@@ -72,37 +72,122 @@ Layouts export and import as single files, so a layout can be shared or publishe
 
 ## 4. Components
 
-| Component | Purpose | Example use |
+### 4.1 Shared contract
+
+Every component carries the same core properties, whatever its type. Settling this before building the first component is what stops the tenth from forcing a rewrite of the first.
+
+| Property | Set in | Purpose |
 |---|---|---|
-| **Stat** | A value with an optional derived display beside it | Ability scores, AC, Speed |
-| **Field** | Labelled text, number, or dropdown | Name, Race, Alignment |
-| **Pool** | Current / max resource with adjust controls | HP, spell slots, rage, ki, sanity |
-| **Track** | Row of boxes or pips | Death saves, exhaustion, stress, clocks |
-| **Toggle** | Single boolean | Inspiration, equipped, trained |
-| **Table** | Repeatable typed records, wikilink-aware | Skills, inventory, attacks, spells, features |
-| **Computed** | Read-only formula output | Passive Perception, spell save DC |
-| **Rich text** | Free markdown block | Backstory, notes, appearance |
-| **Group** | Titled container holding other components | Visual sectioning |
-| **Image** | Portrait or symbol | Character art |
+| `id` | Layout | Stable identity that survives label renames. What formulas reference. |
+| `type` | Layout | Which component this is. |
+| `label` | Layout | Display name, and the section heading in the note body. |
+| `position` | Layout | Grid column, row, width, height. |
+| `storage` | Fixed by type | `fenced` or `markdown`. A property of the component type, never a user choice. |
+| `reset` | Layout, optional | Which named trigger this component responds to, and what it resets to. Only for components that hold state. |
 
-Detail on the ones that carry weight:
+Every component implements four things and nothing more:
 
-**Stat.** Configured with a label and an optional derived formula. Stores one value. In sheet view the value is editable and the derived part updates live. Covers "DEX 16 (+3)" without the plugin knowing what a modifier is.
+- **`read`** — parse its section of the note body into data.
+- **`write`** — serialise data back into a section, byte-identical when nothing changed.
+- **`render`** — display itself, given its data and the resolved values from the formula engine.
+- **`formulaFields`** — declare which of its config fields accept an expression rather than a literal.
 
-**Pool.** Configured with a label, a max that may be a literal or a formula, an optional temp track, and an optional reset trigger. Stores current and temp. In sheet view it offers increment, decrement, and direct entry, so damage and healing are one action.
+Adding a component means implementing exactly those four. Nothing else in the system needs to know the component exists.
 
-**Track.** Configured with a label, a box count that may be a literal or a formula, and an optional reset trigger. Stores how many boxes are filled.
+### 4.2 Catalog
 
-**Table.** The most important component, because it absorbs several system-specific concepts into one generic block. Configured with a column list, each column typed as text, number, toggle, link, or computed. A computed column has a per-row formula that can reference the row's own cells and any value elsewhere on the sheet.
+For each component: what the layout configures, what the character note stores, what it does in sheet view, and which config fields accept formulas.
 
-Tables come in two row modes, and the distinction matters:
+**Stat** — a value with an optional derived display beside it. Covers ability scores, AC, Speed.
 
-- **Fixed rows.** The layout defines the rows, the character only fills in cells. Correct for skills and saving throws, where every character in the system has the same list.
+- *Config:* `label`, `derived` (optional)
+- *Data:* `fenced`, a single value
+- *Sheet view:* value editable inline, derived part recomputes live
+- *Formula fields:* `derived`
+
+Covers "DEX 16 (+3)" without the plugin knowing what a modifier is.
+
+**Field** — labelled text, number, or dropdown. Covers Name, Race, Alignment.
+
+- *Config:* `label`, `input` (`text` | `number` | `select`), `options` when `select`
+- *Data:* `fenced`, a single value
+- *Sheet view:* inline edit appropriate to the input type
+- *Formula fields:* none
+
+**Pool** — current and max resource with adjust controls. Covers HP, spell slots, rage, ki, sanity.
+
+- *Config:* `label`, `max`, `hasTemp`, `reset`
+- *Data:* `fenced`, `current` and optionally `temp`
+- *Sheet view:* increment, decrement, and direct entry, so damage and healing are one action
+- *Formula fields:* `max`, `reset.to`
+
+**Track** — a row of boxes or pips. Covers death saves, exhaustion, stress, clocks.
+
+- *Config:* `label`, `count`, `reset`
+- *Data:* `fenced`, how many boxes are filled
+- *Sheet view:* click a box to fill or clear it
+- *Formula fields:* `count`, `reset.to`
+
+**Toggle** — a single boolean. Covers inspiration, equipped, trained.
+
+- *Config:* `label`, `reset`
+- *Data:* `fenced`, a boolean
+- *Sheet view:* click to flip
+- *Formula fields:* `reset.to`
+
+**Table** — repeatable typed records, wikilink-aware. Covers skills, inventory, attacks, spells, features.
+
+- *Config:* `label`, `rowMode`, `rows` (when fixed), `columns[]`
+- *Data:* `markdown` table, one row per record
+- *Sheet view:* cells editable, link cells navigate on click, computed cells read-only
+- *Formula fields:* each column's `formula`
+
+The most important component, because it absorbs several system-specific concepts into one generic block. Each column is typed as `text`, `number`, `toggle`, `link`, or `computed`. A computed column's formula may reference the row's own cells by column name, and anything else on the sheet by component id.
+
+Two row modes, and the distinction carries real weight:
+
+- **Fixed rows.** The layout defines the rows, the character only fills in cells. Correct for skills and saving throws, where every character in the system has the same list and retyping it per character would be absurd.
 - **Open rows.** The character adds, removes, and reorders rows freely. Correct for inventory, attacks, spells, and features.
 
-Link-typed cells render as real wikilinks and navigate on click.
+Table is where the design risk concentrates. It is the only component using the markdown storage path, the only one holding wikilinks, and the only one with per-row formula scope. If the shared contract in 4.1 is wrong, Table is what reveals it.
 
-**Computed.** Read-only display of a formula result. Hovering reveals the formula.
+**Computed** — read-only formula output. Covers Passive Perception, spell save DC.
+
+- *Config:* `label`, `value`
+- *Data:* none, entirely derived
+- *Sheet view:* read-only, hovering reveals the formula
+- *Formula fields:* `value`
+
+**Rich text** — a free markdown block. Covers backstory, notes, appearance.
+
+- *Config:* `label`
+- *Data:* `markdown`, free text
+- *Sheet view:* editable, renders links and embeds
+- *Formula fields:* none
+
+**Group** — a titled container holding other components. Covers visual sectioning.
+
+- *Config:* `title`, `collapsible`, `children`
+- *Data:* none
+- *Sheet view:* visual container, optionally collapsible
+- *Formula fields:* none
+
+**Image** — a portrait or symbol.
+
+- *Config:* `label`
+- *Data:* `fenced`, a path or wikilink
+- *Sheet view:* click to change
+- *Formula fields:* none
+
+### 4.3 Layout schema
+
+The layout schema is not designed separately. It is the union of the shared contract and each component's configuration, plus three layout-level pieces:
+
+- **Function library.** The layout's own named functions.
+- **Reset triggers.** The layout's own named events.
+- **Promoted fields.** Which values, if any, mirror into frontmatter.
+
+A layout is therefore metadata, a function library, a trigger list, a promoted field list, and an ordered list of component configurations. Every time a component is added to the catalog, the schema grows by exactly that component's config block and nothing else.
 
 ## 5. Formulas
 
@@ -209,11 +294,26 @@ Explicitly out of scope for v1, recorded so they do not creep back in:
 | **M4 Editor** | Grid canvas, component palette, configuration panel |
 | **M5 Finish** | Reset triggers, promoted fields, layout export and import, mobile reflow, error states |
 
-The order is deliberate. The file model is the hardest thing to change once characters exist, so it gets proven first with hand-written files. The layout editor is the largest interface investment and comes only once the thing it edits is known to work.
+The order is deliberate. The file model is the hardest thing to change once characters exist, so it gets proven first. The layout editor is the largest interface investment and comes only once the thing it edits is known to work.
+
+Within the milestones, work proceeds **component by component rather than layer by layer**. The shared contract in 4.1 comes first, then each component is taken all the way through read, write, and render before the next one starts. The layout schema assembles itself as components are added, rather than being designed up front against requirements not yet met.
+
+Component order, chosen by what each one forces you to solve:
+
+| # | Component | Forces you to solve |
+|---|---|---|
+| 1 | **Stat** | The shared contract, the config and data split, fenced storage, read-only render |
+| 2 | **Pool** | Editing interaction, a formula-capable config field, reset triggers |
+| 3 | **Table** | The markdown storage path, wikilinks, fixed versus open rows, per-row formula scope |
+
+The remaining seven are variations on problems those three solve. Field and Toggle are simpler Stats, Track is a simpler Pool, Computed is a Stat with no stored data, and Rich text, Group, and Image barely touch the formula system.
+
+Table's contract is worth writing early even though it is built third, because it is the component most likely to expose a flaw in the shared contract, and that is cheapest to discover while only Stat and Pool depend on it.
 
 ## 13. Open questions
 
 - Default vault folder for layout files.
-- Whether body sections are identified by heading text or by a stable hidden id. Heading text is readable but breaks when a component is renamed.
 - Whether Group components may nest, or only hold leaf components.
 - Whether a character may override a single formula locally without forking the whole layout.
+
+Resolved: **body sections are keyed by the component's `label`**, which doubles as its heading, keeping the note readable. The `id` is the stable identity formulas reference, so renaming a label breaks no formulas, and section 10 covers migrating existing characters when it happens.
