@@ -1,0 +1,10 @@
+{
+	"id": "sheetsmith",
+	"name": "Sheetsmith",
+	"version": "0.1.0",
+	"minAppVersion": "1.9.0",
+	"description": "Design and use character sheets for any tabletop RPG. Build your own layout from drag-and-drop components, define your own formulas, and keep every character as a plain markdown note.",
+	"author": "Ricardo Pereira",
+	"authorUrl": "https://github.com/Richie735",
+	"isDesktopOnly": false
+}
