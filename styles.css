@@ -2,3 +2,549 @@
  * Sheetsmith styles.
  * Use Obsidian's CSS variables so sheets inherit the user's theme.
  */
+
+/* Sheetsmith's own knobs, overridable from a user CSS snippet. */
+body {
+	/* Narrowest a stat card may get in any mode. */
+	--sheetsmith-stat-min: 90px;
+	/* Fixed card width where the grid does not dictate one. */
+	--sheetsmith-stat-width: 110px;
+}
+
+.sheetsmith-view {
+	padding: var(--size-4-4);
+	overflow-y: auto;
+	container-type: inline-size;
+}
+
+.sheetsmith-grid {
+	display: grid;
+	grid-template-columns: repeat(var(--sheetsmith-columns, 12), 1fr);
+	gap: var(--size-4-2);
+	max-width: var(--file-line-width, 700px);
+	margin: 0 auto;
+}
+
+/* SPEC §8: the sheet reflows to a single column on narrow panes. A
+   container query, not a media query — a narrow split in a wide window
+   must reflow too. Must stay below the rule it overrides: @container adds
+   no specificity, so an equal selector above it would simply lose. Cells
+   then fall back to DOM order, which the view sorts into grid order. */
+@container (max-width: 480px) {
+	.sheetsmith-grid {
+		display: flex;
+		flex-direction: column;
+	}
+}
+
+.sheetsmith-notice {
+	max-width: var(--file-line-width, 700px);
+	margin: var(--size-4-4) auto;
+	padding: var(--size-4-3);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	color: var(--text-muted);
+}
+
+.sheetsmith-error {
+	padding: var(--size-4-2);
+	border: 1px solid var(--background-modifier-error);
+	border-radius: var(--radius-m);
+	color: var(--text-error);
+	font-size: var(--font-ui-small);
+}
+
+/* Layout editor (settings) */
+
+/* The open row paints a 2px accent inset at x = 0; the form continues the
+   same line in the same color at the same x, one continuous bracket. */
+.sheetsmith-component-form {
+	margin: 0 0 var(--size-4-4) 0;
+	padding-left: var(--size-4-3);
+	border-left: 2px solid var(--interactive-accent);
+}
+
+/* Hairlines between fields carry the settings rhythm; keep them, and give
+   text controls one shared width so the column's left edge is straight. */
+.sheetsmith-component-form > .setting-item > .setting-item-control > input,
+.sheetsmith-component-form > .setting-item > .setting-item-control > select {
+	width: 14em;
+}
+
+/* Every group heading in a component form, whatever it heads: one size, one
+   weight, one case. A field label and a group heading must not look alike. */
+.sheetsmith-form-group {
+	margin-top: var(--size-4-4);
+	padding-bottom: var(--size-2-2);
+}
+
+.sheetsmith-form-group-title {
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-semibold);
+	color: var(--text-muted);
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+}
+
+/* A heading labels what follows it; no hairline in between. */
+.sheetsmith-form-group + .setting-item {
+	border-top: none;
+}
+
+/* Attribute table: header, rows, and footer are plain divs on one grid
+   template — no Setting internals to fight themes over. One 4px padding
+   unit per element inside a 4px-padded container keeps every spacing 8px:
+   row-to-row (4+4), edge-to-content (4+4), and the 8px column gaps. */
+
+.sheetsmith-attribute-list {
+	margin: var(--size-4-2) 0 var(--size-4-3);
+	padding: var(--size-2-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background-color: var(--background-secondary);
+}
+
+.sheetsmith-attribute-columns,
+.sheetsmith-attribute-row {
+	display: grid;
+	align-items: center;
+	gap: var(--size-4-2);
+	padding: var(--size-2-2);
+}
+
+/* A table, not a settings row: key starts at the left, the name column
+   absorbs the remaining width, controls hold the right edge. The header
+   shares the first two tracks, so its labels align with the inputs. */
+.sheetsmith-attribute-columns {
+	grid-template-columns: 7em minmax(0, 1fr);
+}
+
+.sheetsmith-attribute-row {
+	/* Three control tracks: handle + trash on desktop leaves one empty;
+	   up + down + trash on mobile uses all three. Empty tracks collapse. */
+	grid-template-columns: 7em minmax(0, 1fr) repeat(3, min-content);
+}
+
+.sheetsmith-attribute-columns > span {
+	/* Match the inputs' inner padding so labels align with their text. */
+	padding-left: var(--size-4-2);
+	font-size: var(--font-smallest);
+	color: var(--text-muted);
+}
+
+.sheetsmith-attribute-row > input {
+	width: 100%;
+}
+
+.sheetsmith-attribute-row > button.clickable-icon {
+	background: transparent;
+	border: none;
+	box-shadow: none;
+	height: auto;
+	margin: 0;
+	padding: var(--size-2-2);
+}
+
+/* Optical edge alignment: the trash icon's click-padding would read as
+   extra space against the container edge, making the right inset look
+   wider than the left. Pull it back by exactly that padding. */
+.sheetsmith-attribute-row > button.clickable-icon:last-child {
+	margin-right: calc(-1 * var(--size-2-2));
+}
+
+.sheetsmith-attribute-handle {
+	cursor: grab;
+}
+
+/* The indicator tells the truth about where the row will land: above the
+   hovered row on upward drags, below it on downward ones. */
+.sheetsmith-attribute-drop {
+	box-shadow: inset 0 2px 0 var(--interactive-accent);
+}
+
+.sheetsmith-attribute-drop-below {
+	box-shadow: inset 0 -2px 0 var(--interactive-accent);
+}
+
+.sheetsmith-attribute-empty {
+	padding: var(--size-2-2);
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+
+.sheetsmith-attribute-footer {
+	padding: var(--size-2-2);
+}
+
+.sheetsmith-attribute-list .sheetsmith-field-error {
+	grid-column: 1 / -1;
+	text-align: left;
+	/* Line up with the header labels and input text. */
+	padding-left: var(--size-4-2);
+}
+
+.sheetsmith-position-field {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: var(--size-2-1);
+}
+
+.sheetsmith-position-field input {
+	width: 5em;
+}
+
+.sheetsmith-position-label {
+	font-size: var(--font-smallest);
+	color: var(--text-muted);
+}
+
+.sheetsmith-position-field .sheetsmith-field-error {
+	flex-basis: auto;
+	text-align: center;
+	white-space: normal;
+	max-width: 8em;
+}
+
+/* Inline field validation */
+
+.sheetsmith-input-invalid {
+	border-color: var(--background-modifier-error) !important;
+}
+
+.setting-item-control:has(.sheetsmith-field-error) {
+	flex-wrap: wrap;
+}
+
+.sheetsmith-field-error {
+	flex-basis: 100%;
+	text-align: right;
+	color: var(--text-error);
+	font-size: var(--font-smallest);
+}
+
+/* A component row whose form is open, and the form anchored to it */
+
+/* Paint-only highlight: an inset shadow never shifts the row's layout. */
+.sheetsmith-row-open {
+	box-shadow: inset 2px 0 0 var(--interactive-accent);
+}
+
+.sheetsmith-component-reference {
+	padding-bottom: var(--size-4-1);
+}
+
+/* Grid preview */
+
+.sheetsmith-layout-preview {
+	--sheetsmith-preview-track: calc(
+		(100% - (var(--sheetsmith-columns, 12) - 1) * var(--size-2-2)) /
+			var(--sheetsmith-columns, 12)
+	);
+	display: grid;
+	grid-template-columns: repeat(var(--sheetsmith-columns, 12), 1fr);
+	grid-auto-rows: 44px;
+	gap: var(--size-2-2);
+	margin: var(--size-4-2) 0 var(--size-4-4);
+	padding: var(--size-4-2);
+	border: 1px dashed var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background-color: var(--background-primary);
+	/* Faint column stripes, so "column 7" is verifiable by eye. */
+	background-image: repeating-linear-gradient(
+		to right,
+		var(--background-primary-alt) 0,
+		var(--background-primary-alt) var(--sheetsmith-preview-track),
+		transparent var(--sheetsmith-preview-track),
+		transparent calc(var(--sheetsmith-preview-track) + var(--size-2-2))
+	);
+	background-origin: content-box;
+	background-clip: content-box;
+}
+
+.sheetsmith-preview-cell {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	overflow: hidden;
+	margin: 0;
+	height: auto;
+	padding: 0 var(--size-2-1);
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background-color: var(--background-secondary);
+	box-shadow: none;
+	cursor: pointer;
+}
+
+.sheetsmith-preview-cell > span {
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+	max-width: 100%;
+}
+
+.sheetsmith-preview-cell:hover {
+	border-color: var(--interactive-accent);
+	color: var(--text-normal);
+	background-color: var(--background-modifier-hover);
+}
+
+.sheetsmith-preview-editing {
+	border-color: var(--interactive-accent);
+	color: var(--text-normal);
+	box-shadow: 0 0 0 1px var(--interactive-accent) inset;
+}
+
+.sheetsmith-preview-overlap {
+	border-color: var(--text-error);
+	color: var(--text-error);
+}
+
+.sheetsmith-stat-group {
+	display: grid;
+	/* As many cards per row as fit the component's width; the rest wrap.
+	   A 3-column-wide component therefore shows six abilities as 3×2. */
+	grid-template-columns: repeat(
+		auto-fit,
+		minmax(var(--sheetsmith-stat-min, 90px), 1fr)
+	);
+	gap: var(--size-4-2);
+	width: 100%;
+	align-items: stretch;
+}
+
+/* The group's authored name, above its cards. */
+.sheetsmith-stat-group-label {
+	margin-bottom: var(--size-2-2);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-semibold);
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	color: var(--text-muted);
+}
+
+/* Logical values, so the default start edge follows the vault's text
+   direction rather than hard-coding left. */
+.sheetsmith-stat-group-label-center {
+	text-align: center;
+}
+
+.sheetsmith-stat-group-label-end {
+	text-align: end;
+}
+
+/* Vertical cards are tiles, not banners: cap the column and center it
+   rather than stretching each card across the whole pane. */
+.sheetsmith-stat-group-vertical {
+	grid-template-columns: min(100%, calc(var(--sheetsmith-stat-width, 110px) * 1.5));
+	justify-content: center;
+}
+
+/* Aligned modes: cards take a fixed width and the group aligns. Flex
+   rather than grid, so an incomplete last row aligns too — five cards
+   centered in a 3-wide space sit 3 on top, 2 centered beneath. */
+
+.sheetsmith-stat-group-align-start,
+.sheetsmith-stat-group-align-center,
+.sheetsmith-stat-group-align-end {
+	display: flex;
+	flex-wrap: wrap;
+}
+
+.sheetsmith-stat-group-align-start > div,
+.sheetsmith-stat-group-align-center > div,
+.sheetsmith-stat-group-align-end > div {
+	flex: 0 0 auto;
+	/* One card per grid unit of the component's width, but never narrower
+	   than the same floor the stretch mode enforces. */
+	width: max(
+		var(--sheetsmith-stat-min, 90px),
+		calc(
+			(
+					100% -
+						(var(--sheetsmith-stat-group-per-row, 6) - 1) * var(--size-4-2)
+				) /
+				var(--sheetsmith-stat-group-per-row, 6)
+		)
+	);
+}
+
+.sheetsmith-stat-group-vertical.sheetsmith-stat-group-align-start > div,
+.sheetsmith-stat-group-vertical.sheetsmith-stat-group-align-center > div,
+.sheetsmith-stat-group-vertical.sheetsmith-stat-group-align-end > div {
+	width: var(--sheetsmith-stat-width, 110px);
+}
+
+.sheetsmith-stat-group-align-start {
+	justify-content: flex-start;
+}
+
+.sheetsmith-stat-group-align-center {
+	justify-content: center;
+}
+
+.sheetsmith-stat-group-align-end {
+	justify-content: flex-end;
+}
+
+.sheetsmith-stat-group-vertical.sheetsmith-stat-group-align-start,
+.sheetsmith-stat-group-vertical.sheetsmith-stat-group-align-center,
+.sheetsmith-stat-group-vertical.sheetsmith-stat-group-align-end {
+	flex-direction: column;
+	flex-wrap: nowrap;
+	justify-content: flex-start;
+}
+
+.sheetsmith-stat-group-vertical.sheetsmith-stat-group-align-start {
+	align-items: flex-start;
+}
+
+.sheetsmith-stat-group-vertical.sheetsmith-stat-group-align-center {
+	align-items: center;
+}
+
+.sheetsmith-stat-group-vertical.sheetsmith-stat-group-align-end {
+	align-items: flex-end;
+}
+
+/* Card rhythm: the header pair sits tight (2px), the big number stands
+   apart from it (6px), the pill hangs close under its number (4px). The
+   whole card is a click target for its input. */
+
+.sheetsmith-stat {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: flex-start;
+	gap: var(--size-2-1);
+	padding: var(--size-4-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background-color: var(--background-secondary);
+	text-align: center;
+	cursor: text;
+}
+
+.sheetsmith-stat-label {
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-semibold);
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	color: var(--text-muted);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	max-width: 100%;
+}
+
+/* Always present, so cards with and without an abbreviation keep their
+   numbers on one baseline across a row. */
+.sheetsmith-stat-abbreviation {
+	min-height: 1.2em;
+	font-size: var(--font-smallest);
+	letter-spacing: 0.05em;
+	color: var(--text-faint);
+}
+
+.sheetsmith-stat-value {
+	display: flex;
+	align-items: baseline;
+	justify-content: center;
+	gap: var(--size-2-2);
+	width: 100%;
+	margin-top: var(--size-2-2);
+}
+
+.sheetsmith-view .sheetsmith-stat-input {
+	width: 100%;
+	padding: 0 var(--size-2-1);
+	border: none;
+	border-radius: var(--radius-s);
+	background: transparent;
+	box-shadow: none;
+	text-align: center;
+	font-size: var(--font-ui-large);
+	font-weight: var(--font-bold);
+	color: var(--text-normal);
+}
+
+.sheetsmith-view .sheetsmith-stat-input:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.sheetsmith-view .sheetsmith-stat-input:focus {
+	box-shadow: 0 0 0 2px var(--interactive-accent);
+}
+
+/* The derived result is the card's big number; the stored value drops
+   into a small pill beneath it. Cards without a derived keep the value
+   as the big number. */
+
+.sheetsmith-stat-derived {
+	margin-top: var(--size-2-2);
+	font-size: var(--font-ui-large);
+	font-weight: var(--font-bold);
+	color: var(--text-normal);
+	/* Read-only output: it must not advertise itself as a control. */
+	cursor: default;
+}
+
+/* Visually hidden, present for screen readers: commit announcements. */
+.sheetsmith-sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip-path: inset(50%);
+	white-space: nowrap;
+	border: 0;
+}
+
+/* Unresolved formula is a status, not a value — and not the same glyph
+   as an empty input. */
+.sheetsmith-stat-derived-unresolved {
+	color: var(--text-faint);
+	font-weight: var(--font-normal);
+}
+
+.sheetsmith-stat-has-derived .sheetsmith-stat-value {
+	width: auto;
+	margin-top: var(--size-2-1);
+	padding: var(--size-2-1) var(--size-4-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-l);
+	background-color: var(--background-primary);
+}
+
+/* The pill itself is the field: it reacts to hover and focus, and the
+   input inside it stays chromeless so no second rectangle appears. */
+.sheetsmith-stat-has-derived .sheetsmith-stat-value:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.sheetsmith-stat-has-derived .sheetsmith-stat-value:focus-within {
+	border-color: var(--interactive-accent);
+	box-shadow: 0 0 0 1px var(--interactive-accent);
+}
+
+.sheetsmith-view .sheetsmith-stat-has-derived .sheetsmith-stat-input {
+	width: 4em;
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-semibold);
+	/* User data, not chrome: muted reads as disabled. */
+	color: var(--text-normal);
+}
+
+.sheetsmith-view .sheetsmith-stat-has-derived .sheetsmith-stat-input:hover {
+	background-color: transparent;
+}
+
+.sheetsmith-view .sheetsmith-stat-has-derived .sheetsmith-stat-input:focus {
+	box-shadow: none;
+}
+
