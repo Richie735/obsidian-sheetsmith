@@ -8,9 +8,9 @@ A system-agnostic character sheet builder for Obsidian. The user designs a sheet
 
 ## Hard constraints
 
-These are non-negotiable, and each one is easy to violate by reaching for the obvious solution.
+These are non-negotiable, and each one is easy to violate by reaching for the obvious solution. Constraints 1 and 5 are enforced by eslint and 3 by tests, so violating them fails the build rather than review. The rest need judgement.
 
-1. **Never `eval()` or `new Function()`.** The formula engine must use a real parser. Layouts are shareable files, so evaluating them as code is a live injection vector, and Obsidian's plugin review rejects both outright.
+1. **Never `eval()` or `new Function()`.** The formula engine must use a real parser. Layouts are shareable files, so evaluating them as code is a live injection vector, and Obsidian's plugin review rejects both outright. Enforced by `no-eval`, `no-implied-eval`, and `no-new-func`.
 
 2. **Wikilinks must never be written inside a code fence.** Obsidian does not index links in fenced blocks, so backlinks, graph view, hover preview, and rename propagation all die silently. This is why link-bearing components store as plain markdown and only scalar components use fences. It is the load-bearing decision in the file model.
 
@@ -18,7 +18,9 @@ These are non-negotiable, and each one is easy to violate by reaching for the ob
 
 4. **A layout change never deletes character data.** Sections whose component was removed or renamed are retained, not cleaned up. Losing a player's character is the worst failure this plugin can have.
 
-5. **`src/parse/` imports nothing from `obsidian`.** Parsing stays pure so it can be tested without launching the app. Reach for `app.vault` or `app.metadataCache` in a view or service, never in the parser.
+5. **`src/parse/` and `src/formula/` import nothing from `obsidian`.** They stay pure so they can be tested without launching the app. Reach for `app.vault` or `app.metadataCache` in a view or service, never in the parser or the formula engine. Enforced by `no-restricted-imports` scoped to those paths.
+
+The registry contract in `src/components/contract.test.ts` runs the §4.1 checks against every registered component, so adding one that skips part of the contract fails there rather than at runtime in a view.
 
 6. **Test against a throwaway vault, never a real one.**
 
@@ -30,15 +32,15 @@ These are non-negotiable, and each one is easy to violate by reaching for the ob
 
 ## Component contract
 
-Every component implements exactly four things, defined in `SPEC.md` §4.1:
+Every component implements exactly five things, defined in `SPEC.md` §4.1:
 
-`read` (section → data), `write` (data → section, byte-identical when unchanged), `render` (data + resolved values → DOM), and `formulaFields` (which config fields accept an expression).
+`read` (section → data), `write` (data → section, byte-identical when unchanged), `render` (data + resolved values → DOM), `formulaFields` (which config fields accept an expression), and `configFields` (declared config fields the layout editor renders as a form).
 
-Nothing outside a component should need to know that component exists. Adding one means implementing those four and registering it, not touching the renderer or the parser.
+Nothing outside a component should need to know that component exists. Adding one means implementing those five and registering it, not touching the renderer, the parser, or the layout editor.
 
 ## Working order
 
-Build **component by component, not layer by layer.** Take one component all the way through read, write, render, and tests before starting the next. Order is Stat, then Pool, then Table; the remaining seven are variations. The layout schema assembles itself from component configs rather than being designed up front. See `SPEC.md` §12.
+Build **component by component, not layer by layer.** Take one component all the way through read, write, render, and tests before starting the next. Order so far: Stat (retired once Stat group covered its role), then Stat group; next are Pool, then Table; the remaining seven are variations. The layout schema assembles itself from component configs rather than being designed up front. See `SPEC.md` §12.
 
 Resist building the layout editor and the formula engine early. Both assume a working renderer and a proven file format, and both are the interesting parts, which is exactly why they are the trap.
 

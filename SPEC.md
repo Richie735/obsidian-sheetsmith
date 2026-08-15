@@ -16,7 +16,7 @@ The plugin knows arithmetic and nothing about any game. Every rule specific to a
 
 **Character.** A normal `.md` note naming a layout in frontmatter. Holds values only, never structure.
 
-**Component.** A placeable block on a layout. Deliberately generic (Stat, Pool, Table) rather than system-specific (AbilityScore, SpellSlots).
+**Component.** A placeable block on a layout. Deliberately generic (Stat group, Pool, Table) rather than system-specific (AbilityScore, SpellSlots).
 
 **Formula.** An expression on any numeric field, referencing other fields and layout-defined functions.
 
@@ -63,10 +63,11 @@ Rules:
 - **Each component gets its own `##` section** in the body. Adding a component adds a section. The format stays uniform and expandable.
 - **Format follows the component.** Components holding only numbers and flags store their data in a fenced block, which gives unambiguous boundaries and real types. Components that can hold wikilinks store their data as plain markdown, because Obsidian does not index links inside code blocks.
 - **The note stays readable and hand-editable** as ordinary markdown.
+- **Single-value components store their value under the key `value`** in their fenced block, so hand-editing any of them looks the same.
 
 ### 3.2 Layout file
 
-Stored in a configurable vault folder. Contains the component list with grid positions and sizes, per-component configuration, the function library, reset trigger definitions, and the promoted field list. Contains no per-character data.
+Stored in a configurable vault folder, `Sheetsmith layouts` by default. Contains the component list with grid positions and sizes, per-component configuration, the function library, reset trigger definitions, and the promoted field list. Contains no per-character data.
 
 Layouts export and import as single files, so a layout can be shared or published.
 
@@ -85,27 +86,30 @@ Every component carries the same core properties, whatever its type. Settling th
 | `storage` | Fixed by type | `fenced` or `markdown`. A property of the component type, never a user choice. |
 | `reset` | Layout, optional | Which named trigger this component responds to, and what it resets to. Only for components that hold state. |
 
-Every component implements four things and nothing more:
+Every component implements five things and nothing more:
 
 - **`read`** — parse its section of the note body into data.
 - **`write`** — serialise data back into a section, byte-identical when nothing changed.
-- **`render`** — display itself, given its data and the resolved values from the formula engine.
+- **`render`** — display itself, given its data, the resolved values from the formula engine, a resolver for evaluating formula fields against internal scopes (one ability, a table row), and a callback for reporting user edits. The sheet view owns writing reported edits back to the note; components never touch the file.
 - **`formulaFields`** — declare which of its config fields accept an expression rather than a literal.
+- **`configFields`** — declare its component-specific config fields (key, input kind, label, optional group for subheadings, optional visibility condition on another field's value) so the layout editor can render a configuration form without knowing the component's type. Shared fields (label, position) are the editor's own business.
 
-Adding a component means implementing exactly those four. Nothing else in the system needs to know the component exists.
+Adding a component means implementing exactly those five. Nothing else in the system needs to know the component exists.
 
 ### 4.2 Catalog
 
 For each component: what the layout configures, what the character note stores, what it does in sheet view, and which config fields accept formulas.
 
-**Stat** — a value with an optional derived display beside it. Covers ability scores, AC, Speed.
+**Stat group** — an ordered set of named attributes rendered as a strip of stat cards. Covers the six D&D abilities, Call of Cthulhu characteristics; a single-attribute group is a lone stat card.
 
-- *Config:* `label`, `derived` (optional)
-- *Data:* `fenced`, a single value
-- *Sheet view:* value editable inline, derived part recomputes live
+- *Config:* `label`, `attributes[]` (each a `key` plus optional full `name`, in display order), `derived` (one formula computed per attribute, where `value` is that attribute's value), `direction` (`horizontal` | `vertical`), `sizing` (`fill` | `fixed`; fixed sizes cards at one per grid unit of the component's width, floored at a minimum), `align` (`start` | `center` | `end`, shown and meaningful only with fixed sizing; legacy layouts that carried sizing inside `align` still read correctly), `hideLabel`, `labelAlign` (`start` | `center` | `end`), `hideValue` (meaningful only with a `derived`), `signed`
+- *Data:* `fenced`, one entry per attribute key — the `## Abilities` example in §3.1
+- *Sheet view:* the group's name renders above its cards unless `hideLabel`, aligned to the start of the component unless `labelAlign` says otherwise. Each attribute edits inline. The derived part recomputes live on every keystroke, but the note is written only on commit — leaving the field or pressing Enter. Escape abandons the draft and restores the stored value. Arrow keys step a numeric value like typing: live display, committed on blur. An empty value shows "—" everywhere; "?" is reserved for a value that is present but did not resolve. Covers "DEX 16 (+3)" without the plugin knowing what a modifier is. Until the full engine lands (M3), `derived` may reference the attribute's own `value` and the standard helpers.
 - *Formula fields:* `derived`
 
-Covers "DEX 16 (+3)" without the plugin knowing what a modifier is.
+Entries in the note that no attribute maps to are preserved on write, never dropped. Renaming an attribute key does not move its stored value: the old entry stays in the note under the old key, and migrating it is part of the §10 rename story.
+
+There was a **Stat** component (a single value with a derived display and a free-text note line); it was retired once Stat group covered the card. Character sections written for it are ordinary fenced sections and remain intact and unmapped until re-modelled.
 
 **Field** — labelled text, number, or dropdown. Covers Name, Race, Alignment.
 
@@ -191,7 +195,7 @@ A layout is therefore metadata, a function library, a trigger list, a promoted f
 
 ## 5. Formulas
 
-- **Any numeric field configured in a layout accepts a literal or a formula.** A Pool's max, a Track's box count, a Stat's derived display, a Table's computed column. There is no separate "computed field" concept to learn.
+- **Any numeric field configured in a layout accepts a literal or a formula.** A Pool's max, a Track's box count, an ability's derived display, a Table's computed column. There is no separate "computed field" concept to learn.
 - Formulas reference other components' values by name.
 - **Each layout defines its own function library.** This is what makes the plugin system-agnostic: no game's arithmetic is built in.
 - Standard helpers are available: floor, ceil, round, min, max, abs, and a conditional.
@@ -234,6 +238,10 @@ This is the only place the sheet performs an action rather than holding values.
 
 ## 7. Layout editor
 
+Until the grid canvas below ships (M4), an interim form-based editor lives in the plugin settings: create layouts, add and remove components, and edit each component's shared and declared config fields. It renders forms from `configFields`, so it grows automatically as components are added. The M4 editor is a dedicated workspace view, not a settings tab — an authoring tool needs width, undo scope, and a sheet beside it — and once it ships, settings keep only preferences and a button that opens the editor.
+
+The full editor:
+
 - **Manage layouts**: create, duplicate, rename, delete, import, export.
 - **Grid canvas**: a responsive grid. Drag components in from a palette, move them, resize by grid units. Grid rather than free positioning, so sheets reflow to a single column on a phone instead of breaking.
 - **Configuration panel**: select a component, configure it in a side panel.
@@ -252,7 +260,7 @@ Layouts are independent of one another. "DnD 5e Standard" and "DnD 5e Caster" ar
 - Computed values are read-only.
 - Wikilinks are clickable and navigate. Hover preview works, backlinks resolve, and renaming a linked note updates the sheet, all because links live in plain markdown rather than inside a code block.
 - Reset trigger buttons are available.
-- The sheet reflows to a single column on narrow screens.
+- The sheet reflows to a single column on narrow panes, in grid reading order — top to bottom, then left to right — regardless of the order components sit in the layout file. That order also drives tab order in the normal grid.
 - If the named layout is missing, show a clear message and offer to pick another rather than failing silently.
 
 ## 9. Promoted fields
@@ -268,9 +276,10 @@ Nothing is promoted unless explicitly chosen, so a user who does not want this k
 Character data is the user's, and a layout edit must never destroy it.
 
 - **Removing a component from a layout does not delete character data.** The section remains in the note and stops rendering.
-- **Unmapped data is preserved** and surfaced as a notice, never silently discarded.
+- **Unmapped data is preserved**, never discarded. A section the layout does not map simply does not render; the sheet stays quiet about it rather than reporting it as a problem, since a note carrying sections beyond its layout is ordinary, not an error.
 - **Renaming a component** offers to migrate matching sections in existing characters.
 - **A malformed section shows an error on that component only.** The rest of the sheet renders and stays editable.
+- **A section without a data block is empty, not malformed.** It renders editable exactly like a missing section, and the first edit writes the data block into the section, preserving any prose already there.
 - **Hand edits made in markdown view** are picked up when sheet view reopens.
 
 ## 11. Non-goals
@@ -302,18 +311,22 @@ Component order, chosen by what each one forces you to solve:
 
 | # | Component | Forces you to solve |
 |---|---|---|
-| 1 | **Stat** | The shared contract, the config and data split, fenced storage, read-only render |
-| 2 | **Pool** | Editing interaction, a formula-capable config field, reset triggers |
-| 3 | **Table** | The markdown storage path, wikilinks, fixed versus open rows, per-row formula scope |
+| 1 | **Stat** (since retired) | The shared contract, the config and data split, fenced storage, read-only render |
+| 2 | **Stat group** | Multi-entry fenced storage, per-scope formula evaluation — the row scope Table needs, proven on a simpler component |
+| 3 | **Pool** | Editing interaction, a formula-capable config field, reset triggers |
+| 4 | **Table** | The markdown storage path, wikilinks, fixed versus open rows, per-row formula scope (mechanism proven by Stat group) |
 
-The remaining seven are variations on problems those three solve. Field and Toggle are simpler Stats, Track is a simpler Pool, Computed is a Stat with no stored data, and Rich text, Group, and Image barely touch the formula system.
+Stat group (built as "Abilities") was not in the original order; it jumped the queue on demand once Stat worked, and ended up replacing it — Stat was retired once the Stat group card covered its role. The detour paid for itself regardless: it forced the render contract to grow a per-scope field resolver, which is the same mechanism Table's computed columns need per row, discovered while the codebase was small.
 
-Table's contract is worth writing early even though it is built third, because it is the component most likely to expose a flaw in the shared contract, and that is cheapest to discover while only Stat and Pool depend on it.
+The remaining seven are variations on problems those solve. Field and Toggle are simpler single-value cards, Track is a simpler Pool, Computed is a value-less card fed entirely by a formula, and Rich text, Group, and Image barely touch the formula system.
+
+Table's contract is worth writing early even though it is built fourth, because it is the component most likely to expose a flaw in the shared contract, and that is cheapest to discover while few components depend on it.
 
 ## 13. Open questions
 
-- Default vault folder for layout files.
 - Whether Group components may nest, or only hold leaf components.
 - Whether a character may override a single formula locally without forking the whole layout.
 
 Resolved: **body sections are keyed by the component's `label`**, which doubles as its heading, keeping the note readable. The `id` is the stable identity formulas reference, so renaming a label breaks no formulas, and section 10 covers migrating existing characters when it happens.
+
+Resolved: **layout files live in `Sheetsmith layouts` by default.** The folder is configurable in settings; an empty or whitespace-only value falls back to the default rather than silently pointing at the vault root.
