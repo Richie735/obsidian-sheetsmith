@@ -1,4 +1,12 @@
-import { describe, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
+import {
+	CharacterParseError,
+	getSection,
+	parseCharacter,
+	serialiseCharacter,
+	setSectionBody,
+} from './character';
+import { readFenced, writeFenced } from './fenced';
 
 /*
  * Contract for the character note parser.
@@ -8,24 +16,173 @@ import { describe, it } from 'vitest';
  * bug destroys user data, so every case below should be covered before the
  * parser is wired into a view.
  *
- * Fill these in as the parser takes shape. Round-tripping is the rule that
- * matters most: parse then serialise must return the original file byte for
- * byte when nothing changed, or hand-edited notes will drift on every save.
+ * Round-tripping is the rule that matters most: parse then serialise must
+ * return the original file byte for byte when nothing changed, or hand-edited
+ * notes will drift on every save.
  */
 
+const SAMPLE = `---
+sheet-layout: DnD 5e Caster
+---
+
+## Abilities
+\`\`\`sheet
+STR: 8
+DEX: 16
+WIS: 12
+\`\`\`
+
+## HP
+\`\`\`sheet
+current: 22
+max: 31
+temp: 0
+\`\`\`
+
+## Inventory
+
+| Item | Qty | Weight | Equipped |
+|---|---|---|---|
+| [[Bag of Holding]] | 1 | 15 | yes |
+| [[Sunblade]] | 1 | 3 | yes |
+
+## Backstory
+
+Grew up in [[Neverwinter]] under [[Sildar Hallwinter]].
+`;
+
 describe('parseCharacter', () => {
-	it.todo('reads the layout name from the sheet-layout property');
-	it.todo('fails clearly when the sheet-layout property is missing');
-	it.todo('parses a fenced block section into keyed values');
+	it('reads the layout name from the sheet-layout property', () => {
+		expect(parseCharacter(SAMPLE).layoutName).toBe('DnD 5e Caster');
+	});
+
+	it('strips quotes around the layout name', () => {
+		const note = parseCharacter(
+			'---\nsheet-layout: "DnD 5e Caster"\n---\n',
+		);
+		expect(note.layoutName).toBe('DnD 5e Caster');
+	});
+
+	it('fails clearly when the sheet-layout property is missing', () => {
+		expect(() => parseCharacter('---\ntitle: Nope\n---\n\nBody.\n')).toThrow(
+			CharacterParseError,
+		);
+		expect(() => parseCharacter('No frontmatter at all.\n')).toThrow(
+			CharacterParseError,
+		);
+		expect(() => parseCharacter('---\nsheet-layout:\n---\n')).toThrow(
+			CharacterParseError,
+		);
+	});
+
+	it('splits the body into one section per ## heading', () => {
+		const note = parseCharacter(SAMPLE);
+		expect(note.sections.map((s) => s.label)).toEqual([
+			'Abilities',
+			'HP',
+			'Inventory',
+			'Backstory',
+		]);
+	});
+
+	it('parses a fenced block section into keyed values', () => {
+		const note = parseCharacter(SAMPLE);
+		const hp = getSection(note, 'HP');
+		expect(hp).toBeDefined();
+		const parsed = readFenced((hp as NonNullable<typeof hp>).body);
+		expect(parsed.ok).toBe(true);
+		if (parsed.ok && parsed.values) {
+			expect(Object.fromEntries(parsed.values)).toEqual({
+				current: '22',
+				max: '31',
+				temp: '0',
+			});
+		}
+	});
+
 	it.todo('parses a markdown table section into rows');
 	it.todo('preserves wikilinks verbatim in table cells');
-	it.todo('keeps sections that match no component rather than dropping them');
-	it.todo('reports a malformed section without discarding the others');
+
+	it('keeps sections that match no component rather than dropping them', () => {
+		const note = parseCharacter(SAMPLE);
+		const orphan = getSection(note, 'Backstory');
+		expect(orphan?.body).toContain('[[Neverwinter]]');
+		expect(serialiseCharacter(note)).toContain('## Backstory');
+	});
+
+	it('reports a malformed section without discarding the others', () => {
+		const broken = SAMPLE.replace('current: 22', 'current 22');
+		const note = parseCharacter(broken);
+		const hp = readFenced((getSection(note, 'HP') as { body: string }).body);
+		expect(hp.ok).toBe(false);
+		const abilities = readFenced(
+			(getSection(note, 'Abilities') as { body: string }).body,
+		);
+		expect(abilities.ok).toBe(true);
+		expect(serialiseCharacter(note)).toBe(broken);
+	});
+
+	it('treats deeper headings as part of the enclosing section', () => {
+		const source =
+			'---\nsheet-layout: L\n---\n\n## Notes\n\n### Sub-heading\n\nText.\n';
+		const note = parseCharacter(source);
+		expect(note.sections).toHaveLength(1);
+		expect(getSection(note, 'Notes')?.body).toContain('### Sub-heading');
+	});
 });
 
 describe('serialiseCharacter', () => {
-	it.todo('round-trips an unchanged note byte for byte');
-	it.todo('writes a changed value without reformatting untouched sections');
-	it.todo('leaves body prose outside known sections untouched');
-	it.todo('creates a section for a component that has no data yet');
+	it('round-trips an unchanged note byte for byte', () => {
+		expect(serialiseCharacter(parseCharacter(SAMPLE))).toBe(SAMPLE);
+	});
+
+	it('round-trips a note without a trailing newline', () => {
+		const source = '---\nsheet-layout: L\n---\n\n## AC\n```sheet\nvalue: 14\n```';
+		expect(serialiseCharacter(parseCharacter(source))).toBe(source);
+	});
+
+	it('round-trips CRLF line endings untouched', () => {
+		const source = SAMPLE.replace(/\n/g, '\r\n');
+		expect(serialiseCharacter(parseCharacter(source))).toBe(source);
+	});
+
+	it('writes a changed value without reformatting untouched sections', () => {
+		const note = parseCharacter(SAMPLE);
+		const hp = getSection(note, 'HP') as { body: string };
+		const body = writeFenced(hp.body, new Map([['current', '18']]));
+		const updated = setSectionBody(note, 'HP', body);
+		expect(serialiseCharacter(updated)).toBe(
+			SAMPLE.replace('current: 22', 'current: 18'),
+		);
+	});
+
+	it('preserves unconventional spacing when the value is unchanged', () => {
+		const body = '\n```sheet\nvalue :  14\n```\n';
+		expect(writeFenced(body, new Map([['value', '14']]))).toBe(body);
+	});
+
+	it('leaves body prose outside known sections untouched', () => {
+		const source =
+			'---\nsheet-layout: L\n---\n\nA loose intro paragraph.\n\n## AC\n```sheet\nvalue: 14\n```\n\nTrailing remark inside the section.\n';
+		const note = parseCharacter(source);
+		const ac = getSection(note, 'AC') as { body: string };
+		const updated = setSectionBody(
+			note,
+			'AC',
+			writeFenced(ac.body, new Map([['value', '15']])),
+		);
+		expect(serialiseCharacter(updated)).toBe(
+			source.replace('value: 14', 'value: 15'),
+		);
+	});
+
+	it('creates a section for a component that has no data yet', () => {
+		const note = parseCharacter(SAMPLE);
+		const body = writeFenced(null, new Map([['value', '30']]));
+		const updated = setSectionBody(note, 'Speed', body);
+		expect(serialiseCharacter(updated)).toBe(
+			SAMPLE + '\n## Speed\n\n```sheet\nvalue: 30\n```\n',
+		);
+		expect(serialiseCharacter(note)).toBe(SAMPLE);
+	});
 });
