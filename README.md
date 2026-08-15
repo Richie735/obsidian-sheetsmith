@@ -92,12 +92,27 @@ Dice rolling, bundled rules content, level-up automation, layout inheritance, an
 
 ```bash
 npm install
-npm run dev     # watch build
-npm run build   # type-check and production build
+npm run dev        # watch build
+npm run build      # type-check and production build
 npm run lint
+npm test           # run the test suite once
+npm run test:watch # re-run tests on change
 ```
 
-To test in a vault, clone into `<vault>/.obsidian/plugins/sheetsmith` or symlink the build output there, then enable the plugin in settings.
+### Test vault
+
+Develop against a throwaway vault, never a real one. Early builds rewrite note bodies, and the parser will get it wrong before it gets it right.
+
+```bash
+ln -s /path/to/obsidian-sheetsmith /path/to/test-vault/.obsidian/plugins/sheetsmith
+touch /path/to/obsidian-sheetsmith/.hotreload
+```
+
+Install [Hot Reload](https://github.com/pjeby/hot-reload) in the test vault. Together with the `.hotreload` marker it reloads the plugin whenever `npm run dev` rewrites `main.js`, so there is no disable/enable cycle between builds.
+
+### Testing
+
+The note parser is kept free of Obsidian API imports so it runs under vitest without launching the app. It is also the one place where a bug destroys user data, so it is the part that carries tests. Round-tripping is the rule that matters most: parse then serialise must return an unchanged file byte for byte, or hand-edited notes drift on every save.
 
 `main.js` is the compiled bundle and is deliberately not committed. Releases attach it alongside `manifest.json` and `styles.css`.
 
