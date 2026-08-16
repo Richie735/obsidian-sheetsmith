@@ -28,6 +28,34 @@ export interface Layout {
 	[key: string]: unknown;
 }
 
+/**
+ * A component id is what formulas reference (SPEC §4.1), so it has to be a
+ * name the expression parser accepts. A hyphen is the trap: `armour-class`
+ * tokenizes as `armour` minus `class`, so the id reads as arithmetic over
+ * two names that do not exist, and the formula fails for a reason that
+ * points nowhere near the actual problem.
+ */
+const COMPONENT_ID = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
+ * Rewrite an id no formula could reference into one that can.
+ *
+ * This plugin's own editor emitted hyphenated ids until the clash with the
+ * expression parser was understood, so rejecting them would blank the whole
+ * sheet — over a name that, being unreferencable, nothing can be pointing
+ * at. That is exactly why the rewrite is safe: sections key on the label,
+ * and no formula can have depended on the old form. Layout files carry no
+ * byte-identical promise, so the new id persists on the next save.
+ */
+function migrateId(raw: string, taken: ReadonlySet<string>): string {
+	let base = raw.replace(/[^A-Za-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
+	if (base === '' || /^[0-9]/.test(base)) base = `_${base}`;
+	let id = base;
+	let counter = 2;
+	while (taken.has(id)) id = `${base}_${counter++}`;
+	return id;
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -108,6 +136,19 @@ export function parseLayout(source: string): Layout {
 	}
 
 	const components = raw.components.map(parseComponent);
+
+	// Migrate before the duplicate check, and only ids that fail: two
+	// components genuinely sharing a usable id is an authoring error worth
+	// reporting, not something to quietly rename apart.
+	const usable = new Set(
+		components.filter((c) => COMPONENT_ID.test(c.id)).map((c) => c.id),
+	);
+	for (const component of components) {
+		if (COMPONENT_ID.test(component.id)) continue;
+		component.id = migrateId(component.id, usable);
+		usable.add(component.id);
+	}
+
 	const ids = new Set<string>();
 	const labels = new Set<string>();
 	for (const component of components) {
