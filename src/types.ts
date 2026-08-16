@@ -26,8 +26,19 @@ export interface GridPosition {
 export interface ResetBinding {
 	/** Name of the layout-defined trigger this component responds to. */
 	trigger: string;
-	/** What to reset to: 'max', 'zero', or a formula expression. */
-	to: string;
+	/**
+	 * What resetting means here. The states are named rather than numbered
+	 * because the same three cover a Toggle, where full and empty are true
+	 * and false, as readily as a Pool, where they are its max and zero.
+	 */
+	action: 'full' | 'empty' | 'formula';
+	/**
+	 * The expression, for `action: 'formula'` and nothing else. It is a
+	 * formula field like any other, declared as `reset.to`, which is why the
+	 * action is a separate key: one string cannot be both an expression the
+	 * evaluator reads and a literal word standing in for one.
+	 */
+	to?: string;
 }
 
 /** Properties every component carries, whatever its type (SPEC §4.1). */
@@ -41,6 +52,22 @@ export interface ComponentConfig {
 	position: GridPosition;
 	reset?: ResetBinding;
 }
+
+/**
+ * Outcome of applying a reset (SPEC §6). Shaped like `ReadResult` because it
+ * is the same situation: one component's failure, reported on that component
+ * while everything else carries on.
+ *
+ * A result rather than plain data, because a reset has a failure the caller
+ * cannot see any other way. `full` on a Pool whose `max` will not resolve
+ * produces no new value, and data returned unchanged is indistinguishable
+ * from a pool that was already full — so the trigger would report success
+ * for a component it never reset. It also spares the component inventing a
+ * data object when it was handed null and has nothing to reset.
+ */
+export type ResetResult<TData> =
+	| { ok: true; data: TData }
+	| { ok: false; error: string };
 
 /**
  * Outcome of parsing a section body. An error affects that component only.
@@ -157,6 +184,22 @@ export type FieldExplainer = (
 	scope: Readonly<Record<string, FieldValue>>,
 ) => string | null;
 
+/**
+ * What `applyReset` is given beyond the binding itself (SPEC §6).
+ *
+ * The same resolve/explain pair `render` carries, and for the same reason: a
+ * `FieldResolver` returns null both for a field that was never declared and
+ * for one whose expression threw, so on its own it can only ever produce
+ * some flavour of "could not resolve". Reset is where the difference pays off
+ * most — the user has just pressed a button and watched nothing happen, and
+ * "max: 'con' is not defined on this sheet" is the gap between a dead control
+ * and a fixable one.
+ */
+export interface ResetContext {
+	resolve: FieldResolver;
+	explain: FieldExplainer;
+}
+
 /** What render is given beyond the data itself. */
 export interface RenderContext<TData = unknown> {
 	resolved: ResolvedValues;
@@ -177,8 +220,14 @@ export interface RenderContext<TData = unknown> {
 
 /**
  * The five things a component implements, and the only surface the rest of
- * the system sees — plus one optional sixth, `scopeValues`, for the
- * components that hold values other components' formulas can read.
+ * the system sees.
+ *
+ * Beyond the five, a member is optional only where the alternative is code
+ * outside the component knowing that component's data shape (SPEC §4.1). The
+ * rule is the point, not the count: `scopeValues` passes it because the name
+ * table cannot publish a value it has no way to read, and `applyReset`
+ * because a reset button cannot write "restore to full" into a shape it does
+ * not know. Most candidates will not pass it.
  */
 export interface ComponentDefinition<
 	TConfig extends ComponentConfig = ComponentConfig,
@@ -211,6 +260,30 @@ export interface ComponentDefinition<
 	 * system never learns it exists.
 	 */
 	scopeValues?(data: TData | null, config: TConfig): ScopeValues;
+	/**
+	 * Apply a reset trigger to this component's data (SPEC §6).
+	 *
+	 * Takes the binding rather than a finished value, because only the
+	 * component knows what `full` means for it — a Pool's max, a Track's
+	 * count, a Toggle's true — and a caller that knew would be holding the
+	 * per-type knowledge the contract exists to keep out of it.
+	 *
+	 * The context reads any of this component's formula fields, not just
+	 * `reset.to`: `full` on a Pool means resolving its `max`, which is a
+	 * formula like any other and can fail like one. Returning `{ ok: false }`
+	 * with the reason is how a component says so, and the sheet reports that
+	 * one while the rest of the trigger still applies (SPEC §6).
+	 *
+	 * Implementing it is what declares the component stateful: the editor
+	 * offers a reset binding only to components that have it, and a trigger
+	 * passes over the ones that do not.
+	 */
+	applyReset?(
+		data: TData | null,
+		config: TConfig,
+		reset: ResetBinding,
+		context: ResetContext,
+	): ResetResult<TData>;
 	/**
 	 * Which config fields accept an expression rather than a literal.
 	 *

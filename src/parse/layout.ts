@@ -6,7 +6,7 @@
  * wrong rather than failing silently.
  */
 
-import { ComponentConfig, GridPosition } from '../types';
+import { ComponentConfig, GridPosition, ResetBinding } from '../types';
 
 export class LayoutParseError extends Error {
 	constructor(message: string) {
@@ -108,6 +108,50 @@ function parsePosition(value: unknown, where: string): GridPosition {
 	return position as GridPosition;
 }
 
+/**
+ * A component's reset binding (SPEC §6), or undefined where it has none.
+ *
+ * Checked rather than carried through untouched like the rest of a
+ * component's config, because `reset` is shared config the plugin itself acts
+ * on — the same category as `position`, so §5's rule that a wrong shape
+ * refuses the file applies to it and not merely to `columns` and `functions`.
+ * Without this the type's `action` would be a guarantee nothing enforced: a
+ * binding arriving without one parses clean, and the trigger button silently
+ * does nothing.
+ *
+ * The pre-split shape, `{ trigger, to: "max" }`, is refused rather than
+ * migrated. The `migrateId` precedent above exists because this plugin's own
+ * editor emitted the ids it rewrites; nothing has ever written a `reset`, so
+ * there is no file in the wild to protect, and quietly blessing a shape the
+ * spec no longer has would be worse than naming it.
+ */
+function parseReset(value: unknown, where: string): ResetBinding | undefined {
+	if (value === undefined) return undefined;
+	if (!isRecord(value)) {
+		throw new LayoutParseError(`${where} "reset" must be an object.`);
+	}
+	const trigger = requireString(value, 'trigger', `${where} reset`);
+	const action = value.action;
+	if (action !== 'full' && action !== 'empty' && action !== 'formula') {
+		throw new LayoutParseError(
+			`${where} reset needs an "action" of "full", "empty", or "formula".`,
+		);
+	}
+	const to = value.to;
+	if (to !== undefined && typeof to !== 'string') {
+		throw new LayoutParseError(`${where} reset "to" must be a string.`);
+	}
+	if (action === 'formula' && (to === undefined || to.trim() === '')) {
+		throw new LayoutParseError(
+			`${where} reset action "formula" needs a "to" expression.`,
+		);
+	}
+	// A `to` left beside `full` or `empty` is kept, not dropped: it does not
+	// run, but switching the action in the editor and back must not throw the
+	// expression away.
+	return { trigger, action, ...(to !== undefined ? { to } : {}) };
+}
+
 function parseComponent(value: unknown, index: number): ComponentConfig {
 	const where = `Component ${index + 1}`;
 	if (!isRecord(value)) {
@@ -122,9 +166,10 @@ function parseComponent(value: unknown, index: number): ComponentConfig {
 		);
 	}
 	const position = parsePosition(value.position, `${where} ("${label}")`);
+	const reset = parseReset(value.reset, `${where} ("${label}")`);
 	// Carry component-specific config fields (derived, max, columns, …)
 	// through untouched; each component validates its own.
-	return { ...value, id, type, label, position };
+	return { ...value, id, type, label, position, ...(reset ? { reset } : {}) };
 }
 
 export function parseLayout(source: string): Layout {
