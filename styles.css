@@ -12,6 +12,12 @@ body {
 	/* The card's headline number. Relative rather than a pixel size, so it
 	   follows the vault's text size setting and the card scales with it. */
 	--sheetsmith-stat-value-size: 1.75em;
+	/* How wide the sheet may grow. A sheet is a dashboard, not prose: the
+	   grid is a fixed number of columns the author placed components into,
+	   so holding it at reading width leaves a wide pane mostly empty and
+	   squeezes the cards that were meant to fill it. Set this to
+	   var(--file-line-width) in a CSS snippet to get reading width back. */
+	--sheetsmith-sheet-max-width: none;
 }
 
 .sheetsmith-view {
@@ -24,7 +30,8 @@ body {
 	display: grid;
 	grid-template-columns: repeat(var(--sheetsmith-columns, 12), 1fr);
 	gap: var(--size-4-2);
-	max-width: var(--file-line-width, 700px);
+	/* Fills the pane by default; centred if a snippet caps it. */
+	max-width: var(--sheetsmith-sheet-max-width, none);
 	margin: 0 auto;
 }
 
@@ -674,7 +681,7 @@ body {
 	color: var(--text-faint);
 }
 
-/* Six abilities across a 700px sheet gives each card about 110px, and
+/* Six abilities across a narrow pane gives each card about 110px, and
    "CONSTITUTION" in tracked uppercase does not fit the ~94px left inside
    the padding — half the strip ellipsised, which is a worse label than a
    slightly tighter one. Buy the room back from the two places that are
