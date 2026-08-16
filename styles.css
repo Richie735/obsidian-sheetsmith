@@ -1383,15 +1383,41 @@ body {
 	outline-offset: 2px;
 }
 
+/* A marked level is the accent, mixed back towards the page by how far up
+   the column it is: the first grade a tint, the top one the full colour. The
+   ramp is what lets a column of rings be read as a shape — how trained this
+   character is, before any of the letters are read — and it costs nothing,
+   because the glyph and the name were already carrying the exact answer.
+
+   The ring itself stays full accent at every level, so even the faintest fill
+   still reads as marked rather than as an ordinary empty one. The share comes
+   in from the component, which is the only side that knows how many levels
+   this column has; absent — a plain toggle — it is the whole way. */
 .sheetsmith-view .sheetsmith-table-cycle-on {
 	border-color: var(--interactive-accent);
-	background-color: var(--interactive-accent);
+	background-color: color-mix(
+		in srgb,
+		var(--interactive-accent) calc(var(--sheetsmith-level, 1) * 100%),
+		var(--background-primary)
+	);
 	color: var(--text-on-accent);
+}
+
+/* Short of the top the fill is nearer the page than the accent, and white on
+   a tint is the one place this ramp could cost legibility. --text-normal is
+   defined against --background-primary, which is exactly what the fill is
+   mixed with, so it holds in a light theme and a dark one alike. */
+.sheetsmith-view .sheetsmith-table-cycle-part {
+	color: var(--text-normal);
 }
 
 .sheetsmith-view .sheetsmith-table-cycle-on:hover {
 	border-color: var(--interactive-accent-hover);
-	background-color: var(--interactive-accent-hover);
+	background-color: color-mix(
+		in srgb,
+		var(--interactive-accent-hover) calc(var(--sheetsmith-level, 1) * 100%),
+		var(--background-primary)
+	);
 }
 
 /* A finger has no hover to find the target with and no pixel to aim at, so
@@ -1585,6 +1611,15 @@ body {
 	/* An empty ring against a faint outline is the whole signal here. */
 	.sheetsmith-view .sheetsmith-table-cycle {
 		border-color: var(--text-muted);
+	}
+
+	/* The ramp trades contrast for a shape that can be read down the column,
+	   which is the wrong trade for someone who asked for more contrast. Every
+	   marked level goes back to the full fill; the glyph and the name were
+	   always the exact answer, and here they are the only one. */
+	.sheetsmith-view .sheetsmith-table-cycle-on {
+		background-color: var(--interactive-accent);
+		color: var(--text-on-accent);
 	}
 }
 

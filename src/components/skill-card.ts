@@ -695,6 +695,29 @@ export const skillCard: ComponentDefinition<SkillCardConfig, SkillCardData> = {
 						button.textContent =
 							current === 0 || !graded ? '' : levelGlyph(column, current);
 						button.classList.toggle('sheetsmith-table-cycle-on', current > 0);
+						// How far up the column this cell is, as a share of the
+						// way. The fill is mixed from it, so a glance down the
+						// column reads the shape of a character's training before
+						// a single letter is read. It arrives as a number because
+						// the stylesheet cannot know how many levels a column has;
+						// a plain toggle sets nothing and takes the full fill.
+						if (graded && current > 0) {
+							button.style.setProperty(
+								'--sheetsmith-level',
+								String(current / count),
+							);
+						} else {
+							button.style.removeProperty('--sheetsmith-level');
+						}
+						// Under a partial fill the glyph is on something nearer the
+						// page than the accent, so the letter goes back to reading
+						// against the page. Decided here rather than in the mix,
+						// because a colour interpolated between the two lands
+						// halfway to unreadable in the middle of the ramp.
+						button.classList.toggle(
+							'sheetsmith-table-cycle-part',
+							current > 0 && current < count,
+						);
 						if (pressed) {
 							button.setAttribute('aria-pressed', String(current > 0));
 							button.setAttribute('aria-label', label);
