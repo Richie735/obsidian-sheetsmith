@@ -315,6 +315,26 @@ describe('skillCard.render', () => {
 		]);
 	});
 
+	it('renders a text column as a gloss where the column asks for one', () => {
+		const el = render({ rows: { Acrobatics: { ability: 'DEX' } } }, {
+			...config,
+			columns: [
+				{ key: 'Ability', type: 'text', secondary: true },
+				{ key: 'Note', type: 'text' },
+				// A number is the row's arithmetic, never the note beside it,
+				// so the flag says nothing here even when a layout sets it.
+				{ key: 'Bonus', type: 'number', secondary: true },
+			],
+		});
+		const glossed = Array.from(
+			el.querySelectorAll('tbody .sheetsmith-table-input'),
+		).map((input) =>
+			input.classList.contains('sheetsmith-table-input-secondary'),
+		);
+		// Two rows of three cells, in display order.
+		expect(glossed).toEqual([true, false, false, true, false, false]);
+	});
+
 	it('computes a total from the row values, the cells, and the sheet', () => {
 		// Acrobatics: DEX 3 + training 1 × prof 3 + bonus 0 = 6
 		// Perception: WIS 2 + training 2 × prof 3 + bonus 1 = 9

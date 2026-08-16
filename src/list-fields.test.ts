@@ -185,6 +185,38 @@ describe('columns editor', () => {
 		expect(flashed).toEqual(['skills-col-Bonus-detail']);
 	});
 
+	it('offers the gloss only on the columns it means anything to', () => {
+		const record = {
+			// Text is the default, so a column that never had a type set is one.
+			columns: [{ key: 'Ability' }, { key: 'Bonus', type: 'number' }],
+		};
+		const el = columnsEditor(record);
+		const details = el.querySelectorAll('.sheetsmith-attribute-detail');
+		const checks = Array.from(details).map((detail) =>
+			Array.from(detail.querySelectorAll('.sheetsmith-attribute-check')).map(
+				(check) => check.textContent,
+			),
+		);
+		expect(checks).toEqual([['Secondary text', 'Hide heading'], ['Hide heading']]);
+	});
+
+	it('leaves the gloss out of the file until it is asked for', () => {
+		const record: { columns: { key: string; secondary?: boolean }[] } = {
+			columns: [{ key: 'Ability' }],
+		};
+		const el = columnsEditor(record);
+		const check = el.querySelector(
+			'.sheetsmith-attribute-detail input[type="checkbox"]',
+		) as HTMLInputElement;
+		check.checked = true;
+		check.dispatchEvent(new Event('change'));
+		expect(record.columns[0]?.secondary).toBe(true);
+		check.checked = false;
+		check.dispatchEvent(new Event('change'));
+		expect(record.columns[0]).not.toHaveProperty('secondary');
+		expect(recorded.persists).toBe(2);
+	});
+
 	it('asks before dropping a column carrying a formula', () => {
 		const record = afterRemoval();
 		const el = columnsEditor(record);
