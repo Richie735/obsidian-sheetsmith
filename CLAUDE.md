@@ -40,7 +40,7 @@ Nothing outside a component should need to know that component exists. Adding on
 
 ## Working order
 
-Build **component by component, not layer by layer.** Take one component all the way through read, write, render, and tests before starting the next. Order so far: Stat (retired once Stat group covered its role), then Stat group; next are Pool, then Table; the remaining seven are variations. The layout schema assembles itself from component configs rather than being designed up front. See `SPEC.md` §12.
+Build **component by component, not layer by layer.** Take one component all the way through read, write, render, and tests before starting the next. Order so far: Stat group, then Stat (dropped when Stat group first covered the card, rebuilt on top of it); next are Pool, then Table; the remaining seven are variations. The layout schema assembles itself from component configs rather than being designed up front. See `SPEC.md` §12.
 
 Resist building the layout editor and the formula engine early. Both assume a working renderer and a proven file format, and both are the interesting parts, which is exactly why they are the trap.
 

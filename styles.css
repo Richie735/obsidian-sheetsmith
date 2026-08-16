@@ -9,6 +9,9 @@ body {
 	--sheetsmith-stat-min: 90px;
 	/* Fixed card width where the grid does not dictate one. */
 	--sheetsmith-stat-width: 110px;
+	/* The card's headline number. Relative rather than a pixel size, so it
+	   follows the vault's text size setting and the card scales with it. */
+	--sheetsmith-stat-value-size: 1.75em;
 }
 
 .sheetsmith-view {
@@ -316,14 +319,17 @@ body {
 	align-items: stretch;
 }
 
-/* The group's authored name, above its cards. */
+/* The group's authored name, above its cards. A heading over a strip of
+   cards, so it must not wear the same clothes as the micro-label inside
+   each card: same rule as the settings form keeps between a group heading
+   and a field label. The cards own the uppercase-and-tracked treatment;
+   the heading is the one in sentence case at full contrast. */
 .sheetsmith-stat-group-label {
-	margin-bottom: var(--size-2-2);
-	font-size: var(--font-ui-smaller);
+	margin-bottom: var(--size-2-3);
+	font-size: var(--font-ui-small);
 	font-weight: var(--font-semibold);
-	text-transform: uppercase;
-	letter-spacing: 0.05em;
-	color: var(--text-muted);
+	line-height: 1.3;
+	color: var(--text-normal);
 }
 
 /* Logical values, so the default start edge follows the vault's text
@@ -425,7 +431,31 @@ body {
 	border-radius: var(--radius-m);
 	background-color: var(--background-secondary);
 	text-align: center;
+	/* The settle after a press. Going in is instant; see :active below. */
+	transition: background-color 160ms ease;
+	/* A card in a six-across strip and a lone card twice that wide are the
+	   same component at very different sizes; the query below adapts the
+	   narrow one. Safe to contain: no card is ever sized by its contents. */
+	container-type: inline-size;
+}
+
+/* The whole card is the hit target, so the whole card answers a hover —
+   otherwise the generous target is invisible and the card reads as dead
+   except for the small number. The field's own hover, a second overlay on
+   top of this one, then says which field the click will land in. Only a
+   card with something to edit makes either promise. */
+.sheetsmith-stat-editable {
 	cursor: text;
+}
+
+.sheetsmith-stat-editable:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+/* Feedback on press, not on release: no transition on the way in. */
+.sheetsmith-stat-editable:active {
+	background-color: var(--background-modifier-active-hover);
+	transition-duration: 0s;
 }
 
 .sheetsmith-stat-label {
@@ -441,12 +471,44 @@ body {
 }
 
 /* Always present, so cards with and without an abbreviation keep their
-   numbers on one baseline across a row. */
+   numbers on one baseline across a row.
+
+   Sized down from the label rather than from --font-smallest, which is
+   em-relative and lands *above* --font-ui-smaller: the gloss was coming out
+   larger than the name it glosses, so only colour and weight were holding
+   the hierarchy up while size argued against it. Small tracking is positive
+   here — the opposite of the headline number, and the reason neither can
+   share one letter-spacing value. */
 .sheetsmith-stat-abbreviation {
 	min-height: 1.2em;
-	font-size: var(--font-smallest);
-	letter-spacing: 0.05em;
+	font-size: calc(var(--font-ui-smaller) * 0.85);
+	letter-spacing: 0.06em;
 	color: var(--text-faint);
+}
+
+/* Six abilities across a 700px sheet gives each card about 110px, and
+   "CONSTITUTION" in tracked uppercase does not fit the ~94px left inside
+   the padding — half the strip ellipsised, which is a worse label than a
+   slightly tighter one. Buy the room back from the two places that are
+   spending it for style rather than legibility: the tracking, and padding
+   sized for a card twice this wide. Padding that scales with the surface is
+   right anyway — a small tile should not wear a large tile's margins.
+
+   Below the rules it overrides: @container adds no specificity, so an equal
+   selector placed above would simply lose. */
+@container (max-width: 130px) {
+	/* The padding cannot be trimmed from here: the card is the container,
+	   and an element never queries itself, so a rule on .sheetsmith-stat
+	   inside this block would be answering the *view's* width. Bleeding the
+	   label outward buys exactly the same room from the inside, and spends
+	   it only on the part that needs it — the number and the fields keep the
+	   card's own margins. max-width has to grow with the bleed, or the
+	   100% cap holds the label at the padded width and nothing changes. */
+	.sheetsmith-stat-label {
+		max-width: calc(100% + var(--size-4-2));
+		margin-inline: calc(-1 * var(--size-2-2));
+		letter-spacing: 0.02em;
+	}
 }
 
 .sheetsmith-stat-value {
@@ -466,17 +528,22 @@ body {
 	background: transparent;
 	box-shadow: none;
 	text-align: center;
-	font-size: var(--font-ui-large);
+	font-size: var(--sheetsmith-stat-value-size);
 	font-weight: var(--font-bold);
 	color: var(--text-normal);
+	/* Digits must not re-centre as they change: without fixed advance
+	   widths a stepped value shifts the card's whole stack on every press,
+	   and holding an arrow key makes it wobble. */
+	font-variant-numeric: tabular-nums;
+	/* Tracking is size-specific. At this size letters read too far apart,
+	   so pull them in; the pill's small number below sets its own back to
+	   normal. Leading tightens with size for the same reason. */
+	line-height: 1.05;
+	letter-spacing: -0.02em;
 }
 
 .sheetsmith-view .sheetsmith-stat-input:hover {
 	background-color: var(--background-modifier-hover);
-}
-
-.sheetsmith-view .sheetsmith-stat-input:focus {
-	box-shadow: 0 0 0 2px var(--interactive-accent);
 }
 
 /* The derived result is the card's big number; the stored value drops
@@ -485,11 +552,80 @@ body {
 
 .sheetsmith-stat-derived {
 	margin-top: var(--size-2-2);
-	font-size: var(--font-ui-large);
+	font-size: var(--sheetsmith-stat-value-size);
 	font-weight: var(--font-bold);
 	color: var(--text-normal);
+	font-variant-numeric: tabular-nums;
+	line-height: 1.05;
+	letter-spacing: -0.02em;
 	/* Read-only output: it must not advertise itself as a control. */
 	cursor: default;
+	/* The only abrupt state change on the card is a resolved number turning
+	   into "?". Fade the colour so it reads as the number giving way rather
+	   than a warning appearing from nowhere. A colour fade, not motion, so
+	   reduced-motion has nothing to strip. */
+	transition: color 200ms ease;
+}
+
+/* One focus treatment for every field on a card. The same gesture in the
+   same component must not produce two different rings, so the pill and
+   both inputs share this weight; the pill additionally warms its border.
+
+   The ring is a box-shadow, which forced-colors mode paints out entirely.
+   A transparent outline is the escape hatch: invisible normally, repainted
+   as a real ring where box-shadows are discarded. */
+.sheetsmith-view .sheetsmith-stat-input:focus,
+.sheetsmith-view .sheetsmith-stat-note-input:focus,
+.sheetsmith-stat-has-derived .sheetsmith-stat-value:focus-within {
+	box-shadow: 0 0 0 2px var(--interactive-accent);
+	outline: 2px solid transparent;
+	outline-offset: 0;
+}
+
+/* A lone stat card carries this alongside .sheetsmith-stat. It has no strip
+   and no row of siblings to size against, so it takes the cap Stat group's
+   vertical mode already uses and centres in its cell: a 12-column Stat
+   would otherwise be 700px of clickable card around a two-digit number. */
+.sheetsmith-stat-single {
+	height: 100%;
+	max-width: calc(var(--sheetsmith-stat-width, 110px) * 2);
+	margin-inline: auto;
+}
+
+/* A cell is only tall because a card beside it in the same grid row is
+   taller — an armour class next to an initiative, which carries a pill the
+   armour class does not. Centring each card's stack then leaves the row
+   with labels at three different heights and notes at three more. Holding
+   the top edge and pinning the note to the bottom lands both on one line
+   across the row, and the slack falls in the middle where nothing lines up
+   anyway. */
+.sheetsmith-stat-single > .sheetsmith-stat-note {
+	margin-top: auto;
+	/* Restores the separation the auto margin takes over from. */
+	padding-top: var(--size-2-1);
+}
+
+/* The note line: the user's own qualifier under the number, quiet enough
+   that the value stays the card's subject. */
+.sheetsmith-stat-note {
+	width: 100%;
+	margin-top: var(--size-2-1);
+}
+
+.sheetsmith-view .sheetsmith-stat-note-input {
+	width: 100%;
+	padding: 0 var(--size-2-1);
+	border: none;
+	border-radius: var(--radius-s);
+	background: transparent;
+	box-shadow: none;
+	text-align: center;
+	font-size: var(--font-ui-smaller);
+	color: var(--text-muted);
+}
+
+.sheetsmith-view .sheetsmith-stat-note-input:hover {
+	background-color: var(--background-modifier-hover);
 }
 
 /* Visually hidden, present for screen readers: commit announcements. */
@@ -527,15 +663,18 @@ body {
 	background-color: var(--background-modifier-hover);
 }
 
+/* Weight comes from the shared focus rule above; the border is the pill's
+   own addition, not a second, lighter ring. */
 .sheetsmith-stat-has-derived .sheetsmith-stat-value:focus-within {
 	border-color: var(--interactive-accent);
-	box-shadow: 0 0 0 1px var(--interactive-accent);
 }
 
 .sheetsmith-view .sheetsmith-stat-has-derived .sheetsmith-stat-input {
 	width: 4em;
 	font-size: var(--font-ui-small);
 	font-weight: var(--font-semibold);
+	/* Back to normal tracking: the tightening above is for large text. */
+	letter-spacing: normal;
 	/* User data, not chrome: muted reads as disabled. */
 	color: var(--text-normal);
 }
@@ -546,5 +685,23 @@ body {
 
 .sheetsmith-view .sheetsmith-stat-has-derived .sheetsmith-stat-input:focus {
 	box-shadow: none;
+	outline: none;
+}
+
+/* A card is told apart from the page by a faint border over a faint tint —
+   enough in the default theme, not enough for someone who asked for more
+   contrast. Give every edge that separates a surface a defined line, the
+   pill included, so the card's regions stay legible without relying on the
+   tint at all. */
+@media (prefers-contrast: more) {
+	.sheetsmith-stat,
+	.sheetsmith-stat-has-derived .sheetsmith-stat-value {
+		border-color: var(--text-muted);
+	}
+
+	.sheetsmith-stat-abbreviation,
+	.sheetsmith-stat-derived-unresolved {
+		color: var(--text-muted);
+	}
 }
 
