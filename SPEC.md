@@ -313,6 +313,7 @@ Layouts are independent of one another. "DnD 5e Standard" and "DnD 5e Caster" ar
 - Computed values are read-only.
 - Wikilinks are clickable and navigate. Hover preview works, backlinks resolve, and renaming a linked note updates the sheet, all because links live in plain markdown rather than inside a code block.
 - Reset trigger buttons are available.
+- **The grid fills the pane.** A sheet is a dashboard, not prose: its width is a column count the author placed components into, so reading width would leave a wide pane empty on both sides while squeezing the cards meant to fill it. The `--sheetsmith-sheet-max-width` custom property caps it for anyone who wants reading width back; prose the view writes itself, such as the missing-layout notice, still holds that width.
 - The sheet reflows to a single column on narrow panes, in grid reading order — top to bottom, then left to right — regardless of the order components sit in the layout file. That order also drives tab order in the normal grid.
 - If the named layout is missing, show a clear message and offer to pick another rather than failing silently.
 
