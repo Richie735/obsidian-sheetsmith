@@ -475,6 +475,128 @@ describe('skillCard.render', () => {
 		).toEqual([true, false]);
 	});
 
+	it('lets a level say its ring carries no letter', () => {
+		// The 5e case: untrained is an empty ring, proficient a plain fill,
+		// expertise the fill with its initial on it.
+		const el = render(
+			{ rows: { Acrobatics: { training: '1' }, Perception: { training: '2' } } },
+			{
+				...levelled,
+				columns: [
+					{
+						key: 'Training',
+						type: 'level' as const,
+						levels: ['Untrained', 'Proficient:', 'Expertise'],
+					},
+				],
+			},
+		);
+		const rings = Array.from(
+			el.querySelectorAll<HTMLElement>('tbody .sheetsmith-table-cycle'),
+		);
+		expect(rings.map((ring) => ring.textContent)).toEqual(['', 'E']);
+		// A fill with nothing on it is still a marked ring, and still says
+		// which level it is on through the ramp.
+		expect(rings.map((ring) => ring.classList.contains('sheetsmith-table-cycle-on')))
+			.toEqual([true, true]);
+		expect(rings.map((ring) => ring.style.getPropertyValue('--sheetsmith-level')))
+			.toEqual(['0.5', '1']);
+		// The mark is what the ring shows, never what the level is called: the
+		// name is still there for a reader, a listener, and a hover.
+		expect(rings.map((ring) => ring.getAttribute('title'))).toEqual([
+			'Proficient',
+			'Expertise',
+		]);
+		expect(rings.map((ring) => ring.getAttribute('aria-label'))).toEqual([
+			'Acrobatics Training: Proficient',
+			'Perception Training: Expertise',
+		]);
+	});
+
+	it('takes a mark of the layout\'s own where a level gives one', () => {
+		const el = render(
+			{ rows: { Acrobatics: { training: '1' }, Perception: { training: '2' } } },
+			{
+				...levelled,
+				columns: [
+					{
+						key: 'Training',
+						type: 'level' as const,
+						levels: ['Untrained', 'Proficient:●', 'Expertise:★'],
+					},
+				],
+			},
+		);
+		const rings = Array.from(el.querySelectorAll('tbody .sheetsmith-table-cycle'));
+		expect(rings.map((ring) => ring.textContent)).toEqual(['●', '★']);
+	});
+
+	it('lists a marked level under its name, not its mark', () => {
+		const el = render({ rows: {} }, {
+			...levelled,
+			columns: [
+				{
+					key: 'Training',
+					type: 'level' as const,
+					input: 'select' as const,
+					levels: ['Untrained', 'Proficient:', 'Expertise:★'],
+				},
+			],
+		});
+		// One row's dropdown; the layout gives every row the same list.
+		const options = Array.from(
+			el.querySelectorAll('tbody tr:first-child select option'),
+		);
+		expect(options.map((option) => option.textContent)).toEqual([
+			'Untrained',
+			'Proficient',
+			'Expertise',
+		]);
+	});
+
+	it('leaves a colon inside a level name alone', () => {
+		// A mark is one character in a circle. A layout that named a level
+		// "Trained: the useful one" before this syntax existed is a name with
+		// a colon in it, and still reads as one.
+		const el = render({ rows: { Acrobatics: { training: '1' } } }, {
+			...levelled,
+			columns: [
+				{
+					key: 'Training',
+					type: 'level' as const,
+					levels: ['Untrained', 'Trained: the useful one'],
+				},
+			],
+		});
+		const ring = el.querySelector('tbody .sheetsmith-table-cycle');
+		expect(ring?.textContent).toBe('T');
+		expect(ring?.getAttribute('title')).toBe('Trained: the useful one');
+	});
+
+	it('holds an unnamed column to a level count it can draw', () => {
+		// A hand-authored max, or one carried over from a number column whose
+		// type was changed. The ring cycles what it can show, not what the
+		// number says.
+		const el = render({ rows: { Acrobatics: { training: '1000' } } }, {
+			...levelled,
+			columns: [{ key: 'Training', type: 'level' as const, max: 1000000 }],
+		});
+		const ring = el.querySelector('tbody .sheetsmith-table-cycle');
+		expect(ring?.getAttribute('aria-label')).toBe('Acrobatics Training: 20');
+	});
+
+	it('reports a level carrying a mark and no name', () => {
+		const el = render(null, {
+			...levelled,
+			columns: [
+				{ key: 'Training', type: 'level' as const, levels: ['Untrained', ':P'] },
+			],
+		});
+		expect(el.querySelector('.sheetsmith-error')?.textContent).toContain(
+			'a level with a mark but no name',
+		);
+	});
+
 	it('leaves none and a plain toggle out of the ramp', () => {
 		const toggles = {
 			...levelled,

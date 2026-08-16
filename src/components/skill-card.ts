@@ -23,6 +23,13 @@ import {
 	ReadResult,
 } from '../types';
 import { bindEditable, UNRESOLVED_DELAY } from './editable';
+import {
+	levelCount,
+	levelName,
+	levelOf,
+	paintLevelRing,
+	parseLevel,
+} from './level-ring';
 import { bindLongPress, showPopover } from './popover';
 
 /** Column kinds. `computed` is read-only; the rest are character data. */
@@ -62,6 +69,10 @@ export interface SkillCardColumn {
 	 * `max` is only needed for a column whose levels have no names worth
 	 * writing. A named level reads as itself on the sheet and to a screen
 	 * reader, rather than as the number it happens to be stored as.
+	 *
+	 * A name may also say what its ring shows, after a colon: "Proficient:"
+	 * for a fill carrying no letter, "Proficient:★" for a mark of the
+	 * author's own. See level-ring.ts, which owns the rule.
 	 */
 	levels?: string[];
 	/** How a level column is edited. Defaults to cycling on click. */
@@ -176,46 +187,6 @@ function cellValue(column: SkillCardColumn, raw: string | undefined): FieldValue
 }
 
 /**
- * A level column's highest level. Naming the levels settles how many there
- * are, so the two cannot disagree; `max` covers the column whose levels are
- * not worth naming. One level is an ordinary toggle.
- */
-function levelCount(column: SkillCardColumn): number {
-	if (column.levels !== undefined) return column.levels.length - 1;
-	const max = Math.floor(column.max ?? 1);
-	return Number.isFinite(max) && max > 0 ? max : 1;
-}
-
-/** What a level is called: its name where it has one, its number otherwise. */
-function levelName(column: SkillCardColumn, level: number): string {
-	return column.levels?.[level] ?? String(level);
-}
-
-/**
- * The one character the control shows for a level: the initial of its name,
- * or its number where the levels are unnamed. Taken by code point rather than
- * by index, so a name starting outside the basic plane keeps its first
- * character instead of half of one.
- */
-function levelGlyph(column: SkillCardColumn, level: number): string {
-	const name = column.levels?.[level];
-	if (name === undefined) return String(level);
-	return (Array.from(name)[0] ?? '').toUpperCase();
-}
-
-/**
- * The level a cell holds, held inside the column's range. A stored value
- * outside it is a hand edit or a layout that used to have more marks; showing
- * the nearest level the column can represent beats showing nothing, and the
- * note keeps what it says until the user changes that cell.
- */
-function levelOf(column: SkillCardColumn, raw: string): number {
-	const value = raw.trim() === '' ? 0 : Number(raw);
-	if (!Number.isFinite(value)) return 0;
-	return Math.max(0, Math.min(levelCount(column), Math.round(value)));
-}
-
-/**
  * Hold a typed number to the column's bounds. Text that is not a number is
  * left alone: the arrows already treat it as prose, and silently replacing
  * what someone typed with a number they did not is worse than storing it.
@@ -260,6 +231,12 @@ function configError(config: SkillCardConfig): string | null {
 			// The first name is what "none" is called, so a single name
 			// describes a column with no level to reach.
 			return `The column "${key}" needs at least two level names, starting with the one for none.`;
+		}
+		if (column.levels?.some((entry) => parseLevel(entry).name === '')) {
+			// A level with only a glyph has nothing to be called: the name is
+			// what a screen reader is given and what a dropdown lists, and a
+			// mark on the ring stands for it rather than replacing it.
+			return `The column "${key}" has a level with a mark but no name.`;
 		}
 	}
 	const rowHeader = ((config.rowHeader ?? '').trim() || DEFAULT_ROW_HEADER)
@@ -686,38 +663,12 @@ export const skillCard: ComponentDefinition<SkillCardConfig, SkillCardData> = {
 					const pressed = count === 1;
 					const show = () => {
 						const name = nameOf(current);
-						// One glyph in a filled circle: the level's initial where
-						// it has a name, its number where it does not, and
-						// nothing at all for none — an empty ring is what an
-						// unticked proficiency looks like on paper, and it needs
-						// no letter to say so. A plain toggle stays empty either
-						// way; the fill is the whole answer.
-						button.textContent =
-							current === 0 || !graded ? '' : levelGlyph(column, current);
-						button.classList.toggle('sheetsmith-table-cycle-on', current > 0);
-						// How far up the column this cell is, as a share of the
-						// way. The fill is mixed from it, so a glance down the
-						// column reads the shape of a character's training before
-						// a single letter is read. It arrives as a number because
-						// the stylesheet cannot know how many levels a column has;
-						// a plain toggle sets nothing and takes the full fill.
-						if (graded && current > 0) {
-							button.style.setProperty(
-								'--sheetsmith-level',
-								String(current / count),
-							);
-						} else {
-							button.style.removeProperty('--sheetsmith-level');
-						}
-						// Under a partial fill the glyph is on something nearer the
-						// page than the accent, so the letter goes back to reading
-						// against the page. Decided here rather than in the mix,
-						// because a colour interpolated between the two lands
-						// halfway to unreadable in the middle of the ramp.
-						button.classList.toggle(
-							'sheetsmith-table-cycle-part',
-							current > 0 && current < count,
-						);
+						// Everything a reader sees comes from the shared painter,
+						// so the layout editor's sample of this control cannot
+						// drift from the control. What stays here is what the
+						// sample has no business carrying: the naming, and the
+						// routes to a name the ring is not showing.
+						paintLevelRing(button, column, current, graded);
 						if (pressed) {
 							button.setAttribute('aria-pressed', String(current > 0));
 							button.setAttribute('aria-label', label);
@@ -726,10 +677,10 @@ export const skillCard: ComponentDefinition<SkillCardConfig, SkillCardData> = {
 						}
 						// A tooltip that repeats what is already legible is noise
 						// fired at every pass, as the stat card's label learned.
-						// Only an abbreviation earns one: a named level shows an
-						// initial and the name is the thing it stands for, while
-						// an unnamed one shows the number that is already the
-						// whole answer.
+						// Only an abbreviation earns one, and every named level is
+						// one: an initial, a mark of the layout's own, or a bare
+						// fill saying nothing at all. An unnamed level shows the
+						// number that is already the whole answer.
 						if (graded && column.levels !== undefined) {
 							button.setAttribute('title', name);
 						} else {
