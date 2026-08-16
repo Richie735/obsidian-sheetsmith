@@ -4,6 +4,7 @@
  */
 
 import { ComponentDefinition } from '../types';
+import { stat } from './stat';
 import { statGroup } from './stat-group';
 
 const registry = new Map<string, ComponentDefinition>();
@@ -12,6 +13,7 @@ function register(component: ComponentDefinition): void {
 	registry.set(component.type, component);
 }
 
+register(stat);
 register(statGroup);
 
 /** The component definition for a layout `type`, or undefined if unknown. */

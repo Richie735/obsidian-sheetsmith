@@ -100,6 +100,15 @@ Adding a component means implementing exactly those five. Nothing else in the sy
 
 For each component: what the layout configures, what the character note stores, what it does in sheet view, and which config fields accept formulas.
 
+**Stat** — one named value on a single card, with an optional derived display and a free-text note line. Covers armour class, initiative, speed, passive perception: the standalone numbers a sheet is littered with.
+
+- *Config:* `label`, `key` (entry name for the value in the note; defaults to `value`), `derived` (formula reading the stored value as `value`), `notePlaceholder`, `hideLabel`, `hideValue` (meaningful only with a `derived`), `hideNote`, `signed`
+- *Data:* `fenced`, the value under `key` and the note line under `note`
+- *Sheet view:* the label sits above the value, the note line below it, on the shared card rules below. The note, being prose rather than a number, is the one field the arrow keys do not step. The card takes a width ceiling and centres horizontally in its cell, so a wide component does not become an expanse of clickable card around a two-digit number. Vertically it holds the top edge and pins the note to the bottom, so cards sharing a grid row line their labels up with each other and their notes with each other, even when one of them carries a pill the others do not.
+- *Formula fields:* `derived`
+
+**The key is storage, and only storage.** It names the value's entry so the file reads `AC: 15` while the card reads "Armour class 15" — it is not what formulas reference. That is the component's `id` (§5), so a formula says `armour_class`, and neither the card nor the arithmetic has to know how the note happens to be spelled. Hiding the key from the card is the one thing that separates a Stat from a one-attribute Stat group, where the key *is* the card's abbreviation. `note` is reserved as an entry key, and a key holding a colon cannot be stored; either shows a configuration error on that component alone rather than writing a block that will not parse. Entries under any other key are preserved on write, and renaming the key does not move the stored value — the old entry stays in the note under the old key, as with a Stat group attribute.
+
 **Stat group** — an ordered set of named attributes rendered as a strip of stat cards. Covers the six D&D abilities, Call of Cthulhu characteristics; a single-attribute group is a lone stat card.
 
 - *Config:* `label`, `attributes[]` (each a `key` plus optional full `name`, in display order), `derived` (one formula computed per attribute, where `value` is that attribute's value), `direction` (`horizontal` | `vertical`), `sizing` (`fill` | `fixed`; fixed sizes cards at one per grid unit of the component's width, floored at a minimum), `align` (`start` | `center` | `end`, shown and meaningful only with fixed sizing; legacy layouts that carried sizing inside `align` still read correctly), `hideLabel`, `labelAlign` (`start` | `center` | `end`), `hideValue` (meaningful only with a `derived`), `signed`
@@ -109,7 +118,16 @@ For each component: what the layout configures, what the character note stores, 
 
 Entries in the note that no attribute maps to are preserved on write, never dropped. Renaming an attribute key does not move its stored value: the old entry stays in the note under the old key, and migrating it is part of the §10 rename story.
 
-There was a **Stat** component (a single value with a derived display and a free-text note line); it was retired once Stat group covered the card. Character sections written for it are ordinary fenced sections and remain intact and unmapped until re-modelled.
+**Card interaction, shared by Stat and Stat group.** Both render through one card, so both behave identically under the hand.
+
+- **Feedback is continuous, persistence is discrete.** The derived display recomputes on every keystroke; the file is written only on commit — leaving the field, or pressing Enter.
+- **Enter commits in place** and moves to the next field on the card if there is one. It does not drop focus out of the sheet: committing and abandoning your position in the document are different intentions.
+- **Escape abandons the draft**, restores the stored value, and announces the restore. An undo nobody can perceive does not read as one.
+- **Arrow keys step a numeric value** like typing: live display, committed on blur. Shift steps by ten, for the stats that move in tens. An empty field steps from zero, because pressing up on a fresh card is the obvious first gesture and should not be a dead key. Text that is not a number keeps the arrows as caret movement.
+- **An empty value shows "—" everywhere.** "?" is reserved for a value that is present but did not resolve, and it waits out a short delay before appearing: a draft on its way to being valid ("-" before "-1") is not wrong yet, and must not be told it is.
+- **The whole card is the hit target**, and hovers and presses as one, so the generous target is visible rather than merely present. A click routes to the field nearest it — the padding under the note belongs to the note, not to the number at the top. Because the card is a hover target, a truncated label reveals itself on hover only when it is actually truncated; a tooltip repeating a label already fully legible is noise fired at every pass.
+
+A single-attribute Stat group and a **Stat** are not the same component, which is why both exist. The group shows its key, sizes cards against the grid, and holds one formula that runs per attribute; the Stat hides its key, fills its cell, and carries a note line. Reach for the group when the cards belong to a set and share arithmetic, and for the Stat when the number stands alone.
 
 **Field** — labelled text, number, or dropdown. Covers Name, Race, Alignment.
 
@@ -311,12 +329,12 @@ Component order, chosen by what each one forces you to solve:
 
 | # | Component | Forces you to solve |
 |---|---|---|
-| 1 | **Stat** (since retired) | The shared contract, the config and data split, fenced storage, read-only render |
+| 1 | **Stat** | The shared contract, the config and data split, fenced storage, read-only render |
 | 2 | **Stat group** | Multi-entry fenced storage, per-scope formula evaluation — the row scope Table needs, proven on a simpler component |
 | 3 | **Pool** | Editing interaction, a formula-capable config field, reset triggers |
 | 4 | **Table** | The markdown storage path, wikilinks, fixed versus open rows, per-row formula scope (mechanism proven by Stat group) |
 
-Stat group (built as "Abilities") was not in the original order; it jumped the queue on demand once Stat worked, and ended up replacing it — Stat was retired once the Stat group card covered its role. The detour paid for itself regardless: it forced the render contract to grow a per-scope field resolver, which is the same mechanism Table's computed columns need per row, discovered while the codebase was small.
+Stat group (built as "Abilities") was not in the original order; it jumped the queue on demand once Stat worked, and looked at the time like a replacement for it, so Stat was dropped and then rebuilt on top of the group's card once the standalone numbers turned out to want a component of their own. The detour paid for itself: it forced the render contract to grow a per-scope field resolver, which is the same mechanism Table's computed columns need per row, discovered while the codebase was small, and it left a shared card module for the Stat to render through.
 
 The remaining seven are variations on problems those solve. Field and Toggle are simpler single-value cards, Track is a simpler Pool, Computed is a value-less card fed entirely by a formula, and Rich text, Group, and Image barely touch the formula system.
 
