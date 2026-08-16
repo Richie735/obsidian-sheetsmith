@@ -63,4 +63,31 @@ describe('makeFieldResolver', () => {
 		expect(resolve('nope', {})).toBeNull();
 		expect(resolve('derived', { value: 'fast' })).toBeNull();
 	});
+
+	/*
+	 * The extra scope is an ordinary object, so a membership test with `in`
+	 * answers yes for every name on Object.prototype. A component whose column
+	 * or entry is called "constructor" would then have the name captured by an
+	 * empty scope and resolve to nothing, rather than falling through to the
+	 * data and the sheet where it does live.
+	 */
+	it('does not let an empty scope capture a name off Object.prototype', () => {
+		const shadowing = { formulaFields: ['derived'] as const };
+		const resolve = makeFieldResolver(
+			shadowing,
+			{ ...config, derived: 'constructor + 1' } as typeof config,
+			{ constructor: '4' },
+		);
+		expect(resolve('derived', {})).toBe(5);
+	});
+
+	it('still lets the scope shadow such a name when it holds one', () => {
+		const shadowing = { formulaFields: ['derived'] as const };
+		const resolve = makeFieldResolver(
+			shadowing,
+			{ ...config, derived: 'constructor + 1' } as typeof config,
+			{ constructor: '4' },
+		);
+		expect(resolve('derived', { constructor: 10 })).toBe(11);
+	});
 });

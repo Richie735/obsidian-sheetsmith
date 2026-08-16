@@ -67,10 +67,20 @@ export interface ConfigFieldSpec {
 	/** Field label shown in the editor. */
 	label: string;
 	/**
-	 * Input kind. 'formula' is a text field holding an expression;
-	 * 'attributes' is an ordered list of { key, name? } entries.
+	 * Input kind. 'formula' is a text field holding an expression; the last
+	 * three are ordered lists the editor renders as a table of their own —
+	 * 'attributes' of { key, name? }, 'rows' of { label, values? }, and
+	 * 'columns' of typed column definitions.
 	 */
-	kind: 'text' | 'number' | 'boolean' | 'formula' | 'select' | 'attributes';
+	kind:
+		| 'text'
+		| 'number'
+		| 'boolean'
+		| 'formula'
+		| 'select'
+		| 'attributes'
+		| 'rows'
+		| 'columns';
 	/** Help text shown under the field. */
 	description?: string;
 	/**
@@ -137,11 +147,27 @@ export type FieldResolver = (
 	scope: Readonly<Record<string, FieldValue>>,
 ) => FieldValue | null;
 
+/**
+ * Why a formula field did not resolve, in words, or null where it did. The
+ * component asks only about a field it has already seen fail, so the cost of
+ * evaluating twice is paid on the error path alone.
+ */
+export type FieldExplainer = (
+	field: string,
+	scope: Readonly<Record<string, FieldValue>>,
+) => string | null;
+
 /** What render is given beyond the data itself. */
 export interface RenderContext<TData = unknown> {
 	resolved: ResolvedValues;
 	/** Per-scope formula evaluation for components with internal structure. */
 	resolveField: FieldResolver;
+	/**
+	 * Why a formula field failed. Optional, because a component can always
+	 * fall back to saying only that it did — but "ability is not defined on
+	 * this sheet" is the difference between a status and a next action.
+	 */
+	explainField?: FieldExplainer;
 	/**
 	 * Report edited data. The sheet view owns writing it back to the note;
 	 * components never touch the file themselves.
@@ -185,7 +211,15 @@ export interface ComponentDefinition<
 	 * system never learns it exists.
 	 */
 	scopeValues?(data: TData | null, config: TConfig): ScopeValues;
-	/** Which config fields accept an expression rather than a literal. */
+	/**
+	 * Which config fields accept an expression rather than a literal.
+	 *
+	 * An entry is normally a config key ('derived'), but it may be a dotted
+	 * path into the config with `*` standing for one segment
+	 * ('columns.*.formula'). That is what a component with repeating
+	 * structure needs: a Skill card's expressions live one per column and one
+	 * per row, so no fixed list could name them all.
+	 */
 	formulaFields: readonly string[];
 	/**
 	 * The component-specific config fields the layout editor shows. Shared
