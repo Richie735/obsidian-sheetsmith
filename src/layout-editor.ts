@@ -25,8 +25,14 @@ import {
 	showFieldError,
 } from './list-fields';
 import type SheetsmithPlugin from './main';
-import { Layout, parseLayout, serialiseLayout } from './parse/layout';
-import { ComponentConfig, GridPosition } from './types';
+import {
+	DEFAULT_COLUMNS,
+	Layout,
+	parseLayout,
+	serialiseLayout,
+} from './parse/layout';
+import { clamp, describeCell, findOverlaps, lastColumn } from './preview-grid';
+import { ComponentConfig } from './types';
 import { SheetView, VIEW_TYPE_SHEET } from './view/sheet-view';
 
 /** Dropdown sentinel; layout file names can never collide with it. */
@@ -34,6 +40,9 @@ const CREATE_LAYOUT_OPTION = '::create-layout::';
 
 /** How long a rebuilt region stays marked, before fading over its own transition. */
 const FLASH_HOLD = 900;
+
+/** Which pair of a block's four numbers a pointer drag is writing. */
+type DragMode = 'move' | 'resize';
 
 /**
  * Form-based layout editor rendered inside the settings tab. Covers creating
@@ -309,8 +318,9 @@ export class LayoutEditorSection {
 
 	/**
 	 * Schematic of the grid: one button per component at its configured
-	 * position. Click opens the component's form; arrow keys move it and
-	 * shift+arrows resize it. Overlapping components are marked.
+	 * position. Click opens the component's form; dragging the block moves it
+	 * and dragging its corner resizes it, with arrow keys and shift+arrows
+	 * doing the same two things. Overlapping components are marked.
 	 */
 	private updatePreview(): void {
 		const el = this.previewEl;
@@ -324,7 +334,10 @@ export class LayoutEditorSection {
 				: undefined;
 
 		el.empty();
-		el.style.setProperty('--sheetsmith-columns', String(layout.columns ?? 12));
+		el.style.setProperty(
+			'--sheetsmith-columns',
+			String(layout.columns ?? DEFAULT_COLUMNS),
+		);
 
 		const overlapping = findOverlaps(layout.components);
 		layout.components.forEach((config, index) => {
@@ -334,14 +347,20 @@ export class LayoutEditorSection {
 			const overlaps = overlapping.has(index);
 			if (overlaps) cell.addClass('sheetsmith-preview-overlap');
 			cell.createSpan({ text: config.label });
-			cell.setAttribute(
-				'aria-label',
-				`${config.label}: column ${config.position.col}, row ${config.position.row}, ` +
-					`${config.position.width}×${config.position.height}` +
-					(overlaps ? '. Overlaps another component' : ''),
-			);
+			cell.setAttribute('aria-label', describeCell(config, overlaps));
 			cell.style.gridColumn = `${config.position.col} / span ${config.position.width}`;
 			cell.style.gridRow = `${config.position.row} / span ${config.position.height}`;
+			// Pointer-only, and hidden from assistive tech on purpose:
+			// shift+arrows on the block already resize it, so the handle adds
+			// no function that would otherwise be unreachable. That is also
+			// what lets it be a span — a button inside a button is invalid.
+			const handle = cell.createSpan({ cls: 'sheetsmith-preview-resize' });
+			handle.setAttribute('aria-hidden', 'true');
+			handle.addEventListener('pointerdown', (event) => {
+				// Grabbing the corner must not also pick the whole block up.
+				event.stopPropagation();
+				this.beginDrag(event, cell, config, 'resize');
+			});
 			cell.addEventListener('click', () => {
 				// A drag ends in a click on the same element; that click meant
 				// "put it here", not "open the form".
@@ -353,7 +372,7 @@ export class LayoutEditorSection {
 				this.nudge(event, config, index),
 			);
 			cell.addEventListener('pointerdown', (event) =>
-				this.beginDrag(event, cell, config),
+				this.beginDrag(event, cell, config, 'move'),
 			);
 		});
 
@@ -388,7 +407,7 @@ export class LayoutEditorSection {
 		const view = el.ownerDocument.defaultView;
 		if (!view) return null;
 		const styles = view.getComputedStyle(el);
-		const columns = layout.columns ?? 12;
+		const columns = layout.columns ?? DEFAULT_COLUMNS;
 		const columnGap = parseFloat(styles.columnGap) || 0;
 		const rowGap = parseFloat(styles.rowGap) || 0;
 		const padLeft = parseFloat(styles.paddingLeft) || 0;
@@ -419,7 +438,12 @@ export class LayoutEditorSection {
 		};
 	}
 
-	/** Repaint the overlap marks without rebuilding the preview. */
+	/**
+	 * Repaint the overlap marks without rebuilding the preview, and rewrite
+	 * the labels that go with them. The label carries the block's position
+	 * and size, so a gesture that changes either has to keep it true rather
+	 * than leave it describing where the block used to be.
+	 */
 	private markOverlaps(): void {
 		const el = this.previewEl;
 		const layout = this.layout;
@@ -427,13 +451,21 @@ export class LayoutEditorSection {
 		const overlapping = findOverlaps(layout.components);
 		const cells = el.querySelectorAll('.sheetsmith-preview-cell');
 		cells.forEach((cell, index) => {
-			cell.toggleClass('sheetsmith-preview-overlap', overlapping.has(index));
+			const overlaps = overlapping.has(index);
+			cell.toggleClass('sheetsmith-preview-overlap', overlaps);
+			const config = layout.components[index];
+			if (config) cell.setAttribute('aria-label', describeCell(config, overlaps));
 		});
 	}
 
 	/**
-	 * Drag a component around the schematic, 1:1 with the pointer and snapped
-	 * to the grid it will actually sit on.
+	 * Drag a component around the schematic, or drag its corner to resize it,
+	 * 1:1 with the pointer and snapped to the grid it will actually sit on.
+	 *
+	 * One gesture with two destinations rather than two gestures: the pointer
+	 * capture, the grid arithmetic, the Escape restore, and the click a drag
+	 * leaves behind are the same problem whichever pair of numbers is being
+	 * written, and two copies of them would drift apart.
 	 *
 	 * Only the dragged block's own grid position is written while the pointer
 	 * is down — rebuilding the preview would destroy the element holding the
@@ -444,6 +476,7 @@ export class LayoutEditorSection {
 		event: PointerEvent,
 		cell: HTMLElement,
 		config: ComponentConfig,
+		mode: DragMode,
 	): void {
 		if (event.button !== 0) return;
 		const metrics = this.previewMetrics();
@@ -453,29 +486,66 @@ export class LayoutEditorSection {
 		event.preventDefault();
 
 		const origin = this.cellAt(event, metrics);
-		const startCol = config.position.col;
-		const startRow = config.position.row;
+		const start = { ...config.position };
 		let moved = false;
 		cell.setPointerCapture(event.pointerId);
 
-		const place = (col: number, row: number) => {
-			config.position.col = col;
-			config.position.row = row;
-			cell.style.gridColumn = `${col} / span ${config.position.width}`;
-			cell.style.gridRow = `${row} / span ${config.position.height}`;
+		/**
+		 * Offer the block a position this far from where it was picked up,
+		 * and report whether that changed anything. The delta is measured
+		 * from the origin every time rather than accumulated, so a pointer
+		 * that runs past a bound and comes back resumes exactly.
+		 */
+		const place = (dc: number, dr: number): boolean => {
+			const position = config.position;
+			let { col, row, width, height } = position;
+			if (mode === 'move') {
+				col = clamp(start.col + dc, 1, lastColumn(metrics.columns, width, start.col));
+				row = Math.max(1, start.row + dr);
+			} else {
+				width = clamp(
+					start.width + dc,
+					1,
+					lastColumn(metrics.columns, col, start.width),
+				);
+				height = Math.max(1, start.height + dr);
+			}
+			// Marked before the no-op check, not after: the mark is about where
+			// the block is, not about it having just moved. A block that is
+			// already full-width, or already sitting at the last column, is
+			// held from the first frame of the gesture — which is exactly the
+			// case the feedback exists for, and the case a bail-out first
+			// would never show it in.
+			cell.toggleClass(
+				'sheetsmith-preview-clamped',
+				col + width - 1 >= metrics.columns,
+			);
+			if (
+				col === position.col &&
+				row === position.row &&
+				width === position.width &&
+				height === position.height
+			) {
+				return false;
+			}
+			position.col = col;
+			position.row = row;
+			position.width = width;
+			position.height = height;
+			cell.style.gridColumn = `${col} / span ${width}`;
+			cell.style.gridRow = `${row} / span ${height}`;
 			this.markOverlaps();
+			return true;
 		};
 
 		const onMove = (move: PointerEvent) => {
 			const at = this.cellAt(move, metrics);
-			const col = Math.max(1, startCol + (at.col - origin.col));
-			const row = Math.max(1, startRow + (at.row - origin.row));
-			if (col === config.position.col && row === config.position.row) return;
+			if (!place(at.col - origin.col, at.row - origin.row)) return;
 			if (!moved) {
 				moved = true;
 				cell.addClass('sheetsmith-preview-dragging');
+				if (mode === 'resize') cell.addClass('sheetsmith-preview-resizing');
 			}
-			place(col, row);
 		};
 
 		const finish = (commit: boolean) => {
@@ -484,11 +554,14 @@ export class LayoutEditorSection {
 			cell.removeEventListener('pointercancel', onCancel);
 			cell.ownerDocument.removeEventListener('keydown', onKey);
 			cell.removeClass('sheetsmith-preview-dragging');
+			cell.removeClass('sheetsmith-preview-resizing');
 			if (cell.hasPointerCapture(event.pointerId)) {
 				cell.releasePointerCapture(event.pointerId);
 			}
 			if (!moved) return;
-			if (!commit) place(startCol, startRow);
+			// No delta from the origin is where the block was picked up, so
+			// the restore is the same arithmetic as every other frame.
+			if (!commit) place(0, 0);
 			// The click that follows a drag is the drag's own; swallow it.
 			this.dragged = true;
 			window.setTimeout(() => {
@@ -531,11 +604,22 @@ export class LayoutEditorSection {
 		if (!delta) return;
 		event.preventDefault();
 		const position = config.position;
+		// The same bound the pointer gesture holds to, so the two ways of
+		// doing this cannot disagree about where the grid ends.
+		const columns = this.layout?.columns ?? DEFAULT_COLUMNS;
 		if (event.shiftKey) {
-			position.width = Math.max(1, position.width + (delta[0] ?? 0));
+			position.width = clamp(
+				position.width + (delta[0] ?? 0),
+				1,
+				lastColumn(columns, position.col, position.width),
+			);
 			position.height = Math.max(1, position.height + (delta[1] ?? 0));
 		} else {
-			position.col = Math.max(1, position.col + (delta[0] ?? 0));
+			position.col = clamp(
+				position.col + (delta[0] ?? 0),
+				1,
+				lastColumn(columns, position.width, position.col),
+			);
 			position.row = Math.max(1, position.row + (delta[1] ?? 0));
 		}
 		this.persistSoon();
@@ -1242,27 +1326,6 @@ function onCommit(
 	handler: (value: string) => void,
 ): void {
 	text.inputEl.addEventListener('change', () => handler(text.inputEl.value));
-}
-
-/** Indices of components whose grid rectangles intersect another's. */
-function findOverlaps(components: ComponentConfig[]): Set<number> {
-	const overlapping = new Set<number>();
-	const intersects = (a: GridPosition, b: GridPosition): boolean =>
-		a.col < b.col + b.width &&
-		b.col < a.col + a.width &&
-		a.row < b.row + b.height &&
-		b.row < a.row + a.height;
-	for (let i = 0; i < components.length; i++) {
-		for (let j = i + 1; j < components.length; j++) {
-			const a = components[i] as ComponentConfig;
-			const b = components[j] as ComponentConfig;
-			if (intersects(a.position, b.position)) {
-				overlapping.add(i);
-				overlapping.add(j);
-			}
-		}
-	}
-	return overlapping;
 }
 
 /**
