@@ -4,18 +4,11 @@
  * card and by Stat for its lone card; any future component wanting the same
  * look renders through here.
  *
- * Feedback and persistence are deliberately separate: the derived display
- * recomputes live on every keystroke, while stored text commits (and reaches
- * the file) only on change — blur, Enter, or an arrow-key step.
+ * The editing gesture itself lives in editable.ts, because a table cell has
+ * to behave the same way under the hand as a card does.
  */
 
-/**
- * How long a draft may fail to resolve before the card says so. A value on
- * its way to being valid passes through states that are not wrong yet ("-"
- * before "-1"), and marking those unresolved fires a warning at input the
- * user is still in the middle of. Only a settled bad value earns the glyph.
- */
-const UNRESOLVED_DELAY = 300;
+import { bindEditable, UNRESOLVED_DELAY } from './editable';
 
 export interface StatCardDerived {
 	text: string;
@@ -84,76 +77,6 @@ function setDerived(el: HTMLElement, derived: StatCardDerived): void {
 	} else {
 		el.removeAttribute('title');
 	}
-}
-
-/**
- * One commit path for every gesture: typing, Enter, and arrow steps all just
- * change the draft; leaving the field commits it, and Escape abandons it.
- * Nothing reaches the file until a commit.
- */
-function bindEditable(
-	input: HTMLInputElement,
-	options: {
-		initial: string;
-		/** Arrow keys step a numeric draft, exactly like typing the number. */
-		step?: boolean;
-		/** Live feedback per keystroke, before anything is committed. */
-		onDraft?: () => void;
-		/** Where Enter goes once it has committed, if anywhere. */
-		onEnter?: () => void;
-		/** Announced once per commit, before the view reacts to the change. */
-		announceCommit?: (next: string) => void;
-		/** Announced when Escape puts the stored value back. */
-		announceRestore?: (restored: string) => void;
-		onCommit: (next: string) => void;
-	},
-): void {
-	let committed = options.initial;
-	const redraw = () => options.onDraft?.();
-
-	const commitIfChanged = () => {
-		const next = input.value.trim();
-		if (next === committed) return;
-		committed = next;
-		options.announceCommit?.(next);
-		options.onCommit(next);
-	};
-
-	// Live feedback on every keystroke; persistence only on commit.
-	input.addEventListener('input', redraw);
-	input.addEventListener('blur', commitIfChanged);
-	input.addEventListener('keydown', (event) => {
-		if (event.key === 'Enter') {
-			// Commit in place. Blurring would also throw away the user's
-			// position in the document, and Enter never asked for that.
-			event.preventDefault();
-			commitIfChanged();
-			options.onEnter?.();
-		} else if (event.key === 'Escape') {
-			// Forgiveness: abandon the draft, restore what is stored — and
-			// say so, since an undo nobody can perceive is not obviously one.
-			const abandoned = input.value.trim() !== committed;
-			input.value = committed;
-			redraw();
-			if (abandoned) options.announceRestore?.(committed);
-			input.blur();
-		} else if (
-			options.step === true &&
-			(event.key === 'ArrowUp' || event.key === 'ArrowDown')
-		) {
-			const raw = input.value.trim();
-			// An empty field steps from zero: pressing up on a fresh card is
-			// the obvious first gesture, and it should not be a dead key.
-			// Genuinely non-numeric text is not a number to step, so the
-			// arrows stay caret movement there.
-			const current = raw === '' ? 0 : Number(raw);
-			if (!Number.isFinite(current)) return;
-			event.preventDefault();
-			const size = event.shiftKey ? 10 : 1;
-			input.value = String(current + (event.key === 'ArrowUp' ? size : -size));
-			redraw();
-		}
-	});
 }
 
 export function renderStatCard(
