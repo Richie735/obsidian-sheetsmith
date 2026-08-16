@@ -893,3 +893,501 @@ body {
 	}
 }
 
+
+/* --- Table -------------------------------------------------------------- */
+
+/* The component's authored name, above its table — the same role the stat
+   group's label plays above its cards, so it wears the same clothes. Both sit
+   over a block whose own micro-labels are uppercase, tracked, and muted (the
+   thead here, the card labels there); the heading is the one in sentence case
+   at full contrast, or the two read as the same rank. */
+.sheetsmith-table-label {
+	margin-bottom: var(--size-2-3);
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-semibold);
+	line-height: 1.3;
+	color: var(--text-normal);
+}
+
+/* A wide table scrolls inside its own box. The sheet is a grid, and one
+   component growing a column must never make the whole page scroll
+   sideways — least of all on a phone, where the reflow already stacks
+   every component into one narrow column. */
+.sheetsmith-table-wrapper {
+	overflow-x: auto;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background-color: var(--background-primary-alt);
+	/* A shadow at the right edge while there is more table past it, and
+	   nothing once there is not. Two layers do the whole job: the first
+	   scrolls with the content and parks over the second at the end, so the
+	   hint appears and disappears without a scroll listener. The left edge
+	   needs none of this — the name column is pinned there. */
+	background-image:
+		linear-gradient(to left, var(--background-primary-alt), rgba(0, 0, 0, 0)),
+		linear-gradient(to left, var(--background-modifier-border), rgba(0, 0, 0, 0));
+	background-position: right center;
+	background-size:
+		24px 100%,
+		16px 100%;
+	background-repeat: no-repeat;
+	background-attachment: local, scroll;
+}
+
+.sheetsmith-view .sheetsmith-table {
+	width: 100%;
+	border-collapse: collapse;
+	/* Cells are inputs, not prose: a table row is one line, always. */
+	white-space: nowrap;
+}
+
+.sheetsmith-view .sheetsmith-table th,
+.sheetsmith-view .sheetsmith-table td {
+	padding: var(--size-2-2) var(--size-4-2);
+	border: none;
+	border-bottom: 1px solid var(--background-modifier-border);
+	text-align: center;
+	vertical-align: middle;
+}
+
+.sheetsmith-view .sheetsmith-table thead th {
+	font-size: var(--font-smallest);
+	font-weight: var(--font-medium);
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--text-muted);
+}
+
+/* The last row's rule would be a second line against the container border. */
+.sheetsmith-view .sheetsmith-table tbody tr:last-child th,
+.sheetsmith-view .sheetsmith-table tbody tr:last-child td {
+	border-bottom: none;
+}
+
+/* The row is the hover surface, on the stat card's settle: a sheet of
+   eighteen skills is a lot of rows to have snap under a travelling pointer. */
+.sheetsmith-view .sheetsmith-table tbody tr {
+	transition: background-color 160ms ease;
+}
+
+.sheetsmith-view .sheetsmith-table tbody tr:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+/* The name is what the row is; it holds the left edge, reads as text rather
+   than as another centred number, and takes all the slack in the table. */
+.sheetsmith-view .sheetsmith-table .sheetsmith-table-name {
+	width: 100%;
+	text-align: left;
+	font-weight: var(--font-normal);
+	color: var(--text-normal);
+	/* Scrolling a phone-width sheet right to reach the total would otherwise
+	   take the skill name off the left edge, leaving a column of numbers with
+	   nothing saying which row you are on. It is already the row's th; this
+	   makes it behave like one. */
+	position: sticky;
+	left: 0;
+	z-index: 1;
+	background-color: var(--background-primary-alt);
+}
+
+/* The pinned cell paints its own background, so it would sit out the row's
+   hover. The tint is translucent, so laying it over as an image composites to
+   the same colour the rest of the row lands on. */
+.sheetsmith-view .sheetsmith-table tbody tr:hover .sheetsmith-table-name {
+	background-image: linear-gradient(
+		var(--background-modifier-hover),
+		var(--background-modifier-hover)
+	);
+}
+
+/* Every column holding a value is as wide as the value it holds, and no
+   wider. `1%` is the table-layout idiom for shrink-to-fit: it loses to the
+   name column's 100% and settles at the column's own minimum width. Without
+   it the table splits the leftover width evenly and a level column — a 21px
+   ring — is handed a third of the sheet to sit in the middle of. A text
+   column is deliberately absent: prose is the one cell that wants room. */
+.sheetsmith-view .sheetsmith-table-number,
+.sheetsmith-view .sheetsmith-table-level,
+.sheetsmith-view .sheetsmith-table-toggle,
+.sheetsmith-view .sheetsmith-table-computed {
+	width: 1%;
+}
+
+.sheetsmith-view .sheetsmith-table-input {
+	width: 4em;
+	padding: var(--size-2-1) var(--size-2-2);
+	border: 1px solid transparent;
+	border-radius: var(--radius-s);
+	background-color: transparent;
+	text-align: center;
+	font-size: var(--font-ui-small);
+	color: var(--text-normal);
+}
+
+/* A text column holds prose, and prose wants the room, the left edge, and
+   the right to wrap where every other cell is one line. */
+.sheetsmith-view .sheetsmith-table-text {
+	width: 100%;
+	white-space: normal;
+}
+
+/* Where the table has a prose column, that column is the one that should
+   grow and the name falls back to its own width. Row names are a fixed
+   vocabulary — "Sleight of hand" is as long as a skill gets — so slack given
+   to that column is room it can never use, while a note is open-ended. With
+   no prose column the rule above still applies and the name takes the slack,
+   which is what keeps a ring or a checkbox from being handed a third of the
+   sheet to sit in the middle of. */
+.sheetsmith-view
+	.sheetsmith-table:has(.sheetsmith-table-text)
+	.sheetsmith-table-name {
+	width: auto;
+}
+
+.sheetsmith-view .sheetsmith-table-text .sheetsmith-table-input {
+	width: 100%;
+	min-width: 8em;
+	text-align: left;
+}
+
+
+/* There is no hover on a phone, so resting on hover alone leaves a touch
+   user a table of bare numbers with nothing saying which are typeable and
+   which are computed. A rule under the field is enough to say "this one is
+   yours" without becoming the wall of boxes the desktop rule avoids. */
+@media (pointer: coarse) {
+	.sheetsmith-view .sheetsmith-table-input {
+		border-bottom-color: var(--background-modifier-border);
+		border-radius: 0;
+	}
+}
+
+/* A correction the user cannot perceive is indistinguishable from the app
+   ignoring them, and this one lands on blur — the moment the cell gives up
+   its hover chrome. Hold a tint long enough for eyes already leaving. */
+.sheetsmith-view .sheetsmith-table-input-corrected {
+	border-color: var(--text-warning, var(--interactive-accent));
+	background-color: var(--background-primary);
+	transition: none;
+}
+
+/* The field is invisible until it is asked for: a sheet of eighteen skills
+   would otherwise be thirty-six boxes before it is anything else. */
+.sheetsmith-view .sheetsmith-table-input:hover {
+	border-color: var(--background-modifier-border);
+	background-color: var(--background-primary);
+}
+
+/* The resting border is transparent, so focus colours the chrome the field
+   already has rather than adding a second rectangle around it. The
+   transparent outline is the forced-colors escape hatch the stat card uses:
+   invisible normally, repainted as a real ring where the system overrides
+   every border on the page to one colour and the accent stops meaning
+   anything. */
+.sheetsmith-view .sheetsmith-table-input:focus {
+	border-color: var(--interactive-accent);
+	background-color: var(--background-primary);
+	outline: 2px solid transparent;
+	outline-offset: 0;
+}
+
+/* A level column is one control, not a row of boxes: a graded proficiency
+   is a single answer, and a row of checkboxes invites the states nobody
+   means. It reads as a toggle carrying the level's initial — filled for a
+   level, an empty ring for none, which is what an unticked proficiency
+   looks like on paper. Clicking cycles; the arrow keys aim. */
+.sheetsmith-view .sheetsmith-table-cycle {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	/* Aligned by its box, never by a baseline it may not have: an empty
+	   inline-flex box takes its baseline from its bottom edge, so an
+	   untrained ring would sit lower than the lettered states beside it and
+	   the whole column would twitch as levels changed. */
+	vertical-align: middle;
+	width: 1.6em;
+	height: 1.6em;
+	padding: 0;
+	margin: 0;
+	border: 1.5px solid var(--text-faint);
+	border-radius: 50%;
+	background-color: transparent;
+	box-shadow: none;
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-semibold);
+	/* One glyph in a circle: normal tracking would push it off centre. */
+	letter-spacing: 0;
+	line-height: 1;
+	color: var(--text-muted);
+	cursor: pointer;
+	/* Anchors the hit target below. */
+	position: relative;
+	/* The settle after a press and after a level change; going in is instant,
+	   see :active. The colour and fill here are safe under reduced motion,
+	   but the transform is not, so the reduced-motion block below redeclares
+	   this list without it rather than relying on the transform being absent. */
+	transition:
+		background-color 160ms ease,
+		border-color 160ms ease,
+		color 160ms ease,
+		transform 160ms ease;
+}
+
+/* A 21px circle is the smallest thing on the sheet and the one pressed most.
+   Spend the cell's own padding on the target: the whole cell answers the
+   press, while the ring stays as narrow as the checkbox it replaces. Sized to
+   the padding exactly, so neighbouring cells meet without overlapping and a
+   press is never ambiguous about which control it landed on. */
+.sheetsmith-view .sheetsmith-table-cycle::after {
+	content: '';
+	position: absolute;
+	inset: calc(-1 * var(--size-2-2)) calc(-1 * var(--size-4-2));
+}
+
+.sheetsmith-view .sheetsmith-table-cycle:hover {
+	border-color: var(--text-muted);
+	background-color: var(--background-modifier-hover);
+}
+
+/* Feedback on press, not on release: no transition on the way in, and the
+   whole control gives under the finger rather than waiting for the click to
+   report a new level. */
+.sheetsmith-view .sheetsmith-table-cycle:active {
+	transform: scale(0.9);
+	transition-duration: 0s;
+}
+
+/* The control resets box-shadow, which is where Obsidian's own focus ring
+   lives, so without this a keyboard user cycling levels has nothing to tell
+   them which cell they are on. An outline rather than a ring: the offset
+   leaves the gap that keeps it legible against the accent fill of a marked
+   level, and outlines survive forced-colors mode where box-shadows do not. */
+.sheetsmith-view .sheetsmith-table-cycle:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
+}
+
+.sheetsmith-view .sheetsmith-table-cycle-on {
+	border-color: var(--interactive-accent);
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.sheetsmith-view .sheetsmith-table-cycle-on:hover {
+	border-color: var(--interactive-accent-hover);
+	background-color: var(--interactive-accent-hover);
+}
+
+/* A finger has no hover to find the target with and no pixel to aim at, so
+   the ring itself grows rather than its invisible padding: expanding the hit
+   area any further vertically would reach into the rows above and below. */
+@media (pointer: coarse) {
+	.sheetsmith-view .sheetsmith-table-cycle {
+		width: 2.2em;
+		height: 2.2em;
+	}
+}
+
+.sheetsmith-view .sheetsmith-table-select {
+	max-width: 100%;
+	padding: var(--size-2-1) var(--size-4-1);
+	font-size: var(--font-ui-small);
+}
+
+.sheetsmith-view .sheetsmith-table-value {
+	font-weight: var(--font-semibold);
+	/* Digits must not re-centre as a total changes under the keys, or a whole
+	   column twitches while one bonus is being typed. */
+	font-variant-numeric: tabular-nums;
+	/* The same fade the stat card's derived number gets: the one abrupt change
+	   in a computed cell is a resolved number turning into "?", and it should
+	   read as the number giving way rather than a warning arriving. A colour
+	   fade, not motion, so reduced-motion has nothing to strip. */
+	transition: color 200ms ease;
+}
+
+/* Status, not data: the same treatment "?" gets on a stat card. */
+.sheetsmith-view .sheetsmith-table-unresolved {
+	font-weight: var(--font-normal);
+	color: var(--text-faint);
+}
+
+.sheetsmith-view .sheetsmith-table-empty {
+	padding: var(--size-4-3);
+	text-align: center;
+	color: var(--text-muted);
+}
+
+/* The second door onto what a hover shows, for the pointer that has no
+   hover. Fixed to the viewport, because the table it explains scrolls inside
+   an overflow box that would otherwise clip it. */
+.sheetsmith-popover {
+	position: fixed;
+	z-index: var(--layer-popover, 30);
+	max-width: min(20em, calc(100vw - 2 * var(--size-4-4)));
+	padding: var(--size-2-2) var(--size-4-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background-color: var(--background-secondary);
+	box-shadow: 0 2px 12px var(--background-modifier-box-shadow);
+	font-size: var(--font-ui-smaller);
+	color: var(--text-normal);
+	/* A formula is code and reads as code; wrapping beats a bubble running
+	   off the edge of a phone. */
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	pointer-events: none;
+}
+
+/* A computed cell answers "why this number?" on a tap. Say so with the
+   cursor; the cell is still read-only, and still not a tab stop. */
+.sheetsmith-view .sheetsmith-table-askable {
+	cursor: help;
+}
+
+/* --- List config fields (rows, columns) --------------------------------- */
+
+/* The attribute list has two fixed tracks; these lists vary by what the
+   component declares, so the track count comes in as a property. */
+.sheetsmith-list {
+	/* One icon button: the icon and the click padding around it. The header's
+	   spacers take the same width, so a control track measures the same on
+	   both and the 1fr field tracks land on the same edges. */
+	--sheetsmith-list-control: calc(var(--icon-s, 16px) + 2 * var(--size-2-2));
+}
+
+.sheetsmith-list .sheetsmith-attribute-columns,
+.sheetsmith-list .sheetsmith-attribute-row {
+	grid-template-columns:
+		repeat(var(--sheetsmith-list-fields, 2), minmax(0, 1fr))
+		repeat(3, min-content);
+}
+
+/* Both sides of the same track: give them one width rather than letting the
+   button be measured by its contents and the spacer by nothing. */
+.sheetsmith-list .sheetsmith-attribute-row > button.clickable-icon {
+	width: var(--sheetsmith-list-control);
+}
+
+/* The spacer is a span, so it inherits the header's label padding; that has
+   to go, or the track it reserves is wider than the button it stands in for
+   by however that padding resolves. */
+.sheetsmith-list-control-space {
+	width: var(--sheetsmith-list-control);
+	padding: 0;
+}
+
+/* A track is sized by its item's margin box, so the optical pull on the last
+   button has to be mirrored here or the last track measures eight pixels
+   narrower in the rows than in the header — and every field track shifts. */
+.sheetsmith-list .sheetsmith-attribute-columns > .sheetsmith-list-control-space:last-child {
+	margin-right: calc(-1 * var(--size-2-2));
+}
+
+.sheetsmith-list-columns {
+	--sheetsmith-list-fields: 3;
+}
+
+.sheetsmith-attribute-row > select {
+	width: 100%;
+}
+
+/* A column is one surface: its row, and the options that belong to it. With
+   every line equally spaced, proximity was saying all four lines in a pair of
+   columns were peers. The list sits on --background-secondary, so an entry on
+   --background-primary reads as raised without a border — which matters,
+   because a border would push the row's grid a pixel out of line with the
+   sticky header it has to stay aligned with. No horizontal padding, for the
+   same reason. */
+.sheetsmith-list-entry {
+	/* The card groups; the spacing has to agree with it. The row's own top
+	   padding and the detail's bottom one already inset the pair evenly, so
+	   the card needs no padding of its own — only a gap to the next card that
+	   clearly beats the gap between the two lines inside it. At --size-2-3 it
+	   did not, and the run read as evenly spaced stripes with a tint behind
+	   alternate pairs. */
+	margin-bottom: var(--size-4-2);
+	border-radius: var(--radius-s);
+	background-color: var(--background-primary);
+}
+
+.sheetsmith-list-entry:last-child {
+	margin-bottom: 0;
+}
+
+/* Fields that belong to one kind of column only — a formula, a pair of
+   bounds. They share the row's left edge rather than hanging off it: the card
+   around the pair already says they belong together, and an indent that lands
+   under nothing (these tracks are fractional, so no fixed offset reaches
+   "Heading" at every width) spends the one straight edge the card has to buy
+   a cue it is already getting. */
+.sheetsmith-attribute-detail {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+	padding: 0 var(--size-2-2) var(--size-2-2);
+	/* The fade for the mark below; colour only, nothing motion-shaped. */
+	transition: background-color 400ms ease;
+}
+
+/* Changing what a column holds rebuilds these fields through a full redraw.
+   Marking the region briefly is what ties the new fields to the choice that
+   made them, rather than leaving them to appear as if they always were. */
+.sheetsmith-flash {
+	background-color: var(--background-modifier-hover);
+	transition-duration: 0s;
+}
+
+.sheetsmith-attribute-detail > input[type='text'] {
+	flex: 1;
+	min-width: 0;
+	font-family: var(--font-monospace);
+}
+
+.sheetsmith-attribute-check {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+}
+
+/* See the stat card: a faint tint alone is not enough for someone who
+   asked for more contrast. */
+@media (prefers-contrast: more) {
+	.sheetsmith-table-wrapper,
+	.sheetsmith-view .sheetsmith-table th,
+	.sheetsmith-view .sheetsmith-table td {
+		border-color: var(--text-muted);
+	}
+
+	.sheetsmith-view .sheetsmith-table-unresolved {
+		color: var(--text-muted);
+	}
+
+	/* An empty ring against a faint outline is the whole signal here. */
+	.sheetsmith-view .sheetsmith-table-cycle {
+		border-color: var(--text-muted);
+	}
+}
+
+/* Reduced motion asks for a gentler answer, not a silent one. The colour
+   settles stay — they carry meaning and move nothing — and only the press
+   scale goes, replaced by the fill change it was decorating, so a press is
+   still answered the instant it lands. */
+@media (prefers-reduced-motion: reduce) {
+	.sheetsmith-view .sheetsmith-table-cycle {
+		transition:
+			background-color 160ms ease,
+			border-color 160ms ease,
+			color 160ms ease;
+	}
+
+	.sheetsmith-view .sheetsmith-table-cycle:active {
+		transform: none;
+		border-color: var(--interactive-accent);
+		background-color: var(--background-modifier-active-hover);
+		transition-duration: 0s;
+	}
+}

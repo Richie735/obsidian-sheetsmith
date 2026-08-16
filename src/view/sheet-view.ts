@@ -1,5 +1,6 @@
 import { Notice, TextFileView, WorkspaceLeaf } from 'obsidian';
 import { getComponent } from '../components';
+import { closePopover } from '../components/popover';
 import { loadLayout } from '../layouts';
 import type SheetsmithPlugin from '../main';
 import {
@@ -10,7 +11,11 @@ import {
 	serialiseCharacter,
 	setSectionBody,
 } from '../parse/character';
-import { makeFieldResolver, resolveFormulaFields } from '../formula/resolve';
+import {
+	makeFieldExplainer,
+	makeFieldResolver,
+	resolveFormulaFields,
+} from '../formula/resolve';
 import { Scope } from '../formula/expression';
 import { buildSheetScope } from '../formula/sheet';
 import { Layout } from '../parse/layout';
@@ -61,6 +66,14 @@ export class SheetView extends TextFileView {
 		this.data = '';
 		this.renderId++;
 		this.contentEl.empty();
+		// A popover lives on document.body, so emptying this element does not
+		// reach it — it would be left pointing at a cell of the file just
+		// closed.
+		closePopover();
+	}
+
+	async onClose(): Promise<void> {
+		closePopover();
 	}
 
 	/** Re-render from current data, e.g. after the layout file changed. */
@@ -106,6 +119,11 @@ export class SheetView extends TextFileView {
 		if (run !== this.renderId) return;
 
 		const focus = this.captureFocus();
+		// Everything a popover could be anchored to is about to be replaced.
+		// A pointer interaction dismisses it on its own, but a rebuild driven
+		// by anything else — an external edit, a layout saved in settings —
+		// would strand it over a cell that no longer exists.
+		closePopover();
 		root.empty();
 		if (loadError !== null) {
 			this.renderMessage(loadError);
@@ -185,6 +203,7 @@ export class SheetView extends TextFileView {
 			component.render(cell, config, data, {
 				resolved: resolveFormulaFields(component, config, data, sheet),
 				resolveField: makeFieldResolver(component, config, data, sheet),
+				explainField: makeFieldExplainer(component, config, data, sheet),
 				onChange: (edited: unknown) => this.applyEdit(component, config, edited),
 			});
 		}

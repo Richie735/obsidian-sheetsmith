@@ -1,4 +1,5 @@
 import { Plugin } from 'obsidian';
+import { closePopover } from './components/popover';
 import { registerCommands } from './commands';
 import {
 	DEFAULT_SETTINGS,
@@ -21,7 +22,14 @@ export default class SheetsmithPlugin extends Plugin {
 		registerAutoOpen(this);
 	}
 
-	onunload() {}
+	onunload() {
+		// The one piece of DOM this plugin puts outside its own views: a cell
+		// popover attaches to document.body to escape the table's overflow
+		// clip, and takes three capture-phase listeners with it. Nothing else
+		// would collect them, so an unload with a bubble open would leave both
+		// behind.
+		closePopover();
+	}
 
 	async loadSettings() {
 		this.settings = Object.assign(
