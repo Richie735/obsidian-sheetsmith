@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { evaluate, Scope } from './expression';
+import { parseFunctions } from './functions';
 import { makeFieldResolver, resolveFormulaFields } from './resolve';
 import { buildSheetScope, PublishedComponent } from './sheet';
 import { ComponentConfig } from '../types';
@@ -161,6 +162,40 @@ describe('a component resolving against the sheet', () => {
 	it('fails to resolve when the name is not on the sheet', () => {
 		expect(
 			makeFieldResolver(component, config, null, buildSheetScope([]))('derived', {}),
+		).toBeNull();
+	});
+
+	/*
+	 * The loop the function library has to close: a card calls a layout
+	 * function, whose body reads the sheet, one of whose names is computed by
+	 * another card. The body's scope is the sheet itself, so it reaches the
+	 * lazy table and the cycle guard covers it.
+	 */
+	it('calls a layout function whose body reads a computed name', () => {
+		const { library } = parseFunctions([
+			'save(score) = mod(score) + prof',
+			'mod(score) = floor((score - 10) / 2)',
+			'prof = 3',
+		]);
+		const dexSave = {
+			...config,
+			derived: 'save(abilities.DEX.value)',
+		} as ComponentConfig;
+		expect(
+			makeFieldResolver(component, dexSave, null, sheet, library)('derived', {}),
+		).toBe(9);
+	});
+
+	it('keeps the calling card out of the body even against the sheet', () => {
+		// `value` is the card's own, and the sheet has no such name: a body
+		// reading it must fail rather than pick the caller's up.
+		const { library } = parseFunctions(['twice(x) = x + value']);
+		const calling = { ...config, derived: 'twice(2)' } as ComponentConfig;
+		expect(
+			makeFieldResolver(component, calling, { value: '5' }, sheet, library)(
+				'derived',
+				{},
+			),
 		).toBeNull();
 	});
 });

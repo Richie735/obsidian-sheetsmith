@@ -14,6 +14,12 @@ export interface StatCardDerived {
 	text: string;
 	/** True when the formula did not resolve; styled as status, not data. */
 	unresolved?: boolean;
+	/**
+	 * Why it did not resolve, in words. Same rule as a computed table cell:
+	 * "mod() takes 1 argument, got 2" is a next action, and "did not
+	 * resolve" is a status. Omitted where the caller has no explainer.
+	 */
+	reason?: string | null;
 }
 
 export interface StatCardOptions {
@@ -56,6 +62,28 @@ export interface StatCardOptions {
 	};
 }
 
+/**
+ * Turn one field resolution into the card's derived display.
+ *
+ * The three fields always move together — the text, whether it resolved, and
+ * why it did not — so deriving them together is what keeps a card from ever
+ * showing "?" with no reason, or a reason for a number that came out fine.
+ * The explanation is asked for only where the value already failed, so the
+ * second evaluation is paid on the error path alone.
+ */
+export function toDerived(
+	resolved: string | number | boolean | null | undefined,
+	signed: boolean,
+	explain?: () => string | null,
+): StatCardDerived {
+	const unresolved = resolved === null;
+	return {
+		text: formatDerived(resolved, signed),
+		unresolved,
+		reason: unresolved ? (explain?.() ?? null) : null,
+	};
+}
+
 /** "?" while unresolved; signed numbers read like modifiers ("+4", "-1"). */
 export function formatDerived(
 	value: string | number | boolean | null | undefined,
@@ -73,7 +101,7 @@ function setDerived(el: HTMLElement, derived: StatCardDerived): void {
 		derived.unresolved === true,
 	);
 	if (derived.unresolved === true) {
-		el.setAttribute('title', 'The formula did not resolve.');
+		el.setAttribute('title', derived.reason ?? 'The formula did not resolve.');
 	} else {
 		el.removeAttribute('title');
 	}

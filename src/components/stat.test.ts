@@ -471,6 +471,45 @@ describe('stat.render: computed from elsewhere on the sheet', () => {
 	});
 });
 
+describe('stat.render: why a formula failed', () => {
+	const broken: Partial<StatConfig> = { derived: 'mod(value, 2)' };
+	const failing = () => null;
+
+	it('hovers the reason, not the fact', () => {
+		// The engine's messages are the payoff of a formula library —
+		// "mod() takes 1 argument, got 2" is a next action. A card that only
+		// says "did not resolve" throws that away at the last step.
+		const el = render(broken, { value: '15' }, {
+			resolveField: failing,
+			explainField: () => 'mod() takes 1 argument, got 2.',
+		});
+		const derived = el.querySelector('.sheetsmith-stat-derived');
+		expect(derived?.textContent).toBe('?');
+		expect(derived?.getAttribute('title')).toBe('mod() takes 1 argument, got 2.');
+	});
+
+	it('falls back when nothing can explain it', () => {
+		const el = render(broken, { value: '15' }, { resolveField: failing });
+		expect(el.querySelector('.sheetsmith-stat-derived')?.getAttribute('title')).toBe(
+			'The formula did not resolve.',
+		);
+	});
+
+	it('asks for no explanation while the formula resolves', () => {
+		let asked = 0;
+		const el = render({ derived: '10 + value' }, { value: '5' }, {
+			explainField: () => {
+				asked++;
+				return 'never';
+			},
+		});
+		expect(asked).toBe(0);
+		expect(el.querySelector('.sheetsmith-stat-derived')?.hasAttribute('title')).toBe(
+			false,
+		);
+	});
+});
+
 describe('stat contract', () => {
 	it('declares fenced storage, formula fields, and config fields', () => {
 		expect(stat.storage).toBe('fenced');

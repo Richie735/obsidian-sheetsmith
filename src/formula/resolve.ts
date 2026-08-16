@@ -7,6 +7,11 @@
  * publishes to. Nearest-first is what lets a Stat group's `derived` say
  * `value` and mean this attribute, while an armour class says
  * `abilities.DEX` and means another component entirely.
+ *
+ * The layout's functions are a fourth thing rather than a fourth layer. They
+ * are called, not looked up, and their bodies see only their parameters and
+ * the sheet — never the two nearer layers, which belong to whichever
+ * component happened to make the call.
  */
 
 import {
@@ -16,7 +21,15 @@ import {
 	FieldResolver,
 	ResolvedValues,
 } from '../types';
-import { EMPTY_SCOPE, evaluate, FormulaError, Scope, Value } from './expression';
+import {
+	EMPTY_SCOPE,
+	evaluate,
+	FormulaError,
+	FunctionLibrary,
+	NO_FUNCTIONS,
+	Scope,
+	Value,
+} from './expression';
 
 /** Numeric-looking strings become numbers; anything else passes through. */
 export function coerceValue(raw: unknown): Value | undefined {
@@ -73,23 +86,38 @@ function scopeFromData(data: unknown): Scope {
 }
 
 /**
- * A resolver that evaluates one formula field with extra names layered over
- * the component's data scope. Components with internal structure use this to
- * evaluate per attribute or per row.
+ * The one evaluation both public field readers are built from: read the
+ * declared field, layer `extra` over the component's data over the sheet, and
+ * evaluate. The two readers differ only in what they do with the outcome, and
+ * they must not differ in anything else — an explanation produced under
+ * different scope rules would explain a failure that did not happen.
  */
-export function makeFieldResolver(
+function fieldReaders(
 	component: Pick<ComponentDefinition, 'formulaFields'>,
 	config: ComponentConfig,
 	data: unknown,
-	sheet: Scope = EMPTY_SCOPE,
-): FieldResolver {
+	sheet: Scope,
+	functions: FunctionLibrary,
+): { resolve: FieldResolver; explain: FieldExplainer } {
 	const record = config as unknown as Record<string, unknown>;
 	const dataScope = scopeFromData(data);
-	return (field, extra) => {
+	// The sheet, and only the sheet, is what a function body sees: `prof`
+	// reading `level` is the point of a library, and `mod(score)` silently
+	// reading the calling card's own `value` would be the end of it.
+	const env = { library: functions, base: sheet };
+
+	/** The evaluation itself, or a thrown FormulaError. */
+	const read = (
+		field: string,
+		extra: Record<string, unknown>,
+	): { literal: Value } | { evaluated: Value } | null => {
 		if (!isDeclared(component.formulaFields, field)) return null;
 		const expression = readPath(record, field);
+		// A field configured as a bare number or boolean is its own answer.
+		// The explainer sees this as "nothing to explain", which is the same
+		// thing said the other way round.
 		if (typeof expression === 'number' || typeof expression === 'boolean') {
-			return expression;
+			return { literal: expression };
 		}
 		if (typeof expression !== 'string') return null;
 		const scope: Scope = (name) => {
@@ -107,12 +135,43 @@ export function makeFieldResolver(
 			// to share the name.
 			return dataScope(name) ?? sheet(name);
 		};
-		try {
-			return evaluate(expression, scope);
-		} catch {
-			return null;
-		}
+		return { evaluated: evaluate(expression, scope, env) };
 	};
+
+	return {
+		resolve: (field, extra) => {
+			try {
+				const outcome = read(field, extra);
+				if (outcome === null) return null;
+				return 'literal' in outcome ? outcome.literal : outcome.evaluated;
+			} catch {
+				return null;
+			}
+		},
+		explain: (field, extra) => {
+			try {
+				read(field, extra);
+				return null;
+			} catch (error) {
+				return error instanceof FormulaError ? error.message : String(error);
+			}
+		},
+	};
+}
+
+/**
+ * A resolver that evaluates one formula field with extra names layered over
+ * the component's data scope. Components with internal structure use this to
+ * evaluate per attribute or per row.
+ */
+export function makeFieldResolver(
+	component: Pick<ComponentDefinition, 'formulaFields'>,
+	config: ComponentConfig,
+	data: unknown,
+	sheet: Scope = EMPTY_SCOPE,
+	functions: FunctionLibrary = NO_FUNCTIONS,
+): FieldResolver {
+	return fieldReaders(component, config, data, sheet, functions).resolve;
 }
 
 /**
@@ -129,29 +188,9 @@ export function makeFieldExplainer(
 	config: ComponentConfig,
 	data: unknown,
 	sheet: Scope = EMPTY_SCOPE,
+	functions: FunctionLibrary = NO_FUNCTIONS,
 ): FieldExplainer {
-	const record = config as unknown as Record<string, unknown>;
-	const dataScope = scopeFromData(data);
-	return (field, extra) => {
-		if (!isDeclared(component.formulaFields, field)) return null;
-		const expression = readPath(record, field);
-		if (typeof expression !== 'string') return null;
-		const scope: Scope = (name) => {
-			// Own-property, for the same reason as the resolver above: the
-			// explanation has to be produced under the scope rules the resolver
-			// used, or it explains a failure that did not happen.
-			if (Object.prototype.hasOwnProperty.call(extra, name)) {
-				return coerceValue(extra[name]);
-			}
-			return dataScope(name) ?? sheet(name);
-		};
-		try {
-			evaluate(expression, scope);
-			return null;
-		} catch (error) {
-			return error instanceof FormulaError ? error.message : String(error);
-		}
-	};
+	return fieldReaders(component, config, data, sheet, functions).explain;
 }
 
 /**
@@ -165,8 +204,9 @@ export function resolveFormulaFields(
 	config: ComponentConfig,
 	data: unknown,
 	sheet: Scope = EMPTY_SCOPE,
+	functions: FunctionLibrary = NO_FUNCTIONS,
 ): ResolvedValues {
-	const resolve = makeFieldResolver(component, config, data, sheet);
+	const resolve = makeFieldResolver(component, config, data, sheet, functions);
 	const record = config as unknown as Record<string, unknown>;
 	const resolved: Record<string, Value | null> = {};
 	for (const field of component.formulaFields) {
