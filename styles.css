@@ -7,6 +7,12 @@
 body {
 	/* Narrowest a stat card may get in any mode. */
 	--sheetsmith-stat-min: 90px;
+	/* The vertical slot a stat card always reserves for its abbreviation, so
+	   numbers land on one baseline across a row. Published here because a
+	   second component now has to line up with it: re-deriving 1.2em of a
+	   0.85-scaled --font-ui-smaller somewhere else would drift the moment
+	   either constant moved. See .sheetsmith-stat-abbreviation. */
+	--sheetsmith-card-abbr-space: calc(1.2 * 0.85 * var(--font-ui-smaller));
 	/* Fixed card width where the grid does not dictate one. */
 	--sheetsmith-stat-width: 110px;
 	/* The card's headline number. Relative rather than a pixel size, so it
@@ -865,7 +871,8 @@ body {
    here — the opposite of the headline number, and the reason neither can
    share one letter-spacing value. */
 .sheetsmith-stat-abbreviation {
-	min-height: 1.2em;
+	/* The published slot, in the units it was defined in. */
+	min-height: var(--sheetsmith-card-abbr-space);
 	font-size: calc(var(--font-ui-smaller) * 0.85);
 	letter-spacing: 0.06em;
 	color: var(--text-faint);
@@ -1675,50 +1682,172 @@ body {
 }
 
 /* Pool — a current-and-max resource with adjust controls (SPEC §4.2).
-   Damage and healing are one action, so the step buttons are the primary
-   control and sit either side of the number rather than under it. */
+
+   It wears the stat card's surface, and that is the point rather than a
+   coincidence: a pool holds one value, so it is card-scale, and a fourth
+   surface next to a row of tiles reads as loose chrome floating on the page.
+   The grid gives components nothing — there is no .sheetsmith-cell rule — so
+   each one is responsible for looking like an object, and there is already a
+   right answer for an object this size. */
 .sheetsmith-pool {
 	display: flex;
 	flex-direction: column;
-	gap: var(--size-2-2);
+	align-items: center;
+	justify-content: flex-start;
+	gap: var(--size-2-1);
+	/* The cap a lone stat card takes, and for its reason: a pool spanning
+	   three columns would otherwise be an expanse of clickable card around a
+	   two-digit number, beside stat cards that stayed tile-sized. Sharing the
+	   number is what lines the two up. */
+	height: 100%;
+	max-width: calc(var(--sheetsmith-stat-width, 110px) * 2);
+	margin-inline: auto;
+	padding: var(--size-4-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background-color: var(--background-secondary);
+	text-align: center;
+	/* So the corner radius clips the track, which bleeds edge to edge along the
+	   bottom and would otherwise poke square corners out past the curve. The
+	   cost is real and worth naming: the step buttons' invisible 44px targets
+	   reach about 2px past the card, and that 2px is clipped with them. Losing
+	   it off a 44px target is a fair trade for the bar sitting on the border,
+	   where it reads as the card's own edge rather than as a rule. */
+	overflow: hidden;
+	/* The whole card is the hit target for its value; see pool.ts. */
+	cursor: text;
+	/* The settle after a press. Going in is instant; see :active below. */
+	transition: background-color 160ms ease;
+	container-type: inline-size;
 }
 
+/* The generous target has to be visible or the card reads as dead except
+   for the number, exactly as on a stat card.
+
+   Unlike a stat card, this one contains buttons, and a card-wide answer to a
+   press on a 24px button says "you pressed the card" when you did not. The
+   :has() guards hand the feedback to whichever control the pointer is
+   actually over. */
+.sheetsmith-pool:hover:not(:has(.sheetsmith-pool-step:hover, .sheetsmith-pool-temp:hover)) {
+	background-color: var(--background-modifier-hover);
+}
+
+/* Feedback on press, not on release: no transition on the way in. */
+.sheetsmith-pool:active:not(:has(.sheetsmith-pool-step:active, .sheetsmith-pool-temp:active)) {
+	background-color: var(--background-modifier-active-hover);
+	transition-duration: 0s;
+}
+
+/* A card's own name, not a heading over a set of things. Sentence case at
+   full contrast is the block-heading rank the stat group and table labels
+   hold; a pool is one value on one card, so it takes the card label's
+   uppercase, tracked, muted treatment instead. */
 .sheetsmith-pool-label {
-	font-size: var(--font-ui-small);
+	max-width: 100%;
+	overflow: hidden;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
 	font-weight: var(--font-semibold);
-	line-height: 1.3;
-	color: var(--text-normal);
+	letter-spacing: 0.05em;
+	text-overflow: ellipsis;
+	text-transform: uppercase;
+	white-space: nowrap;
 }
 
 .sheetsmith-pool-row {
 	display: flex;
 	align-items: center;
+	justify-content: center;
 	gap: var(--size-2-2);
+	width: 100%;
+	/* A stat card always reserves an abbreviation slot so numbers land on one
+	   baseline across a row, then its value adds its own margin for the "big
+	   number stands apart" rhythm. A pool has no abbreviation, but it sits in
+	   those rows, so it buys the same space back: the reserved line, the gap
+	   that would have followed it, and the value's margin. Written against
+	   the same custom properties, so the two move together. */
+	margin-top: calc(
+		var(--sheetsmith-card-abbr-space) + var(--size-2-1) + var(--size-2-2)
+	);
 }
 
-/* The number is the thing being read across a table, so it takes the weight
-   and the buttons stay quiet until reached for. */
-.sheetsmith-pool-current {
-	width: 3.5em;
-	padding: var(--size-2-1) var(--size-2-2);
-	border: 1px solid var(--background-modifier-border);
-	border-radius: var(--radius-s);
-	background-color: var(--background-primary);
+/* "12 / 54" is one reading, and it is centred as one.
+
+   It used to be three grid tracks with the value on the middle one, so the
+   number held the card's spine whatever the max read. That rule came from the
+   stat card, where a rank of six identical tiles has to share a centre line —
+   the alignment is the whole point of a row of tiles. A pool is card-scale and
+   appears once or twice, not in a rank, so the trade ran the wrong way: the
+   empty left track put visible weight on the right of every card, in every
+   frame, to buy an alignment that only pays when two pools with different max
+   digit-counts happen to sit side by side.
+
+   What centring costs is smaller than it sounds. `tabular-nums` means 54 to 55
+   moves nothing; only 99 to 100 shifts the number, by half a character, once in
+   a campaign. Baseline-aligned, because the two are different sizes and
+   centring them vertically would float the smaller one. */
+.sheetsmith-pool-reading {
+	display: flex;
+	align-items: baseline;
+	justify-content: center;
+	gap: var(--size-2-1);
+	flex: 1;
+	min-width: 0;
+}
+
+.sheetsmith-pool-ceiling {
+	display: flex;
+	align-items: baseline;
+	gap: var(--size-2-1);
+	white-space: nowrap;
+}
+
+/* The number you read across a table mid-combat, so it gets the card's big
+   chromeless treatment rather than sitting in a bordered box: the surface
+   above is the object, and a second rectangle inside it was competing with
+   the value it contained. */
+/* Scoped under .sheetsmith-view for the reason every other bare input here
+   is: Obsidian styles input[type='text'] at (0,1,1) with a background,
+   border, padding and font-size, and a lone class at (0,1,0) loses to it.
+   Unscoped, every declaration below that removes chrome is discarded and the
+   number renders small inside a form field. The old bordered design hid
+   this; taking the chrome off is what exposed it. */
+.sheetsmith-view .sheetsmith-pool-current {
+	/* Four characters covers the ordinary pool. Where field-sizing is
+	   supported the field grows past that instead of clipping a digit; where
+	   it is not — every non-Chromium engine, Obsidian mobile included —
+	   `width: auto` on an input falls back to its intrinsic ~20-character
+	   size, which is a blown-out card rather than a graceful degradation. */
+	width: 4ch;
+	min-width: 4ch;
+	padding: 0;
+	border: none;
+	background: transparent;
+	box-shadow: none;
 	color: var(--text-normal);
-	font-size: var(--font-ui-medium);
-	font-weight: var(--font-semibold);
+	font-size: var(--sheetsmith-stat-value-size);
+	font-weight: var(--font-bold);
+	/* Tracking and leading are size-specific, and this is the same size the
+	   stat card's number uses — so it takes the same values, or the two read
+	   differently side by side. */
+	line-height: 1.05;
+	letter-spacing: -0.02em;
 	text-align: center;
+	/* Digits must not re-centre as they change: without fixed advance widths
+	   a stepped value shifts the whole row on every press, and holding a step
+	   button makes it wobble. The max already had this; the value did not,
+	   which is precisely the field that moves. */
+	font-variant-numeric: tabular-nums;
 }
 
-.sheetsmith-pool-current:focus {
-	border-color: var(--interactive-accent);
-	outline: none;
+@supports (field-sizing: content) {
+	.sheetsmith-view .sheetsmith-pool-current {
+		width: auto;
+		field-sizing: content;
+	}
 }
 
-.sheetsmith-pool-separator {
-	color: var(--text-faint);
-}
-
+.sheetsmith-pool-separator,
 .sheetsmith-pool-max {
 	color: var(--text-muted);
 	font-size: var(--font-ui-medium);
@@ -1731,7 +1860,59 @@ body {
 	font-weight: var(--font-normal);
 }
 
+/* The card hover advertises the generous target; the field hover then says
+   which field the click will land in. A pool needs the second half more than
+   a stat card does: it has two fields and a nearest-field router, whose
+   outcome is otherwise invisible until after the click. */
+.sheetsmith-view .sheetsmith-pool-current:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.sheetsmith-pool-temp:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+/* Weight comes from the shared focus rule below; the border is the pill's
+   own addition, not a second, lighter ring. The stat card's pill does the
+   same, and two pills of one shape must not answer differently. */
+.sheetsmith-pool-temp:focus-within {
+	border-color: var(--interactive-accent);
+}
+
+/* One focus treatment for every field on a card, matching the stat card's.
+   The ring is a box-shadow, which forced-colors mode paints out entirely; the
+   transparent outline is the escape hatch, invisible normally and repainted
+   as a real ring where box-shadows are discarded. A border-colour change
+   would have left a forced-colors user with no focus indicator at all. */
+.sheetsmith-view .sheetsmith-pool-current:focus,
+.sheetsmith-view .sheetsmith-pool-temp:focus-within {
+	box-shadow: 0 0 0 2px var(--interactive-accent);
+	outline: 2px solid transparent;
+	outline-offset: 0;
+}
+
+/* The visual size stays 24px so the card keeps its proportions, while the
+   press target reaches the 44px a finger needs.
+
+   Only in the row, and never in the pill. A 44px box centred on a 16px pill
+   button reaches 22px each way across a 4px gap, which covers the temp field
+   almost entirely — and because the card's router steps aside for anything
+   inside a button, a tap meant to edit the number would step it instead. A
+   read gesture that silently writes is the worst failure this card could
+   have. The pill grows its buttons for real instead, the way the level ring
+   does, which is what you do where there is no room to grow into. */
+.sheetsmith-pool-step:not(.sheetsmith-pool-step-small)::after {
+	content: '';
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	width: max(100%, 44px);
+	height: max(100%, 44px);
+	translate: -50% -50%;
+}
+
 .sheetsmith-pool-step {
+	position: relative;
 	flex: none;
 	width: var(--size-4-6);
 	height: var(--size-4-6);
@@ -1746,7 +1927,8 @@ body {
 	transition:
 		background-color 120ms ease,
 		border-color 120ms ease,
-		color 120ms ease;
+		color 120ms ease,
+		transform 120ms ease;
 }
 
 .sheetsmith-pool-step:hover {
@@ -1755,39 +1937,140 @@ body {
 	color: var(--text-normal);
 }
 
+/* The control pressed most often at a live table, so it answers instantly
+   and gives under the finger — the same treatment the level ring takes. */
 .sheetsmith-pool-step:active {
 	background-color: var(--background-modifier-active-hover);
+	transform: scale(0.9);
+	transition-duration: 0s;
 }
 
+/* Temporary points are the card's pill: a small qualifier hanging under the
+   big number, which is the shape a stat card already uses for its stored
+   value. As a second bordered rectangle on its own row it was a third
+   surface saying the same thing. */
 .sheetsmith-pool-temp {
 	display: flex;
-	align-items: center;
-	gap: var(--size-2-2);
+	align-items: baseline;
+	gap: var(--size-2-1);
+	margin-top: var(--size-2-1);
+	padding: var(--size-2-1) var(--size-4-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-l);
+	background-color: var(--background-primary);
 }
 
-/* The qualifier wears the same clothes as a stat card's abbreviation: this
-   is a note beside the pool, not a second pool. */
 .sheetsmith-pool-temp-label {
+	color: var(--text-faint);
 	font-size: var(--font-ui-smaller);
 	letter-spacing: 0.04em;
-	color: var(--text-faint);
 	text-transform: uppercase;
 }
 
-.sheetsmith-pool-temp-input {
-	width: 3em;
-	padding: var(--size-2-1) var(--size-2-2);
-	border: 1px solid var(--background-modifier-border);
-	border-radius: var(--radius-s);
-	background-color: var(--background-primary);
+.sheetsmith-view .sheetsmith-pool-temp-input {
+	width: 3ch;
+	min-width: 0;
+	padding: 0;
+	border: none;
+	background: transparent;
+	box-shadow: none;
 	color: var(--text-normal);
 	font-size: var(--font-ui-small);
+	font-variant-numeric: tabular-nums;
 	text-align: center;
 }
 
-.sheetsmith-pool-temp-input:focus {
-	border-color: var(--interactive-accent);
+.sheetsmith-view .sheetsmith-pool-temp-input:focus {
 	outline: none;
+}
+
+/* The proportional read (SPEC §4.2). Mid-fight the question is "am I in
+   trouble", not "what integer am I on", and a pool was the one component
+   whose state is inherently a proportion while rendering it as two
+   disconnected numerals. The level ring already grades its fill so a column
+   can be read as a shape; this is the same language, and a pool has more
+   need of it than a proficiency mark does.
+
+   A hairline on the card's bottom edge, and the position is the whole point.
+   Sitting in the stack between the number and the temp pill, it was a
+   full-width horizontal line with content above and below it — which is a
+   divider, whatever the margins around it are. Spacing was tried and could not
+   fix it, because the reading was structural rather than a matter of degree.
+
+   At the foot there is nothing beneath it to divide from, so it stops being
+   content and becomes the card's own status strip: flush to the border, edge
+   to edge, chrome rather than a rule. That is also what buys the full bleed —
+   an inset hairline at the bottom would just read as a mis-sized rule again. */
+.sheetsmith-pool-track {
+	/* The card centres its children, so the bar has to opt into the full width
+	   before the negative margins can take it past the padding onto the
+	   border. */
+	align-self: stretch;
+	height: 3px;
+	/* `auto` on top is right here and was wrong before: it collects the card's
+	   free space, and with the bar appended last that pins it to the foot
+	   rather than leaving it adrift mid-stack. The bleed is exactly the card's
+	   own padding, so the two move together. */
+	margin: auto calc(-1 * var(--size-4-2)) calc(-1 * var(--size-4-2));
+	background-color: var(--background-modifier-border);
+	overflow: hidden;
+}
+
+.sheetsmith-pool-track-fill {
+	width: calc(var(--sheetsmith-pool-fill, 0) * 100%);
+	height: 100%;
+	background-color: var(--interactive-accent);
+	/* Follows a commit rather than snapping, and follows a scrub 1:1 because
+	   the property is rewritten every frame — a transition this short cannot
+	   lag a drag but does smooth a stepped press. */
+	transition: width 120ms ease-out;
+}
+
+/* During a drag the width is rewritten every frame, and a transition — however
+   short — puts the bar 120ms behind the finger. The bar is the part of the
+   card best able to show that drift. */
+.sheetsmith-pool-scrubbing .sheetsmith-pool-track-fill {
+	transition: none;
+}
+
+/* Boundary as status, not as rule (SPEC §6 keeps the arithmetic the
+   layout's). Nothing is clamped, because whether a pool may run past either
+   end is a rule of the game and not of a pool.
+
+   Deliberately not red and green. Red at zero is right for hit points and
+   wrong for 0 of 4 spell slots, which is a routine Tuesday; green above the
+   ceiling is right for temporary hit points and wrong for a pool that was
+   never meant to exceed it. Draining the colour and lending the accent say
+   "different" without the component asserting "bad" and "good" about a game
+   it does not know — the same restraint it already shows by not clamping.
+   Colour is never the only carrier: the live region says the state too. */
+.sheetsmith-view .sheetsmith-pool-spent {
+	color: var(--text-faint);
+}
+
+.sheetsmith-view .sheetsmith-pool-over {
+	color: var(--interactive-accent);
+}
+
+/* While the number is being dragged. The cursor names the axis, and the
+   selection has to be off or the drag paints a text selection across the
+   card instead of moving the value. */
+.sheetsmith-pool-scrubbing {
+	user-select: none;
+}
+
+/* Only while actually scrubbing. Advertising ew-resize at rest would sell the
+   secondary gesture over the primary one: this is a text field you can also
+   drag, not a slider you can also type into. */
+.sheetsmith-view .sheetsmith-pool-scrubbing .sheetsmith-pool-current {
+	cursor: ew-resize;
+}
+
+/* The browser must not claim the horizontal pan before the drag threshold is
+   crossed; setPointerCapture cannot take it back afterwards. Without this the
+   scrub is desktop-only. */
+.sheetsmith-view .sheetsmith-pool-current {
+	touch-action: none;
 }
 
 /* A finger needs more than a pointer does, and a pool is the control most
@@ -1799,8 +2082,127 @@ body {
 	}
 }
 
-@media (prefers-reduced-motion: reduce) {
+/* Inside the pill, where the surround is too tight for an invisible target. */
+.sheetsmith-pool-step-small {
+	width: var(--size-4-4);
+	height: var(--size-4-4);
+	font-size: var(--font-ui-small);
+}
+
+/* With no room to expand into, the control itself grows — and the pill grows
+   with it, so the gap to the number never closes. */
+@media (pointer: coarse) {
+	.sheetsmith-pool-step-small {
+		width: var(--size-4-6);
+		height: var(--size-4-6);
+	}
+
+	.sheetsmith-pool-temp {
+		gap: var(--size-2-2);
+		padding: var(--size-2-2) var(--size-4-2);
+	}
+}
+
+/* Every edge that separates a surface gets a defined line, so the card's
+   regions stay legible without relying on the tint at all. */
+@media (prefers-contrast: more) {
+	.sheetsmith-pool,
+	.sheetsmith-pool-temp,
 	.sheetsmith-pool-step {
+		border-color: var(--text-muted);
+	}
+
+	.sheetsmith-pool-temp-label,
+	.sheetsmith-pool-max-unresolved {
+		color: var(--text-muted);
+	}
+}
+
+/* A pool in a two-unit cell and one filling half the sheet are the same
+   component at very different sizes. The row's natural width is roughly two
+   24px buttons, a four-character number and a max, plus gaps and the card's
+   padding — about 180px. The threshold sits above that rather than below it,
+   or the query only fires once the row has already overflowed and the number
+   has begun to clip. Spacing goes first and the buttons second: the number is
+   the thing being read. */
+@container (max-width: 200px) {
+	.sheetsmith-pool-row {
+		gap: var(--size-2-1);
+	}
+
+	.sheetsmith-pool-step {
+		width: var(--size-4-4);
+		height: var(--size-4-4);
+	}
+
+	/* The gap shrinks with the row, so the expansion has to shrink too or it
+	   reaches the number the way the pill's did. */
+	.sheetsmith-pool-step:not(.sheetsmith-pool-step-small)::after {
+		width: max(100%, 32px);
+		height: max(100%, 32px);
+	}
+
+	.sheetsmith-pool-label {
+		letter-spacing: 0.02em;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.sheetsmith-pool-step,
+	.sheetsmith-pool-track-fill {
+		transition: none;
+	}
+
+	/* The press answer stays; only the movement goes. */
+	.sheetsmith-pool-step:active {
+		transform: none;
+	}
+}
+
+/* Reset triggers (SPEC §6) — the one place a sheet performs an action rather
+   than holding values, so the buttons sit above the grid where they read as
+   the sheet's own controls rather than as part of any component. */
+.sheetsmith-triggers {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-2-2);
+	margin-bottom: var(--size-4-3);
+}
+
+.sheetsmith-trigger {
+	padding: var(--size-2-1) var(--size-4-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background-color: var(--background-primary);
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+	cursor: pointer;
+	transition:
+		background-color 120ms ease,
+		border-color 120ms ease;
+}
+
+.sheetsmith-trigger:hover:not(:disabled) {
+	border-color: var(--interactive-accent);
+	background-color: var(--background-modifier-hover);
+}
+
+/* A declared trigger nothing binds to yet. Shown rather than hidden, so a
+   half-built layout does not read as a broken one. */
+.sheetsmith-trigger:disabled {
+	color: var(--text-faint);
+	cursor: default;
+}
+
+/* Sits inside a Notice, which has its own colours to read against. */
+a.sheetsmith-undo {
+	color: inherit;
+	cursor: pointer;
+	text-decoration: underline;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.sheetsmith-trigger {
 		transition: none;
 	}
 }

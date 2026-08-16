@@ -80,6 +80,12 @@ export default defineConfig(
 		rules: {
 			'obsidianmd/prefer-create-el': 'off',
 			'obsidianmd/prefer-instanceof': 'off',
+			// Tests run under vitest in Node and are never bundled into
+			// main.js, so the mobile-compatibility rule is asking about a
+			// constraint they do not live under. Reading a fixture — or
+			// styles.css, to assert a cascade the DOM tests cannot see — is
+			// exactly what a test is allowed to do.
+			'obsidianmd/no-nodejs-modules': 'off',
 		},
 	},
 );
