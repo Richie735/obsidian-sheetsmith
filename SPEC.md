@@ -297,6 +297,8 @@ This is the only place the sheet performs an action rather than holding values.
 
 Until the grid canvas below ships (M4), an interim form-based editor lives in the plugin settings: create layouts, add and remove components, edit each component's shared and declared config fields, and write the layout's function library. It renders forms from `configFields`, so it grows automatically as components are added. The M4 editor is a dedicated workspace view, not a settings tab — an authoring tool needs width, undo scope, and a sheet beside it — and once it ships, settings keep only preferences and a button that opens the editor.
 
+A schematic of the grid sits above the forms, and the block is the control: drag it to move, drag its bottom-right corner to resize, arrow keys and shift+arrows for the same two things. `col` and `row` anchor the top left while `width` and `height` grow right and down, which is why one corner is enough — the other three would have to move a block and resize it at once, and moving is what dragging the block already does. Both gestures write the same four numbers the form shows, so neither is the real editor and the position fields are never the only way in. A block cannot be pushed or grown past the last column; one already out there, from a hand-authored file or a `columns` reduced under it, is left where it is rather than snapped back.
+
 The full editor:
 
 - **Manage layouts**: create, duplicate, rename, delete, import, export.

@@ -19,7 +19,7 @@ import {
 import { Scope } from '../formula/expression';
 import { parseFunctions } from '../formula/functions';
 import { buildSheetScope } from '../formula/sheet';
-import { Layout } from '../parse/layout';
+import { DEFAULT_COLUMNS, Layout } from '../parse/layout';
 import { ComponentConfig, ComponentDefinition } from '../types';
 
 export const VIEW_TYPE_SHEET = 'sheetsmith-sheet';
@@ -138,7 +138,10 @@ export class SheetView extends TextFileView {
 		}
 
 		const grid = root.createDiv('sheetsmith-grid');
-		grid.style.setProperty('--sheetsmith-columns', String(layout.columns ?? 12));
+		grid.style.setProperty(
+			'--sheetsmith-columns',
+			String(layout.columns ?? DEFAULT_COLUMNS),
+		);
 
 		// Grid order, not file order. Explicit grid-column/row make DOM order
 		// invisible while the grid holds, but it decides two things that

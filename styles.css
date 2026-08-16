@@ -491,23 +491,40 @@ body {
 		(100% - (var(--sheetsmith-columns, 12) - 1) * var(--size-2-2)) /
 			var(--sheetsmith-columns, 12)
 	);
+	--sheetsmith-preview-row: 44px;
+
 	display: grid;
 	grid-template-columns: repeat(var(--sheetsmith-columns, 12), 1fr);
-	grid-auto-rows: 44px;
+	grid-auto-rows: var(--sheetsmith-preview-row);
 	gap: var(--size-2-2);
 	margin: var(--size-4-2) 0 var(--size-4-4);
 	padding: var(--size-4-2);
 	border: 1px dashed var(--background-modifier-border);
 	border-radius: var(--radius-m);
-	background-color: var(--background-primary);
-	/* Faint column stripes, so "column 7" is verifiable by eye. */
-	background-image: repeating-linear-gradient(
-		to right,
-		var(--background-primary-alt) 0,
-		var(--background-primary-alt) var(--sheetsmith-preview-track),
-		transparent var(--sheetsmith-preview-track),
-		transparent calc(var(--sheetsmith-preview-track) + var(--size-2-2))
-	);
+	/* Faint cells on both axes, so "column 7, two rows tall" is verifiable by
+	   eye either way round. The gutters are painted rather than the tracks:
+	   two stacked track gradients would paint the union of what each covers,
+	   leaving an almost-solid field with a dot at every crossing. Painting
+	   the gutters unions correctly into the cross-hatch between cells, and
+	   the cell colour is simply the background underneath. */
+	background-color: var(--background-primary-alt);
+	background-image:
+		repeating-linear-gradient(
+			to right,
+			transparent 0,
+			transparent var(--sheetsmith-preview-track),
+			var(--background-primary) var(--sheetsmith-preview-track),
+			var(--background-primary)
+				calc(var(--sheetsmith-preview-track) + var(--size-2-2))
+		),
+		repeating-linear-gradient(
+			to bottom,
+			transparent 0,
+			transparent var(--sheetsmith-preview-row),
+			var(--background-primary) var(--sheetsmith-preview-row),
+			var(--background-primary)
+				calc(var(--sheetsmith-preview-row) + var(--size-2-2))
+		);
 	background-origin: content-box;
 	background-clip: content-box;
 }
@@ -521,6 +538,7 @@ body {
 }
 
 .sheetsmith-preview-cell {
+	position: relative;
 	display: flex;
 	align-items: center;
 	justify-content: center;
@@ -539,7 +557,19 @@ body {
 	touch-action: none;
 }
 
-.sheetsmith-preview-cell > span {
+/* Acknowledge the press itself rather than the first grid cell of travel. A
+   block snaps a whole column at a time, so without this the opening 40px of
+   every drag say nothing back — and the resize corner is small enough that
+   "did I even grab it?" is a real question. */
+.sheetsmith-preview-cell:active {
+	border-color: var(--interactive-accent);
+	color: var(--text-normal);
+}
+
+/* The label, which is every child span except the resize corner. Scoped so
+   that changing how the name truncates cannot reach the grabber, which is a
+   direct child too and wants none of it. */
+.sheetsmith-preview-cell > span:not(.sheetsmith-preview-resize) {
 	overflow: hidden;
 	white-space: nowrap;
 	text-overflow: ellipsis;
@@ -570,6 +600,95 @@ body {
 .sheetsmith-preview-overlap {
 	border-color: var(--text-error);
 	color: var(--text-error);
+}
+
+/* The block has stopped growing because the grid ran out, not because the
+   drag broke. Marking the edge that stopped says which of the two it is. */
+.sheetsmith-preview-clamped {
+	border-right-color: var(--text-accent);
+}
+
+/* Resize corner. `col` and `row` anchor the top left and `width` and
+   `height` grow right and down, so the handle sits where the numbers it
+   writes point. The other three corners would have to move the block and
+   resize it at once, and the block itself is already the way to move it. */
+.sheetsmith-preview-resize {
+	/* iPadOS draws its window grabber as a quarter arc concentric with the
+	   corner it sits in, with rounded caps — a curve that follows the shape
+	   rather than a right angle stamped on top of it. CSS borders cannot
+	   round their own ends, so the arc is a mask and the colour behind it is
+	   an ordinary theme variable. */
+	--sheetsmith-resize-arc: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M14.5 5.5A9 9 0 0 1 5.5 14.5' fill='none' stroke='black' stroke-width='2.4' stroke-linecap='round'/%3E%3C/svg%3E");
+
+	position: absolute;
+	right: 0;
+	bottom: 0;
+	/* The box is the hit area; the mark inside it is deliberately smaller.
+	   A 1×1 block is about 40×44px, so the target has to be bigger than the
+	   thing it draws or there is nothing to aim at. */
+	width: 18px;
+	height: 18px;
+	opacity: 0;
+	cursor: nwse-resize;
+	transition: opacity 100ms ease-out;
+	touch-action: none;
+}
+
+.sheetsmith-preview-resize::after {
+	content: '';
+	position: absolute;
+	right: 2px;
+	bottom: 2px;
+	width: 13px;
+	height: 13px;
+	background-color: var(--text-faint);
+	-webkit-mask-image: var(--sheetsmith-resize-arc);
+	mask-image: var(--sheetsmith-resize-arc);
+	-webkit-mask-repeat: no-repeat;
+	mask-repeat: no-repeat;
+	-webkit-mask-size: contain;
+	mask-size: contain;
+}
+
+/* Moving is the common path and the corner appears on approach: hovering or
+   tabbing to a block, or opening its form, which is when sizing is the thing
+   being worked on. */
+.sheetsmith-preview-cell:hover .sheetsmith-preview-resize,
+.sheetsmith-preview-cell:focus-visible .sheetsmith-preview-resize,
+.sheetsmith-preview-editing .sheetsmith-preview-resize {
+	opacity: 1;
+}
+
+.sheetsmith-preview-resize:hover::after,
+.sheetsmith-preview-resizing .sheetsmith-preview-resize::after {
+	background-color: var(--interactive-accent);
+}
+
+/* Under the pointer capture the cursor follows the block, not the corner. */
+.sheetsmith-preview-resizing,
+.sheetsmith-preview-resizing .sheetsmith-preview-resize {
+	cursor: nwse-resize;
+}
+
+/* No hover to reveal it, and a finger to hit it with. The arc grows with the
+   target so the mark keeps its proportion inside it. */
+@media (pointer: coarse) {
+	.sheetsmith-preview-resize {
+		width: 24px;
+		height: 24px;
+		opacity: 1;
+	}
+
+	.sheetsmith-preview-resize::after {
+		width: 17px;
+		height: 17px;
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.sheetsmith-preview-resize {
+		transition: none;
+	}
 }
 
 .sheetsmith-stat-group {

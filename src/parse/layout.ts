@@ -15,9 +15,18 @@ export class LayoutParseError extends Error {
 	}
 }
 
+/**
+ * Grid width for a layout that does not name one.
+ *
+ * Applied where a layout is read rather than filled in when it is parsed: an
+ * absent `columns` has to stay absent through a round trip, or every
+ * hand-authored layout grows a key it never asked for on first save.
+ */
+export const DEFAULT_COLUMNS = 12;
+
 export interface Layout {
 	name: string;
-	/** Grid column count. Defaults to 12. */
+	/** Grid column count. Defaults to `DEFAULT_COLUMNS`. */
 	columns?: number;
 	components: ComponentConfig[];
 	/**
