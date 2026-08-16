@@ -1673,3 +1673,134 @@ body {
 		transition-duration: 0s;
 	}
 }
+
+/* Pool — a current-and-max resource with adjust controls (SPEC §4.2).
+   Damage and healing are one action, so the step buttons are the primary
+   control and sit either side of the number rather than under it. */
+.sheetsmith-pool {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-2);
+}
+
+.sheetsmith-pool-label {
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-semibold);
+	line-height: 1.3;
+	color: var(--text-normal);
+}
+
+.sheetsmith-pool-row {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+}
+
+/* The number is the thing being read across a table, so it takes the weight
+   and the buttons stay quiet until reached for. */
+.sheetsmith-pool-current {
+	width: 3.5em;
+	padding: var(--size-2-1) var(--size-2-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background-color: var(--background-primary);
+	color: var(--text-normal);
+	font-size: var(--font-ui-medium);
+	font-weight: var(--font-semibold);
+	text-align: center;
+}
+
+.sheetsmith-pool-current:focus {
+	border-color: var(--interactive-accent);
+	outline: none;
+}
+
+.sheetsmith-pool-separator {
+	color: var(--text-faint);
+}
+
+.sheetsmith-pool-max {
+	color: var(--text-muted);
+	font-size: var(--font-ui-medium);
+	font-variant-numeric: tabular-nums;
+}
+
+/* "?" is a status rather than a number, and must not read as one. */
+.sheetsmith-pool-max-unresolved {
+	color: var(--text-faint);
+	font-weight: var(--font-normal);
+}
+
+.sheetsmith-pool-step {
+	flex: none;
+	width: var(--size-4-6);
+	height: var(--size-4-6);
+	padding: 0;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background-color: var(--background-primary);
+	color: var(--text-muted);
+	font-size: var(--font-ui-medium);
+	line-height: 1;
+	cursor: pointer;
+	transition:
+		background-color 120ms ease,
+		border-color 120ms ease,
+		color 120ms ease;
+}
+
+.sheetsmith-pool-step:hover {
+	border-color: var(--interactive-accent);
+	background-color: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.sheetsmith-pool-step:active {
+	background-color: var(--background-modifier-active-hover);
+}
+
+.sheetsmith-pool-temp {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+}
+
+/* The qualifier wears the same clothes as a stat card's abbreviation: this
+   is a note beside the pool, not a second pool. */
+.sheetsmith-pool-temp-label {
+	font-size: var(--font-ui-smaller);
+	letter-spacing: 0.04em;
+	color: var(--text-faint);
+	text-transform: uppercase;
+}
+
+.sheetsmith-pool-temp-input {
+	width: 3em;
+	padding: var(--size-2-1) var(--size-2-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	background-color: var(--background-primary);
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+	text-align: center;
+}
+
+.sheetsmith-pool-temp-input:focus {
+	border-color: var(--interactive-accent);
+	outline: none;
+}
+
+/* A finger needs more than a pointer does, and a pool is the control most
+   likely to be pressed repeatedly mid-session. */
+@media (pointer: coarse) {
+	.sheetsmith-pool-step {
+		width: var(--size-4-8);
+		height: var(--size-4-8);
+	}
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.sheetsmith-pool-step {
+		transition: none;
+	}
+}
