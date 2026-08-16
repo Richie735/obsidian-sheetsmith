@@ -17,6 +17,8 @@ const KINDS = [
 	'formula',
 	'select',
 	'attributes',
+	'rows',
+	'columns',
 ];
 
 /** Config keys the layout editor owns. A component must not redeclare them. */
@@ -94,13 +96,30 @@ describe.each(types)('component "%s"', (type) => {
 		}
 	});
 
-	it('exposes every formula field as a formula config field', () => {
+	it('exposes every formula field as a config field the editor renders', () => {
 		// Otherwise the field accepts an expression the editor cannot edit.
-		const editable = (component?.configFields ?? [])
-			.filter((f) => f.kind === 'formula')
-			.map((f) => f.key);
+		// A formula field may be a dotted path into a list field, where each
+		// expression is edited inside that list's own editor rather than as a
+		// setting of its own; there, the path's first segment has to be the
+		// list field, which is what the editor renders.
+		const fields = component?.configFields ?? [];
+		const editable = fields.filter((f) => f.kind === 'formula').map((f) => f.key);
+		const declared = fields.map((f) => f.key);
 		for (const field of component?.formulaFields ?? []) {
-			expect(editable).toContain(field);
+			if (field.includes('.')) {
+				expect(declared).toContain(field.split('.')[0]);
+			} else {
+				expect(editable).toContain(field);
+			}
+		}
+	});
+
+	it('uses "*" only as a whole path segment in a formula field', () => {
+		// A partial wildcard would look like it matched and never would.
+		for (const field of component?.formulaFields ?? []) {
+			for (const segment of field.split('.')) {
+				if (segment.includes('*')) expect(segment).toBe('*');
+			}
 		}
 	});
 });
