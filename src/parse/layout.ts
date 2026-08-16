@@ -21,9 +21,16 @@ export interface Layout {
 	columns?: number;
 	components: ComponentConfig[];
 	/**
-	 * Top-level keys this version does not understand (a hand-authored
-	 * function library, reset triggers, promoted fields) are preserved
-	 * verbatim, so editing a layout never strips them from the file.
+	 * The layout's own functions (SPEC §5), one definition per line. Held as
+	 * written rather than parsed: a definition with a typo in it is a problem
+	 * to show in the editor, not a reason to refuse the whole layout, so the
+	 * text survives the round trip and `parseFunctions` reads it.
+	 */
+	functions?: string[];
+	/**
+	 * Top-level keys this version does not understand (reset triggers,
+	 * promoted fields) are preserved verbatim, so editing a layout never
+	 * strips them from the file.
 	 */
 	[key: string]: unknown;
 }
@@ -135,6 +142,20 @@ export function parseLayout(source: string): Layout {
 		throw new LayoutParseError('"columns" must be a positive integer.');
 	}
 
+	// Only the shape is checked here. What each line says is the function
+	// library's business, and it reports a bad definition rather than
+	// throwing: one typo must not stop every sheet on this layout rendering.
+	const functions = raw.functions;
+	if (
+		functions !== undefined &&
+		(!Array.isArray(functions) ||
+			functions.some((line) => typeof line !== 'string'))
+	) {
+		throw new LayoutParseError(
+			'"functions" must be an array of strings, one definition per line.',
+		);
+	}
+
 	const components = raw.components.map(parseComponent);
 
 	// Migrate before the duplicate check, and only ids that fail: two
@@ -170,6 +191,7 @@ export function parseLayout(source: string): Layout {
 		...raw,
 		name,
 		...(columns !== undefined ? { columns } : {}),
+		...(functions !== undefined ? { functions: functions as string[] } : {}),
 		components,
 	};
 }

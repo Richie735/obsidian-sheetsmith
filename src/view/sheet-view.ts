@@ -17,6 +17,7 @@ import {
 	resolveFormulaFields,
 } from '../formula/resolve';
 import { Scope } from '../formula/expression';
+import { parseFunctions } from '../formula/functions';
 import { buildSheetScope } from '../formula/sheet';
 import { Layout } from '../parse/layout';
 import { ComponentConfig, ComponentDefinition } from '../types';
@@ -168,6 +169,11 @@ export class SheetView extends TextFileView {
 			};
 		});
 
+		// The layout's own arithmetic (SPEC §5). Definitions that failed to
+		// parse are left out and reported in the layout editor, where they
+		// can be fixed; a formula calling one fails on its own component.
+		const { library } = parseFunctions(layout.functions);
+
 		// A published value may itself be computed, so the table takes a way
 		// to build each component's resolver rather than finished numbers:
 		// it is what closes the loop between "this card reads the sheet" and
@@ -180,7 +186,7 @@ export class SheetView extends TextFileView {
 								id: config.id,
 								values: component.scopeValues(data, config),
 								resolver: (scope: Scope) =>
-									makeFieldResolver(component, config, data, scope),
+									makeFieldResolver(component, config, data, scope, library),
 							},
 						]
 					: [],
@@ -201,9 +207,15 @@ export class SheetView extends TextFileView {
 				continue;
 			}
 			component.render(cell, config, data, {
-				resolved: resolveFormulaFields(component, config, data, sheet),
-				resolveField: makeFieldResolver(component, config, data, sheet),
-				explainField: makeFieldExplainer(component, config, data, sheet),
+				resolved: resolveFormulaFields(component, config, data, sheet, library),
+				resolveField: makeFieldResolver(component, config, data, sheet, library),
+				explainField: makeFieldExplainer(
+					component,
+					config,
+					data,
+					sheet,
+					library,
+				),
 				onChange: (edited: unknown) => this.applyEdit(component, config, edited),
 			});
 		}

@@ -15,7 +15,7 @@ import {
 	ScopeEntry,
 	ScopeValues,
 } from '../types';
-import { formatDerived, renderStatCard } from './stat-card';
+import { renderStatCard, toDerived } from './stat-card';
 
 export interface StatGroupAttribute {
 	/** Entry key in the fenced block, and the abbreviation on the card. */
@@ -251,10 +251,9 @@ export const statGroup: ComponentDefinition<StatGroupConfig, StatGroupData> = {
 			// An empty value is a blank, not a broken formula.
 			if (needsValue && raw.trim() === '') return { text: '—', unresolved: false };
 			const resolved = context.resolveField('derived', { value: raw });
-			return {
-				text: formatDerived(resolved, signed),
-				unresolved: resolved === null,
-			};
+			return toDerived(resolved, signed, () =>
+				context.explainField?.('derived', { value: raw }) ?? null,
+			);
 		};
 		for (const attribute of config.attributes ?? []) {
 			const card = doc.createElement('div');

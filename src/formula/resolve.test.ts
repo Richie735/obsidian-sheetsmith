@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { makeFieldResolver, resolveFormulaFields } from './resolve';
+import { parseFunctions } from './functions';
+import {
+	makeFieldExplainer,
+	makeFieldResolver,
+	resolveFormulaFields,
+} from './resolve';
 
 const component = { formulaFields: ['derived'] as const };
 const config = {
@@ -89,5 +94,68 @@ describe('makeFieldResolver', () => {
 			{ constructor: '4' },
 		);
 		expect(resolve('derived', { constructor: 10 })).toBe(11);
+	});
+});
+
+describe('the layout function library, from a component', () => {
+	const { library } = parseFunctions([
+		'mod(score) = floor((score - 10) / 2)',
+		'prof = ceil(level / 4) + 1',
+	]);
+	const sheet = (name: string) => (name === 'level' ? 5 : undefined);
+	const derived = { ...config, derived: 'mod(value) + prof' } as typeof config;
+
+	it('lets a card call a function the layout defined', () => {
+		const resolve = makeFieldResolver(
+			component,
+			derived,
+			{ value: '19' },
+			sheet,
+			library,
+		);
+		expect(resolve('derived', {})).toBe(7);
+	});
+
+	it('resolves the same call per attribute', () => {
+		const resolve = makeFieldResolver(component, derived, {}, sheet, library);
+		expect(resolve('derived', { value: 8 })).toBe(2);
+		expect(resolve('derived', { value: 20 })).toBe(8);
+	});
+
+	it('keeps the card’s own names out of the function body', () => {
+		// The body's `score` is its parameter. A card holding a `score` entry
+		// of its own must not change what mod() means.
+		const shadowed = parseFunctions(['mod(score) = score']).library;
+		const resolve = makeFieldResolver(
+			component,
+			{ ...config, derived: 'mod(3)' } as typeof config,
+			{ score: '99' },
+			sheet,
+			shadowed,
+		);
+		expect(resolve('derived', { score: 50 })).toBe(3);
+	});
+
+	it('explains a call to a function the layout does not define', () => {
+		const explain = makeFieldExplainer(
+			component,
+			{ ...config, derived: 'halve(value)' } as typeof config,
+			{ value: '19' },
+			sheet,
+			library,
+		);
+		expect(explain('derived', {})).toMatch(/halve/);
+	});
+
+	it('resolves to null rather than throwing on a self-referencing function', () => {
+		const looping = parseFunctions(['loop(x) = loop(x)']).library;
+		const resolve = makeFieldResolver(
+			component,
+			{ ...config, derived: 'loop(1)' } as typeof config,
+			{},
+			sheet,
+			looping,
+		);
+		expect(resolve('derived', {})).toBeNull();
 	});
 });

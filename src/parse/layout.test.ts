@@ -131,16 +131,65 @@ describe('parseLayout', () => {
 	it('preserves top-level keys it does not understand', () => {
 		const source = JSON.stringify({
 			name: 'L',
-			functions: { mod: 'floor((score - 10) / 2)' },
 			resetTriggers: ['Long rest'],
 			promoted: ['hp'],
 			components: [],
 		});
 		const layout = parseLayout(source);
-		expect(layout.functions).toEqual({ mod: 'floor((score - 10) / 2)' });
 		expect(layout.resetTriggers).toEqual(['Long rest']);
 		expect(layout.promoted).toEqual(['hp']);
 		expect(parseLayout(serialiseLayout(layout))).toEqual(layout);
+	});
+
+	it('keeps the function library as written, and round-trips it', () => {
+		const functions = [
+			'mod(score) = floor((score - 10) / 2)',
+			'prof = ceil(level / 4) + 1',
+		];
+		const layout = parseLayout(
+			JSON.stringify({ name: 'L', functions, components: [] }),
+		);
+		expect(layout.functions).toEqual(functions);
+		expect(parseLayout(serialiseLayout(layout))).toEqual(layout);
+	});
+
+	it('accepts a definition it cannot read, leaving that to the library', () => {
+		// A typo in one function must not stop the layout loading, or every
+		// sheet using it goes blank over a missing bracket.
+		expect(() =>
+			parseLayout(
+				JSON.stringify({ name: 'L', functions: ['mod(score ='], components: [] }),
+			),
+		).not.toThrow();
+	});
+
+	it('rejects a function library that is not an array of strings', () => {
+		// Deliberate, and the opposite call from the test above: what a line
+		// says is the library's business and a bad one is reported, but what
+		// shape the key is refuses loudly, as "columns" and "components"
+		// already do. A layout is a plain file in the vault, the message names
+		// the key and the shape it wants, and the sheet shows that message
+		// rather than pretending to render — so the failure is diagnosable and
+		// fixable, which a silently ignored key would not be.
+		//
+		// A map of name to body is not a supported spelling. It reads like one
+		// because an earlier comment listed "a hand-authored function library"
+		// among the keys this version did not understand and passed through
+		// verbatim; SPEC §5 now defines the key, so it is validated.
+		expect(() =>
+			parseLayout(
+				JSON.stringify({
+					name: 'L',
+					functions: { mod: 'floor((score - 10) / 2)' },
+					components: [],
+				}),
+			),
+		).toThrow(LayoutParseError);
+		expect(() =>
+			parseLayout(
+				JSON.stringify({ name: 'L', functions: [42], components: [] }),
+			),
+		).toThrow(/array of strings/);
 	});
 
 	it('trims id, type, and label so they match trimmed note sections', () => {

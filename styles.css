@@ -109,6 +109,77 @@ body {
 	border-top: none;
 }
 
+/* Function library: definitions are code, and are read as a set. The field
+   takes the full width rather than the narrow control column a Setting row
+   gives text inputs, because a definition wraps at about forty characters
+   there and a wrapped formula is unreadable. */
+.sheetsmith-function-library {
+	display: block;
+}
+
+.sheetsmith-function-library .setting-item-control {
+	width: 100%;
+	padding-top: var(--size-4-2);
+}
+
+.sheetsmith-function-library textarea {
+	width: 100%;
+	font-family: var(--font-monospace);
+	font-size: var(--font-ui-small);
+	resize: vertical;
+	white-space: pre;
+	overflow-wrap: normal;
+	overflow-x: auto;
+}
+
+/* The heading above already names the field; the empty name div a
+   description-only Setting leaves behind is structure with nothing in it. */
+.sheetsmith-function-library .setting-item-name:empty {
+	display: none;
+}
+
+.sheetsmith-function-problems:not(:empty) {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-1);
+	padding-bottom: var(--size-4-3);
+}
+
+/* Inline validation, not the bordered box that means a layout file is
+   unreadable: a definition being typed is work in progress, and three of
+   them stacked must not read as three catastrophes. */
+.sheetsmith-function-problem {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	gap: var(--size-2-2);
+	color: var(--text-error);
+	font-size: var(--font-ui-smaller);
+}
+
+/* The line number is the locator, quieter than the message it introduces. */
+.sheetsmith-function-problem-line {
+	color: var(--text-faint);
+	font-variant-numeric: tabular-nums;
+}
+
+/* The offending text in the textarea's own font, so the eye can match the
+   two rather than translate between them.
+
+   It scrolls itself rather than wrapping: a definition reads as one line in
+   the field, and a wrapped echo of it is harder to match, not easier. That
+   makes min-width mandatory — a flex item defaults to min-width: auto, so
+   unwrappable text would refuse to shrink and push the settings pane wider
+   than the window instead of scrolling inside its own row. */
+.sheetsmith-function-problem code {
+	min-width: 0;
+	max-width: 100%;
+	overflow-x: auto;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	white-space: pre;
+}
+
 /* Attribute table: header, rows, and footer are plain divs on one grid
    template — no Setting internals to fight themes over. One 4px padding
    unit per element inside a 4px-padded container keeps every spacing 8px:

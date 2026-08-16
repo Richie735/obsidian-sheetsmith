@@ -17,7 +17,7 @@ import {
 	ReadResult,
 	ScopeValues,
 } from '../types';
-import { formatDerived, renderStatCard } from './stat-card';
+import { renderStatCard, toDerived } from './stat-card';
 
 /**
  * SPEC §3.1: single-value components store their value under `value`, so
@@ -218,10 +218,9 @@ export const stat: ComponentDefinition<StatConfig, StatData> = {
 			// An empty value is a blank, not a broken formula.
 			if (needsValue && raw.trim() === '') return { text: '—', unresolved: false };
 			const resolved = context.resolveField('derived', { value: raw });
-			return {
-				text: formatDerived(resolved, signed),
-				unresolved: resolved === null,
-			};
+			return toDerived(resolved, signed, () =>
+				context.explainField?.('derived', { value: raw }) ?? null,
+			);
 		};
 
 		renderStatCard(card, {

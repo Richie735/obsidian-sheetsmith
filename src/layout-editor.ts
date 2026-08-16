@@ -11,6 +11,11 @@ import {
 	TFile,
 } from 'obsidian';
 import { getComponent, listComponentTypes } from './components';
+import {
+	commitFunctionLibrary,
+	FunctionLibraryField,
+	renderFunctionLibrary,
+} from './function-library-field';
 import { createLayout, listLayouts } from './layouts';
 import {
 	ListContext,
@@ -70,18 +75,54 @@ export class LayoutEditorSection {
 	private fieldErrors = new Map<string, string>();
 	/** Generation counter; a render that awaits and comes back stale bails. */
 	private renderId = 0;
+	/**
+	 * The function library field, so its text can be read back on close
+	 * rather than waited on. Held with the layout it edits, because a stale
+	 * field must never write into the layout that replaced it.
+	 */
+	private functions: FunctionLibraryField | null = null;
 
 	/** Debounced persist, used only by rapid-fire paths (keyboard nudging). */
 	private persistSoon = debounce(() => void this.persist(), 500, true);
 
 	constructor(plugin: SheetsmithPlugin, redraw: () => void) {
 		this.plugin = plugin;
-		this.redraw = redraw;
+		// A redraw tears the tab down and builds the function library back from
+		// the layout, so anything typed into it has to be read out first or it
+		// is gone. Blur is not enough on its own: a pointerdown on the grid
+		// calls preventDefault, which suppresses the focus change and with it
+		// the textarea's change event, so clicking a block after typing a
+		// definition would discard it. Wrapped here rather than guarded at each
+		// call site — there are a dozen, and the one that gets missed is the
+		// one that loses a library.
+		this.redraw = () => {
+			this.flush();
+			redraw();
+		};
 	}
 
-	/** Write any pending debounced edit now. Called when the tab closes. */
+	/** Write any pending edit now. Called before a redraw, and on tab close. */
 	flush(): void {
+		if (commitFunctionLibrary(this.functions)) void this.persist();
 		this.persistSoon.run();
+	}
+
+	/**
+	 * Let go of the loaded layout, so the next render reads it fresh.
+	 *
+	 * Flushes first, and that order is the whole point of the method: a
+	 * pending edit belongs to the layout being released, and `persist` writes
+	 * `this.layout` to `this.file`. Clear those first and the commit lands on
+	 * an object nothing will ever write, silently. The redraw these callers go
+	 * on to make flushes too, but by then it is too late — which is exactly
+	 * the kind of ordering that should not be left to each call site to
+	 * remember.
+	 */
+	private releaseLayout(): void {
+		this.flush();
+		this.file = null;
+		this.layout = null;
+		this.editing = null;
 	}
 
 	async render(container: HTMLElement): Promise<void> {
@@ -111,9 +152,7 @@ export class LayoutEditorSection {
 			!files.some((file) => file.basename === this.selected)
 		) {
 			this.selected = files[0]?.basename ?? null;
-			this.file = null;
-			this.layout = null;
-			this.editing = null;
+			this.releaseLayout();
 		}
 		this.renderSelectionRow(container, files);
 
@@ -155,6 +194,9 @@ export class LayoutEditorSection {
 		this.updatePreview();
 		this.renderAddRow(container, this.layout);
 		this.renderComponents(container, this.layout);
+		this.functions = renderFunctionLibrary(container, this.layout, {
+			persist: () => void this.persist(),
+		});
 
 		this.restoreFieldErrors(container);
 
@@ -210,9 +252,7 @@ export class LayoutEditorSection {
 						return;
 					}
 					this.selected = value;
-					this.file = null;
-					this.layout = null;
-					this.editing = null;
+					this.releaseLayout();
 					this.redraw();
 				});
 			})
@@ -238,9 +278,7 @@ export class LayoutEditorSection {
 	private async deleteLayout(file: TFile): Promise<void> {
 		await this.plugin.app.fileManager.trashFile(file);
 		this.selected = null;
-		this.file = null;
-		this.layout = null;
-		this.editing = null;
+		this.releaseLayout();
 		this.redraw();
 	}
 
@@ -265,9 +303,7 @@ export class LayoutEditorSection {
 			return;
 		}
 		this.selected = name;
-		this.file = null;
-		this.layout = null;
-		this.editing = null;
+		this.releaseLayout();
 		this.redraw();
 	}
 

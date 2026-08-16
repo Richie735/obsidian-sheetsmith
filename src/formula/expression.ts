@@ -4,9 +4,10 @@
  * A real tokenizer and recursive descent parser, never eval(): layouts are
  * shareable files, so evaluating them as code would be an injection vector.
  *
- * This is the expression core only. It evaluates one expression against a
- * name-lookup scope. Cross-component references, the dependency graph, and
- * the layout function library arrive with M3.
+ * This is the expression core: it evaluates one expression against a
+ * name-lookup scope, and calls the layout's own functions. The syntax those
+ * functions are written in lives in functions.ts, which parses definitions
+ * into the FunctionLibrary this module evaluates against.
  */
 
 export type Value = number | boolean | string;
@@ -16,6 +17,94 @@ export type Scope = (name: string) => Value | undefined;
 
 /** A scope holding nothing, for the paths that have no sheet around them. */
 export const EMPTY_SCOPE: Scope = () => undefined;
+
+/**
+ * A parsed expression. Opaque: hold one, hand it back to evaluateExpression.
+ * Function bodies are parsed once when the library is built rather than on
+ * every call, which is also what catches a syntax error while the user is
+ * looking at the definition instead of at a card reading "?".
+ */
+export type Expression = Node;
+
+/** One function the layout defines (SPEC §5). */
+export interface FunctionDefinition {
+	name: string;
+	params: readonly string[];
+	body: Expression;
+}
+
+/** The layout's function library, by function name. */
+export type FunctionLibrary = ReadonlyMap<string, FunctionDefinition>;
+
+/** For every path that has no layout around it. */
+export const NO_FUNCTIONS: FunctionLibrary = new Map();
+
+interface Builtin {
+	/** Fixed argument count, or null for "one or more". */
+	arity: number | null;
+	apply: (args: number[]) => number;
+}
+
+/**
+ * The standard helpers (SPEC §5), as a table rather than a switch so that the
+ * reserved list below can be derived from it.
+ *
+ * A Map, not an object, and for the same reason the field resolver spells out
+ * its own-property check: a formula naming `constructor` or `toString` must
+ * fall through to "unknown function", not find something inherited from
+ * Object.prototype and be told its arity is wrong. Keyed the way
+ * `FunctionLibrary` already is, so a lookup here and a lookup there behave
+ * alike.
+ *
+ * Every entry takes numbers and returns one; a helper needing anything else
+ * would be a different shape and should say so rather than widen this.
+ */
+const BUILTINS: ReadonlyMap<string, Builtin> = new Map<string, Builtin>([
+	['floor', { arity: 1, apply: (args) => Math.floor(args[0] as number) }],
+	['ceil', { arity: 1, apply: (args) => Math.ceil(args[0] as number) }],
+	['round', { arity: 1, apply: (args) => Math.round(args[0] as number) }],
+	['abs', { arity: 1, apply: (args) => Math.abs(args[0] as number) }],
+	['min', { arity: null, apply: (args) => Math.min(...args) }],
+	['max', { arity: null, apply: (args) => Math.max(...args) }],
+]);
+
+/**
+ * Names a layout function may not take, since a formula reading `floor` must
+ * mean the one thing everywhere (SPEC §5).
+ *
+ * Derived from the table above rather than listed beside it: two lists that
+ * must agree eventually will not, and the failure is silent — a helper added
+ * to one but not the other becomes a name a layout can shadow, which is the
+ * rule this constant exists to enforce. Only the three names that are not
+ * table entries are written out, and each says why it is not one.
+ */
+export const RESERVED_NAMES: readonly string[] = [
+	...BUILTINS.keys(),
+	// Lazy in its branches, so evalNode handles it rather than callBuiltin.
+	'if',
+	// Literals the parser reads before it looks any name up.
+	'true',
+	'false',
+];
+
+/** The library an expression may call, and what its bodies can see. */
+export interface FunctionEnv {
+	library: FunctionLibrary;
+	/**
+	 * What a function body sees besides its own parameters: the sheet, and
+	 * never the scope of whoever called it. A function is not a macro —
+	 * `mod(score)` must mean the same arithmetic on every card, not quietly
+	 * read the `value` of the one that happened to call it.
+	 */
+	base?: Scope;
+}
+
+/** Library, body scope, and the guard against a function that calls itself. */
+interface Runtime {
+	library: FunctionLibrary;
+	base: Scope;
+	active: Set<string>;
+}
 
 export class FormulaError extends Error {
 	constructor(message: string) {
@@ -216,35 +305,61 @@ function asBoolean(value: Value, context: string): boolean {
 }
 
 function callBuiltin(name: string, args: Value[]): Value {
-	const nums = (count: number): number[] => {
-		if (args.length !== count) {
-			throw new FormulaError(`${name}() takes ${count} argument${count === 1 ? '' : 's'}.`);
+	const builtin = BUILTINS.get(name);
+	if (!builtin) throw new FormulaError(`Unknown function "${name}".`);
+	// Arity before coercion, so calling floor() with nothing says so rather
+	// than complaining about a missing argument's type.
+	if (builtin.arity === null) {
+		if (args.length === 0) {
+			throw new FormulaError(`${name}() needs at least one argument.`);
 		}
-		return args.map((a) => asNumber(a, `${name}()`));
-	};
-	switch (name) {
-		case 'floor':
-			return Math.floor((nums(1) as [number])[0]);
-		case 'ceil':
-			return Math.ceil((nums(1) as [number])[0]);
-		case 'round':
-			return Math.round((nums(1) as [number])[0]);
-		case 'abs':
-			return Math.abs((nums(1) as [number])[0]);
-		case 'min':
-		case 'max': {
-			if (args.length === 0) {
-				throw new FormulaError(`${name}() needs at least one argument.`);
-			}
-			const values = args.map((a) => asNumber(a, `${name}()`));
-			return name === 'min' ? Math.min(...values) : Math.max(...values);
-		}
-		default:
-			throw new FormulaError(`Unknown function "${name}".`);
+	} else if (args.length !== builtin.arity) {
+		throw new FormulaError(
+			`${name}() takes ${builtin.arity} argument${builtin.arity === 1 ? '' : 's'}.`,
+		);
+	}
+	return builtin.apply(args.map((arg) => asNumber(arg, `${name}()`)));
+}
+
+/**
+ * Call a layout-defined function.
+ *
+ * The body runs in a scope of its own: parameters first, then the sheet.
+ * Nothing of the caller's leaks in, which is what makes a function library
+ * a library rather than a set of text substitutions.
+ */
+function callDefined(
+	definition: FunctionDefinition,
+	args: Value[],
+	rt: Runtime,
+): Value {
+	const { name, params } = definition;
+	if (args.length !== params.length) {
+		throw new FormulaError(
+			`${name}() takes ${params.length} argument${params.length === 1 ? '' : 's'}, got ${args.length}.`,
+		);
+	}
+	if (rt.active.has(name)) {
+		// SPEC §5 wants cycles caught when the layout is saved. This is the
+		// runtime floor under that: a function needing its own result reports
+		// it, rather than recursing until the stack goes and takes the app
+		// with it. Mutual recursion is caught by the same set.
+		throw new FormulaError(`Function "${name}" is defined in terms of itself.`);
+	}
+	const frame = new Map<string, Value>();
+	params.forEach((param, index) => frame.set(param, args[index] as Value));
+	const scope: Scope = (lookup) =>
+		frame.has(lookup) ? frame.get(lookup) : rt.base(lookup);
+
+	rt.active.add(name);
+	try {
+		return evalNode(definition.body, scope, rt);
+	} finally {
+		rt.active.delete(name);
 	}
 }
 
-function evalNode(node: Node, scope: Scope): Value {
+function evalNode(node: Node, scope: Scope, rt: Runtime): Value {
 	switch (node.kind) {
 		case 'num':
 			return node.value;
@@ -252,10 +367,21 @@ function evalNode(node: Node, scope: Scope): Value {
 			return node.value;
 		case 'name': {
 			const value = scope(node.name);
-			if (value === undefined) {
-				throw new FormulaError(`Unknown name "${node.name}".`);
+			if (value !== undefined) return value;
+			// A function taking no arguments is a named value, and reads as
+			// one: `prof`, not `prof()`. It answers last, so a component whose
+			// id collides with a function name keeps its own meaning.
+			const definition = rt.library.get(node.name);
+			if (definition) {
+				if (definition.params.length === 0) return callDefined(definition, [], rt);
+				// The name is defined, just not as a value. Saying it is
+				// unknown would send the reader looking for a typo that is
+				// not there.
+				throw new FormulaError(
+					`"${node.name}" is a function the layout defines; call it as ${node.name}(${definition.params.join(', ')}).`,
+				);
 			}
-			return value;
+			throw new FormulaError(`Unknown name "${node.name}".`);
 		}
 		case 'call': {
 			// if() is lazy: only the taken branch is evaluated, so a guard
@@ -265,31 +391,39 @@ function evalNode(node: Node, scope: Scope): Value {
 					throw new FormulaError('if() takes a condition and two results.');
 				}
 				const condition = asBoolean(
-					evalNode(node.args[0] as Node, scope),
+					evalNode(node.args[0] as Node, scope, rt),
 					'if() condition',
 				);
-				return evalNode(node.args[condition ? 1 : 2] as Node, scope);
+				return evalNode(node.args[condition ? 1 : 2] as Node, scope, rt);
 			}
-			return callBuiltin(
-				node.name,
-				node.args.map((arg) => evalNode(arg, scope)),
-			);
+			const args = node.args.map((arg) => evalNode(arg, scope, rt));
+			// The layout's own functions cannot be named after a builtin, so
+			// which is consulted first decides nothing but the error message.
+			const definition = rt.library.get(node.name);
+			if (definition) return callDefined(definition, args, rt);
+			return callBuiltin(node.name, args);
 		}
 		case 'unary': {
-			const operand = evalNode(node.operand, scope);
+			const operand = evalNode(node.operand, scope, rt);
 			return node.op === '-'
 				? -asNumber(operand, 'Negation')
 				: !asBoolean(operand, '"!"');
 		}
 		case 'binary': {
-			const left = evalNode(node.left, scope);
+			const left = evalNode(node.left, scope, rt);
 			if (node.op === '&&') {
-				return asBoolean(left, '"&&"') && asBoolean(evalNode(node.right, scope), '"&&"');
+				return (
+					asBoolean(left, '"&&"') &&
+					asBoolean(evalNode(node.right, scope, rt), '"&&"')
+				);
 			}
 			if (node.op === '||') {
-				return asBoolean(left, '"||"') || asBoolean(evalNode(node.right, scope), '"||"');
+				return (
+					asBoolean(left, '"||"') ||
+					asBoolean(evalNode(node.right, scope, rt), '"||"')
+				);
 			}
-			const right = evalNode(node.right, scope);
+			const right = evalNode(node.right, scope, rt);
 			if (node.op === '==') return left === right;
 			if (node.op === '!=') return left !== right;
 			const a = asNumber(left, `"${node.op}"`);
@@ -339,12 +473,39 @@ export function referencesName(source: string, name: string): boolean {
 	}
 }
 
-/** Evaluate a formula against a scope. Throws FormulaError on any problem. */
-export function evaluate(source: string, scope: Scope): Value {
-	const result = evalNode(new Parser(tokenize(source)).parse(), scope);
+/** Parse an expression without evaluating it. Throws FormulaError. */
+export function parseExpression(source: string): Expression {
+	return new Parser(tokenize(source)).parse();
+}
+
+/**
+ * Evaluate a parsed expression against a scope, and optionally a library of
+ * layout-defined functions. Throws FormulaError on any problem.
+ */
+export function evaluateExpression(
+	expression: Expression,
+	scope: Scope,
+	env?: FunctionEnv,
+): Value {
+	const result = evalNode(expression, scope, {
+		library: env?.library ?? NO_FUNCTIONS,
+		base: env?.base ?? EMPTY_SCOPE,
+		// Per evaluation, not per library: the guard is about one call chain,
+		// and a library outlives every expression that uses it.
+		active: new Set(),
+	});
 	// Nothing downstream may ever render "NaN" or "Infinity" on a card.
 	if (typeof result === 'number' && !Number.isFinite(result)) {
 		throw new FormulaError('The formula did not produce a finite number.');
 	}
 	return result;
+}
+
+/** Parse and evaluate in one step. Throws FormulaError on any problem. */
+export function evaluate(
+	source: string,
+	scope: Scope,
+	env?: FunctionEnv,
+): Value {
+	return evaluateExpression(parseExpression(source), scope, env);
 }
