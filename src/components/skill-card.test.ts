@@ -458,6 +458,56 @@ describe('skillCard.render', () => {
 		).toBe(false);
 	});
 
+	it('shades a marked level by how far up the column it is', () => {
+		const el = render(
+			{ rows: { Acrobatics: { training: '1' }, Perception: { training: '2' } } },
+			levelled,
+		);
+		const rings = Array.from(
+			el.querySelectorAll<HTMLElement>('tbody .sheetsmith-table-cycle'),
+		);
+		// Two of two levels is the whole way; one of two is half of it.
+		expect(rings.map((ring) => ring.style.getPropertyValue('--sheetsmith-level')))
+			.toEqual(['0.5', '1']);
+		// Short of the top the glyph reads against the page, not the accent.
+		expect(
+			rings.map((ring) => ring.classList.contains('sheetsmith-table-cycle-part')),
+		).toEqual([true, false]);
+	});
+
+	it('leaves none and a plain toggle out of the ramp', () => {
+		const toggles = {
+			...levelled,
+			columns: [{ key: 'Trained', type: 'toggle' as const }],
+		};
+		const el = render({ rows: { Acrobatics: { trained: 'yes' } } }, toggles);
+		const rings = Array.from(
+			el.querySelectorAll<HTMLElement>('tbody .sheetsmith-table-cycle'),
+		);
+		// A toggle has one state to be in, so a share of the way up says
+		// nothing; it takes the full fill, as it always did. Acrobatics is
+		// ticked, Perception is not, and neither carries a share.
+		expect(rings.map((ring) => ring.style.getPropertyValue('--sheetsmith-level')))
+			.toEqual(['', '']);
+		expect(
+			rings.map((ring) => ring.classList.contains('sheetsmith-table-cycle-part')),
+		).toEqual([false, false]);
+	});
+
+	it('reshades as it cycles, without waiting for the view to rebuild', () => {
+		const el = render({ rows: {} }, levelled);
+		const ring = el.querySelector('tbody .sheetsmith-table-cycle') as HTMLElement;
+		expect(ring.style.getPropertyValue('--sheetsmith-level')).toBe('');
+		ring.click();
+		expect(ring.style.getPropertyValue('--sheetsmith-level')).toBe('0.5');
+		ring.click();
+		expect(ring.style.getPropertyValue('--sheetsmith-level')).toBe('1');
+		// Back to none, and the ramp goes with it rather than being left at
+		// the top for an empty ring to inherit.
+		ring.click();
+		expect(ring.style.getPropertyValue('--sheetsmith-level')).toBe('');
+	});
+
 	it('falls back to the level number where the levels have no names', () => {
 		const el = render({ rows: { Acrobatics: { training: '2' } } }, levelled);
 		expect(
