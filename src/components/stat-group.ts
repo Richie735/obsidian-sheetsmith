@@ -6,8 +6,15 @@
  * SPEC §3.1.
  */
 
+import { referencesName } from '../formula/expression';
 import { readFenced, writeFenced } from '../parse/fenced';
-import { ComponentConfig, ComponentDefinition, ReadResult } from '../types';
+import {
+	ComponentConfig,
+	ComponentDefinition,
+	ReadResult,
+	ScopeEntry,
+	ScopeValues,
+} from '../types';
 import { formatDerived, renderStatCard } from './stat-card';
 
 export interface StatGroupAttribute {
@@ -28,7 +35,7 @@ export interface StatGroupConfig extends ComponentConfig {
 	/** Hide the group's name above the cards. */
 	hideLabel?: boolean;
 	/** Where that name sits. Defaults to start. */
-	labelAlign?: 'start' | 'center' | 'end';
+	labelAlign?: 'auto' | 'start' | 'center' | 'end';
 	/**
 	 * Card sizing: 'fill' (default) spreads cards across the width; 'fixed'
 	 * sizes them one per grid unit of the component's width.
@@ -113,8 +120,15 @@ export const statGroup: ComponentDefinition<StatGroupConfig, StatGroupData> = {
 			group: 'Appearance',
 			kind: 'select',
 			label: 'Label position',
-			description: 'Where the group name sits above the cards.',
-			options: ['start', 'center', 'end'],
+			description:
+				'Where the group name sits above the cards. Auto follows the cards\' own alignment.',
+			// "auto" is the first option, and the editor stores a config key
+			// only when it differs from the first — so the absent key means
+			// "follow the cards", and picking "start" stores "start" and
+			// pins it there. Without a name for the default, choosing start
+			// would delete the key and render as auto, leaving the dropdown
+			// reading one thing and the sheet showing another.
+			options: ['auto', 'start', 'center', 'end'],
 		},
 		{
 			key: 'hideValue',
@@ -142,6 +156,28 @@ export const statGroup: ComponentDefinition<StatGroupConfig, StatGroupData> = {
 		return { ok: true, data: { values: Object.fromEntries(parsed.values) } };
 	},
 
+	scopeValues(data, config): ScopeValues {
+		// One name per attribute, `abilities.DEX`, carrying what the card
+		// shows — the modifier where a `derived` exists, the score where it
+		// does not. The score stays reachable as `abilities.DEX.value`.
+		//
+		// Only the attributes the layout declares are published: an entry
+		// the layout does not map does not render either, and a formula
+		// should not be able to reach what the sheet cannot show.
+		const named: Record<string, ScopeEntry> = {};
+		for (const attribute of config.attributes ?? []) {
+			const raw = data?.values[attribute.key];
+			named[attribute.key] = {
+				value: raw,
+				display:
+					config.derived === undefined
+						? undefined
+						: { field: 'derived', scope: { value: raw ?? '' } },
+			};
+		}
+		return { named };
+	},
+
 	write(data, body): string {
 		return writeFenced(body, new Map(Object.entries(data.values)));
 	},
@@ -150,13 +186,37 @@ export const statGroup: ComponentDefinition<StatGroupConfig, StatGroupData> = {
 		const doc = container.ownerDocument;
 		container.replaceChildren();
 
+		// Legacy layouts carried sizing inside align ('stretch' meant fill,
+		// any alignment meant fixed); an explicit sizing wins when present.
+		const sizing =
+			config.sizing ??
+			(config.align === 'start' ||
+			config.align === 'center' ||
+			config.align === 'end'
+				? 'fixed'
+				: 'fill');
+		const alignment =
+			sizing === 'fixed' &&
+			(config.align === 'center' || config.align === 'end')
+				? config.align
+				: 'start';
+
 		// The group's name is authored data; the sheet must not drop it.
 		if (config.hideLabel !== true) {
 			const label = doc.createElement('div');
 			label.classList.add('sheetsmith-stat-group-label');
-			// Only a non-default position carries a class, as with the cards.
-			if (config.labelAlign === 'center' || config.labelAlign === 'end') {
-				label.classList.add(`sheetsmith-stat-group-label-${config.labelAlign}`);
+			// A heading belongs over the thing it heads. Left unset it follows
+			// the cards, so centred cards do not sit under a name pinned to the
+			// far left; setting it explicitly overrides that. Only a non-default
+			// position carries a class, as with the cards.
+			// Absent or explicitly auto follows the cards; anything else pins
+			// the heading where the layout put it, "start" included.
+			const labelAlign =
+				config.labelAlign === undefined || config.labelAlign === 'auto'
+					? alignment
+					: config.labelAlign;
+			if (labelAlign === 'center' || labelAlign === 'end') {
+				label.classList.add(`sheetsmith-stat-group-label-${labelAlign}`);
 			}
 			label.textContent = config.label;
 			container.appendChild(label);
@@ -173,20 +233,7 @@ export const statGroup: ComponentDefinition<StatGroupConfig, StatGroupData> = {
 		if (config.direction === 'vertical') {
 			strip.classList.add('sheetsmith-stat-group-vertical');
 		}
-		// Legacy layouts carried sizing inside align ('stretch' meant fill,
-		// any alignment meant fixed); an explicit sizing wins when present.
-		const sizing =
-			config.sizing ??
-			(config.align === 'start' ||
-			config.align === 'center' ||
-			config.align === 'end'
-				? 'fixed'
-				: 'fill');
 		if (sizing === 'fixed') {
-			const alignment =
-				config.align === 'center' || config.align === 'end'
-					? config.align
-					: 'start';
 			strip.classList.add(`sheetsmith-stat-group-align-${alignment}`);
 		}
 		container.appendChild(strip);
@@ -196,9 +243,13 @@ export const statGroup: ComponentDefinition<StatGroupConfig, StatGroupData> = {
 		// Hiding the value only makes sense when a derived remains to show;
 		// otherwise the config would permit a card with nothing in it.
 		const showValue = config.hideValue !== true || config.derived === undefined;
+		// See Stat: only a formula reading the attribute's own value goes
+		// blank when that value is missing.
+		const needsValue =
+			config.derived !== undefined && referencesName(config.derived, 'value');
 		const deriveFrom = (raw: string) => {
 			// An empty value is a blank, not a broken formula.
-			if (raw.trim() === '') return { text: '—', unresolved: false };
+			if (needsValue && raw.trim() === '') return { text: '—', unresolved: false };
 			const resolved = context.resolveField('derived', { value: raw });
 			return {
 				text: formatDerived(resolved, signed),

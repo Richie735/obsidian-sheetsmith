@@ -32,9 +32,11 @@ The registry contract in `src/components/contract.test.ts` runs the §4.1 checks
 
 ## Component contract
 
-Every component implements exactly five things, defined in `SPEC.md` §4.1:
+Every component implements five things, defined in `SPEC.md` §4.1:
 
 `read` (section → data), `write` (data → section, byte-identical when unchanged), `render` (data + resolved values → DOM), `formulaFields` (which config fields accept an expression), and `configFields` (declared config fields the layout editor renders as a form).
+
+Plus an optional sixth, `scopeValues`, for components holding values other components' formulas can read (`abilities.DEX`). Components with nothing referencable omit it.
 
 Nothing outside a component should need to know that component exists. Adding one means implementing those five and registering it, not touching the renderer, the parser, or the layout editor.
 

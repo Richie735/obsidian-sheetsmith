@@ -94,6 +94,40 @@ export interface ConfigFieldSpec {
 export type FieldValue = string | number | boolean;
 
 /**
+ * One name a component publishes to the rest of the sheet.
+ *
+ * A bare reference gets what the card shows: the `display` formula's result
+ * when there is one, and the stored value otherwise. `<name>.value` always
+ * gets the stored value, for the formula that wants the raw score rather
+ * than the modifier the card puts in large type.
+ */
+export interface ScopeEntry {
+	/** What the note stores. Referenced as `<name>.value`. */
+	value?: FieldValue;
+	/**
+	 * The formula field producing the displayed value, and the internal
+	 * scope to run it in (one attribute's own `value`, later a table row).
+	 * Evaluated lazily, because it may reference other components.
+	 */
+	display?: {
+		field: string;
+		scope: Readonly<Record<string, FieldValue>>;
+	};
+}
+
+/**
+ * What a component publishes to formulas elsewhere on the sheet (SPEC §5).
+ *
+ * `self` is referenced by the bare component id — an armour class is just
+ * `armour_class`. `named` entries are referenced as `<id>.<name>`, which is
+ * how a group of attributes exposes each one: `abilities.DEX`.
+ */
+export interface ScopeValues {
+	self?: ScopeEntry;
+	named?: Readonly<Record<string, ScopeEntry>>;
+}
+
+/**
  * Evaluates one of the component's formula fields against extra names, such
  * as a table row or one ability's value. Returns null when the field has no
  * expression or it cannot be evaluated.
@@ -116,8 +150,9 @@ export interface RenderContext<TData = unknown> {
 }
 
 /**
- * The four things a component implements, and the only surface the rest of
- * the system sees.
+ * The five things a component implements, and the only surface the rest of
+ * the system sees — plus one optional sixth, `scopeValues`, for the
+ * components that hold values other components' formulas can read.
  */
 export interface ComponentDefinition<
 	TConfig extends ComponentConfig = ComponentConfig,
@@ -143,6 +178,13 @@ export interface ComponentDefinition<
 		data: TData | null,
 		context: RenderContext<TData>,
 	): void;
+	/**
+	 * Values this component publishes to formulas elsewhere on the sheet.
+	 * Optional: a component holding nothing referencable — a heading, an
+	 * image, a block of prose — simply leaves it off, and the rest of the
+	 * system never learns it exists.
+	 */
+	scopeValues?(data: TData | null, config: TConfig): ScopeValues;
 	/** Which config fields accept an expression rather than a literal. */
 	formulaFields: readonly string[];
 	/**

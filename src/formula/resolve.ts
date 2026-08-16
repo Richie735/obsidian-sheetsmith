@@ -1,9 +1,12 @@
 /*
- * Resolves a component's formula fields against its own data.
+ * Resolves a component's formula fields.
  *
- * Until M3 wires the full engine in, an expression can reference the fields
- * of the component it sits on (a Stat's `value`, one ability's `value`), and
- * nothing else.
+ * Names resolve in three layers, nearest first: the scope the component
+ * passes in (one ability's `value`, later a table row's cells), then the
+ * component's own data, then the sheet-wide table every other component
+ * publishes to. Nearest-first is what lets a Stat group's `derived` say
+ * `value` and mean this attribute, while an armour class says
+ * `abilities.DEX` and means another component entirely.
  */
 
 import {
@@ -12,7 +15,7 @@ import {
 	FieldResolver,
 	ResolvedValues,
 } from '../types';
-import { evaluate, Scope, Value } from './expression';
+import { EMPTY_SCOPE, evaluate, Scope, Value } from './expression';
 
 /** Numeric-looking strings become numbers; anything else passes through. */
 export function coerceValue(raw: unknown): Value | undefined {
@@ -42,6 +45,7 @@ export function makeFieldResolver(
 	component: Pick<ComponentDefinition, 'formulaFields'>,
 	config: ComponentConfig,
 	data: unknown,
+	sheet: Scope = EMPTY_SCOPE,
 ): FieldResolver {
 	const record = config as unknown as Record<string, unknown>;
 	const dataScope = scopeFromData(data);
@@ -52,8 +56,13 @@ export function makeFieldResolver(
 			return expression;
 		}
 		if (typeof expression !== 'string') return null;
-		const scope: Scope = (name) =>
-			name in extra ? coerceValue(extra[name]) : dataScope(name);
+		const scope: Scope = (name) => {
+			if (name in extra) return coerceValue(extra[name]);
+			// The component's own data shadows the sheet, so a card's `value`
+			// always means its own — never some other component that happens
+			// to share the name.
+			return dataScope(name) ?? sheet(name);
+		};
 		try {
 			return evaluate(expression, scope);
 		} catch {
@@ -72,8 +81,9 @@ export function resolveFormulaFields(
 	component: Pick<ComponentDefinition, 'formulaFields'>,
 	config: ComponentConfig,
 	data: unknown,
+	sheet: Scope = EMPTY_SCOPE,
 ): ResolvedValues {
-	const resolve = makeFieldResolver(component, config, data);
+	const resolve = makeFieldResolver(component, config, data, sheet);
 	const record = config as unknown as Record<string, unknown>;
 	const resolved: Record<string, Value | null> = {};
 	for (const field of component.formulaFields) {

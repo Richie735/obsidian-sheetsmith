@@ -11,6 +11,8 @@ import {
 	setSectionBody,
 } from '../parse/character';
 import { makeFieldResolver, resolveFormulaFields } from '../formula/resolve';
+import { Scope } from '../formula/expression';
+import { buildSheetScope } from '../formula/sheet';
 import { Layout } from '../parse/layout';
 import { ComponentConfig, ComponentDefinition } from '../types';
 
@@ -129,26 +131,60 @@ export class SheetView extends TextFileView {
 				a.position.row - b.position.row || a.position.col - b.position.col,
 		);
 
-		for (const config of ordered) {
+		// Read everything before rendering anything: a formula may name any
+		// component on the sheet, including one that sits later in grid
+		// order, so the name table has to be complete before the first card
+		// draws. A component that failed to read publishes nothing, which
+		// makes formulas depending on it report an unknown name rather than
+		// compute from a blank.
+		const prepared = ordered.map((config) => {
+			const component = getComponent(config.type);
+			const section = component ? getSection(note, config.label) : undefined;
+			const result =
+				component && section ? component.read(section.body, config) : null;
+			return {
+				config,
+				component,
+				error: result && !result.ok ? result.error : null,
+				data: result?.ok === true ? result.data : null,
+			};
+		});
+
+		// A published value may itself be computed, so the table takes a way
+		// to build each component's resolver rather than finished numbers:
+		// it is what closes the loop between "this card reads the sheet" and
+		// "the sheet reads this card".
+		const sheet = buildSheetScope(
+			prepared.flatMap(({ config, component, data }) =>
+				component?.scopeValues
+					? [
+							{
+								id: config.id,
+								values: component.scopeValues(data, config),
+								resolver: (scope: Scope) =>
+									makeFieldResolver(component, config, data, scope),
+							},
+						]
+					: [],
+			),
+		);
+
+		for (const { config, component, error, data } of prepared) {
 			const cell = grid.createDiv('sheetsmith-cell');
 			cell.style.gridColumn = `${config.position.col} / span ${config.position.width}`;
 			cell.style.gridRow = `${config.position.row} / span ${config.position.height}`;
 
-			const component = getComponent(config.type);
 			if (!component) {
 				this.renderCellError(cell, `Unknown component type "${config.type}".`);
 				continue;
 			}
-			const section = getSection(note, config.label);
-			const result = section ? component.read(section.body, config) : null;
-			if (result && !result.ok) {
-				this.renderCellError(cell, `${config.label}: ${result.error}`);
+			if (error !== null) {
+				this.renderCellError(cell, `${config.label}: ${error}`);
 				continue;
 			}
-			const data = result ? result.data : null;
 			component.render(cell, config, data, {
-				resolved: resolveFormulaFields(component, config, data),
-				resolveField: makeFieldResolver(component, config, data),
+				resolved: resolveFormulaFields(component, config, data, sheet),
+				resolveField: makeFieldResolver(component, config, data, sheet),
 				onChange: (edited: unknown) => this.applyEdit(component, config, edited),
 			});
 		}
