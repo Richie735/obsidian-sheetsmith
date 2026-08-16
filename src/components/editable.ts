@@ -42,10 +42,24 @@ function clamp(value: number, options: EditableOptions): number {
 	return next;
 }
 
+/** What a caller keeps hold of after binding, for the edits it drives itself. */
+export interface EditableHandle {
+	/**
+	 * Set the field from outside and commit it, as a Pool's step buttons do.
+	 *
+	 * It goes through the same commit as the keyboard rather than writing
+	 * `input.value` directly, because the binding remembers what is committed
+	 * in order to know whether a blur changed anything. A caller that set the
+	 * value behind its back would leave that stale, and the next blur would
+	 * report a change that had already been saved.
+	 */
+	set(next: string): void;
+}
+
 export function bindEditable(
 	input: HTMLInputElement,
 	options: EditableOptions,
-): void {
+): EditableHandle {
 	let committed = options.initial;
 	const redraw = () => options.onDraft?.();
 
@@ -94,4 +108,12 @@ export function bindEditable(
 			redraw();
 		}
 	});
+
+	return {
+		set: (next) => {
+			input.value = next;
+			redraw();
+			commitIfChanged();
+		},
+	};
 }

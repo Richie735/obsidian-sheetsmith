@@ -4,6 +4,7 @@
  */
 
 import { ComponentDefinition } from '../types';
+import { pool } from './pool';
 import { skillCard } from './skill-card';
 import { stat } from './stat';
 import { statGroup } from './stat-group';
@@ -14,6 +15,7 @@ function register(component: ComponentDefinition): void {
 	registry.set(component.type, component);
 }
 
+register(pool);
 register(skillCard);
 register(stat);
 register(statGroup);

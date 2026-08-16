@@ -43,7 +43,6 @@ WIS: 12
 ## HP
 ```sheet
 current: 22
-max: 31
 temp: 0
 ```
 
@@ -147,8 +146,12 @@ A single-attribute Stat group and a **Stat** are not the same component, which i
 
 - *Config:* `label`, `max`, `hasTemp`, `reset`
 - *Data:* `fenced`, `current` and optionally `temp`
-- *Sheet view:* increment, decrement, and direct entry, so damage and healing are one action
+- *Sheet view:* increment, decrement, and direct entry, so damage and healing are one action. The step buttons sit either side of the number and move it by one, or by ten with shift, which is the rule the arrow keys already follow on a card. A press steps what is on screen rather than what was last saved, so a typed draft is what moves
 - *Formula fields:* `max`, `reset.to`
+
+**The max is layout config, and the note never stores it.** It is a formula field, so a copy in the note would be the stale derived value Skill card's storage rules refuse for the same reason. A system whose max is rolled rather than computed — hit points, most obviously — points the formula at a component the character owns, which is what component ids are for (§5): `max_hp` on a Stat, and the Pool's max reads it. That keeps one answer to "what is this character's maximum" rather than two that can disagree. A note carrying a `max` entry from an older layout is preserved and ignored, per §10.
+
+The pool publishes its current value under its bare id, its ceiling as `<id>.max`, and its temporary points as `<id>.temp` where the layout asks for them, so `hp.max / 2` needs no second copy of the expression.
 
 **Track** — a row of boxes or pips. Covers death saves, exhaustion, stress, clocks.
 
@@ -390,7 +393,9 @@ Component order, chosen by what each one forces you to solve:
 | 3 | **Pool** | Editing interaction, a formula-capable config field, reset triggers |
 | 4 | **Skill card** | The markdown storage path, wikilinks, fixed versus open rows, per-row formula scope (mechanism proven by Stat group) |
 
-Skill card jumped Pool for the same reason Stat group jumped Stat: a skill list was wanted, and it is a fixed-row record block rather than a component of its own. Fixed rows shipped first, with `text`, `number`, `level`, `toggle`, and `computed` columns; open rows and `link` columns wait for the inventory that needs them. `level` was not in the original column list. It arrived once the skill list was on screen and a spinner for a two-grade proficiency turned out to be the wrong control, and then changed shape again — from a row of marks to one cycling control — because a set of checkboxes can express states the value cannot. Both corrections came from looking at a rendered sheet, which is the argument for building a component all the way through render before starting the next. Pool is next, and it now inherits an editing gesture already shared by cards and cells, and a function library its `max` can call. The library was built before it rather than after: what Pool has left to force is reset triggers, and a formula-capable config field written against a half-finished engine would have been written twice.
+Skill card jumped Pool for the same reason Stat group jumped Stat: a skill list was wanted, and it is a fixed-row record block rather than a component of its own. Fixed rows shipped first, with `text`, `number`, `level`, `toggle`, and `computed` columns; open rows and `link` columns wait for the inventory that needs them. `level` was not in the original column list. It arrived once the skill list was on screen and a spinner for a two-grade proficiency turned out to be the wrong control, and then changed shape again — from a row of marks to one cycling control — because a set of checkboxes can express states the value cannot. Both corrections came from looking at a rendered sheet, which is the argument for building a component all the way through render before starting the next. Pool followed, and inherited both — the editing gesture already shared by cards and cells, and a function library its `max` can call. The library was built before it rather than after: a formula-capable config field written against a half-finished engine would have been written twice. It shipped without its reset binding, which is the one thing on its §4.2 entry it does not yet implement. That was deliberate: reset triggers are a layer across several components rather than a part of any one of them, and a Pool that renders is what the trigger machinery gets to be built against. The split cost one thing worth naming — `applyReset` and `reset.to` are absent from the component until that layer lands, so the contract's rule that declaring one implies the other holds vacuously for now.
+
+Its one surprise was that the max could not be character data. The §3.1 example had stored one since before `max` was a formula field, and the two could not both be right; a stored copy of a derived value is the thing Skill card's columns already refuse.
 
 Stat group (built as "Abilities") was not in the original order; it jumped the queue on demand once Stat worked, and looked at the time like a replacement for it, so Stat was dropped and then rebuilt on top of the group's card once the standalone numbers turned out to want a component of their own. The detour paid for itself: it forced the render contract to grow a per-scope field resolver, which is the same mechanism Skill card's computed columns need per row, discovered while the codebase was small, and it left a shared card module for the Stat to render through.
 
