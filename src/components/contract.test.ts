@@ -58,10 +58,25 @@ describe.each(types)('component "%s"', (type) => {
 	});
 
 	it('publishes scope values as a function, or not at all', () => {
-		// The optional sixth member: a component either publishes values to
-		// the rest of the sheet's formulas or it does not, never something
-		// in between that the view would have to guard against.
+		// An optional member: a component either publishes values to the rest
+		// of the sheet's formulas or it does not, never something in between
+		// that the view would have to guard against.
 		expect(['function', 'undefined']).toContain(typeof component?.scopeValues);
+	});
+
+	it('applies resets as a function, or not at all', () => {
+		expect(['function', 'undefined']).toContain(typeof component?.applyReset);
+	});
+
+	it('declares reset.to as a formula field when it resets', () => {
+		// `reset` is shared config, so it is forbidden in configFields and
+		// each stateful component has to remember this string for itself —
+		// three copies of one truth by the time Pool, Track, and Toggle
+		// exist. Forget it and `isDeclared` returns null for reset.to, the
+		// resolver hands back nothing, and the reset silently does nothing
+		// at all. Cheaper to fail here than to debug a dead button.
+		if (component?.applyReset === undefined) return;
+		expect(component.formulaFields).toContain('reset.to');
 	});
 
 	it('declares formulaFields and configFields', () => {
@@ -102,12 +117,19 @@ describe.each(types)('component "%s"', (type) => {
 		// expression is edited inside that list's own editor rather than as a
 		// setting of its own; there, the path's first segment has to be the
 		// list field, which is what the editor renders.
+		// Unless the path is rooted at a key the editor already owns. `reset.to`
+		// is an expression on shared config, rendered beside label and position
+		// by the editor itself — and the check above forbids the component from
+		// declaring `reset`, so requiring it here would make the two rules
+		// unsatisfiable together for every stateful component.
 		const fields = component?.configFields ?? [];
 		const editable = fields.filter((f) => f.kind === 'formula').map((f) => f.key);
 		const declared = fields.map((f) => f.key);
 		for (const field of component?.formulaFields ?? []) {
 			if (field.includes('.')) {
-				expect(declared).toContain(field.split('.')[0]);
+				const root = field.split('.')[0] as string;
+				if (RESERVED_KEYS.includes(root)) continue;
+				expect(declared).toContain(root);
 			} else {
 				expect(editable).toContain(field);
 			}

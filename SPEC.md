@@ -86,7 +86,7 @@ Every component carries the same core properties, whatever its type. Settling th
 | `label` | Layout | Display name, and the section heading in the note body. |
 | `position` | Layout | Grid column, row, width, height. |
 | `storage` | Fixed by type | `fenced` or `markdown`. A property of the component type, never a user choice. |
-| `reset` | Layout, optional | Which named trigger this component responds to, and what it resets to. Only for components that hold state. |
+| `reset` | Layout, optional | Which named trigger this component responds to, and which of §6's three actions it takes. Only for components that hold state. |
 
 Every component implements five things and nothing more:
 
@@ -96,11 +96,12 @@ Every component implements five things and nothing more:
 - **`formulaFields`** — declare which of its config fields accept an expression rather than a literal. Usually a config key; a component whose structure repeats declares a path with `*` standing for one segment (`columns.*.formula`), because its expressions live one per column or one per row and a flat list could not name them.
 - **`configFields`** — declare its component-specific config fields (key, input kind, label, optional group for subheadings, optional visibility condition on another field's value) so the layout editor can render a configuration form without knowing the component's type. Shared fields (label, position) are the editor's own business.
 
-And one optional sixth, for the components that hold values other components can read:
+Beyond those five are the optional members, and they exist under a rule rather than to a count: **a member is optional only where the alternative is code outside the component knowing that component's data shape.** Counting them invites the next one; the rule is what refuses it. Both current members pass — the sheet-wide name table cannot publish a value it has no way to read, and a reset button cannot write "restore to full" into a shape it does not know — and most candidates will not.
 
 - **`scopeValues`** — publish this component's values to the sheet-wide name table (§5): a `self` value referenced by the bare component id, and `named` entries referenced as `<id>.<name>`. Each entry carries what the note stores and, when the card computes a display, which formula field produces it and the internal scope to run it in; the table evaluates that lazily, since it may reference another component. A component holding nothing a formula could reference — a heading, an image, a block of prose — leaves it off, and nothing else learns it exists.
+- **`applyReset`** — apply a reset trigger to this component's data (§6), given the binding and the same resolve-and-explain pair `render` gets. It takes the binding rather than a finished value because only the component knows what `full` means for it: a Pool's max, a Track's count, a Toggle's true — and resolving that is a formula that can fail, which is why it reports an outcome rather than returning data. A caller that knew would be holding exactly the per-type knowledge the contract exists to keep out of it. A component without it holds no state, is offered no reset binding in the editor, and is untouched when a trigger fires.
 
-Adding a component means implementing those five, and the sixth only if it holds values. Nothing else in the system needs to know the component exists.
+Adding a component means implementing those five, and an optional member only where that rule says it must. Nothing else in the system needs to know the component exists.
 
 ### 4.2 Catalog
 
@@ -290,9 +291,19 @@ A Call of Cthulhu layout would define entirely different functions (`half`, `fif
 
 - Each layout defines its own named triggers. A 5e layout declares Short Rest and Long Rest. A Blades layout declares Downtime.
 - Any Pool, Track, or Toggle can bind to a trigger.
-- Per component, the reset action is one of: restore to max, set to zero, or set to a formula result.
+- Per component, the reset `action` is one of `full`, `empty`, or `formula`, and only `formula` carries an expression, in `to`.
 - Sheet view shows one button per trigger.
 - Applying a trigger confirms first and is undoable.
+
+**The action is a key of its own, and the states are named rather than numbered.** `to` is declared a formula field on Pool, Track, and Toggle (§4.2), so it is handed to the evaluator as an expression; a `to` that also had to hold the literal word `max` could not be. One string cannot be both a formula and a sentinel standing in for one, and the way to find out is to write a layout that resets to `max` and watch the evaluator look for a name nothing published. `full` and `empty` name the states rather than the numbers because the same three actions have to cover a Toggle, where they are true and false, as readily as a Pool, where they are its max and zero.
+
+**A binding the plugin cannot act on refuses the layout**, as a bad `columns` does and for §5's reason: `reset` is shared config the plugin itself reads, not a component's private business, so a missing or unknown `action` is a wrong shape rather than a typo to report in the editor. The pre-split `{ trigger, to: "max" }` is refused rather than migrated — nothing has ever written this key, so unlike a hyphenated id there is no file in the wild the refusal could cost. An expression left beside `full` or `empty` is kept and simply not run, so changing the action in the editor and changing it back does not throw away what was typed.
+
+**A trigger name that matches nothing is contents, not shape.** Whether `reset` is a binding at all is the file format's business and refuses the layout; whether its `trigger` names one the layout declares is the library's, and follows §5's rule for a function that will not parse — reported in the editor where it can be fixed, while every sheet on the layout goes on rendering. The component simply binds to nothing and no button reaches it. The check cannot live where the rest of the binding is validated in any case: a component is parsed without the layout around it, so nothing at that point knows which triggers exist.
+
+**A trigger applies what it can and names what it could not.** A Long Rest that resets three Pools and finds the fourth's `to` unresolvable leaves that one as it was, resets the rest, and says which one failed. This is §5's rule — one failure must not take the sheet down — and being a button rather than a render does not earn an exception: refusing the whole rest because one component is misconfigured is a worse answer than a rest that happened and reported a gap.
+
+**Undo restores the note as it was immediately before the trigger, and declines if the note has moved since.** Between the confirmation and the undo the player can edit a field, and a restore that silently swallowed that edit would destroy more than it reverted.
 
 This is the only place the sheet performs an action rather than holding values.
 

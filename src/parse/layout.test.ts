@@ -15,6 +15,88 @@ const VALID = JSON.stringify({
 	],
 });
 
+describe('parseLayout: reset bindings', () => {
+	const withReset = (reset: unknown) =>
+		JSON.stringify({
+			name: 'L',
+			components: [
+				{
+					id: 'hp',
+					type: 'stat',
+					label: 'HP',
+					position: { col: 1, row: 1, width: 1, height: 1 },
+					reset,
+				},
+			],
+		});
+
+	const resetOf = (reset: unknown) =>
+		parseLayout(withReset(reset)).components[0]?.reset;
+
+	it('accepts a binding with each action', () => {
+		expect(resetOf({ trigger: 'Long rest', action: 'full' })).toEqual({
+			trigger: 'Long rest',
+			action: 'full',
+		});
+		expect(resetOf({ trigger: 'Downtime', action: 'empty' })).toEqual({
+			trigger: 'Downtime',
+			action: 'empty',
+		});
+		expect(
+			resetOf({ trigger: 'Long rest', action: 'formula', to: 'mod(con)' }),
+		).toEqual({ trigger: 'Long rest', action: 'formula', to: 'mod(con)' });
+	});
+
+	it('leaves a component without a reset alone', () => {
+		expect(parseLayout(VALID).components[0]?.reset).toBeUndefined();
+	});
+
+	it('refuses the pre-split shape rather than migrating it', () => {
+		// `{ trigger, to: "max" }` from before the action was split out. No
+		// file in the wild carries it, so naming it beats blessing it.
+		expect(() => parseLayout(withReset({ trigger: 'Long rest', to: 'max' }))).toThrow(
+			LayoutParseError,
+		);
+	});
+
+	it('refuses a binding whose action it does not know', () => {
+		expect(() =>
+			parseLayout(withReset({ trigger: 'Long rest', action: 'max' })),
+		).toThrow(LayoutParseError);
+	});
+
+	it('refuses a formula action with nothing to evaluate', () => {
+		expect(() =>
+			parseLayout(withReset({ trigger: 'Long rest', action: 'formula' })),
+		).toThrow(LayoutParseError);
+		expect(() =>
+			parseLayout(withReset({ trigger: 'Long rest', action: 'formula', to: '  ' })),
+		).toThrow(LayoutParseError);
+	});
+
+	it('refuses a binding with no trigger to bind to', () => {
+		expect(() => parseLayout(withReset({ action: 'full' }))).toThrow(
+			LayoutParseError,
+		);
+		expect(() => parseLayout(withReset('Long rest'))).toThrow(LayoutParseError);
+	});
+
+	it('keeps an expression left beside another action', () => {
+		// Switching the action in the editor and back must not throw away what
+		// was typed; it simply does not run.
+		expect(
+			resetOf({ trigger: 'Long rest', action: 'full', to: 'mod(con)' }),
+		).toEqual({ trigger: 'Long rest', action: 'full', to: 'mod(con)' });
+	});
+
+	it('round-trips a binding through serialiseLayout', () => {
+		const layout = parseLayout(
+			withReset({ trigger: 'Long rest', action: 'formula', to: 'mod(con)' }),
+		);
+		expect(parseLayout(serialiseLayout(layout))).toEqual(layout);
+	});
+});
+
 describe('parseLayout: component ids', () => {
 	const withId = (id: string) =>
 		JSON.stringify({
@@ -131,12 +213,16 @@ describe('parseLayout', () => {
 	it('preserves top-level keys it does not understand', () => {
 		const source = JSON.stringify({
 			name: 'L',
-			resetTriggers: ['Long rest'],
+			// Deliberately a key this version will never understand.
+			// `resetTriggers` used to stand here, too close to the `triggers`
+			// the parser is about to read; had the two been confused this would
+			// have gone on passing while testing nothing.
+			theme: 'parchment',
 			promoted: ['hp'],
 			components: [],
 		});
 		const layout = parseLayout(source);
-		expect(layout.resetTriggers).toEqual(['Long rest']);
+		expect(layout.theme).toEqual('parchment');
 		expect(layout.promoted).toEqual(['hp']);
 		expect(parseLayout(serialiseLayout(layout))).toEqual(layout);
 	});
