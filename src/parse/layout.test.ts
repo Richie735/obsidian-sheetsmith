@@ -15,6 +15,41 @@ const VALID = JSON.stringify({
 	],
 });
 
+describe('parseLayout: triggers', () => {
+	const withTriggers = (triggers: unknown) =>
+		JSON.stringify({ name: 'L', triggers, components: [] });
+
+	it('keeps the trigger list as written, and round-trips it', () => {
+		const layout = parseLayout(withTriggers(['Short rest', 'Long rest']));
+		expect(layout.triggers).toEqual(['Short rest', 'Long rest']);
+		expect(parseLayout(serialiseLayout(layout))).toEqual(layout);
+	});
+
+	it('leaves the key absent where the layout declares none', () => {
+		// An absent key has to stay absent through a round trip, or every
+		// hand-authored layout grows one it never asked for on first save.
+		const layout = parseLayout(JSON.stringify({ name: 'L', components: [] }));
+		expect('triggers' in layout).toBe(false);
+		expect(serialiseLayout(layout)).not.toContain('triggers');
+	});
+
+	it('refuses a triggers key that is not a list of strings', () => {
+		// The shape is the file format's business, as with functions and
+		// columns; what the names say is reported in the editor instead.
+		expect(() => parseLayout(withTriggers('Long rest'))).toThrow(LayoutParseError);
+		expect(() => parseLayout(withTriggers([1, 2]))).toThrow(LayoutParseError);
+		expect(() => parseLayout(withTriggers({}))).toThrow(LayoutParseError);
+	});
+
+	it('accepts names it will later report as unusable', () => {
+		// A blank or repeated name is contents. It parses, and parseTriggers
+		// is what says it cannot be used.
+		expect(parseLayout(withTriggers(['', 'Long rest', 'Long rest'])).triggers).toEqual(
+			['', 'Long rest', 'Long rest'],
+		);
+	});
+});
+
 describe('parseLayout: reset bindings', () => {
 	const withReset = (reset: unknown) =>
 		JSON.stringify({

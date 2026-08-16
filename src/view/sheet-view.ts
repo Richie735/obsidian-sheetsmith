@@ -1,28 +1,44 @@
 import { Notice, TextFileView, WorkspaceLeaf } from 'obsidian';
 import { getComponent } from '../components';
 import { closePopover } from '../components/popover';
+import { ConfirmModal } from '../confirm-modal';
 import { loadLayout } from '../layouts';
 import type SheetsmithPlugin from '../main';
 import {
+	applySectionWrites,
 	CharacterNote,
 	CharacterParseError,
 	getSection,
 	parseCharacter,
-	serialiseCharacter,
-	setSectionBody,
 } from '../parse/character';
 import {
 	makeFieldExplainer,
 	makeFieldResolver,
 	resolveFormulaFields,
 } from '../formula/resolve';
-import { Scope } from '../formula/expression';
+import { FunctionLibrary, Scope } from '../formula/expression';
 import { parseFunctions } from '../formula/functions';
 import { buildSheetScope } from '../formula/sheet';
 import { DEFAULT_COLUMNS, Layout } from '../parse/layout';
+import { parseTriggers } from '../parse/triggers';
 import { ComponentConfig, ComponentDefinition } from '../types';
 
 export const VIEW_TYPE_SHEET = 'sheetsmith-sheet';
+
+/**
+ * How long the undo stays offered after a trigger. Long enough to notice a
+ * rest was the wrong one, short enough that it is not still sitting there
+ * when the note has moved on.
+ */
+const UNDO_TIMEOUT = 12000;
+
+/** A component read for this render, with whatever its section gave up. */
+interface PreparedComponent {
+	config: ComponentConfig;
+	component: ComponentDefinition | undefined;
+	error: string | null;
+	data: unknown;
+}
 
 /**
  * Sheet view. Renders a character note against its layout, and writes
@@ -137,6 +153,11 @@ export class SheetView extends TextFileView {
 			return;
 		}
 
+		// Created before the grid so the buttons sit above it, filled in once
+		// the components have been read and the name table built — a reset
+		// resolves formulas, so it needs both.
+		const triggerBar = root.createDiv('sheetsmith-triggers');
+
 		const grid = root.createDiv('sheetsmith-grid');
 		grid.style.setProperty(
 			'--sheetsmith-columns',
@@ -159,7 +180,7 @@ export class SheetView extends TextFileView {
 		// draws. A component that failed to read publishes nothing, which
 		// makes formulas depending on it report an unknown name rather than
 		// compute from a blank.
-		const prepared = ordered.map((config) => {
+		const prepared: PreparedComponent[] = ordered.map((config) => {
 			const component = getComponent(config.type);
 			const section = component ? getSection(note, config.label) : undefined;
 			const result =
@@ -226,6 +247,8 @@ export class SheetView extends TextFileView {
 		// SPEC §10: sections the layout does not map are left alone — they stay
 		// in the note untouched and simply do not render.
 
+		this.renderTriggers(triggerBar, layout, prepared, sheet, library);
+
 		this.restoreFocus(focus);
 	}
 
@@ -291,22 +314,189 @@ export class SheetView extends TextFileView {
 	}
 
 	/**
-	 * Write edited component data back into the note. Re-parses the current
-	 * text so the write always lands on the freshest content, and saves only
-	 * when the serialised note actually differs.
+	 * One button per declared trigger (SPEC §6). This is the only place the
+	 * sheet performs an action rather than holding values.
 	 */
+	private renderTriggers(
+		bar: HTMLElement,
+		layout: Layout,
+		prepared: readonly PreparedComponent[],
+		sheet: Scope,
+		library: FunctionLibrary,
+	): void {
+		const { names } = parseTriggers(layout);
+		if (names.length === 0) {
+			bar.remove();
+			return;
+		}
+
+		for (const name of names) {
+			// A component that failed to read has no data to reset and would
+			// be written from nothing, so it is not bound here either.
+			const bound = prepared.filter(
+				(entry) =>
+					entry.error === null &&
+					entry.config.reset?.trigger === name &&
+					entry.component?.applyReset !== undefined,
+			);
+
+			const button = bar.createEl('button', {
+				text: name,
+				cls: 'sheetsmith-trigger',
+			});
+			button.type = 'button';
+
+			if (bound.length === 0) {
+				// Shown but inert: the layout declares this trigger, and hiding
+				// it would make a half-built layout look like a broken one.
+				button.disabled = true;
+				button.setAttribute(
+					'aria-label',
+					`${name}. Nothing on this sheet resets on it.`,
+				);
+				button.title = `Nothing on this sheet resets on ${name}.`;
+				continue;
+			}
+
+			button.addEventListener('click', () => {
+				new ConfirmModal(
+					this.app,
+					`Apply ${name}? It resets ${bound
+						.map((entry) => entry.config.label)
+						.join(', ')}. This can be undone.`,
+					`Apply ${name}`,
+					() => this.applyTrigger(name, bound, sheet, library),
+				).open();
+			});
+		}
+	}
+
+	/**
+	 * Reset every component bound to this trigger, in one write.
+	 *
+	 * SPEC §6: what resolves is applied and what does not is named. A pool
+	 * whose max is broken must not stop the rest of a long rest, which is why
+	 * the failures are collected rather than thrown.
+	 */
+	private applyTrigger(
+		name: string,
+		bound: readonly PreparedComponent[],
+		sheet: Scope,
+		library: FunctionLibrary,
+	): void {
+		const before = this.data;
+		const edits: {
+			component: ComponentDefinition;
+			config: ComponentConfig;
+			data: unknown;
+		}[] = [];
+		const failed: string[] = [];
+
+		for (const { component, config, data } of bound) {
+			const reset = config.reset;
+			if (!component?.applyReset || !reset) continue;
+			const result = component.applyReset(data, config, reset, {
+				resolve: makeFieldResolver(component, config, data, sheet, library),
+				explain: makeFieldExplainer(component, config, data, sheet, library),
+			});
+			if (result.ok) edits.push({ component, config, data: result.data });
+			else failed.push(`"${config.label}": ${result.error}`);
+		}
+
+		if (failed.length > 0) {
+			new Notice(`${name} could not reset ${failed.join('; ')}`);
+		}
+		if (edits.length === 0) return;
+
+		this.applyEdits(edits);
+		// Nothing moved, so there is nothing to offer taking back.
+		if (this.data === before) return;
+		this.offerUndo(name, before, this.data);
+	}
+
+	/**
+	 * Offer to put the note back as it was immediately before the trigger.
+	 *
+	 * One string swapped for another, which is what the batched write bought:
+	 * no inverse edits to compute, and nothing that can half-succeed.
+	 */
+	private offerUndo(name: string, before: string, after: string): void {
+		const notice = new Notice('', UNDO_TIMEOUT);
+		notice.messageEl.createSpan({ text: `${name} applied. ` });
+		const undo = notice.messageEl.createEl('a', {
+			text: 'Undo',
+			cls: 'sheetsmith-undo',
+		});
+		undo.addEventListener('click', () => {
+			notice.hide();
+			this.restoreDocument(before, after);
+		});
+	}
+
+	/**
+	 * Put `previous` back, but only if the note still holds what the trigger
+	 * left. Between the offer and the press the player can edit a field, and a
+	 * restore that swallowed that edit would destroy more than it reverted.
+	 */
+	private restoreDocument(previous: string, expected: string): void {
+		if (this.data !== expected) {
+			new Notice(
+				'Sheetsmith did not undo: this note has changed since the reset.',
+			);
+			return;
+		}
+		this.data = previous;
+		this.requestSave();
+		void this.renderSheet();
+	}
+
+	/** One component's edit, as handed to `applyEdits`. */
 	private applyEdit(
 		component: ComponentDefinition,
 		config: ComponentConfig,
 		data: unknown,
 	): void {
+		this.applyEdits([{ component, config, data }]);
+	}
+
+	/**
+	 * Write edited component data back into the note. Re-parses the current
+	 * text so the write always lands on the freshest content, and saves only
+	 * when the serialised note actually differs.
+	 *
+	 * Takes a batch because a reset trigger (SPEC §6) changes several
+	 * components at once, and one section at a time would mean one parse,
+	 * serialise, save, and re-render per component. An edit from a single
+	 * control is a batch of one and behaves exactly as it did.
+	 */
+	private applyEdits(
+		edits: readonly {
+			component: ComponentDefinition;
+			config: ComponentConfig;
+			data: unknown;
+		}[],
+	): void {
+		if (edits.length === 0) return;
 		try {
-			const note = parseCharacter(this.data);
-			const section = getSection(note, config.label);
-			const body = component.write(data, section ? section.body : null, config);
-			const next = serialiseCharacter(setSectionBody(note, config.label, body));
-			if (next !== this.data) {
-				this.data = next;
+			const { text, failed } = applySectionWrites(
+				this.data,
+				edits.map(({ component, config, data }) => ({
+					label: config.label,
+					write: (body: string | null) => component.write(data, body, config),
+				})),
+			);
+			// Every section that could be written still is; the ones that could
+			// not are named. A batch must not be all-or-nothing, or one
+			// misconfigured component would refuse a whole long rest.
+			if (failed.length > 0) {
+				new Notice(
+					`Sheetsmith could not save ${failed
+						.map((failure) => `"${failure.label}": ${failure.error}`)
+						.join('; ')}`,
+				);
+			}
+			if (text !== this.data) {
+				this.data = text;
 				this.requestSave();
 				// Derived displays recompute from the fresh data; renderSheet
 				// captures and restores focus, so tabbing into the next input
@@ -314,8 +504,10 @@ export class SheetView extends TextFileView {
 				void this.renderSheet();
 			}
 		} catch (error) {
+			// The note itself would not parse, so there is no partial result to
+			// keep — nothing was written.
 			new Notice(
-				`Sheetsmith could not save "${config.label}": ${error instanceof Error ? error.message : String(error)}`,
+				`Sheetsmith could not save this change: ${error instanceof Error ? error.message : String(error)}`,
 			);
 		}
 	}

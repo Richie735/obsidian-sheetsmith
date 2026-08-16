@@ -179,3 +179,58 @@ export function setSectionBody(
 	sections.push({ label, headingLine: `## ${label}\n`, body });
 	return { ...note, preamble, sections };
 }
+
+/** One section's new body, as a function of the body it has now. */
+export interface SectionWrite {
+	label: string;
+	/** Given the section's current body, or null where the section is missing. */
+	write: (body: string | null) => string;
+}
+
+export interface SectionWriteResult {
+	/** The note after every write that succeeded. */
+	text: string;
+	/** Sections whose write threw, in the order they were attempted. */
+	failed: readonly { label: string; error: string }[];
+}
+
+/**
+ * Apply a batch of section writes in one parse-and-serialise pass.
+ *
+ * A single edit is a batch of one, and the common path is unchanged by going
+ * through here. The batch exists for the caller that changes several sections
+ * at once — a reset trigger (SPEC §6) — where doing it one section at a time
+ * would parse and serialise the whole note once per component, and leave the
+ * user with a half-applied rest if anything failed partway.
+ *
+ * One pass is also what makes the undo atomic: the text before is one string
+ * and the text after is another, so restoring is a swap rather than a
+ * sequence of inverse edits that could themselves fail.
+ *
+ * A write that throws is skipped and named, and the rest still apply. That is
+ * §6's rule for a trigger — apply what you can, report what you could not —
+ * and §10's for a malformed section, which reports on that component while
+ * the rest of the sheet keeps working. A source that will not parse at all is
+ * a different matter and throws, because there is no text to return.
+ */
+export function applySectionWrites(
+	source: string,
+	writes: readonly SectionWrite[],
+): SectionWriteResult {
+	let note = parseCharacter(source);
+	const failed: { label: string; error: string }[] = [];
+
+	for (const { label, write } of writes) {
+		try {
+			const section = getSection(note, label);
+			note = setSectionBody(note, label, write(section ? section.body : null));
+		} catch (error) {
+			failed.push({
+				label,
+				error: error instanceof Error ? error.message : String(error),
+			});
+		}
+	}
+
+	return { text: serialiseCharacter(note), failed };
+}

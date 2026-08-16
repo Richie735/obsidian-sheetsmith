@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
+	applySectionWrites,
 	CharacterParseError,
 	getSection,
 	parseCharacter,
@@ -184,5 +185,120 @@ describe('serialiseCharacter', () => {
 			SAMPLE + '\n## Speed\n\n```sheet\nvalue: 30\n```\n',
 		);
 		expect(serialiseCharacter(note)).toBe(SAMPLE);
+	});
+});
+
+describe('applySectionWrites', () => {
+	/** One fenced entry out of a section, for asserting on the result text. */
+	const fenced = (
+		text: string,
+		label: string,
+		key: string,
+	): string | undefined => {
+		const body = getSection(parseCharacter(text), label)?.body ?? '';
+		const parsed = readFenced(body);
+		return parsed.ok && parsed.values ? parsed.values.get(key) : undefined;
+	};
+
+	it('returns the source byte for byte when every write is a no-op', () => {
+		// The batch path carries the same promise a single write does: a note
+		// nothing changed must not drift, or hand-edited files are reformatted
+		// on every save.
+		const result = applySectionWrites(SAMPLE, [
+			{ label: 'Abilities', write: (body) => body ?? '' },
+			{ label: 'HP', write: (body) => body ?? '' },
+			{ label: 'Backstory', write: (body) => body ?? '' },
+		]);
+		expect(result.text).toBe(SAMPLE);
+		expect(result.failed).toEqual([]);
+	});
+
+	it('applies several writes in one pass', () => {
+		const result = applySectionWrites(SAMPLE, [
+			{
+				label: 'Abilities',
+				write: (body) => writeFenced(body, new Map([['STR', '10']])),
+			},
+			{
+				label: 'HP',
+				write: (body) => writeFenced(body, new Map([['current', '30']])),
+			},
+		]);
+		expect(fenced(result.text, 'Abilities', 'STR')).toBe('10');
+		expect(fenced(result.text, 'HP', 'current')).toBe('30');
+		// Untouched entries in a written section survive.
+		expect(fenced(result.text, 'Abilities', 'DEX')).toBe('16');
+	});
+
+	it('leaves sections no write names untouched', () => {
+		const result = applySectionWrites(SAMPLE, [
+			{ label: 'HP', write: (body) => writeFenced(body, new Map([['current', '1']])) },
+		]);
+		const note = parseCharacter(result.text);
+		expect(getSection(note, 'Inventory')?.body).toBe(
+			getSection(parseCharacter(SAMPLE), 'Inventory')?.body,
+		);
+		expect(getSection(note, 'Backstory')?.body).toBe(
+			getSection(parseCharacter(SAMPLE), 'Backstory')?.body,
+		);
+	});
+
+	it('appends a section the note does not have yet', () => {
+		const result = applySectionWrites(SAMPLE, [
+			{ label: 'Speed', write: () => '\n```sheet\nvalue: 30\n```\n' },
+		]);
+		expect(result.text).toBe(SAMPLE + '\n## Speed\n\n```sheet\nvalue: 30\n```\n');
+		expect(result.failed).toEqual([]);
+	});
+
+	it('skips a write that throws and still applies the rest', () => {
+		// SPEC §6: a trigger applies what it can and names what it could not.
+		// One misconfigured component must not refuse a whole long rest.
+		const result = applySectionWrites(SAMPLE, [
+			{
+				label: 'Abilities',
+				write: (body) => writeFenced(body, new Map([['STR', '10']])),
+			},
+			{
+				label: 'HP',
+				write: () => {
+					throw new Error('its max did not resolve.');
+				},
+			},
+			{
+				label: 'Backstory',
+				write: () => '\nRewritten.\n',
+			},
+		]);
+		expect(result.failed).toEqual([
+			{ label: 'HP', error: 'its max did not resolve.' },
+		]);
+		const note = parseCharacter(result.text);
+		expect(getSection(note, 'Backstory')?.body).toBe('\nRewritten.\n');
+		// The failed section is exactly as it was.
+		expect(getSection(note, 'HP')?.body).toBe(
+			getSection(parseCharacter(SAMPLE), 'HP')?.body,
+		);
+	});
+
+	it('throws where the note itself will not parse, since nothing can be written', () => {
+		expect(() => applySectionWrites('no frontmatter here\n', [])).toThrow(
+			CharacterParseError,
+		);
+	});
+
+	it('is a no-op for an empty batch', () => {
+		expect(applySectionWrites(SAMPLE, []).text).toBe(SAMPLE);
+	});
+
+	it('writes a later edit on top of an earlier one to the same section', () => {
+		// Two commits racing one rebuild both land, in order, rather than the
+		// second being computed against a body the first had already replaced.
+		const result = applySectionWrites(SAMPLE, [
+			{ label: 'HP', write: (body) => writeFenced(body, new Map([['current', '5']])) },
+			{ label: 'HP', write: (body) => writeFenced(body, new Map([['temp', '9']])) },
+		]);
+		expect(fenced(result.text, 'HP', 'current')).toBe('5');
+		expect(fenced(result.text, 'HP', 'temp')).toBe('9');
 	});
 });

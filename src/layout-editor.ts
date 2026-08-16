@@ -11,6 +11,7 @@ import {
 	TFile,
 } from 'obsidian';
 import { getComponent, listComponentTypes } from './components';
+import { ConfirmModal } from './confirm-modal';
 import {
 	commitFunctionLibrary,
 	FunctionLibraryField,
@@ -31,12 +32,36 @@ import {
 	parseLayout,
 	serialiseLayout,
 } from './parse/layout';
+import { parseTriggers } from './parse/triggers';
 import { clamp, describeCell, findOverlaps, lastColumn } from './preview-grid';
-import { ComponentConfig } from './types';
+import {
+	commitTriggerList,
+	renderTriggerList,
+	TriggerListField,
+} from './trigger-list-field';
+import { ComponentConfig, ResetBinding } from './types';
 import { SheetView, VIEW_TYPE_SHEET } from './view/sheet-view';
 
 /** Dropdown sentinel; layout file names can never collide with it. */
 const CREATE_LAYOUT_OPTION = '::create-layout::';
+
+/** Dropdown sentinel for "bound to no trigger"; a name can never be empty. */
+const NO_TRIGGER_OPTION = '';
+
+/** Held as a constant because it is an expression, not prose to be cased. */
+const RESET_FORMULA_EXAMPLE = 'mod(abilities.CON) * level';
+
+/**
+ * The three reset actions (SPEC §6), labelled as what they do to a component
+ * rather than as the words stored. "Restore to max" reads as a pool's ceiling
+ * and would read as nonsense over a toggle, which is why the stored names are
+ * the states.
+ */
+const RESET_ACTIONS: readonly (readonly [string, string])[] = [
+	['full', 'Restore to full'],
+	['empty', 'Set to empty'],
+	['formula', 'Set to a formula'],
+];
 
 /** How long a rebuilt region stays marked, before fading over its own transition. */
 const FLASH_HOLD = 900;
@@ -90,6 +115,8 @@ export class LayoutEditorSection {
 	 * field must never write into the layout that replaced it.
 	 */
 	private functions: FunctionLibraryField | null = null;
+	/** The trigger list field, read back on close for the same reason. */
+	private triggers: TriggerListField | null = null;
 
 	/** Debounced persist, used only by rapid-fire paths (keyboard nudging). */
 	private persistSoon = debounce(() => void this.persist(), 500, true);
@@ -112,7 +139,13 @@ export class LayoutEditorSection {
 
 	/** Write any pending edit now. Called before a redraw, and on tab close. */
 	flush(): void {
-		if (commitFunctionLibrary(this.functions)) void this.persist();
+		// Both are read rather than waited on, and either can be holding an
+		// edit when the tab closes. Evaluated into locals first: `||` would
+		// short-circuit past the second commit whenever the first changed,
+		// which is precisely how a library gets lost.
+		const triggersChanged = commitTriggerList(this.triggers);
+		const functionsChanged = commitFunctionLibrary(this.functions);
+		if (triggersChanged || functionsChanged) void this.persist();
 		this.persistSoon.run();
 	}
 
@@ -203,6 +236,10 @@ export class LayoutEditorSection {
 		this.updatePreview();
 		this.renderAddRow(container, this.layout);
 		this.renderComponents(container, this.layout);
+		this.triggers = renderTriggerList(container, this.layout, {
+			persist: () => void this.persist(),
+			redraw: () => this.redraw(),
+		});
 		this.functions = renderFunctionLibrary(container, this.layout, {
 			persist: () => void this.persist(),
 		});
@@ -849,6 +886,14 @@ export class LayoutEditorSection {
 		if (!definition) return;
 		const record = config as unknown as Record<string, unknown>;
 
+		// `reset` is shared config, so the editor renders it rather than the
+		// component declaring it — which is also why RESERVED_KEYS forbids a
+		// component from declaring it. Only components that can act on one are
+		// offered it, and implementing `applyReset` is what says so.
+		if (definition.applyReset !== undefined) {
+			this.renderResetField(form, layout, config);
+		}
+
 		let currentGroup: string | undefined;
 		for (const field of definition.configFields) {
 			if (
@@ -972,6 +1017,117 @@ export class LayoutEditorSection {
 					void this.persist();
 				});
 			});
+		}
+	}
+
+	/**
+	 * The reset binding (SPEC §6), for a component that can act on one.
+	 *
+	 * Three controls rather than one, because the action decides whether the
+	 * expression field means anything: `full` and `empty` need nothing typed,
+	 * and only `formula` carries a `to`. Unbinding is a first-class choice in
+	 * the trigger dropdown rather than a cleared text field, since "resets on
+	 * nothing" is a state a layout holds deliberately.
+	 */
+	private renderResetField(
+		form: HTMLElement,
+		layout: Layout,
+		config: ComponentConfig,
+	): void {
+		const { names, problems } = parseTriggers(layout);
+		const reset = config.reset;
+
+		const setting = new Setting(form).setName('Resets on').setDesc(
+			names.length === 0
+				? 'This layout declares no triggers yet. Add one below and it appears here.'
+				: 'Which trigger restores this component, and what it restores to.',
+		);
+
+		setting.addDropdown((dropdown) => {
+			dropdown.addOption(NO_TRIGGER_OPTION, 'Nothing');
+			for (const name of names) dropdown.addOption(name, name);
+			// A binding pointing at a trigger that no longer exists still has
+			// to be selectable, or opening the form would silently rebind the
+			// component to whatever happened to be first.
+			if (reset && !names.includes(reset.trigger)) {
+				dropdown.addOption(reset.trigger, `${reset.trigger} (not declared)`);
+			}
+			dropdown.setValue(reset?.trigger ?? NO_TRIGGER_OPTION);
+			dropdown.selectEl.dataset.sheetsmithFocus = `reset-trigger-${config.id}`;
+			dropdown.onChange((value) => {
+				if (value === NO_TRIGGER_OPTION) delete config.reset;
+				else {
+					config.reset = {
+						trigger: value,
+						// Restoring to full is what a reset means most of the
+						// time, and an action is required, so it is the one
+						// that gets to be assumed.
+						action: config.reset?.action ?? 'full',
+						...(config.reset?.to !== undefined ? { to: config.reset.to } : {}),
+					};
+				}
+				void this.persist();
+				this.redraw();
+			});
+		});
+
+		if (reset) {
+			setting.addDropdown((dropdown) => {
+				for (const [value, label] of RESET_ACTIONS) {
+					dropdown.addOption(value, label);
+				}
+				dropdown.setValue(reset.action);
+				dropdown.selectEl.dataset.sheetsmithFocus = `reset-action-${config.id}`;
+				dropdown.onChange((value) => {
+					// The expression is kept when the action moves off formula,
+					// so switching to compare against full and back does not
+					// throw away what was typed. parseReset keeps it too.
+					reset.action = value as ResetBinding['action'];
+					void this.persist();
+					this.redraw();
+				});
+			});
+		}
+
+		if (reset?.action === 'formula') {
+			new Setting(form)
+				.setName('Resets to')
+				.setDesc(
+					// The example goes in a code element rather than the prose,
+					// as the function library's does: an expression is not a
+					// sentence, and sentence-casing it would change what it means.
+					createFragment((fragment) => {
+						fragment.appendText('Formula giving the value to restore.');
+						fragment.createEl('br');
+						fragment.createEl('code', { text: RESET_FORMULA_EXAMPLE });
+					}),
+				)
+				.addText((text) => {
+					text.setValue(reset.to ?? '');
+					text.inputEl.dataset.sheetsmithFocus = `reset-to-${config.id}`;
+					onCommit(text, (raw) => {
+						const trimmed = raw.trim();
+						if (trimmed === '') {
+							// The layout would not load: parseReset requires an
+							// expression for this action.
+							this.fieldError(
+								text.inputEl,
+								'A formula reset needs an expression.',
+							);
+							return;
+						}
+						this.fieldError(text.inputEl, null);
+						reset.to = trimmed;
+						void this.persist();
+					});
+				});
+		}
+
+		// Only this component's own problem. The trigger list below shows
+		// every one, which is where the whole picture belongs.
+		const mine = problems.find((problem) => problem.component === config.label);
+		if (mine) {
+			form.createDiv('sheetsmith-error', (el) => el.setText(mine.message));
 		}
 	}
 
@@ -1262,38 +1418,6 @@ class NameModal extends Modal {
 	}
 }
 
-class ConfirmModal extends Modal {
-	private message: string;
-	private cta: string;
-	private onConfirm: () => void;
-
-	constructor(app: App, message: string, cta: string, onConfirm: () => void) {
-		super(app);
-		this.message = message;
-		this.cta = cta;
-		this.onConfirm = onConfirm;
-	}
-
-	onOpen(): void {
-		this.contentEl.createEl('p', { text: this.message });
-		new Setting(this.contentEl)
-			.addButton((button) =>
-				button.setButtonText('Cancel').onClick(() => this.close()),
-			)
-			.addButton((button) => {
-				button.setButtonText(this.cta).onClick(() => {
-					this.close();
-					this.onConfirm();
-				});
-				// setDestructive needs Obsidian 1.13; the class works on 1.9.
-				button.buttonEl.addClass('mod-warning');
-			});
-	}
-
-	onClose(): void {
-		this.contentEl.empty();
-	}
-}
 
 /**
  * One treatment for every group heading inside a component form, whether it

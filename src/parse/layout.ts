@@ -37,9 +37,15 @@ export interface Layout {
 	 */
 	functions?: string[];
 	/**
-	 * Top-level keys this version does not understand (reset triggers,
-	 * promoted fields) are preserved verbatim, so editing a layout never
-	 * strips them from the file.
+	 * The layout's named reset triggers (SPEC §6), in the order their buttons
+	 * appear. Held as written for the same reason `functions` is: whether a
+	 * name is usable — blank, repeated, or bound by nothing — is contents to
+	 * report in the editor, not a reason to refuse the file.
+	 */
+	triggers?: string[];
+	/**
+	 * Top-level keys this version does not understand (promoted fields) are
+	 * preserved verbatim, so editing a layout never strips them from the file.
 	 */
 	[key: string]: unknown;
 }
@@ -210,6 +216,20 @@ export function parseLayout(source: string): Layout {
 		);
 	}
 
+	// Same rule as the function library: the shape of the key is the file
+	// format's business and refuses the layout, while what the names say is
+	// reported where it can be fixed. See parseTriggers.
+	const triggers = raw.triggers;
+	if (
+		triggers !== undefined &&
+		(!Array.isArray(triggers) ||
+			triggers.some((name) => typeof name !== 'string'))
+	) {
+		throw new LayoutParseError(
+			'"triggers" must be an array of strings, one trigger name per entry.',
+		);
+	}
+
 	const components = raw.components.map(parseComponent);
 
 	// Migrate before the duplicate check, and only ids that fail: two
@@ -246,6 +266,7 @@ export function parseLayout(source: string): Layout {
 		name,
 		...(columns !== undefined ? { columns } : {}),
 		...(functions !== undefined ? { functions: functions as string[] } : {}),
+		...(triggers !== undefined ? { triggers: triggers as string[] } : {}),
 		components,
 	};
 }
