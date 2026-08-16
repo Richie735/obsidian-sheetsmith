@@ -7,6 +7,7 @@ export default defineConfig(
 		'node_modules',
 		'dist',
 		'esbuild.config.mjs',
+		'vitest.config.ts',
 		'version-bump.mjs',
 		'versions.json',
 		'main.js',
@@ -68,6 +69,17 @@ export default defineConfig(
 		files: ['src/components/**/*.ts'],
 		rules: {
 			'obsidianmd/prefer-create-el': 'off',
+		},
+	},
+	{
+		// Test scaffolding. The obsidian stub exists precisely to implement
+		// the helpers these rules ask code to use, so telling it to use them
+		// is circular; tests build fixtures with the standard API for the
+		// same reason components do.
+		files: ['src/test/**/*.ts', 'src/**/*.test.ts'],
+		rules: {
+			'obsidianmd/prefer-create-el': 'off',
+			'obsidianmd/prefer-instanceof': 'off',
 		},
 	},
 );
