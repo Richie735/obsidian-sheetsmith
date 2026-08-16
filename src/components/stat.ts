@@ -9,14 +9,21 @@
  * editing reads well, and it never appears on the card.
  */
 
+import { referencesName } from '../formula/expression';
 import { readFenced, writeFenced } from '../parse/fenced';
-import { ComponentConfig, ComponentDefinition, ReadResult } from '../types';
+import {
+	ComponentConfig,
+	ComponentDefinition,
+	ReadResult,
+	ScopeValues,
+} from '../types';
 import { formatDerived, renderStatCard } from './stat-card';
 
 /**
  * SPEC §3.1: single-value components store their value under `value`, so
  * hand-editing any of them looks the same. A layout may override it with a
- * key that reads better in the file, e.g. `AC`.
+ * key that reads better in the file, e.g. `AC`. It changes the note only;
+ * formulas reference the component's id, never its storage key.
  */
 const DEFAULT_KEY = 'value';
 
@@ -81,7 +88,7 @@ export const stat: ComponentDefinition<StatConfig, StatData> = {
 			kind: 'text',
 			label: 'Key',
 			description:
-				'Entry name for the value in the character note, e.g. "AC". Not shown on the card. Defaults to "value". Renaming it does not move a stored value; the old entry stays in the note under the old key.',
+				'Entry name for the value in the character note, e.g. "AC". Not shown on the card, and not what formulas reference — they use the component id above. Defaults to "value". Renaming it does not move a stored value; the old entry stays in the note under the old key.',
 		},
 		{
 			key: 'derived',
@@ -148,6 +155,22 @@ export const stat: ComponentDefinition<StatConfig, StatData> = {
 		return { ok: true, data };
 	},
 
+	scopeValues(data, config): ScopeValues {
+		// A Stat is one value, so it answers to its bare id: `armour_class`,
+		// carrying what the card shows. The configured key names the entry
+		// in the file, not the reference — a formula should not have to know
+		// how the note is spelled.
+		if ('error' in valueKey(config)) return {};
+		return {
+			self: {
+				value: data?.value,
+				display:
+					config.derived === undefined
+						? undefined
+						: { field: 'derived', scope: { value: data?.value ?? '' } },
+			},
+		};
+	},
 
 	write(data, body, config): string {
 		const entry = valueKey(config);
@@ -184,9 +207,16 @@ export const stat: ComponentDefinition<StatConfig, StatData> = {
 		// otherwise the config would permit a card with nothing in it.
 		const showValue = config.hideValue !== true || config.derived === undefined;
 		const value = data?.value ?? '';
+		// Only a formula that actually reads this card's own value has
+		// nothing to work with while the field is empty. One computed
+		// entirely from elsewhere — an armour class off `abilities.DEX` —
+		// resolves whether or not anything is stored here, and blanking it
+		// would hide a working number.
+		const needsValue =
+			config.derived !== undefined && referencesName(config.derived, 'value');
 		const deriveFrom = (raw: string) => {
 			// An empty value is a blank, not a broken formula.
-			if (raw.trim() === '') return { text: '—', unresolved: false };
+			if (needsValue && raw.trim() === '') return { text: '—', unresolved: false };
 			const resolved = context.resolveField('derived', { value: raw });
 			return {
 				text: formatDerived(resolved, signed),

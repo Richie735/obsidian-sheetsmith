@@ -14,6 +14,9 @@ export type Value = number | boolean | string;
 /** Resolves a referenced name, or undefined when nothing has that name. */
 export type Scope = (name: string) => Value | undefined;
 
+/** A scope holding nothing, for the paths that have no sheet around them. */
+export const EMPTY_SCOPE: Scope = () => undefined;
+
 export class FormulaError extends Error {
 	constructor(message: string) {
 		super(message);
@@ -316,6 +319,23 @@ function evalNode(node: Node, scope: Scope): Value {
 					throw new FormulaError(`Unknown operator "${node.op}".`);
 			}
 		}
+	}
+}
+
+/**
+ * Whether an expression reads the given name. Lets a component tell "there
+ * is nothing to compute from yet" apart from "this formula is broken": a
+ * card whose formula reads its own empty `value` is blank, while one that
+ * reads only other components resolves regardless of what it holds.
+ */
+export function referencesName(source: string, name: string): boolean {
+	try {
+		return tokenize(source).some(
+			(token) => token.kind === 'name' && token.value === name,
+		);
+	} catch {
+		// Unparseable input references nothing; the evaluator reports it.
+		return false;
 	}
 }
 

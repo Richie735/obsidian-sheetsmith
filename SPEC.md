@@ -94,7 +94,11 @@ Every component implements five things and nothing more:
 - **`formulaFields`** — declare which of its config fields accept an expression rather than a literal.
 - **`configFields`** — declare its component-specific config fields (key, input kind, label, optional group for subheadings, optional visibility condition on another field's value) so the layout editor can render a configuration form without knowing the component's type. Shared fields (label, position) are the editor's own business.
 
-Adding a component means implementing exactly those five. Nothing else in the system needs to know the component exists.
+And one optional sixth, for the components that hold values other components can read:
+
+- **`scopeValues`** — publish this component's values to the sheet-wide name table (§5): a `self` value referenced by the bare component id, and `named` entries referenced as `<id>.<name>`. Each entry carries what the note stores and, when the card computes a display, which formula field produces it and the internal scope to run it in; the table evaluates that lazily, since it may reference another component. A component holding nothing a formula could reference — a heading, an image, a block of prose — leaves it off, and nothing else learns it exists.
+
+Adding a component means implementing those five, and the sixth only if it holds values. Nothing else in the system needs to know the component exists.
 
 ### 4.2 Catalog
 
@@ -113,7 +117,7 @@ For each component: what the layout configures, what the character note stores, 
 
 - *Config:* `label`, `attributes[]` (each a `key` plus optional full `name`, in display order), `derived` (one formula computed per attribute, where `value` is that attribute's value), `direction` (`horizontal` | `vertical`), `sizing` (`fill` | `fixed`; fixed sizes cards at one per grid unit of the component's width, floored at a minimum), `align` (`start` | `center` | `end`, shown and meaningful only with fixed sizing; legacy layouts that carried sizing inside `align` still read correctly), `hideLabel`, `labelAlign` (`start` | `center` | `end`), `hideValue` (meaningful only with a `derived`), `signed`
 - *Data:* `fenced`, one entry per attribute key — the `## Abilities` example in §3.1
-- *Sheet view:* the group's name renders above its cards unless `hideLabel`, aligned to the start of the component unless `labelAlign` says otherwise. Each attribute edits inline. The derived part recomputes live on every keystroke, but the note is written only on commit — leaving the field or pressing Enter. Escape abandons the draft and restores the stored value. Arrow keys step a numeric value like typing: live display, committed on blur. An empty value shows "—" everywhere; "?" is reserved for a value that is present but did not resolve. Covers "DEX 16 (+3)" without the plugin knowing what a modifier is. Until the full engine lands (M3), `derived` may reference the attribute's own `value` and the standard helpers.
+- *Sheet view:* the group's name renders above its cards unless `hideLabel`. At `auto`, its default, its position follows the cards' own alignment — a heading belongs over the thing it heads, and centred cards under a name pinned to the far left do not read as one block. Any other `labelAlign` pins it there, `start` included: the default needs a name of its own, or "follow the cards" and "hold the start edge" become the same unset key and one of them cannot be chosen. Each attribute edits inline on the shared card rules below. Covers "DEX 16 (+3)" without the plugin knowing what a modifier is. `derived` may reference the attribute's own `value`, anything the sheet publishes (§5), and the standard helpers; the layout's own function library is still to come.
 - *Formula fields:* `derived`
 
 Entries in the note that no attribute maps to are preserved on write, never dropped. Renaming an attribute key does not move its stored value: the old entry stays in the note under the old key, and migrating it is part of the §10 rename story.
@@ -214,7 +218,9 @@ A layout is therefore metadata, a function library, a trigger list, a promoted f
 ## 5. Formulas
 
 - **Any numeric field configured in a layout accepts a literal or a formula.** A Pool's max, a Track's box count, an ability's derived display, a Table's computed column. There is no separate "computed field" concept to learn.
-- Formulas reference other components' values by name.
+- **Formulas reference other components' values by name**, and the name is the component's `id`, never its label — renaming a label must not break arithmetic. A component holding one value answers to its bare id (`armour_class`); one holding several answers to `<id>.<name>` (`abilities.DEX`). What a component publishes is declared by its `scopeValues` (§4.1); a name the sheet does not publish fails to resolve rather than defaulting to zero.
+- **A bare name gives what the card shows, not what the note stores.** `abilities.DEX` is the +6 in large type, not the 22 behind it: the sheet has already decided what that ability means, and a formula reading it should get the same answer the reader does. Where a component computes nothing, the two are the same thing. The stored value stays reachable as `<name>.value` — `abilities.DEX.value` is 22 — for the formula that genuinely wants the raw score.
+- Names resolve nearest-first: a scope internal to the component (one ability's `value`, a table row's cells), then the component's own data, then the sheet. A card's `value` therefore always means its own.
 - **Each layout defines its own function library.** This is what makes the plugin system-agnostic: no game's arithmetic is built in.
 - Standard helpers are available: floor, ceil, round, min, max, abs, and a conditional.
 - Computed values are read-only in sheet view.

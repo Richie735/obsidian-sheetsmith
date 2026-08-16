@@ -55,6 +55,13 @@ describe.each(types)('component "%s"', (type) => {
 		expect(typeof component?.render).toBe('function');
 	});
 
+	it('publishes scope values as a function, or not at all', () => {
+		// The optional sixth member: a component either publishes values to
+		// the rest of the sheet's formulas or it does not, never something
+		// in between that the view would have to guard against.
+		expect(['function', 'undefined']).toContain(typeof component?.scopeValues);
+	});
+
 	it('declares formulaFields and configFields', () => {
 		expect(Array.isArray(component?.formulaFields)).toBe(true);
 		expect(Array.isArray(component?.configFields)).toBe(true);

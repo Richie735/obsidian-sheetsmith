@@ -188,6 +188,45 @@ describe('statGroup.render', () => {
 		}
 	});
 
+	it('sits the label over the cards it heads unless told otherwise', () => {
+		const label = (el: HTMLElement) =>
+			el.querySelector('.sheetsmith-stat-group-label') as HTMLElement;
+		const centred = { ...config, sizing: 'fixed', align: 'center' } as const;
+
+		const followed = document.createElement('div');
+		statGroup.render(followed, centred, { values: {} }, context);
+		expect(
+			label(followed).classList.contains('sheetsmith-stat-group-label-center'),
+		).toBe(true);
+
+		// An explicit position still wins over the cards' alignment.
+		const overridden = document.createElement('div');
+		statGroup.render(
+			overridden,
+			{ ...centred, labelAlign: 'start' },
+			{ values: {} },
+			context,
+		);
+		expect(
+			Array.from(label(overridden).classList).some((name) =>
+				name.includes('label-'),
+			),
+		).toBe(false);
+	});
+
+	it('reads an explicit "auto" the same as an absent position', () => {
+		const centred = { ...config, sizing: 'fixed', align: 'center' } as const;
+		for (const labelAlign of [undefined, 'auto'] as const) {
+			const el = document.createElement('div');
+			statGroup.render(el, { ...centred, labelAlign }, { values: {} }, context);
+			expect(
+				el
+					.querySelector('.sheetsmith-stat-group-label')
+					?.classList.contains('sheetsmith-stat-group-label-center'),
+			).toBe(true);
+		}
+	});
+
 	it('shows an empty value as a blank, not a broken formula', () => {
 		const el = document.createElement('div');
 		statGroup.render(el, config, { values: { STR: '8' } }, context);
@@ -328,6 +367,44 @@ describe('statGroup.render', () => {
 	});
 });
 
+describe('statGroup.scopeValues', () => {
+	it('publishes one name per attribute, for `abilities.DEX`', () => {
+		const published = statGroup.scopeValues?.(
+			{ values: { STR: '8', DEX: '16', WIS: '12' } },
+			config,
+		);
+		expect(Object.keys(published?.named ?? {})).toEqual(['STR', 'DEX', 'WIS']);
+		// The stored score, plus the derived the reference actually gets.
+		expect(published?.named?.DEX).toEqual({
+			value: '16',
+			display: { field: 'derived', scope: { value: '16' } },
+		});
+	});
+
+	it('publishes the score alone when the group derives nothing', () => {
+		const published = statGroup.scopeValues?.({ values: { STR: '8' } }, {
+			...config,
+			derived: undefined,
+		});
+		expect(published?.named?.STR).toEqual({ value: '8', display: undefined });
+	});
+
+	it('publishes only what the layout declares', () => {
+		// An entry no attribute maps to does not render, so a formula must
+		// not be able to reach it either.
+		const published = statGroup.scopeValues?.(
+			{ values: { STR: '8', LUCK: '3' } },
+			config,
+		);
+		expect(Object.keys(published?.named ?? {})).not.toContain('LUCK');
+	});
+
+	it('publishes nothing when the section is missing', () => {
+		const published = statGroup.scopeValues?.(null, config);
+		expect(published?.named?.STR?.value).toBeUndefined();
+	});
+});
+
 describe('statGroup contract', () => {
 	it('declares fenced storage, formula fields, and config fields', () => {
 		expect(statGroup.storage).toBe('fenced');
@@ -345,5 +422,31 @@ describe('statGroup contract', () => {
 		]);
 		const align = statGroup.configFields.find((field) => field.key === 'align');
 		expect(align?.visibleWhen).toEqual({ key: 'sizing', equals: 'fixed' });
+	});
+
+	it('names the default of every select, so each choice is storable', () => {
+		// The editor stores a select only when it differs from the first
+		// option (layout-editor.ts), so the first option has to *be* the
+		// behaviour an absent key produces. Where the default is "whatever
+		// the cards do", that needs its own name: without one, picking
+		// "start" deletes the key and renders as auto, and the dropdown goes
+		// on reading "start" while the sheet disagrees.
+		const labelAlign = statGroup.configFields.find(
+			(field) => field.key === 'labelAlign',
+		);
+		expect(labelAlign?.options?.[0]).toBe('auto');
+
+		// Every other select's first option is already its absent-key
+		// behaviour, so each remaining choice stores a value of its own.
+		expect(
+			statGroup.configFields.find((field) => field.key === 'direction')
+				?.options?.[0],
+		).toBe('horizontal');
+		expect(
+			statGroup.configFields.find((field) => field.key === 'sizing')?.options?.[0],
+		).toBe('fill');
+		expect(
+			statGroup.configFields.find((field) => field.key === 'align')?.options?.[0],
+		).toBe('start');
 	});
 });

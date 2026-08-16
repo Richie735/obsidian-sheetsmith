@@ -403,6 +403,74 @@ describe('stat.render: hit target', () => {
 	});
 });
 
+describe('stat.scopeValues', () => {
+	it('publishes its stored value under the bare component id', () => {
+		expect(stat.scopeValues?.({ value: '18' }, config)).toEqual({
+			self: { value: '18', display: undefined },
+		});
+	});
+
+	it('publishes the derived display when the card computes one', () => {
+		const published = stat.scopeValues?.(
+			{ value: '18' },
+			{ ...config, derived: '10 + value' },
+		);
+		// The reference gets what the card shows; the scope builder runs it.
+		expect(published?.self?.display).toEqual({
+			field: 'derived',
+			scope: { value: '18' },
+		});
+		expect(published?.self?.value).toBe('18');
+	});
+
+	it('publishes nothing it cannot store, and nothing it does not have', () => {
+		expect(stat.scopeValues?.(null, config)?.self?.value).toBeUndefined();
+		expect(stat.scopeValues?.({ value: '18' }, { ...config, key: 'note' })).toEqual(
+			{},
+		);
+	});
+
+	it('does not publish the note: prose is not a value to compute with', () => {
+		const published = stat.scopeValues?.({ value: '18', note: 'plate' }, config);
+		expect(JSON.stringify(published)).not.toContain('plate');
+	});
+});
+
+describe('stat.render: computed from elsewhere on the sheet', () => {
+	// "AC is 10 + the Dex modifier": nothing stored on this card at all.
+	const computed: StatConfig = {
+		...config,
+		derived: '10 + floor((abilities.DEX - 10) / 2)',
+		signed: false,
+		hideValue: true,
+	};
+	// Stands in for the sheet scope the view builds from every component.
+	const fromSheet = (_field: string, _scope: Readonly<Record<string, FieldValue>>) =>
+		16;
+
+	it('shows the number with no value of its own to compute from', () => {
+		const el = render(computed, null, { resolveField: fromSheet });
+		expect(el.querySelector('.sheetsmith-stat-derived')?.textContent).toBe('16');
+		// A computed value is read-only (SPEC §5); there is no field to edit.
+		expect(inputs(el).value).toBeNull();
+	});
+
+	it('does not blank a formula that never reads its own value', () => {
+		// The em dash means "nothing here to compute from". A formula that
+		// reads only other components is not waiting on this card, so it
+		// must not be blanked by an empty one.
+		const el = render(computed, { value: '' }, { resolveField: fromSheet });
+		expect(el.querySelector('.sheetsmith-stat-derived')?.textContent).toBe('16');
+	});
+
+	it('still blanks a formula that does read its own empty value', () => {
+		const el = render({ ...computed, derived: '10 + value' }, null, {
+			resolveField: fromSheet,
+		});
+		expect(el.querySelector('.sheetsmith-stat-derived')?.textContent).toBe('—');
+	});
+});
+
 describe('stat contract', () => {
 	it('declares fenced storage, formula fields, and config fields', () => {
 		expect(stat.storage).toBe('fenced');
