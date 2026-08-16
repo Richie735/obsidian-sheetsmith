@@ -66,6 +66,15 @@ export interface SkillCardColumn {
 	levels?: string[];
 	/** How a level column is edited. Defaults to cycling on click. */
 	input?: 'cycle' | 'select';
+	/**
+	 * Render a text column as a gloss on the row rather than as data beside
+	 * it: a size down, tracked, and faint, the way an abbreviation sits under
+	 * a stat card's name. For the column that qualifies the row — a skill's
+	 * ability, an item's source — where equal weight has the eye reading two
+	 * things per row when only one of them is what the row is. Opt-in, because
+	 * muted user data otherwise reads as disabled.
+	 */
+	secondary?: boolean;
 	/** Prefix a non-negative computed number with "+". Defaults to false. */
 	signed?: boolean;
 }
@@ -742,6 +751,11 @@ export const skillCard: ComponentDefinition<SkillCardConfig, SkillCardData> = {
 
 				const input = element('input', 'sheetsmith-table-input', td);
 				input.type = 'text';
+				// A gloss is a text column's business: a number column is the
+				// row's arithmetic and never the note beside it.
+				if (type === 'text' && column.secondary === true) {
+					input.classList.add('sheetsmith-table-input-secondary');
+				}
 				input.value = raw;
 				input.setAttribute('aria-label', label);
 				if (type === 'number') input.inputMode = 'numeric';

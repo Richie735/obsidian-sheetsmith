@@ -1248,6 +1248,24 @@ body {
 	text-align: left;
 }
 
+/* A text column that glosses the row rather than adding to it — the ability
+   behind a skill, the source of an item. The same clothes the abbreviation
+   wears under a stat card's name, and for the same reason: two things of
+   equal weight per row leave the eye deciding which one the row is. Opt-in
+   per column, because muted user data otherwise reads as disabled. */
+.sheetsmith-view .sheetsmith-table-input-secondary {
+	font-size: calc(var(--font-ui-smaller) * 0.85);
+	letter-spacing: 0.06em;
+	color: var(--text-faint);
+}
+
+/* Faint is for reading past; the cell being edited is the one being read.
+   Colour only — a size change here would reflow the row under the cursor. */
+.sheetsmith-view .sheetsmith-table-input-secondary:hover,
+.sheetsmith-view .sheetsmith-table-input-secondary:focus {
+	color: var(--text-normal);
+}
+
 
 /* There is no hover on a phone, so resting on hover alone leaves a touch
    user a table of bare numbers with nothing saying which are typeable and
@@ -1559,7 +1577,8 @@ body {
 		border-color: var(--text-muted);
 	}
 
-	.sheetsmith-view .sheetsmith-table-unresolved {
+	.sheetsmith-view .sheetsmith-table-unresolved,
+	.sheetsmith-view .sheetsmith-table-input-secondary {
 		color: var(--text-muted);
 	}
 

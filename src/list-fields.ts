@@ -516,6 +516,7 @@ interface ColumnEntry extends Record<string, unknown> {
 	levels?: string[];
 	input?: string;
 	signed?: boolean;
+	secondary?: boolean;
 }
 
 /**
@@ -824,6 +825,20 @@ export function renderColumnsEditor(
 					context.persist();
 				});
 			}
+		} else if (column.type === undefined || column.type === 'text') {
+			// Text is the default, so a column that has never had its type set
+			// is one of these too.
+			const secondaryLabel = detail.createEl('label', {
+				cls: 'sheetsmith-attribute-check',
+			});
+			const secondary = secondaryLabel.createEl('input', { type: 'checkbox' });
+			secondary.checked = column.secondary === true;
+			secondaryLabel.createSpan({ text: 'Secondary text' });
+			secondary.addEventListener('change', () => {
+				if (secondary.checked) column.secondary = true;
+				else delete column.secondary;
+				context.persist();
+			});
 		}
 
 		// Every column has this one: a control that names itself does not
