@@ -217,6 +217,200 @@ describe('columns editor', () => {
 		expect(recorded.persists).toBe(2);
 	});
 
+	it('samples every state a level column can be in', () => {
+		const record = {
+			columns: [
+				{
+					key: 'Training',
+					type: 'level',
+					levels: ['Untrained', 'Proficient:', 'Expertise'],
+				},
+			],
+		};
+		const el = columnsEditor(record);
+		const rings = Array.from(
+			el.querySelectorAll<HTMLElement>(
+				'.sheetsmith-level-sample .sheetsmith-table-cycle',
+			),
+		);
+		// None, and then one per level.
+		expect(rings.map((ring) => ring.textContent)).toEqual(['', '', 'E']);
+		// Painted by the sheet's own painter, ramp and all — which is the
+		// point of the sample: an editor drawing its own idea of the control
+		// would drift from the control.
+		expect(rings.map((ring) => ring.style.getPropertyValue('--sheetsmith-level')))
+			.toEqual(['', '0.5', '1']);
+	});
+
+	/** The sample's rings, re-queried: a press redraws them in place. */
+	function sampleRings(el: HTMLElement): HTMLElement[] {
+		return Array.from(
+			el.querySelectorAll<HTMLElement>(
+				'.sheetsmith-level-sample .sheetsmith-table-cycle',
+			),
+		);
+	}
+
+	function sampleControls(el: HTMLElement): HTMLButtonElement[] {
+		return Array.from(
+			el.querySelectorAll<HTMLButtonElement>('.sheetsmith-level-sample button'),
+		);
+	}
+
+	it('turns a level\'s letter off and on by pressing its ring', () => {
+		const record = {
+			columns: [
+				{
+					key: 'Training',
+					type: 'level',
+					levels: ['Untrained', 'Proficient', 'Expertise'],
+				},
+			],
+		};
+		const el = columnsEditor(record);
+		const names = el.querySelector(
+			'input[aria-label="Training level names"]',
+		) as HTMLInputElement;
+		// None is a picture, not a control: an empty ring is what it is.
+		expect(sampleControls(el)).toHaveLength(2);
+
+		sampleControls(el)[0]?.click();
+		expect(record.columns[0]?.levels).toEqual([
+			'Untrained',
+			'Proficient:',
+			'Expertise',
+		]);
+		// The field and the picture are two views of one string.
+		expect(names.value).toBe('Untrained, Proficient:, Expertise');
+		expect(sampleRings(el).map((ring) => ring.textContent)).toEqual(['', '', 'E']);
+		// Repainted in place: a press is not a reason to rebuild the tab.
+		expect(recorded.persists).toBe(1);
+		expect(recorded.redraws).toBe(0);
+
+		sampleControls(el)[0]?.click();
+		expect(record.columns[0]?.levels).toEqual([
+			'Untrained',
+			'Proficient',
+			'Expertise',
+		]);
+		expect(sampleRings(el).map((ring) => ring.textContent)).toEqual(['', 'P', 'E']);
+	});
+
+	it('gives back a mark of its own after the press that hid it', () => {
+		const record = {
+			columns: [
+				{
+					key: 'Training',
+					type: 'level',
+					levels: ['Untrained', 'Proficient:●', 'Expertise'],
+				},
+			],
+		};
+		const el = columnsEditor(record);
+		sampleControls(el)[0]?.click();
+		expect(record.columns[0]?.levels?.[1]).toBe('Proficient:');
+		sampleControls(el)[0]?.click();
+		// The initial would have been "P": a toggle that loses what it was
+		// holding is a trap, so the press gives the mark back.
+		expect(record.columns[0]?.levels?.[1]).toBe('Proficient:●');
+		expect(sampleRings(el)[1]?.textContent).toBe('●');
+	});
+
+	it('offers no control where a level has nowhere to keep a mark', () => {
+		// Unnamed levels: the mark lives inside the name, so there is none.
+		const el = columnsEditor({
+			columns: [{ key: 'Training', type: 'level', max: 2 }],
+		});
+		expect(sampleRings(el)).toHaveLength(3);
+		expect(sampleControls(el)).toHaveLength(0);
+		expect(
+			el.querySelector('.sheetsmith-level-sample')?.getAttribute('title'),
+		).toBe('Name the levels to choose what each ring shows.');
+	});
+
+	it('leaves the sample out where the column draws no rings', () => {
+		const record = {
+			columns: [
+				{
+					key: 'Training',
+					type: 'level',
+					input: 'select',
+					levels: ['Untrained', 'Proficient', 'Expertise'],
+				},
+			],
+		};
+		const el = columnsEditor(record);
+		expect(el.querySelector('.sheetsmith-level-sample')).toBeNull();
+	});
+
+	it('repaints the sample as the level count changes, without a redraw', () => {
+		const record = { columns: [{ key: 'Training', type: 'level' }] };
+		const el = columnsEditor(record);
+		const max = el.querySelector(
+			'input[aria-label="Training highest level"]',
+		) as HTMLInputElement;
+		max.value = '3';
+		max.dispatchEvent(new Event('change'));
+		expect(
+			el.querySelectorAll('.sheetsmith-level-sample .sheetsmith-table-cycle'),
+		).toHaveLength(4);
+		// In place, so the field being typed in is not pulled out from under
+		// the author mid-edit.
+		expect(recorded.redraws).toBe(0);
+	});
+
+	it('explains the level syntax only where a level column can use it', () => {
+		const plain = columnsEditor({ columns: [{ key: 'Bonus', type: 'number' }] });
+		expect(plain.querySelector('.sheetsmith-attribute-footnote')).toBeNull();
+		const levelled = columnsEditor({
+			columns: [{ key: 'Training', type: 'level' }],
+		});
+		expect(
+			levelled.querySelector('.sheetsmith-attribute-footnote')?.textContent,
+		).toContain('"Proficient:"');
+	});
+
+	it('does not point at rings a dropdown never draws', () => {
+		// The note tells the author to select a ring. A column drawing none
+		// has nothing for that sentence to mean.
+		const el = columnsEditor({
+			columns: [{ key: 'Training', type: 'level', input: 'select' }],
+		});
+		expect(el.querySelector('.sheetsmith-attribute-footnote')).toBeNull();
+	});
+
+	it('repaints the sample when the level count is cleared', () => {
+		const record: { columns: { key: string; type: string; max?: number }[] } = {
+			columns: [{ key: 'Training', type: 'level', max: 3 }],
+		};
+		const el = columnsEditor(record);
+		expect(sampleRings(el)).toHaveLength(4);
+		const max = el.querySelector(
+			'input[aria-label="Training highest level"]',
+		) as HTMLInputElement;
+		max.value = '';
+		max.dispatchEvent(new Event('change'));
+		// Cleared is a level count too: one level, so none and one ring.
+		expect(record.columns[0]).not.toHaveProperty('max');
+		expect(sampleRings(el)).toHaveLength(2);
+	});
+
+	it('refuses a level count it would have to draw a thousand rings for', () => {
+		const record: { columns: { key: string; type: string; max?: number }[] } = {
+			columns: [{ key: 'Training', type: 'level', max: 2 }],
+		};
+		const el = columnsEditor(record);
+		const max = el.querySelector(
+			'input[aria-label="Training highest level"]',
+		) as HTMLInputElement;
+		max.value = '1000000';
+		max.dispatchEvent(new Event('change'));
+		// Rejected, said so, and left holding what it had.
+		expect(record.columns[0]?.max).toBe(2);
+		expect(max.classList.contains('sheetsmith-input-invalid')).toBe(true);
+		expect(sampleRings(el)).toHaveLength(3);
+	});
+
 	it('asks before dropping a column carrying a formula', () => {
 		const record = afterRemoval();
 		const el = columnsEditor(record);

@@ -9,6 +9,13 @@
  */
 
 import { Platform, setIcon } from 'obsidian';
+import {
+	levelCount,
+	levelGlyph,
+	MAX_LEVELS,
+	paintLevelRing,
+	parseLevel,
+} from './components/level-ring';
 
 /** What a list editor needs from the editor around it. */
 export interface ListContext {
@@ -721,6 +728,10 @@ export function renderColumnsEditor(
 				context.persist();
 			});
 		} else if (column.type === 'level') {
+			// Assigned by the sample below, and called by the fields above it
+			// that change what the sample shows. A level column with a
+			// dropdown draws no rings and so has no sample to repaint.
+			let drawSample = () => undefined as void;
 
 			// Naming the levels settles how many there are, so the highest
 			// level is only asked for while they have no names.
@@ -752,6 +763,13 @@ export function renderColumnsEditor(
 					);
 					return;
 				}
+				if (parsed.some((entry) => parseLevel(entry).name === '')) {
+					// A mark stands for the level's name; it does not replace
+					// it. Caught here as well as at render, because this is
+					// where the author is looking at what they typed.
+					fieldError(names, 'A level needs a name before its colon.');
+					return;
+				}
 				fieldError(names, null);
 				column.levels = parsed;
 				context.persist();
@@ -770,16 +788,26 @@ export function renderColumnsEditor(
 					if (raw === '') {
 						fieldError(input, null);
 						delete column.max;
+						// Cleared is a level count too — one — and the sample
+						// has to say so rather than keep showing the old ring.
+						drawSample();
 						context.persist();
 						return;
 					}
 					const parsed = Number(raw);
-					if (!Number.isInteger(parsed) || parsed < 1) {
-						fieldError(input, 'Whole number, 1 or more.');
+					if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_LEVELS) {
+						// Bounded above because the sample draws a ring per
+						// level: a mis-typed 1000000 must be a message, not a
+						// hang.
+						fieldError(input, `Whole number, 1 to ${MAX_LEVELS}.`);
 						return;
 					}
 					fieldError(input, null);
 					column.max = parsed;
+					// A level more or less is a ring more or less. Repainted in
+					// place rather than through a redraw, so the count can be
+					// typed without the field being pulled out from under it.
+					drawSample();
 					context.persist();
 				});
 			}
@@ -791,11 +819,107 @@ export function renderColumnsEditor(
 				inputStyle.createEl('option', { value: option.id, text: option.label });
 			}
 			inputStyle.value = column.input === 'select' ? 'select' : 'cycle';
+			inputStyle.dataset.sheetsmithFocus = `${prefix}-col-${column.key}-input`;
 			inputStyle.addEventListener('change', () => {
 				if (inputStyle.value === 'cycle') delete column.input;
 				else column.input = inputStyle.value;
 				context.persist();
+				// The sample belongs to the ring, so it comes and goes with it.
+				// The redraw takes the focus with it unless it is asked not to,
+				// and the control just used is where the author still is.
+				context.focusAfterRedraw(`${prefix}-col-${column.key}-input`);
+				context.redraw();
 			});
+
+			if (column.input !== 'select') {
+				// Every state the column can be in, drawn by the same painter
+				// the sheet uses. The names say what the levels are; this says
+				// what they look like, which is the half a name cannot carry —
+				// and it is how ":" and ":★" explain themselves, at the moment
+				// they are typed rather than in a sentence somewhere else.
+				const strip = labelled(detail, 'Shows').createDiv(
+					'sheetsmith-view sheetsmith-level-sample',
+				);
+				// A named level's ring is also the control for the one thing a
+				// picture can be asked to change: whether it carries a mark at
+				// all. The colon is exact and unguessable; a ring that answers
+				// a press is neither, and the two write the same string — the
+				// field updates as the rings are pressed, so nothing here is a
+				// second place the truth is kept.
+				if (column.levels === undefined) {
+					// A mark lives inside a level's name, so a column with no
+					// names has nowhere to keep one.
+					strip.setAttribute(
+						'title',
+						'Name the levels to choose what each ring shows.',
+					);
+				}
+				/**
+				 * Marks of the author's own, turned off here. Pressing a ring
+				 * off and on again must give back what it had rather than the
+				 * initial: the press is a toggle, and a toggle that loses
+				 * something on the way through is a trap. An initial needs no
+				 * remembering — an unmarked name is where it comes from.
+				 */
+				const remembered = new Map<number, string>();
+				const setLevel = (level: number, entry: string) => {
+					const levels = [...(column.levels ?? [])];
+					levels[level] = entry;
+					column.levels = levels;
+					// The field and the picture are two views of one string and
+					// must never disagree, least of all while the author is
+					// looking at both of them.
+					names.value = levels.join(', ');
+					fieldError(names, null);
+					drawSample();
+					context.persist();
+				};
+				drawSample = () => {
+					strip.empty();
+					for (let level = 0; level <= levelCount(column); level++) {
+						const entry = column.levels?.[level];
+						// None is an empty ring by definition, and an unnamed
+						// level has nowhere to keep a mark. Neither is a
+						// control, so neither pretends to be one — and neither
+						// is announced, since the field beside them already
+						// says what the levels are.
+						if (entry === undefined || level === 0) {
+							const ring = strip.createDiv(
+								'sheetsmith-table-cycle sheetsmith-level-sample-fixed',
+							);
+							ring.setAttribute('aria-hidden', 'true');
+							paintLevelRing(ring, column, level, true);
+							continue;
+						}
+						const { name, glyph } = parseLevel(entry);
+						const ring = strip.createEl('button', {
+							cls: 'sheetsmith-table-cycle',
+							type: 'button',
+						});
+						paintLevelRing(ring, column, level, true);
+						const marked = glyph !== '';
+						const says = marked
+							? `${name} shows ${levelGlyph(column, level)}`
+							: `${name} shows nothing`;
+						ring.setAttribute('aria-label', says);
+						// Two states, so ARIA has a word for it — and the word
+						// is about this ring's mark, not about the level a
+						// character is on, which is the sheet's business.
+						ring.setAttribute('aria-pressed', String(marked));
+						ring.setAttribute('title', says);
+						ring.addEventListener('click', () => {
+							if (marked) {
+								if (glyph !== null) remembered.set(level, glyph);
+								setLevel(level, `${name}:`);
+								return;
+							}
+							const mark = remembered.get(level) ?? '';
+							setLevel(level, mark === '' ? name : `${name}:${mark}`);
+						});
+					}
+				};
+				drawSample();
+			}
 		} else if (column.type === 'number') {
 			for (const bound of ['min', 'max'] as const) {
 				const holder = detail.createDiv('sheetsmith-position-field');
@@ -858,6 +982,21 @@ export function renderColumnsEditor(
 
 	const footer = listEl.createDiv('sheetsmith-attribute-footer');
 	const add = footer.createEl('button', { text: 'Add column' });
+	// Once for the list rather than under every level column, and only where
+	// there are rings to press: the sample says what the syntax does, and this
+	// says that there is a syntax. A note nobody in this layout can use is
+	// noise, and one pointing at rings a dropdown never draws is worse.
+	if (
+		columns.some(
+			(column) => column.type === 'level' && column.input !== 'select',
+		)
+	) {
+		listEl.createDiv('sheetsmith-attribute-footnote', (el) =>
+			el.setText(
+				'Select a ring to turn its letter on or off. A level name can also say it in writing, after a colon: "Proficient:" is a fill with no letter on it, and anything written after the colon, such as ★, is drawn in place of the initial.',
+			),
+		);
+	}
 	add.addEventListener('click', () => {
 		const taken = new Set(columns.map((column) => column.key));
 		let next = 'New column';

@@ -1586,6 +1586,37 @@ body {
 	font-family: var(--font-monospace);
 }
 
+/* The layout editor's sample of a level column: every state of the ring, as
+   the sheet draws it. It wears .sheetsmith-view because that class is the
+   scope the ring's rules are written against — the sample is a piece of sheet
+   sitting in the editor, and a second copy of those selectors would drift
+   from the first the next time either changed.
+
+   What comes with that class belongs to a whole pane, and has to be handed
+   back: the padding, the scrolling, and above all the containment. An
+   inline-size container may not be measured by its contents, so left in place
+   it would collapse the strip to nothing. */
+.sheetsmith-level-sample {
+	display: flex;
+	align-items: center;
+	/* Twice the ring's hit target, which reaches --size-4-2 past each side.
+	   The table sizes that target to the cell padding exactly, so neighbours
+	   meet without overlapping; here the gap is the only thing between two
+	   rings, and at anything less the targets overlap and the later ring wins
+	   the press — the right edge of "Proficient" would toggle Expertise. */
+	gap: calc(2 * var(--size-4-2));
+	padding: 0;
+	overflow: visible;
+	container-type: normal;
+}
+
+/* None, and any level with no name to keep a mark in: a picture of a state
+   rather than a control for it. Nothing here answers a press, so nothing here
+   offers one — this takes the ring's hover and its pointer cursor with it. */
+.sheetsmith-level-sample-fixed {
+	pointer-events: none;
+}
+
 .sheetsmith-attribute-check {
 	display: flex;
 	align-items: center;
