@@ -16,7 +16,9 @@ The plugin knows arithmetic and nothing about any game. Every rule specific to a
 
 **Character.** A normal `.md` note naming a layout in frontmatter. Holds values only, never structure.
 
-**Component.** A placeable block on a layout. Deliberately generic (Stat group, Pool, Table) rather than system-specific (AbilityScore, SpellSlots).
+**Component.** A placeable block on a layout. Deliberately generic in *capability* (Stat group, Pool) rather than system-specific (AbilityScore, SpellSlots): what a component can do is never tied to one game's rules, and every rule lives in the layout.
+
+A component's *name* is a separate matter, settled per component. **Skill card** is named for the job it was built for even though it implements a generic one — named rows, typed columns, per-row formula scope — because the name a user picks a block by should describe what they are about to build, not the shape of its data model. The cost is real and worth stating: the same block is what §4.2 has covering inventory, attacks, and spells, and its name will read oddly there. Naming those is an open question (§13), not something the file model forces.
 
 **Formula.** An expression on any numeric field, referencing other fields and layout-defined functions.
 
@@ -91,7 +93,7 @@ Every component implements five things and nothing more:
 - **`read`** — parse its section of the note body into data.
 - **`write`** — serialise data back into a section, byte-identical when nothing changed.
 - **`render`** — display itself, given its data, the resolved values from the formula engine, a resolver for evaluating formula fields against internal scopes (one ability, a table row), and a callback for reporting user edits. The sheet view owns writing reported edits back to the note; components never touch the file.
-- **`formulaFields`** — declare which of its config fields accept an expression rather than a literal.
+- **`formulaFields`** — declare which of its config fields accept an expression rather than a literal. Usually a config key; a component whose structure repeats declares a path with `*` standing for one segment (`columns.*.formula`), because its expressions live one per column or one per row and a flat list could not name them.
 - **`configFields`** — declare its component-specific config fields (key, input kind, label, optional group for subheadings, optional visibility condition on another field's value) so the layout editor can render a configuration form without knowing the component's type. Shared fields (label, position) are the editor's own business.
 
 And one optional sixth, for the components that hold values other components can read:
@@ -161,21 +163,41 @@ A single-attribute Stat group and a **Stat** are not the same component, which i
 - *Sheet view:* click to flip
 - *Formula fields:* `reset.to`
 
-**Table** — repeatable typed records, wikilink-aware. Covers skills, inventory, attacks, spells, features.
+**Skill card** (`skill-card`) — repeatable typed records, wikilink-aware. Covers skills and saving throws, and the same block covers inventory, attacks, spells, and features, whose naming §13 leaves open.
 
-- *Config:* `label`, `rowMode`, `rows` (when fixed), `columns[]`
-- *Data:* `markdown` table, one row per record
-- *Sheet view:* cells editable, link cells navigate on click, computed cells read-only
-- *Formula fields:* each column's `formula`
+- *Config:* `label`, `rowHeader` (heading of the column holding row names; defaults to "Name"), `namePosition` (where that column is drawn among the others; 0, first, by default), `rows[]` (each a `label` plus optional `values`), `columns[]` (each a `key`, optional `name`, `type`, `hideHeading`, and the type's own fields), `hideLabel`
+- *Data:* `markdown` table, one row per record, one column per stored column
+- *Sheet view:* cells editable on the shared editing rules, computed cells read-only, hovering one reveals its formula — or, where it failed, the name it could not find, since that is the half a reader can act on. A hover is the desktop half of that: a tap on a computed cell and a long press on a level both open the same text anchored to the cell, because a phone has no hover and a glyph with no route to its meaning is a dead end. The row name stays pinned while the table scrolls sideways, so a column of numbers never loses the row it belongs to. The "—" and "?" rule holds here as on a card: a computed column with no formula has nothing to compute and reads as empty, and "?" stays reserved for a formula that is present and did not resolve
+- *Formula fields:* `columns.*.formula`, `rows.*.values.*`
 
-The most important component, because it absorbs several system-specific concepts into one generic block. Each column is typed as `text`, `number`, `toggle`, `link`, or `computed`. A computed column's formula may reference the row's own cells by column name, and anything else on the sheet by component id.
+The most important component, because it absorbs several system-specific concepts into one generic block — which is what the name does not say, and §2 records why. Each column is typed as `text`, `number` (with optional `min` and `max`), `level`, `toggle`, or `computed` (with a `formula` and optional `signed`). A computed column's formula may reference the row's own cells by column key, the row's own values by name, and anything else on the sheet by component id.
+
+**A `level` column and a `toggle` are one control with a different number of states.** A one-level column already *was* an ordinary toggle by this section's own account, and the two now render identically: two adjacent columns doing the same job must not measure differently under the same finger, and a native checkbox had none of the ring's hit target, coarse-pointer sizing, or press feedback. `toggle` goes on storing yes and no, which is what reads well in a file for a flag.
+
+**A `level` column is one graded control, stored as the level it is on.** It exists because a graded proficiency is neither a number you type nor a set of boxes you tick: a spinner holding 0 to 2 asks the player to know that expertise is spelled "2", and a row of checkboxes offers the states nobody means — none ticked but the second one, or two of the wrong ones. One answer gets one control.
+
+- **It reads as a toggle carrying the level's initial**: a filled circle holding "P" or "E", and an empty ring for none, which is what an unticked proficiency looks like on paper and needs no letter to say so. One glyph keeps the column as narrow as a checkbox would; the full name is a hover away on a pointer, a long press away on touch, and is what assistive tech is given.
+- **`levels`** names the states from none upwards (`["Untrained", "Proficient", "Expertise"]`), and naming them settles how many there are, so `max` is only for a column whose levels are not worth naming — those show their number as the glyph instead. A named level reads as itself to a screen reader rather than as the number behind it.
+- **`input`** is `cycle` (the default) or `select`. Cycling wraps, so one control reaches every level and returns to none without a second gesture; the arrow keys step without wrapping, for the hand that would rather aim than count. A dropdown suits a column whose levels are many or whose names are worth reading before choosing.
+- The stored value is an integer either way, so the arithmetic is unchanged: `Training * prof` covers untrained, proficient, and expertise in one expression, and the note still reads `| Perception | 2 | 0 |` and stays hand-editable.
+- With one level it is an ordinary toggle storing 0 and 1, which is what a system with a single grade of training wants. `toggle` remains for the flags that read better in the file as yes and no.
+
+**A row carries expressions of its own, not just a name.** A row's `values` are named expressions evaluated in that row's scope, and they are what let one column formula serve a whole list: the column says `ability + Training * prof + Bonus`, and each row says which ability it means (`ability: abilities.DEX`). Without them a skill list needs eighteen nearly identical formulas, one per row, and the layout stops being a description of the system and becomes a copy of it.
 
 Two row modes, and the distinction carries real weight:
 
 - **Fixed rows.** The layout defines the rows, the character only fills in cells. Correct for skills and saving throws, where every character in the system has the same list and retyping it per character would be absurd.
-- **Open rows.** The character adds, removes, and reorders rows freely. Correct for inventory, attacks, spells, and features.
+- **Open rows.** The character adds, removes, and reorders rows freely. Correct for inventory, attacks, spells, and features. Not built yet; fixed rows came first because they are what a skill list needs, and they settle the storage format that open rows will reuse.
 
-Table is where the design risk concentrates. It is the only component using the markdown storage path, the only one holding wikilinks, and the only one with per-row formula scope. If the shared contract in 4.1 is wrong, Table is what reveals it.
+Three rules the storage follows, each of them a decision rather than an accident:
+
+- **A computed column is never written to the note.** It is derived, and a stored copy of a derived value is a stale copy waiting to happen. The note holds the columns the character owns and no others.
+- **A blank cell in a `number` column is zero.** The layout declared the column numeric, and an untrained skill is left blank on every character sheet ever printed. This is the one place a missing value resolves rather than failing, and it is confined to a column whose type the layout stated.
+- **A row the layout no longer declares stays in the note**, unrendered and untouched, as does a column, a second row under the same name, and any prose around the table (§10).
+- **A column may leave its heading off the sheet** with `hideHeading`, for the one whose control names itself: a proficiency ring is legible without a word above it, and the word is several times wider than the ring, so the heading was setting the column's width against a control that needed none of it. The heading is still rendered for assistive tech, so the column keeps its name where a name is all there is.
+- **The name is always the note's first column**, whatever `namePosition` draws on the sheet. It is what identifies the row, so a display preference must not move it: a proficiency mark reads better before the skill, and the file still has to say which skill the row is before it says anything else about it.
+
+This is where the design risk concentrates. It is the first component using the markdown storage path, the first holding wikilinks, and the first with per-row formula scope. It is also what forced `formulaFields` to grow paths (§4.1): its expressions live one per column and one per row, so no flat list of config keys could name them.
 
 **Computed** — read-only formula output. Covers Passive Perception, spell save DC.
 
@@ -217,7 +239,7 @@ A layout is therefore metadata, a function library, a trigger list, a promoted f
 
 ## 5. Formulas
 
-- **Any numeric field configured in a layout accepts a literal or a formula.** A Pool's max, a Track's box count, an ability's derived display, a Table's computed column. There is no separate "computed field" concept to learn.
+- **Any numeric field configured in a layout accepts a literal or a formula.** A Pool's max, a Track's box count, an ability's derived display, a Skill card's computed column. There is no separate "computed field" concept to learn.
 - **Formulas reference other components' values by name**, and the name is the component's `id`, never its label — renaming a label must not break arithmetic. An id must therefore be a name the expression parser accepts: letters, digits, and underscores, never starting with a digit. A hyphen would read as subtraction — `armour-class` is "armour minus class" — so an id carrying one is rewritten when the layout loads (`armour_class`) rather than rejected: an unreferencable id is one nothing can be pointing at, which is what makes renaming it safe, and blanking a whole sheet over it would not be. A component holding one value answers to its bare id (`armour_class`); one holding several answers to `<id>.<name>` (`abilities.DEX`). What a component publishes is declared by its `scopeValues` (§4.1); a name the sheet does not publish fails to resolve rather than defaulting to zero.
 - **A bare name gives what the card shows, not what the note stores.** `abilities.DEX` is the +6 in large type, not the 22 behind it: the sheet has already decided what that ability means, and a formula reading it should get the same answer the reader does. Where a component computes nothing, the two are the same thing. The stored value stays reachable as `<name>.value` — `abilities.DEX.value` is 22 — for the formula that genuinely wants the raw score.
 - Names resolve nearest-first: a scope internal to the component (one ability's `value`, a table row's cells), then the component's own data, then the sheet. A card's `value` therefore always means its own.
@@ -237,10 +259,16 @@ mod(score) = floor((score - 10) / 2)
 prof       = ceil(level / 4) + 1
 ```
 
-A skill row's computed total, where `trained` and `bonus` are cells on the same row.
+A skill row's computed total, where `Training` and `Bonus` are cells on the same row, `prof` is a component elsewhere on the sheet, and `ability` is one of the row's own values, defined by that row as `abilities.DEX` — which gives the +3 the ability card shows, not the 16 behind it, by the rule above.
 
 ```
-if(trained, prof, 0) + mod(Abilities.DEX) + bonus
+ability + Training * prof + Bonus
+```
+
+`Training` is a level column named untrained, proficient, and expertise, so the same formula covers all three, and the rule for each level is arithmetic the layout wrote rather than a concept the plugin knows. A system whose levels are not evenly spaced writes the rule out instead:
+
+```
+ability + if(Training == 2, prof * 2, if(Training == 1, prof, 0)) + Bonus
 ```
 
 A feature's uses per day, expressed as a Pool max.
@@ -337,20 +365,24 @@ Component order, chosen by what each one forces you to solve:
 | # | Component | Forces you to solve |
 |---|---|---|
 | 1 | **Stat** | The shared contract, the config and data split, fenced storage, read-only render |
-| 2 | **Stat group** | Multi-entry fenced storage, per-scope formula evaluation — the row scope Table needs, proven on a simpler component |
+| 2 | **Stat group** | Multi-entry fenced storage, per-scope formula evaluation — the row scope Skill card needs, proven on a simpler component |
 | 3 | **Pool** | Editing interaction, a formula-capable config field, reset triggers |
-| 4 | **Table** | The markdown storage path, wikilinks, fixed versus open rows, per-row formula scope (mechanism proven by Stat group) |
+| 4 | **Skill card** | The markdown storage path, wikilinks, fixed versus open rows, per-row formula scope (mechanism proven by Stat group) |
 
-Stat group (built as "Abilities") was not in the original order; it jumped the queue on demand once Stat worked, and looked at the time like a replacement for it, so Stat was dropped and then rebuilt on top of the group's card once the standalone numbers turned out to want a component of their own. The detour paid for itself: it forced the render contract to grow a per-scope field resolver, which is the same mechanism Table's computed columns need per row, discovered while the codebase was small, and it left a shared card module for the Stat to render through.
+Skill card jumped Pool for the same reason Stat group jumped Stat: a skill list was wanted, and it is a fixed-row record block rather than a component of its own. Fixed rows shipped first, with `text`, `number`, `level`, `toggle`, and `computed` columns; open rows and `link` columns wait for the inventory that needs them. `level` was not in the original column list. It arrived once the skill list was on screen and a spinner for a two-grade proficiency turned out to be the wrong control, and then changed shape again — from a row of marks to one cycling control — because a set of checkboxes can express states the value cannot. Both corrections came from looking at a rendered sheet, which is the argument for building a component all the way through render before starting the next. Pool is next, and it now inherits an editing gesture already shared by cards and cells.
+
+Stat group (built as "Abilities") was not in the original order; it jumped the queue on demand once Stat worked, and looked at the time like a replacement for it, so Stat was dropped and then rebuilt on top of the group's card once the standalone numbers turned out to want a component of their own. The detour paid for itself: it forced the render contract to grow a per-scope field resolver, which is the same mechanism Skill card's computed columns need per row, discovered while the codebase was small, and it left a shared card module for the Stat to render through.
 
 The remaining seven are variations on problems those solve. Field and Toggle are simpler single-value cards, Track is a simpler Pool, Computed is a value-less card fed entirely by a formula, and Rich text, Group, and Image barely touch the formula system.
 
-Table's contract is worth writing early even though it is built fourth, because it is the component most likely to expose a flaw in the shared contract, and that is cheapest to discover while few components depend on it.
+Skill card's contract was worth writing early even though it was scheduled fourth, because it is the component most likely to expose a flaw in the shared contract, and that is cheapest to discover while few components depend on it.
 
 ## 13. Open questions
 
 - Whether Group components may nest, or only hold leaf components.
 - Whether a character may override a single formula locally without forking the whole layout.
+- **What the open-row version of Skill card is called.** The block is generic — named rows, typed columns, per-row formula scope — and §4.2 has it covering inventory, attacks, and spells, none of which is a skill. Either open rows ship as a second component sharing this one's implementation, or the name widens again. Deciding it before open rows are built would be deciding it without the thing that will make the answer obvious.
+- **How a Skill card publishes its rows to the rest of the sheet.** `10 + skills.perception` is the obvious way to write a passive perception, and Skill card currently publishes nothing, so it cannot be written that way yet. The obstacle is mechanical rather than a matter of taste: a row's published value is a computed column evaluated in a scope that itself contains formulas (the row's `values`), and `scopeValues` (§4.1) hands the sheet plain values, having no resolver of its own at the time it is called. Either the scope entry grows a way to name an expression to evaluate, or a component gains a say in how its resolver is built. Until then a total is readable on the sheet and not from a formula.
 
 Resolved: **body sections are keyed by the component's `label`**, which doubles as its heading, keeping the note readable. The `id` is the stable identity formulas reference, so renaming a label breaks no formulas, and section 10 covers migrating existing characters when it happens.
 
