@@ -81,6 +81,14 @@ body {
 	padding-bottom: var(--size-2-2);
 }
 
+/* The count sits with the name, quieter than it, so a bounded list still
+   says how much is inside without the heading reading as two things. */
+.sheetsmith-form-group-count {
+	margin-left: var(--size-2-2);
+	font-weight: var(--font-normal);
+	color: var(--text-faint);
+}
+
 .sheetsmith-form-group-title {
 	font-size: var(--font-ui-small);
 	font-weight: var(--font-semibold);
@@ -104,6 +112,76 @@ body {
 	padding: var(--size-2-2);
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-m);
+	background-color: var(--background-secondary);
+	/* The settings tab is not a query container, so the lists make
+	   themselves one: a phone-width pane and a narrow desktop sidebar are the
+	   same problem, and neither is a viewport width. */
+	container-type: inline-size;
+}
+
+/* Below this, a row of 1fr tracks gives every input about forty pixels. The
+   row stops being a table row and becomes a card: fields stacked full width,
+   controls on one line under them, and each field showing the label the
+   header can no longer give it. */
+@container (max-width: 380px) {
+	.sheetsmith-attribute-columns {
+		display: none;
+	}
+
+	.sheetsmith-attribute-row {
+		grid-template-columns: 1fr;
+		gap: var(--size-2-2);
+		padding: var(--size-4-2) var(--size-2-2);
+	}
+
+	.sheetsmith-list .sheetsmith-attribute-row {
+		grid-template-columns: 1fr;
+	}
+
+	/* Every control on its own line, and the buttons gathered onto one. */
+	.sheetsmith-attribute-row > button.clickable-icon {
+		grid-row: 99;
+		justify-self: end;
+	}
+
+	.sheetsmith-attribute-row > button.clickable-icon:nth-last-of-type(2) {
+		justify-self: start;
+	}
+
+	/* Only the rows editor needs this: one row, one line, so the rows are
+	   genuinely adjacent there. In the columns list a detail div always sits
+	   between two rows, so this never matched — and no longer needs to, since
+	   an entry is its own surface at every width. */
+	.sheetsmith-attribute-row + .sheetsmith-attribute-row {
+		border-top: 1px solid var(--background-modifier-border);
+	}
+
+	/* The header is gone, so the per-field labels have to appear. */
+	.sheetsmith-field-name {
+		display: block;
+	}
+
+	.sheetsmith-attribute-detail {
+		flex-wrap: wrap;
+	}
+}
+
+/* Long lists are bounded so they cannot bury the fields under them: a skill
+   card with eighteen rows otherwise puts the whole columns section — and its
+   add control — eight hundred pixels below the fold of the form. The cap only
+   bites once there is more list than that. */
+.sheetsmith-list-scroll {
+	max-height: 20em;
+	overflow-y: auto;
+}
+
+/* The header scrolls with the rows rather than beside them, so the two share
+   a width whether or not a scrollbar appeared, and stays pinned so the
+   columns keep their names while the list moves under it. */
+.sheetsmith-list-scroll > .sheetsmith-attribute-columns {
+	position: sticky;
+	top: 0;
+	z-index: 1;
 	background-color: var(--background-secondary);
 }
 
@@ -135,7 +213,9 @@ body {
 	color: var(--text-muted);
 }
 
-.sheetsmith-attribute-row > input {
+.sheetsmith-attribute-row > input,
+.sheetsmith-attribute-row .sheetsmith-field > input,
+.sheetsmith-attribute-row .sheetsmith-field > select {
 	width: 100%;
 }
 
@@ -175,8 +255,88 @@ body {
 	font-size: var(--font-ui-small);
 }
 
+/* Buttons here sit side by side ("Add row", "Add row value"), and two
+   buttons touching read as one control with a seam down it. */
 .sheetsmith-attribute-footer {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-2-2);
 	padding: var(--size-2-2);
+}
+
+/* Each field's own label. The header row names the columns while there is
+   room for one, so this stays out of the way — but it is in the DOM either
+   way, because it is what the narrow layout has instead of a header. */
+.sheetsmith-field-name {
+	display: none;
+	font-size: var(--font-smallest);
+	color: var(--text-muted);
+}
+
+.sheetsmith-field {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-1);
+	min-width: 0;
+}
+
+/* A control on the detail line, with its label above it. The grid has a
+   header row to name its columns; this line has none, so without these a
+   control's only label is a placeholder that leaves at the first keystroke. */
+.sheetsmith-detail-field {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-1);
+	flex: 1;
+	min-width: 0;
+}
+
+.sheetsmith-detail-field > input,
+.sheetsmith-detail-field > select {
+	width: 100%;
+}
+
+/* The one line explaining the row-value mechanism, under the buttons it
+   explains rather than beside them. */
+.sheetsmith-attribute-footnote {
+	padding: 0 var(--size-2-2) var(--size-2-2);
+	font-size: var(--font-smallest);
+	color: var(--text-muted);
+}
+
+/* The component id is the one thing a user cannot discover anywhere else and
+   has to retype into every formula. Say it is takeable. */
+.sheetsmith-copyable {
+	cursor: pointer;
+}
+
+.sheetsmith-copyable:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+/* A list heading that carries a control: the name takes the track, the
+   button holds the end of it. */
+.sheetsmith-list-heading {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-1);
+	min-width: 0;
+}
+
+.sheetsmith-list-heading > input {
+	flex: 1;
+	min-width: 0;
+}
+
+/* Match the row controls, which reset the theme's button chrome so an icon
+   in a list reads as an icon rather than as a raised button. */
+.sheetsmith-list-heading > button.clickable-icon {
+	background: transparent;
+	border: none;
+	box-shadow: none;
+	height: auto;
+	margin: 0;
+	padding: var(--size-2-1);
 }
 
 .sheetsmith-attribute-list .sheetsmith-field-error {
@@ -184,6 +344,15 @@ body {
 	text-align: left;
 	/* Line up with the header labels and input text. */
 	padding-left: var(--size-4-2);
+}
+
+/* Inside a field the message belongs under its own input, reading left to
+   right like everything else in the column rather than pinned to the right. */
+.sheetsmith-field > .sheetsmith-field-error {
+	flex-basis: auto;
+	padding-left: 0;
+	text-align: left;
+	white-space: normal;
 }
 
 .sheetsmith-position-field {
@@ -265,6 +434,14 @@ body {
 	background-clip: content-box;
 }
 
+/* Spans the schematic under the blocks it explains. */
+.sheetsmith-preview-legend {
+	grid-column: 1 / -1;
+	padding-top: var(--size-2-2);
+	font-size: var(--font-smallest);
+	color: var(--text-muted);
+}
+
 .sheetsmith-preview-cell {
 	display: flex;
 	align-items: center;
@@ -279,7 +456,9 @@ body {
 	border-radius: var(--radius-s);
 	background-color: var(--background-secondary);
 	box-shadow: none;
-	cursor: pointer;
+	cursor: grab;
+	/* A touch drag must move the block, not scroll the settings pane. */
+	touch-action: none;
 }
 
 .sheetsmith-preview-cell > span {
@@ -299,6 +478,15 @@ body {
 	border-color: var(--interactive-accent);
 	color: var(--text-normal);
 	box-shadow: 0 0 0 1px var(--interactive-accent) inset;
+}
+
+.sheetsmith-preview-dragging {
+	cursor: grabbing;
+	/* Lifted, and above every other block so it is never dragged underneath
+	   one it is passing over. */
+	z-index: 1;
+	border-color: var(--interactive-accent);
+	box-shadow: 0 2px 8px var(--background-modifier-box-shadow);
 }
 
 .sheetsmith-preview-overlap {
