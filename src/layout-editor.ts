@@ -960,16 +960,25 @@ function uniqueLabel(type: string, components: ComponentConfig[]): string {
 	return label;
 }
 
+/**
+ * The id is what formulas reference, so it has to be a name the expression
+ * parser accepts: underscores rather than hyphens, since a hyphen would read
+ * as subtraction, and never a leading digit. Kept in step with COMPONENT_ID
+ * in parse/layout.ts, which migrates anything this could not have produced —
+ * including the hyphenated ids this function itself emitted before the clash
+ * with the parser was understood.
+ */
 function uniqueId(label: string, components: ComponentConfig[]): string {
 	const taken = new Set(components.map((c) => c.id));
-	const base =
+	let base =
 		label
 			.toLowerCase()
-			.replace(/[^a-z0-9]+/g, '-')
-			.replace(/^-+|-+$/g, '') || 'component';
+			.replace(/[^a-z0-9]+/g, '_')
+			.replace(/^_+|_+$/g, '') || 'component';
+	if (/^[0-9]/.test(base)) base = `_${base}`;
 	let id = base;
 	let counter = 2;
-	while (taken.has(id)) id = `${base}-${counter++}`;
+	while (taken.has(id)) id = `${base}_${counter++}`;
 	return id;
 }
 
