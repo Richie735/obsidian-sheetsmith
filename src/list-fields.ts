@@ -1,0 +1,856 @@
+/*
+ * List-shaped config fields for the form editor: a Skill card's rows and
+ * columns.
+ *
+ * These are the fields a Setting row cannot express, because each entry is
+ * several inputs plus reorder and remove controls. The attribute list in
+ * layout-editor.ts is the same shape and predates this module; the two share
+ * their chrome here rather than drifting apart.
+ */
+
+import { Platform, setIcon } from 'obsidian';
+
+/** What a list editor needs from the editor around it. */
+export interface ListContext {
+	/** Write the layout. */
+	persist: () => void;
+	/** Rebuild the settings tab. */
+	redraw: () => void;
+	/** Focus this token once the redraw has happened. */
+	focusAfterRedraw: (token: string) => void;
+	/**
+	 * Briefly mark this token once the redraw has happened, for the change
+	 * that rebuilds a region rather than editing one: without it the fields
+	 * under a control simply become different fields, with nothing tying the
+	 * new ones to the choice that produced them.
+	 */
+	flashAfterRedraw?: (token: string) => void;
+	/** Ask before something authored is destroyed, then do it if confirmed. */
+	confirm: (message: string, cta: string, onConfirm: () => void) => void;
+	/** Inline errors by focus token, so they outlive a rebuild of the tab. */
+	errors: Map<string, string>;
+	/** Index of the entry being dragged, shared so one list reads its own. */
+	drag: { index: number | null };
+}
+
+/**
+ * Inline validation: mark the input and show a message under the field, or
+ * clear both. Invalid input is never silently swallowed. The message is keyed
+ * to the input's focus id, because several inputs may share one control and
+ * each needs its own error.
+ */
+export function showFieldError(
+	input: HTMLInputElement,
+	message: string | null,
+	/**
+	 * Where the message is remembered across a rebuild of the tab. Without it
+	 * an error survives only as long as the DOM that drew it, so correcting
+	 * one field silently clears the message on another.
+	 */
+	errors?: Map<string, string>,
+): void {
+	const token = input.dataset.sheetsmithFocus;
+	if (errors && token !== undefined) {
+		if (message === null) errors.delete(token);
+		else errors.set(token, message);
+	}
+	input.toggleClass('sheetsmith-input-invalid', message !== null);
+	const control = input.parentElement;
+	if (!control) return;
+	const key = input.dataset.sheetsmithFocus ?? '';
+	let existing: HTMLElement | null = null;
+	for (const candidate of Array.from(
+		control.querySelectorAll('.sheetsmith-field-error'),
+	)) {
+		if (
+			candidate.instanceOf(HTMLElement) &&
+			candidate.dataset.sheetsmithFor === key
+		) {
+			existing = candidate;
+			break;
+		}
+	}
+	if (message === null) {
+		existing?.remove();
+		return;
+	}
+	if (existing) {
+		existing.setText(message);
+		return;
+	}
+	control.createDiv('sheetsmith-field-error', (el) => {
+		el.dataset.sheetsmithFor = key;
+		el.setText(message);
+	});
+}
+
+export function moveItem<T>(
+	list: T[],
+	from: number,
+	to: number,
+	context: ListContext,
+): void {
+	if (to < 0 || to >= list.length) return;
+	const [item] = list.splice(from, 1);
+	if (item === undefined) return;
+	list.splice(to, 0, item);
+	context.persist();
+	context.redraw();
+}
+
+/**
+ * Reorder and remove controls, and the drop target that goes with them.
+ *
+ * Focus ids follow the same two schemes as the attribute list: inputs are
+ * keyed by index so focus holds its position while typing, buttons by the
+ * entry's own name so focus follows the item through a reorder.
+ */
+function addControls<T>(
+	row: HTMLElement,
+	list: T[],
+	index: number,
+	token: string,
+	label: string,
+	context: ListContext,
+	/**
+	 * What removing this entry would destroy, or null where it would destroy
+	 * nothing. There is no undo behind any of this — persist() writes the file
+	 * on the spot — so the confirmation carries the whole load, and it belongs
+	 * on the entry carrying a hand-written formula rather than on the one just
+	 * added and still empty.
+	 */
+	describeRemoval?: () => string | null,
+): void {
+	row.addEventListener('dragover', (event) => {
+		const from = context.drag.index;
+		if (from === null) return;
+		event.preventDefault();
+		// The drop lands the row above the target on upward drags and below it
+		// on downward ones; the indicator has to say so, not always point up.
+		row.toggleClass('sheetsmith-attribute-drop-below', index > from);
+		row.toggleClass('sheetsmith-attribute-drop', index < from);
+	});
+	row.addEventListener('dragleave', () => {
+		row.removeClass('sheetsmith-attribute-drop');
+		row.removeClass('sheetsmith-attribute-drop-below');
+	});
+	row.addEventListener('drop', (event) => {
+		event.preventDefault();
+		row.removeClass('sheetsmith-attribute-drop');
+		row.removeClass('sheetsmith-attribute-drop-below');
+		const from = context.drag.index;
+		if (from === null || from === index) return;
+		context.drag.index = null;
+		moveItem(list, from, index, context);
+	});
+
+	if (Platform.isMobile) {
+		// HTML5 drag-and-drop is inert on touch, and there is no keyboard —
+		// reordering needs real buttons there.
+		const up = row.createEl('button', {
+			cls: 'clickable-icon',
+			attr: { 'aria-label': `Move ${label} up` },
+		});
+		setIcon(up, 'arrow-up');
+		up.dataset.sheetsmithFocus = `${token}-up`;
+		up.addEventListener('click', () => moveItem(list, index, index - 1, context));
+
+		const down = row.createEl('button', {
+			cls: 'clickable-icon',
+			attr: { 'aria-label': `Move ${label} down` },
+		});
+		setIcon(down, 'arrow-down');
+		down.dataset.sheetsmithFocus = `${token}-down`;
+		down.addEventListener('click', () => moveItem(list, index, index + 1, context));
+	} else {
+		const handle = row.createEl('button', {
+			cls: 'clickable-icon sheetsmith-attribute-handle',
+			attr: {
+				'aria-label': `Reorder ${label}: drag, or press the arrow keys`,
+				draggable: 'true',
+			},
+		});
+		setIcon(handle, 'grip-vertical');
+		handle.dataset.sheetsmithFocus = `${token}-handle`;
+		handle.addEventListener('dragstart', (event) => {
+			context.drag.index = index;
+			event.dataTransfer?.setData('text/plain', label);
+		});
+		handle.addEventListener('dragend', () => {
+			context.drag.index = null;
+		});
+		handle.addEventListener('keydown', (event) => {
+			if (event.key === 'ArrowUp') {
+				event.preventDefault();
+				moveItem(list, index, index - 1, context);
+			} else if (event.key === 'ArrowDown') {
+				event.preventDefault();
+				moveItem(list, index, index + 1, context);
+			}
+		});
+	}
+
+	const remove = row.createEl('button', {
+		cls: 'clickable-icon',
+		attr: { 'aria-label': `Remove ${label}` },
+	});
+	setIcon(remove, 'trash');
+	remove.dataset.sheetsmithFocus = `${token}-remove`;
+	remove.addEventListener('click', () => {
+		const drop = () => {
+			list.splice(index, 1);
+			context.persist();
+			context.redraw();
+		};
+		const cost = describeRemoval?.() ?? null;
+		if (cost === null) {
+			drop();
+			return;
+		}
+		context.confirm(cost, 'Remove', drop);
+	});
+}
+
+/**
+ * Reserve the header's trailing tracks, one per control `addControls` will
+ * render below it.
+ *
+ * The header and the rows share a grid template whose field tracks are `1fr`,
+ * so a control track left empty in the header is a track that costs the rows
+ * width the header keeps — and every heading after the first drifts out of
+ * line with the input under it. Exactly as many spacers as there are buttons,
+ * because reserving a fixed three would leave desktop with a track nothing
+ * ever fills.
+ */
+/**
+ * A field in a list row, carrying the label the header gives it while there
+ * is a header to give one. Narrow enough and the header goes; the label is
+ * already in the DOM to take over, rather than the row becoming a stack of
+ * unlabelled boxes.
+ */
+function listField(row: HTMLElement, name: string): HTMLElement {
+	const field = row.createDiv('sheetsmith-field');
+	field.createSpan({ cls: 'sheetsmith-field-name', text: name });
+	return field;
+}
+
+function addControlSpacers(header: HTMLElement): void {
+	// Keep in step with addControls: a handle and a trash on desktop, up,
+	// down, and trash where there is no drag and no keyboard.
+	const controls = Platform.isMobile ? 3 : 2;
+	for (let i = 0; i < controls; i++) {
+		header.createSpan({ cls: 'sheetsmith-list-control-space' });
+	}
+}
+
+/** A name a formula could reference: what the expression parser accepts. */
+const VALUE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+interface RowEntry {
+	label: string;
+	values?: Record<string, string>;
+}
+
+/**
+ * The row list of a fixed-row table: one entry per row, plus a column for
+ * each named expression the rows define.
+ *
+ * The value names come from the rows themselves rather than a separate config
+ * key, so there is one place a name can be wrong instead of two. An empty
+ * expression is kept rather than deleted: the name has to survive being
+ * cleared in one row while it is still typed into the next.
+ */
+export function renderRowsEditor(
+	listEl: HTMLElement,
+	record: Record<string, unknown>,
+	key: string,
+	prefix: string,
+	context: ListContext,
+): void {
+	if (!Array.isArray(record[key])) record[key] = [];
+	const rows = record[key] as RowEntry[];
+	listEl.addClass('sheetsmith-list');
+	/** Bound once: every inline error here outlives a rebuild of the tab. */
+	const fieldError = (input: HTMLInputElement, message: string | null) =>
+		showFieldError(input, message, context.errors);
+
+	// Union rather than the first row's keys: a name added to one row has to
+	// show up as a column on all of them, empty, ready to be filled in.
+	const names: string[] = [];
+	for (const row of rows) {
+		for (const name of Object.keys(row.values ?? {})) {
+			if (!names.includes(name)) names.push(name);
+		}
+	}
+
+	// One track per input, so the grid keeps its columns in step however
+	// many row values the layout defines.
+	listEl.style.setProperty('--sheetsmith-list-fields', String(names.length + 1));
+
+	// A long list must not bury the sections under it: eighteen skills put
+	// eight hundred pixels between this field and the next one, and the add
+	// control at the bottom of it is below all of them. The header rides
+	// inside the same scroller so the two keep identical widths — a
+	// scrollbar on the rows alone would pull them out of line.
+	const scroller = listEl.createDiv('sheetsmith-list-scroll');
+
+	if (rows.length === 0) {
+		scroller.createDiv('sheetsmith-attribute-empty', (el) =>
+			el.setText('No rows yet.'),
+		);
+	} else {
+		const columns = scroller.createDiv('sheetsmith-attribute-columns');
+		columns.createSpan({ text: 'Row name' });
+		for (const name of names) {
+			const heading = columns.createDiv('sheetsmith-list-heading');
+			// The heading is an input, because renaming a value name is the
+			// only way to fix a typo in one without retyping every row.
+			const input = heading.createEl('input', {
+				type: 'text',
+				attr: { 'aria-label': `Row value name "${name}"` },
+			});
+			input.value = name;
+			input.dataset.sheetsmithFocus = `${prefix}-value-${name}`;
+			input.addEventListener('change', () => {
+				const next = input.value.trim();
+				// Rejection puts the stored name back. Leaving the typed text
+				// in a field whose value was refused makes the field lie about
+				// what the file holds the moment focus moves on.
+				if (!VALUE_NAME.test(next)) {
+					input.value = name;
+					fieldError(
+						input,
+						`A row value needs a name a formula can read — letters, digits and underscores, not starting with a digit — so it was left as "${name}".`,
+					);
+					return;
+				}
+				if (next !== name && names.includes(next)) {
+					input.value = name;
+					fieldError(
+						input,
+						`"${next}" is already a row value, so this one was left as "${name}".`,
+					);
+					return;
+				}
+				fieldError(input, null);
+				if (next === name) return;
+				for (const row of rows) {
+					// Own-property, not `in`: values comes out of the layout file
+					// as an ordinary object, so `in` would report a row value
+					// named for anything on Object.prototype as present on every
+					// row. Spelled the long way; the build targets ES2021.
+					if (
+						!row.values ||
+						!Object.prototype.hasOwnProperty.call(row.values, name)
+					) {
+						continue;
+					}
+					// Rebuild rather than assign and delete, so the columns
+					// keep the order they were in.
+					row.values = Object.fromEntries(
+						Object.entries(row.values).map(([had, value]) => [
+							had === name ? next : had,
+							value,
+						]),
+					);
+				}
+				context.persist();
+				context.redraw();
+			});
+
+			const remove = heading.createEl('button', {
+				cls: 'clickable-icon',
+				attr: { 'aria-label': `Remove row value "${name}"` },
+			});
+			setIcon(remove, 'trash');
+			remove.dataset.sheetsmithFocus = `${prefix}-value-${name}-remove`;
+			remove.addEventListener('click', () => {
+				const drop = () => {
+					for (const row of rows) {
+						if (!row.values) continue;
+						delete row.values[name];
+						// An empty map is not a row value the layout defines.
+						if (Object.keys(row.values).length === 0) delete row.values;
+					}
+					context.persist();
+					context.redraw();
+				};
+				// One click here deletes an expression from every row at once,
+				// so it asks — but only when there is something to lose. A name
+				// nobody has filled in yet is just a column, and confirming its
+				// removal would be a dialogue about nothing.
+				const written = rows.filter(
+					(row) => (row.values?.[name] ?? '') !== '',
+				).length;
+				if (written === 0) {
+					drop();
+					return;
+				}
+				context.confirm(
+					`Remove the row value "${name}"? ${written} ${written === 1 ? 'row has' : 'rows have'} an expression for it, and removing it deletes ${written === 1 ? 'that expression' : 'those expressions'}. Any column formula reading "${name}" will stop resolving.`,
+					'Remove row value',
+					drop,
+				);
+			});
+		}
+		addControlSpacers(columns);
+	}
+
+	rows.forEach((row, index) => {
+		const element = scroller.createDiv('sheetsmith-attribute-row');
+
+		const label = listField(element, 'Row name').createEl('input', {
+			type: 'text',
+			attr: { placeholder: 'Row name', 'aria-label': 'Row name' },
+		});
+		label.value = row.label ?? '';
+		label.dataset.sheetsmithFocus = `${prefix}-row-${index}-label`;
+		label.addEventListener('change', () => {
+			const next = label.value.trim();
+			if (next === '') {
+				label.value = row.label;
+				fieldError(
+					label,
+					`A row name is required, so it was left as "${row.label}".`,
+				);
+				return;
+			}
+			if (rows.some((other, i) => i !== index && other.label === next)) {
+				label.value = row.label;
+				fieldError(
+					label,
+					`"${next}" is already used by another row, so this one was left as "${row.label}".`,
+				);
+				return;
+			}
+			fieldError(label, null);
+			// Renaming a row does not move character data: the note keeps its
+			// old row under the old name, exactly as a renamed attribute key
+			// does (SPEC §10).
+			row.label = next;
+			context.persist();
+			context.redraw();
+		});
+
+		for (const name of names) {
+			const input = listField(element, name).createEl('input', {
+				type: 'text',
+				attr: {
+					placeholder: 'Expression',
+					'aria-label': `${row.label} ${name}`,
+				},
+			});
+			input.value = row.values?.[name] ?? '';
+			input.dataset.sheetsmithFocus = `${prefix}-row-${index}-${name}`;
+			input.addEventListener('change', () => {
+				const values = row.values ?? {};
+				values[name] = input.value.trim();
+				row.values = values;
+				context.persist();
+			});
+		}
+
+		addControls(
+			element,
+			rows,
+			index,
+			`${prefix}-row-${row.label}`,
+			row.label,
+			context,
+			() => {
+				const written = Object.values(row.values ?? {}).filter(
+					(value) => value.trim() !== '',
+				).length;
+				if (written === 0) return null;
+				return `Remove the row "${row.label}"? It carries ${written} ${written === 1 ? 'expression' : 'expressions'}, and character notes keep their "${row.label}" data either way.`;
+			},
+		);
+	});
+
+	const footer = listEl.createDiv('sheetsmith-attribute-footer');
+	const add = footer.createEl('button', { cls: 'mod-cta', text: 'Add row' });
+	add.addEventListener('click', () => {
+		const taken = new Set(rows.map((row) => row.label));
+		let label = 'New row';
+		let counter = 2;
+		while (taken.has(label)) label = `New row ${counter++}`;
+		// The obvious next action is typing the name; put focus there.
+		context.focusAfterRedraw(`${prefix}-row-${rows.length}-label`);
+		// A new row starts with the same value names as its siblings, so the
+		// column formulas that read them keep working down the whole list.
+		const values: Record<string, string> = {};
+		for (const name of names) values[name] = '';
+		rows.push(names.length > 0 ? { label, values } : { label });
+		context.persist();
+		context.redraw();
+	});
+
+	const addValue = footer.createEl('button', { text: 'Add row value' });
+	// The most conceptual control here, and the one that changes every row at
+	// once. Adding a row is the common path and reads for itself; this needs
+	// its one line of why, or it is a button nobody has a reason to press.
+	listEl.createDiv('sheetsmith-attribute-footnote', (el) =>
+		el.setText(
+			'A row value is an expression each row defines for itself, so one column formula can serve every row — "ability" as abilities.DEX on one row and abilities.WIS on the next.',
+		),
+	);
+	addValue.addEventListener('click', () => {
+		let name = 'ability';
+		let counter = 2;
+		while (names.includes(name)) name = `ability_${counter++}`;
+		for (const row of rows) row.values = { ...(row.values ?? {}), [name]: '' };
+		context.focusAfterRedraw(`${prefix}-value-${name}`);
+		context.persist();
+		context.redraw();
+	});
+}
+
+interface ColumnEntry extends Record<string, unknown> {
+	key: string;
+	name?: string;
+	hideHeading?: boolean;
+	type?: string;
+	formula?: string;
+	min?: number;
+	max?: number;
+	levels?: string[];
+	input?: string;
+	signed?: boolean;
+}
+
+/**
+ * What each column type is called in the editor, against the id stored in the
+ * file. The ids are the data model and read like it — "select" as an option
+ * inside a select says nothing, and "toggle" beside "level" hides that a
+ * one-level column is exactly a toggle.
+ */
+const COLUMN_TYPES: readonly { id: string; label: string }[] = [
+	{ id: 'text', label: 'Text' },
+	{ id: 'number', label: 'Number' },
+	{ id: 'level', label: 'Level' },
+	{ id: 'toggle', label: 'Yes or no' },
+	{ id: 'computed', label: 'Computed' },
+];
+
+const LEVEL_INPUTS: readonly { id: string; label: string }[] = [
+	{ id: 'cycle', label: 'Cycle on click' },
+	{ id: 'select', label: 'Dropdown' },
+];
+
+/**
+ * A control on the detail line, with a label above it. The grid above has a
+ * header row to name its columns; this line has none, so a placeholder is the
+ * only label a control would get — and a placeholder disappears at the first
+ * keystroke, exactly when the label is still wanted.
+ */
+function labelled(detail: HTMLElement, text: string): HTMLElement {
+	const field = detail.createDiv('sheetsmith-detail-field');
+	field.createSpan({ cls: 'sheetsmith-position-label', text });
+	return field;
+}
+
+/** Optional string config: an empty field means the key is absent. */
+function setOptional(
+	target: Record<string, unknown>,
+	key: string,
+	raw: string,
+): void {
+	const value = raw.trim();
+	if (value === '') delete target[key];
+	else target[key] = value;
+}
+
+/** The column list of a table: what each cell holds, and how it is computed. */
+export function renderColumnsEditor(
+	listEl: HTMLElement,
+	record: Record<string, unknown>,
+	key: string,
+	prefix: string,
+	context: ListContext,
+): void {
+	if (!Array.isArray(record[key])) record[key] = [];
+	const columns = record[key] as ColumnEntry[];
+	// Three tracks, fixed by the column form itself: key, heading, and what
+	// the column holds. The count lives in the stylesheet with them.
+	listEl.addClass('sheetsmith-list');
+	/** Bound once: every inline error here outlives a rebuild of the tab. */
+	const fieldError = (input: HTMLInputElement, message: string | null) =>
+		showFieldError(input, message, context.errors);
+	listEl.addClass('sheetsmith-list-columns');
+
+	const scroller = listEl.createDiv('sheetsmith-list-scroll');
+
+	if (columns.length === 0) {
+		scroller.createDiv('sheetsmith-attribute-empty', (el) =>
+			el.setText('No columns yet.'),
+		);
+	} else {
+		const headings = scroller.createDiv('sheetsmith-attribute-columns');
+		headings.createSpan({ text: 'Key' });
+		headings.createSpan({ text: 'Heading' });
+		headings.createSpan({ text: 'Holds' });
+		addControlSpacers(headings);
+	}
+
+	columns.forEach((column, index) => {
+		// A column is two lines — its row, and the options belonging to it —
+		// and with every line equally spaced nothing said which pairs went
+		// together. One surface per column; common region beats proximity,
+		// and it costs a wrapper.
+		const entry = scroller.createDiv('sheetsmith-list-entry');
+		const element = entry.createDiv('sheetsmith-attribute-row');
+
+		const keyInput = listField(element, 'Key').createEl('input', {
+			type: 'text',
+			attr: { placeholder: 'Key', 'aria-label': 'Column key' },
+		});
+		keyInput.value = column.key ?? '';
+		keyInput.dataset.sheetsmithFocus = `${prefix}-col-${index}-key`;
+		keyInput.addEventListener('change', () => {
+			const next = keyInput.value.trim();
+			if (next === '') {
+				keyInput.value = column.key;
+				fieldError(
+					keyInput,
+					`A key is required, so it was left as "${column.key}".`,
+				);
+				return;
+			}
+			if (
+				columns.some(
+					(other, i) => i !== index && other.key?.toLowerCase() === next.toLowerCase(),
+				)
+			) {
+				keyInput.value = column.key;
+				fieldError(
+					keyInput,
+					`"${next}" is already used by another column, so this one was left as "${column.key}".`,
+				);
+				return;
+			}
+			fieldError(keyInput, null);
+			column.key = next;
+			context.persist();
+			context.redraw();
+		});
+
+		const nameInput = listField(element, 'Heading').createEl('input', {
+			type: 'text',
+			attr: { placeholder: 'Heading', 'aria-label': 'Column heading' },
+		});
+		nameInput.value = column.name ?? '';
+		nameInput.dataset.sheetsmithFocus = `${prefix}-col-${column.key}-name`;
+		nameInput.addEventListener('change', () => {
+			setOptional(column, 'name', nameInput.value);
+			context.persist();
+		});
+
+		const type = listField(element, 'Holds').createEl('select', {
+			attr: { 'aria-label': 'What the column holds' },
+		});
+		for (const option of COLUMN_TYPES) {
+			type.createEl('option', { value: option.id, text: option.label });
+		}
+		type.value = COLUMN_TYPES.some((option) => option.id === column.type)
+			? (column.type as string)
+			: 'text';
+		type.dataset.sheetsmithFocus = `${prefix}-col-${column.key}-type`;
+		type.addEventListener('change', () => {
+			// The first option is the default and is left out of the file, the
+			// same rule the select fields in the component form follow.
+			if (type.value === COLUMN_TYPES[0]?.id) delete column.type;
+			else column.type = type.value;
+			context.persist();
+			// The type decides which fields below are worth showing.
+			context.flashAfterRedraw?.(`${prefix}-col-${column.key}-detail`);
+			context.redraw();
+		});
+
+		addControls(
+			element,
+			columns,
+			index,
+			`${prefix}-col-${column.key}`,
+			column.key,
+			context,
+			() => {
+				if ((column.formula ?? '').trim() !== '') {
+					return `Remove the column "${column.key}"? Its formula is lost. Character notes keep any "${column.key}" cells they already hold.`;
+				}
+				if (column.type === 'level' && (column.levels ?? []).length > 0) {
+					return `Remove the column "${column.key}"? Its level names are lost. Character notes keep any "${column.key}" cells they already hold.`;
+				}
+				return null;
+			},
+		);
+
+		// A line of its own under each column, holding the fields that only
+		// make sense for that kind of column and then the ones every column
+		// has. One detail element for both, so the two never disagree about
+		// which line they belong on.
+		const detail = entry.createDiv('sheetsmith-attribute-detail');
+		// Changing what a column holds rebuilds this line, through a redraw
+		// that gives no sign anything happened. Mark it so the cause of the
+		// change is visible where the change landed.
+		detail.dataset.sheetsmithFlash = `${prefix}-col-${column.key}-detail`;
+		if (column.type === 'computed') {
+			const formula = labelled(detail, 'Formula').createEl('input', {
+				type: 'text',
+				attr: {
+					placeholder: 'Expression',
+					'aria-label': `${column.key} formula`,
+				},
+			});
+			formula.value = column.formula ?? '';
+			formula.dataset.sheetsmithFocus = `${prefix}-col-${column.key}-formula`;
+			formula.addEventListener('change', () => {
+				setOptional(column, 'formula', formula.value);
+				context.persist();
+			});
+
+			const signedLabel = detail.createEl('label', {
+				cls: 'sheetsmith-attribute-check',
+			});
+			const signed = signedLabel.createEl('input', { type: 'checkbox' });
+			signed.checked = column.signed === true;
+			signedLabel.createSpan({ text: 'Signed' });
+			signed.addEventListener('change', () => {
+				if (signed.checked) column.signed = true;
+				else delete column.signed;
+				context.persist();
+			});
+		} else if (column.type === 'level') {
+
+			// Naming the levels settles how many there are, so the highest
+			// level is only asked for while they have no names.
+			const names = labelled(detail, 'Level names').createEl('input', {
+				type: 'text',
+				attr: {
+					placeholder: 'From none upwards, comma separated',
+					'aria-label': `${column.key} level names`,
+				},
+			});
+			names.value = (column.levels ?? []).join(', ');
+			names.dataset.sheetsmithFocus = `${prefix}-col-${column.key}-levels`;
+			names.addEventListener('change', () => {
+				const parsed = names.value
+					.split(',')
+					.map((name) => name.trim())
+					.filter((name) => name !== '');
+				if (parsed.length === 0) {
+					fieldError(names, null);
+					delete column.levels;
+					context.persist();
+					context.redraw();
+					return;
+				}
+				if (parsed.length < 2) {
+					fieldError(
+						names,
+						'At least two names, starting with the one for none.',
+					);
+					return;
+				}
+				fieldError(names, null);
+				column.levels = parsed;
+				context.persist();
+				context.redraw();
+			});
+
+			if (column.levels === undefined) {
+				const holder = detail.createDiv('sheetsmith-position-field');
+				holder.createSpan({ cls: 'sheetsmith-position-label', text: 'Levels' });
+				const input = holder.createEl('input', { type: 'number' });
+				input.value = column.max === undefined ? '' : String(column.max);
+				input.setAttribute('aria-label', `${column.key} highest level`);
+				input.dataset.sheetsmithFocus = `${prefix}-col-${column.key}-max`;
+				input.addEventListener('change', () => {
+					const raw = input.value.trim();
+					if (raw === '') {
+						fieldError(input, null);
+						delete column.max;
+						context.persist();
+						return;
+					}
+					const parsed = Number(raw);
+					if (!Number.isInteger(parsed) || parsed < 1) {
+						fieldError(input, 'Whole number, 1 or more.');
+						return;
+					}
+					fieldError(input, null);
+					column.max = parsed;
+					context.persist();
+				});
+			}
+
+			const inputStyle = labelled(detail, 'Control').createEl('select', {
+				attr: { 'aria-label': `${column.key} control` },
+			});
+			for (const option of LEVEL_INPUTS) {
+				inputStyle.createEl('option', { value: option.id, text: option.label });
+			}
+			inputStyle.value = column.input === 'select' ? 'select' : 'cycle';
+			inputStyle.addEventListener('change', () => {
+				if (inputStyle.value === 'cycle') delete column.input;
+				else column.input = inputStyle.value;
+				context.persist();
+			});
+		} else if (column.type === 'number') {
+			for (const bound of ['min', 'max'] as const) {
+				const holder = detail.createDiv('sheetsmith-position-field');
+				holder.createSpan({
+					cls: 'sheetsmith-position-label',
+					text: bound === 'min' ? 'Minimum' : 'Maximum',
+				});
+				const input = holder.createEl('input', { type: 'number' });
+				input.value = column[bound] === undefined ? '' : String(column[bound]);
+				input.setAttribute('aria-label', `${column.key} ${bound}`);
+				input.dataset.sheetsmithFocus = `${prefix}-col-${column.key}-${bound}`;
+				input.addEventListener('change', () => {
+					const raw = input.value.trim();
+					if (raw === '') {
+						fieldError(input, null);
+						delete column[bound];
+						context.persist();
+						return;
+					}
+					const parsed = Number(raw);
+					if (Number.isNaN(parsed)) {
+						fieldError(input, 'This field needs a number.');
+						return;
+					}
+					fieldError(input, null);
+					column[bound] = parsed;
+					context.persist();
+				});
+			}
+		}
+
+		// Every column has this one: a control that names itself does not
+		// need a word above it repeating the point at twice the width.
+		const headingLabel = detail.createEl('label', {
+			cls: 'sheetsmith-attribute-check',
+		});
+		const hidden = headingLabel.createEl('input', { type: 'checkbox' });
+		hidden.checked = column.hideHeading === true;
+		headingLabel.createSpan({ text: 'Hide heading' });
+		hidden.addEventListener('change', () => {
+			if (hidden.checked) column.hideHeading = true;
+			else delete column.hideHeading;
+			context.persist();
+		});
+	});
+
+	const footer = listEl.createDiv('sheetsmith-attribute-footer');
+	const add = footer.createEl('button', { text: 'Add column' });
+	add.addEventListener('click', () => {
+		const taken = new Set(columns.map((column) => column.key));
+		let next = 'New column';
+		let counter = 2;
+		while (taken.has(next)) next = `New column ${counter++}`;
+		context.focusAfterRedraw(`${prefix}-col-${columns.length}-key`);
+		columns.push({ key: next });
+		context.persist();
+		context.redraw();
+	});
+}
