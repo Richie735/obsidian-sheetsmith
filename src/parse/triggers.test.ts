@@ -3,12 +3,15 @@ import { Layout } from './layout';
 import { parseTriggers } from './triggers';
 import { ComponentConfig, ResetBinding } from '../types';
 
-const component = (label: string, reset?: ResetBinding): ComponentConfig => ({
+const component = (
+	label: string,
+	reset?: ResetBinding | ResetBinding[],
+): ComponentConfig => ({
 	id: label.toLowerCase(),
 	type: 'pool',
 	label,
 	position: { col: 1, row: 1, width: 1, height: 1 },
-	...(reset ? { reset } : {}),
+	...(reset ? { reset: Array.isArray(reset) ? reset : [reset] } : {}),
 });
 
 const layout = (

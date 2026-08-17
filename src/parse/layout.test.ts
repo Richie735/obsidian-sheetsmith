@@ -68,18 +68,67 @@ describe('parseLayout: reset bindings', () => {
 	const resetOf = (reset: unknown) =>
 		parseLayout(withReset(reset)).components[0]?.reset;
 
-	it('accepts a binding with each action', () => {
-		expect(resetOf({ trigger: 'Long rest', action: 'full' })).toEqual({
-			trigger: 'Long rest',
-			action: 'full',
-		});
-		expect(resetOf({ trigger: 'Downtime', action: 'empty' })).toEqual({
-			trigger: 'Downtime',
-			action: 'empty',
-		});
+	it('accepts a binding with each action, as a one-element list', () => {
+		// A single binding may be written on its own; it normalises to a list so
+		// nothing downstream has to ask which form the author used.
+		expect(resetOf({ trigger: 'Long rest', action: 'full' })).toEqual([
+			{ trigger: 'Long rest', action: 'full' },
+		]);
+		expect(resetOf({ trigger: 'Downtime', action: 'empty' })).toEqual([
+			{ trigger: 'Downtime', action: 'empty' },
+		]);
 		expect(
 			resetOf({ trigger: 'Long rest', action: 'formula', to: 'mod(con)' }),
-		).toEqual({ trigger: 'Long rest', action: 'formula', to: 'mod(con)' });
+		).toEqual([{ trigger: 'Long rest', action: 'formula', to: 'mod(con)' }]);
+	});
+
+	it('accepts several bindings, each with its own action', () => {
+		// The case the single binding could not express: in 5e everything a
+		// short rest restores is restored by a long rest too, and the two need
+		// not restore it to the same thing.
+		expect(
+			resetOf([
+				{ trigger: 'Short rest', action: 'formula', to: '1' },
+				{ trigger: 'Long rest', action: 'full' },
+			]),
+		).toEqual([
+			{ trigger: 'Short rest', action: 'formula', to: '1' },
+			{ trigger: 'Long rest', action: 'full' },
+		]);
+	});
+
+	it('refuses two bindings on one trigger', () => {
+		// The button would apply both in file order and the second would win,
+		// which is not a reading anyone intended.
+		expect(() =>
+			parseLayout(
+				withReset([
+					{ trigger: 'Long rest', action: 'full' },
+					{ trigger: 'Long rest', action: 'empty' },
+				]),
+			),
+		).toThrow(LayoutParseError);
+	});
+
+	it('refuses a bad binding anywhere in the list', () => {
+		expect(() =>
+			parseLayout(
+				withReset([
+					{ trigger: 'Short rest', action: 'full' },
+					{ trigger: 'Long rest' },
+				]),
+			),
+		).toThrow(LayoutParseError);
+	});
+
+	it('round-trips a list of bindings', () => {
+		const layout = parseLayout(
+			withReset([
+				{ trigger: 'Short rest', action: 'empty' },
+				{ trigger: 'Long rest', action: 'full' },
+			]),
+		);
+		expect(parseLayout(serialiseLayout(layout))).toEqual(layout);
 	});
 
 	it('leaves a component without a reset alone', () => {
@@ -121,7 +170,7 @@ describe('parseLayout: reset bindings', () => {
 		// was typed; it simply does not run.
 		expect(
 			resetOf({ trigger: 'Long rest', action: 'full', to: 'mod(con)' }),
-		).toEqual({ trigger: 'Long rest', action: 'full', to: 'mod(con)' });
+		).toEqual([{ trigger: 'Long rest', action: 'full', to: 'mod(con)' }]);
 	});
 
 	it('round-trips a binding through serialiseLayout', () => {
@@ -368,5 +417,55 @@ describe('parseLayout', () => {
 			],
 		});
 		expect(() => parseLayout(dupLabel)).toThrow(/label/i);
+	});
+});
+
+describe('parseLayout: buffer clears', () => {
+	const withReset = (reset: unknown) =>
+		JSON.stringify({
+			name: 'L',
+			components: [
+				{
+					id: 'hp',
+					type: 'pool',
+					label: 'HP',
+					position: { col: 1, row: 1, width: 1, height: 1 },
+					reset,
+				},
+			],
+		});
+	const resetOf = (reset: unknown) =>
+		parseLayout(withReset(reset)).components[0]?.reset;
+
+	it('accepts an action and a buffer clear together', () => {
+		// 5e: a long rest restores hit points and clears temporary ones.
+		expect(
+			resetOf({ trigger: 'Long rest', action: 'full', buffer: 'clear' }),
+		).toEqual([{ trigger: 'Long rest', action: 'full', buffer: 'clear' }]);
+	});
+
+	it('accepts a buffer clear on its own, with no action', () => {
+		// 4e: the end of an encounter clears temporary hit points and touches
+		// nothing else. The layout had no way to say this before.
+		expect(resetOf({ trigger: 'End of encounter', buffer: 'clear' })).toEqual([
+			{ trigger: 'End of encounter', buffer: 'clear' },
+		]);
+	});
+
+	it('refuses a binding that would do nothing at all', () => {
+		expect(() => parseLayout(withReset({ trigger: 'Long rest' }))).toThrow(
+			LayoutParseError,
+		);
+	});
+
+	it('refuses a buffer value it does not know', () => {
+		expect(() =>
+			parseLayout(withReset({ trigger: 'Long rest', buffer: 'reset' })),
+		).toThrow(LayoutParseError);
+	});
+
+	it('round-trips a buffer-only binding', () => {
+		const layout = parseLayout(withReset({ trigger: 'Downtime', buffer: 'clear' }));
+		expect(parseLayout(serialiseLayout(layout))).toEqual(layout);
 	});
 });

@@ -32,7 +32,13 @@ interface FixtureComponent {
 	attributes?: { key: string }[];
 	derived?: string;
 	max?: string;
-	reset?: { trigger: string; action: 'full' | 'empty' | 'formula'; to?: string };
+	hasTemp?: boolean;
+	reset?: {
+		trigger: string;
+		action?: 'full' | 'empty' | 'formula';
+		to?: string;
+		buffer?: 'clear';
+	}[];
 }
 
 interface FixtureLayout {
@@ -63,7 +69,7 @@ const LAYOUT_SHAPE: FixtureLayout = {
 			label: 'HP',
 			position: { col: 1, row: 2, width: 2, height: 1 },
 			max: '10 + abilities.CON',
-			reset: { trigger: 'Long rest', action: 'full' },
+			reset: [{ trigger: 'Long rest', action: 'full' }],
 		},
 		{
 			id: 'ki',
@@ -71,7 +77,7 @@ const LAYOUT_SHAPE: FixtureLayout = {
 			label: 'Ki',
 			position: { col: 3, row: 2, width: 2, height: 1 },
 			max: '5',
-			reset: { trigger: 'Short rest', action: 'empty' },
+			reset: [{ trigger: 'Short rest', action: 'empty' }],
 		},
 	],
 };
@@ -160,11 +166,20 @@ function applyTrigger(
 	const failed: string[] = [];
 	const writes = [];
 	for (const { config, component, data } of prepared) {
-		const reset = config.reset;
-		if (!component.applyReset || !reset || reset.trigger !== trigger) continue;
+		// Any binding matching this trigger, and its index — which is where its
+		// own `to` expression lives now that the bindings are a list.
+		const index = (config.reset ?? []).findIndex(
+			(binding) => binding.trigger === trigger,
+		);
+		const reset = config.reset?.[index];
+		if (!component.applyReset || !reset) continue;
+		const at = (field: string): string =>
+			field === 'reset.to' ? `reset.${index}.to` : field;
+		const resolve = makeFieldResolver(component, config, data, sheet, library);
+		const explain = makeFieldExplainer(component, config, data, sheet, library);
 		const result = component.applyReset(data, config, reset, {
-			resolve: makeFieldResolver(component, config, data, sheet, library),
-			explain: makeFieldExplainer(component, config, data, sheet, library),
+			resolve: (field, scope) => resolve(at(field), scope),
+			explain: (field, scope) => explain(at(field), scope),
 		});
 		if (!result.ok) {
 			failed.push(`${config.label}: ${result.error}`);
@@ -246,7 +261,7 @@ describe('a trigger that cannot fully apply', () => {
 		// on Long rest here, and only one of them can compute.
 		const both = variant((shape) => {
 			componentIn(shape, 'hp').max = '10 + wisdom';
-			componentIn(shape, 'ki').reset = { trigger: 'Long rest', action: 'empty' };
+			componentIn(shape, 'ki').reset = [{ trigger: 'Long rest', action: 'empty' }];
 		});
 		const { text, failed } = applyTrigger(NOTE, both, 'Long rest');
 		expect(failed).toHaveLength(1);
@@ -267,5 +282,79 @@ describe('the trigger list the sheet draws buttons from', () => {
 
 	it('reports nothing wrong with a layout whose bindings all match', () => {
 		expect(parseTriggers(parseLayout(LAYOUT)).problems).toEqual([]);
+	});
+});
+
+describe('a trigger that subsumes another, end to end', () => {
+	// 5e's actual shape: everything a short rest restores, a long rest restores
+	// too, and not the other way round. Ki binds to both; hit dice only to the
+	// long rest.
+	const BOTH = variant((shape) => {
+		componentIn(shape, 'ki').reset = [
+			{ trigger: 'Short rest', action: 'empty' },
+			{ trigger: 'Long rest', action: 'empty' },
+		];
+	});
+
+	it('restores the shared pool on the narrower rest', () => {
+		const { text, failed } = applyTrigger(NOTE, BOTH, 'Short rest');
+		expect(failed).toEqual([]);
+		expect(fenced(text, 'Ki', 'current')).toBe('0');
+		// The long-rest-only pool is untouched by a short rest.
+		expect(fenced(text, 'HP', 'current')).toBe('4');
+	});
+
+	it('restores it on the wider rest as well', () => {
+		const { text, failed } = applyTrigger(NOTE, BOTH, 'Long rest');
+		expect(failed).toEqual([]);
+		expect(fenced(text, 'Ki', 'current')).toBe('0');
+		// And everything the wider rest covers on its own.
+		expect(fenced(text, 'HP', 'current')).toBe('13');
+	});
+
+	it('lets each binding restore to something different', () => {
+		// A short rest gives one use back; a long rest gives all of them.
+		const graded = variant((shape) => {
+			componentIn(shape, 'ki').reset = [
+				{ trigger: 'Short rest', action: 'formula', to: '1' },
+				{ trigger: 'Long rest', action: 'full' },
+			];
+		});
+		expect(fenced(applyTrigger(NOTE, graded, 'Short rest').text, 'Ki', 'current')).toBe(
+			'1',
+		);
+		// max is `level`, which is 5.
+		expect(fenced(applyTrigger(NOTE, graded, 'Long rest').text, 'Ki', 'current')).toBe(
+			'5',
+		);
+	});
+
+	it('reports no problem for a component bound to several declared triggers', () => {
+		expect(parseTriggers(parseLayout(BOTH)).problems).toEqual([]);
+	});
+});
+
+describe('clearing the buffer, end to end', () => {
+	const BUFFERED = variant((shape) => {
+		const hp = componentIn(shape, 'hp');
+		hp.hasTemp = true;
+		hp.reset = [{ trigger: 'Long rest', action: 'full', buffer: 'clear' }];
+		componentIn(shape, 'ki').reset = [
+			{ trigger: 'Short rest', buffer: 'clear' },
+		];
+	});
+
+	it('restores the pool and clears the buffer in one write', () => {
+		const { text, failed } = applyTrigger(NOTE, BUFFERED, 'Long rest');
+		expect(failed).toEqual([]);
+		expect(fenced(text, 'HP', 'current')).toBe('13');
+		expect(fenced(text, 'HP', 'temp')).toBe('0');
+	});
+
+	it('clears a buffer without touching the value beside it', () => {
+		// The 4e shape, on a component whose binding names no action at all.
+		const { text, failed } = applyTrigger(NOTE, BUFFERED, 'Short rest');
+		expect(failed).toEqual([]);
+		expect(fenced(text, 'Ki', 'current')).toBe('3');
 	});
 });

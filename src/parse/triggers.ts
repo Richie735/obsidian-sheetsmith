@@ -73,13 +73,13 @@ export function parseTriggers(layout: Layout): ParsedTriggers {
 	}
 
 	for (const component of layout.components) {
-		const reset = component.reset;
-		if (reset === undefined) continue;
-		if (seen.has(reset.trigger)) continue;
-		problems.push({
-			component: component.label,
-			message: `"${component.label}" resets on "${reset.trigger}", which this layout does not declare. It will not reset until a trigger of that name exists.`,
-		});
+		for (const reset of component.reset ?? []) {
+			if (seen.has(reset.trigger)) continue;
+			problems.push({
+				component: component.label,
+				message: `"${component.label}" resets on "${reset.trigger}", which this layout does not declare. It will not reset until a trigger of that name exists.`,
+			});
+		}
 	}
 
 	return { names, problems };

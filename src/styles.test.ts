@@ -96,3 +96,59 @@ describe('invisible hit targets never overlay a neighbour', () => {
 		}
 	});
 });
+
+describe('the pool\'s controls are one height by construction', () => {
+	const CSS_TEXT = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+
+	/*
+	 * Steppers, the amount trigger, the direction and the field sit in one row
+	 * and have to line up. They used to do that by three separate pairs of
+	 * declarations carrying the same number at each of three breakpoints, which
+	 * is not one height — it is agreement by coincidence in three places a later
+	 * edit has to remember all of. They take a single token now, and these are
+	 * the checks that keep it that way.
+	 */
+	const SIZED = [
+		'.sheetsmith-pool-step',
+		'.sheetsmith-pool-adjust-trigger',
+		'.sheetsmith-pool-adjust-direction',
+		'.sheetsmith-pool-adjust-amount',
+		'.sheetsmith-pool-adjust-panel',
+		'.sheetsmith-pool-adjust',
+	];
+
+	it('sizes every control in the row from the row\'s own token', () => {
+		for (const name of SIZED) {
+			// The block that declares a height for this control, if any does.
+			const blocks = CSS_TEXT.split('}').filter(
+				(block) => block.includes(name + ' {') || block.includes(name + ',\n'),
+			);
+			const heights = blocks
+				.flatMap((block) => block.split('\n'))
+				.filter((line) => /^\s*height:/.test(line));
+			expect(heights.length, `${name} declares no height`).toBeGreaterThan(0);
+			for (const line of heights) {
+				expect(line, `${name} sets a height off the token`).toContain(
+					'--sheetsmith-pool-control',
+				);
+			}
+		}
+	});
+
+	it('keeps a fallback, for a step button rendered outside the row', () => {
+		// The token lives on the controls row. The layout editor's sample and any
+		// later use of this button elsewhere would otherwise render at zero.
+		const uses = CSS_TEXT.split('\n').filter((line) =>
+			line.includes('var(--sheetsmith-pool-control'),
+		);
+		expect(uses.length).toBeGreaterThan(0);
+		for (const line of uses) {
+			// Either the declaration of the token itself, or a use with a fallback.
+			const declares = /^\s*--sheetsmith-pool-control:/.test(line);
+			expect(
+				declares || line.includes('--sheetsmith-pool-control, var('),
+				`no fallback: ${line.trim()}`,
+			).toBe(true);
+		}
+	});
+});

@@ -115,7 +115,7 @@ function parsePosition(value: unknown, where: string): GridPosition {
 }
 
 /**
- * A component's reset binding (SPEC §6), or undefined where it has none.
+ * A component's reset bindings (SPEC §6), or undefined where it has none.
  *
  * Checked rather than carried through untouched like the rest of a
  * component's config, because `reset` is shared config the plugin itself acts
@@ -125,37 +125,90 @@ function parsePosition(value: unknown, where: string): GridPosition {
  * binding arriving without one parses clean, and the trigger button silently
  * does nothing.
  *
+ * One binding may be written on its own instead of a list of one, and that is
+ * a shorthand rather than a leniency — the same accommodation §5 makes for
+ * `prof` beside `prof()`. Most components answer to a single trigger, and
+ * making every one of them carry a one-element list would be punctuation for
+ * its own sake. Both normalise to a list here so nothing downstream has to
+ * ask which form was used.
+ *
  * The pre-split shape, `{ trigger, to: "max" }`, is refused rather than
  * migrated. The `migrateId` precedent above exists because this plugin's own
  * editor emitted the ids it rewrites; nothing has ever written a `reset`, so
  * there is no file in the wild to protect, and quietly blessing a shape the
  * spec no longer has would be worse than naming it.
  */
-function parseReset(value: unknown, where: string): ResetBinding | undefined {
-	if (value === undefined) return undefined;
+function parseBinding(value: unknown, where: string): ResetBinding {
 	if (!isRecord(value)) {
-		throw new LayoutParseError(`${where} "reset" must be an object.`);
+		throw new LayoutParseError(`${where} must be an object.`);
 	}
-	const trigger = requireString(value, 'trigger', `${where} reset`);
+	const trigger = requireString(value, 'trigger', where);
 	const action = value.action;
-	if (action !== 'full' && action !== 'empty' && action !== 'formula') {
+	if (
+		action !== undefined &&
+		action !== 'full' &&
+		action !== 'empty' &&
+		action !== 'formula'
+	) {
 		throw new LayoutParseError(
-			`${where} reset needs an "action" of "full", "empty", or "formula".`,
+			`${where} "action" must be "full", "empty", or "formula".`,
+		);
+	}
+	const buffer = value.buffer;
+	if (buffer !== undefined && buffer !== 'clear') {
+		throw new LayoutParseError(`${where} "buffer" must be "clear".`);
+	}
+	// A binding that does nothing is not a shape the file format has a reading
+	// for: the trigger would list the component and pass over it.
+	if (action === undefined && buffer === undefined) {
+		throw new LayoutParseError(
+			`${where} needs an "action", a "buffer" of "clear", or both.`,
 		);
 	}
 	const to = value.to;
 	if (to !== undefined && typeof to !== 'string') {
-		throw new LayoutParseError(`${where} reset "to" must be a string.`);
+		throw new LayoutParseError(`${where} "to" must be a string.`);
 	}
 	if (action === 'formula' && (to === undefined || to.trim() === '')) {
 		throw new LayoutParseError(
-			`${where} reset action "formula" needs a "to" expression.`,
+			`${where} action "formula" needs a "to" expression.`,
 		);
 	}
 	// A `to` left beside `full` or `empty` is kept, not dropped: it does not
 	// run, but switching the action in the editor and back must not throw the
 	// expression away.
-	return { trigger, action, ...(to !== undefined ? { to } : {}) };
+	return {
+		trigger,
+		...(action !== undefined ? { action } : {}),
+		...(to !== undefined ? { to } : {}),
+		...(buffer !== undefined ? { buffer } : {}),
+	};
+}
+
+function parseReset(value: unknown, where: string): ResetBinding[] | undefined {
+	if (value === undefined) return undefined;
+	const raw = Array.isArray(value) ? value : [value];
+	const bindings = raw.map((entry, index) =>
+		parseBinding(
+			entry,
+			raw.length === 1
+				? `${where} "reset"`
+				: `${where} reset ${index + 1}`,
+		),
+	);
+	// Two bindings on one component for one trigger is an authoring mistake
+	// with no sensible reading: the button would apply both, in file order,
+	// and the second would silently win.
+	const seen = new Set<string>();
+	for (const binding of bindings) {
+		if (seen.has(binding.trigger)) {
+			throw new LayoutParseError(
+				`${where} binds to "${binding.trigger}" more than once.`,
+			);
+		}
+		seen.add(binding.trigger);
+	}
+	return bindings.length > 0 ? bindings : undefined;
 }
 
 function parseComponent(value: unknown, index: number): ComponentConfig {

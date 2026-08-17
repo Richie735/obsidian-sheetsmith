@@ -47,7 +47,13 @@ export interface ListContext {
  * each needs its own error.
  */
 export function showFieldError(
-	input: HTMLInputElement,
+	/**
+	 * Any form field on the tab. A select as readily as a text input: a reset
+	 * binding's trigger is chosen from a dropdown and can still be wrong — two
+	 * bindings on one trigger — and that has to report where it was chosen.
+	 * Nothing below needs more than dataset, classes and a parent.
+	 */
+	input: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement,
 	message: string | null,
 	/**
 	 * Where the message is remembered across a rebuild of the tab. Without it

@@ -27,11 +27,17 @@ export interface ResetBinding {
 	/** Name of the layout-defined trigger this component responds to. */
 	trigger: string;
 	/**
-	 * What resetting means here. The states are named rather than numbered
-	 * because the same three cover a Toggle, where full and empty are true
-	 * and false, as readily as a Pool, where they are its max and zero.
+	 * What resetting means for the component's own value. The states are named
+	 * rather than numbered because the same three cover a Toggle, where full
+	 * and empty are true and false, as readily as a Pool, where they are its
+	 * max and zero.
+	 *
+	 * Optional, because a trigger may be about the buffer alone: 4e clears
+	 * temporary hit points at the end of an encounter and touches nothing else.
+	 * A binding still has to do something, so one of `action` and `buffer` is
+	 * required.
 	 */
-	action: 'full' | 'empty' | 'formula';
+	action?: 'full' | 'empty' | 'formula';
 	/**
 	 * The expression, for `action: 'formula'` and nothing else. It is a
 	 * formula field like any other, declared as `reset.to`, which is why the
@@ -39,6 +45,18 @@ export interface ResetBinding {
 	 * evaluator reads and a literal word standing in for one.
 	 */
 	to?: string;
+	/**
+	 * Clear the component's secondary buffer, independently of `action`.
+	 *
+	 * Which event empties a buffer is a rule of the system and nothing a pool
+	 * could infer: 5e clears temporary hit points on a long rest, 4e at the end
+	 * of an encounter, Blades at the next score. All of those are events a
+	 * trigger already models, and before this the layout had no way to say so.
+	 *
+	 * Only components declaring `hasBuffer` honour it, and the editor offers it
+	 * only for those — so it is not a key every binding carries the weight of.
+	 */
+	buffer?: 'clear';
 }
 
 /** Properties every component carries, whatever its type (SPEC §4.1). */
@@ -50,7 +68,16 @@ export interface ComponentConfig {
 	/** Display name, and the section heading in the note body. */
 	label: string;
 	position: GridPosition;
-	reset?: ResetBinding;
+	/**
+	 * Every trigger this component responds to (SPEC §6), each with its own
+	 * action. A list because the triggers a system declares overlap: in 5e
+	 * everything a short rest restores is restored by a long rest too, and a
+	 * component that could name only one trigger could not say so.
+	 *
+	 * A layout may write one binding on its own rather than a list of one; the
+	 * parser normalises it, so everything downstream sees a list.
+	 */
+	reset?: ResetBinding[];
 }
 
 /**
@@ -119,6 +146,12 @@ export interface ConfigFieldSpec {
 	 * Show this field only while another config key holds a value, e.g.
 	 * alignment only when sizing is fixed, options only when input is a
 	 * select.
+	 *
+	 * Matched against the controlling field's effective value, not the stored
+	 * one: a key whose value equals its own default is omitted from the
+	 * config, so a condition naming that default is satisfied by its absence.
+	 * That is what lets a field be visible in the ordinary mode and hidden in
+	 * the exceptional one, rather than only the other way round.
 	 */
 	visibleWhen?: { key: string; equals: unknown };
 	/** Default for boolean fields; the key is omitted when it matches. */
@@ -284,6 +317,16 @@ export interface ComponentDefinition<
 		reset: ResetBinding,
 		context: ResetContext,
 	): ResetResult<TData>;
+	/**
+	 * True where this component holds a secondary buffer a trigger may clear
+	 * on its own, independently of the component's main value.
+	 *
+	 * Declared rather than inferred, because the alternative is the layout
+	 * editor knowing that a Pool has temporary points and a Track does not —
+	 * which is the rule in §4.1 that decides what may be an optional member at
+	 * all. The editor offers `reset.buffer` exactly where this is set.
+	 */
+	hasBuffer?: boolean;
 	/**
 	 * Which config fields accept an expression rather than a literal.
 	 *

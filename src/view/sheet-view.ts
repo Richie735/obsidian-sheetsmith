@@ -32,6 +32,27 @@ export const VIEW_TYPE_SHEET = 'sheetsmith-sheet';
  */
 const UNDO_TIMEOUT = 12000;
 
+/**
+ * A warning naming the components it affected, one per line.
+ *
+ * A list rather than a sentence. These messages are read to be counted and
+ * checked against the sheet — which pools did not reset, which sections did
+ * not save — and several names run together with semicolons is a sentence to
+ * parse before the question can be answered. One per line also survives a
+ * long reason on each: a failure carries the formula's own explanation, and
+ * two of those in one paragraph is unreadable.
+ */
+function warn(heading: string, items: readonly string[]): void {
+	new Notice(
+		createFragment((fragment) => {
+			fragment.appendText(heading);
+			fragment.createEl('ul', { cls: 'sheetsmith-affected' }, (list) => {
+				for (const item of items) list.createEl('li', { text: item });
+			});
+		}),
+	);
+}
+
 /** A component read for this render, with whatever its section gave up. */
 interface PreparedComponent {
 	config: ComponentConfig;
@@ -336,8 +357,13 @@ export class SheetView extends TextFileView {
 			const bound = prepared.filter(
 				(entry) =>
 					entry.error === null &&
-					entry.config.reset?.trigger === name &&
-					entry.component?.applyReset !== undefined,
+					entry.component?.applyReset !== undefined &&
+					// Any of its bindings, not one: a component may answer to
+					// several triggers, which is how a system whose long rest
+					// includes its short rest gets said at all.
+					(entry.config.reset ?? []).some(
+						(binding) => binding.trigger === name,
+					),
 			);
 
 			const button = bar.createEl('button', {
@@ -361,11 +387,10 @@ export class SheetView extends TextFileView {
 			button.addEventListener('click', () => {
 				new ConfirmModal(
 					this.app,
-					`Apply ${name}? It resets ${bound
-						.map((entry) => entry.config.label)
-						.join(', ')}. This can be undone.`,
+					`Apply ${name}? This can be undone. It resets:`,
 					`Apply ${name}`,
 					() => this.applyTrigger(name, bound, sheet, library),
+					bound.map((entry) => entry.config.label),
 				).open();
 			});
 		}
@@ -393,18 +418,32 @@ export class SheetView extends TextFileView {
 		const failed: string[] = [];
 
 		for (const { component, config, data } of bound) {
-			const reset = config.reset;
+			const index = (config.reset ?? []).findIndex(
+				(binding) => binding.trigger === name,
+			);
+			const reset = config.reset?.[index];
 			if (!component?.applyReset || !reset) continue;
+
+			// The bindings are a list, so this one's expression lives at
+			// `reset.<index>.to`. The component asks for it by the one name it
+			// has — `reset.to` — and the sheet, which knows which binding is
+			// being applied, rewrites it. Without this a component would have to
+			// know its own position in its own config.
+			const at = (field: string): string =>
+				field === 'reset.to' ? `reset.${index}.to` : field;
+			const resolve = makeFieldResolver(component, config, data, sheet, library);
+			const explain = makeFieldExplainer(component, config, data, sheet, library);
+
 			const result = component.applyReset(data, config, reset, {
-				resolve: makeFieldResolver(component, config, data, sheet, library),
-				explain: makeFieldExplainer(component, config, data, sheet, library),
+				resolve: (field, scope) => resolve(at(field), scope),
+				explain: (field, scope) => explain(at(field), scope),
 			});
 			if (result.ok) edits.push({ component, config, data: result.data });
-			else failed.push(`"${config.label}": ${result.error}`);
+			else failed.push(`${config.label} — ${result.error}`);
 		}
 
 		if (failed.length > 0) {
-			new Notice(`${name} could not reset ${failed.join('; ')}`);
+			warn(`${name} could not reset:`, failed);
 		}
 		if (edits.length === 0) return;
 
@@ -489,10 +528,9 @@ export class SheetView extends TextFileView {
 			// not are named. A batch must not be all-or-nothing, or one
 			// misconfigured component would refuse a whole long rest.
 			if (failed.length > 0) {
-				new Notice(
-					`Sheetsmith could not save ${failed
-						.map((failure) => `"${failure.label}": ${failure.error}`)
-						.join('; ')}`,
+				warn(
+					'Sheetsmith could not save:',
+					failed.map((failure) => `${failure.label} — ${failure.error}`),
 				);
 			}
 			if (text !== this.data) {

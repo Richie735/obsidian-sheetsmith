@@ -11,6 +11,7 @@ import {
 	TFile,
 } from 'obsidian';
 import { getComponent, listComponentTypes } from './components';
+import { conditionMet } from './config-fields';
 import { ConfirmModal } from './confirm-modal';
 import {
 	commitFunctionLibrary,
@@ -45,11 +46,15 @@ import { SheetView, VIEW_TYPE_SHEET } from './view/sheet-view';
 /** Dropdown sentinel; layout file names can never collide with it. */
 const CREATE_LAYOUT_OPTION = '::create-layout::';
 
-/** Dropdown sentinel for "bound to no trigger"; a name can never be empty. */
-const NO_TRIGGER_OPTION = '';
+/** Dropdown sentinel for a binding that acts on the buffer only. */
+const NO_ACTION_OPTION = '::none::';
 
 /** Held as a constant because it is an expression, not prose to be cased. */
 const RESET_FORMULA_EXAMPLE = 'mod(abilities.CON) * level';
+
+/** Held as a constant because the examples are the names of games. */
+const BUFFER_CLEAR_DESC =
+	'Which event empties the buffer is a rule of the system, so the layout says it here: a long rest in 5e, the end of an encounter in 4e, the next score in Blades.';
 
 /**
  * The three reset actions (SPEC §6), labelled as what they do to a component
@@ -61,6 +66,10 @@ const RESET_ACTIONS: readonly (readonly [string, string])[] = [
 	['full', 'Restore to full'],
 	['empty', 'Set to empty'],
 	['formula', 'Set to a formula'],
+	// A trigger may be about the buffer alone — 4e clears temporary hit points
+	// at the end of an encounter and touches nothing else — so "nothing" is a
+	// real choice here rather than the absence of one.
+	[NO_ACTION_OPTION, 'Leave the value alone'],
 ];
 
 /** How long a rebuilt region stays marked, before fading over its own transition. */
@@ -898,7 +907,7 @@ export class LayoutEditorSection {
 		for (const field of definition.configFields) {
 			if (
 				field.visibleWhen &&
-				record[field.visibleWhen.key] !== field.visibleWhen.equals
+				!conditionMet(field.visibleWhen, definition.configFields, record)
 			) {
 				continue;
 			}
@@ -1035,99 +1044,183 @@ export class LayoutEditorSection {
 		config: ComponentConfig,
 	): void {
 		const { names, problems } = parseTriggers(layout);
-		const reset = config.reset;
+		const bindings = config.reset ?? [];
 
-		const setting = new Setting(form).setName('Resets on').setDesc(
+		groupHeading(
+			form,
+			'Resets on',
 			names.length === 0
 				? 'This layout declares no triggers yet. Add one below and it appears here.'
-				: 'Which trigger restores this component, and what it restores to.',
+				: 'Which triggers restore this component, and what each restores it to. A system whose long rest also covers its short rest binds to both.',
+			bindings.length,
 		);
 
-		setting.addDropdown((dropdown) => {
-			dropdown.addOption(NO_TRIGGER_OPTION, 'Nothing');
-			for (const name of names) dropdown.addOption(name, name);
-			// A binding pointing at a trigger that no longer exists still has
-			// to be selectable, or opening the form would silently rebind the
-			// component to whatever happened to be first.
-			if (reset && !names.includes(reset.trigger)) {
-				dropdown.addOption(reset.trigger, `${reset.trigger} (not declared)`);
-			}
-			dropdown.setValue(reset?.trigger ?? NO_TRIGGER_OPTION);
-			dropdown.selectEl.dataset.sheetsmithFocus = `reset-trigger-${config.id}`;
-			dropdown.onChange((value) => {
-				if (value === NO_TRIGGER_OPTION) delete config.reset;
-				else {
-					config.reset = {
-						trigger: value,
-						// Restoring to full is what a reset means most of the
-						// time, and an action is required, so it is the one
-						// that gets to be assumed.
-						action: config.reset?.action ?? 'full',
-						...(config.reset?.to !== undefined ? { to: config.reset.to } : {}),
-					};
-				}
-				void this.persist();
-				this.redraw();
-			});
-		});
+		bindings.forEach((reset, index) => {
+			const setting = new Setting(form).setName(`Trigger ${index + 1}`);
 
-		if (reset) {
 			setting.addDropdown((dropdown) => {
-				for (const [value, label] of RESET_ACTIONS) {
-					dropdown.addOption(value, label);
+				for (const name of names) dropdown.addOption(name, name);
+				// A binding pointing at a trigger that no longer exists still has
+				// to be selectable, or opening the form would silently rebind the
+				// component to whatever happened to be first.
+				if (!names.includes(reset.trigger)) {
+					dropdown.addOption(reset.trigger, `${reset.trigger} (not declared)`);
 				}
-				dropdown.setValue(reset.action);
-				dropdown.selectEl.dataset.sheetsmithFocus = `reset-action-${config.id}`;
+				dropdown.setValue(reset.trigger);
+				dropdown.selectEl.dataset.sheetsmithFocus = `reset-trigger-${config.id}-${index}`;
 				dropdown.onChange((value) => {
-					// The expression is kept when the action moves off formula,
-					// so switching to compare against full and back does not
-					// throw away what was typed. parseReset keeps it too.
-					reset.action = value as ResetBinding['action'];
+					// Two bindings on one trigger have no sensible reading, and
+					// the parser refuses the file over it — so it is refused
+					// here, where it can still be corrected.
+					if (bindings.some((other) => other !== reset && other.trigger === value)) {
+						showFieldError(
+							dropdown.selectEl,
+							'This component already resets on that trigger.',
+						);
+						dropdown.setValue(reset.trigger);
+						return;
+					}
+					reset.trigger = value;
 					void this.persist();
 					this.redraw();
 				});
 			});
-		}
 
-		if (reset?.action === 'formula') {
-			new Setting(form)
-				.setName('Resets to')
-				.setDesc(
-					// The example goes in a code element rather than the prose,
-					// as the function library's does: an expression is not a
-					// sentence, and sentence-casing it would change what it means.
-					createFragment((fragment) => {
-						fragment.appendText('Formula giving the value to restore.');
-						fragment.createEl('br');
-						fragment.createEl('code', { text: RESET_FORMULA_EXAMPLE });
-					}),
-				)
-				.addText((text) => {
-					text.setValue(reset.to ?? '');
-					text.inputEl.dataset.sheetsmithFocus = `reset-to-${config.id}`;
-					onCommit(text, (raw) => {
-						const trimmed = raw.trim();
-						if (trimmed === '') {
-							// The layout would not load: parseReset requires an
-							// expression for this action.
-							this.fieldError(
-								text.inputEl,
-								'A formula reset needs an expression.',
-							);
-							return;
-						}
-						this.fieldError(text.inputEl, null);
-						reset.to = trimmed;
-						void this.persist();
-					});
+			// Asked of the component, never inferred: the editor knowing that a
+			// Pool has temporary points and a Track does not is exactly the
+			// coupling the contract exists to prevent.
+			const buffered = getComponent(config.type)?.hasBuffer === true;
+
+			setting.addDropdown((dropdown) => {
+				for (const [value, label] of RESET_ACTIONS) {
+					// Leaving the value alone is only a choice where something
+					// else on the binding can still act; otherwise it would be a
+					// binding that does nothing, which the parser refuses.
+					if (value === NO_ACTION_OPTION && !buffered) continue;
+					dropdown.addOption(value, label);
+				}
+				dropdown.setValue(reset.action ?? NO_ACTION_OPTION);
+				dropdown.selectEl.dataset.sheetsmithFocus = `reset-action-${config.id}-${index}`;
+				dropdown.onChange((value) => {
+					if (value === NO_ACTION_OPTION) {
+						delete reset.action;
+						// Something has to happen, so the buffer takes over.
+						reset.buffer = 'clear';
+					} else {
+						// The expression is kept when the action moves off
+						// formula, so switching away and back does not throw away
+						// what was typed. parseReset keeps it too.
+						reset.action = value as ResetBinding['action'];
+					}
+					void this.persist();
+					this.redraw();
 				});
-		}
+			});
 
-		// Only this component's own problem. The trigger list below shows
-		// every one, which is where the whole picture belongs.
-		const mine = problems.find((problem) => problem.component === config.label);
-		if (mine) {
-			form.createDiv('sheetsmith-error', (el) => el.setText(mine.message));
+			if (buffered) {
+				new Setting(form)
+					.setName('Also clear temporary points')
+					.setDesc(BUFFER_CLEAR_DESC)
+					.addToggle((toggle) => {
+						toggle.setValue(reset.buffer === 'clear');
+						toggle.toggleEl.dataset.sheetsmithFocus = `reset-buffer-${config.id}-${index}`;
+						toggle.onChange((on) => {
+							if (on) reset.buffer = 'clear';
+							else if (reset.action === undefined) {
+								// The binding would be left doing nothing at all.
+								showFieldError(
+									toggle.toggleEl.querySelector('input') ??
+										toggle.toggleEl.createEl('input'),
+									'Give the binding an action first, or remove it.',
+								);
+								toggle.setValue(true);
+								return;
+							} else delete reset.buffer;
+							void this.persist();
+							this.redraw();
+						});
+					});
+			}
+
+			setting.addExtraButton((button) =>
+				button
+					.setIcon('trash-2')
+					.setTooltip('Remove this reset')
+					.onClick(() => {
+						bindings.splice(index, 1);
+						if (bindings.length === 0) delete config.reset;
+						void this.persist();
+						this.redraw();
+					}),
+			);
+
+			if (reset.action === 'formula') {
+				new Setting(form)
+					.setName('Resets to')
+					.setDesc(
+						// The example goes in a code element rather than the prose,
+						// as the function library's does: an expression is not a
+						// sentence, and sentence-casing it would change what it means.
+						createFragment((fragment) => {
+							fragment.appendText('Formula giving the value to restore.');
+							fragment.createEl('br');
+							fragment.createEl('code', { text: RESET_FORMULA_EXAMPLE });
+						}),
+					)
+					.addText((text) => {
+						text.setValue(reset.to ?? '');
+						text.inputEl.dataset.sheetsmithFocus = `reset-to-${config.id}-${index}`;
+						onCommit(text, (raw) => {
+							const trimmed = raw.trim();
+							if (trimmed === '') {
+								// The layout would not load: parseReset requires an
+								// expression for this action.
+								this.fieldError(
+									text.inputEl,
+									'A formula reset needs an expression.',
+								);
+								return;
+							}
+							this.fieldError(text.inputEl, null);
+							reset.to = trimmed;
+							void this.persist();
+						});
+					});
+			}
+		});
+
+		// Only triggers this component is not already bound to: offering one it
+		// answers to already would create the duplicate the parser refuses.
+		const available = names.filter(
+			(name) => !bindings.some((reset) => reset.trigger === name),
+		);
+		new Setting(form).addButton((button) =>
+			button
+				.setButtonText('Add reset')
+				.setDisabled(available.length === 0)
+				.setTooltip(
+					names.length === 0
+						? 'Declare a trigger below first.'
+						: available.length === 0
+							? 'This component already resets on every trigger.'
+							: 'Bind this component to another trigger.',
+				)
+				.onClick(() => {
+					const trigger = available[0];
+					if (trigger === undefined) return;
+					// Restoring to full is what a reset means most of the time,
+					// and an action is required, so it is the one that gets to
+					// be assumed.
+					config.reset = [...bindings, { trigger, action: 'full' }];
+					void this.persist();
+					this.redraw();
+				}),
+		);
+
+		// Only this component's own problems. The trigger list below shows every
+		// one, which is where the whole picture belongs.
+		for (const problem of problems.filter((p) => p.component === config.label)) {
+			form.createDiv('sheetsmith-error', (el) => el.setText(problem.message));
 		}
 	}
 
