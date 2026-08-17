@@ -76,7 +76,7 @@ describe.each(types)('component "%s"', (type) => {
 		// resolver hands back nothing, and the reset silently does nothing
 		// at all. Cheaper to fail here than to debug a dead button.
 		if (component?.applyReset === undefined) return;
-		expect(component.formulaFields).toContain('reset.to');
+		expect(component.formulaFields).toContain('reset.*.to');
 	});
 
 	it('declares formulaFields and configFields', () => {

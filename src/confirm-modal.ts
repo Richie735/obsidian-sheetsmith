@@ -14,16 +14,35 @@ export class ConfirmModal extends Modal {
 	private message: string;
 	private cta: string;
 	private onConfirm: () => void;
+	private items: readonly string[];
 
-	constructor(app: App, message: string, cta: string, onConfirm: () => void) {
+	constructor(
+		app: App,
+		message: string,
+		cta: string,
+		onConfirm: () => void,
+		/**
+		 * The things the action will affect, one per line. A list rather than a
+		 * sentence: these are read to be counted and checked, and four component
+		 * names run together with commas is a sentence to parse before the
+		 * question can be answered.
+		 */
+		items: readonly string[] = [],
+	) {
 		super(app);
 		this.message = message;
 		this.cta = cta;
 		this.onConfirm = onConfirm;
+		this.items = items;
 	}
 
 	onOpen(): void {
 		this.contentEl.createEl('p', { text: this.message });
+		if (this.items.length > 0) {
+			this.contentEl.createEl('ul', { cls: 'sheetsmith-affected' }, (list) => {
+				for (const item of this.items) list.createEl('li', { text: item });
+			});
+		}
 		new Setting(this.contentEl)
 			.addButton((button) =>
 				button.setButtonText('Cancel').onClick(() => this.close()),
