@@ -26,3 +26,14 @@ coverage
 
 # Exclude macOS Finder (System Explorer) View States
 .DS_Store
+
+# Harness build output
+harness/dist
+
+# Obsidian's own CSS, extracted locally by `npm run harness:calibrate`.
+# Never committed: it is not ours to redistribute.
+harness/obsidian.generated.css
+harness/shots
+
+# Per-machine Claude Code state, not project configuration
+.claude/settings.local.json

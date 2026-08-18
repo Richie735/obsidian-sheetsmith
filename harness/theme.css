@@ -1,0 +1,371 @@
+/*
+ * An approximation of Obsidian's default theme variables, for the harness only.
+ * Never shipped, never imported by the plugin.
+ *
+ * These are the variables styles.css actually consumes, and no others. Values
+ * follow Obsidian's defaults closely enough to judge layout, contrast, spacing
+ * and reflow. They are NOT pixel-exact, and a community theme will differ more
+ * still — so the harness is the place to catch "this breaks in dark mode" and
+ * "this overflows at 380px", not "this is two pixels off".
+ */
+
+/*
+ * Cascade order.
+ *
+ * Everything approximating Obsidian sits in the `harness-fallback` layer, so
+ * `obsidian.generated.css` — the real thing, extracted from the installed app
+ * and unlayered — beats it whatever the specificity, and this file only applies
+ * where the generated sheet is absent or silent.
+ *
+ * `styles.css` stays unlayered too, deliberately. Putting the plugin's own CSS
+ * in a winning layer would let a rule beat Obsidian's that loses to it in the
+ * real app, hiding the exact specificity failure `styles.test.ts` exists to
+ * catch. The plugin has to compete on the real cascade or the harness lies.
+ *
+ * The harness's own chrome is unlayered: it is not pretending to be Obsidian.
+ */
+@layer harness-fallback;
+
+@layer harness-fallback {
+
+body {
+	--font-normal: 16px;
+	--font-ui-medium: 15px;
+	--font-ui-small: 13px;
+	--font-ui-smaller: 12px;
+	--font-smallest: 11px;
+	--font-medium: 500;
+	--font-semibold: 600;
+	--font-bold: 700;
+	--font-monospace: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+
+	--size-2-1: 2px;
+	--size-2-2: 4px;
+	--size-2-3: 6px;
+	--size-4-1: 4px;
+	--size-4-2: 8px;
+	--size-4-3: 12px;
+	--size-4-4: 16px;
+	--size-4-6: 24px;
+	--size-4-8: 32px;
+
+	--radius-s: 4px;
+	--radius-m: 8px;
+	--radius-l: 12px;
+
+	--icon-s: 16px;
+	--layer-popover: 30;
+	--file-line-width: 700px;
+
+	font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+	font-size: var(--font-normal);
+	color: var(--text-normal);
+	background-color: var(--background-primary);
+	margin: 0;
+}
+
+body.theme-light {
+	--background-primary: #ffffff;
+	--background-primary-alt: #f5f6f8;
+	--background-secondary: #f2f3f5;
+	--background-modifier-border: #e0e0e0;
+	--background-modifier-hover: rgba(0, 0, 0, 0.05);
+	--background-modifier-active-hover: rgba(139, 108, 239, 0.15);
+	--background-modifier-error: #e68787;
+	--background-modifier-box-shadow: rgba(0, 0, 0, 0.1);
+	--text-normal: #222222;
+	--text-muted: #5c5c5c;
+	--text-faint: #999999;
+	--text-accent: #705dcf;
+	--text-error: #c0392b;
+	--text-on-accent: #ffffff;
+	--interactive-accent: #8b6cef;
+	--interactive-accent-hover: #7a5cf0;
+}
+
+body.theme-dark {
+	--background-primary: #1e1e1e;
+	--background-primary-alt: #161616;
+	--background-secondary: #161616;
+	--background-modifier-border: #333333;
+	--background-modifier-hover: rgba(255, 255, 255, 0.075);
+	--background-modifier-active-hover: rgba(139, 108, 239, 0.25);
+	--background-modifier-error: #3d1e1e;
+	--background-modifier-box-shadow: rgba(0, 0, 0, 0.3);
+	--text-normal: #dadada;
+	--text-muted: #b3b3b3;
+	--text-faint: #666666;
+	--text-accent: #a882ff;
+	--text-error: #ff6b6b;
+	--text-on-accent: #ffffff;
+	--interactive-accent: #8b6cef;
+	--interactive-accent-hover: #9d84f2;
+}
+
+/* ------------------------------------------------------------------------ *
+ * Obsidian's settings tab, as of 1.13.
+ *
+ * Two different things are approximated here and it matters which is which.
+ *
+ * `.setting-item`, `.setting-item-control`, `.setting-item-name` and
+ * `.clickable-icon` are the hooks styles.css itself targets, so their structure
+ * is contract. The *card* treatment around them is app CSS the plugin neither
+ * sees nor targets, reproduced from Obsidian 1.13 so the editor is reviewed in
+ * the frame it actually sits in. Before 1.13 these were hairline-separated
+ * rows, which is what styles.css:83 still assumes.
+ * ------------------------------------------------------------------------ */
+
+body.theme-light {
+	--background-modifier-form-field: #ffffff;
+	--harness-settings-bg: #f8f8f9;
+	--harness-settings-card: #ffffff;
+	--harness-settings-edge: rgba(0, 0, 0, 0.08);
+}
+
+body.theme-dark {
+	--background-modifier-form-field: #1a1a1a;
+	--harness-settings-bg: #1c1c1c;
+	--harness-settings-card: #262626;
+	--harness-settings-edge: rgba(255, 255, 255, 0.06);
+}
+
+.vertical-tab-content {
+	padding: var(--size-4-6) var(--size-4-4);
+	background-color: var(--harness-settings-bg);
+}
+
+/* A card per setting, not a hairline-separated row. */
+.setting-item {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: var(--size-4-4);
+	margin-bottom: var(--size-4-2);
+	padding: var(--size-4-4) var(--size-4-4);
+	border: none;
+	border-radius: var(--radius-m);
+	background-color: var(--harness-settings-card);
+}
+
+.setting-item-info {
+	margin-right: auto;
+	min-width: 0;
+}
+
+.setting-item-name {
+	font-size: var(--font-ui-medium);
+	color: var(--text-normal);
+}
+
+.setting-item-description {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	padding-top: var(--size-2-2);
+	line-height: 1.5;
+}
+
+/* A heading is not a card: it labels the cards under it. */
+.setting-item-heading {
+	margin-bottom: var(--size-2-2);
+	padding: var(--size-4-3) 0 var(--size-2-2) 0;
+	border: none;
+	background: none;
+}
+
+.setting-item-heading .setting-item-name {
+	font-weight: var(--font-semibold);
+}
+
+.setting-item-control {
+	display: flex;
+	align-items: center;
+	justify-content: flex-end;
+	gap: var(--size-4-2);
+	flex-wrap: wrap;
+}
+
+/* Every control in the tab, not only the ones sitting in a Setting's control
+   column: the list editors build their inputs into containers of their own, and
+   styling only the control column is what left them as raw browser widgets. */
+.vertical-tab-content input[type='text'],
+.vertical-tab-content input[type='number'],
+.vertical-tab-content textarea,
+.vertical-tab-content select,
+.vertical-tab-content button {
+	box-sizing: border-box;
+}
+
+.vertical-tab-content input[type='text'],
+.vertical-tab-content input[type='number'],
+.vertical-tab-content textarea,
+.vertical-tab-content select {
+	padding: var(--size-4-2) var(--size-4-3);
+	border: 1px solid var(--harness-settings-edge);
+	border-radius: var(--radius-s);
+	background-color: var(--background-modifier-form-field);
+	color: var(--text-normal);
+	font-family: inherit;
+	font-size: var(--font-ui-small);
+	line-height: 1.4;
+}
+
+.vertical-tab-content input[type='text']:focus,
+.vertical-tab-content input[type='number']:focus,
+.vertical-tab-content textarea:focus,
+.vertical-tab-content select:focus {
+	outline: none;
+	border-color: var(--interactive-accent);
+	box-shadow: 0 0 0 2px var(--background-modifier-active-hover);
+}
+
+.vertical-tab-content input::placeholder,
+.vertical-tab-content textarea::placeholder {
+	color: var(--text-faint);
+}
+
+.vertical-tab-content input[type='checkbox'] {
+	width: 16px;
+	height: 16px;
+	accent-color: var(--interactive-accent);
+}
+
+.vertical-tab-content button {
+	padding: var(--size-4-2) var(--size-4-3);
+	border: 1px solid var(--harness-settings-edge);
+	border-radius: var(--radius-s);
+	background-color: var(--background-modifier-form-field);
+	color: var(--text-normal);
+	font-family: inherit;
+	font-size: var(--font-ui-small);
+	cursor: pointer;
+}
+
+.vertical-tab-content button:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.vertical-tab-content button.mod-cta {
+	background-color: var(--interactive-accent);
+	border-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+/* An icon button carries an SVG and nothing else, so it is sized by the icon
+   and squared off rather than taking the text button's padding.
+
+   Scoped under the tab deliberately. A bare `.clickable-icon` is (0,1,0) and
+   loses to `.vertical-tab-content button` at (0,1,1), so every reset below is
+   silently discarded and an icon button renders with a text button's chrome
+   squeezing the glyph down to nothing. Same failure the `.sheetsmith-view`
+   scope rule exists to prevent, one stylesheet over. */
+.vertical-tab-content .clickable-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	padding: 0;
+	border: none;
+	border-radius: var(--radius-s);
+	background: none;
+	color: var(--text-muted);
+	cursor: pointer;
+}
+
+.vertical-tab-content .clickable-icon:hover {
+	background-color: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.svg-icon {
+	width: var(--icon-s);
+	height: var(--icon-s);
+}
+
+}
+
+/* Harness chrome. Deliberately unstyled by Obsidian variables so it cannot be
+   mistaken for part of the sheet. */
+.harness-bar {
+	position: sticky;
+	top: 0;
+	z-index: 100;
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+	align-items: center;
+	padding: 10px 14px;
+	border-bottom: 1px solid var(--background-modifier-border);
+	background-color: var(--background-secondary);
+	font-size: 13px;
+}
+
+.harness-bar strong {
+	font-weight: 600;
+	margin-right: 4px;
+}
+
+.harness-bar button {
+	padding: 4px 10px;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 6px;
+	background: var(--background-primary);
+	color: var(--text-normal);
+	font: inherit;
+	cursor: pointer;
+}
+
+.harness-bar button[aria-pressed='true'] {
+	background: var(--interactive-accent);
+	border-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.harness-stage {
+	margin: 0 auto;
+	border-left: 1px dashed var(--background-modifier-border);
+	border-right: 1px dashed var(--background-modifier-border);
+	min-height: 60vh;
+}
+
+.harness-note {
+	padding: 10px 14px;
+	color: var(--text-faint);
+	font-size: 12px;
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.harness-bodies {
+	margin: 16px;
+	font-size: 12px;
+	color: var(--text-muted);
+	font-family: var(--font-monospace);
+}
+
+.harness-bodies summary {
+	cursor: pointer;
+}
+
+.harness-bodies pre {
+	white-space: pre-wrap;
+	border-left: 2px solid var(--background-modifier-border);
+	padding-left: 8px;
+}
+
+.harness-pane {
+	min-width: 0;
+}
+
+.harness-split {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 0;
+}
+
+.harness-split .harness-pane + .harness-pane {
+	border-left: 1px solid var(--background-modifier-border);
+}
+
+.harness-settings {
+	container-type: inline-size;
+}

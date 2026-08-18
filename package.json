@@ -10,7 +10,11 @@
 		"version": "node version-bump.mjs && git add manifest.json versions.json",
 		"lint": "eslint .",
 		"test": "vitest run",
-		"test:watch": "vitest"
+		"test:watch": "vitest",
+		"harness": "node harness/build.mjs",
+		"harness:watch": "node harness/build.mjs --watch",
+		"harness:calibrate": "node harness/calibrate.mjs",
+		"harness:shot": "node harness/shot.mjs"
 	},
 	"keywords": [
 		"obsidian",
