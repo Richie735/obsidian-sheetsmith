@@ -86,6 +86,13 @@ export default defineConfig(
 			// styles.css, to assert a cascade the DOM tests cannot see — is
 			// exactly what a test is allowed to do.
 			'obsidianmd/no-nodejs-modules': 'off',
+			// Same circularity as above, one level further in: the stub *is* the
+			// Obsidian API these rules police. `Vault.delete` exists because the
+			// real one does and `FileManager.trashFile` is implemented in terms
+			// of it, and installing `createFragment` is by definition a write to
+			// global scope.
+			'obsidianmd/prefer-file-manager-trash-file': 'off',
+			'obsidianmd/no-global-this': 'off',
 		},
 	},
 );
