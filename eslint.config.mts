@@ -11,6 +11,11 @@ export default defineConfig(
 		'version-bump.mjs',
 		'versions.json',
 		'main.js',
+		'harness/dist',
+		'harness/shots',
+		// Node scripts, not plugin source: outside tsconfig's project, which is
+		// what the type-aware parser needs, and never bundled into main.js.
+		'harness/*.mjs',
 		'package.json',
 		'package-lock.json',
 		'tsconfig.json',
@@ -72,6 +77,22 @@ export default defineConfig(
 		},
 	},
 	{
+		// The harness renders components outside Obsidian, so the helpers this
+		// rule points at do not exist there: `createDiv` is installed on the
+		// element prototype by the app, and the harness has no app. It is also
+		// never bundled into main.js, so the Obsidian-facing rules are asking
+		// about constraints it does not live under.
+		files: ['harness/**/*.ts'],
+		rules: {
+			'obsidianmd/prefer-create-el': 'off',
+			'obsidianmd/no-nodejs-modules': 'off',
+			// The harness renders the settings tab by calling `display()`, which
+			// is what the plugin's own tab implements. Until that migrates to
+			// the declarative API, calling it is the only way to render it.
+			'@typescript-eslint/no-deprecated': 'off',
+		},
+	},
+	{
 		// Test scaffolding. The obsidian stub exists precisely to implement
 		// the helpers these rules ask code to use, so telling it to use them
 		// is circular; tests build fixtures with the standard API for the
@@ -86,6 +107,13 @@ export default defineConfig(
 			// styles.css, to assert a cascade the DOM tests cannot see — is
 			// exactly what a test is allowed to do.
 			'obsidianmd/no-nodejs-modules': 'off',
+			// Same circularity as above, one level further in: the stub *is* the
+			// Obsidian API these rules police. `Vault.delete` exists because the
+			// real one does and `FileManager.trashFile` is implemented in terms
+			// of it, and installing `createFragment` is by definition a write to
+			// global scope.
+			'obsidianmd/prefer-file-manager-trash-file': 'off',
+			'obsidianmd/no-global-this': 'off',
 		},
 	},
 );

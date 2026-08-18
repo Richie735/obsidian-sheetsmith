@@ -2,7 +2,7 @@
 
 Generic Obsidian plugin conventions for this repository. Project-specific
 rules and hard constraints live in `CLAUDE.md`; the feature specification
-lives in `SPEC.md`. Read those first, then this for Obsidian platform detail.
+lives in `docs/SPEC.md`. Read those first, then this for Obsidian platform detail.
 
 ## Project overview
 
@@ -134,7 +134,7 @@ Follow Obsidian's **Developer Policies** and **Plugin Guidelines**. In particula
 
 - TypeScript with `"strict": true` preferred.
 - **Keep `main.ts` minimal**: Focus only on plugin lifecycle (onload, onunload, addCommand calls). Delegate all feature logic to separate modules.
-- **Split large files**: If any file exceeds ~200-300 lines, consider breaking it into smaller, focused modules.
+- **One responsibility per file**: split a module that does two jobs, whatever its length. Line count is not the rule — see `docs/PATTERNS.md` §1, which governs.
 - **Use clear module boundaries**: Each file should have a single, well-defined responsibility.
 - Bundle everything into `main.js` (no unbundled runtime deps).
 - Avoid Node/Electron APIs if you want mobile compatibility; set `isDesktopOnly` accordingly.
@@ -265,7 +265,7 @@ this.registerInterval(
 
 ## References
 
-- Project specification: `SPEC.md`
+- Project specification: `docs/SPEC.md`
 - Project-specific agent rules: `CLAUDE.md`
 - Obsidian sample plugin: https://github.com/obsidianmd/obsidian-sample-plugin
 - API documentation: https://docs.obsidian.md
