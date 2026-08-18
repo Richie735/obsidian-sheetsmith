@@ -34,3 +34,6 @@ harness/dist
 # Never committed: it is not ours to redistribute.
 harness/obsidian.generated.css
 harness/shots
+
+# Per-machine Claude Code state, not project configuration
+.claude/settings.local.json
