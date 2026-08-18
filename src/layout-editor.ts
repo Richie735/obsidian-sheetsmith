@@ -21,6 +21,7 @@ import {
 import { createLayout, listLayouts } from './layouts';
 import {
 	ListContext,
+	addControlSpacers,
 	moveItem,
 	renderColumnsEditor,
 	renderRowsEditor,
@@ -918,6 +919,7 @@ export class LayoutEditorSection {
 
 			if (
 				field.kind === 'attributes' ||
+				field.kind === 'track-rows' ||
 				field.kind === 'rows' ||
 				field.kind === 'columns'
 			) {
@@ -932,8 +934,18 @@ export class LayoutEditorSection {
 					Array.isArray(entries) ? entries.length : 0,
 				);
 				const listEl = form.createDiv('sheetsmith-attribute-list');
-				if (field.kind === 'attributes') {
-					this.renderAttributesEditor(listEl, config, record, field.key);
+				if (field.kind === 'attributes' || field.kind === 'track-rows') {
+					// One editor for both: a track's rows are a Stat group's
+					// attributes with a length, which is the shape the
+					// component chose them for. A second table would drift
+					// from this one the first time either changed.
+					this.renderAttributesEditor(
+						listEl,
+						config,
+						record,
+						field.key,
+						field.kind === 'track-rows',
+					);
 				} else if (field.kind === 'rows') {
 					renderRowsEditor(listEl, record, field.key, config.id, this.listContext());
 				} else {
@@ -1291,18 +1303,45 @@ export class LayoutEditorSection {
 		config: ComponentConfig,
 		record: Record<string, unknown>,
 		key: string,
+		/** Also edit a length and a sense per entry, which is what a track's rows add. */
+		withCount = false,
 	): void {
 		if (!Array.isArray(record[key])) record[key] = [];
-		const list = record[key] as { key: string; name?: string }[];
+		// A third content column changes both grids — the header's and the
+		// row's — and neither can be inferred from the markup, so the list
+		// says so once and the stylesheet reads it.
+		listEl.toggleClass('sheetsmith-attribute-counted', withCount);
+		const list = record[key] as {
+			key: string;
+			name?: string;
+			count?: string | number;
+			sense?: string;
+		}[];
 
 		if (list.length === 0) {
 			listEl.createDiv('sheetsmith-attribute-empty', (el) =>
-				el.setText('No attributes yet.'),
+				el.setText(withCount ? 'No rows yet.' : 'No attributes yet.'),
 			);
 		} else {
 			const columns = listEl.createDiv('sheetsmith-attribute-columns');
 			columns.createSpan({ text: 'Key' });
-			columns.createSpan({ text: 'Full name' });
+			columns.createSpan({ text: withCount ? 'Name' : 'Full name' });
+			if (withCount) {
+				columns.createSpan({ text: 'Segments' });
+				columns.createSpan({ text: 'Sense' });
+				/*
+				 * The header has to carry the row's control tracks too, or its
+				 * last label does not line up with the last input.
+				 *
+				 * With two content columns this never showed: the second label
+				 * is left-aligned at the start of the `1fr` track, and where a
+				 * track starts does not depend on how wide it is. A column
+				 * after that track does depend on it — the row spends
+				 * width on its buttons, its `1fr` is narrower than the
+				 * header's, and everything past it slides left.
+				 */
+				addControlSpacers(columns);
+			}
 		}
 
 		list.forEach((attribute, index) => {
@@ -1375,6 +1414,61 @@ export class LayoutEditorSection {
 				}
 				void this.persist();
 			});
+
+			if (withCount) {
+				// A formula, not a number field: a caster's slots come from a
+				// level table, so a row's length is as much an expression as
+				// the component's own. Empty falls back to that one, which is
+				// why clearing it is a state rather than an error.
+				const countInput = row.createEl('input', {
+					type: 'text',
+					attr: {
+						placeholder: 'Segments',
+						'aria-label': `${attribute.key} segments`,
+					},
+				});
+				countInput.value =
+					attribute.count === undefined ? '' : String(attribute.count);
+				countInput.dataset.sheetsmithFocus = `attr-${config.id}-${attribute.key}-count`;
+				countInput.addEventListener('change', () => {
+					const next = countInput.value.trim();
+					if (next === '') {
+						delete attribute.count;
+					} else {
+						// A bare number is stored as one, so a layout file
+						// reads `count: 5` rather than `count: "5"`.
+						const parsed = Number(next);
+						attribute.count = Number.isFinite(parsed) ? parsed : next;
+					}
+					void this.persist();
+				});
+
+				// Blank is the card's own sense, which is what a set whose
+				// rows all mean the same thing leaves it as. Death saves are
+				// why it is here: successes and failures are one shape pointed
+				// two ways, and a card painting both alike says the wrong
+				// thing about one of them.
+				const senseInput = row.createEl('select', {
+					attr: { 'aria-label': `${attribute.key} sense` },
+				});
+				for (const [value, text] of [
+					['', 'Same as card'],
+					['progress', 'Progress'],
+					['harm', 'Harm'],
+				] as const) {
+					senseInput.createEl('option', { value, text });
+				}
+				senseInput.value = attribute.sense ?? '';
+				senseInput.dataset.sheetsmithFocus = `attr-${config.id}-${attribute.key}-sense`;
+				senseInput.addEventListener('change', () => {
+					if (senseInput.value === '') {
+						delete attribute.sense;
+					} else {
+						attribute.sense = senseInput.value;
+					}
+					void this.persist();
+				});
+			}
 
 			if (Platform.isMobile) {
 				// HTML5 drag-and-drop is inert on touch, and there is no

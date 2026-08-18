@@ -247,7 +247,7 @@ function listField(row: HTMLElement, name: string): HTMLElement {
 	return field;
 }
 
-function addControlSpacers(header: HTMLElement): void {
+export function addControlSpacers(header: HTMLElement): void {
 	// Keep in step with addControls: a handle and a trash on desktop, up,
 	// down, and trash where there is no drag and no keyboard.
 	const controls = Platform.isMobile ? 3 : 2;

@@ -123,9 +123,10 @@ export interface ConfigFieldSpec {
 	/**
 	 * Input kind. 'formula' is a text field holding an expression; 'text-list'
 	 * is an ordered list of plain strings, edited as one comma-separated field
-	 * and stored as an array; the last three are ordered lists the editor
-	 * renders as a table of their own — 'attributes' of { key, name? }, 'rows'
-	 * of { label, values? }, and 'columns' of typed column definitions.
+	 * and stored as an array; the last four are ordered lists the editor
+	 * renders as a table of their own — 'attributes' of { key, name? },
+	 * 'track-rows' of { key, name?, count?, sense? }, 'rows' of { label, values? },
+	 * and 'columns' of typed column definitions.
 	 */
 	kind:
 		| 'text'
@@ -135,6 +136,7 @@ export interface ConfigFieldSpec {
 		| 'select'
 		| 'text-list'
 		| 'attributes'
+		| 'track-rows'
 		| 'rows'
 		| 'columns';
 	/** Help text shown under the field. */
