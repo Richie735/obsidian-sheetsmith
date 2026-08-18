@@ -1,0 +1,73 @@
+/*
+ * Screenshot the harness, so a review can look at the UI instead of reading CSS.
+ *
+ * Uses whatever Chrome is installed, headless. No browser dependency is added
+ * to the project for this: the harness is a static page, and a screenshot of it
+ * is not worth a hundred megabytes of node_modules.
+ *
+ *   node harness/shot.mjs                          # every default view
+ *   node harness/shot.mjs surface=settings theme=dark width=620
+ *
+ * Views are addressed by the harness's own query parameters, so anything
+ * reachable by clicking is reachable by a shot. Output lands in harness/shots/,
+ * which is gitignored.
+ */
+
+import { execFileSync } from 'node:child_process';
+import { mkdirSync, existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+const CHROME = [
+	'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+	'/Applications/Chromium.app/Contents/MacOS/Chromium',
+	'/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+	'/usr/bin/google-chrome',
+	'/usr/bin/chromium',
+].find((path) => existsSync(path));
+
+if (!CHROME) {
+	console.error('No Chrome-family browser found. Install one, or open harness/index.html by hand.');
+	process.exit(1);
+}
+
+const root = fileURLToPath(new URL('.', import.meta.url));
+const page = `file://${root}index.html`;
+const outDir = `${root}shots`;
+mkdirSync(outDir, { recursive: true });
+
+/** The views worth having by default: both themes, both surfaces, and narrow. */
+const DEFAULTS = [
+	{ name: 'sheet-light', query: 'surface=sheet&theme=light', size: '1400,900' },
+	{ name: 'sheet-dark', query: 'surface=sheet&theme=dark', size: '1400,900' },
+	{ name: 'sheet-narrow', query: 'surface=sheet&theme=dark&width=380', size: '520,1400' },
+	{ name: 'sheet-empty', query: 'surface=sheet&theme=dark&state=empty', size: '1400,900' },
+	{ name: 'sheet-error', query: 'surface=sheet&theme=dark&state=broken', size: '1400,900' },
+	{ name: 'settings-light', query: 'surface=settings&theme=light', size: '1500,1500' },
+	{ name: 'settings-dark', query: 'surface=settings&theme=dark', size: '1500,1500' },
+];
+
+const args = process.argv.slice(2);
+const views =
+	args.length === 0
+		? DEFAULTS
+		: [{ name: 'custom', query: args.join('&'), size: '1500,1500' }];
+
+for (const view of views) {
+	const out = `${outDir}/${view.name}.png`;
+	execFileSync(
+		CHROME,
+		[
+			'--headless=new',
+			'--disable-gpu',
+			'--hide-scrollbars',
+			// The page renders, then the settings tab renders asynchronously.
+			// Without a budget the shot lands on an empty stage.
+			'--virtual-time-budget=3000',
+			`--window-size=${view.size}`,
+			`--screenshot=${out}`,
+			`${page}?${view.query}`,
+		],
+		{ stdio: ['ignore', 'ignore', 'ignore'] },
+	);
+	console.log(`${view.name.padEnd(16)} ${out}`);
+}

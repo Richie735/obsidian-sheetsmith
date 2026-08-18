@@ -54,7 +54,24 @@ npm run build      # type-check and production build
 npm run lint
 npm test           # vitest, single run
 npm run test:watch
+npm run harness            # build the harness, then open harness/index.html
+npm run harness:watch
+npm run harness:calibrate  # extract Obsidian's real theme + settings chrome
+npm run harness:shot       # render every view to harness/shots/*.png
 ```
+
+The harness renders both surfaces outside Obsidian against the real
+`styles.css`: the sheet, and the settings tab holding the layout editor. Both
+themes, any width, and the two joined so an editor change re-renders the sheet.
+Review appearance by looking at it, not by reading CSS.
+
+It runs on `src/test/obsidian-stub.ts`, the same stub vitest uses. Anything the
+stub gains for the harness a test can also use.
+
+`harness:calibrate` reads the installed Obsidian's own `app.css` out of its asar
+and generates `harness/obsidian.generated.css`, so the harness borrows the real
+palette and the real settings chrome instead of approximating them. That file is
+gitignored: it is Obsidian's CSS, and this repository is public.
 
 ## Conventions
 
