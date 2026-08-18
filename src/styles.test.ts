@@ -97,6 +97,54 @@ describe('invisible hit targets never overlay a neighbour', () => {
 	});
 });
 
+describe('a filled mark is always visibly filled', () => {
+	const CSS_TEXT = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+
+	/*
+	 * A harm run grades its fill along the run, and a grade running from 1/n
+	 * to 1 makes the first mark of a six-mark run a sixth of the accent —
+	 * against the card, very nearly the empty mark beside it. Two rules keep
+	 * the first step legible, and both are invisible in review because they
+	 * only show up on the *first* mark of a *long* harm run.
+	 */
+
+	it('floors the ramp rather than starting it at nothing', () => {
+		// The bare grade in a color-mix percentage is the bug: it is the form
+		// that puts the first mark at 1/n of the accent.
+		const bare = CSS_TEXT.split('\n').filter((line) =>
+			/var\(--sheetsmith-track-grade[^)]*\)\s*\*\s*100%/.test(line),
+		);
+		expect(bare).toEqual([]);
+		expect(CSS_TEXT).toContain('--sheetsmith-track-ramp');
+	});
+
+	it('never grades a segment\'s border, whatever the fill does', () => {
+		// The level ring keeps its outline at full accent at every level, so
+		// the faintest fill still reads as marked. Grading the border too took
+		// away the second signal exactly where the first was weakest.
+		//
+		// Read as whole declarations, not as lines: a graded border is a
+		// color-mix spread over four of them, with the share nowhere near the
+		// line the property is on. A line-based check passes this file both
+		// before and after the fix, which is the failure mode a guard has.
+		const blocks = CSS_TEXT.split('}').filter((block) =>
+			block.includes('.sheetsmith-track-segment-on'),
+		);
+		expect(blocks.length).toBeGreaterThan(0);
+		const graded: string[] = [];
+		for (const block of blocks) {
+			const body = block.slice(block.indexOf('{') + 1);
+			for (const declaration of body.split(';')) {
+				if (!/^\s*border-color\s*:/.test(declaration)) continue;
+				if (declaration.includes('--sheetsmith-track-grade')) {
+					graded.push(declaration.replace(/\s+/g, ' ').trim());
+				}
+			}
+		}
+		expect(graded).toEqual([]);
+	});
+});
+
 describe('the pool\'s controls are one height by construction', () => {
 	const CSS_TEXT = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 

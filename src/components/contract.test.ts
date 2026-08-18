@@ -16,6 +16,7 @@ const KINDS = [
 	'boolean',
 	'formula',
 	'select',
+	'text-list',
 	'attributes',
 	'rows',
 	'columns',

@@ -8,6 +8,7 @@ import { pool } from './pool';
 import { skillCard } from './skill-card';
 import { stat } from './stat';
 import { statGroup } from './stat-group';
+import { track } from './track';
 
 const registry = new Map<string, ComponentDefinition>();
 
@@ -19,6 +20,7 @@ register(pool);
 register(skillCard);
 register(stat);
 register(statGroup);
+register(track);
 
 /** The component definition for a layout `type`, or undefined if unknown. */
 export function getComponent(type: string): ComponentDefinition | undefined {
