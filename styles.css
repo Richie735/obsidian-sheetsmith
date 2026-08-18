@@ -2661,3 +2661,358 @@ a.sheetsmith-undo {
 .sheetsmith-affected + .setting-item {
 	margin-top: var(--size-4-3);
 }
+
+/* ---------------------------------------------------------------------------
+   Track — a run of segments filled in order.
+
+   The card carries no numerals, deliberately. A pool draws a bar *and* prints
+   `12 / 54` because its state is a quantity; a track's segments are already both
+   the count and the proportion, so `3 / 6` beside six segments would state twice
+   what one glance answers.
+   --------------------------------------------------------------------------- */
+.sheetsmith-track {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: flex-start;
+	gap: var(--size-2-2);
+	/* Fills the cell it was placed in, the rule every card on the sheet
+	   follows: a track spanning three columns is three columns of card. */
+	height: 100%;
+	padding: var(--size-4-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background-color: var(--background-secondary);
+	text-align: center;
+	container-type: inline-size;
+}
+
+/* The card's own name, on the pool label's rank: uppercase, tracked, muted.
+   A track is one control on one card, not a heading over a set of things. */
+.sheetsmith-track-label {
+	max-width: 100%;
+	overflow: hidden;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-semibold);
+	letter-spacing: 0.05em;
+	text-overflow: ellipsis;
+	text-transform: uppercase;
+	white-space: nowrap;
+}
+
+/* One control and one tab stop, whatever it is a run of. The segments inside it
+   are pictures; the run is the thing that answers a press, which is what lets
+   the hit target be the whole row rather than each 12px segment.
+
+   It wraps rather than shrinking its segments: a ten-segment track in a two-column
+   cell is two rows of five, and the reading survives the phone. */
+/* The run's motion, named in one place.
+
+   Critically damped throughout — damping 1.0, no overshoot — because no
+   gesture on this control carries momentum for a spring to inherit. There is
+   no throw here: the drag ends where the finger does, so an overshoot would be
+   energy the interaction never had. That is what the curve is: monotone, so
+   nothing ever passes its target and comes back.
+
+   Two responses, because two different things move. A fill is a state change
+   on an object about a centimetre across, and it has to keep up with a hand
+   sweeping five segments, so it takes the shorter one. The run's spring back from
+   a boundary is a reposition of the whole control and takes the longer, which
+   is the value a reposition gets.
+
+   These are transitions rather than springs, and that is safe here for one
+   reason worth stating: nothing animated is ever under the finger. A drag
+   turns the transition off entirely and tracks 1:1, so what is left to animate
+   is only the settle after a discrete change — a keypress, a reset, a release
+   — where there is no gesture to interrupt. Width transitions also re-target
+   from their current computed value, so a run of quick presses neither queues
+   nor jumps. */
+.sheetsmith-track-run {
+	--sheetsmith-track-response: 200ms;
+	--sheetsmith-track-settle: 300ms;
+	/* The curve for both. Monotone by construction: damping 1.0. */
+	--sheetsmith-track-curve: cubic-bezier(0.2, 0, 0, 1);
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: center;
+	gap: var(--size-2-2);
+	/* The run collects the card's free space, so a tall cell keeps the segments
+	   with the label rather than stranding them at the top. */
+	margin: auto 0;
+	padding: var(--size-2-1) 0;
+	cursor: pointer;
+	/* The browser must not claim the horizontal pan before the drag threshold
+	   is crossed; setPointerCapture cannot take it back afterwards. Without
+	   this the drag is desktop-only. */
+	touch-action: none;
+	/* A drag paints a text selection across the card otherwise. */
+	user-select: none;
+	/* The spring back from the give at either end. Critically damped: no
+	   gesture on this control carries momentum for a spring to inherit, so
+	   there is nothing for an overshoot to be the continuation of. */
+	transition: transform var(--sheetsmith-track-settle, 300ms)
+		var(--sheetsmith-track-curve, cubic-bezier(0.2, 0, 0, 1));
+}
+
+.sheetsmith-track-run:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 3px;
+	border-radius: var(--radius-s);
+}
+
+/* While the finger is down the run is glued to it, and a transition — however
+   short — puts it behind. */
+.sheetsmith-track-dragging {
+	transition: none;
+}
+
+/* A segment is a few pixels of chrome. It carries no target of its own: the run
+   is the hit area, which is what lets a pip be pressable with a thumb without
+   being drawn thumb-sized. */
+.sheetsmith-track-segment {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	segment-sizing: border-segment;
+	width: var(--sheetsmith-track-segment-width, 1.15em);
+	height: 1.15em;
+	border: 1.5px solid var(--text-faint);
+	border-radius: var(--radius-s);
+	overflow: hidden;
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-semibold);
+	/* One glyph in a small segment: normal tracking would push it off centre. */
+	letter-spacing: 0;
+	line-height: 1;
+}
+
+/* The glyph sits above both fills, so a segment the layout lettered stays
+   readable as it fills. Positioned to get there: as the segment's own inline
+   text it painted *under* its absolutely positioned children, which is the
+   order the spec gives — inline content first, positioned descendants after —
+   so a lettered segment lost its letter at the moment it filled. */
+.sheetsmith-track-segment-glyph {
+	position: relative;
+	z-index: 1;
+}
+
+/* One divider per boundary between marks, positioned rather than painted as a
+   repeating background. A repeating gradient draws a line at the end of every
+   mark including the last, and that one lands on the inner edge of the right
+   border and doubles it — visible on every multi-mark segment on the run. The
+   count is the fix and the reason for the change together: a segment holding n
+   marks has n - 1 boundaries inside it, and the segment's border is already the
+   outer two. */
+.sheetsmith-track-mark {
+	position: absolute;
+	top: 0;
+	bottom: 0;
+	left: calc(var(--sheetsmith-track-at, 0) * 100%);
+	z-index: 1;
+	width: 1px;
+	background-color: var(--background-modifier-border);
+	pointer-events: none;
+}
+
+/* A segment holding several marks is several targets, so it is drawn wide enough
+   to hold them: the width is per mark, not per segment. That is what lets both
+   gestures reach a mark — a press as much as a drag — rather than the press
+   having to give the precision up. Sizing a four-mark segment like a one-mark one
+   and subdividing it asked for a four-pixel target, which is under what a
+   finger places or a mouse hand holds; sizing it for four gives each mark
+   about thirteen, and the divisions below say where they are.
+
+   Capped, because past a point this stops being a control the hand aims at and
+   the run wraps to more rows than it is worth. Beyond the cap the marks share
+   the width and get smaller, which is the graceful way to be wrong. */
+.sheetsmith-track-marked {
+	--sheetsmith-track-segment-width: calc(
+		var(--sheetsmith-track-mark-width, 0.8em) *
+			min(var(--sheetsmith-track-marks, 1), 6)
+	);
+}
+
+/* Where a pending gesture would land, drawn under the committed fill and
+   reaching past it. This is SPEC §12's rule kept for a run: the segment the
+   finger is over is an instruction about every segment below it, so the outcome
+   has to be on screen before it is applied. Faint, because nothing has
+   happened yet and it is still cancellable. */
+.sheetsmith-track-segment-ghost,
+.sheetsmith-track-segment-fill {
+	position: absolute;
+	inset: 0 auto 0 0;
+	height: 100%;
+	background-color: var(--interactive-accent);
+	/* Fills animate from where they are on screen rather than from their
+	   target, so a run of quick presses neither queues nor jumps.
+
+	   Every segment carries the same transition and every width is rewritten in
+	   the same frame, so a five-segment sweep moves as one block rather than
+	   staggering along the run. Deliberate: the run is one control at one
+	   value, and the segments are a drawing of that value rather than five
+	   objects that were each acted on. A stagger would assert an order the
+	   data does not have, would take twice as long on a ten-segment run as on a
+	   five to say the same single thing, and would appear only on the
+	   gestures that did *not* sweep — a drag has no transition at all. */
+	transition: width var(--sheetsmith-track-response, 200ms)
+		var(--sheetsmith-track-curve, cubic-bezier(0.2, 0, 0, 1));
+}
+
+.sheetsmith-track-segment-ghost {
+	width: calc(var(--sheetsmith-track-ghost, 0) * 100%);
+	opacity: 0.35;
+}
+
+.sheetsmith-track-segment-fill {
+	width: calc(var(--sheetsmith-track-fill, 0) * 100%);
+}
+
+.sheetsmith-track-segment-on {
+	border-color: var(--interactive-accent);
+}
+
+/* Harm grades the run toward its far end, where the last segment carries the
+   colour a pool past its ceiling carries. Progress takes the accent whole,
+   because a run filling toward an achievement has no escalation to draw.
+
+   Same language as a level ring's ramp, and for the same reason: a shape read
+   along the run answers "how bad is this" before a single name is read. The
+   share comes in from the component, which is the only side that knows how
+   long this run is.
+
+   The ramp starts at 45%, not at nothing, and that floor is the whole
+   difference between an escalation you can read and a first segment you cannot.
+   A share running from 1/n to 1 puts the first of six segments at a sixth of the
+   accent, which against the card is very nearly the empty segment beside it — so
+   the one segment whose entire job is to say "this has happened" was the hardest
+   on the run to see. The grade still reaches the boundary colour at the last
+   segment; only its starting point moved. Mixed toward the card's own surface
+   rather than the page, because that is what an unfilled segment actually shows
+   through, so the floor means what it says. */
+.sheetsmith-track-harm .sheetsmith-track-segment {
+	--sheetsmith-track-ramp: calc(
+		(0.45 + 0.55 * var(--sheetsmith-track-grade, 1)) * 100%
+	);
+}
+
+.sheetsmith-track-harm .sheetsmith-track-segment-fill,
+.sheetsmith-track-harm .sheetsmith-track-segment-ghost {
+	background-color: color-mix(
+		in srgb,
+		var(--interactive-accent) var(--sheetsmith-track-ramp, 100%),
+		var(--background-secondary)
+	);
+}
+
+/* And the border stays full accent at every step, harm or not — the level
+   ring's own rule, which the graded fill above is otherwise free to break.
+   Grading the outline as well took away the second signal at exactly the
+   moment the first was weakest, and a segment lost both at once. */
+
+/* The current step's name, in the clothes a secondary table column wears: a
+   size down, tracked, and faint. It is what makes a threshold track legible —
+   exhaustion and corruption are ladders where the number is an index into a
+   rule, and a row of anonymous segments leaves the player counting segments and then
+   looking the count up somewhere else. An unnamed run has no such line and
+   holds no space for one. */
+.sheetsmith-track-step {
+	max-width: 100%;
+	overflow: hidden;
+	color: var(--text-faint);
+	font-size: calc(var(--font-ui-smaller) * 0.85);
+	letter-spacing: 0.06em;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* A count that is present and did not resolve. "?" is reserved for exactly
+   that (SPEC §5); an empty run is a state the control shows, not a missing
+   value, so it is never drawn as "—". */
+.sheetsmith-track-unresolved {
+	margin: auto 0;
+	color: var(--text-faint);
+	font-size: var(--font-ui-medium);
+	font-weight: var(--font-semibold);
+}
+
+/* A finger has no hover to find the target with, so the segments themselves grow
+   — the run's own padding is already the target, and expanding it further
+   would reach into the components above and below. */
+@media (pointer: coarse) {
+	.sheetsmith-track-segment {
+		width: var(--sheetsmith-track-segment-width, 1.5em);
+		height: 1.5em;
+	}
+
+	/* A finger needs the room most on the run whose marks it is aiming
+	   between, so the per-mark width goes up with everything else rather
+	   than the segment being capped back to the one-mark size. */
+	.sheetsmith-track-marked {
+		--sheetsmith-track-mark-width: 1.1em;
+	}
+}
+
+/* A run squeezed into one grid unit. The segments come down with the card; the
+   gap goes first, since the segments are the thing being read. */
+@container (max-width: 200px) {
+	.sheetsmith-track-run {
+		gap: var(--size-2-1);
+	}
+
+	.sheetsmith-track-label {
+		letter-spacing: 0.02em;
+	}
+}
+
+@media (prefers-contrast: more) {
+	.sheetsmith-track {
+		border-color: var(--text-muted);
+	}
+
+	.sheetsmith-track-segment {
+		border-color: var(--text-muted);
+	}
+
+	/* A divider carries the same job as the segment's own edge, so it takes the
+	   same treatment rather than staying the faint line it is by default. */
+	.sheetsmith-track-mark {
+		background-color: var(--text-muted);
+	}
+
+	/* A shape read along the run is the wrong thing to trade contrast for, so
+	   the grade goes and every filled segment takes the full colour — the level
+	   ring's rule, and the same reasoning. */
+	.sheetsmith-track-harm .sheetsmith-track-segment-fill,
+	.sheetsmith-track-harm .sheetsmith-track-segment-ghost {
+		background-color: var(--interactive-accent);
+	}
+
+	.sheetsmith-track-segment-on {
+		border-color: var(--interactive-accent);
+	}
+
+	.sheetsmith-track-step,
+	.sheetsmith-track-unresolved {
+		color: var(--text-muted);
+	}
+}
+
+/* The pending fill and the colour stay: neither is vestibular, and both are
+   what the control says rather than how it moves. What goes is the travel —
+   the give at either end, and the fills easing rather than arriving. */
+@media (prefers-reduced-motion: reduce) {
+	.sheetsmith-track-run {
+		transition: none;
+	}
+
+	.sheetsmith-track-segment-fill,
+	.sheetsmith-track-segment-ghost {
+		/* The travel goes; the settle from faint to solid stays, because it
+		   is the only thing on the card that says the note was written. */
+		transition: opacity var(--sheetsmith-track-response, 200ms) ease;
+	}
+}

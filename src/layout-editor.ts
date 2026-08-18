@@ -951,6 +951,40 @@ export class LayoutEditorSection {
 			const setting = new Setting(form).setName(field.label);
 			if (field.description) setting.setDesc(field.description);
 
+			if (field.kind === 'text-list') {
+				/*
+				 * One field holding an ordered list of plain strings, not a
+				 * table of its own: the lists this kind serves are short and
+				 * their order is the whole meaning — a track's levels run from
+				 * none upwards — so a row per entry would cost four controls to
+				 * say what a comma already says. It is the same control the
+				 * level column's names use, which is the list it has to agree
+				 * with.
+				 */
+				setting.addText((text) => {
+					const current = record[field.key];
+					text.setValue(Array.isArray(current) ? current.join(', ') : '');
+					text.inputEl.placeholder = 'Comma separated';
+					text.inputEl.dataset.sheetsmithFocus = `cfg-${config.id}-${field.key}`;
+					onCommit(text, (raw) => {
+						const parsed = raw
+							.split(',')
+							.map((entry) => entry.trim())
+							.filter((entry) => entry !== '');
+						this.fieldError(text.inputEl, null);
+						// Cleared is "this list is not set", which is a state
+						// the component reads — a track with no level names
+						// counts its marks instead.
+						if (parsed.length === 0) delete record[field.key];
+						else record[field.key] = parsed;
+						void this.persist();
+						// The list may decide what another field means.
+						this.redraw();
+					});
+				});
+				continue;
+			}
+
 			if (field.kind === 'select') {
 				const options = field.options ?? [];
 				const fallback = options[0] ?? '';

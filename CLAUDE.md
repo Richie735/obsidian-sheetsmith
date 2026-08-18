@@ -2,7 +2,7 @@
 
 A system-agnostic character sheet builder for Obsidian. The user designs a sheet by placing components on a grid and defining formulas; a character is an ordinary markdown note that names a layout and holds only values.
 
-`SPEC.md` is the source of truth for what the plugin does. Read it before proposing design changes. `AGENTS.md`, imported below, covers generic Obsidian plugin conventions: manifest rules, the release process, developer policy, and UI copy style.
+`SPEC.md` is the source of truth for what the plugin does. Read it before proposing design changes. Per-component detail that would swamp the catalog lives in `docs/<component>.md`, linked from that component's §4.2 entry. `AGENTS.md`, imported below, covers generic Obsidian plugin conventions: manifest rules, the release process, developer policy, and UI copy style.
 
 @AGENTS.md
 
@@ -42,7 +42,7 @@ Nothing outside a component should need to know that component exists. Adding on
 
 ## Working order
 
-Build **component by component, not layer by layer.** Take one component all the way through read, write, render, and tests before starting the next. Order so far: Stat group, then Stat (dropped when Stat group first covered the card, rebuilt on top of it); next are Pool, then Table; the remaining seven are variations. The layout schema assembles itself from component configs rather than being designed up front. See `SPEC.md` §12.
+Build **component by component, not layer by layer.** Take one component all the way through read, write, render, and tests before starting the next. Order so far: Stat group, then Stat (dropped when Stat group first covered the card, rebuilt on top of it), Skill card, Pool, Track; the remaining six are variations. The layout schema assembles itself from component configs rather than being designed up front. See `SPEC.md` §12.
 
 Resist building the layout editor and the formula engine early. Both assume a working renderer and a proven file format, and both are the interesting parts, which is exactly why they are the trap.
 

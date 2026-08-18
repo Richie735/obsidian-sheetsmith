@@ -121,10 +121,11 @@ export interface ConfigFieldSpec {
 	/** Field label shown in the editor. */
 	label: string;
 	/**
-	 * Input kind. 'formula' is a text field holding an expression; the last
-	 * three are ordered lists the editor renders as a table of their own —
-	 * 'attributes' of { key, name? }, 'rows' of { label, values? }, and
-	 * 'columns' of typed column definitions.
+	 * Input kind. 'formula' is a text field holding an expression; 'text-list'
+	 * is an ordered list of plain strings, edited as one comma-separated field
+	 * and stored as an array; the last three are ordered lists the editor
+	 * renders as a table of their own — 'attributes' of { key, name? }, 'rows'
+	 * of { label, values? }, and 'columns' of typed column definitions.
 	 */
 	kind:
 		| 'text'
@@ -132,6 +133,7 @@ export interface ConfigFieldSpec {
 		| 'boolean'
 		| 'formula'
 		| 'select'
+		| 'text-list'
 		| 'attributes'
 		| 'rows'
 		| 'columns';
