@@ -2,7 +2,7 @@
 
 Design and use character sheets for any tabletop RPG in [Obsidian](https://obsidian.md). Build your own layout from drag-and-drop components, define your own formulas, and keep every character as a plain markdown note.
 
-> **Status: early development.** No release yet. The [specification](SPEC.md) is written, implementation has not started.
+> **Status: early development.** No release yet. The [specification](docs/SPEC.md) is written, implementation has not started.
 
 ## What it is
 
@@ -82,7 +82,7 @@ if(trained, prof, 0) + mod(Abilities.DEX) + bonus
 
 The file model is proven first with hand-written files, because it is the hardest thing to change once characters exist. The layout editor is the largest interface investment and comes only once the thing it edits is known to work.
 
-See [SPEC.md](SPEC.md) for the full specification: component catalog, formula model, layout schema, and data safety rules.
+See [docs/SPEC.md](docs/SPEC.md) for the full specification: component catalog, formula model, layout schema, and data safety rules.
 
 ## Not in scope
 

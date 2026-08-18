@@ -517,6 +517,8 @@ The remaining six are variations on problems those solve. Field and Toggle are s
 
 Skill card's contract was worth writing early even though it was scheduled fourth, because it is the component most likely to expose a flaw in the shared contract, and that is cheapest to discover while few components depend on it.
 
+Three of the corrections recorded above — the proficiency spinner, the typed amount, the drag that could not reach a boundary — were found by driving a rendered component and none of them by reasoning about the code, which made "look at it" the most productive rule in this section and also the most expensive one to follow, since looking meant launching the app. It is now a harness that builds both surfaces outside Obsidian against the real stylesheet, described in `CLAUDE.md`. It is development tooling and ships with nothing, but it belongs in the build order because it is what the next component's corrections will come from.
+
 ## 13. Open questions
 
 - Whether Group components may nest, or only hold leaf components.
