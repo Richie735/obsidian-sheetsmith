@@ -11,6 +11,11 @@ export default defineConfig(
 		'version-bump.mjs',
 		'versions.json',
 		'main.js',
+		'harness/dist',
+		'harness/shots',
+		// Node scripts, not plugin source: outside tsconfig's project, which is
+		// what the type-aware parser needs, and never bundled into main.js.
+		'harness/*.mjs',
 		'package.json',
 		'package-lock.json',
 		'tsconfig.json',
@@ -69,6 +74,22 @@ export default defineConfig(
 		files: ['src/components/**/*.ts'],
 		rules: {
 			'obsidianmd/prefer-create-el': 'off',
+		},
+	},
+	{
+		// The harness renders components outside Obsidian, so the helpers this
+		// rule points at do not exist there: `createDiv` is installed on the
+		// element prototype by the app, and the harness has no app. It is also
+		// never bundled into main.js, so the Obsidian-facing rules are asking
+		// about constraints it does not live under.
+		files: ['harness/**/*.ts'],
+		rules: {
+			'obsidianmd/prefer-create-el': 'off',
+			'obsidianmd/no-nodejs-modules': 'off',
+			// The harness renders the settings tab by calling `display()`, which
+			// is what the plugin's own tab implements. Until that migrates to
+			// the declarative API, calling it is the only way to render it.
+			'@typescript-eslint/no-deprecated': 'off',
 		},
 	},
 	{
