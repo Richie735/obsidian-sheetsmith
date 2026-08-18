@@ -2,7 +2,7 @@
 
 A system-agnostic character sheet builder for Obsidian. The user designs a sheet by placing components on a grid and defining formulas; a character is an ordinary markdown note that names a layout and holds only values.
 
-`SPEC.md` is the source of truth for what the plugin does. Read it before proposing design changes. Per-component detail that would swamp the catalog lives in `docs/<component>.md`, linked from that component's §4.2 entry. `AGENTS.md`, imported below, covers generic Obsidian plugin conventions: manifest rules, the release process, developer policy, and UI copy style.
+`SPEC.md` is the source of truth for what the plugin does. Read it before proposing design changes. `AGENTS.md`, imported below, covers generic Obsidian plugin conventions: manifest rules, the release process, developer policy, and UI copy style.
 
 @AGENTS.md
 

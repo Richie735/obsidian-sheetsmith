@@ -64,6 +64,189 @@ describe('field rules outweigh Obsidian\'s input styling', () => {
 	});
 });
 
+describe('a container query sits below what it overrides', () => {
+	/*
+	 * `@container` and `@media` add no specificity, so an equal selector
+	 * further down the file simply wins and the narrow layout never applies.
+	 * The file says so in a comment on the sheet's own reflow — and the
+	 * attribute tables broke the rule anyway, so their header never hid and
+	 * their rows never stacked on a narrow settings pane. Nothing in a type
+	 * check or a unit test noticed, and nothing would have until someone
+	 * dragged the pane narrow enough to look.
+	 *
+	 * Compared property by property, not selector by selector: the same
+	 * selector appearing later is only a problem where the two declare the
+	 * same thing, and most do not.
+	 */
+	const CSS_TEXT = readFileSync(new URL('../styles.css', import.meta.url), 'utf8')
+		.replace(/\/\*[\s\S]*?\*\//g, '');
+
+	interface Frame {
+		selector: string;
+		bodyFrom: number;
+		/** The at-rule this sits in, if any. Its `to` is filled in on close. */
+		guard: { to: number } | null;
+		isAt: boolean;
+	}
+
+	interface Rule {
+		selectors: string[];
+		properties: Set<string>;
+		/** Where the enclosing at-rule block ends, or null at top level. */
+		guard: { to: number } | null;
+		at: number;
+	}
+
+	/**
+	 * Every rule in the file, flat, with its enclosing at-rule noted.
+	 *
+	 * Scanned rather than matched. A regex over `selector { body }` has to
+	 * anchor on the delimiter before the selector, and consuming that
+	 * delimiter means the next rule has none left to anchor on — so it
+	 * silently reads every other rule and a guard built on it passes whatever
+	 * it happens to skip.
+	 */
+	function rules(): Rule[] {
+		const found: Rule[] = [];
+		const stack: Frame[] = [];
+		let buf = '';
+		for (let i = 0; i < CSS_TEXT.length; i++) {
+			const ch = CSS_TEXT[i] as string;
+			if (ch === '{') {
+				const selector = buf.trim();
+				buf = '';
+				const isAt = selector.startsWith('@');
+				stack.push({
+					selector,
+					bodyFrom: i + 1,
+					guard: stack.find((f) => f.isAt)?.guard ?? null,
+					isAt,
+				});
+				if (isAt) {
+					// Its own guard object, closed when this block closes.
+					stack[stack.length - 1]!.guard = { to: 0 };
+				}
+				continue;
+			}
+			if (ch === '}') {
+				const frame = stack.pop();
+				buf = '';
+				if (!frame) continue;
+				if (frame.isAt) {
+					if (frame.guard) frame.guard.to = i;
+					continue;
+				}
+				const body = CSS_TEXT.slice(frame.bodyFrom, i);
+				const properties = new Set(
+					[...body.matchAll(/(^|;)\s*([a-z-]+)\s*:/g)].map((d) => d[2] as string),
+				);
+				found.push({
+					selectors: frame.selector
+						.split(',')
+						.map((part) => part.trim())
+						.filter(Boolean),
+					properties,
+					guard: frame.guard,
+					at: frame.bodyFrom,
+				});
+				continue;
+			}
+			buf += ch;
+		}
+		return found;
+	}
+
+	const all = rules();
+
+	it('finds the rules it is meant to be checking', () => {
+		expect(all.length).toBeGreaterThan(200);
+		expect(all.filter((rule) => rule.guard !== null).length).toBeGreaterThan(20);
+	});
+
+	it('is never overridden by an equal selector further down the file', () => {
+		const losing: string[] = [];
+		for (const rule of all) {
+			if (rule.guard === null) continue;
+			for (const selector of rule.selectors) {
+				for (const other of all) {
+					if (other.at <= rule.guard.to) continue;
+					if (other.guard !== null) continue;
+					if (!other.selectors.includes(selector)) continue;
+					for (const property of rule.properties) {
+						if (other.properties.has(property)) {
+							losing.push(`${selector} { ${property} }`);
+						}
+					}
+				}
+			}
+		}
+		expect([...new Set(losing)]).toEqual([]);
+	});
+});
+
+describe('a table header lines up with its rows', () => {
+	/*
+	 * The header and the rows are separate grids, so they agree only while
+	 * they resolve to the same track list. With two content columns the
+	 * agreement is free — the second label starts at the `1fr` track's left
+	 * edge, and a track's start does not move with its width. A third column
+	 * sits after that track, so it does: the row spends width on its buttons,
+	 * its `1fr` comes out narrower, and every column past it slides left.
+	 *
+	 * The fix was to share one declaration. This is the check that keeps it
+	 * shared, because the symptom is a few pixels of drift in a settings pane
+	 * and nothing else reports it.
+	 */
+	const CSS_TEXT = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+
+	const HEADER = '.sheetsmith-attribute-counted .sheetsmith-attribute-columns';
+	const ROW = '.sheetsmith-attribute-counted .sheetsmith-attribute-row';
+
+	/** Every rule declaring a track list, as (selectors, declaration). */
+	function trackLists(): { selectors: string[]; value: string }[] {
+		const withoutComments = CSS_TEXT.replace(/\/\*[\s\S]*?\*\//g, '');
+		const found: { selectors: string[]; value: string }[] = [];
+		for (const block of withoutComments.split('}')) {
+			const brace = block.indexOf('{');
+			if (brace === -1) continue;
+			const declared = /grid-template-columns\s*:([^;]+)/.exec(block.slice(brace));
+			if (!declared) continue;
+			found.push({
+				selectors: block
+					.slice(0, brace)
+					.split(',')
+					.map((part) => part.trim().replace(/\s+/g, ' '))
+					.filter(Boolean),
+				value: (declared[1] ?? '').trim().replace(/\s+/g, ' '),
+			});
+		}
+		return found;
+	}
+
+	it('finds the rules it is meant to be checking', () => {
+		const lists = trackLists();
+		expect(lists.length).toBeGreaterThan(5);
+		expect(lists.some((rule) => rule.selectors.includes(ROW))).toBe(true);
+	});
+
+	it('gives the counted header and its rows one track list', () => {
+		for (const rule of trackLists()) {
+			const header = rule.selectors.includes(HEADER);
+			const row = rule.selectors.includes(ROW);
+			if (!header && !row) continue;
+			// Either both, in one declaration, or neither — a rule naming one
+			// alone is the drift this exists to catch. The narrow block is the
+			// exception it has to allow: there both collapse to a single
+			// column, and the header is hidden outright.
+			if (rule.value === '1fr') continue;
+			expect(
+				header && row,
+				`only one of the pair takes "${rule.value}"`,
+			).toBe(true);
+		}
+	});
+});
+
 describe('the sheet paints its own surfaces', () => {
 	it('gives no rule to .sheetsmith-cell, so components must look like objects', () => {
 		// Load-bearing for the review that produced this file: the grid hands a

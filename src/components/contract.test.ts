@@ -18,6 +18,7 @@ const KINDS = [
 	'select',
 	'text-list',
 	'attributes',
+	'track-rows',
 	'rows',
 	'columns',
 ];
