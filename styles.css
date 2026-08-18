@@ -733,11 +733,13 @@ body {
 	text-align: end;
 }
 
-/* Vertical cards are tiles, not banners: cap the column and center it
-   rather than stretching each card across the whole pane. */
+/* Vertical cards stack in one column, and that column is the component's.
+   The width the author placed the component at is the width they asked for,
+   so the stack fills it rather than capping itself and floating centred in
+   the slack. Tiles are still available: that is what fixed sizing below is,
+   and it sizes a card to one grid unit instead of guessing a cap. */
 .sheetsmith-stat-group-vertical {
-	grid-template-columns: min(100%, calc(var(--sheetsmith-stat-width, 110px) * 1.5));
-	justify-content: center;
+	grid-template-columns: 1fr;
 }
 
 /* Aligned modes: cards take a fixed width and the group aligns. Flex
@@ -975,13 +977,14 @@ body {
 }
 
 /* A lone stat card carries this alongside .sheetsmith-stat. It has no strip
-   and no row of siblings to size against, so it takes the cap Stat group's
-   vertical mode already uses and centres in its cell: a 12-column Stat
-   would otherwise be 700px of clickable card around a two-digit number. */
+   and no row of siblings to size against, so it fills the cell it was placed
+   in — a component two columns wide occupies two columns. It used to cap
+   itself at tile width and centre in the remainder, on the grounds that a
+   12-column Stat is a lot of clickable card around a two-digit number; but
+   that is the author's call to make in the layout, and overriding it made
+   every wide placement look like the grid had failed. */
 .sheetsmith-stat-single {
 	height: 100%;
-	max-width: calc(var(--sheetsmith-stat-width, 110px) * 2);
-	margin-inline: auto;
 }
 
 /* A cell is only tall because a card beside it in the same grid row is
@@ -1695,13 +1698,12 @@ body {
 	align-items: center;
 	justify-content: flex-start;
 	gap: var(--size-2-1);
-	/* The cap a lone stat card takes, and for its reason: a pool spanning
-	   three columns would otherwise be an expanse of clickable card around a
-	   two-digit number, beside stat cards that stayed tile-sized. Sharing the
-	   number is what lines the two up. */
+	/* Fills the cell it was placed in, exactly as a lone stat card does: a
+	   pool spanning three columns is three columns of card. Both used to cap
+	   at tile width and centre in the remainder; they now agree the other
+	   way, which is what keeps a pool and a stat side by side the same size
+	   when the layout gave them the same width. */
 	height: 100%;
-	max-width: calc(var(--sheetsmith-stat-width, 110px) * 2);
-	margin-inline: auto;
 	padding: var(--size-4-2);
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-m);
