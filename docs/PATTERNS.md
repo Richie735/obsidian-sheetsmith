@@ -83,8 +83,18 @@ what one constant says for free. Extract on the second consumer there.
 `interaction/commit-window.ts` holds a single `GESTURE_COMMIT` because Pool and
 Track had both settled on 700ms in two places nothing kept in step;
 `editor/list-field-height.ts` holds the row bounds because the two list fields
-had already drifted apart twice, once on `rows` and once on their width. Both
-say so in their headers, which is what a deliberate departure owes.
+had already drifted apart twice, once on `rows` and once on their width; and
+`components/column-types.ts` holds the typed-column vocabulary because a
+component and the editor field that configures it were each carrying their own
+copy of which types exist, which one is the default, and which can be totalled.
+All three say so in their headers, which is what a deliberate departure owes.
+
+That last one also shows how to tell the tiers apart. Two copies of a *set* is
+the same case as two copies of a number: a guard test could only assert they are
+still equal. Where the shared thing can be expressed as a type instead, prefer
+that — the editor's labels are a `Record<ColumnType, string>`, so a new column
+type does not compile until it has a word, which is a guard nobody has to
+remember to run.
 
 Extraction goes to a module named for the behaviour, never to a component. **A
 component must never import from another component** [checked], because that
@@ -125,6 +135,32 @@ src/
 
 A new module goes in the folder naming what it *does*, not what it is *for*. A
 gesture used by pools belongs in `interaction/`, not in `components/`.
+
+### A component and `obsidian`
+
+**A component imports nothing from `obsidian` for vault access, and nothing that
+needs a DOM at import time** [checked]. Both halves are the rule; "no `obsidian`
+in `components/`" was the shorthand, and it was wider than the reasons behind it.
+
+Enforced as an allowlist — `setIcon` and nothing else — in `eslint.config.mts`,
+and driven through eslint in `components/isolation.test.ts` beside the sibling
+rule. An allowlist rather than a comment because the cost of the first such import
+was invisible until it was paid, so the next one has to be a decision rather than
+an inherited precedent: adding a name means editing the check first, which is what
+this tier means.
+
+`table.ts` takes `setIcon`, and that is the one import of its kind. The
+argument for it: the plugin's other three delete controls are Obsidian's trash
+icon, drawing an icon touches no vault, and taking the app's icon rather than a
+copy of it is what keeps it following the app's icon set. The cost is real and was
+not where it was expected — not fidelity, since `src/test/obsidian-stub.ts` draws
+the genuine Lucide paths for tests and the harness alike, but *import shape*: the
+stub installs its DOM helpers on load, so three node-environment test files (the
+registry contract, the reset flow, the worked examples) failed on import the
+moment a component reached it. The stub guards those installers now.
+
+That is the check to make before the next such import: not "does it work?" but
+"what does the component layer now require in order to be imported at all?"
 
 ### The repository is self-contained
 
@@ -259,6 +295,14 @@ const flip = () => {
 
 A write producing an identical file does not rebuild the view, so a component
 that waited for the round trip would sometimes never update at all.
+
+**That reason is the test, not the habit.** Where a change always alters the file,
+the rebuild always comes and a local paint buys only the milliseconds before it —
+which is not free, because a paint replaces DOM. A Table repainted a cell's
+rendered wikilinks on commit and destroyed the anchor the browser had just focused
+while tabbing out of the field, so focus fell to the body and the view had nothing
+to restore. Paint optimistically where a write may produce no rebuild; leave it to
+the rebuild where one is certain.
 
 ### A component never touches the file
 
@@ -418,4 +462,4 @@ that keeps solved rows stops being read.
 | --- | --- | --- |
 | Two responsibilities in one file | `layout-editor.ts` | Deliberately deferred, not overlooked. The split waits for the M4 workspace view, which rewrites this module anyway; splitting it twice would be the waste. It has tests now, so the move will be guarded when it comes. |
 | Gesture modules have no test file beside them | `src/interaction/` | `scrub.ts`, `hold-repeat.ts` and `editable.ts` are covered thoroughly, but through `pool.test.ts`, `track.test.ts` and the component tests rather than their own files, against §10's one-test-file-per-module. It may be that §10 is what should change here: a gesture is only meaningfully driven through a control that uses it, and a test file of its own would have to build a fake card first, which is what those component tests already are. Settle it rather than leaving it implicit. |
-| A backlog row names a sample, not the whole set | §9, `components/skill-card.ts`, `components/track.ts` | The row that drove the doc-comment cleanup named `stat.ts` and `stat-group.ts`, and the fix followed the row rather than the rule, so instances outside those two files survived: `skill-card.ts` still carries `/** Hide the component's label above the table. */` against a description saying the same thing, and `track.ts` a softer one that may earn its place on the cross-reference alone. Neither is in any diff, having predated the branch, so a diff-scoped review cannot surface them by design and never will. Fix the two, then close the gap properly: a source check comparing each interface doc comment against its own `configFields` description is mechanical, and §9 already says what to compare. Prose caught this once; the check is what stops it recurring. |
+| A backlog row names a sample, not the whole set | §9, `components/track.ts` | The row that drove the doc-comment cleanup named `stat.ts` and `stat-group.ts`, and the fix followed the row rather than the rule, so instances outside those two files survived. `table.ts`'s went with the open-rows change, which touched that interface anyway; `track.ts` still carries a softer one that may earn its place on the cross-reference alone. Neither was ever in a diff, having predated the branch, so a diff-scoped review cannot surface them by design and never will. Fix the last one, then close the gap properly: a source check comparing each interface doc comment against its own `configFields` description is mechanical, and §9 already says what to compare. Prose caught this once; the check is what stops it recurring. |
