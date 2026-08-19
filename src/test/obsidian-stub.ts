@@ -118,7 +118,14 @@ export function installDomHelpers(): void {
 		};
 }
 
-installDomHelpers();
+// Only where there is a DOM to install onto. This module is the whole of
+// `obsidian` under vitest, so importing it is now something a component does — a
+// Table takes `setIcon` — and that puts it in the import graph of tests that
+// have no business with a DOM at all: the registry contract, the reset flow, the
+// worked examples. Those run in node, where `HTMLElement` does not exist, and an
+// unconditional call here made them fail on import. Nothing in a node environment
+// renders, so there is nothing for the helpers to be missing from.
+if (typeof HTMLElement !== 'undefined') installDomHelpers();
 
 /** Which controls `addControls` renders; the tests flip it to cover both. */
 export const Platform = { isMobile: false };
@@ -792,4 +799,7 @@ export function installGlobals(): void {
 	}
 }
 
-installGlobals();
+// Guarded for the reason `installDomHelpers` is: a node-environment test may now
+// reach this module through a component, and there is no document there to install
+// globals onto.
+if (typeof DocumentFragment !== 'undefined') installGlobals();

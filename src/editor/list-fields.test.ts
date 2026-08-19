@@ -81,7 +81,7 @@ function labels(el: HTMLElement): string {
 }
 
 describe('columns editor', () => {
-	/** The skill card as it stands after its bonus column was removed. */
+	/** The table as it stands after its bonus column was removed. */
 	const afterRemoval = () => ({
 		columns: [
 			{
@@ -197,7 +197,13 @@ describe('columns editor', () => {
 				(check) => check.textContent,
 			),
 		);
-		expect(checks).toEqual([['Secondary text', 'Hide heading'], ['Hide heading']]);
+		// A total is offered on the number and not on the text, for the same
+		// reason the gloss is offered the other way round: neither control means
+		// anything on the other kind of column.
+		expect(checks).toEqual([
+			['Secondary text', 'Hide heading'],
+			['Show a total', 'Hide heading'],
+		]);
 	});
 
 	it('leaves the gloss out of the file until it is asked for', () => {
@@ -368,6 +374,21 @@ describe('columns editor', () => {
 		expect(
 			levelled.querySelector('.sheetsmith-attribute-footnote')?.textContent,
 		).toContain('"Proficient:"');
+	});
+
+	it('says a totalled key is a name, only where a column is totalled', () => {
+		// Ticking the total is what turns a column heading into something the rest
+		// of the sheet reads, and nothing else on the form would say so — the
+		// component refuses a key that is not a name, and this is what keeps the
+		// author from meeting that refusal by surprise.
+		const plain = columnsEditor({ columns: [{ key: 'Weight', type: 'number' }] });
+		expect(plain.querySelector('.sheetsmith-attribute-footnote')).toBeNull();
+		const totalled = columnsEditor({
+			columns: [{ key: 'Weight', type: 'number', total: true }],
+		});
+		expect(
+			totalled.querySelector('.sheetsmith-attribute-footnote')?.textContent,
+		).toContain('letters, digits and underscores');
 	});
 
 	it('does not point at rings a dropdown never draws', () => {

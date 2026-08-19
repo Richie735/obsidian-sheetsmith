@@ -387,6 +387,146 @@ describe('the pool\'s controls are one height by construction', () => {
 	});
 });
 
+describe('the armed delete keeps its warning under the pointer', () => {
+	const CSS_TEXT = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+
+	/*
+	 * Arming is the guard on the only irreversible thing a component offers, and
+	 * the instant after the first press the pointer is still on the control — so
+	 * `:hover` is the state the armed treatment competes with every time, and it
+	 * lost: the glyph's hover rule is (0,3,0) and the row-hover pair (0,4,2)
+	 * against an armed rule at (0,2,0), which no source order can rescue. A
+	 * control one press from deleting a row painted the ordinary hover grey, and so
+	 * did its row.
+	 *
+	 * Invisible in review twice over: a headless shot cannot hover, and arming from
+	 * a script leaves the pointer wherever it was, so every screenshot of this
+	 * showed the one condition where it looked right. It took driving a real
+	 * pointer over the harness with CDP to see it.
+	 *
+	 * The arrangement that fixed it is what this checks: a state rule *stands down*
+	 * for the armed state rather than trying to outrank it. Excluded, nothing
+	 * competes, and the next rule added here cannot win by accident.
+	 */
+	const ARMED = ['sheetsmith-table-remove-armed', 'sheetsmith-table-row-arming'];
+	const PAINTED = ['color', 'background-color', 'background-image'];
+
+	/** Rules that paint a state onto the delete control or a table row. */
+	function stateRules(): string[] {
+		const withoutComments = CSS_TEXT.replace(/\/\*[\s\S]*?\*\//g, '');
+		const found: string[] = [];
+		for (const block of withoutComments.split('}')) {
+			const brace = block.indexOf('{');
+			if (brace === -1) continue;
+			const selector = block.slice(0, brace).replace(/\s+/g, ' ').trim();
+			const body = block.slice(brace + 1);
+			if (!/:hover|:focus-visible/.test(selector)) continue;
+			if (
+				!selector.includes('.sheetsmith-table-remove-button') &&
+				!/\.sheetsmith-table tbody tr/.test(selector)
+			) {
+				continue;
+			}
+			const paints = body
+				.split(';')
+				.some((d) => PAINTED.includes(d.split(':')[0]?.trim() ?? ''));
+			if (paints) found.push(selector);
+		}
+		return found;
+	}
+
+	it('finds the state rules it is meant to be checking', () => {
+		expect(stateRules().length).toBeGreaterThan(2);
+	});
+
+	it('stands every one of them down for the armed state', () => {
+		const outranking = stateRules().filter(
+			(selector) => !ARMED.some((armed) => selector.includes(`:not(.${armed})`)),
+		);
+		expect(outranking).toEqual([]);
+	});
+});
+
+describe('a borrowed class is styled by us, not hoped for', () => {
+	const CSS_TEXT = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+
+	/*
+	 * Spelling one of Obsidian's class names buys the name and nothing else.
+	 * Every `.internal-link` rule in `app.css` is scoped to `.markdown-rendered`
+	 * or `.metadata-property-value`, so a sheet gets the bare `a` rule — colour,
+	 * underline, pointer — and none of the state styling. A rendered wikilink to a
+	 * note that does not exist looked exactly like one to a note that does, in the
+	 * app, while the harness showed them as different shades because a stand-in
+	 * rule there filled the gap. That is the worst shape a review can have: the
+	 * instrument kinder than the thing.
+	 *
+	 * So any state class we put on a borrowed element has to be styled here, from
+	 * the app's own variables.
+	 */
+	it('styles is-unresolved under the view scope', () => {
+		const scoped = selectors().filter(
+			(selector) =>
+				selector.includes('.is-unresolved') &&
+				selector.includes('.sheetsmith-view'),
+		);
+		expect(scoped.length).toBeGreaterThan(0);
+		// From the documented variables, never a colour of the plugin's own.
+		expect(CSS_TEXT).toContain('--link-unresolved-color');
+	});
+});
+
+describe('a link over a field survives its own press', () => {
+	const CSS_TEXT = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+
+	/*
+	 * The display layer over a cell's field goes inert while the field is being
+	 * edited, so a click cannot land on a link that is not visible. Keyed on the
+	 * container's focus instead — `:focus-within` — it would also fire when the
+	 * *anchor* takes focus, which is what a press on a link does: the layer would
+	 * go inert between mousedown and mouseup, the mouseup would hit the field
+	 * underneath, and the browser would dispatch the click to their common
+	 * ancestor rather than to the link. The link would quietly stop working.
+	 *
+	 * Invisible in every other check: happy-dom has no hit testing and a
+	 * dispatched click skips it, so the unit tests pass either way.
+	 */
+	it('hides the layer on the field\'s focus, never the container\'s', () => {
+		// Comments stripped first: the rule's own comment names the selector it
+		// rules out, and a check that reads it finds the thing it forbids.
+		const withoutComments = CSS_TEXT.replace(/\/\*[\s\S]*?\*\//g, '');
+		const rules = withoutComments.split('}').filter((block) =>
+			block.includes('.sheetsmith-table-link-layer'),
+		);
+		expect(rules.length).toBeGreaterThan(2);
+		const byContainer = rules.filter(
+			(block) =>
+				block.includes(':focus-within') &&
+				block.slice(0, block.indexOf('{')).includes('.sheetsmith-table-linked'),
+		);
+		expect(byContainer).toEqual([]);
+		expect(withoutComments).toContain(':has(.sheetsmith-table-input:focus)');
+	});
+
+	it('would catch the selector it forbids', () => {
+		// The check above passes on a file that simply has no layer rules at all,
+		// so this drives it over the shape it exists to reject.
+		const broken =
+			'.sheetsmith-view .sheetsmith-table-linked:focus-within ' +
+			'.sheetsmith-table-link-layer { opacity: 0; }';
+		const caught = broken
+			.split('}')
+			.filter(
+				(block) =>
+					block.includes('.sheetsmith-table-link-layer') &&
+					block.includes(':focus-within') &&
+					block
+						.slice(0, block.indexOf('{'))
+						.includes('.sheetsmith-table-linked'),
+			);
+		expect(caught).toHaveLength(1);
+	});
+});
+
 describe('every colour on the sheet comes from the theme', () => {
 	/*
 	 * A literal colour is a colour that does not change with the theme. It
@@ -482,6 +622,18 @@ describe('every class the plugin adds is its own', () => {
 	 */
 	const EXEMPT = 'src/test/obsidian-stub.ts';
 
+	/**
+	 * Class names the plugin deliberately does not own.
+	 *
+	 * A rendered wikilink in a cell *is* an Obsidian link, and spelling its
+	 * classes is the whole point: it takes the user's theme, and anything else
+	 * that treats links as links finds it (UI.md §1). That is the opposite of the
+	 * accident this check exists for — so the exceptions are enumerated here
+	 * rather than waved through, the way `isolation.test.ts` enumerates the import
+	 * spellings it allows.
+	 */
+	const BORROWED = ['internal-link', 'is-unresolved'];
+
 	/** Every `.ts` file under src/, as a repo-relative path. */
 	function sources(dir = 'src'): string[] {
 		const found: string[] = [];
@@ -524,9 +676,17 @@ describe('every class the plugin adds is its own', () => {
 
 	it('prefixes every one with sheetsmith-', () => {
 		const foreign = [...new Set(added)].filter(
-			(name) => !name.startsWith('sheetsmith-'),
+			(name) => !name.startsWith('sheetsmith-') && !BORROWED.includes(name),
 		);
 		expect(foreign).toEqual([]);
+	});
+
+	it('still uses every name it claims to be borrowing', () => {
+		// An exemption nothing exercises is an exemption that quietly widens the
+		// rule for whatever is added next.
+		for (const name of BORROWED) {
+			expect(added, `${name} is exempt but unused`).toContain(name);
+		}
 	});
 });
 

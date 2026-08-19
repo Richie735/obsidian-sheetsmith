@@ -88,6 +88,10 @@ export default defineConfig(
 		// Scoped by the reason rather than by one folder: popover.ts carried
 		// this exemption while it lived in components/ and lost it by moving
 		// to ui/, though nothing about why it needs it changed.
+		//
+		// This says nothing about whether a component may import from `obsidian`
+		// at all — one does, for `setIcon` — and that is a separate rule with its
+		// own allowlist further down, and its reasons in PATTERNS §2.
 		files: [
 			'src/components/**/*.ts',
 			'src/ui/**/*.ts',
@@ -137,6 +141,31 @@ export default defineConfig(
 				{
 					patterns: [
 						{
+							/*
+							 * What a component may take from the app, as an
+							 * allowlist rather than a convention.
+							 *
+							 * `setIcon` is on it because the delete control draws
+							 * Obsidian's trash icon and taking the app's icon beats
+							 * copying it. Nothing else is, and the two reasons are
+							 * in PATTERNS §2: nothing for vault access, and nothing
+							 * that needs a DOM at import time.
+							 *
+							 * Checked rather than written down, because the cost of
+							 * the first import was invisible until it was paid. The
+							 * stub is the whole of `obsidian` under vitest and it
+							 * installed DOM helpers on load, so three
+							 * node-environment test files — the registry contract,
+							 * the reset flow, the worked examples — failed on import
+							 * the moment a component reached it. Adding a name here
+							 * is the decision; inheriting the precedent is not.
+							 */
+							group: ['obsidian'],
+							allowImportNames: ['setIcon'],
+							message:
+								'A component may take only `setIcon` from obsidian. Anything needing the vault or an App belongs in a view or a service and reaches the component through RenderContext; anything else has to be argued here first, because the stub is what tests import and it needs a DOM (docs/PATTERNS.md §2).',
+						},
+						{
 							// Both spellings of a sibling. `no-restricted-imports`
 							// matches the import string literally, so restricting
 							// './*' alone left '../components/pool' passing clean —
@@ -146,8 +175,10 @@ export default defineConfig(
 							group: [
 								'./*',
 								'../components/*',
+								'!./column-types',
 								'!./level-ring',
 								'!./stat-card',
+								'!../components/column-types',
 								'!../components/level-ring',
 								'!../components/stat-card',
 							],
