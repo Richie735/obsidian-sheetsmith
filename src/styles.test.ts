@@ -18,6 +18,7 @@
 
 import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
+import { PARTS, renderStyles } from '../styles.build.mjs';
 
 const CSS = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 
@@ -526,5 +527,34 @@ describe('every class the plugin adds is its own', () => {
 			(name) => !name.startsWith('sheetsmith-'),
 		);
 		expect(foreign).toEqual([]);
+	});
+});
+
+describe('styles.css is assembled, not authored', () => {
+	/*
+	 * The stylesheet is generated from src/styles/, because Obsidian loads one
+	 * file from the plugin folder and the sheet and the editor are two
+	 * surfaces. Generated files invite exactly one failure: someone edits the
+	 * output, it works, and the next build silently reverts it.
+	 *
+	 * Nothing else would notice. The edit is valid CSS, every other check in
+	 * this file passes against it, and the loss only shows up whenever the
+	 * next person happens to run a build.
+	 */
+	it('matches what the parts assemble to', () => {
+		expect(CSS).toBe(renderStyles());
+	});
+
+	it('is assembled from every part, in the declared order', () => {
+		// A part dropped from PARTS would take its rules out of the stylesheet
+		// while leaving the file on disk, which reads as a deletion nobody made.
+		expect(PARTS).toEqual(['tokens', 'shared', 'sheet', 'editor']);
+		for (const part of PARTS) {
+			const source = readFileSync(
+				new URL(`../src/styles/${part}.css`, import.meta.url),
+				'utf8',
+			).trim();
+			expect(CSS).toContain(source);
+		}
 	});
 });

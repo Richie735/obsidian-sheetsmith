@@ -2,12 +2,16 @@
  * Builds the component harness. Separate from esbuild.config.mjs on purpose:
  * nothing here may end up in main.js.
  */
+import { buildStyles } from '../styles.build.mjs';
 import esbuild from 'esbuild';
 import process from 'process';
 import { fileURLToPath } from 'node:url';
 
 const watch = process.argv.includes('--watch');
 const root = fileURLToPath(new URL('.', import.meta.url));
+
+// The harness links ../styles.css directly, so assemble it first.
+buildStyles();
 
 const context = await esbuild.context({
 	entryPoints: [`${root}harness.ts`],

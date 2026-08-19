@@ -1,4 +1,5 @@
 import esbuild from 'esbuild';
+import { buildStyles } from './styles.build.mjs';
 import process from 'process';
 import { builtinModules } from 'node:module';
 
@@ -40,6 +41,9 @@ const context = await esbuild.context({
 	outfile: 'main.js',
 	minify: prod,
 });
+
+// styles.css is assembled rather than authored; see styles.build.mjs.
+buildStyles();
 
 if (prod) {
 	await context.rebuild();

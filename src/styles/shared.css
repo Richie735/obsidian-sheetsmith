@@ -1,0 +1,70 @@
+/*
+ * The vocabulary both surfaces speak (docs/UI.md §8).
+ *
+ * The level ring is the clear case: a mark on a Skill card and the same mark
+ * in the layout editor's sample go through one painter, so they must go
+ * through one rule — two lookalikes are how the same flag ends up measuring
+ * differently under the same finger. Inline errors and the popover are here
+ * for the same reason.
+ *
+ * Second in the cascade, so a surface may still specialise what it shares.
+ */
+
+.sheetsmith-error {
+	padding: var(--size-4-2);
+	border: 1px solid var(--background-modifier-error);
+	border-radius: var(--radius-m);
+	color: var(--text-error);
+	font-size: var(--font-ui-small);
+}
+
+/* The second door onto what a hover shows, for the pointer that has no
+   hover. Fixed to the viewport, because the table it explains scrolls inside
+   an overflow box that would otherwise clip it. */
+.sheetsmith-popover {
+	position: fixed;
+	z-index: var(--layer-popover, 30);
+	max-width: min(20em, calc(100vw - 2 * var(--size-4-4)));
+	padding: var(--size-2-2) var(--size-4-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background-color: var(--background-secondary);
+	box-shadow: 0 2px 12px var(--background-modifier-box-shadow);
+	font-size: var(--font-ui-smaller);
+	color: var(--text-normal);
+	/* A formula is code and reads as code; wrapping beats a bubble running
+	   off the edge of a phone. */
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+	pointer-events: none;
+}
+
+/* The components a warning or a confirmation is about, one per line.
+
+   Read to be counted and checked against the sheet — which pools did not
+   reset, which sections did not save — so they are a list rather than a
+   sentence. A bare ul inside a Notice or a modal would take the browser's
+   own indent and paragraph margins, which is far more room than four short
+   names need. */
+.sheetsmith-affected {
+	margin: var(--size-2-2) 0 0;
+	padding-left: var(--size-4-4);
+}
+
+.sheetsmith-affected li {
+	margin: 0;
+	line-height: 1.4;
+}
+
+.sheetsmith-affected li + li {
+	margin-top: var(--size-2-1);
+}
+
+/* In a confirmation the list is followed by the button row, whose top border
+   draws a rule across the modal — and the list was sitting on it. The gap goes
+   on the row rather than under the list, because the border travels with the
+   row: a bottom margin on the list would open space above the line in the
+   modal and leave dead space under it in a Notice, where nothing follows. */
+.sheetsmith-affected + .setting-item {
+	margin-top: var(--size-4-3);
+}
