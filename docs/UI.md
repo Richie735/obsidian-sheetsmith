@@ -11,10 +11,10 @@ The design reviewer should look at the **harness** (`npm run harness`) rather
 than at CSS. Reviewing appearance by reading a stylesheet describes what the
 code should look like, not what it does.
 
-The harness renders **both** surfaces: the sheet, and the settings tab holding
+The harness renders **both** screens: the sheet, and the settings tab holding
 the layout editor. The editor is where most of a sheet is actually configured,
-so it gets the same scrutiny as the cards. The two are joined — saving in the
-editor re-renders the sheet — so a config field can be judged by what it does to
+so it gets the same scrutiny as the cards. The two are joined, so saving in the
+editor re-renders the sheet and a config field can be judged by what it does to
 the card rather than by its label alone.
 
 ---
@@ -30,7 +30,7 @@ theme the user runs:
 
 - text: `--text-normal`, `--text-muted`, `--text-faint`, `--text-accent`,
   `--text-error`, `--text-on-accent`
-- surface: `--background-primary`, `--background-primary-alt`,
+- background: `--background-primary`, `--background-primary-alt`,
   `--background-secondary`
 - state: `--background-modifier-hover`, `--background-modifier-active-hover`,
   `--background-modifier-border`, `--background-modifier-error`
@@ -54,7 +54,7 @@ background-color: color-mix(
 ```
 
 Text placed on such a blend uses `--text-normal`, which is defined against
-`--background-primary` — the same colour the blend is mixed with, so it holds in
+`--background-primary`, the same colour the blend is mixed with, so it holds in
 a light theme and a dark one alike. That reasoning is the rule: **pick the text
 variable defined against whatever you mixed into**.
 
@@ -66,9 +66,9 @@ Every rule styling a form control on a sheet must be scoped under
 `.sheetsmith-view` [checked: `styles.test.ts`].
 
 Obsidian styles `input[type='text']` at specificity (0,1,1). A bare class is
-(0,1,0) and loses, so every declaration taking chrome off an input is silently
-discarded — the field keeps its form-control look and its small font. This is
-invisible in review precisely when it matters most: a component that paints its
+(0,1,0) and loses, so every declaration taking chrome off an input is dropped
+with no warning and the field keeps its form-control look and its small font.
+This is invisible in review precisely when it matters most: a component that paints its
 own border never reveals the loss. Pool shipped that way once.
 
 `styles.test.ts` is the guard. If you add a field class, it is covered
@@ -97,8 +97,8 @@ A knob is public API once shipped. Renaming it breaks someone's snippet.
 - **A component fills its grid placement** (`SPEC` §8). A card placed two
   columns wide occupies two columns. Stat group's opt-in `fixed` sizing is the
   single exception.
-- **The sheet fills the pane.** A sheet is a dashboard, not prose, so it is not
-  held at reading width. `--sheetsmith-sheet-max-width` gives reading width back
+- **The sheet fills the pane.** A sheet is a dashboard, not prose, so nothing
+  holds it at reading width. `--sheetsmith-sheet-max-width` gives reading width back
   to anyone who wants it.
 - **Reflow uses a container query, never a media query** [judgement]. A narrow
   split in a wide window must reflow too, and a media query cannot see that.
@@ -121,7 +121,7 @@ A knob is public API once shipped. Renaming it breaks someone's snippet.
   `--font-smallest` below that.
 - **`font-variant-numeric: tabular-nums` on every number that changes.** A value
   that reflows while stepping reads as movement the user did not ask for.
-- Secondary text — an abbreviation under a stat name, a gloss beside a row — is
+- Secondary text, an abbreviation under a stat name or a gloss beside a row, is
   one style: sized down, tracked, faint. Reuse it rather than inventing a
   second quiet style.
 
@@ -133,8 +133,8 @@ Not a pass afterwards. Each of these is already load-bearing somewhere in the
 sheet.
 
 - **Forced-colors mode discards `box-shadow`.** A focus ring drawn as a
-  box-shadow carries a transparent `outline` companion, invisible normally and
-  repainted as a real ring where shadows are dropped:
+  box-shadow carries a transparent `outline` companion, invisible in an ordinary
+  theme and repainted as a real ring wherever the browser drops shadows:
   ```css
   box-shadow: 0 0 0 2px var(--interactive-accent);
   outline: 2px solid transparent;
@@ -170,8 +170,8 @@ sheet.
 
 Movement is judged by frequency first. A character sheet is a control panel: the
 same rings, pools and tracks are pressed dozens of times in a session, so
-anything that animates on every press makes the sheet feel slower the longer it
-is used. **Restraint here is the correct answer, not a lack of ambition.**
+anything that animates on every press puts a wait in front of every press, and
+the sheet gets slower to use the longer the session runs. **Restraint here is the correct answer, not a lack of ambition.**
 
 The sheet also lives inside someone's notes and should not behave more
 energetically than the app around it.
@@ -193,9 +193,10 @@ energetically than the app around it.
 - **Gesture values are grabbable at any instant** and continue from where they
   are, rather than snapping to a start.
 
-The tuned constants in `src/interaction/` — projection deceleration, throw
-decay, scrub resistance, hold ramp, velocity window — are decisions taken
-against the real control, with the argument in the code beside them. Treat them
+The tuned constants in `src/interaction/`, covering projection deceleration,
+throw decay, scrub resistance, the hold ramp and the velocity window, are
+decisions taken against the real control, with the argument in the code beside
+them. Treat them
 as settled unless a specific failure is observed.
 
 The full standards, and the vocabulary for describing motion precisely, are in
@@ -206,11 +207,11 @@ The full standards, and the vocabulary for describing motion precisely, are in
 ## 9. The shared vocabulary
 
 New components reuse these rather than inventing a lookalike. A fourth kind of
-surface beside a row of cards reads as loose chrome floating on the page.
+panel beside a row of cards reads as loose chrome floating on the page.
 
 | Thing | Where | Used by |
 | --- | --- | --- |
-| The card surface | `.sheetsmith-stat`, `.sheetsmith-stat-single` | Stat, Stat group, Pool |
+| The card | `.sheetsmith-stat`, `.sheetsmith-stat-single` | Stat, Stat group, Pool |
 | The level ring | `paintLevelRing`, `.sheetsmith-table-cycle` | Skill card columns, Track marks |
 | The editing gesture | `editable.ts` | every stored value on a sheet |
 | Secondary text | `.sheetsmith-stat-abbreviation` | Stat group |
@@ -253,17 +254,17 @@ chrome, so the harness borrows Obsidian's frame instead of approximating it.
 Re-run it after an Obsidian update. Without it the harness falls back to the
 hand-written approximation in `harness/theme.css` and is close but not exact.
 
-`npm run harness:shot` renders every view to `harness/shots/` — both themes,
-both surfaces, the narrow reflow, the empty and error states — so a review can
-look at PNGs rather than clicking through.
+`npm run harness:shot` renders every view to `harness/shots/`, covering both
+themes, both screens, the narrow reflow, and the empty and error states, so a
+review can look at PNGs rather than clicking through.
 
 **The settings tab** (`Surface → Settings`, or `Both` for the two side by side):
 
 - does a new config field read as a setting, or as a form field dumped in a list
 - is its description a consequence, or a restatement of its label (§8 of
   `PATTERNS.md`)
-- do the list-shaped fields — rows, columns, attributes, triggers — stay legible
-  once they hold ten entries rather than two
+- do the list-shaped fields for rows, columns, attributes and triggers stay
+  legible once they hold ten entries rather than two
 - does the grid preview agree with what the sheet actually renders
 - what happens to the sheet when the field changes: `Both` shows it live
 
@@ -272,14 +273,14 @@ look at PNGs rather than clicking through.
 ## 12. Backlog
 
 Where the code does not yet match this file. These are findings, not licences:
-new work follows the sections above. A row leaves when it is fixed — a backlog
+new work follows the sections above. A row leaves when it is fixed. A backlog
 that keeps solved rows stops being read.
 
 | Gap | Where | Fix |
 | --- | --- | --- |
-| An unlabelled example reads as the field's value | `editor/trigger-list-field.ts`, `editor/function-library-field.ts`, `editor/layout-editor.ts` | Each renders a bare `<code>` under its description with no framing word, while the textarea's own `setPlaceholder` already carries a *different* example in the idiomatic place. In the harness sample the function library's visible example is byte-identical to the saved value, so the field reads as though the value were printed twice, and the triggers field shows "Short rest" both as the example and as a real entry. Frame it — "For example: …" — or drop it and let the placeholder do the work. |
-| The stat note clips mid-word | `.sheetsmith-stat-note-input` | No `text-overflow`, so at a 620px container "chain mail, shield" renders as "chain mail, sl": a hard cut with room to spare inside the pill, which reads as damaged data rather than as truncation. Five other rules in `sheet.css` already set `text-overflow: ellipsis`, and the card label directly above it correctly shows "ARMOUR C…". Set it here too — it applies to an unfocused input — and carry the full value in `title`. |
-| §9 names Track as a user of the level ring | §9 above, `components/track.ts` | `paintLevelRing`'s only callers are `skill-card.ts` and `editor/list-fields.ts`. Track imports `levelGlyph`, `levelName` and `parseLevel` and paints its own segments, which render as rounded squares against the ring's circles. The two shapes probably *should* differ — a track counts marks across segments, a ring cycles one value — so the fix is the table rather than the code. As written, §9 promises a shared painter that does not exist, which is the drift it exists to warn about. |
+| An unlabelled example reads as the field's value | `editor/trigger-list-field.ts`, `editor/function-library-field.ts`, `editor/layout-editor.ts` | Each renders a bare `<code>` under its description with no framing word, while the textarea's own `setPlaceholder` already carries a *different* example in the idiomatic place. In the harness sample the function library's visible example is byte-identical to the saved value, so the field reads as though the value were printed twice, and the triggers field shows "Short rest" both as the example and as a real entry. Frame it with "For example: …", or drop it and let the placeholder do the work. |
+| The stat note clips mid-word | `.sheetsmith-stat-note-input` | No `text-overflow`, so at a 620px container "chain mail, shield" renders as "chain mail, sl": a hard cut with room to spare inside the pill, which reads as damaged data rather than as truncation. Five other rules in `sheet.css` already set `text-overflow: ellipsis`, and the card label directly above it correctly shows "ARMOUR C…". Set it here too, since it applies to an unfocused input, and carry the full value in `title`. |
+| §9 names Track as a user of the level ring | §9 above, `components/track.ts` | `paintLevelRing`'s only callers are `skill-card.ts` and `editor/list-fields.ts`. Track imports `levelGlyph`, `levelName` and `parseLevel` and paints its own segments, which render as rounded squares against the ring's circles. The two shapes probably *should* differ, since a track counts marks across segments while a ring cycles one value, so the fix is the table rather than the code. As written, §9 promises a shared painter that does not exist, which is the drift it exists to warn about. |
 | An unknown component type names the fault, not the fix | `view/sheet-view.ts` | `Unknown component type "toggle".` leaves the author to guess what they may write instead, against §10. A layout naming an unbuilt component is the likely way to meet this, since the editor's add menu can only offer registered types. `listComponentTypes()` is already the registry's public list; name them in the message. |
 
 Add a row when a review finds a gap it is not fixing in the same pass.

@@ -15,8 +15,8 @@ writing anything.
 
 Most of what is left in this plugin is gated on a **model** decision, not a UI
 one. §13's live questions are about scope resolution, catalog shape and nesting.
-Designing a surface before those are settled produces a design that assumes the
-problem away.
+Designing the interface before those are settled produces a design that assumes
+the problem away.
 
 So work in this order, and do not skip step 1 because the feature "looks like UI".
 
@@ -40,7 +40,7 @@ scope the feature to what does not depend on it.
 For a feature that genuinely touches no model question, say so in one line and
 move on. The step is cheap when it is cheap.
 
-### 2. Design the surface
+### 2. Design the interface
 
 Only now. Cover:
 
@@ -81,7 +81,7 @@ Board card: <text of the card this implements>
 
 ## Model question
 
-<Which §13 question this touches, and the answer, with the argument. Or: "None —
+<Which §13 question this touches, and the answer, with the argument. Or: "None,
 <one line why>.">
 
 ## What it does
@@ -90,7 +90,7 @@ Board card: <text of the card this implements>
 
 ## Design
 
-<The surface. Interactions. What it reuses. Empty and error states.>
+<The interface. Interactions. What it reuses. Empty and error states.>
 
 ## Config fields
 
@@ -107,7 +107,7 @@ Board card: <text of the card this implements>
 
 ## Commit boundaries
 
-1. <commit message> — <what it contains>
+1. <commit message>. <what it contains>
 
 ## Deliberately not doing
 
@@ -120,5 +120,5 @@ Board card: <text of the card this implements>
   taken as agreed. Flip `Status` to `agreed` only when the user says so.
 - Do not write implementation code. This skill produces a spec, nothing else.
 - Where the spec settles a §13 question, the `Resolved:` entry in `docs/SPEC.md` is
-  written by `/ship`, not here — it is not resolved until it is built.
+  written by `/ship`, not here. It is not resolved until it is built.
 - If the feature contradicts a hard constraint in `CLAUDE.md`, say so and stop.

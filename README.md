@@ -2,7 +2,7 @@
 
 Design and use character sheets for any tabletop RPG in [Obsidian](https://obsidian.md). Build your own layout from drag-and-drop components, define your own formulas, and keep every character as a plain markdown note.
 
-> **Status: early development.** No release yet. The [specification](docs/SPEC.md) is written, implementation has not started.
+> **Status: early development.** No release yet. The file model, sheet view, formula engine and five components are in place. The grid canvas editor and the rest of the component catalog are not. See the roadmap below.
 
 ## What it is
 
@@ -41,7 +41,6 @@ WIS: 12
 ## HP
 ```sheet
 current: 22
-max: 31
 temp: 0
 ```
 
@@ -67,20 +66,24 @@ prof       = ceil(level / 4) + 1
 A skill's computed total then reads:
 
 ```
-if(trained, prof, 0) + mod(Abilities.DEX) + bonus
+ability + Training * prof + Bonus
 ```
+
+One formula serves the whole skill list. `Training` is a graded column holding untrained, proficient or expertise, and each row says which ability it means, so the layout describes the system instead of repeating it eighteen times.
 
 ## Roadmap
 
-| Milestone | Delivers |
-|---|---|
-| **M1 Render** | Read a hand-written layout and character note, render a read-only sheet |
-| **M2 Edit** | Edit values in sheet view, write back to the body, round-trip safely |
-| **M3 Formulas** | Expression evaluation, layout function library, computed values |
-| **M4 Editor** | Grid canvas, component palette, configuration panel |
-| **M5 Finish** | Reset triggers, promoted fields, layout export and import, mobile reflow |
+| Milestone | Delivers | Status |
+|---|---|---|
+| **M1 Render** | Read a hand-written layout and character note, render a read-only sheet | Done |
+| **M2 Edit** | Edit values in sheet view, write back to the body, round-trip safely | Done |
+| **M3 Formulas** | Expression evaluation, layout function library, computed values | Done |
+| **M4 Editor** | Grid canvas, component palette, configuration panel | Interim form editor in settings; grid canvas outstanding |
+| **M5 Finish** | Reset triggers, promoted fields, layout export and import, mobile reflow | Reset triggers done; the rest outstanding |
 
-The file model is proven first with hand-written files, because it is the hardest thing to change once characters exist. The layout editor is the largest interface investment and comes only once the thing it edits is known to work.
+Five of the eleven components ship: Stat, Stat group, Pool, Track, and Skill card. The remaining six are variations on what those solve.
+
+The file model was proven first with hand-written files, because it is the hardest thing to change once characters exist. The layout editor is the largest interface investment and comes only once the thing it edits is known to work.
 
 See [docs/SPEC.md](docs/SPEC.md) for the full specification: component catalog, formula model, layout schema, and data safety rules.
 
@@ -97,6 +100,7 @@ npm run build      # type-check and production build
 npm run lint
 npm test           # run the test suite once
 npm run test:watch # re-run tests on change
+npm run harness    # build the harness, then open harness/index.html
 ```
 
 ### Test vault
@@ -112,7 +116,9 @@ Install [Hot Reload](https://github.com/pjeby/hot-reload) in the test vault. Tog
 
 ### Testing
 
-The note parser is kept free of Obsidian API imports so it runs under vitest without launching the app. It is also the one place where a bug destroys user data, so it is the part that carries tests. Round-tripping is the rule that matters most: parse then serialise must return an unchanged file byte for byte, or hand-edited notes drift on every save.
+The note parser and the formula engine import nothing from the Obsidian API, so they run under vitest without launching the app. The parser is also the one place where a bug destroys user data, so it is the part that carries the most tests. Round-tripping is the rule that matters most: parse then serialise must return an unchanged file byte for byte, or hand-edited notes drift on every save.
+
+`npm run harness` renders the sheet and the settings tab outside Obsidian against the real `styles.css`, in both themes and at any width. Appearance is reviewed by looking at it rather than by reading CSS.
 
 `main.js` is the compiled bundle and is deliberately not committed. Releases attach it alongside `manifest.json` and `styles.css`.
 

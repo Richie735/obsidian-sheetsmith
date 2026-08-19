@@ -21,7 +21,7 @@ npm run lint
 npm run build
 ```
 
-All three must pass. **Stop and report if any fails** — do not commit around a
+All three must pass. **Stop and report if any fails.** Do not commit around a
 failure, and do not "fix" a test by changing what it asserts.
 
 Note the lint warning count. The repo's baseline is 2, both in `src/settings.ts`
@@ -30,7 +30,7 @@ some; clear them or say why they stand.
 
 ## 2. Update docs/SPEC.md
 
-`docs/SPEC.md` is the source of truth and goes stale silently.
+`docs/SPEC.md` is the source of truth, and nothing announces when it goes stale.
 
 - If the feature settled a §13 open question, **move it** to a `Resolved:` entry
   stating the decision and the argument. This is the moment it is genuinely
@@ -39,11 +39,11 @@ some; clear them or say why they stand.
   update that section.
 - If it raised a new open question, add it to §13.
 
-## 3. Update the spec file
+## 3. Update the feature spec
 
 Set `Status: shipped` in `docs/features/<slug>.md`, and tick the acceptance
-criteria that are met. An unticked box at this point is either scope you cut —
-move it to "deliberately not doing" with a reason — or work that is not done.
+criteria that are met. An unticked box at this point is either scope you cut,
+which moves to "deliberately not doing" with a reason, or work that is not done.
 
 ## 4. Split into commits
 
@@ -74,7 +74,7 @@ project whose work is largely visual this is the trap: a change to how something
 looks is `feat:` when it improves it and `fix:` when it was wrong. Reserve
 `style:` for changes a reader would see no difference from.
 
-**`refactor:`** is behaviour-preserving movement — the folder moves and
+**`refactor:`** is behaviour-preserving movement: the folder moves and
 extractions, where tests pass unchanged before and after.
 
 **No scope.** `feat(pool):` adds noise in a single-plugin repository where the

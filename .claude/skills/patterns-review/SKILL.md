@@ -49,8 +49,8 @@ Work through `PATTERNS.md` in order. The high-value checks:
 ## Two things not to report
 
 - **Comment density.** This codebase runs 40-50% comment by design
-  (`PATTERNS.md` §9). Decision records — the argument against the design not
-  taken — are the point and must never be reported as bloat. The only comment
+  (`PATTERNS.md` §9). Decision records, the argument against the design not
+  taken, are the point and must never be reported as bloat. The only comment
   finding worth making is a doc comment that *restates its own identifier*, or
   one duplicating a `configFields` description.
 - **A `[judgement]` rule cited as if binding.** `PATTERNS.md` marks every rule
@@ -66,7 +66,7 @@ Rank most-severe first. For each:
 
 - **file:line**
 - **What rule**, with its `PATTERNS.md` section and its marker
-- **Why it matters here**, concretely — the failure it allows, not a principle
+- **Why it matters here**, concretely: the failure it allows, not a principle
 - **The smallest fix**
 
 Then, in one line each:
