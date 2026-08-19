@@ -78,7 +78,14 @@ export class SheetsmithSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Layout folder')
-			.setDesc('Folder where sheet layouts are stored.')
+			.setDesc(
+				// The label already says it is the folder for layouts. What it
+				// cannot say is what depends on it: lookup is by name inside
+				// this folder only, so moving the folder without moving the
+				// layouts leaves every character reporting a layout it can no
+				// longer find.
+				'Layouts are found here by name. A character naming one that is not in this folder reports it as missing instead of rendering.',
+			)
 			.addText((text) => {
 				text
 					.setPlaceholder('Sheetsmith layouts')
