@@ -46,13 +46,17 @@ Work through `PATTERNS.md` in order. The high-value checks:
 - **§10 Testing.** Round trip covered. Anything expressible in
   `contract.test.ts` put there rather than repeated per component.
 
-## Two things not to report
+## Three things not to report
 
 - **Comment density.** This codebase runs 40-50% comment by design
   (`PATTERNS.md` §9). Decision records, the argument against the design not
   taken, are the point and must never be reported as bloat. The only comment
   finding worth making is a doc comment that *restates its own identifier*, or
   one duplicating a `configFields` description.
+- **Anything the spec axis owns.** Whether the work is what the feature spec asked
+  for, and whether it quietly grew past it, is `/spec-review`'s report. Code that
+  follows every rule here and implements the wrong thing is a finding, just not
+  yours.
 - **A `[judgement]` rule cited as if binding.** `PATTERNS.md` marks every rule
   `[checked]`, `[warned]` or `[judgement]`. Report a judgement departure as a
   question with the tradeoff, not as a violation. Never claim the build enforces

@@ -41,9 +41,17 @@ some; clear them or say why they stand.
 
 ## 3. Update the feature spec
 
-Set `Status: shipped` in `docs/features/<slug>.md`, and tick the acceptance
-criteria that are met. An unticked box at this point is either scope you cut,
-which moves to "deliberately not doing" with a reason, or work that is not done.
+Set `Status: shipped` in `docs/features/<slug>.md` and tick the acceptance
+criteria, **from `/spec-review`'s report rather than by deciding here.** Ticking a
+box on your own reading of the code is the session that built the work grading
+itself, which is the whole reason the spec axis is reviewed separately.
+
+- No `/spec-review` report for this work: say so and stop. Ask for the review.
+- A criterion the report marks **not met**: stop. It is either work that is not
+  done, or scope that was cut, and a cut moves to "deliberately not doing" with a
+  reason before anything commits. Neither is a call to make while shipping.
+- A criterion the report marks **not checkable**: tick nothing. Fix the criterion
+  in the spec so the next reader can settle it, then tick it if it is met.
 
 ## 4. Split into commits
 
