@@ -123,6 +123,21 @@ installDomHelpers();
 /** Which controls `addControls` renders; the tests flip it to cover both. */
 export const Platform = { isMobile: false };
 
+/**
+ * The path half of a link, with any `#subpath` dropped — which is what
+ * `getFirstLinkpathDest` is given.
+ */
+export function getLinkpath(linktext: string): string {
+	return linktext.split('#')[0] ?? linktext;
+}
+
+/** Which modifiers mean "somewhere else" is the app's rule; this is its shape. */
+export class Keymap {
+	static isModEvent(event?: { metaKey?: boolean; ctrlKey?: boolean } | null): boolean {
+		return event?.metaKey === true || event?.ctrlKey === true;
+	}
+}
+
 const SVG_NS = 'http://www.w3.org/2000/svg';
 
 /** One shape in an icon: an element name and its attributes. */

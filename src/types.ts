@@ -242,6 +242,24 @@ export interface ResetContext {
 	explain: FieldExplainer;
 }
 
+/**
+ * What a component needs from the app to make a note reference work.
+ *
+ * Drawing a link needs none of this — the markup and the classes come out of
+ * parsing the text (`parse/wikilink.ts`), which is why a component can render one
+ * without importing `obsidian` and a test can assert it under happy-dom.
+ * Resolving a target, opening it and previewing it are the parts that are the
+ * vault's business, and only the view has the vault.
+ */
+export interface LinkContext {
+	/** Whether the target names a note that exists. Drives `is-unresolved`. */
+	resolves(target: string): boolean;
+	/** Follow the link. The event carries the modifier that opens a new tab. */
+	open(target: string, event: MouseEvent): void;
+	/** Offer Obsidian's hover preview for this anchor. */
+	preview(target: string, anchor: HTMLElement, event: MouseEvent): void;
+}
+
 /** What render is given beyond the data itself. */
 export interface RenderContext<TData = unknown> {
 	resolved: ResolvedValues;
@@ -258,6 +276,15 @@ export interface RenderContext<TData = unknown> {
 	 * components never touch the file themselves.
 	 */
 	onChange: (data: TData) => void;
+	/**
+	 * Resolve, open and preview a note reference a cell holds.
+	 *
+	 * Optional, and the split is deliberate: a component paints its own anchors
+	 * either way, so a unit test and the harness both show a real link. What is
+	 * absent without this is the vault — an anchor paints as resolved and a click
+	 * does nothing, which is the truth where there is no vault to navigate.
+	 */
+	link?: LinkContext;
 }
 
 /**
@@ -288,6 +315,10 @@ export interface ComponentDefinition<
 	/**
 	 * Display the component. `data` is null when the section is missing or
 	 * failed to read.
+	 *
+	 * The context carries what a component cannot reach for itself: the field
+	 * resolver, the change callback, and — for a component whose text may hold a
+	 * note reference — the vault side of a link.
 	 */
 	render(
 		container: HTMLElement,
@@ -342,7 +373,7 @@ export interface ComponentDefinition<
 	 * An entry is normally a config key ('derived'), but it may be a dotted
 	 * path into the config with `*` standing for one segment
 	 * ('columns.*.formula'). That is what a component with repeating
-	 * structure needs: a Skill card's expressions live one per column and one
+	 * structure needs: a Table's expressions live one per column and one
 	 * per row, so no fixed list could name them all.
 	 */
 	formulaFields: readonly string[];
