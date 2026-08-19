@@ -93,6 +93,45 @@ export default defineConfig(
 		},
 	},
 	{
+		// Hard constraint (docs/PATTERNS.md §1): nothing outside a component
+		// may know that component exists, so a component must never import a
+		// sibling. Shared behaviour is extracted to a module named for what it
+		// does — the painters and gesture modules on the allowlist below —
+		// never reached for through another component.
+		//
+		// Stated as an allowlist rather than a list of the component files, so
+		// a component added tomorrow is restricted without anyone remembering
+		// to come back here. A new *shared* module is the deliberate edit.
+		files: ['src/components/**/*.ts'],
+		ignores: [
+			// The registry imports all five to register them. That is its job.
+			'src/components/index.ts',
+			// A test imports its own subject, and a shared-behaviour test
+			// drives two components over the same cases on purpose (§1).
+			'src/components/*.test.ts',
+		],
+		rules: {
+			'no-restricted-imports': [
+				'error',
+				{
+					patterns: [
+						{
+							group: [
+								'./*',
+								'!./editable',
+								'!./level-ring',
+								'!./popover',
+								'!./stat-card',
+							],
+							message:
+								'A component must not import another component. Move the shared behaviour into a module named for what it does — a sibling painter, or src/interaction/ — and import that from both.',
+						},
+					],
+				},
+			],
+		},
+	},
+	{
 		// Test scaffolding. The obsidian stub exists precisely to implement
 		// the helpers these rules ask code to use, so telling it to use them
 		// is circular; tests build fixtures with the standard API for the

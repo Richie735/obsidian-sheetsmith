@@ -18,9 +18,16 @@ describe('conditionMet', () => {
 			key: 'maxSource',
 			kind: 'select',
 			label: 'Max',
+			description: 'Where the maximum comes from.',
 			options: ['calculated', 'character'],
 		},
-		{ key: 'hideFill', kind: 'boolean', label: 'Hide fill bar', default: false },
+		{
+			key: 'hideFill',
+			kind: 'boolean',
+			label: 'Hide fill bar',
+			description: 'Leave the bar off the card.',
+			default: false,
+		},
 	];
 
 	it('is met by an absent key whose default is the value asked for', () => {
