@@ -75,11 +75,28 @@ So:
   use rather than guessed at, and the guard test is no longer cheaper than the
   module.
 
+**That ladder is written for behaviour. A policy number climbs it in one step.**
+Where the duplicated thing is a timing, a bound, or a row count, drift *is* the
+entire risk, so the two-consumer guard test costs more than the module and
+proves less — it can only assert that two constants are still equal, which is
+what one constant says for free. Extract on the second consumer there.
+`interaction/commit-window.ts` holds a single `GESTURE_COMMIT` because Pool and
+Track had both settled on 700ms in two places nothing kept in step;
+`editor/list-field-height.ts` holds the row bounds because the two list fields
+had already drifted apart twice, once on `rows` and once on their width. Both
+say so in their headers, which is what a deliberate departure owes.
+
 Extraction goes to a module named for the behaviour, never to a component. **A
-component must never import from another component** [judgement], because that
+component must never import from another component** [checked], because that
 breaks the isolation the whole contract rests on: nothing outside a component
-may know that component exists. Shared behaviour lives in `stat-card.ts`,
-`level-ring.ts`, `editable.ts`, `popover.ts`, or a new sibling.
+may know that component exists. Shared behaviour lives in a painter beside them
+(`stat-card.ts`, `level-ring.ts`), in `interaction/` (`editable.ts`), or in
+`ui/` (`popover.ts`) — not in a sibling component, whatever the import is
+spelled like. Both directory spellings of a sibling and the registry itself are
+restricted in `eslint.config.mts`, and the spellings are enumerated in
+`components/isolation.test.ts`, which drives eslint rather than trusting a
+comment: the rule stood half-enforced for a while because it was verified once,
+with one import, in one spelling.
 
 ---
 
@@ -264,7 +281,14 @@ A component inventing its own is the failure mode to watch for.
   it is about to hit, so focus moves while the finger is down; committing on
   release is what lets a press slide off and be taken back.
 - **One route in.** Keyboard activation arrives at the same handler by bubbling.
-  Never a second code path for the keyboard — that is how the two drift.
+  Never a second code path for the keyboard — that is how the two drift. **The
+  exception is a gesture the other input does not have**: a key cannot express a
+  hold, so `interaction/hold-repeat.ts` answers `pointerdown` for the repeat and
+  handles the keyboard's `click` separately, telling them apart with
+  `event.detail === 0` so a mouse press is not stepped twice. Take that
+  exception only where the gesture is genuinely absent from the other input,
+  never where routing it through one handler is merely inconvenient — and keep
+  the step arithmetic in one place even when the entry points differ.
 - **Draft and commit are separate** (`editable.ts`). Typing, arrows and Enter
   change the draft; blur commits; Escape abandons and says so. Nothing reaches
   the file before a commit.
