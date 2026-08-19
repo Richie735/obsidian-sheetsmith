@@ -1,5 +1,5 @@
 import { Plugin } from 'obsidian';
-import { closePopover } from './components/popover';
+import { closePopover } from './ui/popover';
 import { registerCommands } from './commands';
 import {
 	DEFAULT_SETTINGS,

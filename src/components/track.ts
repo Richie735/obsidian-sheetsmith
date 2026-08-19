@@ -26,7 +26,7 @@
  */
 
 import { levelGlyph, levelName, parseLevel } from './level-ring';
-import { bindLongPress } from './popover';
+import { bindLongPress } from '../ui/popover';
 import { readFenced, writeFenced } from '../parse/fenced';
 import {
 	ComponentConfig,

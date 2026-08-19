@@ -12,7 +12,7 @@ import {
 } from 'obsidian';
 import { getComponent, listComponentTypes } from '../components';
 import { conditionMet } from './config-fields';
-import { ConfirmModal } from '../confirm-modal';
+import { ConfirmModal } from '../ui/confirm-modal';
 import {
 	commitFunctionLibrary,
 	FunctionLibraryField,
