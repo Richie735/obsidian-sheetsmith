@@ -15,6 +15,7 @@ import { describe, expect, it } from 'vitest';
 import { getComponent } from '../components';
 import { parseFunctions } from '../formula/functions';
 import {
+	makeFieldExplainer,
 	makeFieldResolver,
 	resolveFormulaFields,
 } from '../formula/resolve';
@@ -113,7 +114,20 @@ function buildSheet(layoutSource: string, noteSource: string) {
 		);
 	};
 
-	return { problems, sheet, resolvedFor };
+	/** Why a component's field did not resolve, in the words the card shows. */
+	const explainFor = (id: string, field: string) => {
+		const entry = prepared.find((item) => item.config.id === id);
+		if (!entry) throw new Error(`No component with id "${id}".`);
+		return makeFieldExplainer(
+			entry.component,
+			entry.config,
+			entry.data,
+			sheet,
+			library,
+		)(field, {});
+	};
+
+	return { problems, sheet, resolvedFor, explainFor };
 }
 
 describe('a 5e layout with its own function library', () => {
@@ -157,5 +171,98 @@ describe('a 5e layout with its own function library', () => {
 		// untouched, which is SPEC §5's promise about a failing formula.
 		expect(sheetWithoutProf.resolvedFor('spell_dc').derived).toBeNull();
 		expect(sheetWithoutProf.sheet('abilities.DEX')).toBe(4);
+	});
+});
+
+/*
+ * The encumbrance rule, which is the first formula an inventory invites and the
+ * reason a column total is publishable at all: a sum over stored cells is a
+ * number derived from data alone, so it needs nothing the contract does not
+ * already have. The other half of the same fact is that a row the character
+ * typed publishes nothing, and this is where that shows up as a user would meet
+ * it — a formula naming an item, failing on the card that wrote it.
+ */
+const INVENTORY = JSON.stringify({
+	name: 'Blades in the Dark',
+	columns: 6,
+	components: [
+		{
+			id: 'inventory',
+			type: 'table',
+			label: 'Inventory',
+			position: { col: 1, row: 1, width: 4, height: 3 },
+			rowHeader: 'Item',
+			openRows: true,
+			columns: [
+				{ key: 'Weight', type: 'number', total: true },
+				{ key: 'Carried', type: 'toggle', total: true },
+			],
+		},
+		{
+			id: 'load',
+			type: 'stat',
+			label: 'Load',
+			derived: 'inventory.Weight',
+			position: { col: 5, row: 1, width: 1, height: 1 },
+		},
+		{
+			id: 'overloaded',
+			type: 'stat',
+			label: 'Overloaded',
+			derived: 'if(inventory.Weight > 3, 1, 0)',
+			position: { col: 6, row: 1, width: 1, height: 1 },
+		},
+		{
+			id: 'by_item',
+			type: 'stat',
+			label: 'By item',
+			derived: '1 + inventory.Dagger',
+			position: { col: 5, row: 2, width: 2, height: 1 },
+		},
+	],
+});
+
+const PACK = `---
+sheet-layout: Blades in the Dark
+---
+
+## Inventory
+
+| Item | Weight | Carried |
+| --- | --- | --- |
+| Dagger | 1 | yes |
+| dagger | 1 | yes |
+| Climbing gear | 2 | no |
+`;
+
+describe('a load list totalling a column', () => {
+	const { sheet, resolvedFor, explainFor } = buildSheet(INVENTORY, PACK);
+
+	it('publishes the total of a stored column under the column key', () => {
+		// Two daggers at 1 and climbing gear at 2. Keyed by name the two daggers
+		// were one row and this said 3.
+		expect(sheet('inventory.Weight')).toBe(4);
+		expect(resolvedFor('load').derived).toBe(4);
+	});
+
+	it('counts a toggle column as the rows that are on', () => {
+		expect(sheet('inventory.Carried')).toBe(2);
+	});
+
+	it('lets the layout write the encumbrance rule as arithmetic', () => {
+		expect(resolvedFor('overloaded').derived).toBe(1);
+	});
+
+	it('fails on the card that named a row, whatever its capitalisation', () => {
+		// `<id>.<name>` is a fixed-row mechanism: a name a formula can write has
+		// to be knowable when the formula is written, and a row the character
+		// typed is not. So this fails, on the card that wrote it, and the card
+		// says which name it could not find.
+		expect(sheet('inventory.Dagger')).toBeUndefined();
+		expect(sheet('inventory.dagger')).toBeUndefined();
+		expect(resolvedFor('by_item').derived).toBeNull();
+		expect(explainFor('by_item', 'derived')).toContain('inventory.Dagger');
+		// Everything beside it still resolves (SPEC §5).
+		expect(resolvedFor('load').derived).toBe(4);
 	});
 });

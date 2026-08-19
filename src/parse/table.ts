@@ -14,9 +14,9 @@
 import { lineText, splitLines } from './lines';
 
 export interface MarkdownTable {
-	/** Header texts, trimmed, in file order. */
+	/** Header texts, trimmed and unescaped, in file order. */
 	headers: string[];
-	/** Body rows, each cell trimmed, in file order. */
+	/** Body rows, each cell trimmed and unescaped, in file order. */
 	rows: string[][];
 }
 
@@ -28,6 +28,22 @@ export type TableResult =
 
 /** A row of dashes under the header is what makes a block of pipes a table. */
 const DELIMITER_CELL = /^:?-+:?$/;
+
+/**
+ * Read a cell's escaped pipe back as a pipe.
+ *
+ * **Escaping is this file's business alone.** A pipe would end the cell, so the
+ * writer escapes it on the way in; handing the backslash back out made every
+ * caller responsible for a file-format detail, and none of them was. The sheet
+ * showed `A \| B` in an input, and committing that escaped it a second time.
+ * `[[Note\|Alias]]` is the same mechanism: the file keeps the backslash the
+ * aliased wikilink needs, and everything above this line sees `[[Note|Alias]]`.
+ *
+ * Only `\|` is touched. Every other backslash in a cell is the note's own text.
+ */
+function unescapePipes(text: string): string {
+	return text.replace(/\\\|/g, '|');
+}
 
 /**
  * Split a line into its cell segments, keeping every byte: the outer pipes
@@ -132,7 +148,7 @@ export function readTable(body: string): TableResult {
 	}
 
 	const headers = splitCells(lineText(lines[span.start] as string)).cells.map(
-		(cell) => cell.trim(),
+		(cell) => unescapePipes(cell.trim()),
 	);
 	const seen = new Set<string>();
 	for (const header of headers) {
@@ -146,7 +162,9 @@ export function readTable(body: string): TableResult {
 	const rows: string[][] = [];
 	for (let i = span.start + 2; i < span.end; i++) {
 		rows.push(
-			splitCells(lineText(lines[i] as string)).cells.map((cell) => cell.trim()),
+			splitCells(lineText(lines[i] as string)).cells.map((cell) =>
+				unescapePipes(cell.trim()),
+			),
 		);
 	}
 	return { ok: true, table: { headers, rows } };
@@ -156,21 +174,48 @@ export function readTable(body: string): TableResult {
  * Cell updates for one row, keyed by header text. A header the table does not
  * have is appended as a new column; a header it has under different casing
  * updates that column rather than adding a second one.
+ *
+ * The caller's *first* header always means the note's first cell, whatever the
+ * note calls it. The name is the note's first column by definition (SPEC §4.2),
+ * so a note headed "Item" under a layout headed "Name" has its names written
+ * where they are, rather than growing a second column beside them.
  */
 export type RowUpdate = ReadonlyMap<string, string>;
 
 /**
- * Rows to write, keyed by the text of their first cell. A key the table does
- * not have is appended as a new row; keys are matched exactly, and where a
- * table holds the same key twice only the first is written — the second is a
- * hand-edit the layout does not map, and SPEC §10 leaves those alone.
+ * What to change about a table's body, addressed by position.
+ *
+ * **Position, not the text of the first cell.** A markdown table is an ordered
+ * list of lines and never promised that first cell was unique. Keyed by name,
+ * two rows called "Dagger" were one row: the second was unreachable, and the
+ * first's next edit was written over the top of whichever the writer found
+ * first. An index has none of that, because it is not derived from anything the
+ * user types.
+ *
+ * Indices are the ones `readTable` reported, so they are valid for exactly as
+ * long as the read they came from. That is as long as a gesture: every write
+ * changes the file and every change is followed by a fresh read.
  */
-export type TableUpdates = ReadonlyMap<string, RowUpdate>;
+export interface TableUpdates {
+	/** Cells to change, by body row index, 0 first. */
+	rows?: ReadonlyMap<number, RowUpdate>;
+	/** Rows to append after the last body row, in order. */
+	added?: readonly RowUpdate[];
+	/**
+	 * Body row indices to remove. Each splices exactly one line out and leaves
+	 * every other byte alone; the line ending is not renormalised and the prose
+	 * around the table is untouched (SPEC §10).
+	 */
+	removed?: readonly number[];
+}
 
 /** Put a value into a cell segment, keeping the padding that surrounded it. */
 function replaceCell(segment: string, value: string): string {
 	const trimmed = segment.trim();
-	if (trimmed === value) return segment;
+	// Compared unescaped, because that is the text the caller was handed: a cell
+	// reading `A \| B` in the file and `A | B` on the sheet has not changed, and
+	// comparing the two spellings would rewrite the line on every save.
+	if (unescapePipes(trimmed) === value) return segment;
 	// A pipe inside a value would end the cell, so it is escaped on the way
 	// in. Wikilink aliases are the reason this comes up at all.
 	const escaped = value.replace(/\|/g, '\\|');
@@ -185,13 +230,63 @@ function cellText(value: string): string {
 	return ` ${value.replace(/\|/g, '\\|')} `;
 }
 
+/**
+ * Where each header the caller named lands in the note's columns.
+ *
+ * Case-insensitive, so a hand-typed "training" updates the layout's "Training"
+ * column instead of growing a second one beside it, and the first header is
+ * pinned to the note's first cell for the reason on `RowUpdate`.
+ */
+function columnMap(
+	headers: readonly string[],
+	existing: readonly string[],
+): Map<string, number> {
+	const at = new Map<string, number>();
+	existing.forEach((header, index) => {
+		at.set(header.toLowerCase(), index);
+	});
+	const first = headers[0];
+	if (first !== undefined && existing.length > 0) at.set(first.toLowerCase(), 0);
+	return at;
+}
+
+/** A row update as cell indices, dropping any cell with nowhere to go. */
+function cellsByIndex(
+	update: RowUpdate,
+	columnAt: ReadonlyMap<string, number>,
+): Map<number, string> {
+	const values = new Map<number, string>();
+	for (const [header, value] of update) {
+		const index = columnAt.get(header.toLowerCase());
+		// A cell for a column that is neither in the table nor declared by the
+		// caller has nowhere to go; dropping the write beats widening the table
+		// by a column nothing will ever read.
+		if (index === undefined) continue;
+		values.set(index, value);
+	}
+	return values;
+}
+
+/** One appended row's line, filling every column the table has. */
+function appendedLine(
+	values: ReadonlyMap<number, string>,
+	width: number,
+	ending: string,
+): string {
+	const cells: string[] = [];
+	for (let index = 0; index < width; index++) {
+		cells.push(values.get(index) ?? '');
+	}
+	return '|' + cells.map(cellText).join('|') + '|' + ending;
+}
+
 /** Canonical table for a section that has none yet. */
 function freshTable(headers: readonly string[], updates: TableUpdates): string {
+	const columnAt = columnMap(headers, headers);
 	let out = '\n|' + headers.map(cellText).join('|') + '|\n';
 	out += '|' + headers.map(() => '---').join('|') + '|\n';
-	for (const [key, cells] of updates) {
-		const row = [key, ...headers.slice(1).map((h) => cells.get(h) ?? '')];
-		out += '|' + row.map(cellText).join('|') + '|\n';
+	for (const update of updates.added ?? []) {
+		out += appendedLine(cellsByIndex(update, columnAt), headers.length, '\n');
 	}
 	return out;
 }
@@ -202,9 +297,10 @@ function freshTable(headers: readonly string[], updates: TableUpdates): string {
  * to create one when the body has none, and to append a column the body's
  * table is missing. A body with no table at all gets a fresh canonical one.
  *
- * `headers[0]` is the column holding the row key — the skill's name, the
- * item's name — and is never written to on an existing row: renaming a row is
- * a layout change, and SPEC §10 keeps a layout change off character data.
+ * `headers[0]` is the column holding the row's name. It is written like any
+ * other cell where the caller asks for it: which rows a character may rename is
+ * the caller's rule to keep, and this file's job is only to put the text where
+ * the caller said.
  */
 export function writeTable(
 	body: string | null,
@@ -220,13 +316,10 @@ export function writeTable(
 	}
 
 	const headerLine = lineText(lines[span.start] as string);
-	const existing = splitCells(headerLine).cells.map((cell) => cell.trim());
-	// Column lookup is case-insensitive so a hand-typed "training" updates the
-	// layout's "Training" column instead of growing a second one beside it.
-	const columnAt = new Map<string, number>();
-	existing.forEach((header, index) => {
-		columnAt.set(header.toLowerCase(), index);
-	});
+	const existing = splitCells(headerLine).cells.map((cell) =>
+		unescapePipes(cell.trim()),
+	);
+	const columnAt = columnMap(headers, existing);
 
 	// Columns this caller owns that the table does not have yet. They are
 	// appended in declaration order, header row and every body row alike, so
@@ -297,54 +390,43 @@ export function writeTable(
 		});
 	}
 
-	const pending = new Map(updates);
-	for (let i = span.start + 2; i < span.end; i++) {
-		const line = out[i] as string;
-		const cells = splitCells(lineText(line)).cells;
-		const key = (cells[0] ?? '').trim();
-		const update = pending.get(key);
-		// Only the first row under a key is written; a duplicate below it is
-		// data the layout does not map, and it stays exactly as written.
-		if (update === undefined) continue;
-		pending.delete(key);
-		const values = new Map<number, string>();
-		for (const [header, value] of update) {
-			const index = columnAt.get(header.toLowerCase());
-			// A cell for a column that is neither in the table nor declared by
-			// the caller has nowhere to go; dropping the write beats widening
-			// the table by a column nothing will ever read.
-			if (index === undefined || index === 0) continue;
-			values.set(index, value);
-		}
+	// The body's first line, and the index a caller addresses it by.
+	const first = span.start + 2;
+	const removed = new Set(updates.removed ?? []);
+
+	for (const [index, update] of updates.rows ?? []) {
+		const at = first + index;
+		// A row that is about to go is not worth rewriting, and an index past
+		// the table is a stale read rather than a row to invent.
+		if (removed.has(index) || at < first || at >= span.end) continue;
+		const values = cellsByIndex(update, columnAt);
 		if (values.size === 0) continue;
-		out[i] = rewrite(line, values);
+		out[at] = rewrite(out[at] as string, values);
 	}
 
-	// Rows the layout declares that the note has never held. Appended in the
-	// order they were asked for, immediately after the table's last row, so
-	// anything written under the table stays under it.
-	if (pending.size > 0) {
-		const width = existing.length + added.length;
-		const appended: string[] = [];
-		// Match the last row's line ending, so a file using CRLF keeps to it.
-		const template = out[span.end - 1] as string;
-		const ending = template.slice(lineText(template).length) || '\n';
-		for (const [key, update] of pending) {
-			// The update is keyed by the caller's header spelling; the table's
-			// may differ in case, so match the way columnAt does.
-			const byHeader = new Map<string, string>();
-			for (const [header, value] of update) {
-				byHeader.set(header.toLowerCase(), value);
-			}
-			const cells = [key];
-			for (let index = 1; index < width; index++) {
-				const header = (existing[index] ?? added[index - existing.length]) ?? '';
-				cells.push(byHeader.get(header.toLowerCase()) ?? '');
-			}
-			appended.push('|' + cells.map(cellText).join('|') + '|' + ending);
-		}
-		out.splice(span.end, 0, ...appended);
+	// Match the last row's line ending, so a file using CRLF keeps to it.
+	const template = out[span.end - 1] as string;
+	const ending = template.slice(lineText(template).length) || '\n';
+	const width = existing.length + added.length;
+	const appended = (updates.added ?? []).map((update) =>
+		appendedLine(cellsByIndex(update, columnAt), width, ending),
+	);
+	// A last line carrying no ending at all would have the first appended row
+	// glued onto it. It is the one byte an append may add to a line nobody
+	// edited, and the alternative is a file that no longer parses.
+	if (appended.length > 0 && !template.endsWith('\n')) {
+		out[span.end - 1] = template + ending;
 	}
 
-	return out.join('');
+	const kept: string[] = [];
+	for (let at = first; at < span.end; at++) {
+		if (!removed.has(at - first)) kept.push(out[at] as string);
+	}
+
+	return [
+		...out.slice(0, first),
+		...kept,
+		...appended,
+		...out.slice(span.end),
+	].join('');
 }

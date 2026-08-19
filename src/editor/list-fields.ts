@@ -1,5 +1,5 @@
 /*
- * List-shaped config fields for the form editor: a Skill card's rows and
+ * List-shaped config fields for the form editor: a Table's rows and
  * columns.
  *
  * These are the fields a Setting row cannot express, because each entry is
@@ -16,6 +16,12 @@ import {
 	paintLevelRing,
 	parseLevel,
 } from '../components/level-ring';
+import {
+	COLUMN_TYPES,
+	ColumnType,
+	DEFAULT_COLUMN_TYPE,
+	TOTALLED_TYPES,
+} from '../components/column-types';
 
 /** What a list editor needs from the editor around it. */
 export interface ListContext {
@@ -530,6 +536,7 @@ interface ColumnEntry extends Record<string, unknown> {
 	input?: string;
 	signed?: boolean;
 	secondary?: boolean;
+	total?: boolean;
 }
 
 /**
@@ -537,14 +544,19 @@ interface ColumnEntry extends Record<string, unknown> {
  * file. The ids are the data model and read like it — "select" as an option
  * inside a select says nothing, and "toggle" beside "level" hides that a
  * one-level column is exactly a toggle.
+ *
+ * A `Record` over the type rather than a list of its own, so a column type added
+ * to the shared vocabulary does not compile until it has a word here. The order
+ * comes from there too, because which type is first decides which one is left
+ * out of the file.
  */
-const COLUMN_TYPES: readonly { id: string; label: string }[] = [
-	{ id: 'text', label: 'Text' },
-	{ id: 'number', label: 'Number' },
-	{ id: 'level', label: 'Level' },
-	{ id: 'toggle', label: 'Yes or no' },
-	{ id: 'computed', label: 'Computed' },
-];
+const COLUMN_TYPE_LABELS: Record<ColumnType, string> = {
+	text: 'Text',
+	number: 'Number',
+	level: 'Level',
+	toggle: 'Yes or no',
+	computed: 'Computed',
+};
 
 const LEVEL_INPUTS: readonly { id: string; label: string }[] = [
 	{ id: 'cycle', label: 'Cycle on click' },
@@ -561,6 +573,33 @@ function labelled(detail: HTMLElement, text: string): HTMLElement {
 	const field = detail.createDiv('sheetsmith-detail-field');
 	field.createSpan({ cls: 'sheetsmith-position-label', text });
 	return field;
+}
+
+/**
+ * An opt-in flag on a column's detail line. The label is the whole control: a
+ * checkbox that names itself needs no word above it repeating the point at
+ * twice the width.
+ *
+ * A fourth copy of this pattern is what earned it a function (PATTERNS §1);
+ * every one of them writes `true` or deletes the key, so a column carrying its
+ * default reads as a column that never set it.
+ */
+function checkField(
+	detail: HTMLElement,
+	text: string,
+	target: Record<string, unknown>,
+	key: string,
+	context: ListContext,
+): void {
+	const label = detail.createEl('label', { cls: 'sheetsmith-attribute-check' });
+	const input = label.createEl('input', { type: 'checkbox' });
+	input.checked = target[key] === true;
+	label.createSpan({ text });
+	input.addEventListener('change', () => {
+		if (input.checked) target[key] = true;
+		else delete target[key];
+		context.persist();
+	});
 }
 
 /** Optional string config: an empty field means the key is absent. */
@@ -662,17 +701,19 @@ export function renderColumnsEditor(
 		const type = listField(element, 'Holds').createEl('select', {
 			attr: { 'aria-label': 'What the column holds' },
 		});
-		for (const option of COLUMN_TYPES) {
-			type.createEl('option', { value: option.id, text: option.label });
+		for (const id of COLUMN_TYPES) {
+			type.createEl('option', { value: id, text: COLUMN_TYPE_LABELS[id] });
 		}
-		type.value = COLUMN_TYPES.some((option) => option.id === column.type)
+		type.value = COLUMN_TYPES.some((id) => id === column.type)
 			? (column.type as string)
-			: 'text';
+			: DEFAULT_COLUMN_TYPE;
 		type.dataset.sheetsmithFocus = `${prefix}-col-${column.key}-type`;
 		type.addEventListener('change', () => {
-			// The first option is the default and is left out of the file, the
-			// same rule the select fields in the component form follow.
-			if (type.value === COLUMN_TYPES[0]?.id) delete column.type;
+			// The default is left out of the file, the same rule the select fields
+			// in the component form follow — and it is the component's default,
+			// not this list's, or a column would be stored as one type and read
+			// as another.
+			if (type.value === DEFAULT_COLUMN_TYPE) delete column.type;
 			else column.type = type.value;
 			context.persist();
 			// The type decides which fields below are worth showing.
@@ -722,17 +763,7 @@ export function renderColumnsEditor(
 				context.persist();
 			});
 
-			const signedLabel = detail.createEl('label', {
-				cls: 'sheetsmith-attribute-check',
-			});
-			const signed = signedLabel.createEl('input', { type: 'checkbox' });
-			signed.checked = column.signed === true;
-			signedLabel.createSpan({ text: 'Signed' });
-			signed.addEventListener('change', () => {
-				if (signed.checked) column.signed = true;
-				else delete column.signed;
-				context.persist();
-			});
+			checkField(detail, 'Signed', column, 'signed', context);
 		} else if (column.type === 'level') {
 			// Assigned by the sample below, and called by the fields above it
 			// that change what the sample shows. A level column with a
@@ -958,32 +989,18 @@ export function renderColumnsEditor(
 		} else if (column.type === undefined || column.type === 'text') {
 			// Text is the default, so a column that has never had its type set
 			// is one of these too.
-			const secondaryLabel = detail.createEl('label', {
-				cls: 'sheetsmith-attribute-check',
-			});
-			const secondary = secondaryLabel.createEl('input', { type: 'checkbox' });
-			secondary.checked = column.secondary === true;
-			secondaryLabel.createSpan({ text: 'Secondary text' });
-			secondary.addEventListener('change', () => {
-				if (secondary.checked) column.secondary = true;
-				else delete column.secondary;
-				context.persist();
-			});
+			checkField(detail, 'Secondary text', column, 'secondary', context);
 		}
 
-		// Every column has this one: a control that names itself does not
-		// need a word above it repeating the point at twice the width.
-		const headingLabel = detail.createEl('label', {
-			cls: 'sheetsmith-attribute-check',
-		});
-		const hidden = headingLabel.createEl('input', { type: 'checkbox' });
-		hidden.checked = column.hideHeading === true;
-		headingLabel.createSpan({ text: 'Hide heading' });
-		hidden.addEventListener('change', () => {
-			if (hidden.checked) column.hideHeading = true;
-			else delete column.hideHeading;
-			context.persist();
-		});
+		// Offered beside the type, and only where there is something to add up:
+		// a total is a published name, so it has to come from a column whose
+		// cells are numbers before any formula runs.
+		if (TOTALLED_TYPES.has(column.type ?? 'text')) {
+			checkField(detail, 'Show a total', column, 'total', context);
+		}
+
+		// Every column has this one.
+		checkField(detail, 'Hide heading', column, 'hideHeading', context);
 	});
 
 	const footer = listEl.createDiv('sheetsmith-attribute-footer');
@@ -1000,6 +1017,18 @@ export function renderColumnsEditor(
 		listEl.createDiv('sheetsmith-attribute-footnote', (el) =>
 			el.setText(
 				'Select a ring to turn its letter on or off. A level name can also say it in writing, after a colon: "Proficient:" is a fill with no letter on it, and anything written after the colon, such as ★, is drawn in place of the initial.',
+			),
+		);
+	}
+	// Once for the list, and only where a column is totalled: a total is the one
+	// thing that turns a column key into a name the rest of the sheet reads, and
+	// nothing else on this form would say so. The component refuses the
+	// combination, and this is what keeps the author from meeting that refusal by
+	// surprise.
+	if (columns.some((column) => column.total === true)) {
+		listEl.createDiv('sheetsmith-attribute-footnote', (el) =>
+			el.setText(
+				'A total is published as "<component id>.<column key>", so a formula elsewhere on the sheet can read it. That makes a totalled column\'s key a name: letters, digits and underscores, where a column without a total may be headed anything.',
 			),
 		);
 	}

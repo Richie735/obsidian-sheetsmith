@@ -3,7 +3,9 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 /*
- * The component isolation rule, driven through eslint itself.
+ * The rules about what a component may import, driven through eslint itself.
+ *
+ * Two of them: no sibling component, and only `setIcon` from `obsidian`.
  *
  * docs/PATTERNS.md §1 marks "no component imports a sibling component" as
  * [checked], and CLAUDE.md tells every session that eslint enforces it. This is
@@ -65,12 +67,31 @@ const FORBIDDEN = [
 /** Shared modules a component is meant to reach, in both spellings. */
 const ALLOWED = [
 	"import { paintLevelRing } from './level-ring';",
+	"import { TOTALLED_TYPES } from './column-types';",
+	"import { TOTALLED_TYPES } from '../components/column-types';",
 	"import { formatDerived } from './stat-card';",
 	"import { paintLevelRing } from '../components/level-ring';",
 	"import { bindEditable } from '../interaction/editable';",
 	"import { showPopover } from '../ui/popover';",
 	"import { ComponentDefinition } from '../types';",
 ];
+
+/** What a component may take from the app, and what it may not. */
+const FROM_OBSIDIAN = {
+	allowed: ["import { setIcon } from 'obsidian';"],
+	refused: [
+		// An App is the route to the vault, and a component is handed its data.
+		"import { App } from 'obsidian';",
+		// The shared confirmation. A component has no App to open one into, which
+		// is the reason the delete gesture arms instead (UI.md §9).
+		"import { Modal } from 'obsidian';",
+		"import { Notice } from 'obsidian';",
+		"import { TFile } from 'obsidian';",
+		// Even alongside the allowed one: the allowlist is per name, not per file.
+		"import { setIcon, Modal } from 'obsidian';",
+		"import * as obsidian from 'obsidian';",
+	],
+};
 
 describe('a component cannot import a sibling', () => {
 	it.each(FORBIDDEN)('refuses %s', async (source) => {
@@ -81,5 +102,22 @@ describe('a component cannot import a sibling', () => {
 describe('a component can still import what it is meant to', () => {
 	it.each(ALLOWED)('allows %s', async (source) => {
 		expect(await lintAsComponent(source)).toEqual([]);
+	});
+});
+
+describe('a component takes only what it is allowed from obsidian', () => {
+	/*
+	 * An allowlist rather than a convention, because the cost of the first such
+	 * import was invisible until it was paid: the stub is the whole of `obsidian`
+	 * under vitest, it installed DOM helpers on load, and three node-environment
+	 * test files broke on import the moment a component reached it. A named
+	 * exception is a decision; a precedent is not.
+	 */
+	it.each(FROM_OBSIDIAN.allowed)('allows %s', async (source) => {
+		expect(await lintAsComponent(source)).toEqual([]);
+	});
+
+	it.each(FROM_OBSIDIAN.refused)('refuses %s', async (source) => {
+		expect(await lintAsComponent(source)).not.toEqual([]);
 	});
 });

@@ -508,7 +508,7 @@
 	transition: background-color 160ms ease;
 }
 
-.sheetsmith-view .sheetsmith-table tbody tr:hover {
+.sheetsmith-view .sheetsmith-table tbody tr:not(.sheetsmith-table-row-arming):hover {
 	background-color: var(--background-modifier-hover);
 }
 
@@ -531,8 +531,17 @@
 
 /* The pinned cell paints its own background, so it would sit out the row's
    hover. The tint is translucent, so laying it over as an image composites to
-   the same colour the rest of the row lands on. */
-.sheetsmith-view .sheetsmith-table tbody tr:hover .sheetsmith-table-name {
+   the same colour the rest of the row lands on.
+
+   Both hover rules stand down for a row whose delete control is armed. A hover
+   tint is (0,3,2) against the arming tint's (0,3,1), so with the pointer on the
+   row — which is where it is the instant after the first press — the row about to
+   be deleted was painted the ordinary hover grey. */
+.sheetsmith-view
+	.sheetsmith-table
+	tbody
+	tr:not(.sheetsmith-table-row-arming):hover
+	.sheetsmith-table-name {
 	background-image: linear-gradient(
 		var(--background-modifier-hover),
 		var(--background-modifier-hover)
@@ -662,8 +671,8 @@
 	   untrained ring would sit lower than the lettered states beside it and
 	   the whole column would twitch as levels changed. */
 	vertical-align: middle;
-	width: 1.6em;
-	height: 1.6em;
+	width: var(--sheetsmith-table-control, 1.6em);
+	height: var(--sheetsmith-table-control, 1.6em);
 	padding: 0;
 	margin: 0;
 	border: 1.5px solid var(--text-faint);
@@ -694,8 +703,13 @@
    Spend the cell's own padding on the target: the whole cell answers the
    press, while the ring stays as narrow as the checkbox it replaces. Sized to
    the padding exactly, so neighbouring cells meet without overlapping and a
-   press is never ambiguous about which control it landed on. */
-.sheetsmith-view .sheetsmith-table-cycle::after {
+   press is never ambiguous about which control it landed on.
+
+   One rule for both controls in the table rather than two carrying the same
+   arithmetic: the inset is the cell's own padding, and a copy of it is a copy
+   that drifts. */
+.sheetsmith-view .sheetsmith-table-cycle::after,
+.sheetsmith-view .sheetsmith-table-remove-button::after {
 	content: '';
 	position: absolute;
 	inset: calc(-1 * var(--size-2-2)) calc(-1 * var(--size-4-2));
@@ -761,13 +775,384 @@
 	);
 }
 
+/* A row the character added carries its own name, and the name is a field: it
+   is the row's own data and the one cell a fixed card never had. It takes the
+   same invisible-until-asked-for chrome as every other cell, and the name
+   column's own alignment, because it holds prose rather than a number. */
+.sheetsmith-view .sheetsmith-table-name-input {
+	/* Pulled back by exactly the padding and border it carries, so its text sits
+	   on the same left edge as a declared row's plain text. A character's row and
+	   a printed one are two rows of one list and must not read as two lists,
+	   which four pixels of indent is enough to do. */
+	margin-inline: calc(-1 * var(--sheetsmith-field-inset));
+	width: calc(100% + 2 * var(--sheetsmith-field-inset));
+	min-width: 6em;
+	/* And at the size the names beside it are. The other cells are a size down
+	   because they are data beside the row; this one is the row. */
+	font-size: inherit;
+	text-align: left;
+	/* A name longer than its column is truncated rather than cut mid-glyph: a
+	   hard cut with room to spare inside the field reads as damaged data. */
+	text-overflow: ellipsis;
+}
+
+/* A link to a note that does not exist yet, and this rule is not a preference —
+   it is the app's own, restated where ours live.
+   
+   Obsidian styles `.internal-link` and `.internal-link.is-unresolved` only inside
+   `.markdown-rendered` and `.metadata-property-value`. A sheet is neither, so an
+   anchor in a cell picks up the bare `a` rule — colour, underline, pointer, all
+   from the same variables — and nothing at all that says the note is missing.
+   Rendering the class was doing nothing: both states painted identically in the
+   app, which is what was reported.
+
+   Same declarations and the same documented variables as the app's rule, so a
+   theme restyling unresolved links restyles these too. An inventory of things
+   that have no notes yet is the ordinary case, and it has to be legible at a
+   glance which of them a press can go anywhere from. */
+.sheetsmith-view .internal-link.is-unresolved {
+	/* The two that carry the meaning take a fallback, and it is not belt and
+	   braces: a custom property that is not defined makes `color` invalid at
+	   computed-value time, which computes to `inherit` — so a theme without these
+	   would paint an unresolved link in the cell's own text colour and it would
+	   read as plain text rather than as a link at all. The fallbacks are the
+	   app's own defaults. */
+	color: var(--link-unresolved-color, var(--text-accent));
+	opacity: var(--link-unresolved-opacity, 0.7);
+	filter: var(--link-unresolved-filter);
+	text-decoration-style: var(--link-unresolved-decoration-style);
+	text-decoration-color: var(--link-unresolved-decoration-color);
+}
+
+/* Full strength under the pointer, as the app's does: the press works either way
+   — following an unresolved link is how the note gets created — so the faintness
+   is a status at rest rather than a control that is turned off. */
+@media (hover: hover) {
+	.sheetsmith-view .internal-link.is-unresolved:hover {
+		opacity: 1;
+		color: var(--link-color-hover);
+		text-decoration-color: var(--link-color-hover);
+		text-decoration-line: var(--link-decoration-hover);
+	}
+}
+
+/* A cell whose text holds a wikilink is two things at once: a link to follow and
+   text to edit. An input cannot contain an anchor, so they are two elements —
+   stacked in one grid cell rather than swapped, because the field has to stay in
+   the DOM and in the tab order either way (the view restores focus by counting
+   controls in a cell) and because neither child may change size on focus, or the
+   table reflows under a pointer already resting on it. */
+.sheetsmith-view .sheetsmith-table-linked {
+	display: grid;
+	/* One column that may shrink: without minmax a long link would push the
+	   column wider than the cell it is in. */
+	grid-template-columns: minmax(0, 1fr);
+	align-items: center;
+}
+
+.sheetsmith-view .sheetsmith-table-linked > * {
+	grid-area: 1 / 1;
+	min-width: 0;
+}
+
+/* The display layer sits exactly over the field's text: the same padding, the
+   same transparent border, the same size. Anything else and the rendered link
+   would jump sideways or vertically the moment the cell took focus. */
+.sheetsmith-view .sheetsmith-table-link-layer {
+	padding: var(--size-2-1) var(--size-2-2);
+	border: 1px solid transparent;
+	font-size: var(--font-ui-small);
+	line-height: inherit;
+	text-align: left;
+	/* The field shows its text on one line and so does this, and a run of spaces
+	   in a cell has to occupy the same width in both. */
+	white-space: pre;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	/* The press belongs to the cell, not to the layer over it: a click on the
+	   plain part of a cell falls through and the browser puts the caret where it
+	   landed. Only the links themselves answer a press. */
+	pointer-events: none;
+}
+
+.sheetsmith-view .sheetsmith-table-link-layer a {
+	pointer-events: auto;
+}
+
+/* Where the whole cell is one link — and only then, which is what the component
+   marks — the link does its own clipping.
+   `text-overflow` paints the ellipsis in the colour of the box that carries it,
+   so left on the layer a truncated link read as a link followed by three stray
+   dots in the cell's text colour. Moved onto the anchor the ellipsis is the
+   link's, and it follows the link's state for free — accent, or the faint
+   unresolved treatment. Mixed prose and links keep the layer's ellipsis, where
+   what is being cut off may be either. */
+.sheetsmith-view .sheetsmith-table-link-only > a {
+	display: block;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+/* With the field focused, the raw `[[Sunblade|sword]]` is what is being edited —
+   the same text the note holds, which is what a source-mode view of it would
+   show. The layer goes out of the way completely: transparent, and no longer a
+   press target, so a click inside the cell cannot land on a link that is not
+   visible.
+
+   Keyed on the *field's* focus rather than the container's, and that is
+   load-bearing rather than fussy. An anchor is focusable, so a press on a link
+   focuses it — and under `:focus-within` the layer would go inert between that
+   mousedown and its mouseup. The mouseup would then hit the field underneath, the
+   browser would dispatch the click to their common ancestor instead of the
+   anchor, and the link would quietly stop working. Nothing in a unit test sees
+   that: happy-dom has no hit testing, and a dispatched click skips it. */
+.sheetsmith-view
+	.sheetsmith-table-linked:has(.sheetsmith-table-input:focus)
+	.sheetsmith-table-link-layer {
+	opacity: 0;
+	pointer-events: none;
+}
+
+.sheetsmith-view
+	.sheetsmith-table-linked:has(.sheetsmith-table-input:focus)
+	.sheetsmith-table-link-layer
+	a {
+	pointer-events: none;
+}
+
+/* Unfocused, the field is the thing underneath: its text would show through the
+   layer, so it is hidden rather than the layer being made opaque. Colour only —
+   the field keeps its box, its hover border and its place in the tab order. */
+.sheetsmith-view .sheetsmith-table-linked .sheetsmith-table-input:not(:focus) {
+	color: transparent;
+}
+
+/* The name field pulls itself back by its own inset so its text lines up with a
+   declared row's plain name. The layer stacked over it has to make the same
+   move, and take the name's own size, or the rendered link sits a few pixels
+   right of and a size below the raw text it stands in for. */
+.sheetsmith-view .sheetsmith-table-name .sheetsmith-table-link-layer {
+	margin-inline: calc(-1 * var(--sheetsmith-field-inset));
+	width: calc(100% + 2 * var(--sheetsmith-field-inset));
+	font-size: inherit;
+}
+
+/* A gloss that is also a link takes the link colour and keeps the secondary size
+   and tracking. Faintness says "this qualifies the row"; the link colour says
+   "this can be followed", and only one of those two is discoverable by looking. */
+.sheetsmith-view .sheetsmith-table-input-secondary + .sheetsmith-table-link-layer {
+	font-size: calc(var(--font-ui-smaller) * 0.85);
+	letter-spacing: 0.06em;
+	color: var(--text-faint);
+}
+
+/* The delete column is as wide as its glyph, like every other column holding
+   a control rather than prose. */
+.sheetsmith-view .sheetsmith-table-remove {
+	width: 1%;
+}
+
+/* The delete glyph takes the level ring's measurements rather than the pool
+   stepper's: it lives in a table cell beside rings, and the table already has a
+   1.6em control answering a press with the whole cell as its hit target. There
+   is no shared glyph-button class in this repository today and this does not
+   invent one — two consumers earn duplication, not a module (PATTERNS §1), and
+   UI.md §9 gains a row when a third appears.
+
+   It is always rendered, and faint: UI.md §7 rules out a hover-only
+   affordance, and a phone has no hover to reveal one with. */
+.sheetsmith-view .sheetsmith-table-remove-button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	/* Aligned by its box, never by a baseline, for the ring's reason: the
+	   column would twitch as the glyph changed otherwise. */
+	vertical-align: middle;
+	width: var(--sheetsmith-table-control, 1.6em);
+	height: var(--sheetsmith-table-control, 1.6em);
+	padding: 0;
+	margin: 0;
+	border: none;
+	border-radius: 50%;
+	background-color: transparent;
+	box-shadow: none;
+	font-size: var(--font-ui-small);
+	line-height: 1;
+	color: var(--text-faint);
+	cursor: pointer;
+	/* Anchors the hit target below. */
+	position: relative;
+	/* A colour settle rather than motion, so reduced motion has nothing to
+	   strip: the control has no transform to lose. */
+	transition:
+		background-color 160ms ease,
+		color 160ms ease;
+}
+
+/* The icon takes the app's small icon size rather than the 24px a Lucide SVG
+   carries by default, which would overflow a control sized to a level ring. It
+   paints in `currentColor`, so the faint, full-contrast and armed states all
+   reach it without a rule of their own. */
+.sheetsmith-view .sheetsmith-table-remove-button .svg-icon {
+	width: var(--icon-s);
+	height: var(--icon-s);
+}
+
+/* Full contrast for the row being looked at, and for the control a keyboard is
+   on. Faint is for reading past, which is every other row.
+
+   **Both state rules stand down for an armed control**, and that is the whole
+   cascade problem in this block rather than a nicety. An armed control is one
+   press from an irreversible delete, and every one of these outranks the armed
+   rule below: this pair is (0,4,2) and (0,3,0) against its (0,2,0), so source
+   order never gets a say. Raising the armed rule to match would be an arms race
+   that the next rule added here wins by accident. Excluded, nothing competes:
+   armed is the only rule that matches an armed control.
+
+   Measured before this: arming with the pointer still on the glyph — which is
+   always the case for the instant after the first press — painted the ordinary
+   hover grey and `--text-normal`, so the guard on the only irreversible action on
+   a sheet looked exactly like a control being hovered. */
+.sheetsmith-view
+	.sheetsmith-table
+	tbody
+	tr:hover
+	.sheetsmith-table-remove-button:not(.sheetsmith-table-remove-armed),
+.sheetsmith-view
+	.sheetsmith-table-remove-button:focus-visible:not(.sheetsmith-table-remove-armed) {
+	color: var(--text-normal);
+}
+
+/* Hover answers the press with the surface every control on the sheet uses, and
+   nothing more: red is reserved for armed. A `color: var(--text-error)` sat here
+   and had never once applied — the row-hover rule above outranks it — and making
+   it work would have been worse than deleting it, since a glyph that cries danger
+   before anything is armed is the warning that means nothing when it counts. */
+.sheetsmith-view
+	.sheetsmith-table-remove-button:hover:not(.sheetsmith-table-remove-armed) {
+	background-color: var(--background-modifier-hover);
+}
+
+.sheetsmith-view .sheetsmith-table-remove-button:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
+}
+
+/* Armed: the next press deletes the row, so the control says so before
+   anything is applied. The glyph deliberately does not become a word — the
+   column is as wide as its content, so relabelling in place would move the
+   table under the finger already resting on it, which is what the pool's amount
+   panel was reversed over. The naming is in the tooltip, the accessible name,
+   and the announcement. */
+.sheetsmith-view .sheetsmith-table-remove-armed {
+	background-color: color-mix(
+		in srgb,
+		var(--text-error) 25%,
+		var(--background-primary)
+	);
+	color: var(--text-error);
+}
+
+/* And the row it belongs to is marked with it, so what is about to go is a row
+   the reader can name rather than one glyph in a column of them. A tint mixed
+   most of the way back to the page: the row still has to be read, and the error
+   modifier at full strength paints over it. */
+.sheetsmith-view .sheetsmith-table tbody .sheetsmith-table-row-arming {
+	background-color: color-mix(
+		in srgb,
+		var(--text-error) 12%,
+		var(--background-primary)
+	);
+}
+
+/* The pinned name cell paints its own background, so it would sit out the row's
+   tint. Inherited rather than restated, so the two cannot drift apart. */
+.sheetsmith-view
+	.sheetsmith-table
+	tbody
+	.sheetsmith-table-row-arming
+	.sheetsmith-table-name {
+	background-color: inherit;
+}
+
+/* The add control is a row, in the row position: it reads as "the next row"
+   rather than as chrome parked beside the table, and it picks up the row hover
+   the rows already have. The cell gives its padding to the button, so the whole
+   width of the row is the target. */
+.sheetsmith-view .sheetsmith-table-add td {
+	padding: 0;
+}
+
+.sheetsmith-view .sheetsmith-table-add-button {
+	width: 100%;
+	padding: var(--size-2-2) var(--size-4-2);
+	border: none;
+	border-radius: 0;
+	background-color: transparent;
+	box-shadow: none;
+	/* Left, under the name column, because that is where the row it adds
+	   begins. */
+	text-align: left;
+	font-size: var(--font-ui-small);
+	color: var(--text-muted);
+	cursor: pointer;
+	transition: color 160ms ease;
+}
+
+/* Pinned to the left edge while the table scrolls, for the reason the name
+   column is: the button is as wide as the table, so its label would scroll away
+   and leave a band of nothing where the next row is added. */
+.sheetsmith-view .sheetsmith-table-add-label {
+	display: inline-block;
+	position: sticky;
+	left: var(--size-4-2);
+}
+
+.sheetsmith-view .sheetsmith-table-add-button:hover {
+	color: var(--text-normal);
+}
+
+/* Inset, because the button fills its cell and an outline outside it would be
+   clipped by the container's own radius. */
+.sheetsmith-view .sheetsmith-table-add-button:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: -2px;
+}
+
+/* The last body row drops its rule because it would be a second line against
+   the container border — which stops being true the moment a totals row sits
+   under it. There the foot is the row at the container's edge, and the last row
+   keeps the line that separates it from the total. */
+.sheetsmith-view .sheetsmith-table:has(tfoot) tbody tr:last-child th,
+.sheetsmith-view .sheetsmith-table:has(tfoot) tbody tr:last-child td {
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.sheetsmith-view .sheetsmith-table tfoot th,
+.sheetsmith-view .sheetsmith-table tfoot td {
+	border-bottom: none;
+}
+
+/* "Total" is a label on a reading, not a row name, so it wears the thead's
+   quiet treatment. It stays a th carrying the name column's class, or it slides
+   out from under its own column on a phone-width sheet while the numbers stay
+   put. */
+.sheetsmith-view .sheetsmith-table tfoot .sheetsmith-table-name {
+	font-size: var(--font-smallest);
+	font-weight: var(--font-medium);
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+	color: var(--text-muted);
+}
+
 /* A finger has no hover to find the target with and no pixel to aim at, so
-   the ring itself grows rather than its invisible padding: expanding the hit
-   area any further vertically would reach into the rows above and below. */
+   the controls themselves grow rather than their invisible padding: expanding
+   the hit area any further vertically would reach into the rows above and
+   below. One declaration, because a ring and the delete glyph beside it must
+   not measure differently under the same finger. */
 @media (pointer: coarse) {
-.sheetsmith-view .sheetsmith-table-cycle {
-		width: 2.2em;
-		height: 2.2em;
+body {
+		--sheetsmith-table-control: 2.2em;
 	}
 
 }
@@ -825,6 +1210,12 @@
 /* An empty ring against a faint outline is the whole signal here. */
 .sheetsmith-view .sheetsmith-table-cycle {
 		border-color: var(--text-muted);
+	}
+
+/* Faint is a contrast the reader has said they do not want, and this one is
+	   a control rather than something to read past. */
+.sheetsmith-view .sheetsmith-table-remove-button {
+		color: var(--text-muted);
 	}
 
 /* The ramp trades contrast for a shape that can be read down the column,
