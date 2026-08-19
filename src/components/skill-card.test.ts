@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest';
 import { skillCard, SkillCardConfig, SkillCardData } from './skill-card';
-import { closePopover, LONG_PRESS } from './popover';
+import { closePopover, LONG_PRESS } from '../ui/popover';
 import { makeFieldExplainer, makeFieldResolver } from '../formula/resolve';
 import { Scope } from '../formula/expression';
 import { RenderContext } from '../types';

@@ -9,6 +9,16 @@ Review appearance and usability. **Feature:** $ARGUMENTS
 
 Read `docs/UI.md` and the feature's `docs/features/<slug>.md` before starting.
 
+**If the change touches a transition, a gesture, or anything that moves, also
+read `reference/motion.md` in this skill's folder** before judging it. It carries
+the standards for frequency, easing, duration, interruptibility and gesture feel,
+the vocabulary for saying precisely what is wrong, and a record of where this
+codebase already stands so a review does not re-litigate settled ground.
+
+It lives in the repository rather than as an installed skill on purpose: a clone
+on another machine has to review by the same standard, and a delegation to
+something machine-local would fail silently rather than loudly.
+
 ## You must look at it
 
 ```bash
@@ -48,7 +58,7 @@ Against the spec first:
 - Does it meet each acceptance criterion? Name the ones it misses.
 - Did it build something the spec's "deliberately not doing" ruled out?
 
-Then against `docs/UI.md` §10, both surfaces:
+Then against `docs/UI.md` §11, both surfaces:
 
 **Sheet** — both themes; narrow container reflow and overflow; the component at
 1, 2 and 3 columns wide filling its placement; numbers holding still while
@@ -62,10 +72,12 @@ what the sheet renders. `Surface → Both` shows a config change hit the card li
 
 Then the judgement calls `UI.md` cannot check for you:
 
-- Is this the shared vocabulary (`UI.md` §8), or a lookalike that will drift?
+- Is this the shared vocabulary (`UI.md` §9), or a lookalike that will drift?
 - What does a reader take from this at a glance, and is that the right thing?
 - Is anything reachable only by hover, or only by a gesture with no keyboard
   route?
+- Does anything move that is pressed every few seconds? `UI.md` §8 puts
+  frequency first, and a control panel earns feedback rather than animation.
 - Does the error text name a fix or only a fault?
 
 ## Output

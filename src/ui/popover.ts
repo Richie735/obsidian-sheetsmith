@@ -4,12 +4,15 @@
  * A `title` is the right carrier on a desktop — it costs no layout, no tab
  * stop, and no attention until asked for. It is also the whole story only
  * where there is a pointer: it has no long-press behaviour, and on a touch
- * device it never appears at all. So a level ring is an opaque letter with no
- * route to the word behind it, and a computed cell has no route to its
- * formula or to the name that formula could not find.
+ * device it never appears at all. So a mark standing in for a word leaves no
+ * route to the word, and a value computed from an expression leaves no route
+ * to the expression, or to the name the expression could not find. Both were
+ * observed on touch before this existed — on a level ring and on a computed
+ * table cell — but the shape is the general one, and this module is not
+ * entitled to know what either of those is.
  *
- * This is that route: anchored to the cell it explains, one at a time, and
- * dismissed by the next thing the user does.
+ * This is that route: anchored to whatever element it explains, one at a time,
+ * and dismissed by the next thing the user does.
  */
 
 /** How long a press has to be held before it is a request, not a tap. */

@@ -38,11 +38,8 @@ export interface StatConfig extends ComponentConfig {
 	derived?: string;
 	/** Hint shown while the note line is empty. */
 	notePlaceholder?: string;
-	/** Hide the label above the value. */
 	hideLabel?: boolean;
-	/** Show only the derived result, hiding the stored value. */
 	hideValue?: boolean;
-	/** Leave the note line off the card. */
 	hideNote?: boolean;
 	/** Prefix non-negative derived numbers with "+". Defaults to true. */
 	signed?: boolean;

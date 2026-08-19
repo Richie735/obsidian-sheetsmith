@@ -2,11 +2,24 @@ import obsidianmd from 'eslint-plugin-obsidianmd';
 import globals from 'globals';
 import { globalIgnores, defineConfig } from 'eslint/config';
 
+/**
+ * Why a component may not reach the registry.
+ *
+ * Worse than importing a sibling directly: `getComponent` hands back every
+ * component at once, and it makes index.ts import a module that imports it
+ * back.
+ */
+const REGISTRY_MESSAGE =
+	'A component must not import the component registry. It is how every other component becomes reachable, and it makes index.ts import a file that imports it back. Nothing outside a component needs to know that component exists.';
+
 export default defineConfig(
 	globalIgnores([
 		'node_modules',
 		'dist',
 		'esbuild.config.mjs',
+		// Build scripts, treated like esbuild.config.mjs above.
+		'styles.build.mjs',
+		'styles.build.d.mts',
 		'vitest.config.ts',
 		'version-bump.mjs',
 		'versions.json',
@@ -68,10 +81,18 @@ export default defineConfig(
 		},
 	},
 	{
-		// Components build DOM with the standard API rather than Obsidian's
-		// createEl helpers so they stay testable under happy-dom in vitest.
-		// The two are equivalent at runtime.
-		files: ['src/components/**/*.ts'],
+		// Everything that paints a surface builds DOM with the standard API
+		// rather than Obsidian's createEl helpers, so it stays testable under
+		// happy-dom in vitest. The two are equivalent at runtime.
+		//
+		// Scoped by the reason rather than by one folder: popover.ts carried
+		// this exemption while it lived in components/ and lost it by moving
+		// to ui/, though nothing about why it needs it changed.
+		files: [
+			'src/components/**/*.ts',
+			'src/ui/**/*.ts',
+			'src/interaction/**/*.ts',
+		],
 		rules: {
 			'obsidianmd/prefer-create-el': 'off',
 		},
@@ -90,6 +111,90 @@ export default defineConfig(
 			// is what the plugin's own tab implements. Until that migrates to
 			// the declarative API, calling it is the only way to render it.
 			'@typescript-eslint/no-deprecated': 'off',
+		},
+	},
+	{
+		// Hard constraint (docs/PATTERNS.md §1): nothing outside a component
+		// may know that component exists, so a component must never import a
+		// sibling. Shared behaviour is extracted to a module named for what it
+		// does — the painters and gesture modules on the allowlist below —
+		// never reached for through another component.
+		//
+		// Stated as an allowlist rather than a list of the component files, so
+		// a component added tomorrow is restricted without anyone remembering
+		// to come back here. A new *shared* module is the deliberate edit.
+		files: ['src/components/**/*.ts'],
+		ignores: [
+			// The registry imports all five to register them. That is its job.
+			'src/components/index.ts',
+			// A test imports its own subject, and a shared-behaviour test
+			// drives two components over the same cases on purpose (§1).
+			'src/components/*.test.ts',
+		],
+		rules: {
+			'no-restricted-imports': [
+				'error',
+				{
+					patterns: [
+						{
+							// Both spellings of a sibling. `no-restricted-imports`
+							// matches the import string literally, so restricting
+							// './*' alone left '../components/pool' passing clean —
+							// and that is the spelling that arrives by copy-paste
+							// out of a test or out of src/editor/, where it is the
+							// normal way to name this folder.
+							group: [
+								'./*',
+								'../components/*',
+								'!./level-ring',
+								'!./stat-card',
+								'!../components/level-ring',
+								'!../components/stat-card',
+							],
+							message:
+								'A component must not import another component. Move the shared behaviour into a module named for what it does — a sibling painter, or src/interaction/ — and import that from both.',
+						},
+					],
+					// The registry named by its directory rather than its file.
+					// './index' and '../components/index' are caught by the
+					// patterns above; '.' and '../components' resolve to the same
+					// module and are not — and reaching the registry is the worst
+					// version of this rule's failure, since `getComponent('pool')`
+					// hands back every sibling at once.
+					//
+					// Under `paths`, which matches an import string exactly,
+					// because as a *pattern* a bare '.' matches every relative
+					// import in the file and silently cancels the negations that
+					// keep the shared painters importable. That was measured, not
+					// assumed: with '.' in the group above, './level-ring' and
+					// './stat-card' were both reported restricted.
+					paths: [
+						{
+							name: '.',
+							message: REGISTRY_MESSAGE,
+						},
+						{
+							name: '../components',
+							message: REGISTRY_MESSAGE,
+						},
+					],
+				},
+			],
+		},
+	},
+	{
+		// Obsidian 1.13's declarative settings API describes a tab's settings
+		// as data so the app can index them for search. This tab is mostly the
+		// interim layout editor (docs/SPEC.md §12), a form whose shape is
+		// decided at runtime by the component the author selected, which is
+		// not something static definitions can describe. The argument, and
+		// when it gets adopted, is at the top of the file.
+		//
+		// Off here rather than inline: `eslint-comments/no-restricted-disable`
+		// in the recommended config forbids disabling this rule at its site.
+		files: ['src/settings.ts'],
+		rules: {
+			'obsidianmd/settings-tab/prefer-setting-definitions': 'off',
 		},
 	},
 	{

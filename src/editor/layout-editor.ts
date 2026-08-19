@@ -10,15 +10,15 @@ import {
 	TextComponent,
 	TFile,
 } from 'obsidian';
-import { getComponent, listComponentTypes } from './components';
+import { getComponent, listComponentTypes } from '../components';
 import { conditionMet } from './config-fields';
-import { ConfirmModal } from './confirm-modal';
+import { ConfirmModal } from '../ui/confirm-modal';
 import {
 	commitFunctionLibrary,
 	FunctionLibraryField,
 	renderFunctionLibrary,
 } from './function-library-field';
-import { createLayout, listLayouts } from './layouts';
+import { createLayout, listLayouts } from '../layouts';
 import {
 	ListContext,
 	addControlSpacers,
@@ -27,22 +27,22 @@ import {
 	renderRowsEditor,
 	showFieldError,
 } from './list-fields';
-import type SheetsmithPlugin from './main';
+import type SheetsmithPlugin from '../main';
 import {
 	DEFAULT_COLUMNS,
 	Layout,
 	parseLayout,
 	serialiseLayout,
-} from './parse/layout';
-import { parseTriggers } from './parse/triggers';
+} from '../parse/layout';
+import { parseTriggers } from '../parse/triggers';
 import { clamp, describeCell, findOverlaps, lastColumn } from './preview-grid';
 import {
 	commitTriggerList,
 	renderTriggerList,
 	TriggerListField,
 } from './trigger-list-field';
-import { ComponentConfig, ResetBinding } from './types';
-import { SheetView, VIEW_TYPE_SHEET } from './view/sheet-view';
+import { ComponentConfig, ResetBinding } from '../types';
+import { SheetView, VIEW_TYPE_SHEET } from '../view/sheet-view';
 
 /** Dropdown sentinel; layout file names can never collide with it. */
 const CREATE_LAYOUT_OPTION = '::create-layout::';

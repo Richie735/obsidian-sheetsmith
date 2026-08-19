@@ -37,19 +37,53 @@ The registry contract in `src/components/contract.test.ts` runs the §4.1 checks
 
 ## Component contract
 
-Every component implements five things, defined in `SPEC` §4.1:
+The members and what each one owes are `docs/SPEC.md` §4.1; the order to declare
+them in, and the shape of the file around them, are `docs/PATTERNS.md` §3. Both
+are checked by `src/components/contract.test.ts`, so a component that departs
+from either fails the build rather than review.
 
-`read` (section → data), `write` (data → section, byte-identical when unchanged), `render` (data + resolved values → DOM), `formulaFields` (which config fields accept an expression), and `configFields` (declared config fields the layout editor renders as a form).
-
-Plus an optional sixth, `scopeValues`, for components holding values other components' formulas can read (`abilities.DEX`). Components with nothing referencable omit it.
-
-Nothing outside a component should need to know that component exists. Adding one means implementing those five and registering it, not touching the renderer, the parser, or the layout editor.
+The rule worth repeating here, because everything else follows from it: **nothing
+outside a component needs to know that component exists.** Adding one means
+implementing the contract and registering it — one line in
+`src/components/index.ts` — and touching neither the renderer, the parser, nor
+the layout editor. A component never imports another component either, which
+eslint now enforces.
 
 ## Working order
 
 Build **component by component, not layer by layer.** Take one component all the way through read, write, render, and tests before starting the next. Order so far: Stat group, then Stat (dropped when Stat group first covered the card, rebuilt on top of it), Skill card, Pool, Track; the remaining six are variations. The layout schema assembles itself from component configs rather than being designed up front. See `SPEC` §12.
 
 Resist building the layout editor and the formula engine early. Both assume a working renderer and a proven file format, and both are the interesting parts, which is exactly why they are the trap.
+
+## When to commit
+
+**Not while the work is in progress.** The working tree is what gets reviewed,
+and it stays uncommitted until the change is settled.
+
+The loop is: build the thing, the user looks at it, findings come back, address
+them, repeat. Only when the user says the work is done does `/ship` split the
+whole result into commits.
+
+Do **not** commit after implementing a feature, after addressing a finding, after
+a refactor, or at any other natural-feeling pause, unless asked to. That includes
+the boundaries a feature spec names: those are a plan for the end, not a
+schedule to follow as you go.
+
+The reason is the review, not tidiness. Work that is already committed makes a
+correction expensive: what should be an edit becomes an amend or a follow-up
+commit, and the history ends up recording the back-and-forth instead of the
+result the user actually approved. Reviewing an uncommitted tree keeps every
+change cheap to undo right up until the moment it is not.
+
+Verification is continuous and committing is not: run `npm test`, `npm run lint`
+and `npm run build` as often as they are useful.
+
+- `/ship` is the only thing that commits, and only when invoked.
+- Subjects are Conventional Commits: `type: Subject`, standard types only, with
+  the subject itself in the log's existing voice. `/ship` carries the mapping
+  and the traps.
+- Never push. That is always the user's call.
+- Do not add `Co-Authored-By` trailers to commit messages.
 
 ## Commands
 
@@ -81,9 +115,14 @@ gitignored: it is Obsidian's CSS, and this repository is public.
 ## Conventions
 
 - Tabs, single quotes, per `.editorconfig`.
-- Sentence case for all user-facing UI text; `eslint-plugin-obsidianmd` enforces it.
+- Sentence case for all user-facing UI text. `obsidianmd/ui/sentence-case` reports it
+  as a warning, and `npm run lint` runs with `--max-warnings 0`, so a warning fails
+  the build exactly like an error.
 - Keep `main.ts` to plugin lifecycle only.
 - Do not commit `main.js`. It is a build artifact attached to releases.
+- Do not hand-edit `styles.css`. It is assembled from `src/styles/` by
+  `styles.build.mjs` and a build overwrites it; edit the part the rule belongs
+  to. It stays committed, unlike `main.js`, because the release workflow and the
+  harness both read it directly. A test fails if the two disagree.
 - Update `docs/SPEC.md` when a design decision changes, and move settled items out of §13 Open questions.
 - Follow `docs/PATTERNS.md`. Where the code does not yet match it, the gap is recorded in its §11 backlog rather than copied into new code.
-- Do not add `Co-Authored-By` trailers to commit messages.

@@ -22,7 +22,7 @@ import {
 	FieldValue,
 	ReadResult,
 } from '../types';
-import { bindEditable, UNRESOLVED_DELAY } from './editable';
+import { bindEditable, UNRESOLVED_DELAY } from '../interaction/editable';
 import {
 	levelCount,
 	levelName,
@@ -30,7 +30,7 @@ import {
 	paintLevelRing,
 	parseLevel,
 } from './level-ring';
-import { bindLongPress, showPopover } from './popover';
+import { bindLongPress, showPopover } from '../ui/popover';
 
 /** Column kinds. `computed` is read-only; the rest are character data. */
 export type SkillCardColumnType =

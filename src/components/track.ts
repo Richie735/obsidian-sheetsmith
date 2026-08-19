@@ -25,8 +25,9 @@
  * headings, three labels and three reset bindings kept in step by hand.
  */
 
+import { GESTURE_COMMIT } from '../interaction/commit-window';
 import { levelGlyph, levelName, parseLevel } from './level-ring';
-import { bindLongPress } from './popover';
+import { bindLongPress } from '../ui/popover';
 import { readFenced, writeFenced } from '../parse/fenced';
 import {
 	ComponentConfig,
@@ -109,14 +110,6 @@ export interface TrackData {
  * long to draw is still a run, and the number in the note is untouched.
  */
 export const MAX_SEGMENTS = 100;
-
-/**
- * How long a run of keyboard steps stays open before it is written. The rule
- * the Pool's held button already follows: feedback is continuous, persistence
- * is discrete, and a five-press climb is one change to the note rather than
- * five saves racing each other's re-renders.
- */
-const GESTURE_COMMIT = 700;
 
 /**
  * The furthest a run travels past either end of itself, in pixels, and how
@@ -463,6 +456,14 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 		return { self: { value: filled(VALUE_KEY) }, named };
 	},
 
+	write(data, body): string {
+		const updates = new Map<string, string>();
+		for (const [key, value] of Object.entries(data.values)) {
+			updates.set(key, value);
+		}
+		return writeFenced(body, updates);
+	},
+
 	applyReset(data, config, reset, context): ResetResult<TrackData> {
 		const marks = markSize(config);
 		const rows = runsOf(config);
@@ -533,14 +534,6 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 		// A binding carrying only a buffer instruction, which a track has none
 		// of. Nothing to do, and nothing failed.
 		return { ok: true, data: { values } };
-	},
-
-	write(data, body): string {
-		const updates = new Map<string, string>();
-		for (const [key, value] of Object.entries(data.values)) {
-			updates.set(key, value);
-		}
-		return writeFenced(body, updates);
 	},
 
 	render(container, config, data, context): void {

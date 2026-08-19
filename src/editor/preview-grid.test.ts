@@ -9,7 +9,7 @@
 
 import { describe, expect, it } from 'vitest';
 import { describeCell, findOverlaps, lastColumn } from './preview-grid';
-import { ComponentConfig } from './types';
+import { ComponentConfig } from '../types';
 
 const block = (
 	col: number,

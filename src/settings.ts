@@ -1,5 +1,5 @@
 import { App, PluginSettingTab, Setting } from 'obsidian';
-import { LayoutEditorSection } from './layout-editor';
+import { LayoutEditorSection } from './editor/layout-editor';
 import SheetsmithPlugin from './main';
 import { LAYOUT_KEY } from './types';
 
@@ -15,6 +15,23 @@ export const DEFAULT_SETTINGS: SheetsmithSettings = {
 	openInSheetView: true,
 };
 
+/*
+ * Obsidian 1.13 asks a settings tab to describe itself declaratively through
+ * `getSettingDefinitions()`, so the app can index each setting for search.
+ *
+ * This tab cannot, yet, and the obstacle is not effort. Most of it is not a
+ * list of settings at all: it is the interim layout editor (SPEC §12), an
+ * authoring form that rebuilds itself on every edit, carries a debounced
+ * draft, and generates a component's fields from its own `configFields` at
+ * runtime. Static definitions cannot express a form whose shape is decided by
+ * which component the author selected a moment ago.
+ *
+ * The M4 workspace view takes the editor out of settings, leaving exactly the
+ * two preferences the declarative API is for. That is when this gets adopted,
+ * and adopting it earlier would mean describing the editor as something it is
+ * not. The rule is turned off for this file in eslint.config.mts, because the
+ * plugin's own config forbids silencing it inline.
+ */
 export class SheetsmithSettingTab extends PluginSettingTab {
 	plugin: SheetsmithPlugin;
 	private layoutEditor: LayoutEditorSection;
@@ -22,7 +39,7 @@ export class SheetsmithSettingTab extends PluginSettingTab {
 	constructor(app: App, plugin: SheetsmithPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
-		this.layoutEditor = new LayoutEditorSection(plugin, () => this.display());
+		this.layoutEditor = new LayoutEditorSection(plugin, () => this.redraw());
 	}
 
 	hide(): void {
@@ -32,6 +49,18 @@ export class SheetsmithSettingTab extends PluginSettingTab {
 	}
 
 	display(): void {
+		this.redraw();
+	}
+
+	/*
+	 * The body of `display`, under a name of its own.
+	 *
+	 * Obsidian deprecated `display()` in 1.13, so anything calling it lands on
+	 * a deprecated symbol — including this tab calling itself to redraw, which
+	 * is the one caller that has nothing to do with the deprecation. Obsidian
+	 * still invokes `display()`; the plugin does not have to.
+	 */
+	private redraw(): void {
 		const { containerEl } = this;
 
 		// A redraw empties and rebuilds the tab. Preserve the scroll
@@ -49,7 +78,14 @@ export class SheetsmithSettingTab extends PluginSettingTab {
 
 		new Setting(containerEl)
 			.setName('Layout folder')
-			.setDesc('Folder where sheet layouts are stored.')
+			.setDesc(
+				// The label already says it is the folder for layouts. What it
+				// cannot say is what depends on it: lookup is by name inside
+				// this folder only, so moving the folder without moving the
+				// layouts leaves every character reporting a layout it can no
+				// longer find.
+				'Layouts are found here by name. A character naming one that is not in this folder reports it as missing instead of rendering.',
+			)
 			.addText((text) => {
 				text
 					.setPlaceholder('Sheetsmith layouts')

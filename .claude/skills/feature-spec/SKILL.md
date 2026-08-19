@@ -47,7 +47,7 @@ Only now. Cover:
 - What the component looks like and what a reader takes from it at a glance.
 - Every interaction, against `docs/UI.md` §6 and §7. Reuse the shared gestures;
   a new gesture needs an argument.
-- What it reuses from the shared vocabulary (`UI.md` §8) rather than redrawing.
+- What it reuses from the shared vocabulary (`UI.md` §9) rather than redrawing.
 - Its empty state and its error state, not only the populated one.
 - Its `configFields`: each field's label, kind, and a description stating a
   consequence.
@@ -62,6 +62,11 @@ by reading a test name. "Feels right" is not one.
 
 A list of commits in order, each a coherent step that builds and passes tests.
 This is what stops the work being retro-sliced at the end.
+
+**These are a plan for `/ship`, not a schedule to follow while building.** The
+work stays in one uncommitted tree through implementation and every round of
+findings; the boundaries are applied once, at the end, when the user says the
+change is settled. See `CLAUDE.md` § "When to commit".
 
 ## Output
 

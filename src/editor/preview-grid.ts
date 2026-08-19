@@ -9,7 +9,7 @@
  * it, and not testable at all while it lives inside the settings tab.
  */
 
-import { ComponentConfig, GridPosition } from './types';
+import { ComponentConfig, GridPosition } from '../types';
 
 export function clamp(value: number, low: number, high: number): number {
 	return Math.min(Math.max(value, low), high);
