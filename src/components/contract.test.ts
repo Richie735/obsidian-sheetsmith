@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { getComponent, listComponentTypes } from './index';
+import {
+	getComponent,
+	listComponentTypes,
+	unknownComponentMessage,
+} from './index';
 
 /*
  * Registry-wide contract checks (SPEC §4.1).
@@ -70,6 +74,15 @@ describe('component registry', () => {
 			(type) => getComponent(type)?.configFields ?? [],
 		);
 		expect(fields.length).toBeGreaterThan(25);
+	});
+
+	it('names the types a layout may use when one is unknown', () => {
+		// A stale layout file is the one place a user meets a type id they
+		// have to fix by hand, so the message carries the vocabulary rather
+		// than only the fault (docs/UI.md §12).
+		const message = unknownComponentMessage('skill-card');
+		expect(message).toContain('"skill-card"');
+		for (const type of types) expect(message).toContain(type);
 	});
 });
 

@@ -31,3 +31,17 @@ export function getComponent(type: string): ComponentDefinition | undefined {
 export function listComponentTypes(): string[] {
 	return [...registry.keys()];
 }
+
+/**
+ * What to say when a layout names a component type the registry does not have.
+ *
+ * The list of types is the fix rather than decoration. A layout file is
+ * hand-editable and shareable, so the author meeting this message has one
+ * question — what word would have worked — and `listComponentTypes()` is
+ * already the registry's public answer to it. Naming only the fault leaves
+ * them guessing at a vocabulary that is not written down anywhere they can
+ * see (`docs/UI.md` §12).
+ */
+export function unknownComponentMessage(type: string): string {
+	return `Unknown component type "${type}". Change it to one of: ${listComponentTypes().join(', ')}.`;
+}
