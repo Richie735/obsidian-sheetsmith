@@ -1,4 +1,11 @@
-import { Notice, TextFileView, WorkspaceLeaf } from 'obsidian';
+import {
+	getLinkpath,
+	HoverPopover,
+	Keymap,
+	Notice,
+	TextFileView,
+	WorkspaceLeaf,
+} from 'obsidian';
 import { getComponent, unknownComponentMessage } from '../components';
 import { closePopover } from '../ui/popover';
 import { ConfirmModal } from '../ui/confirm-modal';
@@ -21,9 +28,24 @@ import { parseFunctions } from '../formula/functions';
 import { buildSheetScope } from '../formula/sheet';
 import { DEFAULT_COLUMNS, Layout } from '../parse/layout';
 import { parseTriggers } from '../parse/triggers';
-import { ComponentConfig, ComponentDefinition } from '../types';
+import { ComponentConfig, ComponentDefinition, LinkContext } from '../types';
 
 export const VIEW_TYPE_SHEET = 'sheetsmith-sheet';
+
+/**
+ * What counts as a control for the purpose of putting focus back.
+ *
+ * One constant because capture and restore have to agree exactly: they identify
+ * a control by its index among these, so a selector that listed one more kind on
+ * one side than the other would restore focus to the wrong control rather than
+ * fail visibly. Anchors are here because a cell may hold a rendered wikilink.
+ *
+ * Exported because the component tests that assert a control keeps its index
+ * across a rebuild were each carrying their own copy of it, which is three
+ * answers to "what does the view count?" and two of them silently stale the
+ * moment this one grows a kind (PATTERNS §1).
+ */
+export const FOCUSABLE = 'input, select, textarea, button, a[href]';
 
 /**
  * How long the undo stays offered after a trigger. Long enough to notice a
@@ -70,6 +92,16 @@ export class SheetView extends TextFileView {
 	private plugin: SheetsmithPlugin;
 	/** Generation counter; a render that awaits and comes back stale bails. */
 	private renderId = 0;
+	/**
+	 * Where a hover preview opened from one of this sheet's links lives.
+	 *
+	 * Declared because the view hands itself to `hover-link` as the popover's
+	 * parent, and a parent is the thing that owns one: only `MarkdownView`
+	 * declares this, so a `TextFileView` passing itself was promising an
+	 * interface it did not implement and Page preview was assigning onto an
+	 * object with no place for it.
+	 */
+	hoverPopover: HoverPopover | null = null;
 
 	constructor(leaf: WorkspaceLeaf, plugin: SheetsmithPlugin) {
 		super(leaf);
@@ -262,6 +294,7 @@ export class SheetView extends TextFileView {
 					library,
 				),
 				onChange: (edited: unknown) => this.applyEdit(component, config, edited),
+				link: this.linkContext(),
 			});
 		}
 
@@ -271,6 +304,46 @@ export class SheetView extends TextFileView {
 		this.renderTriggers(triggerBar, layout, prepared, sheet, library);
 
 		this.restoreFocus(focus);
+	}
+
+	/**
+	 * What a component needs to make a note reference in a cell work.
+	 *
+	 * The vault half of a rendered wikilink: a component draws the anchor from
+	 * the text alone and asks this whether the note exists, where to go, and what
+	 * to preview. Resolved against this note's own path, so a relative link in a
+	 * cell means what it would mean written in the note body.
+	 */
+	private linkContext(): LinkContext {
+		const source = this.file?.path ?? '';
+		return {
+			resolves: (target) =>
+				this.app.metadataCache.getFirstLinkpathDest(
+					getLinkpath(target),
+					source,
+				) !== null,
+			open: (target, event) => {
+				// The modifier that means "new tab" is the app's to define, not a
+				// component's — which is half the reason this is passed in.
+				void this.app.workspace.openLinkText(
+					target,
+					source,
+					Keymap.isModEvent(event),
+				);
+			},
+			preview: (target, anchor, event) => {
+				// The Page preview plugin listens for this and owns the popover,
+				// including whether the user asked for it on hover at all.
+				this.app.workspace.trigger('hover-link', {
+					event,
+					source: VIEW_TYPE_SHEET,
+					hoverParent: this,
+					targetEl: anchor,
+					linktext: target,
+					sourcePath: source,
+				});
+			},
+		};
 	}
 
 	/**
@@ -301,9 +374,7 @@ export class SheetView extends TextFileView {
 		const cellIndex = cells.findIndex((cell) => cell.contains(active));
 		if (cellIndex < 0) return null;
 		const controls = Array.from(
-			(cells[cellIndex] as Element).querySelectorAll(
-				'input, select, textarea, button',
-			),
+			(cells[cellIndex] as Element).querySelectorAll(FOCUSABLE),
 		);
 		const controlIndex = controls.indexOf(active);
 		if (controlIndex < 0) return null;
@@ -324,9 +395,7 @@ export class SheetView extends TextFileView {
 			saved.cell
 		];
 		if (!cell) return;
-		const control = cell.querySelectorAll('input, select, textarea, button')[
-			saved.control
-		];
+		const control = cell.querySelectorAll(FOCUSABLE)[saved.control];
 		if (!control || !control.instanceOf(HTMLElement)) return;
 		control.focus({ preventScroll: true });
 		if (control.instanceOf(HTMLInputElement) && saved.start !== null) {

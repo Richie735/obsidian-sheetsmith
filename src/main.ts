@@ -18,6 +18,15 @@ export default class SheetsmithPlugin extends Plugin {
 		await this.loadSettings();
 		this.addSettingTab(new SheetsmithSettingTab(this.app, this));
 		this.registerView(VIEW_TYPE_SHEET, (leaf) => new SheetView(leaf, this));
+		// A sheet's cells can hold wikilinks, so the view emits `hover-link` for
+		// them. Registering it is what makes Page preview treat this view as a
+		// source it knows: the user gets an entry for Sheetsmith in that plugin's
+		// settings, and with it the choice of whether a preview wants the Mod key
+		// — which matters on a card whose rows are dense with links.
+		this.registerHoverLinkSource(VIEW_TYPE_SHEET, {
+			display: this.manifest.name,
+			defaultMod: false,
+		});
 		registerCommands(this);
 		registerAutoOpen(this);
 	}

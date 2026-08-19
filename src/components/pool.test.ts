@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { FOCUSABLE } from '../view/sheet-view';
 import { pool, PoolConfig, PoolData } from './pool';
 import { RenderContext } from '../types';
 
@@ -1891,10 +1892,10 @@ describe('pool amount control', () => {
 		put(amount, '17');
 		amount.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
 		expect(document.activeElement).toBe(parts(el).trigger);
-		const controls = Array.from(el.querySelectorAll('input, select, textarea, button'));
+		const controls = Array.from(el.querySelectorAll(FOCUSABLE));
 		const openIndex = controls.indexOf(parts(el).trigger as Element);
 		open(el);
-		const whileOpen = Array.from(el.querySelectorAll('input, select, textarea, button'));
+		const whileOpen = Array.from(el.querySelectorAll(FOCUSABLE));
 		expect(whileOpen.indexOf(parts(el).trigger as Element)).toBe(openIndex);
 	});
 
