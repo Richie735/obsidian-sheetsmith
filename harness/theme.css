@@ -96,6 +96,21 @@ body.theme-light {
 	--text-muted: #5c5c5c;
 	--text-faint: #999999;
 	--text-accent: #705dcf;
+	/* Link variables, at the app's own defaults. The unresolved ones are the
+	   reason they are here: styles.css paints an unresolved link through them,
+	   and a harness missing them would render one in the cell's own text colour —
+	   a link that reads as plain text, which is the failure this instrument is
+	   supposed to reveal rather than invent. */
+	--link-color: #705dcf;
+	--link-color-hover: #8875ff;
+	--link-decoration: underline;
+	--link-decoration-hover: underline;
+	--link-decoration-thickness: auto;
+	--link-unresolved-color: #705dcf;
+	--link-unresolved-opacity: 0.7;
+	--link-unresolved-filter: none;
+	--link-unresolved-decoration-style: solid;
+	--link-unresolved-decoration-color: rgba(112, 93, 207, 0.3);
 	--text-error: #c0392b;
 	--text-on-accent: #ffffff;
 	--interactive-accent: #8b6cef;
@@ -115,6 +130,11 @@ body.theme-dark {
 	--text-muted: #b3b3b3;
 	--text-faint: #666666;
 	--text-accent: #a882ff;
+	/* The dark half of the link palette; see the light block for why. */
+	--link-color: #a882ff;
+	--link-color-hover: #c0a6ff;
+	--link-unresolved-color: #a882ff;
+	--link-unresolved-decoration-color: rgba(168, 130, 255, 0.3);
 	--text-error: #ff6b6b;
 	--text-on-accent: #ffffff;
 	--interactive-accent: #8b6cef;
@@ -345,6 +365,29 @@ body.theme-dark {
 	border-left: 1px dashed var(--background-modifier-border);
 	border-right: 1px dashed var(--background-modifier-border);
 	min-height: 60vh;
+}
+
+/*
+ * Anchors, standing in for one app.css rule.
+ *
+ * `harness:calibrate` takes the theme variables and the settings chrome, and the
+ * app's bare `a` rule is neither — so without this a rendered wikilink here paints
+ * as a browser-default blue link rather than an accent one. These are the app's
+ * own declarations from its own variables.
+ *
+ * It deliberately stops there. The *unresolved* treatment belongs to
+ * `styles.css`, because Obsidian scopes its own to `.markdown-rendered` and a
+ * plugin view never gets it — and an approximation of it here is what hid that:
+ * the harness showed a resolved and an unresolved link as different shades while
+ * the app showed them identical, so the review passed on an instrument that was
+ * kinder than the app. A stand-in for something the plugin has to own itself is
+ * worse than no stand-in at all.
+ */
+a {
+	color: var(--link-color, var(--text-accent));
+	text-decoration-line: var(--link-decoration, underline);
+	text-decoration-thickness: var(--link-decoration-thickness, auto);
+	cursor: var(--cursor-link, pointer);
 }
 
 .harness-note {

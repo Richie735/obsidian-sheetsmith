@@ -28,7 +28,7 @@ import {
 } from '../src/formula/resolve';
 import { buildSheetScope, PublishedComponent } from '../src/formula/sheet';
 import { Layout } from '../src/parse/layout';
-import { ComponentConfig, ComponentDefinition } from '../src/types';
+import { ComponentConfig, ComponentDefinition, LinkContext } from '../src/types';
 import { brokenSamples, emptySamples, Sample, SAMPLES } from './samples';
 import { harnessLayout, renderSettings } from './settings-panel';
 
@@ -126,6 +126,43 @@ function applyEdit(entry: Live, edited: unknown): void {
 	draw();
 }
 
+/** A note the sample links to that deliberately does not exist. */
+const MISSING_NOTE = 'Torch of Revealing';
+
+/**
+ * What the last link gesture would have done, so a shot can say so.
+ *
+ * Written into the line directly rather than through `draw()`. Redrawing on a
+ * *hover* rebuilt the sheet under the pointer: the element being hovered was
+ * replaced mid-gesture, so a press landed on one anchor and released on its
+ * replacement and the click never dispatched at all. The app rebuilds on an edit,
+ * never on a preview, so the redraw was the instrument inventing a failure — and
+ * an instrument that cannot be hovered cannot be used to review a link.
+ */
+let linkLog: HTMLElement | null = null;
+
+function sayLink(said: string): void {
+	if (linkLog === null) return;
+	linkLog.textContent = `${said}. There is no vault here, so nothing opens.`;
+}
+
+/**
+ * The vault half of a rendered wikilink, faked.
+ *
+ * The anchor itself needs none of this — a component draws it from the cell's
+ * text — so what this adds is the two things only a vault can answer: whether
+ * the note exists, and what a press does. Everything resolves except one target,
+ * so both link states are on screen at once; a press writes a line instead of
+ * navigating, because there is nowhere here to navigate to.
+ */
+function linkContext(): LinkContext {
+	return {
+		resolves: (target) => target !== MISSING_NOTE,
+		open: (target) => sayLink(`Would open "${target}"`),
+		preview: (target) => sayLink(`Would preview "${target}"`),
+	};
+}
+
 function renderSheet(into: HTMLElement): void {
 	const view = document.createElement('div');
 	view.className = 'sheetsmith-view';
@@ -167,9 +204,15 @@ function renderSheet(into: HTMLElement): void {
 			resolveField: makeFieldResolver(component, config, data, sheet),
 			explainField: makeFieldExplainer(component, config, data, sheet),
 			onChange: (edited: unknown) => applyEdit(entry, edited),
+			link: linkContext(),
 		});
 	}
 
+	// Always present, so a link gesture has somewhere to write without a rebuild.
+	linkLog = document.createElement('p');
+	linkLog.className = 'harness-note';
+	linkLog.textContent = 'Press or hover a link in a cell.';
+	into.appendChild(linkLog);
 	into.appendChild(noteBodies());
 }
 
