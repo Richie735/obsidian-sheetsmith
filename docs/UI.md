@@ -234,10 +234,14 @@ look at PNGs rather than clicking through.
 
 ## 11. Backlog
 
-| Gap | Fix |
-| --- | --- |
-| No check on literal colours | Extend `styles.test.ts`: assert no hex, `rgb()`, `hsl()` or named colour outside a comment. Currently zero, so the check lands green. |
-| No check on the `--sheetsmith-` knob prefix | Same file: assert every custom property declared in the plugin's own blocks carries the prefix. |
-| `styles.css` is one 118KB file | Its inline comments are excellent, but section boundaries exist only as comments. Split alongside the `src/editor/` extraction, so sheet styles and editor styles stop sharing a file. |
-| Reduced-motion coverage unverified | 28 `transition` declarations against 5 `prefers-reduced-motion` blocks. One block can cover several selectors, so this is not necessarily a gap. Confirm coverage in the harness rather than by counting. |
-| `styles.css` assumes a settings design Obsidian no longer has | `styles.css:83` says "Hairlines between fields carry the settings rhythm; keep them". Confirmed stale against Obsidian 1.13's own `app.css`: `.setting-item` now carries `--setting-items-background` and `--setting-items-radius` and draws each setting as a card with no hairline between. The rhythm that comment preserves is gone, and the rules tuned to sit with it are tuned against a frame that no longer exists. Re-tune against the calibrated harness, or state that the plugin deliberately keeps its own rhythm inside its accent-bordered form. |
+Where the code does not yet match this file. These are findings, not licences:
+new work follows the sections above.
+
+Empty. Every row this section held has been fixed: literal colours and the
+knob prefix are checked in `styles.test.ts`, `styles.css` is split by surface
+under `src/styles/`, reduced-motion coverage is confirmed in tests and rendered
+by `harness:shot`, and the stale appeal to Obsidian's pre-1.13 settings rhythm
+has been answered where it was written — a component form keeps its own rhythm
+inside its accent border, deliberately.
+
+Add a row when a review finds a gap it is not fixing in the same pass.

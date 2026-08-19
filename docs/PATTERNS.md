@@ -38,10 +38,23 @@ The real test is the one this contract already implies: *could a reader state
 this file's job in one sentence without using "and"?* When the answer is no, the
 file holds more than one thing.
 
-> **Known violation.** `pool.ts` fails this test today. Its first ~850 lines are
-> a gesture engine — scrub, momentum projection, hold-to-repeat ramping, refusal
-> and absorb flashes — and its `ComponentDefinition` does not begin until line
-> 856. Two responsibilities, one file. See §11.
+> **The worked example.** `pool.ts` used to fail this test: its first ~850 lines
+> were a gesture engine — scrub, momentum projection, hold-to-repeat ramping —
+> and its `ComponentDefinition` did not begin until line 856. Two
+> responsibilities, one file, and neither of them small.
+>
+> Worth keeping as the example because of what the fix had to get right. The
+> gesture moved to `src/interaction/`, but the *class names* stayed with the
+> caller: a module in `interaction/` is passed `'sheetsmith-pool-step'` rather
+> than naming a pool itself. That is the difference between splitting a file and
+> actually separating two responsibilities — the second one leaves neither half
+> knowing what the other is for.
+>
+> Note also what did not move. The flash timings and the temporary-points
+> buffer read like gesture code and are not: they are the Pool's own feedback
+> and its own rule. Atomicity is what forced the split, not reuse — the engine
+> has one consumer, and §1 is explicit that one consumer earns no
+> generalisation.
 
 ### Reusable: shared on the third consumer, guarded when duplicated
 
@@ -130,8 +143,9 @@ Every component follows the same order. A reader who knows one knows them all.
    Contract first, then the data path in the order it runs, then rendering last
    because it is the longest.
 
-`pool.ts` currently orders `applyReset` before `write`. Harmless, and worth
-settling one way in the conformance pass.
+Checked in `contract.test.ts`, along with the rule that a component declares
+nothing outside the contract — otherwise a new member falls outside the order
+and is covered by neither.
 
 ### Registering it
 
@@ -357,20 +371,10 @@ decided.
 ## 11. Conformance backlog
 
 Where the code does not yet match this file. These are findings, not licences:
-new code follows the patterns above.
+new code follows the patterns above. A row leaves when it is fixed — a backlog
+that keeps solved rows stops being read.
 
 | Gap | Where | Fix |
 | --- | --- | --- |
-| Gesture engine inside a component | `pool.ts` lines ~78-855 | Extract to `src/interaction/` (scrub, hold-repeat, projection, flashes). Track is the second consumer, so §1 asks for a guard test across both copies until a third arrives and earns the extraction. |
-| Component member order varies | `pool.ts` (`applyReset` before `write`) | Settle on §3's order. |
-| Two responsibilities in one file | `layout-editor.ts`, 1329 code lines at 22% comment | Split by responsibility once the M4 workspace view lands, since that move rewrites it anyway. |
-| `description` optional on config fields | `contract.test.ts` | Promote to a checked rule. |
-| No check that components stay isolated | — | `no-restricted-imports`: a file in `components/` may not import a sibling component module, only shared ones. |
-| No check on `sheetsmith-` class prefix | — | Extend `styles.test.ts` or add a source check. |
-| `npm run lint` passes with warnings | `package.json` | `eslint .` carries no `--max-warnings 0`, so every rule from `obsidianmd.configs.recommended` is advisory and the CI lint job goes green regardless. Only rules set to `error` by hand bite. **The repo is 2 warnings away from being able to turn this on**: both are in `src/settings.ts`, about adopting Obsidian's 1.13 declarative settings API (`getSettingDefinitions`). Adopt it or disable that rule, then add the flag. |
-| Docs overstate enforcement | `CLAUDE.md` | `CLAUDE.md`'s Conventions section says `eslint-plugin-obsidianmd` "enforces" sentence case. It warns, and the lint script passes on warnings, so nothing enforces it. Fix the wording, or fix the lint script and make the wording true. |
-| Root is a junk drawer | `src/` | Six modules sit at root that are all one responsibility — the layout editor: `layout-editor.ts`, `config-fields.ts`, `list-fields.ts`, `trigger-list-field.ts`, `function-library-field.ts`, `preview-grid.ts`. Move to `src/editor/`. |
-| `interaction/`, `editor/` and `ui/` do not exist yet | `src/` | Create them with the moves above and the `pool.ts` extraction. `confirm-modal.ts` and `components/popover.ts` are the `ui/` candidates: neither knows what a component is. `editable.ts` moves to `interaction/`. |
-| Restating doc comments | `stat.ts`, `stat-group.ts` | Drop the interface comments on the `hide*` flags that duplicate their own `configFields` description (§9). |
-| `layout-editor.ts` has no tests | `src/` | 1722 lines, the surface where every layout is authored, and there is no `layout-editor.test.ts`. It was untestable while the stub covered only `Platform` and `setIcon`; the stub now carries `Setting`, the component builders, an in-memory `Vault`, `Modal` and `PluginSettingTab`, so the obstacle is gone. The harness exercises it end to end already, which is the proof it can be driven headlessly. |
-| `AGENTS.md` and `CLAUDE.md` predate this file | repo root | Both are always-loaded and neither points at `docs/PATTERNS.md` for anything but the two lines already fixed. Read them once against §1–§10 and delete or redirect what is now stated in two places, so a session is not given the same rule twice in two voices. |
+| Two responsibilities in one file | `layout-editor.ts` | Deliberately deferred, not overlooked. The split waits for the M4 workspace view, which rewrites this module anyway; splitting it twice would be the waste. It has tests now, so the move will be guarded when it comes. |
+| Gesture modules have no test file beside them | `src/interaction/` | `scrub.ts`, `hold-repeat.ts` and `editable.ts` are covered thoroughly, but through `pool.test.ts`, `track.test.ts` and the component tests rather than their own files — against §10's one-test-file-per-module. It may be that §10 is what should change here: a gesture is only meaningfully driven through a control that uses it, and a test file of its own would have to build a fake card first, which is what those component tests already are. Settle it rather than leaving it implicit. |
