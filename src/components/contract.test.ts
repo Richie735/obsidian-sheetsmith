@@ -36,6 +36,17 @@ describe('component registry', () => {
 	it('registers each type exactly once', () => {
 		expect(new Set(types).size).toBe(types.length);
 	});
+
+	it('declares enough config fields for the per-field checks to mean anything', () => {
+		// Every config field rule below runs inside a per-component loop over
+		// `configFields`. A registry that stopped handing them out would pass
+		// all of them by iterating nothing at all, so assert the loops have
+		// something to look at before trusting that they looked.
+		const fields = types.flatMap(
+			(type) => getComponent(type)?.configFields ?? [],
+		);
+		expect(fields.length).toBeGreaterThan(25);
+	});
 });
 
 describe.each(types)('component "%s"', (type) => {
@@ -86,11 +97,15 @@ describe.each(types)('component "%s"', (type) => {
 		expect(Array.isArray(component?.configFields)).toBe(true);
 	});
 
-	it('gives every config field a key, a label, and a known kind', () => {
+	it('gives every config field a key, a label, a known kind, and a description', () => {
+		// The description is not decoration: the layout editor renders it as
+		// the only explanation of what the setting does to the note, and a
+		// field without one is a field the author has to guess at.
 		for (const field of component?.configFields ?? []) {
 			expect(field.key).toBeTruthy();
 			expect(field.label).toBeTruthy();
 			expect(KINDS).toContain(field.kind);
+			expect(field.description).toBeTruthy();
 		}
 	});
 

@@ -1,5 +1,7 @@
 /*
- * Cascade guards on styles.css.
+ * Guards on styles.css, and on the class names that reach it.
+ *
+ * Most of this file is cascade guards.
  *
  * Obsidian styles `input[type='text']` at specificity (0,1,1), setting a
  * background, a border, padding and a font size. A rule targeting a bare
@@ -14,7 +16,7 @@
  * check that stops it shipping that way twice.
  */
 
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const CSS = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
@@ -381,5 +383,148 @@ describe('the pool\'s controls are one height by construction', () => {
 				`no fallback: ${line.trim()}`,
 			).toBe(true);
 		}
+	});
+});
+
+describe('every colour on the sheet comes from the theme', () => {
+	/*
+	 * A literal colour is a colour that does not change with the theme. It
+	 * looks right in whichever one it was written in and wrong in the other,
+	 * and the wrongness only shows up for the users who did not pick that
+	 * theme — which is to say, never in review.
+	 *
+	 * Obsidian publishes a full palette as CSS variables. Everything the
+	 * plugin paints takes one, or a `color-mix` of one.
+	 */
+
+	/** Declarations as (property, value), comments stripped. */
+	function declarations(): { property: string; value: string }[] {
+		const withoutComments = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+		return [
+			...withoutComments.matchAll(
+				/(?:^|[;{])\s*(--?[-a-zA-Z][-a-zA-Z0-9]*|[a-zA-Z][-a-zA-Z0-9]*)\s*:\s*([^;{}]+)/gm,
+			),
+		].map((match) => ({
+			property: (match[1] ?? '').trim(),
+			value: (match[2] ?? '').trim(),
+		}));
+	}
+
+	const LITERAL =
+		/#[0-9a-fA-F]{3,8}\b|\b(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch)\(|\b(?:white|black|red|green|blue|gr[ae]y|orange|yellow|purple|pink)\b/;
+
+	/**
+	 * A fully transparent stop. It names the absence of a colour rather than a
+	 * colour, so it cannot be theme-dependent and there is no variable for it.
+	 */
+	const TRANSPARENT_STOP = /rgba\(\s*0\s*,\s*0\s*,\s*0\s*,\s*0\s*\)/g;
+
+	const all = declarations();
+
+	it('finds the declarations it is meant to be checking', () => {
+		expect(all.length).toBeGreaterThan(500);
+	});
+
+	it('names no literal colour', () => {
+		const literals: string[] = [];
+		for (const { property, value } of all) {
+			// An embedded SVG used as a mask carries its own alpha channel,
+			// and `stroke='black'` there is that channel at full — the paint
+			// comes from whatever theme variable is behind the mask. The
+			// colour word is part of the image, not part of the palette.
+			if (value.includes('url("data:')) continue;
+			if (LITERAL.test(value.replace(TRANSPARENT_STOP, ''))) {
+				literals.push(`${property}: ${value.replace(/\s+/g, ' ')}`);
+			}
+		}
+		expect(literals).toEqual([]);
+	});
+});
+
+describe('every custom property the plugin declares is its own', () => {
+	/*
+	 * Obsidian's variables live in the same cascade. Declaring an unprefixed
+	 * `--track-width` on a component would either collide with a theme's
+	 * variable of that name or quietly become one for everything nested
+	 * inside — a bug with no stack trace and no failing assertion, found only
+	 * by a user on a theme nobody tested.
+	 */
+	const declared = [
+		...CSS.replace(/\/\*[\s\S]*?\*\//g, '').matchAll(
+			/(?:^|[;{])\s*(--[-a-zA-Z0-9]+)\s*:/gm,
+		),
+	].map((match) => match[1] as string);
+
+	it('finds the properties it is meant to be checking', () => {
+		expect(new Set(declared).size).toBeGreaterThan(12);
+	});
+
+	it('prefixes every one with --sheetsmith-', () => {
+		const foreign = [...new Set(declared)].filter(
+			(name) => !name.startsWith('--sheetsmith-'),
+		);
+		expect(foreign).toEqual([]);
+	});
+});
+
+describe('every class the plugin adds is its own', () => {
+	/*
+	 * The counterpart to the rule above, on the DOM side. An unprefixed class
+	 * lands in the same global namespace as Obsidian's and every other
+	 * plugin's, so it is styled by whatever else claims the name.
+	 *
+	 * `src/test/obsidian-stub.ts` is exempt, and is not an exception to the
+	 * rule so much as the reason for it: the stub reimplements Obsidian's own
+	 * DOM for vitest, so it has to spell Obsidian's class names — `mod-cta`,
+	 * `setting-item`, `modal`. A prefixed stub would be asserting against a
+	 * DOM that does not exist in the app.
+	 */
+	const EXEMPT = 'src/test/obsidian-stub.ts';
+
+	/** Every `.ts` file under src/, as a repo-relative path. */
+	function sources(dir = 'src'): string[] {
+		const found: string[] = [];
+		for (const entry of readdirSync(new URL(`../${dir}`, import.meta.url), {
+			withFileTypes: true,
+		})) {
+			const path = `${dir}/${entry.name}`;
+			if (entry.isDirectory()) found.push(...sources(path));
+			else if (entry.name.endsWith('.ts')) found.push(path);
+		}
+		return found;
+	}
+
+	/**
+	 * Class names passed to `classList.add`, from quoted strings and from the
+	 * fixed head of a template literal — `sheetsmith-stat-group-align-${x}`
+	 * is checked on its prefix, which is the part that has to be owned.
+	 */
+	function classesAdded(source: string): string[] {
+		const found: string[] = [];
+		for (const call of source.matchAll(/classList\.add\(([^)]*)\)/g)) {
+			for (const literal of (call[1] ?? '').matchAll(
+				/'([^']*)'|"([^"]*)"|`([^`$]*)/g,
+			)) {
+				const name = literal[1] ?? literal[2] ?? literal[3] ?? '';
+				if (name !== '') found.push(name);
+			}
+		}
+		return found;
+	}
+
+	const files = sources().filter((path) => path !== EXEMPT);
+	const added = files.flatMap((path) =>
+		classesAdded(readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')),
+	);
+
+	it('finds the classes it is meant to be checking', () => {
+		expect(added.length).toBeGreaterThan(50);
+	});
+
+	it('prefixes every one with sheetsmith-', () => {
+		const foreign = [...new Set(added)].filter(
+			(name) => !name.startsWith('sheetsmith-'),
+		);
+		expect(foreign).toEqual([]);
 	});
 });

@@ -139,8 +139,13 @@ export interface ConfigFieldSpec {
 		| 'track-rows'
 		| 'rows'
 		| 'columns';
-	/** Help text shown under the field. */
-	description?: string;
+	/**
+	 * Help text shown under the field. Required: a field the layout editor
+	 * renders with no explanation is a field the author has to guess at, and
+	 * the guess is usually about what the setting does to the note. State the
+	 * consequence, not the label.
+	 */
+	description: string;
 	/**
 	 * Optional grouping label; consecutive fields sharing one render under
 	 * a subheading in the layout editor.
