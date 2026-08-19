@@ -44,6 +44,18 @@ const DEFAULTS = [
 	{ name: 'sheet-error', query: 'surface=sheet&theme=dark&state=broken', size: '1400,900' },
 	{ name: 'settings-light', query: 'surface=settings&theme=light', size: '1500,1500' },
 	{ name: 'settings-dark', query: 'surface=settings&theme=dark', size: '1500,1500' },
+	{
+		// The stylesheet carries five `prefers-reduced-motion` blocks and the
+		// gesture code two more branches, and none of it was ever rendered —
+		// the unit tests cover the script paths, but nothing looked at what
+		// the CSS does. A still cannot show motion; it can show a control
+		// that lost a transform it needed for its resting state, which is the
+		// failure a reduced-motion block actually risks.
+		name: 'sheet-reduced-motion',
+		query: 'surface=sheet&theme=dark',
+		size: '1400,900',
+		flags: ['--force-prefers-reduced-motion'],
+	},
 ];
 
 const args = process.argv.slice(2);
@@ -63,6 +75,7 @@ for (const view of views) {
 			// The page renders, then the settings tab renders asynchronously.
 			// Without a budget the shot lands on an empty stage.
 			'--virtual-time-budget=3000',
+			...(view.flags ?? []),
 			`--window-size=${view.size}`,
 			`--screenshot=${out}`,
 			`${page}?${view.query}`,
