@@ -110,6 +110,59 @@ export const SAMPLES: Sample[] = [
 			'| Persuasion | 0 | | |',
 		].join('\n'),
 	},
+	{
+		config: {
+			id: 'inventory',
+			type: 'table',
+			label: 'Inventory',
+			position: { col: 1, row: 5, width: 8, height: 2 },
+			rowHeader: 'Item',
+			// The open-row card: the layout declares the gear every character
+			// starts with, and the player adds the rest. A Blades load list is
+			// the case that needs both on one list at once.
+			openRows: true,
+			rows: [{ label: 'Adventurer\'s pack' }],
+			columns: [
+				{ key: 'Qty', type: 'number', min: 0 },
+				{ key: 'Weight', type: 'number', total: true },
+				{ key: 'Worn', type: 'toggle', hideHeading: true, total: true },
+				{ key: 'Notes', type: 'text' },
+			],
+		} as ComponentConfig,
+		body: [
+			'| Item | Qty | Weight | Worn | Notes |',
+			'| --- | --- | --- | --- | --- |',
+			"| Adventurer's pack | 1 | 12 | no | bedroll, rations |",
+			'| [[Sunblade\\|sword]] | 1 | 3 | yes | attuned |',
+			'| Dagger | 2 | 1 | yes | in [[Bag of Holding]] |',
+			'| Dagger | 1 | 1 | no | thrown |',
+			'| [[Torch of Revealing]] | 1 |  | no | not written up yet |',
+			'| Chalk \\| charcoal | 1 |  | no |  |',
+		].join('\n'),
+	},
+	{
+		config: {
+			id: 'attacks',
+			type: 'table',
+			label: 'Attacks',
+			position: { col: 9, row: 5, width: 4, height: 2 },
+			rowHeader: 'Attack',
+			// Nothing declared: every row is the character's. The card the empty
+			// state was written for, since "rows come from the layout" is
+			// precisely wrong here.
+			openRows: true,
+			columns: [
+				{ key: 'Hit', type: 'number' },
+				{ key: 'Damage', type: 'text' },
+			],
+		} as ComponentConfig,
+		body: [
+			'| Attack | Hit | Damage |',
+			'| --- | --- | --- |',
+			'| Longsword | 5 | 1d8+2 |',
+			'| Dagger | 5 | 1d4+2 |',
+		].join('\n'),
+	},
 ];
 
 /** The same layout with nothing stored: every component's empty state. */
@@ -123,11 +176,26 @@ export function emptySamples(): Sample[] {
  */
 export function brokenSamples(): Sample[] {
 	return SAMPLES.map((sample) => {
-		const config = { ...sample.config } as ComponentConfig & { key?: string };
+		const config = { ...sample.config } as ComponentConfig & {
+			key?: string;
+			openRows?: boolean;
+			columns?: { type?: string; total?: boolean }[];
+		};
 		// A key holding a colon is refused by every fenced component, because a
 		// colon is what separates key from value in the block.
 		if (sample.config.type === 'stat') {
 			config.key = 'bad:key';
+		}
+		// A total on a text column, which is the misconfiguration the open-row
+		// card can actually be given: a total is what it publishes, and a text
+		// column has nothing to add up. Only the open card, so the fixed one
+		// stays rendered beside it for comparison.
+		if (config.openRows === true) {
+			config.columns = (config.columns ?? []).map((column) =>
+				column.type === undefined || column.type === 'text'
+					? { ...column, total: true }
+					: column,
+			);
 		}
 		return { config, body: sample.body };
 	});
