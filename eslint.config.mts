@@ -2,6 +2,16 @@ import obsidianmd from 'eslint-plugin-obsidianmd';
 import globals from 'globals';
 import { globalIgnores, defineConfig } from 'eslint/config';
 
+/**
+ * Why a component may not reach the registry.
+ *
+ * Worse than importing a sibling directly: `getComponent` hands back every
+ * component at once, and it makes index.ts import a module that imports it
+ * back.
+ */
+const REGISTRY_MESSAGE =
+	'A component must not import the component registry. It is how every other component becomes reachable, and it makes index.ts import a file that imports it back. Nothing outside a component needs to know that component exists.';
+
 export default defineConfig(
 	globalIgnores([
 		'node_modules',
@@ -127,13 +137,45 @@ export default defineConfig(
 				{
 					patterns: [
 						{
+							// Both spellings of a sibling. `no-restricted-imports`
+							// matches the import string literally, so restricting
+							// './*' alone left '../components/pool' passing clean —
+							// and that is the spelling that arrives by copy-paste
+							// out of a test or out of src/editor/, where it is the
+							// normal way to name this folder.
 							group: [
 								'./*',
+								'../components/*',
 								'!./level-ring',
 								'!./stat-card',
+								'!../components/level-ring',
+								'!../components/stat-card',
 							],
 							message:
 								'A component must not import another component. Move the shared behaviour into a module named for what it does — a sibling painter, or src/interaction/ — and import that from both.',
+						},
+					],
+					// The registry named by its directory rather than its file.
+					// './index' and '../components/index' are caught by the
+					// patterns above; '.' and '../components' resolve to the same
+					// module and are not — and reaching the registry is the worst
+					// version of this rule's failure, since `getComponent('pool')`
+					// hands back every sibling at once.
+					//
+					// Under `paths`, which matches an import string exactly,
+					// because as a *pattern* a bare '.' matches every relative
+					// import in the file and silently cancels the negations that
+					// keep the shared painters importable. That was measured, not
+					// assumed: with '.' in the group above, './level-ring' and
+					// './stat-card' were both reported restricted.
+					paths: [
+						{
+							name: '.',
+							message: REGISTRY_MESSAGE,
+						},
+						{
+							name: '../components',
+							message: REGISTRY_MESSAGE,
 						},
 					],
 				},
