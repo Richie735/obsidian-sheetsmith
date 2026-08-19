@@ -15,8 +15,8 @@
  */
 
 import { Setting } from 'obsidian';
-import { Layout } from './parse/layout';
-import { parseTriggers } from './parse/triggers';
+import { Layout } from '../parse/layout';
+import { parseTriggers } from '../parse/triggers';
 
 const TRIGGER_PLACEHOLDER = 'Long rest';
 const PROBLEMS_ID = 'sheetsmith-trigger-problems';

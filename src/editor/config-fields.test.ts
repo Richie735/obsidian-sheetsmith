@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
 import { conditionMet } from './config-fields';
-import { ConfigFieldSpec } from './types';
+import { ConfigFieldSpec } from '../types';
 
 /*
  * A conditional field is matched against the controlling field's *effective*

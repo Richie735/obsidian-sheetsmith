@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it } from 'vitest';
 import { LayoutEditorSection } from './layout-editor';
-import type SheetsmithPlugin from './main';
-import { Layout, parseLayout, serialiseLayout } from './parse/layout';
-import { DEFAULT_SETTINGS } from './settings';
-import { App } from './test/obsidian-stub';
+import type SheetsmithPlugin from '../main';
+import { Layout, parseLayout, serialiseLayout } from '../parse/layout';
+import { DEFAULT_SETTINGS } from '../settings';
+import { App } from '../test/obsidian-stub';
 
 /*
  * The layout editor, driven through its own DOM.

@@ -18,8 +18,8 @@
  */
 
 import { Setting } from 'obsidian';
-import { parseFunctions } from './formula/functions';
-import { Layout } from './parse/layout';
+import { parseFunctions } from '../formula/functions';
+import { Layout } from '../parse/layout';
 
 /**
  * Sample definitions for the field. Held as constants because they are

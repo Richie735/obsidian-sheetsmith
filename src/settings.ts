@@ -1,5 +1,5 @@
 import { App, PluginSettingTab, Setting } from 'obsidian';
-import { LayoutEditorSection } from './layout-editor';
+import { LayoutEditorSection } from './editor/layout-editor';
 import SheetsmithPlugin from './main';
 import { LAYOUT_KEY } from './types';
 
