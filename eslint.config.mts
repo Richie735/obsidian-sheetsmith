@@ -68,10 +68,18 @@ export default defineConfig(
 		},
 	},
 	{
-		// Components build DOM with the standard API rather than Obsidian's
-		// createEl helpers so they stay testable under happy-dom in vitest.
-		// The two are equivalent at runtime.
-		files: ['src/components/**/*.ts'],
+		// Everything that paints a surface builds DOM with the standard API
+		// rather than Obsidian's createEl helpers, so it stays testable under
+		// happy-dom in vitest. The two are equivalent at runtime.
+		//
+		// Scoped by the reason rather than by one folder: popover.ts carried
+		// this exemption while it lived in components/ and lost it by moving
+		// to ui/, though nothing about why it needs it changed.
+		files: [
+			'src/components/**/*.ts',
+			'src/ui/**/*.ts',
+			'src/interaction/**/*.ts',
+		],
 		rules: {
 			'obsidianmd/prefer-create-el': 'off',
 		},
@@ -120,7 +128,6 @@ export default defineConfig(
 								'./*',
 								'!./editable',
 								'!./level-ring',
-								'!./popover',
 								'!./stat-card',
 							],
 							message:
