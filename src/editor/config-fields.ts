@@ -6,7 +6,7 @@
  * the same reason `src/parse/` and `src/formula/` stay pure.
  */
 
-import { ConfigFieldSpec } from './types';
+import { ConfigFieldSpec } from '../types';
 
 /**
  * Whether a conditional field's controlling key holds the value it asks for.

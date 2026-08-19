@@ -166,7 +166,44 @@ sheet.
 
 ---
 
-## 8. The shared vocabulary
+## 8. Motion
+
+Movement is judged by frequency first. A character sheet is a control panel: the
+same rings, pools and tracks are pressed dozens of times in a session, so
+anything that animates on every press makes the sheet feel slower the longer it
+is used. **Restraint here is the correct answer, not a lack of ambition.**
+
+The sheet also lives inside someone's notes and should not behave more
+energetically than the app around it.
+
+- **Motion earns its place by doing a job** [judgement]: showing state changed,
+  keeping the reader oriented, softening a jump, confirming a press landed.
+  Anything touched every few seconds gets feedback, not animation.
+- **Transitions, never `@keyframes`** [judgement]. A transition can be
+  interrupted and retargeted mid-flight; a keyframe animation restarts from
+  zero. Everything here is repeatable and reversible, so everything is a
+  transition. The plugin currently has zero `@keyframes` and that is worth
+  keeping.
+- **Never `ease-in`.** It delays the instant the user is watching.
+- **Motion stays under 300ms.** A colour or opacity fade is not motion and may
+  run longer when it is deliberately slow.
+- **Prefer `transform` and `opacity`.** Animating `width` or `height` costs
+  layout and paint, so it needs a reason stated in a comment. The pool fill and
+  the track response both animate `width` and both carry that reason.
+- **Gesture values are grabbable at any instant** and continue from where they
+  are, rather than snapping to a start.
+
+The tuned constants in `src/interaction/` — projection deceleration, throw
+decay, scrub resistance, hold ramp, velocity window — are decisions taken
+against the real control, with the argument in the code beside them. Treat them
+as settled unless a specific failure is observed.
+
+The full standards, and the vocabulary for describing motion precisely, are in
+`.claude/skills/design-review/reference/motion.md`.
+
+---
+
+## 9. The shared vocabulary
 
 New components reuse these rather than inventing a lookalike. A fourth kind of
 surface beside a row of cards reads as loose chrome floating on the page.
@@ -186,7 +223,7 @@ differently from the other under the same finger.
 
 ---
 
-## 9. Failure appears in place
+## 10. Failure appears in place
 
 A misconfigured component renders `.sheetsmith-error` into its own container and
 nothing else. The rest of the sheet stays live and editable (`SPEC` §10). There
@@ -197,7 +234,7 @@ Error text names the fix: `"max: 'con' is not defined on this sheet"`, not
 
 ---
 
-## 10. Reviewing appearance
+## 11. Reviewing appearance
 
 Run `npm run harness`. Check each of these, because none is visible in code.
 
@@ -232,12 +269,17 @@ look at PNGs rather than clicking through.
 
 ---
 
-## 11. Backlog
+## 12. Backlog
 
-| Gap | Fix |
-| --- | --- |
-| No check on literal colours | Extend `styles.test.ts`: assert no hex, `rgb()`, `hsl()` or named colour outside a comment. Currently zero, so the check lands green. |
-| No check on the `--sheetsmith-` knob prefix | Same file: assert every custom property declared in the plugin's own blocks carries the prefix. |
-| `styles.css` is one 118KB file | Its inline comments are excellent, but section boundaries exist only as comments. Split alongside the `src/editor/` extraction, so sheet styles and editor styles stop sharing a file. |
-| Reduced-motion coverage unverified | 28 `transition` declarations against 5 `prefers-reduced-motion` blocks. One block can cover several selectors, so this is not necessarily a gap. Confirm coverage in the harness rather than by counting. |
-| `styles.css` assumes a settings design Obsidian no longer has | `styles.css:83` says "Hairlines between fields carry the settings rhythm; keep them". Confirmed stale against Obsidian 1.13's own `app.css`: `.setting-item` now carries `--setting-items-background` and `--setting-items-radius` and draws each setting as a card with no hairline between. The rhythm that comment preserves is gone, and the rules tuned to sit with it are tuned against a frame that no longer exists. Re-tune against the calibrated harness, or state that the plugin deliberately keeps its own rhythm inside its accent-bordered form. |
+Where the code does not yet match this file. These are findings, not licences:
+new work follows the sections above. A row leaves when it is fixed — a backlog
+that keeps solved rows stops being read.
+
+| Gap | Where | Fix |
+| --- | --- | --- |
+| An unlabelled example reads as the field's value | `editor/trigger-list-field.ts`, `editor/function-library-field.ts`, `editor/layout-editor.ts` | Each renders a bare `<code>` under its description with no framing word, while the textarea's own `setPlaceholder` already carries a *different* example in the idiomatic place. In the harness sample the function library's visible example is byte-identical to the saved value, so the field reads as though the value were printed twice, and the triggers field shows "Short rest" both as the example and as a real entry. Frame it — "For example: …" — or drop it and let the placeholder do the work. |
+| The stat note clips mid-word | `.sheetsmith-stat-note-input` | No `text-overflow`, so at a 620px container "chain mail, shield" renders as "chain mail, sl": a hard cut with room to spare inside the pill, which reads as damaged data rather than as truncation. Five other rules in `sheet.css` already set `text-overflow: ellipsis`, and the card label directly above it correctly shows "ARMOUR C…". Set it here too — it applies to an unfocused input — and carry the full value in `title`. |
+| §9 names Track as a user of the level ring | §9 above, `components/track.ts` | `paintLevelRing`'s only callers are `skill-card.ts` and `editor/list-fields.ts`. Track imports `levelGlyph`, `levelName` and `parseLevel` and paints its own segments, which render as rounded squares against the ring's circles. The two shapes probably *should* differ — a track counts marks across segments, a ring cycles one value — so the fix is the table rather than the code. As written, §9 promises a shared painter that does not exist, which is the drift it exists to warn about. |
+| An unknown component type names the fault, not the fix | `view/sheet-view.ts` | `Unknown component type "toggle".` leaves the author to guess what they may write instead, against §10. A layout naming an unbuilt component is the likely way to meet this, since the editor's add menu can only offer registered types. `listComponentTypes()` is already the registry's public list; name them in the message. |
+
+Add a row when a review finds a gap it is not fixing in the same pass.

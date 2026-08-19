@@ -15,7 +15,7 @@ import {
 	MAX_LEVELS,
 	paintLevelRing,
 	parseLevel,
-} from './components/level-ring';
+} from '../components/level-ring';
 
 /** What a list editor needs from the editor around it. */
 export interface ListContext {

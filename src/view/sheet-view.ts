@@ -1,7 +1,7 @@
 import { Notice, TextFileView, WorkspaceLeaf } from 'obsidian';
 import { getComponent } from '../components';
-import { closePopover } from '../components/popover';
-import { ConfirmModal } from '../confirm-modal';
+import { closePopover } from '../ui/popover';
+import { ConfirmModal } from '../ui/confirm-modal';
 import { loadLayout } from '../layouts';
 import type SheetsmithPlugin from '../main';
 import {

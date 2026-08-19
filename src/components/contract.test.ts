@@ -26,6 +26,30 @@ const KINDS = [
 /** Config keys the layout editor owns. A component must not redeclare them. */
 const RESERVED_KEYS = ['id', 'type', 'label', 'position', 'reset'];
 
+/**
+ * The order a component declares its members in (docs/PATTERNS.md §3): the
+ * contract first, then the data path in the order it actually runs, then
+ * rendering last because it is the longest.
+ *
+ * Checked rather than left to review because it is invisible in one. A member
+ * in the wrong place reads perfectly well on its own — Pool and Track both put
+ * `applyReset` before `write` and neither looked wrong — and the cost is only
+ * ever paid later, by the reader who learns one component and then cannot find
+ * their place in the next.
+ */
+const MEMBER_ORDER = [
+	'type',
+	'storage',
+	'formulaFields',
+	'configFields',
+	'read',
+	'scopeValues',
+	'write',
+	'hasBuffer',
+	'applyReset',
+	'render',
+];
+
 const types = listComponentTypes();
 
 describe('component registry', () => {
@@ -35,6 +59,17 @@ describe('component registry', () => {
 
 	it('registers each type exactly once', () => {
 		expect(new Set(types).size).toBe(types.length);
+	});
+
+	it('declares enough config fields for the per-field checks to mean anything', () => {
+		// Every config field rule below runs inside a per-component loop over
+		// `configFields`. A registry that stopped handing them out would pass
+		// all of them by iterating nothing at all, so assert the loops have
+		// something to look at before trusting that they looked.
+		const fields = types.flatMap(
+			(type) => getComponent(type)?.configFields ?? [],
+		);
+		expect(fields.length).toBeGreaterThan(25);
 	});
 });
 
@@ -86,11 +121,15 @@ describe.each(types)('component "%s"', (type) => {
 		expect(Array.isArray(component?.configFields)).toBe(true);
 	});
 
-	it('gives every config field a key, a label, and a known kind', () => {
+	it('gives every config field a key, a label, a known kind, and a description', () => {
+		// The description is not decoration: the layout editor renders it as
+		// the only explanation of what the setting does to the note, and a
+		// field without one is a field the author has to guess at.
 		for (const field of component?.configFields ?? []) {
 			expect(field.key).toBeTruthy();
 			expect(field.label).toBeTruthy();
 			expect(KINDS).toContain(field.kind);
+			expect(field.description).toBeTruthy();
 		}
 	});
 
@@ -100,6 +139,25 @@ describe.each(types)('component "%s"', (type) => {
 				expect(field.options ?? []).not.toHaveLength(0);
 			}
 		}
+	});
+
+	it('declares its members in the order §3 fixes', () => {
+		const declared = Object.keys(component ?? {});
+		// Only the ones this component has, in the order it has them. A
+		// component omitting scopeValues or applyReset is not a finding; one
+		// declaring render before read is.
+		const known = declared.filter((name) => MEMBER_ORDER.includes(name));
+		const expected = MEMBER_ORDER.filter((name) => declared.includes(name));
+		expect(known).toEqual(expected);
+	});
+
+	it('declares nothing outside the contract', () => {
+		// Otherwise the order check above silently stops covering a member,
+		// and the registry grows a field nothing else knows to look for.
+		const declared = Object.keys(component ?? {});
+		expect(declared.filter((name) => !MEMBER_ORDER.includes(name))).toEqual(
+			[],
+		);
 	});
 
 	it('declares no duplicate config field keys', () => {

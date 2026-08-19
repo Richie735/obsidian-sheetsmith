@@ -14,7 +14,7 @@
  * caught by a screenshot. This is the check that stops it shipping twice.
  */
 
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 const CSS = readFileSync(new URL('./theme.css', import.meta.url), 'utf8');
@@ -65,5 +65,48 @@ describe('the tab styles its controls, not only a Setting row', () => {
 				selector.startsWith(TAB_SCOPE) && selector.includes("input[type='text']"),
 		);
 		expect(reachesInputs).toBe(true);
+	});
+});
+
+describe('the harness measures boxes the way Obsidian does', () => {
+	/*
+	 * `app.css` declares `* { box-sizing: border-box }` at the top level, so
+	 * every width and height in Obsidian is a border-box measurement. The
+	 * harness had it nowhere: theme.css set it on form controls only, and
+	 * calibrate.mjs dropped it because a universal selector matched neither the
+	 * palette pattern nor the settings-chrome list.
+	 *
+	 * The cost was not subtle once measured. A card taking `height: 100%` of
+	 * its grid cell overflowed it by padding plus border — 18px — so the shot
+	 * showed the Skills heading painted through the card above it. That
+	 * collision does not happen in Obsidian.
+	 *
+	 * Which makes it the worst kind of bug for this harness to carry. Reviewing
+	 * appearance here means reading the shots, so a false positive invites a
+	 * fix — margins — for a collision that only exists in the instrument, and
+	 * the fix would then be wrong in the app. It masks the real thing equally
+	 * well: 18px of phantom slack hides genuine overflow at the same sites.
+	 * It was found by measuring, not by looking, because looking is what it
+	 * fools.
+	 */
+	function universalBoxSizing(css: string): boolean {
+		const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, '');
+		return /(^|[}{;])\s*\*\s*\{[^}]*box-sizing:\s*border-box/m.test(
+			withoutComments,
+		);
+	}
+
+	it('sets border-box on everything in the fallback theme', () => {
+		expect(universalBoxSizing(CSS)).toBe(true);
+	});
+
+	it('takes the same reset from the real Obsidian when calibrated', () => {
+		// Generated and gitignored, so absent on a fresh clone and in CI. When
+		// it is there it has to carry the reset, because it is the sheet that
+		// wins — an unlayered rule beats the fallback layer above whatever its
+		// specificity.
+		const generated = new URL('./obsidian.generated.css', import.meta.url);
+		if (!existsSync(generated)) return;
+		expect(universalBoxSizing(readFileSync(generated, 'utf8'))).toBe(true);
 	});
 });

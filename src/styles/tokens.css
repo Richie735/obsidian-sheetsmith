@@ -1,0 +1,58 @@
+/*
+ * Tokens and the frame both surfaces sit in.
+ *
+ * Everything here is either a knob a user CSS snippet may override or a rule
+ * that belongs to neither the sheet nor the editor on its own. It is first in
+ * the cascade because everything after it is entitled to win.
+ */
+
+/*
+ * Sheetsmith styles.
+ * Use Obsidian's CSS variables so sheets inherit the user's theme.
+ */
+/* Sheetsmith's own knobs, overridable from a user CSS snippet. */
+body {
+	/* Narrowest a stat card may get in any mode. */
+	--sheetsmith-stat-min: 90px;
+	/* The vertical slot a stat card always reserves for its abbreviation, so
+	   numbers land on one baseline across a row. Published here because a
+	   second component now has to line up with it: re-deriving 1.2em of a
+	   0.85-scaled --font-ui-smaller somewhere else would drift the moment
+	   either constant moved. See .sheetsmith-stat-abbreviation. */
+	--sheetsmith-card-abbr-space: calc(1.2 * 0.85 * var(--font-ui-smaller));
+	/* Fixed card width where the grid does not dictate one. */
+	--sheetsmith-stat-width: 110px;
+	/* The card's headline number. Relative rather than a pixel size, so it
+	   follows the vault's text size setting and the card scales with it. */
+	--sheetsmith-stat-value-size: 1.75em;
+	/* How wide the sheet may grow. A sheet is a dashboard, not prose: the
+	   grid is a fixed number of columns the author placed components into,
+	   so holding it at reading width leaves a wide pane mostly empty and
+	   squeezes the cards that were meant to fill it. Set this to
+	   var(--file-line-width) in a CSS snippet to get reading width back. */
+	--sheetsmith-sheet-max-width: none;
+}
+
+/* Layout editor (settings) */
+/* Attribute table: header, rows, and footer are plain divs on one grid
+   template — no Setting internals to fight themes over. One 4px padding
+   unit per element inside a 4px-padded container keeps every spacing 8px:
+   row-to-row (4+4), edge-to-content (4+4), and the 8px column gaps. */
+/* Inline field validation */
+/* A component row whose form is open, and the form anchored to it */
+/* Grid preview */
+/* Aligned modes: cards take a fixed width and the group aligns. Flex
+   rather than grid, so an incomplete last row aligns too — five cards
+   centered in a 3-wide space sit 3 on top, 2 centered beneath. */
+/* Card rhythm: the header pair sits tight (2px), the big number stands
+   apart from it (6px), the pill hangs close under its number (4px). The
+   whole card is a click target for its input. */
+/* The derived result is the card's big number; the stored value drops
+   into a small pill beneath it. Cards without a derived keep the value
+   as the big number. */
+/* --- Table -------------------------------------------------------------- */
+/* --- List config fields (rows, columns) --------------------------------- */
+/* And the border stays full accent at every step, harm or not — the level
+   ring's own rule, which the graded fill above is otherwise free to break.
+   Grading the outline as well took away the second signal at exactly the
+   moment the first was weakest, and a segment lost both at once. */

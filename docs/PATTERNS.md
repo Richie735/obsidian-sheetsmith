@@ -11,9 +11,10 @@ Every rule below carries how strongly it is held:
 
 - **[checked]** — a test or an eslint `error` fails the build. Departing means
   changing the check first.
-- **[warned]** — an eslint rule reports it, but `npm run lint` is `eslint .`
-  with no `--max-warnings`, so a warning exits 0 and the CI lint passes. Real
-  guidance, no teeth. See §11.
+- **[warned]** — an eslint rule reports it as a warning. `npm run lint` runs
+  with `--max-warnings 0`, so a warning fails the build exactly like an error.
+  The tier records where the rule came from — `obsidianmd.configs.recommended`
+  rather than a hand-set `error` — not how weakly it is held.
 - **[judgement]** — nothing automated. A default with a reason, not a law:
   depart deliberately and say why in a comment.
 
@@ -37,10 +38,23 @@ The real test is the one this contract already implies: *could a reader state
 this file's job in one sentence without using "and"?* When the answer is no, the
 file holds more than one thing.
 
-> **Known violation.** `pool.ts` fails this test today. Its first ~850 lines are
-> a gesture engine — scrub, momentum projection, hold-to-repeat ramping, refusal
-> and absorb flashes — and its `ComponentDefinition` does not begin until line
-> 856. Two responsibilities, one file. See §11.
+> **The worked example.** `pool.ts` used to fail this test: its first ~850 lines
+> were a gesture engine — scrub, momentum projection, hold-to-repeat ramping —
+> and its `ComponentDefinition` did not begin until line 856. Two
+> responsibilities, one file, and neither of them small.
+>
+> Worth keeping as the example because of what the fix had to get right. The
+> gesture moved to `src/interaction/`, but the *class names* stayed with the
+> caller: a module in `interaction/` is passed `'sheetsmith-pool-step'` rather
+> than naming a pool itself. That is the difference between splitting a file and
+> actually separating two responsibilities — the second one leaves neither half
+> knowing what the other is for.
+>
+> Note also what did not move. The flash timings and the temporary-points
+> buffer read like gesture code and are not: they are the Pool's own feedback
+> and its own rule. Atomicity is what forced the split, not reuse — the engine
+> has one consumer, and §1 is explicit that one consumer earns no
+> generalisation.
 
 ### Reusable: shared on the third consumer, guarded when duplicated
 
@@ -61,17 +75,34 @@ So:
   use rather than guessed at, and the guard test is no longer cheaper than the
   module.
 
+**That ladder is written for behaviour. A policy number climbs it in one step.**
+Where the duplicated thing is a timing, a bound, or a row count, drift *is* the
+entire risk, so the two-consumer guard test costs more than the module and
+proves less — it can only assert that two constants are still equal, which is
+what one constant says for free. Extract on the second consumer there.
+`interaction/commit-window.ts` holds a single `GESTURE_COMMIT` because Pool and
+Track had both settled on 700ms in two places nothing kept in step;
+`editor/list-field-height.ts` holds the row bounds because the two list fields
+had already drifted apart twice, once on `rows` and once on their width. Both
+say so in their headers, which is what a deliberate departure owes.
+
 Extraction goes to a module named for the behaviour, never to a component. **A
-component must never import from another component** [judgement], because that
+component must never import from another component** [checked], because that
 breaks the isolation the whole contract rests on: nothing outside a component
-may know that component exists. Shared behaviour lives in `stat-card.ts`,
-`level-ring.ts`, `editable.ts`, `popover.ts`, or a new sibling.
+may know that component exists. Shared behaviour lives in a painter beside them
+(`stat-card.ts`, `level-ring.ts`), in `interaction/` (`editable.ts`), or in
+`ui/` (`popover.ts`) — not in a sibling component, whatever the import is
+spelled like. Both directory spellings of a sibling and the registry itself are
+restricted in `eslint.config.mts`, and the spellings are enumerated in
+`components/isolation.test.ts`, which drives eslint rather than trusting a
+comment: the rule stood half-enforced for a while because it was verified once,
+with one import, in one spelling.
 
 ---
 
 ## 2. Repository structure
 
-`src/` is organised by responsibility, and two of its boundaries are enforced.
+`src/` is organised by responsibility, and three of its boundaries are enforced.
 
 ```
 src/
@@ -82,8 +113,11 @@ src/
   parse/           note and layout parsing. Imports nothing from obsidian [checked]
   formula/         expression parsing and evaluation. Same rule [checked]
   interaction/     gesture vocabulary shared by every control
-  components/      one file per component, plus the painters they share
+  components/      one file per component, plus the painters they share. No
+                   component imports a sibling component [checked]
   editor/          the layout editor and its field widgets
+  styles/          the stylesheet, split by surface; styles.css is assembled
+                   from these at build time and is not edited directly
   view/            sheet view, auto-open, reset flow
   ui/              generic primitives that know nothing of components
   test/            scaffolding only: stubs and fixtures, never test cases
@@ -91,6 +125,22 @@ src/
 
 A new module goes in the folder naming what it *does*, not what it is *for*. A
 gesture used by pools belongs in `interaction/`, not in `components/`.
+
+### The repository is self-contained
+
+**Nothing the workflow depends on may live outside it** [judgement]. Not a
+skill, not a hook, not a reference document, not a machine-local setting.
+
+A clone on another machine has to build, test, review and ship by exactly the
+same standard. The failure this prevents is silent rather than loud: a skill
+delegating to one installed only on the original machine does not error on the
+clone, it simply reviews with whatever generic knowledge it has and reports its
+findings with the same confidence. Nothing marks the difference.
+
+That is why `.claude/skills/design-review/reference/motion.md` is vendored into
+the repository rather than referenced as an installed skill, and why
+`harness/theme.css` carries a hand-written fallback so the harness works before
+`harness:calibrate` has ever been run.
 
 ### Tests live beside the code they test
 
@@ -126,8 +176,9 @@ Every component follows the same order. A reader who knows one knows them all.
    Contract first, then the data path in the order it runs, then rendering last
    because it is the longest.
 
-`pool.ts` currently orders `applyReset` before `write`. Harmless, and worth
-settling one way in the conformance pass.
+Checked in `contract.test.ts`, along with the rule that a component declares
+nothing outside the contract — otherwise a new member falls outside the order
+and is covered by neither.
 
 ### Registering it
 
@@ -230,7 +281,14 @@ A component inventing its own is the failure mode to watch for.
   it is about to hit, so focus moves while the finger is down; committing on
   release is what lets a press slide off and be taken back.
 - **One route in.** Keyboard activation arrives at the same handler by bubbling.
-  Never a second code path for the keyboard — that is how the two drift.
+  Never a second code path for the keyboard — that is how the two drift. **The
+  exception is a gesture the other input does not have**: a key cannot express a
+  hold, so `interaction/hold-repeat.ts` answers `pointerdown` for the repeat and
+  handles the keyboard's `click` separately, telling them apart with
+  `event.detail === 0` so a mouse press is not stepped twice. Take that
+  exception only where the gesture is genuinely absent from the other input,
+  never where routing it through one handler is merely inconvenient — and keep
+  the step arithmetic in one place even when the entry points differ.
 - **Draft and commit are separate** (`editable.ts`). Typing, arrows and Enter
   change the draft; blur commits; Escape abandons and says so. Nothing reaches
   the file before a commit.
@@ -268,13 +326,11 @@ A component inventing its own is the failure mode to watch for.
 ## 8. Config field conventions
 
 - Every field declares `key`, `kind`, `label` [checked], and `description`
-  [judgement — should be promoted to checked, see §11].
+  [checked].
 - **Descriptions state the consequence.** "Renaming it does not move a stored
   value; the old entry stays in the note under the old key" is the model. A
   description that only restates the label is not worth its line.
 - Sentence case, per `AGENTS.md` [warned: `obsidianmd/ui/sentence-case`].
-  `CLAUDE.md` says this is enforced; it is reported as a warning and does not
-  fail the build. See §11.
 - `group: 'Appearance'` collects presentation toggles under a subheading.
 - `default` on booleans; a value matching its default is omitted from the config
   and `visibleWhen` matches the *effective* value, so a condition naming a
@@ -355,20 +411,11 @@ decided.
 ## 11. Conformance backlog
 
 Where the code does not yet match this file. These are findings, not licences:
-new code follows the patterns above.
+new code follows the patterns above. A row leaves when it is fixed — a backlog
+that keeps solved rows stops being read.
 
 | Gap | Where | Fix |
 | --- | --- | --- |
-| Gesture engine inside a component | `pool.ts` lines ~78-855 | Extract to `src/interaction/` (scrub, hold-repeat, projection, flashes). Track is the second consumer, so §1 asks for a guard test across both copies until a third arrives and earns the extraction. |
-| Component member order varies | `pool.ts` (`applyReset` before `write`) | Settle on §3's order. |
-| Two responsibilities in one file | `layout-editor.ts`, 1329 code lines at 22% comment | Split by responsibility once the M4 workspace view lands, since that move rewrites it anyway. |
-| `description` optional on config fields | `contract.test.ts` | Promote to a checked rule. |
-| No check that components stay isolated | — | `no-restricted-imports`: a file in `components/` may not import a sibling component module, only shared ones. |
-| No check on `sheetsmith-` class prefix | — | Extend `styles.test.ts` or add a source check. |
-| `npm run lint` passes with warnings | `package.json` | `eslint .` carries no `--max-warnings 0`, so every rule from `obsidianmd.configs.recommended` is advisory and the CI lint job goes green regardless. Only rules set to `error` by hand bite. **The repo is 2 warnings away from being able to turn this on**: both are in `src/settings.ts`, about adopting Obsidian's 1.13 declarative settings API (`getSettingDefinitions`). Adopt it or disable that rule, then add the flag. |
-| Docs overstate enforcement | `CLAUDE.md` | `CLAUDE.md`'s Conventions section says `eslint-plugin-obsidianmd` "enforces" sentence case. It warns, and the lint script passes on warnings, so nothing enforces it. Fix the wording, or fix the lint script and make the wording true. |
-| Root is a junk drawer | `src/` | Six modules sit at root that are all one responsibility — the layout editor: `layout-editor.ts`, `config-fields.ts`, `list-fields.ts`, `trigger-list-field.ts`, `function-library-field.ts`, `preview-grid.ts`. Move to `src/editor/`. |
-| `interaction/`, `editor/` and `ui/` do not exist yet | `src/` | Create them with the moves above and the `pool.ts` extraction. `confirm-modal.ts` and `components/popover.ts` are the `ui/` candidates: neither knows what a component is. `editable.ts` moves to `interaction/`. |
-| Restating doc comments | `stat.ts`, `stat-group.ts` | Drop the interface comments on the `hide*` flags that duplicate their own `configFields` description (§9). |
-| `layout-editor.ts` has no tests | `src/` | 1722 lines, the surface where every layout is authored, and there is no `layout-editor.test.ts`. It was untestable while the stub covered only `Platform` and `setIcon`; the stub now carries `Setting`, the component builders, an in-memory `Vault`, `Modal` and `PluginSettingTab`, so the obstacle is gone. The harness exercises it end to end already, which is the proof it can be driven headlessly. |
-| `AGENTS.md` and `CLAUDE.md` predate this file | repo root | Both are always-loaded and neither points at `docs/PATTERNS.md` for anything but the two lines already fixed. Read them once against §1–§10 and delete or redirect what is now stated in two places, so a session is not given the same rule twice in two voices. |
+| Two responsibilities in one file | `layout-editor.ts` | Deliberately deferred, not overlooked. The split waits for the M4 workspace view, which rewrites this module anyway; splitting it twice would be the waste. It has tests now, so the move will be guarded when it comes. |
+| Gesture modules have no test file beside them | `src/interaction/` | `scrub.ts`, `hold-repeat.ts` and `editable.ts` are covered thoroughly, but through `pool.test.ts`, `track.test.ts` and the component tests rather than their own files — against §10's one-test-file-per-module. It may be that §10 is what should change here: a gesture is only meaningfully driven through a control that uses it, and a test file of its own would have to build a fake card first, which is what those component tests already are. Settle it rather than leaving it implicit. |
+| A backlog row names a sample, not the whole set | §9, `components/skill-card.ts`, `components/track.ts` | The row that drove the doc-comment cleanup named `stat.ts` and `stat-group.ts`, and the fix followed the row rather than the rule, so instances outside those two files survived: `skill-card.ts` still carries `/** Hide the component's label above the table. */` against a description saying the same thing, and `track.ts` a softer one that may earn its place on the cross-reference alone. Neither is in any diff, having predated the branch, so a diff-scoped review cannot surface them by design and never will. Fix the two, then close the gap properly: a source check comparing each interface doc comment against its own `configFields` description is mechanical, and §9 already says what to compare. Prose caught this once; the check is what stops it recurring. |
