@@ -166,7 +166,44 @@ sheet.
 
 ---
 
-## 8. The shared vocabulary
+## 8. Motion
+
+Movement is judged by frequency first. A character sheet is a control panel: the
+same rings, pools and tracks are pressed dozens of times in a session, so
+anything that animates on every press makes the sheet feel slower the longer it
+is used. **Restraint here is the correct answer, not a lack of ambition.**
+
+The sheet also lives inside someone's notes and should not behave more
+energetically than the app around it.
+
+- **Motion earns its place by doing a job** [judgement]: showing state changed,
+  keeping the reader oriented, softening a jump, confirming a press landed.
+  Anything touched every few seconds gets feedback, not animation.
+- **Transitions, never `@keyframes`** [judgement]. A transition can be
+  interrupted and retargeted mid-flight; a keyframe animation restarts from
+  zero. Everything here is repeatable and reversible, so everything is a
+  transition. The plugin currently has zero `@keyframes` and that is worth
+  keeping.
+- **Never `ease-in`.** It delays the instant the user is watching.
+- **Motion stays under 300ms.** A colour or opacity fade is not motion and may
+  run longer when it is deliberately slow.
+- **Prefer `transform` and `opacity`.** Animating `width` or `height` costs
+  layout and paint, so it needs a reason stated in a comment. The pool fill and
+  the track response both animate `width` and both carry that reason.
+- **Gesture values are grabbable at any instant** and continue from where they
+  are, rather than snapping to a start.
+
+The tuned constants in `src/interaction/` — projection deceleration, throw
+decay, scrub resistance, hold ramp, velocity window — are decisions taken
+against the real control, with the argument in the code beside them. Treat them
+as settled unless a specific failure is observed.
+
+The full standards, and the vocabulary for describing motion precisely, are in
+`.claude/skills/design-review/reference/motion.md`.
+
+---
+
+## 9. The shared vocabulary
 
 New components reuse these rather than inventing a lookalike. A fourth kind of
 surface beside a row of cards reads as loose chrome floating on the page.
@@ -186,7 +223,7 @@ differently from the other under the same finger.
 
 ---
 
-## 9. Failure appears in place
+## 10. Failure appears in place
 
 A misconfigured component renders `.sheetsmith-error` into its own container and
 nothing else. The rest of the sheet stays live and editable (`SPEC` §10). There
@@ -197,7 +234,7 @@ Error text names the fix: `"max: 'con' is not defined on this sheet"`, not
 
 ---
 
-## 10. Reviewing appearance
+## 11. Reviewing appearance
 
 Run `npm run harness`. Check each of these, because none is visible in code.
 
@@ -232,7 +269,7 @@ look at PNGs rather than clicking through.
 
 ---
 
-## 11. Backlog
+## 12. Backlog
 
 Where the code does not yet match this file. These are findings, not licences:
 new work follows the sections above.

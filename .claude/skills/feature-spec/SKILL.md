@@ -47,7 +47,7 @@ Only now. Cover:
 - What the component looks like and what a reader takes from it at a glance.
 - Every interaction, against `docs/UI.md` §6 and §7. Reuse the shared gestures;
   a new gesture needs an argument.
-- What it reuses from the shared vocabulary (`UI.md` §8) rather than redrawing.
+- What it reuses from the shared vocabulary (`UI.md` §9) rather than redrawing.
 - Its empty state and its error state, not only the populated one.
 - Its `configFields`: each field's label, kind, and a description stating a
   consequence.
