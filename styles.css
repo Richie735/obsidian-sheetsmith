@@ -2416,20 +2416,30 @@ a.sheetsmith-undo {
 	border-top: none;
 }
 
-/* Function library: definitions are code, and are read as a set. The field
-   takes the full width rather than the narrow control column a Setting row
-   gives text inputs, because a definition wraps at about forty characters
-   there and a wrapped formula is unreadable. */
-.sheetsmith-function-library {
+/* The two list-shaped fields: the function library and the reset triggers.
+   Both hold one entry per line and both are read as a set, so they take the
+   full width rather than the narrow control column a Setting row gives text
+   inputs — a definition wraps at about forty characters there, and a wrapped
+   formula is unreadable.
+
+   One rule for both, deliberately. They were one rule and one class until the
+   trigger list was given a class of its own that styled nothing, so it fell
+   back to the narrow column and the two fields disagreed on screen about what
+   the same kind of field looks like. Sharing the rule is what stops that
+   happening again. */
+.sheetsmith-function-library,
+.sheetsmith-trigger-list {
 	display: block;
 }
 
-.sheetsmith-function-library .setting-item-control {
+.sheetsmith-function-library .setting-item-control,
+.sheetsmith-trigger-list .setting-item-control {
 	width: 100%;
 	padding-top: var(--size-4-2);
 }
 
-.sheetsmith-function-library textarea {
+.sheetsmith-function-library textarea,
+.sheetsmith-trigger-list textarea {
 	width: 100%;
 	font-family: var(--font-monospace);
 	font-size: var(--font-ui-small);
@@ -2441,7 +2451,8 @@ a.sheetsmith-undo {
 
 /* The heading above already names the field; the empty name div a
    description-only Setting leaves behind is structure with nothing in it. */
-.sheetsmith-function-library .setting-item-name:empty {
+.sheetsmith-function-library .setting-item-name:empty,
+.sheetsmith-trigger-list .setting-item-name:empty {
 	display: none;
 }
 
