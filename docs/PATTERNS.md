@@ -109,6 +109,22 @@ src/
 A new module goes in the folder naming what it *does*, not what it is *for*. A
 gesture used by pools belongs in `interaction/`, not in `components/`.
 
+### The repository is self-contained
+
+**Nothing the workflow depends on may live outside it** [judgement]. Not a
+skill, not a hook, not a reference document, not a machine-local setting.
+
+A clone on another machine has to build, test, review and ship by exactly the
+same standard. The failure this prevents is silent rather than loud: a skill
+delegating to one installed only on the original machine does not error on the
+clone, it simply reviews with whatever generic knowledge it has and reports its
+findings with the same confidence. Nothing marks the difference.
+
+That is why `.claude/skills/design-review/reference/motion.md` is vendored into
+the repository rather than referenced as an installed skill, and why
+`harness/theme.css` carries a hand-written fallback so the harness works before
+`harness:calibrate` has ever been run.
+
 ### Tests live beside the code they test
 
 `pool.test.ts` sits next to `pool.ts` [judgement]. A mirror `tests/` tree
