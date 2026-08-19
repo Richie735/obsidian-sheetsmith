@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest';
-import { skillCard, SkillCardConfig, SkillCardData } from './skill-card';
+import { table, TableConfig, TableData } from './table';
 import { closePopover, LONG_PRESS } from '../ui/popover';
 import { makeFieldExplainer, makeFieldResolver } from '../formula/resolve';
 import { Scope } from '../formula/expression';
@@ -11,9 +11,9 @@ import { RenderContext } from '../types';
  * eighteen skills, the character owns two cells per row, and one formula
  * serves every row because the row says which ability it means.
  */
-const config: SkillCardConfig = {
+const config: TableConfig = {
 	id: 'skills',
-	type: 'skill-card',
+	type: 'table',
 	label: 'Skills',
 	position: { col: 1, row: 1, width: 6, height: 4 },
 	rowHeader: 'Skill',
@@ -44,26 +44,26 @@ const BODY = `
 const sheet: Scope = (name) =>
 	({ 'abilities.DEX': 3, 'abilities.WIS': 2, prof: 3 })[name];
 
-function contextFor(data: SkillCardData | null, over = config): RenderContext {
+function contextFor(data: TableData | null, over = config): RenderContext {
 	return {
 		resolved: {},
 		// The real resolver, so these exercise the dotted formula paths
 		// (columns.2.formula, rows.0.values.ability) rather than a stub that
 		// agrees with them.
-		resolveField: makeFieldResolver(skillCard, over, data, sheet),
-		explainField: makeFieldExplainer(skillCard, over, data, sheet),
+		resolveField: makeFieldResolver(table, over, data, sheet),
+		explainField: makeFieldExplainer(table, over, data, sheet),
 		onChange: () => undefined,
 	};
 }
 
-function render(data: SkillCardData | null, over = config): HTMLElement {
+function render(data: TableData | null, over = config): HTMLElement {
 	const el = document.createElement('div');
-	skillCard.render(el, over, data, contextFor(data, over));
+	table.render(el, over, data, contextFor(data, over));
 	return el;
 }
 
 /** The same skill list with training as marks rather than a number field. */
-const levelled: SkillCardConfig = {
+const levelled: TableConfig = {
 	...config,
 	columns: [
 		{ key: 'Training', type: 'level', max: 2 },
@@ -79,12 +79,12 @@ const levelled: SkillCardConfig = {
 
 /** Render, capturing what the component reports back as edits. */
 function recording(
-	over: SkillCardConfig,
-	data: SkillCardData = { rows: {} },
+	over: TableConfig,
+	data: TableData = { rows: {} },
 ): { el: HTMLElement; changes: unknown[] } {
 	const changes: unknown[] = [];
 	const el = document.createElement('div');
-	skillCard.render(el, over, data, {
+	table.render(el, over, data, {
 		...contextFor(data, over),
 		onChange: (edited) => changes.push(edited),
 	});
@@ -97,9 +97,9 @@ function totals(el: HTMLElement): string[] {
 	);
 }
 
-describe('skillCard.read', () => {
+describe('table.read', () => {
 	it('reads cells by row name and column', () => {
-		const result = skillCard.read(BODY, config);
+		const result = table.read(BODY, config);
 		expect(result).toEqual({
 			ok: true,
 			data: {
@@ -112,7 +112,7 @@ describe('skillCard.read', () => {
 	});
 
 	it('treats a section with no table as empty, not malformed', () => {
-		expect(skillCard.read('\nProse only.\n', config)).toEqual({
+		expect(table.read('\nProse only.\n', config)).toEqual({
 			ok: true,
 			data: null,
 		});
@@ -120,7 +120,7 @@ describe('skillCard.read', () => {
 
 	it('keeps rows and columns the layout does not map', () => {
 		const extra = `${BODY.trimEnd()}\n| Stealth | 3 | 2 |\n`;
-		const result = skillCard.read(extra, config);
+		const result = table.read(extra, config);
 		expect(result.ok && result.data?.rows.Stealth).toEqual({
 			training: '3',
 			bonus: '2',
@@ -129,7 +129,7 @@ describe('skillCard.read', () => {
 
 	it('reports a malformed section on this component alone', () => {
 		const twice = `${BODY}\n| A |\n|---|\n| b |\n`;
-		expect(skillCard.read(twice, config).ok).toBe(false);
+		expect(table.read(twice, config).ok).toBe(false);
 	});
 
 	it('reports a duplicate column key as a configuration error', () => {
@@ -137,18 +137,18 @@ describe('skillCard.read', () => {
 			...config,
 			columns: [{ key: 'Bonus' }, { key: 'bonus' }],
 		};
-		const result = skillCard.read(BODY, broken);
+		const result = table.read(BODY, broken);
 		expect(result.ok).toBe(false);
 	});
 
 	it('reports a column that collides with the name column', () => {
 		const broken = { ...config, columns: [{ key: 'Skill' }] };
-		expect(skillCard.read(BODY, broken).ok).toBe(false);
+		expect(table.read(BODY, broken).ok).toBe(false);
 	});
 
 	it('reports a pipe in a column key, which the file cannot hold', () => {
 		const broken = { ...config, columns: [{ key: 'a|b' }] };
-		expect(skillCard.read(BODY, broken).ok).toBe(false);
+		expect(table.read(BODY, broken).ok).toBe(false);
 	});
 
 	/*
@@ -166,7 +166,7 @@ describe('skillCard.read', () => {
 | toString | 1 | 4 |
 | Acrobatics | 2 | 0 |
 `;
-		const result = skillCard.read(body, config);
+		const result = table.read(body, config);
 		if (!result.ok || result.data === null) throw new Error('expected data');
 		// Read through entries rather than rows['toString']: TypeScript resolves
 		// that access to Object.prototype.toString, which is the same trap the
@@ -187,7 +187,7 @@ describe('skillCard.read', () => {
 |---|---|
 | Acrobatics | 7 |
 `;
-		const result = skillCard.read(body, shadowing);
+		const result = table.read(body, shadowing);
 		if (!result.ok || result.data === null) throw new Error('expected data');
 		expect(Object.entries(result.data.rows['Acrobatics'] ?? {})).toEqual([
 			['constructor', '7'],
@@ -200,21 +200,21 @@ describe('skillCard.read', () => {
 |---|---|---|
 | toString | 1 | 4 |
 `;
-		const read = skillCard.read(body, config);
+		const read = table.read(body, config);
 		if (!read.ok || read.data === null) throw new Error('expected data');
-		expect(skillCard.write(read.data, body, config)).toBe(body);
+		expect(table.write(read.data, body, config)).toBe(body);
 	});
 });
 
-describe('skillCard.write', () => {
+describe('table.write', () => {
 	it('round-trips unchanged data byte for byte', () => {
-		const read = skillCard.read(BODY, config);
+		const read = table.read(BODY, config);
 		if (!read.ok || read.data === null) throw new Error('expected data');
-		expect(skillCard.write(read.data, BODY, config)).toBe(BODY);
+		expect(table.write(read.data, BODY, config)).toBe(BODY);
 	});
 
 	it('rewrites only the cell that changed', () => {
-		const out = skillCard.write(
+		const out = table.write(
 			{ rows: { Acrobatics: { Training: '2' } } },
 			BODY,
 			config,
@@ -223,7 +223,7 @@ describe('skillCard.write', () => {
 	});
 
 	it('never writes a computed column into the note', () => {
-		const out = skillCard.write(
+		const out = table.write(
 			{ rows: { Acrobatics: { Training: '1', Total: '6' } } },
 			BODY,
 			config,
@@ -233,7 +233,7 @@ describe('skillCard.write', () => {
 	});
 
 	it('seeds every declared row the first time the section is written', () => {
-		const out = skillCard.write({ rows: { Acrobatics: { Training: '1' } } }, null, config);
+		const out = table.write({ rows: { Acrobatics: { Training: '1' } } }, null, config);
 		expect(out).toBe(
 			'\n| Skill | Training | Bonus |\n|---|---|---|\n' +
 				'| Acrobatics | 1 |  |\n| Perception |  |  |\n',
@@ -243,7 +243,7 @@ describe('skillCard.write', () => {
 	it('keeps a row the layout no longer declares', () => {
 		// SPEC §10: a layout change never deletes character data.
 		const extra = `${BODY.trimEnd()}\n| Stealth | 3 | 2 |\n`;
-		const out = skillCard.write(
+		const out = table.write(
 			{ rows: { Acrobatics: { Training: '2' } } },
 			extra,
 			config,
@@ -253,7 +253,7 @@ describe('skillCard.write', () => {
 
 	it('leaves prose in the section alone', () => {
 		const withProse = `\nWhat these are for.\n${BODY}`;
-		const out = skillCard.write(
+		const out = table.write(
 			{ rows: { Acrobatics: { Training: '2' } } },
 			withProse,
 			config,
@@ -262,7 +262,7 @@ describe('skillCard.write', () => {
 	});
 });
 
-describe('skillCard.render', () => {
+describe('table.render', () => {
 	it('renders one row per declared row, in order', () => {
 		const el = render({ rows: { Acrobatics: { training: '1', bonus: '0' } } });
 		const names = Array.from(
@@ -283,7 +283,7 @@ describe('skillCard.render', () => {
 
 	it('keeps the name first in the note however it is drawn', () => {
 		// Display order is not storage order: the name identifies the row.
-		const out = skillCard.write(
+		const out = table.write(
 			{ rows: { Acrobatics: { Training: '1' } } },
 			null,
 			{ ...config, namePosition: 1 },
@@ -692,7 +692,7 @@ describe('skillCard.render', () => {
 			...levelled,
 			columns: [{ key: 'Training', type: 'level' as const, levels: ['Only'] }],
 		};
-		expect(skillCard.read(BODY, broken).ok).toBe(false);
+		expect(table.read(BODY, broken).ok).toBe(false);
 	});
 
 	it('feeds the level to the row formula as a number', () => {
@@ -770,7 +770,7 @@ describe('skillCard.render', () => {
 	it('reports an edit as a single-cell delta', () => {
 		const changes: unknown[] = [];
 		const el = document.createElement('div');
-		skillCard.render(el, config, { rows: {} }, {
+		table.render(el, config, { rows: {} }, {
 			...contextFor({ rows: {} }),
 			onChange: (data) => changes.push(data),
 		});
@@ -785,7 +785,7 @@ describe('skillCard.render', () => {
 	it('holds a typed number to the column bounds', () => {
 		const changes: unknown[] = [];
 		const el = document.createElement('div');
-		skillCard.render(el, config, { rows: {} }, {
+		table.render(el, config, { rows: {} }, {
 			...contextFor({ rows: {} }),
 			onChange: (data) => changes.push(data),
 		});
@@ -806,13 +806,13 @@ describe('skillCard.render', () => {
 	});
 });
 
-describe('skillCard touch affordances', () => {
+describe('table touch affordances', () => {
 	/*
 	 * `title` is the whole story only where there is a pointer. These cover
 	 * the second door: the route to a level's name and to a computed cell's
 	 * formula on a device that never fires a hover.
 	 */
-	const named: SkillCardConfig = {
+	const named: TableConfig = {
 		...config,
 		columns: [
 			{

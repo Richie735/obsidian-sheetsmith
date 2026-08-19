@@ -5,9 +5,9 @@
 
 import { ComponentDefinition } from '../types';
 import { pool } from './pool';
-import { skillCard } from './skill-card';
 import { stat } from './stat';
 import { statGroup } from './stat-group';
+import { table } from './table';
 import { track } from './track';
 
 const registry = new Map<string, ComponentDefinition>();
@@ -17,9 +17,9 @@ function register(component: ComponentDefinition): void {
 }
 
 register(pool);
-register(skillCard);
 register(stat);
 register(statGroup);
+register(table);
 register(track);
 
 /** The component definition for a layout `type`, or undefined if unknown. */

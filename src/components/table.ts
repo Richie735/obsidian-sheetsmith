@@ -1,5 +1,5 @@
 /*
- * Skill card — repeatable typed records with a fixed row list (SPEC §4.2).
+ * Table — repeatable typed records with a fixed row list (SPEC §4.2).
  *
  * The layout owns the rows and the character fills in cells: every character
  * in a system has the same skills, and retyping them per character would be
@@ -33,14 +33,14 @@ import {
 import { bindLongPress, showPopover } from '../ui/popover';
 
 /** Column kinds. `computed` is read-only; the rest are character data. */
-export type SkillCardColumnType =
+export type TableColumnType =
 	| 'text'
 	| 'number'
 	| 'level'
 	| 'toggle'
 	| 'computed';
 
-export interface SkillCardColumn {
+export interface TableColumn {
 	/** Header text in the note, and the name a formula reads the cell by. */
 	key: string;
 	/** Column heading on the sheet, when it should differ from the key. */
@@ -53,7 +53,7 @@ export interface SkillCardColumn {
 	 */
 	hideHeading?: boolean;
 	/** Defaults to text. */
-	type?: SkillCardColumnType;
+	type?: TableColumnType;
 	/** For a computed column: the expression, evaluated in the row's scope. */
 	formula?: string;
 	/**
@@ -90,7 +90,7 @@ export interface SkillCardColumn {
 	signed?: boolean;
 }
 
-export interface SkillCardRow {
+export interface TableRow {
 	/** The row's name, stored in the first column and keying its cells. */
 	label: string;
 	/**
@@ -101,8 +101,8 @@ export interface SkillCardRow {
 	values?: Record<string, string>;
 }
 
-export interface SkillCardConfig extends ComponentConfig {
-	type: 'skill-card';
+export interface TableConfig extends ComponentConfig {
+	type: 'table';
 	/** Heading of the column holding row names. Defaults to "Name". */
 	rowHeader?: string;
 	/**
@@ -112,13 +112,13 @@ export interface SkillCardConfig extends ComponentConfig {
 	 * is what identifies the row.
 	 */
 	namePosition?: number;
-	rows?: SkillCardRow[];
-	columns?: SkillCardColumn[];
+	rows?: TableRow[];
+	columns?: TableColumn[];
 	/** Hide the component's label above the table. */
 	hideLabel?: boolean;
 }
 
-export interface SkillCardData {
+export interface TableData {
 	/**
 	 * Stored cells, by row label then column key. On read this holds every
 	 * row the note has; on write only the rows and cells present are touched,
@@ -142,19 +142,19 @@ const TOGGLE_TRUE = 'yes';
 const TOGGLE_FALSE = 'no';
 const TRUTHY = new Set(['yes', 'true', 'x', '✓', '✔', '1']);
 
-function columnType(column: SkillCardColumn): SkillCardColumnType {
+function columnType(column: TableColumn): TableColumnType {
 	return column.type ?? 'text';
 }
 
 /** Columns whose values live in the note. Computed ones are never stored. */
-function storedColumns(config: SkillCardConfig): SkillCardColumn[] {
+function storedColumns(config: TableConfig): TableColumn[] {
 	return (config.columns ?? []).filter(
 		(column) => columnType(column) !== 'computed',
 	);
 }
 
 /** The note's header row: the row-name column, then every stored column. */
-function headers(config: SkillCardConfig): string[] {
+function headers(config: TableConfig): string[] {
 	return [
 		(config.rowHeader ?? '').trim() || DEFAULT_ROW_HEADER,
 		...storedColumns(config).map((column) => column.key),
@@ -169,7 +169,7 @@ function headers(config: SkillCardConfig): string[] {
  * printed, and a sheet that made you type 0 into eighteen rows before it
  * would compute anything would be answering a question nobody asked.
  */
-function cellValue(column: SkillCardColumn, raw: string | undefined): FieldValue {
+function cellValue(column: TableColumn, raw: string | undefined): FieldValue {
 	const text = (raw ?? '').trim();
 	switch (columnType(column)) {
 		case 'toggle':
@@ -191,7 +191,7 @@ function cellValue(column: SkillCardColumn, raw: string | undefined): FieldValue
  * left alone: the arrows already treat it as prose, and silently replacing
  * what someone typed with a number they did not is worse than storing it.
  */
-function bound(raw: string, column: SkillCardColumn): string {
+function bound(raw: string, column: TableColumn): string {
 	const text = raw.trim();
 	if (text === '') return text;
 	const value = Number(text);
@@ -214,7 +214,7 @@ function formatComputed(value: FieldValue | null, signed: boolean): string {
  * Configuration errors that make the table unreadable rather than merely
  * empty. Reported on this component alone, per SPEC §10.
  */
-function configError(config: SkillCardConfig): string | null {
+function configError(config: TableConfig): string | null {
 	const columns = config.columns ?? [];
 	const seen = new Set<string>();
 	for (const column of columns) {
@@ -257,8 +257,8 @@ function configError(config: SkillCardConfig): string | null {
 	return null;
 }
 
-export const skillCard: ComponentDefinition<SkillCardConfig, SkillCardData> = {
-	type: 'skill-card',
+export const table: ComponentDefinition<TableConfig, TableData> = {
+	type: 'table',
 	storage: 'markdown',
 	// `*` stands for one path segment: every column's formula, and every
 	// named expression on every row. See isDeclared in formula/resolve.ts.
@@ -302,7 +302,7 @@ export const skillCard: ComponentDefinition<SkillCardConfig, SkillCardData> = {
 		},
 	],
 
-	read(body, config): ReadResult<SkillCardData> {
+	read(body, config): ReadResult<TableData> {
 		const error = configError(config);
 		if (error !== null) return { ok: false, error };
 		const parsed = readTable(body);
@@ -319,7 +319,7 @@ export const skillCard: ComponentDefinition<SkillCardConfig, SkillCardData> = {
 		// value. The note keeps the data either way, so the sheet would show a
 		// blank cell over a filled one and the first edit would overwrite it —
 		// which is the one failure this component exists to prevent.
-		const data: SkillCardData = { rows: Object.create(null) as SkillCardData['rows'] };
+		const data: TableData = { rows: Object.create(null) as TableData['rows'] };
 		for (const cells of rows) {
 			const label = (cells[0] ?? '').trim();
 			if (label === '') continue;
@@ -439,7 +439,7 @@ export const skillCard: ComponentDefinition<SkillCardConfig, SkillCardData> = {
 				);
 				continue;
 			}
-			const column = columns[entry] as SkillCardColumn;
+			const column = columns[entry] as TableColumn;
 			const heading = column.name ?? column.key;
 			const cell = element('th', '', head);
 			cell.classList.add(`sheetsmith-table-${columnType(column)}`);
@@ -504,7 +504,7 @@ export const skillCard: ComponentDefinition<SkillCardConfig, SkillCardData> = {
 				return scope;
 			};
 
-			const computed: { column: SkillCardColumn; el: HTMLElement; index: number }[] =
+			const computed: { column: TableColumn; el: HTMLElement; index: number }[] =
 				[];
 			const view = doc.defaultView;
 			let pending: number | undefined;
@@ -570,7 +570,7 @@ export const skillCard: ComponentDefinition<SkillCardConfig, SkillCardData> = {
 			};
 
 			const renderCell = (index: number) => {
-				const column = columns[index] as SkillCardColumn;
+				const column = columns[index] as TableColumn;
 				const type = columnType(column);
 				const td = element('td', `sheetsmith-table-${type}`, tr);
 				const raw = stored[column.key.toLowerCase()] ?? '';

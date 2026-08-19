@@ -1674,7 +1674,7 @@ function onCommit(
 }
 
 /**
- * Display name for a component type id: "skill-card" → "Skill card".
+ * Display name for a component type id: "stat-group" → "Stat group".
  * Sentence case, per the style guide: only the first word is capitalised.
  */
 function componentDisplayName(type: string): string {
