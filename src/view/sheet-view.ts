@@ -1,5 +1,5 @@
 import { Notice, TextFileView, WorkspaceLeaf } from 'obsidian';
-import { getComponent } from '../components';
+import { getComponent, unknownComponentMessage } from '../components';
 import { closePopover } from '../ui/popover';
 import { ConfirmModal } from '../ui/confirm-modal';
 import { loadLayout } from '../layouts';
@@ -244,7 +244,7 @@ export class SheetView extends TextFileView {
 			cell.style.gridRow = `${config.position.row} / span ${config.position.height}`;
 
 			if (!component) {
-				this.renderCellError(cell, `Unknown component type "${config.type}".`);
+				this.renderCellError(cell, unknownComponentMessage(config.type));
 				continue;
 			}
 			if (error !== null) {
