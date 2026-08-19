@@ -2381,8 +2381,17 @@ a.sheetsmith-undo {
 	border-left: 2px solid var(--interactive-accent);
 }
 
-/* Hairlines between fields carry the settings rhythm; keep them, and give
-   text controls one shared width so the column's left edge is straight. */
+/* One shared width for text controls, so the column's left edge is straight.
+
+   This comment used to open by appealing to the hairlines between settings
+   rows, and that frame is gone: Obsidian 1.13 gives `.setting-item` its own
+   `--setting-items-background` and `--setting-items-radius` and draws every
+   setting as a card with nothing between. The plugin does not follow it in
+   here, and that is the deliberate answer rather than a gap. A component form
+   is not a list of app settings — it is one thing being configured, marked as
+   such by the accent border above — so its fields keep their own rhythm inside
+   that border. Only the appeal to Obsidian's rhythm was stale; the width rule
+   was always the point. */
 .sheetsmith-component-form > .setting-item > .setting-item-control > input,
 .sheetsmith-component-form > .setting-item > .setting-item-control > select {
 	width: 14em;
