@@ -126,7 +126,6 @@ export default defineConfig(
 						{
 							group: [
 								'./*',
-								'!./editable',
 								'!./level-ring',
 								'!./stat-card',
 							],

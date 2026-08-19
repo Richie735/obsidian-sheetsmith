@@ -15,7 +15,7 @@
  * be the plugin knowing 5e.
  */
 
-import { amountOf } from './editable';
+import { amountOf } from '../interaction/editable';
 import { readFenced, writeFenced } from '../parse/fenced';
 import {
 	ComponentConfig,
@@ -25,7 +25,7 @@ import {
 	ScopeEntry,
 	ScopeValues,
 } from '../types';
-import { bindEditable, EditableHandle } from './editable';
+import { bindEditable, EditableHandle } from '../interaction/editable';
 import { formatDerived } from './stat-card';
 
 /** Entry keys in the fenced block. Fixed, so hand-editing reads the same. */

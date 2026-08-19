@@ -22,7 +22,7 @@ import {
 	FieldValue,
 	ReadResult,
 } from '../types';
-import { bindEditable, UNRESOLVED_DELAY } from './editable';
+import { bindEditable, UNRESOLVED_DELAY } from '../interaction/editable';
 import {
 	levelCount,
 	levelName,
