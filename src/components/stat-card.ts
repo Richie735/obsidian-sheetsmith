@@ -9,6 +9,7 @@
  */
 
 import { bindEditable, UNRESOLVED_DELAY } from '../interaction/editable';
+import { revealWhenTruncated } from '../ui/truncation';
 
 export interface StatCardDerived {
 	text: string;
@@ -128,12 +129,9 @@ export function renderStatCard(
 		// The label ellipsises in narrow cards, and the full text has to stay
 		// reachable — but a tooltip repeating a label that is already fully
 		// legible is noise, and the whole card is a hover target, so a row of
-		// wide cards would pop one on every pass. Decide on hover, when the
-		// text has been laid out and truncation is a fact rather than a guess.
-		label.addEventListener('pointerenter', () => {
-			if (label.scrollWidth > label.clientWidth) label.title = options.title;
-			else label.removeAttribute('title');
-		});
+		// wide cards would pop one on every pass. The shared helper decides on
+		// hover, when the text has been laid out and truncation is a fact.
+		revealWhenTruncated(label);
 		container.appendChild(label);
 	}
 
