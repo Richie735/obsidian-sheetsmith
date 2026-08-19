@@ -8,7 +8,7 @@
  * to behave the same way under the hand as a card does.
  */
 
-import { bindEditable, UNRESOLVED_DELAY } from './editable';
+import { bindEditable, UNRESOLVED_DELAY } from '../interaction/editable';
 
 export interface StatCardDerived {
 	text: string;
