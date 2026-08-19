@@ -30,8 +30,8 @@ Frequency decides. A control used constantly must not celebrate itself.
 
 **This is the rule that matters most here.** A character sheet is a control
 panel: the same rings, pools and tracks are hit dozens of times in one session.
-Anything that animates on every press makes the sheet feel slower the longer it
-is used. Restraint is not timidity in this project, it is the correct answer.
+Anything that animates on every press puts a wait in front of every press, and
+the sheet gets slower to use the longer the session runs. Restraint is not timidity in this project, it is the correct answer.
 
 Valid reasons for motion: showing state changed, keeping the user oriented,
 softening a jarring jump, confirming a press landed. "It would look nice" is not
@@ -49,7 +49,7 @@ should not behave more energetically than the app around it.
 - Unsure → `ease-out`
 
 **Never `ease-in` on interface.** It starts slow and delays the exact instant
-the user is watching. `ease-out` at 200ms feels faster than `ease-in` at 200ms.
+the user is watching. `ease-out` at 200ms reads as faster than `ease-in` at 200ms.
 
 CSS built-ins are weak. Stronger curves, worth reaching for when a transition
 reads as flat:
@@ -70,7 +70,7 @@ cubic-bezier(0.77, 0, 0.175, 1)     /* strong ease-in-out */
 
 **Motion stays under 300ms.** A colour or opacity fade is not motion and may run
 longer where it is deliberately slow: judge those on whether the element still
-feels responsive, not against this number.
+answers the press without a wait, not against this number.
 
 ## 4. Physicality
 

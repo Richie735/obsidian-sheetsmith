@@ -1,4 +1,4 @@
-# Sheetsmith — agent context
+# Sheetsmith agent context
 
 A system-agnostic character sheet builder for Obsidian. The user designs a sheet by placing components on a grid and defining formulas; a character is an ordinary markdown note that names a layout and holds only values.
 
@@ -6,8 +6,8 @@ A system-agnostic character sheet builder for Obsidian. The user designs a sheet
 
 Two more docs carry the conventions, loaded on demand rather than every session:
 
-- **`docs/PATTERNS.md`** — how code here is built. Read before writing a component and when reviewing one. Every rule states whether it is enforced by a check, reported as a lint warning, or held by judgement.
-- **`docs/UI.md`** — how a sheet looks and behaves. Read when designing or reviewing appearance, alongside the harness.
+- **`docs/PATTERNS.md`** covers how code here is built. Read it before writing a component and when reviewing one. Every rule states whether it is enforced by a check, reported as a lint warning, or held by judgement.
+- **`docs/UI.md`** covers how a sheet looks and behaves. Read it when designing or reviewing appearance, alongside the harness.
 
 @AGENTS.md
 
@@ -17,7 +17,7 @@ These are non-negotiable, and each one is easy to violate by reaching for the ob
 
 1. **Never `eval()` or `new Function()`.** The formula engine must use a real parser. Layouts are shareable files, so evaluating them as code is a live injection vector, and Obsidian's plugin review rejects both outright. Enforced by `no-eval`, `no-implied-eval`, and `no-new-func`.
 
-2. **Wikilinks must never be written inside a code fence.** Obsidian does not index links in fenced blocks, so backlinks, graph view, hover preview, and rename propagation all die silently. This is why link-bearing components store as plain markdown and only scalar components use fences. It is the load-bearing decision in the file model.
+2. **Wikilinks must never be written inside a code fence.** Obsidian does not index links in fenced blocks, so backlinks, graph view, hover preview, and rename propagation all break with no warning. This is why link-bearing components store as plain markdown and only scalar components use fences. It is the load-bearing decision in the file model.
 
 3. **Parse then serialise is byte-identical when nothing changed.** Any drift means hand-edited notes get reformatted on every save, which breaks the promise that the user owns plain markdown.
 
@@ -25,33 +25,33 @@ These are non-negotiable, and each one is easy to violate by reaching for the ob
 
 5. **`src/parse/` and `src/formula/` import nothing from `obsidian`.** They stay pure so they can be tested without launching the app. Reach for `app.vault` or `app.metadataCache` in a view or service, never in the parser or the formula engine. Enforced by `no-restricted-imports` scoped to those paths.
 
-The registry contract in `src/components/contract.test.ts` runs the §4.1 checks against every registered component, so adding one that skips part of the contract fails there rather than at runtime in a view.
-
 6. **Test against a throwaway vault, never a real one.**
+
+The registry contract in `src/components/contract.test.ts` runs the §4.1 checks against every registered component, so adding one that skips part of the contract fails there rather than at runtime in a view.
 
 ## Architecture
 
-- **Character note**: one frontmatter key (`sheet-layout`), all values in the body, one `##` section per component. Scalar components store fenced YAML; link-bearing components store markdown tables or prose. See `SPEC` §3.
-- **Layout file**: separate vault file holding structure, formulas, function library, reset triggers. No per-character data. Shared by many characters.
+- **Character note.** One frontmatter key (`sheet-layout`), all values in the body, one `##` section per component. Scalar components store fenced YAML; link-bearing components store markdown tables or prose. See `SPEC` §3.
+- **Layout file.** A separate vault file holding structure, formulas, function library, and reset triggers. No per-character data. Shared by many characters.
 - **Sections key on the component's `label`**, which is also its heading. The `id` is stable identity for formula references, so renaming a label breaks no formulas but does require migrating existing notes.
 
 ## Component contract
 
-The members and what each one owes are `docs/SPEC.md` §4.1; the order to declare
+The members and what each one owes are `docs/SPEC.md` §4.1. The order to declare
 them in, and the shape of the file around them, are `docs/PATTERNS.md` §3. Both
 are checked by `src/components/contract.test.ts`, so a component that departs
 from either fails the build rather than review.
 
 The rule worth repeating here, because everything else follows from it: **nothing
 outside a component needs to know that component exists.** Adding one means
-implementing the contract and registering it — one line in
-`src/components/index.ts` — and touching neither the renderer, the parser, nor
+implementing the contract and registering it, one line in
+`src/components/index.ts`, and touching neither the renderer, the parser, nor
 the layout editor. A component never imports another component either, which
 eslint now enforces.
 
 ## Working order
 
-Build **component by component, not layer by layer.** Take one component all the way through read, write, render, and tests before starting the next. Order so far: Stat group, then Stat (dropped when Stat group first covered the card, rebuilt on top of it), Skill card, Pool, Track; the remaining six are variations. The layout schema assembles itself from component configs rather than being designed up front. See `SPEC` §12.
+Build **component by component, not layer by layer.** Take one component all the way through read, write, render, and tests before starting the next. Order so far: Stat group, then Stat (dropped when Stat group first covered the card, rebuilt on top of it), Skill card, Pool, Track. The remaining six are variations. The layout schema assembles itself from component configs rather than being designed up front. See `SPEC` §12.
 
 Resist building the layout editor and the formula engine early. Both assume a working renderer and a proven file format, and both are the interesting parts, which is exactly why they are the trap.
 
@@ -99,7 +99,7 @@ npm run harness:calibrate  # extract Obsidian's real theme + settings chrome
 npm run harness:shot       # render every view to harness/shots/*.png
 ```
 
-The harness renders both surfaces outside Obsidian against the real
+The harness renders the plugin's two screens outside Obsidian against the real
 `styles.css`: the sheet, and the settings tab holding the layout editor. Both
 themes, any width, and the two joined so an editor change re-renders the sheet.
 Review appearance by looking at it, not by reading CSS.

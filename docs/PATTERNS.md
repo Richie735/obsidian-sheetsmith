@@ -9,13 +9,13 @@ the visual and CSS side; `SPEC.md` (in this folder) covers what the plugin does.
 
 Every rule below carries how strongly it is held:
 
-- **[checked]** — a test or an eslint `error` fails the build. Departing means
+- **[checked]**. A test or an eslint `error` fails the build. Departing means
   changing the check first.
-- **[warned]** — an eslint rule reports it as a warning. `npm run lint` runs
+- **[warned]**. An eslint rule reports it as a warning. `npm run lint` runs
   with `--max-warnings 0`, so a warning fails the build exactly like an error.
-  The tier records where the rule came from — `obsidianmd.configs.recommended`
-  rather than a hand-set `error` — not how weakly it is held.
-- **[judgement]** — nothing automated. A default with a reason, not a law:
+  The tier records where the rule came from, `obsidianmd.configs.recommended`
+  rather than a hand-set `error`, and not how weakly it is held.
+- **[judgement]**. Nothing automated. A default with a reason rather than a law:
   depart deliberately and say why in a comment.
 
 ---
@@ -27,7 +27,7 @@ Everything else in this file is a consequence of these.
 ### Atomic: one file, one responsibility
 
 A module does one job and is named for it. `level-ring.ts` paints level rings.
-`editable.ts` owns the editing gesture. `stat-card.ts` draws the stat surface.
+`editable.ts` owns the editing gesture. `stat-card.ts` draws the stat card.
 
 **Length is a symptom, never the rule.** A 400-line module doing one job is
 correct; a 200-line module doing two is not. Comment density in this repository
@@ -39,20 +39,20 @@ this file's job in one sentence without using "and"?* When the answer is no, the
 file holds more than one thing.
 
 > **The worked example.** `pool.ts` used to fail this test: its first ~850 lines
-> were a gesture engine — scrub, momentum projection, hold-to-repeat ramping —
-> and its `ComponentDefinition` did not begin until line 856. Two
+> were a gesture engine covering scrub, momentum projection and hold-to-repeat
+> ramping, and its `ComponentDefinition` did not begin until line 856. Two
 > responsibilities, one file, and neither of them small.
 >
 > Worth keeping as the example because of what the fix had to get right. The
 > gesture moved to `src/interaction/`, but the *class names* stayed with the
 > caller: a module in `interaction/` is passed `'sheetsmith-pool-step'` rather
 > than naming a pool itself. That is the difference between splitting a file and
-> actually separating two responsibilities — the second one leaves neither half
+> actually separating two responsibilities. The second one leaves neither half
 > knowing what the other is for.
 >
 > Note also what did not move. The flash timings and the temporary-points
 > buffer read like gesture code and are not: they are the Pool's own feedback
-> and its own rule. Atomicity is what forced the split, not reuse — the engine
+> and its own rule. Atomicity is what forced the split, not reuse. The engine
 > has one consumer, and §1 is explicit that one consumer earns no
 > generalisation.
 
@@ -65,20 +65,20 @@ The general rule:
 
 So:
 
-- **One consumer** — keep it private to that module. Do not generalise ahead of
+- **One consumer.** Keep it private to that module. Do not generalise ahead of
   evidence.
-- **Two consumers** — duplication is allowed, *if* a test drives both copies
-  over the same cases and fails when they disagree — the truthiness spellings a
+- **Two consumers.** Duplication is allowed, *if* a test drives both copies
+  over the same cases and fails when they disagree. The truthiness spellings a
   second reader of a flag would have to match are the standing example. Without
   that test the duplication is not allowed.
-- **Three consumers** — extract. At three, the shape has been demonstrated by
+- **Three consumers.** Extract. At three, the shape has been demonstrated by
   use rather than guessed at, and the guard test is no longer cheaper than the
   module.
 
 **That ladder is written for behaviour. A policy number climbs it in one step.**
 Where the duplicated thing is a timing, a bound, or a row count, drift *is* the
 entire risk, so the two-consumer guard test costs more than the module and
-proves less — it can only assert that two constants are still equal, which is
+proves less. It can only assert that two constants are still equal, which is
 what one constant says for free. Extract on the second consumer there.
 `interaction/commit-window.ts` holds a single `GESTURE_COMMIT` because Pool and
 Track had both settled on 700ms in two places nothing kept in step;
@@ -91,7 +91,7 @@ component must never import from another component** [checked], because that
 breaks the isolation the whole contract rests on: nothing outside a component
 may know that component exists. Shared behaviour lives in a painter beside them
 (`stat-card.ts`, `level-ring.ts`), in `interaction/` (`editable.ts`), or in
-`ui/` (`popover.ts`) — not in a sibling component, whatever the import is
+`ui/` (`popover.ts`), never in a sibling component, whatever the import is
 spelled like. Both directory spellings of a sibling and the registry itself are
 restricted in `eslint.config.mts`, and the spellings are enumerated in
 `components/isolation.test.ts`, which drives eslint rather than trusting a
@@ -116,10 +116,10 @@ src/
   components/      one file per component, plus the painters they share. No
                    component imports a sibling component [checked]
   editor/          the layout editor and its field widgets
-  styles/          the stylesheet, split by surface; styles.css is assembled
+  styles/          the stylesheet, split by area; styles.css is assembled
                    from these at build time and is not edited directly
   view/            sheet view, auto-open, reset flow
-  ui/              generic primitives that know nothing of components
+  ui/              generic building blocks that know nothing of components
   test/            scaffolding only: stubs and fixtures, never test cases
 ```
 
@@ -134,7 +134,7 @@ skill, not a hook, not a reference document, not a machine-local setting.
 A clone on another machine has to build, test, review and ship by exactly the
 same standard. The failure this prevents is silent rather than loud: a skill
 delegating to one installed only on the original machine does not error on the
-clone, it simply reviews with whatever generic knowledge it has and reports its
+clone. It reviews with whatever generic knowledge it has and reports its
 findings with the same confidence. Nothing marks the difference.
 
 That is why `.claude/skills/design-review/reference/motion.md` is vendored into
@@ -150,15 +150,15 @@ It would also hide the real problem rather than fix it: `src/components/` looks
 crowded because `pool.test.ts` is 2176 lines, and the answer to that is smaller
 modules, not a different folder to keep them in.
 
-`src/test/` is the exception and is not a contradiction: it holds scaffolding —
-`obsidian-stub.ts` — which is shared infrastructure, not a test case.
+`src/test/` is the exception and is not a contradiction: it holds scaffolding,
+`obsidian-stub.ts`, which is shared infrastructure rather than a test case.
 
 ## 3. Component file shape
 
 Every component follows the same order. A reader who knows one knows them all.
 
 1. **File header comment.** What the component is, its `SPEC` section, the cases
-   it covers, and — most importantly — *what it is not and why*. `track.ts`
+   it covers, and, most importantly, *what it is not and why*. `track.ts`
    opens by ruling out being "a simpler Pool" and saying what differs. This is
    the paragraph that stops the component being redesigned by the next person
    to touch it.
@@ -177,14 +177,14 @@ Every component follows the same order. A reader who knows one knows them all.
    because it is the longest.
 
 Checked in `contract.test.ts`, along with the rule that a component declares
-nothing outside the contract — otherwise a new member falls outside the order
-and is covered by neither.
+nothing outside the contract. Otherwise a new member falls outside the order and
+is covered by neither.
 
 ### Registering it
 
 One line in `components/index.ts`. Nothing else. If adding a component requires
 touching the renderer, the parser, or the layout editor, the contract has been
-broken and that is the bug to fix — not the component.
+broken and that is the bug to fix, not the component.
 
 ---
 
@@ -197,8 +197,8 @@ value the caller can act on.
   null }` for "nothing stored yet", or `{ ok: false, error }`.
 - `applyReset` returns `ResetResult<TData>` for the same reason: data returned
   unchanged is indistinguishable from a reset that did nothing.
-- Config validation returns a discriminated union — `{ key } | { error }`, as in
-  `valueKey()` in `stat.ts` — checked with `'error' in entry`.
+- Config validation returns a discriminated union, `{ key } | { error }` as in
+  `valueKey()` in `stat.ts`, checked with `'error' in entry`.
 
 **`data: null` is not an error.** A missing section, an empty fence, and a fence
 without this component's key all mean the same thing: an editable empty card.
@@ -207,8 +207,8 @@ nobody asked for.
 
 **Error text names the fix, not the fault** [judgement]. `"max: 'con' is not
 defined on this sheet"` beats `"could not resolve"`. Where a component has both
-a `resolve` and an `explain` in its context, use `explain` on the failure path —
-that is what it is for.
+a `resolve` and an `explain` in its context, use `explain` on the failure path.
+That is what it is for.
 
 **One component's failure never takes down the sheet** (`SPEC` §10). A
 misconfigured component renders its own error into its own container and
@@ -229,11 +229,11 @@ render(container, config, data, context): void {
 ```
 
 - `container.ownerDocument`, never the global `document` [judgement]. The view
-  may render into a detached or popout window. Held perfectly today — no source
-  file outside a comment reaches for the global — but nothing enforces it.
+  may render into a detached or popout window. Held today, with no source file
+  outside a comment reaching for the global, but nothing enforces it.
 - `replaceChildren()` to clear. Never `innerHTML` [warned:
-  `@microsoft/sdl/no-inner-html`] — Obsidian's review rejects it and it destroys
-  listeners silently.
+  `@microsoft/sdl/no-inner-html`]. Obsidian's review rejects it, and it destroys
+  listeners with no warning.
 - Build with `doc.createElement` and `classList.add`. Every class is prefixed
   `sheetsmith-` [judgement]. Note `obsidianmd/prefer-create-el` is deliberately
   off in `src/components/` so components stay testable under happy-dom.
@@ -281,13 +281,13 @@ A component inventing its own is the failure mode to watch for.
   it is about to hit, so focus moves while the finger is down; committing on
   release is what lets a press slide off and be taken back.
 - **One route in.** Keyboard activation arrives at the same handler by bubbling.
-  Never a second code path for the keyboard — that is how the two drift. **The
+  Never a second code path for the keyboard. That is how the two drift. **The
   exception is a gesture the other input does not have**: a key cannot express a
   hold, so `interaction/hold-repeat.ts` answers `pointerdown` for the repeat and
   handles the keyboard's `click` separately, telling them apart with
   `event.detail === 0` so a mouse press is not stepped twice. Take that
   exception only where the gesture is genuinely absent from the other input,
-  never where routing it through one handler is merely inconvenient — and keep
+  never where routing it through one handler is merely inconvenient, and keep
   the step arithmetic in one place even when the entry points differ.
 - **Draft and commit are separate** (`editable.ts`). Typing, arrows and Enter
   change the draft; blur commits; Escape abandons and says so. Nothing reaches
@@ -298,7 +298,7 @@ A component inventing its own is the failure mode to watch for.
   for two-state marks; `aria-label` composed from the label and the state name
   the layout author chose. Announce commits and restores where the change is not
   visible on its own.
-- **Arithmetic uses the formula parser, never `eval`** [checked] — `amountOf`
+- **Arithmetic uses the formula parser, never `eval`** [checked]. `amountOf`
   and `settleEntry` in `editable.ts` are the shared entry points.
 
 ---
@@ -308,7 +308,7 @@ A component inventing its own is the failure mode to watch for.
 - **Report a delta, not a snapshot** [judgement]. `StatData` has `value?` and
   `note?` both optional: an edit reports only the field the user touched, so a
   commit racing a rebuild cannot write back a stale sibling. A component with a
-  single field may hold it flat — there is no sibling to protect.
+  single field may hold it flat, since there is no sibling to protect.
 - **Preserve the note's own spelling.** Constraint 3 is byte-identical
   round-tripping, so `write` reads the body it is handed and keeps a spelling
   that already means the right thing. A hand-written `x` stays an `x`; `true`
@@ -318,7 +318,7 @@ A component inventing its own is the failure mode to watch for.
   entry in the note so hand editing reads well. Formulas reference the component
   `id`; the key never appears on the card.
 - **Validate what the file format requires, not what looks tidy.** A key is
-  refused for containing a colon because a colon separates key from value — not
+  refused for containing a colon because a colon separates key from value, not
   because it is ugly.
 
 ---
@@ -335,10 +335,10 @@ A component inventing its own is the failure mode to watch for.
 - `default` on booleans; a value matching its default is omitted from the config
   and `visibleWhen` matches the *effective* value, so a condition naming a
   default is satisfied by absence.
-- Never redeclare `id`, `type`, `label`, `position`, `reset` [checked] — the
+- Never redeclare `id`, `type`, `label`, `position`, `reset` [checked]. The
   editor owns those.
 - Declaring `applyReset` obliges `formulaFields` to include `reset.*.to`
-  [checked]. Forgetting it makes the reset button silently dead.
+  [checked]. Forgetting it leaves the reset button dead with nothing to say so.
 
 ---
 
@@ -357,7 +357,7 @@ nothing and costs a line in every future read.
 
 Density is an *output* of those two rules, never a target. Where the decisions
 are dense the file is dense: `pool.ts` runs 46% comment and blank, `track.ts`
-42%, and nearly all of it is the second kind — the argument against the design
+42%, and nearly all of it is the second kind: the argument against the design
 that was not taken. **A reviewer must not report that as bloat**, and a cleanup
 pass must not strip it. Deleting the paragraph in `editable.ts` explaining why a
 value field does not also read an amount is precisely how that bug gets rebuilt.
@@ -365,7 +365,7 @@ value field does not also read an amount is precisely how that bug gets rebuilt.
 Applied honestly, the cut in this codebase is small and specific:
 
 - **A doc comment restating a self-describing name.** The `hide*` config flags
-  are the clear cases — `/** Hide the label above the value. */ hideLabel?:
+  are the clear cases: `/** Hide the label above the value. */ hideLabel?:
   boolean`, `/** Leave the note line off the card. */ hideNote?: boolean`,
   `/** Show only the derived result... */ hideValue?: boolean`. The identifier
   already says it.
@@ -392,8 +392,8 @@ decided.
   read/write round trip, belongs in that component's file.
 - **`contract.test.ts` is registry-wide** and runs against every registered
   component. A rule that can be expressed there belongs there rather than in six
-  component files — that is the cheapest enforcement surface in the repo, and
-  the first place to reach when adding a checked rule.
+  component files, since that is the cheapest place in the repo to enforce a
+  rule and the first to reach for when adding a checked rule.
 - **Round-trip every component**: parse then serialise with nothing changed is
   byte-identical (Constraint 3).
 - **A guard test earns its place when a failure is invisible in review.**
@@ -411,11 +411,11 @@ decided.
 ## 11. Conformance backlog
 
 Where the code does not yet match this file. These are findings, not licences:
-new code follows the patterns above. A row leaves when it is fixed — a backlog
+new code follows the patterns above. A row leaves when it is fixed. A backlog
 that keeps solved rows stops being read.
 
 | Gap | Where | Fix |
 | --- | --- | --- |
 | Two responsibilities in one file | `layout-editor.ts` | Deliberately deferred, not overlooked. The split waits for the M4 workspace view, which rewrites this module anyway; splitting it twice would be the waste. It has tests now, so the move will be guarded when it comes. |
-| Gesture modules have no test file beside them | `src/interaction/` | `scrub.ts`, `hold-repeat.ts` and `editable.ts` are covered thoroughly, but through `pool.test.ts`, `track.test.ts` and the component tests rather than their own files — against §10's one-test-file-per-module. It may be that §10 is what should change here: a gesture is only meaningfully driven through a control that uses it, and a test file of its own would have to build a fake card first, which is what those component tests already are. Settle it rather than leaving it implicit. |
+| Gesture modules have no test file beside them | `src/interaction/` | `scrub.ts`, `hold-repeat.ts` and `editable.ts` are covered thoroughly, but through `pool.test.ts`, `track.test.ts` and the component tests rather than their own files, against §10's one-test-file-per-module. It may be that §10 is what should change here: a gesture is only meaningfully driven through a control that uses it, and a test file of its own would have to build a fake card first, which is what those component tests already are. Settle it rather than leaving it implicit. |
 | A backlog row names a sample, not the whole set | §9, `components/skill-card.ts`, `components/track.ts` | The row that drove the doc-comment cleanup named `stat.ts` and `stat-group.ts`, and the fix followed the row rather than the rule, so instances outside those two files survived: `skill-card.ts` still carries `/** Hide the component's label above the table. */` against a description saying the same thing, and `track.ts` a softer one that may earn its place on the cross-reference alone. Neither is in any diff, having predated the branch, so a diff-scoped review cannot surface them by design and never will. Fix the two, then close the gap properly: a source check comparing each interface doc comment against its own `configFields` description is mechanical, and §9 already says what to compare. Prose caught this once; the check is what stops it recurring. |

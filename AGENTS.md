@@ -44,16 +44,16 @@ npm run build
 
 ## File & folder conventions
 
-- **Organize code into multiple files**: Split functionality across separate modules rather than putting everything in `main.ts`.
+- **Organize code into multiple files.** Split functionality across separate modules rather than putting everything in `main.ts`.
 - Source lives in `src/`. Keep `main.ts` small and focused on plugin lifecycle (loading, unloading, registering commands).
 - **Where a module goes** is `docs/PATTERNS.md` §2, which lists the folders and
   says which of their boundaries eslint enforces. Deliberately not repeated here:
   this file and that one are both always loaded, and a structure written down
   twice is a structure that goes stale in one of the two.
 - **Do not commit build artifacts**: never commit `node_modules/` or `main.js`.
-  `styles.css` is the deliberate exception — it is generated from `src/styles/`
+  `styles.css` is the deliberate exception. It is generated from `src/styles/`
   but stays tracked, because the release workflow, the harness and a test all
-  read it without running a build first. It is not hand-edited; a test fails if
+  read it without running a build first. Nobody hand-edits it; a test fails if
   it and its sources disagree.
 - Keep the plugin small. Avoid large dependencies. Prefer browser-compatible packages.
 - Generated output should be placed at the plugin root or `dist/` depending on your build setup. Release artifacts must end up at the top level of the plugin folder in the vault (`main.js`, `manifest.json`, `styles.css`).
@@ -128,12 +128,11 @@ Follow Obsidian's **Developer Policies** and **Plugin Guidelines**. In particula
 ## Coding conventions
 
 - TypeScript with `"strict": true` preferred.
-- **Keep `main.ts` minimal**: Focus only on plugin lifecycle (onload, onunload, addCommand calls). Delegate all feature logic to separate modules.
-- **One responsibility per file**: split a module that does two jobs, whatever its length. Line count is not the rule — see `docs/PATTERNS.md` §1, which governs.
-- **Use clear module boundaries**: Each file should have a single, well-defined responsibility.
+- **Keep `main.ts` minimal.** Focus only on the plugin lifecycle (onload, onunload, addCommand calls). Delegate all feature logic to separate modules.
+- **One responsibility per file.** Split a module that does two jobs, whatever its length. Line count is not the rule; see `docs/PATTERNS.md` §1, which governs.
 - Bundle everything into `main.js` (no unbundled runtime deps).
 - Avoid Node/Electron APIs if you want mobile compatibility; set `isDesktopOnly` accordingly.
-- Prefer `async/await` over promise chains; handle errors gracefully.
+- Prefer `async/await` over promise chains, and handle errors rather than letting them escape.
 
 ## Mobile
 
