@@ -6,6 +6,7 @@
  * wrong rather than failing silently.
  */
 
+import { isName } from '../formula/expression';
 import { ComponentConfig, GridPosition, ResetBinding } from '../types';
 
 export class LayoutParseError extends Error {
@@ -49,15 +50,6 @@ export interface Layout {
 	 */
 	[key: string]: unknown;
 }
-
-/**
- * A component id is what formulas reference (SPEC §4.1), so it has to be a
- * name the expression parser accepts. A hyphen is the trap: `armour-class`
- * tokenizes as `armour` minus `class`, so the id reads as arithmetic over
- * two names that do not exist, and the formula fails for a reason that
- * points nowhere near the actual problem.
- */
-const COMPONENT_ID = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
 /**
  * Rewrite an id no formula could reference into one that can.
@@ -289,10 +281,13 @@ export function parseLayout(source: string): Layout {
 	// components genuinely sharing a usable id is an authoring error worth
 	// reporting, not something to quietly rename apart.
 	const usable = new Set(
-		components.filter((c) => COMPONENT_ID.test(c.id)).map((c) => c.id),
+		components.filter((c) => isName(c.id)).map((c) => c.id),
 	);
 	for (const component of components) {
-		if (COMPONENT_ID.test(component.id)) continue;
+		// A component id is what formulas reference (SPEC §4.1), so it has to be
+		// a name the expression parser accepts. `isName` owns that question and
+		// carries the hyphen trap that made this rewrite necessary.
+		if (isName(component.id)) continue;
 		component.id = migrateId(component.id, usable);
 		usable.add(component.id);
 	}

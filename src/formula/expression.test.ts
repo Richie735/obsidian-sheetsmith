@@ -1,11 +1,45 @@
 import { describe, expect, it } from 'vitest';
-import { evaluate, FormulaError, Scope } from './expression';
+import { evaluate, FormulaError, isName, Scope } from './expression';
 
 const empty: Scope = () => undefined;
 const scope =
 	(values: Record<string, number | boolean | string>): Scope =>
 	(name) =>
 		values[name];
+
+describe('isName', () => {
+	/*
+	 * The one question every referencable name in the plugin is measured
+	 * against: a component id, a value a component publishes, a totalled column
+	 * key. Asked here rather than restated by each caller, because three copies
+	 * of a grammar are three answers to it.
+	 */
+	it('accepts what the tokeniser reads as a name', () => {
+		expect(['prof', 'DEX', '_hidden', 'a1', 'Load_cost'].filter(isName)).toEqual([
+			'prof',
+			'DEX',
+			'_hidden',
+			'a1',
+			'Load_cost',
+		]);
+	});
+
+	it('refuses what a formula would read as something else', () => {
+		// A hyphen is subtraction, a space ends the name, a leading digit is a
+		// number, and a dot is a path into something rather than a name.
+		expect(
+			['Load cost', 'Load-cost', '1st', '', 'Load.cost', 'qty%'].filter(isName),
+		).toEqual([]);
+	});
+
+	it('agrees with what evaluate actually resolves', () => {
+		// The pair that matters: a name this accepts has to resolve as one name,
+		// and one it refuses must not quietly resolve as arithmetic over two.
+		const names = scope({ Load_cost: 3, Load: 10, cost: 4 });
+		expect(evaluate('Load_cost', names)).toBe(3);
+		expect(evaluate('Load-cost', names)).toBe(6);
+	});
+});
 
 describe('evaluate', () => {
 	it('does arithmetic with normal precedence', () => {
