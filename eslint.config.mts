@@ -7,6 +7,9 @@ export default defineConfig(
 		'node_modules',
 		'dist',
 		'esbuild.config.mjs',
+		// Build scripts, treated like esbuild.config.mjs above.
+		'styles.build.mjs',
+		'styles.build.d.mts',
 		'vitest.config.ts',
 		'version-bump.mjs',
 		'versions.json',
