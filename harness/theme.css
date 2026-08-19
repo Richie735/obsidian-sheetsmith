@@ -28,6 +28,25 @@
 
 @layer harness-fallback {
 
+/*
+ * Obsidian's own global reset, and the one rule here that is not a variable.
+ *
+ * `app.css` declares `* { box-sizing: border-box }` at the top level, so every
+ * width and height in the app is a border-box measurement. Without it a card
+ * taking `height: 100%` of its grid cell overflows by its padding plus its
+ * border — 18px — and the shot shows a component colliding with whatever sits
+ * below it. That collision does not exist in Obsidian, and a reviewer reading
+ * the shots would be right to try to fix it and wrong about what to change. It
+ * hides real overflow at the same sites just as effectively.
+ *
+ * In the fallback layer with everything else approximating Obsidian, so the
+ * calibrated sheet still wins. Both set the same value; this one is for a
+ * harness running without `harness:calibrate`.
+ */
+* {
+	box-sizing: border-box;
+}
+
 body {
 	--font-normal: 16px;
 	--font-ui-medium: 15px;
