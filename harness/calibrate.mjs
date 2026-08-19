@@ -71,6 +71,25 @@ function readFromAsar(asarPath, name) {
 	return buf.subarray(start, start + entry.size).toString('utf8');
 }
 
+/**
+ * Global resets, taken whole.
+ *
+ * A category of its own rather than another CHROME entry, because a universal
+ * selector is not settings chrome and the reason it has to come along is
+ * different in kind. `* { box-sizing: border-box }` sits at the top level of
+ * app.css and changes what every width and height in the app *means*; leaving
+ * it out made the harness disagree with Obsidian by padding plus border at
+ * every `height: 100%` — 18px on a card — which reads in a screenshot as a
+ * component overflowing its grid cell.
+ *
+ * That is the worst possible failure for this harness to have. Reviewing
+ * appearance here means reading the shots, so a false positive is not a
+ * cosmetic problem: it invites a fix, with margins, for a collision that only
+ * exists in the instrument. It masks the real thing just as well, since 18px of
+ * phantom slack hides genuine overflow at the same sites.
+ */
+const RESET = /^\*$/;
+
 /** Rules whose *whole* body is wanted: Obsidian's real settings chrome. */
 const CHROME = [
 	/^\.setting-item/,
@@ -151,9 +170,15 @@ const lines = [
 
 let palettes = 0;
 let chrome = 0;
+let resets = 0;
 for (const rule of rules(css)) {
 	if (rule.selector.startsWith('@') || rule.selector === '') continue;
 	const parts = rule.selector.split(',').map((s) => s.trim());
+	if (parts.some((s) => RESET.test(s))) {
+		lines.push(`${rule.selector} {${rule.body}}`, '');
+		resets++;
+		continue;
+	}
 	if (parts.some((s) => PALETTE.test(s))) {
 		const props = customProperties(rule.body);
 		if (props.length === 0) continue;
@@ -170,5 +195,6 @@ for (const rule of rules(css)) {
 const out = 'harness/obsidian.generated.css';
 writeFileSync(out, lines.join('\n'));
 console.log(
-	`Wrote ${out} from Obsidian ${version}: ${palettes} palette blocks, ${chrome} chrome rules.`,
+	`Wrote ${out} from Obsidian ${version}: ${palettes} palette blocks, ` +
+		`${chrome} chrome rules, ${resets} global resets.`,
 );
