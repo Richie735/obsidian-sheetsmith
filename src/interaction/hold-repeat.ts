@@ -9,7 +9,8 @@
  * mean two controls that behave differently for no reason a user could name.
  *
  * The class name is passed in rather than chosen here. This module has no
- * business naming a pool, and the caller already owns the stylesheet rule.
+ * business naming the caller's surface, and the caller already owns the
+ * stylesheet rule.
  */
 
 /** How far one press moves the value, and how far with Shift held. */
