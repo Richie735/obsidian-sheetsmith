@@ -37,13 +37,17 @@ The registry contract in `src/components/contract.test.ts` runs the §4.1 checks
 
 ## Component contract
 
-Every component implements five things, defined in `SPEC` §4.1:
+The members and what each one owes are `docs/SPEC.md` §4.1; the order to declare
+them in, and the shape of the file around them, are `docs/PATTERNS.md` §3. Both
+are checked by `src/components/contract.test.ts`, so a component that departs
+from either fails the build rather than review.
 
-`read` (section → data), `write` (data → section, byte-identical when unchanged), `render` (data + resolved values → DOM), `formulaFields` (which config fields accept an expression), and `configFields` (declared config fields the layout editor renders as a form).
-
-Plus an optional sixth, `scopeValues`, for components holding values other components' formulas can read (`abilities.DEX`). Components with nothing referencable omit it.
-
-Nothing outside a component should need to know that component exists. Adding one means implementing those five and registering it, not touching the renderer, the parser, or the layout editor.
+The rule worth repeating here, because everything else follows from it: **nothing
+outside a component needs to know that component exists.** Adding one means
+implementing the contract and registering it — one line in
+`src/components/index.ts` — and touching neither the renderer, the parser, nor
+the layout editor. A component never imports another component either, which
+eslint now enforces.
 
 ## Working order
 
@@ -86,6 +90,10 @@ gitignored: it is Obsidian's CSS, and this repository is public.
   the build exactly like an error.
 - Keep `main.ts` to plugin lifecycle only.
 - Do not commit `main.js`. It is a build artifact attached to releases.
+- Do not hand-edit `styles.css`. It is assembled from `src/styles/` by
+  `styles.build.mjs` and a build overwrites it; edit the part the rule belongs
+  to. It stays committed, unlike `main.js`, because the release workflow and the
+  harness both read it directly. A test fails if the two disagree.
 - Update `docs/SPEC.md` when a design decision changes, and move settled items out of §13 Open questions.
 - Follow `docs/PATTERNS.md`. Where the code does not yet match it, the gap is recorded in its §11 backlog rather than copied into new code.
 - Do not add `Co-Authored-By` trailers to commit messages.

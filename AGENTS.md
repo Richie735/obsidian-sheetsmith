@@ -46,20 +46,15 @@ npm run build
 
 - **Organize code into multiple files**: Split functionality across separate modules rather than putting everything in `main.ts`.
 - Source lives in `src/`. Keep `main.ts` small and focused on plugin lifecycle (loading, unloading, registering commands).
-- **Example file structure**:
-    ```
-    src/
-      main.ts           # Plugin lifecycle only, kept small
-      settings.ts       # Settings interface and defaults
-      parse/            # Note and layout parsing. No obsidian imports.
-        character.ts
-        layout.ts
-      components/       # One file per component, each implementing the contract
-      formula/          # Expression parsing and dependency evaluation
-      view/             # Sheet view, layout editor
-      types.ts          # Shared interfaces
-    ```
-- **Do not commit build artifacts**: Never commit `node_modules/`, `main.js`, or other generated files to version control.
+- **Where a module goes** is `docs/PATTERNS.md` §2, which lists the folders and
+  says which of their boundaries eslint enforces. Deliberately not repeated here:
+  this file and that one are both always loaded, and a structure written down
+  twice is a structure that goes stale in one of the two.
+- **Do not commit build artifacts**: never commit `node_modules/` or `main.js`.
+  `styles.css` is the deliberate exception — it is generated from `src/styles/`
+  but stays tracked, because the release workflow, the harness and a test all
+  read it without running a build first. It is not hand-edited; a test fails if
+  it and its sources disagree.
 - Keep the plugin small. Avoid large dependencies. Prefer browser-compatible packages.
 - Generated output should be placed at the plugin root or `dist/` depending on your build setup. Release artifacts must end up at the top level of the plugin folder in the vault (`main.js`, `manifest.json`, `styles.css`).
 
