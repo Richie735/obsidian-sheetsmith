@@ -87,6 +87,23 @@ export const RESERVED_NAMES: readonly string[] = [
 	'false',
 ];
 
+/**
+ * Whether a formula could reference this text as a name.
+ *
+ * One segment, not a dotted path: the callers are naming *part* of a reference —
+ * a component's id, or a value it publishes as `<id>.<name>` — and a dot inside
+ * one of those would publish a name with more segments than the contract has,
+ * able to collide with the `.value` every entry already answers to.
+ *
+ * Asked here rather than restated by each caller. A hyphen is the trap this
+ * exists for: `armour-class` tokenises as `armour` minus `class`, so the name
+ * reads as arithmetic over two names that do not exist and the formula fails a
+ * long way from the actual mistake.
+ */
+export function isName(text: string): boolean {
+	return ONE_NAME.test(text);
+}
+
 /** The library an expression may call, and what its bodies can see. */
 export interface FunctionEnv {
 	library: FunctionLibrary;
@@ -130,7 +147,21 @@ type Node =
 const TWO_CHAR_OPS = ['<=', '>=', '==', '!=', '&&', '||'];
 const ONE_CHAR_OPS = '+-*/%(),<>!';
 const NUMBER = /^\d+(\.\d+)?/;
-const NAME = /^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*/;
+
+/**
+ * One segment of a name: a letter or an underscore, then letters, digits and
+ * underscores (SPEC §5). Built once and shared, rather than written out in each
+ * of the three forms below, because this is the grammar every referencable name
+ * in the plugin is measured against — a component id, a published value, a
+ * column total — and three copies of it drift into three different answers to
+ * "what can a formula read?".
+ */
+const SEGMENT = '[A-Za-z_][A-Za-z0-9_]*';
+
+/** A name, or a dotted path of them: `prof`, `abilities.DEX.value`. */
+const NAME = new RegExp(`^${SEGMENT}(?:\\.${SEGMENT})*`);
+
+const ONE_NAME = new RegExp(`^${SEGMENT}$`);
 
 function tokenize(source: string): Token[] {
 	const tokens: Token[] = [];
