@@ -55,11 +55,37 @@ Each commit must:
 
 - build and pass tests on its own
 - do one coherent thing
-- carry a message in this repo's voice: **imperative, describing the behaviour
-  rather than the change**. Read `git log` first. The house style is
-  "Let a track hold a set of runs", "Make the schematic block the control it
-  looks like" — not "Add TrackRows support" or "fix(track): rows".
+- carry a **Conventional Commits** subject: `type: Subject`
 - **never** carry a `Co-Authored-By` trailer
+
+### The subject
+
+The type is machine-readable; the rest keeps this repo's voice. Both matter.
+
+**Standard types only**, no invented ones: `feat`, `fix`, `docs`, `refactor`,
+`test`, `perf`, `style`, `build`, `ci`, `chore`.
+
+**After the colon, write as the log already reads**: imperative, describing the
+behaviour rather than the change. `feat: Let a track hold a set of runs`, not
+`feat: add TrackRows support`. Read `git log` for the tone before writing.
+
+**`style:` means formatting and whitespace. It never means visual design.** In a
+project whose work is largely visual this is the trap: a change to how something
+looks is `feat:` when it improves it and `fix:` when it was wrong. Reserve
+`style:` for changes a reader would see no difference from.
+
+**`refactor:`** is behaviour-preserving movement — the folder moves and
+extractions, where tests pass unchanged before and after.
+
+**No scope.** `feat(pool):` adds noise in a single-plugin repository where the
+subject already names the thing.
+
+**Breaking changes.** A change to the layout file format, or to the shape of
+what a character note stores, breaks user data. Mark it `feat!:` or `fix!:` and
+add a `BREAKING CHANGE:` footer saying what the user must do. Constraint 4 makes
+this the most consequential footer this repo has.
+
+Commits made before this convention stay as they are; nothing is rewritten.
 
 Body paragraphs are welcome where a decision needs its argument recorded.
 
