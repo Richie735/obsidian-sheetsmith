@@ -565,6 +565,14 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 		};
 	},
 
+	write(data, body): string {
+		const updates = new Map<string, string>();
+		if (data.current !== undefined) updates.set(CURRENT_KEY, data.current);
+		if (data.temp !== undefined) updates.set(TEMP_KEY, data.temp);
+		if (data.max !== undefined) updates.set(MAX_KEY, data.max);
+		return writeFenced(body, updates);
+	},
+
 	hasBuffer: true,
 
 	applyReset(data, config, reset, context): ResetResult<PoolData> {
@@ -610,14 +618,6 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 		}
 
 		return { ok: true, data: next };
-	},
-
-	write(data, body): string {
-		const updates = new Map<string, string>();
-		if (data.current !== undefined) updates.set(CURRENT_KEY, data.current);
-		if (data.temp !== undefined) updates.set(TEMP_KEY, data.temp);
-		if (data.max !== undefined) updates.set(MAX_KEY, data.max);
-		return writeFenced(body, updates);
 	},
 
 	render(container, config, data, context): void {

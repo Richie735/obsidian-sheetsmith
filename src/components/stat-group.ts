@@ -32,9 +32,8 @@ export interface StatGroupConfig extends ComponentConfig {
 	derived?: string;
 	/** Card flow. Defaults to horizontal. */
 	direction?: 'horizontal' | 'vertical';
-	/** Hide the group's name above the cards. */
 	hideLabel?: boolean;
-	/** Where that name sits. Defaults to start. */
+	/** Where the group name sits. Defaults to start. */
 	labelAlign?: 'auto' | 'start' | 'center' | 'end';
 	/**
 	 * Card sizing: 'fill' (default) spreads cards across the width; 'fixed'
@@ -46,7 +45,6 @@ export interface StatGroupConfig extends ComponentConfig {
 	 * this field also carried the sizing choice; it reads as fill sizing.
 	 */
 	align?: 'stretch' | 'start' | 'center' | 'end';
-	/** Show only the derived results, hiding the stored values. */
 	hideValue?: boolean;
 	/** Prefix non-negative derived numbers with "+". Defaults to true. */
 	signed?: boolean;
