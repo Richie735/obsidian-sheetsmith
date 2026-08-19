@@ -1,7 +1,7 @@
 /*
  * The vocabulary both surfaces speak (docs/UI.md §8).
  *
- * The level ring is the clear case: a mark on a Skill card and the same mark
+ * The level ring is the clear case: a mark on a Table and the same mark
  * in the layout editor's sample go through one painter, so they must go
  * through one rule — two lookalikes are how the same flag ends up measuring
  * differently under the same finger. Inline errors and the popover are here

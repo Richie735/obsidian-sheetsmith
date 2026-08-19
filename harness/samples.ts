@@ -79,7 +79,7 @@ export const SAMPLES: Sample[] = [
 	{
 		config: {
 			id: 'skills',
-			type: 'skill-card',
+			type: 'table',
 			label: 'Skills',
 			position: { col: 1, row: 3, width: 12, height: 2 },
 			rowHeader: 'Skill',
