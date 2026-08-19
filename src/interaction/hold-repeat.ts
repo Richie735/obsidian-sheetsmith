@@ -12,7 +12,7 @@
  * business naming a pool, and the caller already owns the stylesheet rule.
  */
 
-/** How far one press of a step button moves the pool. */
+/** How far one press moves the value, and how far with Shift held. */
 const STEP = 1;
 const STEP_SHIFT = 10;
 
@@ -23,7 +23,7 @@ const HOLD_FLOOR = 40;
  * A ten-step gets a slower floor than a one-step. The ramp accelerates how
  * often a step lands, and Shift multiplies how far each one goes — together
  * they reached 250 a second, which covers ground faster than any flick while
- * the throw beside it is bounded to a quarter of the pool. Either the bound
+ * the throw beside it is bounded to a quarter of the range. Either the bound
  * is a principle or it is not.
  */
 const HOLD_FLOOR_SHIFT = 120;
@@ -33,27 +33,28 @@ const HOLD_RAMP = 0.8;
 /**
  * A step button that repeats while held.
  *
- * The most-pressed control on a sheet, and a table deals damage in sevens
- * rather than ones — seven discrete presses for one hit is the largest single
- * miss in the component. It answers on pointer-down rather than on click,
- * because feedback that waits for release reads as lag.
+ * Typically the most-pressed control on a surface, and the case it was built
+ * for is a change of seven arriving at once — seven discrete presses for one
+ * change was the largest single miss in the first caller. It answers on
+ * pointer-down rather than on click, because feedback that waits for release
+ * reads as lag.
  *
- * Every repeat moves the draft only; the note is written once on release.
- * That is SPEC §4.2's rule — feedback continuous, persistence discrete — and
- * it is also what stops a two-second hold writing the note twenty times and
- * rebuilding the sheet under the finger.
+ * Every repeat moves the draft only; persistence happens once, on release.
+ * Feedback continuous, persistence discrete (SPEC §4.2 states it for the first
+ * caller, but it is the rule that keeps a two-second hold from committing
+ * twenty times and rebuilding the surface under the finger).
  */
 export function stepButton(
 	doc: Document,
 	field: HTMLInputElement,
 	name: string,
 	direction: 1 | -1,
-	/** Class for the button. This module does not name the caller's card. */
+	/** Class for the button. This module does not name the caller's surface. */
 	className: string,
 	stepDraft: (delta: number) => void,
 	/**
 	 * Keeps the run of adjustments open rather than closing it. Consecutive
-	 * taps are one gesture, and one write; leaving the card flushes it.
+	 * taps are one gesture, and one commit; leaving the control flushes it.
 	 */
 	commitSoon: () => void,
 ): HTMLButtonElement {
@@ -89,7 +90,7 @@ export function stepButton(
 		// Take focus deliberately rather than letting the press put it wherever
 		// the browser would. It is the field the buttons adjust, so the arrow
 		// keys carry on from here — and it gives the run a blur to flush on,
-		// which is the only signal the card gets that the user has moved away.
+		// which is the only signal the caller gets that the user has moved away.
 		event.preventDefault();
 		field.focus();
 		button.setPointerCapture(event.pointerId);

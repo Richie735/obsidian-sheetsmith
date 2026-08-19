@@ -12,10 +12,12 @@
 /**
  * How long a run of adjustments stays open before it is written.
  *
- * Three taps on minus and a correcting plus is one gesture and one write, not
- * four — and because the gesture is measured from where it began, the plus
- * refunds the buffer the minuses drained rather than paying the pool instead.
- * Every path that ends an interaction flushes it early, so the window is only
- * ever waiting to see whether another adjustment is coming.
+ * Three taps down and a correcting tap up is one gesture and one commit, not
+ * four. And because the run is measured from where it began rather than
+ * accumulated, the correction unwinds what the earlier taps did instead of
+ * being applied on top of them — which is what lets a caller holding a buffer
+ * refund it rather than double-count. Every path that ends an interaction
+ * flushes early, so the window is only ever waiting to see whether another
+ * adjustment is coming.
  */
 export const GESTURE_COMMIT = 700;
