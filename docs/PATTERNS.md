@@ -86,6 +86,8 @@ src/
   components/      one file per component, plus the painters they share. No
                    component imports a sibling component [checked]
   editor/          the layout editor and its field widgets
+  styles/          the stylesheet, split by surface; styles.css is assembled
+                   from these at build time and is not edited directly
   view/            sheet view, auto-open, reset flow
   ui/              generic primitives that know nothing of components
   test/            scaffolding only: stubs and fixtures, never test cases
