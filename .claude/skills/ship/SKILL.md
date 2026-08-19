@@ -7,6 +7,12 @@ allowed-tools: Read, Glob, Grep, Bash, Edit
 
 Land finished work. **Feature:** $ARGUMENTS
 
+**Run this once, at the end.** Not after the first implementation, not after
+each finding is addressed. The work sits in one uncommitted tree through the
+whole review loop, and this skill turns the settled result into commits when the
+user says it is done. If the tree still has open findings against it, say so and
+stop rather than committing a half-reviewed change.
+
 ## 1. Verify before anything else
 
 ```bash

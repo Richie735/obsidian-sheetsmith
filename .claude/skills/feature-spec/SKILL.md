@@ -63,6 +63,11 @@ by reading a test name. "Feels right" is not one.
 A list of commits in order, each a coherent step that builds and passes tests.
 This is what stops the work being retro-sliced at the end.
 
+**These are a plan for `/ship`, not a schedule to follow while building.** The
+work stays in one uncommitted tree through implementation and every round of
+findings; the boundaries are applied once, at the end, when the user says the
+change is settled. See `CLAUDE.md` § "When to commit".
+
 ## Output
 
 Write to `docs/features/<kebab-slug>.md`, committed with the feature. Use exactly

@@ -55,6 +55,33 @@ Build **component by component, not layer by layer.** Take one component all the
 
 Resist building the layout editor and the formula engine early. Both assume a working renderer and a proven file format, and both are the interesting parts, which is exactly why they are the trap.
 
+## When to commit
+
+**Not while the work is in progress.** The working tree is what gets reviewed,
+and it stays uncommitted until the change is settled.
+
+The loop is: build the thing, the user looks at it, findings come back, address
+them, repeat. Only when the user says the work is done does `/ship` split the
+whole result into commits.
+
+Do **not** commit after implementing a feature, after addressing a finding, after
+a refactor, or at any other natural-feeling pause, unless asked to. That includes
+the boundaries a feature spec names: those are a plan for the end, not a
+schedule to follow as you go.
+
+The reason is the review, not tidiness. Work that is already committed makes a
+correction expensive: what should be an edit becomes an amend or a follow-up
+commit, and the history ends up recording the back-and-forth instead of the
+result the user actually approved. Reviewing an uncommitted tree keeps every
+change cheap to undo right up until the moment it is not.
+
+Verification is continuous and committing is not: run `npm test`, `npm run lint`
+and `npm run build` as often as they are useful.
+
+- `/ship` is the only thing that commits, and only when invoked.
+- Never push. That is always the user's call.
+- Do not add `Co-Authored-By` trailers to commit messages.
+
 ## Commands
 
 ```bash
@@ -96,4 +123,3 @@ gitignored: it is Obsidian's CSS, and this repository is public.
   harness both read it directly. A test fails if the two disagree.
 - Update `docs/SPEC.md` when a design decision changes, and move settled items out of §13 Open questions.
 - Follow `docs/PATTERNS.md`. Where the code does not yet match it, the gap is recorded in its §11 backlog rather than copied into new code.
-- Do not add `Co-Authored-By` trailers to commit messages.
