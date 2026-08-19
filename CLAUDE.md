@@ -79,6 +79,9 @@ Verification is continuous and committing is not: run `npm test`, `npm run lint`
 and `npm run build` as often as they are useful.
 
 - `/ship` is the only thing that commits, and only when invoked.
+- Subjects are Conventional Commits: `type: Subject`, standard types only, with
+  the subject itself in the log's existing voice. `/ship` carries the mapping
+  and the traps.
 - Never push. That is always the user's call.
 - Do not add `Co-Authored-By` trailers to commit messages.
 
