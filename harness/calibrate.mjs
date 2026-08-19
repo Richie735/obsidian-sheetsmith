@@ -126,8 +126,23 @@ function rules(source) {
 	const out = [];
 	let depth = 0;
 	let start = 0;
+	/** The quote character of the string being scanned through, if any. */
+	let quote = '';
 	for (let i = 0; i < css.length; i++) {
 		const ch = css[i];
+		// A brace inside a string is data, not syntax — the same hazard as the
+		// comments stripped above, and the same desync. Not what broke this file
+		// (see customProperties, which is where the real cut was) but the stylesheet
+		// is full of quoted data URLs and a `content: "}"` would be enough.
+		if (quote !== '') {
+			if (ch === '\\') i++;
+			else if (ch === quote) quote = '';
+			continue;
+		}
+		if (ch === '"' || ch === "'") {
+			quote = ch;
+			continue;
+		}
 		if (ch === '{') {
 			if (depth === 0) start = i;
 			depth++;
@@ -147,9 +162,46 @@ function rules(source) {
 	return out;
 }
 
-/** Custom-property declarations only. */
+/**
+ * The custom property declarations in a rule body.
+ *
+ * Split with a scanner rather than `/--x:[^;]+;/`, because **a semicolon inside a
+ * quoted value is data**. Obsidian carries pdf.js's variables, one of which is
+ * `url("data:image/svg+xml;charset=UTF-8,<svg …>")`, and stopping at the first
+ * semicolon emitted `url("data:image/svg+xml;` — an unterminated string. A
+ * browser handed that swallows every rule after it looking for the closing quote,
+ * so the entire generated file was dead from its eleventh line.
+ *
+ * That failure is worth the scanner on its own: nothing reported it. The harness
+ * loaded a calibration that did nothing, the hand-written fallback in theme.css
+ * carried every colour, and the shots looked plausible — an instrument claiming a
+ * fidelity it did not have, which is worse for a review than no calibration at
+ * all.
+ */
 function customProperties(body) {
-	return (body.match(/--[a-z0-9-]+\s*:[^;]+;/gi) ?? []).map((d) => d.trim());
+	const found = [];
+	let quote = '';
+	let start = 0;
+	for (let i = 0; i < body.length; i++) {
+		const ch = body[i];
+		if (quote !== '') {
+			if (ch === '\\') i++;
+			else if (ch === quote) quote = '';
+			continue;
+		}
+		if (ch === '"' || ch === "'") {
+			quote = ch;
+			continue;
+		}
+		if (ch !== ';') continue;
+		const declaration = body.slice(start, i).trim();
+		start = i + 1;
+		if (/^--[a-z0-9-]+\s*:/i.test(declaration)) found.push(`${declaration};`);
+	}
+	// A last declaration may carry no semicolon at all.
+	const tail = body.slice(start).trim();
+	if (/^--[a-z0-9-]+\s*:/i.test(tail)) found.push(`${tail};`);
+	return found;
 }
 
 const asar = newestAsar(dataDir());
