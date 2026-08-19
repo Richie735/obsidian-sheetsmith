@@ -456,6 +456,14 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 		return { self: { value: filled(VALUE_KEY) }, named };
 	},
 
+	write(data, body): string {
+		const updates = new Map<string, string>();
+		for (const [key, value] of Object.entries(data.values)) {
+			updates.set(key, value);
+		}
+		return writeFenced(body, updates);
+	},
+
 	applyReset(data, config, reset, context): ResetResult<TrackData> {
 		const marks = markSize(config);
 		const rows = runsOf(config);
@@ -526,14 +534,6 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 		// A binding carrying only a buffer instruction, which a track has none
 		// of. Nothing to do, and nothing failed.
 		return { ok: true, data: { values } };
-	},
-
-	write(data, body): string {
-		const updates = new Map<string, string>();
-		for (const [key, value] of Object.entries(data.values)) {
-			updates.set(key, value);
-		}
-		return writeFenced(body, updates);
 	},
 
 	render(container, config, data, context): void {
