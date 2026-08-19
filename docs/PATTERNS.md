@@ -11,9 +11,10 @@ Every rule below carries how strongly it is held:
 
 - **[checked]** — a test or an eslint `error` fails the build. Departing means
   changing the check first.
-- **[warned]** — an eslint rule reports it, but `npm run lint` is `eslint .`
-  with no `--max-warnings`, so a warning exits 0 and the CI lint passes. Real
-  guidance, no teeth. See §11.
+- **[warned]** — an eslint rule reports it as a warning. `npm run lint` runs
+  with `--max-warnings 0`, so a warning fails the build exactly like an error.
+  The tier records where the rule came from — `obsidianmd.configs.recommended`
+  rather than a hand-set `error` — not how weakly it is held.
 - **[judgement]** — nothing automated. A default with a reason, not a law:
   depart deliberately and say why in a comment.
 
@@ -71,7 +72,7 @@ may know that component exists. Shared behaviour lives in `stat-card.ts`,
 
 ## 2. Repository structure
 
-`src/` is organised by responsibility, and two of its boundaries are enforced.
+`src/` is organised by responsibility, and three of its boundaries are enforced.
 
 ```
 src/
@@ -82,7 +83,8 @@ src/
   parse/           note and layout parsing. Imports nothing from obsidian [checked]
   formula/         expression parsing and evaluation. Same rule [checked]
   interaction/     gesture vocabulary shared by every control
-  components/      one file per component, plus the painters they share
+  components/      one file per component, plus the painters they share. No
+                   component imports a sibling component [checked]
   editor/          the layout editor and its field widgets
   view/            sheet view, auto-open, reset flow
   ui/              generic primitives that know nothing of components
@@ -268,13 +270,11 @@ A component inventing its own is the failure mode to watch for.
 ## 8. Config field conventions
 
 - Every field declares `key`, `kind`, `label` [checked], and `description`
-  [judgement — should be promoted to checked, see §11].
+  [checked].
 - **Descriptions state the consequence.** "Renaming it does not move a stored
   value; the old entry stays in the note under the old key" is the model. A
   description that only restates the label is not worth its line.
 - Sentence case, per `AGENTS.md` [warned: `obsidianmd/ui/sentence-case`].
-  `CLAUDE.md` says this is enforced; it is reported as a warning and does not
-  fail the build. See §11.
 - `group: 'Appearance'` collects presentation toggles under a subheading.
 - `default` on booleans; a value matching its default is omitted from the config
   and `visibleWhen` matches the *effective* value, so a condition naming a

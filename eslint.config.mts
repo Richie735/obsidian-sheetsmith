@@ -132,6 +132,21 @@ export default defineConfig(
 		},
 	},
 	{
+		// Obsidian 1.13's declarative settings API describes a tab's settings
+		// as data so the app can index them for search. This tab is mostly the
+		// interim layout editor (docs/SPEC.md §12), a form whose shape is
+		// decided at runtime by the component the author selected, which is
+		// not something static definitions can describe. The argument, and
+		// when it gets adopted, is at the top of the file.
+		//
+		// Off here rather than inline: `eslint-comments/no-restricted-disable`
+		// in the recommended config forbids disabling this rule at its site.
+		files: ['src/settings.ts'],
+		rules: {
+			'obsidianmd/settings-tab/prefer-setting-definitions': 'off',
+		},
+	},
+	{
 		// Test scaffolding. The obsidian stub exists precisely to implement
 		// the helpers these rules ask code to use, so telling it to use them
 		// is circular; tests build fixtures with the standard API for the

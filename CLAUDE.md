@@ -81,7 +81,9 @@ gitignored: it is Obsidian's CSS, and this repository is public.
 ## Conventions
 
 - Tabs, single quotes, per `.editorconfig`.
-- Sentence case for all user-facing UI text; `eslint-plugin-obsidianmd` enforces it.
+- Sentence case for all user-facing UI text. `obsidianmd/ui/sentence-case` reports it
+  as a warning, and `npm run lint` runs with `--max-warnings 0`, so a warning fails
+  the build exactly like an error.
 - Keep `main.ts` to plugin lifecycle only.
 - Do not commit `main.js`. It is a build artifact attached to releases.
 - Update `docs/SPEC.md` when a design decision changes, and move settled items out of §13 Open questions.
