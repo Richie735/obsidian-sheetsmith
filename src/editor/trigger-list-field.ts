@@ -14,6 +14,7 @@
  * a component's own form repeats only the problem that belongs to it.
  */
 
+import { bindFitToContent } from './list-field-height';
 import { Setting } from 'obsidian';
 import { Layout } from '../parse/layout';
 import { parseTriggers } from '../parse/triggers';
@@ -101,7 +102,7 @@ export function renderTriggerList(
 		const input = area.inputEl;
 		area.setValue((layout.triggers ?? []).join('\n'));
 		area.setPlaceholder(TRIGGER_PLACEHOLDER);
-		input.rows = 3;
+		bindFitToContent(input);
 		input.dataset.sheetsmithFocus = 'trigger-list';
 		input.setAttribute('aria-describedby', PROBLEMS_ID);
 

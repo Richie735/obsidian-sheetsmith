@@ -17,6 +17,7 @@
  * arrives (SPEC §7).
  */
 
+import { bindFitToContent } from './list-field-height';
 import { Setting } from 'obsidian';
 import { parseFunctions } from '../formula/functions';
 import { Layout } from '../parse/layout';
@@ -118,7 +119,7 @@ export function renderFunctionLibrary(
 		const input = area.inputEl;
 		area.setValue((layout.functions ?? []).join('\n'));
 		area.setPlaceholder(FUNCTION_PLACEHOLDER);
-		input.rows = 6;
+		bindFitToContent(input);
 		input.dataset.sheetsmithFocus = 'function-library';
 		input.setAttribute('aria-describedby', PROBLEMS_ID);
 
