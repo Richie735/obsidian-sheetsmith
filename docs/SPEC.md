@@ -26,6 +26,40 @@ A component's *name* is a separate matter, settled per component, and the rule i
 
 **Reset trigger.** A layout-defined named event (Long Rest, Downtime) that restores bound components in one click.
 
+The terms below were coined as the catalog grew and are collected here so one page defines them. Where a term has a wrong twin already in use, the twin is named so it stops spreading.
+
+**Card.** The shared visual presentation Stat and Stat group both render through (§4.2), and the DOM in `src/components/stat-card.ts`. A card is how a component looks, never a kind of component. *Avoid* using it for a component: what a sheet author calls an inventory card is a Table.
+
+**Row.** One record in a Table, identified by its position in the note's table rather than by the text of its first cell.
+
+**Declared row.** A row the layout defines, so every character has it. Its name is stable and knowable when a formula is written, which is what lets a formula reference it (§4.2).
+
+**Open row.** A row the character adds, enabled by `openRows`. It publishes nothing, because a name a formula can write has to be knowable when the formula is written. What an open list publishes instead is a column total.
+
+**Column type.** The kind of a Table column: `text`, `number`, `level`, `toggle`, `computed`. `computed` is read-only and the rest hold character data.
+
+**Total.** A sum over a stored column, published as a name the rest of the sheet can read. Taken over `number`, `level` and `toggle`, refused on `computed` until §13's publication question is settled.
+
+**Publish.** What a component offers to other components' formulas through `scopeValues` (§4.1): a `self` value under the bare component id, and `named` entries under `<id>.<name>`. Rendering a value and publishing it are separate: a component may show a number no formula can reach.
+
+**Scope.** The names a formula may reference from where it sits: the sheet-wide name table (§5), plus, inside a Table row, that row's own values.
+
+**Run.** One sequence of targets on a Track, filled in order.
+
+**Row set.** Several runs on one Track, through `rows`, rather than a second component. *Avoid*: set of runs, multi-run.
+
+**Slot.** One target within a run.
+
+**Level.** A named step below the stored unit, used as both a Track granularity and a column type. A colon in a level name says what its ring shows.
+
+**Reset layer.** The shared path a reset trigger runs through: every bound component restored in one batched write, undone in one step.
+
+**Catalog.** The component types a layout may name, which is what the registry holds and `listComponentTypes()` returns.
+
+**Palette entry.** How the layout editor offers a component to the author. One type may appear as several entries with configuration prefilled, such as Table offered as "Inventory" with `openRows` on and Item, Qty and Weight columns ready, which needs no new type (§13).
+
+**Tracker.** A counter belonging to a scene or a party rather than to a character, such as a Blades clock or a doom pool. Whether one has a home here is open (§13). *Avoid* using it for a Track, which is a component on one character's sheet.
+
 ## 3. File model
 
 ### 3.1 Character note
