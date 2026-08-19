@@ -87,6 +87,9 @@ and `npm run build` as often as they are useful.
 
 ## Commands
 
+`docs/WORKFLOW.md` is the one-page routing sheet: the loop, which command owns
+each step, and which document answers which question.
+
 ```bash
 npm run dev        # watch build
 npm run build      # type-check and production build
