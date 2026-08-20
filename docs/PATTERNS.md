@@ -461,6 +461,20 @@ decided.
 - **A test that could pass vacuously must assert it is testing something.**
   `styles.test.ts` checks it matched more than 8 rules before checking they are
   all scoped.
+- **A gesture module is tested through a control that drives it.**
+  `src/interaction/` is the stated exception to one test file per module:
+  `scrub.ts`, `hold-repeat.ts` and `editable.ts` have none of their own and
+  should not grow one. A gesture is only meaningfully driven through a control,
+  so a file of its own would have to build a fake card before it could press
+  anything — and `pool.test.ts`, `track.test.ts` and the component tests already
+  are that card. A second one is the duplication §1 forbids.
+- **That exception carries a condition: what the gesture owns has to actually be
+  driven somewhere.** Read as a licence instead, it is how `hold-repeat.ts` came
+  to have its repeat untested — every caller released the button on the tick it
+  pressed it, so the ramp, its floor and reading Shift per tick never ran, and
+  "writes the note once for a press, not once per repeat" passed on a press that
+  had not repeated. Timing the gesture owns belongs beside that control's other
+  gesture tests, under fake timers, not in a file of its own.
 - **Duplication between components requires a test that drives both** (§1).
 
 ---
@@ -474,4 +488,3 @@ that keeps solved rows stops being read.
 | Gap | Where | Fix |
 | --- | --- | --- |
 | Two responsibilities in one file | `layout-editor.ts` | Deliberately deferred, not overlooked. The split waits for the M4 workspace view, which rewrites this module anyway; splitting it twice would be the waste. It has tests now, so the move will be guarded when it comes. |
-| Gesture modules have no test file beside them | `src/interaction/` | `scrub.ts`, `hold-repeat.ts` and `editable.ts` are covered thoroughly, but through `pool.test.ts`, `track.test.ts` and the component tests rather than their own files, against §10's one-test-file-per-module. It may be that §10 is what should change here: a gesture is only meaningfully driven through a control that uses it, and a test file of its own would have to build a fake card first, which is what those component tests already are. Settle it rather than leaving it implicit. |

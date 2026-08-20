@@ -337,6 +337,169 @@ describe('pool step buttons', () => {
 	});
 });
 
+describe('pool step button held', () => {
+	/*
+	 * The repeat itself, which nothing drove until now.
+	 *
+	 * Every test above releases the button on the same tick it pressed it, so
+	 * the hold's timing — when it starts repeating, how it accelerates, the
+	 * floor it accelerates to, and Shift read per tick rather than captured on
+	 * the press — never ran. "Writes the note once for a press, not once per
+	 * repeat" passed on a press that had not repeated.
+	 *
+	 * That timing is the whole of what `hold-repeat.ts` owns, and it is exactly
+	 * the kind of failure a review cannot see: a ramp that stopped accelerating
+	 * still steps, still commits once, and still passes every assertion above.
+	 * Nothing would say so until someone held the button (§10).
+	 */
+	const hold = (
+		button: HTMLButtonElement | undefined,
+		ms: number,
+		init: PointerEventInit = {},
+	) => {
+		button?.dispatchEvent(
+			new PointerEvent('pointerdown', { pointerId: 1, button: 0, ...init }),
+		);
+		vi.advanceTimersByTime(ms);
+	};
+
+	const release = (button: HTMLButtonElement | undefined) => {
+		button?.dispatchEvent(
+			new PointerEvent('pointerup', { pointerId: 1, button: 0 }),
+		);
+	};
+
+	it('steps once and then waits, so a tap is not a repeat', () => {
+		vi.useFakeTimers();
+		try {
+			const el = render({}, { current: '22' });
+			const { current, steps } = parts(el);
+			hold(steps[0], 399);
+			// The press itself landed; the first repeat has not.
+			expect(current?.value).toBe('21');
+			release(steps[0]);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('repeats while it is held', () => {
+		vi.useFakeTimers();
+		try {
+			const el = render({}, { current: '22' });
+			const { current, steps } = parts(el);
+			hold(steps[0], 400);
+			expect(current?.value).toBe('20');
+			release(steps[0]);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('accelerates, so a long press covers real ground', () => {
+		vi.useFakeTimers();
+		try {
+			const el = render({ max: '400' }, { current: '400' });
+			const { current, steps } = parts(el);
+			// The second of the hold against the first, rather than either
+			// against a number: a ramp that flattened out would move the same
+			// distance in both, and this says which property is being checked
+			// without pinning the constants that produce it.
+			hold(steps[0], 1000);
+			const first = 400 - Number(current?.value);
+			vi.advanceTimersByTime(1000);
+			const second = 400 - Number(current?.value) - first;
+			expect(second).toBeGreaterThan(first * 2);
+			release(steps[0]);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('accelerates to a floor rather than without bound', () => {
+		vi.useFakeTimers();
+		try {
+			const el = render({ max: '4000' }, { current: '4000' });
+			const { current, steps } = parts(el);
+			// Bounded by the floor: at 40ms a step, ten seconds cannot move
+			// more than 250. A ramp that lost its floor would run at one step
+			// per frame and empty the pool instead.
+			hold(steps[0], 10_000);
+			expect(4000 - Number(current?.value)).toBeLessThanOrEqual(250);
+			release(steps[0]);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('takes Shift pressed part-way through the hold', () => {
+		vi.useFakeTimers();
+		try {
+			const el = render({ max: '400' }, { current: '400' });
+			const { current, steps } = parts(el);
+			hold(steps[0], 400);
+			// Read per tick, not captured on the press: the key went down after
+			// the gesture began, and the rest of the run has to answer to it.
+			// Captured once, Shift was inert for the whole hold.
+			const beforeShift = Number(current?.value);
+			document.dispatchEvent(
+				new KeyboardEvent('keydown', { key: 'Shift', shiftKey: true }),
+			);
+			vi.advanceTimersByTime(400);
+			const shifted = beforeShift - Number(current?.value);
+			document.dispatchEvent(
+				new KeyboardEvent('keyup', { key: 'Shift', shiftKey: false }),
+			);
+			const afterRelease = Number(current?.value);
+			vi.advanceTimersByTime(400);
+			const unshifted = afterRelease - Number(current?.value);
+			expect(shifted).toBeGreaterThan(unshifted);
+			release(steps[0]);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('writes the note once for the whole hold, not once per repeat', () => {
+		vi.useFakeTimers();
+		try {
+			const onChange = vi.fn();
+			const el = render({ max: '400' }, { current: '400' }, { onChange });
+			const { steps } = parts(el);
+			hold(steps[0], 1000);
+			expect(onChange).not.toHaveBeenCalled();
+			release(steps[0]);
+			vi.advanceTimersByTime(800);
+			// Feedback continuous, persistence discrete (SPEC §4.2). A hold
+			// that committed per repeat would rebuild the card under the finger
+			// a dozen times.
+			expect(onChange).toHaveBeenCalledTimes(1);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it('stops repeating and keeps what it reached when the capture is lost', () => {
+		vi.useFakeTimers();
+		try {
+			const onChange = vi.fn();
+			const el = render({ max: '400' }, { current: '400' }, { onChange });
+			const { current, steps } = parts(el);
+			hold(steps[0], 1000);
+			const reached = current?.value;
+			steps[0]?.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 1 }));
+			vi.advanceTimersByTime(2000);
+			// Cancelled, not abandoned: the repeat stops where it was and the
+			// value it reached is still what gets written.
+			expect(current?.value).toBe(reached);
+			expect(onChange).toHaveBeenCalledTimes(1);
+			expect(onChange).toHaveBeenCalledWith({ current: reached });
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+});
+
 describe('pool.applyReset', () => {
 	const reset = (
 		action: 'full' | 'empty' | 'formula',
