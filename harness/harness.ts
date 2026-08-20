@@ -63,7 +63,7 @@ function loadState(name: StateName): void {
 	state = name;
 	const samples = samplesFor(name);
 	bodies = new Map(samples.map((s) => [s.config.id, s.body]));
-	layout = { ...harnessLayout(), components: samples.map((s) => s.config) };
+	layout = harnessLayout(samples);
 	prepare();
 }
 
@@ -238,21 +238,38 @@ function noteBodies(): HTMLElement {
  * outside would fight the thing being reviewed.
  */
 let settingsPane: HTMLElement | null = null;
+/**
+ * Which state the settings pane was built for. The tab reads its layout from
+ * the stub vault, written once when the pane is built, so a pane kept across a
+ * state change would show the populated layout beside a sheet rendering the
+ * broken one — and a reviewer would be looking at a form that says the field
+ * is fine and a card that says it is not, with nothing but the instrument
+ * between them.
+ */
+let settingsState: StateName | null = null;
 
 async function ensureSettings(): Promise<HTMLElement> {
-	if (settingsPane) return settingsPane;
+	if (settingsPane && settingsState === state) return settingsPane;
 	const pane = document.createElement('div');
 	pane.className = 'harness-settings';
 	settingsPane = pane;
-	await renderSettings(pane, {
-		onLayoutChange: (next) => {
-			// Stored values are keyed by component id and survive, which is
-			// Constraint 4 in miniature: a layout change never drops data.
-			layout = next;
-			prepare();
-			draw();
+	settingsState = state;
+	/** Which component's form to open, for a view that lives inside one. */
+	const open = new URLSearchParams(window.location.search).get('open');
+	await renderSettings(
+		pane,
+		{
+			onLayoutChange: (next) => {
+				// Stored values are keyed by component id and survive, which is
+				// Constraint 4 in miniature: a layout change never drops data.
+				layout = next;
+				prepare();
+				draw();
+			},
 		},
-	});
+		harnessLayout(samplesFor(state)),
+		open ?? undefined,
+	);
 	return pane;
 }
 
@@ -302,7 +319,10 @@ document
 		if (wanted !== undefined) {
 			loadState(wanted as StateName);
 			press('state', wanted);
-			draw();
+			// The settings tab reads the state's own layout, so switching state
+			// rebuilds it rather than leaving it on the last one.
+			if (surface === 'sheet') draw();
+			else void ensureSettings().then(draw);
 		}
 		if (pane !== undefined) {
 			surface = pane as Surface;
@@ -314,7 +334,9 @@ document
 	});
 
 /**
- * Open in a named state: `?surface=settings&theme=dark&width=620&state=empty`.
+ * Open in a named state: `?surface=settings&theme=dark&width=620&state=empty`,
+ * with `&open=<component id>` opening that component's form on the settings
+ * tab.
  *
  * A screenshot has no way to click, so without this only the default view can
  * ever be captured — and the settings tab, which is most of what needs looking

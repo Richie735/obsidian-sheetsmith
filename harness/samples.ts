@@ -52,6 +52,21 @@ export const SAMPLES: Sample[] = [
 	},
 	{
 		config: {
+			id: 'passive_perception',
+			type: 'stat',
+			label: 'Passive perception',
+			position: { col: 3, row: 2, width: 2, height: 1 },
+			// Nothing stored: the number is the skills card's own Perception
+			// row, read by name. The card the whole feature was written for.
+			derived: '10 + skills.perception',
+			signed: false,
+			hideValue: true,
+			hideNote: true,
+		} as ComponentConfig,
+		body: null,
+	},
+	{
+		config: {
 			id: 'hit_points',
 			type: 'pool',
 			label: 'Hit points',
@@ -91,13 +106,25 @@ export const SAMPLES: Sample[] = [
 					type: 'level',
 					levels: ['Untrained', 'Proficient:P', 'Expertise:E'],
 				},
-				{ key: 'Bonus', type: 'computed', formula: 'ability + Training * 2' },
+				{
+					key: 'Bonus',
+					type: 'computed',
+					formula: 'ability + Training * 2',
+					// The published column: every row carrying a key answers to
+					// `skills.<key>`, which is what the passive perception card
+					// above reads.
+					publish: true,
+				},
 				{ key: 'Notes', type: 'text' },
 			],
 			rows: [
 				{ label: 'Acrobatics', values: { ability: 'abilities.DEX' } },
 				{ label: 'Athletics', values: { ability: 'abilities.STR' } },
-				{ label: 'Perception', values: { ability: 'abilities.WIS' } },
+				{
+					label: 'Perception',
+					key: 'perception',
+					values: { ability: 'abilities.WIS' },
+				},
 				{ label: 'Persuasion', values: { ability: 'abilities.CHA' } },
 			],
 		} as ComponentConfig,
@@ -179,6 +206,7 @@ export function brokenSamples(): Sample[] {
 		const config = { ...sample.config } as ComponentConfig & {
 			key?: string;
 			openRows?: boolean;
+			rows?: { label: string; key?: string }[];
 			columns?: { type?: string; total?: boolean }[];
 		};
 		// A key holding a colon is refused by every fenced component, because a
@@ -195,6 +223,14 @@ export function brokenSamples(): Sample[] {
 				column.type === undefined || column.type === 'text'
 					? { ...column, total: true }
 					: column,
+			);
+		}
+		// A row key that is not a name, on the card that publishes one. Refused
+		// rather than rewritten, because nothing could tell the author what
+		// their row had become — so the card has to say so.
+		if (sample.config.type === 'table' && config.rows !== undefined) {
+			config.rows = config.rows.map((row) =>
+				row.key === undefined ? row : { ...row, key: 'passive perception' },
 			);
 		}
 		return { config, body: sample.body };

@@ -62,7 +62,15 @@ const args = process.argv.slice(2);
 const views =
 	args.length === 0
 		? DEFAULTS
-		: [{ name: 'custom', query: args.join('&'), size: '1500,1500' }];
+		: [
+				{
+					name: 'custom',
+					query: args.filter((arg) => !arg.startsWith('size=')).join('&'),
+					// `size=1500,3000` for a view that runs longer than the
+					// default frame: an open component form is most of one.
+					size: args.find((arg) => arg.startsWith('size='))?.slice(5) ?? '1500,1500',
+				},
+			];
 
 for (const view of views) {
 	const out = `${outDir}/${view.name}.png`;
