@@ -83,18 +83,26 @@ export function buildSheetScope(
 			// The stored value is always reachable, whatever the card shows.
 			thunks.set(`${name}.value`, () => clean(entry.value));
 
-			const display = entry.display;
+			// A display that will not resolve publishes nothing rather than
+			// falling back to the stored value: handing back 22 where 6 was
+			// meant is a worse answer than none at all. The same holds for a
+			// computed entry, which is why both go through this.
+			const published = (result: Value | null | undefined) =>
+				result === null || result === undefined ? undefined : clean(result);
+
+			const { display, compute } = entry;
+			if (compute !== undefined) {
+				// A component with no resolver of its own still computes: what
+				// it is handed is a resolver that finds no field, which is what
+				// a component declaring no formula fields would have anyway.
+				thunks.set(name, () => published(compute(resolve ?? (() => null))));
+				return;
+			}
 			if (display === undefined || resolve === undefined) {
 				thunks.set(name, () => clean(entry.value));
 				return;
 			}
-			thunks.set(name, () => {
-				const result = resolve(display.field, display.scope);
-				// A display that will not resolve publishes nothing rather
-				// than falling back to the stored value: handing back 22
-				// where 6 was meant is a worse answer than none at all.
-				return result === null ? undefined : clean(result);
-			});
+			thunks.set(name, () => published(resolve(display.field, display.scope)));
 		};
 
 		if (component.values.self) register(component.id, component.values.self);
