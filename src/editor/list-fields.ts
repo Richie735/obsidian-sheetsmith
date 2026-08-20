@@ -8,7 +8,7 @@
  * their chrome here rather than drifting apart.
  */
 
-import { Platform, setIcon } from 'obsidian';
+import { Notice, Platform, setIcon } from 'obsidian';
 import {
 	levelCount,
 	levelGlyph,
@@ -20,8 +20,10 @@ import {
 	COLUMN_TYPES,
 	ColumnType,
 	DEFAULT_COLUMN_TYPE,
+	PUBLISHABLE_TYPES,
 	TOTALLED_TYPES,
 } from '../components/column-types';
+import { isName } from '../formula/expression';
 
 /** What a list editor needs from the editor around it. */
 export interface ListContext {
@@ -101,6 +103,35 @@ export function showFieldError(
 		el.dataset.sheetsmithFor = key;
 		el.setText(message);
 	});
+}
+
+/**
+ * A name in code type that copies itself when pressed.
+ *
+ * The component id wears one at the top of the form, on the argument that it
+ * is the one thing about a component that cannot be discovered anywhere else
+ * and is what gets retyped into every formula reading it. A published row's
+ * name is the same thing one level down, so the two share the control rather
+ * than growing a second spelling of it.
+ */
+export function copyableName(into: HTMLElement, text: string): HTMLElement {
+	const code = into.createEl('code', { cls: 'sheetsmith-copyable', text });
+	code.setAttribute('tabindex', '0');
+	code.setAttribute('role', 'button');
+	code.setAttribute('aria-label', `Copy "${text}" to the clipboard`);
+	const copy = () => {
+		void navigator.clipboard.writeText(text).then(
+			() => new Notice(`Copied "${text}"`),
+			() => new Notice('Could not copy to the clipboard.'),
+		);
+	};
+	code.addEventListener('click', copy);
+	code.addEventListener('keydown', (event) => {
+		if (event.key !== 'Enter' && event.key !== ' ') return;
+		event.preventDefault();
+		copy();
+	});
+	return code;
 }
 
 export function moveItem<T>(
@@ -262,11 +293,9 @@ export function addControlSpacers(header: HTMLElement): void {
 	}
 }
 
-/** A name a formula could reference: what the expression parser accepts. */
-const VALUE_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
-
 interface RowEntry {
 	label: string;
+	key?: string;
 	values?: Record<string, string>;
 }
 
@@ -288,6 +317,9 @@ export function renderRowsEditor(
 ): void {
 	if (!Array.isArray(record[key])) record[key] = [];
 	const rows = record[key] as RowEntry[];
+	// What a published row answers to, taken from the config rather than from
+	// the focus prefix that happens to hold the same string today.
+	const componentId = typeof record.id === 'string' ? record.id : '';
 	listEl.addClass('sheetsmith-list');
 	/** Bound once: every inline error here outlives a rebuild of the tab. */
 	const fieldError = (input: HTMLInputElement, message: string | null) =>
@@ -303,8 +335,9 @@ export function renderRowsEditor(
 	}
 
 	// One track per input, so the grid keeps its columns in step however
-	// many row values the layout defines.
-	listEl.style.setProperty('--sheetsmith-list-fields', String(names.length + 1));
+	// many row values the layout defines. Two of them are fixed: the row's
+	// name and the key it publishes under.
+	listEl.style.setProperty('--sheetsmith-list-fields', String(names.length + 2));
 
 	// A long list must not bury the sections under it: eighteen skills put
 	// eight hundred pixels between this field and the next one, and the add
@@ -320,6 +353,7 @@ export function renderRowsEditor(
 	} else {
 		const columns = scroller.createDiv('sheetsmith-attribute-columns');
 		columns.createSpan({ text: 'Row name' });
+		columns.createSpan({ text: 'Publishes as' });
 		for (const name of names) {
 			const heading = columns.createDiv('sheetsmith-list-heading');
 			// The heading is an input, because renaming a value name is the
@@ -335,7 +369,7 @@ export function renderRowsEditor(
 				// Rejection puts the stored name back. Leaving the typed text
 				// in a field whose value was refused makes the field lie about
 				// what the file holds the moment focus moves on.
-				if (!VALUE_NAME.test(next)) {
+				if (!isName(next)) {
 					input.value = name;
 					fieldError(
 						input,
@@ -451,6 +485,76 @@ export function renderRowsEditor(
 			context.redraw();
 		});
 
+		// One word set across the heading, the placeholder and the announced
+		// name, as the row name field beside it already has: a control whose
+		// accessible name says a word that is nowhere on screen leaves voice
+		// control nothing to match (UI.md §6).
+		const publishes = listField(element, 'Publishes as');
+		const key = publishes.createEl('input', {
+			type: 'text',
+			attr: {
+				placeholder: 'Publishes as',
+				'aria-label': `${row.label} publishes as`,
+			},
+		});
+		key.value = row.key ?? '';
+		key.dataset.sheetsmithFocus = `${prefix}-row-${index}-key`;
+		key.addEventListener('change', () => {
+			const next = key.value.trim();
+			// Empty is the ordinary state: a row with no key publishes nothing.
+			if (next === '') {
+				delete row.key;
+				fieldError(key, null);
+				context.persist();
+				return;
+			}
+			// Rejection puts the stored key back, on the same rule the row value
+			// names follow: a field holding text the file does not have lies
+			// about the layout the moment focus moves on. Most rows have no key
+			// at all, so what it went back to has to be sayable either way.
+			const kept = row.key === undefined ? 'left empty' : `left as "${row.key}"`;
+			const restore = () => {
+				key.value = row.key ?? '';
+			};
+			if (!isName(next)) {
+				restore();
+				fieldError(
+					key,
+					`A row key is a name a formula reads — letters, digits and underscores, not starting with a digit — so it was ${kept}.`,
+				);
+				return;
+			}
+			const taken = rows.find((other, i) => i !== index && other.key === next);
+			if (taken !== undefined) {
+				restore();
+				fieldError(
+					key,
+					`"${next}" is already the key of the row "${taken.label}", so this one was ${kept}.`,
+				);
+				return;
+			}
+			fieldError(key, null);
+			row.key = next;
+			context.persist();
+			// The composed name below is what changed; redraw so it says the
+			// name the file now holds, as renaming the row beside it does.
+			context.redraw();
+		});
+
+		// What the key actually publishes as, spelled out rather than left to
+		// the reader to assemble from the footnote's pattern — and copyable,
+		// because this is the string that gets retyped into the formula that
+		// reads this row.
+		//
+		// Only where it composes to a name a formula can read. The handler
+		// above refuses anything else, so this is about a key that arrived
+		// from the file: `skills.passive perception` in copyable code type
+		// says "paste me into a formula" about a string that cannot be one,
+		// beside a card rendering the refusal.
+		if (row.key !== undefined && isName(row.key)) {
+			copyableName(publishes, `${componentId}.${row.key}`);
+		}
+
 		for (const name of names) {
 			const input = listField(element, name).createEl('input', {
 				type: 'text',
@@ -537,6 +641,7 @@ interface ColumnEntry extends Record<string, unknown> {
 	signed?: boolean;
 	secondary?: boolean;
 	total?: boolean;
+	publish?: boolean;
 }
 
 /**
@@ -590,15 +695,26 @@ function checkField(
 	target: Record<string, unknown>,
 	key: string,
 	context: ListContext,
+	/**
+	 * For the flag whose value changes which controls the other entries in the
+	 * list may show: a focus token so the hand keeps its place across the
+	 * rebuild, and the rebuild itself. Left off by a flag that affects only
+	 * the entry carrying it, which is most of them.
+	 */
+	rebuild?: { token: string },
 ): void {
 	const label = detail.createEl('label', { cls: 'sheetsmith-attribute-check' });
 	const input = label.createEl('input', { type: 'checkbox' });
 	input.checked = target[key] === true;
+	if (rebuild) input.dataset.sheetsmithFocus = rebuild.token;
 	label.createSpan({ text });
 	input.addEventListener('change', () => {
 		if (input.checked) target[key] = true;
 		else delete target[key];
 		context.persist();
+		if (!rebuild) return;
+		context.focusAfterRedraw(rebuild.token);
+		context.redraw();
 	});
 }
 
@@ -632,6 +748,8 @@ export function renderColumnsEditor(
 	listEl.addClass('sheetsmith-list-columns');
 
 	const scroller = listEl.createDiv('sheetsmith-list-scroll');
+	/** The column publishing per row, if one has taken it. */
+	const publisher = columns.find((column) => column.publish === true);
 
 	if (columns.length === 0) {
 		scroller.createDiv('sheetsmith-attribute-empty', (el) =>
@@ -739,6 +857,15 @@ export function renderColumnsEditor(
 			},
 		);
 
+		/**
+		 * What this column holds, with an unset type resolved to the shared
+		 * default rather than to a literal spelling of it. The card asks the
+		 * same question through `columnType`, and the two have to agree about
+		 * what an untyped column is, or the form offers a control on one set
+		 * of columns while the component judges another.
+		 */
+		const effective = column.type ?? DEFAULT_COLUMN_TYPE;
+
 		// A line of its own under each column, holding the fields that only
 		// make sense for that kind of column and then the ones every column
 		// has. One detail element for both, so the two never disagree about
@@ -748,7 +875,7 @@ export function renderColumnsEditor(
 		// that gives no sign anything happened. Mark it so the cause of the
 		// change is visible where the change landed.
 		detail.dataset.sheetsmithFlash = `${prefix}-col-${column.key}-detail`;
-		if (column.type === 'computed') {
+		if (effective === 'computed') {
 			const formula = labelled(detail, 'Formula').createEl('input', {
 				type: 'text',
 				attr: {
@@ -764,7 +891,7 @@ export function renderColumnsEditor(
 			});
 
 			checkField(detail, 'Signed', column, 'signed', context);
-		} else if (column.type === 'level') {
+		} else if (effective === 'level') {
 			// Assigned by the sample below, and called by the fields above it
 			// that change what the sample shows. A level column with a
 			// dropdown draws no rings and so has no sample to repaint.
@@ -957,7 +1084,7 @@ export function renderColumnsEditor(
 				};
 				drawSample();
 			}
-		} else if (column.type === 'number') {
+		} else if (effective === 'number') {
 			for (const bound of ['min', 'max'] as const) {
 				const holder = detail.createDiv('sheetsmith-position-field');
 				holder.createSpan({
@@ -986,17 +1113,34 @@ export function renderColumnsEditor(
 					context.persist();
 				});
 			}
-		} else if (column.type === undefined || column.type === 'text') {
-			// Text is the default, so a column that has never had its type set
-			// is one of these too.
+		} else if (effective === 'text') {
 			checkField(detail, 'Secondary text', column, 'secondary', context);
 		}
 
 		// Offered beside the type, and only where there is something to add up:
 		// a total is a published name, so it has to come from a column whose
 		// cells are numbers before any formula runs.
-		if (TOTALLED_TYPES.has(column.type ?? 'text')) {
+		if (TOTALLED_TYPES.has(effective)) {
 			checkField(detail, 'Show a total', column, 'total', context);
+		}
+
+		// Beside the total, and offered on every type but text: a published row
+		// answers to one value, and a text cell holding a link is two.
+		//
+		// And only while it can be taken. One card publishes one column, so
+		// once a column has it the others stop offering it, exactly as a total
+		// is not offered on a column with nothing to add up. The component
+		// refuses a second either way, and refusing it here would mean an
+		// error message on a checkbox — a surface this form has never had, and
+		// one that lands inside the label, where pressing the message would
+		// toggle the box it is complaining about. The footnote appears at the
+		// same moment and says only one column can be published, so the
+		// control does not vanish unexplained; unticking brings it back
+		// everywhere, which is how the publication moves.
+		if (PUBLISHABLE_TYPES.has(effective) && (publisher ?? column) === column) {
+			checkField(detail, 'Publish per row', column, 'publish', context, {
+				token: `${prefix}-col-${column.key}-publish`,
+			});
 		}
 
 		// Every column has this one.
@@ -1029,6 +1173,17 @@ export function renderColumnsEditor(
 		listEl.createDiv('sheetsmith-attribute-footnote', (el) =>
 			el.setText(
 				'A total is published as "<component id>.<column key>", so a formula elsewhere on the sheet can read it. That makes a totalled column\'s key a name: letters, digits and underscores, where a column without a total may be headed anything.',
+			),
+		);
+	}
+	// The same rule as the total's note, and shown on the same terms: a
+	// published column is the only thing that turns a row key into a name, and
+	// the rows list above is where the key is typed. Nothing else on this form
+	// would say where to go next.
+	if (columns.some((column) => column.publish === true)) {
+		listEl.createDiv('sheetsmith-attribute-footnote', (el) =>
+			el.setText(
+				'A published column gives every row below a name of its own, "<component id>.<row key>", so a formula elsewhere on the sheet can read that row. Give each row a key in the rows list above. Only one column can be published.',
 			),
 		);
 	}
