@@ -4,6 +4,7 @@ import {
 	listComponentTypes,
 	unknownComponentMessage,
 } from './index';
+import { ComponentConfig, ScopeEntry } from '../types';
 
 /*
  * Registry-wide contract checks (SPEC §4.1).
@@ -56,6 +57,46 @@ const MEMBER_ORDER = [
 
 const types = listComponentTypes();
 
+/** Only what the layout editor owns, so any component will take it. */
+function bareConfig(type: string): ComponentConfig {
+	return {
+		id: 'sample',
+		type,
+		label: 'Sample',
+		position: { col: 1, row: 1, width: 1, height: 1 },
+	};
+}
+
+/**
+ * Every name a component publishes under a config it was given nothing for.
+ *
+ * That is all a registry-wide sweep can ask for without holding a sample
+ * config per component type, which is the one thing this file exists not to
+ * do. It reaches a Pool, a Stat and a Track, whose entries do not depend on
+ * configuration; a Stat group with no attributes and a Table with no columns
+ * correctly publish nothing, so their entries are checked in their own test
+ * files against a card that is actually configured.
+ */
+function publishedEntries(type: string): ScopeEntry[] {
+	const component = getComponent(type);
+	const values = component?.scopeValues?.(null, bareConfig(type));
+	if (values === undefined) return [];
+	return [
+		...(values.self === undefined ? [] : [values.self]),
+		...Object.values(values.named ?? {}),
+	];
+}
+
+/**
+ * A scope entry says one thing about what its name is worth: the stored
+ * value, a formula field, or a value the component computes. Two of them is
+ * an entry with no right answer, and the type refuses it — so this is what
+ * catches the one that got there through a cast.
+ */
+function saysTwoThings(entry: ScopeEntry): boolean {
+	return entry.display !== undefined && entry.compute !== undefined;
+}
+
 describe('component registry', () => {
 	it('has at least one component registered', () => {
 		expect(types.length).toBeGreaterThan(0);
@@ -74,6 +115,32 @@ describe('component registry', () => {
 			(type) => getComponent(type)?.configFields ?? [],
 		);
 		expect(fields.length).toBeGreaterThan(25);
+	});
+
+	it('sees published entries from most of the components that publish any', () => {
+		// The check below runs inside a per-component loop over what that
+		// component publishes, and a component publishing nothing passes it by
+		// iterating nothing. Two of them do exactly that under a bare config
+		// and are covered in their own files, so this holds the rest: if the
+		// sweep stopped reaching any component at all, or reached only one,
+		// every per-component pass below would be worth nothing and nothing
+		// else would say so.
+		const publishing = types.filter(
+			(type) => getComponent(type)?.scopeValues !== undefined,
+		);
+		const reached = publishing.filter((type) => publishedEntries(type).length > 0);
+		expect(reached.length).toBeGreaterThan(publishing.length / 2);
+	});
+
+	it('catches an entry that says two things about one name', () => {
+		// The rule the per-component check applies, applied to an entry that
+		// breaks it. Without this, a check that never fires reads exactly
+		// like a rule nothing violates.
+		const both = {
+			display: { field: 'derived', scope: {} },
+			compute: () => 1,
+		} as unknown as ScopeEntry;
+		expect(saysTwoThings(both)).toBe(true);
 	});
 
 	it('names the types a layout may use when one is unknown', () => {
@@ -112,6 +179,21 @@ describe.each(types)('component "%s"', (type) => {
 		// of the sheet's formulas or it does not, never something in between
 		// that the view would have to guard against.
 		expect(['function', 'undefined']).toContain(typeof component?.scopeValues);
+	});
+
+	it('publishes no name declaring both a display and a computed value', () => {
+		// One name, one source. `display` names a formula field the layout
+		// can be read for; `compute` is the component's own code and nothing
+		// outside it can see through. An entry declaring both would leave the
+		// name table picking one, which is a decision it has no business
+		// making.
+		//
+		// The type refuses it outright, so what this catches is one that got
+		// there through a cast — and only among the names this component
+		// publishes with nothing configured. A component whose entries depend
+		// on its config publishes none here and asserts the same rule over a
+		// configured card in its own test file.
+		expect(publishedEntries(type).filter(saysTwoThings)).toEqual([]);
 	});
 
 	it('applies resets as a function, or not at all', () => {

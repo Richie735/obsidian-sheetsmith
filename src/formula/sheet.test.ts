@@ -78,6 +78,89 @@ describe('buildSheetScope', () => {
 	});
 });
 
+describe('buildSheetScope: a value only the component can produce', () => {
+	/**
+	 * A track storing marks and publishing the segments they fill: the case
+	 * `display` cannot state, because `floor(value / marks)` is arithmetic
+	 * over a config field no formula on the sheet can see.
+	 */
+	const exhaustion: PublishedComponent = {
+		id: 'exhaustion',
+		values: {
+			self: { value: '22', compute: () => Math.floor(22 / 4) },
+		},
+	};
+
+	it('gives the bare name the computed value and .value the stored one', () => {
+		const scope = buildSheetScope([exhaustion]);
+		expect(scope('exhaustion')).toBe(5);
+		expect(scope('exhaustion.value')).toBe(22);
+	});
+
+	it('publishes nothing where the component could not produce a value', () => {
+		const scope = buildSheetScope([
+			{ id: 'row', values: { self: { value: '3', compute: () => null } } },
+		]);
+		expect(scope('row')).toBeUndefined();
+		// The stored value stays reachable: only the bare name went missing.
+		expect(scope('row.value')).toBe(3);
+	});
+
+	it('hands the component a resolver bound to the finished sheet', () => {
+		// The whole point of the member: the component computes with the sheet
+		// in hand, so a published row may read a card registered after it.
+		const scope = buildSheetScope([
+			{
+				id: 'skills',
+				values: {
+					named: {
+						perception: {
+							compute: (resolve) => resolve('columns.0.formula', { Training: 2 }),
+						},
+					},
+				},
+				resolver: (sheet) => (field, row) =>
+					field === 'columns.0.formula'
+						? evaluate('abilities.DEX + Training', (name) =>
+								Object.prototype.hasOwnProperty.call(row, name)
+									? row[name]
+									: sheet(name),
+							)
+						: null,
+			},
+			abilities,
+		]);
+		expect(scope('skills.perception')).toBe(8);
+		expect(evaluate('10 + skills.perception', scope)).toBe(18);
+	});
+
+	it('catches a cycle running through a computed value', () => {
+		// Two rows of one card naming each other: two distinct published
+		// names, so the guard that catches a cross-component cycle catches
+		// this one without knowing they are siblings.
+		const rows: PublishedComponent = {
+			id: 'skills',
+			values: {
+				named: {
+					row_a: { compute: (resolve) => resolve('a', {}) },
+					row_b: { compute: (resolve) => resolve('b', {}) },
+				},
+			},
+			resolver: (sheet) => (field) => {
+				try {
+					return evaluate(field === 'a' ? 'skills.row_b' : 'skills.row_a', sheet);
+				} catch {
+					return null;
+				}
+			},
+		};
+		const scope = buildSheetScope([rows, abilities]);
+		expect(scope('skills.row_a')).toBeUndefined();
+		expect(scope('skills.row_b')).toBeUndefined();
+		expect(scope('abilities.DEX')).toBe(6);
+	});
+});
+
 describe('buildSheetScope: names that depend on names', () => {
 	/** A component whose display is whatever formula it is given. */
 	const computed = (id: string, formula: string): PublishedComponent => ({

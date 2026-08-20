@@ -173,26 +173,57 @@ export interface ConfigFieldSpec {
 export type FieldValue = string | number | boolean;
 
 /**
+ * What a published name is worth, where the note's own value is not it.
+ *
+ * An entry takes at most one of the two, and declaring both is refused rather
+ * than resolved in some order: an entry saying two things about one name has
+ * no right answer.
+ *
+ * `display` names one of the component's own formula fields, so a reader of
+ * the layout can in principle follow the edge from one component to the next,
+ * and SPEC §5's save-time cycle check has an edge to see. `compute` is the
+ * component's own code, which that check can never see through, so it is for
+ * the value nothing else could produce — a Track's filled segments out of its
+ * stored marks, a Table row's cell in its published column. `display` stays
+ * the one to reach for wherever it will do.
+ */
+type ScopeEntrySource =
+	| {
+			/**
+			 * The formula field producing the displayed value, and the internal
+			 * scope to run it in (one attribute's own `value`, later a table row).
+			 * Evaluated lazily, because it may reference other components.
+			 */
+			display?: {
+				field: string;
+				scope: Readonly<Record<string, FieldValue>>;
+			};
+			compute?: never;
+	  }
+	| {
+			display?: never;
+			/**
+			 * The value this component alone can produce, given a resolver bound
+			 * to the finished sheet. Called lazily by the name table, inside the
+			 * same guard `display` runs under, so a name computed from another
+			 * name is memoised and a cycle through one is caught rather than
+			 * recursed. Null or undefined publishes nothing.
+			 */
+			compute?: (resolve: FieldResolver) => FieldValue | null | undefined;
+	  };
+
+/**
  * One name a component publishes to the rest of the sheet.
  *
- * A bare reference gets what the card shows: the `display` formula's result
- * when there is one, and the stored value otherwise. `<name>.value` always
- * gets the stored value, for the formula that wants the raw score rather
- * than the modifier the card puts in large type.
+ * A bare reference gets what the card shows: the `display` formula's result or
+ * the `compute`d one where there is either, and the stored value otherwise.
+ * `<name>.value` always gets the stored value, for the formula that wants the
+ * raw score rather than the modifier the card puts in large type.
  */
-export interface ScopeEntry {
+export type ScopeEntry = {
 	/** What the note stores. Referenced as `<name>.value`. */
 	value?: FieldValue;
-	/**
-	 * The formula field producing the displayed value, and the internal
-	 * scope to run it in (one attribute's own `value`, later a table row).
-	 * Evaluated lazily, because it may reference other components.
-	 */
-	display?: {
-		field: string;
-		scope: Readonly<Record<string, FieldValue>>;
-	};
-}
+} & ScopeEntrySource;
 
 /**
  * What a component publishes to formulas elsewhere on the sheet (SPEC §5).
