@@ -70,7 +70,6 @@ export interface TrackConfig extends ComponentConfig {
 	 * are; where `rows` is set it is the fallback for a row without its own.
 	 */
 	count?: string | number;
-	/** How many presses fill one segment. Defaults to 1, and applies to every row. */
 	marks?: number;
 	/** One run per entry. Absent is a single unnamed run. */
 	rows?: TrackRow[];
@@ -85,7 +84,6 @@ export interface TrackConfig extends ComponentConfig {
 	 * no property of the data distinguishes them.
 	 */
 	sense?: 'progress' | 'harm';
-	/** Leave the heading off the sheet, as on a Stat. */
 	hideLabel?: boolean;
 }
 
