@@ -356,26 +356,33 @@ describe('marksAtPoint', () => {
 });
 
 describe('track.scopeValues', () => {
-	it('publishes the filled segments under the bare id', () => {
-		expect(track.scopeValues?.({ values: { value: '3' } }, config)?.self).toEqual({
-			value: 3,
-		});
-	});
+	/**
+	 * What a name is worth is asserted through the table that answers it, not
+	 * through the declaration: a published segment count is a value the
+	 * component computes, so reading `self.value` off the entry would be
+	 * asserting the marks it was computed from.
+	 */
+	const scopeFor = (data: TrackData, overrides: Partial<TrackConfig> = {}) => {
+		const merged = { ...config, ...overrides };
+		const values = track.scopeValues?.(data, merged);
+		if (!values) throw new Error('expected scope values');
+		return buildSheetScope([
+			{
+				id: merged.id,
+				values,
+				resolver: (sheet) =>
+					makeFieldResolver(track, merged, data, sheet, new Map()),
+			},
+		]);
+	};
 
-	it('publishes filled segments, not stored marks, where a segment holds several', () => {
-		const published = track.scopeValues?.(
-			{ values: { value: '22' } },
-			{ ...config, marks: 4 },
-		);
-		expect(published?.self).toEqual({ value: 5 });
-		expect(published?.named?.value).toEqual({ value: '22' });
+	it('publishes the filled segments under the bare id', () => {
+		expect(scopeFor({ values: { value: '3' } })('exhaustion')).toBe(3);
 	});
 
 	it('publishes nothing for an empty or unreadable value', () => {
-		expect(track.scopeValues?.(null, config)?.self?.value).toBeUndefined();
-		expect(
-			track.scopeValues?.({ values: { value: '' } }, config)?.self?.value,
-		).toBeUndefined();
+		expect(scopeFor({ values: {} })('exhaustion')).toBeUndefined();
+		expect(scopeFor({ values: { value: '' } })('exhaustion')).toBeUndefined();
 	});
 
 	it('publishes a named run\'s count as a literal', () => {
@@ -404,28 +411,10 @@ describe('track.scopeValues', () => {
 			slots,
 		);
 		expect(published?.self).toBeUndefined();
-		expect(published?.named).toEqual({
-			L1: { value: 2 },
-			L2: { value: 1 },
-			L3: { value: 0 },
-		});
+		expect(Object.keys(published?.named ?? {})).toEqual(['L1', 'L2', 'L3']);
 	});
 
 	describe('through the sheet scope', () => {
-		const scopeFor = (data: TrackData, overrides: Partial<TrackConfig> = {}) => {
-			const merged = { ...config, ...overrides };
-			const values = track.scopeValues?.(data, merged);
-			if (!values) throw new Error('expected scope values');
-			return buildSheetScope([
-				{
-					id: merged.id,
-					values,
-					resolver: (sheet) =>
-						makeFieldResolver(track, merged, data, sheet, new Map()),
-				},
-			]);
-		};
-
 		it('answers the bare id with segments and .value with marks', () => {
 			const scope = scopeFor({ values: { value: '22' } }, { marks: 4 });
 			expect(scope('exhaustion')).toBe(5);
@@ -444,6 +433,17 @@ describe('track.scopeValues', () => {
 			const scope = buildSheetScope([{ id: slots.id, values: published }]);
 			expect(scope('slots.L1')).toBe(2);
 			expect(scope('slots')).toBeUndefined();
+		});
+
+		it('answers a row with segments and its .value with marks', () => {
+			// The same rule as the bare id, one level down: a row's name is
+			// the boxes it shows, and the marks behind them stay reachable.
+			const data = { values: { L1: '8', L2: '2' } };
+			const published = track.scopeValues?.(data, { ...slots, marks: 4 });
+			if (!published) throw new Error('expected scope values');
+			const scope = buildSheetScope([{ id: slots.id, values: published }]);
+			expect(scope('slots.L1')).toBe(2);
+			expect(scope('slots.L1.value')).toBe(8);
 		});
 	});
 });

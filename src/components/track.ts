@@ -422,30 +422,36 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			return Number.isFinite(parsed) ? Math.floor(parsed / marks) : undefined;
 		};
 
+		/*
+		 * The stored marks, and the segments they fill, on one entry. A name is
+		 * worth the boxes a reader can see — `exhaustion - 1` is written about
+		 * those, not about a mark total whose size depends on a config field no
+		 * formula can see — and §5 still wants the raw number reachable, which
+		 * `<name>.value` is. Where a segment holds one mark the two are the
+		 * same number and this says nothing new.
+		 *
+		 * `compute` rather than `display` because dividing the marks by the
+		 * marks a segment holds is not one of this component's formula fields
+		 * and could not be made into one: how many marks a segment holds is
+		 * layout configuration, not a name any formula on the sheet can see.
+		 */
+		const run = (key: string): ScopeEntry => ({
+			value: data?.values[key],
+			compute: () => filled(key),
+		});
+
 		if (isRowSet(config)) {
 			// A component holding several values answers to `<id>.<name>`, as
 			// `abilities.DEX` does, and not under its bare id: there is no one
 			// number a set of runs could mean.
 			const named: Record<string, ScopeEntry> = {};
 			for (const row of config.rows ?? []) {
-				named[row.key] = { value: filled(row.key) };
+				named[row.key] = run(row.key);
 			}
 			return { named };
 		}
 
-		const named: Record<string, ScopeEntry> = {
-			/*
-			 * `<id>.value` is the stored mark count, and it is restated here
-			 * rather than left to the name table's own `.value`, which would
-			 * take it from `self`. The bare id has to be the filled segments —
-			 * `exhaustion - 1` is written about the boxes a reader can see,
-			 * not about a mark total whose size depends on a config field the
-			 * formula cannot see — and §5 still wants the raw number
-			 * reachable. Where a segment holds one mark the two are the same
-			 * number and this changes nothing.
-			 */
-			value: { value: data?.values[VALUE_KEY] },
-		};
+		const named: Record<string, ScopeEntry> = {};
 		if (config.levels !== undefined) {
 			named.count = { value: config.levels.length - 1 };
 		} else if (config.count !== undefined) {
@@ -453,7 +459,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			// reference another component.
 			named.count = { display: { field: 'count', scope: {} } };
 		}
-		return { self: { value: filled(VALUE_KEY) }, named };
+		return { self: run(VALUE_KEY), named };
 	},
 
 	write(data, body): string {
