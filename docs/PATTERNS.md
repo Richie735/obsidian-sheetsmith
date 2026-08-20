@@ -417,6 +417,19 @@ Applied honestly, the cut in this codebase is small and specific:
   three sit directly above a `configFields` entry carrying the same sentence as
   user-facing copy. The description must exist; the interface comment is the
   copy to drop. Keep it only where it says something the description does not.
+  `components/doc-comments.test.ts` [checked] holds this over every component:
+  a comment fails there when *every* sentence in it is one the description
+  already carries verbatim. Two things pass deliberately, and neither is a hole
+  left open. A restatement in *different words* passes, because no similarity
+  threshold separates this codebase's duplicates from its keeps — `track.ts`'s
+  `count` comment resembles its own description more closely than the
+  cross-reference dropped from `hideLabel` did. And a comment that repeats a
+  description sentence and then *adds* to it passes, because the obvious rule
+  for catching it — compare the comment's leading clause against a whole
+  description sentence — reports "off the sheet, so the run has no visible
+  name" exactly as readily as "off the sheet, as on a Stat", which would fail
+  the build against comments this section asks an author to write. Both stay a
+  judgement made in review, and the check only ever reports what it can prove.
 - **Restating the code.** `// increment the counter`.
 
 Contrast a comment that stays: `/** Arrow keys step a numeric draft, exactly
@@ -462,4 +475,3 @@ that keeps solved rows stops being read.
 | --- | --- | --- |
 | Two responsibilities in one file | `layout-editor.ts` | Deliberately deferred, not overlooked. The split waits for the M4 workspace view, which rewrites this module anyway; splitting it twice would be the waste. It has tests now, so the move will be guarded when it comes. |
 | Gesture modules have no test file beside them | `src/interaction/` | `scrub.ts`, `hold-repeat.ts` and `editable.ts` are covered thoroughly, but through `pool.test.ts`, `track.test.ts` and the component tests rather than their own files, against §10's one-test-file-per-module. It may be that §10 is what should change here: a gesture is only meaningfully driven through a control that uses it, and a test file of its own would have to build a fake card first, which is what those component tests already are. Settle it rather than leaving it implicit. |
-| A backlog row names a sample, not the whole set | §9, `components/track.ts` | The row that drove the doc-comment cleanup named `stat.ts` and `stat-group.ts`, and the fix followed the row rather than the rule, so instances outside those two files survived. `table.ts`'s went with the open-rows change, which touched that interface anyway; `track.ts` still carries a softer one that may earn its place on the cross-reference alone. Neither was ever in a diff, having predated the branch, so a diff-scoped review cannot surface them by design and never will. Fix the last one, then close the gap properly: a source check comparing each interface doc comment against its own `configFields` description is mechanical, and §9 already says what to compare. Prose caught this once; the check is what stops it recurring. |
