@@ -54,10 +54,10 @@ export const DEFAULT_COLUMN_TYPE: ColumnType = COLUMN_TYPES[0];
  * Column types a total can be taken over: the ones whose cell is a number
  * before any formula runs.
  *
- * A total is a name the rest of the sheet can read (SPEC §5), so it has to come
- * from stored data alone. `text` has nothing to add up, and `computed` cannot
- * publish a value until §13's publication question is settled — which is the
- * change this file is waiting for, and the reason the set is in one place.
+ * A total sums what the note stores, over however many rows the character
+ * happens to have. `text` has nothing to add up, and a `computed` column stores
+ * nothing to sum — its values are derived per row, which is a different
+ * question from publishing one row's value and is answered separately, below.
  */
 const TOTALLABLE: readonly ColumnType[] = ['number', 'level', 'toggle'];
 
@@ -66,3 +66,22 @@ const TOTALLABLE: readonly ColumnType[] = ['number', 'level', 'toggle'];
  * a layout file can ask without a cast. The array above is what is type-checked.
  */
 export const TOTALLED_TYPES: ReadonlySet<string> = new Set(TOTALLABLE);
+
+/**
+ * Column types a declared row may publish its cell from: everything but `text`.
+ *
+ * A published row answers to `<component id>.<row key>` (SPEC §5), so the cell
+ * has to mean one value. A text cell does not: the card shows "sword" where the
+ * note holds "[[Sunblade|sword]]", and a name meaning either is a name meaning
+ * both. A computed column is here where it is absent from the set above,
+ * because one row's derived value is a value and a sum of them is not.
+ */
+const PUBLISHABLE: readonly ColumnType[] = [
+	'number',
+	'level',
+	'toggle',
+	'computed',
+];
+
+/** As above: strings, so a type read out of a layout file can be asked about. */
+export const PUBLISHABLE_TYPES: ReadonlySet<string> = new Set(PUBLISHABLE);
