@@ -22,6 +22,7 @@ import { createLayout, listLayouts } from '../layouts';
 import {
 	ListContext,
 	addControlSpacers,
+	copyableName,
 	moveItem,
 	renderColumnsEditor,
 	renderRowsEditor,
@@ -810,25 +811,7 @@ export class LayoutEditorSection {
 				// The id is the one thing about a component that cannot be
 				// discovered anywhere else, and it is what gets retyped into
 				// every formula that reads this component. Make it one click.
-				const code = el.createEl('code', {
-					cls: 'sheetsmith-copyable',
-					text: config.id,
-				});
-				code.setAttribute('tabindex', '0');
-				code.setAttribute('role', 'button');
-				code.setAttribute('aria-label', `Copy "${config.id}" to the clipboard`);
-				const copy = () => {
-					void navigator.clipboard.writeText(config.id).then(
-						() => new Notice(`Copied "${config.id}"`),
-						() => new Notice('Could not copy to the clipboard.'),
-					);
-				};
-				code.addEventListener('click', copy);
-				code.addEventListener('keydown', (event) => {
-					if (event.key !== 'Enter' && event.key !== ' ') return;
-					event.preventDefault();
-					copy();
-				});
+				copyableName(el, config.id);
 			},
 		);
 

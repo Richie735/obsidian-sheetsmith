@@ -199,10 +199,12 @@ describe('columns editor', () => {
 		);
 		// A total is offered on the number and not on the text, for the same
 		// reason the gloss is offered the other way round: neither control means
-		// anything on the other kind of column.
+		// anything on the other kind of column. Publishing a row is offered
+		// beside the total and refused on a text column for its own reason: a
+		// cell holding a link has no one value for a name to mean.
 		expect(checks).toEqual([
 			['Secondary text', 'Hide heading'],
-			['Show a total', 'Hide heading'],
+			['Show a total', 'Publish per row', 'Hide heading'],
 		]);
 	});
 
@@ -391,6 +393,81 @@ describe('columns editor', () => {
 		).toContain('letters, digits and underscores');
 	});
 
+	it('writes the publish flag, and leaves it out until it is asked for', () => {
+		const record: { columns: { key: string; type: string; publish?: boolean }[] } =
+			{ columns: [{ key: 'Total', type: 'computed' }] };
+		const el = columnsEditor(record);
+		const check = Array.from(
+			el.querySelectorAll('.sheetsmith-attribute-check'),
+		).find((label) => label.textContent === 'Publish per row');
+		const input = check?.querySelector('input') as HTMLInputElement;
+		input.checked = true;
+		input.dispatchEvent(new Event('change'));
+		expect(record.columns[0]?.publish).toBe(true);
+		input.checked = false;
+		input.dispatchEvent(new Event('change'));
+		expect(record.columns[0]).not.toHaveProperty('publish');
+	});
+
+	it('offers the publish tick only while it is still there to take', () => {
+		// One card publishes one column, and the component refuses a second by
+		// rendering an error over the whole card. Ticking a second one from
+		// this form was reachable, so the form stops offering it — the way a
+		// total is not offered on a column with nothing to add up.
+		const checks = (record: Record<string, unknown>) =>
+			Array.from(
+				columnsEditor(record).querySelectorAll('.sheetsmith-attribute-check'),
+			).map((check) => check.textContent);
+		const free = {
+			columns: [
+				{ key: 'Bonus', type: 'number' },
+				{ key: 'Total', type: 'computed' },
+			],
+		};
+		expect(checks(free).filter((text) => text === 'Publish per row')).toHaveLength(
+			2,
+		);
+		const taken = {
+			columns: [
+				{ key: 'Bonus', type: 'number' },
+				{ key: 'Total', type: 'computed', publish: true },
+			],
+		};
+		// Still on the column that has it, so unticking is how it moves.
+		expect(checks(taken).filter((text) => text === 'Publish per row')).toHaveLength(
+			1,
+		);
+	});
+
+	it('rebuilds the list when a column takes the publication', () => {
+		// Otherwise the tick disappears from the siblings only at the next
+		// redraw, and until then a second one is still there to be pressed.
+		const record: { columns: { key: string; type: string; publish?: boolean }[] } =
+			{ columns: [{ key: 'Total', type: 'computed' }, { key: 'Bonus', type: 'number' }] };
+		const el = columnsEditor(record);
+		const check = Array.from(
+			el.querySelectorAll('.sheetsmith-attribute-check'),
+		).find((label) => label.textContent === 'Publish per row');
+		const input = check?.querySelector('input') as HTMLInputElement;
+		input.checked = true;
+		input.dispatchEvent(new Event('change'));
+		expect(record.columns[0]?.publish).toBe(true);
+		expect(recorded.redraws).toBe(1);
+	});
+
+	it('says where a row key is typed, only where a column is published', () => {
+		// Ticking publish is what gives the rows list a name to hand out, and
+		// the field for it is in a different list on the same form.
+		const plain = columnsEditor({ columns: [{ key: 'Total', type: 'computed' }] });
+		expect(plain.querySelector('.sheetsmith-attribute-footnote')).toBeNull();
+		const publishing = columnsEditor({
+			columns: [{ key: 'Total', type: 'computed', publish: true }],
+		});
+		expect(
+			publishing.querySelector('.sheetsmith-attribute-footnote')?.textContent,
+		).toContain('Give each row a key in the rows list above');
+	});
+
 	it('does not point at rings a dropdown never draws', () => {
 		// The note tells the author to select a ring. A column drawing none
 		// has nothing for that sentence to mean.
@@ -492,6 +569,85 @@ describe('rows editor', () => {
 		const remove = byLabel(el, 'Remove row value "ability"');
 		remove.click();
 		expect(record.rows[0]?.values).toEqual({ ability: 'abilities.DEX' });
+	});
+
+	it('writes a row key, and clears it when the field is emptied', () => {
+		const record = skills();
+		const el = rowsEditor(record);
+		const key = el.querySelector(
+			'input[aria-label="Perception publishes as"]',
+		) as HTMLInputElement;
+		key.value = 'perception';
+		key.dispatchEvent(new Event('change'));
+		expect(record.rows[1]).toMatchObject({ key: 'perception' });
+		key.value = '';
+		key.dispatchEvent(new Event('change'));
+		// Empty is the ordinary state: a row with no key publishes nothing, and
+		// the layout should not carry one saying so.
+		expect(record.rows[1]).not.toHaveProperty('key');
+	});
+
+	it('spells out what a keyed row publishes as, and copies it', () => {
+		// The name a formula reads is what gets retyped elsewhere, so it is
+		// composed here rather than left to the reader to assemble from the
+		// footnote's pattern — the same argument the component id chip makes.
+		const record = {
+			id: 'skills',
+			rows: [{ label: 'Acrobatics' }, { label: 'Perception', key: 'perception' }],
+		};
+		const chips = Array.from(
+			rowsEditor(record).querySelectorAll('.sheetsmith-copyable'),
+		);
+		expect(chips.map((chip) => chip.textContent)).toEqual(['skills.perception']);
+		expect(chips[0]?.getAttribute('aria-label')).toBe(
+			'Copy "skills.perception" to the clipboard',
+		);
+	});
+
+	it('composes no name for a key that arrived unusable', () => {
+		// Typing one is refused, so this is a layout that came from the file.
+		// The chip means "this is the name a formula reads", and there is no
+		// such name here — the card is rendering the refusal instead.
+		const record = {
+			id: 'skills',
+			rows: [{ label: 'Perception', key: 'passive perception' }],
+		};
+		expect(
+			rowsEditor(record).querySelector('.sheetsmith-copyable'),
+		).toBeNull();
+	});
+
+	it('puts the stored key back when one that is not a name is typed', () => {
+		const record = skills();
+		const el = rowsEditor(record);
+		const key = el.querySelector(
+			'input[aria-label="Perception publishes as"]',
+		) as HTMLInputElement;
+		key.value = 'passive perception';
+		key.dispatchEvent(new Event('change'));
+		expect(key.value).toBe('');
+		expect(record.rows[1]).not.toHaveProperty('key');
+		expect(context.errors.size).toBe(1);
+		expect([...context.errors.values()][0]).toContain(
+			'letters, digits and underscores',
+		);
+	});
+
+	it('refuses a key another row already publishes under, naming it', () => {
+		const record = {
+			rows: [
+				{ label: 'Acrobatics', key: 'acrobatics' },
+				{ label: 'Perception' },
+			],
+		};
+		const el = rowsEditor(record);
+		const key = el.querySelector(
+			'input[aria-label="Perception publishes as"]',
+		) as HTMLInputElement;
+		key.value = 'acrobatics';
+		key.dispatchEvent(new Event('change'));
+		expect(record.rows[1]).not.toHaveProperty('key');
+		expect([...context.errors.values()][0]).toContain('"Acrobatics"');
 	});
 
 	it('puts the stored name back when a rename is rejected', () => {
