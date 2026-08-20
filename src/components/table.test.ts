@@ -5,7 +5,8 @@ import { closePopover, LONG_PRESS } from '../ui/popover';
 import { UNRESOLVED_DELAY } from '../interaction/editable';
 import { FOCUSABLE } from '../view/sheet-view';
 import { makeFieldExplainer, makeFieldResolver } from '../formula/resolve';
-import { Scope } from '../formula/expression';
+import { evaluate, Scope } from '../formula/expression';
+import { buildSheetScope } from '../formula/sheet';
 import { RenderContext } from '../types';
 
 /*
@@ -1038,6 +1039,272 @@ describe('table touch affordances', () => {
  * unclaimed row is the character's, which is what lets one list hold a
  * playbook's printed gear and a player's invented gear at once.
  */
+/*
+ * Publishing a declared row (SPEC §5). A column asks to be published, a row
+ * carries the name, and `skills.perception` is that column's value on that
+ * row. Driven through the sheet-wide name table rather than through the
+ * declaration, because what a name is worth is the table's answer.
+ */
+describe('table publishes a declared row', () => {
+	/** The skills card with its computed Total published per row. */
+	const published: TableConfig = {
+		...config,
+		columns: config.columns?.map((column) =>
+			column.key === 'Total' ? { ...column, publish: true } : column,
+		),
+		rows: [
+			{ label: 'Acrobatics', values: { ability: 'abilities.DEX' } },
+			{ label: 'Perception', key: 'perception', values: { ability: 'abilities.WIS' } },
+		],
+	};
+
+	/**
+	 * The sheet the card sits on, built exactly as the view builds it: the
+	 * abilities and the proficiency the row formulas read, and the card
+	 * itself, resolving against the finished table.
+	 */
+	function sheetWith(over: TableConfig, data: TableData | null): Scope {
+		return buildSheetScope([
+			{
+				id: 'abilities',
+				values: { named: { DEX: { value: 3 }, WIS: { value: 2 } } },
+			},
+			{ id: 'prof', values: { self: { value: 3 } } },
+			{
+				id: over.id,
+				values: table.scopeValues?.(data, over) ?? {},
+				resolver: (scope) => makeFieldResolver(table, over, data, scope),
+			},
+		]);
+	}
+
+	it('answers <id>.<key> with the published column on that row', () => {
+		// The formula the original brief wrote, through the expression engine:
+		// WIS +2, proficient twice over at +3, and a +1 bonus is a +9 skill.
+		const scope = sheetWith(published, stored(BODY, published));
+		expect(scope('skills.perception')).toBe(9);
+		expect(evaluate('10 + skills.perception', scope)).toBe(19);
+	});
+
+	it('publishes each row from one source, never a display beside a compute', () => {
+		// The rule contract.test.ts sweeps registry-wide, asserted here because
+		// the sweep cannot see it: a Table with nothing configured publishes
+		// nothing, and this card is the one that actually uses `compute`.
+		const entries = Object.values(
+			table.scopeValues?.(stored(BODY, published), published)?.named ?? {},
+		);
+		expect(entries).not.toHaveLength(0);
+		for (const entry of entries) {
+			expect(entry.display === undefined || entry.compute === undefined).toBe(true);
+		}
+	});
+
+	it('publishes only the rows carrying a key', () => {
+		const scope = sheetWith(published, stored(BODY, published));
+		expect(scope('skills.Acrobatics')).toBeUndefined();
+		expect(scope('skills.acrobatics')).toBeUndefined();
+	});
+
+	it('publishes no .value for a computed column', () => {
+		// A computed column is never written to the note (§4.2), so there is
+		// no stored cell for `.value` to mean.
+		const scope = sheetWith(published, stored(BODY, published));
+		expect(scope('skills.perception.value')).toBeUndefined();
+	});
+
+	it('publishes the stored cell, and its .value, for a stored column', () => {
+		const bonus: TableConfig = {
+			...published,
+			columns: published.columns?.map((column) => ({
+				...column,
+				publish: column.key === 'Bonus',
+			})),
+		};
+		const scope = sheetWith(bonus, stored(BODY, bonus));
+		expect(scope('skills.perception')).toBe(1);
+		expect(scope('skills.perception.value')).toBe(1);
+	});
+
+	it('publishes what the card shows for a row the note has no row for', () => {
+		// A declared row that claimed nothing renders with blank cells, and a
+		// blank number cell is zero (§4.2): WIS +2 and nothing else.
+		const alone = `
+| Skill | Training | Bonus |
+|---|---|---|
+| Acrobatics | 1 | 0 |
+`;
+		const data = stored(alone, published);
+		expect(sheetWith(published, data)('skills.perception')).toBe(2);
+		expect(totals(render(data, published))).toEqual(['+6', '+2']);
+	});
+
+	it('agrees with the cell the card draws, from one row scope', () => {
+		// The rendered cell reads the drafts and the published name reads the
+		// note, but both are the same construction: same cells, same row
+		// values, same formula. A second copy is where the two drift apart.
+		const data = stored(BODY, published);
+		expect(totals(render(data, published))).toEqual(['+6', '+9']);
+		expect(sheetWith(published, data)('skills.perception')).toBe(9);
+	});
+
+	it('publishes nothing for a row the character added', () => {
+		// Not a guard: the entries are built from the layout's rows, and a row
+		// the character typed appears in none of them.
+		const open: TableConfig = {
+			...published,
+			id: 'inventory',
+			openRows: true,
+			rows: [{ label: 'Rope', key: 'rope' }],
+			columns: [{ key: 'Qty', type: 'number', publish: true }],
+		};
+		const body = `
+| Item | Qty |
+|---|---|
+| Rope | 1 |
+| Dagger | 2 |
+`;
+		const scope = sheetWith(open, stored(body, open));
+		expect(scope('inventory.rope')).toBe(1);
+		expect(scope('inventory.Dagger')).toBeUndefined();
+		expect(scope('inventory.dagger')).toBeUndefined();
+		// And a formula reading one says so rather than computing from a blank.
+		expect(() => evaluate('inventory.Dagger + 1', scope)).toThrow(
+			'Unknown name "inventory.Dagger"',
+		);
+	});
+
+	it('catches two rows whose formulas name each other', () => {
+		// Two rows of one card are two published names, so the name table's
+		// own cycle guard covers a cycle inside a component.
+		const paired: TableConfig = {
+			...config,
+			rows: [
+				{ label: 'Athletics', key: 'row_a', values: { other: 'skills.row_b' } },
+				{ label: 'Perception', key: 'row_b', values: { other: 'skills.row_a' } },
+			],
+			columns: [
+				{ key: 'Bonus', type: 'number' },
+				{ key: 'Total', type: 'computed', formula: 'other + Bonus', publish: true },
+			],
+		};
+		const body = `
+| Skill | Bonus |
+|---|---|
+| Athletics | 1 |
+| Perception | 2 |
+`;
+		const data = stored(body, paired);
+		const scope = sheetWith(paired, data);
+		expect(scope('skills.row_a')).toBeUndefined();
+		expect(scope('skills.row_b')).toBeUndefined();
+		// Everything outside the cycle keeps working.
+		expect(scope('abilities.DEX')).toBe(3);
+
+		const el = document.createElement('div');
+		table.render(el, paired, data, {
+			resolved: {},
+			resolveField: makeFieldResolver(table, paired, data, scope),
+			explainField: makeFieldExplainer(table, paired, data, scope),
+			onChange: () => undefined,
+		});
+		const cells = Array.from(
+			el.querySelectorAll('tbody .sheetsmith-table-value'),
+		);
+		expect(cells.map((cell) => cell.textContent)).toEqual(['?', '?']);
+		expect(cells[0]?.getAttribute('title')).toContain('other');
+		expect(cells[1]?.getAttribute('title')).toContain('other');
+	});
+
+	/*
+	 * Every refusal is a configuration error: the card renders it, publishes
+	 * nothing, and the message names the fix (SPEC §10, PATTERNS §4).
+	 */
+	describe('refuses a publication it cannot honour', () => {
+		function refused(over: TableConfig): string {
+			const result = table.read(BODY, over);
+			if (result.ok) throw new Error('expected a configuration error');
+			// Rendered on the card, and nothing published behind it.
+			expect(render(null, over).querySelector('.sheetsmith-error')).not.toBeNull();
+			expect(table.scopeValues?.(null, over)).toEqual({});
+			return result.error;
+		}
+
+		it('refuses two published columns, naming both', () => {
+			const error = refused({
+				...published,
+				columns: [
+					{ key: 'Training', type: 'number', publish: true },
+					{ key: 'Bonus', type: 'number', publish: true },
+				],
+			});
+			expect(error).toContain('"Training"');
+			expect(error).toContain('"Bonus"');
+			expect(error).toContain('only one');
+		});
+
+		it('refuses a published text column, saying what the cell could mean', () => {
+			const error = refused({
+				...published,
+				columns: [{ key: 'Notes', publish: true }],
+			});
+			expect(error).toContain('[[Sunblade|sword]]');
+			expect(error).toContain('number, level, toggle or computed');
+		});
+
+		it('refuses a row key that is not a name, naming the fix', () => {
+			const error = refused({
+				...published,
+				rows: [{ label: 'Perception', key: 'passive perception' }],
+			});
+			expect(error).toContain('letters, digits and underscores');
+			expect(error).toContain('refused rather than rewritten');
+		});
+
+		it('refuses a row key holding a dot, which would be a third segment', () => {
+			// `<id>.<key>` is two segments, and a third would collide with the
+			// `.value` every published name already answers to.
+			expect(
+				refused({ ...published, rows: [{ label: 'Perception', key: 'a.b' }] }),
+			).toContain('letters, digits and underscores');
+		});
+
+		it('refuses two rows publishing under the same key, naming both', () => {
+			const error = refused({
+				...published,
+				rows: [
+					{ label: 'Acrobatics', key: 'perception' },
+					{ label: 'Perception', key: 'perception' },
+				],
+			});
+			expect(error).toContain('"Acrobatics"');
+			expect(error).toContain('"Perception"');
+			expect(error).toContain('"perception"');
+		});
+
+		it('refuses a row key a totalled column already answers to', () => {
+			const error = refused({
+				...published,
+				rows: [{ label: 'Perception', key: 'Bonus' }],
+				columns: [
+					{ key: 'Bonus', type: 'number', total: true },
+					{ key: 'Total', type: 'computed', formula: 'Bonus', publish: true },
+				],
+			});
+			expect(error).toContain('skills.Bonus');
+			expect(error).toContain('totalled column');
+		});
+
+		it('refuses a row key with no column published, naming the control', () => {
+			const error = refused({
+				...config,
+				rows: [{ label: 'Perception', key: 'perception' }],
+			});
+			expect(error).toContain('no column is published per row');
+			expect(error).toContain('Publish per row');
+		});
+	});
+});
+
 describe('table with open rows', () => {
 	const inventory: TableConfig = {
 		id: 'inventory',
@@ -1515,13 +1782,18 @@ describe('table with open rows', () => {
 		expect(table.read(PACK, spaced).ok).toBe(true);
 	});
 
-	it('reports a total on a computed column, naming the reason', () => {
+	it('reports a total on a computed column, arguing from the aggregate', () => {
+		// Refused before a declared row could publish and refused after: one
+		// row's derived value is a value, and a sum of them over a list the
+		// character owns is a different question. The message says so rather
+		// than pointing at a limit that no longer exists.
 		const broken = {
 			...inventory,
 			columns: [{ key: 'Bulk', type: 'computed' as const, formula: 'Qty', total: true }],
 		};
 		const result = table.read(PACK, broken);
-		expect(!result.ok && result.error).toContain('cannot publish one');
+		expect(!result.ok && result.error).toContain('adds up stored cells');
+		expect(!result.ok && result.error).toContain('as many rows as the character has');
 		// A misconfigured card publishes nothing, so a formula reading its total
 		// fails and says so rather than reading a number the card refuses to show.
 		expect(table.scopeValues?.(null, broken)).toEqual({});

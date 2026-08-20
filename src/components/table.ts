@@ -42,11 +42,13 @@ import { displayText, hasLink, parseLinks } from '../parse/wikilink';
 import {
 	ColumnType,
 	DEFAULT_COLUMN_TYPE,
+	PUBLISHABLE_TYPES,
 	TOTALLED_TYPES,
 } from './column-types';
 import {
 	ComponentConfig,
 	ComponentDefinition,
+	FieldResolver,
 	FieldValue,
 	LinkContext,
 	ReadResult,
@@ -119,6 +121,18 @@ export interface TableColumn {
 	 * and it is what an encumbrance rule is made of.
 	 */
 	total?: boolean;
+	/**
+	 * Give every declared row carrying a `key` a name of its own, answering
+	 * with this column's cell on that row: `skills.perception` is the Total
+	 * column's value on the Perception row.
+	 *
+	 * The column asks and the row carries the name, which is the way round
+	 * `total` already has it: which value on a row is worth publishing is a
+	 * property of the column, stated once, not a property repeated on eighteen
+	 * rows. At most one column per card, because `<id>.<key>` is two segments
+	 * and the row is already the second.
+	 */
+	publish?: boolean;
 }
 
 export interface TableRow {
@@ -127,6 +141,14 @@ export interface TableRow {
 	 * case-insensitively. See claimRows.
 	 */
 	label: string;
+	/**
+	 * The name a formula reads this row's published value by, as
+	 * `<component id>.<key>`. Only meaningful with a published column, and
+	 * opt-in rather than derived from the label: a skills card must not claim
+	 * eighteen sheet-wide names nobody asked for, and slugifying "Sleight of
+	 * Hand" is a question with no answer worth guessing at.
+	 */
+	key?: string;
 	/**
 	 * Named expressions available to this row's computed columns. This is
 	 * what lets one formula serve every row of a skill list: the column says
@@ -446,17 +468,53 @@ function rowViews(config: TableConfig, data: TableData | null): RowView[] {
 /** A column's total, or the row that stopped it being one. */
 type ColumnTotal = { sum: number } | { unreadable: string };
 
+/** This row's text for a column, wherever the caller reads it from. */
+type CellReader = (column: TableColumn) => string | undefined;
+
 /**
  * One row as a total sees it: what it is called, and what its cells hold.
  *
- * A reader rather than the cells themselves, because the two callers read from
- * different places. `scopeValues` has only the note. `render` layers the row's
+ * A reader rather than the cells themselves, because the callers read from
+ * different places. Publication has only the note. `render` layers the row's
  * drafts over it, so a total moves while the cell that changed it is still being
  * typed — which is the same reader the row's computed columns already use.
  */
 interface TotalRow {
 	label: string;
-	cell(column: TableColumn): string | undefined;
+	cell: CellReader;
+}
+
+/**
+ * The names a row's computed columns resolve against: every stored cell by its
+ * column key, then the row's own named expressions layered over them.
+ *
+ * One helper, because the same names are needed from two places and must not
+ * disagree. `render` builds it over the drafts, so a computed cell moves while
+ * the value feeding it is still being typed; `scopeValues` builds it over the
+ * note, which is what a published name reads. Two copies would be the same
+ * class of bug the totals were factored to avoid — a cell and a name computed
+ * from different accounts of one row.
+ */
+function rowScope(
+	config: TableConfig,
+	declared: number | null,
+	cell: CellReader,
+	resolve: FieldResolver,
+): Record<string, FieldValue> {
+	const scope: Record<string, FieldValue> = {};
+	for (const column of config.columns ?? []) {
+		if (columnType(column) === 'computed') continue;
+		scope[column.key] = cellValue(column, cell(column));
+	}
+	const row = declared === null ? undefined : config.rows?.[declared];
+	for (const name of Object.keys(row?.values ?? {})) {
+		const value = resolve(`rows.${declared}.values.${name}`, scope);
+		// A row value that will not resolve publishes nothing, so the column
+		// formula reading it fails and says so, rather than computing from a
+		// silent zero (SPEC §5).
+		if (value !== null) scope[name] = value;
+	}
+	return scope;
 }
 
 /**
@@ -490,18 +548,12 @@ function columnTotal(
 	return { sum: Math.round(sum * TOTAL_PRECISION) / TOTAL_PRECISION };
 }
 
-/** The rows a total counts, reading what the note holds and nothing else. */
-function storedRows(
-	config: TableConfig,
-	data: TableData | null,
-): TotalRow[] {
-	return rowViews(config, data).map((view) => ({
-		label: view.label,
-		cell: (column) =>
-			view.at === null
-				? undefined
-				: data?.rows[view.at]?.cells?.[column.key.toLowerCase()],
-	}));
+/** What the note holds for one row, whatever the card is showing for it. */
+function storedCells(data: TableData | null, view: RowView): CellReader {
+	return (column) =>
+		view.at === null
+			? undefined
+			: data?.rows[view.at]?.cells?.[column.key.toLowerCase()];
 }
 
 /**
@@ -600,6 +652,10 @@ function paintText(
 function configError(config: TableConfig): string | null {
 	const columns = config.columns ?? [];
 	const seen = new Set<string>();
+	/** The column published per row, once one has been met. */
+	let published: string | null = null;
+	/** Column keys already answering to `<id>.<key>` as a total. */
+	const totalled = new Set<string>();
 	for (const column of columns) {
 		const key = (column.key ?? '').trim();
 		if (key === '') return 'Every column needs a key.';
@@ -630,16 +686,32 @@ function configError(config: TableConfig): string | null {
 			return `The column "${key}" cannot show a total, because "${config.id}.${key}" is not a name a formula can read. Rename the column using letters, digits and underscores, or turn the total off.`;
 		}
 		if (column.total === true && !TOTALLED_TYPES.has(columnType(column))) {
-			// A total is a published name (SPEC §5), so it has to come from
-			// stored data alone. A text column has nothing to add up, and a
-			// computed column cannot publish a value yet — §13's question. Both
-			// are stated rather than rendered as a number the sheet then refuses
-			// to read: one name meaning "publishable, sometimes" is worse than a
-			// refusal that says why.
+			// A total sums what the note stores, over however many rows the
+			// character has. A text column has nothing to add up, and a computed
+			// column stores nothing to sum — one row's derived value is a value,
+			// and a sum of them across a list the character owns is a different
+			// question. Stated rather than rendered as a number the sheet then
+			// refuses to read: one name meaning "publishable, sometimes" is worse
+			// than a refusal that says why.
 			return columnType(column) === 'computed'
-				? `The column "${key}" cannot show a total yet, because a total is a value the rest of the sheet can read and a computed column cannot publish one. Total a stored column instead, or turn the total off.`
+				? `The column "${key}" cannot show a total, because a total adds up stored cells and a computed column stores none — it works one row out at a time, over as many rows as the character has. Total a stored column instead, or publish a single row's value by giving that row a key.`
 				: `The column "${key}" cannot show a total, because a text column has nothing to add up. Make it a number column, or turn the total off.`;
 		}
+		if (column.publish === true) {
+			if (published !== null) {
+				// One card, one published column: `<id>.<key>` is two segments
+				// and the row is already the second, so a second column would
+				// have nowhere to put its own name.
+				return `The columns "${published}" and "${key}" are both published per row, and only one can be: a row publishes as "${config.id}.<row key>", and one name cannot mean two cells.`;
+			}
+			published = key;
+			if (!PUBLISHABLE_TYPES.has(columnType(column))) {
+				// The one type left out is `text`, and the reason is the link:
+				// there is no one value for the name to mean.
+				return `The column "${key}" cannot be published per row, because the card shows "sword" where the note holds "[[Sunblade|sword]]", so there is no one value a formula could read. Publish a number, level, toggle or computed column instead.`;
+			}
+		}
+		if (column.total === true) totalled.add(key);
 		if (column.levels?.some((entry) => parseLevel(entry).name === '')) {
 			// A level with only a glyph has nothing to be called: the name is
 			// what a screen reader is given and what a dropdown lists, and a
@@ -653,6 +725,8 @@ function configError(config: TableConfig): string | null {
 		return `A column is called "${config.rowHeader ?? DEFAULT_ROW_HEADER}", which is already the name column's heading.`;
 	}
 	const labels = new Set<string>();
+	/** Row keys already published, against the row that carries each. */
+	const keys = new Map<string, string>();
 	for (const row of config.rows ?? []) {
 		const label = (row.label ?? '').trim();
 		if (label === '') return 'Every row needs a name.';
@@ -661,6 +735,26 @@ function configError(config: TableConfig): string | null {
 		}
 		if (labels.has(label)) return `Two rows are both called "${label}".`;
 		labels.add(label);
+
+		const key = (row.key ?? '').trim();
+		if (key === '') continue;
+		if (!isName(key)) {
+			// Refused rather than rewritten, on the same argument a totalled
+			// column's key is: the editor can tell an author what their
+			// component id became, and nothing here could tell them what their
+			// row became.
+			return `The row "${label}" cannot publish as "${key}", because a row key is a name a formula reads — letters, digits and underscores, not starting with a digit. It is refused rather than rewritten, so rename it or clear it.`;
+		}
+		if (published === null) {
+			return `The row "${label}" publishes as "${key}", but no column is published per row, so the key names no value. Turn on "Publish per row" for the column the name should read, or clear the key.`;
+		}
+		if (keys.has(key)) {
+			return `The rows "${keys.get(key) ?? ''}" and "${label}" both publish as "${key}", and one name cannot mean two rows.`;
+		}
+		if (totalled.has(key)) {
+			return `The row "${label}" publishes as "${key}", which is already the key of a totalled column, so both would answer to "${config.id}.${key}". Rename one of them.`;
+		}
+		keys.set(key, label);
 	}
 	return null;
 }
@@ -677,14 +771,14 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			kind: 'rows',
 			label: 'Rows',
 			description:
-				'The rows every character using this layout has. Each row may define named expressions its computed columns can read, e.g. "ability" as abilities.DEX, so one column formula serves the whole list.',
+				'The rows every character using this layout has. Each row may define named expressions its computed columns can read, e.g. "ability" as abilities.DEX, so one column formula serves the whole list. A row may also carry a key, which is the name a formula elsewhere reads that row\'s published value by.',
 		},
 		{
 			key: 'columns',
 			kind: 'columns',
 			label: 'Columns',
 			description:
-				'Text, number, and toggle columns hold character data. A computed column is read-only and reads the row\'s other cells by column key, its row values by name, and anything else on the sheet by component id.',
+				'Text, number, and toggle columns hold character data. A computed column is read-only and reads the row\'s other cells by column key, its row values by name, and anything else on the sheet by component id. One column may be published per row, which is what lets a formula read a single row\'s value rather than a column\'s total.',
 		},
 		{
 			key: 'openRows',
@@ -753,31 +847,46 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 	},
 
 	/**
-	 * What the card publishes to the rest of the sheet: one total per column
-	 * asking for one, as `<id>.<key>`.
+	 * What the card publishes to the rest of the sheet, both of them under
+	 * `<id>.<name>`: one total per column asking for one, and one name per
+	 * declared row carrying a `key`, answering with the published column's
+	 * cell on that row.
 	 *
 	 * **A character-added row publishes nothing**, and that is a finding about
 	 * the contract rather than about this component: `<id>.<name>` is a
 	 * fixed-row mechanism. A name a formula can write has to be stable and has
 	 * to be knowable when the formula is written, and a row the character typed
-	 * is neither. §13's question about how a *declared* row publishes stays
-	 * open; this fixes its bound.
+	 * is neither. The entries below are built from `config.rows`, where a row
+	 * the character typed has nowhere to appear, so `inventory.Dagger` fails as
+	 * an unknown name without a guard saying so.
 	 *
 	 * A total is the one thing an open list can publish, because an aggregate
-	 * needs no row name — and it needs no change to the contract either.
-	 * `scopeValues` is handed no resolver, so a row's published value (a
-	 * computed column evaluated in a scope that itself holds formulas) is
-	 * exactly what §13 is about. A sum over a *stored* column is a number
-	 * derived from data alone, so `ScopeEntry.value` carries it as it stands.
+	 * needs no row name, and it is a number derived from stored data alone, so
+	 * `ScopeEntry.value` carries it. A published row is the case that needed
+	 * `compute`: its value may be a computed column, evaluated in a row scope
+	 * that itself holds formulas, and only this component can build that scope.
+	 *
+	 * **A published name reads the note; a cell reads the draft.** While a
+	 * value is being typed, a formula elsewhere on the sheet still sees the
+	 * last committed number and catches up on commit, when the sheet rebuilds.
+	 * That is "feedback is continuous, persistence is discrete" applied to a
+	 * name rather than to a card: publishing per keystroke would mean
+	 * rebuilding the sheet-wide name table on every key.
 	 */
 	scopeValues(data, config): ScopeValues {
 		// A misconfigured card renders an error and publishes nothing, so a
 		// formula reading it fails and says so rather than reading a total the
 		// card is refusing to show.
 		if (configError(config) !== null) return {};
-		const rows = storedRows(config, data);
+		const columns = config.columns ?? [];
+		const views = rowViews(config, data);
 		const named: Record<string, ScopeEntry> = {};
-		for (const column of config.columns ?? []) {
+
+		const rows = views.map((view) => ({
+			label: view.label,
+			cell: storedCells(data, view),
+		}));
+		for (const column of columns) {
 			if (column.total !== true || !TOTALLED_TYPES.has(columnType(column))) continue;
 			const total = columnTotal(column, rows);
 			// A total that could not be read publishes nothing rather than the
@@ -786,6 +895,35 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			if ('unreadable' in total) continue;
 			named[column.key] = { value: total.sum };
 		}
+
+		const at = columns.findIndex((column) => column.publish === true);
+		const published = columns[at];
+		if (published !== undefined) {
+			for (const view of views) {
+				const declared = view.declared;
+				const key = (view.row?.key ?? '').trim();
+				if (declared === null || key === '') continue;
+				const cell = storedCells(data, view);
+				if (columnType(published) !== 'computed') {
+					// A stored cell is its own answer, and it is the same answer
+					// the card shows, so the bare name and `.value` agree. A
+					// declared row the note has no row for reads as blank, which
+					// in a number column is zero — the number the card shows.
+					named[key] = { value: cellValue(published, cell(published)) };
+					continue;
+				}
+				// A computed column stores nothing, so there is no `.value` to
+				// publish: a formula reading one fails as an unknown name (§4.2).
+				named[key] = {
+					compute: (resolve) =>
+						resolve(
+							`columns.${at}.formula`,
+							rowScope(config, declared, cell, resolve),
+						),
+				};
+			}
+		}
+
 		return Object.keys(named).length === 0 ? {} : { named };
 	},
 
@@ -1231,12 +1369,7 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 				rowView.at === null ? {} : (data?.rows[rowView.at]?.cells ?? {});
 			const tr = element('tr', '', body);
 
-			/**
-			 * The row's names, as a computed cell sees them: every cell by its
-			 * column key, then the row's own named expressions layered over
-			 * them. Rebuilt per keystroke from the drafts, so a total moves
-			 * while the user is still typing the bonus that changed it.
-			 */
+			/** What is being typed in this row's cells, by column key. */
 			const drafts = new Map<string, string>();
 			/**
 			 * This row's text for a column: what is being typed if anything is,
@@ -1246,24 +1379,14 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			const cellText = (column: TableColumn): string | undefined =>
 				drafts.get(column.key) ?? stored[column.key.toLowerCase()];
 			counted.push({ label: rowView.label, cell: cellText });
-			const rowScope = (): Record<string, FieldValue> => {
-				const scope: Record<string, FieldValue> = {};
-				for (const column of columns) {
-					if (columnType(column) === 'computed') continue;
-					scope[column.key] = cellValue(column, cellText(column));
-				}
-				for (const name of Object.keys(rowView.row?.values ?? {})) {
-					const value = context.resolveField(
-						`rows.${rowIndex}.values.${name}`,
-						scope,
-					);
-					// A row value that will not resolve publishes nothing, so
-					// the column formula reading it fails and says so, rather
-					// than computing from a silent zero (SPEC §5).
-					if (value !== null) scope[name] = value;
-				}
-				return scope;
-			};
+			/**
+			 * The row's names as a computed cell sees them, rebuilt per
+			 * keystroke from the drafts so a value moves while the user is
+			 * still typing the bonus that changed it. The same construction a
+			 * published row reads from the note.
+			 */
+			const scopeNow = (): Record<string, FieldValue> =>
+				rowScope(config, rowIndex, cellText, context.resolveField);
 
 			const computed: { column: TableColumn; el: HTMLElement; index: number }[] =
 				[];
@@ -1285,7 +1408,7 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 					view?.clearTimeout(pending);
 					pending = undefined;
 				}
-				const scope = rowScope();
+				const scope = scopeNow();
 				const results = computed.map(({ column, index }) => {
 					if (column.formula === undefined) return null;
 					// A formula reading a cell that is still blank in a text
