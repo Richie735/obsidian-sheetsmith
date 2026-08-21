@@ -25,11 +25,37 @@ import {
 	EMPTY_SCOPE,
 	evaluate,
 	FormulaError,
+	FunctionEnv,
 	FunctionLibrary,
 	NO_FUNCTIONS,
 	Scope,
 	Value,
 } from './expression';
+
+/**
+ * Everything on the sheet a formula resolves against.
+ *
+ * One object rather than trailing parameters. The three factories below took
+ * `(component, config, data, sheet, functions)`, and every one of those has to
+ * reach every formula on the sheet, so each new sheet-wide thing a formula could
+ * read arrived as another positional argument at five call sites.
+ */
+export interface FormulaEnv {
+	/** The names every other component publishes (SPEC §5). */
+	sheet: Scope;
+	/** The layout's own arithmetic. */
+	library: FunctionLibrary;
+}
+
+/**
+ * The environment with no sheet around it: a component rendered on its own, a
+ * formula evaluated in a test. Nothing resolves and no function is defined,
+ * which is the truth there rather than a fallback.
+ */
+export const NO_ENV: FormulaEnv = {
+	sheet: EMPTY_SCOPE,
+	library: NO_FUNCTIONS,
+};
 
 /** Numeric-looking strings become numbers; anything else passes through. */
 export function coerceValue(raw: unknown): Value | undefined {
@@ -96,15 +122,14 @@ function fieldReaders(
 	component: Pick<ComponentDefinition, 'formulaFields'>,
 	config: ComponentConfig,
 	data: unknown,
-	sheet: Scope,
-	functions: FunctionLibrary,
+	env: FormulaEnv,
 ): { resolve: FieldResolver; explain: FieldExplainer } {
 	const record = config as unknown as Record<string, unknown>;
 	const dataScope = scopeFromData(data);
 	// The sheet, and only the sheet, is what a function body sees: `prof`
 	// reading `level` is the point of a library, and `mod(score)` silently
 	// reading the calling card's own `value` would be the end of it.
-	const env = { library: functions, base: sheet };
+	const calls: FunctionEnv = { library: env.library, base: env.sheet };
 
 	/** The evaluation itself, or a thrown FormulaError. */
 	const read = (
@@ -133,9 +158,9 @@ function fieldReaders(
 			// The component's own data shadows the sheet, so a card's `value`
 			// always means its own — never some other component that happens
 			// to share the name.
-			return dataScope(name) ?? sheet(name);
+			return dataScope(name) ?? env.sheet(name);
 		};
-		return { evaluated: evaluate(expression, scope, env) };
+		return { evaluated: evaluate(expression, scope, calls) };
 	};
 
 	return {
@@ -168,10 +193,9 @@ export function makeFieldResolver(
 	component: Pick<ComponentDefinition, 'formulaFields'>,
 	config: ComponentConfig,
 	data: unknown,
-	sheet: Scope = EMPTY_SCOPE,
-	functions: FunctionLibrary = NO_FUNCTIONS,
+	env: FormulaEnv = NO_ENV,
 ): FieldResolver {
-	return fieldReaders(component, config, data, sheet, functions).resolve;
+	return fieldReaders(component, config, data, env).resolve;
 }
 
 /**
@@ -187,10 +211,9 @@ export function makeFieldExplainer(
 	component: Pick<ComponentDefinition, 'formulaFields'>,
 	config: ComponentConfig,
 	data: unknown,
-	sheet: Scope = EMPTY_SCOPE,
-	functions: FunctionLibrary = NO_FUNCTIONS,
+	env: FormulaEnv = NO_ENV,
 ): FieldExplainer {
-	return fieldReaders(component, config, data, sheet, functions).explain;
+	return fieldReaders(component, config, data, env).explain;
 }
 
 /**
@@ -203,10 +226,9 @@ export function resolveFormulaFields(
 	component: Pick<ComponentDefinition, 'formulaFields'>,
 	config: ComponentConfig,
 	data: unknown,
-	sheet: Scope = EMPTY_SCOPE,
-	functions: FunctionLibrary = NO_FUNCTIONS,
+	env: FormulaEnv = NO_ENV,
 ): ResolvedValues {
-	const resolve = makeFieldResolver(component, config, data, sheet, functions);
+	const resolve = makeFieldResolver(component, config, data, env);
 	const record = config as unknown as Record<string, unknown>;
 	const resolved: Record<string, Value | null> = {};
 	for (const field of component.formulaFields) {

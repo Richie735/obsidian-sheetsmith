@@ -20,10 +20,12 @@
  */
 
 import { getComponent } from '../src/components';
-import { EMPTY_SCOPE, Scope } from '../src/formula/expression';
+import { EMPTY_SCOPE } from '../src/formula/expression';
 import {
+	FormulaEnv,
 	makeFieldExplainer,
 	makeFieldResolver,
+	NO_ENV,
 	resolveFormulaFields,
 } from '../src/formula/resolve';
 import { buildSheetScope, PublishedComponent } from '../src/formula/sheet';
@@ -95,8 +97,8 @@ function prepare(): void {
 	});
 }
 
-/** The sheet-wide name table, built exactly as the real view builds it. */
-function sheetScope(entries: Live[]): Scope {
+/** What every formula on the sheet resolves against, as the real view builds it. */
+function sheetEnv(entries: Live[]): FormulaEnv {
 	const published: PublishedComponent[] = [];
 	for (const entry of entries) {
 		if (!entry.component || entry.error !== null) continue;
@@ -104,10 +106,13 @@ function sheetScope(entries: Live[]): Scope {
 		published.push({
 			id: config.id,
 			values: component.scopeValues?.(data, config) ?? {},
-			resolver: (sheet) => makeFieldResolver(component, config, data, sheet),
+			resolver: (env) => makeFieldResolver(component, config, data, env),
 		});
 	}
-	return published.length === 0 ? EMPTY_SCOPE : buildSheetScope(published);
+	return {
+		...NO_ENV,
+		sheet: published.length === 0 ? EMPTY_SCOPE : buildSheetScope(published),
+	};
 }
 
 /**
@@ -173,7 +178,7 @@ function renderSheet(into: HTMLElement): void {
 	grid.style.setProperty('--sheetsmith-columns', String(layout.columns ?? 12));
 	view.appendChild(grid);
 
-	const sheet = sheetScope(live);
+	const env = sheetEnv(live);
 
 	// Grid order, not declaration order: it decides tab order and the sequence
 	// the narrow reflow falls back to.
@@ -200,9 +205,9 @@ function renderSheet(into: HTMLElement): void {
 
 		const { component, config, data } = entry;
 		component.render(cell, config, data, {
-			resolved: resolveFormulaFields(component, config, data, sheet),
-			resolveField: makeFieldResolver(component, config, data, sheet),
-			explainField: makeFieldExplainer(component, config, data, sheet),
+			resolved: resolveFormulaFields(component, config, data, env),
+			resolveField: makeFieldResolver(component, config, data, env),
+			explainField: makeFieldExplainer(component, config, data, env),
 			onChange: (edited: unknown) => applyEdit(entry, edited),
 			link: linkContext(),
 		});
