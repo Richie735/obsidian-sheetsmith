@@ -15,12 +15,12 @@ import { describe, expect, it } from 'vitest';
 import { getComponent } from '../components';
 import { parseFunctions } from '../formula/functions';
 import {
+	FormulaEnv,
 	makeFieldExplainer,
 	makeFieldResolver,
 	resolveFormulaFields,
 } from '../formula/resolve';
 import { buildSheetScope } from '../formula/sheet';
-import { Scope } from '../formula/expression';
 import { getSection, parseCharacter } from '../parse/character';
 import { parseLayout } from '../parse/layout';
 
@@ -87,31 +87,29 @@ function buildSheet(layoutSource: string, noteSource: string) {
 		return { config, component, data: result?.ok === true ? result.data : null };
 	});
 
-	const sheet = buildSheetScope(
-		prepared.flatMap(({ config, component, data }) =>
-			component.scopeValues
-				? [
-						{
-							id: config.id,
-							values: component.scopeValues(data, config),
-							resolver: (scope: Scope) =>
-								makeFieldResolver(component, config, data, scope, library),
-						},
-					]
-				: [],
+	const env: FormulaEnv = {
+		sheet: buildSheetScope(
+			prepared.flatMap(({ config, component, data }) =>
+				component.scopeValues
+					? [
+							{
+								id: config.id,
+								values: component.scopeValues(data, config),
+								resolver: (bound: FormulaEnv) =>
+									makeFieldResolver(component, config, data, bound),
+							},
+						]
+					: [],
+			),
+			{ sheet: (name) => env.sheet(name), library },
 		),
-	);
+		library,
+	};
 
 	const resolvedFor = (id: string) => {
 		const entry = prepared.find((item) => item.config.id === id);
 		if (!entry) throw new Error(`No component with id "${id}".`);
-		return resolveFormulaFields(
-			entry.component,
-			entry.config,
-			entry.data,
-			sheet,
-			library,
-		);
+		return resolveFormulaFields(entry.component, entry.config, entry.data, env);
 	};
 
 	/** Why a component's field did not resolve, in the words the card shows. */
@@ -122,12 +120,11 @@ function buildSheet(layoutSource: string, noteSource: string) {
 			entry.component,
 			entry.config,
 			entry.data,
-			sheet,
-			library,
+			env,
 		)(field, {});
 	};
 
-	return { problems, sheet, resolvedFor, explainFor };
+	return { problems, sheet: env.sheet, resolvedFor, explainFor };
 }
 
 describe('a 5e layout with its own function library', () => {

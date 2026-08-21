@@ -15,9 +15,12 @@
 import { describe, expect, it } from 'vitest';
 import { getComponent } from '../components';
 import { parseFunctions } from '../formula/functions';
-import { makeFieldExplainer, makeFieldResolver } from '../formula/resolve';
+import {
+	FormulaEnv,
+	makeFieldExplainer,
+	makeFieldResolver,
+} from '../formula/resolve';
 import { buildSheetScope } from '../formula/sheet';
-import { Scope } from '../formula/expression';
 import { applySectionWrites, getSection, parseCharacter } from '../parse/character';
 import { parseLayout } from '../parse/layout';
 import { parseTriggers } from '../parse/triggers';
@@ -148,20 +151,24 @@ function applyTrigger(
 		return { config, component, data: result?.ok === true ? result.data : null };
 	});
 
-	const sheet: Scope = buildSheetScope(
-		prepared.flatMap(({ config, component, data }) =>
-			component.scopeValues
-				? [
-						{
-							id: config.id,
-							values: component.scopeValues(data, config),
-							resolver: (scope: Scope) =>
-								makeFieldResolver(component, config, data, scope, library),
-						},
-					]
-				: [],
+	const env: FormulaEnv = {
+		sheet: buildSheetScope(
+			prepared.flatMap(({ config, component, data }) =>
+				component.scopeValues
+					? [
+							{
+								id: config.id,
+								values: component.scopeValues(data, config),
+								resolver: (bound: FormulaEnv) =>
+									makeFieldResolver(component, config, data, bound),
+							},
+						]
+					: [],
+			),
+			{ sheet: (name) => env.sheet(name), library },
 		),
-	);
+		library,
+	};
 
 	const failed: string[] = [];
 	const writes = [];
@@ -175,8 +182,8 @@ function applyTrigger(
 		if (!component.applyReset || !reset) continue;
 		const at = (field: string): string =>
 			field === 'reset.to' ? `reset.${index}.to` : field;
-		const resolve = makeFieldResolver(component, config, data, sheet, library);
-		const explain = makeFieldExplainer(component, config, data, sheet, library);
+		const resolve = makeFieldResolver(component, config, data, env);
+		const explain = makeFieldExplainer(component, config, data, env);
 		const result = component.applyReset(data, config, reset, {
 			resolve: (field, scope) => resolve(at(field), scope),
 			explain: (field, scope) => explain(at(field), scope),

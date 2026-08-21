@@ -4,7 +4,11 @@ import { table, TableConfig, TableData } from './table';
 import { closePopover, LONG_PRESS } from '../ui/popover';
 import { UNRESOLVED_DELAY } from '../interaction/editable';
 import { FOCUSABLE } from '../view/sheet-view';
-import { makeFieldExplainer, makeFieldResolver } from '../formula/resolve';
+import {
+	makeFieldExplainer,
+	makeFieldResolver,
+	NO_ENV,
+} from '../formula/resolve';
 import { evaluate, Scope } from '../formula/expression';
 import { buildSheetScope } from '../formula/sheet';
 import { RenderContext } from '../types';
@@ -53,8 +57,8 @@ function contextFor(data: TableData | null, over = config): RenderContext {
 		// The real resolver, so these exercise the dotted formula paths
 		// (columns.2.formula, rows.0.values.ability) rather than a stub that
 		// agrees with them.
-		resolveField: makeFieldResolver(table, over, data, sheet),
-		explainField: makeFieldExplainer(table, over, data, sheet),
+		resolveField: makeFieldResolver(table, over, data, { ...NO_ENV, sheet }),
+		explainField: makeFieldExplainer(table, over, data, { ...NO_ENV, sheet }),
 		onChange: () => undefined,
 	};
 }
@@ -1073,7 +1077,7 @@ describe('table publishes a declared row', () => {
 			{
 				id: over.id,
 				values: table.scopeValues?.(data, over) ?? {},
-				resolver: (scope) => makeFieldResolver(table, over, data, scope),
+				resolver: (env) => makeFieldResolver(table, over, data, env),
 			},
 		]);
 	}
@@ -1203,8 +1207,14 @@ describe('table publishes a declared row', () => {
 		const el = document.createElement('div');
 		table.render(el, paired, data, {
 			resolved: {},
-			resolveField: makeFieldResolver(table, paired, data, scope),
-			explainField: makeFieldExplainer(table, paired, data, scope),
+			resolveField: makeFieldResolver(table, paired, data, {
+				...NO_ENV,
+				sheet: scope,
+			}),
+			explainField: makeFieldExplainer(table, paired, data, {
+				...NO_ENV,
+				sheet: scope,
+			}),
 			onChange: () => undefined,
 		});
 		const cells = Array.from(

@@ -370,8 +370,7 @@ describe('track.scopeValues', () => {
 			{
 				id: merged.id,
 				values,
-				resolver: (sheet) =>
-					makeFieldResolver(track, merged, data, sheet, new Map()),
+				resolver: (env) => makeFieldResolver(track, merged, data, env),
 			},
 		]);
 	};

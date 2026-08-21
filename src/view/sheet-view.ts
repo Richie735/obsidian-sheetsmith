@@ -19,11 +19,11 @@ import {
 	parseCharacter,
 } from '../parse/character';
 import {
+	FormulaEnv,
 	makeFieldExplainer,
 	makeFieldResolver,
 	resolveFormulaFields,
 } from '../formula/resolve';
-import { FunctionLibrary, Scope } from '../formula/expression';
 import { parseFunctions } from '../formula/functions';
 import { buildSheetScope } from '../formula/sheet';
 import { DEFAULT_COLUMNS, Layout } from '../parse/layout';
@@ -255,20 +255,24 @@ export class SheetView extends TextFileView {
 		// to build each component's resolver rather than finished numbers:
 		// it is what closes the loop between "this card reads the sheet" and
 		// "the sheet reads this card".
-		const sheet = buildSheetScope(
-			prepared.flatMap(({ config, component, data }) =>
-				component?.scopeValues
-					? [
-							{
-								id: config.id,
-								values: component.scopeValues(data, config),
-								resolver: (scope: Scope) =>
-									makeFieldResolver(component, config, data, scope, library),
-							},
-						]
-					: [],
+		const env: FormulaEnv = {
+			sheet: buildSheetScope(
+				prepared.flatMap(({ config, component, data }) =>
+					component?.scopeValues
+						? [
+								{
+									id: config.id,
+									values: component.scopeValues(data, config),
+									resolver: (bound: FormulaEnv) =>
+										makeFieldResolver(component, config, data, bound),
+								},
+							]
+						: [],
+				),
+				{ sheet: (name) => env.sheet(name), library },
 			),
-		);
+			library,
+		};
 
 		for (const { config, component, error, data } of prepared) {
 			const cell = grid.createDiv('sheetsmith-cell');
@@ -284,15 +288,9 @@ export class SheetView extends TextFileView {
 				continue;
 			}
 			component.render(cell, config, data, {
-				resolved: resolveFormulaFields(component, config, data, sheet, library),
-				resolveField: makeFieldResolver(component, config, data, sheet, library),
-				explainField: makeFieldExplainer(
-					component,
-					config,
-					data,
-					sheet,
-					library,
-				),
+				resolved: resolveFormulaFields(component, config, data, env),
+				resolveField: makeFieldResolver(component, config, data, env),
+				explainField: makeFieldExplainer(component, config, data, env),
 				onChange: (edited: unknown) => this.applyEdit(component, config, edited),
 				link: this.linkContext(),
 			});
@@ -301,7 +299,7 @@ export class SheetView extends TextFileView {
 		// SPEC §10: sections the layout does not map are left alone — they stay
 		// in the note untouched and simply do not render.
 
-		this.renderTriggers(triggerBar, layout, prepared, sheet, library);
+		this.renderTriggers(triggerBar, layout, prepared, env);
 
 		this.restoreFocus(focus);
 	}
@@ -411,8 +409,7 @@ export class SheetView extends TextFileView {
 		bar: HTMLElement,
 		layout: Layout,
 		prepared: readonly PreparedComponent[],
-		sheet: Scope,
-		library: FunctionLibrary,
+		env: FormulaEnv,
 	): void {
 		const { names } = parseTriggers(layout);
 		if (names.length === 0) {
@@ -458,7 +455,7 @@ export class SheetView extends TextFileView {
 					this.app,
 					`Apply ${name}? This can be undone. It resets:`,
 					`Apply ${name}`,
-					() => this.applyTrigger(name, bound, sheet, library),
+					() => this.applyTrigger(name, bound, env),
 					bound.map((entry) => entry.config.label),
 				).open();
 			});
@@ -475,8 +472,7 @@ export class SheetView extends TextFileView {
 	private applyTrigger(
 		name: string,
 		bound: readonly PreparedComponent[],
-		sheet: Scope,
-		library: FunctionLibrary,
+		env: FormulaEnv,
 	): void {
 		const before = this.data;
 		const edits: {
@@ -500,8 +496,8 @@ export class SheetView extends TextFileView {
 			// know its own position in its own config.
 			const at = (field: string): string =>
 				field === 'reset.to' ? `reset.${index}.to` : field;
-			const resolve = makeFieldResolver(component, config, data, sheet, library);
-			const explain = makeFieldExplainer(component, config, data, sheet, library);
+			const resolve = makeFieldResolver(component, config, data, env);
+			const explain = makeFieldExplainer(component, config, data, env);
 
 			const result = component.applyReset(data, config, reset, {
 				resolve: (field, scope) => resolve(at(field), scope),

@@ -20,19 +20,19 @@
 
 import { FieldResolver, ScopeEntry, ScopeValues } from '../types';
 import { Scope, Value } from './expression';
-import { coerceValue } from './resolve';
+import { coerceValue, FormulaEnv, NO_ENV } from './resolve';
 
 export interface PublishedComponent {
 	/** The component's layout id: the name formulas reference it by. */
 	id: string;
 	values: ScopeValues;
 	/**
-	 * Builds this component's field resolver against the sheet it will read.
-	 * A factory rather than a resolver, because the sheet is the thing being
-	 * built: a displayed value may reference another component, whose
-	 * displayed value may reference a third.
+	 * Builds this component's field resolver against the environment it will
+	 * read. A factory rather than a resolver, because that environment is the
+	 * thing being built: a displayed value may reference another component,
+	 * whose displayed value may reference a third.
 	 */
-	resolver?: (sheet: Scope) => FieldResolver;
+	resolver?: (env: FormulaEnv) => FieldResolver;
 }
 
 /**
@@ -51,6 +51,7 @@ function clean(raw: unknown): Value | undefined {
  */
 export function buildSheetScope(
 	components: readonly PublishedComponent[],
+	env?: FormulaEnv,
 ): Scope {
 	const thunks = new Map<string, () => Value | undefined>();
 	const memo = new Map<string, Value | undefined>();
@@ -76,8 +77,13 @@ export function buildSheetScope(
 		}
 	};
 
+	// Without one it builds an environment over itself: the sheet is then all
+	// there is to resolve against, which is the truth for a name table with no
+	// layout around it.
+	const bound: FormulaEnv = env ?? { ...NO_ENV, sheet: scope };
+
 	for (const component of components) {
-		const resolve = component.resolver?.(scope);
+		const resolve = component.resolver?.(bound);
 
 		const register = (name: string, entry: ScopeEntry): void => {
 			// The stored value is always reachable, whatever the card shows.

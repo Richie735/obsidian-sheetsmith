@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { evaluate, Scope } from './expression';
 import { parseFunctions } from './functions';
-import { makeFieldResolver, resolveFormulaFields } from './resolve';
+import {
+	makeFieldResolver,
+	NO_ENV,
+	resolveFormulaFields,
+} from './resolve';
 import { buildSheetScope, PublishedComponent } from './sheet';
 import { ComponentConfig } from '../types';
 
@@ -119,12 +123,12 @@ describe('buildSheetScope: a value only the component can produce', () => {
 						},
 					},
 				},
-				resolver: (sheet) => (field, row) =>
+				resolver: (env) => (field, row) =>
 					field === 'columns.0.formula'
 						? evaluate('abilities.DEX + Training', (name) =>
 								Object.prototype.hasOwnProperty.call(row, name)
 									? row[name]
-									: sheet(name),
+									: env.sheet(name),
 							)
 						: null,
 			},
@@ -146,9 +150,12 @@ describe('buildSheetScope: a value only the component can produce', () => {
 					row_b: { compute: (resolve) => resolve('b', {}) },
 				},
 			},
-			resolver: (sheet) => (field) => {
+			resolver: (env) => (field) => {
 				try {
-					return evaluate(field === 'a' ? 'skills.row_b' : 'skills.row_a', sheet);
+					return evaluate(
+						field === 'a' ? 'skills.row_b' : 'skills.row_a',
+						env.sheet,
+					);
 				} catch {
 					return null;
 				}
@@ -166,10 +173,10 @@ describe('buildSheetScope: names that depend on names', () => {
 	const computed = (id: string, formula: string): PublishedComponent => ({
 		id,
 		values: { self: { display: { field: 'derived', scope: {} } } },
-		resolver: (sheet) => (field) => {
+		resolver: (env) => (field) => {
 			if (field !== 'derived') return null;
 			try {
-				return evaluate(formula, sheet);
+				return evaluate(formula, env.sheet);
 			} catch {
 				return null;
 			}
@@ -218,17 +225,17 @@ describe('a component resolving against the sheet', () => {
 	const sheet = buildSheetScope([abilities]);
 
 	it('reads another component by name, with nothing stored of its own', () => {
-		expect(makeFieldResolver(component, config, null, sheet)('derived', {})).toBe(
+		expect(makeFieldResolver(component, config, null, { ...NO_ENV, sheet })('derived', {})).toBe(
 			16,
 		);
-		expect(resolveFormulaFields(component, config, null, sheet)).toEqual({
+		expect(resolveFormulaFields(component, config, null, { ...NO_ENV, sheet })).toEqual({
 			derived: 16,
 		});
 	});
 
 	it('can still ask for the raw score', () => {
 		const raw = { ...config, derived: 'abilities.DEX.value' } as ComponentConfig;
-		expect(makeFieldResolver(component, raw, null, sheet)('derived', {})).toBe(22);
+		expect(makeFieldResolver(component, raw, null, { ...NO_ENV, sheet })('derived', {})).toBe(22);
 	});
 
 	it('lets local names shadow the sheet, never the other way round', () => {
@@ -236,7 +243,10 @@ describe('a component resolving against the sheet', () => {
 		const shadowing: Scope = buildSheetScope([
 			{ id: 'value', values: { self: { value: '99' } } },
 		]);
-		const resolve = makeFieldResolver(component, local, { value: '5' }, shadowing);
+		const resolve = makeFieldResolver(component, local, { value: '5' }, {
+			...NO_ENV,
+			sheet: shadowing,
+		});
 		expect(resolve('derived', {})).toBe(10);
 		// And the innermost scope shadows the component's own data in turn.
 		expect(resolve('derived', { value: 7 })).toBe(14);
@@ -244,7 +254,10 @@ describe('a component resolving against the sheet', () => {
 
 	it('fails to resolve when the name is not on the sheet', () => {
 		expect(
-			makeFieldResolver(component, config, null, buildSheetScope([]))('derived', {}),
+			makeFieldResolver(component, config, null, {
+				...NO_ENV,
+				sheet: buildSheetScope([]),
+			})('derived', {}),
 		).toBeNull();
 	});
 
@@ -265,7 +278,7 @@ describe('a component resolving against the sheet', () => {
 			derived: 'save(abilities.DEX.value)',
 		} as ComponentConfig;
 		expect(
-			makeFieldResolver(component, dexSave, null, sheet, library)('derived', {}),
+			makeFieldResolver(component, dexSave, null, { ...NO_ENV, sheet, library })('derived', {}),
 		).toBe(9);
 	});
 
@@ -275,7 +288,11 @@ describe('a component resolving against the sheet', () => {
 		const { library } = parseFunctions(['twice(x) = x + value']);
 		const calling = { ...config, derived: 'twice(2)' } as ComponentConfig;
 		expect(
-			makeFieldResolver(component, calling, { value: '5' }, sheet, library)(
+			makeFieldResolver(component, calling, { value: '5' }, {
+				...NO_ENV,
+				sheet,
+				library,
+			})(
 				'derived',
 				{},
 			),

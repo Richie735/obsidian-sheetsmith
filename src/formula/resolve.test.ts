@@ -3,6 +3,7 @@ import { parseFunctions } from './functions';
 import {
 	makeFieldExplainer,
 	makeFieldResolver,
+	NO_ENV,
 	resolveFormulaFields,
 } from './resolve';
 
@@ -110,14 +111,13 @@ describe('the layout function library, from a component', () => {
 			component,
 			derived,
 			{ value: '19' },
-			sheet,
-			library,
+			{ ...NO_ENV, sheet, library },
 		);
 		expect(resolve('derived', {})).toBe(7);
 	});
 
 	it('resolves the same call per attribute', () => {
-		const resolve = makeFieldResolver(component, derived, {}, sheet, library);
+		const resolve = makeFieldResolver(component, derived, {}, { ...NO_ENV, sheet, library });
 		expect(resolve('derived', { value: 8 })).toBe(2);
 		expect(resolve('derived', { value: 20 })).toBe(8);
 	});
@@ -130,8 +130,7 @@ describe('the layout function library, from a component', () => {
 			component,
 			{ ...config, derived: 'mod(3)' } as typeof config,
 			{ score: '99' },
-			sheet,
-			shadowed,
+			{ ...NO_ENV, sheet, library: shadowed },
 		);
 		expect(resolve('derived', { score: 50 })).toBe(3);
 	});
@@ -141,8 +140,7 @@ describe('the layout function library, from a component', () => {
 			component,
 			{ ...config, derived: 'halve(value)' } as typeof config,
 			{ value: '19' },
-			sheet,
-			library,
+			{ ...NO_ENV, sheet, library },
 		);
 		expect(explain('derived', {})).toMatch(/halve/);
 	});
@@ -153,8 +151,7 @@ describe('the layout function library, from a component', () => {
 			component,
 			{ ...config, derived: 'loop(1)' } as typeof config,
 			{},
-			sheet,
-			looping,
+			{ ...NO_ENV, sheet, library: looping },
 		);
 		expect(resolve('derived', {})).toBeNull();
 	});
