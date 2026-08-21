@@ -5,12 +5,13 @@ import { closePopover, LONG_PRESS } from '../ui/popover';
 import { UNRESOLVED_DELAY } from '../interaction/editable';
 import { FOCUSABLE } from '../view/sheet-view';
 import {
+	callsFrom,
 	makeFieldExplainer,
 	makeFieldResolver,
 	NO_ENV,
 } from '../formula/resolve';
 import { evaluate, Scope } from '../formula/expression';
-import { buildSheetScope } from '../formula/sheet';
+import { buildSheetEnv, buildSheetScope } from '../formula/sheet';
 import { RenderContext } from '../types';
 
 /*
@@ -1782,6 +1783,45 @@ describe('table with open rows', () => {
 		expect(table.read(PACK, dotted).ok).toBe(false);
 	});
 
+	it('leaves a key that is not a name unreachable to an aggregate too', () => {
+		// One limit, one rule. `sum(inventory, Load cost)` is not writable for
+		// the same reason the column is untotallable: the tokeniser reads it as
+		// two names, so there is nothing here to refuse a second time.
+		const spaced = {
+			...inventory,
+			columns: [{ key: 'Load cost', type: 'number' as const }],
+		};
+		const data = stored(PACK, spaced);
+		const env = buildSheetEnv([
+			{
+				id: spaced.id,
+				values: table.scopeValues?.(data, spaced) ?? {},
+				rows: table.scopeRows?.(data, spaced),
+				resolver: (bound) => makeFieldResolver(table, spaced, data, bound),
+			},
+		]);
+		expect(() => evaluate('sum(inventory, Load cost)', env.sheet, callsFrom(env))).toThrow(
+			/Expected "\)"/,
+		);
+		// The same key under a name a formula can read is reachable.
+		const named = {
+			...inventory,
+			columns: [{ key: 'Load_cost', type: 'number' as const }],
+		};
+		const paid = stored(PACK, named);
+		const withName = buildSheetEnv([
+			{
+				id: named.id,
+				values: table.scopeValues?.(paid, named) ?? {},
+				rows: table.scopeRows?.(paid, named),
+				resolver: (bound) => makeFieldResolver(table, named, paid, bound),
+			},
+		]);
+		expect(
+			evaluate('sum(inventory, Load_cost)', withName.sheet, callsFrom(withName)),
+		).toBe(0);
+	});
+
 	it('leaves an unnamed key alone on a column with no total', () => {
 		// The key is the note's column heading first. Nothing publishes it, so
 		// nothing needs it to be a name.
@@ -1804,9 +1844,13 @@ describe('table with open rows', () => {
 		const result = table.read(PACK, broken);
 		expect(!result.ok && result.error).toContain('adds up stored cells');
 		expect(!result.ok && result.error).toContain('as many rows as the character has');
+		// And the fix it names is the aggregate, which is the thing that can
+		// actually add a derived value up over the rows a character has.
+		expect(!result.ok && result.error).toContain('sum(inventory, <expression>)');
 		// A misconfigured card publishes nothing, so a formula reading its total
 		// fails and says so rather than reading a number the card refuses to show.
 		expect(table.scopeValues?.(null, broken)).toEqual({});
+		expect(table.scopeRows?.(null, broken)).toBeUndefined();
 	});
 });
 
@@ -2133,5 +2177,460 @@ describe('table link cells', () => {
 		};
 		const body = '\n| Item | Qty |\n|---|---|\n| Rope | [[two]] |\n';
 		expect(links(driven(body, numeric).el)).toEqual([]);
+	});
+});
+
+/*
+ * The rows an aggregate walks (SPEC §5).
+ *
+ * Driven through the real environment rather than through `scopeRows` alone,
+ * because what these are about is a formula elsewhere on the sheet reading the
+ * table: `sum(inventory, Qty * Weight)` is the whole feature and the member is
+ * how it is reached.
+ */
+describe('table publishes its rows to an aggregate', () => {
+	/** An open inventory: one declared row, the rest the character's. */
+	const inventory: TableConfig = {
+		id: 'inventory',
+		type: 'table',
+		label: 'Inventory',
+		position: { col: 1, row: 1, width: 6, height: 2 },
+		rowHeader: 'Item',
+		openRows: true,
+		rows: [{ label: "Adventurer's pack" }],
+		columns: [
+			{ key: 'Qty', type: 'number', min: 0 },
+			{ key: 'Weight', type: 'number', total: true },
+			{ key: 'Worn', type: 'toggle' },
+		],
+	};
+
+	const PACK = `
+| Item | Qty | Weight | Worn |
+|---|---|---|---|
+| Adventurer's pack | 1 | 12 | no |
+| Dagger | 2 | 1 | yes |
+| Rope | 1 | 10 | no |
+`;
+
+	/**
+	 * The sheet the card sits on, built as the view builds it: the abilities a
+	 * row formula might read, and the card itself, resolving against the
+	 * finished environment.
+	 */
+	function envWith(over: TableConfig, body: string | null) {
+		const data = body === null ? null : stored(body, over);
+		return buildSheetEnv([
+			{
+				id: 'abilities',
+				values: { named: { STR: { value: 3 } } },
+			},
+			{ id: 'armour_class', values: { self: { value: 16 } } },
+			{
+				id: over.id,
+				values: table.scopeValues?.(data, over) ?? {},
+				rows: table.scopeRows?.(data, over),
+				resolver: (env) => makeFieldResolver(table, over, data, env),
+			},
+		]);
+	}
+
+	const sum = (formula: string, over = inventory, body: string | null = PACK) => {
+		const env = envWith(over, body);
+		return evaluate(formula, env.sheet, callsFrom(env));
+	};
+
+	it('sums a stored column over every row the card draws', () => {
+		expect(sum('sum(inventory, Weight)')).toBe(23);
+	});
+
+	it('sums an expression, which is what an encumbrance rule is', () => {
+		expect(sum('sum(inventory, Qty * Weight)')).toBe(24);
+	});
+
+	it('filters on a toggle column, and counts what it reaches', () => {
+		expect(sum('sum(inventory, Weight, Worn)')).toBe(1);
+		expect(sum('count(inventory)')).toBe(3);
+		expect(sum('count(inventory, Worn)')).toBe(1);
+	});
+
+	it('walks declared and character rows alike, in the order render draws them', () => {
+		// The declared row first whatever the note's order, then the
+		// character's in note order — the same helper `render` uses, so the
+		// number a formula reads counts the rows a reader can see.
+		const reordered = `
+| Item | Qty | Weight | Worn |
+|---|---|---|---|
+| Dagger | 2 | 1 | yes |
+| Adventurer's pack | 1 | 12 | no |
+`;
+		const data = stored(reordered, inventory);
+		const env = envWith(inventory, reordered);
+		const rows = table
+			.scopeRows?.(data, inventory)
+			?.(makeFieldResolver(table, inventory, data, env));
+		expect(rows?.map((row) => row.label)).toEqual(["Adventurer's pack", 'Dagger']);
+	});
+
+	it('is 0 over a card with no rows at all', () => {
+		// An open card declaring nothing, over a note holding nothing: an empty
+		// inventory weighs nothing, and a new character's sheet must not be full
+		// of "?".
+		const open: TableConfig = { ...inventory, rows: [] };
+		expect(sum('sum(inventory, Weight)', open, null)).toBe(0);
+		expect(sum('count(inventory)', open, null)).toBe(0);
+	});
+
+	it('walks a declared row the note has no row for', () => {
+		// The card renders it with blank cells, so the aggregate counts it and
+		// its blank number cell is 0 — the number the reader is looking at.
+		expect(sum('sum(inventory, Weight)', inventory, null)).toBe(0);
+		expect(sum('count(inventory)', inventory, null)).toBe(1);
+	});
+
+	it('counts a blank number cell as zero, as the column already does', () => {
+		const blanks = `
+| Item | Qty | Weight | Worn |
+|---|---|---|---|
+| Rope | 1 |  | no |
+`;
+		// Two rows: the unclaimed declared one and the character's.
+		expect(sum('sum(inventory, Weight)', inventory, blanks)).toBe(0);
+		expect(sum('count(inventory)', inventory, blanks)).toBe(2);
+	});
+
+	it('reads a declared computed column, where a total on one is refused', () => {
+		// The two halves §4.2 separated. `total` had no scope to evaluate a
+		// formula in; this is handed a resolver bound to the finished sheet.
+		const withLoad: TableConfig = {
+			...inventory,
+			columns: [...(inventory.columns ?? []), {
+				key: 'Load',
+				type: 'computed',
+				formula: 'Qty * Weight',
+			}],
+		};
+		expect(sum('sum(inventory, Load)', withLoad)).toBe(24);
+	});
+
+	it('reads a row value and a name off the sheet from inside a row expression', () => {
+		const withValues: TableConfig = {
+			...inventory,
+			rows: [{ label: "Adventurer's pack", values: { bulk: 'abilities.STR' } }],
+		};
+		// Only the declared row carries `bulk`, so the character's rows fail on
+		// it — which is the aggregate naming the first row that cannot be read.
+		expect(() => sum('sum(inventory, bulk)', withValues)).toThrow(
+			/Row "Dagger": unknown name "bulk"/,
+		);
+	});
+
+	it('names the row holding text in a number column', () => {
+		const bad = `
+| Item | Qty | Weight | Worn |
+|---|---|---|---|
+| Dagger | 2 | 1 | yes |
+| Rope | 1 | a coil | no |
+`;
+		expect(() => sum('sum(inventory, Weight)', inventory, bad)).toThrow(
+			'Row "Rope": sum() needs a number, got "a coil".',
+		);
+	});
+
+	it('calls a row with no name what everything else on the card calls it', () => {
+		// The add control writes one deliberately, so a nameless row is
+		// ordinary. A reader hearing the cell, the delete control and this has
+		// to be able to tell they are the same row.
+		const nameless = `
+| Item | Qty | Weight | Worn |
+|---|---|---|---|
+|  | 1 | a coil | no |
+`;
+		expect(() => sum('sum(inventory, Weight)', inventory, nameless)).toThrow(
+			'Row "Unnamed row": sum() needs a number, got "a coil".',
+		);
+	});
+
+	it('names the row as a reader sees it, never as the note spells it', () => {
+		const linked = `
+| Item | Qty | Weight | Worn |
+|---|---|---|---|
+| [[Sunblade\\|sword]] | 1 | heavy | no |
+`;
+		expect(() => sum('sum(inventory, Weight)', inventory, linked)).toThrow(
+			'Row "sword": sum() needs a number, got "heavy".',
+		);
+	});
+
+	it('refuses a computed column that aggregates over its own table', () => {
+		// Through no published name at all, so this is the row table's own
+		// guard. The cell shows "?" and says why, and the rest of the card is
+		// still drawn and still editable.
+		const selfSumming: TableConfig = {
+			...inventory,
+			columns: [...(inventory.columns ?? []), {
+				key: 'Load',
+				type: 'computed',
+				formula: 'sum(inventory, Weight)',
+			}],
+		};
+		const data = stored(PACK, selfSumming);
+		const env = envWith(selfSumming, PACK);
+		const explain = makeFieldExplainer(table, selfSumming, data, env);
+		expect(explain('columns.3.formula', {})).toContain('already being read');
+		// And an aggregate elsewhere on the sheet over the same table is
+		// refused too, rather than reading a number the cell cannot show.
+		expect(() => sum('sum(inventory, Weight)', selfSumming)).toThrow(
+			/already being read/,
+		);
+
+		const el = document.createElement('div');
+		table.render(el, selfSumming, data, {
+			resolved: {},
+			resolveField: makeFieldResolver(table, selfSumming, data, env),
+			explainField: explain,
+			onChange: () => undefined,
+		});
+		const computed = Array.from(
+			el.querySelectorAll('tbody .sheetsmith-table-value'),
+		);
+		expect(computed.map((cell) => cell.textContent)).toEqual(['?', '?', '?']);
+		// The rest of the card still draws and is still editable: the failure
+		// is one column's, not the component's.
+		const names = Array.from(
+			el.querySelectorAll<HTMLInputElement>('.sheetsmith-table-name-input'),
+		);
+		// The declared row's name is text rather than a field, because the
+		// layout owns it; the character's two are still fields.
+		expect(names.map((input) => input.value)).toEqual(['Dagger', 'Rope']);
+		expect(names.some((input) => input.disabled)).toBe(false);
+	});
+
+	it('publishes no rows from a card that will not configure', () => {
+		// A misconfigured card publishes no names either. Summing rows the card
+		// is refusing to show would be a number derived from a configuration
+		// nobody has agreed to yet.
+		const broken: TableConfig = {
+			...inventory,
+			columns: [{ key: 'Notes', type: 'text', total: true }],
+		};
+		expect(table.scopeRows?.(null, broken)).toBeUndefined();
+	});
+
+	/*
+	 * The readout following the rows, which is what the harness is for looking
+	 * at and what this pins so a change to either side cannot break it quietly.
+	 *
+	 * One loop, driven the way the sheet drives it: render, take the reported
+	 * edit, `write` it, `read` it back, rebuild the environment, and ask the
+	 * aggregate again. A component that reported an edit it cannot read back
+	 * shows up here rather than on a card.
+	 */
+	describe('the readout follows the rows', () => {
+		/** The aggregate over a body, as a card elsewhere on the sheet reads it. */
+		const readout = (body: string, over = inventory) => {
+			const env = envWith(over, body);
+			return evaluate('sum(inventory, Qty * Weight)', env.sheet, callsFrom(env));
+		};
+
+		/** Render, drive one gesture, and return the note it would be saved as. */
+		const commit = (
+			body: string,
+			drive: (el: HTMLElement) => void,
+			over = inventory,
+		): string => {
+			const data = stored(body, over);
+			const changes: unknown[] = [];
+			const el = document.createElement('div');
+			table.render(el, over, data, {
+				resolved: {},
+				resolveField: makeFieldResolver(table, over, data, envWith(over, body)),
+				onChange: (edited) => changes.push(edited),
+			});
+			drive(el);
+			expect(changes).toHaveLength(1);
+			return table.write(changes[0] as TableData, body, over);
+		};
+
+		it('grows when a row is added and edited', () => {
+			expect(readout(PACK)).toBe(24);
+			const added = commit(PACK, (el) =>
+				(el.querySelector('.sheetsmith-table-add-button') as HTMLElement).click(),
+			);
+			// A blank row is worth nothing, so the number holds while the player
+			// fills it in — and the row is really there, which the count says.
+			expect(readout(added)).toBe(24);
+			const env = envWith(inventory, added);
+			expect(evaluate('count(inventory)', env.sheet, callsFrom(env))).toBe(4);
+
+			const filled = added.replace('|  |  |  |  |', '| Torch | 2 | 1 | no |');
+			expect(readout(filled)).toBe(26);
+		});
+
+		it('shrinks when a row is deleted', () => {
+			const after = commit(PACK, (el) => {
+				// Two presses: the first arms, the second commits.
+				const trash = el.querySelectorAll<HTMLElement>(
+					'tbody .sheetsmith-table-remove-button',
+				);
+				const rope = trash[trash.length - 1] as HTMLElement;
+				rope.click();
+				rope.click();
+			});
+			// The rope was 1 x 10 of the 24.
+			expect(readout(after)).toBe(14);
+		});
+
+		it('moves on commit and not per keystroke', () => {
+			// SPEC §4.2's "a published name reads the note; a cell reads the
+			// draft", from the aggregate's side: the row set is built from the
+			// data the sheet was rendered with, so a formula elsewhere holds its
+			// last committed number until the sheet rebuilds. The totals row
+			// under the column is the one that moves per keystroke.
+			const data = stored(PACK, inventory);
+			const changes: unknown[] = [];
+			const el = document.createElement('div');
+			table.render(el, inventory, data, {
+				resolved: {},
+				resolveField: makeFieldResolver(table, inventory, data, envWith(inventory, PACK)),
+				onChange: (edited) => changes.push(edited),
+			});
+			const qty = el.querySelectorAll<HTMLInputElement>(
+				'tbody .sheetsmith-table-input',
+			)[0] as HTMLInputElement;
+			// The first cell field on the card is the declared pack's quantity.
+			qty.value = '9';
+			qty.dispatchEvent(new Event('input', { bubbles: true }));
+			// Nothing has reached the note, so nothing has reached the aggregate.
+			expect(changes).toEqual([]);
+			expect(readout(PACK)).toBe(24);
+
+			qty.dispatchEvent(new FocusEvent('blur'));
+			expect(changes).toHaveLength(1);
+			const committed = table.write(changes[0] as TableData, PACK, inventory);
+			// Nine packs at 12, the dagger's 2 and the rope's 10.
+			expect(readout(committed)).toBe(120);
+		});
+	});
+
+	it('holds no rows on a component that never had any', () => {
+		expect(() => sum('sum(armour_class, Weight)')).toThrow(/holds no rows/);
+	});
+});
+
+/*
+ * The two-consumer guard (PATTERNS §1). A column's total and `sum()` over the
+ * same column are two call sites for one piece of arithmetic, kept apart on
+ * purpose — a total reads the draft and a published name reads the note — so
+ * this is the test that has to fail when they disagree.
+ */
+describe('a column total and sum() over the same rows agree', () => {
+	// Number and level columns, which is the whole of where the two paths are
+	// spelled the same. A toggle column is the exception and has its own test at
+	// the end of this block, with the reason.
+
+	const config: TableConfig = {
+		id: 'inventory',
+		type: 'table',
+		label: 'Inventory',
+		position: { col: 1, row: 1, width: 6, height: 2 },
+		rowHeader: 'Item',
+		openRows: true,
+		columns: [
+			{ key: 'Weight', type: 'number', total: true },
+			{ key: 'Worn', type: 'toggle', total: true },
+			{ key: 'Training', type: 'level', max: 2, total: true },
+		],
+	};
+
+	/** Both numbers over one note: the published total, and the aggregate. */
+	function both(body: string, key: string) {
+		const data = stored(body, config);
+		const env = buildSheetEnv([
+			{
+				id: config.id,
+				values: table.scopeValues?.(data, config) ?? {},
+				rows: table.scopeRows?.(data, config),
+				resolver: (bound) => makeFieldResolver(table, config, data, bound),
+			},
+		]);
+		return {
+			total: env.sheet(`inventory.${key}`),
+			aggregate: evaluate(`sum(inventory, ${key})`, env.sheet, callsFrom(env)),
+		};
+	}
+
+	it('agrees on a column of whole numbers', () => {
+		const body = `
+| Item | Weight | Worn | Training |
+|---|---|---|---|
+| Dagger | 1 | yes | 1 |
+| Rope | 10 | no | 0 |
+| Sunblade | 3 | yes | 2 |
+`;
+		const weight = both(body, 'Weight');
+		expect(weight.aggregate).toBe(weight.total);
+		expect(weight.total).toBe(14);
+	});
+
+	it('agrees on a column of tenths, where float summation would part them', () => {
+		// 0.1 + 0.2 is 0.30000000000000004. One expression reading that where
+		// the number under the column reads 0.3 is the drift `roundSum` exists
+		// in one place to prevent.
+		const body = `
+| Item | Weight | Worn | Training |
+|---|---|---|---|
+| Chalk | 0.1 | no | 0 |
+| Charcoal | 0.2 | no | 0 |
+`;
+		const weight = both(body, 'Weight');
+		expect(weight.total).toBe(0.3);
+		expect(weight.aggregate).toBe(weight.total);
+	});
+
+	it('agrees on a level column, whose cell is already a number', () => {
+		const body = `
+| Item | Weight | Worn | Training |
+|---|---|---|---|
+| Dagger | 1 | yes | 1 |
+| Rope | 10 | x | 2 |
+| Sunblade | 3 |  | 0 |
+`;
+		const training = both(body, 'Training');
+		expect(training.aggregate).toBe(training.total);
+		expect(training.total).toBe(3);
+	});
+
+	it('answers a toggle column with count(), which is what a toggle total is', () => {
+		// **The scope of the two tests above is number and level**, and this is
+		// why: on a toggle column the two paths are spelled differently. A toggle
+		// cell is `true` to a formula, which `sum()` refuses as it refuses any
+		// non-number, while the totals row maps it to 1. So the aggregate for
+		// "how many are worn" is `count(inventory, Worn)` — the same number,
+		// asked the way the language asks it — and `sum(inventory, Worn)` names
+		// that as the fix rather than inventing a coercion the language has
+		// nowhere else. `cellValue` is still one rule for what a cell is worth;
+		// what differs is what the two accumulators accept.
+		const body = `
+| Item | Weight | Worn | Training |
+|---|---|---|---|
+| Dagger | 1 | yes | 1 |
+| Rope | 10 | x | 2 |
+| Sunblade | 3 |  | 0 |
+`;
+		const data = stored(body, config);
+		const env = buildSheetEnv([
+			{
+				id: config.id,
+				values: table.scopeValues?.(data, config) ?? {},
+				rows: table.scopeRows?.(data, config),
+				resolver: (bound) => makeFieldResolver(table, config, data, bound),
+			},
+		]);
+		expect(env.sheet('inventory.Worn')).toBe(2);
+		expect(evaluate('count(inventory, Worn)', env.sheet, callsFrom(env))).toBe(2);
+		expect(() => evaluate('sum(inventory, Worn)', env.sheet, callsFrom(env))).toThrow(
+			'Row "Dagger": sum() adds numbers up and this is yes or no. Count the rows it holds for instead, with count(inventory, <condition>).',
+		);
 	});
 });

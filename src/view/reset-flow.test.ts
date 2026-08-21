@@ -20,7 +20,7 @@ import {
 	makeFieldExplainer,
 	makeFieldResolver,
 } from '../formula/resolve';
-import { buildSheetScope } from '../formula/sheet';
+import { buildSheetEnv } from '../formula/sheet';
 import { applySectionWrites, getSection, parseCharacter } from '../parse/character';
 import { parseLayout } from '../parse/layout';
 import { parseTriggers } from '../parse/triggers';
@@ -36,6 +36,9 @@ interface FixtureComponent {
 	derived?: string;
 	max?: string;
 	hasTemp?: boolean;
+	rowHeader?: string;
+	openRows?: boolean;
+	columns?: { key: string; type?: string }[];
 	reset?: {
 		trigger: string;
 		action?: 'full' | 'empty' | 'formula';
@@ -151,24 +154,16 @@ function applyTrigger(
 		return { config, component, data: result?.ok === true ? result.data : null };
 	});
 
-	const env: FormulaEnv = {
-		sheet: buildSheetScope(
-			prepared.flatMap(({ config, component, data }) =>
-				component.scopeValues
-					? [
-							{
-								id: config.id,
-								values: component.scopeValues(data, config),
-								resolver: (bound: FormulaEnv) =>
-									makeFieldResolver(component, config, data, bound),
-							},
-						]
-					: [],
-			),
-			{ sheet: (name) => env.sheet(name), library },
-		),
+	const env: FormulaEnv = buildSheetEnv(
+		prepared.map(({ config, component, data }) => ({
+			id: config.id,
+			values: component.scopeValues?.(data, config) ?? {},
+			rows: component.scopeRows?.(data, config),
+			resolver: (bound: FormulaEnv) =>
+				makeFieldResolver(component, config, data, bound),
+		})),
 		library,
-	};
+	);
 
 	const failed: string[] = [];
 	const writes = [];
@@ -230,6 +225,73 @@ describe('a long rest, end to end', () => {
 		const { text } = applyTrigger(NOTE, LAYOUT, 'Long rest');
 		expect(getSection(parseCharacter(text), 'Backstory')?.body).toBe(
 			getSection(parseCharacter(NOTE), 'Backstory')?.body,
+		);
+	});
+});
+
+/*
+ * A pool whose maximum an aggregate produces (SPEC §5). The reset path is where
+ * a formula stops being a number on a card and becomes a number written into a
+ * note, so it is the one that has to be driven end to end.
+ */
+describe('a long rest against a maximum an aggregate produced', () => {
+	const WITH_PACK = variant((shape) => {
+		shape.components.push({
+			id: 'inventory',
+			type: 'table',
+			label: 'Inventory',
+			position: { col: 1, row: 3, width: 4, height: 2 },
+			rowHeader: 'Item',
+			openRows: true,
+			columns: [
+				{ key: 'Qty', type: 'number' },
+				{ key: 'Weight', type: 'number' },
+			],
+		});
+		componentIn(shape, 'hp').max = 'sum(inventory, Qty * Weight)';
+	});
+
+	const PACKED = NOTE.replace(
+		'## Backstory',
+		[
+			'## Inventory',
+			'',
+			'| Item | Qty | Weight |',
+			'|---|---|---|',
+			'| Dagger | 2 | 1 |',
+			'| Rope | 1 | 10 |',
+			'',
+			'## Backstory',
+		].join('\n'),
+	);
+
+	it('restores the pool to what the aggregate came to', () => {
+		// Two daggers at a pound and a coil of rope at ten: a twelve-pound pack,
+		// summed over rows the character added and no layout declared.
+		const { text, failed } = applyTrigger(PACKED, WITH_PACK, 'Long rest');
+		expect(failed).toEqual([]);
+		expect(fenced(text, 'HP', 'current')).toBe('12');
+	});
+
+	it('names the reason rather than writing a number, where it will not resolve', () => {
+		// A pool whose max is broken must not stop the rest of a long rest, and
+		// the reason has to reach the user: they have pressed a button and
+		// watched nothing happen.
+		const misspelled = variant((shape) => {
+			componentIn(shape, 'hp').max = 'sum(inventroy, Weight)';
+		});
+		const { text, failed } = applyTrigger(PACKED, misspelled, 'Long rest');
+		expect(failed).toEqual([
+			'HP: There is no table called "inventroy" on this sheet. An aggregate names a component by its layout id, which is not the heading shown on its card.',
+		]);
+		expect(fenced(text, 'HP', 'current')).toBe('4');
+	});
+
+	it('leaves the inventory section byte for byte', () => {
+		// Constraint 4 in miniature: an aggregate reads a note and writes none.
+		const { text } = applyTrigger(PACKED, WITH_PACK, 'Long rest');
+		expect(getSection(parseCharacter(text), 'Inventory')?.body).toBe(
+			getSection(parseCharacter(PACKED), 'Inventory')?.body,
 		);
 	});
 });

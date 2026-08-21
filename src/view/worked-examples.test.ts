@@ -20,7 +20,7 @@ import {
 	makeFieldResolver,
 	resolveFormulaFields,
 } from '../formula/resolve';
-import { buildSheetScope } from '../formula/sheet';
+import { buildSheetEnv } from '../formula/sheet';
 import { getSection, parseCharacter } from '../parse/character';
 import { parseLayout } from '../parse/layout';
 
@@ -87,24 +87,16 @@ function buildSheet(layoutSource: string, noteSource: string) {
 		return { config, component, data: result?.ok === true ? result.data : null };
 	});
 
-	const env: FormulaEnv = {
-		sheet: buildSheetScope(
-			prepared.flatMap(({ config, component, data }) =>
-				component.scopeValues
-					? [
-							{
-								id: config.id,
-								values: component.scopeValues(data, config),
-								resolver: (bound: FormulaEnv) =>
-									makeFieldResolver(component, config, data, bound),
-							},
-						]
-					: [],
-			),
-			{ sheet: (name) => env.sheet(name), library },
-		),
+	const env = buildSheetEnv(
+		prepared.map(({ config, component, data }) => ({
+			id: config.id,
+			values: component.scopeValues?.(data, config) ?? {},
+			rows: component.scopeRows?.(data, config),
+			resolver: (bound: FormulaEnv) =>
+				makeFieldResolver(component, config, data, bound),
+		})),
 		library,
-	};
+	);
 
 	const resolvedFor = (id: string) => {
 		const entry = prepared.find((item) => item.config.id === id);
@@ -191,6 +183,7 @@ const INVENTORY = JSON.stringify({
 			rowHeader: 'Item',
 			openRows: true,
 			columns: [
+				{ key: 'Qty', type: 'number' },
 				{ key: 'Weight', type: 'number', total: true },
 				{ key: 'Carried', type: 'toggle', total: true },
 			],
@@ -216,6 +209,32 @@ const INVENTORY = JSON.stringify({
 			derived: '1 + inventory.Dagger',
 			position: { col: 5, row: 2, width: 2, height: 1 },
 		},
+		{
+			id: 'carried_weight',
+			type: 'stat',
+			label: 'Carried weight',
+			derived: 'sum(inventory, Weight, Carried)',
+			position: { col: 5, row: 3, width: 2, height: 1 },
+		},
+		{
+			id: 'items',
+			type: 'stat',
+			label: 'Items',
+			derived: 'count(inventory)',
+			position: { col: 5, row: 4, width: 2, height: 1 },
+		},
+		{
+			id: 'encumbrance',
+			type: 'stat',
+			label: 'Encumbrance',
+			// The number §13 refused: quantity times weight summed down the list,
+			// over rows no layout declared and with no computed column to total.
+			// Here rather than only in a hand-built environment, because this is
+			// the file that runs SPEC §5's worked examples through the real
+			// parsers and the real registry, and §5 now lists this as one.
+			derived: 'sum(inventory, Qty * Weight)',
+			position: { col: 5, row: 5, width: 2, height: 1 },
+		},
 	],
 });
 
@@ -225,11 +244,11 @@ sheet-layout: Blades in the Dark
 
 ## Inventory
 
-| Item | Weight | Carried |
-| --- | --- | --- |
-| Dagger | 1 | yes |
-| dagger | 1 | yes |
-| Climbing gear | 2 | no |
+| Item | Qty | Weight | Carried |
+| --- | --- | --- | --- |
+| Dagger | 2 | 1 | yes |
+| dagger | 1 | 1 | yes |
+| Climbing gear | 1 | 2 | no |
 `;
 
 describe('a load list totalling a column', () => {
@@ -250,6 +269,24 @@ describe('a load list totalling a column', () => {
 		expect(resolvedFor('overloaded').derived).toBe(1);
 	});
 
+	it('aggregates over the rows the character added', () => {
+		// The other half of the same list: the total is configuration on a
+		// column, and this is a formula reaching the rows themselves. Two
+		// daggers carried at 1 each, and climbing gear at 2 that is not.
+		expect(resolvedFor('carried_weight').derived).toBe(2);
+		expect(resolvedFor('items').derived).toBe(3);
+	});
+
+	it('sums an expression over the rows, which is what §13 refused', () => {
+		// Two daggers at a pound, one dagger at a pound, one lot of climbing
+		// gear at two: five. **Deliberately none of the other four numbers this
+		// note produces** — the Weight total is 4, the Carried total and the
+		// filtered sum are 2, the count is 3 — so it cannot pass by reading the
+		// wrong one, which is the whole risk with five aggregates over one table.
+		expect(resolvedFor('encumbrance').derived).toBe(5);
+		expect(sheet('inventory.Weight')).toBe(4);
+	});
+
 	it('fails on the card that named a row, whatever its capitalisation', () => {
 		// `<id>.<name>` is a fixed-row mechanism: a name a formula can write has
 		// to be knowable when the formula is written, and a row the character
@@ -261,5 +298,72 @@ describe('a load list totalling a column', () => {
 		expect(explainFor('by_item', 'derived')).toContain('inventory.Dagger');
 		// Everything beside it still resolves (SPEC §5).
 		expect(resolvedFor('load').derived).toBe(4);
+	});
+});
+
+/*
+ * One unreadable row, from the seat the reader is in (SPEC §5).
+ *
+ * The rule — one row out of nine with an unreadable cell fails the whole
+ * aggregate, and the error names that row — is driven at the evaluator over a
+ * row table built by hand, and at the component over a note. Neither of those is
+ * where a user meets it. This is: the consuming card publishes nothing, shows no
+ * partial sum, and its explanation names the row, through the resolver and
+ * explainer pair the sheet actually hands a component.
+ */
+describe('a row an aggregate cannot read, on the card that asked', () => {
+	/** The rope's weight is prose, and it is carried, so no filter hides it. */
+	const PROSE = `---
+sheet-layout: Blades in the Dark
+---
+
+## Inventory
+
+| Item | Qty | Weight | Carried |
+| --- | --- | --- | --- |
+| Dagger | 2 | 1 | yes |
+| Rope | 1 | a coil | yes |
+| Climbing gear | 1 | 2 | no |
+`;
+
+	const sheet = buildSheet(INVENTORY, PROSE);
+
+	it('fails on an unfiltered aggregate too, not only the filtered one', () => {
+		// `carried_weight` reaches the rope only because it is carried. An
+		// unfiltered sum reaches every row by construction, so this is the one
+		// that cannot be passing for the wrong reason.
+		//
+		// And it names the operator rather than `sum()`, because `Qty * Weight`
+		// fails inside the multiplication before the aggregate has a result to
+		// type-check. That is the row prefix doing its job over the whole
+		// expression rather than over the aggregate's own gate: whatever went
+		// wrong in a row expression, the reader is told which row.
+		expect(sheet.resolvedFor('encumbrance').derived).toBeNull();
+		expect(sheet.explainFor('encumbrance', 'derived')).toBe(
+			'Row "Rope": "*" needs a number, got "a coil".',
+		);
+	});
+
+	it('publishes nothing, rather than the sum of the rows it could read', () => {
+		// 1 is the dagger and 3 is the note's other two. Neither is publishable:
+		// a quietly wrong number is worse than a missing one, which is the
+		// totals row's rule and the reason this one is not a second answer.
+		expect(sheet.resolvedFor('carried_weight').derived).toBeNull();
+		expect(sheet.sheet('carried_weight')).toBeUndefined();
+	});
+
+	it('names the row in the explanation the card shows', () => {
+		// The half of the rule a reader can act on. Without the row it says only
+		// that something is not a number, over however many rows they own.
+		expect(sheet.explainFor('carried_weight', 'derived')).toBe(
+			'Row "Rope": sum() needs a number, got "a coil".',
+		);
+	});
+
+	it('leaves the aggregates that do not touch the cell working', () => {
+		// count() evaluates no per-row expression, so the unreadable cell is not
+		// its business — one component's failure never takes the sheet down.
+		expect(sheet.resolvedFor('items').derived).toBe(3);
+		expect(sheet.explainFor('items', 'derived')).toBeNull();
 	});
 });

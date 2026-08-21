@@ -31,31 +31,53 @@ import {
 	Scope,
 	Value,
 } from './expression';
+import { NO_ROWS, RowLookup } from './rows';
 
 /**
  * Everything on the sheet a formula resolves against.
  *
  * One object rather than trailing parameters. The three factories below took
- * `(component, config, data, sheet, functions)`, and every one of those has to
- * reach every formula on the sheet, so each new sheet-wide thing a formula could
- * read arrived as another positional argument at five call sites.
+ * `(component, config, data, sheet, functions)` and this feature made it six
+ * positionals, all of which have to reach every formula on the sheet: a name
+ * table, a function library, and a row table. An environment is also what the
+ * aggregate needs in order to exist at all, since the row table and the name
+ * table are mutually lazy and neither can be passed before the other is built.
  */
 export interface FormulaEnv {
 	/** The names every other component publishes (SPEC §5). */
 	sheet: Scope;
 	/** The layout's own arithmetic. */
 	library: FunctionLibrary;
+	/** The rows an aggregate may walk, by component id. */
+	rows: RowLookup;
 }
 
 /**
  * The environment with no sheet around it: a component rendered on its own, a
- * formula evaluated in a test. Nothing resolves and no function is defined,
- * which is the truth there rather than a fallback.
+ * formula evaluated in a test. Nothing resolves, no function is defined, and no
+ * table holds rows — which is the truth there rather than a fallback.
  */
 export const NO_ENV: FormulaEnv = {
 	sheet: EMPTY_SCOPE,
 	library: NO_FUNCTIONS,
+	rows: NO_ROWS,
 };
+
+/**
+ * The sheet-wide environment as one expression's own: **the sheet becomes
+ * `base`**, which is what a layout function's body sees besides its parameters.
+ *
+ * One function because that rename is the whole of the conversion and it is
+ * silent when it goes missing. The two types are otherwise structurally
+ * compatible, so passing a `FormulaEnv` straight to `evaluate` used to compile
+ * and leave every function body reading an empty scope — a failure that cannot
+ * happen in the app, reported by a test as though it could. `FunctionEnv`
+ * declares `sheet?: never` to make that a compile error, and this is what the
+ * error sends the caller to.
+ */
+export function callsFrom(env: FormulaEnv): FunctionEnv {
+	return { library: env.library, base: env.sheet, rows: env.rows };
+}
 
 /** Numeric-looking strings become numbers; anything else passes through. */
 export function coerceValue(raw: unknown): Value | undefined {
@@ -128,8 +150,10 @@ function fieldReaders(
 	const dataScope = scopeFromData(data);
 	// The sheet, and only the sheet, is what a function body sees: `prof`
 	// reading `level` is the point of a library, and `mod(score)` silently
-	// reading the calling card's own `value` would be the end of it.
-	const calls: FunctionEnv = { library: env.library, base: env.sheet };
+	// reading the calling card's own `value` would be the end of it. The row
+	// table goes through untouched: an aggregate names the table it walks, so
+	// there is no caller's scope for it to leak.
+	const calls = callsFrom(env);
 
 	/** The evaluation itself, or a thrown FormulaError. */
 	const read = (

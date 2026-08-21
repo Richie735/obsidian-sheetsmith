@@ -10,6 +10,8 @@
  * into the FunctionLibrary this module evaluates against.
  */
 
+import { NO_ROWS, RowLookup } from './rows';
+
 export type Value = number | boolean | string;
 
 /** Resolves a referenced name, or undefined when nothing has that name. */
@@ -38,6 +40,30 @@ export type FunctionLibrary = ReadonlyMap<string, FunctionDefinition>;
 
 /** For every path that has no layout around it. */
 export const NO_FUNCTIONS: FunctionLibrary = new Map();
+
+/**
+ * Where a sum stops being exact.
+ *
+ * Sums are floating point, so a column of tenths would otherwise read
+ * 0.30000000000000004; past six decimals is not a weight anyone typed.
+ *
+ * A function rather than the bare number, because the number was never the
+ * duplication worth removing: two callers round — a Table's own total under the
+ * column, and `sum()` over the same rows — and sharing only the constant left
+ * `Math.round(x * P) / P` written out at both, which drifts by a `floor` or a
+ * missing divide. The feature spec expected both call sites to be inside
+ * table.ts, and one of them cannot be: the aggregate's loop evaluates an
+ * expression per row in the row's own scope, so it lives in the evaluator. That
+ * makes this the one thing crossing the boundary, which is the smallest thing
+ * that can (PATTERNS §1's policy tier, applied to the policy rather than to its
+ * constant).
+ */
+export function roundSum(total: number): number {
+	return Math.round(total * TOTAL_PRECISION) / TOTAL_PRECISION;
+}
+
+/** The precision `roundSum` holds to. Read it there rather than applying it. */
+const TOTAL_PRECISION = 1e6;
 
 interface Builtin {
 	/** Fixed argument count, or null for "one or more". */
@@ -75,13 +101,18 @@ const BUILTINS: ReadonlyMap<string, Builtin> = new Map<string, Builtin>([
  * Derived from the table above rather than listed beside it: two lists that
  * must agree eventually will not, and the failure is silent — a helper added
  * to one but not the other becomes a name a layout can shadow, which is the
- * rule this constant exists to enforce. Only the three names that are not
- * table entries are written out, and each says why it is not one.
+ * rule this constant exists to enforce. Only the names that are not table
+ * entries are written out, and each says why it is not one.
  */
 export const RESERVED_NAMES: readonly string[] = [
 	...BUILTINS.keys(),
 	// Lazy in its branches, so evalNode handles it rather than callBuiltin.
 	'if',
+	// Lazy in every argument but the first, which is not a value at all: the
+	// aggregates evaluate their arguments once per row, in the row's own scope.
+	// evalNode handles them for the same reason it handles `if`.
+	'sum',
+	'count',
 	// Literals the parser reads before it looks any name up.
 	'true',
 	'false',
@@ -104,9 +135,15 @@ export function isName(text: string): boolean {
 	return ONE_NAME.test(text);
 }
 
-/** The library an expression may call, and what its bodies can see. */
+/**
+ * What an expression may reach beyond the scope it is evaluated in. Every
+ * member is optional and every one has an empty answer, because the paths with
+ * no layout and no sheet around them are real: a component rendered on its own,
+ * a formula in a test.
+ */
 export interface FunctionEnv {
-	library: FunctionLibrary;
+	/** The layout's own functions (SPEC §5). */
+	library?: FunctionLibrary;
 	/**
 	 * What a function body sees besides its own parameters: the sheet, and
 	 * never the scope of whoever called it. A function is not a macro —
@@ -114,12 +151,33 @@ export interface FunctionEnv {
 	 * read the `value` of the one that happened to call it.
 	 */
 	base?: Scope;
+	/**
+	 * The rows an aggregate may walk, by component id. Absent where there is no
+	 * sheet around the expression, and then every aggregate fails saying the
+	 * table it named is not on the sheet — which is the truth there.
+	 */
+	rows?: RowLookup;
+	/**
+	 * Never set, and here only so the compiler refuses a `FormulaEnv` passed
+	 * where this is wanted.
+	 *
+	 * The two share `library` and `rows`, and `base` is optional, so without
+	 * this the sheet-wide environment satisfies this one structurally with its
+	 * `sheet` ignored as an excess property and `base` silently absent — and a
+	 * function body would then see nothing where production hands it the whole
+	 * sheet. Nothing would fail until a body read a name off the sheet, and then
+	 * it would fail in a way it cannot fail in the app. `callsFrom` in resolve.ts
+	 * is the conversion; this is what makes reaching for it obligatory rather
+	 * than remembered.
+	 */
+	sheet?: never;
 }
 
 /** Library, body scope, and the guard against a function that calls itself. */
 interface Runtime {
 	library: FunctionLibrary;
 	base: Scope;
+	rows: RowLookup;
 	active: Set<string>;
 }
 
@@ -390,6 +448,152 @@ function callDefined(
 	}
 }
 
+/**
+ * How many arguments each aggregate takes, and what to say when it was given
+ * some other number.
+ *
+ * `sum(<table>, <expression>, [<condition>])` and `count(<table>,
+ * [<condition>])`. Written out per aggregate rather than derived from a shape,
+ * because the message is the whole value of the entry: "takes 2 or 3
+ * arguments" names the fault, and PATTERNS §4 wants the fix.
+ */
+interface Aggregate {
+	/** Arguments before the optional condition, the component reference included. */
+	least: number;
+	wrongCount: string;
+}
+
+const AGGREGATES: ReadonlyMap<string, Aggregate> = new Map<string, Aggregate>([
+	[
+		'sum',
+		{
+			least: 2,
+			wrongCount:
+				'sum() takes a table, what to add up, and optionally a condition.',
+		},
+	],
+	[
+		'count',
+		{ least: 1, wrongCount: 'count() takes a table, and optionally a condition.' },
+	],
+]);
+
+/**
+ * Restate a row's failure as the row a reader sees, plus what went wrong.
+ *
+ * One row out of nine with an unreadable cell fails the whole aggregate, which
+ * is `columnTotal`'s existing rule — reporting the row beats adding up the
+ * rest, because a quietly wrong number is worse than a missing one — and the
+ * only thing that rule needs from here is which row.
+ *
+ * The inner message loses its capital, because it is a clause now rather than a
+ * sentence: `Row "Dagger": Unknown name "Wieght".` reads as two sentences run
+ * into one.
+ */
+function inRow(label: string, error: unknown): FormulaError {
+	const said = error instanceof FormulaError ? error.message : String(error);
+	return new FormulaError(
+		`Row "${label}": ${said.charAt(0).toLowerCase()}${said.slice(1)}`,
+	);
+}
+
+/**
+ * sum() and count() over the rows a component holds (SPEC §5).
+ *
+ * Handled here rather than in the BUILTINS table for the reason `if` is: every
+ * argument but the first is evaluated once per row, in a scope the row provides,
+ * so the caller must not evaluate any of them.
+ *
+ * **Argument 1 is a component reference, not a value.** It is read out of the
+ * parse tree as identifier text and never resolved through the name table, so
+ * this is the one position in the language where one text has two meanings. The
+ * alternative is a string literal, which is what the closest prior art uses
+ * precisely to avoid the exception — and the tokenizer has no quote handling at
+ * all, so adding string literals to the grammar for one argument is a larger and
+ * more permanent tax, on top of making that argument look like the one thing
+ * the prior art is unanimous against: a language inside a string.
+ *
+ * **Nothing here is collection-valued.** A row set lives for the duration of
+ * this frame, is never a `Value`, and so has no way to reach a card, a
+ * published name, or a note. That is the whole guard, and it is why `Value`
+ * stays `number | boolean | string`: a `Value` in this codebase is one typo
+ * from `applyReset` writing it into a file, and a Pool whose max is a list
+ * clamps its bar against a list and restores to one.
+ */
+function evalAggregate(
+	name: string,
+	shape: Aggregate,
+	args: readonly Node[],
+	scope: Scope,
+	rt: Runtime,
+): Value {
+	if (args.length < shape.least || args.length > shape.least + 1) {
+		throw new FormulaError(shape.wrongCount);
+	}
+	const table = args[0] as Node;
+	if (table.kind !== 'name' || table.name.includes('.')) {
+		throw new FormulaError(
+			name === 'sum'
+				? 'sum() names a table first, then what to add up: sum(inventory, Weight).'
+				: 'count() names a table first: count(inventory).',
+		);
+	}
+	const found = rt.rows(table.name, name);
+	if ('error' in found) throw new FormulaError(found.error);
+
+	// count() has no expression to add up: each row it keeps is worth one.
+	const each = name === 'sum' ? (args[1] as Node) : null;
+	const condition = args[shape.least];
+
+	let total = 0;
+	for (const row of found.rows) {
+		// The row is the nearest scope there is, nearer than a function's own
+		// parameters: `load(Weight) = sum(inventory, Weight)` sums the column
+		// rather than the parameter. A row expression that could not see a column
+		// because a parameter happened to share its name is the harder surprise,
+		// and SPEC §5's "means the same arithmetic wherever it is called" is not
+		// threatened, because the table is named in the same expression as the
+		// shadowing.
+		const inner: Scope = (lookup) =>
+			Object.prototype.hasOwnProperty.call(row.values, lookup)
+				? row.values[lookup]
+				: scope(lookup);
+		try {
+			if (
+				condition !== undefined &&
+				!asBoolean(evalNode(condition, inner, rt), `${name}()'s condition`)
+			) {
+				continue;
+			}
+			if (each === null) {
+				total += 1;
+				continue;
+			}
+			const value = evalNode(each, inner, rt);
+			// The one mistake this feature invites, and worth its own sentence
+			// rather than "needs a number, got true". A `toggle` column is a type
+			// `total` accepts, and it totals to a count — so an author who has
+			// seen the number under the column writes `sum` for it. The language
+			// has no numeric meaning for yes and no anywhere else, so the answer
+			// is the other aggregate rather than a coercion here.
+			if (typeof value === 'boolean') {
+				throw new FormulaError(
+					`sum() adds numbers up and this is yes or no. Count the rows it holds for instead, with count(${table.name}, <condition>).`,
+				);
+			}
+			total += asNumber(value, `${name}()`);
+		} catch (error) {
+			throw inRow(row.label, error);
+		}
+	}
+	// An empty row set is 0, not a failure: an empty inventory weighs nothing,
+	// and a new character's sheet must not be full of "?". Rounded through the
+	// same helper the totals row under the column uses, so one expression cannot
+	// read 0.30000000000000004 where the number under the column reads 0.3.
+	// A count is whole and has nothing to round.
+	return name === 'sum' ? roundSum(total) : total;
+}
+
 function evalNode(node: Node, scope: Scope, rt: Runtime): Value {
 	switch (node.kind) {
 		case 'num':
@@ -426,6 +630,12 @@ function evalNode(node: Node, scope: Scope, rt: Runtime): Value {
 					'if() condition',
 				);
 				return evalNode(node.args[condition ? 1 : 2] as Node, scope, rt);
+			}
+			// The aggregates are lazy in the same way and for the same reason,
+			// and their first argument is not a value at all.
+			const aggregate = AGGREGATES.get(node.name);
+			if (aggregate) {
+				return evalAggregate(node.name, aggregate, node.args, scope, rt);
 			}
 			const args = node.args.map((arg) => evalNode(arg, scope, rt));
 			// The layout's own functions cannot be named after a builtin, so
@@ -521,6 +731,7 @@ export function evaluateExpression(
 	const result = evalNode(expression, scope, {
 		library: env?.library ?? NO_FUNCTIONS,
 		base: env?.base ?? EMPTY_SCOPE,
+		rows: env?.rows ?? NO_ROWS,
 		// Per evaluation, not per library: the guard is about one call chain,
 		// and a library outlives every expression that uses it.
 		active: new Set(),
