@@ -27,7 +27,7 @@ import {
 	makeFieldResolver,
 	resolveFormulaFields,
 } from '../src/formula/resolve';
-import { buildSheetEnv, PublishedComponent } from '../src/formula/sheet';
+import { buildSheetEnv, publishedComponent } from '../src/formula/sheet';
 import { Layout } from '../src/parse/layout';
 import { ComponentConfig, ComponentDefinition, LinkContext } from '../src/types';
 import { brokenSamples, emptySamples, Sample, SAMPLES } from './samples';
@@ -96,22 +96,23 @@ function prepare(): void {
 	});
 }
 
-/** What every formula on the sheet resolves against, as the real view builds it. */
+/**
+ * What every formula on the sheet resolves against, built by the view's own
+ * `publishedComponent` rather than by a copy of it.
+ *
+ * A copy is what this was, and it had drifted: it dropped a component whose
+ * section would not read instead of listing it, so an aggregate over a broken
+ * table said there was no such table on the sheet where the app says it holds no
+ * rows. An instrument that publishes differently from the thing it measures
+ * signs off on messages the plugin never produces.
+ */
 function sheetEnv(entries: Live[]): FormulaEnv {
-	const published: PublishedComponent[] = [];
-	for (const entry of entries) {
-		if (!entry.component || entry.error !== null) continue;
-		const { component, config, data } = entry;
-		published.push({
-			id: config.id,
-			values: component.scopeValues?.(data, config) ?? {},
-			rows: component.scopeRows?.(data, config),
-			resolver: (env) => makeFieldResolver(component, config, data, env),
-		});
-	}
 	// The layout's own arithmetic, which the harness sheet has needed since a
 	// card could read a function the settings pane is editing.
-	return buildSheetEnv(published, parseFunctions(layout.functions).library);
+	return buildSheetEnv(
+		entries.map(publishedComponent),
+		parseFunctions(layout.functions).library,
+	);
 }
 
 /**

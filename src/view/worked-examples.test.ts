@@ -14,13 +14,8 @@
 import { describe, expect, it } from 'vitest';
 import { getComponent } from '../components';
 import { parseFunctions } from '../formula/functions';
-import {
-	FormulaEnv,
-	makeFieldExplainer,
-	makeFieldResolver,
-	resolveFormulaFields,
-} from '../formula/resolve';
-import { buildSheetEnv } from '../formula/sheet';
+import { makeFieldExplainer, resolveFormulaFields } from '../formula/resolve';
+import { buildSheetEnv, publishedComponent } from '../formula/sheet';
 import { getSection, parseCharacter } from '../parse/character';
 import { parseLayout } from '../parse/layout';
 
@@ -84,19 +79,15 @@ function buildSheet(layoutSource: string, noteSource: string) {
 		if (!component) throw new Error(`No component of type "${config.type}".`);
 		const section = getSection(note, config.label);
 		const result = section ? component.read(section.body, config) : null;
-		return { config, component, data: result?.ok === true ? result.data : null };
+		return {
+			config,
+			component,
+			error: result && !result.ok ? result.error : null,
+			data: result?.ok === true ? result.data : null,
+		};
 	});
 
-	const env = buildSheetEnv(
-		prepared.map(({ config, component, data }) => ({
-			id: config.id,
-			values: component.scopeValues?.(data, config) ?? {},
-			rows: component.scopeRows?.(data, config),
-			resolver: (bound: FormulaEnv) =>
-				makeFieldResolver(component, config, data, bound),
-		})),
-		library,
-	);
+	const env = buildSheetEnv(prepared.map(publishedComponent), library);
 
 	const resolvedFor = (id: string) => {
 		const entry = prepared.find((item) => item.config.id === id);
@@ -116,7 +107,7 @@ function buildSheet(layoutSource: string, noteSource: string) {
 		)(field, {});
 	};
 
-	return { problems, sheet: env.sheet, resolvedFor, explainFor };
+	return { problems, env, sheet: env.sheet, prepared, resolvedFor, explainFor };
 }
 
 describe('a 5e layout with its own function library', () => {
@@ -365,5 +356,70 @@ sheet-layout: Blades in the Dark
 		// its business — one component's failure never takes the sheet down.
 		expect(sheet.resolvedFor('items').derived).toBe(3);
 		expect(sheet.explainFor('items', 'derived')).toBeNull();
+	});
+});
+
+/*
+ * A section that will not read (SPEC §10).
+ *
+ * The rule is one sentence in `renderSheet` — a component that failed to read
+ * publishes nothing — and it is the one the whole file is here to hold, because
+ * nothing else can see it. A read failure leaves `data` null, and null is
+ * indistinguishable from a card with nothing stored yet: without the gate a
+ * Table's declared rows are handed out with blank cells, and every number
+ * derived from them is confidently wrong beside a card saying it could not read
+ * the section.
+ */
+describe('a section the component refuses to read', () => {
+	/** Two tables in one section: the body `read` refuses outright, because an
+	 * edit reports a row by its position and there is no one body to count in. */
+	const AMBIGUOUS = `---
+sheet-layout: Blades in the Dark
+---
+
+## Inventory
+
+| Item | Qty | Weight | Carried |
+| --- | --- | --- | --- |
+| Dagger | 2 | 1 | yes |
+
+| Item | Qty | Weight | Carried |
+| --- | --- | --- | --- |
+| Climbing gear | 1 | 2 | no |
+`;
+
+	const sheet = buildSheet(INVENTORY, AMBIGUOUS);
+
+	it('reports the section as unreadable rather than as empty', () => {
+		// The premise. Without this the rest of the describe passes vacuously
+		// against a section that read perfectly well.
+		const entry = sheet.prepared.find((item) => item.config.id === 'inventory');
+		expect(entry?.error).toContain('more than one table');
+		expect(entry?.data).toBeNull();
+	});
+
+	it('publishes no total, rather than the total of a table it could not read', () => {
+		// 3 is the answer the note holds and 0 is what the declared rows come to.
+		// Neither is publishable: the card cannot say what the column is worth.
+		expect(sheet.sheet('inventory.Weight')).toBeUndefined();
+		expect(sheet.sheet('inventory.Carried')).toBeUndefined();
+		expect(sheet.resolvedFor('load').derived).toBeNull();
+	});
+
+	it('holds no rows for an aggregate, rather than the rows the layout declared', () => {
+		expect(sheet.resolvedFor('carried_weight').derived).toBeNull();
+		expect(sheet.resolvedFor('encumbrance').derived).toBeNull();
+		expect(sheet.resolvedFor('items').derived).toBeNull();
+		expect(sheet.explainFor('items', 'derived')).toBe(
+			'"inventory" holds no rows for count() to read. Only a table does, and a table showing an error of its own holds none until that is fixed.',
+		);
+	});
+
+	it('leaves every card that does not read it working', () => {
+		// One component's failure never takes down the sheet (SPEC §10), and the
+		// cards that do read it fail on themselves and say why.
+		const other = buildSheet(LAYOUT, NOTE);
+		expect(other.sheet('abilities.DEX')).toBe(4);
+		expect(sheet.explainFor('load', 'derived')).toContain('inventory.Weight');
 	});
 });

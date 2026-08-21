@@ -20,7 +20,7 @@ import {
 	makeFieldExplainer,
 	makeFieldResolver,
 } from '../formula/resolve';
-import { buildSheetEnv } from '../formula/sheet';
+import { buildSheetEnv, publishedComponent } from '../formula/sheet';
 import { applySectionWrites, getSection, parseCharacter } from '../parse/character';
 import { parseLayout } from '../parse/layout';
 import { parseTriggers } from '../parse/triggers';
@@ -151,19 +151,15 @@ function applyTrigger(
 		const component = getComponent(config.type) as ComponentDefinition;
 		const section = getSection(note, config.label);
 		const result = section ? component.read(section.body, config) : null;
-		return { config, component, data: result?.ok === true ? result.data : null };
+		return {
+			config,
+			component,
+			error: result && !result.ok ? result.error : null,
+			data: result?.ok === true ? result.data : null,
+		};
 	});
 
-	const env: FormulaEnv = buildSheetEnv(
-		prepared.map(({ config, component, data }) => ({
-			id: config.id,
-			values: component.scopeValues?.(data, config) ?? {},
-			rows: component.scopeRows?.(data, config),
-			resolver: (bound: FormulaEnv) =>
-				makeFieldResolver(component, config, data, bound),
-		})),
-		library,
-	);
+	const env: FormulaEnv = buildSheetEnv(prepared.map(publishedComponent), library);
 
 	const failed: string[] = [];
 	const writes = [];
