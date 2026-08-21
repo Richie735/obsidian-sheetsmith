@@ -36,7 +36,7 @@
  */
 
 import { setIcon } from 'obsidian';
-import { isName } from '../formula/expression';
+import { isName, roundSum } from '../formula/expression';
 import { MarkdownTable, readTable, writeTable } from '../parse/table';
 import { displayText, hasLink, parseLinks } from '../parse/wikilink';
 import {
@@ -52,6 +52,8 @@ import {
 	FieldValue,
 	LinkContext,
 	ReadResult,
+	RowsSource,
+	RowValues,
 	ScopeEntry,
 	ScopeValues,
 } from '../types';
@@ -244,13 +246,6 @@ const CORRECTION_FLASH = 1200;
  * the row in the accessible name, the tooltip and the announcement.
  */
 const REMOVE_ICON = 'trash';
-
-/**
- * Where a total stops being exact. Sums are floating point, so a column of
- * tenths would otherwise read 0.30000000000000004; past six decimals is not a
- * weight anyone typed.
- */
-const TOTAL_PRECISION = 1e6;
 
 /**
  * What a row with no name is called, wherever something has to name one.
@@ -545,7 +540,7 @@ function columnTotal(
 			return { unreadable: rowLabel(view.label) };
 		}
 	}
-	return { sum: Math.round(sum * TOTAL_PRECISION) / TOTAL_PRECISION };
+	return { sum: roundSum(sum) };
 }
 
 /** What the note holds for one row, whatever the card is showing for it. */
@@ -554,6 +549,39 @@ function storedCells(data: TableData | null, view: RowView): CellReader {
 		view.at === null
 			? undefined
 			: data?.rows[view.at]?.cells?.[column.key.toLowerCase()];
+}
+
+/**
+ * One row as an aggregate reads it: what to call it, and every name on it.
+ *
+ * Three layers, and the layering is the point. `rowScope` already gives the
+ * first two — every stored cell by its column key, then the row's own named
+ * expressions — and this adds the computed columns over the top.
+ *
+ * **Every computed column resolves against the same two layers, never against
+ * each other.** That is what the cell on screen does, and the two must not
+ * disagree about what a row says: a computed column that could read a second
+ * computed column here and not in `render` would put one number under the
+ * cursor and a different one into `sum()`.
+ *
+ * A column that would not resolve is absent rather than zero, exactly as a row
+ * value is, so an expression reading it fails and the aggregate names the row.
+ */
+function rowValues(
+	config: TableConfig,
+	data: TableData | null,
+	view: RowView,
+	resolve: FieldResolver,
+): RowValues {
+	const cell = storedCells(data, view);
+	const stored = rowScope(config, view.declared, cell, resolve);
+	const values: Record<string, FieldValue> = { ...stored };
+	(config.columns ?? []).forEach((column, at) => {
+		if (columnType(column) !== 'computed') return;
+		const value = resolve(`columns.${at}.formula`, stored);
+		if (value !== null) values[column.key] = value;
+	});
+	return { label: rowLabel(view.label), values };
 }
 
 /**
@@ -694,7 +722,7 @@ function configError(config: TableConfig): string | null {
 			// refuses to read: one name meaning "publishable, sometimes" is worse
 			// than a refusal that says why.
 			return columnType(column) === 'computed'
-				? `The column "${key}" cannot show a total, because a total adds up stored cells and a computed column stores none — it works one row out at a time, over as many rows as the character has. Total a stored column instead, or publish a single row's value by giving that row a key.`
+				? `The column "${key}" cannot show a total, because a total adds up stored cells and a computed column stores none — it works one row out at a time, over as many rows as the character has. Add it up from elsewhere on the sheet with sum(${config.id}, <expression>), total a stored column, or publish a single row's value by giving that row a key.`
 				: `The column "${key}" cannot show a total, because a text column has nothing to add up. Make it a number column, or turn the total off.`;
 		}
 		if (column.publish === true) {
@@ -778,14 +806,14 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			kind: 'columns',
 			label: 'Columns',
 			description:
-				'Text, number, and toggle columns hold character data. A computed column is read-only and reads the row\'s other cells by column key, its row values by name, and anything else on the sheet by component id. One column may be published per row, which is what lets a formula read a single row\'s value rather than a column\'s total.',
+				'Text, number, and toggle columns hold character data. A computed column is read-only and reads the row\'s other cells by column key, its row values by name, and anything else on the sheet by component id. One column may be published per row, which is what lets a formula read a single row\'s value rather than a column\'s total. A column\'s total sums what the note stores; a formula elsewhere can sum an expression over the rows instead, with sum(<component id>, <expression>).',
 		},
 		{
 			key: 'openRows',
 			kind: 'boolean',
 			label: 'Characters may add rows',
 			description:
-				'Adds a row control under the table. Rows a character adds are theirs to rename and delete, and no formula can name them — total a column instead. Rows declared above stay read-only and cannot be deleted from a character.',
+				'Adds a row control under the table. Rows a character adds are theirs to rename and delete, and no formula can name a row a character added — total a column, or aggregate over the rows with sum(<component id>, <expression>). Rows declared above stay read-only and cannot be deleted from a character.',
 			default: false,
 		},
 		{
@@ -925,6 +953,43 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 		}
 
 		return Object.keys(named).length === 0 ? {} : { named };
+	},
+
+	/**
+	 * The rows an aggregate walks, so a formula elsewhere can write
+	 * `sum(inventory, Qty * Weight)` over the rows a character added (SPEC §5).
+	 *
+	 * **The rows have no names and never gain any**, which is what makes this a
+	 * different member from `scopeValues` rather than more of it. `<id>.<name>`
+	 * is a fixed-row mechanism and stays one: `inventory.Dagger` still fails as
+	 * an unknown name. What an aggregate names is the component, which is
+	 * knowable when the formula is written, and it reaches the rows as a set
+	 * whose cardinality the layout does not know — which is the whole of what an
+	 * aggregate is for.
+	 *
+	 * **Every row the card draws, in the order it draws them**: declared rows
+	 * first in declared order, then the character's own in note order. Same
+	 * helper as `render` and as the totals row, because a number the reader can
+	 * see under a column and a number a formula reads about the same table must
+	 * be counting the same rows.
+	 *
+	 * **A computed column is readable here where `total` still refuses one**,
+	 * and the refusal was never "a derived value cannot be summed": a `total` is
+	 * a declarative flag with no scope to evaluate a formula in and no lazy path
+	 * to a finished sheet. This has both — it is handed a resolver bound to the
+	 * finished sheet, inside the row table's own guard — which is exactly what
+	 * `compute` gave a declared row.
+	 *
+	 * Like `scopeValues`, this reads the note rather than the draft: a formula
+	 * elsewhere on the sheet catches up on commit, when the sheet rebuilds.
+	 */
+	scopeRows(data, config): RowsSource | undefined {
+		// A misconfigured card publishes nothing, on the same argument its names
+		// go unpublished: summing rows the card is refusing to show would be a
+		// number derived from a configuration nobody has agreed to yet.
+		if (configError(config) !== null) return undefined;
+		const views = rowViews(config, data);
+		return (resolve) => views.map((view) => rowValues(config, data, view, resolve));
 	},
 
 	write(data, body, config): string {

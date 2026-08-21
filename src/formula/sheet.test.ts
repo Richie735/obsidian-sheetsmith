@@ -2,12 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { evaluate, Scope } from './expression';
 import { parseFunctions } from './functions';
 import {
+	callsFrom,
 	makeFieldResolver,
 	NO_ENV,
 	resolveFormulaFields,
 } from './resolve';
-import { buildSheetScope, PublishedComponent } from './sheet';
-import { ComponentConfig } from '../types';
+import { buildSheetEnv, buildSheetScope, PublishedComponent } from './sheet';
+import { ComponentConfig, FieldValue } from '../types';
 
 /** A stat group with the 5e modifier formula on every attribute. */
 const abilities: PublishedComponent = {
@@ -297,5 +298,247 @@ describe('a component resolving against the sheet', () => {
 				{},
 			),
 		).toBeNull();
+	});
+});
+
+/*
+ * The two tables, tied (SPEC §5).
+ *
+ * A published name may hold an aggregate and a row's computed column may read a
+ * published name, so neither table can be finished before the other starts.
+ * These drive that loop from both ends.
+ */
+describe('buildSheetEnv', () => {
+	/** An inventory whose rows carry a weight and a worn flag. */
+	const inventory: PublishedComponent = {
+		id: 'inventory',
+		values: {},
+		rows: () => [
+			{ label: 'Dagger', values: { Weight: 1, Worn: false } },
+			{ label: 'Sunblade', values: { Weight: 3, Worn: true } },
+		],
+	};
+
+	/** A card whose one published name is whatever formula it is given. */
+	const computed = (id: string, formula: string): PublishedComponent => ({
+		id,
+		values: { self: { display: { field: 'derived', scope: {} } } },
+		resolver: (env) => (field) => {
+			if (field !== 'derived') return null;
+			try {
+				return evaluate(formula, env.sheet, callsFrom(env));
+			} catch {
+				return null;
+			}
+		},
+	});
+
+	it('publishes a name computed by an aggregate', () => {
+		const env = buildSheetEnv([
+			inventory,
+			computed('encumbrance', 'sum(inventory, Weight)'),
+		]);
+		expect(env.sheet('encumbrance')).toBe(4);
+		expect(evaluate('encumbrance / 2', env.sheet, callsFrom(env))).toBe(2);
+	});
+
+	it('lets a row expression read a name another component publishes', () => {
+		// The other direction of the same loop: the row table is handed a
+		// resolver bound to the finished name table.
+		const env = buildSheetEnv([
+			{
+				...inventory,
+				rows: (resolve) => [
+					{ label: 'Dagger', values: { Load: resolve('derived', {}) ?? 0 } },
+				],
+				resolver: (bound) => () => bound.sheet('prof') ?? null,
+			},
+			{ id: 'prof', values: { self: { value: 3 } } },
+		]);
+		expect(evaluate('sum(inventory, Load)', env.sheet, callsFrom(env))).toBe(3);
+	});
+
+	it('takes the layout\'s own functions, so an aggregate can call one', () => {
+		const { library } = parseFunctions(['half(x) = x / 2']);
+		const env = buildSheetEnv([inventory], library);
+		expect(evaluate('sum(inventory, half(Weight))', env.sheet, callsFrom(env))).toBe(
+			2,
+		);
+	});
+
+	it('gives a function body called from a row the sheet, and not the row', () => {
+		// Two things at once, and the second is why the body reads a *sheet*
+		// name rather than only its parameter. `callsFrom` renames the sheet to
+		// `base`, which is the whole of what a function body sees besides its
+		// parameters — and the two environments are otherwise close enough that
+		// skipping the conversion compiles. Written with `half(x) = x / 2` the
+		// body never reaches the sheet, so this passed either way and the
+		// omission was invisible; `density` is what makes it bite.
+		const { library } = parseFunctions(['bulk(x) = x * density']);
+		const env = buildSheetEnv(
+			[inventory, { id: 'density', values: { self: { value: 2 } } }],
+			library,
+		);
+		expect(evaluate('sum(inventory, bulk(Weight))', env.sheet, callsFrom(env))).toBe(
+			8,
+		);
+		// And the row is still not visible inside the body: SPEC §5's rule that
+		// a function is not a text substitution, unchanged by the aggregate.
+		const reading = parseFunctions(['weight_of(n) = n * Weight']).library;
+		expect(() =>
+			evaluate(
+				'sum(inventory, weight_of(1))',
+				env.sheet,
+				callsFrom(buildSheetEnv([inventory], reading)),
+			),
+		).toThrow(/unknown name "Weight"/);
+	});
+
+	it('leaves both ends of a cycle through a published name unresolved', () => {
+		// `encumbrance` sums the table, and the table's own row reads
+		// `encumbrance`. The existing name-table guard is the whole of what
+		// catches this: the row's value goes unresolved, so it is absent from
+		// the row, and the aggregate reading it fails. No new guard involved.
+		const env = buildSheetEnv([
+			{
+				id: 'inventory',
+				values: {},
+				// A column that will not resolve is absent from the row, never
+				// zero, which is what makes the aggregate reading it fail rather
+				// than quietly add nothing.
+				rows: (resolve) => {
+					const load = resolve('derived', {});
+					const values: Record<string, FieldValue> = {};
+					if (load !== null) values.Load = load;
+					return [{ label: 'Dagger', values }];
+				},
+				resolver: (bound) => () => bound.sheet('encumbrance') ?? null,
+			},
+			computed('encumbrance', 'sum(inventory, Load)'),
+			computed('speed', '30'),
+		]);
+		expect(env.sheet('encumbrance')).toBeUndefined();
+		// Everything outside the cycle keeps working.
+		expect(env.sheet('speed')).toBe(30);
+	});
+
+	it('refuses a row set that is being walked rather than recursing', () => {
+		// A computed column aggregating over its own table runs through no
+		// published name at all, so this is the row table's own guard rather
+		// than the name table's.
+		let said: string | null = null;
+		const env: ReturnType<typeof buildSheetEnv> = buildSheetEnv([
+			{
+				id: 'inventory',
+				values: {},
+				rows: () => {
+					try {
+						evaluate('sum(inventory, Weight)', env.sheet, callsFrom(env));
+					} catch (error) {
+						said = error instanceof Error ? error.message : String(error);
+					}
+					return [{ label: 'Dagger', values: { Weight: 1 } }];
+				},
+			},
+			computed('speed', '30'),
+		]);
+		expect(() => evaluate('sum(inventory, Weight)', env.sheet, callsFrom(env))).toThrow(
+			/already being read/,
+		);
+		expect(said).toContain('already being read');
+		// The rest of the sheet is untouched by it.
+		expect(env.sheet('speed')).toBe(30);
+	});
+
+	/*
+	 * SPEC §5's coarse edge, driven from both ends.
+	 *
+	 * `encumbrance = sum(inventory, Weight)` with `inventory`'s computed
+	 * `Load = encumbrance / 2` is "a cycle to a coarse check and not one in
+	 * fact": the walk's failure to produce `Load` never reaches an aggregate
+	 * that asked for `Weight`. The name table's own guard is what unwinds it,
+	 * and the row table's guard must not turn it into a real one — which it did
+	 * while the refusal was held against the component rather than the walk, and
+	 * only in the order no test drove.
+	 */
+	describe('a coarse cycle is not made a real one', () => {
+		const coarse = () =>
+			buildSheetEnv([
+				{
+					id: 'inventory',
+					values: {},
+					rows: (resolve) => {
+						const load = resolve('derived', {});
+						const values: Record<string, FieldValue> = { Weight: 4 };
+						if (load !== null) values.Load = load;
+						return [{ label: 'Dagger', values }];
+					},
+					resolver: (bound) => () => {
+						try {
+							return evaluate('encumbrance / 2', bound.sheet, callsFrom(bound));
+						} catch {
+							return null;
+						}
+					},
+				},
+				computed('encumbrance', 'sum(inventory, Weight)'),
+				computed('speed', '30'),
+			]);
+
+		it('resolves the published name and every aggregate, asked that way round', () => {
+			const env = coarse();
+			expect(env.sheet('encumbrance')).toBe(4);
+			expect(evaluate('sum(inventory, Weight)', env.sheet, callsFrom(env))).toBe(4);
+			expect(env.sheet('speed')).toBe(30);
+		});
+
+		it('is caught by whichever guard the ring is entered at, and says so', () => {
+			// F4's clause "with no new guard involved" was written before the row
+			// table existed and is false in this order. A card holding an
+			// aggregate over the table, drawing before `encumbrance` resolves,
+			// enters the ring at the rows: `encumbrance`'s thunk runs inside the
+			// row walk and is not yet its own dependency, so the name table's
+			// guard never fires and the row table's does.
+			//
+			// Pinned rather than fixed. It is one evaluation and it corrects
+			// itself — the cost is a "?" whose appearance depends on grid order,
+			// recorded against the guard in SPEC §5. Closing it means the two
+			// guards knowing about each other.
+			const env = coarse();
+			expect(() =>
+				evaluate('sum(inventory, Weight)', env.sheet, callsFrom(env)),
+			).toThrow(/already being read/);
+			// It corrects itself: the name resolves, the row set is built, and
+			// the same formula is the number from then on.
+			expect(env.sheet('encumbrance')).toBe(4);
+			expect(evaluate('sum(inventory, Weight)', env.sheet, callsFrom(env))).toBe(4);
+		});
+
+		it('resolves them just the same after the column in the cycle is asked for first', () => {
+			// The order that used to condemn the table for the environment's
+			// life: `sum(inventory, Load)` reaches the row table's guard before
+			// `encumbrance` reaches the name table's, so the refusal fires here
+			// first. It has to be this walk's and no more than that.
+			const env = coarse();
+			expect(() =>
+				evaluate('sum(inventory, Load)', env.sheet, callsFrom(env)),
+			).toThrow(/already being read/);
+			// Everything §5 says is not in the cycle still works, which is the
+			// whole of what the coarse edge costs.
+			expect(env.sheet('encumbrance')).toBe(4);
+			expect(evaluate('sum(inventory, Weight)', env.sheet, callsFrom(env))).toBe(4);
+			expect(env.sheet('speed')).toBe(30);
+		});
+	});
+
+	it('names a component that holds no rows rather than denying it exists', () => {
+		const env = buildSheetEnv([
+			inventory,
+			{ id: 'armour_class', values: { self: { value: 16 } } },
+		]);
+		expect(() => evaluate('count(armour_class)', env.sheet, callsFrom(env))).toThrow(
+			/holds no rows/,
+		);
+		expect(env.sheet('armour_class')).toBe(16);
 	});
 });

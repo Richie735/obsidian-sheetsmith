@@ -248,6 +248,39 @@ export type FieldResolver = (
 ) => FieldValue | null;
 
 /**
+ * One row an aggregate walks (SPEC §5).
+ *
+ * A row, unlike everything else a formula reads, has no name of its own: what
+ * an aggregate is for is the rows whose number the layout does not know. So it
+ * carries the two things a walk needs and nothing that could identify it.
+ */
+export interface RowValues {
+	/**
+	 * The row as a reader sees it, for wherever an error has to name one. Never
+	 * as the file spells it: a name cell may hold a wikilink, and a message
+	 * reading "[[Sunblade|sword]]" names nothing anybody can find on the card.
+	 */
+	label: string;
+	/**
+	 * The names this row's expressions may read. A name that would not resolve
+	 * is absent rather than zero, so an expression reading it fails and the
+	 * aggregate says which row — publishing a silent zero is the quietly wrong
+	 * number SPEC §5 refuses everywhere else.
+	 */
+	values: Readonly<Record<string, FieldValue>>;
+}
+
+/**
+ * A component's rows, built with a resolver bound to the finished sheet.
+ *
+ * A factory rather than the rows themselves, and for the same reason
+ * `ScopeEntry.compute` is one: a row may hold a computed column, which is a
+ * formula that reads the rest of the sheet, and the sheet is the thing being
+ * built. Called at most once per sheet.
+ */
+export type RowsSource = (resolve: FieldResolver) => readonly RowValues[];
+
+/**
  * Why a formula field did not resolve, in words, or null where it did. The
  * component asks only about a field it has already seen fail, so the cost of
  * evaluating twice is paid on the error path alone.
@@ -364,6 +397,23 @@ export interface ComponentDefinition<
 	 * system never learns it exists.
 	 */
 	scopeValues?(data: TData | null, config: TConfig): ScopeValues;
+	/**
+	 * The rows an aggregate walks, where this component holds any (SPEC §5).
+	 *
+	 * Named for its sibling: `scopeValues` publishes this component's *names*,
+	 * and this publishes the rows that have none. Optional under §4.1's rule,
+	 * and it passes squarely — the alternative is the formula engine knowing
+	 * that a Table has columns and rows, that a cell is text mapping to a
+	 * number by column type, that a blank number cell is zero, that declared
+	 * rows come first and the character's follow in note order, and that a row
+	 * carries named expressions layered over its cells. That is the entirety of
+	 * one component's data shape, and nothing else could build it.
+	 *
+	 * Returns undefined where there is nothing to walk, which is how a
+	 * misconfigured card declines: an aggregate over it fails rather than
+	 * summing rows the card is refusing to show.
+	 */
+	scopeRows?(data: TData | null, config: TConfig): RowsSource | undefined;
 	/**
 	 * Apply a reset trigger to this component's data (SPEC §6).
 	 *

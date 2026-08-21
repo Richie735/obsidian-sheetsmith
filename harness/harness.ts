@@ -20,15 +20,14 @@
  */
 
 import { getComponent } from '../src/components';
-import { EMPTY_SCOPE } from '../src/formula/expression';
+import { parseFunctions } from '../src/formula/functions';
 import {
 	FormulaEnv,
 	makeFieldExplainer,
 	makeFieldResolver,
-	NO_ENV,
 	resolveFormulaFields,
 } from '../src/formula/resolve';
-import { buildSheetScope, PublishedComponent } from '../src/formula/sheet';
+import { buildSheetEnv, PublishedComponent } from '../src/formula/sheet';
 import { Layout } from '../src/parse/layout';
 import { ComponentConfig, ComponentDefinition, LinkContext } from '../src/types';
 import { brokenSamples, emptySamples, Sample, SAMPLES } from './samples';
@@ -106,13 +105,13 @@ function sheetEnv(entries: Live[]): FormulaEnv {
 		published.push({
 			id: config.id,
 			values: component.scopeValues?.(data, config) ?? {},
+			rows: component.scopeRows?.(data, config),
 			resolver: (env) => makeFieldResolver(component, config, data, env),
 		});
 	}
-	return {
-		...NO_ENV,
-		sheet: published.length === 0 ? EMPTY_SCOPE : buildSheetScope(published),
-	};
+	// The layout's own arithmetic, which the harness sheet has needed since a
+	// card could read a function the settings pane is editing.
+	return buildSheetEnv(published, parseFunctions(layout.functions).library);
 }
 
 /**

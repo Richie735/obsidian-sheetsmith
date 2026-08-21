@@ -83,7 +83,9 @@ describe('parseFunctions', () => {
 	});
 
 	it('reports a parameter named twice', () => {
-		const { problems } = parseFunctions(['sum(a, a) = a']);
+		// Not a reserved name, or the reserved check answers first and this
+		// stops being about parameters at all.
+		const { problems } = parseFunctions(['tally(a, a) = a']);
 		expect(problems[0]?.message).toMatch(/twice/);
 	});
 
@@ -228,16 +230,17 @@ describe('calling layout functions', () => {
  *
  * For the helpers themselves that rule is now structural — RESERVED_NAMES is
  * derived from the BUILTINS table's keys, so a helper cannot be added to one
- * and missed in the other. What is left hand-written is the three names that
- * are not table entries: `if`, which is lazy and lives in evalNode, and the
- * two literals the parser reads directly. Those are what these tests cover,
- * plus a cheap smoke check that the derivation still holds end to end.
+ * and missed in the other. What is left hand-written is the names that are not
+ * table entries: `if` and the two aggregates, which are lazy in their arguments
+ * and live in evalNode, and the two literals the parser reads directly. Those
+ * are what these tests cover, plus a cheap smoke check that the derivation
+ * still holds end to end.
  */
 describe('reserved names and builtins agree', () => {
 	/** Literals the parser reads before it looks any name up. */
 	const LITERALS = ['true', 'false'];
-	/** Lazy, so evalNode handles it rather than callBuiltin. */
-	const LAZY = ['if'];
+	/** Lazy, so evalNode handles them rather than callBuiltin. */
+	const LAZY = ['if', 'sum', 'count'];
 
 	it('answers to every name it reserves', () => {
 		for (const name of RESERVED_NAMES) {
@@ -248,11 +251,28 @@ describe('reserved names and builtins agree', () => {
 		}
 	});
 
-	it('reserves the three names that are not builtins', () => {
+	it('reserves the names that are not builtins', () => {
 		// The derivation cannot cover these, so they are the ones that can
-		// drift: `if` gaining a reserved entry it never had, or losing one.
+		// drift: `if` or an aggregate gaining a reserved entry it never had, or
+		// losing one.
 		for (const name of [...LITERALS, ...LAZY]) {
 			expect(RESERVED_NAMES).toContain(name);
+		}
+	});
+
+	it('leaves a layout defining an aggregate out of the library', () => {
+		// A formula reading `sum` must mean the one thing everywhere, and a
+		// layout typing one gets it reported in the editor rather than blanking
+		// every sheet the layout serves.
+		for (const name of ['sum', 'count']) {
+			const { library, problems } = parseFunctions([
+				`${name}(a) = a`,
+				'half(x) = x / 2',
+			]);
+			expect(library.has(name)).toBe(false);
+			// The rest of the library still loads, which is the whole rule.
+			expect(library.has('half')).toBe(true);
+			expect(problems[0]?.message).toContain(`"${name}" is built in`);
 		}
 	});
 

@@ -25,7 +25,7 @@ import {
 	resolveFormulaFields,
 } from '../formula/resolve';
 import { parseFunctions } from '../formula/functions';
-import { buildSheetScope } from '../formula/sheet';
+import { buildSheetEnv } from '../formula/sheet';
 import { DEFAULT_COLUMNS, Layout } from '../parse/layout';
 import { parseTriggers } from '../parse/triggers';
 import { ComponentConfig, ComponentDefinition, LinkContext } from '../types';
@@ -255,24 +255,22 @@ export class SheetView extends TextFileView {
 		// to build each component's resolver rather than finished numbers:
 		// it is what closes the loop between "this card reads the sheet" and
 		// "the sheet reads this card".
-		const env: FormulaEnv = {
-			sheet: buildSheetScope(
-				prepared.flatMap(({ config, component, data }) =>
-					component?.scopeValues
-						? [
-								{
-									id: config.id,
-									values: component.scopeValues(data, config),
-									resolver: (bound: FormulaEnv) =>
-										makeFieldResolver(component, config, data, bound),
-								},
-							]
-						: [],
-				),
-				{ sheet: (name) => env.sheet(name), library },
-			),
+		// Every component, including the ones publishing nothing at all: the
+		// row table tells "there is no table called that" from "that component
+		// holds no rows", and it can only do so while it knows every id on the
+		// sheet.
+		const env = buildSheetEnv(
+			prepared.map(({ config, component, data }) => ({
+				id: config.id,
+				values: component?.scopeValues?.(data, config) ?? {},
+				rows: component?.scopeRows?.(data, config),
+				resolver: component
+					? (bound: FormulaEnv) =>
+							makeFieldResolver(component, config, data, bound)
+					: undefined,
+			})),
 			library,
-		};
+		);
 
 		for (const { config, component, error, data } of prepared) {
 			const cell = grid.createDiv('sheetsmith-cell');

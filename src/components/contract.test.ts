@@ -49,6 +49,7 @@ const MEMBER_ORDER = [
 	'configFields',
 	'read',
 	'scopeValues',
+	'scopeRows',
 	'write',
 	'hasBuffer',
 	'applyReset',
@@ -143,6 +144,24 @@ describe('component registry', () => {
 		expect(saysTwoThings(both)).toBe(true);
 	});
 
+	it('leaves the row source off unless a component actually holds rows', () => {
+		// `scopeRows` is optional under §4.1's rule — a member exists only where
+		// the alternative is code outside the component knowing that
+		// component's data shape — so the many must not have it.
+		//
+		// **Named rather than counted**, which is the only spelling that holds
+		// the rule the comment claims: a bound like "fewer than all of them"
+		// permits three of five, so the member could spread and this would still
+		// pass. Naming it means a second component growing rows does not compile
+		// its way past here — somebody edits this line, which is the decision
+		// being asked for. It costs a catalog name in a registry-wide file, and
+		// that is the smaller price.
+		const holding = types.filter(
+			(type) => getComponent(type)?.scopeRows !== undefined,
+		);
+		expect(holding).toEqual(['table']);
+	});
+
 	it('names the types a layout may use when one is unknown', () => {
 		// A stale layout file is the one place a user meets a type id they
 		// have to fix by hand, so the message carries the vocabulary rather
@@ -194,6 +213,13 @@ describe.each(types)('component "%s"', (type) => {
 		// on its config publishes none here and asserts the same rule over a
 		// configured card in its own test file.
 		expect(publishedEntries(type).filter(saysTwoThings)).toEqual([]);
+	});
+
+	it('publishes rows as a function, or not at all', () => {
+		// The same optional-member rule as scopeValues: a component either holds
+		// rows an aggregate can walk or it does not, never something in between
+		// that the formula engine would have to guard against.
+		expect(['function', 'undefined']).toContain(typeof component?.scopeRows);
 	});
 
 	it('applies resets as a function, or not at all', () => {
