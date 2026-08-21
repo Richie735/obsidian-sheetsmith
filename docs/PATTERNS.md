@@ -82,6 +82,15 @@ proves less. It can only assert that two constants are still equal, which is
 what one constant says for free. Extract on the second consumer there.
 `interaction/commit-window.ts` holds a single `GESTURE_COMMIT` because Pool and
 Track had both settled on 700ms in two places nothing kept in step;
+`formula/expression.ts` holds `roundSum` because a Table's totals row and the
+formula language's own `sum()` add up the same column from two call sites kept
+apart on purpose — a total reads the draft and an aggregate reads the note — and
+one expression reading `0.30000000000000004` where the number under the column
+reads `0.3` is the whole of what drift means here. Note what got extracted: the
+precision started out as a shared constant with `Math.round(x * P) / P` written
+at both sites, which is a policy shared and its application duplicated. **Share
+the application, not the number**, or the copy that can still drift is the one
+nothing is watching;
 `editor/list-field-height.ts` holds the row bounds because the two list fields
 had already drifted apart twice, once on `rows` and once on their width; and
 `components/column-types.ts` holds the typed-column vocabulary because a
@@ -208,9 +217,11 @@ Every component follows the same order. A reader who knows one knows them all.
 7. **`export const x: ComponentDefinition<XConfig, XData>`**, members in this
    order [judgement]:
    `type`, `storage`, `formulaFields`, `configFields`, `read`, `scopeValues`,
-   `write`, `hasBuffer`, `applyReset`, `render`.
+   `scopeRows`, `write`, `hasBuffer`, `applyReset`, `render`.
    Contract first, then the data path in the order it runs, then rendering last
-   because it is the longest.
+   because it is the longest. `scopeRows` sits beside `scopeValues` because it is
+   the same job read the other way: one publishes the component's names, the
+   other the rows that have none.
 
 Checked in `contract.test.ts`, along with the rule that a component declares
 nothing outside the contract. Otherwise a new member falls outside the order and
@@ -489,4 +500,5 @@ that keeps solved rows stops being read.
 | --- | --- | --- |
 | Two responsibilities in one file | `layout-editor.ts` | Deliberately deferred, not overlooked. The split waits for the M4 workspace view, which rewrites this module anyway; splitting it twice would be the waste. It has tests now, so the move will be guarded when it comes. |
 | A pointer-press helper is redeclared per `describe` block | `components/*.test.ts` | Three copies of `press` inside `pool.test.ts`, one more each in `stat.test.ts` and `track.test.ts`, over about thirty `pointerdown` dispatch sites. Past §1's extract-at-three by any reading, and `src/test/` is the folder for it. Deferred because it is a mechanical change across four test files whose only safe review is reading every call site, which does not belong inside a feature diff — and because the drift it risks is loud: an event missing `button: 0` makes a gesture test fail, not pass quietly. The `hold`/`release` pair added beside them is a different gesture, not a fourth copy, and should be extracted with them rather than before them. |
+| A test mirror of the view diverges from it on one branch | `view/reset-flow.test.ts` | Its trigger loop iterates every prepared component, where `SheetView.renderTriggers` filters `entry.error === null` before binding one. The env it builds now goes through the view's own `publishedComponent`, so the two agree about publication; this last branch is about which components a trigger reaches. Unobservable today, because no fixture there fails a read — which is also why it survived: a mirror's divergence is only ever visible on a case the mirror does not have. Deferred rather than fixed because the change is one line in a file whose whole job is to be an independent check, and adding a failing-read fixture to prove it is a diff of its own. The file's own header states the rule it is breaking: if the two disagree, this file is the copy that is wrong. |
 | The declared `lib` is behind the code that compiles against it | `tsconfig.json`, three shipping files | `lib` is `ES2021` while `scrub.ts`, `trigger-list-field.ts` and `function-library-field.ts` all call `Array.prototype.at`, which is ES2022. It type-checks only because `@types/node` ships a compatibility shim declaring `at` on `Array`, so `npm run build` is more permissive than `tsconfig.json` claims and an editor resolving types without that package reports errors the build does not. No runtime consequence: esbuild only emits, and `minAppVersion` 1.9.0 is long past the Chromium that shipped `.at`. The fix is to align `lib` and esbuild's `target` on ES2022, which is a project-wide compiler decision rather than something to change while shipping other work. |
