@@ -190,6 +190,73 @@ export const SAMPLES: Sample[] = [
 			'| Dagger | 5 | 1d4+2 |',
 		].join('\n'),
 	},
+	/*
+	 * A row of aggregates under the two open tables, which is the whole of the
+	 * feature's visible surface: there is no control for one, so the way to
+	 * look at it is a readout beside the rows it reads. Watch these while
+	 * adding, editing and deleting an inventory row — each follows on commit,
+	 * not per keystroke, which is a published name reading the note.
+	 */
+	{
+		config: {
+			id: 'encumbrance',
+			type: 'stat',
+			label: 'Weight carried',
+			position: { col: 1, row: 7, width: 3, height: 1 },
+			// Quantity times weight summed down the list, over rows the layout
+			// never declared. The number §13 said could not be written.
+			derived: 'sum(inventory, Qty * Weight)',
+			signed: false,
+			hideValue: true,
+			hideNote: true,
+		} as ComponentConfig,
+		body: null,
+	},
+	{
+		config: {
+			id: 'worn_weight',
+			type: 'stat',
+			label: 'Weight worn',
+			position: { col: 4, row: 7, width: 3, height: 1 },
+			derived: 'sum(inventory, Weight, Worn)',
+			signed: false,
+			hideValue: true,
+			hideNote: true,
+		} as ComponentConfig,
+		body: null,
+	},
+	{
+		config: {
+			id: 'worn_count',
+			type: 'stat',
+			label: 'Things worn',
+			position: { col: 7, row: 7, width: 3, height: 1 },
+			// count() rather than sum(), because a toggle cell is true to a
+			// formula where the totals row maps it to 1.
+			derived: 'count(inventory, Worn)',
+			signed: false,
+			hideValue: true,
+			hideNote: true,
+		} as ComponentConfig,
+		body: null,
+	},
+	{
+		config: {
+			id: 'attack_count',
+			// Labels key note sections, so this cannot be "Attacks": the table
+			// beside it already is.
+			type: 'stat',
+			label: 'Attacks known',
+			position: { col: 10, row: 7, width: 3, height: 1 },
+			// Over the card that declares no rows at all: every row is the
+			// character's, and the count is what the layout cannot know.
+			derived: 'count(attacks)',
+			signed: false,
+			hideValue: true,
+			hideNote: true,
+		} as ComponentConfig,
+		body: null,
+	},
 ];
 
 /** The same layout with nothing stored: every component's empty state. */
@@ -205,13 +272,33 @@ export function brokenSamples(): Sample[] {
 	return SAMPLES.map((sample) => {
 		const config = { ...sample.config } as ComponentConfig & {
 			key?: string;
+			derived?: string;
 			openRows?: boolean;
 			rows?: { label: string; key?: string }[];
 			columns?: { type?: string; total?: boolean }[];
 		};
-		// A key holding a colon is refused by every fenced component, because a
-		// colon is what separates key from value in the block.
-		if (sample.config.type === 'stat') {
+		// A misspelled table, on the one readout that gets it: the aggregate's
+		// own error state, which is a formula naming something that is not on
+		// the sheet. The other readouts are left as they are and show the other
+		// half — an aggregate over a table that will not configure, which says
+		// the component holds no rows rather than that it does not exist.
+		if (config.id === 'encumbrance') {
+			config.derived = 'sum(inventroy, Qty * Weight)';
+		} else if (sample.config.type === 'stat' && config.key !== undefined) {
+			// A key holding a colon is refused by every fenced component,
+			// because a colon is what separates key from value in the block.
+			//
+			// **Only a stat that already has one**, and the narrowing is a
+			// decision rather than a side effect of the readouts arriving. It
+			// used to break every stat, which put five copies of one config
+			// error on a view whose whole job is showing the error states side by
+			// side — and none of the derived-only cards could then show the
+			// other state a Stat has, a formula that will not resolve. Now
+			// `armour_class` carries the config error and the five keyless cards
+			// show `?`, so both states are on screen at once instead of one of
+			// them five times. Adding a keyless stat therefore adds a `?` here,
+			// which is the intent; taking the last keyed one away would lose the
+			// config error, and that is what to watch for.
 			config.key = 'bad:key';
 		}
 		// A total on a text column, which is the misconfiguration the open-row
