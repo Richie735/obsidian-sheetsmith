@@ -25,9 +25,21 @@
  * published name — so neither can be finished before the other starts.
  */
 
-import { FieldResolver, RowsSource, ScopeEntry, ScopeValues } from '../types';
+import {
+	ComponentConfig,
+	ComponentDefinition,
+	FieldResolver,
+	RowsSource,
+	ScopeEntry,
+	ScopeValues,
+} from '../types';
 import { FunctionLibrary, NO_FUNCTIONS, Scope, Value } from './expression';
-import { coerceValue, FormulaEnv, NO_ENV } from './resolve';
+import {
+	coerceValue,
+	FormulaEnv,
+	makeFieldResolver,
+	NO_ENV,
+} from './resolve';
 import { buildRowTable, RowComponent } from './rows';
 
 export interface PublishedComponent {
@@ -49,6 +61,62 @@ export interface PublishedComponent {
 	 * may reference any of them.
 	 */
 	resolver?: (env: FormulaEnv) => FieldResolver;
+}
+
+/** One component as the sheet found it: read, or the reason it was not. */
+export interface ReadComponent {
+	config: ComponentConfig;
+	/** Undefined where the layout named a type the registry does not have. */
+	component: ComponentDefinition | undefined;
+	data: unknown;
+	/** Why this component's section would not read, or null where it did. */
+	error: string | null;
+}
+
+/**
+ * What one component contributes to the two tables above.
+ *
+ * **A section that failed to read publishes nothing and holds no rows.** A
+ * failed read leaves `data` null, and null is a card with nothing stored yet
+ * rather than a card that could not be read — so without this a Table whose
+ * markdown is malformed hands out its declared rows with blank cells, a total
+ * reads 0 and an aggregate reads 0 or the declared-row count, beside a card
+ * saying it could not read the section. That is the quietly wrong number
+ * `columnTotal`, `scopeValues` and the row set all refuse by design, and from
+ * here it reaches a Pool's max and a reset's `to`.
+ *
+ * **Every component is listed either way**, publishing nothing where it
+ * cannot. That is what lets the row table tell "there is no table called that"
+ * from "that component holds no rows": a component whose section would not read
+ * is on the sheet, it just cannot say what it holds.
+ *
+ * Extracted because two callers build this — the sheet view and the harness —
+ * and they must not disagree: the harness is how appearance is reviewed, so a
+ * harness publishing differently from the view signs off on messages the plugin
+ * never produces. They had already drifted, the harness dropping a failed
+ * component from the list where the view listed it.
+ *
+ * The two test files that mirror `renderSheet` call this as well, and that is
+ * not a mirror calling the thing it mirrors: what they exist to prove is the
+ * composition — read every section, publish, resolve, write — which no test can
+ * reach through the view itself. Re-deriving the publication policy beside it
+ * would only mean their assertions held for a lookalike.
+ */
+export function publishedComponent({
+	config,
+	component,
+	data,
+	error,
+}: ReadComponent): PublishedComponent {
+	const readable = error === null ? component : undefined;
+	return {
+		id: config.id,
+		values: readable?.scopeValues?.(data, config) ?? {},
+		rows: readable?.scopeRows?.(data, config),
+		resolver: component
+			? (env) => makeFieldResolver(component, config, data, env)
+			: undefined,
+	};
 }
 
 /**

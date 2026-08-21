@@ -25,7 +25,7 @@ import {
 	resolveFormulaFields,
 } from '../formula/resolve';
 import { parseFunctions } from '../formula/functions';
-import { buildSheetEnv } from '../formula/sheet';
+import { buildSheetEnv, publishedComponent } from '../formula/sheet';
 import { DEFAULT_COLUMNS, Layout } from '../parse/layout';
 import { parseTriggers } from '../parse/triggers';
 import { ComponentConfig, ComponentDefinition, LinkContext } from '../types';
@@ -251,26 +251,14 @@ export class SheetView extends TextFileView {
 		// can be fixed; a formula calling one fails on its own component.
 		const { library } = parseFunctions(layout.functions);
 
-		// A published value may itself be computed, so the table takes a way
+		// A published value may itself be computed, so the tables take a way
 		// to build each component's resolver rather than finished numbers:
 		// it is what closes the loop between "this card reads the sheet" and
 		// "the sheet reads this card".
-		// Every component, including the ones publishing nothing at all: the
-		// row table tells "there is no table called that" from "that component
-		// holds no rows", and it can only do so while it knows every id on the
-		// sheet.
-		const env = buildSheetEnv(
-			prepared.map(({ config, component, data }) => ({
-				id: config.id,
-				values: component?.scopeValues?.(data, config) ?? {},
-				rows: component?.scopeRows?.(data, config),
-				resolver: component
-					? (bound: FormulaEnv) =>
-							makeFieldResolver(component, config, data, bound)
-					: undefined,
-			})),
-			library,
-		);
+		// Every component, including the ones that publish nothing at all —
+		// `publishedComponent` holds why, and holds it in one place because the
+		// harness builds the same thing and the two must not disagree.
+		const env = buildSheetEnv(prepared.map(publishedComponent), library);
 
 		for (const { config, component, error, data } of prepared) {
 			const cell = grid.createDiv('sheetsmith-cell');
