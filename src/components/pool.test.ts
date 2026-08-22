@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { FOCUSABLE } from '../view/sheet-view';
+import { FOCUSABLE } from '../view/cell-focus';
 import { pool, PoolConfig, PoolData } from './pool';
 import { RenderContext } from '../types';
 

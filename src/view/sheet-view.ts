@@ -29,23 +29,9 @@ import { buildSheetEnv, publishedComponent } from '../formula/sheet';
 import { DEFAULT_COLUMNS, Layout } from '../parse/layout';
 import { parseTriggers } from '../parse/triggers';
 import { ComponentConfig, ComponentDefinition, LinkContext } from '../types';
+import { captureFocus, restoreFocus } from './cell-focus';
 
 export const VIEW_TYPE_SHEET = 'sheetsmith-sheet';
-
-/**
- * What counts as a control for the purpose of putting focus back.
- *
- * One constant because capture and restore have to agree exactly: they identify
- * a control by its index among these, so a selector that listed one more kind on
- * one side than the other would restore focus to the wrong control rather than
- * fail visibly. Anchors are here because a cell may hold a rendered wikilink.
- *
- * Exported because the component tests that assert a control keeps its index
- * across a rebuild were each carrying their own copy of it, which is three
- * answers to "what does the view count?" and two of them silently stale the
- * moment this one grows a kind (PATTERNS §1).
- */
-export const FOCUSABLE = 'input, select, textarea, button, a[href]';
 
 /**
  * How long the undo stays offered after a trigger. Long enough to notice a
@@ -188,7 +174,7 @@ export class SheetView extends TextFileView {
 		}
 		if (run !== this.renderId) return;
 
-		const focus = this.captureFocus();
+		const focus = captureFocus(root);
 		// Everything a popover could be anchored to is about to be replaced.
 		// A pointer interaction dismisses it on its own, but a rebuild driven
 		// by anything else — an external edit, a layout saved in settings —
@@ -287,7 +273,7 @@ export class SheetView extends TextFileView {
 
 		this.renderTriggers(triggerBar, layout, prepared, env);
 
-		this.restoreFocus(focus);
+		restoreFocus(root, focus);
 	}
 
 	/**
@@ -328,63 +314,6 @@ export class SheetView extends TextFileView {
 				});
 			},
 		};
-	}
-
-	/**
-	 * Rebuilding the grid detaches whatever control the user tabbed or
-	 * clicked into while the rebuild's layout read was in flight. Structural
-	 * identity (cell index, control index within the cell) survives a
-	 * rebuild of an unchanged layout, so capture it and re-focus after.
-	 */
-	private captureFocus(): {
-		cell: number;
-		control: number;
-		start: number | null;
-		end: number | null;
-	} | null {
-		const active = this.contentEl.ownerDocument.activeElement;
-		// instanceOf rather than instanceof: constructors are per-window, and
-		// the sheet may live in a popout.
-		if (
-			!active ||
-			!active.instanceOf(HTMLElement) ||
-			!this.contentEl.contains(active)
-		) {
-			return null;
-		}
-		const cells = Array.from(
-			this.contentEl.querySelectorAll('.sheetsmith-cell'),
-		);
-		const cellIndex = cells.findIndex((cell) => cell.contains(active));
-		if (cellIndex < 0) return null;
-		const controls = Array.from(
-			(cells[cellIndex] as Element).querySelectorAll(FOCUSABLE),
-		);
-		const controlIndex = controls.indexOf(active);
-		if (controlIndex < 0) return null;
-		const input = active.instanceOf(HTMLInputElement) ? active : null;
-		return {
-			cell: cellIndex,
-			control: controlIndex,
-			start: input ? input.selectionStart : null,
-			end: input ? input.selectionEnd : null,
-		};
-	}
-
-	private restoreFocus(
-		saved: ReturnType<SheetView['captureFocus']>,
-	): void {
-		if (!saved) return;
-		const cell = this.contentEl.querySelectorAll('.sheetsmith-cell')[
-			saved.cell
-		];
-		if (!cell) return;
-		const control = cell.querySelectorAll(FOCUSABLE)[saved.control];
-		if (!control || !control.instanceOf(HTMLElement)) return;
-		control.focus({ preventScroll: true });
-		if (control.instanceOf(HTMLInputElement) && saved.start !== null) {
-			control.setSelectionRange(saved.start, saved.end);
-		}
 	}
 
 	/**
