@@ -450,6 +450,20 @@
 	box-shadow: inset 2px 0 0 var(--interactive-accent);
 }
 
+/* A component sitting inside a container, one level of disclosure in the list.
+
+   Indented by its depth rather than by a class per level: the bound is two
+   containers today, and two classes saying "one in" and "two in" would be two
+   places to change if it ever moved. The rule on the left is what says the row
+   belongs to the container above it rather than merely following it — an indent
+   alone reads as a wide margin once the list is long. */
+.sheetsmith-row-child {
+	padding-left: calc(
+		var(--size-4-4) + var(--sheetsmith-row-depth, 1) * var(--size-4-4)
+	);
+	border-left: 1px solid var(--background-modifier-border);
+}
+
 .sheetsmith-component-reference {
 	padding-bottom: var(--size-4-1);
 }

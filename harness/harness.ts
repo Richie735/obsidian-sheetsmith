@@ -29,7 +29,14 @@ import {
 } from '../src/formula/resolve';
 import { buildSheetEnv, publishedComponent } from '../src/formula/sheet';
 import { Layout } from '../src/parse/layout';
-import { ComponentConfig, ComponentDefinition, LinkContext } from '../src/types';
+import { walkComponents } from '../src/parse/layout-walk';
+import {
+	ComponentConfig,
+	ComponentDefinition,
+	isContainer,
+	LinkContext,
+} from '../src/types';
+import { renderGrid } from '../src/view/grid-cells';
 import { brokenSamples, emptySamples, Sample, SAMPLES } from './samples';
 import { harnessLayout, renderSettings } from './settings-panel';
 
@@ -63,14 +70,26 @@ function samplesFor(name: StateName): Sample[] {
 function loadState(name: StateName): void {
 	state = name;
 	const samples = samplesFor(name);
-	bodies = new Map(samples.map((s) => [s.config.id, s.body]));
+	bodies = new Map(
+		samples.flatMap((s) =>
+			walkComponents([s.config]).map((entry) => [
+				entry.config.id,
+				entry.config === s.config ? s.body : (s.children?.[entry.config.id] ?? null),
+			] as [string, string | null]),
+		),
+	);
 	layout = harnessLayout(samples);
 	prepare();
 }
 
-/** Read every section before rendering any, so the name table is complete. */
+/**
+ * Read every section before rendering any, so the name table is complete —
+ * including a container's children, which is the whole point of walking rather
+ * than iterating: a formula may name a card inside a group that is closed, and
+ * the closed group must not change what the sheet computes.
+ */
 function prepare(): void {
-	live = layout.components.map((config) => {
+	live = walkComponents(layout.components).map(({ config }) => {
 		const component = getComponent(config.type);
 		const body = bodies.get(config.id) ?? null;
 		if (!component) {
@@ -82,7 +101,8 @@ function prepare(): void {
 				error: `Unknown component type "${config.type}".`,
 			};
 		}
-		if (body === null) {
+		// A container has no section, so there is nothing to read (SPEC §4.1).
+		if (body === null || isContainer(component)) {
 			return { config, component, body, data: null, error: null };
 		}
 		const result = component.read(body, config);
@@ -168,6 +188,9 @@ function linkContext(): LinkContext {
 	};
 }
 
+/** Which tab the reader has opened where, exactly as the view holds it. */
+const activeTab = new Map<string, number>();
+
 function renderSheet(into: HTMLElement): void {
 	const view = document.createElement('div');
 	view.className = 'sheetsmith-view';
@@ -180,38 +203,33 @@ function renderSheet(into: HTMLElement): void {
 
 	const env = sheetEnv(live);
 
-	// Grid order, not declaration order: it decides tab order and the sequence
-	// the narrow reflow falls back to.
-	const ordered = [...live].sort(
-		(a, b) =>
-			a.config.position.row - b.config.position.row ||
-			a.config.position.col - b.config.position.col,
+	// The view's own walk and the view's own descent through it, so the harness
+	// cannot order or nest the sheet differently from the thing it is measuring.
+	// Everything below the context builder is `grid-cells.ts`: the cells, the
+	// subgrids, the error marks, and the recursion that used to be a second copy
+	// of the view's loop.
+	renderGrid(
+		grid,
+		walkComponents(layout.components),
+		live,
+		(entry) => {
+			const { config, component, data } = entry;
+			return {
+				resolved: resolveFormulaFields(component, config, data, env),
+				resolveField: makeFieldResolver(component, config, data, env),
+				explainField: makeFieldExplainer(component, config, data, env),
+				// The entry the grid was given, which is this module's own `Live`:
+				// `applyEdit` writes the re-read section back into it.
+				onChange: (edited: unknown) => applyEdit(entry as Live, edited),
+				link: linkContext(),
+				// The view's own answer, so a tab survives an edit here exactly as
+				// it does in the app: a re-render is what would otherwise reset it.
+				activeTab: activeTab.get(config.id),
+				onActivateTab: (index: number) => activeTab.set(config.id, index),
+			};
+		},
 	);
 
-	for (const entry of ordered) {
-		const cell = document.createElement('div');
-		cell.className = 'sheetsmith-cell';
-		cell.style.gridColumn = `${entry.config.position.col} / span ${entry.config.position.width}`;
-		cell.style.gridRow = `${entry.config.position.row} / span ${entry.config.position.height}`;
-		grid.appendChild(cell);
-
-		if (!entry.component || entry.error !== null) {
-			const error = document.createElement('div');
-			error.className = 'sheetsmith-error';
-			error.textContent = `${entry.config.label}: ${entry.error ?? 'unknown component'}`;
-			cell.appendChild(error);
-			continue;
-		}
-
-		const { component, config, data } = entry;
-		component.render(cell, config, data, {
-			resolved: resolveFormulaFields(component, config, data, env),
-			resolveField: makeFieldResolver(component, config, data, env),
-			explainField: makeFieldExplainer(component, config, data, env),
-			onChange: (edited: unknown) => applyEdit(entry, edited),
-			link: linkContext(),
-		});
-	}
 
 	// Always present, so a link gesture has somewhere to write without a rebuild.
 	linkLog = document.createElement('p');

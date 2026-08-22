@@ -18,6 +18,8 @@ import { makeFieldExplainer, resolveFormulaFields } from '../formula/resolve';
 import { buildSheetEnv, publishedComponent } from '../formula/sheet';
 import { getSection, parseCharacter } from '../parse/character';
 import { parseLayout } from '../parse/layout';
+import { walkComponents } from '../parse/layout-walk';
+import { ComponentConfig, isContainer } from '../types';
 
 const LAYOUT = JSON.stringify({
 	name: 'DnD 5e Standard',
@@ -74,10 +76,16 @@ function buildSheet(layoutSource: string, noteSource: string) {
 	const { library, problems } = parseFunctions(layout.functions);
 	const note = parseCharacter(noteSource);
 
-	const prepared = layout.components.map((config) => {
+	// The view's own walk, depth first and each level in grid order, so a card
+	// inside a container is read before anything renders — exactly as one at the
+	// top level is.
+	const prepared = walkComponents(layout.components).map(({ config }) => {
 		const component = getComponent(config.type);
 		if (!component) throw new Error(`No component of type "${config.type}".`);
-		const section = getSection(note, config.label);
+		// A container has no section (SPEC §4.1), so there is nothing to read.
+		const section = isContainer(component)
+			? undefined
+			: getSection(note, config.label);
 		const result = section ? component.read(section.body, config) : null;
 		return {
 			config,
@@ -421,5 +429,89 @@ sheet-layout: Blades in the Dark
 		const other = buildSheet(LAYOUT, NOTE);
 		expect(other.sheet('abilities.DEX')).toBe(4);
 		expect(sheet.explainFor('load', 'derived')).toContain('inventory.Weight');
+	});
+});
+
+/*
+ * The same sheet, with its cards inside containers (SPEC §13).
+ *
+ * The claim this file exists to hold about nesting is a negative one:
+ * containment is arrangement and never addressing, so a card two containers deep
+ * publishes exactly the name it publishes at the top level and every formula on
+ * the sheet reads the same as before. Driven through the name table rather than
+ * through the renderer, because that is where the claim actually lives — a
+ * container that quietly added a segment would still draw perfectly.
+ */
+describe('the same layout with its cards inside two containers', () => {
+	/** Wrap every component in a Group, and those Groups in one more. */
+	function nest(source: string): string {
+		const layout = JSON.parse(source) as {
+			components: ComponentConfig[];
+			[key: string]: unknown;
+		};
+		return JSON.stringify({
+			...layout,
+			components: [
+				{
+					id: 'sheet_region',
+					type: 'group',
+					label: 'Everything',
+					position: { col: 1, row: 1, width: 6, height: 6 },
+					children: layout.components.map((config, index) => ({
+						id: `wrap_${index}`,
+						type: 'group',
+						label: `Region ${index + 1}`,
+						position: { col: 1, row: index + 1, width: 6, height: 1 },
+						children: [config],
+					})),
+				},
+			],
+		});
+	}
+
+	const flat = buildSheet(LAYOUT, NOTE);
+	const deep = buildSheet(nest(LAYOUT), NOTE);
+
+	it('reaches the cards inside the containers at all', () => {
+		// The premise. Without it every assertion below passes over a sheet whose
+		// cards were never read, which is exactly how a nested layout would look
+		// if the walk stopped at the top level.
+		expect(deep.prepared.map((entry) => entry.config.id)).toContain('abilities');
+		expect(deep.prepared).toHaveLength(flat.prepared.length + 4);
+	});
+
+	it('publishes every name unchanged, at any depth', () => {
+		// No segment is added, so `abilities.DEX` is `abilities.DEX` — which is
+		// what keeps §13's open question about how deep a published name may go
+		// exactly where it was.
+		expect(deep.sheet('abilities.DEX')).toBe(flat.sheet('abilities.DEX'));
+		expect(deep.sheet('abilities.DEX.value')).toBe(
+			flat.sheet('abilities.DEX.value'),
+		);
+		expect(deep.sheet('sheet_region')).toBeUndefined();
+		expect(deep.sheet('wrap_0')).toBeUndefined();
+	});
+
+	it('resolves a formula reading across the containers', () => {
+		// `spell_dc` is `8 + prof + mod(abilities.DEX.value)`, and it now sits in
+		// a different container from the ability it reads. A closed container
+		// changes nothing about it: hiding is never a way to make a formula not
+		// run.
+		expect(deep.resolvedFor('spell_dc').derived).toBe(
+			flat.resolvedFor('spell_dc').derived,
+		);
+	});
+
+	it('reads no section for a container, whatever the note holds', () => {
+		// `storage: 'none'`, so a note holding unmapped prose under a heading
+		// that happened to match a container's label is never even looked at.
+		const containers = deep.prepared.filter(
+			(entry) => isContainer(entry.component),
+		);
+		expect(containers).toHaveLength(4);
+		for (const entry of containers) {
+			expect(entry.data).toBeNull();
+			expect(entry.error).toBeNull();
+		}
 	});
 });

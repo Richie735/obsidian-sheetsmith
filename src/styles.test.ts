@@ -250,6 +250,234 @@ describe('a table header lines up with its rows', () => {
 	});
 });
 
+describe('a container collapses on its own column count', () => {
+	/*
+	 * One rule, written out twelve times because a container query can neither
+	 * multiply nor read a custom property. That makes it a table, and a table is
+	 * a thing that drifts off the rule it tabulates — one hand-edited number and
+	 * a container of that width collapses at a threshold nothing chose.
+	 *
+	 * The rule: 40px a column, which is the sheet's own 480px across 12 columns.
+	 * Answering that 480 for every container instead was one number applied to
+	 * twelve questions, and it left a two-column container unable to place two
+	 * children side by side at any pane width.
+	 */
+	const CSS_TEXT = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+	const PER_COLUMN = 40;
+
+	/** Each tabulated threshold, as (column count, px). */
+	function thresholds(): { columns: number; px: number }[] {
+		const withoutComments = CSS_TEXT.replace(/\/\*[\s\S]*?\*\//g, '');
+		const found: { columns: number; px: number }[] = [];
+		for (const match of withoutComments.matchAll(
+			/@container \(max-width: (\d+)px\)\s*\{\s*\.sheetsmith-cols-(\d+) >/g,
+		)) {
+			found.push({
+				columns: Number(match[2]),
+				px: Number(match[1]),
+			});
+		}
+		return found;
+	}
+
+	it('tabulates every count a layout can reach by default', () => {
+		// A regex that matched nothing, or stopped at the first few, would pass
+		// the rule below by having nothing to check.
+		const counts = thresholds().map(({ columns }) => columns);
+		expect(counts).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]);
+	});
+
+	it('keeps every threshold at the rule it tabulates', () => {
+		const off = thresholds()
+			.filter(({ columns, px }) => px !== columns * PER_COLUMN)
+			.map(({ columns, px }) => `${columns} columns at ${px}px`);
+		expect(off).toEqual([]);
+	});
+
+	it('derives the sheet\'s own threshold rather than sitting beside it', () => {
+		// The whole claim that this is one rule: 12 columns has to come out at
+		// the number the sheet grid still uses, or there are two rules again.
+		const twelve = thresholds().find(({ columns }) => columns === 12);
+		expect(twelve?.px).toBe(480);
+		expect(CSS_TEXT).toContain(
+			'@container (max-width: 480px) {\n.sheetsmith-view > .sheetsmith-grid',
+		);
+	});
+
+	it('leaves the sheet grid out of the per-container rules', () => {
+		// The sheet's grid is a direct child of the view, never of a subgrid, so
+		// the two selectors are disjoint by construction. Asserted because an
+		// unscoped `.sheetsmith-grid` in the 480px block would collapse every
+		// inner grid at the sheet's number and quietly restore the bug.
+		const withoutComments = CSS_TEXT.replace(/\/\*[\s\S]*?\*\//g, '');
+		expect(withoutComments).not.toMatch(
+			/@container \(max-width: 480px\)\s*\{\s*\.sheetsmith-grid\s*\{/,
+		);
+	});
+});
+
+describe('a container adds no box between the cell and its grid', () => {
+	/*
+	 * The design's central claim is that a group needs no border, because a card
+	 * inside it lines up column for column with the identical card outside it and
+	 * alignment does the work a box would. That holds exactly rather than
+	 * approximately, and the arithmetic says it must: a component W sheet columns
+	 * wide occupies `W·T + (W-1)·G`, and an inner grid dividing that into W
+	 * columns at the same gap resolves to `T` again. Measured at 106.5000px on
+	 * both sides.
+	 *
+	 * One padding declaration anywhere on the chain from the cell down to the
+	 * inner grid breaks it, and breaks it by a few pixels — which is invisible in
+	 * a screenshot, invisible in a type check, and invisible in every unit test,
+	 * while quietly taking away the reason the component has no border. The spec
+	 * predicted this cost as already paid and it was not; the check is what stops
+	 * it being paid by accident later.
+	 *
+	 * The heading is deliberately not on the list: it sits above the region
+	 * rather than around it, and its padding is what makes the row pressable.
+	 */
+	const CHAIN = [
+		'.sheetsmith-group',
+		'.sheetsmith-group-body',
+		'.sheetsmith-subgrid',
+		// The tab set's chain to the same inner grid. A tab fills the panel and
+		// the panel is the tab set's own placement, so the identical claim has to
+		// hold down this side: one padding declaration between the cell and the
+		// subgrid and a card inside a tab stops lining up with the same card
+		// outside the tab set.
+		'.sheetsmith-tabset',
+		'.sheetsmith-tabset-stage',
+		'.sheetsmith-tabset-panel',
+	];
+	const BOXES = ['padding', 'padding-inline', 'padding-left', 'padding-right', 'border', 'border-left', 'border-right', 'border-inline', 'width', 'max-width', 'margin-inline', 'margin-left', 'margin-right'];
+
+	/** Declarations on a rule whose subject is one of the chain elements. */
+	function chainDeclarations(): { selector: string; property: string }[] {
+		const withoutComments = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+		const found: { selector: string; property: string }[] = [];
+		for (const block of withoutComments.split('}')) {
+			const brace = block.indexOf('{');
+			if (brace === -1) continue;
+			const selectors = block
+				.slice(0, brace)
+				.split(',')
+				.map((part) => part.trim().replace(/\s+/g, ' '))
+				.filter(Boolean);
+			// The rule's subject is its last compound selector, so a descendant
+			// rule like `.sheetsmith-group .something` is not about the group.
+			const subjects = selectors.map(
+				(selector) => selector.split(/[\s>]+/).pop() ?? '',
+			);
+			if (!subjects.some((subject) => CHAIN.includes(subject))) continue;
+			for (const declaration of block.slice(brace + 1).split(';')) {
+				const property = declaration.split(':')[0]?.trim() ?? '';
+				if (property !== '') {
+					found.push({ selector: selectors.join(', '), property });
+				}
+			}
+		}
+		return found;
+	}
+
+	it('finds the rules it is meant to be checking', () => {
+		// Named rather than counted, which is the only spelling that holds the
+		// claim: `.sheetsmith-group-body` carries no rule of its own today, so a
+		// count would have to be loose enough to pass on an extractor that had
+		// stopped matching. These two do carry one, and a rename should be a
+		// decision taken here rather than a check that quietly stops looking.
+		const found = chainDeclarations();
+		expect(found.length).toBeGreaterThan(2);
+		const subjects = new Set(found.map(({ selector }) => selector));
+		expect(subjects).toContain('.sheetsmith-group');
+		expect(subjects).toContain('.sheetsmith-subgrid');
+	});
+
+	it('gives none of them a horizontal box', () => {
+		const boxed = chainDeclarations()
+			.filter(({ property }) => BOXES.includes(property))
+			.map(({ selector, property }) => `${selector} { ${property} }`);
+		expect([...new Set(boxed)]).toEqual([]);
+	});
+});
+
+describe('a container draws one rule under its chrome', () => {
+	/*
+	 * Group closes its heading with a hairline; a tab set closes its *strip* with
+	 * the same one, because the strip is part of the chrome. Drawn both ways it
+	 * put two rules 37px apart, and next to the groups beside it the tab set read
+	 * as a heavier, more built-up object — which is the one thing its chrome
+	 * exists not to do (`docs/UI.md` §9).
+	 *
+	 * A review found that by looking, in both themes and at both widths, and
+	 * nothing else could: two borders are not a type error and not a behaviour.
+	 * The fix is a single declaration, so it is a single declaration away from
+	 * coming back.
+	 */
+	it('drops the heading\'s own rule where a strip carries it', () => {
+		const withoutComments = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+		const rule =
+			/\.sheetsmith-tabset\s*>\s*\.sheetsmith-group-heading\s*\{([^}]*)\}/.exec(
+				withoutComments,
+			);
+		expect(rule).not.toBeNull();
+		expect(rule?.[1]).toMatch(/border-bottom:\s*0/);
+	});
+
+	it('keeps the rule the strip carries, so one survives', () => {
+		// The other half: dropping both would leave the chrome with no closing
+		// edge at all, which is the same object read the other way.
+		const withoutComments = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+		const strip = /\.sheetsmith-tabset-strip\s*\{([^}]*)\}/.exec(withoutComments);
+		expect(strip?.[1]).toMatch(/border-bottom:\s*1px/);
+	});
+});
+
+describe('a stage that shows one child is not a reflow context', () => {
+	/*
+	 * The narrow failure the three-layer DOM exists to prevent, held at the one
+	 * layer a stylesheet can be asked about.
+	 *
+	 * A tab set's panels all occupy one grid cell, so exactly one is visible and
+	 * the set is as tall as its tallest tab. Give that grid a `container-type` and
+	 * it answers the reflow query like any other container's grid, drops to a flex
+	 * column, and the panels stop overlapping — they **stack**, so the set becomes
+	 * as tall as every tab put together with one of them showing. It looks correct
+	 * at 1400px and fails only in the narrow shot, which is exactly the kind of
+	 * regression a screenshot review catches late and a type check never.
+	 *
+	 * Asserted in both directions on purpose. `.sheetsmith-subgrid` *must* carry
+	 * it — that is what makes a container its own reflow context — so requiring
+	 * its presence there is the vacuity guard: a scan that stopped matching
+	 * anything would fail on the subgrid rather than pass on the stage.
+	 */
+	function declares(subject: string, property: string): boolean {
+		const withoutComments = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+		for (const block of withoutComments.split('}')) {
+			const brace = block.indexOf('{');
+			if (brace === -1) continue;
+			const subjects = block
+				.slice(0, brace)
+				.split(',')
+				.map((part) => part.trim().replace(/\s+/g, ' '))
+				.map((selector) => selector.split(/[\s>]+/).pop() ?? '');
+			if (!subjects.includes(subject)) continue;
+			for (const declaration of block.slice(brace + 1).split(';')) {
+				if ((declaration.split(':')[0] ?? '').trim() === property) return true;
+			}
+		}
+		return false;
+	}
+
+	it('gives a container that places its children one', () => {
+		// The guard on the check below: this is the rule that has to have it.
+		expect(declares('.sheetsmith-subgrid', 'container-type')).toBe(true);
+	});
+
+	it('gives the tab set\'s stage none, so its panels keep overlapping', () => {
+		expect(declares('.sheetsmith-tabset-stage', 'container-type')).toBe(false);
+	});
+});
+
 describe('the sheet paints its own surfaces', () => {
 	it('gives no rule to .sheetsmith-cell, so components must look like objects', () => {
 		// Load-bearing for the review that produced this file: the grid hands a

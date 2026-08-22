@@ -159,6 +159,13 @@ body {
 	padding: var(--size-4-4);
 	overflow-y: auto;
 	container-type: inline-size;
+	/* Named so a container nested inside it can ask about the *sheet's* width
+	   and not only its own. That is not a convenience: a two-column container
+	   measures 221px on a 1400px pane, where it must keep its grid, and 348px on
+	   a 380px pane, where it must not — the narrow case is the wider one, so no
+	   threshold on a container's own width can separate them. What separates
+	   them is whether the sheet has given up being a grid. */
+	container-name: sheetsmith-sheet;
 }
 
 .sheetsmith-grid {
@@ -174,9 +181,13 @@ body {
    container query, not a media query — a narrow split in a wide window
    must reflow too. Must stay below the rule it overrides: @container adds
    no specificity, so an equal selector above it would simply lose. Cells
-   then fall back to DOM order, which the view sorts into grid order. */
+   then fall back to DOM order, which the view sorts into grid order.
+
+   Scoped to the sheet's own grid, because a container's inner grid answers
+   the same *rule* at its own column count rather than the same number — see
+   the table below. */
 @container (max-width: 480px) {
-.sheetsmith-grid {
+.sheetsmith-view > .sheetsmith-grid {
 		display: flex;
 		flex-direction: column;
 	}
@@ -190,6 +201,360 @@ body {
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-m);
 	color: var(--text-muted);
+}
+
+/* ---------------------------------------------------------------------------
+   Group — a heading over a region of other components.
+
+   A container must read as a region *behind* the cards, never as a fourth kind
+   of card beside them (§9 of docs/UI.md). That is the one component where the
+   temptation is structural rather than incidental, because it genuinely does
+   surround things — so there is no border here, no surface, no inset
+   background and no indent. Alignment is free: the inner grid is the group's
+   width in columns by its height in rows, so an inner column is a sheet column
+   and an inner row is a sheet row, and a card inside the group lines up with
+   the identical card outside it in both directions. Anything more would be a
+   box drawn around boxes.
+
+   What alignment does *not* do is make the region legible — this said it did,
+   and two things lining up is the absence of a signal rather than one. The
+   heading and the strength of its rule carry that, which is the rule below.
+--------------------------------------------------------------------------- */
+
+.sheetsmith-group {
+	/* The heading's rule, held here rather than on the heading so the depth
+	   override below is one declaration instead of a specificity contest. A
+	   section rule at the top level and a
+	   quieter one inside a container: nesting has to read from *something*, and
+	   the design rules out a border, a surface and an indent, which leaves the
+	   heading and its rule as the only device there is. `--background-modifier-
+	   border` alone measures 1.27:1 in light and 1.35:1 in dark — the same value
+	   a card uses, except a card also has a fill — so at one strength for both
+	   levels an outer region and an inner one were two identical lines. */
+	--sheetsmith-group-rule: var(--background-modifier-border-focus);
+
+	display: flex;
+	flex-direction: column;
+}
+
+/* Anything on a container's own grid is a level in, which the DOM already says:
+   only a nested group's heading has a `.sheetsmith-subgrid` above it. */
+.sheetsmith-subgrid .sheetsmith-group {
+	--sheetsmith-group-rule: var(--background-modifier-border);
+}
+
+/* A level above the labels inside it, and the rank it has to clear is the
+   *component* label — a Table's own name, a Stat group's own name — not the
+   uppercase tracked muted micro-labels further down. Those two are
+   `--font-ui-small` semibold at full contrast, so size alone does not separate
+   them: at 15px against 13px, same weight and same colour, a group heading, a
+   nested group's heading and a table's label read as three near-identical
+   labels, which was measured and reported.
+
+   So the weight carries it as well as the size. Obsidian separates its own
+   section heading from the field labels under it exactly this way — 15px
+   semibold over 13px at normal weight — and this is that relationship shifted
+   one notch, because a component label here is semibold where the app's
+   equivalent rank is not. Taking the component labels down to normal instead
+   would match the app more closely and is the better fix; it also restyles two
+   shipped components, so it is not one to make while adding a third.
+
+   The hairline is the whole of the enclosure. It travels with the heading
+   rather than boxing the children, which is what keeps the group behind the
+   cards instead of around them. */
+.sheetsmith-group-heading {
+	margin-bottom: var(--size-4-2);
+	/* The space above matches the space below, or the rule reads as underlining
+	   the words rather than as closing the heading. Two headings of the same
+	   rank in the same grid row have to put their hairlines at the same height,
+	   which is §9's rule about two controls not measuring differently, read one
+	   level up. */
+	padding: var(--size-2-2) 0 var(--size-2-3);
+	border-bottom: 1px solid
+		var(--sheetsmith-group-rule, var(--background-modifier-border));
+	font-size: var(--font-ui-medium);
+	font-weight: var(--font-bold);
+	line-height: 1.3;
+	color: var(--text-normal);
+}
+
+/* Its own reflow context. A group four columns wide inside a 1200px pane is
+   about 380px, so it has to reflow while the sheet around it does not — which
+   is a case a media query cannot see at all (§4). The wrapper carries
+   `container-type` because a container query cannot ask about the element
+   declaring it, so the inner grid needs an ancestor to be measured against;
+   the grid itself then answers the same 480px threshold the sheet does, from
+   the rule at the top of this file. One threshold, not two, because two
+   numbers are two answers to "when is it narrow". */
+.sheetsmith-subgrid {
+	container-type: inline-size;
+}
+
+/* When a container's own grid stops being worth having, at 40px a column.
+
+   One rule, tabulated. The sheet collapses at 480px across 12 columns, which
+   is 40px a column, and that is the number this scales: a four-column
+   container collapses at 160px, a two-column one at 80px, and twelve columns
+   at 480px — the sheet's own threshold, now a consequence of the rule rather
+   than a coincidence beside it.
+
+   Answering the sheet's 480px for every container was one number applied to
+   twelve different questions, and the spread was 7x: a container collapsed
+   while its columns were still 236px wide at two columns, and was allowed down
+   to 32.7px at twelve. A two-column container could not place two children
+   side by side at any pane width up to 2400px, and the six-up "stat beside its
+   skills" arrangement §13 names as the reason containers exist was unreachable
+   at three per row below a 1489px pane. It read as broken rather than as
+   responsive, which is what a reflow firing on a wide sheet always will.
+
+   Twelve blocks rather than one, because a container query cannot multiply and
+   cannot read a custom property, and `repeat(auto-fit, minmax(...))` would
+   renumber the columns and break every explicit `grid-column`. So the view
+   stamps the count as a class and this is the formula written out.
+   `styles.test.ts` holds each threshold to 40 x its count, so the table cannot
+   drift off the rule it tabulates. */
+@container (max-width: 40px) {
+.sheetsmith-cols-1 > .sheetsmith-grid {
+		display: flex;
+		flex-direction: column;
+	}
+
+}
+@container (max-width: 80px) {
+.sheetsmith-cols-2 > .sheetsmith-grid {
+		display: flex;
+		flex-direction: column;
+	}
+
+}
+@container (max-width: 120px) {
+.sheetsmith-cols-3 > .sheetsmith-grid {
+		display: flex;
+		flex-direction: column;
+	}
+
+}
+@container (max-width: 160px) {
+.sheetsmith-cols-4 > .sheetsmith-grid {
+		display: flex;
+		flex-direction: column;
+	}
+
+}
+@container (max-width: 200px) {
+.sheetsmith-cols-5 > .sheetsmith-grid {
+		display: flex;
+		flex-direction: column;
+	}
+
+}
+@container (max-width: 240px) {
+.sheetsmith-cols-6 > .sheetsmith-grid {
+		display: flex;
+		flex-direction: column;
+	}
+
+}
+@container (max-width: 280px) {
+.sheetsmith-cols-7 > .sheetsmith-grid {
+		display: flex;
+		flex-direction: column;
+	}
+
+}
+@container (max-width: 320px) {
+.sheetsmith-cols-8 > .sheetsmith-grid {
+		display: flex;
+		flex-direction: column;
+	}
+
+}
+@container (max-width: 360px) {
+.sheetsmith-cols-9 > .sheetsmith-grid {
+		display: flex;
+		flex-direction: column;
+	}
+
+}
+@container (max-width: 400px) {
+.sheetsmith-cols-10 > .sheetsmith-grid {
+		display: flex;
+		flex-direction: column;
+	}
+
+}
+@container (max-width: 440px) {
+.sheetsmith-cols-11 > .sheetsmith-grid {
+		display: flex;
+		flex-direction: column;
+	}
+
+}
+@container (max-width: 480px) {
+.sheetsmith-cols-12 > .sheetsmith-grid {
+		display: flex;
+		flex-direction: column;
+	}
+
+}
+
+/* Whatever their own width, every inner grid follows the sheet down. Once the
+   sheet is a single column each component has the whole pane, so a container is
+   *wider* there than on a roomy sheet while having far less room to spend — the
+   one case its own width cannot report. Asking the named ancestor is what closes
+   it, and it is the sheet's own threshold rather than a second number.
+
+   Below the per-column blocks, and it has to be: same selector, same properties,
+   and `@container` adds no specificity, so the later rule is the one that wins
+   where both apply. Both say collapse, so the order only decides which one gets
+   the credit — but an override that depends on nothing is an override that
+   breaks the day one of them stops saying collapse. */
+@container sheetsmith-sheet (max-width: 480px) {
+.sheetsmith-subgrid > .sheetsmith-grid {
+		display: flex;
+		flex-direction: column;
+	}
+
+}
+
+/* Tab set — one region of the sheet showing one of several alternatives
+   (SPEC §4.2).
+
+   The whole component is built around one promise: switching tabs moves nothing.
+   That comes from the stage below, not from the strip. */
+.sheetsmith-tabset {
+	display: flex;
+	flex-direction: column;
+	/* Fills the cell it was placed in, as every component does (SPEC §8) — and
+	   here it is load-bearing rather than tidy: the panel is the tab set's own
+	   placement, so the box has to be the cell rather than whatever the active
+	   tab came to. */
+	height: 100%;
+}
+
+/* Every panel in one grid cell, so the set is as tall as its tallest tab and
+   changing tabs cannot change its height.
+
+   **It answers no container query, deliberately.** Overlapping elements on a
+   grid that reflowed to a flex column would stack *vertically*, making the set
+   as tall as every tab put together with one of them visible — which is the
+   failure this element exists to prevent and the only width it shows at. A
+   container tab's own subgrid sits inside its panel and reflows normally, which
+   is what should happen: a Group four columns wide is narrow on a phone whether
+   or not a tab set is around it. */
+.sheetsmith-tabset-stage {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	/* Takes the room the strip leaves. `min-height: 0` because a grid child's
+	   automatic minimum is its content, which would stop the stage ever being
+	   shorter than its tallest panel wants. */
+	flex: 1 1 auto;
+	min-height: 0;
+}
+
+.sheetsmith-tabset-panel {
+	/* All of them in the one cell. */
+	grid-area: 1 / 1;
+	min-width: 0;
+}
+
+/* Hidden and still laid out, which is the trade the component's header states:
+   `visibility` keeps the panel contributing height where `display: none` and
+   `content-visibility: hidden` would not, and a panel contributing no height is
+   a panel whose appearance moves the sheet. What it costs is find-in-page
+   reaching an unopened tab. `inert` is on the element as well, for the tab order
+   and for a script that would focus into it. */
+.sheetsmith-tabset-panel-hidden {
+	visibility: hidden;
+}
+
+/* One rule under the chrome, whichever container drew it (SPEC §4.2).
+
+   The strip below carries the hairline, so the heading above it must not. Drawn
+   both ways it put two rules 37px apart, which made the tab set read as a
+   heavier, more built-up object than the Group beside it — and matching a Group
+   is the whole of what its chrome is for. Found by looking, in both themes and
+   at both widths; nothing in a type check or a unit test sees a second border.
+
+   The heading's own bottom margin goes with it: the space existed to separate a
+   rule from the region under it, and with no rule the name sits directly above
+   the strip it names. Its top padding stays, so a tab set's heading and a
+   group's still start at the same height in a shared grid row (§9). */
+.sheetsmith-tabset > .sheetsmith-group-heading {
+	margin-bottom: 0;
+	border-bottom: 0;
+}
+
+.sheetsmith-tabset-strip {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: stretch;
+	gap: var(--size-4-3);
+	/* The group's own hairline, in the same place: a tab set and a group of the
+	   same declared size have to read as the same kind of object, and the rule
+	   under the chrome is most of what says so. */
+	border-bottom: 1px solid
+		var(--sheetsmith-group-rule, var(--background-modifier-border));
+	margin-bottom: var(--size-4-2);
+}
+
+/* A name, not a folder tab. A raised tab silhouette is a fourth surface beside
+   the cards — the loose chrome §9 warns about — and it needs a border that has
+   to disappear into the panel edge on exactly one side, which is the detail that
+   looks right in one theme only.
+
+   Scoped, because this is a button taking chrome *off*: a rule that lost to
+   Obsidian's own button styling would never reveal the loss on a control that
+   painted its own surface (§2). */
+.sheetsmith-view .sheetsmith-tabset-tab {
+	padding: var(--size-2-2) 0 var(--size-2-3);
+	border: 0;
+	/* Reserves the mark the active tab paints, so nothing shifts by two pixels
+	   when the selection moves. */
+	border-bottom: 2px solid transparent;
+	border-radius: 0;
+	background-color: transparent;
+	box-shadow: none;
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-normal);
+	line-height: 1.3;
+	color: var(--text-muted);
+	cursor: pointer;
+	transition: color 120ms ease-out;
+}
+
+.sheetsmith-view .sheetsmith-tabset-tab:hover {
+	color: var(--text-normal);
+}
+
+/* Weight and the accent, which is a colour change rather than motion (§8): a
+   strip is pressed dozens of times in a session, so it gets feedback and not
+   animation. */
+.sheetsmith-view .sheetsmith-tabset-tab.is-active {
+	border-bottom-color: var(--interactive-accent);
+	font-weight: var(--font-bold);
+	color: var(--text-normal);
+}
+
+/* One treatment, and an outline rather than a shadow: forced-colors mode
+   discards box-shadow, and the offset here has room for a real ring (§6). */
+.sheetsmith-view .sheetsmith-tabset-tab:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: -2px;
+}
+
+/* A tab set with no tabs is a layout part-way through being built, on the same
+   terms as an empty group: it holds open the space its strip will occupy rather
+   than collapsing onto whatever follows. */
+.sheetsmith-tabset-empty {
+	min-height: var(--size-4-8);
+}
+
+/* A group with no children is a layout part-way through being built, not an
+   error, so it holds open the space its region will occupy rather than
+   collapsing the heading onto whatever follows. */
+.sheetsmith-group-empty {
+	min-height: var(--size-4-8);
 }
 
 .sheetsmith-stat-group {
@@ -2242,7 +2607,7 @@ body {
    direction joined to a field when open, the outcome having a line of its own
    above them either way. Spacing goes first and the buttons second, as before:
    the number is the thing being read. */
-@container (max-width: 200px) {
+@container (max-width: 160px) {
 .sheetsmith-pool-controls {
 		gap: var(--size-2-1);
 	}
@@ -2705,7 +3070,7 @@ a.sheetsmith-undo {
 
 /* A run squeezed into one grid unit. The segments come down with the card; the
    gap goes first, since the segments are the thing being read. */
-@container (max-width: 200px) {
+@container (max-width: 160px) {
 .sheetsmith-track-run {
 		gap: var(--size-2-1);
 	}
@@ -3217,6 +3582,20 @@ a.sheetsmith-undo {
 /* Paint-only highlight: an inset shadow never shifts the row's layout. */
 .sheetsmith-row-open {
 	box-shadow: inset 2px 0 0 var(--interactive-accent);
+}
+
+/* A component sitting inside a container, one level of disclosure in the list.
+
+   Indented by its depth rather than by a class per level: the bound is two
+   containers today, and two classes saying "one in" and "two in" would be two
+   places to change if it ever moved. The rule on the left is what says the row
+   belongs to the container above it rather than merely following it — an indent
+   alone reads as a wide margin once the list is long. */
+.sheetsmith-row-child {
+	padding-left: calc(
+		var(--size-4-4) + var(--sheetsmith-row-depth, 1) * var(--size-4-4)
+	);
+	border-left: 1px solid var(--background-modifier-border);
 }
 
 .sheetsmith-component-reference {
