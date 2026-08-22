@@ -11,8 +11,18 @@
  */
 export const LAYOUT_KEY = 'sheet-layout';
 
-/** How a component stores its section. Fixed by type, never a user choice. */
-export type StorageKind = 'fenced' | 'markdown';
+/**
+ * How a component stores its section. Fixed by type, never a user choice.
+ *
+ * `none` is a container (SPEC §4.1): it holds other components rather than a
+ * value, so it has no section in the note, nothing reads it and nothing writes
+ * it. Declared rather than left implicit in a `read` that always returns
+ * nothing, because that is a claim only a reader of the component could check —
+ * and it is what lets the sheet skip `getSection` and `read` for one, so a note
+ * holding unmapped prose under a heading that happens to match a container's
+ * label is never even looked at (SPEC §10).
+ */
+export type StorageKind = 'fenced' | 'markdown' | 'none';
 
 /** Grid placement of a component within a layout. */
 export interface GridPosition {
@@ -68,6 +78,24 @@ export interface ComponentConfig {
 	/** Display name, and the section heading in the note body. */
 	label: string;
 	position: GridPosition;
+	/**
+	 * The components this one contains, each placed on this component's own
+	 * grid, which is this component's `width` in columns by its `height` in
+	 * rows — so an inner column is a sheet column and an inner row is a sheet
+	 * row, and a child two rows high is the size of the identical component two
+	 * rows high outside it (SPEC §4.2, §8).
+	 *
+	 * Shared config the plugin itself reads, the category `position` and
+	 * `reset` are already in: the parser runs over every child for its
+	 * position, its id migration and the id-and-label uniqueness that keys note
+	 * sections globally, and the sheet has to flatten the tree before its name
+	 * table can be complete. A component never declares it in `configFields`.
+	 *
+	 * A container inside a container may hold only leaves — `parseLayout`
+	 * refuses a third — and containment is not addressing: a child publishes
+	 * exactly the name it would publish at the top level, at any depth.
+	 */
+	children?: ComponentConfig[];
 	/**
 	 * Every trigger this component responds to (SPEC §6), each with its own
 	 * action. A list because the triggers a system declares overlap: in 5e
@@ -349,6 +377,92 @@ export interface RenderContext<TData = unknown> {
 	 * does nothing, which is the truth where there is no vault to navigate.
 	 */
 	link?: LinkContext;
+	/**
+	 * Draw this component's `children` into an element of its own choosing
+	 * (SPEC §4.2).
+	 *
+	 * The view owns the recursion, the inner grid and the cells on it, because
+	 * those are the same grid rules the sheet already has one level up. What a
+	 * container owns is *where* the region sits inside its own chrome, which is
+	 * the one thing the view cannot know: a heading above it, a tab strip above
+	 * it, or nothing at all.
+	 *
+	 * Absent where the layout gave this component no children, so an empty
+	 * container can draw its heading over a quiet empty region rather than over
+	 * an empty grid.
+	 */
+	renderChildren?: (into: HTMLElement) => void;
+	/**
+	 * Each child on its own, in the order the layout wrote them, for a container
+	 * that shows one at a time rather than all of them together.
+	 *
+	 * The sibling of `renderChildren`, and a container uses exactly one of the
+	 * two: that one says "put all of my children on a grid inside this element",
+	 * which is the only thing a region wants, and this says "draw my *n*th child
+	 * inside this element, filling it", which is the only thing a tab strip can
+	 * use. One callback answering both would need a second argument changing what
+	 * the first means, which is the shape §4.1 already refuses for `display`
+	 * against `compute`.
+	 *
+	 * **File order, not grid order**, because a child drawn this way has no
+	 * placement — it fills the element it is given — so there is no grid order to
+	 * read and §8's rule stops at this boundary. That is also why the index is
+	 * enough to line these up with `config.children`, which is where a container
+	 * reads the name to show for each one.
+	 *
+	 * Absent on the same terms as `renderChildren`: a layout that gave this
+	 * component no children.
+	 */
+	childRegions?: readonly ((into: HTMLElement) => void)[];
+	/**
+	 * True where the container holding this component is already showing its
+	 * name, so drawing it again would say it twice.
+	 *
+	 * Set for a child reached through `childRegions`: a tab set's strip is drawn
+	 * from its children's own labels, so the tab and the region under it carry one
+	 * name between them. **A component that draws its own label must honour
+	 * this**, and Group is the only one that can be reached this way today.
+	 *
+	 * The twin of the placement rule, and the same sentence read for chrome rather
+	 * than geometry: a child a container shows one at a time has no placement of
+	 * its own *and* no heading of its own, because the container supplies both.
+	 *
+	 * A context flag rather than the author's `hideLabel`, because there is no
+	 * configuration in which the duplicate is wanted — and a setting with one
+	 * correct value in a context should be supplied by the code rather than
+	 * remembered by the author. Both fixtures had it written by hand, which is
+	 * exactly why nobody noticed the component was not doing it: the editor's add
+	 * row wrote no such flag, so a Group added into a tab set through the settings
+	 * tab named itself twice.
+	 *
+	 * Nothing is lost for assistive tech: the panel carries `aria-labelledby`
+	 * pointing at its tab, so the region is still named where a visible heading is
+	 * gone.
+	 */
+	parentShowsLabel?: boolean;
+	/**
+	 * Which of this component's alternatives the reader has open, and undefined
+	 * where they have not chosen.
+	 *
+	 * Held by the view rather than by the component, because the sheet re-renders
+	 * on every committed edit: state in the component's own closure would snap
+	 * back to the first alternative the moment a pool inside it was edited. Held
+	 * by the view rather than by the note, because it is this reader's posture and
+	 * not the character's data — Obsidian keeps its own folds out of markdown for
+	 * the same reason, and a container that stored anything would stop being a
+	 * container (SPEC §13).
+	 *
+	 * An index rather than a child's id, because it is the layout's own order that
+	 * the strip draws; a component clamps it, since a layout that lost a tab
+	 * leaves a reader pointing past the end.
+	 *
+	 * Named for what it is rather than as a general slot of view state: one
+	 * consumer earns no generalisation (PATTERNS §1), which is what made the
+	 * collapse's equivalent pair cheap to delete when the collapse went.
+	 */
+	activeTab?: number;
+	/** Report the reader opening one of this component's alternatives. */
+	onActivateTab?: (index: number) => void;
 }
 
 /**
@@ -368,6 +482,32 @@ export interface ComponentDefinition<
 > {
 	type: string;
 	storage: StorageKind;
+	/**
+	 * True where this container shows one child at a time rather than all of
+	 * them together, so **a child of it has no placement**: it fills the region
+	 * the container gives it, and the container's own `width × height` is the box
+	 * (SPEC §4.2).
+	 *
+	 * Declared rather than inferred, for exactly the reason `hasBuffer` is: the
+	 * alternative is the layout editor knowing that a Tab set shows one tab and a
+	 * Group shows every child. It is the one thing the editor cannot work out —
+	 * both containers hold `children`, both take the same context, and which of
+	 * `renderChildren` and `childRegions` a component reaches for is not
+	 * something anything outside it can see.
+	 *
+	 * What it decides is all editor-side, and all of it is wrong without it: a
+	 * grid schematic of children that all sit at the same position draws them
+	 * stacked on one another and reports every one as overlapping every other,
+	 * the four position fields on a tab's form edit numbers nothing reads, and
+	 * there is no way left to reorder the tabs. So the editor offers an ordered
+	 * list instead, and drops the position fields for a child of one.
+	 *
+	 * Absent is the common case — a container that places its children, which is
+	 * what a region is — and only the exception declares it. Meaningless on a
+	 * component that holds no children at all, and `contract.test.ts` refuses it
+	 * there rather than leaving it as a flag with no reading.
+	 */
+	showsOneChild?: boolean;
 	/** Parse this component's section body into data. */
 	read(body: string, config: TConfig): ReadResult<TData>;
 	/**
@@ -463,4 +603,93 @@ export interface ComponentDefinition<
 	 * fields (label, position) are handled by the editor itself.
 	 */
 	configFields: readonly ConfigFieldSpec[];
+}
+
+/**
+ * Whether this component holds other components rather than a value (SPEC §4.2).
+ *
+ * One function rather than four comparisons against a string. Where the shared
+ * thing is a policy rather than a behaviour it climbs §1's ladder in one step: a
+ * guard test over the call sites could only assert that they all still spell
+ * `'none'`, which is what one predicate says for free. The four are not
+ * interchangeable either — the sheet view and the harness use it to decide
+ * whether a section is read at all, and those two disagreeing is invisible in
+ * review, because appearance is reviewed in the harness.
+ *
+ * The equivalence is SPEC §4.1's, in words: "`none` is a container." So it is a
+ * consequence of the storage kind rather than a declaration of its own, and a
+ * storage-less component that was *not* a container would move the marker —
+ * which is the whole reason it is written down once. `contract.test.ts` names
+ * the roster, so a second container is a deliberate edit rather than a drift.
+ *
+ * Takes the definition or nothing, because every caller has just asked the
+ * registry for it and a layout may name a type that is not there. An unknown
+ * type is not a container: there is no component to say where its region goes.
+ *
+ * A plain boolean rather than a `component is ComponentDefinition` predicate,
+ * which was tried and is wrong: it narrows the *false* branch by excluding the
+ * whole type, so the two callers that keep the component when it is not a
+ * container were left holding `never`. A non-container is still a component.
+ */
+export function isContainer(
+	component: ComponentDefinition | undefined,
+): boolean {
+	return component?.storage === 'none';
+}
+
+/**
+ * Whether this component gives each of its children a placement of its own,
+ * rather than showing one at a time in a region they all fill.
+ *
+ * The complement of `showsOneChild`, named once rather than negated at each
+ * site. It was spelled four times before this, in two complementary pairs —
+ * `=== true` where a caller wanted the alternatives case and `!== true` where it
+ * wanted the placed one — and §1's policy tier is the argument: a guard test
+ * over them could only assert they still spell the same thing, which is what one
+ * predicate says for free. Two of the four were far enough apart that a rule
+ * growing a second clause would have been added to one and missed on the other,
+ * leaving a form that edits numbers nothing reads or an add row that writes a
+ * placement the form then hides.
+ *
+ * True for a leaf, which holds no children to place. Harmless rather than
+ * meaningful: every caller has already established it is looking at a container,
+ * and answering "yes, placed" for a component with nothing to place is the same
+ * answer as for the sheet itself.
+ */
+/**
+ * Whether a component should draw its own visible label.
+ *
+ * Two reasons not to, and a component that checked only the first drew its name
+ * twice: the layout asked for no label, or the container above it has already
+ * shown one. The second is `parentShowsLabel` — a tab strip is built from its
+ * children's labels, so the tab and the region under it carry one name between
+ * them.
+ *
+ * **One predicate because five components had to remember this and one bug is one
+ * of them forgetting.** Group honoured `parentShowsLabel` and Stat, Stat group,
+ * Pool, Track and Table did not, so a Table tab drew its heading under a strip
+ * that had just named it — in a different type treatment, which reads as an
+ * accident rather than a repeat. Enumerating the obligation in five files is how
+ * the sixth misses it, and `contract.test.ts` now holds every component that
+ * draws a label to asking this.
+ *
+ * **Only the visible label.** An `aria-label`, a `title` and a status message are
+ * not this: they name a control for someone who cannot see the strip, so they
+ * stay in every case. `stat-card.ts` has said so about its own `hideTitle` since
+ * before there were containers.
+ */
+export function showsOwnLabel(
+	// Intersected rather than the bare optional: `{ hideLabel?: boolean }` is a
+	// weak type, so TypeScript refuses a config that has no such key at all —
+	// which is Pool, the one component here that never had the setting.
+	config: ComponentConfig & { hideLabel?: boolean },
+	context: { parentShowsLabel?: boolean },
+): boolean {
+	return config.hideLabel !== true && context.parentShowsLabel !== true;
+}
+
+export function placesChildren(
+	component: ComponentDefinition | undefined,
+): boolean {
+	return component?.showsOneChild !== true;
 }

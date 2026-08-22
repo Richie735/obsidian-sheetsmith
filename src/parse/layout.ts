@@ -7,6 +7,7 @@
  */
 
 import { isName } from '../formula/expression';
+import { walkComponents } from './layout-walk';
 import { ComponentConfig, GridPosition, ResetBinding } from '../types';
 
 export class LayoutParseError extends Error {
@@ -203,8 +204,81 @@ function parseReset(value: unknown, where: string): ResetBinding[] | undefined {
 	return bindings.length > 0 ? bindings : undefined;
 }
 
-function parseComponent(value: unknown, index: number): ComponentConfig {
-	const where = `Component ${index + 1}`;
+/**
+ * How many containers a component may sit inside (SPEC §13).
+ *
+ * Two, so `Group(Group(Stat))` renders and a fourth level does not: a component
+ * this far in may not itself hold children. The bound is the whole reason this
+ * is buildable before the grid canvas — `preview-grid.ts` takes a flat list plus
+ * a column count, and a container's children *are* a flat list plus a column
+ * count, so the schematic is that module called once per open container rather
+ * than a tree-aware rewrite of it.
+ */
+const MAX_CONTAINER_DEPTH = 2;
+
+/**
+ * Whether a component this many containers deep may hold components of its own.
+ *
+ * Exported so the layout editor offers a destination exactly where the parser
+ * would accept one: the rule lives here, and the alternative is the editor
+ * carrying its own copy of the comparison and getting it the wrong way round
+ * once. `depth` is how many containers enclose the candidate parent, which is
+ * what `walkComponents` reports.
+ */
+export function mayHoldChildren(depth: number): boolean {
+	return depth < MAX_CONTAINER_DEPTH;
+}
+
+/**
+ * The components a container holds, each parsed exactly as a top-level one is.
+ *
+ * Checked here rather than by the component, for the reason `parseReset` is:
+ * `children` is shared config the plugin itself acts on, so §5's rule applies —
+ * the shape of the key is not forgiven the way its contents are. The parser has
+ * to walk it anyway, for each child's position, its id migration and the
+ * id-and-label uniqueness that keys note sections *globally*; and a refusal
+ * raised by the component would arrive after the parser had already accepted
+ * and walked the depth it was refusing.
+ *
+ * The depth check is **structural rather than type-aware** — a `children` key on
+ * a component already two containers deep, whatever its `type` — so this file
+ * still imports nothing from `src/components/` and the rule holds for a
+ * container type nobody has written yet.
+ */
+function parseChildren(
+	value: unknown,
+	where: string,
+	depth: number,
+): ComponentConfig[] | undefined {
+	if (value === undefined) return undefined;
+	if (!Array.isArray(value)) {
+		throw new LayoutParseError(`${where} "children" must be an array.`);
+	}
+	if (!mayHoldChildren(depth)) {
+		throw new LayoutParseError(
+			`${where} cannot hold components: it already sits inside ${MAX_CONTAINER_DEPTH} containers, and a container may hold containers only one level deep. Move these components up a level.`,
+		);
+	}
+	return value.map((child, index) =>
+		parseComponent(child, index, depth + 1, where),
+	);
+}
+
+/**
+ * `depth` is how many containers enclose this component, and `inside` names the
+ * one holding it, so a message about a child reads as a path rather than as
+ * "component 1" of a list the author cannot see.
+ */
+function parseComponent(
+	value: unknown,
+	index: number,
+	depth = 0,
+	inside?: string,
+): ComponentConfig {
+	const where =
+		inside === undefined
+			? `Component ${index + 1}`
+			: `${inside} component ${index + 1}`;
 	if (!isRecord(value)) {
 		throw new LayoutParseError(`${where} is not an object.`);
 	}
@@ -216,11 +290,21 @@ function parseComponent(value: unknown, index: number): ComponentConfig {
 			`${where} label cannot contain a line break, because it becomes a section heading.`,
 		);
 	}
-	const position = parsePosition(value.position, `${where} ("${label}")`);
-	const reset = parseReset(value.reset, `${where} ("${label}")`);
+	const named = `${where} ("${label}")`;
+	const position = parsePosition(value.position, named);
+	const reset = parseReset(value.reset, named);
+	const children = parseChildren(value.children, named, depth);
 	// Carry component-specific config fields (derived, max, columns, …)
 	// through untouched; each component validates its own.
-	return { ...value, id, type, label, position, ...(reset ? { reset } : {}) };
+	return {
+		...value,
+		id,
+		type,
+		label,
+		position,
+		...(reset ? { reset } : {}),
+		...(children ? { children } : {}),
+	};
 }
 
 export function parseLayout(source: string): Layout {
@@ -275,15 +359,26 @@ export function parseLayout(source: string): Layout {
 		);
 	}
 
-	const components = raw.components.map(parseComponent);
+	const components = raw.components.map((component, index) =>
+		parseComponent(component, index),
+	);
+
+	// Over the flattened walk, not the top level: containment scopes neither an
+	// id nor a label, because a label still keys a section in a flat note and an
+	// id is still what a formula writes. A child sharing a label with a
+	// component in another container is the same collision it has always been.
+	//
+	// The walk's order decides only which of two clashing ids takes the `_2`
+	// suffix below, and grid order is the order the reader would name them in.
+	const flattened = walkComponents(components).map((entry) => entry.config);
 
 	// Migrate before the duplicate check, and only ids that fail: two
 	// components genuinely sharing a usable id is an authoring error worth
 	// reporting, not something to quietly rename apart.
 	const usable = new Set(
-		components.filter((c) => isName(c.id)).map((c) => c.id),
+		flattened.filter((c) => isName(c.id)).map((c) => c.id),
 	);
-	for (const component of components) {
+	for (const component of flattened) {
 		// A component id is what formulas reference (SPEC §4.1), so it has to be
 		// a name the expression parser accepts. `isName` owns that question and
 		// carries the hyphen trap that made this rewrite necessary.
@@ -294,7 +389,7 @@ export function parseLayout(source: string): Layout {
 
 	const ids = new Set<string>();
 	const labels = new Set<string>();
-	for (const component of components) {
+	for (const component of flattened) {
 		if (ids.has(component.id)) {
 			throw new LayoutParseError(`Duplicate component id "${component.id}".`);
 		}
