@@ -75,11 +75,12 @@ So:
   use rather than guessed at, and the guard test is no longer cheaper than the
   module.
 
-**That ladder is written for behaviour. A policy number climbs it in one step.**
-Where the duplicated thing is a timing, a bound, or a row count, drift *is* the
-entire risk, so the two-consumer guard test costs more than the module and
-proves less. It can only assert that two constants are still equal, which is
-what one constant says for free. Extract on the second consumer there.
+**That ladder is written for behaviour. A policy climbs it in one step.**
+Where the duplicated thing is a timing, a bound, a row count, **a set, or a
+predicate**, drift *is* the entire risk, so the two-consumer guard test costs
+more than the module and proves less. It can only assert that the copies still
+say the same thing, which is what one name says for free. Extract on the second
+consumer there.
 `interaction/commit-window.ts` holds a single `GESTURE_COMMIT` because Pool and
 Track had both settled on 700ms in two places nothing kept in step;
 `formula/expression.ts` holds `roundSum` because a Table's totals row and the
@@ -105,6 +106,30 @@ that — the editor's labels are a `Record<ColumnType, string>`, so a new column
 type does not compile until it has a word, which is a guard nobody has to
 remember to run.
 
+**A predicate is the same case again, and it was practice before it was written
+here.** `types.ts` holds `isContainer` because four sites were each comparing
+`storage` to `'none'`, and `placesChildren` beside it because `showsOneChild` was
+spelled four times in two complementary pairs — `=== true` where a caller wanted
+one branch and `!== true` where it wanted the other. A guard test over those
+could only assert they still negate each other, which is what one name says for
+free; and the pairs were far enough apart that a rule growing a second clause
+would have been added to one and missed on the other. The tell is the same as for
+a number: **if the only thing a test could check is that the copies still agree,
+there should be one copy.**
+
+Two consequences of that worth stating, because both were learned the hard way in
+one diff. **Share the application, not just the fact.** `placesChildren` takes a
+definition, so `view/grid-cells.ts` holds `childIsPlaced` — the same predicate
+applied to a parent config, with the registry lookup the callers were otherwise
+each doing, including a `?? ''` that leant on the empty string never being a
+registered type. And **a third drawing of one model is a third consumer of every
+rule under it.** The layout editor is not a renderer of the sheet, so the check
+holding the two renderers to `renderGrid` does not reach it — and it had its own
+derivation of which placement governs an inner grid, which agreed with the sheet
+until a container was resized. `view/grid-cells.test.ts` now holds the rule to one
+reader by scanning for the flag's name, which is the check that class of bug
+earns: it was findable only by reading two files side by side (§10).
+
 Extraction goes to a module named for the behaviour, never to a component. **A
 component must never import from another component** [checked], because that
 breaks the isolation the whole contract rests on: nothing outside a component
@@ -129,7 +154,8 @@ src/
   commands.ts
   settings.ts
   types.ts         the component contract
-  parse/           note and layout parsing. Imports nothing from obsidian [checked]
+  parse/           note and layout parsing, and the ordered walk over a parsed
+                   layout. Imports nothing from obsidian [checked]
   formula/         expression parsing and evaluation. Same rule [checked]
   interaction/     gesture vocabulary shared by every control
   components/      one file per component, plus the painters they share. No
@@ -210,17 +236,27 @@ Every component follows the same order. A reader who knows one knows them all.
 2. **Imports**, shared modules first, then `../types`.
 3. **Constants**, each with the reason it holds that value.
 4. **`XConfig extends ComponentConfig`**, exported, with `type: 'x'` as a
-   literal. Every optional key carries a doc comment saying what it does *to the
-   note or the card*, not what it is.
+   literal. A key carries a doc comment where it has something to say that its
+   own name and its `configFields` description do not — what it does *to the
+   note or the card*, not what it is. **Where the name already carries it, the
+   comment is deleted**, which is §9's rule and the one that governs: the `hide*`
+   flags are named there as the clear cases, `doc-comments.test.ts` [checked]
+   fails a comment that only repeats its description, and five components across
+   the catalog now declare one of those flags bare. A container declares its one
+   key bare, which is what this looks like at the end. *(It had three when this
+   was written; `collapsible` and `startCollapsed` went with the collapse,
+   SPEC §13.)*
 5. **`XData`**, exported, doc-commented.
 6. **Private helpers**: validation, formatting, storage spelling.
 7. **`export const x: ComponentDefinition<XConfig, XData>`**, members in this
    order [judgement]:
-   `type`, `storage`, `formulaFields`, `configFields`, `read`, `scopeValues`,
-   `scopeRows`, `write`, `hasBuffer`, `applyReset`, `render`.
+   `type`, `storage`, `showsOneChild`, `formulaFields`, `configFields`, `read`,
+   `scopeValues`, `scopeRows`, `write`, `hasBuffer`, `applyReset`, `render`.
    Contract first, then the data path in the order it runs, then rendering last
-   because it is the longest. `scopeRows` sits beside `scopeValues` because it is
-   the same job read the other way: one publishes the component's names, the
+   because it is the longest. `showsOneChild` sits beside `storage` because it is
+   the same kind of fact: what this component is structurally, before anything
+   about its data or its drawing. `scopeRows` sits beside `scopeValues` because it
+   is the same job read the other way: one publishes the component's names, the
    other the rows that have none.
 
 Checked in `contract.test.ts`, along with the rule that a component declares
@@ -390,8 +426,8 @@ A component inventing its own is the failure mode to watch for.
 - `default` on booleans; a value matching its default is omitted from the config
   and `visibleWhen` matches the *effective* value, so a condition naming a
   default is satisfied by absence.
-- Never redeclare `id`, `type`, `label`, `position`, `reset` [checked]. The
-  editor owns those.
+- Never redeclare `id`, `type`, `label`, `position`, `reset`, `children`
+  [checked]. The editor owns those.
 - Declaring `applyReset` obliges `formulaFields` to include `reset.*.to`
   [checked]. Forgetting it leaves the reset button dead with nothing to say so.
 
@@ -501,4 +537,6 @@ that keeps solved rows stops being read.
 | Two responsibilities in one file | `layout-editor.ts` | Deliberately deferred, not overlooked. The split waits for the M4 workspace view, which rewrites this module anyway; splitting it twice would be the waste. It has tests now, so the move will be guarded when it comes. |
 | A pointer-press helper is redeclared per `describe` block | `components/*.test.ts` | Three copies of `press` inside `pool.test.ts`, one more each in `stat.test.ts` and `track.test.ts`, over about thirty `pointerdown` dispatch sites. Past §1's extract-at-three by any reading, and `src/test/` is the folder for it. Deferred because it is a mechanical change across four test files whose only safe review is reading every call site, which does not belong inside a feature diff — and because the drift it risks is loud: an event missing `button: 0` makes a gesture test fail, not pass quietly. The `hold`/`release` pair added beside them is a different gesture, not a fourth copy, and should be extracted with them rather than before them. |
 | A test mirror of the view diverges from it on one branch | `view/reset-flow.test.ts` | Its trigger loop iterates every prepared component, where `SheetView.renderTriggers` filters `entry.error === null` before binding one. The env it builds now goes through the view's own `publishedComponent`, so the two agree about publication; this last branch is about which components a trigger reaches. Unobservable today, because no fixture there fails a read — which is also why it survived: a mirror's divergence is only ever visible on a case the mirror does not have. Deferred rather than fixed because the change is one line in a file whose whole job is to be an independent check, and adding a failing-read fixture to prove it is a diff of its own. The file's own header states the rule it is breaking: if the two disagree, this file is the copy that is wrong. |
+| No component has a boolean that redraws the editor, so the redraw's focus path is only half driven | `src/settings.test.ts`, `components/*.ts` | A boolean controlling another field's `visibleWhen` rebuilds the settings tab, and the tab restores focus by a `data-sheetsmith-focus` token. `Collapsible` was the only such boolean anywhere, and it went with the group's collapse (SPEC §13); the two `visibleWhen`s left are both keyed on selects, which the sibling test drives. So the test asserts the precondition — a boolean's checkbox carries a token that addresses it — rather than pressing one and watching focus survive. That is §10's `hold-repeat` failure with the polarity reversed: there a path had callers that never exercised it, here it has no caller at all. Not fixed by inventing a boolean a component does not need, nor by registering a fake component, which would mean the registry opening a door for a test. It closes when a component next gains a boolean that controls visibility, and the test goes back to driving it. |
+| The view's share of a container's tab state has no test | `view/sheet-view.ts` | Three lines with no logic in them — the `Map`, the `clear()` on a file change, and the get/set handed to a container's context — and none of it drivable, because `SheetView` cannot be constructed without a workspace. The component's half *is* tested: `tab-set.test.ts` drives the first tab, the reader's press, the clamp, and the state surviving a rebuild. What is untested is that the view supplies it and drops it, and the second is a real claim: forget the `clear()` and a reopened note inherits the previous note's tab. **This row existed for the collapse's identical `Map` and was retired when the collapse went; Tab set brought the same three lines back, so it is back.** Not extracted the way `cell-focus.ts` was, because that carried logic with a trap in it and this is a `Map` — a module here would test that a `Map` works, behind an abstraction with one caller (§1). The fix is whatever makes `SheetView` constructible in a test, which is a change to the view rather than to this feature; until then it is a look criterion in `docs/features/tab-set.md`. |
 | The declared `lib` is behind the code that compiles against it | `tsconfig.json`, three shipping files | `lib` is `ES2021` while `scrub.ts`, `trigger-list-field.ts` and `function-library-field.ts` all call `Array.prototype.at`, which is ES2022. It type-checks only because `@types/node` ships a compatibility shim declaring `at` on `Array`, so `npm run build` is more permissive than `tsconfig.json` claims and an editor resolving types without that package reports errors the build does not. No runtime consequence: esbuild only emits, and `minAppVersion` 1.9.0 is long past the Chromium that shipped `.at`. The fix is to align `lib` and esbuild's `target` on ES2022, which is a project-wide compiler decision rather than something to change while shipping other work. |
