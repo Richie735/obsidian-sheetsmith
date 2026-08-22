@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { LayoutParseError, parseLayout, serialiseLayout } from './layout';
+import { readFileSync } from 'node:fs';
+import { LayoutParseError, mayHoldChildren, parseLayout, serialiseLayout } from './layout';
+import { componentsInside, walkComponents } from './layout-walk';
+import { ComponentConfig } from '../types';
 
 const VALID = JSON.stringify({
 	name: 'DnD 5e Caster',
@@ -467,5 +470,366 @@ describe('parseLayout: buffer clears', () => {
 	it('round-trips a buffer-only binding', () => {
 		const layout = parseLayout(withReset({ trigger: 'Downtime', buffer: 'clear' }));
 		expect(parseLayout(serialiseLayout(layout))).toEqual(layout);
+	});
+});
+
+/*
+ * Components inside components (SPEC §4.2, §13).
+ *
+ * `children` is shared config the parser acts on, so the depth bound, the
+ * flattened uniqueness checks and the ordered walk are all this file's
+ * business — a refusal raised anywhere later would arrive after the parser had
+ * already accepted and walked the depth it was refusing.
+ */
+describe('parseLayout: components inside components', () => {
+	const at = (row: number, col = 1, width = 2) => ({
+		col,
+		row,
+		width,
+		height: 1,
+	});
+
+	/** A layout of one Group holding whatever it is given. */
+	const withChildren = (children: unknown) =>
+		JSON.stringify({
+			name: 'L',
+			components: [
+				{
+					id: 'outer',
+					type: 'group',
+					label: 'Outer',
+					position: at(1),
+					children,
+				},
+			],
+		});
+
+	const leaf = (id: string, row = 1) => ({
+		id,
+		type: 'stat',
+		label: id.toUpperCase(),
+		position: at(row),
+	});
+
+	it('parses a child exactly as it parses a top-level component', () => {
+		const layout = parseLayout(withChildren([leaf('str')]));
+		expect(layout.components[0]?.children).toEqual([
+			{ id: 'str', type: 'stat', label: 'STR', position: at(1) },
+		]);
+	});
+
+	it('holds a child to the same checks a top-level component gets', () => {
+		// Position, the line-break rule on a label, and the reset shape: all of
+		// them run over a child because the same function parses it.
+		expect(() =>
+			parseLayout(withChildren([{ ...leaf('str'), position: { col: 0, row: 1, width: 1, height: 1 } }])),
+		).toThrow(/col/);
+		expect(() =>
+			parseLayout(withChildren([{ ...leaf('str'), label: 'S\ntr' }])),
+		).toThrow(/line break/);
+		expect(() =>
+			parseLayout(withChildren([{ ...leaf('str'), reset: { trigger: 'Long rest' } }])),
+		).toThrow(LayoutParseError);
+	});
+
+	it('names the container in a message about one of its children', () => {
+		// "Component 1" of a list the author cannot see is not an address. The
+		// message has to read as a path, or a broken child inside a group of six
+		// is a hunt.
+		expect(() =>
+			parseLayout(withChildren([{ ...leaf('str'), position: undefined }])),
+		).toThrow(/Outer.*component 1/s);
+	});
+
+	it('accepts a container inside a container', () => {
+		// §13's motivating arrangement: an outer Group of Groups, each holding a
+		// card and a table. The deepest legal component is three levels down.
+		const layout = parseLayout(
+			withChildren([
+				{
+					id: 'inner',
+					type: 'group',
+					label: 'Inner',
+					position: at(1),
+					children: [leaf('str')],
+				},
+			]),
+		);
+		expect(layout.components[0]?.children?.[0]?.children?.[0]?.id).toBe('str');
+	});
+
+	it('refuses a third container, naming the component and the rule', () => {
+		const source = withChildren([
+			{
+				id: 'inner',
+				type: 'group',
+				label: 'Inner',
+				position: at(1),
+				children: [{ ...leaf('deep'), children: [leaf('str')] }],
+			},
+		]);
+		expect(() => parseLayout(source)).toThrow(LayoutParseError);
+		expect(() => parseLayout(source)).toThrow(/"DEEP"/);
+		expect(() => parseLayout(source)).toThrow(/one level deep/);
+	});
+
+	it('refuses it whatever type the component is', () => {
+		// Structural rather than type-aware, which is what keeps src/parse/ free
+		// of any import from src/components/ and makes the rule hold for a
+		// container type nobody has written yet.
+		const source = withChildren([
+			{
+				id: 'inner',
+				type: 'tab-set-nobody-has-written',
+				label: 'Inner',
+				position: at(1),
+				children: [{ ...leaf('deep'), type: 'pool', children: [leaf('str')] }],
+			},
+		]);
+		expect(() => parseLayout(source)).toThrow(/one level deep/);
+	});
+
+	it('counts containers, not tab sets, so a nested one turns on its tabs', () => {
+		/*
+		 * The pair the depth rule actually draws, and it is easy to state wrongly:
+		 * this feature's own acceptance criteria said "a Tab set inside a Tab set is
+		 * refused", which contradicted the scope bullet governing it and the code
+		 * both. The rule counts *containers* — so the question is never whether the
+		 * outer thing is a tab set, it is whether the tabs are containers too.
+		 *
+		 * Typed as tab sets deliberately, even though this file may not import the
+		 * registry: the depth check is structural, so these are only strings to it,
+		 * and naming them is what makes the case legible to a reader who arrives
+		 * from the criterion.
+		 */
+		const nested = (tab: unknown) =>
+			withChildren([
+				{
+					id: 'inner',
+					type: 'tab-set',
+					label: 'Inner',
+					position: at(1),
+					children: [tab],
+				},
+			]);
+
+		// Tabs that are cards: the inner tab set is an ordinary second-level
+		// container and there is no third.
+		const cards = parseLayout(nested(leaf('str')));
+		expect(
+			cards.components[0]?.children?.[0]?.children?.[0]?.id,
+		).toBe('str');
+
+		// Tabs that are containers: those tabs are the third container.
+		expect(() =>
+			parseLayout(nested({ ...leaf('grp'), type: 'group', children: [leaf('str')] })),
+		).toThrow(/one level deep/);
+	});
+
+	it('refuses a children key that is not a list', () => {
+		expect(() => parseLayout(withChildren({}))).toThrow(/"children"/);
+		expect(() => parseLayout(withChildren('str'))).toThrow(/"children"/);
+	});
+
+	it('leaves the key absent where a component has none', () => {
+		// Every layout in the fixtures and the vault renders exactly as it did,
+		// which is what an absent key has to mean.
+		const layout = parseLayout(VALID);
+		expect('children' in (layout.components[0] ?? {})).toBe(false);
+		expect(serialiseLayout(layout)).not.toContain('children');
+	});
+
+	it('round-trips a nested layout', () => {
+		const layout = parseLayout(
+			withChildren([
+				{
+					id: 'inner',
+					type: 'group',
+					label: 'Inner',
+					position: at(1),
+					children: [leaf('str')],
+				},
+			]),
+		);
+		expect(parseLayout(serialiseLayout(layout))).toEqual(layout);
+	});
+
+	it('preserves unknown keys on a child, as it does on a top-level component', () => {
+		const layout = parseLayout(
+			withChildren([{ ...leaf('str'), derived: 'mod(str)' }]),
+		);
+		const child = layout.components[0]?.children?.[0] as unknown as Record<
+			string,
+			unknown
+		>;
+		expect(child.derived).toBe('mod(str)');
+	});
+
+	it('refuses a child colliding with a component in another container', () => {
+		// Labels key note sections in a flat note, so containment scopes
+		// neither a label nor an id: this is the same collision it always was.
+		const collide = (key: 'id' | 'label') =>
+			JSON.stringify({
+				name: 'L',
+				components: [
+					{
+						id: 'left',
+						type: 'group',
+						label: 'Left',
+						position: at(1),
+						children: [{ ...leaf('str'), [key]: key === 'id' ? 'shared' : 'Shared' }],
+					},
+					{
+						id: 'right',
+						type: 'group',
+						label: 'Right',
+						position: at(2),
+						children: [{ ...leaf('dex', 2), [key]: key === 'id' ? 'shared' : 'Shared' }],
+					},
+				],
+			});
+		expect(() => parseLayout(collide('id'))).toThrow(/Duplicate component id/);
+		expect(() => parseLayout(collide('label'))).toThrow(
+			/Labels key note sections/,
+		);
+	});
+
+	it('migrates a nested id against the whole flattened set', () => {
+		// Not against its siblings: the id is what a formula writes, and a
+		// formula does not know what a name is nested inside.
+		const layout = parseLayout(
+			JSON.stringify({
+				name: 'L',
+				components: [
+					{ id: 'armour_class', type: 'stat', label: 'A', position: at(1) },
+					{
+						id: 'outer',
+						type: 'group',
+						label: 'Outer',
+						position: at(2),
+						children: [
+							{ id: 'armour-class', type: 'stat', label: 'B', position: at(1) },
+						],
+					},
+				],
+			}),
+		);
+		expect(layout.components[1]?.children?.[0]?.id).toBe('armour_class_2');
+	});
+});
+
+describe('walkComponents', () => {
+	const block = (
+		id: string,
+		row: number,
+		col: number,
+		children?: ComponentConfig[],
+	): ComponentConfig => ({
+		id,
+		type: children ? 'group' : 'stat',
+		label: id,
+		position: { col, row, width: 1, height: 1 },
+		...(children ? { children } : {}),
+	});
+
+	/*
+	 * File order and grid order deliberately disagree at both levels, because
+	 * that is the only shape where "grid reading order" and "the order somebody
+	 * happened to type them" are distinguishable.
+	 */
+	const LAYOUT = [
+		block('last', 3, 1),
+		block('group', 2, 1, [block('inner_second', 1, 2), block('inner_first', 1, 1)]),
+		block('first', 1, 1),
+	];
+
+	it('reads each level in grid order, children where their container sits', () => {
+		expect(walkComponents(LAYOUT).map((entry) => entry.config.id)).toEqual([
+			'first',
+			'group',
+			'inner_first',
+			'inner_second',
+			'last',
+		]);
+	});
+
+	it('reports depth, parent, and the list a component lives in', () => {
+		const inner = walkComponents(LAYOUT)[2];
+		expect(inner?.depth).toBe(1);
+		expect(inner?.parent?.id).toBe('group');
+		expect(inner?.siblings).toBe(LAYOUT[1]?.children);
+	});
+
+	it('does not reorder the layout it was given', () => {
+		// A render must not rewrite its own input, and the editor removes
+		// through `siblings` by identity.
+		walkComponents(LAYOUT);
+		expect(LAYOUT.map((config) => config.id)).toEqual([
+			'last',
+			'group',
+			'first',
+		]);
+	});
+
+	it('reads the same order descending as it does flattened', () => {
+		// The claim the sheet rests on, and it is not a restatement: the trigger
+		// loop and the read-every-section pass iterate the flat walk, while the
+		// grid draws by descending one level at a time through
+		// `componentsInside`. If those two orders ever differ, the sheet renders
+		// its cards in an order the name table and the tab order do not have —
+		// and the flat walk is the one nothing draws, so nothing would show it.
+		const walk = walkComponents(LAYOUT);
+		const descend = (parent: ComponentConfig | null): string[] =>
+			componentsInside(walk, parent).flatMap((config) => [
+				config.id,
+				...descend(config),
+			]);
+		expect(descend(null)).toEqual(walk.map((entry) => entry.config.id));
+	});
+
+	it('groups each level by its own container', () => {
+		// Vacuity guard on the test above: a `componentsInside` that returned
+		// everything at every level would still flatten to the same sequence for
+		// a one-container layout read depth first.
+		expect(componentsInside(walkComponents(LAYOUT), null).map((c) => c.id)).toEqual(
+			['first', 'group', 'last'],
+		);
+		const group = LAYOUT[1] as ComponentConfig;
+		expect(
+			componentsInside(walkComponents(LAYOUT), group).map((c) => c.id),
+		).toEqual(['inner_first', 'inner_second']);
+	});
+
+	it('imports nothing from src/components to decide any of it', () => {
+		// The depth check is structural rather than type-aware, which is what
+		// keeps this file pure: five callers share this order, and one of them is
+		// the layout editor, which does know the registry. The rule holds for a
+		// container type nobody has written yet.
+		const source = readFileSync(new URL('./layout.ts', import.meta.url), 'utf8');
+		const imports = [...source.matchAll(/^import .*?from '([^']+)';$/gm)].map(
+			(match) => match[1],
+		);
+		expect(imports.length).toBeGreaterThan(0);
+		expect(imports.filter((path) => path?.includes('components'))).toEqual([]);
+	});
+
+	it('gives the same order for a layout that has been through the parser', () => {
+		// The five callers all walk a parsed layout, so the order has to survive
+		// parsing — which normalises shared config and could reorder `children`
+		// without anything else noticing.
+		const parsed = parseLayout(JSON.stringify({ name: 'L', components: LAYOUT }));
+		expect(walkComponents(parsed.components).map((entry) => entry.config.id)).toEqual(
+			walkComponents(LAYOUT).map((entry) => entry.config.id),
+		);
+	});
+});
+
+describe('mayHoldChildren', () => {
+	it('permits two containers and no more', () => {
+		// Exported so the layout editor offers a destination exactly where the
+		// parser would accept one. The comparison lives once.
+		expect(mayHoldChildren(0)).toBe(true);
+		expect(mayHoldChildren(1)).toBe(true);
+		expect(mayHoldChildren(2)).toBe(false);
 	});
 });
