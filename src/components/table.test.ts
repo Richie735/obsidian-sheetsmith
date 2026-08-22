@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { table, TableConfig, TableData } from './table';
 import { closePopover, LONG_PRESS } from '../ui/popover';
 import { UNRESOLVED_DELAY } from '../interaction/editable';
-import { FOCUSABLE } from '../view/sheet-view';
+import { FOCUSABLE } from '../view/cell-focus';
 import {
 	callsFrom,
 	makeFieldExplainer,
