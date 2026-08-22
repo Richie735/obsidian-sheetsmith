@@ -14,6 +14,7 @@ import {
 	ReadResult,
 	ScopeEntry,
 	ScopeValues,
+	showsOwnLabel,
 } from '../types';
 import { renderStatCard, toDerived } from './stat-card';
 
@@ -199,8 +200,9 @@ export const statGroup: ComponentDefinition<StatGroupConfig, StatGroupData> = {
 				? config.align
 				: 'start';
 
-		// The group's name is authored data; the sheet must not drop it.
-		if (config.hideLabel !== true) {
+		// The group's name is authored data; the sheet drops it only where the
+		// layout said to, or where a container above has already shown it.
+		if (showsOwnLabel(config, context)) {
 			const label = doc.createElement('div');
 			label.classList.add('sheetsmith-stat-group-label');
 			// A heading belongs over the thing it heads. Left unset it follows

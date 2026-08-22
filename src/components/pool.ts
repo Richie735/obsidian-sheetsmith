@@ -27,6 +27,7 @@ import {
 	ResetResult,
 	ScopeEntry,
 	ScopeValues,
+	showsOwnLabel,
 } from '../types';
 import { bindEditable, EditableHandle } from '../interaction/editable';
 import { formatDerived } from './stat-card';
@@ -634,10 +635,15 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 		card.classList.add('sheetsmith-pool');
 		container.appendChild(card);
 
-		const label = doc.createElement('div');
-		label.classList.add('sheetsmith-pool-label');
-		label.textContent = config.label;
-		card.appendChild(label);
+		// A pool has no `hideLabel` of its own, so this drew unconditionally until
+		// a container that names its children arrived. The accessible name below is
+		// untouched either way.
+		if (showsOwnLabel(config, context)) {
+			const label = doc.createElement('div');
+			label.classList.add('sheetsmith-pool-label');
+			label.textContent = config.label;
+			card.appendChild(label);
+		}
 
 		// Announces once per commit, whether the change came from the keyboard,
 		// a step button, or a scrub. Attached before anything writes to it,
