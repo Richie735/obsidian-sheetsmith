@@ -39,6 +39,16 @@ mkdirSync(outDir, { recursive: true });
 const DEFAULTS = [
 	{ name: 'sheet-light', query: 'surface=sheet&theme=light', size: '1400,900' },
 	{ name: 'sheet-dark', query: 'surface=sheet&theme=dark', size: '1400,900' },
+	{
+		// A second, roomier width for the alignment a container's design rests on:
+		// a card inside a group lining up column for column with a card outside
+		// it. Added when the default 1400 could not show it at all — every
+		// four-column group stacked there, under a threshold since corrected — and
+		// kept because tracks of 148px are easier to check by eye than 106px ones.
+		name: 'sheet-wide',
+		query: 'surface=sheet&theme=light',
+		size: '1900,1100',
+	},
 	{ name: 'sheet-narrow', query: 'surface=sheet&theme=dark&width=380', size: '520,1400' },
 	{ name: 'sheet-empty', query: 'surface=sheet&theme=dark&state=empty', size: '1400,900' },
 	{ name: 'sheet-error', query: 'surface=sheet&theme=dark&state=broken', size: '1400,900' },
