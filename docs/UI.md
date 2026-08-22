@@ -104,6 +104,36 @@ A knob is public API once shipped. Renaming it breaks someone's snippet.
   split in a wide window must reflow too, and a media query cannot see that.
   `.sheetsmith-view` sets `container-type: inline-size`; the grid collapses to a
   column under 480px of *container* width.
+- **A container is its own reflow context** (`SPEC` §8). A Group four columns
+  wide inside a wide pane is narrow even though the sheet is not, so
+  `.sheetsmith-subgrid` carries `container-type` and the grid inside it collapses
+  on its own width. **One rule, not one number: 40px a column**, which is the
+  sheet's own 480px across twelve columns. Twelve columns still collapse at
+  480px; four collapse at 160px.
+- **A threshold calibrated for one column count is not one rule.** This bullet
+  used to say the container answered the sheet's 480px, and defended it as one
+  threshold rather than two. It was one number applied to twelve questions, and
+  the spread was 7x: a container collapsed while its columns were still 236px
+  wide at two columns, and was allowed down to 32.7px at twelve. A two-column
+  container could not place two children side by side at any pane width up to
+  2400px, and a four-column one flipped between stacked and side-by-side across
+  1489px, which reads as broken rather than as responsive. Recorded because the
+  reasoning was the failure, not the number: whenever a threshold is reused at a
+  different scale, check what it means there before reusing it.
+- **A container also follows the sheet down.** Two conditions, because they
+  answer two questions: "are my own columns too narrow" and "has the sheet given
+  up being a grid". The second cannot be derived from the first — once the sheet
+  is one column each component has the whole pane, so a two-column container is
+  221px on a 1400px pane where it must keep its grid and 348px on a 380px pane
+  where it must not. **The narrow case is the wider one**, so no threshold on a
+  container's own width can separate them. `.sheetsmith-view` carries
+  `container-name: sheetsmith-sheet` and the inner grids query it by name.
+- **A rule a container query cannot compute is tabulated, not approximated.** A
+  query can neither multiply nor read a custom property, and
+  `repeat(auto-fit, minmax(…))` renumbers the columns and breaks explicit
+  placement — so the view stamps the column count as a class and `sheet.css`
+  writes the formula out once per count. `styles.test.ts` holds every entry to
+  the rule, so a table cannot drift off the thing it tabulates.
 - **Media queries are for user preference and device capability only**:
   `prefers-reduced-motion`, `forced-colors`, pointer coarseness. Never for space.
 - **Cascade order is load-bearing.** `@container` adds no specificity, so an
@@ -220,6 +250,8 @@ panel beside a row of cards reads as loose chrome floating on the page.
 | Thing | Where | Used by |
 | --- | --- | --- |
 | The card | `.sheetsmith-stat`, `.sheetsmith-stat-single` | Stat, Stat group, Pool |
+| A heading over a region | `.sheetsmith-group-heading` | Group, Tab set |
+| A strip of alternatives over a region | `.sheetsmith-tabset-strip` | Tab set's tabs |
 | The level ring | `paintLevelRing`, `.sheetsmith-table-cycle` | Table columns, Track marks |
 | The editing gesture | `editable.ts` | every stored value on a sheet |
 | Secondary text | `.sheetsmith-stat-abbreviation` | Stat group |
@@ -272,6 +304,16 @@ ring's measurements through `--sheetsmith-table-control`, because two glyph
 buttons in one table row must not measure differently under the same finger, and
 that number is the whole of the agreement: two consumers earn duplication, not a
 module (`PATTERNS.md` §1). This table gains a class when a third appears.
+
+**One hairline under a container's chrome, whichever container drew it**
+[judgement]. A Group's heading carries the rule; a Tab set's strip carries the
+same rule in the same place, and `.sheetsmith-tabset > .sheetsmith-group-heading`
+zeroes the heading's own so the two never stack. A tab set drew both at first —
+a rule under its name and a second under its strip, ~37px apart — and beside a
+group of the same declared size it read as a heavier, more built-up object, which
+is this section's opening sentence one level up. The heading class is shared for
+the same reason the painter below is: two headings of the same rank must not
+measure differently.
 
 **When a card and a cell do the same job, they share the painter** [judgement].
 A single-level mark on a card and the same mark in a table cell must go through
@@ -354,6 +396,10 @@ that keeps solved rows stops being read.
 | A value the file already holds is never marked as wrong | `editor/list-fields.ts`, `editor/layout-editor.ts` | Every inline error in the editor fires from a `change` handler, so validation happens to what is typed and never to what is loaded. A layout arriving with a value its component refuses — a row key that is not a name, a totalled column key with a space in it, a duplicate row label — draws a field that looks perfectly normal beside a card rendered entirely as an error, and a layout file is a thing people hand-edit and share, so arriving invalid is its ordinary way of being wrong. Visible now that `state=broken` reaches the settings tab. The fix is to run each list field's own rule over its stored value as it renders and seed `context.errors` from it, which is the same rule in the same place rather than a second copy of it. |
 | A flag outlives the control that sets it | `editor/list-fields.ts` | **Show a total** and **Publish per row** are offered only on the column types that can carry them, but changing a column's type leaves the flag where it was. Tick either on a number column, switch it to text, and the layout still holds it while the checkbox that would clear it is gone: the card renders a configuration error and the form offers no way out of it except guessing that the type has to go back. The total's own message even says "or turn the total off", naming a control that is no longer on screen. Either clear a flag the new type cannot carry, or keep offering the control while the flag is set. Found reviewing publication, which inherited the behaviour rather than introduced it. |
 | An error card renders without its component name | `components/stat.ts`, `view/sheet-view.ts` | The view prefixes a failed `read` with the component's label, so a broken card says "Armour class: …". A failure raised in `render` instead — a Stat with an unusable key and no stored value yet — carries no prefix, and the error replaces the whole card including its heading, so nothing on screen says which component failed. The same misconfiguration is labelled or not depending on whether the note happens to have a body for it, which is visible in `sheet-error.png` with the two cards side by side. Fix it in the view, which already composes the prefix, rather than in each component, or the labelled path ends up saying it twice. |
+| `hideLabel` drops a group's children a heading's height below its siblings' | `components/group.ts`, `.sheetsmith-group-heading` | Measured: two sibling groups on one inner grid row, one labelled and one not, put their first cards 39px apart — exactly the heading's height. In the harness sample "Tool bonus" floats a whole heading above "Attack bonus". `stat-card.ts` already answers this exact question for cards in a row, and its answer is the shape of the problem: `reserveAbbreviation` keeps an empty slot "so cards in a row share a baseline. Defaults to true; a lone card has no row to align with, and an empty slot there is just a gap." So reserving is right beside a labelled sibling and wrong for a group standing alone, and a group cannot tell which it is — the three fixes are always reserve (a gap over a lone group), never reserve (today), or let something that knows the row decide, which means a config key or a new `RenderContext` member for one appearance case. **Not the same call as two headings in one row putting their hairlines at the same height**: there both are a heading the author asked for, so differing heights were unambiguously wrong, where here the author asked for no heading and the space arguably should differ. Left as a design decision rather than picked here. The sample keeps the mixed pair on purpose, so the cost of the flag is on screen. **Worse once stacked**: at 380px every level is one column, so an unlabelled group's cards follow the previous sibling's with nothing between them and read as that sibling's — a heading is the only thing that says a new region starts here, and `hideLabel` removes it. Whatever fixes the baseline should answer this too. |
+| An open container's form sits between it and its children | `editor/layout-editor.ts` | A form goes directly under the row it belongs to, which is what every component's does, so opening a container puts its whole form — around 500px for a Group with a schematic in it — between its row and the indented rows of what it holds. The disclosure relationship is furthest apart exactly when the container is being worked on. The indent chain itself is sound: measured, the row and its form share a left edge, and at one level in the form's first field sits within 3px of its row's name, so the accent bracket reads as continuous. Not reordered, because each way out costs more than it buys — children above the form inverts the convention every other component follows, the form after the whole subtree puts it further from its own row, and nesting the child rows inside the form would put a child's edit and remove controls inside its parent's configuration. Deferred to the M4 workspace view, which replaces this form entirely (`SPEC` §12) and is where a tree-shaped editor gets designed rather than patched. |
 | §9 names Track as a user of the level ring | §9 above, `components/track.ts` | `paintLevelRing`'s only callers are `table.ts` and `editor/list-fields.ts`. Track imports `levelGlyph`, `levelName` and `parseLevel` and paints its own segments, which render as rounded squares against the ring's circles. The two shapes probably *should* differ, since a track counts marks across segments while a ring cycles one value, so the fix is the table rather than the code. As written, §9 promises a shared painter that does not exist, which is the drift it exists to warn about. |
+
+| A disabled control looks exactly like an enabled one | `editor/layout-editor.ts`, `styles/editor.css` | The tab-order arrows are the first control in the plugin to call `setDisabled` on an icon button — the ↑ on the first tab and the ↓ on the last. Obsidian's own CSS carries `is-disabled` rules for `.setting-item.mod-action` and `.checkbox-container` and none for `.clickable-icon`, and the plugin styles no disabled state at all, so all six arrows render identically in the harness. Behaviour is right either way: the buttons carry `disabled` and `moveItem` refuses an out-of-range move, which a test asserts. What is missing is the paint, and UI §6's rule read backwards — state in the DOM that never reaches the paint is half a control. Not fixed here because the smaller half of the fix is four lines of `editor.css` and the larger half is a question this pass should not answer alone: the plugin's three *other* reorder controls never disable their ends at all, relying on the same range guard, so styling this one makes it the odd one out and styling all four is a change to controls this feature never touched. Found only because a missing stub glyph was fixed and the control became reviewable for the first time. |
 
 Add a row when a review finds a gap it is not fixing in the same pass.
