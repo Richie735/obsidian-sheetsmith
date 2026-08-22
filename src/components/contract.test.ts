@@ -1,3 +1,6 @@
+import { readdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
 	getComponent,
@@ -225,6 +228,50 @@ describe('component registry', () => {
 		const message = unknownComponentMessage('skill-card');
 		expect(message).toContain('"skill-card"');
 		for (const type of types) expect(message).toContain(type);
+	});
+});
+
+describe('a component that draws a label asks whether it should', () => {
+	/*
+	 * Two reasons a component must not draw its visible label: the layout asked
+	 * for none, or a container above it has already shown one. Group honoured the
+	 * second and the other five did not, so a Table tab drew its heading under a
+	 * strip that had just named it — in a different type treatment, so it read as
+	 * an accident rather than a repeat.
+	 *
+	 * A source scan rather than a render sweep, because rendering every component
+	 * registry-wide needs a DOM this file deliberately does not have (`setIcon`
+	 * reaching the stub is what made three node-environment files fail on import
+	 * once). What it holds is the obligation itself: if a file declares a
+	 * `ComponentDefinition<…>` and reads `config.label`, it asks `showsOwnLabel`.
+	 * That is the enumeration the bug came from, checked in the one place that
+	 * cannot be forgotten rather than remembered in six.
+	 */
+	const HERE = dirname(fileURLToPath(import.meta.url));
+
+	/** Files declaring a component, which `index.ts` and the painters do not. */
+	function componentFiles(): { name: string; source: string }[] {
+		return readdirSync(HERE)
+			.filter((name) => name.endsWith('.ts') && !name.includes('.test.'))
+			.map((name) => ({
+				name,
+				source: readFileSync(join(HERE, name), 'utf8'),
+			}))
+			.filter(({ source }) => source.includes('ComponentDefinition<'));
+	}
+
+	it('finds every component file', () => {
+		// A filter that stopped matching would pass the check below by iterating
+		// nothing, and the count has to keep up with the registry.
+		expect(componentFiles()).toHaveLength(types.length);
+	});
+
+	it('asks showsOwnLabel wherever it reads its own label', () => {
+		const forgetful = componentFiles()
+			.filter(({ source }) => source.includes('config.label'))
+			.filter(({ source }) => !source.includes('showsOwnLabel'))
+			.map(({ name }) => name);
+		expect(forgetful).toEqual([]);
 	});
 });
 

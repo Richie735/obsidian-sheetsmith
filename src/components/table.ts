@@ -56,6 +56,7 @@ import {
 	RowValues,
 	ScopeEntry,
 	ScopeValues,
+	showsOwnLabel,
 } from '../types';
 import { bindEditable, UNRESOLVED_DELAY } from '../interaction/editable';
 import {
@@ -1143,7 +1144,7 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			return;
 		}
 
-		if (config.hideLabel !== true) {
+		if (showsOwnLabel(config, context)) {
 			element('div', 'sheetsmith-table-label', container, config.label);
 		}
 

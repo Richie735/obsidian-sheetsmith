@@ -37,6 +37,7 @@ import {
 	ResetResult,
 	ScopeEntry,
 	ScopeValues,
+	showsOwnLabel,
 } from '../types';
 
 /** SPEC §3.1: a single-value component stores its value under `value`. */
@@ -560,7 +561,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			return;
 		}
 
-		if (config.hideLabel !== true) {
+		if (showsOwnLabel(config, context)) {
 			const label = doc.createElement('div');
 			label.classList.add('sheetsmith-track-label');
 			label.textContent = config.label;

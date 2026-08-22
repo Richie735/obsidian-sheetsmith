@@ -16,6 +16,7 @@ import {
 	ComponentDefinition,
 	ReadResult,
 	ScopeValues,
+	showsOwnLabel,
 } from '../types';
 import { renderStatCard, toDerived } from './stat-card';
 
@@ -222,7 +223,9 @@ export const stat: ComponentDefinition<StatConfig, StatData> = {
 
 		renderStatCard(card, {
 			title: config.label,
-			hideTitle: config.hideLabel === true,
+			// The strip of a container showing one child at a time has already
+			// named this card, so the title goes while the accessible name stays.
+			hideTitle: !showsOwnLabel(config, context),
 			// A lone card has no row of siblings to keep on one baseline.
 			reserveAbbreviation: false,
 			value: showValue
