@@ -96,6 +96,12 @@ export default defineConfig(
 			'src/components/**/*.ts',
 			'src/ui/**/*.ts',
 			'src/interaction/**/*.ts',
+			// The grid's DOM shape, shared with the harness so the two cannot
+			// nest differently — and the harness has no app, so Obsidian's
+			// element helpers do not exist there. One file rather than
+			// `src/view/**`: the sheet view itself has an app and should keep
+			// using them.
+			'src/view/grid-cells.ts',
 		],
 		rules: {
 			'obsidianmd/prefer-create-el': 'off',
@@ -211,6 +217,17 @@ export default defineConfig(
 					],
 				},
 			],
+		},
+	},
+	{
+		// The one test that renders the settings tab, and so the layout editor,
+		// the way the harness does. `display()` is what the plugin's own tab
+		// implements, so calling it is the only way to render it until that
+		// migrates to the declarative API — the same argument the harness block
+		// above makes, and the rule is off for `settings.ts` itself further down.
+		files: ['src/settings.test.ts'],
+		rules: {
+			'@typescript-eslint/no-deprecated': 'off',
 		},
 	},
 	{

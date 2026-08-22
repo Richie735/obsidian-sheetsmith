@@ -15,6 +15,15 @@ export interface Sample {
 	config: ComponentConfig;
 	/** Section body as it would appear in a character note. */
 	body: string | null;
+	/**
+	 * Section bodies for the components inside this one, by component id.
+	 *
+	 * A container has no section of its own, and its children's sections are
+	 * ordinary `##` headings in the same flat note — so they are keyed by id
+	 * here for the reason the harness keys everything else by id: a layout edit
+	 * must never lose a stored value.
+	 */
+	children?: Record<string, string | null>;
 }
 
 /** The populated sheet: every component holding plausible values. */
@@ -240,6 +249,179 @@ export const SAMPLES: Sample[] = [
 		} as ComponentConfig,
 		body: null,
 	},
+	/*
+	 * A container holding containers, which is as deep as a layout may go: the
+	 * six-up "stat beside its skills" arrangement in miniature, an outer Group
+	 * of Groups each holding a Stat and a Table.
+	 *
+	 * Two things to watch. The inner groups sit on the outer group's own grid,
+	 * so a card inside lines up column for column with a card outside it at the
+	 * same declared width. And "Weapons" keeps its heading where "Tools" hides
+	 * one, side by side at the same width, which is the comparison `hideLabel`
+	 * is worth looking at.
+	 */
+	{
+		config: {
+			id: 'proficiencies',
+			type: 'group',
+			label: 'Proficiencies',
+			position: { col: 1, row: 8, width: 8, height: 4 },
+			children: [
+				{
+					id: 'weapons',
+					type: 'group',
+					label: 'Weapons',
+					position: { col: 1, row: 1, width: 4, height: 3 },
+					children: [
+						/*
+						 * Two cards side by side on the group's own grid, which
+						 * is what makes the container query visible: the group is
+						 * four columns wide, so inside a 1400px pane it is about
+						 * 450px and these stack — while the sheet around it stays
+						 * a grid. One threshold rather than two is the decision
+						 * being looked at here, so look at whether stacking two
+						 * cards this wide is the right answer.
+						 */
+						{
+							id: 'weapon_bonus',
+							type: 'stat',
+							label: 'Attack bonus',
+							position: { col: 1, row: 1, width: 2, height: 1 },
+							// Reads a card two containers away, which is the
+							// point: containment adds no segment, so this is the
+							// expression it would be at the top level.
+							derived: '2 + abilities.STR',
+							signed: true,
+							hideValue: true,
+							hideNote: true,
+						},
+						{
+							id: 'weapon_damage',
+							type: 'stat',
+							label: 'Damage bonus',
+							position: { col: 3, row: 1, width: 2, height: 1 },
+							derived: 'abilities.STR',
+							signed: true,
+							hideValue: true,
+							hideNote: true,
+						},
+						{
+							id: 'weapon_training',
+							type: 'table',
+							label: 'Weapon training',
+							position: { col: 1, row: 2, width: 4, height: 2 },
+							rowHeader: 'Weapon',
+							columns: [
+								{
+									key: 'Training',
+									hideHeading: true,
+									type: 'level',
+									levels: ['Untrained', 'Trained:T'],
+								},
+							],
+							rows: [{ label: 'Simple' }, { label: 'Martial' }],
+						},
+					],
+				},
+				{
+					id: 'tools',
+					type: 'group',
+					label: 'Tools',
+					position: { col: 5, row: 1, width: 4, height: 3 },
+					// Pure arrangement: the cards inside say what they are. The
+					// cost is on screen and is a known gap (docs/UI.md §12): with
+					// no heading to occupy it, this group's first card sits a
+					// heading's height above its labelled sibling's.
+					hideLabel: true,
+					children: [
+						{
+							id: 'tool_bonus',
+							type: 'stat',
+							label: 'Tool bonus',
+							position: { col: 1, row: 1, width: 4, height: 1 },
+							derived: '2 + abilities.INT',
+							signed: true,
+							hideValue: true,
+							hideNote: true,
+						},
+						{
+							id: 'tool_training',
+							type: 'table',
+							label: 'Tool training',
+							position: { col: 1, row: 2, width: 4, height: 2 },
+							rowHeader: 'Tool',
+							columns: [
+								{
+									key: 'Training',
+									hideHeading: true,
+									type: 'level',
+									levels: ['Untrained', 'Trained:T'],
+								},
+							],
+							rows: [{ label: "Thieves' tools" }, { label: 'Herbalism kit' }],
+						},
+					],
+				},
+			],
+		} as unknown as ComponentConfig,
+		body: null,
+		children: {
+			weapon_training: [
+				'| Weapon | Training |',
+				'| --- | --- |',
+				'| Simple | 1 |',
+				'| Martial | 0 |',
+			].join('\n'),
+			tool_training: [
+				'| Tool | Training |',
+				'| --- | --- |',
+				"| Thieves' tools | 1 |",
+				'| Herbalism kit | 0 |',
+			].join('\n'),
+		},
+	},
+	/*
+	 * A one-card group beside a much taller one, which is the placement that
+	 * ended the collapse (SPEC §13): the grid rows here are sized by
+	 * "Proficiencies" spanning four of them, so this cell is far taller than the
+	 * card in it and the slack below is unreclaimable. Worth keeping on screen
+	 * for exactly that reason — a control that promised to close that gap and
+	 * could not is the thing not to re-add.
+	 */
+	{
+		config: {
+			id: 'background',
+			type: 'group',
+			label: 'Background',
+			position: { col: 9, row: 8, width: 4, height: 2 },
+			children: [
+				{
+					id: 'origin',
+					type: 'stat',
+					label: 'Origin',
+					position: { col: 1, row: 1, width: 4, height: 1 },
+					key: 'origin',
+					notePlaceholder: 'where from',
+				},
+			],
+		} as unknown as ComponentConfig,
+		body: null,
+		children: {
+			origin: '```sheet\norigin: Neverwinter\nnote: guild artisan\n```',
+		},
+	},
+	/* A group the author has not filled in yet: a heading over a quiet empty
+	   region, which is a layout part-way through being built rather than an
+	   error. */
+	{
+		config: {
+			id: 'spellbook',
+			type: 'group',
+			label: 'Spellbook',
+			position: { col: 9, row: 10, width: 4, height: 1 },
+		},
+		body: null,
+	},
 	{
 		config: {
 			id: 'attack_count',
@@ -254,6 +436,128 @@ export const SAMPLES: Sample[] = [
 			signed: false,
 			hideValue: true,
 			hideNote: true,
+		} as ComponentConfig,
+		body: null,
+	},
+	/*
+	 * A tab set, which is the component containment exists for. Three things to
+	 * watch and only one of them is about the tabs.
+	 *
+	 * **Switch tabs and watch the two components below.** Nothing outside the set
+	 * may move: every panel stays laid out in one grid cell, so the set is the box
+	 * its placement declared whichever tab is showing. That is the promise Group's
+	 * withdrawn collapse could not make, and the only way to check it is to press
+	 * a tab and look at something else.
+	 *
+	 * **The tabs are three different shapes.** A Group of two cards over a table,
+	 * a bare table, and a Group holding a pool — so a tab that is a container and
+	 * a tab that is one card sit in the same strip. A card inside the first tab
+	 * should be the size of the identical card outside the set, because a container
+	 * tab opens its grid at the *tab set's* placement rather than its own.
+	 *
+	 * **The pool on the third tab resets on a long rest from a tab nobody opened.**
+	 * Hiding is never a way to make a formula not run.
+	 */
+	{
+		config: {
+			id: 'pages',
+			type: 'tab-set',
+			label: 'Pages',
+			position: { col: 1, row: 12, width: 8, height: 3 },
+			children: [
+				{
+					id: 'tab_combat',
+					type: 'group',
+					label: 'Combat',
+					// No `hideLabel`, on purpose. The strip is drawn from this
+					// label, so the grid tells the group its name is already on
+					// screen and the group draws no heading. Written by hand here
+					// once, which is exactly what hid the fact that the component
+					// was not doing it.
+					position: { col: 1, row: 1, width: 8, height: 3 },
+					children: [
+						{
+							id: 'tab_attack',
+							type: 'stat',
+							// Not "Attack bonus": the Weapons group already has one,
+							// and a label keys a note section so the whole layout
+							// shares one namespace. The settings tab refuses a
+							// duplicate outright, which is how this was found — the
+							// sheet renders from the samples without parsing them,
+							// so the collision was invisible there.
+							label: 'Strike bonus',
+							derived: '2 + abilities.STR',
+							signed: true,
+							hideValue: true,
+							hideNote: true,
+							position: { col: 1, row: 1, width: 4, height: 1 },
+						},
+						{
+							id: 'tab_defence',
+							type: 'stat',
+							label: 'Defence',
+							derived: '10 + abilities.DEX',
+							hideValue: true,
+							hideNote: true,
+							position: { col: 5, row: 1, width: 4, height: 1 },
+						},
+					],
+				},
+				{
+					// A tab that is one card rather than a region: requiring a
+					// container here would be ceremony on the commonest case.
+					id: 'tab_spells',
+					type: 'table',
+					// The empty group below is already "Spellbook".
+					label: 'Spell list',
+					position: { col: 1, row: 1, width: 8, height: 3 },
+					rowHeader: 'Spell',
+					openRows: true,
+					columns: [
+						{ key: 'Level', type: 'number' },
+						{ key: 'Prepared', type: 'toggle' },
+					],
+				},
+				{
+					id: 'tab_rest',
+					type: 'group',
+					label: 'Rest',
+					position: { col: 1, row: 1, width: 8, height: 3 },
+					children: [
+						{
+							id: 'tab_ki',
+							type: 'pool',
+							label: 'Ki',
+							max: 'abilities.WIS + 2',
+							reset: [{ trigger: 'Short rest', action: 'full' }],
+							position: { col: 1, row: 1, width: 8, height: 1 },
+						},
+					],
+				},
+			],
+		} as unknown as ComponentConfig,
+		body: null,
+		children: {
+			tab_spells: [
+				'| Spell | Level | Prepared |',
+				'| --- | --- | --- |',
+				'| Cure wounds | 1 | true |',
+				'| Fireball | 3 | false |',
+			].join('\n'),
+			tab_ki: '```sheet\ncurrent: 2\n```',
+		},
+	},
+	/* Beside the set rather than inside it, so a tab press has something to not
+	   move. */
+	{
+		config: {
+			id: 'tab_witness',
+			type: 'stat',
+			label: 'Ki from a hidden tab',
+			derived: 'tab_ki',
+			hideValue: true,
+			hideNote: true,
+			position: { col: 9, row: 12, width: 4, height: 1 },
 		} as ComponentConfig,
 		body: null,
 	},
@@ -277,6 +581,29 @@ export function brokenSamples(): Sample[] {
 			rows?: { label: string; key?: string }[];
 			columns?: { type?: string; total?: boolean }[];
 		};
+		// Nothing for a container itself: with the collapse gone a group has one
+		// setting left and no combination of settings without a reading, so there
+		// is no `configError` for this view to show, and a container nested too
+		// deep is refused by `parseLayout` before this view sees a layout at all.
+		//
+		// **The containment error that *is* reachable is the registry's**, and it
+		// has to be staged here or it is never drawn: a leaf handed components to
+		// hold. An earlier version of this comment claimed the error view already
+		// reached it, which was simply false — `brokenSamples` rewrote keys,
+		// columns and rows and nothing else, so the longest error string the
+		// containment work added had never been rendered anywhere. It wraps inside
+		// a three-column cell, which is the reason to look at it rather than trust
+		// it (`docs/UI.md` §11).
+		if (config.id === 'worn_count') {
+			config.children = [
+				{
+					id: 'stranded',
+					type: 'stat',
+					label: 'Stranded card',
+					position: { col: 1, row: 1, width: 3, height: 1 },
+				},
+			];
+		}
 		// A misspelled table, on the one readout that gets it: the aggregate's
 		// own error state, which is a formula naming something that is not on
 		// the sheet. The other readouts are left as they are and show the other
@@ -320,6 +647,6 @@ export function brokenSamples(): Sample[] {
 				row.key === undefined ? row : { ...row, key: 'passive perception' },
 			);
 		}
-		return { config, body: sample.body };
+		return { config, body: sample.body, children: sample.children };
 	});
 }

@@ -6,7 +6,7 @@ import {
 	TextFileView,
 	WorkspaceLeaf,
 } from 'obsidian';
-import { getComponent, unknownComponentMessage } from '../components';
+import { getComponent } from '../components';
 import { closePopover } from '../ui/popover';
 import { ConfirmModal } from '../ui/confirm-modal';
 import { loadLayout } from '../layouts';
@@ -27,9 +27,16 @@ import {
 import { parseFunctions } from '../formula/functions';
 import { buildSheetEnv, publishedComponent } from '../formula/sheet';
 import { DEFAULT_COLUMNS, Layout } from '../parse/layout';
+import { walkComponents } from '../parse/layout-walk';
 import { parseTriggers } from '../parse/triggers';
-import { ComponentConfig, ComponentDefinition, LinkContext } from '../types';
+import {
+	ComponentConfig,
+	ComponentDefinition,
+	isContainer,
+	LinkContext,
+} from '../types';
 import { captureFocus, restoreFocus } from './cell-focus';
+import { renderGrid } from './grid-cells';
 
 export const VIEW_TYPE_SHEET = 'sheetsmith-sheet';
 
@@ -88,6 +95,23 @@ export class SheetView extends TextFileView {
 	 * object with no place for it.
 	 */
 	hoverPopover: HoverPopover | null = null;
+	/**
+	 * Which alternative the reader has opened in each container, by component id.
+	 *
+	 * Held here rather than in the note, because it is this reader's posture and
+	 * not the character's data — a plugin writing its own UI state into a file the
+	 * user hand-edits would break the promise the whole plugin rests on, and
+	 * Obsidian keeps its own folds out of markdown for the same reason. Held here
+	 * rather than in the component, because the sheet re-renders on every
+	 * committed edit: a tab set taking its state from its own closure would snap
+	 * back to the first tab the moment a pool inside it was edited. The precedent
+	 * is `cell-focus.ts`, which carries structural state across exactly this
+	 * rebuild.
+	 *
+	 * Dropped when the leaf moves to another file, so a reopened note starts from
+	 * the first tab rather than inheriting the last note's.
+	 */
+	private activeTab = new Map<string, number>();
 
 	constructor(leaf: WorkspaceLeaf, plugin: SheetsmithPlugin) {
 		super(leaf);
@@ -121,6 +145,7 @@ export class SheetView extends TextFileView {
 		// file must bail rather than repaint the emptied view.
 		this.data = '';
 		this.renderId++;
+		this.activeTab.clear();
 		this.contentEl.empty();
 		// A popover lives on document.body, so emptying this element does not
 		// reach it — it would be left pointing at a cell of the file just
@@ -203,27 +228,30 @@ export class SheetView extends TextFileView {
 			String(layout.columns ?? DEFAULT_COLUMNS),
 		);
 
-		// Grid order, not file order. Explicit grid-column/row make DOM order
-		// invisible while the grid holds, but it decides two things that
-		// matter: tab order, and the single-column sequence once the narrow
-		// reflow drops the grid and lays cells out in DOM order. Copy before
-		// sorting: sort mutates, and a render must not rewrite its own input.
-		const ordered = [...layout.components].sort(
-			(a, b) =>
-				a.position.row - b.position.row || a.position.col - b.position.col,
-		);
+		// Grid order, not file order, and depth first: a container's children
+		// are read where the container sits, before its next neighbour (SPEC
+		// §8). Explicit grid-column/row make DOM order invisible while a grid
+		// holds, but it decides two things that matter: tab order, and the
+		// single-column sequence once the narrow reflow drops the grid and lays
+		// cells out in DOM order.
+		const walk = walkComponents(layout.components);
 
 		// Read everything before rendering anything: a formula may name any
 		// component on the sheet, including one that sits later in grid
-		// order, so the name table has to be complete before the first card
-		// draws. A component that failed to read publishes nothing, which
-		// makes formulas depending on it report an unknown name rather than
-		// compute from a blank.
-		const prepared: PreparedComponent[] = ordered.map((config) => {
+		// order or inside a container that is closed, so the name table has to
+		// be complete before the first card draws. A component that failed to
+		// read publishes nothing, which makes formulas depending on it report an
+		// unknown name rather than compute from a blank.
+		const prepared: PreparedComponent[] = walk.map(({ config }) => {
 			const component = getComponent(config.type);
-			const section = component ? getSection(note, config.label) : undefined;
+			// A container has no section, so there is nothing to look for and no
+			// note body to be misread as its own: unmapped prose under a heading
+			// that happens to match a container's label is never even read
+			// (SPEC §10).
+			const readable = isContainer(component) ? undefined : component;
+			const section = readable ? getSection(note, config.label) : undefined;
 			const result =
-				component && section ? component.read(section.body, config) : null;
+				readable && section ? readable.read(section.body, config) : null;
 			return {
 				config,
 				component,
@@ -246,27 +274,15 @@ export class SheetView extends TextFileView {
 		// harness builds the same thing and the two must not disagree.
 		const env = buildSheetEnv(prepared.map(publishedComponent), library);
 
-		for (const { config, component, error, data } of prepared) {
-			const cell = grid.createDiv('sheetsmith-cell');
-			cell.style.gridColumn = `${config.position.col} / span ${config.position.width}`;
-			cell.style.gridRow = `${config.position.row} / span ${config.position.height}`;
-
-			if (!component) {
-				this.renderCellError(cell, unknownComponentMessage(config.type));
-				continue;
-			}
-			if (error !== null) {
-				this.renderCellError(cell, `${config.label}: ${error}`);
-				continue;
-			}
-			component.render(cell, config, data, {
-				resolved: resolveFormulaFields(component, config, data, env),
-				resolveField: makeFieldResolver(component, config, data, env),
-				explainField: makeFieldExplainer(component, config, data, env),
-				onChange: (edited: unknown) => this.applyEdit(component, config, edited),
-				link: this.linkContext(),
-			});
-		}
+		renderGrid(grid, walk, prepared, ({ config, component, data }) => ({
+			resolved: resolveFormulaFields(component, config, data, env),
+			resolveField: makeFieldResolver(component, config, data, env),
+			explainField: makeFieldExplainer(component, config, data, env),
+			onChange: (edited: unknown) => this.applyEdit(component, config, edited),
+			link: this.linkContext(),
+			activeTab: this.activeTab.get(config.id),
+			onActivateTab: (index: number) => this.activeTab.set(config.id, index),
+		}));
 
 		// SPEC §10: sections the layout does not map are left alone — they stay
 		// in the note untouched and simply do not render.
@@ -532,10 +548,5 @@ export class SheetView extends TextFileView {
 
 	private renderMessage(text: string): void {
 		this.contentEl.createDiv('sheetsmith-notice', (el) => el.setText(text));
-	}
-
-	private renderCellError(cell: HTMLElement, text: string): void {
-		cell.addClass('sheetsmith-cell-error');
-		cell.createDiv('sheetsmith-error', (el) => el.setText(text));
 	}
 }

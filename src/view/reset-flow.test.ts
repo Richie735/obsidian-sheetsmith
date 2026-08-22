@@ -23,8 +23,9 @@ import {
 import { buildSheetEnv, publishedComponent } from '../formula/sheet';
 import { applySectionWrites, getSection, parseCharacter } from '../parse/character';
 import { parseLayout } from '../parse/layout';
+import { walkComponents } from '../parse/layout-walk';
 import { parseTriggers } from '../parse/triggers';
-import { ComponentDefinition } from '../types';
+import { ComponentDefinition, isContainer } from '../types';
 
 /** The fixture's own shape, written out so a variant can be typed against it. */
 interface FixtureComponent {
@@ -32,6 +33,7 @@ interface FixtureComponent {
 	type: string;
 	label: string;
 	position: { col: number; row: number; width: number; height: number };
+	children?: FixtureComponent[];
 	attributes?: { key: string }[];
 	derived?: string;
 	max?: string;
@@ -142,14 +144,19 @@ function applyTrigger(
 	source: string,
 	layoutSource: string,
 	trigger: string,
-): { text: string; failed: string[] } {
+): { text: string; failed: string[]; bound: string[] } {
 	const layout = parseLayout(layoutSource);
 	const note = parseCharacter(source);
 	const { library } = parseFunctions(layout.functions);
 
-	const prepared = layout.components.map((config) => {
+	// The view's own walk: a trigger reaches a component wherever it sits, and
+	// whether or not the reader has the container holding it open.
+	const prepared = walkComponents(layout.components).map(({ config }) => {
 		const component = getComponent(config.type) as ComponentDefinition;
-		const section = getSection(note, config.label);
+		// A container has no section (SPEC §4.1), so there is nothing to read.
+		const section = isContainer(component)
+			? undefined
+			: getSection(note, config.label);
 		const result = section ? component.read(section.body, config) : null;
 		return {
 			config,
@@ -189,7 +196,23 @@ function applyTrigger(
 		});
 	}
 
-	return { text: applySectionWrites(source, writes).text, failed };
+	return {
+		text: applySectionWrites(source, writes).text,
+		failed,
+		// What the confirmation lists, which is `SheetView.renderTriggers`'
+		// filter: a component that read, that can act on a reset, and that binds
+		// to this trigger. Nothing about where it sits, deliberately.
+		bound: prepared
+			.filter(
+				(entry) =>
+					entry.error === null &&
+					entry.component.applyReset !== undefined &&
+					(entry.config.reset ?? []).some(
+						(binding) => binding.trigger === trigger,
+					),
+			)
+			.map((entry) => entry.config.label),
+	};
 }
 
 const fenced = (text: string, label: string, key: string): string | undefined => {
@@ -421,5 +444,167 @@ describe('clearing the buffer, end to end', () => {
 		const { text, failed } = applyTrigger(NOTE, BUFFERED, 'Short rest');
 		expect(failed).toEqual([]);
 		expect(fenced(text, 'Ki', 'current')).toBe('3');
+	});
+});
+
+/*
+ * A long rest reaching two containers down (SPEC §13).
+ *
+ * **Containment changes nothing about a reset**, which is the whole claim now
+ * that a container hides nothing: a Pool two containers deep publishes its
+ * value, resolves its max, resets, and appears by name in the trigger's
+ * confirmation exactly as one at the top level does.
+ *
+ * This was written against a *collapsed* container, to hold the corollary that
+ * hiding is never a way to make a formula not run. The collapse went (SPEC §13),
+ * so there is no hidden case left to except here — and the test is kept rather
+ * than dropped, because the rule it drives is the one that outlived the control.
+ * Tab set brought the hidden case back, and the describe below is where it is
+ * answered.
+ */
+describe('a long rest against a pool two containers deep', () => {
+	/** The same three components, with the pool two containers deep. */
+	const NESTED = variant((shape) => {
+		const hp = componentIn(shape, 'hp');
+		shape.components = shape.components.filter(
+			(component) => component.id !== 'hp',
+		);
+		shape.components.push({
+			id: 'vitals',
+			type: 'group',
+			label: 'Vitals',
+			position: { col: 1, row: 3, width: 4, height: 2 },
+			children: [
+				{
+					id: 'body',
+					type: 'group',
+					label: 'Body',
+					position: { col: 1, row: 1, width: 4, height: 1 },
+					children: [{ ...hp, position: { col: 1, row: 1, width: 4, height: 1 } }],
+				},
+			],
+		});
+	});
+
+	it('restores it, to a max computed from a card outside the container', () => {
+		// max is "10 + abilities.CON", and the abilities card is not inside this
+		// group at all: containment adds no segment, so the expression is the one
+		// it always was.
+		const { text, failed } = applyTrigger(NOTE, NESTED, 'Long rest');
+		expect(failed).toEqual([]);
+		expect(fenced(text, 'HP', 'current')).toBe('13');
+	});
+
+	it('names it in the confirmation, and names no container', () => {
+		// A container holds no state, so it is offered no binding and a trigger
+		// passes over it — while the pool inside it is listed exactly as it would
+		// be at the top level.
+		expect(applyTrigger(NOTE, NESTED, 'Long rest').bound).toEqual(['HP']);
+	});
+
+	it('writes the section as a heading in the same flat note', () => {
+		// The character note is unchanged by containment, to the byte: a
+		// container has no section, so the body stays a flat list of `##`
+		// headings, one per leaf (Constraints 2 and 3).
+		const { text } = applyTrigger(NOTE, NESTED, 'Long rest');
+		expect(getSection(parseCharacter(text), 'Vitals')).toBeUndefined();
+		expect(getSection(parseCharacter(text), 'Backstory')?.body).toBe(
+			getSection(parseCharacter(NOTE), 'Backstory')?.body,
+		);
+	});
+});
+
+/*
+ * The same long rest, reaching a pool on a tab nobody has opened (SPEC §4.2).
+ *
+ * **This is the hidden case the collapse's removal left without a home**, and
+ * the corollary it exists for is the one worth being able to point at: *hiding
+ * is never a way to make a formula not run.* A reset whose meaning depended on
+ * which tab the reader had open would be SPEC §5's grid-order `?` in a new
+ * place — a rest that restored four pools or three depending on where somebody
+ * had clicked last.
+ *
+ * The pool is on the **second** tab, inside a Group, so it is both hidden and
+ * two containers deep. Nothing in this path knows about tabs, which is the
+ * point: the read pass walks every component in the layout, `buildSheetEnv`
+ * publishes from that same list, and the confirmation filters on `error === null`
+ * and a matching binding — never on what is on screen. The assertion is that
+ * none of those three grew an opinion about visibility.
+ */
+describe('a long rest against a pool on a tab nobody opened', () => {
+	/** The pool as the second tab of a tab set, inside a group of its own. */
+	const TABBED = variant((shape) => {
+		const hp = componentIn(shape, 'hp');
+		shape.components = shape.components.filter(
+			(component) => component.id !== 'hp',
+		);
+		shape.components.push({
+			id: 'pages',
+			type: 'tab-set',
+			label: 'Pages',
+			position: { col: 1, row: 3, width: 4, height: 2 },
+			children: [
+				// First, so it is the tab that opens and the pool's is not.
+				{
+					id: 'notes_tab',
+					type: 'stat',
+					label: 'Notes tab',
+					position: { col: 1, row: 1, width: 4, height: 2 },
+				},
+				{
+					id: 'vitals',
+					type: 'group',
+					label: 'Vitals',
+					position: { col: 1, row: 1, width: 4, height: 2 },
+					children: [
+						{ ...hp, position: { col: 1, row: 1, width: 4, height: 1 } },
+					],
+				},
+			],
+		});
+	});
+
+	it('really does put the pool inside a tab that is not the first', () => {
+		// Vacuity guard. Every assertion below would pass just as well on a pool
+		// left at the top level, so the fixture's own shape is asserted before it
+		// is trusted: `variant` edits an object, and an edit that matched nothing
+		// is exactly the failure this file's `variant` comment was written about.
+		const walk = walkComponents(parseLayout(TABBED).components);
+		const pool = walk.find((entry) => entry.config.id === 'hp');
+		expect(pool?.depth).toBe(2);
+		expect(pool?.parent?.id).toBe('vitals');
+		// And it is the second tab, so the one the tab set opens is the other.
+		const tabs = walk.find((entry) => entry.config.id === 'pages');
+		expect(tabs?.config.children?.map((tab) => tab.id)).toEqual([
+			'notes_tab',
+			'vitals',
+		]);
+	});
+
+	it('restores it, to a max resolved from a card outside the tab set', () => {
+		// `max` is "10 + abilities.CON" and the abilities card is not in the tab
+		// set at all. So the pool on the unopened tab was read, its max resolved
+		// against the sheet-wide table, and the write landed: 6 + 7 = 13.
+		const { text, failed } = applyTrigger(NOTE, TABBED, 'Long rest');
+		expect(failed).toEqual([]);
+		expect(fenced(text, 'HP', 'current')).toBe('13');
+	});
+
+	it('names it in the confirmation, and names neither container', () => {
+		// The reader is told what a rest will touch before pressing it, and a pool
+		// they cannot currently see is still one of those things. Neither the tab
+		// set nor the group inside it appears: a container holds no state, so it
+		// is offered no binding and a trigger passes over it.
+		expect(applyTrigger(NOTE, TABBED, 'Long rest').bound).toEqual(['HP']);
+	});
+
+	it('leaves the note a flat list of headings, with no section for either container', () => {
+		// Constraints 2 and 3 again, through a tab this time: a tab has no
+		// placement and no section either, so the body is unchanged in shape.
+		const { text } = applyTrigger(NOTE, TABBED, 'Long rest');
+		const note = parseCharacter(text);
+		expect(getSection(note, 'Pages')).toBeUndefined();
+		expect(getSection(note, 'Vitals')).toBeUndefined();
+		expect(getSection(note, 'HP')).toBeDefined();
 	});
 });
