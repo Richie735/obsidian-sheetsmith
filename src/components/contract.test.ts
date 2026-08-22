@@ -2,9 +2,15 @@ import { describe, expect, it } from 'vitest';
 import {
 	getComponent,
 	listComponentTypes,
+	undrawableMessage,
 	unknownComponentMessage,
 } from './index';
-import { ComponentConfig, ScopeEntry } from '../types';
+import {
+	ComponentConfig,
+	isContainer,
+	placesChildren,
+	ScopeEntry,
+} from '../types';
 
 /*
  * Registry-wide contract checks (SPEC §4.1).
@@ -29,7 +35,7 @@ const KINDS = [
 ];
 
 /** Config keys the layout editor owns. A component must not redeclare them. */
-const RESERVED_KEYS = ['id', 'type', 'label', 'position', 'reset'];
+const RESERVED_KEYS = ['id', 'type', 'label', 'position', 'reset', 'children'];
 
 /**
  * The order a component declares its members in (docs/PATTERNS.md §3): the
@@ -45,6 +51,9 @@ const RESERVED_KEYS = ['id', 'type', 'label', 'position', 'reset'];
 const MEMBER_ORDER = [
 	'type',
 	'storage',
+	// Beside `storage` because it is the same kind of fact: what this component
+	// is structurally, before anything about its data or its drawing.
+	'showsOneChild',
 	'formulaFields',
 	'configFields',
 	'read',
@@ -57,6 +66,11 @@ const MEMBER_ORDER = [
 ];
 
 const types = listComponentTypes();
+
+/** A child to place inside another component, for the containment checks. */
+function child(): ComponentConfig {
+	return bareConfig('stat');
+}
 
 /** Only what the layout editor owns, so any component will take it. */
 function bareConfig(type: string): ComponentConfig {
@@ -144,6 +158,16 @@ describe('component registry', () => {
 		expect(saysTwoThings(both)).toBe(true);
 	});
 
+	it('names the containers, so a second one is a decision rather than a drift', () => {
+		// The same spelling as the row-source check below, and for the same
+		// reason: a bound like "not all of them" permits the kind spreading. A
+		// container is the one component the sheet treats differently — it skips
+		// its section, and the layout editor offers it as a destination — so a
+		// second one arriving means somebody edits this line.
+		const containers = types.filter((type) => isContainer(getComponent(type)));
+		expect(containers).toEqual(['group', 'tab-set']);
+	});
+
 	it('leaves the row source off unless a component actually holds rows', () => {
 		// `scopeRows` is optional under §4.1's rule — a member exists only where
 		// the alternative is code outside the component knowing that
@@ -160,6 +184,38 @@ describe('component registry', () => {
 			(type) => getComponent(type)?.scopeRows !== undefined,
 		);
 		expect(holding).toEqual(['table']);
+	});
+
+	it('names the types that can hold components when one cannot', () => {
+		// `children` is shared config the parser walks without knowing any type,
+		// so a hand-edited layout can put cards inside a Stat. The fix is a type
+		// that holds them, and which those are is the registry's question — the
+		// view naming one would be the view knowing a component exists.
+		const leaf = types.find((type) => !isContainer(getComponent(type)));
+		const config = { ...bareConfig(leaf ?? 'stat'), children: [child(), child()] };
+		const message = undrawableMessage(config, getComponent(leaf ?? 'stat'));
+		expect(message).toContain(`"${leaf ?? ''}"`);
+		expect(message).toContain('2 components');
+		for (const type of types) {
+			if (isContainer(getComponent(type))) expect(message).toContain(type);
+		}
+		// And it counts, rather than saying "components" for one of them.
+		expect(
+			undrawableMessage(
+				{ ...bareConfig(leaf ?? 'stat'), children: [child()] },
+				getComponent(leaf ?? 'stat'),
+			),
+		).toContain('1 component inside');
+
+		// A container handed the same children is drawable, which is what keeps
+		// the check above from reporting every nested layout.
+		const holder = types.find((type) => isContainer(getComponent(type)));
+		expect(
+			undrawableMessage(
+				{ ...bareConfig(holder ?? 'group'), children: [child()] },
+				getComponent(holder ?? 'group'),
+			),
+		).toBeNull();
 	});
 
 	it('names the types a layout may use when one is unknown', () => {
@@ -184,7 +240,27 @@ describe.each(types)('component "%s"', (type) => {
 	});
 
 	it('declares a storage kind fixed by the contract', () => {
-		expect(['fenced', 'markdown']).toContain(component?.storage);
+		expect(['fenced', 'markdown', 'none']).toContain(component?.storage);
+	});
+
+	it('holds nothing at all where it declares no storage', () => {
+		// `none` is a container (SPEC §4.1): it holds other components rather
+		// than a value. Checked rather than asserted in prose, because that is
+		// the whole reason the kind exists — declaring `fenced` for a component
+		// with no fence is a statement nothing verifies and a reader would
+		// believe, and the sheet skips `getSection` and `read` on the strength
+		// of this one.
+		if (!component || !isContainer(component)) return;
+		// `typeof` rather than the members themselves: reading a method off a
+		// definition to assert on it is an unbound method, which the lint rules
+		// reject — and every other member check in this file already asks the
+		// same question this way.
+		expect(typeof component.scopeValues).toBe('undefined');
+		expect(typeof component.scopeRows).toBe('undefined');
+		expect(typeof component.applyReset).toBe('undefined');
+		expect(component.hasBuffer).toBeUndefined();
+		// Containment is not addressing, so there is no name to compute either.
+		expect(component.formulaFields).toEqual([]);
 	});
 
 	it('implements read, write, and render', () => {
@@ -220,6 +296,23 @@ describe.each(types)('component "%s"', (type) => {
 		// rows an aggregate can walk or it does not, never something in between
 		// that the formula engine would have to guard against.
 		expect(['function', 'undefined']).toContain(typeof component?.scopeRows);
+	});
+
+	it('places its children unless it declares that it shows one', () => {
+		// The predicate against the flag, once, so the complement is asserted
+		// rather than trusted at four call sites. §1's policy tier is why the four
+		// became one: a guard test over them could only say they still spell the
+		// same thing.
+		expect(placesChildren(component)).toBe(component?.showsOneChild !== true);
+	});
+
+	it('declares showing one child only where it can hold children at all', () => {
+		// A flag with no reading is worse than no flag: it is `hasBuffer` on a
+		// component with no buffer, and the editor would act on it. Only a
+		// container has children to show one of.
+		if (component?.showsOneChild === undefined) return;
+		expect(typeof component.showsOneChild).toBe('boolean');
+		expect(isContainer(component)).toBe(true);
 	});
 
 	it('applies resets as a function, or not at all', () => {
