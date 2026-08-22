@@ -1,5 +1,7 @@
 // @vitest-environment happy-dom
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { GridComponent, renderGrid } from './grid-cells';
 import { parseLayout } from '../parse/layout';
@@ -424,6 +426,77 @@ describe('the grid has one renderer', () => {
 			expect(source).not.toContain(`"${owned}"`);
 			expect(source).not.toContain(`\`${owned}\``);
 		}
+	});
+});
+
+describe('the placement rule has one reader', () => {
+	/*
+	 * The net above holds the two *renderers* to one loop. This holds everyone
+	 * else to one statement of the rule underneath it, which is the gap the two
+	 * findings that produced this file's `innerPlacement` both fell through.
+	 *
+	 * The first was only findable by reading `grid-cells.ts` and
+	 * `layout-editor.ts` side by side: the sheet asked the container for the box
+	 * and the editor's schematic read the child's own stored width, which the add
+	 * row copied off the parent at creation and nothing keeps in step. The second
+	 * was `showsOneChild` spelled four times in two complementary pairs. Both are
+	 * the same failure — a rule re-derived by a consumer outside the net — and
+	 * "read two files side by side" is what earns a check rather than a note
+	 * (`PATTERNS.md` §10).
+	 *
+	 * So: the flag is *declared* by a component and *read* by exactly one
+	 * predicate. Anything else naming it is deriving the rule again, which is how
+	 * both bugs started.
+	 */
+	const ROOT = dirname(dirname(fileURLToPath(import.meta.url)));
+
+	/** Every shipping source file under `src/`, tests excluded. */
+	function sources(): string[] {
+		const found: string[] = [];
+		const walk = (dir: string): void => {
+			for (const entry of readdirSync(dir, { withFileTypes: true })) {
+				const at = join(dir, entry.name);
+				if (entry.isDirectory()) walk(at);
+				else if (entry.name.endsWith('.ts') && !entry.name.includes('.test.'))
+					found.push(at);
+			}
+		};
+		walk(ROOT);
+		return found;
+	}
+
+	it('finds the tree it is meant to be scanning', () => {
+		// A walk that stopped resolving would read nothing and pass everything
+		// below by having nothing to look at.
+		const found = sources();
+		expect(found.length).toBeGreaterThan(20);
+		expect(found.some((path) => path.endsWith('/types.ts'))).toBe(true);
+		expect(found.some((path) => path.endsWith('/layout-editor.ts'))).toBe(true);
+	});
+
+	it('is named only where it is declared and where it is answered', () => {
+		// `types.ts` declares the member and holds `placesChildren`, the one
+		// predicate that reads it. A component declaring it is the author saying
+		// what its own component is. Everything else asks the predicate — or
+		// `childIsPlaced`, which is that predicate applied to a parent.
+		const naming = sources()
+			.filter((path) => readFileSync(path, 'utf8').includes('showsOneChild'))
+			.map((path) => path.slice(ROOT.length + 1));
+		expect(naming.sort()).toEqual(['components/tab-set.ts', 'types.ts']);
+	});
+
+	it('is what the editor asks rather than something it works out', () => {
+		// The schematic's column count comes from `innerPlacement`, so it cannot
+		// read a container's own stored width for a container that is itself a
+		// tab. `layout-editor.test.ts` drives the outcome against the sheet's;
+		// this holds the import that makes the two the same answer.
+		const editor = readFileSync(join(ROOT, 'editor', 'layout-editor.ts'), 'utf8');
+		expect(editor.length).toBeGreaterThan(2000);
+		expect(editor).toContain('innerPlacement');
+		expect(editor).toContain('childIsPlaced');
+		// The exact spelling of the bug, so the regression is named rather than
+		// merely covered elsewhere.
+		expect(editor).not.toContain('columns: config.position.width');
 	});
 });
 
