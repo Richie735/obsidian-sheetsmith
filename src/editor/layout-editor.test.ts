@@ -3,8 +3,11 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { LayoutEditorSection } from './layout-editor';
 import type SheetsmithPlugin from '../main';
 import { Layout, parseLayout, serialiseLayout } from '../parse/layout';
+import { walkComponents } from '../parse/layout-walk';
+import { renderGrid } from '../view/grid-cells';
 import { DEFAULT_SETTINGS } from '../settings';
 import { App } from '../test/obsidian-stub';
+import { getComponent, listComponentTypes } from '../components';
 
 /*
  * The layout editor, driven through its own DOM.
@@ -163,9 +166,9 @@ function toggle(input: HTMLInputElement, checked: boolean): void {
 /**
  * The checkbox in the setting row with this name.
  *
- * Boolean fields are the one kind the editor gives no focus token, so a row
- * name is the only address they have. It is also the label the author reads,
- * which makes it the right thing for a test to name.
+ * By row name rather than by focus token, which booleans now carry too: the
+ * name is the label the author reads, which makes it the right thing for a test
+ * to name. `settings.test.ts` is where the token itself is load bearing.
  */
 function checkbox(harness: Harness, name: string): HTMLInputElement {
 	for (const item of Array.from(
@@ -387,6 +390,69 @@ describe('the reset binding', () => {
 	});
 });
 
+/*
+ * The convention every control on this tab follows, held over the whole catalog
+ * rather than one component at a time.
+ *
+ * `settings.ts` restores focus across a redraw by reading
+ * `data-sheetsmith-focus` off whatever was focused, so a control without one is
+ * a control focus falls off — and the boolean fields were exactly that for as
+ * long as no boolean redrew the tab. Found by hand, on one field, after the
+ * redraw arrived. It is mechanically checkable, so it is checked.
+ */
+describe('every control in a component form is addressable', () => {
+	/** One component of every registered type, so a new one is covered on arrival. */
+	function everyType(): Layout {
+		return {
+			name: 'Catalog',
+			columns: 12,
+			components: listComponentTypes().map((type, index) => ({
+				id: `c${index}`,
+				type,
+				label: `C${index}`,
+				position: { col: 1, row: index + 1, width: 2, height: 1 },
+			})),
+			triggers: ['Long rest'],
+		};
+	}
+
+	it.each(listComponentTypes().map((type, index) => [type, index] as const))(
+		'gives every field of a "%s" form a focus token',
+		async (_type, index) => {
+			harness = await open(everyType());
+			control(harness, `edit-c${index}`).click();
+			await settle(harness.editor);
+
+			const form = harness.container.querySelector('.sheetsmith-component-form');
+			expect(form).not.toBeNull();
+			const fields = Array.from(
+				(form as HTMLElement).querySelectorAll('input, select, textarea'),
+			);
+			// A form the query stopped finding would pass by iterating nothing.
+			expect(fields.length).toBeGreaterThan(3);
+
+			const bare = fields.filter((el) => {
+				const host = el as HTMLElement;
+				// On the control, or on the wrapper that actually takes focus.
+				// Obsidian's toggle is a focusable `.checkbox-container` div around
+				// an invisible checkbox, and the stub makes the input itself that
+				// element — so requiring it on the input would describe the stub
+				// rather than the app, and pass while the app kept losing focus.
+				return (
+					host.dataset.sheetsmithFocus === undefined &&
+					host.parentElement?.dataset.sheetsmithFocus === undefined
+				);
+			});
+			expect(
+				bare.map(
+					(el) =>
+						`${el.tagName} ${el.getAttribute('aria-label') ?? el.getAttribute('placeholder') ?? ''}`,
+				),
+			).toEqual([]);
+		},
+	);
+});
+
 describe('a layout file the editor cannot read', () => {
 	it('reports it rather than throwing', async () => {
 		const app = new App();
@@ -407,5 +473,824 @@ describe('a layout file the editor cannot read', () => {
 
 		const error = container.querySelector('.sheetsmith-error');
 		expect(error?.textContent).toContain('cannot be edited');
+	});
+});
+
+/*
+ * Components inside components (SPEC §4.2).
+ *
+ * Nesting is where the prior art says the pain is, so the interim editor gets
+ * the smallest thing that is honestly authorable: one level of disclosure in the
+ * list, a destination on the add row, a schematic per open container, and a
+ * removal that moves children out rather than deleting them. What is checked
+ * here is the editor's contract with the file — which edit lands where, and what
+ * survives a removal.
+ */
+
+/** A layout with a Group holding one card, and a plain card beside it. */
+function nested(): Layout {
+	return {
+		name: 'Nested sheet',
+		columns: 12,
+		components: [
+			{
+				id: 'defences',
+				type: 'group',
+				label: 'Defences',
+				position: { col: 1, row: 1, width: 6, height: 2 },
+				children: [
+					{
+						id: 'armour',
+						type: 'stat',
+						label: 'Armour class',
+						position: { col: 1, row: 1, width: 3, height: 1 },
+					},
+				],
+			},
+			{
+				id: 'hit_points',
+				type: 'pool',
+				label: 'Hit points',
+				position: { col: 7, row: 1, width: 4, height: 1 },
+			},
+		],
+		triggers: ['Long rest'],
+	};
+}
+
+/**
+ * A layout two containers deep, plus a container holding nothing.
+ *
+ * `nested()` cannot reach either case: its only container is at the top level
+ * and already has a child, so nothing there is at the depth that may hold
+ * nothing, and nothing there has an absent `children`.
+ */
+function deep(): Layout {
+	return {
+		name: 'Deep sheet',
+		columns: 12,
+		components: [
+			{
+				id: 'defences',
+				type: 'group',
+				label: 'Defences',
+				position: { col: 1, row: 1, width: 6, height: 2 },
+				children: [
+					{
+						id: 'melee',
+						type: 'group',
+						label: 'Melee',
+						position: { col: 1, row: 1, width: 4, height: 1 },
+						children: [
+							{
+								id: 'armour',
+								type: 'stat',
+								label: 'Armour class',
+								position: { col: 1, row: 1, width: 2, height: 1 },
+							},
+						],
+					},
+				],
+			},
+			{
+				id: 'spellbook',
+				type: 'group',
+				label: 'Spellbook',
+				position: { col: 7, row: 1, width: 4, height: 1 },
+			},
+		],
+		triggers: ['Long rest'],
+	};
+}
+
+/** The "Add component" row's destination dropdown, or nothing if absent. */
+function destinations(harness: Harness): string[] | null {
+	const select = harness.container.querySelector(
+		'[data-sheetsmith-focus="add-destination"]',
+	);
+	if (!select) return null;
+	return Array.from((select as HTMLSelectElement).options).map(
+		(option) => option.text,
+	);
+}
+
+function pressAdd(harness: Harness): void {
+	const button = Array.from(harness.container.querySelectorAll('button')).find(
+		(el) => el.textContent === 'Add',
+	);
+	if (!button) throw new Error('no Add button');
+	button.click();
+}
+
+/** The type dropdown on the add row, found by an option only it carries. */
+function typeDropdown(harness: Harness): HTMLSelectElement {
+	const select = Array.from(harness.container.querySelectorAll('select')).find(
+		(candidate) =>
+			Array.from(candidate.options).some((option) => option.value === 'group'),
+	);
+	if (!select) throw new Error('no type dropdown');
+	return select;
+}
+
+describe('the component list', () => {
+	beforeEach(async () => {
+		harness = await open(nested());
+	});
+
+	it('lists the children of a container beneath it, indented', () => {
+		// The same depth-first walk the sheet reads in, so what the list shows in
+		// order is what the sheet reflows and tabs through in order: a child sits
+		// between its container and the container's next neighbour.
+		const rows = labels(harness);
+		expect(rows.indexOf('Armour class')).toBe(rows.indexOf('Defences') + 1);
+		expect(rows.indexOf('Hit points')).toBe(rows.indexOf('Armour class') + 1);
+		const row = control(harness, 'edit-armour').closest('.setting-item');
+		expect(row?.classList.contains('sheetsmith-row-child')).toBe(true);
+	});
+
+	it('orders the list by the walk the sheet reads in, not by file order', async () => {
+		// One exported function, and this is the caller that could most easily
+		// have had its own copy: the list used to iterate `layout.components` and
+		// index into it. A layout whose file order and grid order disagree is the
+		// only shape where the two are distinguishable.
+		const scrambled = nested();
+		scrambled.components.reverse();
+		harness = await open(scrambled);
+
+		const walked = walkComponents((await harness.stored()).components);
+		expect(walked.map((entry) => entry.config.label)).toEqual([
+			'Defences',
+			'Armour class',
+			'Hit points',
+		]);
+		const shown = labels(harness);
+		const positions = walked.map((entry) => shown.indexOf(entry.config.label));
+		expect(positions).not.toContain(-1);
+		expect([...positions].sort((a, b) => a - b)).toEqual(positions);
+	});
+
+	it('gives a child its own edit and remove controls', () => {
+		expect(has(harness, 'edit-armour')).toBe(true);
+		expect(has(harness, 'remove-armour')).toBe(true);
+	});
+
+	it('draws the container on the schematic and not what it holds', () => {
+		// The children sit on the container's own grid, not the sheet's, so the
+		// sheet's schematic has nowhere to put them. Theirs is drawn beside the
+		// container's form, where the width they are placed against is known.
+		expect(has(harness, 'preview-defences')).toBe(true);
+		expect(has(harness, 'preview-armour')).toBe(false);
+	});
+});
+
+describe('adding a component into a container', () => {
+	beforeEach(async () => {
+		harness = await open(nested());
+	});
+
+	it('offers the sheet and every container that may still take one', () => {
+		expect(destinations(harness)).toEqual(['On the sheet', 'In Defences']);
+	});
+
+	it('puts the new component in the chosen container', async () => {
+		choose(typeDropdown(harness), 'stat');
+		choose(
+			control<HTMLSelectElement>(harness, 'add-destination'),
+			'defences',
+		);
+		pressAdd(harness);
+		await settle(harness.editor);
+
+		const stored = await harness.stored();
+		expect(stored.components).toHaveLength(2);
+		expect(stored.components[0]?.children).toHaveLength(2);
+		// Never wider than the grid it lands on: a child spanning past its
+		// container's last column would open an implicit column.
+		expect(stored.components[0]?.children?.[1]?.position).toMatchObject({
+			col: 1,
+			row: 2,
+			width: 2,
+		});
+	});
+
+	it('leaves it on the sheet where no container was chosen', async () => {
+		choose(typeDropdown(harness), 'stat');
+		pressAdd(harness);
+		await settle(harness.editor);
+		expect((await harness.stored()).components).toHaveLength(3);
+	});
+
+	it('names the new component against the whole sheet, not one level', async () => {
+		// A label keys a note section and an id is what a formula writes, and
+		// containment scopes neither — so a child may not take a name a
+		// component in another container already has.
+		choose(typeDropdown(harness), 'pool');
+		choose(control<HTMLSelectElement>(harness, 'add-destination'), 'defences');
+		pressAdd(harness);
+		await settle(harness.editor);
+
+		const added = (await harness.stored()).components[0]?.children?.[1];
+		expect(added?.label).not.toBe('Hit points');
+		expect(added?.id).not.toBe('hit_points');
+	});
+
+	it('offers no container that is already two deep', async () => {
+		// The parser refuses a third container, so the editor must not be able to
+		// walk into it. A Group inside a Group is still a destination for a card;
+		// a component inside *that* is not a destination at all.
+		choose(typeDropdown(harness), 'group');
+		choose(control<HTMLSelectElement>(harness, 'add-destination'), 'defences');
+		pressAdd(harness);
+		await settle(harness.editor);
+
+		const inner = (await harness.stored()).components[0]?.children?.[1];
+		expect(inner?.type).toBe('group');
+		// The inner group is offered; nothing below it can be, because it has no
+		// children to be a container of yet — and once it has, it is two deep.
+		expect(destinations(harness)).toEqual([
+			'On the sheet',
+			'In Defences',
+			`\u2007\u2007In ${inner?.label ?? ''}`,
+		]);
+
+		choose(typeDropdown(harness), 'group');
+		choose(
+			control<HTMLSelectElement>(harness, 'add-destination'),
+			inner?.id ?? '',
+		);
+		pressAdd(harness);
+		await settle(harness.editor);
+
+		// Three containers deep is where it stops being offered.
+		const deepest = (await harness.stored()).components[0]?.children?.[1]
+			?.children?.[0];
+		expect(deepest?.type).toBe('group');
+		expect(destinations(harness)).not.toContain(
+			`\u2007\u2007\u2007\u2007In ${deepest?.label ?? ''}`,
+		);
+	});
+
+	it('offers no destination at all where the layout has no container', async () => {
+		// A dropdown naming the sheet and nothing else says a layout has
+		// containers when it has none.
+		harness = await open();
+		expect(destinations(harness)).toBeNull();
+	});
+});
+
+describe('removing a container', () => {
+	beforeEach(async () => {
+		harness = await open(nested());
+	});
+
+	it('says what happens to the components inside it', () => {
+		control(harness, 'remove-defences').click();
+		const modal = document.body.querySelector('.modal-container');
+		expect(modal?.textContent).toContain('The component inside it moves');
+	});
+
+	it('keeps its children, at the top level', async () => {
+		// A component config is not character data, but losing six components'
+		// formulas to one click is the same failure in miniature — and the modal
+		// only ever promised that the notes survived.
+		control(harness, 'remove-defences').click();
+		confirmAction();
+		await settle(harness.editor);
+
+		const stored = await harness.stored();
+		expect(stored.components.map((c) => c.id)).toEqual(['hit_points', 'armour']);
+		const moved = stored.components[1];
+		expect(moved?.children).toBeUndefined();
+		// At the bottom of the sheet, where a newly added component goes, so
+		// nothing arrives overlapping.
+		expect(moved?.position).toMatchObject({ col: 1, row: 2, width: 3 });
+	});
+
+	it('removes a child without touching its container', async () => {
+		control(harness, 'remove-armour').click();
+		confirmAction();
+		await settle(harness.editor);
+
+		const stored = await harness.stored();
+		expect(stored.components.map((c) => c.id)).toEqual([
+			'defences',
+			'hit_points',
+		]);
+		expect(stored.components[0]?.children).toEqual([]);
+	});
+});
+
+describe('a container that may hold nothing', () => {
+	/*
+	 * The add row and the form have to give one answer. The add row withholds a
+	 * container two levels deep as a destination, correctly; the form was still
+	 * offering that same container a grid to fill and a sentence saying it holds
+	 * components on it — which is also how the empty `children` of the finding
+	 * above got written onto one.
+	 */
+	beforeEach(async () => {
+		harness = await open(deep());
+		choose(typeDropdown(harness), 'group');
+		choose(control<HTMLSelectElement>(harness, 'add-destination'), 'melee');
+		pressAdd(harness);
+		await settle(harness.editor);
+	});
+
+	it('is not offered a grid to put components on', async () => {
+		const inner = (await harness.stored()).components[0]?.children?.[0]
+			?.children?.[1];
+		expect(inner?.type).toBe('group');
+		// Its form is open, so the sheet's schematic is the only one there is.
+		expect(
+			harness.container.querySelectorAll('.sheetsmith-layout-preview'),
+		).toHaveLength(1);
+	});
+
+	it('says why, rather than saying nothing', () => {
+		// The author picked this type deliberately, so silence reads as a
+		// container that simply does not work.
+		expect(harness.container.textContent).toContain(
+			'sits inside two containers, so it can hold nothing',
+		);
+	});
+
+	it('still offers a grid to a container that may hold one', async () => {
+		// The other side of the same rule: `melee` is one level in, so it takes
+		// children and gets its schematic.
+		control(harness, 'edit-melee').click();
+		await settle(harness.editor);
+		expect(
+			harness.container.querySelectorAll('.sheetsmith-layout-preview'),
+		).toHaveLength(2);
+		expect(harness.container.textContent).toContain('on its own grid of');
+	});
+});
+
+describe('drawing a container form is not an edit', () => {
+	it('does not write a children key for a container that holds nothing', async () => {
+		// A schematic reads the list; it must not create one. `??=` here wrote
+		// `children: []` into the config for having drawn a form, which is the
+		// editor touching a key nothing had put anything in (PATTERNS §7).
+		//
+		// Asserted after an unrelated edit, because drawing a form persists
+		// nothing on its own: the mutation sat in memory until the next save
+		// carried it, which is exactly what made it invisible.
+		harness = await open(deep());
+		control(harness, 'edit-spellbook').click();
+		await settle(harness.editor);
+		type(control<HTMLInputElement>(harness, 'label-spellbook'), 'Spells');
+		await settle(harness.editor);
+
+		expect((await harness.stored()).components[1]?.label).toBe('Spells');
+		expect(await harness.raw()).not.toContain('"children": []');
+	});
+
+	it('keeps saving after a container two deep has been opened', async () => {
+		// The bite, driven rather than described. A component two containers
+		// deep may hold nothing, so a `children: []` written onto one is a
+		// layout `parseLayout` refuses — and `persist` validates before it
+		// writes, so the file stays intact while every later save is silently
+		// refused and the author loses edits to a message about a depth rule
+		// they never broke.
+		harness = await open(deep());
+		choose(typeDropdown(harness), 'group');
+		choose(control<HTMLSelectElement>(harness, 'add-destination'), 'melee');
+		pressAdd(harness);
+		await settle(harness.editor);
+
+		const added = (await harness.stored()).components[0]?.children?.[0]
+			?.children?.[1];
+		expect(added?.type).toBe('group');
+		// Its form is open, which is what used to create the key.
+		expect(has(harness, `label-${added?.id ?? ''}`)).toBe(true);
+
+		type(control<HTMLInputElement>(harness, `label-${added?.id ?? ''}`), 'Renamed');
+		await settle(harness.editor);
+		expect(
+			(await harness.stored()).components[0]?.children?.[0]?.children?.[1]
+				?.label,
+		).toBe('Renamed');
+	});
+});
+
+describe('the form of an open container', () => {
+	beforeEach(async () => {
+		harness = await open(nested());
+		control(harness, 'edit-defences').click();
+		await settle(harness.editor);
+	});
+
+	it('offers the container its own settings and nothing it does not have', () => {
+		// A group has one setting. This asserted a withdrawal until the collapse
+		// went (SPEC §13): `Hide the heading` was offered only while
+		// `Collapsible` was off, and with no collapse there is no combination to
+		// withdraw. Kept, pointing the other way, because the failure it now
+		// catches is the one that matters — a form that offered a container the
+		// fields of the component it used to be.
+		expect(labels(harness)).toContain('Hide the heading');
+		expect(labels(harness)).not.toContain('Collapsible');
+		expect(labels(harness)).not.toContain('Start collapsed');
+	});
+
+	it('draws a second schematic for the children, on its own grid', () => {
+		const previews = harness.container.querySelectorAll(
+			'.sheetsmith-layout-preview',
+		);
+		expect(previews).toHaveLength(2);
+		// Six columns, which is the container's width rather than the layout's.
+		expect(
+			(previews[1] as HTMLElement).style.getPropertyValue(
+				'--sheetsmith-columns',
+			),
+		).toBe('6');
+		expect(previews[1]?.querySelector('.sheetsmith-preview-cell')).not.toBeNull();
+	});
+});
+
+/** A layout whose container shows one child at a time, which is a Tab set. */
+function tabbed(): Layout {
+	return {
+		name: 'Tabbed sheet',
+		columns: 12,
+		components: [
+			{
+				id: 'pages',
+				type: 'tab-set',
+				label: 'Pages',
+				position: { col: 1, row: 1, width: 6, height: 3 },
+				children: [
+					// Every tab at the same position, which is the ordinary case and
+					// the whole reason a grid cannot edit these.
+					{
+						id: 'combat',
+						type: 'stat',
+						label: 'Combat',
+						position: { col: 1, row: 1, width: 6, height: 3 },
+					},
+					{
+						id: 'spells',
+						type: 'table',
+						label: 'Spells',
+						position: { col: 1, row: 1, width: 6, height: 3 },
+					},
+					{
+						id: 'rest',
+						type: 'group',
+						label: 'Rest',
+						position: { col: 1, row: 1, width: 6, height: 3 },
+					},
+				],
+			},
+		],
+		triggers: [],
+	};
+}
+
+describe('a container that shows one child at a time', () => {
+	/*
+	 * The editor half of Tab set, and it is the half that was broken first: every
+	 * tab sits at the same position, so the grid schematic drew all three on top
+	 * of one another and `findOverlaps` reported each as overlapping the others.
+	 * A grid could not have edited the one thing there is to edit either, because
+	 * the order of a strip is not a rectangle.
+	 */
+	let harness: Harness;
+
+	beforeEach(async () => {
+		harness = await open(tabbed());
+		control(harness, 'edit-pages').click();
+		await settle(harness.editor);
+	});
+
+	it('draws no schematic for it, and lists its tabs in order instead', async () => {
+		// One schematic on the tab — the sheet's — where an open Group has two.
+		expect(
+			harness.container.querySelectorAll('.sheetsmith-layout-preview'),
+		).toHaveLength(1);
+		expect(labels(harness)).toContain('1. Combat');
+		expect(labels(harness)).toContain('2. Spells');
+		expect(labels(harness)).toContain('3. Rest');
+	});
+
+	it('offers no position fields on a tab', async () => {
+		// None of the four is read for a tab, and a field that edits a number
+		// nothing reads is worse than no field.
+		control(harness, 'edit-spells').click();
+		await settle(harness.editor);
+		expect(has(harness, 'pos-spells-col')).toBe(false);
+		expect(has(harness, 'pos-spells-row')).toBe(false);
+		expect(has(harness, 'pos-spells-width')).toBe(false);
+		expect(has(harness, 'pos-spells-height')).toBe(false);
+		// And still offers everything a component's form is for.
+		expect(has(harness, 'label-spells')).toBe(true);
+	});
+
+	it('still offers position fields on a child that is placed', async () => {
+		// The vacuity guard on the test above: if the fields had simply stopped
+		// rendering everywhere, both would pass and neither would mean anything.
+		const grouped = await open(nested());
+		control(grouped, 'edit-armour').click();
+		await settle(grouped.editor);
+		expect(has(grouped, 'pos-armour-col')).toBe(true);
+	});
+
+	it('reorders the tabs, and that is what the strip order is', async () => {
+		control(harness, 'tab-down-combat').click();
+		await settle(harness.editor);
+		const stored = await harness.stored();
+		expect(stored.components[0]?.children?.map((tab) => tab.id)).toEqual([
+			'spells',
+			'combat',
+			'rest',
+		]);
+	});
+
+	it('will not move the first tab earlier or the last later', async () => {
+		// The outcome, not the styling: the buttons are disabled, and `moveItem`
+		// refuses an out-of-range move besides, so pressing them anyway has to
+		// leave the order alone. Asserting the class would have been asserting
+		// which of two `setDisabled` implementations the stub happens to be.
+		const first = control<HTMLElement>(harness, 'tab-up-combat');
+		const last = control<HTMLElement>(harness, 'tab-down-rest');
+		expect(first.hasAttribute('disabled')).toBe(true);
+		expect(last.hasAttribute('disabled')).toBe(true);
+		first.click();
+		last.click();
+		await settle(harness.editor);
+		expect(
+			(await harness.stored()).components[0]?.children?.map((tab) => tab.id),
+		).toEqual(['combat', 'spells', 'rest']);
+	});
+
+	it('gives a tab it adds the container\'s own size rather than a free row', async () => {
+		// The numbers are not read, but they are in the file: `row: 4` on a tab
+		// would tell a hand-editor it sits somewhere. The box it actually fills is
+		// the honest thing to write.
+		choose(control<HTMLSelectElement>(harness, 'add-destination'), 'pages');
+		pressAdd(harness);
+		await settle(harness.editor);
+		const added = (await harness.stored()).components[0]?.children?.[3];
+		expect(added?.position).toEqual({ col: 1, row: 1, width: 6, height: 3 });
+	});
+});
+
+describe('a container that is itself a tab', () => {
+	/*
+	 * The one place a container's own four numbers are read by nothing: a Group
+	 * that is a tab fills the tab set's panel, so the tab set's placement is the
+	 * box its children sit on.
+	 *
+	 * This is a regression fixture rather than an ordinary one. The editor used to
+	 * draw this schematic from the Group's own stored width — the number the add
+	 * row copies off the parent at creation and nothing keeps in step — so
+	 * resizing the tab set afterwards left the sheet laying the children out on
+	 * the new width while the editor drew them, described them and clamped every
+	 * drag to the old one. The stored width here is deliberately the stale value.
+	 */
+	function staleTab(): Layout {
+		return {
+			name: 'Resized sheet',
+			columns: 12,
+			components: [
+				{
+					id: 'pages',
+					type: 'tab-set',
+					label: 'Pages',
+					// Widened since the tab was added.
+					position: { col: 1, row: 1, width: 6, height: 3 },
+					children: [
+						{
+							id: 'combat',
+							type: 'group',
+							label: 'Combat',
+							// What the add row wrote when the set was 4 wide.
+							position: { col: 1, row: 1, width: 4, height: 3 },
+							children: [
+								{
+									id: 'strike',
+									type: 'stat',
+									label: 'Strike bonus',
+									position: { col: 1, row: 1, width: 2, height: 1 },
+								},
+							],
+						},
+					],
+				},
+			],
+			triggers: [],
+		};
+	}
+
+	it('draws its grid at the tab set\'s width, not its own stale one', async () => {
+		const harness = await open(staleTab());
+		control(harness, 'edit-combat').click();
+		await settle(harness.editor);
+
+		const previews = harness.container.querySelectorAll(
+			'.sheetsmith-layout-preview',
+		);
+		expect(previews).toHaveLength(2);
+		// Six, the tab set's. Four would be the Group's own stored width, which is
+		// what the sheet ignores and what this used to draw.
+		expect(
+			(previews[1] as HTMLElement).style.getPropertyValue(
+				'--sheetsmith-columns',
+			),
+		).toBe('6');
+	});
+
+	it('draws the declared rows, so the preview shows the box not the content', async () => {
+		// The premise of a tab set is that its box is its placement — and the editor
+		// is the only surface where an author can see a declared row nothing fills.
+		// The schematic drew only the rows blocks occupied, so an 8×3 tab holding
+		// one row of cards previewed as one row while the sheet drew three.
+		//
+		// Six rows here rather than three, because the stale fixture's tab set is
+		// what governs: `innerPlacement` again, the same function the columns come
+		// from.
+		const harness = await open(staleTab());
+		control(harness, 'edit-combat').click();
+		await settle(harness.editor);
+		const inner = harness.container.querySelectorAll(
+			'.sheetsmith-layout-preview',
+		)[1] as HTMLElement;
+		expect(inner.style.gridTemplateRows).toBe(
+			'repeat(3, var(--sheetsmith-preview-row))',
+		);
+	});
+
+	it('leaves the sheet\'s own schematic to grow, as the sheet does', async () => {
+		// Not an omission: `.sheetsmith-grid` sets no `grid-template-rows` at the
+		// top level, so the sheet grows down as components are added. A fixed row
+		// count here would preview a box the sheet does not have — the opposite of
+		// the bug above, and the reason `rows` is optional rather than always set.
+		const harness = await open(staleTab());
+		const sheet = harness.container.querySelector(
+			'.sheetsmith-layout-preview',
+		) as HTMLElement;
+		expect(sheet.style.gridTemplateRows).toBe('');
+	});
+
+	it('describes the same width it draws', async () => {
+		// The two said different things fifty lines apart: the schematic read the
+		// stored width while the child's own form printed "it has no position of
+		// its own".
+		const harness = await open(staleTab());
+		control(harness, 'edit-combat').click();
+		await settle(harness.editor);
+		const descriptions = Array.from(
+			harness.container.querySelectorAll('.setting-item-description'),
+		).map((el) => el.textContent ?? '');
+		expect(
+			descriptions.some((text) => text.includes('6 columns by 3 rows')),
+		).toBe(true);
+		expect(descriptions.some((text) => text.includes('4 columns'))).toBe(false);
+	});
+
+	it('agrees with the sheet, which is the divergence that mattered', async () => {
+		// Both drawings through one function: the editor's schematic column count
+		// and the subgrid `renderGrid` opens for the same component. Asserted
+		// against each other rather than against 6 twice, so a change to either
+		// side has to move both.
+		const layout = staleTab();
+		const harness = await open(layout);
+		control(harness, 'edit-combat').click();
+		await settle(harness.editor);
+		const drawn = (
+			harness.container.querySelectorAll(
+				'.sheetsmith-layout-preview',
+			)[1] as HTMLElement
+		).style.getPropertyValue('--sheetsmith-columns');
+
+		const stage = document.createElement('div');
+		document.body.appendChild(stage);
+		const walk = walkComponents(layout.components);
+		renderGrid(
+			stage,
+			walk,
+			walk.map(({ config }) => ({
+				config,
+				component: getComponent(config.type),
+				data: null,
+				error: null,
+			})),
+			() => ({
+				resolved: {},
+				resolveField: () => null,
+				onChange: () => undefined,
+			}),
+		);
+		const sheet = stage.querySelector<HTMLElement>('.sheetsmith-grid');
+		// Vacuity guard: two empty strings would compare equal and this test would
+		// pass on a schematic that had stopped setting the property at all.
+		expect(drawn).not.toBe('');
+		expect(sheet?.style.getPropertyValue('--sheetsmith-columns')).toBe(drawn);
+		stage.remove();
+	});
+});
+
+describe('overlap inside a tab, and never across tabs', () => {
+	/*
+	 * `findOverlaps` runs per schematic over one list, so which blocks can be
+	 * reported as overlapping each other is decided entirely by which list a
+	 * schematic draws. That makes "never across tabs" true by construction rather
+	 * than by a check: tabs share one position by definition, and no schematic
+	 * ever draws them, so there is nothing to compare.
+	 *
+	 * What is left to assert is the other half — that a tab's own children are
+	 * still compared with each other, on the container tab's own schematic. This
+	 * feature's criterion named the tab set's schematic as the driver, which the
+	 * editor deliberately does not create; corrected, and driven here.
+	 */
+	function overlappingTabs(): Layout {
+		const fill = { col: 1, row: 1, width: 6, height: 2 };
+		return {
+			name: 'Overlapping sheet',
+			columns: 12,
+			components: [
+				{
+					id: 'pages',
+					type: 'tab-set',
+					label: 'Pages',
+					position: { col: 1, row: 1, width: 6, height: 2 },
+					children: [
+						{
+							id: 'combat',
+							type: 'group',
+							label: 'Combat',
+							position: fill,
+							children: [
+								// Two blocks on one cell of the Combat tab's own grid.
+								{
+									id: 'one',
+									type: 'stat',
+									label: 'One',
+									position: { col: 1, row: 1, width: 3, height: 1 },
+								},
+								{
+									id: 'two',
+									type: 'stat',
+									label: 'Two',
+									position: { col: 1, row: 1, width: 3, height: 1 },
+								},
+							],
+						},
+						{
+							// Same position as Combat's children, but on another tab's
+							// grid entirely: it must never be implicated.
+							id: 'spells',
+							type: 'group',
+							label: 'Spells',
+							position: fill,
+							children: [
+								{
+									id: 'three',
+									type: 'stat',
+									label: 'Three',
+									position: { col: 1, row: 1, width: 3, height: 1 },
+								},
+							],
+						},
+					],
+				},
+			],
+			triggers: [],
+		};
+	}
+
+	it('marks the two blocks sharing a cell inside the open tab', async () => {
+		const harness = await open(overlappingTabs());
+		control(harness, 'edit-combat').click();
+		await settle(harness.editor);
+
+		// One schematic for the sheet and one for the open container tab. The tab
+		// set contributes none, which is why the count is two rather than three.
+		const previews = harness.container.querySelectorAll(
+			'.sheetsmith-layout-preview',
+		);
+		expect(previews).toHaveLength(2);
+		const marked = Array.from(
+			(previews[1] as HTMLElement).querySelectorAll(
+				'.sheetsmith-preview-overlap',
+			),
+		).map((el) => el.textContent);
+		expect(marked.sort()).toEqual(['One', 'Two']);
+	});
+
+	it('never marks a block on another tab, whatever position it shares', async () => {
+		const harness = await open(overlappingTabs());
+		control(harness, 'edit-combat').click();
+		await settle(harness.editor);
+		// "Three" sits at the same coordinates as both of the above and is on no
+		// schematic that draws them, so it is drawn nowhere here and marked
+		// nowhere either.
+		const all = Array.from(
+			harness.container.querySelectorAll('.sheetsmith-preview-cell'),
+		).map((el) => el.textContent);
+		expect(all).not.toContain('Three');
+		// And the tabs themselves, which share one position, are never compared:
+		// no schematic draws them, so neither can be marked.
+		expect(all).not.toContain('Combat');
+		expect(all).not.toContain('Spells');
 	});
 });
