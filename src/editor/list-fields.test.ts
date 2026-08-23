@@ -238,7 +238,7 @@ describe('columns editor', () => {
 		const el = columnsEditor(record);
 		const rings = Array.from(
 			el.querySelectorAll<HTMLElement>(
-				'.sheetsmith-level-sample .sheetsmith-table-cycle',
+				'.sheetsmith-level-sample .sheetsmith-level-ring',
 			),
 		);
 		// None, and then one per level.
@@ -254,7 +254,7 @@ describe('columns editor', () => {
 	function sampleRings(el: HTMLElement): HTMLElement[] {
 		return Array.from(
 			el.querySelectorAll<HTMLElement>(
-				'.sheetsmith-level-sample .sheetsmith-table-cycle',
+				'.sheetsmith-level-sample .sheetsmith-level-ring',
 			),
 		);
 	}
@@ -360,7 +360,7 @@ describe('columns editor', () => {
 		max.value = '3';
 		max.dispatchEvent(new Event('change'));
 		expect(
-			el.querySelectorAll('.sheetsmith-level-sample .sheetsmith-table-cycle'),
+			el.querySelectorAll('.sheetsmith-level-sample .sheetsmith-level-ring'),
 		).toHaveLength(4);
 		// In place, so the field being typed in is not pulled out from under
 		// the author mid-edit.

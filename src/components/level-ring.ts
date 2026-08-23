@@ -6,6 +6,12 @@
  * control would drift from the real one the first time either changed, and the
  * sample is there to answer "what will this look like?" exactly.
  *
+ * Three consumers now, and the third is why the class it paints is called
+ * `sheetsmith-level-ring` rather than naming a table: a Track whose run is one
+ * segment is a flag, and `docs/UI.md` §9 requires a card and a cell doing the
+ * same job to share the painter rather than measure differently under the same
+ * finger. A painter naming one of its callers is PATTERNS §1's worked example.
+ *
  * A level name may say what its ring shows, after a colon: "Proficient:" for a
  * plain fill carrying no letter, "Proficient:★" for a mark of the author's
  * own. Left alone it carries the initial of its name, which is what every
@@ -132,7 +138,7 @@ export function paintLevelRing(
 	// no letter to say so. A level that asked for no glyph shows the fill
 	// alone, which is the same answer one step further.
 	ring.textContent = level === 0 || !graded ? '' : levelGlyph(column, level);
-	ring.classList.toggle('sheetsmith-table-cycle-on', level > 0);
+	ring.classList.toggle('sheetsmith-level-ring-on', level > 0);
 	// How far up the column this cell is, as a share of the way. The fill is
 	// mixed from it, so a glance down the column reads the shape of a
 	// character's training before a single letter is read. It arrives as a
@@ -148,7 +154,7 @@ export function paintLevelRing(
 	// here rather than in the mix, because a colour interpolated between the
 	// two lands halfway to unreadable in the middle of the ramp.
 	ring.classList.toggle(
-		'sheetsmith-table-cycle-part',
+		'sheetsmith-level-ring-part',
 		level > 0 && level < count,
 	);
 }

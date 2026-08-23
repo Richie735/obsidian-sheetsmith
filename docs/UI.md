@@ -252,7 +252,7 @@ panel beside a row of cards reads as loose chrome floating on the page.
 | The card | `.sheetsmith-stat`, `.sheetsmith-stat-single` | Stat, Stat group, Pool |
 | A heading over a region | `.sheetsmith-group-heading` | Group, Tab set |
 | A strip of alternatives over a region | `.sheetsmith-tabset-strip` | Tab set's tabs |
-| The level ring | `paintLevelRing`, `.sheetsmith-table-cycle` | Table columns, Track marks |
+| The level ring | `paintLevelRing`, `.sheetsmith-level-ring` | Table's `level` and `toggle` columns, Track's flag, the editor's level sample |
 | The editing gesture | `editable.ts` | every stored value on a sheet |
 | Secondary text | `.sheetsmith-stat-abbreviation` | Stat group |
 | Inline error | `.sheetsmith-error` | every component's own failure |
@@ -318,7 +318,17 @@ measure differently.
 **When a card and a cell do the same job, they share the painter** [judgement].
 A single-level mark on a card and the same mark in a table cell must go through
 `paintLevelRing` rather than a lookalike, precisely so one flag cannot measure
-differently from the other under the same finger.
+differently from the other under the same finger. Track's flag is the card half:
+a run of one segment is two states, so it draws the ring and not a segment, and
+`docs/features/palette-entries-and-flags.md` carries the argument. **The class is
+named for the painter and not for a caller**, which is why it is
+`.sheetsmith-level-ring` rather than the table it used to be spelled after — a
+Track card carrying a class called `table` is a name a reader would believe
+(`PATTERNS.md` §1). The ring's expanded hit target rides on that class rather
+than on a table cell, and the price is on whoever stacks rings: a checklist has
+to keep its rows further apart than the target reaches, or the later ring wins
+the press. Track's `.sheetsmith-track-flags` row-gap and the editor's
+`.sheetsmith-level-sample` gap are the same arithmetic for the same reason.
 
 ---
 

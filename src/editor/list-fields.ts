@@ -1049,7 +1049,7 @@ export function renderColumnsEditor(
 						// says what the levels are.
 						if (entry === undefined || level === 0) {
 							const ring = strip.createDiv(
-								'sheetsmith-table-cycle sheetsmith-level-sample-fixed',
+								'sheetsmith-level-ring sheetsmith-level-sample-fixed',
 							);
 							ring.setAttribute('aria-hidden', 'true');
 							paintLevelRing(ring, column, level, true);
@@ -1057,7 +1057,7 @@ export function renderColumnsEditor(
 						}
 						const { name, glyph } = parseLevel(entry);
 						const ring = strip.createEl('button', {
-							cls: 'sheetsmith-table-cycle',
+							cls: 'sheetsmith-level-ring',
 							type: 'button',
 						});
 						paintLevelRing(ring, column, level, true);

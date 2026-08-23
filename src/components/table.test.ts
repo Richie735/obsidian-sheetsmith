@@ -397,7 +397,7 @@ describe('table.render', () => {
 		);
 		expect(headings).toEqual(['Training', 'Skill', 'Bonus', 'Total']);
 		const first = el.querySelector('tbody tr')?.firstElementChild;
-		expect(first?.querySelector('.sheetsmith-table-cycle')).not.toBeNull();
+		expect(first?.querySelector('.sheetsmith-level-ring')).not.toBeNull();
 	});
 
 	it('keeps the name first in the note however it is drawn', () => {
@@ -515,7 +515,7 @@ describe('table.render', () => {
 
 	it('says which level it is on, by name where the column names them', () => {
 		const el = render(note({ Acrobatics: { training: '2' } }), levelled);
-		const buttons = el.querySelectorAll('tbody .sheetsmith-table-cycle');
+		const buttons = el.querySelectorAll('tbody .sheetsmith-level-ring');
 		expect(buttons[0]?.getAttribute('aria-label')).toBe('Acrobatics Training: 2');
 		expect(buttons[1]?.getAttribute('aria-label')).toBe('Perception Training: 0');
 
@@ -524,7 +524,7 @@ describe('table.render', () => {
 				levels: ['Untrained', 'Proficient', 'Expertise'] },
 		] };
 		const withNames = render(note({ Acrobatics: { training: '2' } }), named);
-		const first = withNames.querySelector('tbody .sheetsmith-table-cycle');
+		const first = withNames.querySelector('tbody .sheetsmith-level-ring');
 		expect(first?.getAttribute('aria-label')).toBe(
 			'Acrobatics Training: Expertise',
 		);
@@ -532,7 +532,7 @@ describe('table.render', () => {
 
 	it('cycles through the levels and back to none on click', () => {
 		const { el, changes } = recording(levelled);
-		const button = el.querySelector('tbody .sheetsmith-table-cycle') as HTMLElement;
+		const button = el.querySelector('tbody .sheetsmith-level-ring') as HTMLElement;
 		button.click();
 		button.click();
 		button.click();
@@ -545,10 +545,10 @@ describe('table.render', () => {
 
 	it('repaints as it cycles, without waiting for the view to rebuild', () => {
 		const { el } = recording(levelled);
-		const button = el.querySelector('tbody .sheetsmith-table-cycle') as HTMLElement;
+		const button = el.querySelector('tbody .sheetsmith-level-ring') as HTMLElement;
 		button.click();
 		expect(button.getAttribute('aria-label')).toBe('Acrobatics Training: 1');
-		expect(button.classList.contains('sheetsmith-table-cycle-on')).toBe(true);
+		expect(button.classList.contains('sheetsmith-level-ring-on')).toBe(true);
 	});
 
 	it('shows the level as one glyph, and nothing at all for none', () => {
@@ -563,7 +563,7 @@ describe('table.render', () => {
 			],
 		};
 		const el = render(note({ Acrobatics: { training: '2' } }), named);
-		const buttons = el.querySelectorAll('tbody .sheetsmith-table-cycle');
+		const buttons = el.querySelectorAll('tbody .sheetsmith-level-ring');
 		// The initial of the level's name, and the full name on hover.
 		expect(buttons[0]?.textContent).toBe('E');
 		expect(buttons[0]?.getAttribute('title')).toBe('Expertise');
@@ -571,7 +571,7 @@ describe('table.render', () => {
 		expect(buttons[1]?.textContent).toBe('');
 		expect(buttons[1]?.getAttribute('title')).toBe('Untrained');
 		expect(
-			buttons[1]?.classList.contains('sheetsmith-table-cycle-on'),
+			buttons[1]?.classList.contains('sheetsmith-level-ring-on'),
 		).toBe(false);
 	});
 
@@ -580,14 +580,14 @@ describe('table.render', () => {
 			levelled,
 		);
 		const rings = Array.from(
-			el.querySelectorAll<HTMLElement>('tbody .sheetsmith-table-cycle'),
+			el.querySelectorAll<HTMLElement>('tbody .sheetsmith-level-ring'),
 		);
 		// Two of two levels is the whole way; one of two is half of it.
 		expect(rings.map((ring) => ring.style.getPropertyValue('--sheetsmith-level')))
 			.toEqual(['0.5', '1']);
 		// Short of the top the glyph reads against the page, not the accent.
 		expect(
-			rings.map((ring) => ring.classList.contains('sheetsmith-table-cycle-part')),
+			rings.map((ring) => ring.classList.contains('sheetsmith-level-ring-part')),
 		).toEqual([true, false]);
 	});
 
@@ -607,12 +607,12 @@ describe('table.render', () => {
 			},
 		);
 		const rings = Array.from(
-			el.querySelectorAll<HTMLElement>('tbody .sheetsmith-table-cycle'),
+			el.querySelectorAll<HTMLElement>('tbody .sheetsmith-level-ring'),
 		);
 		expect(rings.map((ring) => ring.textContent)).toEqual(['', 'E']);
 		// A fill with nothing on it is still a marked ring, and still says
 		// which level it is on through the ramp.
-		expect(rings.map((ring) => ring.classList.contains('sheetsmith-table-cycle-on')))
+		expect(rings.map((ring) => ring.classList.contains('sheetsmith-level-ring-on')))
 			.toEqual([true, true]);
 		expect(rings.map((ring) => ring.style.getPropertyValue('--sheetsmith-level')))
 			.toEqual(['0.5', '1']);
@@ -641,7 +641,7 @@ describe('table.render', () => {
 				],
 			},
 		);
-		const rings = Array.from(el.querySelectorAll('tbody .sheetsmith-table-cycle'));
+		const rings = Array.from(el.querySelectorAll('tbody .sheetsmith-level-ring'));
 		expect(rings.map((ring) => ring.textContent)).toEqual(['●', '★']);
 	});
 
@@ -682,7 +682,7 @@ describe('table.render', () => {
 				},
 			],
 		});
-		const ring = el.querySelector('tbody .sheetsmith-table-cycle');
+		const ring = el.querySelector('tbody .sheetsmith-level-ring');
 		expect(ring?.textContent).toBe('T');
 		expect(ring?.getAttribute('title')).toBe('Trained: the useful one');
 	});
@@ -695,7 +695,7 @@ describe('table.render', () => {
 			...levelled,
 			columns: [{ key: 'Training', type: 'level' as const, max: 1000000 }],
 		});
-		const ring = el.querySelector('tbody .sheetsmith-table-cycle');
+		const ring = el.querySelector('tbody .sheetsmith-level-ring');
 		expect(ring?.getAttribute('aria-label')).toBe('Acrobatics Training: 20');
 	});
 
@@ -718,7 +718,7 @@ describe('table.render', () => {
 		};
 		const el = render(note({ Acrobatics: { trained: 'yes' } }), toggles);
 		const rings = Array.from(
-			el.querySelectorAll<HTMLElement>('tbody .sheetsmith-table-cycle'),
+			el.querySelectorAll<HTMLElement>('tbody .sheetsmith-level-ring'),
 		);
 		// A toggle has one state to be in, so a share of the way up says
 		// nothing; it takes the full fill, as it always did. Acrobatics is
@@ -726,13 +726,13 @@ describe('table.render', () => {
 		expect(rings.map((ring) => ring.style.getPropertyValue('--sheetsmith-level')))
 			.toEqual(['', '']);
 		expect(
-			rings.map((ring) => ring.classList.contains('sheetsmith-table-cycle-part')),
+			rings.map((ring) => ring.classList.contains('sheetsmith-level-ring-part')),
 		).toEqual([false, false]);
 	});
 
 	it('reshades as it cycles, without waiting for the view to rebuild', () => {
 		const el = render(note({}), levelled);
-		const ring = el.querySelector('tbody .sheetsmith-table-cycle') as HTMLElement;
+		const ring = el.querySelector('tbody .sheetsmith-level-ring') as HTMLElement;
 		expect(ring.style.getPropertyValue('--sheetsmith-level')).toBe('');
 		ring.click();
 		expect(ring.style.getPropertyValue('--sheetsmith-level')).toBe('0.5');
@@ -747,7 +747,7 @@ describe('table.render', () => {
 	it('falls back to the level number where the levels have no names', () => {
 		const el = render(note({ Acrobatics: { training: '2' } }), levelled);
 		expect(
-			el.querySelector('tbody .sheetsmith-table-cycle')?.textContent,
+			el.querySelector('tbody .sheetsmith-level-ring')?.textContent,
 		).toBe('2');
 	});
 
@@ -755,7 +755,7 @@ describe('table.render', () => {
 		const { el, changes } = recording(levelled, {
 			rows: { 0: { name: 'Acrobatics', cells: { training: '2' } } },
 		});
-		const button = el.querySelector('tbody .sheetsmith-table-cycle') as HTMLElement;
+		const button = el.querySelector('tbody .sheetsmith-level-ring') as HTMLElement;
 		button.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }));
 		expect(changes).toEqual([]);
 		button.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }));
@@ -792,7 +792,7 @@ describe('table.render', () => {
 			columns: [{ key: 'Training', type: 'level' as const }],
 		};
 		const { el, changes } = recording(single);
-		const button = el.querySelector('tbody .sheetsmith-table-cycle') as HTMLElement;
+		const button = el.querySelector('tbody .sheetsmith-level-ring') as HTMLElement;
 		button.click();
 		button.click();
 		expect(changes).toEqual([
@@ -825,7 +825,7 @@ describe('table.render', () => {
 		};
 		const el = render(note({ Acrobatics: { trained: 'yes' } }), toggles);
 		expect(el.querySelectorAll('input[type="checkbox"]')).toHaveLength(0);
-		const rings = el.querySelectorAll('tbody .sheetsmith-table-cycle');
+		const rings = el.querySelectorAll('tbody .sheetsmith-level-ring');
 		expect(rings).toHaveLength(2);
 		// Two states is a toggle button, and ARIA has a word for that.
 		expect(rings[0]?.getAttribute('aria-pressed')).toBe('true');
@@ -842,7 +842,7 @@ describe('table.render', () => {
 			columns: [{ key: 'Trained', type: 'toggle' as const }],
 		};
 		const { el, changes } = recording(toggles);
-		const ring = el.querySelector('tbody .sheetsmith-table-cycle') as HTMLElement;
+		const ring = el.querySelector('tbody .sheetsmith-level-ring') as HTMLElement;
 		ring.click();
 		ring.click();
 		expect(changes).toEqual([
@@ -853,7 +853,7 @@ describe('table.render', () => {
 
 	it('gives an unnamed level no tooltip repeating its own glyph', () => {
 		const el = render(note({ Acrobatics: { training: '2' } }), levelled);
-		const ring = el.querySelector('tbody .sheetsmith-table-cycle');
+		const ring = el.querySelector('tbody .sheetsmith-level-ring');
 		expect(ring?.textContent).toBe('2');
 		expect(ring?.hasAttribute('title')).toBe(false);
 	});
@@ -951,7 +951,7 @@ describe('table touch affordances', () => {
 			const { el, changes } = recording(named, {
 				rows: { 0: { name: 'Acrobatics', cells: { training: '2' } } },
 			});
-			const ring = el.querySelector('tbody .sheetsmith-table-cycle') as HTMLElement;
+			const ring = el.querySelector('tbody .sheetsmith-level-ring') as HTMLElement;
 			press(ring);
 			vi.advanceTimersByTime(LONG_PRESS + 10);
 
@@ -976,7 +976,7 @@ describe('table touch affordances', () => {
 		vi.useFakeTimers();
 		try {
 			const { el, changes } = recording(named);
-			const ring = el.querySelector('tbody .sheetsmith-table-cycle') as HTMLElement;
+			const ring = el.querySelector('tbody .sheetsmith-level-ring') as HTMLElement;
 			press(ring, 'mouse');
 			vi.advanceTimersByTime(LONG_PRESS + 10);
 
@@ -992,7 +992,7 @@ describe('table touch affordances', () => {
 		vi.useFakeTimers();
 		try {
 			const { el, changes } = recording(named);
-			const ring = el.querySelector('tbody .sheetsmith-table-cycle') as HTMLElement;
+			const ring = el.querySelector('tbody .sheetsmith-level-ring') as HTMLElement;
 			press(ring);
 			ring.dispatchEvent(new Event('pointerup'));
 			vi.advanceTimersByTime(LONG_PRESS + 10);
@@ -1698,7 +1698,7 @@ describe('table with open rows', () => {
 		};
 		const { el } = openRender(PACK, worn);
 		expect(footTotals(el)).toEqual(['1']);
-		(el.querySelector('tbody .sheetsmith-table-cycle') as HTMLElement).click();
+		(el.querySelector('tbody .sheetsmith-level-ring') as HTMLElement).click();
 		expect(footTotals(el)).toEqual(['2']);
 	});
 

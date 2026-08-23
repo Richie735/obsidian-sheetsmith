@@ -1621,7 +1621,7 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 						return;
 					}
 
-					const button = element('button', 'sheetsmith-table-cycle', td);
+					const button = element('button', 'sheetsmith-level-ring', td);
 					button.type = 'button';
 					// Two states is a toggle button, and ARIA has a word for
 					// that; more than two is not, so those carry their state in
