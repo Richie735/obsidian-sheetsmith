@@ -168,9 +168,32 @@ function applyTrigger(
 
 	const env: FormulaEnv = buildSheetEnv(prepared.map(publishedComponent), library);
 
+	/*
+	 * What the trigger reaches, which is `SheetView.renderTriggers`' filter: a
+	 * component that read, that can act on a reset, and that binds to this
+	 * trigger. Nothing about where it sits, deliberately.
+	 *
+	 * One list, computed once, because two is what let this file drift from the
+	 * view. The write loop below used to walk every prepared component while
+	 * only the returned `bound` filtered on `error === null`, so a component
+	 * whose section failed to read was reset from `null` and written back — and
+	 * the view never does that, because `renderTriggers` filters before it hands
+	 * anything to `applyTrigger`. Unobservable until this file had a fixture
+	 * whose read fails, which is why it survived: a mirror's divergence is only
+	 * ever visible on a case the mirror does not have.
+	 */
+	const bound = prepared.filter(
+		(entry) =>
+			entry.error === null &&
+			entry.component.applyReset !== undefined &&
+			(entry.config.reset ?? []).some(
+				(binding) => binding.trigger === trigger,
+			),
+	);
+
 	const failed: string[] = [];
 	const writes = [];
-	for (const { config, component, data } of prepared) {
+	for (const { config, component, data } of bound) {
 		// Any binding matching this trigger, and its index — which is where its
 		// own `to` expression lives now that the bindings are a list.
 		const index = (config.reset ?? []).findIndex(
@@ -199,19 +222,9 @@ function applyTrigger(
 	return {
 		text: applySectionWrites(source, writes).text,
 		failed,
-		// What the confirmation lists, which is `SheetView.renderTriggers`'
-		// filter: a component that read, that can act on a reset, and that binds
-		// to this trigger. Nothing about where it sits, deliberately.
-		bound: prepared
-			.filter(
-				(entry) =>
-					entry.error === null &&
-					entry.component.applyReset !== undefined &&
-					(entry.config.reset ?? []).some(
-						(binding) => binding.trigger === trigger,
-					),
-			)
-			.map((entry) => entry.config.label),
+		// The same list the writes came from, which is the whole point: what the
+		// confirmation names and what the reset touches cannot disagree.
+		bound: bound.map((entry) => entry.config.label),
 	};
 }
 
@@ -606,5 +619,90 @@ describe('a long rest against a pool on a tab nobody opened', () => {
 		expect(getSection(note, 'Pages')).toBeUndefined();
 		expect(getSection(note, 'Vitals')).toBeUndefined();
 		expect(getSection(note, 'HP')).toBeDefined();
+	});
+});
+
+/*
+ * A long rest where one bound component's section will not read.
+ *
+ * The case this file had no fixture for, and the reason it had quietly drifted
+ * from `SheetView` (PATTERNS §11): the view filters `error === null` in
+ * `renderTriggers` before handing anything to `applyTrigger`, and this mirror's
+ * write loop used to walk every prepared component instead. A mirror's
+ * divergence is only ever visible on a case the mirror does not have, so the
+ * fixture is the proof and not the fix.
+ *
+ * Two components bind to the rest so the assertions can separate "skipped" from
+ * "stopped everything": SPEC §6 is that what resolves is applied and what does
+ * not is named, and a broken section is a third thing again — not a failure to
+ * report, but a component with no data to reset and nothing to write from.
+ */
+describe('a long rest where a bound section will not read', () => {
+	/** Ki bound to the long rest as well, so something still resets. */
+	const BOTH = variant((shape) => {
+		componentIn(shape, 'ki').reset = [
+			{ trigger: 'Long rest', action: 'full' },
+		];
+	});
+
+	/** The same note with HP's block holding a line that is not an entry. */
+	const BROKEN = NOTE.replace('current: 4\ntemp: 2', 'current: 4\nnot an entry');
+
+	it('really does fail to read that one section', () => {
+		// Vacuity guard. Every assertion below passes on a note that reads
+		// cleanly, because a component that resets to what it already holds
+		// writes nothing either — so the fixture's own premise is asserted first.
+		const section = getSection(parseCharacter(BROKEN), 'HP');
+		const result = getComponent('pool')?.read(section?.body ?? '', {
+			id: 'hp',
+			type: 'pool',
+			label: 'HP',
+			position: { col: 1, row: 2, width: 2, height: 1 },
+		});
+		expect(result?.ok).toBe(false);
+		// And the clean note reads, so it is the edit that broke it.
+		expect(
+			getComponent('pool')?.read(
+				getSection(parseCharacter(NOTE), 'HP')?.body ?? '',
+				{
+					id: 'hp',
+					type: 'pool',
+					label: 'HP',
+					position: { col: 1, row: 2, width: 2, height: 1 },
+				},
+			)?.ok,
+		).toBe(true);
+	});
+
+	it('leaves it out of the confirmation, and names the one that can reset', () => {
+		// The reader is told what the rest will touch. A pool whose section is
+		// malformed is not one of those things: there is nothing to reset it
+		// from, so offering it would promise a change that cannot happen.
+		expect(applyTrigger(BROKEN, BOTH, 'Long rest').bound).toEqual(['Ki']);
+	});
+
+	it('leaves the malformed section byte-identical', () => {
+		// The whole of the divergence. Reset from `null`, a pool writes a fresh
+		// block from nothing and the hand-edit is gone — which is Constraint 4
+		// with the loss dressed up as a repair.
+		const { text } = applyTrigger(BROKEN, BOTH, 'Long rest');
+		expect(getSection(parseCharacter(text), 'HP')?.body).toBe(
+			getSection(parseCharacter(BROKEN), 'HP')?.body,
+		);
+	});
+
+	it('still resets the component that did read', () => {
+		// One unreadable section does not stop the rest of a long rest, which is
+		// the same rule as SPEC §6's collected failures arriving one layer down.
+		const { text } = applyTrigger(BROKEN, BOTH, 'Long rest');
+		expect(fenced(text, 'Ki', 'current')).toBe('5');
+	});
+
+	it('reports no failure for it, because it was never asked', () => {
+		// `failed` is what `applyReset` refused, and a component outside `bound`
+		// never reaches it. The malformed section is reported where a malformed
+		// section is always reported — on the card, by the render — not as a
+		// reset that went wrong.
+		expect(applyTrigger(BROKEN, BOTH, 'Long rest').failed).toEqual([]);
 	});
 });
