@@ -66,6 +66,7 @@ import {
 	paintLevelRing,
 	parseLevel,
 } from './level-ring';
+import { flagReading, flagText, isFlagSet } from './stored-flag';
 import { bindLongPress, showPopover } from '../ui/popover';
 import { revealWhenTruncated } from '../ui/truncation';
 
@@ -260,11 +261,6 @@ const REMOVE_ICON = 'trash';
  */
 const UNNAMED_ROW = 'Unnamed row';
 
-/** Values a toggle cell is stored as, and what the note reads like. */
-const TOGGLE_TRUE = 'yes';
-const TOGGLE_FALSE = 'no';
-const TRUTHY = new Set(['yes', 'true', 'x', '✓', '✔', '1']);
-
 /**
  * What a row is called, for anything that has to say which row it means.
  *
@@ -312,7 +308,7 @@ function cellValue(column: TableColumn, raw: string | undefined): FieldValue {
 	const text = (raw ?? '').trim();
 	switch (columnType(column)) {
 		case 'toggle':
-			return TRUTHY.has(text.toLowerCase());
+			return isFlagSet(text);
 		case 'level':
 			return levelOf(column, text);
 		case 'number': {
@@ -1595,10 +1591,10 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 
 					/** What the note stores for a level: a count, or yes/no. */
 					const stateOf = (level: number) =>
-						graded ? String(level) : level > 0 ? TOGGLE_TRUE : TOGGLE_FALSE;
+						graded ? String(level) : flagText(level > 0);
 					/** What the level is called, to a reader and to a listener. */
 					const nameOf = (level: number) =>
-						graded ? levelName(column, level) : level > 0 ? 'Yes' : 'No';
+						graded ? levelName(column, level) : flagReading(level > 0);
 
 					const setLevel = (next: number) => {
 						if (next === current) return;

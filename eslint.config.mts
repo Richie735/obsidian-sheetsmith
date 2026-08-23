@@ -184,9 +184,11 @@ export default defineConfig(
 								'!./column-types',
 								'!./level-ring',
 								'!./stat-card',
+								'!./stored-flag',
 								'!../components/column-types',
 								'!../components/level-ring',
 								'!../components/stat-card',
+								'!../components/stored-flag',
 							],
 							message:
 								'A component must not import another component. Move the shared behaviour into a module named for what it does — a sibling painter, or src/interaction/ — and import that from both.',
