@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { table, TableConfig, TableData } from './table';
 import { closePopover, LONG_PRESS } from '../ui/popover';
 import { UNRESOLVED_DELAY } from '../interaction/editable';
+import { hold, pressDown, release } from '../test/pointer';
 import { FOCUSABLE } from '../view/cell-focus';
 import {
 	callsFrom,
@@ -938,13 +939,6 @@ describe('table touch affordances', () => {
 		],
 	};
 
-	// jsdom has no PointerEvent, so the pointer type goes on a plain event.
-	function press(el: HTMLElement, pointerType = 'touch'): void {
-		const event = new Event('pointerdown');
-		Object.defineProperty(event, 'pointerType', { value: pointerType });
-		el.dispatchEvent(event);
-	}
-
 	it('reveals a level name on a long press, and swallows the click', () => {
 		vi.useFakeTimers();
 		try {
@@ -952,8 +946,7 @@ describe('table touch affordances', () => {
 				rows: { 0: { name: 'Acrobatics', cells: { training: '2' } } },
 			});
 			const ring = el.querySelector('tbody .sheetsmith-level-ring') as HTMLElement;
-			press(ring);
-			vi.advanceTimersByTime(LONG_PRESS + 10);
+			hold(ring, LONG_PRESS + 10, { pointerType: 'touch' });
 
 			const bubble = document.querySelector('.sheetsmith-popover');
 			expect(bubble?.textContent).toBe('Expertise');
@@ -977,8 +970,7 @@ describe('table touch affordances', () => {
 		try {
 			const { el, changes } = recording(named);
 			const ring = el.querySelector('tbody .sheetsmith-level-ring') as HTMLElement;
-			press(ring, 'mouse');
-			vi.advanceTimersByTime(LONG_PRESS + 10);
+			hold(ring, LONG_PRESS + 10, { pointerType: 'mouse' });
 
 			expect(document.querySelector('.sheetsmith-popover')).toBeNull();
 			ring.click();
@@ -993,8 +985,8 @@ describe('table touch affordances', () => {
 		try {
 			const { el, changes } = recording(named);
 			const ring = el.querySelector('tbody .sheetsmith-level-ring') as HTMLElement;
-			press(ring);
-			ring.dispatchEvent(new Event('pointerup'));
+			pressDown(ring, { pointerType: 'touch' });
+			release(ring);
 			vi.advanceTimersByTime(LONG_PRESS + 10);
 			expect(document.querySelector('.sheetsmith-popover')).toBeNull();
 			ring.click();
