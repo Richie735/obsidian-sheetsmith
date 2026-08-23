@@ -51,7 +51,7 @@ eslint now enforces.
 
 ## Working order
 
-Build **component by component, not layer by layer.** Take one component all the way through read, write, render, and tests before starting the next. Order so far: Stat group, then Stat (dropped when Stat group first covered the card, rebuilt on top of it), Table, Pool, Track. The remaining six are variations. The layout schema assembles itself from component configs rather than being designed up front. See `SPEC` §12.
+Build **component by component, not layer by layer.** Take one component all the way through read, write, render, and tests before starting the next. Order so far: Card set, then Card (dropped when Card set first covered the card, rebuilt on top of it), Table, Pool, Track. The remaining six are variations. The layout schema assembles itself from component configs rather than being designed up front. See `SPEC` §12.
 
 Resist building the layout editor and the formula engine early. Both assume a working renderer and a proven file format, and both are the interesting parts, which is exactly why they are the trap.
 

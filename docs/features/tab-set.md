@@ -449,7 +449,7 @@ any component. Those two lines together mean *every* component can be a tab, and
 every component draws its own label — so the rule cannot live in Group. It is
 `RenderContext.parentShowsLabel`, set by `renderGrid` on the `childRegions` path
 only, and asked through one predicate, `showsOwnLabel(config, context)` in
-`types.ts`. **Stat, Stat group, Pool, Track and Table all changed for it, and Pool
+`types.ts`. **Card, Card set, Pool, Track and Table all changed for it, and Pool
 gained label-hiding it never had.** That is not scope creep; it is what those two
 spec lines require, and a reader finding five components asking a predicate about
 containers deserves to find the reason here rather than reconstructing it.

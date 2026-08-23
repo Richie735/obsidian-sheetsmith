@@ -103,18 +103,18 @@ With one component there is exactly one name to choose, which is the order §13
 said this had to happen in. **It is Table**, on three legs, the first two evidence
 from this repository rather than taste.
 
-1. **Every sibling in the catalog is named for what it is on the page.** Stat,
-   Stat group, Pool, Track, Group, Image, Rich text, Computed. "Skill card" is
+1. **Every sibling in the catalog is named for what it is on the page.** Card,
+   Card set, Pool, Track, Group, Image, Rich text, Computed. "Skill card" is
    the only exception, and it is the only name that reads wrong over most of what
    its own component does — §4.2 has this block covering inventory, attacks,
    spells and features, and §2 already admitted "its name will read oddly there".
    Renaming it makes the catalog consistent rather than breaking it.
 2. **This repository has already made this exact move, in this direction, for
-   this reason.** §12 records that Stat group "was built as 'Abilities'" and
-   became Stat group once it turned out to be the general thing. Same correction,
+   this reason.** §12 records that Card set "was built as 'Abilities'" and
+   became Card set once it turned out to be the general thing. Same correction,
    one component earlier, and nobody has regretted it.
 3. **§2's principle is applied, not broken.** Read in full it says a component is
-   "deliberately generic in *capability* (Stat group, Pool) rather than
+   "deliberately generic in *capability* (Card set, Pool) rather than
    system-specific (AbilityScore, SpellSlots)", and then that the name "should
    describe what they are about to build rather than the shape of its data
    model". The target of that sentence is system-specificity, and the shape it
@@ -344,7 +344,7 @@ disagreed.
 
 - **The add menu** lists "Table". It is built from `listComponentTypes()` in
   registry order, so the `register()` call moves to keep that list alphabetical —
-  `pool, stat, stat-group, table, track`.
+  `pool, stat, card-set, table, track`.
 - **A new component's default label** is "Table", from `uniqueLabel`. A second one
   is "Table 2", unchanged behaviour.
 - **The configuration form** is identical apart from the two fields below. Every
@@ -599,7 +599,7 @@ value in `title`").
 
 Two parts, and the second is why the first needs care:
 
-- **The reveal is `ui/truncation.ts`**, extracted from the stat card's label rather
+- **The reveal is `ui/truncation.ts`**, extracted from the card's label rather
   than copied. `PATTERNS` §1 allows two consumers to duplicate *if* a test drives
   both copies, and no such test can exist here — `scrollWidth` and `clientWidth` are
   both 0 under happy-dom, so neither copy's branch is reachable. With the guard
@@ -906,7 +906,7 @@ which is the failure mode a hand-written scanner over bracket pairs actually has
       header comment — and no identifier, type id, filename or class.
 - [x] `componentDisplayName('table')` returns `Table`, and `layout-editor.ts`'s own
       doc-comment example names a type that still exists.
-- [x] The add menu lists `Table` between `Stat group` and `Track`.
+- [x] The add menu lists `Table` between `Card set` and `Track`.
 - [x] Adding a Table from the menu seeds the label `Table`, and a second one
       `Table 2`.
 - [x] The rename commit changes no selector and no declaration in `styles.css`. One
@@ -974,7 +974,7 @@ rest of the log read in the vocabulary the feature ends in.
 3. `refactor: Ask one place whether a formula can name something`. `isName` out of
    the expression parser, replacing the layout parser's copy, before a third was
    written for a totalled column.
-4. `refactor: Extract the truncation reveal from the stat card`. `src/ui/truncation.ts`
+4. `refactor: Extract the truncation reveal from the card`. `src/ui/truncation.ts`
    and its tests over faked metrics.
 5. `feat: Parse a cell's wikilinks into segments`. `src/parse/wikilink.ts` and the
    rejoin invariant. Nothing consumes it yet.
@@ -1090,7 +1090,7 @@ reasoning is not visible in the code that came out of them.
 - **Renaming `src/parse/table.ts`, its exports, or any CSS class.** They had the table
   vocabulary first, and the folder is what disambiguates. The classes already say
   `table`.
-- **Renaming the other components.** Stat, Stat group, Pool and Track are already
+- **Renaming the other components.** Card, Card set, Pool and Track are already
   named for what they are on the page; this makes the catalog consistent rather than
   starting a sweep.
 - **A layout-file migration tool.** Nothing to migrate. Editing one word is the

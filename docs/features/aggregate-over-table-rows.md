@@ -65,7 +65,7 @@ surface the tool owns: a spreadsheet cell, a Notion property, a Dataview view. I
 Sheetsmith a `Value` has five destinations, and they are not display surfaces:
 
 - `FieldResolver` returns one, and every component's `render` prints it on a
-  card. A Pool's `max` is a formula field; so is a Track's `count`, a Stat
+  card. A Pool's `max` is a formula field; so is a Track's `count`, a Card
   group's `derived`, a Table's column formula.
 - `ScopeEntry.value` and `ScopeValues` carry one into the sheet-wide name table.
 - `coerceValue` produces one from anything a note holds.
@@ -788,7 +788,7 @@ consuming component renders. A footer total with a filter is a column configurin
 an aggregation, which §1 rejects.
 
 **Aggregating over anything but a Table.** Only Table implements `scopeRows`. A
-Stat group's attributes and a Track's runs both have names a formula can already
+Card set's entries and a Track's runs both have names a formula can already
 reach, so neither needs a set, and neither gains one here.
 
 **Item modifiers.** A row that adds to a value elsewhere on the sheet. It consumes
