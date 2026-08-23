@@ -167,7 +167,9 @@ import { MySettings, DEFAULT_SETTINGS } from './settings';
 import { registerCommands } from './commands';
 
 export default class MyPlugin extends Plugin {
-	settings!: MySettings;
+	// `declare`, not `settings!:` — Obsidian's own `Plugin` owns this property,
+	// and under `target: ES2022` a redeclaration defines over it (TS2612).
+	declare settings: MySettings;
 
 	async onload() {
 		this.settings = Object.assign(

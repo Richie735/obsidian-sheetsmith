@@ -23,7 +23,8 @@ const context = await esbuild.context({
 	},
 	bundle: true,
 	format: 'iife',
-	target: 'es2021',
+	// Kept in step with tsconfig's `target`, which carries the reason.
+	target: 'es2022',
 	platform: 'browser',
 	sourcemap: 'inline',
 	outfile: `${root}dist/harness.js`,

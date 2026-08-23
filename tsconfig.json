@@ -3,7 +3,25 @@
 		"inlineSourceMap": true,
 		"inlineSources": true,
 		"module": "ESNext",
-		"target": "ES2021",
+		// ES2022 because the code already compiles against it. The dependency is
+		// `Array.prototype.at`: `interaction/scrub.ts`, the two editor list
+		// fields, and two test files. Under `lib: ["ES2021"]` that type-checked
+		// only because `@types/node` ships a shim declaring `at` on `Array`, so
+		// the build was more permissive than this file claimed and an editor
+		// resolving types without that package reported errors the build did not.
+		// `lib` and both esbuild targets were moved with it, since three targets
+		// disagreeing is the drift this was fixing. Verified by type-checking
+		// with `types: []`, which named all five sites before and none after.
+		"target": "ES2022",
+		// Pinned rather than inherited from `target`. It defaults to true at
+		// ES2022 and false below it, so a target change is silently also a class
+		// semantics change: a declaration-only field stops being erased and
+		// starts defining the property as undefined. That flip broke one
+		// declaration the compiler could see (TS2612 on `Plugin.settings`) and
+		// left one it could not, where the base owns the property at runtime but
+		// does not declare it. Named here so the next target move is one
+		// decision rather than two.
+		"useDefineForClassFields": true,
 		"strict": true,
 		"noImplicitReturns": true,
 		"noFallthroughCasesInSwitch": true,
@@ -13,7 +31,7 @@
 		"skipLibCheck": true,
 		"forceConsistentCasingInFileNames": true,
 		"allowSyntheticDefaultImports": true,
-		"lib": ["ES2021", "DOM"]
+		"lib": ["ES2022", "DOM"]
 	},
 	"include": ["src/**/*.ts", "harness/**/*.ts"]
 }

@@ -391,10 +391,10 @@ export function renderRowsEditor(
 					// Own-property, not `in`: values comes out of the layout file
 					// as an ordinary object, so `in` would report a row value
 					// named for anything on Object.prototype as present on every
-					// row. Spelled the long way; the build targets ES2021.
+					// row.
 					if (
 						!row.values ||
-						!Object.prototype.hasOwnProperty.call(row.values, name)
+						!Object.hasOwn(row.values, name)
 					) {
 						continue;
 					}

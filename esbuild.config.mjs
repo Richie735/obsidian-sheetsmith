@@ -34,7 +34,8 @@ const context = await esbuild.context({
 		...builtinModules,
 	],
 	format: 'cjs',
-	target: 'es2021',
+	// Kept in step with tsconfig's `target`, which carries the reason.
+	target: 'es2022',
 	logLevel: 'info',
 	sourcemap: prod ? false : 'inline',
 	treeShaking: true,

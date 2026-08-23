@@ -10,7 +10,14 @@ import { registerAutoOpen } from './view/auto-open';
 import { SheetView, VIEW_TYPE_SHEET } from './view/sheet-view';
 
 export default class SheetsmithPlugin extends Plugin {
-	settings!: SheetsmithSettings;
+	/*
+	 * `declare`, not an assignment: Obsidian 1.13's `Plugin` owns `settings`
+	 * (typed `unknown`) and this only narrows it. Under `target: ES2022` a class
+	 * field is *defined* rather than assigned, so a redeclaration here would
+	 * write `undefined` over the base's own property — which is what TS2612
+	 * reports and what `declare` emits nothing for.
+	 */
+	declare settings: SheetsmithSettings;
 	/** Files the user chose to keep in markdown view this session. */
 	markdownOverrides = new Set<string>();
 
