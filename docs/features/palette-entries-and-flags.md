@@ -519,14 +519,18 @@ Read from the harness at both themes, per UI.md §11.
       which a review rightly called not the thing under review. The harness now takes
       `&choice=<type>:<index>`, and `?surface=settings&choice=track:0` shows the menu
       reading "Checkbox" with its description beside it.
-- [ ] **The row grows when an entry is selected, and the controls wrap.** What the new
-      view showed. With a bare type the menu, the destination and **Add** sit on one
-      line; with Checkbox chosen the description takes two lines and pushes the
-      destination and **Add** onto a second row, moving the button about 35px down. Not
-      the rule the pool's typed amount established — the pointer is on the select, not
-      on the button that moved — but untidy, and the fix is a judgement about the
-      settings tab's rows in general rather than about this one. `docs/UI.md` §12 holds
-      it.
+- [x] **The row holds still when an entry is selected.** What the new view showed
+      first was the opposite: with Checkbox chosen the description took two lines inside
+      the info column and pushed the destination and **Add** onto a second row, about
+      35px down. Not the rule the pool's typed amount established — the pointer is on
+      the select, not on the button that moved — but the button an author presses next
+      moved while they were choosing what to press it for. Fixed with the three prefills,
+      which turned it from an edge case into the normal case: measured at 1400px, 620px
+      and 380px, the name, the menu, the destination and **Add** land on identical
+      pixels whether a bare type or an entry is selected, and the description grows
+      downward below them. At 380px the destination and **Add** wrap to a second line in
+      *both* states, so that wrap is the width and not the copy. `docs/UI.md` §9 carries
+      the rule and §12's row is retired.
 - [ ] **The add menu's indent, open.** A native `<select>` renders only its selection in
       a still, so this one genuinely needs a hand on the mouse — in Obsidian or in
       `harness/index.html`. Left as a look criterion for that reason, the way the tab
@@ -570,7 +574,8 @@ Each of these is separate work.
 - **The Currency, Inventory and Features prefills.** §13 states all three and this
   feature builds the mechanism they need. Adding them here would put three system
   flavours in the menu before anyone has used one, and question 5's rule is what they
-  should be tested against when they arrive.
+  should be tested against when they arrive. *(Built afterwards, on that rule. See
+  "The three prefills, as shipped" below.)*
 - **A Field component.** Still a variation on the list in §12.
 - **A select column type, or a select config field anywhere.** Unrelated, and a `count`
   of one is not a choice from a list.
@@ -665,3 +670,211 @@ last, so a run of one lands on the same colour as a progress run. "Bloodied" and
 "Inspiration" are pixel-identical apart from the glyph. The class is applied so a later
 answer has somewhere to hang; the stylesheet says nothing, and the design section
 carries the argument against inventing a colour that means "bad".
+
+
+## The three prefills, as shipped
+
+Built in a later session, against question 5's rule rather than inherited from the
+§13 entry that listed them. Each passes both halves: the generic block covers the
+job, and the component's own name would not lead an author to it — nobody building
+an inventory looks for a component called Table, and nobody counting coins looks for
+a Stat group.
+
+| Entry | Type | Config |
+| --- | --- | --- |
+| Currency | Stat group | `attributes` CP/Copper, SP/Silver, EP/Electrum, GP/Gold, PP/Platinum |
+| Inventory | Table | `columns` Qty (number), Weight (number, `total`); `openRows`; `rowHeader` "Item" |
+| Features | Table | `columns` Source (`secondary`), Notes; `openRows`; `rowHeader` "Feature" |
+
+What the build decided, that §13 did not state.
+
+**A prefill writes no key whose value is already its default.** §13 says Currency is
+"horizontal" and Features has "a Source text column"; neither reaches the config,
+because `direction` defaults to horizontal and a column with no `type` is a text
+column. PATTERNS §8 already leaves a defaulted value out of a config, and the reason
+bites harder for an entry than for a form: a layout is hand-edited and shared, so an
+entry that spells out its defaults writes that noise into every layout anyone builds
+from it. "No `derived`" and "no declared rows" are absences for the same reason and a
+plainer one — there is nothing to write. A declared row is one *every* character
+using the layout has, and gear and features are the lists where the character owns
+every line. **[checked]** — `contract.test.ts` compares a prefilled boolean against
+its `default` and a prefilled select against its first option, which are the two kinds
+with a default to compare against and the two the editor itself omits on
+(`ConfigFieldSpec` says so on the members). It went in as a check rather than staying a
+convention because the rule was stated in this document and in a code comment and held
+by nothing, and a defaulted key looks perfectly deliberate in review.
+
+**Config keys are in `configFields` order**, which is the order the form the author
+lands in will show them. It is the same reasoning PATTERNS §3 gives for `palette`
+sitting after `configFields`: here are the settings, and here is one of them filled in.
+**[checked]**, and for the reason `MEMBER_ORDER` is: an entry whose keys run in some
+other order reads perfectly well on its own, so a review never catches it.
+
+**An entry's example ids name what the entry itself produces.** Currency writes
+`currency.GP` and Inventory `inventory.Weight`, because the entry's name is the new
+component's label and `uniqueId` derives the id from that label. Both first drafts
+invented an id — `coins.` and `gear.` — which is the convention for a *config field*
+description like Pool's `8 + mod(abilities.CON) * level`, where the copy belongs to no
+particular component and an invented name is honest. An entry ships its own label, so
+the reader is one click from a component the example contradicts. Not checked: it would
+mean parsing prose for names, and the rule is one sentence.
+
+**Table is the first type with two entries, and nothing had assumed one.**
+`paletteEntries` returns a list, `addChoices` flat-maps it, and the option value is
+already `type:index` — so `table:0` and `table:1` are two options rather than a second
+displacing the first. The contract test's name-uniqueness guard is per type and was
+written for exactly this. What was *not* covered is the run: the existing menu test
+checks only the option immediately after a type, which an interleaved menu would still
+pass, so a test now pins type → every prefill of it → next type.
+
+**Two of the same entry collide on the label, and the existing answer holds.** An
+entry's name is also the label the component starts with, and `parseLayout` refuses a
+duplicate label globally because labels key note sections. Adding Inventory twice goes
+through `uniqueLabel` and then `uniqueId`, which derives from the label it settled on:
+"Inventory" and "Inventory 2", `inventory` and `inventory_2`. Nothing was changed for
+it, and the suffix is the right behaviour rather than a tolerated one — a second
+inventory is a real layout, and "Inventory 2" is the author's cue to say what it is.
+
+**A description says what decides the choice, and stops.** Each of the three runs to
+two or three sentences, which is the shape the shipped Checkbox entry already had: what
+it is with an example, the block it is and what that does to the note, and where useful
+one thing to do next. The drafts before review were four long sentences and, at 620px —
+nearer a real settings pane than the harness's full width — the Inventory row grew to
+about 163px against every other row's 60px, so the one row explaining a choice was three
+times the height of the rows listing what already exists.
+
+What came out is the post-add half. Inventory's draft explained that Weight publishes as
+`inventory.Weight` and that the total is one-of-each-item rather than quantity times
+weight, naming `sum(inventory, Qty * Weight)` for the loaded pack. **That reversed an
+earlier finding and the reversal is the point**: the earlier one was that stating the
+limitation with no way past it was worse than useless, which is true, and removing both
+halves answers it as completely as adding the fix did. The author lands in the new
+component's form the moment they press **Add**, and `columns`'s own description there
+already carries the aggregate — so the menu was duplicating, at the moment of choosing,
+copy that arrives one click later anyway.
+
+**Each description names its block**, as Checkbox's "a track of one segment" already
+did. The collapsed menu shows only the entry's name where every component row below it
+shows a name over its type, so "Inventory" alone is the one place on the tab that says
+what is about to be created without saying what it is made of. Naming the type in the
+description costs a clause and keeps the indent's grouping, where relabelling the option
+would not.
+
+**The prefilled config is unchanged** by any of this: still `total` on Weight and no
+computed column. What remains is only that the prefill does not write an encumbrance
+rule for the author, which is a much smaller thing than §740 says it is — see the §740
+correction below.
+
+**The add row's description moved below the row.** Selecting an entry used to widen the
+info column, wrap the control column, and drop the destination dropdown and **Add**
+about 35px while the menu kept the first line — the row in `docs/UI.md` §12, which
+three more entries turn from an edge case into the normal case. `descEl` is appended
+after the controls and given `flex-basis: 100%`, the same mechanism `.sheetsmith-field-error`
+already uses, so the first line's height is fixed whatever is selected and the
+description grows downward into space nothing is placed in. Moved rather than reserved:
+a reserved line shows as a gap under every bare type, and it would have to be three
+lines deep to fit these descriptions anyway. An empty description collapses, so a bare
+type is the single-line row it was before the palette existed. §12's row is retired,
+and the general question it was deferred on — how *every* settings row carries a
+growing description — is answered in `docs/UI.md` §9 rather than left in this
+document, so the next row with the same problem inherits the answer instead of
+re-deriving it.
+
+**Two of the three are in the harness sample, and the third deliberately is not.**
+A prefill is config, so what needs looking at is the *rendering* it produces, and only
+two produce one nothing else reached. Currency covers a stat card with **no** `derived`
+— Abilities carries one, so until now no card in the harness was a name and a number
+with no modifier line under it. Features covers `secondary`, which was implemented and
+styled and drawn nowhere at all; shipping an entry that turns it on without a sample
+would have been shipping an appearance no one had looked at. Inventory adds no sample,
+because the existing `inventory` card is already that entry's config with three extras
+on top. `shot.mjs`'s sheet frame goes 2100 → 2500 with it, which its own comment asks
+for.
+
+**And all three are in the throwaway vault**, which is the half the harness cannot
+stand in for: `Sheetsmith layouts/Prefill variations.json` with `Characters/Prefills.md`
+beside it, each block holding exactly what its entry writes and nothing enriched on top.
+It carries the two things no sample shows. The Inventory the entry actually produces —
+two columns, no declared rows — where the harness card is that config with three extras
+on it. And the pair of numbers the copy is about: `inventory.Weight` reads 18, one of
+each item, beside `sum(inventory, Qty * Weight)` at 25, which is the sentence §740 had
+wrong standing next to the arithmetic that settles it.
+
+Looking at it earned its keep immediately: the Features sample clips its first and last
+columns while the middle one takes about 500px of slack. Rendering the same sample with
+`secondary` off is pixel-identical, so it is Table's width distribution rather than this
+work, and it is now a `docs/UI.md` §12 row rather than a thing the sample quietly hides.
+
+### What `/ship` changed in docs/SPEC.md
+
+Two sentences said the description sits **beside** the menu, and it now sits below the
+row. Named here rather than left to "update that section", because they are two clauses
+in an 800-line document and finding them again is the expensive part. All four edits
+below were made when this shipped.
+
+- **§539**, the paragraph describing what the interim editor does today: "each entry
+  indented under the type it prefills and its description shown beside the menu"
+  becomes *shown below the row*. This one is not a stale resolution but a plain false
+  statement about shipped behaviour.
+- **§690**, the palette entry's `Resolved:` entry: "the selected entry's description
+  sits beside the menu" needs the amendment rather than the replacement — the reasoning
+  it gives is still the reasoning, and what changed is where the copy had to go once
+  there were three entries with three-line descriptions. Beside the name it grew the
+  info column until the control column wrapped, which is the `docs/UI.md` §12 row this
+  work retires.
+
+The other "beside" in §690 — "the interim add menu offers entries **beside** types" —
+is about entries next to types in the menu and stays true.
+
+- **§740** contradicts §718, and §718 is the later resolution. §740 says an
+  inventory's encumbrance "is a total over a computed column: refused on purpose,
+  and already open above", and concludes the prefilled `total` on Weight is "short
+  of what a loaded pack asks". §718 then settles the aggregate and says "an
+  inventory's encumbrance is `sum(inventory, Qty * Weight)` … the three things this
+  entry said were out of reach", and §363 has the total refusal "names
+  `sum(<id>, <expression>)` as the fix". So §740's sentence should point at the
+  aggregate rather than at a refusal. It is worth fixing rather than leaving as a
+  known wrinkle: it is the sentence a reader is sent to by the five-blocks entry,
+  it is the sentence this work copied into shipping copy before the review caught
+  it, and an out-of-date limitation in §13 is the kind that gets rebuilt.
+
+Noted and **not this work's** — for `/ship` to take or leave. §738 still says "today
+the interim editor builds its add-row dropdown straight from `listComponentTypes()`
+and pushes a component with no config at all", which the palette mechanism made stale
+in the preceding commits rather than here. Recorded because it is one sentence away
+from the two above and cheaper to fix in the same pass than to find again.
+
+And one **new open question** for §13, raised by the Currency entry and written out
+here so it is pasted rather than composed. It is an open question and not a rename:
+the argument cuts both ways and no candidate name survived it.
+
+> - **Whether "Stat group" still names what the component is.** Every other block in
+>   the catalog is named for its shape — Table, Pool, Track, Group, Tab set — and Stat
+>   and Stat group are named for a kind of content. The Currency entry is what made
+>   that visible: a coin purse is five cards in a row, and nobody building one goes
+>   looking for a Stat group. That is the exact failure §2 records twice, and the
+>   catalog has already made this correction three times (Abilities became Stat group,
+>   Skill card became Table, Toggle folded into Track), so a fourth would be in
+>   character. **Three things cut the other way.** The palette entry is the *designed*
+>   answer to a generic type not leading an author to a job, and §13's own palette
+>   entry says so — "the type stays generic, the entry is a starting point the author
+>   edits", and an entry may be named for a job where a component may not. "Stat" is
+>   also a category where the previous three were jobs: a coin amount genuinely is a
+>   tracked number on a character sheet, where a dagger row is genuinely not a skill,
+>   so the name is imprecise rather than wrong over four of five jobs. And there is no
+>   better name on offer — it is a pair, so renaming Stat group means renaming Stat or
+>   living with "Stat" beside "Number group", and the obvious shape name is taken,
+>   since `docs/UI.md` §9 has "the card" as vocabulary shared by Stat, Stat group and
+>   Pool. Recorded now rather than decided because it is cheap now and dear later:
+>   nothing is released, so a note holds no component type and no formula references
+>   one, exactly as §758 found for Skill card. The moment a layout exists outside this
+>   repository, the answer is fixed by migration cost rather than by §2.
+
+Commit boundaries for this follow-up, continuing the list above:
+
+7. `feat: Offer currency, inventory and features ready-made`. The three entries, and
+   `contract.test.ts`'s two new rules for form order and defaulted prefills.
+8. `fix: Hold the add row still while a prefill is chosen`. `descEl` moved after the
+   controls, `.sheetsmith-add-row`, and the guard test on where it sits.
+9. `docs: Record the three prefills`. §539 and §690 above, `docs/UI.md` §12's retired
+   row, and this section.
