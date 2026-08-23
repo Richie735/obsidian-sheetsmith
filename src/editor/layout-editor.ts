@@ -56,6 +56,9 @@ import { SheetView, VIEW_TYPE_SHEET } from '../view/sheet-view';
 /** Dropdown sentinel; layout file names can never collide with it. */
 const CREATE_LAYOUT_OPTION = '::create-layout::';
 
+/** Ties the add menu to the description under it, for a screen reader. */
+const ADD_DESCRIPTION_ID = 'sheetsmith-add-description';
+
 /** Dropdown sentinel for a binding that acts on the buffer only. */
 const NO_ACTION_OPTION = '::none::';
 
@@ -832,7 +835,38 @@ export class LayoutEditorSection {
 
 		const row = new Setting(container).setName('Add component');
 		/*
-		 * The entry's own description, beside the menu it was chosen from. A
+		 * The description goes *below* the row rather than under the name, and
+		 * that is a layout decision rather than a styling one (docs/UI.md §12).
+		 * In the info column it is copy that grows from nothing to several lines
+		 * depending on which option is highlighted, and a settings row is a
+		 * centred flex line: the info column widened, the control column wrapped,
+		 * and the destination dropdown and **Add** dropped about 35px while the
+		 * menu kept the first line. So the button an author presses next moved
+		 * while they were still choosing what to press it for.
+		 *
+		 * Moved rather than reserved. Reserving a line of height shows an empty
+		 * one for every bare type and only fits the shortest description anyway,
+		 * where an entry's runs to several at a real settings width. Out here
+		 * the first line — name, menu, destination, **Add** — is a fixed height
+		 * whatever is selected, and the description grows downward into space
+		 * nothing has been placed in. `descEl` keeps its own class and Obsidian's
+		 * own treatment; only where it sits changes.
+		 */
+		row.settingEl.addClass('sheetsmith-add-row');
+		row.settingEl.appendChild(row.descEl);
+		/*
+		 * And named, so the menu is described by it (docs/UI.md §6). The
+		 * description is the only explanation an entry gets, and choosing an
+		 * option repaints it — painted alone, a screen reader hears "Inventory"
+		 * and nothing else. A literal id is safe here because the row is drawn
+		 * once per render and `redraw` replaces the container's children.
+		 *
+		 * The empty description a bare type leaves is `display: none`, which
+		 * assistive tech skips, so the association costs a type nothing.
+		 */
+		row.descEl.id = ADD_DESCRIPTION_ID;
+		/*
+		 * The entry's own description, below the menu it was chosen from. A
 		 * dropdown line is one or two words, and SPEC §13's warning about the
 		 * palette is that a menu nobody can read is worse than the type list it
 		 * replaced — so what a prefill is *for* has to be on screen, not only in
@@ -857,6 +891,7 @@ export class LayoutEditorSection {
 			}
 			dropdown.setValue(chosen);
 			dropdown.selectEl.dataset.sheetsmithFocus = 'add-choice';
+			dropdown.selectEl.setAttribute('aria-describedby', ADD_DESCRIPTION_ID);
 			dropdown.onChange((value) => {
 				chosen = value;
 				describe(value);
