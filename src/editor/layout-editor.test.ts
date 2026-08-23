@@ -282,6 +282,75 @@ describe('adding and removing a component', () => {
 		expect(has(harness, `cfg-${components[2]?.id}-count`)).toBe(true);
 	});
 
+	it('offers every type, with each entry indented under the type it prefills', () => {
+		const options = Array.from(
+			control<HTMLSelectElement>(harness, 'add-choice').options,
+		);
+		// The vocabulary is still the whole catalog: an author who wants a plain
+		// Track has to be able to ask for one, and an entry is a starting point
+		// they then edit rather than a variant with capabilities of its own.
+		for (const type of listComponentTypes()) {
+			expect(options.map((option) => option.value)).toContain(type);
+		}
+		const checkbox = options.find((option) => option.value === 'track:0');
+		expect(checkbox?.text.trim()).toBe('Checkbox');
+		// Indented, which is the only thing a dropdown has for saying that one
+		// option sits under another — the destination dropdown's own spelling.
+		expect(checkbox?.text.startsWith('\u2007')).toBe(true);
+		// And directly under it, so the list reads as the catalog with each
+		// block's own prefills beneath it.
+		expect(options.indexOf(checkbox as HTMLOptionElement)).toBe(
+			options.findIndex((option) => option.value === 'track') + 1,
+		);
+	});
+
+	it('writes the entry\'s config, its name and an ordinary component', async () => {
+		choose(control<HTMLSelectElement>(harness, 'add-choice'), 'track:0');
+		pressAdd(harness);
+		await settle(harness.editor);
+
+		const components = (await harness.stored()).components;
+		const added = components[components.length - 1];
+		// A layout stores the component an entry produced and never the entry:
+		// there is no palette key in the file, and the author edits this like
+		// anything else.
+		expect(added).toMatchObject({
+			type: 'track',
+			label: 'Checkbox',
+			count: 1,
+		});
+		expect(added).not.toHaveProperty('palette');
+		// And the form it opens is Track's own.
+		expect(has(harness, `cfg-${added?.id ?? ''}-count`)).toBe(true);
+	});
+
+	it('puts the chosen entry\'s description beside the menu, and a type\'s nothing', () => {
+		const menu = control<HTMLSelectElement>(harness, 'add-choice');
+		const description = () =>
+			menu.closest('.setting-item')?.querySelector('.setting-item-description')
+				?.textContent ?? '';
+		// SPEC §13's warning is that a menu nobody can read is worse than the
+		// type list it replaced, and a dropdown line is one or two words. So what
+		// a prefill is for has to be on screen.
+		choose(menu, 'track:0');
+		expect(description()).toContain('yes or no');
+		choose(menu, 'track');
+		expect(description()).toBe('');
+	});
+
+	it('names an entry against the whole sheet, as a type is named', async () => {
+		choose(control<HTMLSelectElement>(harness, 'add-choice'), 'track:0');
+		pressAdd(harness);
+		await settle(harness.editor);
+		choose(control<HTMLSelectElement>(harness, 'add-choice'), 'track:0');
+		pressAdd(harness);
+		await settle(harness.editor);
+
+		const labelled = (await harness.stored()).components.map((c) => c.label);
+		expect(labelled).toContain('Checkbox');
+		expect(labelled).toContain('Checkbox 2');
+	});
+
 	it('removes nothing until the confirmation is taken', async () => {
 		control(harness, 'remove-armour').click();
 		expect((await harness.stored()).components).toHaveLength(2);
@@ -692,6 +761,38 @@ describe('adding a component into a container', () => {
 		const added = (await harness.stored()).components[0]?.children?.[1];
 		expect(added?.label).not.toBe('Hit points');
 		expect(added?.id).not.toBe('hit_points');
+	});
+
+	it('puts a palette entry in a container, prefilled and named against the sheet', async () => {
+		/*
+		 * The composition none of the tests above reach: an entry, a container
+		 * destination, and a name already taken somewhere else on the sheet. The
+		 * three interact — the label comes from the entry rather than from the
+		 * type, the position comes from the container rather than from the sheet,
+		 * and uniqueness is checked against every component rather than against
+		 * this container's children.
+		 */
+		const menu = control<HTMLSelectElement>(harness, 'add-choice');
+		choose(menu, 'track:0');
+		pressAdd(harness);
+		await settle(harness.editor);
+
+		choose(control<HTMLSelectElement>(harness, 'add-choice'), 'track:0');
+		choose(control<HTMLSelectElement>(harness, 'add-destination'), 'defences');
+		pressAdd(harness);
+		await settle(harness.editor);
+
+		const stored = await harness.stored();
+		const onSheet = stored.components.find((c) => c.label === 'Checkbox');
+		const inside = stored.components[0]?.children?.at(-1);
+		expect(onSheet).toBeDefined();
+		// Containment scopes neither a label nor an id, so the child takes the
+		// next name rather than the one its sibling outside already has.
+		expect(inside?.label).toBe('Checkbox 2');
+		expect(inside?.id).not.toBe(onSheet?.id);
+		// Prefilled, on the child's own placement rather than the sheet's.
+		expect(inside).toMatchObject({ type: 'track', count: 1 });
+		expect(inside?.position.col).toBe(1);
 	});
 
 	it('offers no container that is already two deep', async () => {

@@ -197,6 +197,77 @@ export interface ConfigFieldSpec {
 	options?: readonly string[];
 }
 
+/**
+ * Shared config the layout editor owns. A component declares none of it, in
+ * `configFields` or in a palette entry.
+ *
+ * Two rules need this list and they are checked at different times — a
+ * `configFields` entry is data, so the registry contract asks at runtime, while a
+ * palette entry's config *is* the shape, so the compiler asks. PATTERNS §1's
+ * policy tier is why there is one copy rather than two: a set is where drift is
+ * the entire risk, and a guard test over two spellings of six strings could only
+ * assert they still agree.
+ *
+ * **The const is the copy and the type is derived from it**, not the other way
+ * round, because the failure is one-directional. A seventh key added to a
+ * hand-written type compiles, and the runtime check silently stops covering it —
+ * a component could then declare it in `configFields` with the build still
+ * green. Derived, a seventh key has nowhere to be added that the check does not
+ * see. `column-types.ts` is the same shape for the same reason.
+ */
+export const EDITOR_OWNED_KEYS = [
+	'id',
+	'type',
+	'label',
+	'position',
+	'reset',
+	'children',
+] as const;
+
+export type EditorOwnedKey = (typeof EDITOR_OWNED_KEYS)[number];
+
+/**
+ * One way the layout editor offers a component, with configuration prefilled
+ * (SPEC §4.2, §13).
+ *
+ * A layout stores the component an entry produced and never the entry itself, so
+ * nothing here reaches a file: the entry is a starting point the author then
+ * edits like any other component. That is also why an entry may be named for a
+ * job where a component may not (SPEC §2) — Table offered as "Inventory" costs
+ * the plugin no neutrality, because the type stays generic.
+ */
+export interface PaletteEntry<TConfig extends ComponentConfig = ComponentConfig> {
+	/**
+	 * What the palette calls it, and the label the new component starts with.
+	 *
+	 * One string for both, because they are the same answer: an author who chose
+	 * "Checkbox" has a component called Checkbox until they rename it, and a
+	 * second name would only be a second thing to keep in step.
+	 */
+	name: string;
+	/**
+	 * What the entry is for, and what it does to the note.
+	 *
+	 * Required on `ConfigFieldSpec.description`'s rule: it is the only
+	 * explanation the author is given, and here the menu line is one or two
+	 * words. State the consequence, not the label.
+	 */
+	description: string;
+	/**
+	 * Config written into the new component.
+	 *
+	 * The keys the editor owns are excluded by the type rather than by a check,
+	 * because there is no editor field here for a check to hang on. Two of them
+	 * are worth the sentence. A `reset` prefill would name a trigger the layout
+	 * may not have declared, which SPEC §6 reports in the editor rather than
+	 * refusing, so the entry would hand over a binding that reaches nothing. A
+	 * `children` prefill would make an entry that produces several components,
+	 * which SPEC §13 rules out: a palette entry is one component with its config
+	 * filled in, so a job needing two has nothing for one entry to be.
+	 */
+	config: Partial<Omit<TConfig, EditorOwnedKey>>;
+}
+
 /** A value a formula can produce or a scope can hold. */
 export type FieldValue = string | number | boolean;
 
@@ -603,6 +674,18 @@ export interface ComponentDefinition<
 	 * fields (label, position) are handled by the editor itself.
 	 */
 	configFields: readonly ConfigFieldSpec[];
+	/**
+	 * Ways the layout editor may offer this component with its configuration
+	 * already filled in (SPEC §4.2, §13).
+	 *
+	 * Optional under §4.1's rule, and §13 settled which side of it this falls:
+	 * the alternative is a table in `src/editor/` holding Table's column shape
+	 * and Track's count, which is code outside a component knowing what that
+	 * component is. A component with nothing worth prefilling leaves it off and
+	 * appears in the palette as its bare type, which is what every component did
+	 * before this existed.
+	 */
+	palette?: readonly PaletteEntry<TConfig>[];
 }
 
 /**
