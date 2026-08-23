@@ -146,6 +146,38 @@ export const statGroup: ComponentDefinition<StatGroupConfig, StatGroupData> = {
 			default: true,
 		},
 	],
+	/*
+	 * A currency block is this component with its denominations as attributes,
+	 * and SPEC §13 checked it against Table before settling there. Five declared
+	 * rows with a number column store and publish the same five numbers and are
+	 * the wrong shape for them: a row's apparatus buys nothing where a
+	 * denomination is a name and a count, and a name column would only repeat the
+	 * abbreviation the card already is. The one thing Table adds is a total, and
+	 * a total is the wrong arithmetic — copper plus gold is a quantity of nothing.
+	 *
+	 * Nothing here says `direction: 'horizontal'`. Horizontal is what the absent
+	 * key already means, and PATTERNS §8 leaves a value matching its default out
+	 * of the config; a layout file is hand-edited and shared, so an entry that
+	 * writes down defaults writes noise into every layout that uses it. `derived`
+	 * is absent for the same kind of reason and a stronger one: a coin is a
+	 * count, not a score with a modifier under it.
+	 */
+	palette: [
+		{
+			name: 'Currency',
+			description:
+				'Coins as five cards in a row, one per denomination: CP, SP, EP, GP, PP. A Stat group, so the note stores one entry per denomination and each publishes a name a formula can read. Rename or drop the ones your game does not use.',
+			config: {
+				attributes: [
+					{ key: 'CP', name: 'Copper' },
+					{ key: 'SP', name: 'Silver' },
+					{ key: 'EP', name: 'Electrum' },
+					{ key: 'GP', name: 'Gold' },
+					{ key: 'PP', name: 'Platinum' },
+				],
+			},
+		},
+	],
 
 	read(body): ReadResult<StatGroupData> {
 		const parsed = readFenced(body);

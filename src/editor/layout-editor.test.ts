@@ -7,7 +7,7 @@ import { walkComponents } from '../parse/layout-walk';
 import { renderGrid } from '../view/grid-cells';
 import { DEFAULT_SETTINGS } from '../settings';
 import { App } from '../test/obsidian-stub';
-import { getComponent, listComponentTypes } from '../components';
+import { getComponent, listComponentTypes, paletteEntries } from '../components';
 
 /*
  * The layout editor, driven through its own DOM.
@@ -302,6 +302,98 @@ describe('adding and removing a component', () => {
 		expect(options.indexOf(checkbox as HTMLOptionElement)).toBe(
 			options.findIndex((option) => option.value === 'track') + 1,
 		);
+	});
+
+	it('runs each type, then every prefill of it, then the next type', () => {
+		/*
+		 * The menu's whole structure in one assertion, and it is written as the
+		 * rule rather than against the catalog of the day: Table is the first
+		 * type carrying two entries, but a version naming Table would hold the
+		 * run only for Table, and would fail the moment Table gained a third —
+		 * on the check that is not the point.
+		 *
+		 * The shape is what the option *value* scheme rests on. `paletteEntries`
+		 * returns a list and the value is `type:index`, so a second entry is a
+		 * second option rather than one displacing the other, and the indent that
+		 * says an entry sits under its type is only true while the entry actually
+		 * follows it. The check above cannot see any of that: it looks at the one
+		 * option after a type, so an interleaved menu passes it.
+		 *
+		 * Expected from `paletteEntries` — the registry — and not from
+		 * `addChoices`, which is the thing under test. Derived from the latter
+		 * this would only assert that a function equals itself.
+		 */
+		const values = Array.from(
+			control<HTMLSelectElement>(harness, 'add-choice').options,
+		).map((option) => option.value);
+		expect(values).toEqual(
+			listComponentTypes().flatMap((type) => [
+				type,
+				...paletteEntries(type).map((_entry, index) => `${type}:${index}`),
+			]),
+		);
+	});
+
+	it('adds one entry twice under names the layout parser accepts', async () => {
+		/*
+		 * The entry's name is also the label the component starts with, so two
+		 * Inventories are two components asking for one label — and labels key
+		 * note sections globally, which `parseLayout` refuses a duplicate of. The
+		 * answer is the one the editor already had for two of anything:
+		 * `uniqueLabel` suffixes the second and the id is derived from the label
+		 * it settled on, so the second is "Inventory 2" and `inventory_2`. That is
+		 * acceptable rather than merely tolerated — a second inventory is a real
+		 * layout, and the suffix is the author's cue to rename it.
+		 */
+		const menu = () => control<HTMLSelectElement>(harness, 'add-choice');
+		choose(menu(), 'table:0');
+		pressAdd(harness);
+		await settle(harness.editor);
+		choose(menu(), 'table:0');
+		pressAdd(harness);
+		await settle(harness.editor);
+
+		// Through the parser, which is what would have thrown.
+		const components = (await harness.stored()).components;
+		expect(components.map((c) => c.label)).toContain('Inventory');
+		expect(components.map((c) => c.label)).toContain('Inventory 2');
+		expect(new Set(components.map((c) => c.id)).size).toBe(components.length);
+	});
+
+	it('writes the config of the entry its index names, for each entry on a type', async () => {
+		/*
+		 * The index in the option value is the only thing telling two entries on
+		 * one type apart, so this walks every entry a type has rather than
+		 * naming one — the first draft asserted that `table:1` is Features, which
+		 * holds only until an entry is inserted above it and then fails while
+		 * pointing at Features' columns, which is not what broke.
+		 *
+		 * Expected from the registry, as the menu-run check above is, so what is
+		 * compared is the component the editor wrote against the entry it was
+		 * asked for.
+		 */
+		const entries = paletteEntries('table');
+		// A loop over one entry would pass without exercising the disambiguation
+		// at all, which is the whole subject here.
+		expect(entries.length).toBeGreaterThan(1);
+
+		for (const [index, entry] of entries.entries()) {
+			choose(control<HTMLSelectElement>(harness, 'add-choice'), `table:${index}`);
+			pressAdd(harness);
+			await settle(harness.editor);
+
+			const components = (await harness.stored()).components;
+			const added = components[
+				components.length - 1
+			] as unknown as Record<string, unknown>;
+			expect(added.type).toBe('table');
+			// The entry's own name, so an author who chose Features has a
+			// component called Features until they rename it.
+			expect(added.label).toBe(entry.name);
+			for (const [key, value] of Object.entries(entry.config)) {
+				expect(added[key], `${entry.name} wrote ${key}`).toEqual(value);
+			}
+		}
 	});
 
 	it('writes the entry\'s config, its name and an ordinary component', async () => {

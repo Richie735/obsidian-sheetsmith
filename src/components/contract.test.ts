@@ -596,6 +596,60 @@ describe.each(types)('component "%s"', (type) => {
 		}
 	});
 
+	it('prefills its keys in the order the form shows them', () => {
+		/*
+		 * An entry reads as the form with some of it filled in, which is the same
+		 * reason PATTERNS §3 puts `palette` after `configFields` — here are the
+		 * settings, and here is one of them filled in for a job. An entry whose
+		 * keys run in some other order still works and still reads perfectly well
+		 * on its own, which is exactly why it is checked rather than reviewed:
+		 * `MEMBER_ORDER` above is the same rule one level up.
+		 *
+		 * Positions rather than a spelled-out list, so this says the rule once
+		 * instead of once per entry. The check above has already established that
+		 * every key is a declared field, so none of these is -1.
+		 */
+		const declared = (component?.configFields ?? []).map((field) => field.key);
+		for (const entry of component?.palette ?? []) {
+			const order = Object.keys(entry.config).map((key) => declared.indexOf(key));
+			expect(order, `${entry.name} prefills out of form order`).toEqual(
+				[...order].sort((a, b) => a - b),
+			);
+		}
+	});
+
+	it('prefills no value a field already defaults to', () => {
+		/*
+		 * A layout stores what an entry wrote, and a layout is hand-edited and
+		 * shared — so an entry that spells out a default writes that noise into
+		 * every layout anyone builds from it, and writes a key the editor itself
+		 * would have left out. This is what lets Currency be horizontal by saying
+		 * nothing and Features hold text columns by declaring no type.
+		 *
+		 * The two kinds that *have* a knowable default are the two the editor
+		 * omits on, and `ConfigFieldSpec` says so on the members themselves:
+		 * `default` for a boolean, the first option for a select. The rest have
+		 * no default to compare against — a prefilled `count` or `rowHeader` is
+		 * the entry's whole content.
+		 */
+		const fields = component?.configFields ?? [];
+		for (const entry of component?.palette ?? []) {
+			for (const [key, value] of Object.entries(entry.config)) {
+				const field = fields.find((candidate) => candidate.key === key);
+				const fallback =
+					field?.kind === 'boolean'
+						? field.default
+						: field?.kind === 'select'
+							? field.options?.[0]
+							: undefined;
+				if (fallback === undefined) continue;
+				expect(value, `${entry.name} prefills ${key} at its default`).not.toBe(
+					fallback,
+				);
+			}
+		}
+	});
+
 	it('declares no duplicate config field keys', () => {
 		const keys = (component?.configFields ?? []).map((f) => f.key);
 		expect(new Set(keys).size).toBe(keys.length);

@@ -836,6 +836,47 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			default: false,
 		},
 	],
+	/*
+	 * Both entries are this component with `openRows` on and its columns
+	 * filled in, which is what SPEC §13 found when it checked the five blocks
+	 * one at a time: an inventory and a features list wanted no capability the
+	 * table lacks, only a starting point. They are the first two entries on one
+	 * type, and they earn that under §4.2's rule twice over — nobody building an
+	 * inventory looks for a component called Table, which is the same miss that
+	 * made "Skill card" the wrong name for this block in the first place.
+	 *
+	 * Neither declares rows. A declared row is one every character using the
+	 * layout has, and gear and features are exactly the lists where the
+	 * character owns every line.
+	 */
+	palette: [
+		{
+			name: 'Inventory',
+			description:
+				'An open list of gear: the character adds every row, names it, and fills in a quantity and a weight. A Table with the weights totalled under it, storing as ordinary markdown, so an item named as a wikilink stays a real link the vault indexes.',
+			config: {
+				columns: [
+					{ key: 'Qty', type: 'number' },
+					{ key: 'Weight', type: 'number', total: true },
+				],
+				openRows: true,
+				rowHeader: 'Item',
+			},
+		},
+		{
+			name: 'Features',
+			description:
+				'An open list of features, traits or moves: the character adds every row and names it, with its source in quieter type beside the name and a line of notes after. A Table, so it stores as ordinary markdown and a feature naming its own note keeps a working wikilink. A cell is one line, so a feature whose text runs long belongs in the note it links to.',
+			config: {
+				columns: [
+					{ key: 'Source', secondary: true },
+					{ key: 'Notes' },
+				],
+				openRows: true,
+				rowHeader: 'Feature',
+			},
+		},
+	],
 
 	read(body, config): ReadResult<TableData> {
 		const error = configError(config);
