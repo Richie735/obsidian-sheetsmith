@@ -1,7 +1,7 @@
 # Nested components
 
 Status: shipped, with one thing withdrawn after it was built
-Board card: ✨ A Group holds other components — the six-up "stat beside its skills"
+Board card: ✨ A Group holds other components — the six-up "card beside its skills"
 arrangement §13's five-blocks entry parked, and the container the catalog has
 carried an entry for since §4.2 was first written.
 
@@ -44,7 +44,7 @@ hold only leaves.** So the deepest legal component is three levels down, and a
 
 Depth 2 is what §13 asked for and no more. Its own entry names the arrangement:
 "whether one outer Group can gather the six under a heading". That is
-`Group(Group(Stat, Table))` exactly, and a leaves-only container answers the
+`Group(Group(Card, Table))` exactly, and a leaves-only container answers the
 motivating case with "spell it differently", which is how a settled question gets
 reopened.
 
@@ -288,7 +288,7 @@ That is also the convergent finding, and it is unanimous: no builder makes
 containment addressable. CSB's own word for a Panel is "invisible"; its
 `fetchFromParent` looked like the exception and is not, since it walks *document*
 ownership — an item inside an item inside an actor — and the wiki says it "doesn't
-work on Actors, only Items, because Actors don't have parents". Roll20 attribute
+work on Actors, only Items, because Actors don't have parents". Roll20 entry
 names are flat regardless of surrounding divs, and Sandbox property keys are
 global. Nesting has cost nobody a name segment anywhere.
 
@@ -354,9 +354,9 @@ implements. It lands in **Deliberately not doing**.
 ### What this settles, and what it leaves open
 
 Settled: §13's nesting bullet, in full and for both containers. §13's five-blocks
-entry named the six-up "stat beside its skills" block as "the one waiting on the
+entry named the six-up "card beside its skills" block as "the one waiting on the
 nesting bullet"; it is now expressible, as an outer Group of six Groups each
-holding a Stat and a Table.
+holding a Card and a Table.
 
 Left open, deliberately and unchanged: **how deep a published name may go**, which
 this feature does not touch because containment adds no segment. **Whether the two
@@ -554,10 +554,10 @@ PATTERNS §11 already carries a row about.
 
 ## Acceptance criteria
 
-- [x] A layout placing a Stat and a Table inside a Group renders both inside the
+- [x] A layout placing a Card and a Table inside a Group renders both inside the
       group's region, at their own positions on an inner grid whose column count
       is the group's width.
-- [x] `abilities.DEX` resolves identically whether the Stat group is top-level or
+- [x] `abilities.DEX` resolves identically whether the Card set is top-level or
       inside two containers, driven through `buildSheetScope` rather than through
       the renderer.
 - [x] A Group inside a Group renders, and a component inside a third container

@@ -193,7 +193,7 @@ because an entry is a starting point the author edits and a prefilled key with n
 configuration they can neither see nor undo. And **no two entries on one type share a
 name**, because those are two identical indented lines differing only in an option value
 nobody sees. Not unique *across* the palette: the menu is grouped by type, so a Table
-offered as "Inventory" beside a Stat group offered as "Inventory" is two distinguishable
+offered as "Inventory" beside a Card set offered as "Inventory" is two distinguishable
 lines, and refusing that would refuse one of the three prefills §13 defers. The optional-member rule in
 §4.1 is satisfied: the alternative is a table in `src/editor/` holding Table's column
 shape and Track's `count`, which is the editor knowing what a component is.
@@ -211,8 +211,8 @@ it moves then.
 ```
 Group
 Pool
-Stat
-Stat group
+Card
+Card set
 Table
 Tab set
 Track
@@ -678,11 +678,11 @@ Built in a later session, against question 5's rule rather than inherited from t
 §13 entry that listed them. Each passes both halves: the generic block covers the
 job, and the component's own name would not lead an author to it — nobody building
 an inventory looks for a component called Table, and nobody counting coins looks for
-a Stat group.
+a Card set.
 
 | Entry | Type | Config |
 | --- | --- | --- |
-| Currency | Stat group | `attributes` CP/Copper, SP/Silver, EP/Electrum, GP/Gold, PP/Platinum |
+| Currency | Card set | `entries` CP/Copper, SP/Silver, EP/Electrum, GP/Gold, PP/Platinum |
 | Inventory | Table | `columns` Qty (number), Weight (number, `total`); `openRows`; `rowHeader` "Item" |
 | Features | Table | `columns` Source (`secondary`), Notes; `openRows`; `rowHeader` "Feature" |
 
@@ -782,7 +782,7 @@ re-deriving it.
 
 **Two of the three are in the harness sample, and the third deliberately is not.**
 A prefill is config, so what needs looking at is the *rendering* it produces, and only
-two produce one nothing else reached. Currency covers a stat card with **no** `derived`
+two produce one nothing else reached. Currency covers a card with **no** `derived`
 — Abilities carries one, so until now no card in the harness was a name and a number
 with no modifier line under it. Features covers `secondary`, which was implemented and
 styled and drawn nowhere at all; shipping an entry that turns it on without a sample
@@ -848,23 +848,23 @@ And one **new open question** for §13, raised by the Currency entry and written
 here so it is pasted rather than composed. It is an open question and not a rename:
 the argument cuts both ways and no candidate name survived it.
 
-> - **Whether "Stat group" still names what the component is.** Every other block in
->   the catalog is named for its shape — Table, Pool, Track, Group, Tab set — and Stat
->   and Stat group are named for a kind of content. The Currency entry is what made
+> - **Whether "Card set" still names what the component is.** Every other block in
+>   the catalog is named for its shape — Table, Pool, Track, Group, Tab set — and Card
+>   and Card set are named for a kind of content. The Currency entry is what made
 >   that visible: a coin purse is five cards in a row, and nobody building one goes
->   looking for a Stat group. That is the exact failure §2 records twice, and the
->   catalog has already made this correction three times (Abilities became Stat group,
+>   looking for a Card set. That is the exact failure §2 records twice, and the
+>   catalog has already made this correction three times (Abilities became Card set,
 >   Skill card became Table, Toggle folded into Track), so a fourth would be in
 >   character. **Three things cut the other way.** The palette entry is the *designed*
 >   answer to a generic type not leading an author to a job, and §13's own palette
 >   entry says so — "the type stays generic, the entry is a starting point the author
->   edits", and an entry may be named for a job where a component may not. "Stat" is
+>   edits", and an entry may be named for a job where a component may not. "Card" is
 >   also a category where the previous three were jobs: a coin amount genuinely is a
 >   tracked number on a character sheet, where a dagger row is genuinely not a skill,
 >   so the name is imprecise rather than wrong over four of five jobs. And there is no
->   better name on offer — it is a pair, so renaming Stat group means renaming Stat or
->   living with "Stat" beside "Number group", and the obvious shape name is taken,
->   since `docs/UI.md` §9 has "the card" as vocabulary shared by Stat, Stat group and
+>   better name on offer — it is a pair, so renaming Card set means renaming Card or
+>   living with "Card" beside "Number group", and the obvious shape name is taken,
+>   since `docs/UI.md` §9 has "the card" as vocabulary shared by Card, Card set and
 >   Pool. Recorded now rather than decided because it is cheap now and dear later:
 >   nothing is released, so a note holds no component type and no formula references
 >   one, exactly as §758 found for Skill card. The moment a layout exists outside this

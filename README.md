@@ -81,7 +81,7 @@ One formula serves the whole skill list. `Training` is a graded column holding u
 | **M4 Editor** | Grid canvas, component palette, configuration panel | Interim form editor in settings; grid canvas outstanding |
 | **M5 Finish** | Reset triggers, promoted fields, layout export and import, mobile reflow | Reset triggers done; the rest outstanding |
 
-Five of the eleven components ship: Stat, Stat group, Pool, Track, and Skill card. The remaining six are variations on what those solve.
+Five of the eleven components ship: Card, Card set, Pool, Track, and Table. The remaining six are variations on what those solve.
 
 The file model was proven first with hand-written files, because it is the hardest thing to change once characters exist. The layout editor is the largest interface investment and comes only once the thing it edits is known to work.
 

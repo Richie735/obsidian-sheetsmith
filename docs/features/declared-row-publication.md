@@ -148,7 +148,7 @@ A layout may name a declared Table row so the rest of the sheet can read its val
 one column says which value is worth publishing, each row that wants a name carries
 a key, and `skills.perception` resolves to the number on that row. Passive
 perception, a save DC read off a skills card, a carrying capacity read off a row of
-an attributes table — arithmetic the layout writes rather than a number the author
+an abilities table — arithmetic the layout writes rather than a number the author
 copies by hand into a second place.
 
 ## Design

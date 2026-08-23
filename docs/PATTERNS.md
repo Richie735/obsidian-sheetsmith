@@ -27,7 +27,7 @@ Everything else in this file is a consequence of these.
 ### Atomic: one file, one responsibility
 
 A module does one job and is named for it. `level-ring.ts` paints level rings.
-`editable.ts` owns the editing gesture. `stat-card.ts` draws the stat card.
+`editable.ts` owns the editing gesture. `card-face.ts` draws the card.
 
 **Length is a symptom, never the rule.** A 400-line module doing one job is
 correct; a 200-line module doing two is not. Comment density in this repository
@@ -134,7 +134,7 @@ Extraction goes to a module named for the behaviour, never to a component. **A
 component must never import from another component** [checked], because that
 breaks the isolation the whole contract rests on: nothing outside a component
 may know that component exists. Shared behaviour lives in a painter beside them
-(`stat-card.ts`, `level-ring.ts`), in `interaction/` (`editable.ts`), or in
+(`card-face.ts`, `level-ring.ts`), in `interaction/` (`editable.ts`), or in
 `ui/` (`popover.ts`), never in a sibling component, whatever the import is
 spelled like. Both directory spellings of a sibling and the registry itself are
 restricted in `eslint.config.mts`, and the spellings are enumerated in
@@ -284,7 +284,7 @@ value the caller can act on.
 - `applyReset` returns `ResetResult<TData>` for the same reason: data returned
   unchanged is indistinguishable from a reset that did nothing.
 - Config validation returns a discriminated union, `{ key } | { error }` as in
-  `valueKey()` in `stat.ts`, checked with `'error' in entry`.
+  `valueKey()` in `card.ts`, checked with `'error' in entry`.
 
 **`data: null` is not an error.** A missing section, an empty fence, and a fence
 without this component's key all mean the same thing: an editable empty card.
@@ -477,7 +477,7 @@ Applied honestly, the cut in this codebase is small and specific:
   description sentence and then *adds* to it passes, because the obvious rule
   for catching it — compare the comment's leading clause against a whole
   description sentence — reports "off the sheet, so the run has no visible
-  name" exactly as readily as "off the sheet, as on a Stat", which would fail
+  name" exactly as readily as "off the sheet, as on a Card", which would fail
   the build against comments this section asks an author to write. Both stay a
   judgement made in review, and the check only ever reports what it can prove.
 - **Restating the code.** `// increment the counter`.
