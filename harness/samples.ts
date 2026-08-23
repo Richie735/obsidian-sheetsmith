@@ -547,6 +547,79 @@ export const SAMPLES: Sample[] = [
 			tab_ki: '```sheet\ncurrent: 2\n```',
 		},
 	},
+	/*
+	 * The flag row: a track of one segment is a checkbox, which is where Toggle
+	 * went (SPEC §13). Three cards, and each is a different claim to look at.
+	 *
+	 * **"Inspiration" is the plain case.** Its ring has to be the same object as
+	 * a level ring in the Skills table above, at the same size — one painter,
+	 * because a flag on a card must not measure differently from the same flag
+	 * in a cell (`docs/UI.md` §9). Compare the two directly.
+	 *
+	 * **"Conditions" is a checklist**, which is what rows gain from the fold.
+	 * The rings line up into a column beside their names, and the rows are
+	 * spaced further apart than a set of runs would be — the ring's hit target
+	 * reaches past its own box, so press the top edge of the second ring and
+	 * check which one changes.
+	 *
+	 * **"Bloodied" is a named flag whose ring carries a mark**, and it is `harm`
+	 * where the other two are progress. They are *expected* to look identical:
+	 * `sense` grades a run from its first segment to its last, and a run of one
+	 * is its own last, so there is nothing to grade. Confirm that rather than
+	 * discovering it.
+	 */
+	{
+		config: {
+			id: 'inspiration',
+			type: 'track',
+			label: 'Inspiration',
+			position: { col: 1, row: 15, width: 3, height: 1 },
+			count: 1,
+		} as ComponentConfig,
+		body: '```sheet\nvalue: yes\n```',
+	},
+	{
+		config: {
+			id: 'conditions',
+			type: 'track',
+			label: 'Conditions',
+			position: { col: 4, row: 15, width: 4, height: 1 },
+			count: 1,
+			rows: [
+				{ key: 'prone', name: 'Prone' },
+				{ key: 'grappled', name: 'Grappled' },
+				{ key: 'frightened', name: 'Frightened' },
+			],
+		} as ComponentConfig,
+		body: '```sheet\nprone: no\ngrappled: yes\nfrightened: no\n```',
+	},
+	{
+		config: {
+			id: 'bloodied',
+			type: 'track',
+			label: 'Bloodied',
+			position: { col: 8, row: 15, width: 2, height: 1 },
+			levels: ['Fine', 'Bloodied:!'],
+			sense: 'harm',
+		} as ComponentConfig,
+		body: '```sheet\nvalue: yes\n```',
+	},
+	{
+		config: {
+			id: 'inspired_bonus',
+			type: 'stat',
+			label: 'Inspired bonus',
+			position: { col: 10, row: 15, width: 3, height: 1 },
+			// A flag publishes a boolean, which is what Toggle promised and what
+			// makes `if()` the expression an author reaches for. 1 and 0 would
+			// have made this an error.
+			derived: 'if(inspiration, 1, 0)',
+			signed: true,
+			hideValue: true,
+			hideNote: true,
+		} as ComponentConfig,
+		body: null,
+	},
 	/* Beside the set rather than inside it, so a tab press has something to not
 	   move. */
 	{
@@ -647,6 +720,23 @@ export function brokenSamples(): Sample[] {
 				row.key === undefined ? row : { ...row, key: 'passive perception' },
 			);
 		}
-		return { config, body: sample.body, children: sample.children };
+		/*
+		 * A body that will not read, which nothing else here produces. Every
+		 * breakage above rewrites *config*, so no fenced component's `read` path
+		 * had ever been drawn — a section holding something its component cannot
+		 * parse is a state the sheet has error text for and no picture of, and it
+		 * is exactly the state a hand-edited note arrives in. Found by a review
+		 * reading a vault fixture rather than this view, which is the argument for
+		 * it being here.
+		 *
+		 * On the flag, because that card is where the two spellings meet and so
+		 * where the wrong sentence is easiest to write: it has to say "not yes or
+		 * no" rather than the run's "not a number of marks". Broadening it to the
+		 * other fenced cards is a choice per component about which breakage is
+		 * worth a picture, and is a `docs/UI.md` §12 row rather than this diff.
+		 */
+		const body =
+			config.id === 'inspiration' ? '```sheet\nvalue: maybe\n```' : sample.body;
+		return { config, body, children: sample.children };
 	});
 }

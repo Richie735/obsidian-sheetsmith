@@ -277,8 +277,10 @@ async function ensureSettings(): Promise<HTMLElement> {
 	pane.className = 'harness-settings';
 	settingsPane = pane;
 	settingsState = state;
-	/** Which component's form to open, for a view that lives inside one. */
-	const open = new URLSearchParams(window.location.search).get('open');
+	// Which of the tab's own controls this view wants driven: a component's form
+	// open, an add-menu option selected. Both are things a reviewer would click
+	// and a still cannot.
+	const params = new URLSearchParams(window.location.search);
 	await renderSettings(
 		pane,
 		{
@@ -291,7 +293,10 @@ async function ensureSettings(): Promise<HTMLElement> {
 			},
 		},
 		harnessLayout(samplesFor(state)),
-		open ?? undefined,
+		{
+			open: params.get('open') ?? undefined,
+			choice: params.get('choice') ?? undefined,
+		},
 	);
 	return pane;
 }
@@ -357,9 +362,13 @@ document
 	});
 
 /**
- * Open in a named state: `?surface=settings&theme=dark&width=620&state=empty`,
- * with `&open=<component id>` opening that component's form on the settings
- * tab.
+ * Open in a named state: `?surface=settings&theme=dark&width=620&state=empty`.
+ *
+ * Two more for the settings tab, whose controls a still cannot press:
+ * `&open=<component id>` opens that component's form, and
+ * `&choice=<type>` or `&choice=<type>:<index>` selects an option of the **Add
+ * component** menu — which is the only way to see a palette entry's description,
+ * since the menu opens on a bare type and those have none.
  *
  * A screenshot has no way to click, so without this only the default view can
  * ever be captured — and the settings tab, which is most of what needs looking

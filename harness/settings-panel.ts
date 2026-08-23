@@ -41,6 +41,17 @@ export function harnessLayout(samples: readonly Sample[] = SAMPLES): Layout {
 	};
 }
 
+/** Which of the settings tab's own controls a view wants driven. */
+export interface SettingsView {
+	/**
+	 * A component id whose form to open — a Table's rows and columns lists are
+	 * most of what the layout editor is, and a screenshot has no way to click.
+	 */
+	open?: string;
+	/** An **Add component** option to select, as a type id or `<type>:<index>`. */
+	choice?: string;
+}
+
 export interface SettingsHost {
 	/** Called whenever the editor saves, with the layout as it now stands. */
 	onLayoutChange: (layout: Layout) => void;
@@ -100,15 +111,16 @@ export async function renderSettings(
 	/** The layout to put in the stub vault, so both surfaces read one. */
 	layout: Layout,
 	/**
-	 * A component id whose form to open once the tab has drawn, for the views
-	 * that live inside one — a Table's rows and columns lists are most of what
-	 * the layout editor is, and a screenshot has no way to click.
+	 * Which of the tab's own controls to drive once it has drawn, for the views
+	 * that live inside one. Every one of these presses the control a user would
+	 * press rather than reaching into the tab's state, so the harness stays a
+	 * page that clicks buttons.
 	 *
-	 * Opened through the tab's own edit control rather than by reaching into
-	 * its state, so the harness stays a page that presses the buttons a user
-	 * would.
+	 * An object rather than a trailing parameter each: `src/formula/`'s resolvers
+	 * grew to five of those before somebody stopped (SPEC §12), and two is where
+	 * the choice is still free.
 	 */
-	open?: string,
+	view: SettingsView = {},
 ): Promise<void> {
 	const app = new App();
 	watchLayoutFile(app.vault, host.onLayoutChange);
@@ -121,24 +133,57 @@ export async function renderSettings(
 	container.replaceChildren();
 	container.appendChild(tab.containerEl);
 	tab.display();
-	if (open !== undefined) await openComponent(tab.containerEl, open);
+	if (view.open !== undefined) await openComponent(tab.containerEl, view.open);
+	if (view.choice !== undefined) await chooseAdd(tab.containerEl, view.choice);
 }
 
 /**
- * Press a component's edit control once the tab has drawn it.
+ * Wait for one of the tab's controls to exist, by its focus token.
  *
- * `display()` starts the layout loading and returns, so the control does not
- * exist yet when it does — hence the wait rather than a straight query.
+ * `display()` starts the layout loading and returns, so nothing the editor draws
+ * exists yet when it does — hence the wait rather than a straight query. The
+ * token is the address because the editor already gives every control one, to
+ * restore focus across its own rebuilds.
  */
-async function openComponent(root: HTMLElement, id: string): Promise<void> {
-	const selector = `[data-sheetsmith-focus="edit-${id}"]`;
+async function control(root: HTMLElement, token: string): Promise<HTMLElement | null> {
+	const selector = `[data-sheetsmith-focus="${token}"]`;
 	for (let attempt = 0; attempt < 40; attempt++) {
-		const edit = root.querySelector(selector);
-		if (edit instanceof HTMLElement) {
-			edit.click();
-			return;
-		}
+		const el = root.querySelector(selector);
+		if (el instanceof HTMLElement) return el;
 		await new Promise((resolve) => window.setTimeout(resolve, 25));
 	}
-	console.warn(`No component "${id}" on the settings tab to open.`);
+	return null;
+}
+
+/** Press a component's edit control, which opens its form. */
+async function openComponent(root: HTMLElement, id: string): Promise<void> {
+	const edit = await control(root, `edit-${id}`);
+	if (edit === null) {
+		console.warn(`No component "${id}" on the settings tab to open.`);
+		return;
+	}
+	edit.click();
+}
+
+/**
+ * Select one option of the **Add component** menu.
+ *
+ * Without this the menu can only ever be shot on its first option, which is a
+ * bare type — so a palette entry's description, the line that says what the
+ * prefill is *for*, was unreachable to any still. A native `<select>` shows only
+ * its selection, so the indent still needs a hand on the mouse; the description
+ * does not.
+ */
+async function chooseAdd(root: HTMLElement, value: string): Promise<void> {
+	const menu = await control(root, 'add-choice');
+	if (!(menu instanceof HTMLSelectElement)) {
+		console.warn('No add menu on the settings tab.');
+		return;
+	}
+	if (!Array.from(menu.options).some((option) => option.value === value)) {
+		console.warn(`No add choice "${value}". Try a type id, or "<type>:<index>".`);
+		return;
+	}
+	menu.value = value;
+	menu.dispatchEvent(new Event('change'));
 }
