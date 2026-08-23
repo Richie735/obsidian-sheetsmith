@@ -416,7 +416,7 @@ describe('adding and removing a component', () => {
 		expect(has(harness, `cfg-${added?.id ?? ''}-count`)).toBe(true);
 	});
 
-	it('puts the chosen entry\'s description beside the menu, and a type\'s nothing', () => {
+	it('puts the chosen entry\'s description below the menu, and a type\'s nothing', () => {
 		const menu = control<HTMLSelectElement>(harness, 'add-choice');
 		const description = () =>
 			menu.closest('.setting-item')?.querySelector('.setting-item-description')
@@ -428,6 +428,40 @@ describe('adding and removing a component', () => {
 		expect(description()).toContain('yes or no');
 		choose(menu, 'track');
 		expect(description()).toBe('');
+	});
+
+	it('leaves the description a direct child of the row, after the controls', () => {
+		/*
+		 * The stylesheet's half of the fix for docs/UI.md §12's moved **Add**
+		 * button: `.sheetsmith-add-row > .setting-item-description` is a child
+		 * combinator, and it is what gives the description `flex-basis: 100%` so
+		 * it takes a line of its own instead of widening the info column until
+		 * the control column wraps.
+		 *
+		 * Guarded because the failure is invisible (docs/PATTERNS.md §10). Drop
+		 * the `appendChild` — in an edit here, or in the M4 rewrite of this row —
+		 * and `descEl` goes back inside the info column, the selector matches
+		 * nothing, and the button an author presses next moves 35px while they
+		 * are choosing what to press it for. Nothing type-checks it, and the test
+		 * above passes either way: it reaches the description with a descendant
+		 * query, which finds it in both positions.
+		 *
+		 * `lastElementChild` rather than a containment check, because both facts
+		 * are load bearing and it holds them in one. Direct child is what the
+		 * selector needs; *after* the controls is what puts it on the second flex
+		 * line rather than the first.
+		 */
+		const menu = control(harness, 'add-choice');
+		const row = menu.closest('.setting-item');
+		expect(row?.classList.contains('sheetsmith-add-row')).toBe(true);
+		const description = row?.lastElementChild;
+		expect(description?.classList.contains('setting-item-description')).toBe(true);
+		// And the menu is described by it (docs/UI.md §6). Painted alone, the only
+		// explanation an entry gets reaches nobody using a screen reader: they
+		// hear "Inventory" and stop there. Asserted beside the position because
+		// the id is what the association hangs on, so the two break together.
+		expect(menu.getAttribute('aria-describedby')).toBe(description?.id);
+		expect(description?.id).toBeTruthy();
 	});
 
 	it('names an entry against the whole sheet, as a type is named', async () => {

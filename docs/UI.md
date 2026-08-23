@@ -330,6 +330,26 @@ to keep its rows further apart than the target reaches, or the later ring wins
 the press. Track's `.sheetsmith-track-flags` row-gap and the editor's
 `.sheetsmith-level-sample` gap are the same arithmetic for the same reason.
 
+**A settings row whose description grows puts it below the controls, never beside
+the name** [judgement]. Obsidian draws a setting row as one centred flex line, so
+copy in the info column widens it until the control column wraps — and what wraps
+is the control the author is about to reach for. The layout editor's **Add
+component** row is where this first bit: its description is empty for a bare type
+and three lines for a palette entry, so choosing an entry dropped the destination
+dropdown and **Add** about 35px while the menu they were chosen from kept the
+first line. `.sheetsmith-add-row` is the answer — `descEl` appended after the
+controls and given `flex-basis: 100%` — so the first line's height is fixed
+whatever is selected and the copy grows downward into space nothing is placed in.
+
+**Moved rather than reserved**, which was the open half of this question. Reserving
+a line of description height shows as a gap under every row whose copy happens to
+be empty, and it has to be as deep as the longest copy to be worth anything;
+clamping to one line with the rest in a `title` hides text that is often the only
+explanation a field gets (`PATTERNS.md` §8). One consumer today, so this is a class
+rather than a row in the table above — the second settings row with growing copy
+reuses it rather than inventing a second answer, which is this section's opening
+sentence applied to the editor rather than to a card.
+
 ---
 
 ## 10. Failure appears in place
@@ -410,7 +430,6 @@ that keeps solved rows stops being read.
 | An open container's form sits between it and its children | `editor/layout-editor.ts` | A form goes directly under the row it belongs to, which is what every component's does, so opening a container puts its whole form — around 500px for a Group with a schematic in it — between its row and the indented rows of what it holds. The disclosure relationship is furthest apart exactly when the container is being worked on. The indent chain itself is sound: measured, the row and its form share a left edge, and at one level in the form's first field sits within 3px of its row's name, so the accent bracket reads as continuous. Not reordered, because each way out costs more than it buys — children above the form inverts the convention every other component follows, the form after the whole subtree puts it further from its own row, and nesting the child rows inside the form would put a child's edit and remove controls inside its parent's configuration. Deferred to the M4 workspace view, which replaces this form entirely (`SPEC` §12) and is where a tree-shaped editor gets designed rather than patched. |
 
 | No fenced component's read error is drawn except one | `harness/samples.ts` | `brokenSamples()` breaks *config* — a key, a column, a row, a child — so until a review found it, no section holding something its component cannot parse had ever been rendered, for Stat, Stat group, Pool or Track. That is the state a hand-edited note actually arrives in, and the state whose text §10 says has to name the fix; the flag's said "not a number of marks" on a card that writes yes and no, and nothing on screen would have shown it. Track's flag now carries a broken body and the error is in `sheet-error.png`. The rest are not, because which breakage is worth a picture is a choice per component — a malformed fence, a duplicate key, a value of the wrong kind — and four of those judgements do not belong in the diff that found the first. Whoever adds the next one needs only an id and a body: the mechanism is there. |
-| Selecting a palette entry moves the **Add** button | `editor/layout-editor.ts`, `styles/editor.css` | The **Add component** row has no description while a bare type is selected and a two-line one once an entry is, so its control column wraps: the menu keeps the first line and the destination dropdown and **Add** drop to a second, about 35px down. Not the pool's rule — the pointer is on the select, not on the button that moved — but the button you press next moves while you are choosing what to press it for. Three ways out and each costs something the others do not: reserve a line of description height, which shows an empty line for every bare type and is the same reserve-or-not question the `hideLabel` row above is unresolved on; give the row a full-width description below its controls, which no other row on the tab does; or clamp the description to one line with the rest in a `title`, which hides copy §4.1 calls the only explanation the author gets. Deferred because it is a decision about how *every* settings row carries a growing description, and this feature is the first to have one. Visible with `?surface=settings&choice=track:0`, which is the view this row was found through. |
 | A disabled control looks exactly like an enabled one | `editor/layout-editor.ts`, `styles/editor.css` | The tab-order arrows are the first control in the plugin to call `setDisabled` on an icon button — the ↑ on the first tab and the ↓ on the last. Obsidian's own CSS carries `is-disabled` rules for `.setting-item.mod-action` and `.checkbox-container` and none for `.clickable-icon`, and the plugin styles no disabled state at all, so all six arrows render identically in the harness. Behaviour is right either way: the buttons carry `disabled` and `moveItem` refuses an out-of-range move, which a test asserts. What is missing is the paint, and UI §6's rule read backwards — state in the DOM that never reaches the paint is half a control. Not fixed here because the smaller half of the fix is four lines of `editor.css` and the larger half is a question this pass should not answer alone: the plugin's three *other* reorder controls never disable their ends at all, relying on the same range guard, so styling this one makes it the odd one out and styling all four is a change to controls this feature never touched. Found only because a missing stub glyph was fixed and the control became reviewable for the first time. |
 
 Add a row when a review finds a gap it is not fixing in the same pass.

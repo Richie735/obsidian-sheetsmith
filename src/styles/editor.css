@@ -445,6 +445,36 @@
 	font-size: var(--font-smallest);
 }
 
+/* The Add component row, whose description is a second line rather than copy
+   beside the name (docs/UI.md §12).
+
+   The description element is moved out of the info column and appended after
+   the controls, so it is a flex child of the row itself; `flex-basis: 100%`
+   then puts it on a line of its own. Same mechanism as the field error above,
+   and for the same reason: a settings row is one centred flex line, so anything
+   that grows inside the info column squeezes the control column until it wraps
+   — which is how selecting a palette entry used to move the **Add** button
+   35px down while the menu it was chosen from stayed put.
+
+   Out here the first line's height is fixed whatever is selected, and the
+   description grows downward. An empty one collapses, so a bare type still
+   shows the single-line row this had before the palette existed, and nothing is
+   reserved for copy that is not there. */
+.sheetsmith-add-row {
+	flex-wrap: wrap;
+}
+
+.sheetsmith-add-row > .setting-item-description {
+	flex-basis: 100%;
+}
+
+/* Only when there is something to say. An empty description still carries
+   Obsidian's own top margin, which would show as a gap under every bare type —
+   the reserved line this layout exists to avoid, arrived at by accident. */
+.sheetsmith-add-row > .setting-item-description:empty {
+	display: none;
+}
+
 /* Paint-only highlight: an inset shadow never shifts the row's layout. */
 .sheetsmith-row-open {
 	box-shadow: inset 2px 0 0 var(--interactive-accent);
