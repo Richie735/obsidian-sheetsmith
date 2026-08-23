@@ -10,7 +10,7 @@ import {
 	TextComponent,
 	TFile,
 } from 'obsidian';
-import { getComponent, listComponentTypes } from '../components';
+import { getComponent, listComponentTypes, paletteEntries } from '../components';
 import { conditionMet } from './config-fields';
 import { ConfirmModal } from '../ui/confirm-modal';
 import {
@@ -817,7 +817,8 @@ export class LayoutEditorSection {
 	}
 
 	private renderAddRow(container: HTMLElement, layout: Layout): void {
-		let chosen = listComponentTypes()[0] ?? 'stat-group';
+		const choices = addChoices();
+		let chosen = choices[0]?.value ?? 'stat-group';
 		// Every container that may still take a child. A container already two
 		// deep is left out, so the depth the parser refuses is never something
 		// the editor can walk into — the rule itself is `mayHoldChildren`, in
@@ -829,17 +830,39 @@ export class LayoutEditorSection {
 		);
 		let into: ComponentConfig | null = null;
 
-		const row = new Setting(container)
-			.setName('Add component')
-			.addDropdown((dropdown) => {
-				for (const type of listComponentTypes()) {
-					dropdown.addOption(type, componentDisplayName(type));
-				}
-				dropdown.setValue(chosen);
-				dropdown.onChange((value) => {
-					chosen = value;
-				});
+		const row = new Setting(container).setName('Add component');
+		/*
+		 * The entry's own description, beside the menu it was chosen from. A
+		 * dropdown line is one or two words, and SPEC §13's warning about the
+		 * palette is that a menu nobody can read is worse than the type list it
+		 * replaced — so what a prefill is *for* has to be on screen, not only in
+		 * the code. A bare type has none and the line is empty, which is the
+		 * truth: a type's name is all this editor has ever offered for one.
+		 */
+		const describe = (value: string): void => {
+			row.setDesc(
+				choices.find((choice) => choice.value === value)?.description ?? '',
+			);
+		};
+		row.addDropdown((dropdown) => {
+			for (const choice of choices) {
+				// An entry sits one level under the type it prefills. It is what
+				// keeps the menu readable as the entries multiply — the list gets
+				// longer, and its structure stays the catalog with each block's
+				// own prefills beneath it.
+				dropdown.addOption(
+					choice.value,
+					`${indent(choice.entry ? 1 : 0)}${choice.name}`,
+				);
+			}
+			dropdown.setValue(chosen);
+			dropdown.selectEl.dataset.sheetsmithFocus = 'add-choice';
+			dropdown.onChange((value) => {
+				chosen = value;
+				describe(value);
 			});
+		});
+		describe(chosen);
 
 		// Only where there is somewhere else to put one. A dropdown offering the
 		// sheet and nothing else says a layout has containers when it has none.
@@ -847,9 +870,7 @@ export class LayoutEditorSection {
 			row.addDropdown((dropdown) => {
 				dropdown.addOption(SHEET_DESTINATION, 'On the sheet');
 				for (const { config, depth } of destinations) {
-					// Indented in the option text, because a dropdown has no other
-					// way to say that one container sits inside another.
-					dropdown.addOption(config.id, `${'\u2007'.repeat(depth * 2)}In ${config.label}`);
+					dropdown.addOption(config.id, `${indent(depth)}In ${config.label}`);
 				}
 				dropdown.setValue(SHEET_DESTINATION);
 				dropdown.selectEl.dataset.sheetsmithFocus = 'add-destination';
@@ -873,7 +894,13 @@ export class LayoutEditorSection {
 				// note section and an id is what a formula writes, and containment
 				// scopes neither.
 				const all = this.allComponents();
-				const label = uniqueLabel(chosen, all);
+				const choice =
+					choices.find((candidate) => candidate.value === chosen) ??
+					choices[0];
+				const type = choice?.type ?? chosen;
+				// The entry's own name, so an author who chose "Checkbox" has a
+				// component called Checkbox until they rename it.
+				const label = uniqueLabel(choice?.name ?? componentDisplayName(type), all);
 				// A tab has no placement, so the numbers written here are not read
 				// by anything — but they are still in the file, and a hand-editor
 				// reading `row: 4` on a tab would reasonably conclude it sits
@@ -886,8 +913,13 @@ export class LayoutEditorSection {
 				// `innerPlacement` for the live box instead. Do not add a sync —
 				// reading this number was the bug, not writing it.
 				list.push({
+					// The prefill first, so nothing an entry carries can displace
+					// what the editor owns. The type forbids those keys outright;
+					// this is the spread order that makes the refusal true at
+					// runtime as well.
+					...(choice?.config ?? {}),
 					id: uniqueId(label, all),
-					type: chosen,
+					type,
 					label,
 					position: childIsPlaced(parent)
 						? {
@@ -2015,6 +2047,27 @@ function onCommit(
 }
 
 /**
+ * Leading space for a dropdown option that sits under another, by how many
+ * levels in it is.
+ *
+ * A figure space, because it is the one space character with a width that does
+ * not collapse and does not vary with the digits around it. Both dropdowns on
+ * the **Add component** row use it — an entry under its type, a container under
+ * its parent — for the same reason: a `<select>` has no other way to say that
+ * one option sits under another.
+ *
+ * One function because the bound is the whole of it, and the two callers sit in
+ * one row of the settings tab. Spelled twice they agreed only by accident: one
+ * multiplied by depth and the other hard-coded a flat two, so widening the
+ * indent in either place would have indented the two dropdowns beside each other
+ * differently. Taking the depth rather than a character count is also what lets a
+ * caller say "one level in" instead of restating the arithmetic (PATTERNS §1).
+ */
+function indent(depth: number): string {
+	return '\u2007'.repeat(depth * 2);
+}
+
+/**
  * Display name for a component type id: "stat-group" → "Stat group".
  * Sentence case, per the style guide: only the first word is capitalised.
  */
@@ -2042,9 +2095,67 @@ function removalMessage(config: ComponentConfig, held: number): string {
 	return `Remove "${config.label}" from the layout? Its own configuration is lost. ${inside} to the bottom of the sheet, keeping their own configuration, and ${kept}.`;
 }
 
-function uniqueLabel(type: string, components: ComponentConfig[]): string {
+/**
+ * One line of the add menu: a bare type, or a type with its config prefilled.
+ *
+ * Flattened here rather than in the registry because this is the only thing that
+ * draws a palette today, and PATTERNS §1 is explicit that one consumer earns no
+ * module. M4's grid canvas is the second and it moves then; what the registry
+ * owns is which entries exist, not how a menu spells them.
+ */
+interface AddChoice {
+	/** Stable option value. A type on its own, or the type and the entry's index. */
+	value: string;
+	type: string;
+	/** The menu line, and the label the new component starts with. */
+	name: string;
+	description: string;
+	/** Whether it is a prefill of the type above it, which is what indents it. */
+	entry: boolean;
+	config: Readonly<Partial<ComponentConfig>>;
+}
+
+/**
+ * Every type, each followed by its own prefills.
+ *
+ * Types stay, and not for completeness: an author who wants a plain Track has to
+ * be able to ask for one, and an entry is a starting point they then edit rather
+ * than a variant with capabilities of its own. A menu of entries alone would hide
+ * the generic block behind a job name, which is the failure SPEC §2 records twice
+ * — nobody building an inventory looks for a skill card.
+ */
+function addChoices(): AddChoice[] {
+	return listComponentTypes().flatMap((type) => [
+		{
+			value: type,
+			type,
+			name: componentDisplayName(type),
+			description: '',
+			entry: false,
+			config: {},
+		},
+		// The index rather than a machine id on the entry itself: the value only
+		// has to tell one option from another inside one dropdown, and a member
+		// for it would be a member every future entry has to invent a value for.
+		//
+		// A colon rather than a hash, because the harness addresses this menu by
+		// query string and `#` is the one character that cannot survive one — it
+		// starts a fragment, so `choice=track#0` arrives as `choice=track` and
+		// selects the bare type instead. A type id is lower-case and hyphenated,
+		// so a colon parses unambiguously.
+		...paletteEntries(type).map((entry, index) => ({
+			value: `${type}:${index}`,
+			type,
+			name: entry.name,
+			description: entry.description,
+			entry: true,
+			config: entry.config,
+		})),
+	]);
+}
+
+function uniqueLabel(base: string, components: ComponentConfig[]): string {
 	const taken = new Set(components.map((c) => c.label));
-	const base = componentDisplayName(type);
 	let label = base;
 	let counter = 2;
 	while (taken.has(label)) label = `${base} ${counter++}`;

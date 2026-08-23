@@ -387,6 +387,20 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			default: false,
 		},
 	],
+	/*
+	 * A checkbox is this component with `count: 1`, and it is the entry that
+	 * took Toggle out of the catalog (SPEC §13). Nobody wanting a checkbox looks
+	 * for a component called Track, which is exactly what a palette entry is for
+	 * and the whole of why Toggle looked like it needed to exist.
+	 */
+	palette: [
+		{
+			name: 'Checkbox',
+			description:
+				'One yes-or-no flag: inspiration, equipped, trained. A track of one segment, so the note stores yes or no rather than a count, and the card draws one ring. Name the levels to letter the ring, or add rows for a checklist of flags under one heading.',
+			config: { count: 1 },
+		},
+	],
 
 	read(body, config): ReadResult<TrackData> {
 		const parsed = readFenced(body);

@@ -3,7 +3,12 @@
  * contract (SPEC §4.1) in its own file and adding one line here.
  */
 
-import { ComponentConfig, ComponentDefinition, isContainer } from '../types';
+import {
+	ComponentConfig,
+	ComponentDefinition,
+	isContainer,
+	PaletteEntry,
+} from '../types';
 import { group } from './group';
 import { pool } from './pool';
 import { stat } from './stat';
@@ -34,6 +39,22 @@ export function getComponent(type: string): ComponentDefinition | undefined {
 /** All registered component types, for the layout editor's add menu. */
 export function listComponentTypes(): string[] {
 	return [...registry.keys()];
+}
+
+/**
+ * The ways a type may be offered with its configuration prefilled (SPEC §4.2).
+ *
+ * The exact analogue of `listComponentTypes()`, and asked per type rather than
+ * flattened across the registry because an entry belongs *under* the type it
+ * prefills: the palette is the catalog, each block followed by its own
+ * prefills, which is what keeps it readable as the entries multiply.
+ *
+ * Which options a menu holds and how they are drawn stays in the editor. There
+ * is one consumer of that today, and PATTERNS §1 is explicit that one consumer
+ * earns no module; M4's palette is the second, and it moves then.
+ */
+export function paletteEntries(type: string): readonly PaletteEntry[] {
+	return registry.get(type)?.palette ?? [];
 }
 
 /**

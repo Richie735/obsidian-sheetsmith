@@ -5,11 +5,13 @@ import { describe, expect, it } from 'vitest';
 import {
 	getComponent,
 	listComponentTypes,
+	paletteEntries,
 	undrawableMessage,
 	unknownComponentMessage,
 } from './index';
 import {
 	ComponentConfig,
+	EDITOR_OWNED_KEYS,
 	isContainer,
 	placesChildren,
 	ScopeEntry,
@@ -37,9 +39,6 @@ const KINDS = [
 	'columns',
 ];
 
-/** Config keys the layout editor owns. A component must not redeclare them. */
-const RESERVED_KEYS = ['id', 'type', 'label', 'position', 'reset', 'children'];
-
 /**
  * The order a component declares its members in (docs/PATTERNS.md §3): the
  * contract first, then the data path in the order it actually runs, then
@@ -59,6 +58,9 @@ const MEMBER_ORDER = [
 	'showsOneChild',
 	'formulaFields',
 	'configFields',
+	// After the fields it prefills, because that is the order it reads in:
+	// here are the settings, and here is one of them filled in for a job.
+	'palette',
 	'read',
 	'scopeValues',
 	'scopeRows',
@@ -221,6 +223,57 @@ describe('component registry', () => {
 		).toBeNull();
 	});
 
+	it('names every shared config key, so the rules that forbid them are not vacuous', () => {
+		/*
+		 * Both rules below use `EDITOR_OWNED_KEYS` as the *forbidden* set, so an
+		 * emptied list passes them by forbidding nothing — and the palette's half
+		 * is the compiler's, where `Omit<TConfig, never>` would quietly let an
+		 * entry prefill an id. That became worth checking when the list moved into
+		 * shipping code to be the one copy the type derives from.
+		 *
+		 * Anchored to the config the editor actually writes rather than to a
+		 * second spelling of the six: every key of a bare component is a key the
+		 * editor owns, so a seventh shared key on `ComponentConfig` fails here
+		 * until it is named.
+		 */
+		for (const key of Object.keys(bareConfig('stat'))) {
+			expect(EDITOR_OWNED_KEYS).toContain(key);
+		}
+		// The two that are optional, and so absent from a bare config: `reset` is
+		// a binding the editor renders beside label and position, and `children`
+		// is the key it writes when something is put inside a container.
+		expect(EDITOR_OWNED_KEYS).toContain('reset');
+		expect(EDITOR_OWNED_KEYS).toContain('children');
+	});
+
+	it('offers at least one palette entry, so the per-entry checks look at something', () => {
+		// Every palette rule below runs inside a loop over one component's
+		// entries, and a registry offering none would pass all of them by
+		// iterating nothing at all.
+		const entries = types.flatMap((type) => [...paletteEntries(type)]);
+		expect(entries.length).toBeGreaterThan(0);
+	});
+
+	it('gives no two entries on one type the same name', () => {
+		/*
+		 * Two entries under one type sharing a name are two identical indented
+		 * lines in the menu, differing only in an option value nobody sees. That
+		 * is not a configuration anyone chooses, so it fails here (SPEC §4.2).
+		 *
+		 * **Per type, not across the palette.** Global uniqueness was the first
+		 * spelling and it forbade something legitimate: the menu is grouped by
+		 * type with each entry under its own, so a Table offered as "Inventory"
+		 * beside a Stat group offered as "Inventory" is two distinguishable lines,
+		 * and the deferred prefills (SPEC §13) must not be refused by a rule
+		 * nothing needs. The option value is `type:index` and the label goes
+		 * through `uniqueLabel`, so neither depends on this either way.
+		 */
+		for (const type of types) {
+			const names = paletteEntries(type).map((entry) => entry.name);
+			expect(new Set(names).size).toBe(names.length);
+		}
+	});
+
 	it('names the types a layout may use when one is unknown', () => {
 		// A stale layout file is the one place a user meets a type id they
 		// have to fix by hand, so the message carries the vocabulary rather
@@ -272,6 +325,72 @@ describe('a component that draws a label asks whether it should', () => {
 			.filter(({ source }) => !source.includes('showsOwnLabel'))
 			.map(({ name }) => name);
 		expect(forgetful).toEqual([]);
+	});
+
+	it('draws every two-state control through the shared ring painter', () => {
+		/*
+		 * `docs/UI.md` §9: when a card and a cell do the same job they share the
+		 * painter, "precisely so one flag cannot measure differently from the
+		 * other under the same finger". A `toggle` column and a Track's flag are
+		 * that case, and the way it would drift is somebody giving the second one
+		 * a lookalike — a native checkbox, or its own class with its own
+		 * measurements — which reads perfectly well in the file it is written in.
+		 *
+		 * `aria-pressed` is the marker because it is the one thing a two-state
+		 * control cannot be written without: ARIA has a word for two states, and
+		 * a control declaring it is declaring itself to be one.
+		 */
+		const lookalikes = componentFiles()
+			.filter(({ source }) => source.includes('aria-pressed'))
+			.filter(({ source }) => !source.includes('paintLevelRing'))
+			.map(({ name }) => name);
+		expect(lookalikes).toEqual([]);
+	});
+
+	/*
+	 * A native checkbox, by the two spellings a component could reach it through.
+	 *
+	 * Narrower than the word, deliberately. Matching `'checkbox'` anywhere failed
+	 * the build on any component that so much as quoted it — and one already
+	 * nearly did: Track's `count` description says "a plain 1 makes this a
+	 * checkbox", which escaped only for want of a pair of quotes. A guard whose
+	 * false positive is a sentence explaining the guard is a guard somebody will
+	 * delete.
+	 *
+	 * `components/` builds DOM with the standard API rather than Obsidian's
+	 * helpers, so the routes are an assignment or an object literal (`type` set to
+	 * it) and `setAttribute('type', 'checkbox')`. `Setting.addToggle` is not one:
+	 * a component cannot import it.
+	 */
+	const NATIVE_CHECKBOX = /type\s*[=:]\s*'checkbox'|'type'\s*,\s*'checkbox'/;
+
+	it('never draws a checkbox where the ring is the control', () => {
+		// The other half of §4.2's ruling, and the half a class name cannot
+		// carry: a native checkbox has none of the ring's hit target, its
+		// coarse-pointer sizing or its press feedback, so reaching for one is the
+		// drift rather than an alternative spelling of the same control. It is
+		// also the half the `aria-pressed` check above cannot reach, since a
+		// native checkbox carries `checked` and declares no ARIA at all.
+		const checkboxes = componentFiles()
+			.filter(({ source }) => NATIVE_CHECKBOX.test(source))
+			.map(({ name }) => name);
+		expect(checkboxes).toEqual([]);
+	});
+
+	it('catches a checkbox however it is spelled, so the scan above means something', () => {
+		// The check above asserts an empty list, so a pattern that had stopped
+		// matching anything would read exactly like a rule nothing violates. Same
+		// shape as the two-things-about-one-name check: the rule applied to
+		// something that breaks it.
+		for (const spelling of [
+			"input.type = 'checkbox';",
+			"createElement('input', { type: 'checkbox' })",
+			"el.setAttribute('type', 'checkbox');",
+		]) {
+			expect(NATIVE_CHECKBOX.test(spelling)).toBe(true);
+		}
+		// And the prose it must not fire on.
+		expect(NATIVE_CHECKBOX.test('A plain 1 makes this a checkbox.')).toBe(false);
 	});
 });
 
@@ -421,6 +540,53 @@ describe.each(types)('component "%s"', (type) => {
 		);
 	});
 
+	it('offers palette entries as a list, or not at all', () => {
+		// An optional member under §4.1's rule, so a component with nothing worth
+		// prefilling leaves it off and appears as its bare type — never as
+		// something in between the editor would have to guard against.
+		if (component?.palette === undefined) return;
+		expect(Array.isArray(component.palette)).toBe(true);
+		expect(component.palette.length).toBeGreaterThan(0);
+	});
+
+	it('gives every palette entry a name, a description, and some config', () => {
+		for (const entry of component?.palette ?? []) {
+			expect(entry.name).toBeTruthy();
+			// The description is not decoration here either: the menu line is
+			// one or two words, and this is the only thing that says what the
+			// prefill is for (docs/UI.md, SPEC §13).
+			expect(entry.description).toBeTruthy();
+			// An entry prefilling nothing is the bare type, which the palette
+			// already offers.
+			expect(Object.keys(entry.config).length).toBeGreaterThan(0);
+		}
+	});
+
+	it('prefills no config key the layout editor owns', () => {
+		// The type excludes them, so what this catches is one that got there
+		// through a cast — and the two worth naming are why it is worth catching:
+		// a `reset` prefill would name a trigger the layout may not declare, and
+		// a `children` prefill would make an entry that produces several
+		// components, which SPEC §13 rules out.
+		for (const entry of component?.palette ?? []) {
+			for (const key of Object.keys(entry.config)) {
+				expect(EDITOR_OWNED_KEYS).not.toContain(key);
+			}
+		}
+	});
+
+	it('declares every prefilled key as a config field it also renders', () => {
+		// Otherwise an entry hands the author configuration with no form to edit
+		// it in, which is the palette quietly becoming a second way to configure
+		// a component.
+		const declared = (component?.configFields ?? []).map((field) => field.key);
+		for (const entry of component?.palette ?? []) {
+			for (const key of Object.keys(entry.config)) {
+				expect(declared).toContain(key);
+			}
+		}
+	});
+
 	it('declares no duplicate config field keys', () => {
 		const keys = (component?.configFields ?? []).map((f) => f.key);
 		expect(new Set(keys).size).toBe(keys.length);
@@ -428,7 +594,7 @@ describe.each(types)('component "%s"', (type) => {
 
 	it('does not redeclare a config key the layout editor owns', () => {
 		for (const field of component?.configFields ?? []) {
-			expect(RESERVED_KEYS).not.toContain(field.key);
+			expect(EDITOR_OWNED_KEYS).not.toContain(field.key);
 		}
 	});
 
@@ -449,7 +615,7 @@ describe.each(types)('component "%s"', (type) => {
 		for (const field of component?.formulaFields ?? []) {
 			if (field.includes('.')) {
 				const root = field.split('.')[0] as string;
-				if (RESERVED_KEYS.includes(root)) continue;
+				if (EDITOR_OWNED_KEYS.some((key) => key === root)) continue;
 				expect(declared).toContain(root);
 			} else {
 				expect(editable).toContain(field);
