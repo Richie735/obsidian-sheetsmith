@@ -1335,6 +1335,37 @@ describe('a flag track', () => {
 			expect(fills(el)).toEqual([1, 0, 0, 0, 0, 0]);
 		});
 
+		it('reads a spelled-out cleared flag as a flag, not as a mistake', () => {
+			// `no` and `false` are the two spellings `CLEAR` holds, and this is
+			// the only consumer that can tell them from a mistake: a Table's
+			// toggle reads anything unrecognised as off, so `false` and `maybe`
+			// are the same answer there. Here they are not — one is a flag that
+			// reads clear, the other a malformed section — and that distinction
+			// is the whole reason `CLEAR` is a named set rather than "not yes".
+			for (const spelling of ['no', 'false']) {
+				expect(
+					track.read(`\n\`\`\`sheet\nvalue: ${spelling}\n\`\`\`\n`, flag).ok,
+					spelling,
+				).toBe(true);
+				expect(
+					rings(drawFlag({}, { values: { value: spelling } }))[0]?.getAttribute(
+						'aria-pressed',
+					),
+					spelling,
+				).toBe('false');
+			}
+			// And the two spellings that only this side of the set reaches.
+			for (const spelling of ['true', '✓']) {
+				expect(track.read(`\n\`\`\`sheet\nvalue: ${spelling}\n\`\`\`\n`, flag).ok).toBe(true);
+				expect(
+					rings(drawFlag({}, { values: { value: spelling } }))[0]?.getAttribute(
+						'aria-pressed',
+					),
+					spelling,
+				).toBe('true');
+			}
+		});
+
 		it('still reports something that is neither a number nor a flag', () => {
 			// Named for what a checkbox writes. This assertion existed and held
 			// the *other* card's sentence — "not a number of marks" — which is a

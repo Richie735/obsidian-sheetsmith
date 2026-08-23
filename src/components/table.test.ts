@@ -852,6 +852,37 @@ describe('table.render', () => {
 		]);
 	});
 
+	it('reads every spelling of a set flag a hand-edited note may hold', () => {
+		/*
+		 * `stored-flag.ts` accepts six spellings and this drives all six, through
+		 * the ring that shows the answer. A toggle column is where they are
+		 * reachable: Track checks `Number.isFinite` first, so a note holding `1`
+		 * never reaches the flag set there at all.
+		 *
+		 * Spelled out rather than iterated over an exported set, which is the
+		 * shape §10 warns about: a test walking `SET` still passes after a
+		 * spelling is deleted from it, because the deletion leaves the iteration
+		 * too. Only a literal fails, which is the drift that matters — a note
+		 * hand-edited to `✓` reading as ticked in a table and clear on a card,
+		 * from the same file, with nothing on screen to say why.
+		 */
+		const toggles = {
+			...config,
+			columns: [{ key: 'Trained', type: 'toggle' as const }],
+		};
+		for (const spelling of ['yes', 'true', 'x', '✓', '✔', '1']) {
+			const el = render(note({ Acrobatics: { trained: spelling } }, toggles), toggles);
+			const ring = el.querySelector('tbody .sheetsmith-level-ring');
+			expect(ring?.getAttribute('aria-pressed'), spelling).toBe('true');
+		}
+		// And the negative, so the loop above is not passing on a ring stuck on.
+		for (const spelling of ['no', 'false', '0', '', 'maybe']) {
+			const el = render(note({ Acrobatics: { trained: spelling } }, toggles), toggles);
+			const ring = el.querySelector('tbody .sheetsmith-level-ring');
+			expect(ring?.getAttribute('aria-pressed'), spelling).toBe('false');
+		}
+	});
+
 	it('gives an unnamed level no tooltip repeating its own glyph', () => {
 		const el = render(note({ Acrobatics: { training: '2' } }), levelled);
 		const ring = el.querySelector('tbody .sheetsmith-level-ring');
