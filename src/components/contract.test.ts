@@ -347,6 +347,15 @@ describe('a component that draws a label asks whether it should', () => {
 		expect(lookalikes).toEqual([]);
 	});
 
+	it('finds the two-state controls it is meant to be checking', () => {
+		// A marker that stopped matching would pass the check above by iterating
+		// nothing, and the rule it holds is about the *second* implementor.
+		const pressing = componentFiles().filter(({ source }) =>
+			source.includes('aria-pressed'),
+		);
+		expect(pressing.length).toBeGreaterThan(1);
+	});
+
 	/*
 	 * A native checkbox, by the two spellings a component could reach it through.
 	 *
