@@ -1178,7 +1178,7 @@ body {
    means. It reads as a toggle carrying the level's initial — filled for a
    level, an empty ring for none, which is what an unticked proficiency
    looks like on paper. Clicking cycles; the arrow keys aim. */
-.sheetsmith-view .sheetsmith-table-cycle {
+.sheetsmith-view .sheetsmith-level-ring {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
@@ -1224,14 +1224,14 @@ body {
    One rule for both controls in the table rather than two carrying the same
    arithmetic: the inset is the cell's own padding, and a copy of it is a copy
    that drifts. */
-.sheetsmith-view .sheetsmith-table-cycle::after,
+.sheetsmith-view .sheetsmith-level-ring::after,
 .sheetsmith-view .sheetsmith-table-remove-button::after {
 	content: '';
 	position: absolute;
 	inset: calc(-1 * var(--size-2-2)) calc(-1 * var(--size-4-2));
 }
 
-.sheetsmith-view .sheetsmith-table-cycle:hover {
+.sheetsmith-view .sheetsmith-level-ring:hover {
 	border-color: var(--text-muted);
 	background-color: var(--background-modifier-hover);
 }
@@ -1239,7 +1239,7 @@ body {
 /* Feedback on press, not on release: no transition on the way in, and the
    whole control gives under the finger rather than waiting for the click to
    report a new level. */
-.sheetsmith-view .sheetsmith-table-cycle:active {
+.sheetsmith-view .sheetsmith-level-ring:active {
 	transform: scale(0.9);
 	transition-duration: 0s;
 }
@@ -1249,7 +1249,7 @@ body {
    them which cell they are on. An outline rather than a ring: the offset
    leaves the gap that keeps it legible against the accent fill of a marked
    level, and outlines survive forced-colors mode where box-shadows do not. */
-.sheetsmith-view .sheetsmith-table-cycle:focus-visible {
+.sheetsmith-view .sheetsmith-level-ring:focus-visible {
 	outline: 2px solid var(--interactive-accent);
 	outline-offset: 2px;
 }
@@ -1264,7 +1264,7 @@ body {
    still reads as marked rather than as an ordinary empty one. The share comes
    in from the component, which is the only side that knows how many levels
    this column has; absent — a plain toggle — it is the whole way. */
-.sheetsmith-view .sheetsmith-table-cycle-on {
+.sheetsmith-view .sheetsmith-level-ring-on {
 	border-color: var(--interactive-accent);
 	background-color: color-mix(
 		in srgb,
@@ -1278,11 +1278,11 @@ body {
    a tint is the one place this ramp could cost legibility. --text-normal is
    defined against --background-primary, which is exactly what the fill is
    mixed with, so it holds in a light theme and a dark one alike. */
-.sheetsmith-view .sheetsmith-table-cycle-part {
+.sheetsmith-view .sheetsmith-level-ring-part {
 	color: var(--text-normal);
 }
 
-.sheetsmith-view .sheetsmith-table-cycle-on:hover {
+.sheetsmith-view .sheetsmith-level-ring-on:hover {
 	border-color: var(--interactive-accent-hover);
 	background-color: color-mix(
 		in srgb,
@@ -1724,7 +1724,7 @@ body {
 	}
 
 /* An empty ring against a faint outline is the whole signal here. */
-.sheetsmith-view .sheetsmith-table-cycle {
+.sheetsmith-view .sheetsmith-level-ring {
 		border-color: var(--text-muted);
 	}
 
@@ -1738,7 +1738,7 @@ body {
 	   which is the wrong trade for someone who asked for more contrast. Every
 	   marked level goes back to the full fill; the glyph and the name were
 	   always the exact answer, and here they are the only one. */
-.sheetsmith-view .sheetsmith-table-cycle-on {
+.sheetsmith-view .sheetsmith-level-ring-on {
 		background-color: var(--interactive-accent);
 		color: var(--text-on-accent);
 	}
@@ -1750,14 +1750,14 @@ body {
    scale goes, replaced by the fill change it was decorating, so a press is
    still answered the instant it lands. */
 @media (prefers-reduced-motion: reduce) {
-.sheetsmith-view .sheetsmith-table-cycle {
+.sheetsmith-view .sheetsmith-level-ring {
 		transition:
 			background-color 160ms ease,
 			border-color 160ms ease,
 			color 160ms ease;
 	}
 
-.sheetsmith-view .sheetsmith-table-cycle:active {
+.sheetsmith-view .sheetsmith-level-ring:active {
 		transform: none;
 		border-color: var(--interactive-accent);
 		background-color: var(--background-modifier-active-hover);
