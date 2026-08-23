@@ -10,7 +10,7 @@ const VALID = JSON.stringify({
 	components: [
 		{
 			id: 'dex',
-			type: 'stat',
+			type: 'card',
 			label: 'DEX',
 			position: { col: 1, row: 1, width: 1, height: 1 },
 			derived: 'mod(dex)',
@@ -60,7 +60,7 @@ describe('parseLayout: reset bindings', () => {
 			components: [
 				{
 					id: 'hp',
-					type: 'stat',
+					type: 'card',
 					label: 'HP',
 					position: { col: 1, row: 1, width: 1, height: 1 },
 					reset,
@@ -191,7 +191,7 @@ describe('parseLayout: component ids', () => {
 			components: [
 				{
 					id,
-					type: 'stat',
+					type: 'card',
 					label: 'A',
 					position: { col: 1, row: 1, width: 1, height: 1 },
 				},
@@ -224,7 +224,7 @@ describe('parseLayout: component ids', () => {
 			components: ['armour_class', 'armour-class', 'armour.class'].map(
 				(id, i) => ({
 					id,
-					type: 'stat',
+					type: 'card',
 					label: `A${i}`,
 					position: { col: 1, row: i + 1, width: 1, height: 1 },
 				}),
@@ -243,7 +243,7 @@ describe('parseLayout: component ids', () => {
 			name: 'L',
 			components: [1, 2].map((i) => ({
 				id: 'abilities',
-				type: 'stat',
+				type: 'card',
 				label: `A${i}`,
 				position: { col: 1, row: i, width: 1, height: 1 },
 			})),
@@ -276,7 +276,7 @@ describe('parseLayout', () => {
 		const bad = JSON.stringify({
 			name: 'L',
 			components: [
-				{ type: 'stat', label: 'DEX', position: { col: 1, row: 1, width: 1, height: 1 } },
+				{ type: 'card', label: 'DEX', position: { col: 1, row: 1, width: 1, height: 1 } },
 			],
 		});
 		expect(() => parseLayout(bad)).toThrow(/id/);
@@ -286,7 +286,7 @@ describe('parseLayout', () => {
 		const bad = JSON.stringify({
 			name: 'L',
 			components: [
-				{ id: 'a', type: 'stat', label: 'A', position: { col: 0, row: 1, width: 1, height: 1 } },
+				{ id: 'a', type: 'card', label: 'A', position: { col: 0, row: 1, width: 1, height: 1 } },
 			],
 		});
 		expect(() => parseLayout(bad)).toThrow(/col/);
@@ -372,7 +372,7 @@ describe('parseLayout', () => {
 				components: [
 					{
 						id: ' str ',
-						type: ' stat ',
+						type: ' card ',
 						label: ' Str ',
 						position: { col: 1, row: 1, width: 1, height: 1 },
 					},
@@ -382,7 +382,7 @@ describe('parseLayout', () => {
 		expect(layout.name).toBe('L');
 		expect(layout.components[0]).toMatchObject({
 			id: 'str',
-			type: 'stat',
+			type: 'card',
 			label: 'Str',
 		});
 	});
@@ -393,7 +393,7 @@ describe('parseLayout', () => {
 			components: [
 				{
 					id: 'a',
-					type: 'stat',
+					type: 'card',
 					label: 'St\nr',
 					position: { col: 1, row: 1, width: 1, height: 1 },
 				},
@@ -407,16 +407,16 @@ describe('parseLayout', () => {
 		const dupId = JSON.stringify({
 			name: 'L',
 			components: [
-				{ id: 'a', type: 'stat', label: 'A', position },
-				{ id: 'a', type: 'stat', label: 'B', position },
+				{ id: 'a', type: 'card', label: 'A', position },
+				{ id: 'a', type: 'card', label: 'B', position },
 			],
 		});
 		expect(() => parseLayout(dupId)).toThrow(/id/);
 		const dupLabel = JSON.stringify({
 			name: 'L',
 			components: [
-				{ id: 'a', type: 'stat', label: 'A', position },
-				{ id: 'b', type: 'stat', label: 'A', position },
+				{ id: 'a', type: 'card', label: 'A', position },
+				{ id: 'b', type: 'card', label: 'A', position },
 			],
 		});
 		expect(() => parseLayout(dupLabel)).toThrow(/label/i);
@@ -506,7 +506,7 @@ describe('parseLayout: components inside components', () => {
 
 	const leaf = (id: string, row = 1) => ({
 		id,
-		type: 'stat',
+		type: 'card',
 		label: id.toUpperCase(),
 		position: at(row),
 	});
@@ -514,7 +514,7 @@ describe('parseLayout: components inside components', () => {
 	it('parses a child exactly as it parses a top-level component', () => {
 		const layout = parseLayout(withChildren([leaf('str')]));
 		expect(layout.components[0]?.children).toEqual([
-			{ id: 'str', type: 'stat', label: 'STR', position: at(1) },
+			{ id: 'str', type: 'card', label: 'STR', position: at(1) },
 		]);
 	});
 
@@ -701,14 +701,14 @@ describe('parseLayout: components inside components', () => {
 			JSON.stringify({
 				name: 'L',
 				components: [
-					{ id: 'armour_class', type: 'stat', label: 'A', position: at(1) },
+					{ id: 'armour_class', type: 'card', label: 'A', position: at(1) },
 					{
 						id: 'outer',
 						type: 'group',
 						label: 'Outer',
 						position: at(2),
 						children: [
-							{ id: 'armour-class', type: 'stat', label: 'B', position: at(1) },
+							{ id: 'armour-class', type: 'card', label: 'B', position: at(1) },
 						],
 					},
 				],
@@ -726,7 +726,7 @@ describe('walkComponents', () => {
 		children?: ComponentConfig[],
 	): ComponentConfig => ({
 		id,
-		type: children ? 'group' : 'stat',
+		type: children ? 'group' : 'card',
 		label: id,
 		position: { col, row, width: 1, height: 1 },
 		...(children ? { children } : {}),

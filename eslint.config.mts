@@ -183,11 +183,11 @@ export default defineConfig(
 								'../components/*',
 								'!./column-types',
 								'!./level-ring',
-								'!./stat-card',
+								'!./card-face',
 								'!./stored-flag',
 								'!../components/column-types',
 								'!../components/level-ring',
-								'!../components/stat-card',
+								'!../components/card-face',
 								'!../components/stored-flag',
 							],
 							message:
@@ -206,7 +206,7 @@ export default defineConfig(
 					// import in the file and silently cancels the negations that
 					// keep the shared painters importable. That was measured, not
 					// assumed: with '.' in the group above, './level-ring' and
-					// './stat-card' were both reported restricted.
+					// './card-face' were both reported restricted.
 					paths: [
 						{
 							name: '.',

@@ -1,5 +1,5 @@
 /*
- * The editing gesture, shared by every stored value on a sheet: stat cards
+ * The editing gesture, shared by every stored value on a sheet: cards
  * and table cells alike (SPEC §4.2, "Card interaction").
  *
  * Feedback and persistence are deliberately separate. Typing, Enter, and

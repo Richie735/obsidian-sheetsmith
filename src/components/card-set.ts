@@ -1,9 +1,9 @@
 /*
- * Stat group — an ordered set of named attributes rendered as a strip of
- * stat cards (SPEC §4.2). Covers the six D&D abilities or Call of Cthulhu
- * characteristics; a single-attribute group is a lone stat card. One fenced
- * block holds one entry per attribute, matching the file model example in
- * SPEC §3.1.
+ * Card set — an ordered set of named entries rendered as a strip of
+ * cards (SPEC §4.2). Covers the six D&D abilities or Call of Cthulhu
+ * characteristics, and a coin purse under the Currency entry; a single-entry
+ * set is a lone card. One fenced block holds one entry per declared key,
+ * matching the file model example in SPEC §3.1.
  */
 
 import { referencesName } from '../formula/expression';
@@ -16,25 +16,25 @@ import {
 	ScopeValues,
 	showsOwnLabel,
 } from '../types';
-import { renderStatCard, toDerived } from './stat-card';
+import { renderCardFace, toDerived } from './card-face';
 
-export interface StatGroupAttribute {
+export interface CardSetEntry {
 	/** Entry key in the fenced block, and the abbreviation on the card. */
 	key: string;
 	/** Full display name, e.g. "Strength" over "STR". */
 	name?: string;
 }
 
-export interface StatGroupConfig extends ComponentConfig {
-	type: 'stat-group';
-	/** The attributes, in display order. */
-	attributes?: StatGroupAttribute[];
-	/** Formula computed per attribute; `value` is that attribute's value. */
+export interface CardSetConfig extends ComponentConfig {
+	type: 'card-set';
+	/** The entries, in display order. */
+	entries?: CardSetEntry[];
+	/** Formula computed per entry; `value` is that entry's value. */
 	derived?: string;
 	/** Card flow. Defaults to horizontal. */
 	direction?: 'horizontal' | 'vertical';
 	hideLabel?: boolean;
-	/** Where the group name sits. Defaults to start. */
+	/** Where the set's name sits. Defaults to start. */
 	labelAlign?: 'auto' | 'start' | 'center' | 'end';
 	/**
 	 * Card sizing: 'fill' (default) spreads cards across the width; 'fixed'
@@ -51,7 +51,7 @@ export interface StatGroupConfig extends ComponentConfig {
 	signed?: boolean;
 }
 
-export interface StatGroupData {
+export interface CardSetData {
 	/**
 	 * Raw values by fenced key. On read this holds every entry; on write
 	 * only the entries present are touched, so an edit reported as a
@@ -61,15 +61,15 @@ export interface StatGroupData {
 	values: Record<string, string>;
 }
 
-export const statGroup: ComponentDefinition<StatGroupConfig, StatGroupData> = {
-	type: 'stat-group',
+export const cardSet: ComponentDefinition<CardSetConfig, CardSetData> = {
+	type: 'card-set',
 	storage: 'fenced',
 	formulaFields: ['derived'],
 	configFields: [
 		{
-			key: 'attributes',
-			kind: 'attributes',
-			label: 'Attributes',
+			key: 'entries',
+			kind: 'entries',
+			label: 'Entries',
 			description:
 				'Each key is the entry name in the note and the abbreviation on the card. Order is display order. Renaming a key does not move a stored value; the old entry stays in the note under the old key.',
 		},
@@ -78,7 +78,7 @@ export const statGroup: ComponentDefinition<StatGroupConfig, StatGroupData> = {
 			kind: 'formula',
 			label: 'Derived',
 			description:
-				'Formula computed per attribute, where "value" is that attribute\'s value, e.g. floor((value - 10) / 2).',
+				'Formula computed per entry, where "value" is that entry\'s value, e.g. floor((value - 10) / 2).',
 		},
 		{
 			key: 'direction',
@@ -111,7 +111,7 @@ export const statGroup: ComponentDefinition<StatGroupConfig, StatGroupData> = {
 			group: 'Appearance',
 			kind: 'boolean',
 			label: 'Hide label',
-			description: 'Hide the group name above the cards.',
+			description: 'Hide the set\'s name above the cards.',
 			default: false,
 		},
 		{
@@ -120,7 +120,7 @@ export const statGroup: ComponentDefinition<StatGroupConfig, StatGroupData> = {
 			kind: 'select',
 			label: 'Label position',
 			description:
-				'Where the group name sits above the cards. Auto follows the cards\' own alignment.',
+				'Where the set\'s name sits above the cards. Auto follows the cards\' own alignment.',
 			// "auto" is the first option, and the editor stores a config key
 			// only when it differs from the first — so the absent key means
 			// "follow the cards", and picking "start" stores "start" and
@@ -147,7 +147,7 @@ export const statGroup: ComponentDefinition<StatGroupConfig, StatGroupData> = {
 		},
 	],
 	/*
-	 * A currency block is this component with its denominations as attributes,
+	 * A currency block is this component with its denominations as entries,
 	 * and SPEC §13 checked it against Table before settling there. Five declared
 	 * rows with a number column store and publish the same five numbers and are
 	 * the wrong shape for them: a row's apparatus buys nothing where a
@@ -166,9 +166,9 @@ export const statGroup: ComponentDefinition<StatGroupConfig, StatGroupData> = {
 		{
 			name: 'Currency',
 			description:
-				'Coins as five cards in a row, one per denomination: CP, SP, EP, GP, PP. A Stat group, so the note stores one entry per denomination and each publishes a name a formula can read. Rename or drop the ones your game does not use.',
+				'Coins as five cards in a row, one per denomination: CP, SP, EP, GP, PP. A Card set, so the note stores one entry per denomination and each publishes a name a formula can read. Rename or drop the ones your game does not use.',
 			config: {
-				attributes: [
+				entries: [
 					{ key: 'CP', name: 'Copper' },
 					{ key: 'SP', name: 'Silver' },
 					{ key: 'EP', name: 'Electrum' },
@@ -179,7 +179,7 @@ export const statGroup: ComponentDefinition<StatGroupConfig, StatGroupData> = {
 		},
 	],
 
-	read(body): ReadResult<StatGroupData> {
+	read(body): ReadResult<CardSetData> {
 		const parsed = readFenced(body);
 		if (!parsed.ok) return parsed;
 		// No fence yet: editable empty cards, not an error.
@@ -188,17 +188,17 @@ export const statGroup: ComponentDefinition<StatGroupConfig, StatGroupData> = {
 	},
 
 	scopeValues(data, config): ScopeValues {
-		// One name per attribute, `abilities.DEX`, carrying what the card
+		// One name per entry, `abilities.DEX`, carrying what the card
 		// shows — the modifier where a `derived` exists, the score where it
 		// does not. The score stays reachable as `abilities.DEX.value`.
 		//
-		// Only the attributes the layout declares are published: an entry
+		// Only the entries the layout declares are published: an entry
 		// the layout does not map does not render either, and a formula
 		// should not be able to reach what the sheet cannot show.
 		const named: Record<string, ScopeEntry> = {};
-		for (const attribute of config.attributes ?? []) {
-			const raw = data?.values[attribute.key];
-			named[attribute.key] = {
+		for (const entry of config.entries ?? []) {
+			const raw = data?.values[entry.key];
+			named[entry.key] = {
 				value: raw,
 				display:
 					config.derived === undefined
@@ -232,11 +232,11 @@ export const statGroup: ComponentDefinition<StatGroupConfig, StatGroupData> = {
 				? config.align
 				: 'start';
 
-		// The group's name is authored data; the sheet drops it only where the
+		// The set's name is authored data; the sheet drops it only where the
 		// layout said to, or where a container above has already shown it.
 		if (showsOwnLabel(config, context)) {
 			const label = doc.createElement('div');
-			label.classList.add('sheetsmith-stat-group-label');
+			label.classList.add('sheetsmith-card-set-label');
 			// A heading belongs over the thing it heads. Left unset it follows
 			// the cards, so centred cards do not sit under a name pinned to the
 			// far left; setting it explicitly overrides that. Only a non-default
@@ -248,25 +248,25 @@ export const statGroup: ComponentDefinition<StatGroupConfig, StatGroupData> = {
 					? alignment
 					: config.labelAlign;
 			if (labelAlign === 'center' || labelAlign === 'end') {
-				label.classList.add(`sheetsmith-stat-group-label-${labelAlign}`);
+				label.classList.add(`sheetsmith-card-set-label-${labelAlign}`);
 			}
 			label.textContent = config.label;
 			container.appendChild(label);
 		}
 
 		const strip = doc.createElement('div');
-		strip.classList.add('sheetsmith-stat-group');
+		strip.classList.add('sheetsmith-card-set');
 		// Aligned modes size cards so one card spans one grid unit, keeping
 		// rows in step with the sheet grid whatever the pane width is.
 		strip.style.setProperty(
-			'--sheetsmith-stat-group-per-row',
+			'--sheetsmith-card-set-per-row',
 			String(config.position.width),
 		);
 		if (config.direction === 'vertical') {
-			strip.classList.add('sheetsmith-stat-group-vertical');
+			strip.classList.add('sheetsmith-card-set-vertical');
 		}
 		if (sizing === 'fixed') {
-			strip.classList.add(`sheetsmith-stat-group-align-${alignment}`);
+			strip.classList.add(`sheetsmith-card-set-align-${alignment}`);
 		}
 		container.appendChild(strip);
 
@@ -275,7 +275,7 @@ export const statGroup: ComponentDefinition<StatGroupConfig, StatGroupData> = {
 		// Hiding the value only makes sense when a derived remains to show;
 		// otherwise the config would permit a card with nothing in it.
 		const showValue = config.hideValue !== true || config.derived === undefined;
-		// See Stat: only a formula reading the attribute's own value goes
+		// See Card: only a formula reading the entry's own value goes
 		// blank when that value is missing.
 		const needsValue =
 			config.derived !== undefined && referencesName(config.derived, 'value');
@@ -287,23 +287,23 @@ export const statGroup: ComponentDefinition<StatGroupConfig, StatGroupData> = {
 				context.explainField?.('derived', { value: raw }) ?? null,
 			);
 		};
-		for (const attribute of config.attributes ?? []) {
+		for (const entry of config.entries ?? []) {
 			const card = doc.createElement('div');
 			strip.appendChild(card);
-			renderStatCard(card, {
-				title: attribute.name ?? attribute.key,
+			renderCardFace(card, {
+				title: entry.name ?? entry.key,
 				abbreviation:
-					attribute.name !== undefined && attribute.name !== attribute.key
-						? attribute.key
+					entry.name !== undefined && entry.name !== entry.key
+						? entry.key
 						: undefined,
 				value: showValue
 					? {
-							current: values[attribute.key] ?? '',
+							current: values[entry.key] ?? '',
 							// Delta, not snapshot: writing only this key
 							// cannot revert a sibling's fresher edit.
 							onCommit: (next) =>
 								context.onChange({
-									values: { [attribute.key]: next },
+									values: { [entry.key]: next },
 								}),
 						}
 					: undefined,
@@ -311,7 +311,7 @@ export const statGroup: ComponentDefinition<StatGroupConfig, StatGroupData> = {
 					config.derived === undefined
 						? undefined
 						: {
-								...deriveFrom(values[attribute.key] ?? ''),
+								...deriveFrom(values[entry.key] ?? ''),
 								compute: deriveFrom,
 							},
 			});

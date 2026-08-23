@@ -207,7 +207,7 @@ function parseReset(value: unknown, where: string): ResetBinding[] | undefined {
 /**
  * How many containers a component may sit inside (SPEC §13).
  *
- * Two, so `Group(Group(Stat))` renders and a fourth level does not: a component
+ * Two, so `Group(Group(Card))` renders and a fourth level does not: a component
  * this far in may not itself hold children. The bound is the whole reason this
  * is buildable before the grid canvas — `preview-grid.ts` takes a flat list plus
  * a column count, and a container's children *are* a flat list plus a column

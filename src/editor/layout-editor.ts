@@ -821,7 +821,7 @@ export class LayoutEditorSection {
 
 	private renderAddRow(container: HTMLElement, layout: Layout): void {
 		const choices = addChoices();
-		let chosen = choices[0]?.value ?? 'stat-group';
+		let chosen = choices[0]?.value ?? 'card-set';
 		// Every container that may still take a child. A container already two
 		// deep is left out, so the depth the parser refuses is never something
 		// the editor can walk into — the rule itself is `mayHoldChildren`, in
@@ -1057,7 +1057,7 @@ export class LayoutEditorSection {
 	 * A list rather than a grid, and up/down rather than a drag, because the
 	 * order is the whole of what there is to say: a tab has no placement, so
 	 * there is no second dimension for a gesture to write. `moveItem` is the
-	 * same reorder the attribute and row lists use — one consumer more of a
+	 * same reorder the entry and row lists use — one consumer more of a
 	 * mechanism already proven, rather than a second answer to "how does a list
 	 * move".
 	 *
@@ -1087,7 +1087,7 @@ export class LayoutEditorSection {
 			row.addExtraButton((button) => {
 				button
 					// The arrows every other reorder control in the plugin uses —
-					// the attribute list and both list fields — rather than a
+					// the entry list and both list fields — rather than a
 					// chevron. `docs/UI.md` §9: reuse the vocabulary instead of
 					// inventing a lookalike. A chevron here would also have collided
 					// with the disclosure two rows up, where `chevron-down` means
@@ -1300,7 +1300,7 @@ export class LayoutEditorSection {
 			}
 
 			if (
-				field.kind === 'attributes' ||
+				field.kind === 'entries' ||
 				field.kind === 'track-rows' ||
 				field.kind === 'rows' ||
 				field.kind === 'columns'
@@ -1315,13 +1315,13 @@ export class LayoutEditorSection {
 					field.description,
 					Array.isArray(entries) ? entries.length : 0,
 				);
-				const listEl = form.createDiv('sheetsmith-attribute-list');
-				if (field.kind === 'attributes' || field.kind === 'track-rows') {
-					// One editor for both: a track's rows are a Stat group's
-					// attributes with a length, which is the shape the
+				const listEl = form.createDiv('sheetsmith-entry-list');
+				if (field.kind === 'entries' || field.kind === 'track-rows') {
+					// One editor for both: a track's rows are a Card set's
+					// entries with a length, which is the shape the
 					// component chose them for. A second table would drift
 					// from this one the first time either changed.
-					this.renderAttributesEditor(
+					this.renderEntriesEditor(
 						listEl,
 						config,
 						record,
@@ -1698,15 +1698,15 @@ export class LayoutEditorSection {
 
 	/** Ordered { key, name? } list with add, remove, and reorder controls. */
 	/**
-	 * The attribute table is plain divs on its own grid template, not
+	 * The entry table is plain divs on its own grid template, not
 	 * Setting rows — reusing Setting here meant deleting half its structure
 	 * and overriding theme-styled internals.
 	 *
 	 * Focus ids use two schemes on purpose: inputs are keyed by index so
-	 * focus holds its position while typing, buttons by attribute key so
+	 * focus holds its position while typing, buttons by entry key so
 	 * focus follows the item through a reorder.
 	 */
-	private renderAttributesEditor(
+	private renderEntriesEditor(
 		listEl: HTMLElement,
 		config: ComponentConfig,
 		record: Record<string, unknown>,
@@ -1718,7 +1718,7 @@ export class LayoutEditorSection {
 		// A third content column changes both grids — the header's and the
 		// row's — and neither can be inferred from the markup, so the list
 		// says so once and the stylesheet reads it.
-		listEl.toggleClass('sheetsmith-attribute-counted', withCount);
+		listEl.toggleClass('sheetsmith-entry-counted', withCount);
 		const list = record[key] as {
 			key: string;
 			name?: string;
@@ -1727,11 +1727,11 @@ export class LayoutEditorSection {
 		}[];
 
 		if (list.length === 0) {
-			listEl.createDiv('sheetsmith-attribute-empty', (el) =>
-				el.setText(withCount ? 'No rows yet.' : 'No attributes yet.'),
+			listEl.createDiv('sheetsmith-entry-empty', (el) =>
+				el.setText(withCount ? 'No rows yet.' : 'No entries yet.'),
 			);
 		} else {
-			const columns = listEl.createDiv('sheetsmith-attribute-columns');
+			const columns = listEl.createDiv('sheetsmith-entry-columns');
 			columns.createSpan({ text: 'Key' });
 			columns.createSpan({ text: withCount ? 'Name' : 'Full name' });
 			if (withCount) {
@@ -1752,30 +1752,30 @@ export class LayoutEditorSection {
 			}
 		}
 
-		list.forEach((attribute, index) => {
-			const row = listEl.createDiv('sheetsmith-attribute-row');
+		list.forEach((entry, index) => {
+			const row = listEl.createDiv('sheetsmith-entry-row');
 			row.addEventListener('dragover', (event) => {
 				if (this.drag.index === null) return;
 				event.preventDefault();
-				// moveAttribute lands the row above the target on upward
+				// moveEntry lands the row above the target on upward
 				// drags and below it on downward ones; the indicator must
 				// say so, not always point above.
 				row.toggleClass(
-					'sheetsmith-attribute-drop-below',
+					'sheetsmith-entry-drop-below',
 					index > this.drag.index,
 				);
-				row.toggleClass('sheetsmith-attribute-drop', index < this.drag.index);
+				row.toggleClass('sheetsmith-entry-drop', index < this.drag.index);
 			});
 			row.addEventListener('dragleave', () => {
-				row.removeClass('sheetsmith-attribute-drop');
-				row.removeClass('sheetsmith-attribute-drop-below');
+				row.removeClass('sheetsmith-entry-drop');
+				row.removeClass('sheetsmith-entry-drop-below');
 			});
 			row.addEventListener('drop', (event) => {
 				event.preventDefault();
-				row.removeClass('sheetsmith-attribute-drop');
-				row.removeClass('sheetsmith-attribute-drop-below');
+				row.removeClass('sheetsmith-entry-drop');
+				row.removeClass('sheetsmith-entry-drop-below');
 				if (this.drag.index === null || this.drag.index === index) return;
-				this.moveAttribute(list, this.drag.index, index);
+				this.moveEntry(list, this.drag.index, index);
 				this.drag.index = null;
 			});
 
@@ -1783,7 +1783,7 @@ export class LayoutEditorSection {
 				type: 'text',
 				attr: { placeholder: 'Key', 'aria-label': 'Attribute key' },
 			});
-			keyInput.value = attribute.key;
+			keyInput.value = entry.key;
 			keyInput.dataset.sheetsmithFocus = `attr-${config.id}-${index}-key`;
 			keyInput.addEventListener('change', () => {
 				const next = keyInput.value.trim();
@@ -1794,12 +1794,12 @@ export class LayoutEditorSection {
 				if (list.some((other, i) => i !== index && other.key === next)) {
 					showFieldError(
 						keyInput,
-						`"${next}" is already used by another attribute.`,
+						`"${next}" is already used by another entry.`,
 					);
 					return;
 				}
 				showFieldError(keyInput, null);
-				attribute.key = next;
+				entry.key = next;
 				void this.persist();
 				this.redraw();
 			});
@@ -1808,17 +1808,17 @@ export class LayoutEditorSection {
 				type: 'text',
 				attr: { placeholder: 'Full name', 'aria-label': 'Attribute full name' },
 			});
-			nameInput.value = attribute.name ?? '';
+			nameInput.value = entry.name ?? '';
 			// Keyed by identity, unlike the key input: name commits do not
 			// redraw, so the only redraw this input lives through is a
 			// reorder — where focus should follow the item.
-			nameInput.dataset.sheetsmithFocus = `attr-${config.id}-${attribute.key}-name`;
+			nameInput.dataset.sheetsmithFocus = `attr-${config.id}-${entry.key}-name`;
 			nameInput.addEventListener('change', () => {
 				const next = nameInput.value.trim();
 				if (next === '') {
-					delete attribute.name;
+					delete entry.name;
 				} else {
-					attribute.name = next;
+					entry.name = next;
 				}
 				void this.persist();
 			});
@@ -1832,21 +1832,21 @@ export class LayoutEditorSection {
 					type: 'text',
 					attr: {
 						placeholder: 'Segments',
-						'aria-label': `${attribute.key} segments`,
+						'aria-label': `${entry.key} segments`,
 					},
 				});
 				countInput.value =
-					attribute.count === undefined ? '' : String(attribute.count);
-				countInput.dataset.sheetsmithFocus = `attr-${config.id}-${attribute.key}-count`;
+					entry.count === undefined ? '' : String(entry.count);
+				countInput.dataset.sheetsmithFocus = `attr-${config.id}-${entry.key}-count`;
 				countInput.addEventListener('change', () => {
 					const next = countInput.value.trim();
 					if (next === '') {
-						delete attribute.count;
+						delete entry.count;
 					} else {
 						// A bare number is stored as one, so a layout file
 						// reads `count: 5` rather than `count: "5"`.
 						const parsed = Number(next);
-						attribute.count = Number.isFinite(parsed) ? parsed : next;
+						entry.count = Number.isFinite(parsed) ? parsed : next;
 					}
 					void this.persist();
 				});
@@ -1857,7 +1857,7 @@ export class LayoutEditorSection {
 				// two ways, and a card painting both alike says the wrong
 				// thing about one of them.
 				const senseInput = row.createEl('select', {
-					attr: { 'aria-label': `${attribute.key} sense` },
+					attr: { 'aria-label': `${entry.key} sense` },
 				});
 				for (const [value, text] of [
 					['', 'Same as card'],
@@ -1866,13 +1866,13 @@ export class LayoutEditorSection {
 				] as const) {
 					senseInput.createEl('option', { value, text });
 				}
-				senseInput.value = attribute.sense ?? '';
-				senseInput.dataset.sheetsmithFocus = `attr-${config.id}-${attribute.key}-sense`;
+				senseInput.value = entry.sense ?? '';
+				senseInput.dataset.sheetsmithFocus = `attr-${config.id}-${entry.key}-sense`;
 				senseInput.addEventListener('change', () => {
 					if (senseInput.value === '') {
-						delete attribute.sense;
+						delete entry.sense;
 					} else {
-						attribute.sense = senseInput.value;
+						entry.sense = senseInput.value;
 					}
 					void this.persist();
 				});
@@ -1886,32 +1886,32 @@ export class LayoutEditorSection {
 					attr: { 'aria-label': 'Move up' },
 				});
 				setIcon(up, 'arrow-up');
-				up.dataset.sheetsmithFocus = `attr-${config.id}-${attribute.key}-up`;
+				up.dataset.sheetsmithFocus = `attr-${config.id}-${entry.key}-up`;
 				up.addEventListener('click', () =>
-					this.moveAttribute(list, index, index - 1),
+					this.moveEntry(list, index, index - 1),
 				);
 				const down = row.createEl('button', {
 					cls: 'clickable-icon',
 					attr: { 'aria-label': 'Move down' },
 				});
 				setIcon(down, 'arrow-down');
-				down.dataset.sheetsmithFocus = `attr-${config.id}-${attribute.key}-down`;
+				down.dataset.sheetsmithFocus = `attr-${config.id}-${entry.key}-down`;
 				down.addEventListener('click', () =>
-					this.moveAttribute(list, index, index + 1),
+					this.moveEntry(list, index, index + 1),
 				);
 			} else {
 				const handle = row.createEl('button', {
-					cls: 'clickable-icon sheetsmith-attribute-handle',
+					cls: 'clickable-icon sheetsmith-entry-handle',
 					attr: {
 						'aria-label': 'Reorder: drag, or press the arrow keys',
 						draggable: 'true',
 					},
 				});
 				setIcon(handle, 'grip-vertical');
-				handle.dataset.sheetsmithFocus = `attr-${config.id}-${attribute.key}-handle`;
+				handle.dataset.sheetsmithFocus = `attr-${config.id}-${entry.key}-handle`;
 				handle.addEventListener('dragstart', (event) => {
 					this.drag.index = index;
-					event.dataTransfer?.setData('text/plain', attribute.key);
+					event.dataTransfer?.setData('text/plain', entry.key);
 				});
 				handle.addEventListener('dragend', () => {
 					this.drag.index = null;
@@ -1919,20 +1919,20 @@ export class LayoutEditorSection {
 				handle.addEventListener('keydown', (event) => {
 					if (event.key === 'ArrowUp') {
 						event.preventDefault();
-						this.moveAttribute(list, index, index - 1);
+						this.moveEntry(list, index, index - 1);
 					} else if (event.key === 'ArrowDown') {
 						event.preventDefault();
-						this.moveAttribute(list, index, index + 1);
+						this.moveEntry(list, index, index + 1);
 					}
 				});
 			}
 
 			const remove = row.createEl('button', {
 				cls: 'clickable-icon',
-				attr: { 'aria-label': 'Remove attribute' },
+				attr: { 'aria-label': 'Remove entry' },
 			});
 			setIcon(remove, 'trash');
-			remove.dataset.sheetsmithFocus = `attr-${config.id}-${attribute.key}-remove`;
+			remove.dataset.sheetsmithFocus = `attr-${config.id}-${entry.key}-remove`;
 			remove.addEventListener('click', () => {
 				list.splice(index, 1);
 				void this.persist();
@@ -1940,15 +1940,15 @@ export class LayoutEditorSection {
 			});
 		});
 
-		const footer = listEl.createDiv('sheetsmith-attribute-footer');
-		const add = footer.createEl('button', { text: 'Add attribute' });
+		const footer = listEl.createDiv('sheetsmith-entry-footer');
+		const add = footer.createEl('button', { text: 'Add entry' });
 		add.addEventListener('click', () => {
-			const taken = new Set(list.map((attribute) => attribute.key));
+			const taken = new Set(list.map((entry) => entry.key));
 			// Same shape as the row and column lists: a new entry is named for
 			// what it is, capitalised, and focus lands on it to be renamed.
-			let next = 'New attribute';
+			let next = 'New entry';
 			let counter = 2;
-			while (taken.has(next)) next = `New attribute ${counter++}`;
+			while (taken.has(next)) next = `New entry ${counter++}`;
 			// The obvious next action is typing the key; put focus there.
 			this.pendingFocus = `attr-${config.id}-${list.length}-key`;
 			list.push({ key: next });
@@ -1957,7 +1957,7 @@ export class LayoutEditorSection {
 		});
 	}
 
-	private moveAttribute(
+	private moveEntry(
 		list: { key: string; name?: string }[],
 		from: number,
 		to: number,
@@ -2050,7 +2050,7 @@ class NameModal extends Modal {
 
 /**
  * One treatment for every group heading inside a component form, whether it
- * heads a run of fields sharing a `group` or a list field such as attributes.
+ * heads a run of fields sharing a `group` or a list field such as entries.
  * Both sit at the same level, so both must look the same; rendering them from
  * two code paths is what let them drift apart.
  */
@@ -2103,7 +2103,7 @@ function indent(depth: number): string {
 }
 
 /**
- * Display name for a component type id: "stat-group" → "Stat group".
+ * Display name for a component type id: "card-set" → "Card set".
  * Sentence case, per the style guide: only the first word is capitalised.
  */
 function componentDisplayName(type: string): string {

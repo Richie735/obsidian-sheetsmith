@@ -27,10 +27,10 @@ function fixture(): Layout {
 		components: [
 			{
 				id: 'abilities',
-				type: 'stat-group',
+				type: 'card-set',
 				label: 'Abilities',
 				position: { col: 7, row: 1, width: 6, height: 1 },
-				attributes: [{ key: 'STR' }],
+				entries: [{ key: 'STR' }],
 			} as ComponentConfig,
 			{
 				id: 'defences',
@@ -40,7 +40,7 @@ function fixture(): Layout {
 				children: [
 					{
 						id: 'armour',
-						type: 'stat',
+						type: 'card',
 						label: 'Armour class',
 						position: { col: 1, row: 1, width: 2, height: 1 },
 					},

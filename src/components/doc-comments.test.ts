@@ -48,7 +48,7 @@ import { getComponent, listComponentTypes } from './index';
  *   literally.
  *
  * What it deliberately does not catch: anything a comment adds to a sentence it
- * repeats. Pool's `hasTemp` and Stat group's `sizing` restate their
+ * repeats. Pool's `hasTemp` and Card set's `sizing` restate their
  * descriptions in different words and escape; so does a comment that repeats a
  * description sentence and then says more, whether the addition arrives after a
  * full stop or after a comma.
@@ -57,7 +57,7 @@ import { getComponent, listComponentTypes } from './index';
  * it went. It compared a comment's first clause against a whole description
  * sentence, which reads as narrow and is not: the constraint sits entirely on
  * the description side, so the comment could append anything at all. "Leave the
- * heading off the sheet, as on a Stat." and "Leave the heading off the sheet, so
+ * heading off the sheet, as on a Card." and "Leave the heading off the sheet, so
  * the run has no visible name" were indistinguishable to it, and the second is a
  * comment §9 says to keep. It discriminated on punctuation rather than content —
  * the same words after a full stop passed — so there was nothing in it to tune.
@@ -337,7 +337,7 @@ describe('the check reaches the components it is meant to check', () => {
 		// anyone rebuilds it.
 		expect(
 			duplicates(
-				'Leave the heading off the sheet, as on a Stat.',
+				'Leave the heading off the sheet, as on a Card.',
 				'Leave the heading off the sheet. Worth it only under a heading that already names the run.',
 			),
 		).toBe(false);

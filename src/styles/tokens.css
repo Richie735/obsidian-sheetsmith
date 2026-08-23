@@ -12,13 +12,13 @@
  */
 /* Sheetsmith's own knobs, overridable from a user CSS snippet. */
 body {
-	/* Narrowest a stat card may get in any mode. */
-	--sheetsmith-stat-min: 90px;
-	/* The vertical slot a stat card always reserves for its abbreviation, so
+	/* Narrowest a card may get in any mode. */
+	--sheetsmith-card-min: 90px;
+	/* The vertical slot a card always reserves for its abbreviation, so
 	   numbers land on one baseline across a row. Published here because a
 	   second component now has to line up with it: re-deriving 1.2em of a
 	   0.85-scaled --font-ui-smaller somewhere else would drift the moment
-	   either constant moved. See .sheetsmith-stat-abbreviation. */
+	   either constant moved. See .sheetsmith-card-abbreviation. */
 	--sheetsmith-card-abbr-space: calc(1.2 * 0.85 * var(--font-ui-smaller));
 	/* A control inside a table cell: the level ring, and the delete glyph beside
 	   it. Published here because a second control now has to line up with the
@@ -35,10 +35,10 @@ body {
 	   character starts. */
 	--sheetsmith-field-inset: calc(var(--size-2-2) + 1px);
 	/* Fixed card width where the grid does not dictate one. */
-	--sheetsmith-stat-width: 110px;
+	--sheetsmith-card-width: 110px;
 	/* The card's headline number. Relative rather than a pixel size, so it
 	   follows the vault's text size setting and the card scales with it. */
-	--sheetsmith-stat-value-size: 1.75em;
+	--sheetsmith-card-value-size: 1.75em;
 	/* How wide the sheet may grow. A sheet is a dashboard, not prose: the
 	   grid is a fixed number of columns the author placed components into,
 	   so holding it at reading width leaves a wide pane mostly empty and

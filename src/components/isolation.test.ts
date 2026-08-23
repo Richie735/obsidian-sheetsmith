@@ -71,7 +71,7 @@ const ALLOWED = [
 	"import { isFlagSet } from './stored-flag';",
 	"import { isFlagSet } from '../components/stored-flag';",
 	"import { TOTALLED_TYPES } from '../components/column-types';",
-	"import { formatDerived } from './stat-card';",
+	"import { formatDerived } from './card-face';",
 	"import { paintLevelRing } from '../components/level-ring';",
 	"import { bindEditable } from '../interaction/editable';",
 	"import { showPopover } from '../ui/popover';",

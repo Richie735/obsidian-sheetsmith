@@ -4,8 +4,8 @@
  * Names resolve in three layers, nearest first: the scope the component
  * passes in (one ability's `value`, later a table row's cells), then the
  * component's own data, then the sheet-wide table every other component
- * publishes to. Nearest-first is what lets a Stat group's `derived` say
- * `value` and mean this attribute, while an armour class says
+ * publishes to. Nearest-first is what lets a Card set's `derived` say
+ * `value` and mean this entry, while an armour class says
  * `abilities.DEX` and means another component entirely.
  *
  * The layout's functions are a fourth thing rather than a fourth layer. They
@@ -211,7 +211,7 @@ function fieldReaders(
 /**
  * A resolver that evaluates one formula field with extra names layered over
  * the component's data scope. Components with internal structure use this to
- * evaluate per attribute or per row.
+ * evaluate per entry or per row.
  */
 export function makeFieldResolver(
 	component: Pick<ComponentDefinition, 'formulaFields'>,

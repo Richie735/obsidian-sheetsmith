@@ -19,13 +19,13 @@
  */
 /* Sheetsmith's own knobs, overridable from a user CSS snippet. */
 body {
-	/* Narrowest a stat card may get in any mode. */
-	--sheetsmith-stat-min: 90px;
-	/* The vertical slot a stat card always reserves for its abbreviation, so
+	/* Narrowest a card may get in any mode. */
+	--sheetsmith-card-min: 90px;
+	/* The vertical slot a card always reserves for its abbreviation, so
 	   numbers land on one baseline across a row. Published here because a
 	   second component now has to line up with it: re-deriving 1.2em of a
 	   0.85-scaled --font-ui-smaller somewhere else would drift the moment
-	   either constant moved. See .sheetsmith-stat-abbreviation. */
+	   either constant moved. See .sheetsmith-card-abbreviation. */
 	--sheetsmith-card-abbr-space: calc(1.2 * 0.85 * var(--font-ui-smaller));
 	/* A control inside a table cell: the level ring, and the delete glyph beside
 	   it. Published here because a second control now has to line up with the
@@ -42,10 +42,10 @@ body {
 	   character starts. */
 	--sheetsmith-field-inset: calc(var(--size-2-2) + 1px);
 	/* Fixed card width where the grid does not dictate one. */
-	--sheetsmith-stat-width: 110px;
+	--sheetsmith-card-width: 110px;
 	/* The card's headline number. Relative rather than a pixel size, so it
 	   follows the vault's text size setting and the card scales with it. */
-	--sheetsmith-stat-value-size: 1.75em;
+	--sheetsmith-card-value-size: 1.75em;
 	/* How wide the sheet may grow. A sheet is a dashboard, not prose: the
 	   grid is a fixed number of columns the author placed components into,
 	   so holding it at reading width leaves a wide pane mostly empty and
@@ -244,7 +244,7 @@ body {
 }
 
 /* A level above the labels inside it, and the rank it has to clear is the
-   *component* label — a Table's own name, a Stat group's own name — not the
+   *component* label — a Table's own name, a Card set's own name — not the
    uppercase tracked muted micro-labels further down. Those two are
    `--font-ui-small` semibold at full contrast, so size alone does not separate
    them: at 15px against 13px, same weight and same colour, a group heading, a
@@ -557,13 +557,13 @@ body {
 	min-height: var(--size-4-8);
 }
 
-.sheetsmith-stat-group {
+.sheetsmith-card-set {
 	display: grid;
 	/* As many cards per row as fit the component's width; the rest wrap.
 	   A 3-column-wide component therefore shows six abilities as 3×2. */
 	grid-template-columns: repeat(
 		auto-fit,
-		minmax(var(--sheetsmith-stat-min, 90px), 1fr)
+		minmax(var(--sheetsmith-card-min, 90px), 1fr)
 	);
 	gap: var(--size-4-2);
 	width: 100%;
@@ -575,7 +575,7 @@ body {
    each card: same rule as the settings form keeps between a group heading
    and a field label. The cards own the uppercase-and-tracked treatment;
    the heading is the one in sentence case at full contrast. */
-.sheetsmith-stat-group-label {
+.sheetsmith-card-set-label {
 	margin-bottom: var(--size-2-3);
 	font-size: var(--font-ui-small);
 	font-weight: var(--font-semibold);
@@ -585,11 +585,11 @@ body {
 
 /* Logical values, so the default start edge follows the vault's text
    direction rather than hard-coding left. */
-.sheetsmith-stat-group-label-center {
+.sheetsmith-card-set-label-center {
 	text-align: center;
 }
 
-.sheetsmith-stat-group-label-end {
+.sheetsmith-card-set-label-end {
 	text-align: end;
 }
 
@@ -598,74 +598,74 @@ body {
    so the stack fills it rather than capping itself and floating centred in
    the slack. Tiles are still available: that is what fixed sizing below is,
    and it sizes a card to one grid unit instead of guessing a cap. */
-.sheetsmith-stat-group-vertical {
+.sheetsmith-card-set-vertical {
 	grid-template-columns: 1fr;
 }
 
-.sheetsmith-stat-group-align-start,
-.sheetsmith-stat-group-align-center,
-.sheetsmith-stat-group-align-end {
+.sheetsmith-card-set-align-start,
+.sheetsmith-card-set-align-center,
+.sheetsmith-card-set-align-end {
 	display: flex;
 	flex-wrap: wrap;
 }
 
-.sheetsmith-stat-group-align-start > div,
-.sheetsmith-stat-group-align-center > div,
-.sheetsmith-stat-group-align-end > div {
+.sheetsmith-card-set-align-start > div,
+.sheetsmith-card-set-align-center > div,
+.sheetsmith-card-set-align-end > div {
 	flex: 0 0 auto;
 	/* One card per grid unit of the component's width, but never narrower
 	   than the same floor the stretch mode enforces. */
 	width: max(
-		var(--sheetsmith-stat-min, 90px),
+		var(--sheetsmith-card-min, 90px),
 		calc(
 			(
 					100% -
-						(var(--sheetsmith-stat-group-per-row, 6) - 1) * var(--size-4-2)
+						(var(--sheetsmith-card-set-per-row, 6) - 1) * var(--size-4-2)
 				) /
-				var(--sheetsmith-stat-group-per-row, 6)
+				var(--sheetsmith-card-set-per-row, 6)
 		)
 	);
 }
 
-.sheetsmith-stat-group-vertical.sheetsmith-stat-group-align-start > div,
-.sheetsmith-stat-group-vertical.sheetsmith-stat-group-align-center > div,
-.sheetsmith-stat-group-vertical.sheetsmith-stat-group-align-end > div {
-	width: var(--sheetsmith-stat-width, 110px);
+.sheetsmith-card-set-vertical.sheetsmith-card-set-align-start > div,
+.sheetsmith-card-set-vertical.sheetsmith-card-set-align-center > div,
+.sheetsmith-card-set-vertical.sheetsmith-card-set-align-end > div {
+	width: var(--sheetsmith-card-width, 110px);
 }
 
-.sheetsmith-stat-group-align-start {
+.sheetsmith-card-set-align-start {
 	justify-content: flex-start;
 }
 
-.sheetsmith-stat-group-align-center {
+.sheetsmith-card-set-align-center {
 	justify-content: center;
 }
 
-.sheetsmith-stat-group-align-end {
+.sheetsmith-card-set-align-end {
 	justify-content: flex-end;
 }
 
-.sheetsmith-stat-group-vertical.sheetsmith-stat-group-align-start,
-.sheetsmith-stat-group-vertical.sheetsmith-stat-group-align-center,
-.sheetsmith-stat-group-vertical.sheetsmith-stat-group-align-end {
+.sheetsmith-card-set-vertical.sheetsmith-card-set-align-start,
+.sheetsmith-card-set-vertical.sheetsmith-card-set-align-center,
+.sheetsmith-card-set-vertical.sheetsmith-card-set-align-end {
 	flex-direction: column;
 	flex-wrap: nowrap;
 	justify-content: flex-start;
 }
 
-.sheetsmith-stat-group-vertical.sheetsmith-stat-group-align-start {
+.sheetsmith-card-set-vertical.sheetsmith-card-set-align-start {
 	align-items: flex-start;
 }
 
-.sheetsmith-stat-group-vertical.sheetsmith-stat-group-align-center {
+.sheetsmith-card-set-vertical.sheetsmith-card-set-align-center {
 	align-items: center;
 }
 
-.sheetsmith-stat-group-vertical.sheetsmith-stat-group-align-end {
+.sheetsmith-card-set-vertical.sheetsmith-card-set-align-end {
 	align-items: flex-end;
 }
 
-.sheetsmith-stat {
+.sheetsmith-card {
 	display: flex;
 	flex-direction: column;
 	align-items: center;
@@ -689,21 +689,21 @@ body {
    except for the small number. The field's own hover, a second overlay on
    top of this one, then says which field the click will land in. Only a
    card with something to edit makes either promise. */
-.sheetsmith-stat-editable {
+.sheetsmith-card-editable {
 	cursor: text;
 }
 
-.sheetsmith-stat-editable:hover {
+.sheetsmith-card-editable:hover {
 	background-color: var(--background-modifier-hover);
 }
 
 /* Feedback on press, not on release: no transition on the way in. */
-.sheetsmith-stat-editable:active {
+.sheetsmith-card-editable:active {
 	background-color: var(--background-modifier-active-hover);
 	transition-duration: 0s;
 }
 
-.sheetsmith-stat-label {
+.sheetsmith-card-label {
 	font-size: var(--font-ui-smaller);
 	font-weight: var(--font-semibold);
 	text-transform: uppercase;
@@ -724,7 +724,7 @@ body {
    the hierarchy up while size argued against it. Small tracking is positive
    here — the opposite of the headline number, and the reason neither can
    share one letter-spacing value. */
-.sheetsmith-stat-abbreviation {
+.sheetsmith-card-abbreviation {
 	/* The published slot, in the units it was defined in. */
 	min-height: var(--sheetsmith-card-abbr-space);
 	font-size: calc(var(--font-ui-smaller) * 0.85);
@@ -744,13 +744,13 @@ body {
    selector placed above would simply lose. */
 @container (max-width: 130px) {
 /* The padding cannot be trimmed from here: the card is the container,
-	   and an element never queries itself, so a rule on .sheetsmith-stat
+	   and an element never queries itself, so a rule on .sheetsmith-card
 	   inside this block would be answering the *view's* width. Bleeding the
 	   label outward buys exactly the same room from the inside, and spends
 	   it only on the part that needs it — the number and the fields keep the
 	   card's own margins. max-width has to grow with the bleed, or the
 	   100% cap holds the label at the padded width and nothing changes. */
-.sheetsmith-stat-label {
+.sheetsmith-card-label {
 		max-width: calc(100% + var(--size-4-2));
 		margin-inline: calc(-1 * var(--size-2-2));
 		letter-spacing: 0.02em;
@@ -758,7 +758,7 @@ body {
 
 }
 
-.sheetsmith-stat-value {
+.sheetsmith-card-value {
 	display: flex;
 	align-items: baseline;
 	justify-content: center;
@@ -767,7 +767,7 @@ body {
 	margin-top: var(--size-2-2);
 }
 
-.sheetsmith-view .sheetsmith-stat-input {
+.sheetsmith-view .sheetsmith-card-input {
 	width: 100%;
 	padding: 0 var(--size-2-1);
 	border: none;
@@ -775,7 +775,7 @@ body {
 	background: transparent;
 	box-shadow: none;
 	text-align: center;
-	font-size: var(--sheetsmith-stat-value-size);
+	font-size: var(--sheetsmith-card-value-size);
 	font-weight: var(--font-bold);
 	color: var(--text-normal);
 	/* Digits must not re-centre as they change: without fixed advance
@@ -789,13 +789,13 @@ body {
 	letter-spacing: -0.02em;
 }
 
-.sheetsmith-view .sheetsmith-stat-input:hover {
+.sheetsmith-view .sheetsmith-card-input:hover {
 	background-color: var(--background-modifier-hover);
 }
 
-.sheetsmith-stat-derived {
+.sheetsmith-card-derived {
 	margin-top: var(--size-2-2);
-	font-size: var(--sheetsmith-stat-value-size);
+	font-size: var(--sheetsmith-card-value-size);
 	font-weight: var(--font-bold);
 	color: var(--text-normal);
 	font-variant-numeric: tabular-nums;
@@ -817,22 +817,22 @@ body {
    The ring is a box-shadow, which forced-colors mode paints out entirely.
    A transparent outline is the escape hatch: invisible normally, repainted
    as a real ring where box-shadows are discarded. */
-.sheetsmith-view .sheetsmith-stat-input:focus,
-.sheetsmith-view .sheetsmith-stat-note-input:focus,
-.sheetsmith-stat-has-derived .sheetsmith-stat-value:focus-within {
+.sheetsmith-view .sheetsmith-card-input:focus,
+.sheetsmith-view .sheetsmith-card-note-input:focus,
+.sheetsmith-card-has-derived .sheetsmith-card-value:focus-within {
 	box-shadow: 0 0 0 2px var(--interactive-accent);
 	outline: 2px solid transparent;
 	outline-offset: 0;
 }
 
-/* A lone stat card carries this alongside .sheetsmith-stat. It has no strip
+/* A lone card carries this alongside .sheetsmith-card. It has no strip
    and no row of siblings to size against, so it fills the cell it was placed
    in — a component two columns wide occupies two columns. It used to cap
    itself at tile width and centre in the remainder, on the grounds that a
    12-column Stat is a lot of clickable card around a two-digit number; but
    that is the author's call to make in the layout, and overriding it made
    every wide placement look like the grid had failed. */
-.sheetsmith-stat-single {
+.sheetsmith-card-single {
 	height: 100%;
 }
 
@@ -843,7 +843,7 @@ body {
    the top edge and pinning the note to the bottom lands both on one line
    across the row, and the slack falls in the middle where nothing lines up
    anyway. */
-.sheetsmith-stat-single > .sheetsmith-stat-note {
+.sheetsmith-card-single > .sheetsmith-card-note {
 	margin-top: auto;
 	/* Restores the separation the auto margin takes over from. */
 	padding-top: var(--size-2-1);
@@ -851,12 +851,12 @@ body {
 
 /* The note line: the user's own qualifier under the number, quiet enough
    that the value stays the card's subject. */
-.sheetsmith-stat-note {
+.sheetsmith-card-note {
 	width: 100%;
 	margin-top: var(--size-2-1);
 }
 
-.sheetsmith-view .sheetsmith-stat-note-input {
+.sheetsmith-view .sheetsmith-card-note-input {
 	width: 100%;
 	padding: 0 var(--size-2-1);
 	border: none;
@@ -868,7 +868,7 @@ body {
 	color: var(--text-muted);
 }
 
-.sheetsmith-view .sheetsmith-stat-note-input:hover {
+.sheetsmith-view .sheetsmith-card-note-input:hover {
 	background-color: var(--background-modifier-hover);
 }
 
@@ -887,12 +887,12 @@ body {
 
 /* Unresolved formula is a status, not a value — and not the same glyph
    as an empty input. */
-.sheetsmith-stat-derived-unresolved {
+.sheetsmith-card-derived-unresolved {
 	color: var(--text-faint);
 	font-weight: var(--font-normal);
 }
 
-.sheetsmith-stat-has-derived .sheetsmith-stat-value {
+.sheetsmith-card-has-derived .sheetsmith-card-value {
 	width: auto;
 	margin-top: var(--size-2-1);
 	padding: var(--size-2-1) var(--size-4-2);
@@ -903,17 +903,17 @@ body {
 
 /* The pill itself is the field: it reacts to hover and focus, and the
    input inside it stays chromeless so no second rectangle appears. */
-.sheetsmith-stat-has-derived .sheetsmith-stat-value:hover {
+.sheetsmith-card-has-derived .sheetsmith-card-value:hover {
 	background-color: var(--background-modifier-hover);
 }
 
 /* Weight comes from the shared focus rule above; the border is the pill's
    own addition, not a second, lighter ring. */
-.sheetsmith-stat-has-derived .sheetsmith-stat-value:focus-within {
+.sheetsmith-card-has-derived .sheetsmith-card-value:focus-within {
 	border-color: var(--interactive-accent);
 }
 
-.sheetsmith-view .sheetsmith-stat-has-derived .sheetsmith-stat-input {
+.sheetsmith-view .sheetsmith-card-has-derived .sheetsmith-card-input {
 	width: 4em;
 	font-size: var(--font-ui-small);
 	font-weight: var(--font-semibold);
@@ -923,11 +923,11 @@ body {
 	color: var(--text-normal);
 }
 
-.sheetsmith-view .sheetsmith-stat-has-derived .sheetsmith-stat-input:hover {
+.sheetsmith-view .sheetsmith-card-has-derived .sheetsmith-card-input:hover {
 	background-color: transparent;
 }
 
-.sheetsmith-view .sheetsmith-stat-has-derived .sheetsmith-stat-input:focus {
+.sheetsmith-view .sheetsmith-card-has-derived .sheetsmith-card-input:focus {
 	box-shadow: none;
 	outline: none;
 }
@@ -938,13 +938,13 @@ body {
    pill included, so the card's regions stay legible without relying on the
    tint at all. */
 @media (prefers-contrast: more) {
-.sheetsmith-stat,
-.sheetsmith-stat-has-derived .sheetsmith-stat-value {
+.sheetsmith-card,
+.sheetsmith-card-has-derived .sheetsmith-card-value {
 		border-color: var(--text-muted);
 	}
 
-.sheetsmith-stat-abbreviation,
-.sheetsmith-stat-derived-unresolved {
+.sheetsmith-card-abbreviation,
+.sheetsmith-card-derived-unresolved {
 		color: var(--text-muted);
 	}
 
@@ -1018,7 +1018,7 @@ body {
 	border-bottom: none;
 }
 
-/* The row is the hover surface, on the stat card's settle: a sheet of
+/* The row is the hover surface, on the card's settle: a sheet of
    eighteen skills is a lot of rows to have snap under a travelling pointer. */
 .sheetsmith-view .sheetsmith-table tbody tr {
 	transition: background-color 160ms ease;
@@ -1116,7 +1116,7 @@ body {
 
 /* A text column that glosses the row rather than adding to it — the ability
    behind a skill, the source of an item. The same clothes the abbreviation
-   wears under a stat card's name, and for the same reason: two things of
+   wears under a card's name, and for the same reason: two things of
    equal weight per row leave the eye deciding which one the row is. Opt-in
    per column, because muted user data otherwise reads as disabled. */
 .sheetsmith-view .sheetsmith-table-input-secondary {
@@ -1162,7 +1162,7 @@ body {
 
 /* The resting border is transparent, so focus colours the chrome the field
    already has rather than adding a second rectangle around it. The
-   transparent outline is the forced-colors escape hatch the stat card uses:
+   transparent outline is the forced-colors escape hatch the card uses:
    invisible normally, repainted as a real ring where the system overrides
    every border on the page to one colour and the accent stops meaning
    anything. */
@@ -1690,14 +1690,14 @@ body {
 	/* Digits must not re-centre as a total changes under the keys, or a whole
 	   column twitches while one bonus is being typed. */
 	font-variant-numeric: tabular-nums;
-	/* The same fade the stat card's derived number gets: the one abrupt change
+	/* The same fade the card's derived number gets: the one abrupt change
 	   in a computed cell is a resolved number turning into "?", and it should
 	   read as the number giving way rather than a warning arriving. A colour
 	   fade, not motion, so reduced-motion has nothing to strip. */
 	transition: color 200ms ease;
 }
 
-/* Status, not data: the same treatment "?" gets on a stat card. */
+/* Status, not data: the same treatment "?" gets on a card. */
 .sheetsmith-view .sheetsmith-table-unresolved {
 	font-weight: var(--font-normal);
 	color: var(--text-faint);
@@ -1715,7 +1715,7 @@ body {
 	cursor: help;
 }
 
-/* See the stat card: a faint tint alone is not enough for someone who
+/* See the card: a faint tint alone is not enough for someone who
    asked for more contrast. */
 @media (prefers-contrast: more) {
 .sheetsmith-table-wrapper,
@@ -1774,7 +1774,7 @@ body {
 
 /* Pool — a current-and-max resource with adjust controls (SPEC §4.2).
 
-   It wears the stat card's surface, and that is the point rather than a
+   It wears the card's surface, and that is the point rather than a
    coincidence: a pool holds one value, so it is card-scale, and a fourth
    surface next to a row of tiles reads as loose chrome floating on the page.
    The grid gives components nothing — there is no .sheetsmith-cell rule — so
@@ -1786,7 +1786,7 @@ body {
 	align-items: center;
 	justify-content: flex-start;
 	gap: var(--size-2-1);
-	/* Fills the cell it was placed in, exactly as a lone stat card does: a
+	/* Fills the cell it was placed in, exactly as a lone card does: a
 	   pool spanning three columns is three columns of card. Both used to cap
 	   at tile width and centre in the remainder; they now agree the other
 	   way, which is what keeps a pool and a stat side by side the same size
@@ -1812,9 +1812,9 @@ body {
 }
 
 /* The generous target has to be visible or the card reads as dead except
-   for the number, exactly as on a stat card.
+   for the number, exactly as on a card.
 
-   Unlike a stat card, this one contains buttons, and a card-wide answer to a
+   Unlike a card, this one contains buttons, and a card-wide answer to a
    press on a 24px button says "you pressed the card" when you did not. The
    :has() guards hand the feedback to whichever control the pointer is
    actually over — every control on the card lights itself, so the card lights
@@ -1867,7 +1867,7 @@ body {
 	justify-content: center;
 	gap: var(--size-2-2);
 	width: 100%;
-	/* A stat card always reserves an abbreviation slot so numbers land on one
+	/* A card always reserves an abbreviation slot so numbers land on one
 	   baseline across a row, then its value adds its own margin for the "big
 	   number stands apart" rhythm. A pool has no abbreviation, but it sits in
 	   those rows, so it buys the same space back: the reserved line, the gap
@@ -1882,7 +1882,7 @@ body {
 
    It used to be three grid tracks with the value on the middle one, so the
    number held the card's spine whatever the max read. That rule came from the
-   stat card, where a rank of six identical tiles has to share a centre line —
+   card, where a rank of six identical tiles has to share a centre line —
    the alignment is the whole point of a row of tiles. A pool is card-scale and
    appears once or twice, not in a rank, so the trade ran the wrong way: the
    empty left track put visible weight on the right of every card, in every
@@ -1932,10 +1932,10 @@ body {
 	background: transparent;
 	box-shadow: none;
 	color: var(--text-normal);
-	font-size: var(--sheetsmith-stat-value-size);
+	font-size: var(--sheetsmith-card-value-size);
 	font-weight: var(--font-bold);
 	/* Tracking and leading are size-specific, and this is the same size the
-	   stat card's number uses — so it takes the same values, or the two read
+	   card's number uses — so it takes the same values, or the two read
 	   differently side by side. */
 	line-height: 1.05;
 	letter-spacing: -0.02em;
@@ -2024,7 +2024,7 @@ body {
 
 /* The card hover advertises the generous target; the field hover then says
    which field the click will land in. A pool needs the second half more than
-   a stat card does: it has two fields and a nearest-field router, whose
+   a card does: it has two fields and a nearest-field router, whose
    outcome is otherwise invisible until after the click. */
 .sheetsmith-view .sheetsmith-pool-current:hover {
 	background-color: var(--background-modifier-hover);
@@ -2035,13 +2035,13 @@ body {
 }
 
 /* Weight comes from the shared focus rule below; the border is the pill's
-   own addition, not a second, lighter ring. The stat card's pill does the
+   own addition, not a second, lighter ring. The card's pill does the
    same, and two pills of one shape must not answer differently. */
 .sheetsmith-pool-temp:focus-within {
 	border-color: var(--interactive-accent);
 }
 
-/* One focus treatment for every field on a card, matching the stat card's.
+/* One focus treatment for every field on a card, matching the card's.
    The ring is a box-shadow, which forced-colors mode paints out entirely; the
    transparent outline is the escape hatch, invisible normally and repainted
    as a real ring where box-shadows are discarded. A border-colour change
@@ -2142,7 +2142,7 @@ body {
 }
 
 /* Temporary points are the card's pill: a small qualifier hanging under the
-   big number, which is the shape a stat card already uses for its stored
+   big number, which is the shape a card already uses for its stored
    value. As a second bordered rectangle on its own row it was a third
    surface saying the same thing. */
 .sheetsmith-pool-temp {
@@ -2188,7 +2188,7 @@ body {
    classes, and Obsidian's own `input:focus` carries an element as well, so it
    outweighs it the moment the field is focused and paints its box-shadow back
    — a second ring a few pixels inside the pill's. Suppressing it here is what
-   the stat card's pill already does, and any pill added later needs the same
+   the card's pill already does, and any pill added later needs the same
    three lines. */
 .sheetsmith-view .sheetsmith-pool-temp-input:focus {
 	box-shadow: none;
@@ -3341,7 +3341,7 @@ a.sheetsmith-undo {
 	white-space: pre;
 }
 
-.sheetsmith-attribute-list {
+.sheetsmith-entry-list {
 	margin: var(--size-4-2) 0 var(--size-4-3);
 	padding: var(--size-2-2);
 	border: 1px solid var(--background-modifier-border);
@@ -3365,15 +3365,15 @@ a.sheetsmith-undo {
 /* The header scrolls with the rows rather than beside them, so the two share
    a width whether or not a scrollbar appeared, and stays pinned so the
    columns keep their names while the list moves under it. */
-.sheetsmith-list-scroll > .sheetsmith-attribute-columns {
+.sheetsmith-list-scroll > .sheetsmith-entry-columns {
 	position: sticky;
 	top: 0;
 	z-index: 1;
 	background-color: var(--background-secondary);
 }
 
-.sheetsmith-attribute-columns,
-.sheetsmith-attribute-row {
+.sheetsmith-entry-columns,
+.sheetsmith-entry-row {
 	display: grid;
 	align-items: center;
 	gap: var(--size-4-2);
@@ -3383,11 +3383,11 @@ a.sheetsmith-undo {
 /* A table, not a settings row: key starts at the left, the name column
    absorbs the remaining width, controls hold the right edge. The header
    shares the first two tracks, so its labels align with the inputs. */
-.sheetsmith-attribute-columns {
+.sheetsmith-entry-columns {
 	grid-template-columns: 7em minmax(0, 1fr);
 }
 
-.sheetsmith-attribute-row {
+.sheetsmith-entry-row {
 	/* Three control tracks: handle + trash on desktop leaves one empty;
 	   up + down + trash on mobile uses all three. Empty tracks collapse. */
 	grid-template-columns: 7em minmax(0, 1fr) repeat(3, min-content);
@@ -3400,7 +3400,7 @@ a.sheetsmith-undo {
    squeezed them to nothing and pushed the row out of shape. Two fixed
    two-column grids cannot be told apart from the markup, so the list carries
    the fact and this reads it. */
-.sheetsmith-attribute-counted {
+.sheetsmith-entry-counted {
 	/* One icon button: the icon and the click padding around it. The header's
 	   spacers take the same width, so a control track measures the same on
 	   both and the field tracks land on the same edges. The same token the
@@ -3414,16 +3414,16 @@ a.sheetsmith-undo {
    a track's start does not move with its width. A third column sits after
    that track, so it does move: the row spends width on its buttons, its `1fr`
    comes out narrower, and every column past it slides. */
-.sheetsmith-attribute-counted .sheetsmith-attribute-columns,
-.sheetsmith-attribute-counted .sheetsmith-attribute-row {
+.sheetsmith-entry-counted .sheetsmith-entry-columns,
+.sheetsmith-entry-counted .sheetsmith-entry-row {
 	grid-template-columns: 7em minmax(0, 1fr) 7em 7em repeat(3, min-content);
 }
 
 /* A track is sized by its item's margin box, so the optical pull on the last
    button has to be mirrored here or the last track measures eight pixels
    narrower in the rows than in the header — and every field track shifts. */
-.sheetsmith-attribute-counted
-	.sheetsmith-attribute-columns
+.sheetsmith-entry-counted
+	.sheetsmith-entry-columns
 	> .sheetsmith-list-control-space:last-child {
 	margin-right: calc(-1 * var(--size-2-2));
 }
@@ -3438,7 +3438,7 @@ a.sheetsmith-undo {
    third column started earlier than the header's and the last label sat right
    of its input. Pinning both ends of the promise is what makes `min-content`
    resolve to one answer. */
-.sheetsmith-attribute-counted .sheetsmith-attribute-row > button.clickable-icon {
+.sheetsmith-entry-counted .sheetsmith-entry-row > button.clickable-icon {
 	box-sizing: border-box;
 	width: var(--sheetsmith-list-control);
 }
@@ -3448,28 +3448,28 @@ a.sheetsmith-undo {
    label inset back on — so a spacer measured the token plus eight pixels
    wherever the page is not border-box. Said here at a weight that wins,
    rather than relying on a global nobody in this file sets. */
-.sheetsmith-attribute-counted
-	.sheetsmith-attribute-columns
+.sheetsmith-entry-counted
+	.sheetsmith-entry-columns
 	> .sheetsmith-list-control-space {
 	box-sizing: border-box;
 	width: var(--sheetsmith-list-control);
 	padding: 0;
 }
 
-.sheetsmith-attribute-columns > span {
+.sheetsmith-entry-columns > span {
 	/* Match the inputs' inner padding so labels align with their text. */
 	padding-left: var(--size-4-2);
 	font-size: var(--font-smallest);
 	color: var(--text-muted);
 }
 
-.sheetsmith-attribute-row > input,
-.sheetsmith-attribute-row .sheetsmith-field > input,
-.sheetsmith-attribute-row .sheetsmith-field > select {
+.sheetsmith-entry-row > input,
+.sheetsmith-entry-row .sheetsmith-field > input,
+.sheetsmith-entry-row .sheetsmith-field > select {
 	width: 100%;
 }
 
-.sheetsmith-attribute-row > button.clickable-icon {
+.sheetsmith-entry-row > button.clickable-icon {
 	background: transparent;
 	border: none;
 	box-shadow: none;
@@ -3481,25 +3481,25 @@ a.sheetsmith-undo {
 /* Optical edge alignment: the trash icon's click-padding would read as
    extra space against the container edge, making the right inset look
    wider than the left. Pull it back by exactly that padding. */
-.sheetsmith-attribute-row > button.clickable-icon:last-child {
+.sheetsmith-entry-row > button.clickable-icon:last-child {
 	margin-right: calc(-1 * var(--size-2-2));
 }
 
-.sheetsmith-attribute-handle {
+.sheetsmith-entry-handle {
 	cursor: grab;
 }
 
 /* The indicator tells the truth about where the row will land: above the
    hovered row on upward drags, below it on downward ones. */
-.sheetsmith-attribute-drop {
+.sheetsmith-entry-drop {
 	box-shadow: inset 0 2px 0 var(--interactive-accent);
 }
 
-.sheetsmith-attribute-drop-below {
+.sheetsmith-entry-drop-below {
 	box-shadow: inset 0 -2px 0 var(--interactive-accent);
 }
 
-.sheetsmith-attribute-empty {
+.sheetsmith-entry-empty {
 	padding: var(--size-2-2);
 	color: var(--text-muted);
 	font-size: var(--font-ui-small);
@@ -3507,7 +3507,7 @@ a.sheetsmith-undo {
 
 /* Buttons here sit side by side ("Add row", "Add row value"), and two
    buttons touching read as one control with a seam down it. */
-.sheetsmith-attribute-footer {
+.sheetsmith-entry-footer {
 	display: flex;
 	flex-wrap: wrap;
 	gap: var(--size-2-2);
@@ -3548,7 +3548,7 @@ a.sheetsmith-undo {
 
 /* The one line explaining the row-value mechanism, under the buttons it
    explains rather than beside them. */
-.sheetsmith-attribute-footnote {
+.sheetsmith-entry-footnote {
 	padding: 0 var(--size-2-2) var(--size-2-2);
 	font-size: var(--font-smallest);
 	color: var(--text-muted);
@@ -3589,7 +3589,7 @@ a.sheetsmith-undo {
 	padding: var(--size-2-1);
 }
 
-.sheetsmith-attribute-list .sheetsmith-field-error {
+.sheetsmith-entry-list .sheetsmith-field-error {
 	grid-column: 1 / -1;
 	text-align: left;
 	/* Line up with the header labels and input text. */
@@ -3912,8 +3912,8 @@ a.sheetsmith-undo {
 	--sheetsmith-list-control: calc(var(--icon-s, 16px) + 2 * var(--size-2-2));
 }
 
-.sheetsmith-list .sheetsmith-attribute-columns,
-.sheetsmith-list .sheetsmith-attribute-row {
+.sheetsmith-list .sheetsmith-entry-columns,
+.sheetsmith-list .sheetsmith-entry-row {
 	grid-template-columns:
 		repeat(var(--sheetsmith-list-fields, 2), minmax(0, 1fr))
 		repeat(3, min-content);
@@ -3921,7 +3921,7 @@ a.sheetsmith-undo {
 
 /* Both sides of the same track: give them one width rather than letting the
    button be measured by its contents and the spacer by nothing. */
-.sheetsmith-list .sheetsmith-attribute-row > button.clickable-icon {
+.sheetsmith-list .sheetsmith-entry-row > button.clickable-icon {
 	width: var(--sheetsmith-list-control);
 }
 
@@ -3936,7 +3936,7 @@ a.sheetsmith-undo {
 /* A track is sized by its item's margin box, so the optical pull on the last
    button has to be mirrored here or the last track measures eight pixels
    narrower in the rows than in the header — and every field track shifts. */
-.sheetsmith-list .sheetsmith-attribute-columns > .sheetsmith-list-control-space:last-child {
+.sheetsmith-list .sheetsmith-entry-columns > .sheetsmith-list-control-space:last-child {
 	margin-right: calc(-1 * var(--size-2-2));
 }
 
@@ -3944,7 +3944,7 @@ a.sheetsmith-undo {
 	--sheetsmith-list-fields: 3;
 }
 
-.sheetsmith-attribute-row > select {
+.sheetsmith-entry-row > select {
 	width: 100%;
 }
 
@@ -3977,7 +3977,7 @@ a.sheetsmith-undo {
    under nothing (these tracks are fractional, so no fixed offset reaches
    "Heading" at every width) spends the one straight edge the card has to buy
    a cue it is already getting. */
-.sheetsmith-attribute-detail {
+.sheetsmith-entry-detail {
 	display: flex;
 	align-items: center;
 	gap: var(--size-4-2);
@@ -3994,7 +3994,7 @@ a.sheetsmith-undo {
 	transition-duration: 0s;
 }
 
-.sheetsmith-attribute-detail > input[type='text'] {
+.sheetsmith-entry-detail > input[type='text'] {
 	flex: 1;
 	min-width: 0;
 	font-family: var(--font-monospace);
@@ -4016,29 +4016,29 @@ a.sheetsmith-undo {
    width, controls on one line under them, and each field showing the label
    the header can no longer give it. */
 @container (max-width: 380px) {
-.sheetsmith-attribute-columns,
-.sheetsmith-attribute-counted .sheetsmith-attribute-columns {
+.sheetsmith-entry-columns,
+.sheetsmith-entry-counted .sheetsmith-entry-columns {
 		display: none;
 	}
 
-.sheetsmith-attribute-row {
+.sheetsmith-entry-row {
 		grid-template-columns: 1fr;
 		gap: var(--size-2-2);
 		padding: var(--size-4-2) var(--size-2-2);
 	}
 
-.sheetsmith-list .sheetsmith-attribute-row,
-.sheetsmith-attribute-counted .sheetsmith-attribute-row {
+.sheetsmith-list .sheetsmith-entry-row,
+.sheetsmith-entry-counted .sheetsmith-entry-row {
 		grid-template-columns: 1fr;
 	}
 
 /* Every control on its own line, and the buttons gathered onto one. */
-.sheetsmith-attribute-row > button.clickable-icon {
+.sheetsmith-entry-row > button.clickable-icon {
 		grid-row: 99;
 		justify-self: end;
 	}
 
-.sheetsmith-attribute-row > button.clickable-icon:nth-last-of-type(2) {
+.sheetsmith-entry-row > button.clickable-icon:nth-last-of-type(2) {
 		justify-self: start;
 	}
 
@@ -4046,7 +4046,7 @@ a.sheetsmith-undo {
 	   genuinely adjacent there. In the columns list a detail div always sits
 	   between two rows, so this never matched — and no longer needs to, since
 	   an entry is its own surface at every width. */
-.sheetsmith-attribute-row + .sheetsmith-attribute-row {
+.sheetsmith-entry-row + .sheetsmith-entry-row {
 		border-top: 1px solid var(--background-modifier-border);
 	}
 
@@ -4055,7 +4055,7 @@ a.sheetsmith-undo {
 		display: block;
 	}
 
-.sheetsmith-attribute-detail {
+.sheetsmith-entry-detail {
 		flex-wrap: wrap;
 	}
 
@@ -4092,7 +4092,7 @@ a.sheetsmith-undo {
 	pointer-events: none;
 }
 
-.sheetsmith-attribute-check {
+.sheetsmith-entry-check {
 	display: flex;
 	align-items: center;
 	gap: var(--size-2-2);

@@ -40,7 +40,7 @@ function fixture(): Layout {
 		components: [
 			{
 				id: 'armour',
-				type: 'stat',
+				type: 'card',
 				label: 'Armour class',
 				position: { col: 1, row: 1, width: 2, height: 1 },
 			},
@@ -563,7 +563,7 @@ describe('a field shown only under a condition', () => {
 
 describe('the reset binding', () => {
 	// Asked of the component through `applyReset`, never inferred from its
-	// type. The editor knowing that a Pool can be restored and a Stat cannot
+	// type. The editor knowing that a Pool can be restored and a Card cannot
 	// is exactly the coupling the component contract exists to prevent.
 
 	it('is offered to a component that can act on a reset', async () => {
@@ -696,7 +696,7 @@ function nested(): Layout {
 				children: [
 					{
 						id: 'armour',
-						type: 'stat',
+						type: 'card',
 						label: 'Armour class',
 						position: { col: 1, row: 1, width: 3, height: 1 },
 					},
@@ -739,7 +739,7 @@ function deep(): Layout {
 						children: [
 							{
 								id: 'armour',
-								type: 'stat',
+								type: 'card',
 								label: 'Armour class',
 								position: { col: 1, row: 1, width: 2, height: 1 },
 							},
@@ -848,7 +848,7 @@ describe('adding a component into a container', () => {
 	});
 
 	it('puts the new component in the chosen container', async () => {
-		choose(typeDropdown(harness), 'stat');
+		choose(typeDropdown(harness), 'card');
 		choose(
 			control<HTMLSelectElement>(harness, 'add-destination'),
 			'defences',
@@ -869,7 +869,7 @@ describe('adding a component into a container', () => {
 	});
 
 	it('leaves it on the sheet where no container was chosen', async () => {
-		choose(typeDropdown(harness), 'stat');
+		choose(typeDropdown(harness), 'card');
 		pressAdd(harness);
 		await settle(harness.editor);
 		expect((await harness.stored()).components).toHaveLength(3);
@@ -1150,7 +1150,7 @@ function tabbed(): Layout {
 					// the whole reason a grid cannot edit these.
 					{
 						id: 'combat',
-						type: 'stat',
+						type: 'card',
 						label: 'Combat',
 						position: { col: 1, row: 1, width: 6, height: 3 },
 					},
@@ -1295,7 +1295,7 @@ describe('a container that is itself a tab', () => {
 							children: [
 								{
 									id: 'strike',
-									type: 'stat',
+									type: 'card',
 									label: 'Strike bonus',
 									position: { col: 1, row: 1, width: 2, height: 1 },
 								},
@@ -1450,13 +1450,13 @@ describe('overlap inside a tab, and never across tabs', () => {
 								// Two blocks on one cell of the Combat tab's own grid.
 								{
 									id: 'one',
-									type: 'stat',
+									type: 'card',
 									label: 'One',
 									position: { col: 1, row: 1, width: 3, height: 1 },
 								},
 								{
 									id: 'two',
-									type: 'stat',
+									type: 'card',
 									label: 'Two',
 									position: { col: 1, row: 1, width: 3, height: 1 },
 								},
@@ -1472,7 +1472,7 @@ describe('overlap inside a tab, and never across tabs', () => {
 							children: [
 								{
 									id: 'three',
-									type: 'stat',
+									type: 'card',
 									label: 'Three',
 									position: { col: 1, row: 1, width: 3, height: 1 },
 								},

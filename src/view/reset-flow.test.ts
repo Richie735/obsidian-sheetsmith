@@ -34,7 +34,7 @@ interface FixtureComponent {
 	label: string;
 	position: { col: number; row: number; width: number; height: number };
 	children?: FixtureComponent[];
-	attributes?: { key: string }[];
+	entries?: { key: string }[];
 	derived?: string;
 	max?: string;
 	hasTemp?: boolean;
@@ -65,10 +65,10 @@ const LAYOUT_SHAPE: FixtureLayout = {
 	components: [
 		{
 			id: 'abilities',
-			type: 'stat-group',
+			type: 'card-set',
 			label: 'Abilities',
 			position: { col: 1, row: 1, width: 3, height: 1 },
-			attributes: [{ key: 'CON' }],
+			entries: [{ key: 'CON' }],
 			derived: 'mod(value)',
 		},
 		{
@@ -547,7 +547,7 @@ describe('a long rest against a pool on a tab nobody opened', () => {
 				// First, so it is the tab that opens and the pool's is not.
 				{
 					id: 'notes_tab',
-					type: 'stat',
+					type: 'card',
 					label: 'Notes tab',
 					position: { col: 1, row: 1, width: 4, height: 2 },
 				},

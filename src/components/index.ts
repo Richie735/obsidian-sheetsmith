@@ -9,10 +9,10 @@ import {
 	isContainer,
 	PaletteEntry,
 } from '../types';
+import { card } from './card';
+import { cardSet } from './card-set';
 import { group } from './group';
 import { pool } from './pool';
-import { stat } from './stat';
-import { statGroup } from './stat-group';
 import { table } from './table';
 import { tabSet } from './tab-set';
 import { track } from './track';
@@ -23,10 +23,10 @@ function register(component: ComponentDefinition): void {
 	registry.set(component.type, component);
 }
 
+register(card);
+register(cardSet);
 register(group);
 register(pool);
-register(stat);
-register(statGroup);
 register(table);
 register(tabSet);
 register(track);
@@ -97,7 +97,7 @@ export function undrawableMessage(
 	 * `children` is shared config the parser walks without knowing any type,
 	 * which is what keeps `src/parse/` free of any import from here and makes
 	 * the depth rule hold for a container nobody has written yet (SPEC §13).
-	 * The cost is this: a hand-edited layout can place cards inside a Stat, the
+	 * The cost is this: a hand-edited layout can place cards inside a Card, the
 	 * parser accepts it, the sections are read and the names published, and the
 	 * component has nowhere to draw them. Unsaid, that is cards which hold data
 	 * and reset on a trigger while being invisible, which is worse than a card

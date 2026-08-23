@@ -33,7 +33,7 @@ const KINDS = [
 	'formula',
 	'select',
 	'text-list',
-	'attributes',
+	'entries',
 	'track-rows',
 	'rows',
 	'columns',
@@ -74,7 +74,7 @@ const types = listComponentTypes();
 
 /** A child to place inside another component, for the containment checks. */
 function child(): ComponentConfig {
-	return bareConfig('stat');
+	return bareConfig('card');
 }
 
 /** Only what the layout editor owns, so any component will take it. */
@@ -92,8 +92,8 @@ function bareConfig(type: string): ComponentConfig {
  *
  * That is all a registry-wide sweep can ask for without holding a sample
  * config per component type, which is the one thing this file exists not to
- * do. It reaches a Pool, a Stat and a Track, whose entries do not depend on
- * configuration; a Stat group with no attributes and a Table with no columns
+ * do. It reaches a Pool, a Card and a Track, whose entries do not depend on
+ * configuration; a Card set with no entries and a Table with no columns
  * correctly publish nothing, so their entries are checked in their own test
  * files against a card that is actually configured.
  */
@@ -193,12 +193,12 @@ describe('component registry', () => {
 
 	it('names the types that can hold components when one cannot', () => {
 		// `children` is shared config the parser walks without knowing any type,
-		// so a hand-edited layout can put cards inside a Stat. The fix is a type
+		// so a hand-edited layout can put cards inside a Card. The fix is a type
 		// that holds them, and which those are is the registry's question — the
 		// view naming one would be the view knowing a component exists.
 		const leaf = types.find((type) => !isContainer(getComponent(type)));
-		const config = { ...bareConfig(leaf ?? 'stat'), children: [child(), child()] };
-		const message = undrawableMessage(config, getComponent(leaf ?? 'stat'));
+		const config = { ...bareConfig(leaf ?? 'card'), children: [child(), child()] };
+		const message = undrawableMessage(config, getComponent(leaf ?? 'card'));
 		expect(message).toContain(`"${leaf ?? ''}"`);
 		expect(message).toContain('2 components');
 		for (const type of types) {
@@ -207,8 +207,8 @@ describe('component registry', () => {
 		// And it counts, rather than saying "components" for one of them.
 		expect(
 			undrawableMessage(
-				{ ...bareConfig(leaf ?? 'stat'), children: [child()] },
-				getComponent(leaf ?? 'stat'),
+				{ ...bareConfig(leaf ?? 'card'), children: [child()] },
+				getComponent(leaf ?? 'card'),
 			),
 		).toContain('1 component inside');
 
@@ -236,7 +236,7 @@ describe('component registry', () => {
 		 * editor owns, so a seventh shared key on `ComponentConfig` fails here
 		 * until it is named.
 		 */
-		for (const key of Object.keys(bareConfig('stat'))) {
+		for (const key of Object.keys(bareConfig('card'))) {
 			expect(EDITOR_OWNED_KEYS).toContain(key);
 		}
 		// The two that are optional, and so absent from a bare config: `reset` is
@@ -263,7 +263,7 @@ describe('component registry', () => {
 		 * **Per type, not across the palette.** Global uniqueness was the first
 		 * spelling and it forbade something legitimate: the menu is grouped by
 		 * type with each entry under its own, so a Table offered as "Inventory"
-		 * beside a Stat group offered as "Inventory" is two distinguishable lines,
+		 * beside a Card set offered as "Inventory" is two distinguishable lines,
 		 * and the deferred prefills (SPEC §13) must not be refused by a rule
 		 * nothing needs. The option value is `type:index` and the label goes
 		 * through `uniqueLabel`, so neither depends on this either way.

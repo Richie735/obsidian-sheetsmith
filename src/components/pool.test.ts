@@ -591,7 +591,7 @@ describe('pool Enter', () => {
 			new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
 		);
 
-	it('moves to the temporary field, as a stat card moves to its note', () => {
+	it('moves to the temporary field, as a card moves to its note', () => {
 		const el = render({ hasTemp: true }, { current: '22', temp: '4' });
 		document.body.appendChild(el);
 		const { current, temp } = parts(el);
@@ -624,7 +624,7 @@ describe('pool card', () => {
 		button?.dispatchEvent(new PointerEvent('pointerup', { pointerId: 1, button: 0 }));
 	};
 	it('renders the card as a child of the cell, not as the cell', () => {
-		// The cell is grid placement; the card is the object. A lone stat card
+		// The cell is grid placement; the card is the object. A lone card
 		// works the same way, which is what lets both take one width cap.
 		const el = render();
 		expect(el.classList.contains('sheetsmith-pool')).toBe(false);

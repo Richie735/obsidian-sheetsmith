@@ -3,7 +3,7 @@
  * columns.
  *
  * These are the fields a Setting row cannot express, because each entry is
- * several inputs plus reorder and remove controls. The attribute list in
+ * several inputs plus reorder and remove controls. The entry list in
  * layout-editor.ts is the same shape and predates this module; the two share
  * their chrome here rather than drifting apart.
  */
@@ -151,7 +151,7 @@ export function moveItem<T>(
 /**
  * Reorder and remove controls, and the drop target that goes with them.
  *
- * Focus ids follow the same two schemes as the attribute list: inputs are
+ * Focus ids follow the same two schemes as the entry list: inputs are
  * keyed by index so focus holds its position while typing, buttons by the
  * entry's own name so focus follows the item through a reorder.
  */
@@ -177,17 +177,17 @@ function addControls<T>(
 		event.preventDefault();
 		// The drop lands the row above the target on upward drags and below it
 		// on downward ones; the indicator has to say so, not always point up.
-		row.toggleClass('sheetsmith-attribute-drop-below', index > from);
-		row.toggleClass('sheetsmith-attribute-drop', index < from);
+		row.toggleClass('sheetsmith-entry-drop-below', index > from);
+		row.toggleClass('sheetsmith-entry-drop', index < from);
 	});
 	row.addEventListener('dragleave', () => {
-		row.removeClass('sheetsmith-attribute-drop');
-		row.removeClass('sheetsmith-attribute-drop-below');
+		row.removeClass('sheetsmith-entry-drop');
+		row.removeClass('sheetsmith-entry-drop-below');
 	});
 	row.addEventListener('drop', (event) => {
 		event.preventDefault();
-		row.removeClass('sheetsmith-attribute-drop');
-		row.removeClass('sheetsmith-attribute-drop-below');
+		row.removeClass('sheetsmith-entry-drop');
+		row.removeClass('sheetsmith-entry-drop-below');
 		const from = context.drag.index;
 		if (from === null || from === index) return;
 		context.drag.index = null;
@@ -214,7 +214,7 @@ function addControls<T>(
 		down.addEventListener('click', () => moveItem(list, index, index + 1, context));
 	} else {
 		const handle = row.createEl('button', {
-			cls: 'clickable-icon sheetsmith-attribute-handle',
+			cls: 'clickable-icon sheetsmith-entry-handle',
 			attr: {
 				'aria-label': `Reorder ${label}: drag, or press the arrow keys`,
 				draggable: 'true',
@@ -347,11 +347,11 @@ export function renderRowsEditor(
 	const scroller = listEl.createDiv('sheetsmith-list-scroll');
 
 	if (rows.length === 0) {
-		scroller.createDiv('sheetsmith-attribute-empty', (el) =>
+		scroller.createDiv('sheetsmith-entry-empty', (el) =>
 			el.setText('No rows yet.'),
 		);
 	} else {
-		const columns = scroller.createDiv('sheetsmith-attribute-columns');
+		const columns = scroller.createDiv('sheetsmith-entry-columns');
 		columns.createSpan({ text: 'Row name' });
 		columns.createSpan({ text: 'Publishes as' });
 		for (const name of names) {
@@ -450,7 +450,7 @@ export function renderRowsEditor(
 	}
 
 	rows.forEach((row, index) => {
-		const element = scroller.createDiv('sheetsmith-attribute-row');
+		const element = scroller.createDiv('sheetsmith-entry-row');
 
 		const label = listField(element, 'Row name').createEl('input', {
 			type: 'text',
@@ -478,7 +478,7 @@ export function renderRowsEditor(
 			}
 			fieldError(label, null);
 			// Renaming a row does not move character data: the note keeps its
-			// old row under the old name, exactly as a renamed attribute key
+			// old row under the old name, exactly as a renamed entry key
 			// does (SPEC §10).
 			row.label = next;
 			context.persist();
@@ -590,7 +590,7 @@ export function renderRowsEditor(
 		);
 	});
 
-	const footer = listEl.createDiv('sheetsmith-attribute-footer');
+	const footer = listEl.createDiv('sheetsmith-entry-footer');
 	const add = footer.createEl('button', { cls: 'mod-cta', text: 'Add row' });
 	add.addEventListener('click', () => {
 		const taken = new Set(rows.map((row) => row.label));
@@ -612,7 +612,7 @@ export function renderRowsEditor(
 	// The most conceptual control here, and the one that changes every row at
 	// once. Adding a row is the common path and reads for itself; this needs
 	// its one line of why, or it is a button nobody has a reason to press.
-	listEl.createDiv('sheetsmith-attribute-footnote', (el) =>
+	listEl.createDiv('sheetsmith-entry-footnote', (el) =>
 		el.setText(
 			'A row value is an expression each row defines for itself, so one column formula can serve every row — "ability" as abilities.DEX on one row and abilities.WIS on the next.',
 		),
@@ -703,7 +703,7 @@ function checkField(
 	 */
 	rebuild?: { token: string },
 ): void {
-	const label = detail.createEl('label', { cls: 'sheetsmith-attribute-check' });
+	const label = detail.createEl('label', { cls: 'sheetsmith-entry-check' });
 	const input = label.createEl('input', { type: 'checkbox' });
 	input.checked = target[key] === true;
 	if (rebuild) input.dataset.sheetsmithFocus = rebuild.token;
@@ -752,11 +752,11 @@ export function renderColumnsEditor(
 	const publisher = columns.find((column) => column.publish === true);
 
 	if (columns.length === 0) {
-		scroller.createDiv('sheetsmith-attribute-empty', (el) =>
+		scroller.createDiv('sheetsmith-entry-empty', (el) =>
 			el.setText('No columns yet.'),
 		);
 	} else {
-		const headings = scroller.createDiv('sheetsmith-attribute-columns');
+		const headings = scroller.createDiv('sheetsmith-entry-columns');
 		headings.createSpan({ text: 'Key' });
 		headings.createSpan({ text: 'Heading' });
 		headings.createSpan({ text: 'Holds' });
@@ -769,7 +769,7 @@ export function renderColumnsEditor(
 		// together. One surface per column; common region beats proximity,
 		// and it costs a wrapper.
 		const entry = scroller.createDiv('sheetsmith-list-entry');
-		const element = entry.createDiv('sheetsmith-attribute-row');
+		const element = entry.createDiv('sheetsmith-entry-row');
 
 		const keyInput = listField(element, 'Key').createEl('input', {
 			type: 'text',
@@ -870,7 +870,7 @@ export function renderColumnsEditor(
 		// make sense for that kind of column and then the ones every column
 		// has. One detail element for both, so the two never disagree about
 		// which line they belong on.
-		const detail = entry.createDiv('sheetsmith-attribute-detail');
+		const detail = entry.createDiv('sheetsmith-entry-detail');
 		// Changing what a column holds rebuilds this line, through a redraw
 		// that gives no sign anything happened. Mark it so the cause of the
 		// change is visible where the change landed.
@@ -1147,7 +1147,7 @@ export function renderColumnsEditor(
 		checkField(detail, 'Hide heading', column, 'hideHeading', context);
 	});
 
-	const footer = listEl.createDiv('sheetsmith-attribute-footer');
+	const footer = listEl.createDiv('sheetsmith-entry-footer');
 	const add = footer.createEl('button', { text: 'Add column' });
 	// Once for the list rather than under every level column, and only where
 	// there are rings to press: the sample says what the syntax does, and this
@@ -1158,7 +1158,7 @@ export function renderColumnsEditor(
 			(column) => column.type === 'level' && column.input !== 'select',
 		)
 	) {
-		listEl.createDiv('sheetsmith-attribute-footnote', (el) =>
+		listEl.createDiv('sheetsmith-entry-footnote', (el) =>
 			el.setText(
 				'Select a ring to turn its letter on or off. A level name can also say it in writing, after a colon: "Proficient:" is a fill with no letter on it, and anything written after the colon, such as ★, is drawn in place of the initial.',
 			),
@@ -1170,7 +1170,7 @@ export function renderColumnsEditor(
 	// combination, and this is what keeps the author from meeting that refusal by
 	// surprise.
 	if (columns.some((column) => column.total === true)) {
-		listEl.createDiv('sheetsmith-attribute-footnote', (el) =>
+		listEl.createDiv('sheetsmith-entry-footnote', (el) =>
 			el.setText(
 				'A total is published as "<component id>.<column key>", so a formula elsewhere on the sheet can read it. That makes a totalled column\'s key a name: letters, digits and underscores, where a column without a total may be headed anything.',
 			),
@@ -1181,7 +1181,7 @@ export function renderColumnsEditor(
 	// the rows list above is where the key is typed. Nothing else on this form
 	// would say where to go next.
 	if (columns.some((column) => column.publish === true)) {
-		listEl.createDiv('sheetsmith-attribute-footnote', (el) =>
+		listEl.createDiv('sheetsmith-entry-footnote', (el) =>
 			el.setText(
 				'A published column gives every row below a name of its own, "<component id>.<row key>", so a formula elsewhere on the sheet can read that row. Give each row a key in the rows list above. Only one column can be published.',
 			),
