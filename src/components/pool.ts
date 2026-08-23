@@ -30,7 +30,7 @@ import {
 	showsOwnLabel,
 } from '../types';
 import { bindEditable, EditableHandle } from '../interaction/editable';
-import { formatDerived } from './stat-card';
+import { formatDerived } from './card-face';
 
 /** Entry keys in the fenced block. Fixed, so hand-editing reads the same. */
 const CURRENT_KEY = 'current';
@@ -627,10 +627,10 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 		container.replaceChildren();
 
 		// The card is a child of the cell, not the cell itself, exactly as a
-		// lone stat card is: the cell is grid placement and the card is the
+		// lone card is: the cell is grid placement and the card is the
 		// object. It also takes the same width cap, so a pool spanning three
 		// columns does not become an expanse of clickable card around a
-		// two-digit number while the stat cards beside it stay tile-sized.
+		// two-digit number while the cards beside it stay tile-sized.
 		const card = doc.createElement('div');
 		card.classList.add('sheetsmith-pool');
 		container.appendChild(card);
@@ -939,7 +939,7 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 		 * Spend from the pool, taking temporary points first.
 		 *
 		 * This is what makes `hasTemp` a pool's buffer rather than a second
-		 * number parked beside it — without it the field is a Stat the layout
+		 * number parked beside it — without it the field is a Card the layout
 		 * could have placed itself, which is the one thing it must not be.
 		 *
 		 * Only a decrement is absorbed. Healing goes to the pool and never
@@ -1044,7 +1044,7 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 				 * The ceiling is a value the character holds, so it is edited
 				 * where it is read rather than on a component of its own.
 				 *
-				 * Pointing the formula at a separate Stat was the old answer and
+				 * Pointing the formula at a separate Card was the old answer and
 				 * it still works, but it costs a second card for a number that
 				 * belongs to this one, and it shows the max twice on a sheet
 				 * where the reading already says it. Here the pool asks for the
@@ -1106,7 +1106,7 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 			},
 			onEnter: () => {
 				// SPEC §4.2 moves to the next field on the card, and here that is
-				// the buffer — deliberately without selecting it, unlike a stat
+				// the buffer — deliberately without selecting it, unlike a card
 				// card's note line. On this card Enter most often means "done",
 				// and a selected number arms the next keystroke to replace a
 				// value the user never meant to touch. A caret is recoverable

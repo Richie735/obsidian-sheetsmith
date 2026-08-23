@@ -10,7 +10,7 @@ import {
 import { buildSheetEnv, buildSheetScope, PublishedComponent } from './sheet';
 import { ComponentConfig, FieldValue } from '../types';
 
-/** A stat group with the 5e modifier formula on every attribute. */
+/** A card set with the 5e modifier formula on every entry. */
 const abilities: PublishedComponent = {
 	id: 'abilities',
 	values: {
@@ -217,7 +217,7 @@ describe('buildSheetScope: names that depend on names', () => {
 describe('a component resolving against the sheet', () => {
 	const config = {
 		id: 'armour-class',
-		type: 'stat',
+		type: 'card',
 		label: 'Armour class',
 		position: { col: 1, row: 1, width: 2, height: 1 },
 		derived: '10 + abilities.DEX',

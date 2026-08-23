@@ -72,7 +72,7 @@ describe('a container query sits below what it overrides', () => {
 	 * `@container` and `@media` add no specificity, so an equal selector
 	 * further down the file simply wins and the narrow layout never applies.
 	 * The file says so in a comment on the sheet's own reflow — and the
-	 * attribute tables broke the rule anyway, so their header never hid and
+	 * entry tables broke the rule anyway, so their header never hid and
 	 * their rows never stacked on a narrow settings pane. Nothing in a type
 	 * check or a unit test noticed, and nothing would have until someone
 	 * dragged the pane narrow enough to look.
@@ -202,8 +202,8 @@ describe('a table header lines up with its rows', () => {
 	 */
 	const CSS_TEXT = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 
-	const HEADER = '.sheetsmith-attribute-counted .sheetsmith-attribute-columns';
-	const ROW = '.sheetsmith-attribute-counted .sheetsmith-attribute-row';
+	const HEADER = '.sheetsmith-entry-counted .sheetsmith-entry-columns';
+	const ROW = '.sheetsmith-entry-counted .sheetsmith-entry-row';
 
 	/** Every rule declaring a track list, as (selectors, declaration). */
 	function trackLists(): { selectors: string[]; value: string }[] {
@@ -877,7 +877,7 @@ describe('every class the plugin adds is its own', () => {
 
 	/**
 	 * Class names passed to `classList.add`, from quoted strings and from the
-	 * fixed head of a template literal — `sheetsmith-stat-group-align-${x}`
+	 * fixed head of a template literal — `sheetsmith-card-set-align-${x}`
 	 * is checked on its prefix, which is the part that has to be owned.
 	 */
 	function classesAdded(source: string): string[] {

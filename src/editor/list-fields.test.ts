@@ -138,7 +138,7 @@ describe('columns editor', () => {
 			],
 		};
 		const el = columnsEditor(record);
-		expect(el.querySelectorAll('.sheetsmith-attribute-row')).toHaveLength(5);
+		expect(el.querySelectorAll('.sheetsmith-entry-row')).toHaveLength(5);
 		expect(() => button(el, 'Add column')).not.toThrow();
 	});
 
@@ -150,8 +150,8 @@ describe('columns editor', () => {
 		const entries = el.querySelectorAll('.sheetsmith-list-entry');
 		expect(entries).toHaveLength(2);
 		for (const entry of Array.from(entries)) {
-			expect(entry.querySelectorAll('.sheetsmith-attribute-row')).toHaveLength(1);
-			expect(entry.querySelectorAll('.sheetsmith-attribute-detail')).toHaveLength(
+			expect(entry.querySelectorAll('.sheetsmith-entry-row')).toHaveLength(1);
+			expect(entry.querySelectorAll('.sheetsmith-entry-detail')).toHaveLength(
 				1,
 			);
 		}
@@ -165,7 +165,7 @@ describe('columns editor', () => {
 		for (const child of Array.from(scroll.children)) {
 			expect(
 				child.classList.contains('sheetsmith-list-entry') ||
-					child.classList.contains('sheetsmith-attribute-columns'),
+					child.classList.contains('sheetsmith-entry-columns'),
 			).toBe(true);
 		}
 	});
@@ -191,9 +191,9 @@ describe('columns editor', () => {
 			columns: [{ key: 'Ability' }, { key: 'Bonus', type: 'number' }],
 		};
 		const el = columnsEditor(record);
-		const details = el.querySelectorAll('.sheetsmith-attribute-detail');
+		const details = el.querySelectorAll('.sheetsmith-entry-detail');
 		const checks = Array.from(details).map((detail) =>
-			Array.from(detail.querySelectorAll('.sheetsmith-attribute-check')).map(
+			Array.from(detail.querySelectorAll('.sheetsmith-entry-check')).map(
 				(check) => check.textContent,
 			),
 		);
@@ -214,7 +214,7 @@ describe('columns editor', () => {
 		};
 		const el = columnsEditor(record);
 		const check = el.querySelector(
-			'.sheetsmith-attribute-detail input[type="checkbox"]',
+			'.sheetsmith-entry-detail input[type="checkbox"]',
 		) as HTMLInputElement;
 		check.checked = true;
 		check.dispatchEvent(new Event('change'));
@@ -369,12 +369,12 @@ describe('columns editor', () => {
 
 	it('explains the level syntax only where a level column can use it', () => {
 		const plain = columnsEditor({ columns: [{ key: 'Bonus', type: 'number' }] });
-		expect(plain.querySelector('.sheetsmith-attribute-footnote')).toBeNull();
+		expect(plain.querySelector('.sheetsmith-entry-footnote')).toBeNull();
 		const levelled = columnsEditor({
 			columns: [{ key: 'Training', type: 'level' }],
 		});
 		expect(
-			levelled.querySelector('.sheetsmith-attribute-footnote')?.textContent,
+			levelled.querySelector('.sheetsmith-entry-footnote')?.textContent,
 		).toContain('"Proficient:"');
 	});
 
@@ -384,12 +384,12 @@ describe('columns editor', () => {
 		// component refuses a key that is not a name, and this is what keeps the
 		// author from meeting that refusal by surprise.
 		const plain = columnsEditor({ columns: [{ key: 'Weight', type: 'number' }] });
-		expect(plain.querySelector('.sheetsmith-attribute-footnote')).toBeNull();
+		expect(plain.querySelector('.sheetsmith-entry-footnote')).toBeNull();
 		const totalled = columnsEditor({
 			columns: [{ key: 'Weight', type: 'number', total: true }],
 		});
 		expect(
-			totalled.querySelector('.sheetsmith-attribute-footnote')?.textContent,
+			totalled.querySelector('.sheetsmith-entry-footnote')?.textContent,
 		).toContain('letters, digits and underscores');
 	});
 
@@ -398,7 +398,7 @@ describe('columns editor', () => {
 			{ columns: [{ key: 'Total', type: 'computed' }] };
 		const el = columnsEditor(record);
 		const check = Array.from(
-			el.querySelectorAll('.sheetsmith-attribute-check'),
+			el.querySelectorAll('.sheetsmith-entry-check'),
 		).find((label) => label.textContent === 'Publish per row');
 		const input = check?.querySelector('input') as HTMLInputElement;
 		input.checked = true;
@@ -416,7 +416,7 @@ describe('columns editor', () => {
 		// total is not offered on a column with nothing to add up.
 		const checks = (record: Record<string, unknown>) =>
 			Array.from(
-				columnsEditor(record).querySelectorAll('.sheetsmith-attribute-check'),
+				columnsEditor(record).querySelectorAll('.sheetsmith-entry-check'),
 			).map((check) => check.textContent);
 		const free = {
 			columns: [
@@ -446,7 +446,7 @@ describe('columns editor', () => {
 			{ columns: [{ key: 'Total', type: 'computed' }, { key: 'Bonus', type: 'number' }] };
 		const el = columnsEditor(record);
 		const check = Array.from(
-			el.querySelectorAll('.sheetsmith-attribute-check'),
+			el.querySelectorAll('.sheetsmith-entry-check'),
 		).find((label) => label.textContent === 'Publish per row');
 		const input = check?.querySelector('input') as HTMLInputElement;
 		input.checked = true;
@@ -459,12 +459,12 @@ describe('columns editor', () => {
 		// Ticking publish is what gives the rows list a name to hand out, and
 		// the field for it is in a different list on the same form.
 		const plain = columnsEditor({ columns: [{ key: 'Total', type: 'computed' }] });
-		expect(plain.querySelector('.sheetsmith-attribute-footnote')).toBeNull();
+		expect(plain.querySelector('.sheetsmith-entry-footnote')).toBeNull();
 		const publishing = columnsEditor({
 			columns: [{ key: 'Total', type: 'computed', publish: true }],
 		});
 		expect(
-			publishing.querySelector('.sheetsmith-attribute-footnote')?.textContent,
+			publishing.querySelector('.sheetsmith-entry-footnote')?.textContent,
 		).toContain('Give each row a key in the rows list above');
 	});
 
@@ -474,7 +474,7 @@ describe('columns editor', () => {
 		const el = columnsEditor({
 			columns: [{ key: 'Training', type: 'level', input: 'select' }],
 		});
-		expect(el.querySelector('.sheetsmith-attribute-footnote')).toBeNull();
+		expect(el.querySelector('.sheetsmith-entry-footnote')).toBeNull();
 	});
 
 	it('repaints the sample when the level count is cleared', () => {

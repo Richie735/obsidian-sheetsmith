@@ -152,7 +152,7 @@ const NESTED = JSON.stringify({
 		// File order and grid order disagree, so the walk is doing real work.
 		{
 			id: 'trailing',
-			type: 'stat',
+			type: 'card',
 			label: 'Trailing',
 			position: { col: 1, row: 3, width: 2, height: 1 },
 		},
@@ -170,7 +170,7 @@ const NESTED = JSON.stringify({
 					children: [
 						{
 							id: 'deep',
-							type: 'stat',
+							type: 'card',
 							label: 'Deep',
 							position: { col: 1, row: 1, width: 3, height: 1 },
 						},
@@ -178,7 +178,7 @@ const NESTED = JSON.stringify({
 				},
 				{
 					id: 'beside',
-					type: 'stat',
+					type: 'card',
 					label: 'Beside',
 					position: { col: 1, row: 1, width: 3, height: 1 },
 				},
@@ -186,7 +186,7 @@ const NESTED = JSON.stringify({
 		},
 		{
 			id: 'leading',
-			type: 'stat',
+			type: 'card',
 			label: 'Leading',
 			position: { col: 1, row: 1, width: 2, height: 1 },
 		},
@@ -251,7 +251,7 @@ describe('renderGrid', () => {
 	});
 
 	it('draws nothing inside a component that cannot hold components', () => {
-		// A hand-edited layout can put cards inside a Stat: the parser accepts
+		// A hand-edited layout can put cards inside a Card: the parser accepts
 		// it, the registry refuses it, and the children are not drawn — because
 		// only a component says where its region goes.
 		const source = JSON.stringify({
@@ -259,13 +259,13 @@ describe('renderGrid', () => {
 			components: [
 				{
 					id: 'holder',
-					type: 'stat',
+					type: 'card',
 					label: 'Holder',
 					position: { col: 1, row: 1, width: 4, height: 1 },
 					children: [
 						{
 							id: 'buried',
-							type: 'stat',
+							type: 'card',
 							label: 'Buried',
 							position: { col: 1, row: 1, width: 2, height: 1 },
 						},
@@ -522,7 +522,7 @@ describe('a container that shows one child at a time', () => {
 				children: [
 					{
 						id: 'first',
-						type: 'stat',
+						type: 'card',
 						label: 'First',
 						// Deliberately a placement that means nothing: a tab fills
 						// the panel, so none of these four numbers may reach the DOM.
@@ -536,7 +536,7 @@ describe('a container that shows one child at a time', () => {
 						children: [
 							{
 								id: 'inside',
-								type: 'stat',
+								type: 'card',
 								label: 'Inside',
 								position: { col: 2, row: 2, width: 2, height: 1 },
 							},
@@ -603,7 +603,7 @@ describe('a container that shows one child at a time', () => {
 		 */
 		const recorder = (type: string): ComponentDefinition => ({
 			type,
-			storage: type === 'stat' ? 'fenced' : 'none',
+			storage: type === 'card' ? 'fenced' : 'none',
 			...(type === ALTERNATIVES ? { showsOneChild: true } : {}),
 			formulaFields: [],
 			configFields: [],

@@ -1,15 +1,15 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
-import { statGroup, StatGroupConfig } from './stat-group';
+import { cardSet, CardSetConfig } from './card-set';
 import { FieldValue, RenderContext } from '../types';
 
-const config: StatGroupConfig = {
-	id: 'stat-group',
-	type: 'stat-group',
+const config: CardSetConfig = {
+	id: 'card-set',
+	type: 'card-set',
 	label: 'Abilities',
 	position: { col: 1, row: 1, width: 6, height: 1 },
 	derived: 'floor((value - 10) / 2)',
-	attributes: [
+	entries: [
 		{ key: 'STR', name: 'Strength' },
 		{ key: 'DEX', name: 'Dexterity' },
 		{ key: 'WIS' },
@@ -19,7 +19,7 @@ const config: StatGroupConfig = {
 const BODY = '\n```sheet\nSTR: 8\nDEX: 16\nWIS: 12\n```\n';
 
 const abilitiesWrite = (data: { values: Record<string, string> }) =>
-	statGroup.write(data, BODY, config);
+	cardSet.write(data, BODY, config);
 
 /** Stub resolver behaving like the 5e modifier formula. */
 const modifier = (field: string, scope: Readonly<Record<string, FieldValue>>) =>
@@ -33,9 +33,9 @@ const context: RenderContext = {
 	onChange: () => undefined,
 };
 
-describe('statGroup.read', () => {
+describe('cardSet.read', () => {
 	it('reads every entry of the fenced block', () => {
-		const result = statGroup.read(BODY, config);
+		const result = cardSet.read(BODY, config);
 		expect(result).toEqual({
 			ok: true,
 			data: { values: { STR: '8', DEX: '16', WIS: '12' } },
@@ -43,14 +43,14 @@ describe('statGroup.read', () => {
 	});
 
 	it('treats a section with no sheet block as empty, not malformed', () => {
-		expect(statGroup.read('\nProse only.\n', config)).toEqual({
+		expect(cardSet.read('\nProse only.\n', config)).toEqual({
 			ok: true,
 			data: null,
 		});
 	});
 
-	it('keeps entries that no attribute maps to', () => {
-		const result = statGroup.read(
+	it('keeps entries the layout does not declare', () => {
+		const result = cardSet.read(
 			'\n```sheet\nSTR: 8\nLUCK: 3\n```\n',
 			config,
 		);
@@ -58,16 +58,16 @@ describe('statGroup.read', () => {
 	});
 });
 
-describe('statGroup.write', () => {
+describe('cardSet.write', () => {
 	it('round-trips unchanged data byte for byte', () => {
-		const read = statGroup.read(BODY, config);
+		const read = cardSet.read(BODY, config);
 		if (!read.ok || read.data === null) throw new Error('expected data');
-		expect(statGroup.write(read.data, BODY, config)).toBe(BODY);
+		expect(cardSet.write(read.data, BODY, config)).toBe(BODY);
 	});
 
 	it('rewrites only the changed entry', () => {
 		expect(
-			statGroup.write(
+			cardSet.write(
 				{ values: { STR: '8', DEX: '18', WIS: '12' } },
 				BODY,
 				config,
@@ -76,61 +76,61 @@ describe('statGroup.write', () => {
 	});
 
 	it('creates a fresh section body when none exists', () => {
-		expect(statGroup.write({ values: { STR: '8' } }, null, config)).toBe(
+		expect(cardSet.write({ values: { STR: '8' } }, null, config)).toBe(
 			'\n```sheet\nSTR: 8\n```\n',
 		);
 	});
 });
 
-describe('statGroup.render', () => {
-	it('renders one card per attribute, in order', () => {
+describe('cardSet.render', () => {
+	it('renders one card per entry, in order', () => {
 		const el = document.createElement('div');
-		statGroup.render(el, config, { values: { STR: '8', DEX: '16', WIS: '12' } }, context);
+		cardSet.render(el, config, { values: { STR: '8', DEX: '16', WIS: '12' } }, context);
 		const labels = Array.from(
-			el.querySelectorAll('.sheetsmith-stat-label'),
+			el.querySelectorAll('.sheetsmith-card-label'),
 			(node) => node.textContent,
 		);
 		expect(labels).toEqual(['Strength', 'Dexterity', 'WIS']);
 		const inputs = Array.from(
-			el.querySelectorAll('.sheetsmith-stat-input'),
+			el.querySelectorAll('.sheetsmith-card-input'),
 			(node) => (node as HTMLInputElement).value,
 		);
 		expect(inputs).toEqual(['8', '16', '12']);
 	});
 
-	it('computes the derived value per attribute', () => {
+	it('computes the derived value per entry', () => {
 		const el = document.createElement('div');
-		statGroup.render(el, config, { values: { STR: '8', DEX: '16', WIS: '12' } }, context);
+		cardSet.render(el, config, { values: { STR: '8', DEX: '16', WIS: '12' } }, context);
 		const derived = Array.from(
-			el.querySelectorAll('.sheetsmith-stat-derived'),
+			el.querySelectorAll('.sheetsmith-card-derived'),
 			(node) => node.textContent,
 		);
 		expect(derived).toEqual(['-1', '+3', '+1']);
 	});
 
 	const strip = (el: HTMLElement) =>
-		el.querySelector('.sheetsmith-stat-group') as HTMLElement;
+		el.querySelector('.sheetsmith-card-set') as HTMLElement;
 
 	it('applies fixed sizing with its alignment', () => {
 		const el = document.createElement('div');
-		statGroup.render(
+		cardSet.render(
 			el,
 			{ ...config, sizing: 'fixed', align: 'center' },
 			{ values: {} },
 			context,
 		);
-		expect(strip(el).classList.contains('sheetsmith-stat-group-align-center')).toBe(
+		expect(strip(el).classList.contains('sheetsmith-card-set-align-center')).toBe(
 			true,
 		);
 
 		const start = document.createElement('div');
-		statGroup.render(start, { ...config, sizing: 'fixed' }, { values: {} }, context);
-		expect(strip(start).classList.contains('sheetsmith-stat-group-align-start')).toBe(
+		cardSet.render(start, { ...config, sizing: 'fixed' }, { values: {} }, context);
+		expect(strip(start).classList.contains('sheetsmith-card-set-align-start')).toBe(
 			true,
 		);
 
 		const filled = document.createElement('div');
-		statGroup.render(filled, config, { values: {} }, context);
+		cardSet.render(filled, config, { values: {} }, context);
 		expect(
 			Array.from(strip(filled).classList).some((name) => name.includes('align')),
 		).toBe(false);
@@ -138,13 +138,13 @@ describe('statGroup.render', () => {
 
 	it('reads legacy align values that carried the sizing choice', () => {
 		const el = document.createElement('div');
-		statGroup.render(el, { ...config, align: 'center' }, { values: {} }, context);
-		expect(strip(el).classList.contains('sheetsmith-stat-group-align-center')).toBe(
+		cardSet.render(el, { ...config, align: 'center' }, { values: {} }, context);
+		expect(strip(el).classList.contains('sheetsmith-card-set-align-center')).toBe(
 			true,
 		);
 
 		const stretched = document.createElement('div');
-		statGroup.render(
+		cardSet.render(
 			stretched,
 			{ ...config, align: 'stretch' },
 			{ values: {} },
@@ -159,49 +159,49 @@ describe('statGroup.render', () => {
 
 	it('renders the group label, and hides it with hideLabel', () => {
 		const el = document.createElement('div');
-		statGroup.render(el, config, { values: {} }, context);
-		expect(el.querySelector('.sheetsmith-stat-group-label')?.textContent).toBe(
+		cardSet.render(el, config, { values: {} }, context);
+		expect(el.querySelector('.sheetsmith-card-set-label')?.textContent).toBe(
 			'Abilities',
 		);
 
 		const hidden = document.createElement('div');
-		statGroup.render(hidden, { ...config, hideLabel: true }, { values: {} }, context);
-		expect(hidden.querySelector('.sheetsmith-stat-group-label')).toBeNull();
+		cardSet.render(hidden, { ...config, hideLabel: true }, { values: {} }, context);
+		expect(hidden.querySelector('.sheetsmith-card-set-label')).toBeNull();
 	});
 
 	it('positions the group label, leaving the default unclassed', () => {
 		const label = (el: HTMLElement) =>
-			el.querySelector('.sheetsmith-stat-group-label') as HTMLElement;
+			el.querySelector('.sheetsmith-card-set-label') as HTMLElement;
 
 		const start = document.createElement('div');
-		statGroup.render(start, config, { values: {} }, context);
+		cardSet.render(start, config, { values: {} }, context);
 		expect(
 			Array.from(label(start).classList).some((name) => name.includes('label-')),
 		).toBe(false);
 
 		for (const position of ['center', 'end'] as const) {
 			const el = document.createElement('div');
-			statGroup.render(el, { ...config, labelAlign: position }, { values: {} }, context);
+			cardSet.render(el, { ...config, labelAlign: position }, { values: {} }, context);
 			expect(
-				label(el).classList.contains(`sheetsmith-stat-group-label-${position}`),
+				label(el).classList.contains(`sheetsmith-card-set-label-${position}`),
 			).toBe(true);
 		}
 	});
 
 	it('sits the label over the cards it heads unless told otherwise', () => {
 		const label = (el: HTMLElement) =>
-			el.querySelector('.sheetsmith-stat-group-label') as HTMLElement;
+			el.querySelector('.sheetsmith-card-set-label') as HTMLElement;
 		const centred = { ...config, sizing: 'fixed', align: 'center' } as const;
 
 		const followed = document.createElement('div');
-		statGroup.render(followed, centred, { values: {} }, context);
+		cardSet.render(followed, centred, { values: {} }, context);
 		expect(
-			label(followed).classList.contains('sheetsmith-stat-group-label-center'),
+			label(followed).classList.contains('sheetsmith-card-set-label-center'),
 		).toBe(true);
 
 		// An explicit position still wins over the cards' alignment.
 		const overridden = document.createElement('div');
-		statGroup.render(
+		cardSet.render(
 			overridden,
 			{ ...centred, labelAlign: 'start' },
 			{ values: {} },
@@ -218,46 +218,46 @@ describe('statGroup.render', () => {
 		const centred = { ...config, sizing: 'fixed', align: 'center' } as const;
 		for (const labelAlign of [undefined, 'auto'] as const) {
 			const el = document.createElement('div');
-			statGroup.render(el, { ...centred, labelAlign }, { values: {} }, context);
+			cardSet.render(el, { ...centred, labelAlign }, { values: {} }, context);
 			expect(
 				el
-					.querySelector('.sheetsmith-stat-group-label')
-					?.classList.contains('sheetsmith-stat-group-label-center'),
+					.querySelector('.sheetsmith-card-set-label')
+					?.classList.contains('sheetsmith-card-set-label-center'),
 			).toBe(true);
 		}
 	});
 
 	it('shows an empty value as a blank, not a broken formula', () => {
 		const el = document.createElement('div');
-		statGroup.render(el, config, { values: { STR: '8' } }, context);
-		const derived = el.querySelectorAll('.sheetsmith-stat-derived');
+		cardSet.render(el, config, { values: { STR: '8' } }, context);
+		const derived = el.querySelectorAll('.sheetsmith-card-derived');
 		// DEX has no value: a dash with no error styling, not "?".
 		expect(derived[1]?.textContent).toBe('—');
 		expect(
-			derived[1]?.classList.contains('sheetsmith-stat-derived-unresolved'),
+			derived[1]?.classList.contains('sheetsmith-card-derived-unresolved'),
 		).toBe(false);
 	});
 
 	it('ignores hideValue when there is no derived to show instead', () => {
 		const el = document.createElement('div');
-		statGroup.render(
+		cardSet.render(
 			el,
 			{ ...config, derived: undefined, hideValue: true },
 			{ values: { STR: '8' } },
 			context,
 		);
-		expect(el.querySelector('.sheetsmith-stat-input')).not.toBeNull();
+		expect(el.querySelector('.sheetsmith-card-input')).not.toBeNull();
 	});
 
 	it('flows vertically when configured', () => {
 		const el = document.createElement('div');
-		statGroup.render(
+		cardSet.render(
 			el,
 			{ ...config, direction: 'vertical' },
 			{ values: {} },
 			context,
 		);
-		expect(strip(el).classList.contains('sheetsmith-stat-group-vertical')).toBe(
+		expect(strip(el).classList.contains('sheetsmith-card-set-vertical')).toBe(
 			true,
 		);
 	});
@@ -267,11 +267,11 @@ describe('statGroup.render', () => {
 		// fresher edit; a delta can only ever touch its own entry.
 		const el = document.createElement('div');
 		const edits: unknown[] = [];
-		statGroup.render(el, config, { values: { STR: '8', DEX: '16', WIS: '12' } }, {
+		cardSet.render(el, config, { values: { STR: '8', DEX: '16', WIS: '12' } }, {
 			...context,
 			onChange: (data) => edits.push(data),
 		});
-		const dex = el.querySelectorAll('.sheetsmith-stat-input')[1] as HTMLInputElement;
+		const dex = el.querySelectorAll('.sheetsmith-card-input')[1] as HTMLInputElement;
 		dex.value = '18';
 		dex.dispatchEvent(new Event('blur'));
 		expect(edits).toEqual([{ values: { DEX: '18' } }]);
@@ -280,11 +280,11 @@ describe('statGroup.render', () => {
 	it('does not commit when the value is unchanged on blur', () => {
 		const el = document.createElement('div');
 		const edits: unknown[] = [];
-		statGroup.render(el, config, { values: { STR: '8', DEX: '16', WIS: '12' } }, {
+		cardSet.render(el, config, { values: { STR: '8', DEX: '16', WIS: '12' } }, {
 			...context,
 			onChange: (data) => edits.push(data),
 		});
-		const dex = el.querySelectorAll('.sheetsmith-stat-input')[1] as HTMLInputElement;
+		const dex = el.querySelectorAll('.sheetsmith-card-input')[1] as HTMLInputElement;
 		dex.dispatchEvent(new Event('blur'));
 		expect(edits).toEqual([]);
 	});
@@ -297,22 +297,22 @@ describe('statGroup.render', () => {
 
 	it('updates the derived display live while typing', () => {
 		const el = document.createElement('div');
-		statGroup.render(el, config, { values: { STR: '8', DEX: '16', WIS: '12' } }, context);
-		const dex = el.querySelectorAll('.sheetsmith-stat-input')[1] as HTMLInputElement;
+		cardSet.render(el, config, { values: { STR: '8', DEX: '16', WIS: '12' } }, context);
+		const dex = el.querySelectorAll('.sheetsmith-card-input')[1] as HTMLInputElement;
 		dex.value = '20';
 		dex.dispatchEvent(new Event('input'));
-		const derived = el.querySelectorAll('.sheetsmith-stat-derived')[1];
+		const derived = el.querySelectorAll('.sheetsmith-card-derived')[1];
 		expect(derived?.textContent).toBe('+5');
 	});
 
 	it('restores the committed value on Escape without reporting an edit', () => {
 		const el = document.createElement('div');
 		const edits: unknown[] = [];
-		statGroup.render(el, config, { values: { STR: '8', DEX: '16', WIS: '12' } }, {
+		cardSet.render(el, config, { values: { STR: '8', DEX: '16', WIS: '12' } }, {
 			...context,
 			onChange: (data) => edits.push(data),
 		});
-		const dex = el.querySelectorAll('.sheetsmith-stat-input')[1] as HTMLInputElement;
+		const dex = el.querySelectorAll('.sheetsmith-card-input')[1] as HTMLInputElement;
 		dex.value = '99';
 		dex.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
 		expect(dex.value).toBe('16');
@@ -322,16 +322,16 @@ describe('statGroup.render', () => {
 	it('steps the value with arrow keys like typing: live, committed on blur', () => {
 		const el = document.createElement('div');
 		const edits: unknown[] = [];
-		statGroup.render(el, config, { values: { STR: '8', DEX: '16', WIS: '12' } }, {
+		cardSet.render(el, config, { values: { STR: '8', DEX: '16', WIS: '12' } }, {
 			...context,
 			onChange: (data) => edits.push(data),
 		});
-		const dex = el.querySelectorAll('.sheetsmith-stat-input')[1] as HTMLInputElement;
+		const dex = el.querySelectorAll('.sheetsmith-card-input')[1] as HTMLInputElement;
 		dex.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp' }));
 		dex.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp' }));
 		expect(dex.value).toBe('18');
 		// Steps update the draft and the derived display, not the file.
-		expect(el.querySelectorAll('.sheetsmith-stat-derived')[1]?.textContent).toBe(
+		expect(el.querySelectorAll('.sheetsmith-card-derived')[1]?.textContent).toBe(
 			'+4',
 		);
 		expect(edits).toEqual([]);
@@ -341,35 +341,35 @@ describe('statGroup.render', () => {
 
 	it('marks an unresolved derived as status, distinct from an empty value', () => {
 		const el = document.createElement('div');
-		statGroup.render(el, config, { values: { STR: '8' } }, {
+		cardSet.render(el, config, { values: { STR: '8' } }, {
 			...context,
 			resolveField: () => null,
 		});
-		const derived = el.querySelector('.sheetsmith-stat-derived');
+		const derived = el.querySelector('.sheetsmith-card-derived');
 		expect(derived?.textContent).toBe('?');
 		expect(
-			derived?.classList.contains('sheetsmith-stat-derived-unresolved'),
+			derived?.classList.contains('sheetsmith-card-derived-unresolved'),
 		).toBe(true);
 	});
 
 	it('hides inputs but keeps modifiers with hideValue', () => {
 		const el = document.createElement('div');
-		statGroup.render(
+		cardSet.render(
 			el,
 			{ ...config, hideValue: true },
 			{ values: { STR: '8' } },
 			context,
 		);
-		expect(el.querySelector('.sheetsmith-stat-input')).toBeNull();
-		expect(el.querySelector('.sheetsmith-stat-derived')?.textContent).toBe(
+		expect(el.querySelector('.sheetsmith-card-input')).toBeNull();
+		expect(el.querySelector('.sheetsmith-card-derived')?.textContent).toBe(
 			'-1',
 		);
 	});
 });
 
-describe('statGroup.scopeValues', () => {
-	it('publishes one name per attribute, for `abilities.DEX`', () => {
-		const published = statGroup.scopeValues?.(
+describe('cardSet.scopeValues', () => {
+	it('publishes one name per entry, for `abilities.DEX`', () => {
+		const published = cardSet.scopeValues?.(
 			{ values: { STR: '8', DEX: '16', WIS: '12' } },
 			config,
 		);
@@ -382,7 +382,7 @@ describe('statGroup.scopeValues', () => {
 	});
 
 	it('publishes the score alone when the group derives nothing', () => {
-		const published = statGroup.scopeValues?.({ values: { STR: '8' } }, {
+		const published = cardSet.scopeValues?.({ values: { STR: '8' } }, {
 			...config,
 			derived: undefined,
 		});
@@ -390,9 +390,9 @@ describe('statGroup.scopeValues', () => {
 	});
 
 	it('publishes only what the layout declares', () => {
-		// An entry no attribute maps to does not render, so a formula must
+		// An entry the layout does not declare does not render, so a formula must
 		// not be able to reach it either.
-		const published = statGroup.scopeValues?.(
+		const published = cardSet.scopeValues?.(
 			{ values: { STR: '8', LUCK: '3' } },
 			config,
 		);
@@ -400,17 +400,17 @@ describe('statGroup.scopeValues', () => {
 	});
 
 	it('publishes nothing when the section is missing', () => {
-		const published = statGroup.scopeValues?.(null, config);
+		const published = cardSet.scopeValues?.(null, config);
 		expect(published?.named?.STR?.value).toBeUndefined();
 	});
 });
 
-describe('statGroup contract', () => {
+describe('cardSet contract', () => {
 	it('declares fenced storage, formula fields, and config fields', () => {
-		expect(statGroup.storage).toBe('fenced');
-		expect(statGroup.formulaFields).toEqual(['derived']);
-		expect(statGroup.configFields.map((field) => field.key)).toEqual([
-			'attributes',
+		expect(cardSet.storage).toBe('fenced');
+		expect(cardSet.formulaFields).toEqual(['derived']);
+		expect(cardSet.configFields.map((field) => field.key)).toEqual([
+			'entries',
 			'derived',
 			'direction',
 			'sizing',
@@ -420,7 +420,7 @@ describe('statGroup contract', () => {
 			'hideValue',
 			'signed',
 		]);
-		const align = statGroup.configFields.find((field) => field.key === 'align');
+		const align = cardSet.configFields.find((field) => field.key === 'align');
 		expect(align?.visibleWhen).toEqual({ key: 'sizing', equals: 'fixed' });
 	});
 
@@ -431,7 +431,7 @@ describe('statGroup contract', () => {
 		// the cards do", that needs its own name: without one, picking
 		// "start" deletes the key and renders as auto, and the dropdown goes
 		// on reading "start" while the sheet disagrees.
-		const labelAlign = statGroup.configFields.find(
+		const labelAlign = cardSet.configFields.find(
 			(field) => field.key === 'labelAlign',
 		);
 		expect(labelAlign?.options?.[0]).toBe('auto');
@@ -439,14 +439,14 @@ describe('statGroup contract', () => {
 		// Every other select's first option is already its absent-key
 		// behaviour, so each remaining choice stores a value of its own.
 		expect(
-			statGroup.configFields.find((field) => field.key === 'direction')
+			cardSet.configFields.find((field) => field.key === 'direction')
 				?.options?.[0],
 		).toBe('horizontal');
 		expect(
-			statGroup.configFields.find((field) => field.key === 'sizing')?.options?.[0],
+			cardSet.configFields.find((field) => field.key === 'sizing')?.options?.[0],
 		).toBe('fill');
 		expect(
-			statGroup.configFields.find((field) => field.key === 'align')?.options?.[0],
+			cardSet.configFields.find((field) => field.key === 'align')?.options?.[0],
 		).toBe('start');
 	});
 });

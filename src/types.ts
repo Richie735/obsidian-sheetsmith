@@ -152,7 +152,7 @@ export interface ConfigFieldSpec {
 	 * Input kind. 'formula' is a text field holding an expression; 'text-list'
 	 * is an ordered list of plain strings, edited as one comma-separated field
 	 * and stored as an array; the last four are ordered lists the editor
-	 * renders as a table of their own — 'attributes' of { key, name? },
+	 * renders as a table of their own — 'entries' of { key, name? },
 	 * 'track-rows' of { key, name?, count?, sense? }, 'rows' of { label, values? },
 	 * and 'columns' of typed column definitions.
 	 */
@@ -163,7 +163,7 @@ export interface ConfigFieldSpec {
 		| 'formula'
 		| 'select'
 		| 'text-list'
-		| 'attributes'
+		| 'entries'
 		| 'track-rows'
 		| 'rows'
 		| 'columns';
@@ -290,7 +290,7 @@ type ScopeEntrySource =
 	| {
 			/**
 			 * The formula field producing the displayed value, and the internal
-			 * scope to run it in (one attribute's own `value`, later a table row).
+			 * scope to run it in (one entry's own `value`, later a table row).
 			 * Evaluated lazily, because it may reference other components.
 			 */
 			display?: {
@@ -329,7 +329,7 @@ export type ScopeEntry = {
  *
  * `self` is referenced by the bare component id — an armour class is just
  * `armour_class`. `named` entries are referenced as `<id>.<name>`, which is
- * how a group of attributes exposes each one: `abilities.DEX`.
+ * how a group of entries exposes each one: `abilities.DEX`.
  */
 export interface ScopeValues {
 	self?: ScopeEntry;
@@ -749,7 +749,7 @@ export function isContainer(
  * them.
  *
  * **One predicate because five components had to remember this and one bug is one
- * of them forgetting.** Group honoured `parentShowsLabel` and Stat, Stat group,
+ * of them forgetting.** Group honoured `parentShowsLabel` and Card, Card set,
  * Pool, Track and Table did not, so a Table tab drew its heading under a strip
  * that had just named it — in a different type treatment, which reads as an
  * accident rather than a repeat. Enumerating the obligation in five files is how
@@ -758,7 +758,7 @@ export function isContainer(
  *
  * **Only the visible label.** An `aria-label`, a `title` and a status message are
  * not this: they name a control for someone who cannot see the strip, so they
- * stay in every case. `stat-card.ts` has said so about its own `hideTitle` since
+ * stay in every case. `card-face.ts` has said so about its own `hideTitle` since
  * before there were containers.
  */
 export function showsOwnLabel(

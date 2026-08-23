@@ -1,5 +1,5 @@
 /*
- * Stat — one named value on a single card (SPEC §4.2). Covers armour class,
+ * Card — one named value on a single card (SPEC §4.2). Covers armour class,
  * initiative, speed, passive perception: the standalone numbers a sheet is
  * littered with, each with a qualifier the number itself cannot carry
  * ("chain mail, shield", "ft.").
@@ -18,7 +18,7 @@ import {
 	ScopeValues,
 	showsOwnLabel,
 } from '../types';
-import { renderStatCard, toDerived } from './stat-card';
+import { renderCardFace, toDerived } from './card-face';
 
 /**
  * SPEC §3.1: single-value components store their value under `value`, so
@@ -31,8 +31,8 @@ const DEFAULT_KEY = 'value';
 /** Entry holding the note line. Fixed, so no configured key can collide. */
 const NOTE_KEY = 'note';
 
-export interface StatConfig extends ComponentConfig {
-	type: 'stat';
+export interface CardConfig extends ComponentConfig {
+	type: 'card';
 	/** Entry key in the fenced block. Defaults to `value`. Never displayed. */
 	key?: string;
 	/** Formula computed from the stored value, which it reads as `value`. */
@@ -46,7 +46,7 @@ export interface StatConfig extends ComponentConfig {
 	signed?: boolean;
 }
 
-export interface StatData {
+export interface CardData {
 	/**
 	 * Raw stored value. Absent means "not part of this change": an edit is
 	 * reported as a delta of the one field the user touched, so a commit
@@ -62,7 +62,7 @@ export interface StatData {
  * checks guard the file format rather than taste: a colon is what separates
  * key from value in the block, and `note` is already spoken for.
  */
-function valueKey(config: StatConfig): { key: string } | { error: string } {
+function valueKey(config: CardConfig): { key: string } | { error: string } {
 	const key = (config.key ?? '').trim();
 	if (key === '') return { key: DEFAULT_KEY };
 	if (/[:\r\n]/.test(key)) {
@@ -76,8 +76,8 @@ function valueKey(config: StatConfig): { key: string } | { error: string } {
 	return { key };
 }
 
-export const stat: ComponentDefinition<StatConfig, StatData> = {
-	type: 'stat',
+export const card: ComponentDefinition<CardConfig, CardData> = {
+	type: 'card',
 	storage: 'fenced',
 	formulaFields: ['derived'],
 	configFields: [
@@ -137,14 +137,14 @@ export const stat: ComponentDefinition<StatConfig, StatData> = {
 		},
 	],
 
-	read(body, config): ReadResult<StatData> {
+	read(body, config): ReadResult<CardData> {
 		const entry = valueKey(config);
 		if ('error' in entry) return { ok: false, error: entry.error };
 		const parsed = readFenced(body);
 		if (!parsed.ok) return parsed;
 		// No fence yet: an editable empty card, not an error.
 		if (parsed.values === null) return { ok: true, data: null };
-		const data: StatData = {};
+		const data: CardData = {};
 		const value = parsed.values.get(entry.key);
 		if (value !== undefined) data.value = value;
 		const note = parsed.values.get(NOTE_KEY);
@@ -154,7 +154,7 @@ export const stat: ComponentDefinition<StatConfig, StatData> = {
 	},
 
 	scopeValues(data, config): ScopeValues {
-		// A Stat is one value, so it answers to its bare id: `armour_class`,
+		// A Card is one value, so it answers to its bare id: `armour_class`,
 		// carrying what the card shows. The configured key names the entry
 		// in the file, not the reference — a formula should not have to know
 		// how the note is spelled.
@@ -196,9 +196,9 @@ export const stat: ComponentDefinition<StatConfig, StatData> = {
 			return;
 		}
 
-		const card = doc.createElement('div');
-		card.classList.add('sheetsmith-stat-single');
-		container.appendChild(card);
+		const face = doc.createElement('div');
+		face.classList.add('sheetsmith-card-single');
+		container.appendChild(face);
 
 		const signed = config.signed !== false;
 		// Hiding the value only makes sense when a derived remains to show;
@@ -221,7 +221,7 @@ export const stat: ComponentDefinition<StatConfig, StatData> = {
 			);
 		};
 
-		renderStatCard(card, {
+		renderCardFace(face, {
 			title: config.label,
 			// The strip of a container showing one child at a time has already
 			// named this card, so the title goes while the accessible name stays.

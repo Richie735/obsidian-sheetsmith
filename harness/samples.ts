@@ -31,10 +31,10 @@ export const SAMPLES: Sample[] = [
 	{
 		config: {
 			id: 'abilities',
-			type: 'stat-group',
+			type: 'card-set',
 			label: 'Abilities',
 			position: { col: 1, row: 1, width: 12, height: 1 },
-			attributes: [
+			entries: [
 				{ key: 'STR', name: 'Strength' },
 				{ key: 'DEX', name: 'Dexterity' },
 				{ key: 'CON', name: 'Constitution' },
@@ -49,7 +49,7 @@ export const SAMPLES: Sample[] = [
 	{
 		config: {
 			id: 'armour_class',
-			type: 'stat',
+			type: 'card',
 			label: 'Armour class',
 			position: { col: 1, row: 2, width: 2, height: 1 },
 			key: 'AC',
@@ -62,7 +62,7 @@ export const SAMPLES: Sample[] = [
 	{
 		config: {
 			id: 'passive_perception',
-			type: 'stat',
+			type: 'card',
 			label: 'Passive perception',
 			position: { col: 3, row: 2, width: 2, height: 1 },
 			// Nothing stored: the number is the skills card's own Perception
@@ -209,7 +209,7 @@ export const SAMPLES: Sample[] = [
 	{
 		config: {
 			id: 'encumbrance',
-			type: 'stat',
+			type: 'card',
 			label: 'Weight carried',
 			position: { col: 1, row: 7, width: 3, height: 1 },
 			// Quantity times weight summed down the list, over rows the layout
@@ -224,7 +224,7 @@ export const SAMPLES: Sample[] = [
 	{
 		config: {
 			id: 'worn_weight',
-			type: 'stat',
+			type: 'card',
 			label: 'Weight worn',
 			position: { col: 4, row: 7, width: 3, height: 1 },
 			derived: 'sum(inventory, Weight, Worn)',
@@ -237,7 +237,7 @@ export const SAMPLES: Sample[] = [
 	{
 		config: {
 			id: 'worn_count',
-			type: 'stat',
+			type: 'card',
 			label: 'Things worn',
 			position: { col: 7, row: 7, width: 3, height: 1 },
 			// count() rather than sum(), because a toggle cell is true to a
@@ -251,8 +251,8 @@ export const SAMPLES: Sample[] = [
 	},
 	/*
 	 * A container holding containers, which is as deep as a layout may go: the
-	 * six-up "stat beside its skills" arrangement in miniature, an outer Group
-	 * of Groups each holding a Stat and a Table.
+	 * six-up "card beside its skills" arrangement in miniature, an outer Group
+	 * of Groups each holding a Card and a Table.
 	 *
 	 * Two things to watch. The inner groups sit on the outer group's own grid,
 	 * so a card inside lines up column for column with a card outside it at the
@@ -284,7 +284,7 @@ export const SAMPLES: Sample[] = [
 						 */
 						{
 							id: 'weapon_bonus',
-							type: 'stat',
+							type: 'card',
 							label: 'Attack bonus',
 							position: { col: 1, row: 1, width: 2, height: 1 },
 							// Reads a card two containers away, which is the
@@ -297,7 +297,7 @@ export const SAMPLES: Sample[] = [
 						},
 						{
 							id: 'weapon_damage',
-							type: 'stat',
+							type: 'card',
 							label: 'Damage bonus',
 							position: { col: 3, row: 1, width: 2, height: 1 },
 							derived: 'abilities.STR',
@@ -336,7 +336,7 @@ export const SAMPLES: Sample[] = [
 					children: [
 						{
 							id: 'tool_bonus',
-							type: 'stat',
+							type: 'card',
 							label: 'Tool bonus',
 							position: { col: 1, row: 1, width: 4, height: 1 },
 							derived: '2 + abilities.INT',
@@ -397,7 +397,7 @@ export const SAMPLES: Sample[] = [
 			children: [
 				{
 					id: 'origin',
-					type: 'stat',
+					type: 'card',
 					label: 'Origin',
 					position: { col: 1, row: 1, width: 4, height: 1 },
 					key: 'origin',
@@ -427,7 +427,7 @@ export const SAMPLES: Sample[] = [
 			id: 'attack_count',
 			// Labels key note sections, so this cannot be "Attacks": the table
 			// beside it already is.
-			type: 'stat',
+			type: 'card',
 			label: 'Attacks known',
 			position: { col: 10, row: 7, width: 3, height: 1 },
 			// Over the card that declares no rows at all: every row is the
@@ -478,7 +478,7 @@ export const SAMPLES: Sample[] = [
 					children: [
 						{
 							id: 'tab_attack',
-							type: 'stat',
+							type: 'card',
 							// Not "Attack bonus": the Weapons group already has one,
 							// and a label keys a note section so the whole layout
 							// shares one namespace. The settings tab refuses a
@@ -494,7 +494,7 @@ export const SAMPLES: Sample[] = [
 						},
 						{
 							id: 'tab_defence',
-							type: 'stat',
+							type: 'card',
 							label: 'Defence',
 							derived: '10 + abilities.DEX',
 							hideValue: true,
@@ -607,7 +607,7 @@ export const SAMPLES: Sample[] = [
 	{
 		config: {
 			id: 'inspired_bonus',
-			type: 'stat',
+			type: 'card',
 			label: 'Inspired bonus',
 			position: { col: 10, row: 15, width: 3, height: 1 },
 			// A flag publishes a boolean, which is what Toggle promised and what
@@ -628,15 +628,15 @@ export const SAMPLES: Sample[] = [
 	{
 		config: {
 			id: 'currency',
-			type: 'stat-group',
+			type: 'card-set',
 			label: 'Currency',
 			position: { col: 1, row: 16, width: 5, height: 1 },
 			// What the Currency entry writes. The card with **no** `derived` is
 			// the path this covers: Abilities above carries one, so until this
-			// existed nothing in the harness drew a stat card that is a name and
+			// existed nothing in the harness drew a card that is a name and
 			// a number with no modifier line under it — which is every card this
 			// entry produces.
-			attributes: [
+			entries: [
 				{ key: 'CP', name: 'Copper' },
 				{ key: 'SP', name: 'Silver' },
 				{ key: 'EP', name: 'Electrum' },
@@ -682,7 +682,7 @@ export const SAMPLES: Sample[] = [
 	{
 		config: {
 			id: 'tab_witness',
-			type: 'stat',
+			type: 'card',
 			label: 'Ki from a hidden tab',
 			derived: 'tab_ki',
 			hideValue: true,
@@ -728,7 +728,7 @@ export function brokenSamples(): Sample[] {
 			config.children = [
 				{
 					id: 'stranded',
-					type: 'stat',
+					type: 'card',
 					label: 'Stranded card',
 					position: { col: 1, row: 1, width: 3, height: 1 },
 				},
@@ -741,19 +741,19 @@ export function brokenSamples(): Sample[] {
 		// the component holds no rows rather than that it does not exist.
 		if (config.id === 'encumbrance') {
 			config.derived = 'sum(inventroy, Qty * Weight)';
-		} else if (sample.config.type === 'stat' && config.key !== undefined) {
+		} else if (sample.config.type === 'card' && config.key !== undefined) {
 			// A key holding a colon is refused by every fenced component,
 			// because a colon is what separates key from value in the block.
 			//
-			// **Only a stat that already has one**, and the narrowing is a
+			// **Only a card that already has one**, and the narrowing is a
 			// decision rather than a side effect of the readouts arriving. It
-			// used to break every stat, which put five copies of one config
+			// used to break every card, which put five copies of one config
 			// error on a view whose whole job is showing the error states side by
 			// side — and none of the derived-only cards could then show the
-			// other state a Stat has, a formula that will not resolve. Now
+			// other state a Card has, a formula that will not resolve. Now
 			// `armour_class` carries the config error and the five keyless cards
 			// show `?`, so both states are on screen at once instead of one of
-			// them five times. Adding a keyless stat therefore adds a `?` here,
+			// them five times. Adding a keyless card therefore adds a `?` here,
 			// which is the intent; taking the last keyed one away would lose the
 			// config error, and that is what to watch for.
 			config.key = 'bad:key';

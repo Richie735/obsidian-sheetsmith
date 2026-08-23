@@ -1,11 +1,11 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { stat, StatConfig } from './stat';
+import { card, CardConfig } from './card';
 import { FieldValue, RenderContext } from '../types';
 
-const config: StatConfig = {
+const config: CardConfig = {
 	id: 'armour-class',
-	type: 'stat',
+	type: 'card',
 	label: 'Armour class',
 	position: { col: 1, row: 1, width: 2, height: 1 },
 	key: 'AC',
@@ -31,23 +31,23 @@ const context: RenderContext = {
 };
 
 const render = (
-	overrides: Partial<StatConfig> = {},
+	overrides: Partial<CardConfig> = {},
 	data: { value?: string; note?: string } | null = { value: '15' },
 	ctx: Partial<RenderContext> = {},
 ) => {
 	const el = document.createElement('div');
-	stat.render(el, { ...config, ...overrides }, data, { ...context, ...ctx });
+	card.render(el, { ...config, ...overrides }, data, { ...context, ...ctx });
 	return el;
 };
 
 const inputs = (el: HTMLElement) => ({
-	value: el.querySelector<HTMLInputElement>('.sheetsmith-stat-input'),
-	note: el.querySelector<HTMLInputElement>('.sheetsmith-stat-note-input'),
+	value: el.querySelector<HTMLInputElement>('.sheetsmith-card-input'),
+	note: el.querySelector<HTMLInputElement>('.sheetsmith-card-note-input'),
 });
 
-describe('stat.read', () => {
+describe('card.read', () => {
 	it('reads the value under the configured key, and the note', () => {
-		expect(stat.read(BODY, config)).toEqual({
+		expect(card.read(BODY, config)).toEqual({
 			ok: true,
 			data: { value: '15', note: 'chain mail, shield' },
 		});
@@ -55,14 +55,14 @@ describe('stat.read', () => {
 
 	it('defaults to the "value" key when the layout names none', () => {
 		const { key: _key, ...unkeyed } = config;
-		expect(stat.read('\n```sheet\nvalue: 30\n```\n', unkeyed as StatConfig)).toEqual({
+		expect(card.read('\n```sheet\nvalue: 30\n```\n', unkeyed as CardConfig)).toEqual({
 			ok: true,
 			data: { value: '30' },
 		});
 	});
 
 	it('treats a section with no sheet block as empty, not malformed', () => {
-		expect(stat.read('\nProse only.\n', config)).toEqual({
+		expect(card.read('\nProse only.\n', config)).toEqual({
 			ok: true,
 			data: null,
 		});
@@ -70,46 +70,46 @@ describe('stat.read', () => {
 
 	it('reports a key it cannot store, rather than writing a broken block', () => {
 		for (const key of ['a: b', 'note']) {
-			const result = stat.read(BODY, { ...config, key });
+			const result = card.read(BODY, { ...config, key });
 			expect(result.ok).toBe(false);
 		}
 	});
 
 	it('leaves entries under other keys alone', () => {
 		const body = '\n```sheet\nAC: 15\nLUCK: 3\n```\n';
-		const read = stat.read(body, config);
+		const read = card.read(body, config);
 		if (!read.ok || read.data === null) throw new Error('expected data');
-		expect(stat.write(read.data, body, config)).toBe(body);
+		expect(card.write(read.data, body, config)).toBe(body);
 	});
 });
 
-describe('stat.write', () => {
+describe('card.write', () => {
 	it('round-trips unchanged data byte for byte', () => {
-		const read = stat.read(BODY, config);
+		const read = card.read(BODY, config);
 		if (!read.ok || read.data === null) throw new Error('expected data');
-		expect(stat.write(read.data, BODY, config)).toBe(BODY);
+		expect(card.write(read.data, BODY, config)).toBe(BODY);
 	});
 
 	it('rewrites only the field the edit reported', () => {
-		expect(stat.write({ value: '17' }, BODY, config)).toBe(
+		expect(card.write({ value: '17' }, BODY, config)).toBe(
 			BODY.replace('AC: 15', 'AC: 17'),
 		);
-		expect(stat.write({ note: 'plate' }, BODY, config)).toBe(
+		expect(card.write({ note: 'plate' }, BODY, config)).toBe(
 			BODY.replace('note: chain mail, shield', 'note: plate'),
 		);
 	});
 
 	it('creates a fresh section body when none exists', () => {
-		expect(stat.write({ value: '15' }, null, config)).toBe(
+		expect(card.write({ value: '15' }, null, config)).toBe(
 			'\n```sheet\nAC: 15\n```\n',
 		);
 	});
 });
 
-describe('stat.render', () => {
+describe('card.render', () => {
 	it('shows the label, the value, and the note', () => {
 		const el = render({}, { value: '15', note: 'chain mail' });
-		expect(el.querySelector('.sheetsmith-stat-label')?.textContent).toBe(
+		expect(el.querySelector('.sheetsmith-card-label')?.textContent).toBe(
 			'Armour class',
 		);
 		expect(inputs(el).value?.value).toBe('15');
@@ -119,18 +119,18 @@ describe('stat.render', () => {
 	it('never shows the key, and reserves no slot for it', () => {
 		const el = render();
 		expect(el.textContent).not.toContain('AC');
-		expect(el.querySelector('.sheetsmith-stat-abbreviation')).toBeNull();
+		expect(el.querySelector('.sheetsmith-card-abbreviation')).toBeNull();
 	});
 
 	it('hides the label on request, keeping it as the accessible name', () => {
 		const el = render({ hideLabel: true });
-		expect(el.querySelector('.sheetsmith-stat-label')).toBeNull();
+		expect(el.querySelector('.sheetsmith-card-label')).toBeNull();
 		expect(inputs(el).value?.getAttribute('aria-label')).toBe('Armour class');
 	});
 
 	it('computes the derived value, and updates it live while typing', () => {
 		const el = render({ derived: '10 + value' });
-		const derived = el.querySelector('.sheetsmith-stat-derived');
+		const derived = el.querySelector('.sheetsmith-card-derived');
 		expect(derived?.textContent).toBe('+25');
 		const value = inputs(el).value as HTMLInputElement;
 		value.value = '5';
@@ -140,10 +140,10 @@ describe('stat.render', () => {
 
 	it('shows an empty value as a blank, not a broken formula', () => {
 		const el = render({ derived: '10 + value' }, null);
-		const derived = el.querySelector('.sheetsmith-stat-derived');
+		const derived = el.querySelector('.sheetsmith-card-derived');
 		expect(derived?.textContent).toBe('—');
 		expect(
-			derived?.classList.contains('sheetsmith-stat-derived-unresolved'),
+			derived?.classList.contains('sheetsmith-card-derived-unresolved'),
 		).toBe(false);
 	});
 
@@ -223,14 +223,14 @@ describe('stat.render', () => {
 	it('reports a key it cannot store, even with no section to read', () => {
 		const el = render({ key: 'note' }, null);
 		expect(el.querySelector('.sheetsmith-error')).not.toBeNull();
-		expect(el.querySelector('.sheetsmith-stat')).toBeNull();
+		expect(el.querySelector('.sheetsmith-card')).toBeNull();
 	});
 
 	it('promises an edit only when it has one to give', () => {
 		const editable = (el: HTMLElement) =>
 			el
-				.querySelector('.sheetsmith-stat')
-				?.classList.contains('sheetsmith-stat-editable');
+				.querySelector('.sheetsmith-card')
+				?.classList.contains('sheetsmith-card-editable');
 		expect(editable(render())).toBe(true);
 		// No value and no note: the card is a read-only display, and must
 		// not wear a text cursor over a hit target that does nothing.
@@ -247,7 +247,7 @@ describe('stat.render', () => {
 	});
 });
 
-describe('stat.render: drafts in flight', () => {
+describe('card.render: drafts in flight', () => {
 	afterEach(() => {
 		vi.useRealTimers();
 	});
@@ -255,7 +255,7 @@ describe('stat.render: drafts in flight', () => {
 	it('holds the last resolved display while a draft cannot resolve', () => {
 		vi.useFakeTimers();
 		const el = render({ derived: '10 + value' });
-		const derived = el.querySelector('.sheetsmith-stat-derived');
+		const derived = el.querySelector('.sheetsmith-card-derived');
 		const value = inputs(el).value as HTMLInputElement;
 		expect(derived?.textContent).toBe('+25');
 
@@ -264,7 +264,7 @@ describe('stat.render: drafts in flight', () => {
 		value.dispatchEvent(new Event('input'));
 		expect(derived?.textContent).toBe('+25');
 		expect(
-			derived?.classList.contains('sheetsmith-stat-derived-unresolved'),
+			derived?.classList.contains('sheetsmith-card-derived-unresolved'),
 		).toBe(false);
 
 		// Finish the number before the delay is up: nothing ever flashed.
@@ -281,7 +281,7 @@ describe('stat.render: drafts in flight', () => {
 		const el = render({ derived: '10 + value' }, { value: '15' }, {
 			resolveField: () => null,
 		});
-		const derived = el.querySelector('.sheetsmith-stat-derived');
+		const derived = el.querySelector('.sheetsmith-card-derived');
 		const value = inputs(el).value as HTMLInputElement;
 		value.value = 'wat';
 		value.dispatchEvent(new Event('input'));
@@ -290,7 +290,7 @@ describe('stat.render: drafts in flight', () => {
 		vi.advanceTimersByTime(300);
 		expect(derived?.textContent).toBe('?');
 		expect(
-			derived?.classList.contains('sheetsmith-stat-derived-unresolved'),
+			derived?.classList.contains('sheetsmith-card-derived-unresolved'),
 		).toBe(true);
 	});
 
@@ -310,7 +310,7 @@ describe('stat.render: drafts in flight', () => {
 	});
 });
 
-describe('stat.render: keyboard', () => {
+describe('card.render: keyboard', () => {
 	const press = (input: HTMLInputElement, key: string, shiftKey = false) =>
 		input.dispatchEvent(new KeyboardEvent('keydown', { key, shiftKey }));
 
@@ -321,7 +321,7 @@ describe('stat.render: keyboard', () => {
 		expect(value.value).toBe('1');
 	});
 
-	it('steps by ten with shift, for the stats that move in tens', () => {
+	it('steps by ten with shift, for the numbers that move in tens', () => {
 		const el = render();
 		const value = inputs(el).value as HTMLInputElement;
 		press(value, 'ArrowUp', true);
@@ -368,7 +368,7 @@ describe('stat.render: keyboard', () => {
 	});
 });
 
-describe('stat.render: hit target', () => {
+describe('card.render: hit target', () => {
 	/** happy-dom reports zero rects; the card routes clicks by geometry. */
 	const stubRect = (el: HTMLElement, top: number, height: number) => {
 		el.getBoundingClientRect = () => ({
@@ -386,7 +386,7 @@ describe('stat.render: hit target', () => {
 
 	it('routes a click to the nearest field, not always to the value', () => {
 		const el = render({}, { value: '15', note: 'chain mail' });
-		const card = el.querySelector('.sheetsmith-stat') as HTMLElement;
+		const card = el.querySelector('.sheetsmith-card') as HTMLElement;
 		const { value, note } = inputs(el);
 		if (!value || !note) throw new Error('expected both fields');
 		stubRect(value, 0, 20);
@@ -403,15 +403,15 @@ describe('stat.render: hit target', () => {
 	});
 });
 
-describe('stat.scopeValues', () => {
+describe('card.scopeValues', () => {
 	it('publishes its stored value under the bare component id', () => {
-		expect(stat.scopeValues?.({ value: '18' }, config)).toEqual({
+		expect(card.scopeValues?.({ value: '18' }, config)).toEqual({
 			self: { value: '18', display: undefined },
 		});
 	});
 
 	it('publishes the derived display when the card computes one', () => {
-		const published = stat.scopeValues?.(
+		const published = card.scopeValues?.(
 			{ value: '18' },
 			{ ...config, derived: '10 + value' },
 		);
@@ -424,21 +424,21 @@ describe('stat.scopeValues', () => {
 	});
 
 	it('publishes nothing it cannot store, and nothing it does not have', () => {
-		expect(stat.scopeValues?.(null, config)?.self?.value).toBeUndefined();
-		expect(stat.scopeValues?.({ value: '18' }, { ...config, key: 'note' })).toEqual(
+		expect(card.scopeValues?.(null, config)?.self?.value).toBeUndefined();
+		expect(card.scopeValues?.({ value: '18' }, { ...config, key: 'note' })).toEqual(
 			{},
 		);
 	});
 
 	it('does not publish the note: prose is not a value to compute with', () => {
-		const published = stat.scopeValues?.({ value: '18', note: 'plate' }, config);
+		const published = card.scopeValues?.({ value: '18', note: 'plate' }, config);
 		expect(JSON.stringify(published)).not.toContain('plate');
 	});
 });
 
-describe('stat.render: computed from elsewhere on the sheet', () => {
+describe('card.render: computed from elsewhere on the sheet', () => {
 	// "AC is 10 + the Dex modifier": nothing stored on this card at all.
-	const computed: StatConfig = {
+	const computed: CardConfig = {
 		...config,
 		derived: '10 + floor((abilities.DEX - 10) / 2)',
 		signed: false,
@@ -450,7 +450,7 @@ describe('stat.render: computed from elsewhere on the sheet', () => {
 
 	it('shows the number with no value of its own to compute from', () => {
 		const el = render(computed, null, { resolveField: fromSheet });
-		expect(el.querySelector('.sheetsmith-stat-derived')?.textContent).toBe('16');
+		expect(el.querySelector('.sheetsmith-card-derived')?.textContent).toBe('16');
 		// A computed value is read-only (SPEC §5); there is no field to edit.
 		expect(inputs(el).value).toBeNull();
 	});
@@ -460,19 +460,19 @@ describe('stat.render: computed from elsewhere on the sheet', () => {
 		// reads only other components is not waiting on this card, so it
 		// must not be blanked by an empty one.
 		const el = render(computed, { value: '' }, { resolveField: fromSheet });
-		expect(el.querySelector('.sheetsmith-stat-derived')?.textContent).toBe('16');
+		expect(el.querySelector('.sheetsmith-card-derived')?.textContent).toBe('16');
 	});
 
 	it('still blanks a formula that does read its own empty value', () => {
 		const el = render({ ...computed, derived: '10 + value' }, null, {
 			resolveField: fromSheet,
 		});
-		expect(el.querySelector('.sheetsmith-stat-derived')?.textContent).toBe('—');
+		expect(el.querySelector('.sheetsmith-card-derived')?.textContent).toBe('—');
 	});
 });
 
-describe('stat.render: why a formula failed', () => {
-	const broken: Partial<StatConfig> = { derived: 'mod(value, 2)' };
+describe('card.render: why a formula failed', () => {
+	const broken: Partial<CardConfig> = { derived: 'mod(value, 2)' };
 	const failing = () => null;
 
 	it('hovers the reason, not the fact', () => {
@@ -483,14 +483,14 @@ describe('stat.render: why a formula failed', () => {
 			resolveField: failing,
 			explainField: () => 'mod() takes 1 argument, got 2.',
 		});
-		const derived = el.querySelector('.sheetsmith-stat-derived');
+		const derived = el.querySelector('.sheetsmith-card-derived');
 		expect(derived?.textContent).toBe('?');
 		expect(derived?.getAttribute('title')).toBe('mod() takes 1 argument, got 2.');
 	});
 
 	it('falls back when nothing can explain it', () => {
 		const el = render(broken, { value: '15' }, { resolveField: failing });
-		expect(el.querySelector('.sheetsmith-stat-derived')?.getAttribute('title')).toBe(
+		expect(el.querySelector('.sheetsmith-card-derived')?.getAttribute('title')).toBe(
 			'The formula did not resolve.',
 		);
 	});
@@ -504,17 +504,17 @@ describe('stat.render: why a formula failed', () => {
 			},
 		});
 		expect(asked).toBe(0);
-		expect(el.querySelector('.sheetsmith-stat-derived')?.hasAttribute('title')).toBe(
+		expect(el.querySelector('.sheetsmith-card-derived')?.hasAttribute('title')).toBe(
 			false,
 		);
 	});
 });
 
-describe('stat contract', () => {
+describe('card contract', () => {
 	it('declares fenced storage, formula fields, and config fields', () => {
-		expect(stat.storage).toBe('fenced');
-		expect(stat.formulaFields).toEqual(['derived']);
-		expect(stat.configFields.map((field) => field.key)).toEqual([
+		expect(card.storage).toBe('fenced');
+		expect(card.formulaFields).toEqual(['derived']);
+		expect(card.configFields.map((field) => field.key)).toEqual([
 			'key',
 			'derived',
 			'notePlaceholder',

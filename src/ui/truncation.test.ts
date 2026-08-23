@@ -25,7 +25,7 @@ describe('revealWhenTruncated', () => {
 
 	it('says nothing where the text already fits', () => {
 		// A tooltip repeating something fully legible is noise fired at every
-		// pass, which is what the stat card's label learned.
+		// pass, which is what the card's label learned.
 		const el = sized(100, 100, 'Dagger');
 		revealWhenTruncated(el);
 		el.dispatchEvent(new Event('pointerenter'));

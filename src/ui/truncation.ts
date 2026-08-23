@@ -4,7 +4,7 @@
  * Two rules pull against each other on a sheet. Anything ellipsised has to stay
  * readable somehow, or a clipped value reads as damaged data rather than as
  * truncation (`UI.md` §12). And a tooltip repeating a value that is already
- * fully legible is noise fired at every pass, which is what the stat card's label
+ * fully legible is noise fired at every pass, which is what the card's label
  * learned when a row of wide cards popped one on every crossing.
  *
  * Both are satisfied by deciding late: on hover, when the text has been laid out

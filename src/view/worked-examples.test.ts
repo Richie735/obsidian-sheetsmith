@@ -32,21 +32,21 @@ const LAYOUT = JSON.stringify({
 	components: [
 		{
 			id: 'level',
-			type: 'stat',
+			type: 'card',
 			label: 'Level',
 			position: { col: 1, row: 1, width: 1, height: 1 },
 		},
 		{
 			id: 'abilities',
-			type: 'stat-group',
+			type: 'card-set',
 			label: 'Abilities',
 			position: { col: 2, row: 1, width: 4, height: 1 },
-			attributes: [{ key: 'STR' }, { key: 'DEX' }],
+			entries: [{ key: 'STR' }, { key: 'DEX' }],
 			derived: 'mod(value)',
 		},
 		{
 			id: 'spell_dc',
-			type: 'stat',
+			type: 'card',
 			label: 'Spell save DC',
 			position: { col: 1, row: 2, width: 2, height: 1 },
 			derived: '8 + prof + mod(abilities.DEX.value)',
@@ -126,7 +126,7 @@ describe('a 5e layout with its own function library', () => {
 	});
 
 	it('computes each ability modifier through mod()', () => {
-		// One formula, `mod(value)`, run per attribute — and the arithmetic
+		// One formula, `mod(value)`, run per entry — and the arithmetic
 		// behind it belongs to the layout, not the plugin.
 		expect(sheet('abilities.DEX')).toBe(4);
 		expect(sheet('abilities.STR')).toBe(-1);
@@ -189,42 +189,42 @@ const INVENTORY = JSON.stringify({
 		},
 		{
 			id: 'load',
-			type: 'stat',
+			type: 'card',
 			label: 'Load',
 			derived: 'inventory.Weight',
 			position: { col: 5, row: 1, width: 1, height: 1 },
 		},
 		{
 			id: 'overloaded',
-			type: 'stat',
+			type: 'card',
 			label: 'Overloaded',
 			derived: 'if(inventory.Weight > 3, 1, 0)',
 			position: { col: 6, row: 1, width: 1, height: 1 },
 		},
 		{
 			id: 'by_item',
-			type: 'stat',
+			type: 'card',
 			label: 'By item',
 			derived: '1 + inventory.Dagger',
 			position: { col: 5, row: 2, width: 2, height: 1 },
 		},
 		{
 			id: 'carried_weight',
-			type: 'stat',
+			type: 'card',
 			label: 'Carried weight',
 			derived: 'sum(inventory, Weight, Carried)',
 			position: { col: 5, row: 3, width: 2, height: 1 },
 		},
 		{
 			id: 'items',
-			type: 'stat',
+			type: 'card',
 			label: 'Items',
 			derived: 'count(inventory)',
 			position: { col: 5, row: 4, width: 2, height: 1 },
 		},
 		{
 			id: 'encumbrance',
-			type: 'stat',
+			type: 'card',
 			label: 'Encumbrance',
 			// The number §13 refused: quantity times weight summed down the list,
 			// over rows no layout declared and with no computed column to total.

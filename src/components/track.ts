@@ -18,7 +18,7 @@
  * remainder that can disagree with each other. At the default of one the two
  * are the same number and the note reads exactly as every other track's does.
  *
- * A track may be a set of runs, and the set is Stat group's shape: `rows`
+ * A track may be a set of runs, and the set is Card set's shape: `rows`
  * names them and one fenced block holds an entry per key. Spell slots are five
  * first-level, three second and one third — three runs differing in nothing
  * but their length and their name, which as three components would be three
@@ -110,7 +110,7 @@ export interface TrackData {
 	 *
 	 * On read this holds every entry a run maps to; on write only the entries
 	 * present are touched, so an edit reported as a single-key delta can never
-	 * clobber a sibling run with a stale snapshot — the rule Stat group's
+	 * clobber a sibling run with a stale snapshot — the rule Card set's
 	 * values already follow, and the reason a row set is safe under two
 	 * commits racing one rebuild.
 	 */
@@ -1216,7 +1216,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 				// Only a named run earns one. An unnamed step's name is the
 				// count, which the segments already state — and a tooltip
 				// repeating what is legible is noise fired at every pass, as
-				// the stat card's label and the level ring both learned.
+				// the card's label and the level ring both learned.
 				if (named) el.title = reading;
 			};
 

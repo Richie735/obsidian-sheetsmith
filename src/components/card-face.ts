@@ -1,8 +1,12 @@
 /*
- * Card DOM for stat-like displays: title, abbreviation, derived number,
- * editable value, editable note line. Used by Stat group for each attribute
- * card and by Stat for its lone card; any future component wanting the same
- * look renders through here.
+ * The face of one card: title, abbreviation, derived number, editable value,
+ * editable note line. Card renders its lone card through here, Card set one
+ * per entry, and Pool takes the derived formatting; any future component
+ * wanting the same look renders through here too.
+ *
+ * Named for the face rather than for the card because `card.ts` is the
+ * component (SPEC §2), and the shared painter is what a card looks like
+ * rather than the thing a layout places.
  *
  * The editing gesture itself lives in editable.ts, because a table cell has
  * to behave the same way under the hand as a card does.
@@ -11,7 +15,7 @@
 import { bindEditable, UNRESOLVED_DELAY } from '../interaction/editable';
 import { revealWhenTruncated } from '../ui/truncation';
 
-export interface StatCardDerived {
+export interface CardFaceDerived {
 	text: string;
 	/** True when the formula did not resolve; styled as status, not data. */
 	unresolved?: boolean;
@@ -23,7 +27,7 @@ export interface StatCardDerived {
 	reason?: string | null;
 }
 
-export interface StatCardOptions {
+export interface CardFaceOptions {
 	title: string;
 	/**
 	 * Hide the title text. It still names the card's controls for assistive
@@ -48,8 +52,8 @@ export interface StatCardOptions {
 	 * stored value drops into a small pill beneath it. `compute` re-derives
 	 * the display from a draft value while the user types.
 	 */
-	derived?: StatCardDerived & {
-		compute?: (draft: string) => StatCardDerived;
+	derived?: CardFaceDerived & {
+		compute?: (draft: string) => CardFaceDerived;
 	};
 	/**
 	 * Editable free-text line under the value, for the qualifier a number
@@ -76,7 +80,7 @@ export function toDerived(
 	resolved: string | number | boolean | null | undefined,
 	signed: boolean,
 	explain?: () => string | null,
-): StatCardDerived {
+): CardFaceDerived {
 	const unresolved = resolved === null;
 	return {
 		text: formatDerived(resolved, signed),
@@ -95,10 +99,10 @@ export function formatDerived(
 	return String(value);
 }
 
-function setDerived(el: HTMLElement, derived: StatCardDerived): void {
+function setDerived(el: HTMLElement, derived: CardFaceDerived): void {
 	el.textContent = derived.text;
 	el.classList.toggle(
-		'sheetsmith-stat-derived-unresolved',
+		'sheetsmith-card-derived-unresolved',
 		derived.unresolved === true,
 	);
 	if (derived.unresolved === true) {
@@ -108,23 +112,23 @@ function setDerived(el: HTMLElement, derived: StatCardDerived): void {
 	}
 }
 
-export function renderStatCard(
+export function renderCardFace(
 	container: HTMLElement,
-	options: StatCardOptions,
+	options: CardFaceOptions,
 ): void {
 	// Rendering twice into one element must replace, not duplicate — and
 	// state classes must be re-derived, not merely accumulated.
 	container.replaceChildren();
 	const doc = container.ownerDocument;
-	container.classList.add('sheetsmith-stat');
+	container.classList.add('sheetsmith-card');
 	container.classList.toggle(
-		'sheetsmith-stat-has-derived',
+		'sheetsmith-card-has-derived',
 		options.derived !== undefined,
 	);
 
 	if (options.hideTitle !== true) {
 		const label = doc.createElement('div');
-		label.classList.add('sheetsmith-stat-label');
+		label.classList.add('sheetsmith-card-label');
 		label.textContent = options.title;
 		// The label ellipsises in narrow cards, and the full text has to stay
 		// reachable — but a tooltip repeating a label that is already fully
@@ -137,7 +141,7 @@ export function renderStatCard(
 
 	if (options.reserveAbbreviation !== false || options.abbreviation) {
 		const abbreviation = doc.createElement('div');
-		abbreviation.classList.add('sheetsmith-stat-abbreviation');
+		abbreviation.classList.add('sheetsmith-card-abbreviation');
 		abbreviation.textContent = options.abbreviation ?? '';
 		container.appendChild(abbreviation);
 	}
@@ -145,7 +149,7 @@ export function renderStatCard(
 	let derivedEl: HTMLElement | null = null;
 	if (options.derived) {
 		derivedEl = doc.createElement('div');
-		derivedEl.classList.add('sheetsmith-stat-derived');
+		derivedEl.classList.add('sheetsmith-card-derived');
 		// A per-keystroke live region is noise; announcements happen once
 		// per commit, via the status element below.
 		if (!options.value) derivedEl.setAttribute('aria-label', options.title);
@@ -171,14 +175,14 @@ export function renderStatCard(
 	if (options.value) {
 		const compute = options.derived?.compute;
 		const value = doc.createElement('div');
-		value.classList.add('sheetsmith-stat-value');
+		value.classList.add('sheetsmith-card-value');
 		container.appendChild(value);
 
 		const input = doc.createElement('input');
 		input.type = 'text';
 		// A derived formula implies the value is used numerically.
 		if (options.derived) input.inputMode = 'numeric';
-		input.classList.add('sheetsmith-stat-input');
+		input.classList.add('sheetsmith-card-input');
 		input.value = options.value.current;
 		// With a derived above it, the em dash would be the card's second
 		// copy of the same nothing; the pill's own outline says "field".
@@ -241,12 +245,12 @@ export function renderStatCard(
 
 	if (options.note) {
 		const note = doc.createElement('div');
-		note.classList.add('sheetsmith-stat-note');
+		note.classList.add('sheetsmith-card-note');
 		container.appendChild(note);
 
 		const input = doc.createElement('input');
 		input.type = 'text';
-		input.classList.add('sheetsmith-stat-note-input');
+		input.classList.add('sheetsmith-card-note-input');
 		input.value = options.note.current;
 		if (options.note.placeholder) input.placeholder = options.note.placeholder;
 		input.setAttribute('aria-label', `${options.title} note`);
@@ -276,7 +280,7 @@ export function renderStatCard(
 	if (primary) {
 		// The card only promises an edit when it has one to give; the cursor
 		// and the hover and press states hang off this class.
-		container.classList.add('sheetsmith-stat-editable');
+		container.classList.add('sheetsmith-card-editable');
 		// The whole card is the hit target, not just the small inputs — but
 		// never at the cost of a text selection in progress, and never
 		// stealing focus from a field the click already landed in.
@@ -299,7 +303,7 @@ export function renderStatCard(
 			target.focus();
 		};
 	} else {
-		container.classList.remove('sheetsmith-stat-editable');
+		container.classList.remove('sheetsmith-card-editable');
 		container.onclick = null;
 	}
 }

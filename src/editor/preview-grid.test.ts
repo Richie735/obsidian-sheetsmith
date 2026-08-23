@@ -19,7 +19,7 @@ const block = (
 	label = 'Abilities',
 ): ComponentConfig => ({
 	id: 'abilities',
-	type: 'stat-group',
+	type: 'card-set',
 	label,
 	position: { col, row, width, height },
 });

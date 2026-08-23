@@ -10,7 +10,7 @@ import {
 const component = { formulaFields: ['derived'] as const };
 const config = {
 	id: 'wis',
-	type: 'stat',
+	type: 'card',
 	label: 'WIS',
 	position: { col: 1, row: 1, width: 1, height: 1 },
 };
@@ -116,7 +116,7 @@ describe('the layout function library, from a component', () => {
 		expect(resolve('derived', {})).toBe(7);
 	});
 
-	it('resolves the same call per attribute', () => {
+	it('resolves the same call per entry', () => {
 		const resolve = makeFieldResolver(component, derived, {}, { ...NO_ENV, sheet, library });
 		expect(resolve('derived', { value: 8 })).toBe(2);
 		expect(resolve('derived', { value: 20 })).toBe(8);

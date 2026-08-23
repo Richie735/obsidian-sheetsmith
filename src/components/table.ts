@@ -18,7 +18,7 @@
  * from one of five jobs made the other four unfindable — nobody building an
  * inventory looks for a skill card. "Table" is what every sibling is named for:
  * what the thing is on the page, the way Pool and Track are, rather than a job in
- * some game. Stat group made the same move from "Abilities" (§12). What the name
+ * some game. Card set made the same move from "Abilities" (§12). What the name
  * does not carry — typed columns, per-row scope, totals — is what `configFields`
  * descriptions are for, exactly as Pool's name says nothing of its buffer.
  *
@@ -110,7 +110,7 @@ export interface TableColumn {
 	/**
 	 * Render a text column as a gloss on the row rather than as data beside
 	 * it: a size down, tracked, and faint, the way an abbreviation sits under
-	 * a stat card's name. For the column that qualifies the row — a skill's
+	 * a card's name. For the column that qualifies the row — a skill's
 	 * ability, an item's source — where equal weight has the eye reading two
 	 * things per row when only one of them is what the row is. Opt-in, because
 	 * muted user data otherwise reads as disabled.
@@ -634,7 +634,7 @@ function paintText(
 		// An aliased link shows the alias, so the target is otherwise nowhere on
 		// the card. Only where the two differ: a tooltip repeating text that is
 		// already legible is noise fired at every pass, which is the lesson the
-		// stat card's label learned.
+		// card's label learned.
 		//
 		// **`title`, not `aria-label`**, and that is a correction rather than a
 		// preference. `aria-label` is what Obsidian's own aliased links carry, and
@@ -1679,7 +1679,7 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 							button.setAttribute('aria-label', `${label}: ${name}`);
 						}
 						// A tooltip that repeats what is already legible is noise
-						// fired at every pass, as the stat card's label learned.
+						// fired at every pass, as the card's label learned.
 						// Only an abbreviation earns one, and every named level is
 						// one: an initial, a mark of the layout's own, or a bare
 						// fill saying nothing at all. An unnamed level shows the
@@ -1750,7 +1750,7 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 							next === '' ? `${label} cleared` : `${label} ${next}`;
 					},
 					announceRestore: (restored) => {
-						// The same undo the stat card has, and it was silent
+						// The same undo the card has, and it was silent
 						// here: an undo nobody can perceive is not obviously one.
 						status.textContent =
 							restored === ''

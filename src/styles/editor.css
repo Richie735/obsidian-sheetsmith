@@ -143,7 +143,7 @@
 	white-space: pre;
 }
 
-.sheetsmith-attribute-list {
+.sheetsmith-entry-list {
 	margin: var(--size-4-2) 0 var(--size-4-3);
 	padding: var(--size-2-2);
 	border: 1px solid var(--background-modifier-border);
@@ -167,15 +167,15 @@
 /* The header scrolls with the rows rather than beside them, so the two share
    a width whether or not a scrollbar appeared, and stays pinned so the
    columns keep their names while the list moves under it. */
-.sheetsmith-list-scroll > .sheetsmith-attribute-columns {
+.sheetsmith-list-scroll > .sheetsmith-entry-columns {
 	position: sticky;
 	top: 0;
 	z-index: 1;
 	background-color: var(--background-secondary);
 }
 
-.sheetsmith-attribute-columns,
-.sheetsmith-attribute-row {
+.sheetsmith-entry-columns,
+.sheetsmith-entry-row {
 	display: grid;
 	align-items: center;
 	gap: var(--size-4-2);
@@ -185,11 +185,11 @@
 /* A table, not a settings row: key starts at the left, the name column
    absorbs the remaining width, controls hold the right edge. The header
    shares the first two tracks, so its labels align with the inputs. */
-.sheetsmith-attribute-columns {
+.sheetsmith-entry-columns {
 	grid-template-columns: 7em minmax(0, 1fr);
 }
 
-.sheetsmith-attribute-row {
+.sheetsmith-entry-row {
 	/* Three control tracks: handle + trash on desktop leaves one empty;
 	   up + down + trash on mobile uses all three. Empty tracks collapse. */
 	grid-template-columns: 7em minmax(0, 1fr) repeat(3, min-content);
@@ -202,7 +202,7 @@
    squeezed them to nothing and pushed the row out of shape. Two fixed
    two-column grids cannot be told apart from the markup, so the list carries
    the fact and this reads it. */
-.sheetsmith-attribute-counted {
+.sheetsmith-entry-counted {
 	/* One icon button: the icon and the click padding around it. The header's
 	   spacers take the same width, so a control track measures the same on
 	   both and the field tracks land on the same edges. The same token the
@@ -216,16 +216,16 @@
    a track's start does not move with its width. A third column sits after
    that track, so it does move: the row spends width on its buttons, its `1fr`
    comes out narrower, and every column past it slides. */
-.sheetsmith-attribute-counted .sheetsmith-attribute-columns,
-.sheetsmith-attribute-counted .sheetsmith-attribute-row {
+.sheetsmith-entry-counted .sheetsmith-entry-columns,
+.sheetsmith-entry-counted .sheetsmith-entry-row {
 	grid-template-columns: 7em minmax(0, 1fr) 7em 7em repeat(3, min-content);
 }
 
 /* A track is sized by its item's margin box, so the optical pull on the last
    button has to be mirrored here or the last track measures eight pixels
    narrower in the rows than in the header — and every field track shifts. */
-.sheetsmith-attribute-counted
-	.sheetsmith-attribute-columns
+.sheetsmith-entry-counted
+	.sheetsmith-entry-columns
 	> .sheetsmith-list-control-space:last-child {
 	margin-right: calc(-1 * var(--size-2-2));
 }
@@ -240,7 +240,7 @@
    third column started earlier than the header's and the last label sat right
    of its input. Pinning both ends of the promise is what makes `min-content`
    resolve to one answer. */
-.sheetsmith-attribute-counted .sheetsmith-attribute-row > button.clickable-icon {
+.sheetsmith-entry-counted .sheetsmith-entry-row > button.clickable-icon {
 	box-sizing: border-box;
 	width: var(--sheetsmith-list-control);
 }
@@ -250,28 +250,28 @@
    label inset back on — so a spacer measured the token plus eight pixels
    wherever the page is not border-box. Said here at a weight that wins,
    rather than relying on a global nobody in this file sets. */
-.sheetsmith-attribute-counted
-	.sheetsmith-attribute-columns
+.sheetsmith-entry-counted
+	.sheetsmith-entry-columns
 	> .sheetsmith-list-control-space {
 	box-sizing: border-box;
 	width: var(--sheetsmith-list-control);
 	padding: 0;
 }
 
-.sheetsmith-attribute-columns > span {
+.sheetsmith-entry-columns > span {
 	/* Match the inputs' inner padding so labels align with their text. */
 	padding-left: var(--size-4-2);
 	font-size: var(--font-smallest);
 	color: var(--text-muted);
 }
 
-.sheetsmith-attribute-row > input,
-.sheetsmith-attribute-row .sheetsmith-field > input,
-.sheetsmith-attribute-row .sheetsmith-field > select {
+.sheetsmith-entry-row > input,
+.sheetsmith-entry-row .sheetsmith-field > input,
+.sheetsmith-entry-row .sheetsmith-field > select {
 	width: 100%;
 }
 
-.sheetsmith-attribute-row > button.clickable-icon {
+.sheetsmith-entry-row > button.clickable-icon {
 	background: transparent;
 	border: none;
 	box-shadow: none;
@@ -283,25 +283,25 @@
 /* Optical edge alignment: the trash icon's click-padding would read as
    extra space against the container edge, making the right inset look
    wider than the left. Pull it back by exactly that padding. */
-.sheetsmith-attribute-row > button.clickable-icon:last-child {
+.sheetsmith-entry-row > button.clickable-icon:last-child {
 	margin-right: calc(-1 * var(--size-2-2));
 }
 
-.sheetsmith-attribute-handle {
+.sheetsmith-entry-handle {
 	cursor: grab;
 }
 
 /* The indicator tells the truth about where the row will land: above the
    hovered row on upward drags, below it on downward ones. */
-.sheetsmith-attribute-drop {
+.sheetsmith-entry-drop {
 	box-shadow: inset 0 2px 0 var(--interactive-accent);
 }
 
-.sheetsmith-attribute-drop-below {
+.sheetsmith-entry-drop-below {
 	box-shadow: inset 0 -2px 0 var(--interactive-accent);
 }
 
-.sheetsmith-attribute-empty {
+.sheetsmith-entry-empty {
 	padding: var(--size-2-2);
 	color: var(--text-muted);
 	font-size: var(--font-ui-small);
@@ -309,7 +309,7 @@
 
 /* Buttons here sit side by side ("Add row", "Add row value"), and two
    buttons touching read as one control with a seam down it. */
-.sheetsmith-attribute-footer {
+.sheetsmith-entry-footer {
 	display: flex;
 	flex-wrap: wrap;
 	gap: var(--size-2-2);
@@ -350,7 +350,7 @@
 
 /* The one line explaining the row-value mechanism, under the buttons it
    explains rather than beside them. */
-.sheetsmith-attribute-footnote {
+.sheetsmith-entry-footnote {
 	padding: 0 var(--size-2-2) var(--size-2-2);
 	font-size: var(--font-smallest);
 	color: var(--text-muted);
@@ -391,7 +391,7 @@
 	padding: var(--size-2-1);
 }
 
-.sheetsmith-attribute-list .sheetsmith-field-error {
+.sheetsmith-entry-list .sheetsmith-field-error {
 	grid-column: 1 / -1;
 	text-align: left;
 	/* Line up with the header labels and input text. */
@@ -714,8 +714,8 @@
 	--sheetsmith-list-control: calc(var(--icon-s, 16px) + 2 * var(--size-2-2));
 }
 
-.sheetsmith-list .sheetsmith-attribute-columns,
-.sheetsmith-list .sheetsmith-attribute-row {
+.sheetsmith-list .sheetsmith-entry-columns,
+.sheetsmith-list .sheetsmith-entry-row {
 	grid-template-columns:
 		repeat(var(--sheetsmith-list-fields, 2), minmax(0, 1fr))
 		repeat(3, min-content);
@@ -723,7 +723,7 @@
 
 /* Both sides of the same track: give them one width rather than letting the
    button be measured by its contents and the spacer by nothing. */
-.sheetsmith-list .sheetsmith-attribute-row > button.clickable-icon {
+.sheetsmith-list .sheetsmith-entry-row > button.clickable-icon {
 	width: var(--sheetsmith-list-control);
 }
 
@@ -738,7 +738,7 @@
 /* A track is sized by its item's margin box, so the optical pull on the last
    button has to be mirrored here or the last track measures eight pixels
    narrower in the rows than in the header — and every field track shifts. */
-.sheetsmith-list .sheetsmith-attribute-columns > .sheetsmith-list-control-space:last-child {
+.sheetsmith-list .sheetsmith-entry-columns > .sheetsmith-list-control-space:last-child {
 	margin-right: calc(-1 * var(--size-2-2));
 }
 
@@ -746,7 +746,7 @@
 	--sheetsmith-list-fields: 3;
 }
 
-.sheetsmith-attribute-row > select {
+.sheetsmith-entry-row > select {
 	width: 100%;
 }
 
@@ -779,7 +779,7 @@
    under nothing (these tracks are fractional, so no fixed offset reaches
    "Heading" at every width) spends the one straight edge the card has to buy
    a cue it is already getting. */
-.sheetsmith-attribute-detail {
+.sheetsmith-entry-detail {
 	display: flex;
 	align-items: center;
 	gap: var(--size-4-2);
@@ -796,7 +796,7 @@
 	transition-duration: 0s;
 }
 
-.sheetsmith-attribute-detail > input[type='text'] {
+.sheetsmith-entry-detail > input[type='text'] {
 	flex: 1;
 	min-width: 0;
 	font-family: var(--font-monospace);
@@ -818,29 +818,29 @@
    width, controls on one line under them, and each field showing the label
    the header can no longer give it. */
 @container (max-width: 380px) {
-.sheetsmith-attribute-columns,
-.sheetsmith-attribute-counted .sheetsmith-attribute-columns {
+.sheetsmith-entry-columns,
+.sheetsmith-entry-counted .sheetsmith-entry-columns {
 		display: none;
 	}
 
-.sheetsmith-attribute-row {
+.sheetsmith-entry-row {
 		grid-template-columns: 1fr;
 		gap: var(--size-2-2);
 		padding: var(--size-4-2) var(--size-2-2);
 	}
 
-.sheetsmith-list .sheetsmith-attribute-row,
-.sheetsmith-attribute-counted .sheetsmith-attribute-row {
+.sheetsmith-list .sheetsmith-entry-row,
+.sheetsmith-entry-counted .sheetsmith-entry-row {
 		grid-template-columns: 1fr;
 	}
 
 /* Every control on its own line, and the buttons gathered onto one. */
-.sheetsmith-attribute-row > button.clickable-icon {
+.sheetsmith-entry-row > button.clickable-icon {
 		grid-row: 99;
 		justify-self: end;
 	}
 
-.sheetsmith-attribute-row > button.clickable-icon:nth-last-of-type(2) {
+.sheetsmith-entry-row > button.clickable-icon:nth-last-of-type(2) {
 		justify-self: start;
 	}
 
@@ -848,7 +848,7 @@
 	   genuinely adjacent there. In the columns list a detail div always sits
 	   between two rows, so this never matched — and no longer needs to, since
 	   an entry is its own surface at every width. */
-.sheetsmith-attribute-row + .sheetsmith-attribute-row {
+.sheetsmith-entry-row + .sheetsmith-entry-row {
 		border-top: 1px solid var(--background-modifier-border);
 	}
 
@@ -857,7 +857,7 @@
 		display: block;
 	}
 
-.sheetsmith-attribute-detail {
+.sheetsmith-entry-detail {
 		flex-wrap: wrap;
 	}
 
@@ -894,7 +894,7 @@
 	pointer-events: none;
 }
 
-.sheetsmith-attribute-check {
+.sheetsmith-entry-check {
 	display: flex;
 	align-items: center;
 	gap: var(--size-2-2);

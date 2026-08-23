@@ -18,7 +18,7 @@ import { ComponentConfig, RenderContext } from '../types';
 function child(id: string, label: string): ComponentConfig {
 	return {
 		id,
-		type: 'stat',
+		type: 'card',
 		label,
 		position: { col: 1, row: 1, width: 3, height: 2 },
 	};
