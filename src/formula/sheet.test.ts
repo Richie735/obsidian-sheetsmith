@@ -127,7 +127,7 @@ describe('buildSheetScope: a value only the component can produce', () => {
 				resolver: (env) => (field, row) =>
 					field === 'columns.0.formula'
 						? evaluate('abilities.DEX + Training', (name) =>
-								Object.prototype.hasOwnProperty.call(row, name)
+								Object.hasOwn(row, name)
 									? row[name]
 									: env.sheet(name),
 							)

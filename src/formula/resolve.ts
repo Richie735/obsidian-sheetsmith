@@ -174,9 +174,8 @@ function fieldReaders(
 			// object, so `in` answers yes for every name on Object.prototype and
 			// a formula reading `constructor` or `toString` would be captured
 			// here and resolve to nothing, instead of falling through to the
-			// data and the sheet where the name might genuinely live. The long
-			// spelling because the build targets ES2021, not ES2022.
-			if (Object.prototype.hasOwnProperty.call(extra, name)) {
+			// data and the sheet where the name might genuinely live.
+			if (Object.hasOwn(extra, name)) {
 				return coerceValue(extra[name]);
 			}
 			// The component's own data shadows the sheet, so a card's `value`

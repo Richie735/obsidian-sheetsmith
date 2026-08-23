@@ -555,7 +555,7 @@ function evalAggregate(
 		// threatened, because the table is named in the same expression as the
 		// shadowing.
 		const inner: Scope = (lookup) =>
-			Object.prototype.hasOwnProperty.call(row.values, lookup)
+			Object.hasOwn(row.values, lookup)
 				? row.values[lookup]
 				: scope(lookup);
 		try {

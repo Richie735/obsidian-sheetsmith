@@ -33,7 +33,18 @@ export const DEFAULT_SETTINGS: SheetsmithSettings = {
  * plugin's own config forbids silencing it inline.
  */
 export class SheetsmithSettingTab extends PluginSettingTab {
-	plugin: SheetsmithPlugin;
+	/*
+	 * `declare`, as on `main.ts`'s `settings`, and for a reason the compiler
+	 * cannot reach here: `PluginSettingTab` holds a `plugin` at runtime — its own
+	 * `getControlValue` and `setControlValue` are documented as reading
+	 * `this.plugin.settings` — but does not declare one in its typings. So TS2612
+	 * fires for `Plugin.settings` and cannot fire for this, while
+	 * `useDefineForClassFields` makes an uninitialized field *define* rather than
+	 * assign: without `declare` this emits `plugin;`, writing `undefined` over
+	 * the base's own property the instant `super()` returns. The assignment below
+	 * happens to repair it, which is exactly why this needed writing down.
+	 */
+	declare plugin: SheetsmithPlugin;
 	private layoutEditor: LayoutEditorSection;
 
 	constructor(app: App, plugin: SheetsmithPlugin) {
