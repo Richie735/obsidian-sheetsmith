@@ -311,29 +311,29 @@ describe('card.render: drafts in flight', () => {
 });
 
 describe('card.render: keyboard', () => {
-	const press = (input: HTMLInputElement, key: string, shiftKey = false) =>
+	const pressKey = (input: HTMLInputElement, key: string, shiftKey = false) =>
 		input.dispatchEvent(new KeyboardEvent('keydown', { key, shiftKey }));
 
 	it('steps an empty value from zero rather than doing nothing', () => {
 		const el = render({}, null);
 		const value = inputs(el).value as HTMLInputElement;
-		press(value, 'ArrowUp');
+		pressKey(value, 'ArrowUp');
 		expect(value.value).toBe('1');
 	});
 
 	it('steps by ten with shift, for the numbers that move in tens', () => {
 		const el = render();
 		const value = inputs(el).value as HTMLInputElement;
-		press(value, 'ArrowUp', true);
+		pressKey(value, 'ArrowUp', true);
 		expect(value.value).toBe('25');
-		press(value, 'ArrowDown', true);
+		pressKey(value, 'ArrowDown', true);
 		expect(value.value).toBe('15');
 	});
 
 	it('leaves the arrows as caret movement on text that is not a number', () => {
 		const el = render({}, { value: 'see below' });
 		const value = inputs(el).value as HTMLInputElement;
-		press(value, 'ArrowUp');
+		pressKey(value, 'ArrowUp');
 		expect(value.value).toBe('see below');
 	});
 
@@ -346,7 +346,7 @@ describe('card.render: keyboard', () => {
 		const focused: string[] = [];
 		if (note) note.focus = () => focused.push('note');
 		(value as HTMLInputElement).value = '17';
-		press(value as HTMLInputElement, 'Enter');
+		pressKey(value as HTMLInputElement, 'Enter');
 		expect(edits).toEqual([{ value: '17' }]);
 		expect(focused).toEqual(['note']);
 	});
@@ -355,7 +355,7 @@ describe('card.render: keyboard', () => {
 		const el = render({}, { value: '15', note: 'chain mail' });
 		const value = inputs(el).value as HTMLInputElement;
 		value.value = '99';
-		press(value, 'Escape');
+		pressKey(value, 'Escape');
 		expect(el.querySelector('.sheetsmith-sr-only')?.textContent).toBe(
 			'Armour class restored to 15',
 		);
@@ -363,7 +363,7 @@ describe('card.render: keyboard', () => {
 
 	it('stays silent on an Escape that abandoned nothing', () => {
 		const el = render();
-		press(inputs(el).value as HTMLInputElement, 'Escape');
+		pressKey(inputs(el).value as HTMLInputElement, 'Escape');
 		expect(el.querySelector('.sheetsmith-sr-only')?.textContent).toBe('');
 	});
 });

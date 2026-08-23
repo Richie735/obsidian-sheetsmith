@@ -804,17 +804,17 @@ describe('track rows', () => {
 });
 
 describe('track keyboard', () => {
-	const press = (el: HTMLElement, key: string, shiftKey = false) =>
+	const pressKey = (el: HTMLElement, key: string, shiftKey = false) =>
 		parts(el).run?.dispatchEvent(
 			new KeyboardEvent('keydown', { key, shiftKey, cancelable: true }),
 		);
 
 	it('steps a segment with left and right', () => {
 		const el = render();
-		press(el, 'ArrowRight');
+		pressKey(el, 'ArrowRight');
 		expect(shown(el)).toBe(4);
-		press(el, 'ArrowLeft');
-		press(el, 'ArrowLeft');
+		pressKey(el, 'ArrowLeft');
+		pressKey(el, 'ArrowLeft');
 		expect(shown(el)).toBe(2);
 	});
 
@@ -822,15 +822,15 @@ describe('track keyboard', () => {
 		const el = render({ count: 10, marks: 4 }, { values: { value: '20' } }, {
 			resolved: { count: 10 },
 		});
-		press(el, 'ArrowRight', true);
+		pressKey(el, 'ArrowRight', true);
 		expect(shown(el)).toBe(21);
 	});
 
 	it('empties and fills the run with Home and End', () => {
 		const el = render();
-		press(el, 'End');
+		pressKey(el, 'End');
 		expect(shown(el)).toBe(6);
-		press(el, 'Home');
+		pressKey(el, 'Home');
 		expect(shown(el)).toBe(0);
 	});
 
@@ -838,25 +838,25 @@ describe('track keyboard', () => {
 		const el = render({ count: 10, marks: 4 }, { values: { value: '22' } }, {
 			resolved: { count: 10 },
 		});
-		press(el, ' ');
+		pressKey(el, ' ');
 		expect(shown(el)).toBe(24);
 	});
 
 	it('holds the value inside the run', () => {
 		const el = render({}, { values: { value: '0' } });
-		press(el, 'ArrowLeft');
+		pressKey(el, 'ArrowLeft');
 		expect(shown(el)).toBe(0);
-		press(el, 'End');
-		press(el, 'ArrowRight');
+		pressKey(el, 'End');
+		pressKey(el, 'ArrowRight');
 		expect(shown(el)).toBe(6);
 	});
 
 	it('writes a run of presses once, when the gesture ends', () => {
 		const changed = vi.fn();
 		const el = render({}, { values: { value: '3' } }, { onChange: changed });
-		press(el, 'ArrowRight');
-		press(el, 'ArrowRight');
-		press(el, 'ArrowLeft');
+		pressKey(el, 'ArrowRight');
+		pressKey(el, 'ArrowRight');
+		pressKey(el, 'ArrowLeft');
 		expect(changed).not.toHaveBeenCalled();
 		parts(el).run?.dispatchEvent(new Event('blur'));
 		expect(changed).toHaveBeenCalledTimes(1);
@@ -866,8 +866,8 @@ describe('track keyboard', () => {
 	it('writes nothing where the gesture landed back where it started', () => {
 		const changed = vi.fn();
 		const el = render({}, { values: { value: '3' } }, { onChange: changed });
-		press(el, 'ArrowRight');
-		press(el, 'ArrowLeft');
+		pressKey(el, 'ArrowRight');
+		pressKey(el, 'ArrowLeft');
 		parts(el).run?.dispatchEvent(new Event('blur'));
 		expect(changed).not.toHaveBeenCalled();
 	});
@@ -878,7 +878,7 @@ describe('track keyboard', () => {
 		vi.useFakeTimers();
 		const changed = vi.fn();
 		const el = render({}, { values: { value: '3' } }, { onChange: changed });
-		press(el, 'ArrowRight');
+		pressKey(el, 'ArrowRight');
 		expect(fills(el)).toEqual([1, 1, 1, 0, 0, 0]);
 		expect(ghosts(el)).toEqual([1, 1, 1, 1, 0, 0]);
 		vi.advanceTimersByTime(1000);

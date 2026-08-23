@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { hold, press, pressDown, release } from '../test/pointer';
 import { FOCUSABLE } from '../view/cell-focus';
 import { pool, PoolConfig, PoolData } from './pool';
 import { RenderContext } from '../types';
@@ -207,23 +208,6 @@ describe('pool.render', () => {
 });
 
 describe('pool step buttons', () => {
-	/**
-	 * A full pointer press: down, then up. The step lands on the way down —
-	 * feedback belongs on the press — and the commit on the way up, so a hold
-	 * writes the note once rather than once per repeat.
-	 */
-	const press = (
-		button: HTMLButtonElement | undefined,
-		init: PointerEventInit = {},
-	) => {
-		button?.dispatchEvent(
-			new PointerEvent('pointerdown', { pointerId: 1, button: 0, ...init }),
-		);
-		button?.dispatchEvent(
-			new PointerEvent('pointerup', { pointerId: 1, button: 0, ...init }),
-		);
-	};
-
 	it('steps down and up by one', () => {
 		const el = render({}, { current: '22' });
 		const { current, steps } = parts(el);
@@ -352,23 +336,6 @@ describe('pool step button held', () => {
 	 * still steps, still commits once, and still passes every assertion above.
 	 * Nothing would say so until someone held the button (§10).
 	 */
-	const hold = (
-		button: HTMLButtonElement | undefined,
-		ms: number,
-		init: PointerEventInit = {},
-	) => {
-		button?.dispatchEvent(
-			new PointerEvent('pointerdown', { pointerId: 1, button: 0, ...init }),
-		);
-		vi.advanceTimersByTime(ms);
-	};
-
-	const release = (button: HTMLButtonElement | undefined) => {
-		button?.dispatchEvent(
-			new PointerEvent('pointerup', { pointerId: 1, button: 0 }),
-		);
-	};
-
 	it('steps once and then waits, so a tap is not a repeat', () => {
 		vi.useFakeTimers();
 		try {
@@ -619,10 +586,6 @@ describe('pool Enter', () => {
 });
 
 describe('pool card', () => {
-	const press = (button: HTMLButtonElement | undefined) => {
-		button?.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, button: 0 }));
-		button?.dispatchEvent(new PointerEvent('pointerup', { pointerId: 1, button: 0 }));
-	};
 	it('renders the card as a child of the cell, not as the cell', () => {
 		// The cell is grid placement; the card is the object. A lone card
 		// works the same way, which is what lets both take one width cap.
@@ -893,10 +856,6 @@ describe('pool hideFill', () => {
 });
 
 describe('pool temporary points absorb a spend', () => {
-	const press = (button: HTMLButtonElement | undefined, init: PointerEventInit = {}) => {
-		button?.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, button: 0, ...init }));
-		button?.dispatchEvent(new PointerEvent('pointerup', { pointerId: 1, button: 0, ...init }));
-	};
 	const withTemp = (current: string, temp: string, onChange = vi.fn()) => {
 		const el = render({ hasTemp: true }, { current, temp }, { onChange, resolved: { max: 54 } });
 		return { el, onChange, ...parts(el) };
@@ -1122,7 +1081,7 @@ describe('pool buffer feedback', () => {
 		// change actually happened.
 		const el = render({ hasTemp: true }, { current: '20', temp: '4' });
 		const step = parts(el).steps[0];
-		step?.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, button: 0 }));
+		pressDown(step);
 		expect(
 			el.querySelector('.sheetsmith-pool-temp')?.classList.contains(
 				'sheetsmith-pool-absorbed',
@@ -1133,7 +1092,7 @@ describe('pool buffer feedback', () => {
 	it('does not light it when the spend reaches the pool', () => {
 		const el = render({ hasTemp: true }, { current: '20', temp: '0' });
 		const step = parts(el).steps[0];
-		step?.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, button: 0 }));
+		pressDown(step);
 		expect(
 			el.querySelector('.sheetsmith-pool-temp')?.classList.contains(
 				'sheetsmith-pool-absorbed',
@@ -1185,9 +1144,7 @@ describe('pool discoverability', () => {
 
 	it('keeps the direction in words for anyone the arrow does not reach', () => {
 		const el = render();
-		parts(el).trigger?.dispatchEvent(
-			new PointerEvent('pointerdown', { pointerId: 1, button: 0 }),
-		);
+		pressDown(parts(el).trigger);
 		const { direction } = parts(el);
 		expect(direction?.textContent).toBe('−');
 		expect(direction?.getAttribute('aria-label')).toContain('Spending from HP');
@@ -1308,9 +1265,7 @@ describe('pool refuses a step it cannot make', () => {
 	it('marks the field rather than doing nothing at all', () => {
 		const el = render({}, { current: 'lots' });
 		const current = parts(el).current;
-		parts(el).steps[1]?.dispatchEvent(
-			new PointerEvent('pointerdown', { pointerId: 1, button: 0 }),
-		);
+		pressDown(parts(el).steps[1]);
 		expect(current?.classList.contains('sheetsmith-pool-refused')).toBe(true);
 	});
 
@@ -1347,13 +1302,17 @@ describe('pool throw with no ceiling', () => {
 });
 
 describe('pool gesture is derived from its origin', () => {
-	const hold = (button: HTMLButtonElement | undefined, ticks: number) => {
-		button?.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, button: 0 }));
-		// Each further pointerdown stands in for a repeat tick without waiting.
-		for (let i = 1; i < ticks; i++) {
-			button?.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, button: 0 }));
-		}
-		button?.dispatchEvent(new PointerEvent('pointerup', { pointerId: 1, button: 0 }));
+	/**
+	 * A run of `ticks` steps on one button, then a release.
+	 *
+	 * Each further `pointerdown` stands in for a repeat tick without waiting,
+	 * so this is not `hold`: it counts steps where that one counts milliseconds,
+	 * and what is under test here is where the points came from rather than the
+	 * ramp that asked for them.
+	 */
+	const repeat = (button: HTMLButtonElement | undefined, ticks: number) => {
+		for (let i = 0; i < ticks; i++) pressDown(button);
+		release(button);
 	};
 
 	it('refunds the buffer when a gesture reverses to nothing', () => {
@@ -1363,10 +1322,10 @@ describe('pool gesture is derived from its origin', () => {
 			resolved: { max: 54 },
 		});
 		const { current, temp, steps } = parts(el);
-		hold(steps[0], 1);
+		repeat(steps[0], 1);
 		expect(temp?.value).toBe('7');
 		// Same gesture, reversed: back to exactly where it started.
-		hold(steps[1], 1);
+		repeat(steps[1], 1);
 		expect(temp?.value).toBe('8');
 		expect(current?.value).toBe('43');
 	});
@@ -1377,11 +1336,11 @@ describe('pool gesture is derived from its origin', () => {
 		});
 		const { current, temp, steps } = parts(el);
 		// Four down: the buffer covers two, the pool takes two.
-		hold(steps[0], 4);
+		repeat(steps[0], 4);
 		expect(temp?.value).toBe('0');
 		expect(current?.value).toBe('41');
 		// Two up within the same gesture: the pool is repaid before the buffer.
-		hold(steps[1], 2);
+		repeat(steps[1], 2);
 		expect(current?.value).toBe('43');
 		expect(temp?.value).toBe('0');
 	});
@@ -1393,7 +1352,7 @@ describe('pool gesture is derived from its origin', () => {
 			resolved: { max: 54 },
 		});
 		const { temp } = parts(el);
-		hold(parts(el).steps[0], 5);
+		repeat(parts(el).steps[0], 5);
 		expect(Number(temp?.value)).toBe(0);
 	});
 
@@ -1418,11 +1377,11 @@ describe('pool gesture is derived from its origin', () => {
 		});
 		const { current, temp, steps } = parts(el);
 		if (!current) throw new Error('expected the value');
-		hold(steps[0], 1);
+		repeat(steps[0], 1);
 		expect(temp?.value).toBe('4');
 		current.value = '30';
 		current.dispatchEvent(new Event('blur'));
-		hold(steps[0], 1);
+		repeat(steps[0], 1);
 		expect(temp?.value).toBe('3');
 		expect(current.value).toBe('30');
 	});
@@ -1459,12 +1418,7 @@ describe('pool write coalescing', () => {
 		try {
 			const onChange = vi.fn();
 			const el = render({}, { current: '22' }, { onChange });
-			parts(el).steps[0]?.dispatchEvent(
-				new PointerEvent('pointerdown', { pointerId: 1, button: 0 }),
-			);
-			parts(el).steps[0]?.dispatchEvent(
-				new PointerEvent('pointerup', { pointerId: 1, button: 0 }),
-			);
+			press(parts(el).steps[0]);
 			expect(onChange).not.toHaveBeenCalled();
 			vi.advanceTimersByTime(800);
 			expect(onChange).toHaveBeenCalledWith({ current: '21' });
@@ -1480,12 +1434,7 @@ describe('pool write coalescing', () => {
 		try {
 			const onChange = vi.fn();
 			const el = render({}, { current: '22' }, { onChange });
-			parts(el).steps[0]?.dispatchEvent(
-				new PointerEvent('pointerdown', { pointerId: 1, button: 0 }),
-			);
-			parts(el).steps[0]?.dispatchEvent(
-				new PointerEvent('pointerup', { pointerId: 1, button: 0 }),
-			);
+			press(parts(el).steps[0]);
 			el.remove();
 			vi.advanceTimersByTime(800);
 			expect(onChange).not.toHaveBeenCalled();
@@ -1536,9 +1485,7 @@ describe('pool buffer pill', () => {
 
 	it('quietens as the last point is absorbed', () => {
 		const el = render({ hasTemp: true }, { current: '20', temp: '1' });
-		parts(el).steps[0]?.dispatchEvent(
-			new PointerEvent('pointerdown', { pointerId: 1, button: 0 }),
-		);
+		pressDown(parts(el).steps[0]);
 		expect(
 			el.querySelector('.sheetsmith-pool-temp')?.classList.contains(
 				'sheetsmith-pool-temp-empty',
@@ -1665,7 +1612,7 @@ describe('pool value field holds only values', () => {
 		});
 		const { current, trigger, amount } = parts(el);
 		if (!current || !amount) throw new Error('expected the fields');
-		trigger?.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, button: 0 }));
+		pressDown(trigger);
 		amount.value = '2';
 		amount.dispatchEvent(new Event('input'));
 		expect(current.value).toBe('5');
@@ -1676,7 +1623,7 @@ describe('pool value field holds only values', () => {
 describe('pool amount control', () => {
 	const open = (el: HTMLElement) => {
 		const { trigger, amount } = parts(el);
-		trigger?.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, button: 0 }));
+		pressDown(trigger);
 		if (!amount) throw new Error('expected the amount field');
 		return amount;
 	};
@@ -2037,8 +1984,7 @@ describe('pool amount control', () => {
 		const amount = open(el);
 		put(amount, '17');
 		const steps = parts(el).steps;
-		steps[0]?.dispatchEvent(new PointerEvent('pointerdown', { pointerId: 1, button: 0 }));
-		steps[0]?.dispatchEvent(new PointerEvent('pointerup', { pointerId: 1, button: 0 }));
+		press(steps[0]);
 		await new Promise((resolve) => window.setTimeout(resolve, 0));
 		parts(el).current?.dispatchEvent(new Event('blur'));
 		expect(onChange).toHaveBeenCalledWith({ current: '61' });
@@ -2094,9 +2040,7 @@ describe('pool amount control', () => {
 		// would lose focus to the value the moment it was touched.
 		const el = render();
 		const amount = open(el);
-		amount.dispatchEvent(
-			new PointerEvent('pointerdown', { pointerId: 1, button: 0, bubbles: true }),
-		);
+		pressDown(amount, { bubbles: true });
 		expect(document.activeElement).toBe(amount);
 	});
 });
@@ -2277,9 +2221,7 @@ describe('a pool whose max the character owns', () => {
 		const el = render(owned, { current: '22', max: '31' });
 		const { maxInput } = parts(el);
 		maxInput?.focus();
-		maxInput?.dispatchEvent(
-			new PointerEvent('pointerdown', { pointerId: 1, button: 0, bubbles: true }),
-		);
+		pressDown(maxInput, { bubbles: true });
 		expect(document.activeElement).toBe(maxInput);
 	});
 
