@@ -165,7 +165,8 @@ src/
                    from these at build time and is not edited directly
   view/            sheet view, auto-open, reset flow
   ui/              generic building blocks that know nothing of components
-  test/            scaffolding only: stubs and fixtures, never test cases
+  test/            scaffolding only: the stub, the fixtures, and the gestures a
+                   test presses a control with. Never test cases
 ```
 
 A new module goes in the folder naming what it *does*, not what it is *for*. A
@@ -218,11 +219,14 @@ the repository rather than referenced as an installed skill, and why
 `pool.test.ts` sits next to `pool.ts` [judgement]. A mirror `tests/` tree
 duplicates the structure, drifts from it, and turns every import into a climb.
 It would also hide the real problem rather than fix it: `src/components/` looks
-crowded because `pool.test.ts` is 2176 lines, and the answer to that is smaller
+crowded because `pool.test.ts` is 2300 lines and `table.test.ts` 2600, and the answer to that is smaller
 modules, not a different folder to keep them in.
 
 `src/test/` is the exception and is not a contradiction: it holds scaffolding,
-`obsidian-stub.ts`, which is shared infrastructure rather than a test case.
+which is shared infrastructure rather than a test case. `obsidian-stub.ts` is the
+app a test runs against; `pointer.ts` is the gestures a test presses a control
+with, which went there rather than beside a component because no component owns
+a gesture every component is driven by.
 
 ## 3. Component file shape
 
@@ -511,20 +515,69 @@ decided.
 - **A test that could pass vacuously must assert it is testing something.**
   `styles.test.ts` checks it matched more than 8 rules before checking they are
   all scoped.
-- **A gesture module is tested through a control that drives it.**
-  `src/interaction/` is the stated exception to one test file per module:
-  `scrub.ts`, `hold-repeat.ts` and `editable.ts` have none of their own and
-  should not grow one. A gesture is only meaningfully driven through a control,
-  so a file of its own would have to build a fake card before it could press
-  anything — and `pool.test.ts`, `track.test.ts` and the component tests already
-  are that card. A second one is the duplication §1 forbids.
-- **That exception carries a condition: what the gesture owns has to actually be
-  driven somewhere.** Read as a licence instead, it is how `hold-repeat.ts` came
-  to have its repeat untested — every caller released the button on the tick it
-  pressed it, so the ramp, its floor and reading Shift per tick never ran, and
-  "writes the note once for a press, not once per repeat" passed on a press that
-  had not repeated. Timing the gesture owns belongs beside that control's other
-  gesture tests, under fake timers, not in a file of its own.
+- **A shared test helper is checked to be the only spelling of what it owns**
+  [checked]. `pointer-gestures.test.ts` scans every `*.test.ts` for a bare
+  `new PointerEvent('pointerdown'|'pointerup', …)` that carries `pointerId` or
+  `button` and no coordinates — which is exactly what `src/test/pointer.ts`
+  already says — and fails naming the file and line. It exists because
+  extracting that module removed the four redeclarations and left fifteen
+  equivalent raw dispatches behind in one file: **an extraction is not finished
+  at the declarations, and the call sites are the half nothing was watching.**
+  Finding them cost a grep across 2300 lines, which is dearer than the scan and
+  would be paid again by every reader who wondered. Same class as
+  `view/grid-cells.test.ts` and `components/isolation.test.ts` (§1): a gap
+  findable only by reading two files side by side is worth a scan rather than a
+  habit. The predicate is narrow on purpose — a drag carries coordinates and a
+  card's own surface press carries neither `pointerId` nor `button`, and both are
+  hand-written by design — so the check only ever reports what it can prove.
+- **Two kinds of module are tested through their consumers instead.** Both are
+  stated exceptions to one test file per module. What they share is that the
+  consumer is the only place what the module owns becomes observable; the reason
+  differs, and collapsing the two into one reason is what let the condition below
+  read as attaching to just the first of them. A gesture has nothing to act on
+  without a control. A vocabulary has nothing to assert that is not a tautology.
+
+  **A gesture module is tested through a control that drives it.**
+  `src/interaction/` is the first: `scrub.ts`, `hold-repeat.ts` and `editable.ts`
+  have none of their own and should not grow one. A gesture is only meaningfully
+  driven through a control, so a file of its own would have to build a fake card
+  before it could press anything — and `pool.test.ts`, `track.test.ts` and the
+  component tests already are that card. A second one is the duplication §1
+  forbids.
+
+  **A shared-vocabulary module is tested through the consumers that speak it.**
+  `components/column-types.ts` and `components/stored-flag.ts` are the second,
+  and they hold nothing but the policy §1's one-step tier extracted: which column
+  types exist, which is the default, which can be totalled and which published;
+  which spellings of a flag a note may hold, what one is written as, and what a
+  two-state control is called. A file of its own could assert little past a
+  constant equalling itself, which is §1's own reason the copies were merged —
+  the only thing such a test could check is that they still agree, and that is
+  what one name says for free. What holds them is three consumer test files:
+  `table.test.ts` and `track.test.ts` drive every spelling either flag set holds,
+  through a read and a rendered control, and those two together with
+  `list-fields.test.ts` drive every column type — through a rendered card and
+  through the editor field that offers it. Each spelling is written out literally
+  rather than iterated from an exported set: a test walking `SET` passes after a
+  member is deleted from it, because the deletion takes the iteration with it,
+  which is the vacuous pass this section forbids above. One member of
+  `stored-flag.ts` does not meet the condition below, and §11 holds it.
+- **Both exceptions carry the same condition, and the condition is what makes
+  either of them safe: what the module owns has to actually be driven
+  somewhere.** Read as a licence
+  instead, it is how `hold-repeat.ts` came to have its repeat untested — every
+  caller released the button on the tick it pressed it, so the ramp, its floor
+  and reading Shift per tick never ran, and "writes the note once for a press,
+  not once per repeat" passed on a press that had not repeated. Timing the
+  gesture owns belongs beside that control's other gesture tests, under fake
+  timers, not in a file of its own. A vocabulary fails the same way and is
+  cheaper to miss, because nothing about it looks untested: a spelling no
+  consumer's fixture holds, or a column type no fixture configures, is a member
+  of a set nothing has ever asked about, and the module's whole value is that
+  the answer is in one place. Where a *type* can carry the guard instead, prefer
+  that (§1) — the editor's labels are a `Record<ColumnType, string>`, so a new
+  column type does not compile until it has a word, which is a check nobody has
+  to remember to run.
 - **Duplication between components requires a test that drives both** (§1).
 
 ---
@@ -535,13 +588,14 @@ Where the code does not yet match this file. These are findings, not licences:
 new code follows the patterns above. A row leaves when it is fixed. A backlog
 that keeps solved rows stops being read.
 
+Every row here names what it is waiting for. A row with no trigger is a row
+nobody can ever retire, and four of the eight this table held were closed in one
+pass precisely because each said what would close it.
+
 | Gap | Where | Fix |
 | --- | --- | --- |
-| Two responsibilities in one file | `layout-editor.ts` | Deliberately deferred, not overlooked. The split waits for the M4 workspace view, which rewrites this module anyway; splitting it twice would be the waste. It has tests now, so the move will be guarded when it comes. |
-| A pointer-press helper is redeclared per `describe` block | `components/*.test.ts` | Three copies of `press` inside `pool.test.ts`, one more each in `stat.test.ts` and `track.test.ts`, over about thirty `pointerdown` dispatch sites. Past §1's extract-at-three by any reading, and `src/test/` is the folder for it. Deferred because it is a mechanical change across four test files whose only safe review is reading every call site, which does not belong inside a feature diff — and because the drift it risks is loud: an event missing `button: 0` makes a gesture test fail, not pass quietly. The `hold`/`release` pair added beside them is a different gesture, not a fourth copy, and should be extracted with them rather than before them. |
-| A test mirror of the view diverges from it on one branch | `view/reset-flow.test.ts` | Its trigger loop iterates every prepared component, where `SheetView.renderTriggers` filters `entry.error === null` before binding one. The env it builds now goes through the view's own `publishedComponent`, so the two agree about publication; this last branch is about which components a trigger reaches. Unobservable today, because no fixture there fails a read — which is also why it survived: a mirror's divergence is only ever visible on a case the mirror does not have. Deferred rather than fixed because the change is one line in a file whose whole job is to be an independent check, and adding a failing-read fixture to prove it is a diff of its own. The file's own header states the rule it is breaking: if the two disagree, this file is the copy that is wrong. |
-| No component has a boolean that redraws the editor, so the redraw's focus path is only half driven | `src/settings.test.ts`, `components/*.ts` | A boolean controlling another field's `visibleWhen` rebuilds the settings tab, and the tab restores focus by a `data-sheetsmith-focus` token. `Collapsible` was the only such boolean anywhere, and it went with the group's collapse (SPEC §13); the two `visibleWhen`s left are both keyed on selects, which the sibling test drives. So the test asserts the precondition — a boolean's checkbox carries a token that addresses it — rather than pressing one and watching focus survive. That is §10's `hold-repeat` failure with the polarity reversed: there a path had callers that never exercised it, here it has no caller at all. Not fixed by inventing a boolean a component does not need, nor by registering a fake component, which would mean the registry opening a door for a test. It closes when a component next gains a boolean that controls visibility, and the test goes back to driving it. |
-| The view's share of a container's tab state has no test | `view/sheet-view.ts` | Three lines with no logic in them — the `Map`, the `clear()` on a file change, and the get/set handed to a container's context — and none of it drivable, because `SheetView` cannot be constructed without a workspace. The component's half *is* tested: `tab-set.test.ts` drives the first tab, the reader's press, the clamp, and the state surviving a rebuild. What is untested is that the view supplies it and drops it, and the second is a real claim: forget the `clear()` and a reopened note inherits the previous note's tab. **This row existed for the collapse's identical `Map` and was retired when the collapse went; Tab set brought the same three lines back, so it is back.** Not extracted the way `cell-focus.ts` was, because that carried logic with a trap in it and this is a `Map` — a module here would test that a `Map` works, behind an abstraction with one caller (§1). The fix is whatever makes `SheetView` constructible in a test, which is a change to the view rather than to this feature; until then it is a look criterion in `docs/features/tab-set.md`. |
-| A shared vocabulary module has no test file of its own | `components/column-types.ts`, `components/stored-flag.ts` | §10 asks for one test file per module beside the code, and neither has one. Both hold only shared policy — which column types exist, and which spellings of a flag a note may hold — so a file of their own could assert little beyond a constant equalling itself, which §10 elsewhere names as the test worth nothing. What actually holds them is the consumers: `table.test.ts` and `track.test.ts` drive `yes`, `✔`, `no` and `maybe` through a read and a write, and every column type through a rendered card. That is `src/interaction/`'s stated exception with the same condition attached — what the module owns has to be driven *somewhere* — but §10 names only gestures, so this is a gap in the rule's wording rather than in the coverage, and widening a rule is not something to do while shipping other work. Recorded rather than papered over, because the condition is what makes the exception safe and the next such module will inherit the precedent without it. |
-| The two-state ring's ARIA wiring is spelled in both components that draw one | `components/table.ts`, `components/track.ts` | Three lines apiece: `aria-pressed` carries the state, the accessible name is the field's own, and only a named level earns a `title`. The painter, the stored spellings and the "Yes"/"No" reading are all extracted, so what is left is each component's own naming — a cell names its column and row, a card names its label — and generalising it means a control module parameterised over both, which §1 refuses on two consumers. `contract.test.ts` holds the half that would actually cost something, that a second implementor draws through `paintLevelRing` rather than a lookalike. The row exists because that guard checks the *painter* and not the ARIA, so if the two ever disagree about what a two-state control announces, nothing says so. It closes if a third two-state control arrives. |
-| The declared `lib` is behind the code that compiles against it | `tsconfig.json`, three shipping files | `lib` is `ES2021` while `scrub.ts`, `trigger-list-field.ts` and `function-library-field.ts` all call `Array.prototype.at`, which is ES2022. It type-checks only because `@types/node` ships a compatibility shim declaring `at` on `Array`, so `npm run build` is more permissive than `tsconfig.json` claims and an editor resolving types without that package reports errors the build does not. No runtime consequence: esbuild only emits, and `minAppVersion` 1.9.0 is long past the Chromium that shipped `.at`. The fix is to align `lib` and esbuild's `target` on ES2022, which is a project-wide compiler decision rather than something to change while shipping other work. |
+| Two responsibilities in one file | `layout-editor.ts` | Deliberately deferred, not overlooked. The split waits for the M4 workspace view, which rewrites this module anyway; splitting it twice would be the waste. It has tests now, so the move will be guarded when it comes. **Waiting on:** M4. |
+| No component has a boolean that redraws the editor, so the redraw's focus path is only half driven | `src/settings.test.ts`, `components/*.ts` | A boolean controlling another field's `visibleWhen` rebuilds the settings tab, and the tab restores focus by a `data-sheetsmith-focus` token. `Collapsible` was the only such boolean anywhere, and it went with the group's collapse (SPEC §13); the two `visibleWhen`s left are both keyed on selects, which the sibling test drives. So the test asserts the precondition — a boolean's checkbox carries a token that addresses it — rather than pressing one and watching focus survive. That is §10's `hold-repeat` failure with the polarity reversed: there a path had callers that never exercised it, here it has no caller at all. Not fixed by inventing a boolean a component does not need, nor by registering a fake component, which would mean the registry opening a door for a test. **Waiting on:** a component gaining a boolean that controls another field's visibility, at which point the test goes back to driving it. |
+| The view's share of a container's tab state has no test | `view/sheet-view.ts` | Three lines with no logic in them — the `Map`, the `clear()` on a file change, and the get/set handed to a container's context — and none of it drivable, because `SheetView` cannot be constructed without a workspace. The component's half *is* tested: `tab-set.test.ts` drives the first tab, the reader's press, the clamp, and the state surviving a rebuild. What is untested is that the view supplies it and drops it, and the second is a real claim: forget the `clear()` and a reopened note inherits the previous note's tab. **This row existed for the collapse's identical `Map` and was retired when the collapse went; Tab set brought the same three lines back, so it is back.** Not extracted the way `cell-focus.ts` was, because that carried logic with a trap in it and this is a `Map` — a module here would test that a `Map` works, behind an abstraction with one caller (§1). **Waiting on:** a `SheetView` a test can *render*, not merely construct. Constructible is the cheaper half and it is not enough: `activeTab` is private and only reachable through the `onActivateTab` callback handed out mid-render, so setting a tab before asserting `clear()` drops it means driving `renderSheet` — a vault, a metadata cache, a layout file to load, and `contentEl` and `file` on the stub's `TextFileView`. That is a workspace fixture in `src/test/`, designed rather than accreted, under §2's rule that the folder holds scaffolding and never test cases. Weighed in the pass that closed four of this table's rows and ruled its own piece of work, since it is larger than all four together; until then it is a look criterion in `docs/features/tab-set.md`. |
+| A shared vocabulary's member is computed and its value discarded | `components/stored-flag.ts`, `components/table.ts`, `components/track.ts` | `flagReading` says what a two-state control is called — "Yes" or "No" — and nothing a reader or a listener can reach ever carries the answer. Table computes `nameOf(current)` for a toggle and then takes neither branch that uses it: `aria-pressed` carries the state, `aria-label` is the field's own name, and `title` is removed, because a tooltip repeating what is already legible is noise fired at every pass. Track guards both its call sites on `named`, and `reading` returns `stepLabel` whenever `named` is true, so the flag branch is only ever taken to be thrown away. Measured, not read: inverting the function passes all 1370 tests while making it throw fails, which is the signature of a live call site with a dead result. §10's condition cannot be met by a test here — there is nothing to assert — so this is not a coverage gap but a policy with no application, and §1's "share the application, not the number" is the rule it fails. **Waiting on:** a decision that is the spec's rather than a reviewer's. Either an unnamed two-state control should announce "Yes"/"No" and the two components' comments arguing the opposite are wrong, or it should not and `flagReading` and its three dead branches go. Deleting an export across two components is a diff of its own and ships behaviour either way, which is why it was not taken in the pass that found it. |
+| The two-state ring's ARIA wiring is spelled in both components that draw one | `components/table.ts`, `components/track.ts` | Three lines apiece: `aria-pressed` carries the state, the accessible name is the field's own, and only a named level earns a `title`. The painter, the stored spellings and the "Yes"/"No" reading are all extracted, so what is left is each component's own naming — a cell names its column and row, a card names its label — and generalising it means a control module parameterised over both, which §1 refuses on two consumers. `contract.test.ts` holds the half that would actually cost something, that a second implementor draws through `paintLevelRing` rather than a lookalike. The row exists because that guard checks the *painter* and not the ARIA, so if the two ever disagree about what a two-state control announces, nothing says so. **Waiting on:** a third two-state control, which is where §1 extracts. |
