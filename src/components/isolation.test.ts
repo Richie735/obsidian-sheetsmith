@@ -68,6 +68,8 @@ const FORBIDDEN = [
 const ALLOWED = [
 	"import { paintLevelRing } from './level-ring';",
 	"import { TOTALLED_TYPES } from './column-types';",
+	"import { isFlagSet } from './stored-flag';",
+	"import { isFlagSet } from '../components/stored-flag';",
 	"import { TOTALLED_TYPES } from '../components/column-types';",
 	"import { formatDerived } from './stat-card';",
 	"import { paintLevelRing } from '../components/level-ring';",
