@@ -918,6 +918,60 @@ describe('every class the plugin adds is its own', () => {
 	});
 });
 
+describe('a stacked ring keeps its neighbour\'s hit target off its own', () => {
+	/*
+	 * Two numbers in rules thirty lines apart, tied together by nothing but a
+	 * comment, whose disagreement is silent and lands on the finger: the level
+	 * ring's target reaches past its own box, and a checklist stacks rings, so a
+	 * gap smaller than twice that reach makes the lower ring's target cover the
+	 * upper ring's bottom edge and win a press aimed at it. Nothing in a type
+	 * check, a unit test or a screenshot shows it — a hit target has no
+	 * appearance — which is what §10 says a guard test is for.
+	 *
+	 * Held as the *relationship* rather than as a pixel count, so the tokens stay
+	 * free to move: whatever the ring insets by, the gap is twice it.
+	 */
+	function value(subject: string, property: string): string | null {
+		const withoutComments = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+		for (const block of withoutComments.split('}')) {
+			const brace = block.indexOf('{');
+			if (brace === -1) continue;
+			const subjects = block
+				.slice(0, brace)
+				.split(',')
+				.map((part) => part.trim().replace(/\s+/g, ' '))
+				.map((selector) => selector.split(/[\s>]+/).pop() ?? '');
+			if (!subjects.includes(subject)) continue;
+			for (const declaration of block.slice(brace + 1).split(';')) {
+				const [key, ...rest] = declaration.split(':');
+				if ((key ?? '').trim() === property) return rest.join(':').trim();
+			}
+		}
+		return null;
+	}
+
+	/** The token a `calc(-1 * var(--x))` or `calc(2 * var(--x))` is built on. */
+	const token = (expression: string | null): string | null =>
+		expression?.match(/var\((--[a-z0-9-]+)\)/)?.[1] ?? null;
+
+	it('finds both rules it is meant to be comparing', () => {
+		// Either selector renamed and this passes by comparing two nulls.
+		expect(value('.sheetsmith-level-ring::after', 'inset')).not.toBeNull();
+		expect(
+			value('.sheetsmith-track-flags.sheetsmith-track-set', 'row-gap'),
+		).not.toBeNull();
+	});
+
+	it('spaces a checklist by twice what the ring reaches', () => {
+		const reach = value('.sheetsmith-level-ring::after', 'inset');
+		const gap = value('.sheetsmith-track-flags.sheetsmith-track-set', 'row-gap');
+		// `token` takes the first `var()` it finds, which is the vertical half:
+		// two-value `inset` is block-then-inline, and stacking is the block axis.
+		expect(token(reach)).toBe(token(gap));
+		expect(gap).toMatch(/^calc\(\s*2\s*\*/);
+	});
+});
+
 describe('styles.css is assembled, not authored', () => {
 	/*
 	 * The stylesheet is generated from src/styles/, because Obsidian loads one

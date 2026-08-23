@@ -1223,7 +1223,13 @@ body {
 
    One rule for both controls in the table rather than two carrying the same
    arithmetic: the inset is the cell's own padding, and a copy of it is a copy
-   that drifts. */
+   that drifts.
+
+   It stays on the ring itself rather than being scoped back to a table cell,
+   because a 21px circle is the smallest thing on the sheet wherever it is
+   drawn, and Track's flag is drawn on a card. What that costs is paid where the
+   rings are stacked: a checklist has to keep its rows further apart than the
+   target reaches, which is the row-gap rule on .sheetsmith-track-flags. */
 .sheetsmith-view .sheetsmith-level-ring::after,
 .sheetsmith-view .sheetsmith-table-remove-button::after {
 	content: '';
@@ -2870,6 +2876,64 @@ a.sheetsmith-undo {
 
 .sheetsmith-track-set .sheetsmith-track-run {
 	justify-content: flex-start;
+}
+
+/* A run of one segment is a flag, and it draws the level ring rather than a
+   segment: two states is a toggle and not a value with positions between its
+   ends, so it takes the ring's box, its press scale, its focus outline and its
+   hit target from the shared painter (docs/UI.md §9).
+
+   So .sheetsmith-track-flag has no rule at all, here or anywhere: the ring rule
+   above is the whole appearance, and the class is on the element only as the
+   sheet's name for the control — which is what a test asserts and what a reader
+   grepping for the flag finds. .sheetsmith-track-flags, on the list, is a
+   different class and is the one the rule below selects.
+
+   No .sheetsmith-track-step beside a flag either: a step line exists for a named
+   run where the number is an index into a rule, and a flag's one step is
+   already on the ring. */
+
+/* Stacked rings need more room between rows than stacked runs do. The ring's
+   hit target reaches --size-2-2 above and below its own box, and the set's
+   ordinary row gap is smaller than that, so two rows' targets would overlap and
+   the later ring would win a press aimed at the earlier one. Twice the reach, so
+   neighbours meet without overlapping — the same arithmetic
+   .sheetsmith-level-sample does in the editor, for the same reason. */
+.sheetsmith-track-flags.sheetsmith-track-set {
+	row-gap: calc(2 * var(--size-2-2));
+	/* Content-sized columns, and the pair of them centred — which is what
+	   centres a checklist rather than `justify-items`, whose effect here is to
+	   centre each ring inside a 1fr column and so drag it away from the name it
+	   belongs to. Proximity is the whole of what says a name names the ring
+	   beside it.
+
+	   A run set stays ragged-right, and that is not an inconsistency: what a
+	   card of five, three and one slots is *for* is the shape of five, three and
+	   one, and stretching or centring every row draws that shape away. A
+	   checklist has no such shape — every row is one ring — so left-hugging it
+	   in a card whose heading is centred buys nothing and costs the heading its
+	   relationship to what it labels. Measured at 380, where the card goes
+	   full-width and the content does not: the block sat in the left 27% with
+	   its own heading 130px away, beside two single flags centring theirs. */
+	grid-template-columns: auto auto;
+	justify-content: center;
+}
+
+/* A checklist's row name is the content, not a caption on it.
+
+   Every other row set draws its name faint, and rightly: on a card of spell
+   slots or death saves the segments are the reading and "Successes" says which
+   run they belong to. A flag has no reading — there is a dot and a word, and the
+   word is the only thing that says which flag it is, so drawn at --text-faint it
+   sat quieter than the table's own column headers while carrying more. The
+   painter was shared so a flag could not measure differently on a card than in a
+   cell (docs/UI.md §9); this is the label beside it, which was not.
+
+   Colour only. The size and the tracking stay, so a checklist still reads as a
+   list of labels rather than as a stack of headings, and every other row set is
+   untouched. */
+.sheetsmith-track-flags .sheetsmith-track-row-name {
+	color: var(--text-normal);
 }
 
 .sheetsmith-track-run:focus-visible {

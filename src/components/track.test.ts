@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
 	configError,
+	isFlagCard,
 	isRowSet,
 	markSize,
 	marksAtPoint,
@@ -635,11 +636,13 @@ describe('track.render', () => {
 	});
 
 	it('keeps a lettered segment\'s letter above its fill', () => {
+		// Three names rather than two: two is one segment, which is a flag and
+		// draws the ring instead, and this is about a segment's paint order.
 		const el = render(
-			{ count: undefined, levels: ['Rested', 'One:☠'] },
-			{ values: { value: '1' } },
+			{ count: undefined, levels: ['Rested', 'One', 'Two:☠'] },
+			{ values: { value: '2' } },
 		);
-		const segment = parts(el).segments[0];
+		const segment = parts(el).segments[1];
 		const letter = segment?.querySelector<HTMLElement>(
 			'.sheetsmith-track-segment-glyph',
 		);
@@ -1220,5 +1223,456 @@ describe('track pointer', () => {
 		expect(ghosts(el, 0)).toEqual([0, 0, 0, 0, 0]);
 		expect(fills(el, 1)).toEqual([1, 0, 0]);
 		expect(ghosts(el, 1)).toEqual([0, 0, 0]);
+	});
+});
+
+/*
+ * A run of one segment, which is where Toggle went (SPEC §13).
+ *
+ * Grouped rather than spread through the sections above, because what is being
+ * checked is one claim repeated at every layer: two states is a flag, and the
+ * flag-ness is a property of the *layout* rather than of one evaluation.
+ */
+describe('a flag track', () => {
+	const flag: TrackConfig = {
+		id: 'inspiration',
+		type: 'track',
+		label: 'Inspiration',
+		position: { col: 1, row: 1, width: 1, height: 1 },
+		count: 1,
+	};
+
+	/** The ring on a flag card, by row. */
+	const rings = (el: HTMLElement) =>
+		Array.from(el.querySelectorAll<HTMLElement>('.sheetsmith-track-flag'));
+
+	const drawFlag = (
+		overrides: Partial<TrackConfig> = {},
+		data: TrackData | null = { values: { value: 'yes' } },
+		ctx: Partial<RenderContext> = {},
+	) => {
+		const el = document.createElement('div');
+		document.body.appendChild(el);
+		track.render(el, { ...flag, ...overrides }, data, {
+			// Nothing resolved by default, on purpose: a flag's length is a
+			// literal, so the card must draw without asking the formula layer
+			// anything at all.
+			resolved: {},
+			resolveField: () => null,
+			onChange: () => undefined,
+			...ctx,
+		});
+		return el;
+	};
+
+	describe('is decided by the layout, not by a resolved number', () => {
+		it('takes a literal count of one, written as a number or as text', () => {
+			expect(isFlagCard(flag)).toBe(true);
+			expect(isFlagCard({ ...flag, count: '1' })).toBe(true);
+			expect(isFlagCard({ ...flag, count: ' 1 ' })).toBe(true);
+		});
+
+		it('refuses a formula, whatever it works out to', () => {
+			// The whole reason the predicate is static: `level - 4` is 1 for a
+			// fifth-level character and 3 later, and a note that changed spelling
+			// on a level-up would be rewriting itself behind the reader.
+			expect(isFlagCard({ ...flag, count: 'level - 4' })).toBe(false);
+			expect(isFlagCard({ ...flag, count: '3' })).toBe(false);
+		});
+
+		it('takes two level names, since naming the steps settles the length', () => {
+			expect(
+				isFlagCard({ ...flag, count: undefined, levels: ['Fine', 'Bloodied:!'] }),
+			).toBe(true);
+			expect(
+				isFlagCard({ ...flag, count: undefined, levels: ['Fine', 'Hurt', 'Down'] }),
+			).toBe(false);
+		});
+
+		it('refuses one segment holding several marks: five states is not two', () => {
+			expect(isFlagCard({ ...flag, marks: 4 })).toBe(false);
+		});
+
+		it('is the whole card, so a slot set with a one-slot row still counts', () => {
+			// Five, three and one — the third falling back to the component's
+			// count. Per run this would write `L1: 2`, `L2: 1`, `L3: yes` down one
+			// fenced block, and one spelling per card is what a hand-editable
+			// note needs.
+			expect(isFlagCard(slots)).toBe(false);
+			expect(
+				isFlagCard({
+					...flag,
+					rows: [{ key: 'alert' }, { key: 'lucky' }],
+				}),
+			).toBe(true);
+		});
+	});
+
+	describe('reads either spelling, on a run of any length', () => {
+		it('reads a flag as one mark and a cleared one as none', () => {
+			expect(track.read('\n```sheet\nvalue: yes\n```\n', flag)).toEqual({
+				ok: true,
+				data: { values: { value: 'yes' } },
+			});
+			expect(
+				track.read('\n```sheet\nvalue: ✔\n```\n', flag).ok,
+			).toBe(true);
+		});
+
+		it('accepts a flag on a long run, which is what a raised count needs', () => {
+			// The case that would otherwise be a crash: a layout that wrote `yes`
+			// raises its count to six, and every character note it wrote becomes
+			// an error card the moment it does.
+			const raised: TrackConfig = { ...flag, count: 6 };
+			expect(track.read('\n```sheet\nvalue: yes\n```\n', raised)).toEqual({
+				ok: true,
+				data: { values: { value: 'yes' } },
+			});
+			const el = drawFlag({ count: 6 }, { values: { value: 'yes' } }, {
+				resolved: { count: 6 },
+			});
+			// One mark, its first segment filled: the state the flag was in.
+			expect(fills(el)).toEqual([1, 0, 0, 0, 0, 0]);
+		});
+
+		it('still reports something that is neither a number nor a flag', () => {
+			// Named for what a checkbox writes. This assertion existed and held
+			// the *other* card's sentence — "not a number of marks" — which is a
+			// spelling this card never produces, so it pointed its author at a
+			// fix they could not use (SPEC §10).
+			expect(track.read('\n```sheet\nvalue: maybe\n```\n', flag)).toEqual({
+				ok: false,
+				error: '"maybe" is not yes or no.',
+			});
+			// And a run of segments still says marks, since that is what it holds.
+			expect(
+				track.read('\n```sheet\nvalue: maybe\n```\n', { ...flag, count: 6 }),
+			).toEqual({ ok: false, error: '"maybe" is not a number of marks.' });
+		});
+
+		it('round-trips a flag section byte for byte', () => {
+			// Constraint 3, on the spelling this feature adds. Nothing about the
+			// write path changed, which is the point of asserting it here.
+			const body = '\n```sheet\nvalue: yes\n```\n';
+			const read = track.read(body, flag);
+			if (!read.ok || !read.data) throw new Error('expected data');
+			expect(track.write(read.data, body, flag)).toBe(body);
+		});
+
+		it('shows a count on a flag card as ticked, and leaves the note alone', () => {
+			// A note written before the fold, by a layout that has not changed.
+			const el = drawFlag({}, { values: { value: '1' } });
+			expect(rings(el)[0]?.getAttribute('aria-pressed')).toBe('true');
+		});
+	});
+
+	describe('publishes a boolean', () => {
+		const publish = (
+			overrides: Partial<TrackConfig>,
+			data: TrackData | null,
+		) => {
+			const config = { ...flag, ...overrides };
+			const scope = buildSheetScope([
+				{
+					id: config.id,
+					values: track.scopeValues?.(data, config) ?? {},
+					resolver: () => makeFieldResolver(track, config, data, undefined),
+				},
+			]);
+			return scope;
+		};
+
+		it('under its bare id and under .value alike', () => {
+			// What Toggle promised, and what a `toggle` column's cell already
+			// means to a formula: `if(inspiration, 1, 0)` is the expression an
+			// author writes for a flag, and 1 and 0 would have made it an error.
+			const scope = publish({}, { values: { value: 'yes' } });
+			expect(scope('inspiration')).toBe(true);
+			expect(scope('inspiration.value')).toBe(true);
+			expect(publish({}, { values: { value: 'no' } })('inspiration')).toBe(false);
+		});
+
+		it('keeps publishing its count, so lowering a count takes no name away', () => {
+			// A numeric run publishes `<id>.count`; a layout dropping from six
+			// segments to one must not silently break the formulas reading it.
+			expect(publish({}, { values: { value: 'yes' } })('inspiration.count')).toBe(1);
+			// And a checklist publishes none, exactly as a numeric row set does:
+			// a set of runs has no one ceiling to name.
+			expect(
+				publish(
+					{ rows: [{ key: 'alert' }, { key: 'lucky' }] },
+					{ values: {} },
+				)('inspiration.count'),
+			).toBeUndefined();
+		});
+
+		it('as false where the note holds nothing, not as an unknown name', () => {
+			// A flag has two states and no room for a third, and the empty ring
+			// on screen reads as "no". The alternative is a "?" beside every
+			// unset flag on a new character's sheet.
+			expect(publish({}, null)('inspiration')).toBe(false);
+			expect(publish({}, { values: {} })('inspiration.value')).toBe(false);
+		});
+
+		it('per row on a checklist, and nothing under the bare id', () => {
+			const scope = publish(
+				{ rows: [{ key: 'alert' }, { key: 'lucky' }] },
+				{ values: { alert: 'yes', lucky: 'no' } },
+			);
+			expect(scope('inspiration.alert')).toBe(true);
+			expect(scope('inspiration.lucky')).toBe(false);
+			expect(scope('inspiration')).toBeUndefined();
+		});
+	});
+
+	describe('resets to yes and no', () => {
+		const context = {
+			resolve: () => null,
+			explain: () => null,
+		};
+
+		it('fills and empties in the card\'s own spelling', () => {
+			expect(
+				track.applyReset?.(
+					{ values: { value: 'no' } },
+					flag,
+					{ trigger: 'Long rest', action: 'full' },
+					context,
+				),
+			).toEqual({ ok: true, data: { values: { value: 'yes' } } });
+			expect(
+				track.applyReset?.(
+					{ values: { value: 'yes' } },
+					flag,
+					{ trigger: 'Long rest', action: 'empty' },
+					context,
+				),
+			).toEqual({ ok: true, data: { values: { value: 'no' } } });
+		});
+
+		it('fills and empties without resolving anything', () => {
+			// §6's `full` and `empty` name the states rather than the numbers
+			// precisely so one set of three actions covers a Pool's max and a
+			// flag's yes, and this is the branch that would have cost it: a
+			// spelling that needed the resolved count could not clear a card
+			// whose count is broken.
+			const refuse = {
+				resolve: (): never => {
+					throw new Error('a flag must resolve nothing');
+				},
+				explain: () => null,
+			};
+			const checklist = {
+				...flag,
+				rows: [{ key: 'alert' }, { key: 'lucky' }],
+			};
+			expect(
+				track.applyReset?.(
+					null,
+					checklist,
+					{ trigger: 'Long rest', action: 'empty' },
+					refuse,
+				),
+			).toEqual({ ok: true, data: { values: { alert: 'no', lucky: 'no' } } });
+			expect(
+				track.applyReset?.(
+					null,
+					checklist,
+					{ trigger: 'Long rest', action: 'full' },
+					refuse,
+				),
+			).toEqual({ ok: true, data: { values: { alert: 'yes', lucky: 'yes' } } });
+		});
+
+		it('spells a formula outcome as a flag', () => {
+			const resolved = (to: number) =>
+				track.applyReset?.(
+					{ values: { value: 'no' } },
+					flag,
+					{ trigger: 'Long rest', action: 'formula', to: String(to) },
+					{ resolve: () => to, explain: () => null },
+				);
+			expect(resolved(1)).toEqual({ ok: true, data: { values: { value: 'yes' } } });
+			expect(resolved(4)).toEqual({ ok: true, data: { values: { value: 'yes' } } });
+			expect(resolved(0)).toEqual({ ok: true, data: { values: { value: 'no' } } });
+		});
+	});
+
+	describe('draws the level ring, not a segment', () => {
+		it('renders one ring and no segments', () => {
+			const el = drawFlag();
+			expect(rings(el)).toHaveLength(1);
+			expect(el.querySelectorAll('.sheetsmith-track-segment')).toHaveLength(0);
+			expect(el.querySelectorAll('.sheetsmith-track-run')).toHaveLength(0);
+			// The shared painter's own class, so a flag on a card cannot measure
+			// differently from the same flag in a table cell (docs/UI.md §9).
+			expect(rings(el)[0]?.classList.contains('sheetsmith-level-ring')).toBe(true);
+		});
+
+		it('is a toggle button rather than a slider', () => {
+			const ring = rings(drawFlag())[0];
+			expect(ring?.tagName).toBe('BUTTON');
+			expect(ring?.getAttribute('aria-pressed')).toBe('true');
+			expect(ring?.getAttribute('role')).toBeNull();
+			expect(ring?.getAttribute('aria-label')).toBe('Inspiration');
+		});
+
+		it('fills for yes and empties for no', () => {
+			expect(
+				rings(drawFlag())[0]?.classList.contains('sheetsmith-level-ring-on'),
+			).toBe(true);
+			const off = drawFlag({}, { values: { value: 'no' } });
+			expect(
+				rings(off)[0]?.classList.contains('sheetsmith-level-ring-on'),
+			).toBe(false);
+		});
+
+		it('carries a named step\'s mark, and the name behind it', () => {
+			const el = drawFlag(
+				{ count: undefined, levels: ['Fine', 'Bloodied:!'] },
+				{ values: { value: 'yes' } },
+			);
+			expect(rings(el)[0]?.textContent).toBe('!');
+			expect(rings(el)[0]?.getAttribute('title')).toBe('Bloodied');
+		});
+
+		it('gives an unnamed flag no tooltip, since aria-pressed already says it', () => {
+			expect(rings(drawFlag())[0]?.getAttribute('title')).toBeNull();
+		});
+
+		it('draws no step line: a flag\'s one step is already on the ring', () => {
+			const el = drawFlag(
+				{ count: undefined, levels: ['Fine', 'Bloodied:!'] },
+				{ values: { value: 'yes' } },
+			);
+			expect(el.querySelector('.sheetsmith-track-step')).toBeNull();
+		});
+
+		it('names each row of a checklist, and spaces the rings apart', () => {
+			const el = drawFlag(
+				{ rows: [{ key: 'alert', name: 'Alert' }, { key: 'lucky', name: 'Lucky' }] },
+				{ values: { alert: 'yes', lucky: 'no' } },
+			);
+			expect(rings(el)).toHaveLength(2);
+			expect(rings(el).map((r) => r.getAttribute('aria-label'))).toEqual([
+				'Alert',
+				'Lucky',
+			]);
+			// The ring's hit target reaches past its own box, so a stacked column
+			// of them needs its rows further apart than a stacked column of runs.
+			expect(
+				el
+					.querySelector('.sheetsmith-track-rows')
+					?.classList.contains('sheetsmith-track-flags'),
+			).toBe(true);
+		});
+
+		it('keeps the card to one tab stop', () => {
+			const el = drawFlag(
+				{ rows: [{ key: 'alert' }, { key: 'lucky' }] },
+				{ values: {} },
+			);
+			expect(rings(el).map((r) => r.tabIndex)).toEqual([0, -1]);
+		});
+	});
+
+	describe('writes on the press', () => {
+		const changes = () => {
+			const seen: Partial<TrackData>[] = [];
+			const el = document.createElement('div');
+			document.body.appendChild(el);
+			return {
+				seen,
+				render: (
+					overrides: Partial<TrackConfig> = {},
+					data: TrackData | null = { values: { value: 'no' } },
+				) => {
+					track.render(el, { ...flag, ...overrides }, data, {
+						resolved: {},
+						resolveField: () => null,
+						onChange: (delta) => seen.push(delta),
+					});
+					return el;
+				},
+			};
+		};
+
+		it('flips and writes at once, with no window to wait out', () => {
+			const card = changes();
+			const el = card.render();
+			rings(el)[0]?.click();
+			expect(card.seen).toEqual([{ values: { value: 'yes' } }]);
+			expect(rings(el)[0]?.getAttribute('aria-pressed')).toBe('true');
+		});
+
+		it('writes once per ring pressed, not once per burst', () => {
+			// `commit` collects every dirty run, so this path reads as though it
+			// would batch, and it never can: the press writes synchronously, so
+			// the first has landed before the second can arrive. Pinned because
+			// the spec claimed the opposite until somebody measured it — and
+			// because the fix somebody would reach for is routing the press
+			// through `commitSoon`, which would make a checklist's writes late to
+			// buy a batch nothing asked for.
+			const card = changes();
+			const el = card.render(
+				{ rows: [{ key: 'alert' }, { key: 'lucky' }] },
+				{ values: { alert: 'no', lucky: 'no' } },
+			);
+			rings(el)[0]?.click();
+			rings(el)[1]?.click();
+			expect(card.seen).toEqual([
+				{ values: { alert: 'yes' } },
+				{ values: { lucky: 'yes' } },
+			]);
+		});
+
+		it('writes nothing where the note already says what a press asks for', () => {
+			/*
+			 * A flag card handed `value: 1` from before the fold would otherwise
+			 * find "yes" different from "1" and rewrite the note having changed
+			 * nothing the reader asked to change — the decision the spec calls
+			 * "the write that must not happen".
+			 *
+			 * Driven through a press that is a no-op rather than through a blur.
+			 * A flag has no blur listener, because it writes on the press and so
+			 * has nothing to defer; dispatching one here reached no code at all
+			 * and the assertion held under every implementation, including one
+			 * that spelled `sent` wrong. Right arrow on a ring already set is the
+			 * route that does reach it: `setMarks` returns early and `commit`
+			 * runs anyway, with the note's own spelling as the only thing it can
+			 * compare against.
+			 */
+			const card = changes();
+			const el = card.render({}, { values: { value: '1' } });
+			rings(el)[0]?.dispatchEvent(
+				new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true }),
+			);
+			expect(card.seen).toEqual([]);
+			// And the ring still reads the note, rather than having been reset
+			// along the way.
+			expect(rings(el)[0]?.getAttribute('aria-pressed')).toBe('true');
+		});
+
+		it('sets with right, clears with left, and moves rows with up and down', () => {
+			const card = changes();
+			const el = card.render(
+				{ rows: [{ key: 'alert' }, { key: 'lucky' }] },
+				{ values: { alert: 'no', lucky: 'no' } },
+			);
+			const key = (index: number, name: string) =>
+				rings(el)[index]?.dispatchEvent(
+					new KeyboardEvent('keydown', { key: name, cancelable: true }),
+				);
+			key(0, 'ArrowRight');
+			expect(card.seen).toEqual([{ values: { alert: 'yes' } }]);
+			// Right again is the same answer, so nothing is written twice.
+			key(0, 'ArrowRight');
+			expect(card.seen).toHaveLength(1);
+			key(0, 'ArrowLeft');
+			expect(card.seen[1]).toEqual({ values: { alert: 'no' } });
+
+			key(0, 'ArrowDown');
+			expect(rings(el).map((r) => r.tabIndex)).toEqual([-1, 0]);
+		});
 	});
 });

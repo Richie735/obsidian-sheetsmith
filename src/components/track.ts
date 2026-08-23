@@ -23,10 +23,26 @@
  * first-level, three second and one third — three runs differing in nothing
  * but their length and their name, which as three components would be three
  * headings, three labels and three reset bindings kept in step by hand.
+ *
+ * A run of one segment is a flag, and that is where Toggle went (SPEC §13). Two
+ * states is not a run with positions between its ends, so the card draws the
+ * level ring rather than a segment — the same painter a `toggle` column uses, so
+ * a flag on a card cannot measure differently from the same flag in a cell — and
+ * stores `yes` or `no`, which reads better in a file for a flag than `1` does.
+ * It is a consequence of the length rather than a config field: a declared
+ * storage flag would be a third mutually exclusive pair on this form, and the
+ * worst of the three, since the author would be holding a fact the layout
+ * already states.
  */
 
 import { GESTURE_COMMIT } from '../interaction/commit-window';
-import { levelGlyph, levelName, parseLevel } from './level-ring';
+import { levelGlyph, levelName, paintLevelRing, parseLevel } from './level-ring';
+import {
+	flagReading,
+	flagText,
+	isFlagSet,
+	isFlagSpelling,
+} from './stored-flag';
 import { bindLongPress } from '../ui/popover';
 import { readFenced, writeFenced } from '../parse/fenced';
 import {
@@ -303,12 +319,126 @@ function segmentFill(total: number, index: number, marks: number): number {
 	return Math.max(0, Math.min(1, (total - index * marks) / marks));
 }
 
+/**
+ * Whether a stored value is something a run can read at all.
+ *
+ * The vocabulary, in one place, because a run holds two spellings and two
+ * callers need the answer for different reasons. `marksFrom` below wants the
+ * value; `read` wants only whether it has one, since an unreadable entry is a
+ * malformed section and it cannot use a value whose "nothing" covers an empty
+ * entry too. Spelled at both — `read` had the negated form inline — the numeric
+ * half could drift: reject a leading `+` or an `Infinity` in one and `read`
+ * accepts what nothing can read, or refuses what it could have.
+ *
+ * Expects trimmed text, which both callers already have in hand.
+ */
+function readsAsMarks(text: string): boolean {
+	return Number.isFinite(Number(text)) || isFlagSpelling(text);
+}
+
+/**
+ * The marks a stored value says, or null where it says nothing.
+ *
+ * The one place a stored value is turned into a number, and the reason it is one
+ * place is that a run holds two spellings. A flag card writes `yes` and `no`
+ * (below), and the same layout raising its count to three has to go on reading
+ * the notes it already wrote: a flag reads as its first mark, which is the state
+ * it was in, and a count on a flag card reads as ticked or clear. Neither is
+ * corrected — SPEC §7's rule that a stored value outside the run is rendered
+ * rather than fixed covers both, and the note keeps what it says until the reader
+ * changes it.
+ *
+ * Null rather than zero, because "the note holds nothing readable" and "the note
+ * holds none" are different answers to a formula and the same answer to a fill.
+ * That conflation is also why `read` cannot call this: those two are exactly what
+ * it has to tell apart, so it shares the predicate above instead.
+ */
+function marksFrom(raw: string | undefined): number | null {
+	const text = (raw ?? '').trim();
+	if (text === '') return null;
+	if (!readsAsMarks(text)) return null;
+	return Number.isFinite(Number(text)) ? Number(text) : isFlagSet(text) ? 1 : 0;
+}
+
 /** The stored marks for one key, as a number. Unreadable counts as none. */
 function storedMarks(data: TrackData | null, key: string): number {
-	const raw = data?.values[key]?.trim() ?? '';
-	if (raw === '') return 0;
-	const parsed = Number(raw);
-	return Number.isFinite(parsed) ? parsed : 0;
+	return marksFrom(data?.values[key]) ?? 0;
+}
+
+/**
+ * A run's length where the layout states it outright, or null where it does not.
+ *
+ * A plain integer is a length; anything else is a formula, whatever it happens
+ * to resolve to today. The distinction is what `isFlagCard` below stands on, and
+ * it exists so that being a flag is a property of the *layout* rather than of
+ * one evaluation: `count: "level - 4"` is 1 for a fifth-level character and 3
+ * later, and a spelling that followed the number would rewrite how a note is
+ * spelled when a character levelled up.
+ *
+ * The text as well as the number, because a `formula` config field is stored as
+ * text: an author typing 1 into the segment count and a palette entry carrying
+ * `count: 1` must produce the same component.
+ */
+function literalCount(value: string | number | undefined): number | null {
+	if (typeof value === 'number') {
+		return Number.isInteger(value) ? value : null;
+	}
+	if (value === undefined) return null;
+	const text = value.trim();
+	return /^\d+$/.test(text) ? Number(text) : null;
+}
+
+/**
+ * Whether this card is a flag card: every run on it one segment of one mark, as
+ * the layout declares it, so each stores yes or no rather than a count.
+ *
+ * This is what Toggle folded into (SPEC §13). A run with one segment and one
+ * mark has exactly two states, and `yes` reads better in a file for a flag than
+ * `1` does — the same choice a `toggle` column already made.
+ *
+ * **Per card, not per run**, and the spell-slot case is why: five first-level
+ * slots, three second and one third takes the third row's length from the
+ * component's `count` fallback, so a per-run rule would write `L1: 2`, `L2: 1`,
+ * `L3: yes` down one fenced block. One spelling per card is what a hand-editable
+ * note needs. A checklist of named flags is a card *all* of whose rows are one
+ * segment, which is a real configuration and what rows gain from the fold.
+ */
+export function isFlagCard(config: TrackConfig): boolean {
+	if (markSize(config) !== 1) return false;
+	// Naming the steps settles the length, so two names is one segment. `rows`
+	// and `levels` are already refused together, so this is the single run.
+	if (config.levels !== undefined) return config.levels.length === 2;
+	return runsOf(config).every(
+		(row) => literalCount(row.count ?? config.count) === 1,
+	);
+}
+
+/**
+ * What the note should hold for a mark count, in this card's own spelling.
+ *
+ * `marksFrom` read the other way, and one function for the same reason: this is
+ * the write *policy* — where the flag threshold sits, and what a run falls back
+ * to — and a card has two write paths kept apart on purpose. A reset trigger
+ * comes through `applyReset` and a press comes through the card's own commit, so
+ * two copies of the threshold means a long rest writing `1` into a section a
+ * press writes `yes` into, in one fenced block, with nothing on screen to say
+ * why. PATTERNS §1's policy tier: a guard test over the copies could only assert
+ * they still agree.
+ *
+ * Also what a run's *starting* text is taken to be, which is the one thing this
+ * has to get right beyond writing. A flag card handed a note that reads
+ * `value: 1`, from a layout that counted segments before the fold, would
+ * otherwise find `yes` different from `1` and rewrite the note on the next blur,
+ * having changed nothing the reader asked to change. Normalised on the way in,
+ * the note keeps `1` until the box is actually pressed.
+ *
+ * Taken from the config rather than from a resolved count, which is what keeps
+ * `applyReset`'s `empty` resolving nothing: a card whose count is broken can
+ * still be cleared, and a spelling that needed the count would have taken that
+ * away.
+ */
+function spelledMarks(config: TrackConfig, value: number): string {
+	return isFlagCard(config) ? flagText(value >= 1) : String(value);
 }
 
 /**
@@ -346,7 +476,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			kind: 'formula',
 			label: 'Segments',
 			description:
-				'How many segments a run holds, as a number or a formula, e.g. 10, or 2 + if(abilities.PHY >= 3, 2, 1). Ignored where the levels below are named. Where there are rows it is the fallback for a row that sets no length of its own.',
+				'How many segments a run holds, as a number or a formula, e.g. 10, or 2 + if(abilities.PHY >= 3, 2, 1). Ignored where the levels below are named. Where there are rows it is the fallback for a row that sets no length of its own. A plain 1 makes this a checkbox: two states, drawn as one ring, stored in the note as yes or no rather than as a count. A formula that happens to work out to 1 does not, since the note would then change spelling whenever the number behind it did.',
 		},
 		{
 			key: 'marks',
@@ -415,8 +545,24 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			// A number the run cannot represent is still a number and is left
 			// exactly as it is (§7). Something that is not one at all is a
 			// malformed section, reported on this component alone.
-			if (text !== '' && !Number.isFinite(Number(text))) {
-				return { ok: false, error: `"${text}" is not a number of marks.` };
+			//
+			// A flag's spelling is accepted on *every* run, not only on a flag
+			// card, and that is the whole answer to a layout raising its count
+			// from 1 to 3: the narrow rule would turn every note the flag ever
+			// wrote into an error card at the moment the layout changed. `yes` on
+			// a ten-segment run is one mark; `maybe` is still malformed.
+			if (text !== '' && !readsAsMarks(text)) {
+				// Named for what this card writes, not for what a Track writes in
+				// general: a checkbox stores yes and no, so telling its author
+				// about marks points them at a spelling that card never produces.
+				// SPEC §10 wants the fix rather than the fault, and here the two
+				// are different sentences for the same fault.
+				return {
+					ok: false,
+					error: isFlagCard(config)
+						? `"${text}" is not yes or no.`
+						: `"${text}" is not a number of marks.`,
+				};
 			}
 			values[row.key] = raw;
 		}
@@ -428,12 +574,45 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 
 	scopeValues(data, config): ScopeValues {
 		const marks = markSize(config);
+		const flag = isFlagCard(config);
 		const filled = (key: string): number | undefined => {
-			const raw = data?.values[key]?.trim() ?? '';
-			if (raw === '') return undefined;
-			const parsed = Number(raw);
-			return Number.isFinite(parsed) ? Math.floor(parsed / marks) : undefined;
+			const held = marksFrom(data?.values[key]);
+			return held === null ? undefined : Math.floor(held / marks);
 		};
+
+		/*
+		 * A flag publishes a boolean, under its name and under `<name>.value`
+		 * alike, which is what Toggle promised and what a `toggle` column's cell
+		 * already means to a formula. So `if(inspiration, 1, 0)` is the
+		 * expression an author writes for one and it works, where 1 and 0 would
+		 * have made it an error. The two names carry the same answer here, and
+		 * saying nothing new under `.value` is what the entry below already does
+		 * wherever a segment holds one mark.
+		 *
+		 * An entry the note does not have publishes `false` rather than nothing.
+		 * A flag has two states and no room for a third; the empty ring on
+		 * screen reads as "no"; and the alternative is a "?" beside every unset
+		 * flag on a new character's sheet, which is the argument the aggregate
+		 * already makes for an empty inventory weighing nothing. A numeric run
+		 * still publishes nothing when its entry is blank, because a run's fill
+		 * is a count whose own ceiling can fail to resolve.
+		 */
+		if (flag) {
+			const entry = (key: string): ScopeEntry => ({
+				value: (marksFrom(data?.values[key]) ?? 0) >= 1,
+			});
+			if (isRowSet(config)) {
+				const named: Record<string, ScopeEntry> = {};
+				for (const row of config.rows ?? []) named[row.key] = entry(row.key);
+				return { named };
+			}
+			// `<id>.count` as a literal, because a numeric run publishes one and a
+			// layout lowering its count to 1 must not silently take a name away
+			// from every formula reading it — the continuity a raised count gets
+			// on the read side. A checklist publishes none, exactly as a numeric
+			// row set does: a set of runs has no one ceiling to name.
+			return { self: entry(VALUE_KEY), named: { count: { value: 1 } } };
+		}
 
 		/*
 		 * The stored marks, and the segments they fill, on one entry. A name is
@@ -486,12 +665,27 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 	applyReset(data, config, reset, context): ResetResult<TrackData> {
 		const marks = markSize(config);
 		const rows = runsOf(config);
+		const flag = isFlagCard(config);
 		const values: Record<string, string> = {};
+		// §6's `full` and `empty` name the states rather than the numbers
+		// precisely so that one set of three actions covers a Pool's max and zero
+		// and a flag's yes and no, and `spelledMarks` is where that pays: no
+		// branch below learns which kind of card it is on.
 
 		if (reset.action === 'empty') {
 			// Nothing to resolve: empty is zero whatever a run's length is, so
 			// a track whose count is broken can still be cleared.
-			for (const row of rows) values[row.key] = '0';
+			for (const row of rows) values[row.key] = spelledMarks(config, 0);
+			return { ok: true, data: { values } };
+		}
+
+		if (flag && reset.action === 'full') {
+			// A flag resolves nothing, here as on the card: its length is a
+			// literal by construction (`isFlagCard`), so `full` is `yes` and has
+			// no ceiling to go and ask for. That gives it the property `empty`
+			// above already has, which is worth having on both — a card whose
+			// formulas are in a bad way can still be ticked and cleared.
+			for (const row of rows) values[row.key] = flagText(true);
 			return { ok: true, data: { values } };
 		}
 
@@ -521,7 +715,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 							) ?? `it has no segments to fill${where}.`,
 					};
 				}
-				values[row.key] = String(count * marks);
+				values[row.key] = spelledMarks(config, count * marks);
 			}
 			return { ok: true, data: { values } };
 		}
@@ -545,7 +739,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			// run publishes and what an author counts. Down to the nearest
 			// mark, so half a segment of an Ironsworn track lands on a mark
 			// boundary rather than storing a fraction the note cannot mean.
-			const next = String(Math.floor(segments * marks));
+			const next = spelledMarks(config, Math.floor(segments * marks));
 			for (const row of rows) values[row.key] = next;
 			return { ok: true, data: { values } };
 		}
@@ -586,6 +780,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 		const rows = runsOf(config);
 		const rowSet = isRowSet(config);
 		const named = config.levels !== undefined;
+		const flag = isFlagCard(config);
 		const cardHarm = config.sense === 'harm';
 		const reduced =
 			view?.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
@@ -600,6 +795,12 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			list.setAttribute('role', 'group');
 			list.setAttribute('aria-label', config.label);
 		}
+		// A stacked column of rings needs its rows further apart than a stacked
+		// column of runs: the ring's hit target reaches past its own box, and at
+		// the set's ordinary row gap two rows' targets overlap and the later ring
+		// wins the press. Same arithmetic as the editor's level sample, for the
+		// same reason.
+		if (flag) list.classList.add('sheetsmith-track-flags');
 		card.appendChild(list);
 
 		/** One run on the card: its own value, its own geometry, its own gesture. */
@@ -638,7 +839,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			if (!card.isConnected) return;
 			const values: Record<string, string> = {};
 			for (const run of runs) {
-				const next = String(run.value);
+				const next = spelledMarks(config, run.value);
 				if (next === run.sent) continue;
 				values[run.key] = next;
 				run.sent = next;
@@ -692,6 +893,135 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 				name.classList.add('sheetsmith-track-row-name');
 				name.textContent = row.name ?? row.key;
 				line.appendChild(name);
+			}
+
+			if (flag) {
+				/*
+				 * Two states, so the control is the level ring and not a run:
+				 * SPEC §4.2's rule that a `level` column and a `toggle` are one
+				 * control with a different number of states, applied to a card.
+				 * A `<button aria-pressed>` because that is the word ARIA has
+				 * for two states, where the run's `role="slider"` is for a value
+				 * with positions between its ends.
+				 *
+				 * Before `countFor`, so a flag resolves nothing at all. Its
+				 * length is a literal by construction (`isFlagCard`), and this is
+				 * the same property `applyReset`'s `empty` branch keeps: a card
+				 * whose formulas are in a bad way can still be ticked.
+				 *
+				 * None of the run's gesture carries over, and that is the point
+				 * rather than an omission. The drag, the mark-level hit test, the
+				 * give at either end and the pending fill exist because a run has
+				 * somewhere in between to be. Here the press is the whole
+				 * gesture and its outcome is its input, so §12's rule about
+				 * putting an outcome on screen before applying it does not
+				 * engage, and there is no run of presses to debounce.
+				 */
+				const el = doc.createElement('button');
+				el.type = 'button';
+				el.classList.add('sheetsmith-level-ring', 'sheetsmith-track-flag');
+				// Nothing in the stylesheet reads it yet, and the class is here
+				// anyway: `sense` grades a run from its first segment to its
+				// last, and a run of one *is* its last, so there is nothing to
+				// grade. A colour that said "bad" instead is what the pool's own
+				// boundary rule refuses. This is where a later answer hangs.
+				if (harm) el.classList.add('sheetsmith-track-harm');
+				// One tab stop for the card, whatever it is a run of.
+				el.tabIndex = runs.length === 0 ? 0 : -1;
+				line.appendChild(el);
+
+				const held = storedMarks(data, row.key);
+				const run: Run = {
+					key: row.key,
+					el,
+					segments: [],
+					total: marks,
+					value: held,
+					sent: spelledMarks(config, held),
+					pending: null,
+					paint: () => undefined,
+					setMarks: () => undefined,
+				};
+
+				/** The step's own name where they are named, yes or no otherwise. */
+				const reading = (on: boolean): string =>
+					named ? stepLabel(config, on ? 1 : 0, 1) : flagReading(on);
+
+				run.paint = (): void => {
+					const on = run.value >= 1;
+					// Everything a reader sees comes from the shared painter, so
+					// a flag on a card cannot measure differently from the same
+					// flag in a cell. `graded` only where the steps are named,
+					// which is what puts the level's own mark in the ring.
+					paintLevelRing(el, { levels: config.levels }, on ? 1 : 0, named);
+					el.setAttribute('aria-pressed', String(on));
+					el.setAttribute(
+						'aria-label',
+						rowSet ? (row.name ?? row.key) : config.label,
+					);
+					// Only a named step earns a tooltip, and every named one is an
+					// abbreviation: an initial, a mark of the layout's own, or a
+					// bare fill saying nothing. An unnamed flag is a box, and
+					// aria-pressed already says which way it is — a tooltip
+					// repeating what is legible is noise fired at every pass.
+					if (named) el.title = reading(on);
+				};
+
+				run.setMarks = (next: number): void => {
+					const wanted = next >= 1 ? 1 : 0;
+					if (wanted === run.value) return;
+					run.value = wanted;
+					run.paint();
+				};
+
+				runs.push(run);
+
+				// The touch route to what a glyph stands for, where there is
+				// something it is not already saying. A press held that long was
+				// a question rather than an instruction, and it ends in a click.
+				const longPressed = named
+					? bindLongPress(el, () => reading(run.value >= 1))
+					: null;
+
+				el.addEventListener('click', () => {
+					if (longPressed?.() === true) return;
+					run.setMarks(run.value >= 1 ? 0 : 1);
+					// Synchronously, not through `commitSoon`: a press's outcome
+					// is its input, so there is no run of presses to wait out and
+					// the debounce would only make the note late. So a checklist
+					// writes once per ring rather than once per burst — `commit`
+					// collects every dirty run, but this path has already written
+					// the last one before the next press can arrive.
+					commit();
+				});
+
+				el.addEventListener('keydown', (event) => {
+					// Up and down move between a checklist's flags, on the axis
+					// they are laid out on — the row set's rule unchanged, so a
+					// card is still one tab stop. Left and right set and clear
+					// without wrapping, which is the ring's "aim rather than
+					// count" at two states. Space and Enter are the button's own
+					// click and need nothing here.
+					if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+						if (runs.length < 2) return;
+						event.preventDefault();
+						focusRun(runs.indexOf(run) + (event.key === 'ArrowDown' ? 1 : -1));
+						return;
+					}
+					const wanted =
+						event.key === 'ArrowRight'
+							? 1
+							: event.key === 'ArrowLeft'
+								? 0
+								: null;
+					if (wanted === null) return;
+					event.preventDefault();
+					run.setMarks(wanted);
+					commit();
+				});
+
+				run.paint();
+				return;
 			}
 
 			const count = countFor(
@@ -838,12 +1168,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			};
 
 			/** The mark count the note holds for this run. */
-			const written = (): number => {
-				const raw = run.sent.trim();
-				if (raw === '') return 0;
-				const parsed = Number(raw);
-				return Number.isFinite(parsed) ? parsed : 0;
-			};
+			const written = (): number => marksFrom(run.sent) ?? 0;
 
 			run.paint = (): void => {
 				const landing = run.pending ?? run.value;
