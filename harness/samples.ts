@@ -620,6 +620,63 @@ export const SAMPLES: Sample[] = [
 		} as ComponentConfig,
 		body: null,
 	},
+	/* The two palette prefills whose *rendering* nothing else here reaches, which
+	   is the whole reason they are in the sample rather than only in the vault.
+	   Inventory's is not among them: the `inventory` card above is already that
+	   entry's config with three extras on top, so a third open table would be a
+	   longer sheet showing nothing new. */
+	{
+		config: {
+			id: 'currency',
+			type: 'stat-group',
+			label: 'Currency',
+			position: { col: 1, row: 16, width: 5, height: 1 },
+			// What the Currency entry writes. The card with **no** `derived` is
+			// the path this covers: Abilities above carries one, so until this
+			// existed nothing in the harness drew a stat card that is a name and
+			// a number with no modifier line under it — which is every card this
+			// entry produces.
+			attributes: [
+				{ key: 'CP', name: 'Copper' },
+				{ key: 'SP', name: 'Silver' },
+				{ key: 'EP', name: 'Electrum' },
+				{ key: 'GP', name: 'Gold' },
+				{ key: 'PP', name: 'Platinum' },
+			],
+		} as ComponentConfig,
+		// EP left out on purpose: a denomination the note has never held renders
+		// beside four that have.
+		body: '```sheet\nCP: 42\nSP: 18\nGP: 7\nPP: 1\n```',
+	},
+	{
+		config: {
+			id: 'features',
+			type: 'table',
+			label: 'Features',
+			// Its own row at full width: at seven columns the Notes cells clipped
+			// on three rows of four, and a sample that is mostly ellipses does not
+			// show the treatment it exists to show.
+			position: { col: 1, row: 17, width: 12, height: 2 },
+			rowHeader: 'Feature',
+			openRows: true,
+			// `secondary` had no harness coverage at all before this: it is
+			// implemented, it is styled at §5's quieter treatment, and nothing
+			// drew it. The Features entry turns it on, so shipping that entry
+			// without a sample would be shipping an appearance nobody looked at.
+			columns: [
+				{ key: 'Source', secondary: true },
+				{ key: 'Notes' },
+			],
+		} as ComponentConfig,
+		body: [
+			'| Feature | Source | Notes |',
+			'| --- | --- | --- |',
+			'| Darkvision | Elf | 60 ft. |',
+			'| Fey Ancestry | Elf | advantage against being charmed |',
+			'| [[Second Wind]] | Fighter | once per short rest |',
+			'| Lucky | Feat | three rerolls a day |',
+		].join('\n'),
+	},
 	/* Beside the set rather than inside it, so a tab press has something to not
 	   move. */
 	{

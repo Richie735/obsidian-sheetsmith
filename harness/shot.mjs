@@ -38,14 +38,15 @@ mkdirSync(outDir, { recursive: true });
 /**
  * The views worth having by default: both themes, both surfaces, and narrow.
  *
- * The sheet frames are 2100 tall because the sample sheet is about 2000, and a
+ * The sheet frames are 2500 tall because the sample sheet is about 2400, and a
  * default view that crops most of it is a default view that hides findings. They
  * were 900 while the sheet still fitted, and stayed 900 after it stopped — so the
  * tab set, and then the flag row below it, were only ever looked at through a
  * one-off `size=` on the command line. Raise this when the sample sheet grows
- * again; the number is the sheet's height and nothing else.
+ * again; the number is the sheet's height and nothing else. Last raised when the
+ * Currency and Features prefills were added to the sample.
  */
-const SHEET_FRAME = '1400,2100';
+const SHEET_FRAME = '1400,2500';
 
 const DEFAULTS = [
 	{ name: 'sheet-light', query: 'surface=sheet&theme=light', size: SHEET_FRAME },
