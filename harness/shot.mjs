@@ -35,10 +35,21 @@ const page = `file://${root}index.html`;
 const outDir = `${root}shots`;
 mkdirSync(outDir, { recursive: true });
 
-/** The views worth having by default: both themes, both surfaces, and narrow. */
+/**
+ * The views worth having by default: both themes, both surfaces, and narrow.
+ *
+ * The sheet frames are 2100 tall because the sample sheet is about 2000, and a
+ * default view that crops most of it is a default view that hides findings. They
+ * were 900 while the sheet still fitted, and stayed 900 after it stopped — so the
+ * tab set, and then the flag row below it, were only ever looked at through a
+ * one-off `size=` on the command line. Raise this when the sample sheet grows
+ * again; the number is the sheet's height and nothing else.
+ */
+const SHEET_FRAME = '1400,2100';
+
 const DEFAULTS = [
-	{ name: 'sheet-light', query: 'surface=sheet&theme=light', size: '1400,900' },
-	{ name: 'sheet-dark', query: 'surface=sheet&theme=dark', size: '1400,900' },
+	{ name: 'sheet-light', query: 'surface=sheet&theme=light', size: SHEET_FRAME },
+	{ name: 'sheet-dark', query: 'surface=sheet&theme=dark', size: SHEET_FRAME },
 	{
 		// A second, roomier width for the alignment a container's design rests on:
 		// a card inside a group lining up column for column with a card outside
@@ -50,8 +61,8 @@ const DEFAULTS = [
 		size: '1900,1100',
 	},
 	{ name: 'sheet-narrow', query: 'surface=sheet&theme=dark&width=380', size: '520,1400' },
-	{ name: 'sheet-empty', query: 'surface=sheet&theme=dark&state=empty', size: '1400,900' },
-	{ name: 'sheet-error', query: 'surface=sheet&theme=dark&state=broken', size: '1400,900' },
+	{ name: 'sheet-empty', query: 'surface=sheet&theme=dark&state=empty', size: SHEET_FRAME },
+	{ name: 'sheet-error', query: 'surface=sheet&theme=dark&state=broken', size: SHEET_FRAME },
 	{ name: 'settings-light', query: 'surface=settings&theme=light', size: '1500,1500' },
 	{ name: 'settings-dark', query: 'surface=settings&theme=dark', size: '1500,1500' },
 	{
