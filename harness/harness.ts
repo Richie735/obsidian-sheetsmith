@@ -391,6 +391,14 @@ document
  * component** menu — which is the only way to see a palette entry's description,
  * since the menu opens on a bare type and those have none.
  *
+ * And one for focus: `&focus=<css selector>` focuses the first element matching
+ * it once the surface has drawn. A still cannot press Tab, so until this existed
+ * *no* focus treatment had ever been photographed — every "focus is visible on
+ * every interactive element" reading in `docs/UI.md` §11 was taken by hand or
+ * taken on trust. The rule the sheet uses is `:focus` rather than
+ * `:focus-visible`, so a programmatic focus paints exactly what a tab press
+ * would.
+ *
  * A screenshot has no way to click, so without this only the default view can
  * ever be captured — and the settings tab, which is most of what needs looking
  * at, would be unreachable to any automated shot or to a link in a review.
@@ -418,8 +426,22 @@ function applyQuery(): void {
 	press('surface', surface);
 	stage.classList.toggle('harness-split', surface === 'both');
 
-	if (surface === 'sheet') draw();
-	else void ensureSettings().then(draw);
+	const focus = params.get('focus');
+	/** After the surface exists, or there is nothing matching to focus yet. */
+	const focusWanted = () => {
+		if (focus === null) return;
+		document.querySelector<HTMLElement>(focus)?.focus();
+	};
+
+	if (surface === 'sheet') {
+		draw();
+		focusWanted();
+	} else {
+		void ensureSettings().then(() => {
+			draw();
+			focusWanted();
+		});
+	}
 }
 
 applyQuery();
