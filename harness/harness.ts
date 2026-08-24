@@ -319,6 +319,22 @@ function draw(): void {
 	}
 }
 
+/**
+ * The base font size the sheet's relative units resolve against, which is the
+ * thing a reader's vault text size setting actually moves. `0` leaves the
+ * inherited size alone.
+ *
+ * It moves every `em`-relative rule the plugin declares — the card's headline
+ * number, the level ring and the delete glyph beside it, the 0.85 secondary
+ * sizes — and deliberately not Obsidian's fixed-px `--font-ui-*` tokens, which
+ * do not move for the user either. So a shot at 24 shows exactly what UI.md
+ * §5's "relative units, so the card scales with the user's setting" is worth,
+ * and claims nothing beyond it.
+ */
+function setText(size: string): void {
+	stage.style.fontSize = size === '0' ? '' : `${size}px`;
+}
+
 function press(group: string, value: string): void {
 	// Array.from rather than iterating the NodeList directly: the plugin's
 	// tsconfig omits DOM.Iterable, and the harness must not widen it.
@@ -335,7 +351,7 @@ document
 	?.addEventListener('click', (event) => {
 		const button = (event.target as HTMLElement).closest('button');
 		if (!button) return;
-		const { theme, width, state: wanted, surface: pane } = button.dataset;
+		const { theme, width, text, state: wanted, surface: pane } = button.dataset;
 		if (theme !== undefined) {
 			document.body.className = `theme-${theme}`;
 			press('theme', theme);
@@ -343,6 +359,10 @@ document
 		if (width !== undefined) {
 			stage.style.maxWidth = width === '0' ? 'none' : `${width}px`;
 			press('width', width);
+		}
+		if (text !== undefined) {
+			setText(text);
+			press('text', text);
 		}
 		if (wanted !== undefined) {
 			loadState(wanted as StateName);
@@ -362,7 +382,8 @@ document
 	});
 
 /**
- * Open in a named state: `?surface=settings&theme=dark&width=620&state=empty`.
+ * Open in a named state:
+ * `?surface=settings&theme=dark&width=620&text=24&state=empty`.
  *
  * Two more for the settings tab, whose controls a still cannot press:
  * `&open=<component id>` opens that component's form, and
@@ -383,6 +404,10 @@ function applyQuery(): void {
 	const width = params.get('width') ?? '0';
 	stage.style.maxWidth = width === '0' ? 'none' : `${width}px`;
 	press('width', width);
+
+	const text = params.get('text') ?? '0';
+	setText(text);
+	press('text', text);
 
 	const wanted = params.get('state');
 	loadState(wanted === 'empty' || wanted === 'broken' ? wanted : 'populated');
