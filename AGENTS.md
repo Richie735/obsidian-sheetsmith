@@ -269,3 +269,16 @@ this.registerInterval(
 - Developer policies: https://docs.obsidian.md/Developer+policies
 - Plugin guidelines: https://docs.obsidian.md/Plugins/Releasing/Plugin+guidelines
 - Style guide: https://help.obsidian.md/style-guide
+
+Design standards the review skill vendors into
+`.claude/skills/design-review/reference/` rather than fetches, since its
+`allowed-tools` carries no network. Read these to re-check a number or to extend
+that folder, never mid-review:
+
+- Apple HIG, Accessibility: https://developer.apple.com/design/human-interface-guidelines/accessibility
+- Apple HIG, Typography: https://developer.apple.com/design/human-interface-guidelines/typography
+- Apple HIG, Color: https://developer.apple.com/design/human-interface-guidelines/color
+- Apple HIG, VoiceOver: https://developer.apple.com/design/human-interface-guidelines/voiceover
+- The HIG site renders client-side, so an ordinary fetch returns the page title
+  and nothing else. The docs JSON behind it does work:
+  `https://developer.apple.com/tutorials/data/design/human-interface-guidelines/<page>.json`

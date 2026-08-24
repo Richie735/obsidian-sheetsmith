@@ -188,6 +188,19 @@ sheet.
   chose, since "Stowed" says more than "not pressed".
 - **Announce what is not visible.** A commit or an Escape-restore that changes
   nothing on screen is announced.
+- **A mark whose state is only a fill strength has one channel.** Filled against
+  empty is a shape difference and carries itself; two marked levels differing
+  only by how far the mix went do not. `paintLevelRing` is the model, and its
+  comment says so: the ramp "costs nothing, because the glyph and the name were
+  already carrying the exact answer." A new mark either has that second channel
+  or the review says what a reader sees without it.
+
+The numbers these rules are judged against, and the way to measure them, are in
+`.claude/skills/design-review/reference/legibility.md`: contrast ratios by text
+size, the 10px type floor, hit target sizes with the gap rule beside them, and
+reading order against visual order. §1's "pick the text variable defined against
+whatever you mixed into" is the rule; that file is what shows whether a given
+case obeys it.
 
 ---
 
@@ -380,6 +393,10 @@ Run `npm run harness`. Check each of these, because none is visible in code.
 - numbers mid-step: do they jitter, or hold on tabular figures
 - focus: visible on every interactive element, one treatment per component
 - an error state and an empty state, not only the populated one
+- a larger text size (`Text → 24`, or `sheet-large-text.png`): does truncation
+  grow, does the hierarchy reorder, does anything collide. §5 rests the card on
+  relative units so it follows the vault setting, and that is where the claim is
+  either true or not
 
 **A harness that rebuilds on hover cannot review anything a pointer does.** The
 fake link context redrew the sheet on a preview, so the element under the pointer
@@ -403,8 +420,8 @@ Re-run it after an Obsidian update. Without it the harness falls back to the
 hand-written approximation in `harness/theme.css` and is close but not exact.
 
 `npm run harness:shot` renders every view to `harness/shots/`, covering both
-themes, both screens, the narrow reflow, and the empty and error states, so a
-review can look at PNGs rather than clicking through.
+themes, both screens, the narrow reflow, the larger text size, and the empty and
+error states, so a review can look at PNGs rather than clicking through.
 
 **The settings tab** (`Surface → Settings`, or `Both` for the two side by side):
 
