@@ -515,3 +515,98 @@ describe('the same layout with its cards inside two containers', () => {
 		}
 	});
 });
+
+/*
+ * A choice worth arithmetic, which is what the value-and-label split buys and
+ * the whole reason an option stores a value rather than a label (SPEC §13).
+ *
+ * The expression language has no string literals, deliberately, so a dropdown
+ * storing words publishes something no formula can compare or add to. Here the
+ * author put the arithmetic in the value — 2 shown as "Expertise" — and the
+ * same expression a `level` column takes, `Training * prof`, works on a card.
+ * Run through the real parsers because nothing about it is new code: this is
+ * `coerceValue` doing to a card's stored `2` what it already does to a cell's.
+ */
+const PROFICIENCY = JSON.stringify({
+	name: 'Graded training',
+	columns: 6,
+	functions: ['prof = ceil(level / 4) + 1'],
+	components: [
+		{
+			id: 'level',
+			type: 'card',
+			label: 'Level',
+			position: { col: 1, row: 1, width: 1, height: 1 },
+		},
+		{
+			id: 'training',
+			type: 'card',
+			label: 'Training',
+			// A card, not a column: a standalone graded choice gets a menu
+			// rather than a ring, because a card has no column of neighbours to
+			// read as a shape.
+			options: [
+				{ value: '0', label: 'Untrained' },
+				{ value: '1', label: 'Proficient' },
+				{ value: '2', label: 'Expertise' },
+			],
+			position: { col: 2, row: 1, width: 2, height: 1 },
+		},
+		{
+			id: 'stealth',
+			type: 'card',
+			label: 'Stealth',
+			derived: 'training * prof',
+			position: { col: 4, row: 1, width: 2, height: 1 },
+		},
+	],
+});
+
+const ROGUE = `---
+sheet-layout: Graded training
+---
+
+## Level
+\`\`\`sheet
+value: 5
+\`\`\`
+
+## Training
+\`\`\`sheet
+value: 2
+\`\`\`
+`;
+
+describe('a card whose value is chosen from a list', () => {
+	const { sheet, resolvedFor } = buildSheet(PROFICIENCY, ROGUE);
+
+	it('publishes the chosen value as a number', () => {
+		expect(sheet('training')).toBe(2);
+		expect(sheet('training.value')).toBe(2);
+	});
+
+	it('lets another card do arithmetic with the choice', () => {
+		// prof is 3 at level 5, so expertise is +6 — the number issue #423
+		// asked the closest analogue for, and no new code in src/formula/.
+		expect(resolvedFor('stealth').derived).toBe(6);
+	});
+
+	it('publishes no label, under any name', () => {
+		// A label is display and is unreachable from a formula (SPEC §5). The
+		// fix for a layout that needs the word is to make the word the value.
+		expect(sheet('training.label')).toBeUndefined();
+		expect(sheet('training.Expertise')).toBeUndefined();
+	});
+
+	it('publishes nothing at all where nothing has been chosen', () => {
+		const unset = buildSheet(
+			PROFICIENCY,
+			ROGUE.replace('## Training\n```sheet\nvalue: 2\n```\n', ''),
+		);
+		// A name the sheet does not publish fails to resolve rather than
+		// defaulting to zero, so the card downstream shows "?" instead of a
+		// plausible bonus nobody chose.
+		expect(unset.sheet('training')).toBeUndefined();
+		expect(unset.resolvedFor('stealth').derived).toBeNull();
+	});
+});

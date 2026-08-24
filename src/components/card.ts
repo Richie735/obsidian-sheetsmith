@@ -7,6 +7,15 @@
  * The card shows the label, the value, and the note line. The storage key is
  * config, not display: it names the entry in the note's sheet block so hand
  * editing reads well, and it never appears on the card.
+ *
+ * **It is also the dropdown, and that is why there is no Field component**
+ * (SPEC §13). A labelled text or number value was already this, with the note
+ * line hidden; the only thing Field carried that a Card did not was a closed
+ * set of choices, which is the `options` list below. Declaring any is what
+ * makes the value a menu, so nothing here says which control to draw — the
+ * layout already said it by listing choices or not. Text against number needs
+ * no setting either: the arrow keys step a value that is a number and move the
+ * caret in one that is not, so the kind is a property of what is stored.
  */
 
 import { referencesName } from '../formula/expression';
@@ -31,10 +40,29 @@ const DEFAULT_KEY = 'value';
 /** Entry holding the note line. Fixed, so no configured key can collide. */
 const NOTE_KEY = 'note';
 
+/**
+ * One choice a card's value may hold (SPEC §2).
+ *
+ * The `value` is what the note stores and what a formula reads; the `label`
+ * is what the card shows, and is unreachable from a formula. So a choice
+ * worth arithmetic stores the number and shows the word — `2` labelled
+ * "Expertise" — and a list of plain words needs no labels at all.
+ */
+export interface CardOption {
+	value: string;
+	label?: string;
+}
+
 export interface CardConfig extends ComponentConfig {
 	type: 'card';
 	/** Entry key in the fenced block. Defaults to `value`. Never displayed. */
 	key?: string;
+	/**
+	 * Choices for the value. Declaring any is what makes the card a dropdown
+	 * over them rather than a field, so there is no setting saying which
+	 * control it wears (SPEC §4.2).
+	 */
+	options?: CardOption[];
 	/** Formula computed from the stored value, which it reads as `value`. */
 	derived?: string;
 	/** Hint shown while the note line is empty. */
@@ -76,6 +104,63 @@ function valueKey(config: CardConfig): { key: string } | { error: string } {
 	return { key };
 }
 
+/**
+ * The card's choices, or the reason they cannot be a menu. Same shape as
+ * `valueKey` above, and both checks are about the file rather than about
+ * taste: a value is what the note stores, and a `<select>` holding one value
+ * twice cannot say which line was chosen, so the card could not round-trip
+ * its own control.
+ *
+ * No options is not an error and not a dropdown — it is the field a Card has
+ * always been.
+ */
+function optionList(
+	config: CardConfig,
+): { options: CardOption[] } | { error: string } {
+	const options: CardOption[] = [];
+	const seen = new Set<string>();
+	for (const option of config.options ?? []) {
+		// Trimmed because the fenced block's own values are: a stored value
+		// arrives from `readFenced` with its spaces gone, so an option holding
+		// them could never match one — the reader would choose it, the note
+		// would store it trimmed, and the next render would show it as a value
+		// the layout no longer offers.
+		const value = (option.value ?? '').trim();
+		if (value === '') {
+			return {
+				error: 'Every option needs a value, because the value is what the note stores. A label may be left blank; an option with none shows its value.',
+			};
+		}
+		if (seen.has(value)) {
+			return {
+				error: `Two options share the value "${value}". Give each option a value of its own; only the labels may repeat.`,
+			};
+		}
+		seen.add(value);
+		options.push(option.label === undefined ? { value } : { value, label: option.label });
+	}
+	return { options };
+}
+
+/**
+ * The choices the card draws its value with, or the first reason it cannot be
+ * drawn at all. Both faults are the file's rather than taste's, and both are
+ * reported on this card alone (SPEC §10).
+ *
+ * The key is checked first: a card that cannot store its value has nothing for
+ * a menu to choose, and one error at a time is what the card has room to say.
+ * Held together in one place because `render` and `scopeValues` have to agree
+ * about it — a card that cannot draw its own control must not publish a name
+ * the rest of the sheet would then be built on.
+ */
+function drawableCard(
+	config: CardConfig,
+): { options: CardOption[] } | { error: string } {
+	const entry = valueKey(config);
+	if ('error' in entry) return entry;
+	return optionList(config);
+}
+
 export const card: ComponentDefinition<CardConfig, CardData> = {
 	type: 'card',
 	storage: 'fenced',
@@ -87,6 +172,19 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 			label: 'Key',
 			description:
 				'Entry name for the value in the character note, e.g. "AC". Not shown on the card, and not what formulas reference — they use the component id above. Defaults to "value". Renaming it does not move a stored value; the old entry stays in the note under the old key.',
+		},
+		{
+			key: 'options',
+			kind: 'entries',
+			label: 'Options',
+			entryColumns: [
+				// The value is the word here and the label is usually blank,
+				// which is the opposite of a Card set's key and full name.
+				{ key: 'value', heading: 'Value', wide: true },
+				{ key: 'label', heading: 'Label' },
+			],
+			description:
+				'Turns the value into a dropdown over these choices. The value is what the character note stores and what a formula reads; the label is what the card shows, and an option with no label shows its value. A formula cannot read a label, so a choice worth arithmetic stores the number and shows the word — 2 labelled "Expertise". Nothing is chosen until the reader chooses it, and a stored value you later remove from this list is kept and still shown.',
 		},
 		{
 			key: 'derived',
@@ -136,6 +234,48 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 			default: true,
 		},
 	],
+	/*
+	 * A dropdown is this component with a list of options, and it is the entry
+	 * that kept Field out of the catalog (SPEC §13). Nobody wanting a dropdown
+	 * looks for a component called Card — Checkbox's argument on Track exactly —
+	 * while somebody wanting a labelled Name or Race lands here by the
+	 * component's own description, which is why *Field* earns no entry and this
+	 * does.
+	 *
+	 * Two placeholder options rather than none, because declaring options is
+	 * the only thing that makes the card a dropdown: an entry prefilling an
+	 * empty list would produce a plain text card and the menu line would have
+	 * lied. Values and no labels, because words are the ordinary case (Race,
+	 * Alignment, Heritage) and an author editing one column beats one clearing
+	 * two. It does not prefill `hideNote`: the note line is the Blades case —
+	 * a heritage is a closed choice plus a written detail — and hiding it is one
+	 * checkbox for the cards that do not want it.
+	 */
+	palette: [
+		{
+			name: 'Dropdown',
+			description:
+				'A value chosen from a closed list: race, alignment, heritage. The note stores the chosen option\'s value, so a choice can carry arithmetic — 2 shown as "Expertise" — and nothing is chosen until the reader chooses it. Edit the options below; the note line under the value stays for the detail a choice cannot carry.',
+			config: {
+				options: [{ value: 'First choice' }, { value: 'Second choice' }],
+			},
+		},
+	],
+
+	/*
+	 * A card with options is a dropdown, so the editor says so rather than
+	 * telling an author who chose **Dropdown** that they have a Card. Derived
+	 * from the config and never stored: clear the last option and it is a Card
+	 * again, which is exactly what the card then is.
+	 *
+	 * Not a second component type. The two share a `read`, a `write`, a
+	 * `scopeValues`, a note format and a card face, which is a copy rather than
+	 * a component (SPEC §13, PATTERNS §1) — what differs is the control and the
+	 * word for it, and this is the word.
+	 */
+	configName(config): string | null {
+		return (config.options?.length ?? 0) > 0 ? 'Dropdown' : null;
+	},
 
 	read(body, config): ReadResult<CardData> {
 		const entry = valueKey(config);
@@ -158,7 +298,11 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 		// carrying what the card shows. The configured key names the entry
 		// in the file, not the reference — a formula should not have to know
 		// how the note is spelled.
-		if ('error' in valueKey(config)) return {};
+		//
+		// A chosen option publishes its value and never its label: the layout
+		// wrote the mapping down, so the value is the meaning and the label is
+		// its presentation (SPEC §5). Nothing here changes for it.
+		if ('error' in drawableCard(config)) return {};
 		return {
 			self: {
 				value: data?.value,
@@ -185,13 +329,13 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 		const doc = container.ownerDocument;
 		container.replaceChildren();
 
-		const entry = valueKey(config);
-		if ('error' in entry) {
+		const drawable = drawableCard(config);
+		if ('error' in drawable) {
 			// A misconfigured component reports on itself; SPEC §10 keeps the
 			// rest of the sheet rendering and editable.
 			const error = doc.createElement('div');
 			error.classList.add('sheetsmith-error');
-			error.textContent = entry.error;
+			error.textContent = drawable.error;
 			container.appendChild(error);
 			return;
 		}
@@ -231,6 +375,11 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 			value: showValue
 				? {
 						current: value,
+						// Absent where the layout declared none, which is what
+						// leaves the value a field. Hiding the value hides the
+						// menu with it, the same trade the field already makes.
+						options:
+							drawable.options.length === 0 ? undefined : drawable.options,
 						// Delta, not snapshot: committing the value cannot
 						// revert a note edited moments earlier.
 						onCommit: (next) => context.onChange({ value: next }),

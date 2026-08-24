@@ -1008,7 +1008,7 @@ export class LayoutEditorSection {
 			const open = this.editing === config.id;
 			const row = new Setting(container)
 				.setName(config.label)
-				.setDesc(componentDisplayName(config.type));
+				.setDesc(placedComponentName(config));
 			if (open) row.settingEl.addClass('sheetsmith-row-open');
 			if (depth > 0) {
 				row.settingEl.addClass('sheetsmith-row-child');
@@ -1094,7 +1094,7 @@ export class LayoutEditorSection {
 		tabs.forEach((tab, index) => {
 			const row = new Setting(form)
 				.setName(`${index + 1}. ${tab.label}`)
-				.setDesc(componentDisplayName(tab.type));
+				.setDesc(placedComponentName(tab));
 			// The class alone: these are always one level in, and the indent rule
 			// already defaults `--sheetsmith-row-depth` to 1. Setting it here would
 			// be a static style assignment, which the lint rules refuse — rightly,
@@ -2195,6 +2195,22 @@ function componentDisplayName(type: string): string {
 	return words.charAt(0).toUpperCase() + words.slice(1);
 }
 
+/**
+ * What to call a component the layout has already placed.
+ *
+ * Its type, unless the component says its configuration has a better name —
+ * a Card with options is a Dropdown, and an author who picked Dropdown out of
+ * the add menu should not be told a line later that they have a Card. The
+ * component answers, never this module: whether options make a dropdown is
+ * exactly the kind of thing nothing outside a component may know.
+ *
+ * The add menu keeps `componentDisplayName`, because there it is naming *types*
+ * and the prefills are listed under them by name already.
+ */
+function placedComponentName(config: ComponentConfig): string {
+	const named = getComponent(config.type)?.configName?.(config);
+	return named ?? componentDisplayName(config.type);
+}
 
 /**
  * What removing a component takes with it.
