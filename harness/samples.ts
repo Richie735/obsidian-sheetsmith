@@ -677,6 +677,93 @@ export const SAMPLES: Sample[] = [
 			'| Lucky | Feat | three rerolls a day |',
 		].join('\n'),
 	},
+	/*
+	 * A card whose value is chosen from a list, which is what folded Field out
+	 * of the catalog (SPEC §13). Four cards, because the four things worth
+	 * looking at are four different cards:
+	 *
+	 * 1. **A choice plus a written line.** Blades in the Dark asks for exactly
+	 *    this — "choose a heritage, write a detail about your family life on the
+	 *    line above" — and it is the argument for the fold: the component that
+	 *    already holds a value and a note line is Card, so the choice went where
+	 *    the line already is.
+	 * 2. **Numeric values under a derived.** The choice drops into the small pill
+	 *    and the arithmetic runs off it. Check that the word stays legible at the
+	 *    pill's size, and that the headline is the number.
+	 * 3. **A long label in a narrow card.** It has to clip inside the card rather
+	 *    than widen it, on the two columns the layout gave it.
+	 * 4. **A stored value the layout no longer offers.** The last line of the
+	 *    menu, selected, showing what the note actually holds. It must read as
+	 *    data rather than as a warning: no status colour, no "?", and the note is
+	 *    not rewritten to fix it (Constraint 4).
+	 */
+	{
+		config: {
+			id: 'heritage',
+			type: 'card',
+			label: 'Heritage',
+			position: { col: 1, row: 19, width: 3, height: 1 },
+			options: [
+				{ value: 'Akoros' },
+				{ value: 'The Dagger Isles' },
+				{ value: 'Iruvia' },
+				{ value: 'Severos' },
+				{ value: 'Tycheros' },
+			],
+			notePlaceholder: 'a detail',
+		} as ComponentConfig,
+		body: '```sheet\nvalue: Iruvia\nnote: ore miners, now war refugees\n```',
+	},
+	{
+		config: {
+			id: 'stealth',
+			type: 'card',
+			label: 'Stealth',
+			position: { col: 4, row: 19, width: 3, height: 1 },
+			// The arithmetic is in the value and the word is in the label, which
+			// is the whole of what the split buys: a formula cannot read
+			// "Expertise", so the layout writes the number it is worth.
+			options: [
+				{ value: '0', label: 'Untrained' },
+				{ value: '1', label: 'Proficient' },
+				{ value: '2', label: 'Expertise' },
+			],
+			derived: 'abilities.DEX + value * 2',
+		} as ComponentConfig,
+		body: '```sheet\nvalue: 2\n```',
+	},
+	{
+		config: {
+			id: 'vice',
+			type: 'card',
+			label: 'Vice',
+			position: { col: 7, row: 19, width: 2, height: 1 },
+			options: [
+				{ value: 'luxury', label: 'Luxury — silk, fine wine and better company' },
+				{ value: 'obligation', label: 'Obligation — family in Charterhall' },
+				{ value: 'weird', label: 'Weird — esoteric interests and experiments' },
+			],
+			hideNote: true,
+		} as ComponentConfig,
+		body: '```sheet\nvalue: weird\n```',
+	},
+	{
+		config: {
+			id: 'alignment',
+			type: 'card',
+			label: 'Alignment',
+			position: { col: 9, row: 19, width: 4, height: 1 },
+			options: [
+				{ value: 'Lawful good' },
+				{ value: 'Neutral good' },
+				{ value: 'Chaotic good' },
+			],
+			hideNote: true,
+		} as ComponentConfig,
+		// A value the list above does not offer, which is what a note holds
+		// after its author edited the layout.
+		body: '```sheet\nvalue: Chaotic neutral\n```',
+	},
 	/* Beside the set rather than inside it, so a tab press has something to not
 	   move. */
 	{
@@ -708,6 +795,7 @@ export function brokenSamples(): Sample[] {
 			key?: string;
 			derived?: string;
 			openRows?: boolean;
+			options?: { value: string; label?: string }[];
 			rows?: { label: string; key?: string }[];
 			columns?: { type?: string; total?: boolean }[];
 		};
@@ -757,6 +845,25 @@ export function brokenSamples(): Sample[] {
 			// which is the intent; taking the last keyed one away would lose the
 			// config error, and that is what to watch for.
 			config.key = 'bad:key';
+		}
+		/*
+		 * Two options sharing a value, on the one dropdown that can spare it: a
+		 * `<select>` holding one value twice cannot say which line was chosen,
+		 * so the card refuses to draw rather than round-tripping a choice it
+		 * cannot read back.
+		 *
+		 * On `alignment` and not on every card with options, for the reason the
+		 * key error above is narrowed: breaking all four would put one error
+		 * four times on a view whose whole job is showing the states side by
+		 * side, and the other three still have something to show here — a menu
+		 * whose stored value is now the layout's own first option, a choice in
+		 * a pill, and a long label in a narrow card.
+		 */
+		if (config.id === 'alignment' && config.options !== undefined) {
+			const [first] = config.options;
+			if (first) {
+				config.options = [first, { value: first.value, label: 'Neutral good' }];
+			}
 		}
 		// A total on a text column, which is the misconfiguration the open-row
 		// card can actually be given: a total is what it publishes, and a text

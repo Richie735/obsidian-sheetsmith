@@ -44,9 +44,9 @@ mkdirSync(outDir, { recursive: true });
  * tab set, and then the flag row below it, were only ever looked at through a
  * one-off `size=` on the command line. Raise this when the sample sheet grows
  * again; the number is the sheet's height and nothing else. Last raised when the
- * Currency and Features prefills were added to the sample.
+ * row of dropdown cards was added to the sample.
  */
-const SHEET_FRAME = '1400,2500';
+const SHEET_FRAME = '1400,2700';
 
 const DEFAULTS = [
 	{ name: 'sheet-light', query: 'surface=sheet&theme=light', size: SHEET_FRAME },
@@ -61,7 +61,18 @@ const DEFAULTS = [
 		query: 'surface=sheet&theme=light',
 		size: '1900,1100',
 	},
-	{ name: 'sheet-narrow', query: 'surface=sheet&theme=dark&width=380', size: '520,1400' },
+	{
+		// 4200 because the one-column sheet is about 4100 tall, and the frame
+		// was 1400 — so every look criterion ever settled "at 380" was settled
+		// against a picture holding the top third of the sheet. The row of
+		// dropdown cards sits at y ~3600 and was cropped out entirely, which is
+		// how three criteria came to be ticked against a shot that did not
+		// contain them. Same rule as SHEET_FRAME above: the number is the
+		// sheet's height in this reflow and nothing else.
+		name: 'sheet-narrow',
+		query: 'surface=sheet&theme=dark&width=380',
+		size: '520,4200',
+	},
 	{
 		// UI.md §5 puts the card's headline number in `em` rather than pixels
 		// "so it follows the vault's text size setting", and until this entry
@@ -75,7 +86,19 @@ const DEFAULTS = [
 		// sheet gets taller with it.
 		name: 'sheet-large-text',
 		query: 'surface=sheet&theme=light&text=24',
-		size: '1400,2800',
+		size: '1400,3000',
+	},
+	{
+		// The first view to photograph a focus ring at all. A still cannot press
+		// Tab, so `&focus=` was added to the harness for this (see harness.ts),
+		// and the sheet's rule is `:focus` rather than `:focus-visible`, so what
+		// this shows is exactly what a tab press shows. The dropdown card,
+		// because a native `<select>` is the one control here that arrives with
+		// a focus treatment of its own: if the view scope ever lost, Obsidian's
+		// ring would sit beside the card's and nothing else would report it.
+		name: 'sheet-focus',
+		query: 'surface=sheet&theme=light&focus=.sheetsmith-card-select',
+		size: SHEET_FRAME,
 	},
 	{ name: 'sheet-empty', query: 'surface=sheet&theme=dark&state=empty', size: SHEET_FRAME },
 	{ name: 'sheet-error', query: 'surface=sheet&theme=dark&state=broken', size: SHEET_FRAME },
