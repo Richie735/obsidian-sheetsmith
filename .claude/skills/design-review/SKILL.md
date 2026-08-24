@@ -9,13 +9,21 @@ Review appearance and usability. **Feature:** $ARGUMENTS
 
 Read `docs/UI.md` and the feature's `docs/features/<slug>.md` before starting.
 
-**If the change touches a transition, a gesture, or anything that moves, also
-read `reference/motion.md` in this skill's folder** before judging it. It carries
-the standards for frequency, easing, duration, interruptibility and how a gesture
-should respond, the vocabulary for saying precisely what is wrong, and a record of where this
-codebase already stands so a review does not re-litigate settled ground.
+Two reference files in this skill's folder carry the standards `UI.md` states as
+rules but does not put numbers on. Read the one the change touches, before
+judging it. Each ends with a measured record of where this codebase already
+stands, so a review does not re-litigate settled ground.
 
-It lives in the repository rather than as an installed skill on purpose: a clone
+- **`reference/motion.md`**, for a transition, a gesture, or anything that
+  moves: frequency, easing, duration, interruptibility, how a gesture should
+  respond, and the vocabulary for saying precisely what is wrong.
+- **`reference/legibility.md`**, for a colour, a mark that carries state, a
+  control's size, or grid placement: whether colour is carrying meaning alone,
+  the contrast ratios and how to measure them off the theme variables, the type
+  size floor, hit targets and the gap beside them, and reading order against
+  visual order.
+
+They live in the repository rather than as installed skills on purpose: a clone
 on another machine has to review by the same standard, and a delegation to
 something machine-local would fail with no sign rather than with an error.
 
@@ -28,7 +36,8 @@ npm run harness:shot        # writes harness/shots/*.png
 ```
 
 Then **read the PNGs**. They are the review. `harness/shots/` holds both themes,
-both screens, the narrow reflow, and the empty and error states.
+both screens, the narrow reflow, the larger text size, and the empty and error
+states.
 
 - `harness:calibrate` extracts the real theme palette and settings chrome from
   the installed Obsidian, so what you are looking at is the app's own frame
@@ -64,6 +73,14 @@ Then against `docs/UI.md` §11, both screens:
 1, 2 and 3 columns wide filling its placement; numbers holding still while
 stepping; one focus treatment, visible everywhere; the empty and error states,
 not only the populated one.
+
+**What `reference/legibility.md` adds to that sweep**, when the change touches a
+colour, a mark, a control's size or grid placement: does any state differ only
+by fill strength, with no glyph or shape behind it; does text on a mixed fill
+clear 4.5:1 in *both* themes; does a derived size land under 10px; does
+`sheet-large-text` truncate more, reorder the hierarchy, or overflow; does a
+stacked control's gap stay wider than its hit target reaches; does tab order
+still walk the sheet in the order the eye does once it has reflowed.
 
 **Settings.** Does a new config field read as a setting or as a form field
 dumped in a list; is its description a consequence or a restatement; do the
