@@ -62,6 +62,21 @@ const DEFAULTS = [
 		size: '1900,1100',
 	},
 	{ name: 'sheet-narrow', query: 'surface=sheet&theme=dark&width=380', size: '520,1400' },
+	{
+		// UI.md §5 puts the card's headline number in `em` rather than pixels
+		// "so it follows the vault's text size setting", and until this entry
+		// existed nothing had ever rendered a sheet at any size but the default:
+		// the claim was argued in a comment and never once looked at. 24px is
+		// half again the 16px default and well inside what Obsidian's Appearance
+		// setting offers, so it is a size a reader actually sets rather than an
+		// invented worst case. What it shows is truncation that grew, a
+		// hierarchy that reordered, and controls that collided. See
+		// `reference/legibility.md` §4. Taller frame because everything on the
+		// sheet gets taller with it.
+		name: 'sheet-large-text',
+		query: 'surface=sheet&theme=light&text=24',
+		size: '1400,2800',
+	},
 	{ name: 'sheet-empty', query: 'surface=sheet&theme=dark&state=empty', size: SHEET_FRAME },
 	{ name: 'sheet-error', query: 'surface=sheet&theme=dark&state=broken', size: SHEET_FRAME },
 	{ name: 'settings-light', query: 'surface=settings&theme=light', size: '1500,1500' },
