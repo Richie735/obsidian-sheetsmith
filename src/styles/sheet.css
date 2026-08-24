@@ -642,6 +642,96 @@
 	background-color: var(--background-modifier-hover);
 }
 
+/* The same value slot as a menu over the layout's options.
+
+   Deliberately not sharing a class with `.sheetsmith-table-select`: the two are
+   the same element doing the same job and they are not the same object on the
+   page, because a cell's select is `--font-ui-small` in a row of cells and a
+   card's value is the card's headline size, bold and centred. That is exactly
+   what `.sheetsmith-card-input` and a table cell's field already are — one
+   gesture, two classes, two sets of clothes — and a native select needs no
+   gesture module at all, so there is nothing to share but a name that would
+   then have to mean two sizes.
+
+   Obsidian's own `select` rule is the reason for half of these declarations. It
+   sits at (0,0,1) and sets a fixed `--input-height`, the dropdown background,
+   the input shadow and `--font-ui-small`; the height alone clips a value at the
+   card's size. */
+.sheetsmith-view .sheetsmith-card-select {
+	/* Auto rather than 100%, so the chevron beside it is centred with it
+	   rather than pushed to the card's edge. Sized to the chosen option rather
+	   than to the longest one, or the chevron sits a word away from a short
+	   choice in a list holding a long one; unsupported it falls back to the
+	   widest option, which is the same layout with a wider gap. */
+	width: auto;
+	field-sizing: content;
+	max-width: 100%;
+	/* Or a long label refuses to shrink and widens the card.
+
+	   Neither this nor a cap below the slot's width recovers a *centred*
+	   reading for a label longer than the card: centring only shows where
+	   there is slack, so clipped text starts at the left edge whatever the box
+	   is. That is the same on a field — a plain card holding the identical
+	   string renders identically, and without even an ellipsis — so it is what
+	   truncation looks like here rather than something the menu does. */
+	min-width: 0;
+	height: auto;
+	/* Symmetric, so the text stays centred under the label. */
+	padding: 0 var(--size-2-1);
+	border: none;
+	border-radius: var(--radius-s);
+	background: transparent;
+	box-shadow: none;
+	text-align: center;
+	/* A select clips its own text with no mark, so a label longer than the card
+	   loses its last letters with nothing saying so. The card's label already
+	   ellipsises for the same reason. */
+	text-overflow: ellipsis;
+	font-size: var(--sheetsmith-card-value-size);
+	font-weight: var(--font-bold);
+	color: var(--text-normal);
+	line-height: 1.05;
+	letter-spacing: -0.02em;
+	cursor: pointer;
+}
+
+.sheetsmith-view .sheetsmith-card-select:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+/* The chevron, which is the whole of what says this value is a menu and not a
+   field: with Obsidian's dropdown background taken off, a bare select is a
+   piece of text.
+
+   It rides on the value slot rather than on the control, because a select can
+   carry no pseudo-element, and a background image would mean a colour of this
+   plugin's own — the arrow in `app.css` is a black stroke over a themed ellipse
+   and is scoped to `.dropdown` (docs/UI.md §1, §9). A sibling in the slot's flex
+   row rather than an overlay, so the pair centres together and a long label
+   cannot run underneath it. */
+.sheetsmith-card-dropdown::after {
+	content: '';
+	/* The row is baseline-aligned for the value and its pill; an empty box has
+	   no baseline worth aligning to. */
+	align-self: center;
+	flex: none;
+	width: 0.34em;
+	height: 0.34em;
+	/* The rotated square's own centre sits below the glyph's, so a chevron
+	   aligned by the box reads as hanging low. */
+	margin-block-start: -0.16em;
+	/* Muted rather than faint, which is the variable a quiet mark reaches for
+	   first and the wrong one here: faint measures 2.12:1 on the card in a light
+	   theme and 2.57:1 in a dark one, under the 3:1 a border or fill has to
+	   clear when it is the only thing marking a state — and this one is the only
+	   thing saying the value is a menu, so it is exactly that case. Muted is
+	   6.19:1 and 7.03:1. The reader who has not asked for more contrast is the
+	   one who most needs telling that this value can be pressed. */
+	border-right: 1.5px solid var(--text-muted);
+	border-bottom: 1.5px solid var(--text-muted);
+	transform: rotate(45deg);
+}
+
 .sheetsmith-card-derived {
 	margin-top: var(--size-2-2);
 	font-size: var(--sheetsmith-card-value-size);
@@ -667,6 +757,7 @@
    A transparent outline is the escape hatch: invisible normally, repainted
    as a real ring where box-shadows are discarded. */
 .sheetsmith-view .sheetsmith-card-input:focus,
+.sheetsmith-view .sheetsmith-card-select:focus,
 .sheetsmith-view .sheetsmith-card-note-input:focus,
 .sheetsmith-card-has-derived .sheetsmith-card-value:focus-within {
 	box-shadow: 0 0 0 2px var(--interactive-accent);
@@ -781,6 +872,24 @@
 	outline: none;
 }
 
+/* The menu in the pill, on the field's own three rules: the pill is what
+   reacts, and a second rectangle inside it would be a second control. */
+.sheetsmith-view .sheetsmith-card-has-derived .sheetsmith-card-select {
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-semibold);
+	letter-spacing: normal;
+	color: var(--text-normal);
+}
+
+.sheetsmith-view .sheetsmith-card-has-derived .sheetsmith-card-select:hover {
+	background-color: transparent;
+}
+
+.sheetsmith-view .sheetsmith-card-has-derived .sheetsmith-card-select:focus {
+	box-shadow: none;
+	outline: none;
+}
+
 /* A card is told apart from the page by a faint border over a faint tint —
    enough in the default theme, not enough for someone who asked for more
    contrast. Give every edge that separates a surface a defined line, the
@@ -795,6 +904,12 @@
 .sheetsmith-card-abbreviation,
 .sheetsmith-card-derived-unresolved {
 		color: var(--text-muted);
+	}
+
+/* One step further for someone who asked for it, since the default is
+	   already what this block would otherwise raise it to. */
+.sheetsmith-card-dropdown::after {
+		border-color: var(--text-normal);
 	}
 
 }

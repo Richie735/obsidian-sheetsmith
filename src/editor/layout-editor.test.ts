@@ -1523,19 +1523,26 @@ describe('overlap inside a tab, and never across tabs', () => {
 });
 
 /*
- * The two-column list field, now that its words are the caller's.
+ * The two-column list field, under two vocabularies.
  *
- * What is checked here is the half that holds with one caller: the vocabulary
- * Card set has always had comes out unchanged, the stale "Attribute" labels are
- * gone, and opening a form no longer writes an empty list into the layout. A
- * second vocabulary is what proves the parameterisation, and there is not one
- * yet.
+ * A Card set's entries are a key and a full name; a Card's options are a value
+ * and a label, and they could not be spelled `key` and `name` because a Card
+ * already has a `key` (SPEC §13). So the field takes its two property names and
+ * its two headings from the field spec, and what is checked here is that both
+ * callers get their own words out of one editor.
  */
 function twoLists(): Layout {
 	return {
 		name: 'Two lists',
 		columns: 12,
 		components: [
+			{
+				id: 'race',
+				type: 'card',
+				label: 'Race',
+				options: [{ value: 'Elf', label: 'Elf' }, { value: 'Dwarf' }],
+				position: { col: 1, row: 1, width: 2, height: 1 },
+			},
 			{
 				id: 'abilities',
 				type: 'card-set',
@@ -1593,6 +1600,11 @@ describe('a list field naming its own columns', () => {
 		await settle(harness.editor);
 	}
 
+	it('heads a card\'s options Value and Label', async () => {
+		await openForm('edit-race');
+		expect(headings()).toEqual(['Value', 'Label']);
+		expect(names()).toEqual(['Value', 'Label', 'Value', 'Label']);
+	});
 
 	it('leaves a card set\'s entries exactly as they were', async () => {
 		await openForm('edit-abilities');
@@ -1600,18 +1612,115 @@ describe('a list field naming its own columns', () => {
 		expect(names()).toEqual(['Key', 'Full name']);
 	});
 
+	it('calls a card with options a Dropdown, and a card without one a Card', () => {
+		/*
+		 * An author picks **Dropdown** off the add menu and the row under it
+		 * used to say "Card", which is the menu and the list disagreeing about
+		 * the thing that was just added. The component answers — the editor
+		 * asking whether a config has options would be this module knowing what
+		 * a Card is.
+		 */
+		const named = (label: string) =>
+			Array.from(harness.container.querySelectorAll('.setting-item'))
+				.find(
+					(item) =>
+						item.querySelector('.setting-item-name')?.textContent === label,
+				)
+				?.querySelector('.setting-item-description')?.textContent;
+		expect(named('Race')).toBe('Dropdown');
+		expect(named('Level')).toBe('Card');
+		// Nothing about the type changed, so a set is still a set.
+		expect(named('Abilities')).toBe('Card set');
+	});
 
+	it('goes back to calling it a Card when the last option is removed', async () => {
+		// Derived from the config every time, never stored: a layout keeps the
+		// component an entry produced and never the entry (SPEC §13).
+		control(harness, 'edit-race').click();
+		await settle(harness.editor);
+		for (const remove of Array.from(
+			harness.container.querySelectorAll<HTMLButtonElement>(
+				'.sheetsmith-entry-row button[aria-label="Remove entry"]',
+			),
+		).reverse()) {
+			remove.click();
+			await settle(harness.editor);
+		}
 
+		const row = Array.from(
+			harness.container.querySelectorAll('.setting-item'),
+		).find(
+			(item) => item.querySelector('.setting-item-name')?.textContent === 'Race',
+		);
+		expect(row?.querySelector('.setting-item-description')?.textContent).toBe(
+			'Card',
+		);
+	});
+
+	it('gives a list whose first column holds a word the width for it', async () => {
+		/*
+		 * The class is the whole contract between this module and the
+		 * stylesheet, and nothing else would report its loss: the list still
+		 * renders, still round-trips, and quietly clips "The Dagger Isles" in a
+		 * track sized for `STR` while an empty Label box takes five times the
+		 * width (docs/PATTERNS.md §10).
+		 */
+		const wide = () =>
+			harness.container
+				.querySelector('.sheetsmith-entry-list')
+				?.classList.contains('sheetsmith-entry-wide-first');
+		await openForm('edit-race');
+		expect(wide()).toBe(true);
+		// Card set's key really is an abbreviation, so its geometry is the one
+		// the field was built with and must not move.
+		await openForm('edit-abilities');
+		expect(wide()).toBe(false);
+	});
 
 	it('says "Attribute" nowhere, in either list', async () => {
 		// The one place the "Abilities" mistake was still live: `attributes`
 		// became `entries` in the config (SPEC §13) and these two labels kept
 		// the word, where only a screen reader would ever meet it.
-		await openForm('edit-abilities');
-		expect(names().join(' ')).not.toContain('Attribute');
+		for (const token of ['edit-race', 'edit-abilities']) {
+			await openForm(token);
+			expect(names().join(' ')).not.toContain('Attribute');
+		}
 	});
 
+	it('writes an edit under the property name its column carries', async () => {
+		await openForm('edit-race');
+		const row = harness.container.querySelectorAll('.sheetsmith-entry-row')[1];
+		const value = row?.querySelector('input[aria-label="Value"]');
+		type(value as HTMLInputElement, 'Half-elf');
+		await settle(harness.editor);
 
+		const stored = (await harness.stored()).components[0] as unknown as {
+			options: { value: string; label?: string }[];
+		};
+		// The list the layout holds, not a `key` beside it: one word meaning two
+		// things on one component is the defect this spelling exists to avoid.
+		expect(stored.options).toEqual([
+			{ value: 'Elf', label: 'Elf' },
+			{ value: 'Half-elf' },
+		]);
+	});
+
+	it('names the column in the error for a cleared cell', async () => {
+		await openForm('edit-race');
+		const value = harness.container.querySelector('input[aria-label="Value"]');
+		type(value as HTMLInputElement, '');
+		await settle(harness.editor);
+		// "A key is required" over a column headed Value points at nothing on
+		// screen.
+		expect(
+			harness.container.querySelector('.sheetsmith-field-error')?.textContent,
+		).toBe('A value is required.');
+		// And the list is unchanged: a refused edit writes nothing.
+		const stored = (await harness.stored()).components[0] as unknown as {
+			options: { value: string }[];
+		};
+		expect(stored.options[0]?.value).toBe('Elf');
+	});
 
 	it('writes no empty list into a layout for having shown the form', async () => {
 		/*
@@ -1651,3 +1760,37 @@ describe('a list field naming its own columns', () => {
 	});
 });
 
+describe('the Dropdown entry on Card', () => {
+	beforeEach(async () => {
+		harness = await open();
+	});
+
+	it('sits indented under Card in the add menu', () => {
+		const options = Array.from(
+			control<HTMLSelectElement>(harness, 'add-choice').options,
+		);
+		const dropdown = options.find((option) => option.value === 'card:0');
+		expect(dropdown?.text.trim()).toBe('Dropdown');
+		expect(dropdown?.text.startsWith(' ')).toBe(true);
+		expect(options.indexOf(dropdown as HTMLOptionElement)).toBe(
+			options.findIndex((option) => option.value === 'card') + 1,
+		);
+	});
+
+	it('adds a card carrying two options, labelled Dropdown', async () => {
+		choose(control<HTMLSelectElement>(harness, 'add-choice'), 'card:0');
+		pressAdd(harness);
+		await settle(harness.editor);
+
+		const components = (await harness.stored()).components;
+		const added = components[components.length - 1];
+		expect(added).toMatchObject({
+			type: 'card',
+			label: 'Dropdown',
+			options: [{ value: 'First choice' }, { value: 'Second choice' }],
+		});
+		// Declaring options is the only thing that makes the card a dropdown,
+		// so an entry that prefilled none would have produced a text card.
+		expect(added).not.toHaveProperty('input');
+	});
+});

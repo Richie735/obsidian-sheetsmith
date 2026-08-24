@@ -61,6 +61,9 @@ const MEMBER_ORDER = [
 	// After the fields it prefills, because that is the order it reads in:
 	// here are the settings, and here is one of them filled in for a job.
 	'palette',
+	// Beside `palette` because it is the same job read the other way: one
+	// offers a configuration under a name, the other names a configuration.
+	'configName',
 	'read',
 	'scopeValues',
 	'scopeRows',
@@ -577,6 +580,21 @@ describe.each(types)('component "%s"', (type) => {
 		expect(declared.filter((name) => !MEMBER_ORDER.includes(name))).toEqual(
 			[],
 		);
+	});
+
+	it('names a configuration as a string, or not at all', () => {
+		// A component that only ever is what its type says leaves it off, and
+		// the editor shows the type — which is what every component did before
+		// this existed. An empty string is the failure worth catching: it would
+		// blank the line rather than falling back to the type.
+		if (component?.configName === undefined) return;
+		expect(typeof component.configName).toBe('function');
+		for (const entry of component.palette ?? []) {
+			const named = component.configName(entry.config as never);
+			expect(named === null || (typeof named === 'string' && named !== '')).toBe(
+				true,
+			);
+		}
 	});
 
 	it('offers palette entries as a list, or not at all', () => {

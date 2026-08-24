@@ -46,8 +46,13 @@ function selectors(): string[] {
  * has to outweigh Obsidian's element rule, which means carrying the view
  * scope. `.sheetsmith-input-invalid` is deliberately not here: it lives in
  * the settings tab, not the sheet, and only sets a border colour.
+ *
+ * `-select` is the third spelling, and it is here for the reason the first two
+ * are: Obsidian's bare `select` rule sets a height, a background, a shadow and
+ * a font size, so a card's value drawn as a menu silently reverts to a form
+ * control the moment a rule of ours loses to it.
  */
-const FIELD_CLASS = /\.sheetsmith-[a-z-]*(?:-input|-current)\b/;
+const FIELD_CLASS = /\.sheetsmith-[a-z-]*(?:-input|-current|-select)\b/;
 
 describe('field rules outweigh Obsidian\'s input styling', () => {
 	const fieldRules = selectors().filter((selector) =>

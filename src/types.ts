@@ -182,8 +182,7 @@ export interface ConfigFieldSpec {
 	group?: string;
 	/**
 	 * Show this field only while another config key holds a value, e.g.
-	 * alignment only when sizing is fixed, options only when input is a
-	 * select.
+	 * alignment only when sizing is fixed.
 	 *
 	 * Matched against the controlling field's effective value, not the stored
 	 * one: a key whose value equals its own default is omitted from the
@@ -728,6 +727,23 @@ export interface ComponentDefinition<
 	 * before this existed.
 	 */
 	palette?: readonly PaletteEntry<TConfig>[];
+	/**
+	 * What to call one configuration of this component, where the type's own
+	 * name is not the honest answer. `null` means it is.
+	 *
+	 * The editor shows it wherever it would otherwise show the type, so an
+	 * author who chose **Dropdown** from the add menu is not told a line later
+	 * that they have a Card. It is derived from the config every time rather
+	 * than stored: a layout keeps the component a palette entry produced and
+	 * never the entry itself (SPEC §13), so the only honest source for the name
+	 * is what the configuration now says — an author who deletes a card's last
+	 * option has a Card again, and should be told so.
+	 *
+	 * Optional under §4.1's rule, and here for the reason `palette` is: the
+	 * alternative is the editor asking whether a config has options, which is
+	 * code outside a component knowing what that component is.
+	 */
+	configName?(config: TConfig): string | null;
 }
 
 /**

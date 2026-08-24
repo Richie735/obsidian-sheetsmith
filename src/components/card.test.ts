@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { card, CardConfig } from './card';
+import { card, CardConfig, CardOption } from './card';
 import { FieldValue, RenderContext } from '../types';
 
 const config: CardConfig = {
@@ -403,6 +403,84 @@ describe('card.render: hit target', () => {
 	});
 });
 
+describe('card.render: a menu takes the whole card as its hit target', () => {
+	/** happy-dom reports zero rects; the card routes clicks by geometry. */
+	const stubRect = (el: HTMLElement, top: number, height: number) => {
+		el.getBoundingClientRect = () => ({
+			top,
+			height,
+			bottom: top + height,
+			left: 0,
+			right: 0,
+			width: 0,
+			x: 0,
+			y: top,
+			toJSON: () => ({}),
+		});
+	};
+
+	const races: CardConfig = {
+		...config,
+		key: 'race',
+		options: [{ value: 'Elf' }, { value: 'Dwarf' }],
+	};
+
+	it('opens the menu on a press the card routed to it', () => {
+		// A field only needed focus, because focus on an input *is* the edit
+		// gesture. Focus on a select shows a ring on a desktop and nothing at
+		// all under a finger, so the card's own hit target was answering with
+		// silence — and a menu's box is only as wide as the chosen option, so
+		// that target is a fraction of the same card as a field (docs/UI.md §7).
+		const el = render(races, { value: 'Elf', note: 'ancestry' });
+		const card = el.querySelector('.sheetsmith-card') as HTMLElement;
+		const menu = el.querySelector('select') as HTMLSelectElement;
+		const note = el.querySelector('.sheetsmith-card-note-input') as HTMLInputElement;
+		stubRect(menu, 0, 20);
+		stubRect(note, 40, 20);
+		const acted: string[] = [];
+		menu.focus = () => acted.push('focus');
+		menu.showPicker = () => acted.push('picker');
+
+		card.dispatchEvent(new MouseEvent('click', { clientY: 5 }));
+		// Focused as well, so a dismissed picker leaves the keyboard where the
+		// press aimed it.
+		expect(acted).toEqual(['focus', 'picker']);
+	});
+
+	it('falls back to focus where the platform refuses the picker', () => {
+		const el = render(races, { value: 'Elf' });
+		const card = el.querySelector('.sheetsmith-card') as HTMLElement;
+		const menu = el.querySelector('select') as HTMLSelectElement;
+		stubRect(menu, 0, 20);
+		const acted: string[] = [];
+		menu.focus = () => acted.push('focus');
+		menu.showPicker = () => {
+			throw new Error('NotAllowedError');
+		};
+		expect(() =>
+			card.dispatchEvent(new MouseEvent('click', { clientY: 5 })),
+		).not.toThrow();
+		expect(acted).toEqual(['focus']);
+	});
+
+	it('leaves a press nearest the note as a press on the note', () => {
+		// The routing still means what it meant: proximity picks the control,
+		// and only a menu gets the second half.
+		const el = render(races, { value: 'Elf', note: 'ancestry' });
+		const card = el.querySelector('.sheetsmith-card') as HTMLElement;
+		const menu = el.querySelector('select') as HTMLSelectElement;
+		const note = el.querySelector('.sheetsmith-card-note-input') as HTMLInputElement;
+		stubRect(menu, 0, 20);
+		stubRect(note, 40, 20);
+		const acted: string[] = [];
+		note.focus = () => acted.push('note');
+		menu.showPicker = () => acted.push('picker');
+
+		card.dispatchEvent(new MouseEvent('click', { clientY: 70 }));
+		expect(acted).toEqual(['note']);
+	});
+});
+
 describe('card.scopeValues', () => {
 	it('publishes its stored value under the bare component id', () => {
 		expect(card.scopeValues?.({ value: '18' }, config)).toEqual({
@@ -516,6 +594,7 @@ describe('card contract', () => {
 		expect(card.formulaFields).toEqual(['derived']);
 		expect(card.configFields.map((field) => field.key)).toEqual([
 			'key',
+			'options',
 			'derived',
 			'notePlaceholder',
 			'hideLabel',
@@ -523,5 +602,368 @@ describe('card contract', () => {
 			'hideNote',
 			'signed',
 		]);
+	});
+});
+
+/*
+ * A card whose layout declares options (SPEC §4.2). The whole feature is a
+ * control and a config key: nothing in `read`, `write` or the note changes, so
+ * what these drive is the menu, what a choice stores, and the one case the
+ * prior art documents nowhere — a stored value the layout no longer offers.
+ */
+describe('card.render: a value chosen from a list', () => {
+	const races: CardConfig = {
+		...config,
+		key: 'race',
+		options: [{ value: 'Elf' }, { value: 'Dwarf' }, { value: 'Half-elf' }],
+	};
+
+	const menu = (el: HTMLElement) =>
+		el.querySelector<HTMLSelectElement>('.sheetsmith-card-select');
+
+	/** Every line of the menu, in the order the reader meets them. */
+	const lines = (el: HTMLElement) =>
+		Array.from(menu(el)?.options ?? []).map((option) => [
+			option.value,
+			option.textContent,
+		]);
+
+	const choose = (el: HTMLElement, value: string) => {
+		const select = menu(el) as HTMLSelectElement;
+		select.value = value;
+		select.dispatchEvent(new Event('change'));
+	};
+
+	it('draws a menu in the value slot, and no field', () => {
+		const el = render(races, { value: 'Elf' });
+		expect(menu(el)).not.toBeNull();
+		expect(inputs(el).value).toBeNull();
+		// The slot is the same one, so the card's typography and the pill
+		// treatment reach the menu without a second layout.
+		expect(menu(el)?.parentElement?.classList.contains('sheetsmith-card-value')).toBe(
+			true,
+		);
+	});
+
+	it('offers the em dash first, then the layout\'s options in its order', () => {
+		expect(lines(render(races, { value: 'Elf' }))).toEqual([
+			['', '—'],
+			['Elf', 'Elf'],
+			['Dwarf', 'Dwarf'],
+			['Half-elf', 'Half-elf'],
+		]);
+	});
+
+	it('shows a label where an option has one, and its value where it has none', () => {
+		const training: CardConfig = {
+			...config,
+			options: [{ value: '0', label: 'Untrained' }, { value: '2' }],
+		};
+		expect(lines(render(training, null))).toEqual([
+			['', '—'],
+			['0', 'Untrained'],
+			// A blank label is not an error: it shows the value, which is the
+			// default and the ordinary case.
+			['2', '2'],
+		]);
+	});
+
+	it('stores the chosen option\'s value, not its label and not its index', () => {
+		const edits: unknown[] = [];
+		const el = render(
+			{ ...config, options: [{ value: '0', label: 'Untrained' }, { value: '2', label: 'Expertise' }] },
+			null,
+			{ onChange: (data) => edits.push(data) },
+		);
+		choose(el, '2');
+		expect(edits).toEqual([{ value: '2' }]);
+	});
+
+	it('clears the value when the em dash is chosen', () => {
+		const edits: unknown[] = [];
+		const el = render(races, { value: 'Elf' }, {
+			onChange: (data) => edits.push(data),
+		});
+		choose(el, '');
+		expect(edits).toEqual([{ value: '' }]);
+	});
+
+	it('selects the em dash with nothing stored, and writes nothing to say so', () => {
+		const edits: unknown[] = [];
+		const el = render(races, null, { onChange: (data) => edits.push(data) });
+		expect(menu(el)?.value).toBe('');
+		// No option is a default: rendering an unset card must not write one,
+		// which is the trap this control is best known for.
+		expect(edits).toEqual([]);
+	});
+
+	it('publishes nothing while nothing is chosen', () => {
+		expect(card.scopeValues?.(null, races)?.self?.value).toBeUndefined();
+	});
+
+	it('publishes the stored value, which is what a formula reads', () => {
+		// Never the label: the layout wrote the mapping down, so the value is
+		// the meaning and the label is its presentation (SPEC §5).
+		const published = card.scopeValues?.({ value: '2' }, {
+			...config,
+			options: [{ value: '2', label: 'Expertise' }],
+		});
+		expect(published?.self?.value).toBe('2');
+		expect(JSON.stringify(published)).not.toContain('Expertise');
+	});
+
+	it('keeps one tab stop for the value, named by the card\'s label', () => {
+		const el = render(races, { value: 'Elf' });
+		expect(el.querySelectorAll('select, input')).toHaveLength(
+			// The menu and the note line, exactly as the field and the note.
+			2,
+		);
+		expect(menu(el)?.getAttribute('aria-label')).toBe('Armour class');
+	});
+});
+
+describe('card.render: a stored value the layout no longer offers', () => {
+	const races: CardConfig = {
+		...config,
+		key: 'race',
+		options: [{ value: 'Elf' }, { value: 'Dwarf' }],
+	};
+	const STRAY = '\n```sheet\nrace: Tiefling\n```\n';
+
+	const menu = (el: HTMLElement) =>
+		el.querySelector<HTMLSelectElement>('.sheetsmith-card-select');
+
+	it('carries it as the last line, selected, and says what it is', () => {
+		const el = render(races, { value: 'Tiefling' });
+		const options = Array.from(menu(el)?.options ?? []);
+		expect(options.map((option) => option.value)).toEqual([
+			'',
+			'Elf',
+			'Dwarf',
+			'Tiefling',
+		]);
+		expect(menu(el)?.value).toBe('Tiefling');
+		// `title` rather than `aria-label`: the control's visible content is
+		// words, so the explanation adds to the name (docs/UI.md §6).
+		expect(menu(el)?.getAttribute('title')).toContain('Not one of this card\'s options');
+		expect(menu(el)?.hasAttribute('aria-label')).toBe(true);
+	});
+
+	it('renders it rather than correcting it, and rewrites no note', () => {
+		const edits: unknown[] = [];
+		render(races, { value: 'Tiefling' }, { onChange: (data) => edits.push(data) });
+		expect(edits).toEqual([]);
+		const read = card.read(STRAY, races);
+		if (!read.ok || read.data === null) throw new Error('expected data');
+		expect(card.write(read.data, STRAY, races)).toBe(STRAY);
+	});
+
+	it('drops the line as soon as anything else is chosen', () => {
+		const el = render(races, { value: 'Tiefling' });
+		const select = menu(el) as HTMLSelectElement;
+		select.value = 'Elf';
+		select.dispatchEvent(new Event('change'));
+		expect(Array.from(select.options).map((option) => option.value)).toEqual([
+			'',
+			'Elf',
+			'Dwarf',
+		]);
+		expect(select.hasAttribute('title')).toBe(false);
+	});
+
+	it('matches exactly: a stored "elf" is not the option "Elf"', () => {
+		// Table's claim rule is case-insensitive because it matches a row name
+		// a human typed into a note. An option's value is layout configuration,
+		// and forgiving case here would let two options differing only in case
+		// both claim one stored value.
+		const el = render(races, { value: 'elf' });
+		expect(Array.from(menu(el)?.options ?? []).map((o) => o.value)).toEqual([
+			'',
+			'Elf',
+			'Dwarf',
+			'elf',
+		]);
+		expect(menu(el)?.value).toBe('elf');
+	});
+
+	it('leaves the stored value untouched through every edit to the list', () => {
+		// The five edits an author can make, minus the one that changes nothing
+		// about this note: renaming a label. None of them writes.
+		const stored = '\n```sheet\nrace: Dwarf\n```\n';
+		const lists: Record<string, CardOption[]> = {
+			reordered: [{ value: 'Dwarf' }, { value: 'Elf' }],
+			added: [{ value: 'Elf' }, { value: 'Dwarf' }, { value: 'Gnome' }],
+			renamed: [{ value: 'Elf' }, { value: 'Dwarven' }],
+			deleted: [{ value: 'Elf' }],
+		};
+		for (const [edit, options] of Object.entries(lists)) {
+			const after = { ...races, options };
+			const read = card.read(stored, after);
+			if (!read.ok || read.data === null) throw new Error('expected data');
+			expect(read.data.value, edit).toBe('Dwarf');
+			expect(card.write(read.data, stored, after), edit).toBe(stored);
+		}
+	});
+});
+
+describe('card.render: a menu under a derived', () => {
+	const training: CardConfig = {
+		...config,
+		key: 'training',
+		derived: '10 + value',
+		options: [
+			{ value: '0', label: 'Untrained' },
+			{ value: '2', label: 'Expertise' },
+		],
+	};
+
+	const menu = (el: HTMLElement) =>
+		el.querySelector<HTMLSelectElement>('.sheetsmith-card-select');
+
+	it('reads the stored value as "value", and recomputes on the change', () => {
+		const el = render(training, { value: '0' });
+		const derived = el.querySelector('.sheetsmith-card-derived');
+		expect(derived?.textContent).toBe('+10');
+		const select = menu(el) as HTMLSelectElement;
+		select.value = '2';
+		select.dispatchEvent(new Event('change'));
+		// A menu has no draft, so there is nothing to hold back: the number
+		// settles with the choice.
+		expect(derived?.textContent).toBe('+12');
+	});
+
+	it('blanks on an empty value, exactly as a text card does', () => {
+		const el = render(training, null);
+		expect(el.querySelector('.sheetsmith-card-derived')?.textContent).toBe('—');
+	});
+
+	it('shows the card one em dash, not two', () => {
+		// The field drops its placeholder where a derived owns the headline, or
+		// the card draws the same nothing twice and the smaller copy is the
+		// control. The menu takes the same branch: the line stays, because it is
+		// what clears the value, and the chevron is what says it is a menu.
+		const el = render(training, null);
+		expect(menu(el)?.value).toBe('');
+		expect(Array.from(menu(el)?.options ?? []).map((o) => o.textContent)).toEqual([
+			'',
+			'Untrained',
+			'Expertise',
+		]);
+		// One em dash on the card, and it is the headline.
+		expect(el.textContent?.match(/—/g) ?? []).toHaveLength(1);
+	});
+
+	it('keeps the em dash on a card with no derived to own the headline', () => {
+		const { derived: _derived, ...plain } = training;
+		const el = render(plain, null);
+		expect(
+			Array.from(
+				el.querySelector<HTMLSelectElement>('.sheetsmith-card-select')?.options ?? [],
+			).map((option) => option.textContent),
+		).toEqual(['—', 'Untrained', 'Expertise']);
+	});
+
+	it('hides the menu with the value, since the trade is the field\'s own', () => {
+		expect(menu(render({ ...training, hideValue: true }, { value: '2' }))).toBeNull();
+	});
+});
+
+describe('card.render: an options list that cannot be a menu', () => {
+	it('reports an option with no value, on that card alone', () => {
+		const el = render({ ...config, options: [{ value: 'Elf' }, { value: ' ' }] }, null);
+		expect(el.querySelector('.sheetsmith-error')?.textContent).toContain(
+			'Every option needs a value',
+		);
+		expect(el.querySelector('.sheetsmith-card')).toBeNull();
+	});
+
+	it('reports two options sharing a value, which no select could tell apart', () => {
+		const el = render(
+			{
+				...config,
+				options: [
+					{ value: '2', label: 'Proficient' },
+					{ value: '2', label: 'Expertise' },
+				],
+			},
+			null,
+		);
+		expect(el.querySelector('.sheetsmith-error')?.textContent).toContain(
+			'Two options share the value "2"',
+		);
+	});
+
+	it('publishes nothing it cannot draw', () => {
+		// Both faults, because both reach the same guard and only one of them
+		// was ever driven through it: a card that cannot draw its own control
+		// must not publish a name the sheet is then built on.
+		expect(
+			card.scopeValues?.({ value: '2' }, {
+				...config,
+				options: [{ value: '2' }, { value: '2' }],
+			}),
+		).toEqual({});
+		expect(
+			card.scopeValues?.({ value: 'Elf' }, {
+				...config,
+				options: [{ value: 'Elf' }, { value: ' ' }],
+			}),
+		).toEqual({});
+	});
+
+	it('trims a declared value, so a card can round-trip its own choice', () => {
+		// `readFenced` trims, so an option carrying surrounding space could
+		// never match a stored value — and choosing it would write a value that
+		// came back as a stray on the very next render.
+		const el = render({ ...config, options: [{ value: ' Elf ' }] }, { value: 'Elf' });
+		const menu = el.querySelector<HTMLSelectElement>('.sheetsmith-card-select');
+		expect(Array.from(menu?.options ?? []).map((option) => option.value)).toEqual([
+			'',
+			'Elf',
+		]);
+		// Matched, so there is no stray line and nothing to explain.
+		expect(menu?.value).toBe('Elf');
+		expect(menu?.hasAttribute('title')).toBe(false);
+	});
+
+	it('reports two options that differ only in space as one value', () => {
+		// The same trim the match rests on is what the duplicate check compares,
+		// or the two would be one value in the note and two lines in the menu.
+		const el = render(
+			{ ...config, options: [{ value: 'Elf' }, { value: 'Elf ' }] },
+			null,
+		);
+		expect(el.querySelector('.sheetsmith-error')?.textContent).toContain(
+			'Two options share the value "Elf"',
+		);
+	});
+
+	it('takes a blank label as the value, not as an error', () => {
+		const el = render({ ...config, options: [{ value: 'Elf', label: '' }] }, null);
+		expect(el.querySelector('.sheetsmith-error')).toBeNull();
+		expect(
+			Array.from(
+				el.querySelector<HTMLSelectElement>('.sheetsmith-card-select')?.options ?? [],
+			).map((option) => option.textContent),
+		).toEqual(['—', 'Elf']);
+	});
+});
+
+describe('card palette', () => {
+	it('offers a dropdown, because nobody looks for one under Card', () => {
+		expect(card.palette?.map((entry) => entry.name)).toEqual(['Dropdown']);
+	});
+
+	it('prefills options, which is the only thing that makes it a dropdown', () => {
+		// An entry prefilling an empty list would produce a plain text card,
+		// and the menu line would have lied.
+		const entry = card.palette?.[0];
+		expect(entry?.config.options).toEqual([
+			{ value: 'First choice' },
+			{ value: 'Second choice' },
+		]);
+		// Not `hideNote`: a heritage is a closed choice plus a written detail,
+		// and the line is the half the choice cannot carry.
+		expect(entry?.config).not.toHaveProperty('hideNote');
 	});
 });
