@@ -497,6 +497,15 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			key: 'rows',
 			kind: 'track-rows',
 			label: 'Rows',
+			// A row's name column is headed "Name" and not "Full name": a row
+			// is named for what it is — a spell level, a death save — where a
+			// Card set's entry has an abbreviation on the card and the full word
+			// behind it. The editor's list field cannot know that, which is why
+			// each field says it (docs/PATTERNS.md §1).
+			entryColumns: [
+				{ key: 'key', heading: 'Key' },
+				{ key: 'name', heading: 'Name' },
+			],
 			description:
 				'One run per entry, sharing a heading, a reset binding and a write. Spell slots are five first-level, three second and one third. Each key names the entry in the character note; a row with no length of its own falls back to the segment count above. Rows and named levels do not combine.',
 		},
