@@ -1521,3 +1521,133 @@ describe('overlap inside a tab, and never across tabs', () => {
 		expect(all).not.toContain('Spells');
 	});
 });
+
+/*
+ * The two-column list field, now that its words are the caller's.
+ *
+ * What is checked here is the half that holds with one caller: the vocabulary
+ * Card set has always had comes out unchanged, the stale "Attribute" labels are
+ * gone, and opening a form no longer writes an empty list into the layout. A
+ * second vocabulary is what proves the parameterisation, and there is not one
+ * yet.
+ */
+function twoLists(): Layout {
+	return {
+		name: 'Two lists',
+		columns: 12,
+		components: [
+			{
+				id: 'abilities',
+				type: 'card-set',
+				label: 'Abilities',
+				entries: [{ key: 'STR', name: 'Strength' }],
+				position: { col: 3, row: 1, width: 4, height: 1 },
+			},
+			// The three list fields with nothing in them, which is where an
+			// empty list has to stay out of the file: a Card that is still a
+			// field, a Card set with no entries, a Track with no rows.
+			{
+				id: 'level',
+				type: 'card',
+				label: 'Level',
+				position: { col: 7, row: 1, width: 2, height: 1 },
+			},
+			{
+				id: 'bare_set',
+				type: 'card-set',
+				label: 'Bare set',
+				position: { col: 9, row: 1, width: 2, height: 1 },
+			},
+			{
+				id: 'bare_track',
+				type: 'track',
+				label: 'Bare track',
+				position: { col: 11, row: 1, width: 2, height: 1 },
+			},
+		] as unknown as Layout['components'],
+		triggers: [],
+	};
+}
+
+describe('a list field naming its own columns', () => {
+	beforeEach(async () => {
+		harness = await open(twoLists());
+	});
+
+	/** The headings over the open form's list, in order. */
+	function headings(): string[] {
+		return Array.from(
+			harness.container.querySelectorAll('.sheetsmith-entry-columns > span'),
+		).map((el) => el.textContent ?? '');
+	}
+
+	/** Every accessible name in the open form's list rows. */
+	function names(): string[] {
+		return Array.from(
+			harness.container.querySelectorAll('.sheetsmith-entry-row input'),
+		).map((el) => el.getAttribute('aria-label') ?? '');
+	}
+
+	async function openForm(token: string): Promise<void> {
+		control(harness, token).click();
+		await settle(harness.editor);
+	}
+
+
+	it('leaves a card set\'s entries exactly as they were', async () => {
+		await openForm('edit-abilities');
+		expect(headings()).toEqual(['Key', 'Full name']);
+		expect(names()).toEqual(['Key', 'Full name']);
+	});
+
+
+
+
+	it('says "Attribute" nowhere, in either list', async () => {
+		// The one place the "Abilities" mistake was still live: `attributes`
+		// became `entries` in the config (SPEC §13) and these two labels kept
+		// the word, where only a screen reader would ever meet it.
+		await openForm('edit-abilities');
+		expect(names().join(' ')).not.toContain('Attribute');
+	});
+
+
+
+	it('writes no empty list into a layout for having shown the form', async () => {
+		/*
+		 * A list is a key an author has to ask for. Materialising the array on
+		 * render put `options: []`, `entries: []` or `rows: []` into the file
+		 * for every component whose form was merely opened, which is the editor
+		 * reformatting what it was only asked to show.
+		 *
+		 * All three kinds, not only the Card this feature added the field to:
+		 * the write predates it on the other two, and a test driving one would
+		 * go on passing while either of the others came back.
+		 *
+		 * **The edit is what makes this a test.** Opening a form mutates the
+		 * layout in memory and persists nothing, so asserting the bytes straight
+		 * after an open passes whether or not the array was materialised — the
+		 * first draft did exactly that, and restoring the line it forbids left it
+		 * green. The empty list reaches the file on the *next* write, whatever
+		 * that write was for, which is how it was found in the first place: by
+		 * the undo round-trip above, three tests away from the cause.
+		 */
+		for (const id of ['level', 'bare_set', 'bare_track']) {
+			await openForm(`edit-${id}`);
+			type(control<HTMLInputElement>(harness, `label-${id}`), `${id} renamed`);
+			await settle(harness.editor);
+
+			const written = (await harness.stored()).components.find(
+				(component) => component.id === id,
+			) as unknown as Record<string, unknown>;
+			expect(written?.label, id).toBe(`${id} renamed`);
+			// The rename is the only thing the file gained.
+			for (const list of ['options', 'entries', 'rows']) {
+				expect(Object.keys(written ?? {}), `${id} wrote ${list}`).not.toContain(
+					list,
+				);
+			}
+		}
+	});
+});
+

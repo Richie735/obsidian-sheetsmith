@@ -152,9 +152,10 @@ export interface ConfigFieldSpec {
 	 * Input kind. 'formula' is a text field holding an expression; 'text-list'
 	 * is an ordered list of plain strings, edited as one comma-separated field
 	 * and stored as an array; the last four are ordered lists the editor
-	 * renders as a table of their own — 'entries' of { key, name? },
-	 * 'track-rows' of { key, name?, count?, sense? }, 'rows' of { label, values? },
-	 * and 'columns' of typed column definitions.
+	 * renders as a table of their own — 'entries' of the two columns the
+	 * field's own `entryColumns` names, 'track-rows' of those two plus a count
+	 * and a sense, 'rows' of { label, values? }, and 'columns' of typed column
+	 * definitions.
 	 */
 	kind:
 		| 'text'
@@ -195,6 +196,47 @@ export interface ConfigFieldSpec {
 	default?: boolean;
 	/** Choices for 'select' fields. The first is the default and is omitted. */
 	options?: readonly string[];
+	/**
+	 * What an 'entries' or 'track-rows' list calls its two content columns.
+	 * Required on those two kinds, which `contract.test.ts` checks: the member
+	 * is optional here because no other kind has a use for it, and the editor
+	 * draws no table for a list field that declares none.
+	 *
+	 * A field of these kinds is two columns of one shape — a required name and
+	 * an optional second string — under three different vocabularies: a Card
+	 * set's entries are a key and a full name, a Track's rows a key and a name,
+	 * and a Card's options a value and a label. The words cannot be shared,
+	 * because a Card already has a `key` (SPEC §13), and they cannot sit in the
+	 * editor either: a shared field holding one caller's words is the thing
+	 * PATTERNS §1's worked example is against.
+	 */
+	entryColumns?: readonly [EntryColumnSpec, EntryColumnSpec];
+}
+
+/**
+ * One content column of an 'entries' list: the property each cell writes on
+ * the entry, and the word over it.
+ *
+ * The heading is the column's only name — it is also the input's placeholder
+ * and its accessible name, so a screen reader hears what the eye reads
+ * (`docs/UI.md` §6).
+ */
+export interface EntryColumnSpec {
+	key: string;
+	heading: string;
+	/**
+	 * This column holds prose rather than an abbreviation, so it takes the
+	 * width instead of a fixed narrow track.
+	 *
+	 * The field was built for a Card set, whose key is `STR` and whose name is
+	 * "Strength", so the shape it left behind is a narrow first column and a
+	 * wide second one. A Card's options invert it — the value is the word and
+	 * the label is usually blank — and a list that moved its vocabulary and
+	 * kept its geometry clips "The Dagger Isles" beside an empty box five
+	 * times its width. The second column is the remainder in every shape, so
+	 * this only ever changes the first.
+	 */
+	wide?: boolean;
 }
 
 /**

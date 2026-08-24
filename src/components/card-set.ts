@@ -70,6 +70,13 @@ export const cardSet: ComponentDefinition<CardSetConfig, CardSetData> = {
 			key: 'entries',
 			kind: 'entries',
 			label: 'Entries',
+			// The set's own words for its two columns. Held here rather than in
+			// the editor's list field, which serves three vocabularies now and
+			// must not know which one it is drawing (docs/PATTERNS.md §1).
+			entryColumns: [
+				{ key: 'key', heading: 'Key' },
+				{ key: 'name', heading: 'Full name' },
+			],
 			description:
 				'Each key is the entry name in the note and the abbreviation on the card. Order is display order. Renaming a key does not move a stored value; the old entry stays in the note under the old key.',
 		},

@@ -46,12 +46,28 @@ import {
 } from './trigger-list-field';
 import {
 	ComponentConfig,
+	EntryColumnSpec,
 	isContainer,
 	placesChildren,
 	ResetBinding,
 } from '../types';
 import { childIsPlaced, innerPlacement } from '../view/grid-cells';
 import { SheetView, VIEW_TYPE_SHEET } from '../view/sheet-view';
+
+/**
+ * One row of an 'entries' list, as the editor handles it: two content columns
+ * the field spec names, plus the two a track's rows add.
+ *
+ * The index signature is what lets one editor serve two vocabularies — a Card
+ * set's `key` and `name`, a Card's `value` and `label` — without either
+ * spelling being written into this module. `count` and `sense` are declared
+ * because only one caller has them and they are not both strings.
+ */
+type EntryRecord = {
+	[property: string]: string | number | undefined;
+	count?: string | number;
+	sense?: string;
+};
 
 /** Dropdown sentinel; layout file names can never collide with it. */
 const CREATE_LAYOUT_OPTION = '::create-layout::';
@@ -1321,13 +1337,24 @@ export class LayoutEditorSection {
 					// entries with a length, which is the shape the
 					// component chose them for. A second table would drift
 					// from this one the first time either changed.
-					this.renderEntriesEditor(
-						listEl,
-						config,
-						record,
-						field.key,
-						field.kind === 'track-rows',
-					);
+					//
+					// The columns are the field's own words, and a field of
+					// this kind that declares none has no table to draw. The
+					// registry contract holds every one of them to declaring
+					// them, so what this guard covers is the type rather than a
+					// state a registered component can reach — the heading and
+					// the description above it are drawn either way, so a field
+					// is never silently absent from the form.
+					if (field.entryColumns) {
+						this.renderEntriesEditor(
+							listEl,
+							config,
+							record,
+							field.key,
+							field.kind === 'track-rows',
+							field.entryColumns,
+						);
+					}
 				} else if (field.kind === 'rows') {
 					renderRowsEditor(listEl, record, field.key, config.id, this.listContext());
 				} else {
@@ -1696,15 +1723,40 @@ export class LayoutEditorSection {
 		};
 	}
 
-	/** Ordered { key, name? } list with add, remove, and reorder controls. */
 	/**
+	 * Ordered two-column list with add, remove, and reorder controls: a
+	 * required name and an optional second string per entry.
+	 *
 	 * The entry table is plain divs on its own grid template, not
 	 * Setting rows — reusing Setting here meant deleting half its structure
 	 * and overriding theme-styled internals.
 	 *
+	 * **What the two columns are called is the caller's**, not this method's.
+	 * They were `key` and `name` under "Key" and "Full name" while Card set
+	 * was the only caller, which made the field unusable for a Card's options
+	 * — those are a `value` and a `label`, and a Card already has a `key`
+	 * (SPEC §13). So the vocabulary arrives as an argument, the way a gesture
+	 * module is handed the class names of the component driving it
+	 * (`docs/PATTERNS.md` §1), and the heading is the whole of what a column
+	 * is called: it is the header, the placeholder, the accessible name, and
+	 * the word the two field errors below name.
+	 *
+	 * **Required, with no default**, which is the half of that worked example
+	 * that is easy to miss: a default holding one caller's words leaves the
+	 * shared method still naming a component, and picking between two callers'
+	 * words with a ternary on `withCount` is the method asking which caller it
+	 * is. Every field of this kind declares its own, and `contract.test.ts`
+	 * holds them to it.
+	 *
+	 * `withCount` stays, and the line between it and the words is worth
+	 * stating: it says whether a row carries a length and a sense, which is a
+	 * fact about the *kind* this method serves rather than about who called it.
+	 * The same goes for the empty line's noun — an entries list has entries and
+	 * a track's rows have rows.
+	 *
 	 * Focus ids use two schemes on purpose: inputs are keyed by index so
-	 * focus holds its position while typing, buttons by entry key so
-	 * focus follows the item through a reorder.
+	 * focus holds its position while typing, buttons by the entry's own name
+	 * so focus follows the item through a reorder.
 	 */
 	private renderEntriesEditor(
 		listEl: HTMLElement,
@@ -1712,19 +1764,34 @@ export class LayoutEditorSection {
 		record: Record<string, unknown>,
 		key: string,
 		/** Also edit a length and a sense per entry, which is what a track's rows add. */
-		withCount = false,
+		withCount: boolean,
+		columnSpec: readonly [EntryColumnSpec, EntryColumnSpec],
 	): void {
-		if (!Array.isArray(record[key])) record[key] = [];
 		// A third content column changes both grids — the header's and the
 		// row's — and neither can be inferred from the markup, so the list
 		// says so once and the stylesheet reads it.
 		listEl.toggleClass('sheetsmith-entry-counted', withCount);
-		const list = record[key] as {
-			key: string;
-			name?: string;
-			count?: string | number;
-			sense?: string;
-		}[];
+		const [primary, secondary] = columnSpec;
+		// The geometry follows the vocabulary: a list whose first column holds
+		// the word rather than an abbreviation says so once and the stylesheet
+		// reads it, exactly as the counted list above does.
+		listEl.toggleClass('sheetsmith-entry-wide-first', primary.wide === true);
+		/*
+		 * Held locally where the config has no list yet, and attached by the
+		 * add control below. Materialising it here instead wrote `options: []`
+		 * into a layout for every Card whose form was merely *opened*, which is
+		 * the editor reformatting a file it was only asked to show — the same
+		 * promise the undo round-trip in `layout-editor.test.ts` holds it to.
+		 * Nothing before the first add needs the config to carry the key.
+		 */
+		const stored = record[key];
+		const list = (Array.isArray(stored) ? stored : []) as EntryRecord[];
+		/**
+		 * The entry's own name: whatever its first column holds. It is the cell
+		 * the row is identified by — the duplicate check, the drag payload and
+		 * every button's focus token.
+		 */
+		const nameOf = (entry: EntryRecord) => String(entry[primary.key] ?? '');
 
 		if (list.length === 0) {
 			listEl.createDiv('sheetsmith-entry-empty', (el) =>
@@ -1732,8 +1799,8 @@ export class LayoutEditorSection {
 			);
 		} else {
 			const columns = listEl.createDiv('sheetsmith-entry-columns');
-			columns.createSpan({ text: 'Key' });
-			columns.createSpan({ text: withCount ? 'Name' : 'Full name' });
+			columns.createSpan({ text: primary.heading });
+			columns.createSpan({ text: secondary.heading });
 			if (withCount) {
 				columns.createSpan({ text: 'Segments' });
 				columns.createSpan({ text: 'Sense' });
@@ -1779,46 +1846,59 @@ export class LayoutEditorSection {
 				this.drag.index = null;
 			});
 
-			const keyInput = row.createEl('input', {
+			const primaryInput = row.createEl('input', {
 				type: 'text',
-				attr: { placeholder: 'Key', 'aria-label': 'Attribute key' },
+				// The heading, not "Attribute key": that word was the D&D term
+				// for STR/DEX/CON, left behind by the rename that took it out of
+				// the config (SPEC §13), and it survived in the one place only a
+				// screen reader hears.
+				attr: { placeholder: primary.heading, 'aria-label': primary.heading },
 			});
-			keyInput.value = entry.key;
-			keyInput.dataset.sheetsmithFocus = `attr-${config.id}-${index}-key`;
-			keyInput.addEventListener('change', () => {
-				const next = keyInput.value.trim();
+			primaryInput.value = nameOf(entry);
+			primaryInput.dataset.sheetsmithFocus = `attr-${config.id}-${index}-key`;
+			primaryInput.addEventListener('change', () => {
+				const next = primaryInput.value.trim();
 				if (next === '') {
-					showFieldError(keyInput, 'A key is required.');
+					// Names the column, because "a key is required" over a
+					// column headed Value points at nothing on screen. The
+					// duplicate below names the *row* instead, and "entry" is
+					// what this list calls a row whatever its columns are —
+					// which is also what its add control and its empty state
+					// say.
+					showFieldError(primaryInput, `A ${primary.heading.toLowerCase()} is required.`);
 					return;
 				}
-				if (list.some((other, i) => i !== index && other.key === next)) {
+				if (list.some((other, i) => i !== index && nameOf(other) === next)) {
 					showFieldError(
-						keyInput,
+						primaryInput,
 						`"${next}" is already used by another entry.`,
 					);
 					return;
 				}
-				showFieldError(keyInput, null);
-				entry.key = next;
+				showFieldError(primaryInput, null);
+				entry[primary.key] = next;
 				void this.persist();
 				this.redraw();
 			});
 
-			const nameInput = row.createEl('input', {
+			const secondaryInput = row.createEl('input', {
 				type: 'text',
-				attr: { placeholder: 'Full name', 'aria-label': 'Attribute full name' },
+				attr: {
+					placeholder: secondary.heading,
+					'aria-label': secondary.heading,
+				},
 			});
-			nameInput.value = entry.name ?? '';
-			// Keyed by identity, unlike the key input: name commits do not
+			secondaryInput.value = String(entry[secondary.key] ?? '');
+			// Keyed by identity, unlike the first column: a commit here does not
 			// redraw, so the only redraw this input lives through is a
 			// reorder — where focus should follow the item.
-			nameInput.dataset.sheetsmithFocus = `attr-${config.id}-${entry.key}-name`;
-			nameInput.addEventListener('change', () => {
-				const next = nameInput.value.trim();
+			secondaryInput.dataset.sheetsmithFocus = `attr-${config.id}-${nameOf(entry)}-name`;
+			secondaryInput.addEventListener('change', () => {
+				const next = secondaryInput.value.trim();
 				if (next === '') {
-					delete entry.name;
+					delete entry[secondary.key];
 				} else {
-					entry.name = next;
+					entry[secondary.key] = next;
 				}
 				void this.persist();
 			});
@@ -1832,12 +1912,12 @@ export class LayoutEditorSection {
 					type: 'text',
 					attr: {
 						placeholder: 'Segments',
-						'aria-label': `${entry.key} segments`,
+						'aria-label': `${nameOf(entry)} segments`,
 					},
 				});
 				countInput.value =
 					entry.count === undefined ? '' : String(entry.count);
-				countInput.dataset.sheetsmithFocus = `attr-${config.id}-${entry.key}-count`;
+				countInput.dataset.sheetsmithFocus = `attr-${config.id}-${nameOf(entry)}-count`;
 				countInput.addEventListener('change', () => {
 					const next = countInput.value.trim();
 					if (next === '') {
@@ -1857,7 +1937,7 @@ export class LayoutEditorSection {
 				// two ways, and a card painting both alike says the wrong
 				// thing about one of them.
 				const senseInput = row.createEl('select', {
-					attr: { 'aria-label': `${entry.key} sense` },
+					attr: { 'aria-label': `${nameOf(entry)} sense` },
 				});
 				for (const [value, text] of [
 					['', 'Same as card'],
@@ -1867,7 +1947,7 @@ export class LayoutEditorSection {
 					senseInput.createEl('option', { value, text });
 				}
 				senseInput.value = entry.sense ?? '';
-				senseInput.dataset.sheetsmithFocus = `attr-${config.id}-${entry.key}-sense`;
+				senseInput.dataset.sheetsmithFocus = `attr-${config.id}-${nameOf(entry)}-sense`;
 				senseInput.addEventListener('change', () => {
 					if (senseInput.value === '') {
 						delete entry.sense;
@@ -1886,7 +1966,7 @@ export class LayoutEditorSection {
 					attr: { 'aria-label': 'Move up' },
 				});
 				setIcon(up, 'arrow-up');
-				up.dataset.sheetsmithFocus = `attr-${config.id}-${entry.key}-up`;
+				up.dataset.sheetsmithFocus = `attr-${config.id}-${nameOf(entry)}-up`;
 				up.addEventListener('click', () =>
 					this.moveEntry(list, index, index - 1),
 				);
@@ -1895,7 +1975,7 @@ export class LayoutEditorSection {
 					attr: { 'aria-label': 'Move down' },
 				});
 				setIcon(down, 'arrow-down');
-				down.dataset.sheetsmithFocus = `attr-${config.id}-${entry.key}-down`;
+				down.dataset.sheetsmithFocus = `attr-${config.id}-${nameOf(entry)}-down`;
 				down.addEventListener('click', () =>
 					this.moveEntry(list, index, index + 1),
 				);
@@ -1908,10 +1988,10 @@ export class LayoutEditorSection {
 					},
 				});
 				setIcon(handle, 'grip-vertical');
-				handle.dataset.sheetsmithFocus = `attr-${config.id}-${entry.key}-handle`;
+				handle.dataset.sheetsmithFocus = `attr-${config.id}-${nameOf(entry)}-handle`;
 				handle.addEventListener('dragstart', (event) => {
 					this.drag.index = index;
-					event.dataTransfer?.setData('text/plain', entry.key);
+					event.dataTransfer?.setData('text/plain', nameOf(entry));
 				});
 				handle.addEventListener('dragend', () => {
 					this.drag.index = null;
@@ -1932,7 +2012,7 @@ export class LayoutEditorSection {
 				attr: { 'aria-label': 'Remove entry' },
 			});
 			setIcon(remove, 'trash');
-			remove.dataset.sheetsmithFocus = `attr-${config.id}-${entry.key}-remove`;
+			remove.dataset.sheetsmithFocus = `attr-${config.id}-${nameOf(entry)}-remove`;
 			remove.addEventListener('click', () => {
 				list.splice(index, 1);
 				void this.persist();
@@ -1943,22 +2023,26 @@ export class LayoutEditorSection {
 		const footer = listEl.createDiv('sheetsmith-entry-footer');
 		const add = footer.createEl('button', { text: 'Add entry' });
 		add.addEventListener('click', () => {
-			const taken = new Set(list.map((entry) => entry.key));
+			const taken = new Set(list.map(nameOf));
 			// Same shape as the row and column lists: a new entry is named for
 			// what it is, capitalised, and focus lands on it to be renamed.
 			let next = 'New entry';
 			let counter = 2;
 			while (taken.has(next)) next = `New entry ${counter++}`;
-			// The obvious next action is typing the key; put focus there.
+			// The obvious next action is typing the first column; put focus
+			// there.
 			this.pendingFocus = `attr-${config.id}-${list.length}-key`;
-			list.push({ key: next });
+			list.push({ [primary.key]: next });
+			// Attaches the list on the first add, and is already a no-op on
+			// every one after it.
+			record[key] = list;
 			void this.persist();
 			this.redraw();
 		});
 	}
 
 	private moveEntry(
-		list: { key: string; name?: string }[],
+		list: EntryRecord[],
 		from: number,
 		to: number,
 	): void {
@@ -2110,6 +2194,7 @@ function componentDisplayName(type: string): string {
 	const words = type.split('-').join(' ');
 	return words.charAt(0).toUpperCase() + words.slice(1);
 }
+
 
 /**
  * What removing a component takes with it.

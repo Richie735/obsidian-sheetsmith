@@ -3384,13 +3384,23 @@ a.sheetsmith-undo {
    absorbs the remaining width, controls hold the right edge. The header
    shares the first two tracks, so its labels align with the inputs. */
 .sheetsmith-entry-columns {
-	grid-template-columns: 7em minmax(0, 1fr);
+	grid-template-columns: var(--sheetsmith-entry-first, 7em) minmax(0, 1fr);
 }
 
 .sheetsmith-entry-row {
 	/* Three control tracks: handle + trash on desktop leaves one empty;
 	   up + down + trash on mobile uses all three. Empty tracks collapse. */
-	grid-template-columns: 7em minmax(0, 1fr) repeat(3, min-content);
+	grid-template-columns: var(--sheetsmith-entry-first, 7em) minmax(0, 1fr) repeat(3, min-content);
+}
+
+/* A list whose first column holds the word rather than an abbreviation: a
+   Card's options are a value and an optional label, where a Card set's entries
+   are a key and a full name. Only the first track moves, because the second is
+   the remainder in every shape — so the two columns come out equal here and
+   narrow-then-wide there. Set as a property rather than a second template, so
+   the counted list below keeps one track list shared with its header. */
+.sheetsmith-entry-wide-first {
+	--sheetsmith-entry-first: minmax(0, 1fr);
 }
 
 /* A list whose entries carry a length has a third content column, and both
@@ -3416,7 +3426,7 @@ a.sheetsmith-undo {
    comes out narrower, and every column past it slides. */
 .sheetsmith-entry-counted .sheetsmith-entry-columns,
 .sheetsmith-entry-counted .sheetsmith-entry-row {
-	grid-template-columns: 7em minmax(0, 1fr) 7em 7em repeat(3, min-content);
+	grid-template-columns: var(--sheetsmith-entry-first, 7em) minmax(0, 1fr) 7em 7em repeat(3, min-content);
 }
 
 /* A track is sized by its item's margin box, so the optical pull on the last

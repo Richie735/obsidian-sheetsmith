@@ -522,6 +522,36 @@ describe.each(types)('component "%s"', (type) => {
 		}
 	});
 
+	it('gives every two-column list field its own column names', () => {
+		/*
+		 * The editor's entries table serves three vocabularies — a Card set's
+		 * key and full name, a Track row's key and name, a Card option's value
+		 * and label — and holds none of them: a default there would be one
+		 * caller's words compiled into a shared module, and choosing between two
+		 * callers' words would be that module asking which caller it is
+		 * (docs/PATTERNS.md §1). So the words live on the field, and a field of
+		 * this kind without them draws no table at all. Same shape as the select
+		 * rule below, and here for the same reason: the member is optional on
+		 * `ConfigFieldSpec` because most kinds have no use for it, so what makes
+		 * it required for these two is this check.
+		 */
+		for (const field of component?.configFields ?? []) {
+			if (field.kind !== 'entries' && field.kind !== 'track-rows') continue;
+			const columns = field.entryColumns;
+			expect(columns, `${field.key} declares no columns`).toBeDefined();
+			if (!columns) continue;
+			for (const column of columns) {
+				expect(column.key).toBeTruthy();
+				// The heading is the column's only name: the header, the
+				// placeholder, and the accessible name a screen reader hears.
+				expect(column.heading).toBeTruthy();
+			}
+			// Two columns writing one property is one column with two inputs,
+			// and the second would silently win every commit.
+			expect(columns[0].key).not.toBe(columns[1].key);
+		}
+	});
+
 	it('gives every select field a non-empty options list', () => {
 		for (const field of component?.configFields ?? []) {
 			if (field.kind === 'select') {
