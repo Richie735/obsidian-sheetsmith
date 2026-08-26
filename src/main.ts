@@ -7,6 +7,10 @@ import {
 	SheetsmithSettingTab,
 } from './settings';
 import { registerAutoOpen } from './view/auto-open';
+import {
+	LayoutEditorView,
+	VIEW_TYPE_LAYOUT_EDITOR,
+} from './view/layout-editor-view';
 import { SheetView, VIEW_TYPE_SHEET } from './view/sheet-view';
 
 export default class SheetsmithPlugin extends Plugin {
@@ -25,6 +29,10 @@ export default class SheetsmithPlugin extends Plugin {
 		await this.loadSettings();
 		this.addSettingTab(new SheetsmithSettingTab(this.app, this));
 		this.registerView(VIEW_TYPE_SHEET, (leaf) => new SheetView(leaf, this));
+		this.registerView(
+			VIEW_TYPE_LAYOUT_EDITOR,
+			(leaf) => new LayoutEditorView(leaf, this),
+		);
 		// A sheet's cells can hold wikilinks, so the view emits `hover-link` for
 		// them. Registering it is what makes Page preview treat this view as a
 		// source it knows: the user gets an entry for Sheetsmith in that plugin's

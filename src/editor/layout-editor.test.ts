@@ -1,12 +1,14 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it } from 'vitest';
-import { LayoutEditorSection } from './layout-editor';
-import type SheetsmithPlugin from '../main';
+import { SHEET_DESTINATION } from './layout-editor';
+import { LayoutEditorView } from '../view/layout-editor-view';
 import { Layout, parseLayout, serialiseLayout } from '../parse/layout';
 import { walkComponents } from '../parse/layout-walk';
 import { renderGrid } from '../view/grid-cells';
-import { DEFAULT_SETTINGS } from '../settings';
 import { App } from '../test/obsidian-stub';
+import { fakePlugin, LAYOUT_FOLDER } from '../test/plugin';
+import { openView } from '../test/workspace';
+import { ComponentConfig } from '../types';
 import { getComponent, listComponentTypes, paletteEntries } from '../components';
 
 /*
@@ -17,20 +19,23 @@ import { getComponent, listComponentTypes, paletteEntries } from '../components'
  * and `setIcon`, and by the time the stub grew `Setting`, the builders, an
  * in-memory vault and `Modal`, nothing came back to write the tests.
  *
+ * **Driven through the pane it lives in**, not by calling `render` directly.
+ * The editor asks its host for the two pieces of posture the pane owns — which
+ * layout is open, and what is selected — so a test supplying its own host would
+ * be testing the editor against a second answer to those, and the pane's own is
+ * the one that ships.
+ *
  * Everything below goes through the rendered controls rather than calling a
- * method, because almost the whole module is private — `render` and `flush`
- * are the entire public surface, and a test reaching past that would be
- * asserting on an implementation the editor is free to change. The editor
- * gives every control a `data-sheetsmith-focus` token so it can restore focus
- * across its own rebuilds; that token is a stable address, and these tests
+ * method, because almost the whole module is private — a test reaching past that
+ * would be asserting on an implementation the editor is free to change. The
+ * editor gives every control a `data-sheetsmith-focus` token so it can restore
+ * focus across its own rebuilds; that token is a stable address, and these tests
  * use it as one.
  *
  * What is checked here is the editor's contract with the *file*: which edit
  * lands as which key, what is left out, and what is never touched. How it
  * looks is `docs/UI.md`'s business and the harness's.
  */
-
-const FOLDER = 'Sheetsmith layouts';
 
 /** A layout with one plain component and one that can act on a reset. */
 function fixture(): Layout {
@@ -57,46 +62,41 @@ function fixture(): Layout {
 }
 
 interface Harness {
+	/** The pane's content element, which is the whole of what it draws into. */
 	container: HTMLElement;
-	editor: LayoutEditorSection;
+	pane: LayoutEditorView;
 	app: App;
 	/** The layout as the file currently holds it. */
 	stored: () => Promise<Layout>;
 	/** The file's exact bytes, for the round-trip check. */
 	raw: () => Promise<string>;
-	/** Re-render, the way the settings tab's redraw does. */
+	/** Re-render, the way an edit does. */
 	redraw: () => Promise<void>;
+}
+
+/** One turn of the event loop, which is what an unawaited render needs. */
+async function tick(): Promise<void> {
+	await new Promise((resolve) => window.setTimeout(resolve, 0));
 }
 
 /**
  * The editor writes through a debounce and persists without awaiting, so a
  * test that asserted straight after a click would read the file as it was
- * before the edit. `flush` runs the pending write; the timeout lets the
- * unawaited promise inside it settle.
+ * before the edit. `flush` runs the pending write; the tick lets the unawaited
+ * promise inside it, and the redraw it triggers, settle.
  */
-async function settle(editor: LayoutEditorSection): Promise<void> {
-	editor.flush();
-	await new Promise((resolve) => window.setTimeout(resolve, 0));
+async function settle(pane: LayoutEditorView): Promise<void> {
+	pane.flush();
+	await tick();
 }
 
 async function open(layout: Layout = fixture()): Promise<Harness> {
 	const app = new App();
-	await app.vault.createFolder(FOLDER);
-	const path = `${FOLDER}/${layout.name}.json`;
+	await app.vault.createFolder(LAYOUT_FOLDER);
+	const path = `${LAYOUT_FOLDER}/${layout.name}.json`;
 	await app.vault.create(path, serialiseLayout(layout));
 
-	const plugin = {
-		app,
-		settings: { ...DEFAULT_SETTINGS, layoutFolder: FOLDER },
-		async saveSettings() {},
-	} as unknown as SheetsmithPlugin;
-
-	const container = document.createElement('div');
-	document.body.replaceChildren(container);
-
-	const editor = new LayoutEditorSection(plugin, () => {
-		void harness.redraw();
-	});
+	const pane = await openView(app, document.body, LayoutEditorView, fakePlugin(app));
 
 	const raw = async () => {
 		const file = app.vault.getFileByPath(path);
@@ -104,20 +104,17 @@ async function open(layout: Layout = fixture()): Promise<Harness> {
 		return app.vault.read(file);
 	};
 
-	const harness: Harness = {
-		container,
-		editor,
+	return {
+		container: pane.contentEl,
+		pane,
 		app,
 		raw,
 		stored: async () => parseLayout(await raw()),
 		redraw: async () => {
-			container.replaceChildren();
-			await editor.render(container);
+			pane.redraw();
+			await tick();
 		},
 	};
-
-	await harness.redraw();
-	return harness;
 }
 
 /** The control the editor addresses by this focus token. */
@@ -196,6 +193,18 @@ function labels(harness: Harness): string[] {
 	).map((el) => el.textContent ?? '');
 }
 
+/**
+ * Whose grid each container schematic draws, in the order they are stacked.
+ *
+ * The sheet's own schematic carries no id and is not in this list, so what comes
+ * back is the containers: where the selection sits, then what it holds.
+ */
+function grids(harness: Harness): string[] {
+	return Array.from(
+		harness.container.querySelectorAll('[data-sheetsmith-grid]'),
+	).map((el) => (el as HTMLElement).dataset.sheetsmithGrid ?? '');
+}
+
 /** The subheadings the open component form is divided into. */
 function groups(harness: Harness): string[] {
 	return Array.from(
@@ -233,7 +242,7 @@ describe('opening a layout', () => {
 			return modify(file, content);
 		};
 
-		await settle(harness.editor);
+		await settle(harness.pane);
 		expect(writes).toBe(0);
 	});
 
@@ -245,13 +254,13 @@ describe('opening a layout', () => {
 		const before = await harness.raw();
 
 		control(harness, 'edit-armour').click();
-		await settle(harness.editor);
+		await settle(harness.pane);
 		type(control<HTMLInputElement>(harness, 'cfg-armour-key'), 'AC');
-		await settle(harness.editor);
+		await settle(harness.pane);
 		expect(await harness.raw()).not.toBe(before);
 
 		type(control<HTMLInputElement>(harness, 'cfg-armour-key'), '');
-		await settle(harness.editor);
+		await settle(harness.pane);
 		expect(await harness.raw()).toBe(before);
 	});
 });
@@ -272,7 +281,7 @@ describe('adding and removing a component', () => {
 			harness.container.querySelectorAll('button'),
 		).find((el) => el.textContent === 'Add');
 		button?.click();
-		await settle(harness.editor);
+		await settle(harness.pane);
 
 		const components = (await harness.stored()).components;
 		expect(components).toHaveLength(3);
@@ -348,10 +357,10 @@ describe('adding and removing a component', () => {
 		const menu = () => control<HTMLSelectElement>(harness, 'add-choice');
 		choose(menu(), 'table:0');
 		pressAdd(harness);
-		await settle(harness.editor);
+		await settle(harness.pane);
 		choose(menu(), 'table:0');
 		pressAdd(harness);
-		await settle(harness.editor);
+		await settle(harness.pane);
 
 		// Through the parser, which is what would have thrown.
 		const components = (await harness.stored()).components;
@@ -380,7 +389,7 @@ describe('adding and removing a component', () => {
 		for (const [index, entry] of entries.entries()) {
 			choose(control<HTMLSelectElement>(harness, 'add-choice'), `table:${index}`);
 			pressAdd(harness);
-			await settle(harness.editor);
+			await settle(harness.pane);
 
 			const components = (await harness.stored()).components;
 			const added = components[
@@ -399,7 +408,7 @@ describe('adding and removing a component', () => {
 	it('writes the entry\'s config, its name and an ordinary component', async () => {
 		choose(control<HTMLSelectElement>(harness, 'add-choice'), 'track:0');
 		pressAdd(harness);
-		await settle(harness.editor);
+		await settle(harness.pane);
 
 		const components = (await harness.stored()).components;
 		const added = components[components.length - 1];
@@ -467,10 +476,10 @@ describe('adding and removing a component', () => {
 	it('names an entry against the whole sheet, as a type is named', async () => {
 		choose(control<HTMLSelectElement>(harness, 'add-choice'), 'track:0');
 		pressAdd(harness);
-		await settle(harness.editor);
+		await settle(harness.pane);
 		choose(control<HTMLSelectElement>(harness, 'add-choice'), 'track:0');
 		pressAdd(harness);
-		await settle(harness.editor);
+		await settle(harness.pane);
 
 		const labelled = (await harness.stored()).components.map((c) => c.label);
 		expect(labelled).toContain('Checkbox');
@@ -482,7 +491,7 @@ describe('adding and removing a component', () => {
 		expect((await harness.stored()).components).toHaveLength(2);
 
 		confirmAction();
-		await settle(harness.editor);
+		await settle(harness.pane);
 		expect((await harness.stored()).components.map((c) => c.id)).toEqual([
 			'hit_points',
 		]);
@@ -493,7 +502,7 @@ describe('editing a component', () => {
 	beforeEach(async () => {
 		harness = await open();
 		control(harness, 'edit-armour').click();
-		await settle(harness.editor);
+		await settle(harness.pane);
 	});
 
 	it('renames the label without moving the id', async () => {
@@ -501,7 +510,7 @@ describe('editing a component', () => {
 		// changed it would break every expression naming this component while
 		// looking like a cosmetic edit.
 		type(control<HTMLInputElement>(harness, 'label-armour'), 'Defence');
-		await settle(harness.editor);
+		await settle(harness.pane);
 
 		const component = (await harness.stored()).components[0];
 		expect(component?.label).toBe('Defence');
@@ -510,7 +519,7 @@ describe('editing a component', () => {
 
 	it('writes a config value under the field\'s own key', async () => {
 		type(control<HTMLInputElement>(harness, 'cfg-armour-key'), 'AC');
-		await settle(harness.editor);
+		await settle(harness.pane);
 		expect((await harness.stored()).components[0]).toMatchObject({ key: 'AC' });
 	});
 
@@ -519,18 +528,18 @@ describe('editing a component', () => {
 		// carry a key that says nothing, and `visibleWhen` matches effective
 		// values precisely so absence can mean the default (PATTERNS §8).
 		toggle(checkbox(harness, 'Signed'), true);
-		await settle(harness.editor);
+		await settle(harness.pane);
 		expect((await harness.stored()).components[0]).not.toHaveProperty('signed');
 
 		toggle(checkbox(harness, 'Signed'), false);
-		await settle(harness.editor);
+		await settle(harness.pane);
 		expect((await harness.stored()).components[0]).toMatchObject({ signed: false });
 	});
 
 	it('never touches the other components', async () => {
 		const before = (await harness.stored()).components[1];
 		type(control<HTMLInputElement>(harness, 'cfg-armour-key'), 'AC');
-		await settle(harness.editor);
+		await settle(harness.pane);
 		expect((await harness.stored()).components[1]).toEqual(before);
 	});
 });
@@ -539,7 +548,7 @@ describe('a field shown only under a condition', () => {
 	beforeEach(async () => {
 		harness = await open();
 		control(harness, 'edit-hit_points').click();
-		await settle(harness.editor);
+		await settle(harness.pane);
 	});
 
 	it('is shown while the controlling key is absent and defaults to the match', async () => {
@@ -556,7 +565,7 @@ describe('a field shown only under a condition', () => {
 			control<HTMLSelectElement>(harness, 'cfg-hit_points-maxSource'),
 			'character',
 		);
-		await settle(harness.editor);
+		await settle(harness.pane);
 		expect(has(harness, 'cfg-hit_points-max')).toBe(false);
 	});
 });
@@ -569,7 +578,7 @@ describe('the reset binding', () => {
 	it('is offered to a component that can act on a reset', async () => {
 		harness = await open();
 		control(harness, 'edit-hit_points').click();
-		await settle(harness.editor);
+		await settle(harness.pane);
 		// The heading carries a count badge, so match its start.
 		expect(groups(harness).some((t) => t.startsWith('Resets on'))).toBe(true);
 	});
@@ -580,7 +589,7 @@ describe('the reset binding', () => {
 		// author they have configured something.
 		harness = await open();
 		control(harness, 'edit-armour').click();
-		await settle(harness.editor);
+		await settle(harness.pane);
 		expect(groups(harness).some((t) => t.startsWith('Resets on'))).toBe(false);
 	});
 });
@@ -616,7 +625,7 @@ describe('every control in a component form is addressable', () => {
 		async (_type, index) => {
 			harness = await open(everyType());
 			control(harness, `edit-c${index}`).click();
-			await settle(harness.editor);
+			await settle(harness.pane);
 
 			const form = harness.container.querySelector('.sheetsmith-component-form');
 			expect(form).not.toBeNull();
@@ -651,23 +660,25 @@ describe('every control in a component form is addressable', () => {
 describe('a layout file the editor cannot read', () => {
 	it('reports it rather than throwing', async () => {
 		const app = new App();
-		await app.vault.createFolder(FOLDER);
-		await app.vault.create(`${FOLDER}/Broken.json`, '{ not json');
+		await app.vault.createFolder(LAYOUT_FOLDER);
+		await app.vault.create(`${LAYOUT_FOLDER}/Broken.json`, '{ not json');
 
-		const plugin = {
-			app,
-			settings: { ...DEFAULT_SETTINGS, layoutFolder: FOLDER },
-			async saveSettings() {},
-		} as unknown as SheetsmithPlugin;
+		const pane = await openView(app, document.body, LayoutEditorView, fakePlugin(app));
 
-		const container = document.createElement('div');
-		document.body.replaceChildren(container);
-		const editor = new LayoutEditorSection(plugin, () => undefined);
-
-		await editor.render(container);
-
-		const error = container.querySelector('.sheetsmith-error');
+		const error = pane.contentEl.querySelector('.sheetsmith-error');
 		expect(error?.textContent).toContain('cannot be edited');
+		// The picker survives, because it is how an author leaves a layout they
+		// cannot edit — the message goes where the tree would be, under it.
+		expect(
+			pane.contentEl.querySelector('[data-sheetsmith-focus="layout-picker"]'),
+		).not.toBeNull();
+		// And no panel, so the two-column rule reserves no track: a grid column
+		// the template declares is 620px wide whether or not anything is in it,
+		// and one line of error text beside 620px of empty pane is the state this
+		// pane was designed to stop inheriting from the settings tab.
+		expect(
+			pane.contentEl.querySelector('.sheetsmith-editor-panel'),
+		).toBeNull();
 	});
 });
 
@@ -854,7 +865,7 @@ describe('adding a component into a container', () => {
 			'defences',
 		);
 		pressAdd(harness);
-		await settle(harness.editor);
+		await settle(harness.pane);
 
 		const stored = await harness.stored();
 		expect(stored.components).toHaveLength(2);
@@ -871,7 +882,7 @@ describe('adding a component into a container', () => {
 	it('leaves it on the sheet where no container was chosen', async () => {
 		choose(typeDropdown(harness), 'card');
 		pressAdd(harness);
-		await settle(harness.editor);
+		await settle(harness.pane);
 		expect((await harness.stored()).components).toHaveLength(3);
 	});
 
@@ -882,7 +893,7 @@ describe('adding a component into a container', () => {
 		choose(typeDropdown(harness), 'pool');
 		choose(control<HTMLSelectElement>(harness, 'add-destination'), 'defences');
 		pressAdd(harness);
-		await settle(harness.editor);
+		await settle(harness.pane);
 
 		const added = (await harness.stored()).components[0]?.children?.[1];
 		expect(added?.label).not.toBe('Hit points');
@@ -901,12 +912,12 @@ describe('adding a component into a container', () => {
 		const menu = control<HTMLSelectElement>(harness, 'add-choice');
 		choose(menu, 'track:0');
 		pressAdd(harness);
-		await settle(harness.editor);
+		await settle(harness.pane);
 
 		choose(control<HTMLSelectElement>(harness, 'add-choice'), 'track:0');
 		choose(control<HTMLSelectElement>(harness, 'add-destination'), 'defences');
 		pressAdd(harness);
-		await settle(harness.editor);
+		await settle(harness.pane);
 
 		const stored = await harness.stored();
 		const onSheet = stored.components.find((c) => c.label === 'Checkbox');
@@ -928,7 +939,7 @@ describe('adding a component into a container', () => {
 		choose(typeDropdown(harness), 'group');
 		choose(control<HTMLSelectElement>(harness, 'add-destination'), 'defences');
 		pressAdd(harness);
-		await settle(harness.editor);
+		await settle(harness.pane);
 
 		const inner = (await harness.stored()).components[0]?.children?.[1];
 		expect(inner?.type).toBe('group');
@@ -946,7 +957,7 @@ describe('adding a component into a container', () => {
 			inner?.id ?? '',
 		);
 		pressAdd(harness);
-		await settle(harness.editor);
+		await settle(harness.pane);
 
 		// Three containers deep is where it stops being offered.
 		const deepest = (await harness.stored()).components[0]?.children?.[1]
@@ -982,7 +993,7 @@ describe('removing a container', () => {
 		// only ever promised that the notes survived.
 		control(harness, 'remove-defences').click();
 		confirmAction();
-		await settle(harness.editor);
+		await settle(harness.pane);
 
 		const stored = await harness.stored();
 		expect(stored.components.map((c) => c.id)).toEqual(['hit_points', 'armour']);
@@ -996,7 +1007,7 @@ describe('removing a container', () => {
 	it('removes a child without touching its container', async () => {
 		control(harness, 'remove-armour').click();
 		confirmAction();
-		await settle(harness.editor);
+		await settle(harness.pane);
 
 		const stored = await harness.stored();
 		expect(stored.components.map((c) => c.id)).toEqual([
@@ -1020,17 +1031,17 @@ describe('a container that may hold nothing', () => {
 		choose(typeDropdown(harness), 'group');
 		choose(control<HTMLSelectElement>(harness, 'add-destination'), 'melee');
 		pressAdd(harness);
-		await settle(harness.editor);
+		await settle(harness.pane);
 	});
 
 	it('is not offered a grid to put components on', async () => {
 		const inner = (await harness.stored()).components[0]?.children?.[0]
 			?.children?.[1];
 		expect(inner?.type).toBe('group');
-		// Its form is open, so the sheet's schematic is the only one there is.
-		expect(
-			harness.container.querySelectorAll('.sheetsmith-layout-preview'),
-		).toHaveLength(1);
+		// A grid of its own is what it does not get. The grid it *sits on* is
+		// drawn either way, because it has a position and four editable numbers
+		// with no grid to read them against is worse than no mark at all.
+		expect(grids(harness)).toEqual(['melee']);
 	});
 
 	it('says why, rather than saying nothing', () => {
@@ -1043,13 +1054,33 @@ describe('a container that may hold nothing', () => {
 
 	it('still offers a grid to a container that may hold one', async () => {
 		// The other side of the same rule: `melee` is one level in, so it takes
-		// children and gets its schematic.
+		// children and gets its schematic — under the grid it sits on, which is
+		// the chain the left column reads in.
 		control(harness, 'edit-melee').click();
-		await settle(harness.editor);
-		expect(
-			harness.container.querySelectorAll('.sheetsmith-layout-preview'),
-		).toHaveLength(2);
+		await settle(harness.pane);
+		expect(grids(harness)).toEqual(['defences', 'melee']);
 		expect(harness.container.textContent).toContain('on its own grid of');
+	});
+
+	it('draws the grid a nested component sits on, and marks its block', async () => {
+		/*
+		 * The panel offers `col`, `row`, `width` and `height` for anything with a
+		 * placement, wherever it sits. Those four numbers address one grid, and
+		 * until this the pane drew that grid only when the *container* was
+		 * selected — so selecting a card inside a Group left four editable fields
+		 * pointing at a grid nowhere on screen, and the selected mark the tree row
+		 * carried had no block to agree with.
+		 */
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+
+		expect(grids(harness)).toEqual(['melee']);
+		expect(has(harness, 'pos-armour-col')).toBe(true);
+		expect(
+			control(harness, 'preview-armour').classList.contains(
+				'sheetsmith-preview-editing',
+			),
+		).toBe(true);
 	});
 });
 
@@ -1064,9 +1095,9 @@ describe('drawing a container form is not an edit', () => {
 		// carried it, which is exactly what made it invisible.
 		harness = await open(deep());
 		control(harness, 'edit-spellbook').click();
-		await settle(harness.editor);
+		await settle(harness.pane);
 		type(control<HTMLInputElement>(harness, 'label-spellbook'), 'Spells');
-		await settle(harness.editor);
+		await settle(harness.pane);
 
 		expect((await harness.stored()).components[1]?.label).toBe('Spells');
 		expect(await harness.raw()).not.toContain('"children": []');
@@ -1083,7 +1114,7 @@ describe('drawing a container form is not an edit', () => {
 		choose(typeDropdown(harness), 'group');
 		choose(control<HTMLSelectElement>(harness, 'add-destination'), 'melee');
 		pressAdd(harness);
-		await settle(harness.editor);
+		await settle(harness.pane);
 
 		const added = (await harness.stored()).components[0]?.children?.[0]
 			?.children?.[1];
@@ -1092,7 +1123,7 @@ describe('drawing a container form is not an edit', () => {
 		expect(has(harness, `label-${added?.id ?? ''}`)).toBe(true);
 
 		type(control<HTMLInputElement>(harness, `label-${added?.id ?? ''}`), 'Renamed');
-		await settle(harness.editor);
+		await settle(harness.pane);
 		expect(
 			(await harness.stored()).components[0]?.children?.[0]?.children?.[1]
 				?.label,
@@ -1104,7 +1135,7 @@ describe('the form of an open container', () => {
 	beforeEach(async () => {
 		harness = await open(nested());
 		control(harness, 'edit-defences').click();
-		await settle(harness.editor);
+		await settle(harness.pane);
 	});
 
 	it('offers the container its own settings and nothing it does not have', () => {
@@ -1186,7 +1217,7 @@ describe('a container that shows one child at a time', () => {
 	beforeEach(async () => {
 		harness = await open(tabbed());
 		control(harness, 'edit-pages').click();
-		await settle(harness.editor);
+		await settle(harness.pane);
 	});
 
 	it('draws no schematic for it, and lists its tabs in order instead', async () => {
@@ -1203,7 +1234,7 @@ describe('a container that shows one child at a time', () => {
 		// None of the four is read for a tab, and a field that edits a number
 		// nothing reads is worse than no field.
 		control(harness, 'edit-spells').click();
-		await settle(harness.editor);
+		await settle(harness.pane);
 		expect(has(harness, 'pos-spells-col')).toBe(false);
 		expect(has(harness, 'pos-spells-row')).toBe(false);
 		expect(has(harness, 'pos-spells-width')).toBe(false);
@@ -1217,13 +1248,13 @@ describe('a container that shows one child at a time', () => {
 		// rendering everywhere, both would pass and neither would mean anything.
 		const grouped = await open(nested());
 		control(grouped, 'edit-armour').click();
-		await settle(grouped.editor);
+		await settle(grouped.pane);
 		expect(has(grouped, 'pos-armour-col')).toBe(true);
 	});
 
 	it('reorders the tabs, and that is what the strip order is', async () => {
 		control(harness, 'tab-down-combat').click();
-		await settle(harness.editor);
+		await settle(harness.pane);
 		const stored = await harness.stored();
 		expect(stored.components[0]?.children?.map((tab) => tab.id)).toEqual([
 			'spells',
@@ -1243,7 +1274,7 @@ describe('a container that shows one child at a time', () => {
 		expect(last.hasAttribute('disabled')).toBe(true);
 		first.click();
 		last.click();
-		await settle(harness.editor);
+		await settle(harness.pane);
 		expect(
 			(await harness.stored()).components[0]?.children?.map((tab) => tab.id),
 		).toEqual(['combat', 'spells', 'rest']);
@@ -1255,7 +1286,7 @@ describe('a container that shows one child at a time', () => {
 		// the honest thing to write.
 		choose(control<HTMLSelectElement>(harness, 'add-destination'), 'pages');
 		pressAdd(harness);
-		await settle(harness.editor);
+		await settle(harness.pane);
 		const added = (await harness.stored()).components[0]?.children?.[3];
 		expect(added?.position).toEqual({ col: 1, row: 1, width: 6, height: 3 });
 	});
@@ -1311,7 +1342,7 @@ describe('a container that is itself a tab', () => {
 	it('draws its grid at the tab set\'s width, not its own stale one', async () => {
 		const harness = await open(staleTab());
 		control(harness, 'edit-combat').click();
-		await settle(harness.editor);
+		await settle(harness.pane);
 
 		const previews = harness.container.querySelectorAll(
 			'.sheetsmith-layout-preview',
@@ -1337,7 +1368,7 @@ describe('a container that is itself a tab', () => {
 		// from.
 		const harness = await open(staleTab());
 		control(harness, 'edit-combat').click();
-		await settle(harness.editor);
+		await settle(harness.pane);
 		const inner = harness.container.querySelectorAll(
 			'.sheetsmith-layout-preview',
 		)[1] as HTMLElement;
@@ -1364,7 +1395,7 @@ describe('a container that is itself a tab', () => {
 		// its own".
 		const harness = await open(staleTab());
 		control(harness, 'edit-combat').click();
-		await settle(harness.editor);
+		await settle(harness.pane);
 		const descriptions = Array.from(
 			harness.container.querySelectorAll('.setting-item-description'),
 		).map((el) => el.textContent ?? '');
@@ -1382,7 +1413,7 @@ describe('a container that is itself a tab', () => {
 		const layout = staleTab();
 		const harness = await open(layout);
 		control(harness, 'edit-combat').click();
-		await settle(harness.editor);
+		await settle(harness.pane);
 		const drawn = (
 			harness.container.querySelectorAll(
 				'.sheetsmith-layout-preview',
@@ -1488,7 +1519,7 @@ describe('overlap inside a tab, and never across tabs', () => {
 	it('marks the two blocks sharing a cell inside the open tab', async () => {
 		const harness = await open(overlappingTabs());
 		control(harness, 'edit-combat').click();
-		await settle(harness.editor);
+		await settle(harness.pane);
 
 		// One schematic for the sheet and one for the open container tab. The tab
 		// set contributes none, which is why the count is two rather than three.
@@ -1504,10 +1535,57 @@ describe('overlap inside a tab, and never across tabs', () => {
 		expect(marked.sort()).toEqual(['One', 'Two']);
 	});
 
+	it('draws one cell per component, in the order the list holds them', async () => {
+		/*
+		 * The invariant `markOverlaps` rests on, and the reason it is worth an
+		 * assertion of its own.
+		 *
+		 * The two cases either side of this one check the marks as
+		 * `drawSchematic` paints them, and there the mark is set inside the same
+		 * loop that creates the cell, so it cannot land on the wrong block. The
+		 * *repaint* is the hazard: `markOverlaps` maps
+		 * `querySelectorAll('.sheetsmith-preview-cell')` onto
+		 * `schematic.components` **by index**, and `renderGrid` keys by identity
+		 * for exactly the reason that breaks — a list indexed against another
+		 * breaks silently the moment either side grows a filter, which is how
+		 * those two diverged once already.
+		 *
+		 * It has one caller, inside the drag, and this slice carried the gesture
+		 * layer into a new host without adding a test to it — a cut it states.
+		 * So the pin is the invariant rather than the gesture: a filter in
+		 * `drawSchematic` fails here, at the paint, without a pointer.
+		 */
+		const layout = overlappingTabs();
+		const harness = await open(layout);
+		control(harness, 'edit-combat').click();
+		await settle(harness.pane);
+
+		const previews = harness.container.querySelectorAll(
+			'.sheetsmith-layout-preview',
+		);
+		const cellsIn = (preview: Element): (string | null)[] =>
+			Array.from(preview.querySelectorAll('.sheetsmith-preview-cell')).map(
+				(el) => el.textContent,
+			);
+
+		// Array order, not the tree's reading order: a schematic iterates the list
+		// it was handed, and that list is what `markOverlaps` indexes into.
+		const tabs = layout.components[0]?.children ?? [];
+		const combat = tabs.find((tab) => tab.id === 'combat')?.children ?? [];
+		expect(combat.length).toBeGreaterThan(1);
+
+		expect(cellsIn(previews[0] as Element)).toEqual(
+			layout.components.map((component) => component.label),
+		);
+		expect(cellsIn(previews[1] as Element)).toEqual(
+			combat.map((child) => child.label),
+		);
+	});
+
 	it('never marks a block on another tab, whatever position it shares', async () => {
 		const harness = await open(overlappingTabs());
 		control(harness, 'edit-combat').click();
-		await settle(harness.editor);
+		await settle(harness.pane);
 		// "Three" sits at the same coordinates as both of the above and is on no
 		// schematic that draws them, so it is drawn nowhere here and marked
 		// nowhere either.
@@ -1597,7 +1675,7 @@ describe('a list field naming its own columns', () => {
 
 	async function openForm(token: string): Promise<void> {
 		control(harness, token).click();
-		await settle(harness.editor);
+		await settle(harness.pane);
 	}
 
 	it('heads a card\'s options Value and Label', async () => {
@@ -1637,14 +1715,14 @@ describe('a list field naming its own columns', () => {
 		// Derived from the config every time, never stored: a layout keeps the
 		// component an entry produced and never the entry (SPEC §13).
 		control(harness, 'edit-race').click();
-		await settle(harness.editor);
+		await settle(harness.pane);
 		for (const remove of Array.from(
 			harness.container.querySelectorAll<HTMLButtonElement>(
 				'.sheetsmith-entry-row button[aria-label="Remove entry"]',
 			),
 		).reverse()) {
 			remove.click();
-			await settle(harness.editor);
+			await settle(harness.pane);
 		}
 
 		const row = Array.from(
@@ -1692,7 +1770,7 @@ describe('a list field naming its own columns', () => {
 		const row = harness.container.querySelectorAll('.sheetsmith-entry-row')[1];
 		const value = row?.querySelector('input[aria-label="Value"]');
 		type(value as HTMLInputElement, 'Half-elf');
-		await settle(harness.editor);
+		await settle(harness.pane);
 
 		const stored = (await harness.stored()).components[0] as unknown as {
 			options: { value: string; label?: string }[];
@@ -1709,7 +1787,7 @@ describe('a list field naming its own columns', () => {
 		await openForm('edit-race');
 		const value = harness.container.querySelector('input[aria-label="Value"]');
 		type(value as HTMLInputElement, '');
-		await settle(harness.editor);
+		await settle(harness.pane);
 		// "A key is required" over a column headed Value points at nothing on
 		// screen.
 		expect(
@@ -1744,7 +1822,7 @@ describe('a list field naming its own columns', () => {
 		for (const id of ['level', 'bare_set', 'bare_track']) {
 			await openForm(`edit-${id}`);
 			type(control<HTMLInputElement>(harness, `label-${id}`), `${id} renamed`);
-			await settle(harness.editor);
+			await settle(harness.pane);
 
 			const written = (await harness.stored()).components.find(
 				(component) => component.id === id,
@@ -1780,7 +1858,7 @@ describe('the Dropdown entry on Card', () => {
 	it('adds a card carrying two options, labelled Dropdown', async () => {
 		choose(control<HTMLSelectElement>(harness, 'add-choice'), 'card:0');
 		pressAdd(harness);
-		await settle(harness.editor);
+		await settle(harness.pane);
 
 		const components = (await harness.stored()).components;
 		const added = components[components.length - 1];
@@ -1792,5 +1870,452 @@ describe('the Dropdown entry on Card', () => {
 		// Declaring options is the only thing that makes the card a dropdown,
 		// so an entry that prefilled none would have produced a text card.
 		expect(added).not.toHaveProperty('input');
+	});
+});
+
+/*
+ * The pane's two regions, and the one selection that decides what is in them.
+ *
+ * The tree is everything the layout holds, with the layout itself as its first
+ * row; the panel is the settings of whichever one is selected. What is checked
+ * below is that the two agree — a row and its schematic block are one selection
+ * seen twice — and that nothing about *looking* at a layout writes to it, which
+ * is the claim the whole editor rests on and the one a bigger surface makes
+ * easier to break.
+ */
+
+/** A layout with a card set and a container, whose forms carry every field kind. */
+function furnished(): Layout {
+	return {
+		name: 'Furnished sheet',
+		columns: 12,
+		components: [
+			{
+				id: 'abilities',
+				type: 'card-set',
+				label: 'Abilities',
+				position: { col: 7, row: 1, width: 6, height: 1 },
+				entries: [{ key: 'STR' }],
+			} as ComponentConfig,
+			{
+				id: 'defences',
+				type: 'group',
+				label: 'Defences',
+				position: { col: 1, row: 1, width: 6, height: 2 },
+				children: [
+					{
+						id: 'armour',
+						type: 'card',
+						label: 'Armour class',
+						position: { col: 1, row: 1, width: 2, height: 1 },
+					},
+				],
+			},
+		],
+		functions: ['mod(score) = floor((score - 10) / 2)'],
+		triggers: ['Long rest'],
+	};
+}
+
+/** The tree row carrying this focus token, as a settings row. */
+function treeRow(harness: Harness, token: string): HTMLElement {
+	const button = control(harness, token);
+	const row = button.closest('.setting-item');
+	if (!row) throw new Error(`"${token}" is not in a settings row`);
+	return row as HTMLElement;
+}
+
+describe('the tree', () => {
+	beforeEach(async () => {
+		harness = await open(furnished());
+	});
+
+	it('puts the layout itself first, then everything in it', () => {
+		// The reading order the sheet uses, with one row in front of it. The
+		// layout's row is what makes this one selection rather than two: there is
+		// no second kind of panel and no mode switch, because selecting the
+		// layout is an ordinary selection.
+		expect(labels(harness).slice(0, 5)).toEqual([
+			// The picker, then the tree. Named apart on purpose: this one chooses
+			// which layout is open and the next configures the one that is.
+			'Layout file',
+			'Layout',
+			'Defences',
+			'Armour class',
+			'Abilities',
+		]);
+	});
+
+	it('starts on the layout, so nothing nobody chose is open', () => {
+		expect(
+			treeRow(harness, `edit-${SHEET_DESTINATION}`).classList.contains(
+				'sheetsmith-preview-editing',
+			),
+		).toBe(true);
+	});
+
+	it('marks the row and the block for one selection, not two', async () => {
+		// Two paints of one piece of state. They were one thing when the form sat
+		// under its own row and the block was the only other way in; with the
+		// form in a panel, a row and a block that disagreed would leave nothing
+		// on screen saying which component the panel belongs to.
+		control(harness, 'edit-abilities').click();
+		await settle(harness.pane);
+
+		expect(
+			treeRow(harness, 'edit-abilities').classList.contains(
+				'sheetsmith-preview-editing',
+			),
+		).toBe(true);
+		expect(
+			control(harness, 'preview-abilities').classList.contains(
+				'sheetsmith-preview-editing',
+			),
+		).toBe(true);
+	});
+
+	it('selects from the schematic block exactly as from the row', async () => {
+		control(harness, 'preview-abilities').click();
+		await settle(harness.pane);
+
+		expect(
+			treeRow(harness, 'edit-abilities').classList.contains(
+				'sheetsmith-preview-editing',
+			),
+		).toBe(true);
+		expect(has(harness, 'cfg-abilities-direction')).toBe(true);
+	});
+
+	it('keeps the selection when the selected row is pressed again', async () => {
+		// Deselecting to nowhere would leave the panel empty, and nothing is the
+		// wrong thing to configure. The `Layout` row is the way back out.
+		control(harness, 'edit-abilities').click();
+		await settle(harness.pane);
+		control(harness, 'edit-abilities').click();
+		await settle(harness.pane);
+
+		expect(has(harness, 'cfg-abilities-direction')).toBe(true);
+	});
+
+	it('puts nothing between a container and the rows of what it holds', async () => {
+		// docs/UI.md §12's open-container row, as an assertion. The form used to
+		// go directly under the row it belonged to, which put around 500px of it
+		// between a container and its own children.
+		control(harness, 'edit-defences').click();
+		await settle(harness.pane);
+
+		const container = treeRow(harness, 'edit-defences');
+		const child = treeRow(harness, 'edit-armour');
+		expect(container.nextElementSibling).toBe(child);
+	});
+});
+
+describe('a selection the layout cannot honour', () => {
+	it('falls back to the layout, never to the first component', async () => {
+		// Landing an author in a form nobody chose is the failure the reset
+		// binding's dropdown already guards against for the same reason.
+		harness = await open(furnished());
+		control(harness, 'edit-abilities').click();
+		await settle(harness.pane);
+
+		treeRow(harness, 'edit-abilities');
+		control(harness, 'remove-abilities').click();
+		confirmAction();
+		await settle(harness.pane);
+
+		expect(
+			treeRow(harness, `edit-${SHEET_DESTINATION}`).classList.contains(
+				'sheetsmith-preview-editing',
+			),
+		).toBe(true);
+		expect(has(harness, 'layout-columns')).toBe(true);
+	});
+});
+
+describe('the layout is not written for having been looked at', () => {
+	it('leaves the file byte-identical after selecting every component in turn', async () => {
+		/*
+		 * The stronger form of the two guards above, and the one that covers the
+		 * traps by construction rather than by naming them. `children: []` on a
+		 * container, `options: []` on a card, `columns: 12` on a layout that
+		 * omitted the key: each is a key a form materialised for having been
+		 * drawn, and each was found late because the write lands on the *next*
+		 * save rather than at the moment of the draw.
+		 *
+		 * Containers included, which is the half that matters: a `children: []`
+		 * written onto a component two containers deep is a layout `parseLayout`
+		 * refuses, so `persist` would refuse every later save and the author
+		 * would lose edits to a message about a depth rule they never broke.
+		 */
+		harness = await open(furnished());
+		const before = await harness.raw();
+
+		const ids = walkComponents(furnished().components).map(
+			(entry) => entry.config.id,
+		);
+		// The walk found something to select, or this passes by selecting nothing.
+		expect(ids.length).toBeGreaterThan(2);
+		for (const id of [SHEET_DESTINATION, ...ids, SHEET_DESTINATION]) {
+			control(harness, `edit-${id}`).click();
+			await settle(harness.pane);
+		}
+
+		expect(await harness.raw()).toBe(before);
+	});
+});
+
+describe("the layout's own settings", () => {
+	beforeEach(async () => {
+		harness = await open(furnished());
+		control(harness, `edit-${SHEET_DESTINATION}`).click();
+		await settle(harness.pane);
+	});
+
+	it('draws the grid, the function library and the trigger list together', () => {
+		// The function library's own header asked for this: below the component
+		// forms, "the definitions are a scroll away from the formulas calling
+		// them, which is a side panel's job to fix".
+		expect(has(harness, 'layout-columns')).toBe(true);
+		expect(
+			harness.container.querySelector('.sheetsmith-function-library'),
+		).not.toBeNull();
+		expect(
+			harness.container.querySelector('.sheetsmith-trigger-list'),
+		).not.toBeNull();
+	});
+
+	it('writes the column count to the layout', async () => {
+		type(control<HTMLInputElement>(harness, 'layout-columns'), '6');
+		await settle(harness.pane);
+		expect((await harness.stored()).columns).toBe(6);
+	});
+
+	it('redraws the schematic against the new count without rebuilding the pane', async () => {
+		const panel = harness.container.querySelector('.sheetsmith-editor-panel');
+		type(control<HTMLInputElement>(harness, 'layout-columns'), '4');
+		await settle(harness.pane);
+
+		const sheet = harness.container.querySelector(
+			'.sheetsmith-layout-preview',
+		) as HTMLElement;
+		expect(sheet.style.getPropertyValue('--sheetsmith-columns')).toBe('4');
+		expect(harness.container.querySelector('.sheetsmith-editor-panel')).toBe(
+			panel,
+		);
+	});
+});
+
+describe('a layout that omits its column count', () => {
+	/** No `columns` key at all, which is a layout the parser accepts. */
+	function bare(): Layout {
+		return {
+			name: 'Bare sheet',
+			components: [
+				{
+					id: 'armour',
+					type: 'card',
+					label: 'Armour class',
+					position: { col: 1, row: 1, width: 2, height: 1 },
+				},
+			],
+			triggers: [],
+		};
+	}
+
+	beforeEach(async () => {
+		harness = await open(bare());
+		control(harness, `edit-${SHEET_DESTINATION}`).click();
+		await settle(harness.pane);
+	});
+
+	it('still omits it after the field has been shown and set back to the default', async () => {
+		// The `options: []` and `children: []` trap a third time. An absent
+		// `columns` has to stay absent through a round trip, so a value matching
+		// the default deletes the key rather than writing `"columns": 12`.
+		expect(control<HTMLInputElement>(harness, 'layout-columns').value).toBe(
+			'12',
+		);
+		type(control<HTMLInputElement>(harness, 'layout-columns'), '12');
+		await settle(harness.pane);
+		expect(Object.keys(await harness.stored())).not.toContain('columns');
+	});
+
+	it('shows an inline error for a count below one, rather than persisting it', async () => {
+		// `parseLayout` refuses anything that is not a positive integer, so
+		// letting this through would have `persist` refuse the whole file with a
+		// notice and drop the edit — an error about the layout, on a keystroke.
+		const input = control<HTMLInputElement>(harness, 'layout-columns');
+		type(input, '0');
+		await settle(harness.pane);
+
+		expect(input.classList.contains('sheetsmith-input-invalid')).toBe(true);
+		expect(Object.keys(await harness.stored())).not.toContain('columns');
+	});
+});
+
+describe('nudging a block', () => {
+	it('writes the panel\'s four position fields without rebuilding the pane', async () => {
+		/*
+		 * Holding an arrow key is the one rapid-fire gesture here, and a teardown
+		 * per repeat is the latency cliff `nudge` was written to avoid. The write
+		 * is debounced; this is the other half of that, and with the form in a
+		 * panel rather than under the row it is a different element being written
+		 * into.
+		 */
+		harness = await open(furnished());
+		control(harness, 'edit-abilities').click();
+		await settle(harness.pane);
+
+		const panel = harness.container.querySelector('.sheetsmith-editor-panel');
+		const col = control<HTMLInputElement>(harness, 'pos-abilities-col');
+		expect(col.value).toBe('7');
+
+		control(harness, 'preview-abilities').dispatchEvent(
+			new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }),
+		);
+
+		expect(col.value).toBe('6');
+		// The same node, not merely a node with the same value: a rebuild would
+		// have replaced both the panel and the field inside it.
+		expect(harness.container.querySelector('.sheetsmith-editor-panel')).toBe(
+			panel,
+		);
+		expect(control(harness, 'pos-abilities-col')).toBe(col);
+	});
+});
+
+describe('a control that redraws the pane', () => {
+	/*
+	 * Focus across the rebuild, which is the editor's own job rather than the
+	 * pane's: the focus token is this module's convention, so restoring across a
+	 * teardown this module asked for is too. The pane owns the scroll, which is
+	 * the half it can see.
+	 *
+	 * Both of these lived in `settings.test.ts` while the tab held the editor and
+	 * did the restoring. Moved rather than rewritten — what they check did not
+	 * change, only which module owes it.
+	 */
+	beforeEach(async () => {
+		harness = await open(furnished());
+	});
+
+	it('keeps focus across the redraw when it is a dropdown', async () => {
+		// The kind that has always redrawn, so it holds the mechanism the
+		// checkbox below depends on: if this one breaks the fault is the restore,
+		// not the checkbox's token.
+		control(harness, 'edit-abilities').click();
+		await settle(harness.pane);
+
+		const select = control<HTMLSelectElement>(
+			harness,
+			'cfg-abilities-direction',
+		);
+		select.focus();
+		choose(select, 'vertical');
+		await settle(harness.pane);
+
+		expect(document.activeElement).toBe(
+			control(harness, 'cfg-abilities-direction'),
+		);
+	});
+
+	it('gives a checkbox the token the redraw would need', async () => {
+		// **This holds the precondition, not the behaviour, and the difference is
+		// worth stating.** A boolean that decides another field's visibility
+		// redraws the pane, and a control the editor cannot address by token is a
+		// control focus falls off — landing the author on the body with the form
+		// rebuilt around them. `Collapsible` was the only such boolean on any
+		// component, and it went with the group's collapse (SPEC §13); the two
+		// `visibleWhen`s left are both keyed on selects, which the test above
+		// drives. So there is nothing to press here that redraws, and asserting
+		// the token is on the checkbox is what is left: it is the one thing that
+		// makes the redraw survivable, and it fails the moment the boolean
+		// control stops carrying one.
+		//
+		// When a component next gains a boolean that controls visibility, this
+		// goes back to driving it — press, redraw, assert focus — which is the
+		// standing row in docs/PATTERNS.md §11.
+		control(harness, 'edit-defences').click();
+		await settle(harness.pane);
+
+		// On the `.checkbox-container`, which is the element the app gives focus
+		// to and the one the token has to address. This asserted on the input
+		// while the stub made the input *be* that container — describing the
+		// stub rather than the app, and passing while the app lost focus.
+		const input = checkbox(harness, 'Hide the heading');
+		const toggle = input.parentElement as HTMLElement;
+		expect(toggle.classList.contains('checkbox-container')).toBe(true);
+		expect(toggle.dataset.sheetsmithFocus).toBeTruthy();
+		expect(control(harness, toggle.dataset.sheetsmithFocus ?? '')).toBe(toggle);
+	});
+});
+
+describe('a vault with no layouts in it', () => {
+	it('offers one sentence and a way to create one, and nothing else', async () => {
+		// The first thing a new user sees, and the state the settings tab drew as
+		// a row: one line in the top-left corner of an empty rectangle. Centred
+		// here, with no tree and no panel — asserted as the absence of both,
+		// because a grid drawn around a single sentence is what this replaced.
+		const app = new App();
+		const pane = await openView(
+			app,
+			document.body,
+			LayoutEditorView,
+			fakePlugin(app),
+		);
+
+		const vacant = pane.contentEl.querySelector('.sheetsmith-editor-vacant');
+		expect(vacant?.textContent).toContain('No layouts yet.');
+		expect(vacant?.querySelector('button')?.textContent).toBe('Create layout');
+		expect(pane.contentEl.querySelector('.sheetsmith-editor-panel')).toBeNull();
+		expect(pane.contentEl.querySelector('.setting-item')).toBeNull();
+	});
+});
+
+describe('the panel says what it is configuring', () => {
+	/*
+	 * The one thing tying the two columns together when the tree has scrolled
+	 * away. A form under its own row needed no title; a panel beside a tree does,
+	 * and without it the identity of what is being edited lives in the contents
+	 * of a text field.
+	 */
+	it('heads a component form with the component, not only the label field', async () => {
+		harness = await open(furnished());
+		control(harness, 'edit-defences').click();
+		await settle(harness.pane);
+
+		const panel = harness.container.querySelector(
+			'.sheetsmith-editor-panel',
+		) as HTMLElement;
+		const heading = panel.querySelector('.setting-item-heading');
+		expect(heading?.textContent).toBe('Defences');
+		// Above the reference line and the fields, which is what makes it a title
+		// rather than another row.
+		expect(panel.querySelector('.sheetsmith-component-form')?.firstElementChild)
+			.toBe(heading);
+	});
+
+	it('heads the layout\'s own settings too', async () => {
+		harness = await open(furnished());
+		const panel = harness.container.querySelector(
+			'.sheetsmith-editor-panel',
+		) as HTMLElement;
+		expect(panel.querySelector('.setting-item-heading')?.textContent).toBe(
+			'Layout',
+		);
+	});
+
+	it('follows a rename, so the title is never the old name', async () => {
+		harness = await open(furnished());
+		control(harness, 'edit-defences').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'label-defences'), 'Saves');
+		await settle(harness.pane);
+
+		expect(
+			harness.container
+				.querySelector('.sheetsmith-editor-panel')
+				?.querySelector('.setting-item-heading')?.textContent,
+		).toBe('Saves');
 	});
 });

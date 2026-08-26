@@ -1,74 +1,48 @@
 // @vitest-environment happy-dom
-import { beforeEach, describe, expect, it } from 'vitest';
-import { DEFAULT_SETTINGS, SheetsmithSettingTab } from './settings';
+import { describe, expect, it } from 'vitest';
+import {
+	DEFAULT_SETTINGS,
+	SheetsmithSettings,
+	SheetsmithSettingTab,
+} from './settings';
 import type SheetsmithPlugin from './main';
-import { Layout, serialiseLayout } from './parse/layout';
-import { ComponentConfig } from './types';
 import { App } from './test/obsidian-stub';
 
 /*
- * The settings tab's own job, which is not the layout editor's: keeping the
- * scroll position and the focused control across the redraw the editor asks for.
+ * The settings tab, which is two preferences and a button now that the layout
+ * editor has a pane of its own.
  *
- * `layout-editor.test.ts` drives the editor through a redraw of its own that
- * restores neither, because neither is the editor's to restore — it hands the
- * tab a `redraw` callback and the tab owns what survives it. So the convention
- * every control follows, a `data-sheetsmith-focus` token, is only actually load
- * bearing here, and this is the only place it can be driven.
+ * What is left here worth a test is the folder preference, because it is not a
+ * plain bind: an emptied field falls back to the default rather than storing
+ * nothing, since an empty folder silently relocates layout lookup and creation
+ * to the vault root — and what is on screen has to agree with what is in effect.
+ * That is also one of the two things still keeping this tab off Obsidian's
+ * declarative settings API, and the argument is at the top of `settings.ts`.
+ *
+ * The scroll-and-focus tests this file used to hold moved with the editor. Both
+ * were about surviving the rebuild the editor asks for, and neither is this
+ * tab's any more: the pane restores the scroll and the editor restores the
+ * focus, and `editor/layout-editor.test.ts` drives the second.
  */
 
-const FOLDER = 'Sheetsmith layouts';
-
-/** A layout with a container, whose form has the fields that redraw. */
-function fixture(): Layout {
-	return {
-		name: 'Test sheet',
-		columns: 12,
-		components: [
-			{
-				id: 'abilities',
-				type: 'card-set',
-				label: 'Abilities',
-				position: { col: 7, row: 1, width: 6, height: 1 },
-				entries: [{ key: 'STR' }],
-			} as ComponentConfig,
-			{
-				id: 'defences',
-				type: 'group',
-				label: 'Defences',
-				position: { col: 1, row: 1, width: 6, height: 2 },
-				children: [
-					{
-						id: 'armour',
-						type: 'card',
-						label: 'Armour class',
-						position: { col: 1, row: 1, width: 2, height: 1 },
-					},
-				],
-			},
-		],
-		triggers: ['Long rest'],
-	};
-}
-
 interface Harness {
-	tab: SheetsmithSettingTab;
 	root: HTMLElement;
-	/** Let the tab's own async layout render settle. */
-	settle: () => Promise<void>;
+	/** The object the tab writes into, read back to see what it wrote. */
+	settings: SheetsmithSettings;
+	/** How many times the tab asked for the settings to be persisted. */
+	saves: () => number;
 }
 
-async function open(): Promise<Harness> {
+function open(): Harness {
 	const app = new App();
-	await app.vault.createFolder(FOLDER);
-	await app.vault.create(
-		`${FOLDER}/Test sheet.json`,
-		serialiseLayout(fixture()),
-	);
+	let saves = 0;
+	const settings: SheetsmithSettings = { ...DEFAULT_SETTINGS };
 	const plugin = {
 		app,
-		settings: { ...DEFAULT_SETTINGS, layoutFolder: FOLDER },
-		async saveSettings() {},
+		settings,
+		async saveSettings() {
+			saves++;
+		},
 	} as unknown as SheetsmithPlugin;
 
 	const tab = new SheetsmithSettingTab(
@@ -76,27 +50,28 @@ async function open(): Promise<Harness> {
 		plugin,
 	);
 	document.body.replaceChildren(tab.containerEl);
-	const settle = async () => {
-		for (let i = 0; i < 20; i++) {
-			await new Promise((resolve) => window.setTimeout(resolve, 0));
-		}
-	};
 	tab.display();
-	await settle();
-	return { tab, root: tab.containerEl, settle };
+	return { root: tab.containerEl, settings, saves: () => saves };
 }
 
-/** The control the tab addresses by this focus token. */
-function control<T extends HTMLElement = HTMLElement>(
-	root: HTMLElement,
-	token: string,
-): T {
-	const el = root.querySelector(`[data-sheetsmith-focus="${token}"]`);
-	if (!el) throw new Error(`no control for "${token}"`);
-	return el as T;
+/** The named setting rows, in order. */
+function rows(root: HTMLElement): string[] {
+	return Array.from(root.querySelectorAll('.setting-item-name')).map(
+		(el) => el.textContent ?? '',
+	);
 }
 
-/** The checkbox in the setting row with this name. */
+/** The text input in the row with this name. */
+function textIn(root: HTMLElement, name: string): HTMLInputElement {
+	for (const item of Array.from(root.querySelectorAll('.setting-item'))) {
+		if (item.querySelector('.setting-item-name')?.textContent !== name) continue;
+		const input = item.querySelector('input[type="text"]');
+		if (input) return input as HTMLInputElement;
+	}
+	throw new Error(`no text field in a row named "${name}"`);
+}
+
+/** The checkbox in the row with this name. */
 function checkbox(root: HTMLElement, name: string): HTMLInputElement {
 	for (const item of Array.from(root.querySelectorAll('.setting-item'))) {
 		if (item.querySelector('.setting-item-name')?.textContent !== name) continue;
@@ -106,57 +81,52 @@ function checkbox(root: HTMLElement, name: string): HTMLInputElement {
 	throw new Error(`no toggle in a row named "${name}"`);
 }
 
-let harness: Harness;
+describe('what the tab offers', () => {
+	it('holds the two preferences and a way into the editor, and nothing else', () => {
+		// The guard on the move. The editor generated dozens of rows here, so a
+		// change that put any of it back — or that grew a third preference
+		// without a decision — fails on this list rather than on a screenshot.
+		const harness = open();
+		expect(rows(harness.root)).toEqual([
+			'Layout folder',
+			'Open sheets in sheet view',
+			'Layout editor',
+		]);
+	});
+});
 
-describe('a control that redraws the tab', () => {
-	beforeEach(async () => {
-		harness = await open();
-		control(harness.root, 'edit-defences').click();
-		await harness.settle();
+describe('the layout folder', () => {
+	it('stores what the author types, trimmed', async () => {
+		const harness = open();
+		const input = textIn(harness.root, 'Layout folder');
+		input.value = '  Sheets/Layouts  ';
+		input.dispatchEvent(new Event('input'));
+		expect(harness.settings.layoutFolder).toBe('Sheets/Layouts');
+		expect(harness.saves()).toBeGreaterThan(0);
 	});
 
-	it('keeps focus across the redraw when it is a dropdown', async () => {
-		// The kind that has always redrawn, so it holds the mechanism the
-		// checkbox above depends on: if this one breaks the fault is the tab's
-		// restore, not the checkbox's token.
-		harness = await open();
-		control(harness.root, 'edit-abilities').click();
-		await harness.settle();
-
-		const select = control<HTMLSelectElement>(
-			harness.root,
-			'cfg-abilities-direction',
-		);
-		select.focus();
-		select.value = 'vertical';
-		select.dispatchEvent(new Event('change'));
-		await harness.settle();
-
-		expect(document.activeElement).toBe(
-			control(harness.root, 'cfg-abilities-direction'),
-		);
+	it('falls back to the default when emptied, and shows what it fell back to', () => {
+		// Two halves of one promise, which is why they are one test: an empty
+		// folder would relocate every lookup to the vault root, so it is refused
+		// — and a field left reading empty while the default is in effect is a
+		// control lying about the value it holds.
+		const harness = open();
+		const input = textIn(harness.root, 'Layout folder');
+		input.value = '   ';
+		input.dispatchEvent(new Event('input'));
+		expect(harness.settings.layoutFolder).toBe(DEFAULT_SETTINGS.layoutFolder);
+		input.dispatchEvent(new Event('blur'));
+		expect(input.value).toBe(DEFAULT_SETTINGS.layoutFolder);
 	});
+});
 
-	it('gives a checkbox the token the redraw would need', () => {
-		// **This holds the precondition, not the behaviour, and the difference
-		// is worth stating.** A boolean that decides another field's visibility
-		// redraws the tab, and a control the tab cannot address by token is a
-		// control focus falls off — landing the author on the body with the form
-		// rebuilt around them. `Collapsible` was the only such boolean on any
-		// component, and it went with the group's collapse (SPEC §13); the two
-		// `visibleWhen`s left are both keyed on selects, which the test above
-		// drives. So there is nothing to press here that redraws, and asserting
-		// the token is on the checkbox is what is left: it is the one thing that
-		// makes the redraw survivable, and it fails the moment the boolean
-		// control stops carrying one.
-		//
-		// When a component next gains a boolean that controls visibility, this
-		// goes back to driving it — press, redraw, assert focus — which is the
-		// standing row in docs/PATTERNS.md §11.
-		const toggle = checkbox(harness.root, 'Hide the heading');
-		expect(toggle.dataset.sheetsmithFocus).toBeTruthy();
-		expect(control(harness.root, toggle.dataset.sheetsmithFocus ?? '')).toBe(
-			toggle,
-		);
+describe('opening sheets in sheet view', () => {
+	it('stores the choice and persists it', () => {
+		const harness = open();
+		const toggle = checkbox(harness.root, 'Open sheets in sheet view');
+		toggle.checked = false;
+		toggle.dispatchEvent(new Event('change'));
+		expect(harness.settings.openInSheetView).toBe(false);
+		expect(harness.saves()).toBeGreaterThan(0);
 	});
 });

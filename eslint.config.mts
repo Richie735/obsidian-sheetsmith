@@ -234,11 +234,21 @@ export default defineConfig(
 	},
 	{
 		// Obsidian 1.13's declarative settings API describes a tab's settings
-		// as data so the app can index them for search. This tab is mostly the
-		// interim layout editor (docs/SPEC.md §12), a form whose shape is
-		// decided at runtime by the component the author selected, which is
-		// not something static definitions can describe. The argument, and
-		// when it gets adopted, is at the top of the file.
+		// as data so the app can index them for search. This tab no longer has
+		// the excuse it used to — it is two preferences and a button since the
+		// layout editor moved into a pane, which is the shape the API is for —
+		// and two things still block it, both about being able to tell whether
+		// the adoption worked:
+		//
+		// - whether a `control` write also persists is undocumented, and nothing
+		//   here could catch it either way, because the obsidian stub renders
+		//   `Setting` rows and not definitions;
+		// - the folder preference substitutes the default on empty where
+		//   `validate` only rejects.
+		//
+		// Named rather than restated: the argument and the **Waiting on** line
+		// live at the top of `src/settings.ts`, and this comment is deliberately
+		// the summary. This block held the stale half of that pair once already.
 		//
 		// Off here rather than inline: `eslint-comments/no-restricted-disable`
 		// in the recommended config forbids disabling this rule at its site.

@@ -12,6 +12,7 @@ import {
 } from 'obsidian';
 import { getComponent, listComponentTypes, paletteEntries } from '../components';
 import { conditionMet } from './config-fields';
+import { groupHeading, panelTitle } from './form-group';
 import { ConfirmModal } from '../ui/confirm-modal';
 import {
 	commitFunctionLibrary,
@@ -36,7 +37,7 @@ import {
 	parseLayout,
 	serialiseLayout,
 } from '../parse/layout';
-import { walkComponents } from '../parse/layout-walk';
+import { WalkEntry, walkComponents } from '../parse/layout-walk';
 import { parseTriggers } from '../parse/triggers';
 import { clamp, describeCell, findOverlaps, lastColumn } from './preview-grid';
 import {
@@ -52,7 +53,6 @@ import {
 	ResetBinding,
 } from '../types';
 import { childIsPlaced, innerPlacement } from '../view/grid-cells';
-import { SheetView, VIEW_TYPE_SHEET } from '../view/sheet-view';
 
 /**
  * One row of an 'entries' list, as the editor handles it: two content columns
@@ -78,8 +78,16 @@ const ADD_DESCRIPTION_ID = 'sheetsmith-add-description';
 /** Dropdown sentinel for a binding that acts on the buffer only. */
 const NO_ACTION_OPTION = '::none::';
 
-/** Dropdown sentinel for the top level; component ids can never collide. */
-const SHEET_DESTINATION = '::sheet::';
+/**
+ * The top level, wherever something has to be named that is not a component.
+ *
+ * Two jobs and one spelling: it is the **Add component** row's destination for
+ * "on the sheet", and it is what the selection holds while the panel is
+ * configuring the layout itself rather than anything in it. A second sentinel
+ * for the second job would be two words for one idea, and component ids can
+ * collide with neither — `COMPONENT_ID` admits no colon.
+ */
+export const SHEET_DESTINATION = '::sheet::';
 
 /** Held as a constant because it is an expression, not prose to be cased. */
 const RESET_FORMULA_EXAMPLE = 'mod(abilities.CON) * level';
@@ -111,7 +119,7 @@ const FLASH_HOLD = 900;
 type DragMode = 'move' | 'resize';
 
 /**
- * One schematic on the tab: the sheet's, or an open container's own.
+ * One schematic in the pane: the sheet's, or the selected container's own.
  *
  * The same drawing twice rather than two drawings, and `preview-grid.ts` is
  * untouched by the second: `clamp`, `lastColumn`, `describeCell` and
@@ -139,34 +147,73 @@ interface Schematic {
 }
 
 /**
- * Form-based layout editor rendered inside the settings tab. Covers creating
- * layouts and configuring their components until the grid canvas (M4)
- * replaces it with a dedicated workspace view. Knows no component types:
- * component-specific fields come from each configFields declaration.
+ * What the editor needs from the pane hosting it.
+ *
+ * The two pieces of state are the *author's posture* rather than the layout's
+ * content — which layout they have open, and what they are looking at — so both
+ * belong to the view, which is where a workspace remembers posture at all
+ * (`View.getState` for one, `View.setEphemeralState` for the other). The editor
+ * reads them at render time and asks for a change; it never keeps a copy,
+ * because a copy is a second answer to "what is selected" and the two would
+ * disagree the first time a pane was restored.
+ *
+ * The setters do not redraw. A render that has to correct one of these — a
+ * selection naming a component the layout no longer holds — would otherwise
+ * redraw from inside a render, and the caller that wants both says so in two
+ * lines instead.
+ *
+ * `refreshSheets` is here for a different reason: a write to the layout file has
+ * to reach every sheet rendering it, and reaching into a view is the view
+ * layer's hop to make rather than this one's (`docs/PATTERNS.md` §2).
+ */
+export interface LayoutEditorHost {
+	/** The layout file the pane has open, by basename, or null before one is. */
+	readonly layoutName: string | null;
+	/** Remember which layout is open. Does not redraw. */
+	setLayoutName(name: string | null): void;
+	/**
+	 * What the panel configures: a component id, or `SHEET_DESTINATION` for the
+	 * layout itself.
+	 */
+	readonly selection: string;
+	/** Remember what is selected. Does not redraw. */
+	setSelection(id: string): void;
+	/** Rebuild both regions from the layout as it now stands. */
+	redraw(): void;
+	/** Refresh every open sheet view, after a write to the layout file. */
+	refreshSheets(): void;
+}
+
+/** The two regions of the pane, and which one a thing is drawn into. */
+interface Regions {
+	/** The picker, the schematics, the tree and the add row. */
+	outline: HTMLElement;
+	/** The settings of whatever is selected. */
+	panel: HTMLElement;
+}
+
+/**
+ * The layout editor: the tree of what a layout holds, and the panel configuring
+ * whichever one is selected. Covers creating layouts and configuring their
+ * components. Knows no component types — component-specific fields come from
+ * each `configFields` declaration — and knows nothing about a leaf either: it
+ * renders into an element it is handed, and asks its host for the two pieces of
+ * posture that are the pane's to remember.
  *
  * Text fields commit on change (blur or Enter), never per keystroke, and
  * invalid input shows an inline error instead of being silently ignored.
  */
 export class LayoutEditorSection {
 	private plugin: SheetsmithPlugin;
+	private host: LayoutEditorHost;
 	private redraw: () => void;
-	private selected: string | null = null;
-	/**
-	 * Which component's form is open, by id rather than by index.
-	 *
-	 * An index into `layout.components` stopped meaning anything once a
-	 * component could sit inside another: the list the editor shows is a
-	 * depth-first walk, and a child's position in it is not a position in any
-	 * one array. The id is what every other address here already uses.
-	 */
-	private editing: string | null = null;
 	private file: TFile | null = null;
 	private layout: Layout | null = null;
 	/** The sheet's schematic first, then an open container's, while it is open. */
 	private schematics: Schematic[] = [];
 	/**
 	 * The entry being dragged, in whichever list is mid-drag. One cursor for
-	 * every list on the tab, so a drag started in one is never read as a drop
+	 * every list in the pane, so a drag started in one is never read as a drop
 	 * into another; the list editors in list-fields.ts share this object.
 	 */
 	private drag: { index: number | null } = { index: null };
@@ -174,8 +221,10 @@ export class LayoutEditorSection {
 	private pendingFocus: string | null = null;
 	/** Region to mark after the next render, e.g. fields a type change built. */
 	private pendingFlash: string | null = null;
-	/** The tab's own element, for the updates that must not rebuild it. */
-	private containerEl: HTMLElement | null = null;
+	/** The pane's own element, for the updates that must not rebuild it. */
+	private rootEl: HTMLElement | null = null;
+	/** The two regions of the last render, or null before the first. */
+	private regions: Regions | null = null;
 	/** True between a drag ending and the click it produces. */
 	private dragged = false;
 	/**
@@ -199,9 +248,10 @@ export class LayoutEditorSection {
 	/** Debounced persist, used only by rapid-fire paths (keyboard nudging). */
 	private persistSoon = debounce(() => void this.persist(), 500, true);
 
-	constructor(plugin: SheetsmithPlugin, redraw: () => void) {
+	constructor(plugin: SheetsmithPlugin, host: LayoutEditorHost) {
 		this.plugin = plugin;
-		// A redraw tears the tab down and builds the function library back from
+		this.host = host;
+		// A redraw tears the pane down and builds the function library back from
 		// the layout, so anything typed into it has to be read out first or it
 		// is gone. Blur is not enough on its own: a pointerdown on the grid
 		// calls preventDefault, which suppresses the focus change and with it
@@ -211,14 +261,29 @@ export class LayoutEditorSection {
 		// one that loses a library.
 		this.redraw = () => {
 			this.flush();
-			redraw();
+			// The control the author is standing in, so the rebuild does not drop
+			// them on the body. The focus token is this module's own convention,
+			// which is why restoring across a rebuild is this module's job and
+			// not the pane's — the pane owns the scroll, which is the half it can
+			// see. Only where nothing has already asked: a list field that just
+			// added a row wants focus on the row, not on the button that made it.
+			this.pendingFocus ??= this.focusedToken();
+			host.redraw();
 		};
+	}
+
+	/** The focus token of whatever is focused inside the pane, if anything. */
+	private focusedToken(): string | null {
+		const active = this.rootEl?.ownerDocument.activeElement;
+		if (!active?.instanceOf(HTMLElement)) return null;
+		if (!this.rootEl?.contains(active)) return null;
+		return active.dataset.sheetsmithFocus ?? null;
 	}
 
 	/** Write any pending edit now. Called before a redraw, and on tab close. */
 	flush(): void {
 		// Both are read rather than waited on, and either can be holding an
-		// edit when the tab closes. Evaluated into locals first: `||` would
+		// edit when the pane closes. Evaluated into locals first: `||` would
 		// short-circuit past the second commit whenever the first changed,
 		// which is precisely how a library gets lost.
 		const triggersChanged = commitTriggerList(this.triggers);
@@ -242,7 +307,6 @@ export class LayoutEditorSection {
 		this.flush();
 		this.file = null;
 		this.layout = null;
-		this.editing = null;
 	}
 
 	/**
@@ -258,9 +322,22 @@ export class LayoutEditorSection {
 		);
 	}
 
+	/**
+	 * Draw the editor into the element it is handed.
+	 *
+	 * Two regions, and which side a thing goes on is the design's one structural
+	 * rule: the left column is everything about *where* — the picker, the grids,
+	 * the tree of what the layout holds — and the panel is everything about the
+	 * one thing selected. That is what puts nothing between a container's row
+	 * and the rows of what it holds, which a form drawn under its own row could
+	 * not avoid (`docs/UI.md` §12).
+	 */
 	async render(container: HTMLElement): Promise<void> {
-		this.containerEl = container;
-		new Setting(container).setHeading().setName('Layouts');
+		this.rootEl = container;
+		// The query container the two-column rule reads, and it has to be an
+		// ancestor of the grid rather than the grid itself: an element cannot
+		// query its own width.
+		container.addClass('sheetsmith-layout-editor-pane');
 
 		const files = listLayouts(
 			this.plugin.app,
@@ -268,28 +345,36 @@ export class LayoutEditorSection {
 		);
 
 		if (files.length === 0) {
-			new Setting(container)
-				.setName('Layout')
-				.setDesc('No layouts yet.')
-				.addButton((button) =>
-					button
-						.setButtonText('Create layout')
-						.setCta()
-						.onClick(() => this.promptCreateLayout()),
-				);
+			this.renderVacant(container);
 			return;
 		}
 
+		// The open layout, corrected where it names a file that is gone. Set
+		// without redrawing, because this is already inside a render.
 		if (
-			this.selected === null ||
-			!files.some((file) => file.basename === this.selected)
+			this.host.layoutName === null ||
+			!files.some((file) => file.basename === this.host.layoutName)
 		) {
-			this.selected = files[0]?.basename ?? null;
+			this.host.setLayoutName(files[0]?.basename ?? null);
 			this.releaseLayout();
 		}
-		this.renderSelectionRow(container, files);
 
-		const selectedFile = files.find((file) => file.basename === this.selected);
+		const grid = container.createDiv('sheetsmith-layout-editor');
+		// The left column exists from here, because the picker goes in it and the
+		// picker is how an author leaves a layout they cannot edit. **The panel
+		// does not**, and that is the point rather than an ordering accident:
+		// every path that gives up below draws its message here and returns, and
+		// a panel created in advance would leave the two-column rule reserving
+		// 620px of empty pane beside one line of error text. The rule is keyed on
+		// the panel being there, so not drawing one is the whole of the fix.
+		const outline = grid.createDiv('sheetsmith-editor-outline');
+		this.regions = null;
+
+		this.renderSelectionRow(outline, files);
+
+		const selectedFile = files.find(
+			(file) => file.basename === this.host.layoutName,
+		);
 		if (!selectedFile) return;
 		if (this.file?.path !== selectedFile.path || this.layout === null) {
 			const run = ++this.renderId;
@@ -300,21 +385,25 @@ export class LayoutEditorSection {
 			} catch (error) {
 				this.layout = null;
 				if (run !== this.renderId) return;
-				container.createDiv('sheetsmith-error', (el) =>
+				// Where the tree would be, under the picker rather than over it.
+				// The order is load bearing: the picker is how an author leaves a
+				// layout they cannot edit, so a message that displaced it would
+				// trap them on the broken one.
+				outline.createDiv('sheetsmith-error', (el) =>
 					el.setText(
 						`This layout cannot be read: ${error instanceof Error ? error.message : String(error)}`,
 					),
 				);
 				return;
 			}
-			// A redraw may have emptied and rebuilt the settings container
-			// while the read was in flight; only the newest run may append.
+			// A redraw may have rebuilt the pane while the read was in flight;
+			// only the newest run may append.
 			if (run !== this.renderId) return;
 			try {
 				this.layout = parseLayout(source);
 			} catch (error) {
 				this.layout = null;
-				container.createDiv('sheetsmith-error', (el) =>
+				outline.createDiv('sheetsmith-error', (el) =>
 					el.setText(
 						`This layout cannot be edited until its file is fixed: ${error instanceof Error ? error.message : String(error)}`,
 					),
@@ -322,32 +411,52 @@ export class LayoutEditorSection {
 				return;
 			}
 		}
+		const layout = this.layout;
 
-		// Registered before the forms are built, drawn after: an open container
-		// contributes a schematic of its own from inside its form, and both have
-		// to be on the list before either is drawn.
+		// Past every giving-up path, so this is where the second column earns its
+		// track.
+		const panel = grid.createDiv('sheetsmith-editor-panel');
+		this.regions = { outline, panel };
+
+		// A selection naming nothing falls back to the layout's own settings,
+		// never to the first component: landing an author in a form nobody chose
+		// is the failure the reset binding's dropdown already guards against.
+		const selected = this.selectedEntry(layout);
+		if (selected === null && this.host.selection !== SHEET_DESTINATION) {
+			this.host.setSelection(SHEET_DESTINATION);
+		}
+
+		// Registered before anything is drawn, drawn after: a selected container
+		// contributes a schematic of its own, and both have to be on the list
+		// before either is drawn.
 		this.schematics = [
 			{
-				el: container.createDiv('sheetsmith-layout-preview'),
-				components: this.layout.components,
-				columns: this.layout.columns ?? DEFAULT_COLUMNS,
+				el: outline.createDiv('sheetsmith-layout-preview'),
+				components: layout.components,
+				columns: layout.columns ?? DEFAULT_COLUMNS,
 			},
 		];
-		this.renderAddRow(container, this.layout);
-		this.renderComponents(container, this.layout);
+		if (selected) this.renderSelectionSchematics(outline, layout, selected);
+		this.renderTree(outline, layout);
+		this.renderAddRow(outline, layout);
 		this.drawSchematics();
-		this.triggers = renderTriggerList(container, this.layout, {
-			persist: () => void this.persist(),
-			redraw: () => this.redraw(),
-		});
-		this.functions = renderFunctionLibrary(container, this.layout, {
-			persist: () => void this.persist(),
-		});
+
+		if (selected) {
+			this.renderComponentForm(
+				panel,
+				layout,
+				selected.config,
+				selected.depth,
+				selected.parent,
+			);
+		} else {
+			this.renderLayoutSettings(panel, layout);
+		}
 
 		this.restoreFieldErrors(container);
 
 		if (this.pendingFlash !== null) {
-			this.flash(container, this.pendingFlash);
+			this.flash(panel, this.pendingFlash);
 			this.pendingFlash = null;
 		}
 
@@ -355,6 +464,41 @@ export class LayoutEditorSection {
 			this.refocus(container, this.pendingFocus);
 			this.pendingFocus = null;
 		}
+	}
+
+	/**
+	 * The vault holds no layouts yet, which is the one state with no tree and no
+	 * panel to draw.
+	 *
+	 * Centred on the pane rather than left as a row in the top-left corner. In a
+	 * settings tab a row is what everything else looks like; on a surface of its
+	 * own it is one line stranded in an empty rectangle.
+	 */
+	private renderVacant(container: HTMLElement): void {
+		container.createDiv('sheetsmith-editor-vacant', (vacant) => {
+			vacant.createDiv({
+				cls: 'setting-item-description',
+				text: 'No layouts yet.',
+			});
+			new ButtonComponent(vacant)
+				.setButtonText('Create layout')
+				.setCta()
+				.onClick(() => this.promptCreateLayout());
+		});
+	}
+
+	/**
+	 * The walk entry for the selected component, or null where the layout itself
+	 * is selected — and also where the selection names a component the layout no
+	 * longer holds, which reads the same way and is corrected by the caller.
+	 */
+	private selectedEntry(layout: Layout): WalkEntry | null {
+		if (this.host.selection === SHEET_DESTINATION) return null;
+		return (
+			walkComponents(layout.components).find(
+				(entry) => entry.config.id === this.host.selection,
+			) ?? null
+		);
 	}
 
 	/**
@@ -383,13 +527,18 @@ export class LayoutEditorSection {
 
 	private renderSelectionRow(container: HTMLElement, files: TFile[]): void {
 		new Setting(container)
-			.setName('Layout')
+			// "Layout file", not "Layout", because the tree's first row is the
+			// layout and this is the file it lives in. Two adjacent rows both
+			// named Layout — one choosing which one is open, one configuring the
+			// one that is — would be a reader's problem, not a naming quibble.
+			.setName('Layout file')
 			.addDropdown((dropdown) => {
 				for (const file of files) {
 					dropdown.addOption(file.basename, file.basename);
 				}
 				dropdown.addOption(CREATE_LAYOUT_OPTION, 'New layout…');
-				dropdown.setValue(this.selected ?? '');
+				dropdown.setValue(this.host.layoutName ?? '');
+				dropdown.selectEl.dataset.sheetsmithFocus = 'layout-picker';
 				dropdown.onChange((value) => {
 					if (value === CREATE_LAYOUT_OPTION) {
 						// The modal redraws on close either way, which also
@@ -397,8 +546,8 @@ export class LayoutEditorSection {
 						this.promptCreateLayout();
 						return;
 					}
-					this.selected = value;
 					this.releaseLayout();
+					this.host.setLayoutName(value);
 					this.redraw();
 				});
 			})
@@ -408,7 +557,7 @@ export class LayoutEditorSection {
 					.setTooltip('Delete layout')
 					.onClick(() => {
 						const file = files.find(
-							(candidate) => candidate.basename === this.selected,
+							(candidate) => candidate.basename === this.host.layoutName,
 						);
 						if (!file) return;
 						new ConfirmModal(
@@ -423,8 +572,8 @@ export class LayoutEditorSection {
 
 	private async deleteLayout(file: TFile): Promise<void> {
 		await this.plugin.app.fileManager.trashFile(file);
-		this.selected = null;
 		this.releaseLayout();
+		this.host.setLayoutName(null);
 		this.redraw();
 	}
 
@@ -448,8 +597,8 @@ export class LayoutEditorSection {
 			this.redraw();
 			return;
 		}
-		this.selected = name;
 		this.releaseLayout();
+		this.host.setLayoutName(name);
 		this.redraw();
 	}
 
@@ -466,7 +615,7 @@ export class LayoutEditorSection {
 	private drawSchematics(): void {
 		// The block a gesture left focused, so redrawing the grid under it does
 		// not drop focus to the body. Only a block inside a schematic counts:
-		// nothing else on the tab is rebuilt here, so nothing else has lost its
+		// nothing else in the pane is rebuilt here, so nothing else has lost its
 		// focus and searching wider would only risk finding the wrong control.
 		const active = this.schematics[0]?.el.ownerDocument.activeElement;
 		const held = active
@@ -511,7 +660,9 @@ export class LayoutEditorSection {
 		components.forEach((config, index) => {
 			const cell = el.createEl('button', { cls: 'sheetsmith-preview-cell' });
 			cell.dataset.sheetsmithFocus = `preview-${config.id}`;
-			if (config.id === this.editing) cell.addClass('sheetsmith-preview-editing');
+			if (config.id === this.host.selection) {
+				cell.addClass('sheetsmith-preview-editing');
+			}
 			const overlaps = overlapping.has(index);
 			if (overlaps) cell.addClass('sheetsmith-preview-overlap');
 			cell.createSpan({ text: config.label });
@@ -531,10 +682,12 @@ export class LayoutEditorSection {
 			});
 			cell.addEventListener('click', () => {
 				// A drag ends in a click on the same element; that click meant
-				// "put it here", not "open the form".
+				// "put it here", not "select it".
 				if (this.dragged) return;
-				this.editing = this.editing === config.id ? null : config.id;
-				this.redraw();
+				// Selects, never deselects. Pressing the selected block again
+				// would empty the panel, and nothing is the wrong thing to
+				// configure — the `Layout` row is how an author gets back out.
+				this.select(config.id);
 			});
 			cell.addEventListener('keydown', (event) =>
 				this.nudge(event, config, schematic),
@@ -787,7 +940,7 @@ export class LayoutEditorSection {
 		this.persistSoon();
 		this.drawSchematics();
 		// The open form shows the same numbers, so they have to follow — but
-		// by being written, not by rebuilding the tab around them. Holding an
+		// by being written, not by rebuilding the pane around them. Holding an
 		// arrow key is the one gesture here that is rapid-fire by design, and
 		// a full teardown per repeat is the latency cliff it would fall off.
 		// The write is already debounced; this is the other half of that.
@@ -796,7 +949,7 @@ export class LayoutEditorSection {
 
 	/** Write a component's position back into its open form, if it has one. */
 	private syncPositionFields(config: ComponentConfig): void {
-		const container = this.containerEl;
+		const container = this.regions?.panel;
 		if (!container) return;
 		for (const key of ['col', 'row', 'width', 'height'] as const) {
 			const field = container.querySelector(
@@ -840,12 +993,9 @@ export class LayoutEditorSection {
 		let chosen = choices[0]?.value ?? 'card-set';
 		// Every container that may still take a child. A container already two
 		// deep is left out, so the depth the parser refuses is never something
-		// the editor can walk into — the rule itself is `mayHoldChildren`, in
-		// the parser, rather than a second copy of the comparison here.
-		const destinations = walkComponents(layout.components).filter(
-			(entry) =>
-				isContainer(getComponent(entry.config.type)) &&
-				mayHoldChildren(entry.depth),
+		// the editor can walk into.
+		const destinations = walkComponents(layout.components).filter((entry) =>
+			acceptsChildren(entry.config, entry.depth),
 		);
 		let into: ComponentConfig | null = null;
 
@@ -985,51 +1135,59 @@ export class LayoutEditorSection {
 							}
 						: { ...(parent as ComponentConfig).position, col: 1, row: 1 },
 				});
-				this.editing = list[list.length - 1]?.id ?? null;
+				const added = list[list.length - 1]?.id;
+				if (added !== undefined) this.host.setSelection(added);
 				void this.persist();
 				this.redraw();
 			}),
 		);
 	}
 
+	/** Select a component, or the layout itself, and rebuild both regions. */
+	private select(id: string): void {
+		// Pressing what is already selected does nothing at all, rather than
+		// rebuilding what is already on screen. Deselecting to nowhere would
+		// leave the panel empty and nothing is the wrong thing to configure; and
+		// a redraw for no change would throw away a half-typed field and put the
+		// focus back where it was for the sake of it.
+		if (this.host.selection === id) return;
+		this.host.setSelection(id);
+		this.redraw();
+	}
+
 	/**
-	 * One row per component, a container's children indented beneath it.
+	 * The layout, then everything in it, in the depth-first walk the sheet reads
+	 * in: the pane's complete table of contents.
 	 *
-	 * The list is the same depth-first walk the sheet reads in, so what the
-	 * editor shows in order is what the sheet reflows and tabs through in order
-	 * — one level of disclosure, which is the smallest thing that is honestly
-	 * authorable and no more. The prior art says nesting is where the pain lands,
-	 * and it lands in the editor rather than in the rendered sheet.
+	 * **The first row is the layout itself**, selectable exactly as a component
+	 * row is. That is what keeps this one selection rather than two, and it is
+	 * why the panel needs no chrome of its own — no tab strip, no mode switch, no
+	 * fourth kind of panel, which is what `docs/UI.md` §9 opens by forbidding.
+	 *
+	 * **No disclosure control**, which is the change from the settings tab. A
+	 * chevron there opened a form under the row; here the form is in the panel
+	 * and a container's children are always listed, so a triangle would be a
+	 * disclosure that discloses nothing. The indent and the rule down its left
+	 * say what holds what, and the row's own name is the control.
 	 */
-	private renderComponents(container: HTMLElement, layout: Layout): void {
-		for (const { config, depth, siblings, parent } of walkComponents(
+	private renderTree(outline: HTMLElement, layout: Layout): void {
+		this.renderTreeRow(
+			outline,
+			SHEET_DESTINATION,
+			'Layout',
+			'The grid, the function library and the reset triggers.',
+			0,
+		);
+		for (const { config, depth, siblings } of walkComponents(
 			layout.components,
 		)) {
-			const open = this.editing === config.id;
-			const row = new Setting(container)
-				.setName(config.label)
-				.setDesc(placedComponentName(config));
-			if (open) row.settingEl.addClass('sheetsmith-row-open');
-			if (depth > 0) {
-				row.settingEl.addClass('sheetsmith-row-child');
-				// The depth rather than a class per level: the indent is
-				// arithmetic, and two classes saying "one in" and "two in" would
-				// be two places to change if the bound ever moved.
-				row.settingEl.style.setProperty(
-					'--sheetsmith-row-depth',
-					String(depth),
-				);
-			}
-			row.addExtraButton((button) => {
-				button
-					.setIcon(open ? 'chevron-down' : 'chevron-right')
-					.setTooltip(open ? 'Close' : 'Edit')
-					.onClick(() => {
-						this.editing = open ? null : config.id;
-						this.redraw();
-					});
-				button.extraSettingsEl.dataset.sheetsmithFocus = `edit-${config.id}`;
-			});
+			const row = this.renderTreeRow(
+				outline,
+				config.id,
+				config.label,
+				placedComponentName(config),
+				depth,
+			);
 			row.addExtraButton((button) => {
 				button
 					.setIcon('trash')
@@ -1052,7 +1210,10 @@ export class LayoutEditorSection {
 									child.position.row = nextFreeRow(layout.components);
 									layout.components.push(child);
 								}
-								this.editing = null;
+								// Back to the layout's own settings. The panel was
+								// showing the component that just went, and the
+								// first component is not something anyone chose.
+								this.host.setSelection(SHEET_DESTINATION);
 								void this.persist();
 								this.redraw();
 							},
@@ -1060,10 +1221,214 @@ export class LayoutEditorSection {
 					});
 				button.extraSettingsEl.dataset.sheetsmithFocus = `remove-${config.id}`;
 			});
-			if (open) {
-				this.renderComponentForm(container, layout, config, depth, parent);
-			}
 		}
+	}
+
+	/**
+	 * One row of the tree: a name that selects, at its own depth.
+	 *
+	 * A button in the row's name rather than a click handler on the row. A thing
+	 * that answers a press is a control (`docs/UI.md` §6), so it gets a tab stop,
+	 * a focus ring and Enter for free — and §7's "focus on pointerdown, commit on
+	 * click" comes with it rather than being reimplemented per row.
+	 */
+	private renderTreeRow(
+		outline: HTMLElement,
+		id: string,
+		name: string,
+		description: string,
+		/** How many containers enclose it, which is what indents the row. */
+		depth: number,
+	): Setting {
+		const selected = this.host.selection === id;
+		const row = new Setting(outline).setDesc(description);
+		// One class for the row and for the schematic block, so the two paints
+		// cannot disagree about what is selected.
+		if (selected) row.settingEl.addClass('sheetsmith-preview-editing');
+		if (depth > 0) {
+			row.settingEl.addClass('sheetsmith-row-child');
+			// The depth rather than a class per level: the indent is arithmetic,
+			// and two classes saying "one in" and "two in" would be two places to
+			// change if the bound ever moved.
+			row.settingEl.style.setProperty('--sheetsmith-row-depth', String(depth));
+		}
+		const button = row.nameEl.createEl('button', {
+			cls: 'sheetsmith-tree-name',
+			text: name,
+		});
+		button.dataset.sheetsmithFocus = `edit-${id}`;
+		// The paint says which row is selected; this is what says it out loud.
+		if (selected) button.setAttribute('aria-current', 'true');
+		button.addEventListener('click', () => this.select(id));
+		return row;
+	}
+
+	/**
+	 * Every grid the selection has anything to do with: the one it sits on, then
+	 * the one it provides.
+	 *
+	 * **The first of those was missing and it is the one that matters more.** The
+	 * sheet's schematic draws the top level only, so selecting anything inside a
+	 * container drew no block for it anywhere — and the panel beside it still
+	 * offered four editable position fields addressing a grid the pane was not
+	 * drawing. Four numbers with nothing on screen to read them against is worse
+	 * than an absent mark, and it is the exact opposite of the reason the
+	 * container's schematic went in the left column: grids belong beside the grid
+	 * they sit inside.
+	 *
+	 * Both, rather than one or the other, for the same reason the container's own
+	 * grid is stacked under the sheet's rather than replacing it — a selected
+	 * container an author is arranging has a place *and* contents, and the chain
+	 * reads down the column: the sheet, then where this sits, then what it holds.
+	 *
+	 * A tab's parent draws nothing, and that is `renderContainerSchematic`'s own
+	 * guard rather than a case here: a container showing one child at a time has
+	 * no grid, which is also why the panel withholds the position fields there.
+	 */
+	private renderSelectionSchematics(
+		outline: HTMLElement,
+		layout: Layout,
+		entry: WalkEntry,
+	): void {
+		if (entry.parent !== null) {
+			// The parent's own walk entry, not a synthesised one: `innerPlacement`
+			// needs the grandparent to answer what box the parent actually has,
+			// which is the whole reason a stale `position` cannot be trusted.
+			const parent = walkComponents(layout.components).find(
+				(candidate) => candidate.config === entry.parent,
+			);
+			if (parent) this.renderContainerSchematic(outline, parent);
+		}
+		this.renderContainerSchematic(outline, entry);
+	}
+
+	/**
+	 * One container's own grid, under the sheet's.
+	 *
+	 * In the left column rather than in the panel, because it is a grid and grids
+	 * belong beside the grid they sit inside; and stacked under the sheet's
+	 * rather than replacing it, so an author can see where the container sits
+	 * *and* what is in it at once.
+	 *
+	 * The column count comes from `innerPlacement`, the same function the sheet
+	 * draws through, and not from `config.position.width`. This container may
+	 * itself be a tab, and then its own four numbers are read by nothing: the box
+	 * is the tab set's, so a stale width copied in at creation would have the
+	 * editor drawing, describing and clamping against a grid the sheet does not
+	 * have.
+	 */
+	private renderContainerSchematic(
+		outline: HTMLElement,
+		entry: WalkEntry,
+	): void {
+		const { config, depth, parent } = entry;
+		const definition = getComponent(config.type);
+		if (!acceptsChildren(config, depth)) return;
+		// A container that shows one child at a time has no grid to draw: its
+		// children have no placement, so every one of them would land in the same
+		// cell and `findOverlaps` would report each as overlapping all the others
+		// — true of the rectangles and silent about the layout. The order is the
+		// only thing there is to edit, and the panel edits it.
+		if (!placesChildren(definition)) return;
+		const inner = innerPlacement(config, parent);
+		outline.createDiv({ cls: 'setting-item-description' }, (el) =>
+			el.setText(
+				`Inside "${config.label}", on its own grid of ${inner.width} columns by ${inner.height} rows. Cells nothing fills stay empty on the sheet.`,
+			),
+		);
+		const el = outline.createDiv('sheetsmith-layout-preview');
+		// Whose grid this is, so a reader — and a test — can say which schematic
+		// it is looking at rather than counting them. Two are on screen whenever a
+		// container inside a container is selected, and telling them apart by
+		// position is the index-mapping fragility `markOverlaps` already carries.
+		el.dataset.sheetsmithGrid = config.id;
+		this.schematics.push({
+			el,
+			// Read, never created: drawing this must not write a key into the
+			// config. A `children: []` written onto a component two containers
+			// deep is a layout `parseLayout` refuses, so `persist` would refuse
+			// every later save and the author would lose edits to a message about
+			// a depth rule they never broke. Nothing pushes into this list — a
+			// drag moves an existing block, and the add row creates the key
+			// itself — so a throwaway array is enough.
+			components: config.children ?? [],
+			columns: inner.width,
+			rows: inner.height,
+		});
+	}
+
+	/**
+	 * The layout's own settings: the grid it places components on, the functions
+	 * its formulas may call, and the triggers its components reset on.
+	 *
+	 * Reached by selecting the `Layout` row, which is why there is no second kind
+	 * of panel. Both textarea fields already took a container and a layout and
+	 * knew nothing about a settings tab, so they move rather than being
+	 * rewritten — and the function library's own header asked for exactly this:
+	 * below the component forms "the definitions are a scroll away from the
+	 * formulas calling them, which is a side panel's job to fix".
+	 */
+	private renderLayoutSettings(panel: HTMLElement, layout: Layout): void {
+		const form = panel.createDiv('sheetsmith-component-form');
+		// The tree row that got here says `Layout`, so this does too. The layout's
+		// own name is the picker's, one column over, and saying it twice would be
+		// two answers to "which layout is this".
+		panelTitle(form, 'Layout');
+		this.renderColumnCount(form, layout);
+		this.triggers = renderTriggerList(form, layout, {
+			persist: () => void this.persist(),
+			redraw: () => this.redraw(),
+		});
+		this.functions = renderFunctionLibrary(form, layout, {
+			persist: () => void this.persist(),
+		});
+	}
+
+	/**
+	 * How many columns the grid places components across.
+	 *
+	 * The first control this key has ever had: it round-trips today and is
+	 * reachable only by hand-editing the file. A plain number rather than a
+	 * formula field — a column count is structure, and nothing resolves it.
+	 *
+	 * Two hazards, both spelled out in `parse/layout.ts` and both of a kind this
+	 * codebase has been caught by twice. An absent `columns` has to stay absent
+	 * through a round trip, so a value matching the default deletes the key
+	 * rather than writing `"columns": 12` into a file that merely had the field
+	 * shown — the same answer a select and a boolean already give, and the
+	 * `options: []` trap a third time. And `parseLayout` refuses anything that is
+	 * not a positive integer, so this carries the position fields' own inline
+	 * error rather than letting `persist` refuse the whole file with a `Notice`
+	 * and drop the edit.
+	 */
+	private renderColumnCount(form: HTMLElement, layout: Layout): void {
+		new Setting(form)
+			.setName('Grid columns')
+			.setDesc(
+				'How many columns components are placed across. Reducing it leaves a component already past the new last column where it is, rather than moving something you did not touch.',
+			)
+			.addText((text) => {
+				text.inputEl.type = 'number';
+				text.setValue(String(layout.columns ?? DEFAULT_COLUMNS));
+				text.inputEl.dataset.sheetsmithFocus = 'layout-columns';
+				onCommit(text, (raw) => {
+					const parsed = Number(raw.trim());
+					if (!Number.isInteger(parsed) || parsed < 1) {
+						this.fieldError(text.inputEl, 'Whole number, 1 or more.');
+						return;
+					}
+					this.fieldError(text.inputEl, null);
+					if (parsed === DEFAULT_COLUMNS) delete layout.columns;
+					else layout.columns = parsed;
+					void this.persist();
+					// The schematic is drawn against this number and the tree and
+					// the panel are not, so the grid is redrawn and the pane is
+					// left standing.
+					const sheet = this.schematics[0];
+					if (sheet) sheet.columns = parsed;
+					this.drawSchematics();
+				});
+			});
 	}
 
 	/**
@@ -1136,6 +1501,7 @@ export class LayoutEditorSection {
 	): void {
 		const form = container.createDiv('sheetsmith-component-form');
 		const definition = getComponent(config.type);
+		panelTitle(form, config.label);
 
 		form.createDiv(
 			{ cls: ['setting-item-description', 'sheetsmith-component-reference'] },
@@ -1149,11 +1515,14 @@ export class LayoutEditorSection {
 		);
 
 		// A container that may hold nothing says so, rather than being offered a
-		// grid to fill. The add row already withholds it as a destination, so a
-		// schematic here would be the tab giving two answers to one rule — and
-		// the author chose this type deliberately, so silence is worse than a
+		// grid to fill. This is the complement of the schematic's own guard and
+		// the add row's, and the three sit in three places now — the panel, the
+		// left column and the add row — which is why they ask one named question
+		// rather than three spellings of it. Diverge and the author gets a grid in
+		// one column beside a sentence in the other saying nothing can go in it.
+		// The author chose this type deliberately, so silence is worse than a
 		// sentence.
-		if (isContainer(definition) && !mayHoldChildren(depth)) {
+		if (isContainer(definition) && !acceptsChildren(config, depth)) {
 			form.createDiv({ cls: 'setting-item-description' }, (el) =>
 				el.setText(
 					'This component sits inside two containers, so it can hold nothing: a container may hold containers only one level deep. Move it up a level to put components in it.',
@@ -1163,56 +1532,11 @@ export class LayoutEditorSection {
 
 		// A container that shows one child at a time gets an ordered list, not a
 		// grid. Its children have no placement — each fills the region in turn —
-		// so a schematic would draw every one of them in the same cell and
-		// `findOverlaps` would report each as overlapping all the others, which is
-		// true of the rectangles and says nothing about the layout. The order is
-		// the only thing there is to edit, and it is the one thing a grid could
-		// not have edited.
-		if (
-			isContainer(definition) &&
-			mayHoldChildren(depth) &&
-			!placesChildren(definition)
-		) {
+		// so the order is the only thing there is to edit, and it is the one thing
+		// a grid could not have edited. The grid case is the left column's:
+		// `renderContainerSchematic` draws it beside the sheet's own.
+		if (acceptsChildren(config, depth) && !placesChildren(definition)) {
 			this.renderChildOrder(form, config);
-		}
-
-		// A container's own schematic, above its settings: its children sit on
-		// its grid, not the sheet's, so the sheet's schematic cannot show where
-		// they are. The same drawing against a different column count, which is
-		// why `preview-grid.ts` needed no change for any of this.
-		//
-		// The count comes from `innerPlacement`, the same function the sheet
-		// draws through, and not from `config.position.width`. This container may
-		// itself be a tab, and then its own four numbers are read by nothing: the
-		// box is the tab set's, so a stale width copied in at creation would have
-		// the editor drawing, describing and clamping against a grid the sheet
-		// does not have.
-		const inner = innerPlacement(config, parent);
-		if (
-			isContainer(definition) &&
-			mayHoldChildren(depth) &&
-			placesChildren(definition)
-		) {
-			form.createDiv(
-				{ cls: 'setting-item-description' },
-				(el) =>
-					el.setText(
-						`Components inside this one, on its own grid of ${inner.width} columns by ${inner.height} rows. Cells nothing fills stay empty on the sheet.`,
-					),
-			);
-			this.schematics.push({
-				el: form.createDiv('sheetsmith-layout-preview'),
-				// Read, never created: drawing a form must not write a key into
-				// the config. A `children: []` written here onto a component two
-				// containers deep is a layout `parseLayout` refuses, so `persist`
-				// would refuse every later save and the author would lose edits to
-				// a message about a depth rule they never broke. Nothing pushes
-				// into this list — a drag moves an existing block, and the add row
-				// creates the key itself — so a throwaway array is enough.
-				components: config.children ?? [],
-				columns: inner.width,
-				rows: inner.height,
-			});
 		}
 
 		new Setting(form)
@@ -1609,11 +1933,18 @@ export class LayoutEditorSection {
 							if (on) reset.buffer = 'clear';
 							else if (reset.action === undefined) {
 								// The binding would be left doing nothing at all.
-								showFieldError(
-									toggle.toggleEl.querySelector('input') ??
-										toggle.toggleEl.createEl('input'),
-									'Give the binding an action first, or remove it.',
-								);
+								// The container's own checkbox, which is where an
+								// inline error is anchored. The `?? createEl` this
+								// used to carry was there because `toggleEl` *was*
+								// the input, so the query found nothing and the
+								// fallback quietly built a second one.
+								const box = toggle.toggleEl.querySelector('input');
+								if (box?.instanceOf(HTMLInputElement)) {
+									showFieldError(
+										box,
+										'Give the binding an action first, or remove it.',
+									);
+								}
 								toggle.setValue(true);
 								return;
 							} else delete reset.buffer;
@@ -2064,11 +2395,7 @@ export class LayoutEditorSection {
 			return;
 		}
 		await this.plugin.app.vault.modify(this.file, serialised);
-		for (const leaf of this.plugin.app.workspace.getLeavesOfType(
-			VIEW_TYPE_SHEET,
-		)) {
-			if (leaf.view instanceof SheetView) leaf.view.refresh();
-		}
+		this.host.refreshSheets();
 	}
 }
 
@@ -2132,31 +2459,6 @@ class NameModal extends Modal {
 }
 
 
-/**
- * One treatment for every group heading inside a component form, whether it
- * heads a run of fields sharing a `group` or a list field such as entries.
- * Both sit at the same level, so both must look the same; rendering them from
- * two code paths is what let them drift apart.
- */
-function groupHeading(
-	form: HTMLElement,
-	title: string,
-	description?: string,
-	/** Entries in the list this heads, so a bounded list says what it holds. */
-	count?: number,
-): void {
-	const heading = form.createDiv('sheetsmith-form-group');
-	heading.createDiv({ cls: 'sheetsmith-form-group-title' }, (el) => {
-		el.appendText(title);
-		if (count !== undefined) {
-			el.createSpan({ cls: 'sheetsmith-form-group-count', text: String(count) });
-		}
-	});
-	if (description) {
-		heading.createDiv({ cls: 'setting-item-description', text: description });
-	}
-}
-
 /** Commit on change (blur or Enter), never per keystroke. */
 function onCommit(
 	text: TextComponent,
@@ -2176,7 +2478,7 @@ function onCommit(
  * one option sits under another.
  *
  * One function because the bound is the whole of it, and the two callers sit in
- * one row of the settings tab. Spelled twice they agreed only by accident: one
+ * one row of the pane. Spelled twice they agreed only by accident: one
  * multiplied by depth and the other hard-coded a flat two, so widening the
  * indent in either place would have indented the two dropdowns beside each other
  * differently. Taking the depth rather than a character count is also what lets a
@@ -2193,6 +2495,30 @@ function indent(depth: number): string {
 function componentDisplayName(type: string): string {
 	const words = type.split('-').join(' ');
 	return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
+/**
+ * Whether this component may take a child *where it sits*.
+ *
+ * Two questions the editor always asks together — is it a container, and is it
+ * shallow enough that the parser would still accept a child in it — and the
+ * conjunction is the editor's own rather than either half's: `isContainer` is a
+ * fact about the type and `mayHoldChildren` is the parser's depth rule, and
+ * neither answers this on its own.
+ *
+ * Named because it is spelled in three regions and in both polarities. The add
+ * row withholds a destination, the left column withholds a schematic, and the
+ * panel prints a sentence saying nothing can go in it — and while the last two
+ * were adjacent lines of one function, a rule growing a clause would have been
+ * hard to add to one and miss on the other. They are a column apart now, and a
+ * divergence paints a grid beside a sentence denying it: the instrument
+ * disagreeing with itself, which `docs/UI.md` §11 calls worse than showing
+ * nothing. This is `docs/PATTERNS.md` §1's predicate clause, and the shape is
+ * `childIsPlaced`'s: the registry lookup the callers were each doing comes
+ * inside, so a caller passes what it has.
+ */
+function acceptsChildren(config: ComponentConfig, depth: number): boolean {
+	return isContainer(getComponent(config.type)) && mayHoldChildren(depth);
 }
 
 /**
