@@ -155,8 +155,15 @@ const DEFAULTS = [
 		// `.setting-item` none), so its accent ring is a shadow and nothing else,
 		// and without the transparent-outline companion the row this pane's whole
 		// right-hand column belongs to is unmarked among forty.
+		//
+		// A Table rather than the container the three shots above open, because
+		// this is the mode the pane's booleans fail in and a Table's form is the
+		// only one holding both kinds: Obsidian's toggle, which the app repaints
+		// here, and the bare per-column checkbox, which it does not. Ticked ones
+		// were pixel-identical to clear ones until `editor.css` answered it, and a
+		// defect with no default view is a defect that comes back.
 		name: 'editor-forced-colors',
-		query: 'surface=editor&theme=light&open=weapons',
+		query: 'surface=editor&theme=light&open=inventory',
 		size: EDITOR_FRAME,
 		flags: ['--force-high-contrast'],
 	},
