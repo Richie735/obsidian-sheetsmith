@@ -142,3 +142,100 @@ describe('the harness measures boxes the way Obsidian does', () => {
 		expect(universalBoxSizing(readFileSync(generated, 'utf8'))).toBe(true);
 	});
 });
+
+describe('&bounded has an opinion about every link in the chain', () => {
+	/*
+	 * The mode inverts a height down a chain of six elements, and it shipped
+	 * skipping one of them.
+	 *
+	 * `.workspace-leaf` had no rule under `.harness-bounded`, so
+	 * `.workspace-leaf-content`'s own `height: 100%` resolved against an auto
+	 * height, was ignored, and every element below it grew — 728px of
+	 * `.harness-editor` above 4382px of leaf. **The shot still landed**, because
+	 * `body` is `overflow: hidden` at `100vh`: it landed as a crop of a grown
+	 * pane, which is what a fold looks like. That passed a review, and a
+	 * `docs/UI.md` §12 row was retired on it.
+	 *
+	 * So this is §10's case exactly — a failure looking is no use against,
+	 * because looking is what it fools — and the guard is the cheap text one
+	 * rather than a browser: `harness/shot.mjs` opens with why there is no
+	 * browser dependency here, and happy-dom does no layout, so nothing in this
+	 * suite can measure a box.
+	 *
+	 * **The rule is coverage, not equality.** The obvious formulation — the
+	 * selectors the grown rule releases and the ones the bounded rules re-height
+	 * must name the same chain — is wrong, and wrong in the direction that
+	 * matters: the two lists are disjoint *by design* and stay disjoint after
+	 * the fix. `.workspace-leaf-content` and `.view-content` carry heights of
+	 * their own, so the grown mode has to release them and the bounded mode has
+	 * nothing to add; `.harness-pane`, `.harness-editor` and `.workspace-leaf`
+	 * carry none, so the bounded mode supplies one and the grown mode has
+	 * nothing to release. What is true of every link is only that *some* rule
+	 * names it. The one that no rule named is the one that broke.
+	 */
+	const CHAIN = [
+		'.harness-stage',
+		'.harness-pane',
+		'.harness-editor',
+		'.workspace-leaf',
+		'.workspace-leaf-content',
+		'.view-content',
+	];
+
+	/** The files that actually build the chain, so a rename cannot leave it stale. */
+	const BUILDERS = ['./index.html', './harness.ts', '../src/test/obsidian-stub.ts'];
+
+	/**
+	 * One class name, matched whole.
+	 *
+	 * `includes` is what this was, and it made the check vacuous in the one case
+	 * it exists for: `.workspace-leaf` is a substring of
+	 * `.workspace-leaf-content`, so deleting the leaf's own rule left the link
+	 * "claimed" by the release rule naming its child, and the guard stayed green
+	 * against the exact bug it was written from. Caught by reintroducing the bug
+	 * and watching the test not go red, which is the step that has to be run.
+	 */
+	function names(selector: string, link: string): boolean {
+		return new RegExp(`\\${link}(?![\\w-])`).test(selector);
+	}
+
+	const bounded = selectors().filter((selector) =>
+		selector.includes('.harness-bounded'),
+	);
+	const released = selectors().filter((selector) =>
+		selector.includes(':not(.harness-bounded)'),
+	);
+
+	it('finds the rules it is meant to be checking', () => {
+		// Either list matching nothing would pass every case below.
+		expect(bounded.length).toBeGreaterThan(0);
+		expect(released.length).toBeGreaterThan(0);
+	});
+
+	it('names a chain the harness and the stub actually build', () => {
+		// The list above is hand-written, which is the thing that rots. A class
+		// nothing creates any more is a link this check has stopped guarding,
+		// and it would go on passing in silence.
+		const sources = BUILDERS.map((path) =>
+			readFileSync(new URL(path, import.meta.url), 'utf8'),
+		).join('\n');
+		// The bare name, because a builder writes `classList.add('workspace-leaf')`
+		// rather than a selector — and matched whole for the same reason `names`
+		// is, or `workspace-leaf` finds `workspace-leaf-content` and a renamed
+		// link goes on passing.
+		const missing = CHAIN.filter(
+			(link) =>
+				!new RegExp(`\\b${link.slice(1)}(?![\\w-])`).test(sources),
+		);
+		expect(missing).toEqual([]);
+	});
+
+	it('gives every link a height or releases it, and never neither', () => {
+		const unclaimed = CHAIN.filter(
+			(link) =>
+				!bounded.some((selector) => names(selector, link)) &&
+				!released.some((selector) => names(selector, link)),
+		);
+		expect(unclaimed).toEqual([]);
+	});
+});

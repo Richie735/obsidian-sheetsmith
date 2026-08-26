@@ -557,21 +557,113 @@ a {
  * allowed to grow here.
  *
  * The cost is stated rather than hidden: **overflow inside the pane is not
- * visible in a shot**. The settings tab has always been shown this way for the
- * same reason, so it is the harness's existing bargain rather than a new one, and
- * it is unlayered so it beats the calibrated sheet as well as the fallback above.
+ * visible in a grown shot**. The settings tab has always been shown this way for
+ * the same reason, so it is the harness's existing bargain rather than a new one,
+ * and it is unlayered so it beats the calibrated sheet as well as the fallback
+ * above.
  *
  * **It has cost a real defect once**, which is worth recording rather than
  * leaving as a caveat. The pane shipped with one scroller for both columns, so
  * selecting a row near the bottom of a long tree scrolled the panel out of the
  * leaf entirely — invisible in every shot, because a 4600px full-page capture
- * has no fold for anything to fall below. Anything about *where the fold is*
- * has to be checked against a leaf given a real height, which today means a
- * throwaway override of the two rules below rather than a mode this page
- * offers.
+ * has no fold for anything to fall below.
+ *
+ * That is what the scope on this rule is for. `&bounded` gives the leaf the
+ * window's own height for one shot, and anything about *where the fold is* is
+ * checked there rather than against a throwaway override pasted into
+ * `index.html`, which is what it used to mean. Growing stays the default,
+ * because a review that has to scroll for its findings is a review that misses
+ * them. The query is documented in `harness.ts`; `shot.mjs` holds the view that
+ * uses it.
  */
-.harness-editor .workspace-leaf-content,
-.harness-editor .view-content {
+body:not(.harness-bounded) .harness-editor .workspace-leaf-content,
+body:not(.harness-bounded) .harness-editor .view-content {
 	height: auto;
 	overflow: visible;
+}
+
+/*
+ * `&bounded`: every surface held to the window, so a shot has a fold in it.
+ *
+ * The page becomes a column — the bar keeps its own height, the stage takes the
+ * rest — and each surface then scrolls inside its pane exactly as a leaf scrolls
+ * inside a workspace.
+ *
+ * **The fold is the viewport minus the bar, and it is neither of the numbers a
+ * shot passes as `size=`.** Two subtractions, both easy to forget. Headless
+ * Chrome spends window chrome out of the height it is given — `size=1400,900`
+ * renders an 813px viewport — and the harness bar takes 47px more at one row,
+ * leaving a 766px leaf. So a bounded shot's fold is a measured number, not a
+ * stated one, and the way to know it is to measure it.
+ *
+ * That is not a distortion to be engineered away, which was the first instinct
+ * and is wrong: a leaf in Obsidian never gets the whole window either, only what
+ * is left after the ribbon, the tab header and the status bar. The bar standing
+ * in for app chrome is the faithful arrangement. What has to be true is that it
+ * is *stated*, because the alternative is a comment claiming `size=` says where
+ * the fold is while the fold quietly moves.
+ *
+ * **And it does move.** The bar wraps to a second row when it runs out of width
+ * — 47px at one row, 85px at two — so a control added to it costs every shot at
+ * every width where it rewraps. Adding two buttons put the bar on two rows at
+ * 1400, which is the default frame of four shots, and took 38px off each of them
+ * for a mode none of them use. That is why `&bounded` is a query and not a pair
+ * of buttons: `&open=`, `&layout=`, `&choice=` and `&focus=` are all query-only
+ * already, and the bar at 1400 turns out to have had no room left for a seventh
+ * group.
+ *
+ * Unlayered for the same reason the rule above it is: these have to beat the
+ * calibrated `height: 100%` as well as the fallback one.
+ */
+.harness-bounded {
+	display: flex;
+	flex-direction: column;
+	height: 100vh;
+	overflow: hidden;
+}
+
+/* The note below the stage would push the fold up by its own height, and then
+   the leaf would be shorter than the window says it is. */
+.harness-bounded > .harness-note {
+	display: none;
+}
+
+/* `width` rather than a stretch: the stage keeps `margin: 0 auto` so a narrow
+   width stays centred, and an auto margin on a flex item's cross axis turns
+   stretching off — which collapsed it to the width of its own content. */
+.harness-bounded .harness-stage {
+	flex: 1 1 auto;
+	min-height: 0;
+	width: 100%;
+}
+
+/*
+ * A definite height the whole way down, and **the whole way down is longer than
+ * it looks**. `.workspace-leaf-content` sets its own `height: 100%`, a
+ * percentage against an auto height is ignored, and one auto height anywhere in
+ * the chain lets everything below it grow — which is the one failure this mode
+ * must not have, because `body` is `overflow: hidden` at `100vh` and the shot
+ * still lands. It lands as a crop of a grown pane rather than a fold, and the
+ * two look alike.
+ *
+ * `.workspace-leaf` is the link that was missed, and it is invisible from either
+ * end: the harness builds `.harness-editor` and the plugin's view builds
+ * `.workspace-leaf-content`, so the element between them belongs to neither and
+ * is named in neither. It comes from `WorkspaceLeaf` in `src/test/obsidian-stub.ts`
+ * — `containerEl` is a `div.workspace-leaf` and the view's own container goes
+ * inside it, exactly as the app nests them.
+ *
+ * Measured rather than read, which is the only way this was ever going to be
+ * caught: with the leaf missing, `.harness-editor` is 728px and
+ * `.workspace-leaf` under it is 4382. Anything added here is checked the same
+ * way, by measuring every element in the chain and not only the two ends.
+ */
+.harness-bounded .harness-pane {
+	height: 100%;
+	overflow: auto;
+}
+
+.harness-bounded .harness-editor,
+.harness-bounded .workspace-leaf {
+	height: 100%;
 }
