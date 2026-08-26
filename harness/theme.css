@@ -317,6 +317,58 @@ body.theme-dark {
 	opacity: 0.5;
 }
 
+/* A bare checkbox, which Obsidian styles as thoroughly as it styles the toggle
+   above — `appearance: none`, its own box, and an accent fill with a tick masked
+   out of it.
+
+   Approximated here for the same reason and now on the same CHROME list, because
+   without it the browser's own control was what got reviewed: a blue box in a
+   purple form, at the browser's size rather than `--checkbox-size`. The plugin
+   draws one of these per column flag, so **Show a total** and **Publish per row**
+   were being judged against a control the app never draws — the toggle's own
+   failure, one control along.
+
+   The tick is a glyph rather than the app's masked SVG, and that is a cascade
+   decision rather than a matter of taste. A fallback here has to be *fully*
+   overridable: the calibrated rule replaces this one declaration by declaration,
+   so any property the app does not also set survives into the calibrated render.
+   A rotated border did exactly that — two stray edges came through turned 45°
+   over the app's own tick, and a ticked box read as an "L". Every declaration
+   below is one the app's rule answers, and the two that are not (the centring
+   and the type) are inert against the `content: ''` box the app masks its tick
+   out of. */
+input[type='checkbox'] {
+	appearance: none;
+	flex-shrink: 0;
+	position: relative;
+	width: var(--checkbox-size, 16px);
+	height: var(--checkbox-size, 16px);
+	margin: 0 6px 0 0;
+	padding: 0;
+	border: 1px solid var(--checkbox-border-color, var(--text-faint));
+	border-radius: var(--checkbox-radius, 4px);
+}
+
+input[type='checkbox']:checked {
+	background-color: var(--checkbox-color, var(--interactive-accent));
+	border-color: var(--checkbox-color, var(--interactive-accent));
+}
+
+input[type='checkbox']:checked::after {
+	content: '✓';
+	position: absolute;
+	top: 0;
+	left: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 100%;
+	height: 100%;
+	color: var(--checkbox-marker-color, var(--background-primary));
+	font-size: 0.8em;
+	line-height: 1;
+}
+
 :is(.vertical-tab-content, .harness-editor) button {
 	padding: var(--size-4-2) var(--size-4-3);
 	border: 1px solid var(--harness-settings-edge);

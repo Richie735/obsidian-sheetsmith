@@ -97,6 +97,13 @@ const CHROME = [
 	/^\.clickable-icon/,
 	/^\.vertical-tab-content/,
 	/^\.checkbox-container/,
+	// A bare checkbox, which Obsidian gives `appearance: none` and repaints from
+	// `--checkbox-*`. Without it the harness showed the browser's own control —
+	// a blue box in a purple form — so the editor's per-column flags were
+	// reviewed against something the app never draws. Anchored, and refused a
+	// class or an id after it, so the app's own `.metadata-input-checkbox` and
+	// the gallery's scoped rules do not come with it.
+	/^input\[type=checkbox\](?![.#])/,
 	/^\.dropdown$/,
 	/^\.svg-icon/,
 	// The workspace pane the layout editor is a view in. A settings tab and a
@@ -122,8 +129,11 @@ const PALETTE =
 /**
  * Split a stylesheet into top-level rules.
  *
- * Deliberately crude, and deliberately skips at-rules entirely: a real parser
- * would be a dependency, and everything wanted here sits at the top level.
+ * Deliberately crude: a real parser would be a dependency, and nearly everything
+ * wanted here sits at the top level. An at-rule comes back as one rule whose
+ * `selector` is the query and whose `body` is the CSS inside it, which is what
+ * lets `insideMode` run this over that body a second time rather than teaching
+ * the scanner to nest.
  */
 function rules(source) {
 	// Comments first: a `}` inside one desyncs the brace depth for the rest of
@@ -211,6 +221,42 @@ function customProperties(body) {
 	return found;
 }
 
+/**
+ * The at-rules worth carrying, which is a much shorter list than "all of them".
+ *
+ * At-rules are otherwise skipped here on purpose — a crude scanner is the price
+ * of having no CSS parser as a dependency — and that was fine while everything
+ * wanted sat at the top level. It stopped being fine the first time a shot was
+ * taken in one of these modes. Obsidian answers `forced-colors` for its own
+ * toggle, giving the pill and its thumb a `ButtonBorder` outline and the enabled
+ * state `SelectedItem`; without the block the harness drew a control painted with
+ * nothing but `background-color`, which the system palette overwrites — so
+ * `editor-forced-colors` showed **no toggle at all** beside its label, and every
+ * boolean in the pane looked like a missing control the plugin would have to fix.
+ * It has none to fix: this is the app's, and the app handles it.
+ *
+ * Deliberately only the modes a shot can actually be taken in — Chrome takes
+ * `--force-high-contrast` and `--force-prefers-reduced-motion` on the command
+ * line, and `shot.mjs` uses both. Width queries stay out: what Obsidian's own
+ * narrow-settings CSS would do to a *leaf* is a question `docs/UI.md` §12 has a
+ * row for, and answering it by quietly changing what the instrument draws would
+ * settle it in the wrong place.
+ */
+const MODES = /\(\s*(forced-colors|prefers-reduced-motion)\s*:/;
+
+/** The chrome rules inside one at-rule, or nothing if it is not a mode wanted. */
+function insideMode(rule) {
+	if (!MODES.test(rule.selector)) return [];
+	return rules(rule.body)
+		.filter((inner) =>
+			inner.selector
+				.split(',')
+				.map((s) => s.trim())
+				.some((s) => CHROME.some((re) => re.test(s))),
+		)
+		.map((inner) => `${inner.selector} {${inner.body}}`);
+}
+
 const asar = newestAsar(dataDir());
 const version = asar.match(/obsidian-([\d.]+)\.asar/)?.[1] ?? 'unknown';
 const css = readFromAsar(asar, 'app.css');
@@ -230,8 +276,16 @@ const lines = [
 let palettes = 0;
 let chrome = 0;
 let resets = 0;
+let modes = 0;
 for (const rule of rules(css)) {
-	if (rule.selector.startsWith('@') || rule.selector === '') continue;
+	if (rule.selector === '') continue;
+	if (rule.selector.startsWith('@')) {
+		const inner = insideMode(rule);
+		if (inner.length === 0) continue;
+		lines.push(`${rule.selector} {`, ...inner, '}', '');
+		modes++;
+		continue;
+	}
 	const parts = rule.selector.split(',').map((s) => s.trim());
 	if (parts.some((s) => RESET.test(s))) {
 		lines.push(`${rule.selector} {${rule.body}}`, '');
@@ -255,5 +309,5 @@ const out = 'harness/obsidian.generated.css';
 writeFileSync(out, lines.join('\n'));
 console.log(
 	`Wrote ${out} from Obsidian ${version}: ${palettes} palette blocks, ` +
-		`${chrome} chrome rules, ${resets} global resets.`,
+		`${chrome} chrome rules, ${modes} mode blocks, ${resets} global resets.`,
 );
