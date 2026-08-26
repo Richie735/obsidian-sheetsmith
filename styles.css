@@ -4063,14 +4063,25 @@ a.sheetsmith-undo {
 
    The transparent outline is the forced-colors escape hatch the sheet's own
    rings use (docs/UI.md §6), and this is the first state ring the editor has
-   drawn, so it is the first place in here to need one. It is load bearing on
-   both halves and for two different reasons. A block has a real 1px border, but
-   forced-colors mode overrides every border on the page to one system colour, so
-   recolouring it says nothing there; a **tree row has no border at all** —
-   Obsidian 1.13 sets `--setting-items-border-width: 0`, so the declaration
-   above paints nothing on one and the inset shadow is the whole of the mark.
-   Discard the shadow and a sighted forced-colors user is left with a panel full
-   of fields and nothing in a tree of forty rows saying which one it belongs to.
+   drawn, so it is the first place in here to need one. **It works on the tree
+   row and it does not work on the block**, which is one half of what this
+   comment used to claim, and the half it got wrong is worth keeping written
+   down because the argument for it was sound. A tree row has no border at all —
+   Obsidian 1.13 sets `--setting-items-border-width: 0` — so the declaration
+   above paints nothing there and the inset shadow is the whole of the mark;
+   discard the shadow and a sighted forced-colors user has a panel full of fields
+   and nothing in a tree of forty rows saying which one it belongs to. That is
+   the half the hatch rescues, and clipping the two side by side shows it doing
+   the job.
+
+   A block is the half it does not rescue, and for the reason the block was
+   supposed to need it: it has a real 1px border, forced colors repaints every
+   border on the page one system colour, and a 1px outline at
+   `outline-offset: -1px` lands exactly on top of that border. So the mark is
+   drawn and is invisible, and the selected block sits among forty identical
+   ones with nothing but its 13px resize arc to tell it apart — which reads as an
+   artefact, not a state. The block is the only thing joining the panel on the
+   right to a place on the left.
 
    Offset inward by the shadow's own width, so the repainted ring lands where
    the shadow was rather than a pixel outside it. */
@@ -4080,6 +4091,21 @@ a.sheetsmith-undo {
 	box-shadow: 0 0 0 1px var(--interactive-accent) inset;
 	outline: 1px solid transparent;
 	outline-offset: -1px;
+}
+
+/* The block's own answer, since the hatch above cannot reach it.
+
+   Two channels away from what every other block gets rather than one: twice the
+   width, and outside the border instead of on it, so it reads as a ring around
+   the block rather than as a slightly heavier edge. A system colour because
+   nothing else survives the mode, and `SelectedItem` because that is the word
+   the plugin's other forced-colors answer already uses for "this one is the
+   chosen one" — a ticked column flag takes the same fill. */
+@media (forced-colors: active) {
+	.sheetsmith-preview-editing {
+		outline: 2px solid SelectedItem;
+		outline-offset: 1px;
+	}
 }
 
 .sheetsmith-preview-dragging {
