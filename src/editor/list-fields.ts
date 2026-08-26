@@ -1220,6 +1220,17 @@ export function renderEntriesEditor(
 	 * every button's focus token.
 	 */
 	const nameOf = (entry: EntryRecord) => String(entry[primary.key] ?? '');
+	/*
+	 * Bound once, as the two list editors above bind it, and for the reason
+	 * the third argument exists: an inline error has to outlive a rebuild of
+	 * the pane. It matters more here than anywhere, because a refusal below
+	 * writes nothing and redraws nothing — so the typed text stands until some
+	 * *other* control rebuilds the pane, and without the map that rebuild puts
+	 * the stored name back and drops the message with it. Typed value gone,
+	 * nothing said.
+	 */
+	const fieldError = (input: HTMLInputElement, message: string | null) =>
+		showFieldError(input, message, context.errors);
 
 	if (list.length === 0) {
 		listEl.createDiv('sheetsmith-entry-empty', (el) =>
@@ -1286,6 +1297,32 @@ export function renderEntriesEditor(
 		primaryInput.dataset.sheetsmithFocus = `attr-${prefix}-${index}-key`;
 		primaryInput.addEventListener('change', () => {
 			const next = primaryInput.value.trim();
+			const stored = nameOf(entry);
+			/*
+			 * A refusal puts the stored name back, which is the rows editor's
+			 * rule and its words: leaving the typed text in a field whose value
+			 * was refused makes the field lie about what the file holds the
+			 * moment focus moves on. It is also what makes the remembered
+			 * message coherent — the copy a rebuild restores sits beside the
+			 * stored name, so the message has to say that is what happened.
+			 *
+			 * The clause is dropped where there is nothing to name, which is an
+			 * entry that reached the editor from a hand-edited file with its
+			 * first column blank. `left as ""` describes nothing.
+			 *
+			 * "this one" for the duplicate and "it" for the blank, which is the
+			 * siblings' distinction: the duplicate's sentence has already named
+			 * the other entry, so "it" would not say which one was left.
+			 */
+			const refuse = (reason: string, subject: 'it' | 'this one') => {
+				primaryInput.value = stored;
+				fieldError(
+					primaryInput,
+					stored === ''
+						? `${reason}.`
+						: `${reason}, so ${subject} was left as "${stored}".`,
+				);
+			};
 			if (next === '') {
 				// Names the column, because "a key is required" over a
 				// column headed Value points at nothing on screen. The
@@ -1293,17 +1330,14 @@ export function renderEntriesEditor(
 				// what this list calls a row whatever its columns are —
 				// which is also what its add control and its empty state
 				// say.
-				showFieldError(primaryInput, `A ${primary.heading.toLowerCase()} is required.`);
+				refuse(`A ${primary.heading.toLowerCase()} is required`, 'it');
 				return;
 			}
 			if (list.some((other, i) => i !== index && nameOf(other) === next)) {
-				showFieldError(
-					primaryInput,
-					`"${next}" is already used by another entry.`,
-				);
+				refuse(`"${next}" is already used by another entry`, 'this one');
 				return;
 			}
-			showFieldError(primaryInput, null);
+			fieldError(primaryInput, null);
 			entry[primary.key] = next;
 			context.persist();
 			context.redraw();
