@@ -362,6 +362,29 @@ function setText(size: string): void {
 	stage.style.fontSize = size === '0' ? '' : `${size}px`;
 }
 
+/**
+ * Light or dark, without disturbing the other classes body carries.
+ *
+ * It used to be an assignment to `className`, which was fine while the theme was
+ * the only thing written there. `harness-bounded` lives there too now, and an
+ * assignment would drop it on the next press of **Dark** — an instrument that
+ * silently leaves the mode it was put in is worse than one that never had it.
+ */
+function setTheme(theme: string): void {
+	document.body.classList.toggle('theme-dark', theme === 'dark');
+	document.body.classList.toggle('theme-light', theme !== 'dark');
+}
+
+/**
+ * Whether the surface is held to the window's height or allowed to grow past it.
+ *
+ * Everything the class does is in `theme.css`; what it means is that the pane
+ * scrolls inside itself the way a leaf does, so a shot has a fold in it.
+ */
+function setBounded(on: boolean): void {
+	document.body.classList.toggle('harness-bounded', on);
+}
+
 function press(group: string, value: string): void {
 	// Array.from rather than iterating the NodeList directly: the plugin's
 	// tsconfig omits DOM.Iterable, and the harness must not widen it.
@@ -380,7 +403,7 @@ document
 		if (!button) return;
 		const { theme, width, text, state: wanted, surface: pane } = button.dataset;
 		if (theme !== undefined) {
-			document.body.className = `theme-${theme}`;
+			setTheme(theme);
 			press('theme', theme);
 		}
 		if (width !== undefined) {
@@ -421,6 +444,23 @@ document
  * reachable through **State**, which breaks a component's config and leaves the
  * file perfectly parseable.
  *
+ * And one for the fold: `&bounded` holds the surface to the window's height, so
+ * it scrolls inside itself the way a leaf scrolls inside a workspace. The
+ * default is the opposite — the pane grows and a shot captures the whole surface
+ * — and that default is right, because a review that has to scroll for its
+ * findings misses them. What it costs is that **nothing about scrolling,
+ * clipping, or what falls below the fold is visible in a grown shot**, which is
+ * how a pane with one scroller for both its columns shipped behind a 4600px
+ * capture. It takes no value, because the fold is not a number this page gets to
+ * pick: it is the viewport minus the bar, and `theme.css` carries both
+ * subtractions and why neither is the number a shot passes as `size=`.
+ *
+ * A query rather than a pair of buttons in the bar, which is what this was
+ * first. The bar at 1400 had no room for a seventh group, so it wrapped to two
+ * rows and took 38px off every shot at that width — four of the defaults —
+ * for a mode none of them use. Every other control a still cannot press is a
+ * query for its own reasons; this one is a query because the bar is not free.
+ *
  * And one for focus: `&focus=<css selector>` focuses the first element matching
  * it once the surface has drawn. A still cannot press Tab, so until this existed
  * *no* focus treatment had ever been photographed — every "focus is visible on
@@ -436,12 +476,16 @@ document
 function applyQuery(): void {
 	const params = new URLSearchParams(window.location.search);
 	const theme = params.get('theme') === 'dark' ? 'dark' : 'light';
-	document.body.className = `theme-${theme}`;
+	setTheme(theme);
 	press('theme', theme);
 
 	const width = params.get('width') ?? '0';
 	stage.style.maxWidth = width === '0' ? 'none' : `${width}px`;
 	press('width', width);
+
+	// Present at all, whatever it is spelled as: `&bounded` alone is the form
+	// the shots use, and `&bounded=1` should not mean something else.
+	setBounded(params.get('bounded') !== null);
 
 	const text = params.get('text') ?? '0';
 	setText(text);

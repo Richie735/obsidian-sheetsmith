@@ -161,6 +161,40 @@ const DEFAULTS = [
 		flags: ['--force-high-contrast'],
 	},
 	{
+		// The one view with a fold in it. Every other shot here lets the pane
+		// grow past the window, so what a reader sees at once has never been
+		// photographed at all — only the whole surface, laid out flat. `&bounded`
+		// gives the leaf the window's own height. 900 because that is about what a
+		// leaf gets on a laptop, and not because anything here was measured at it
+		// — and note the frame is not the fold: headless Chrome spends window
+		// chrome out of it and the harness bar takes 47px more, so the leaf here
+		// is 766px. `theme.css` carries both subtractions. `editor-threshold`
+		// below gets 728, because at 1210 the bar wraps to two rows.
+		//
+		// `alignment` is a component low in the tree, so the panel is the far
+		// end of a long list rather than the top of a short one.
+		//
+		// **What it shows, and what it does not.** It shows how much of the pane
+		// arrives in one screen, and what falls below the fold. It also shows the
+		// two-column promise holding: the tree and the panel clip on one line,
+		// the leaf's own bottom edge, because each column is its own scroller —
+		// where one shared scroller would put the panel's top wherever the tree
+		// had been scrolled to. The leaf's edge being *drawn at all* is the whole
+		// of the difference from a grown shot, and it is worth knowing that a
+		// missing `height` anywhere in the chain takes it away while leaving a
+		// picture that still looks cropped. See `theme.css`.
+		//
+		// It does not show a *scrolled* pane — a still has no scroll position, and
+		// the single-scroller defect that made this row would need one. No
+		// scrollbar is in the picture either, whatever `--hide-scrollbars` is
+		// doing: macOS paints overlay scrollbars, which appear while scrolling and
+		// nowhere else.
+		name: 'editor-bounded',
+		query: 'surface=editor&theme=light&open=alignment&bounded',
+		size: '1400,900',
+	},
+
+	{
 		// The narrow regime, which had no view at all: `editor-stacked` at 1190 was
 		// the narrowest editor shot, and everything below it was unlooked at. This
 		// one shows a pane that does not fit — the picker's delete clipped, the
