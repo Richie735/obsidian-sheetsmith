@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { hold, press, pressDown, release } from '../test/pointer';
+import { cancel, hold, press, pressDown, release } from '../test/pointer';
 import { FOCUSABLE } from '../view/cell-focus';
 import { pool, PoolConfig, PoolData } from './pool';
 import { RenderContext } from '../types';
@@ -454,7 +454,7 @@ describe('pool step button held', () => {
 			const { current, steps } = parts(el);
 			hold(steps[0], 1000);
 			const reached = current?.value;
-			steps[0]?.dispatchEvent(new PointerEvent('pointercancel', { pointerId: 1 }));
+			cancel(steps[0]);
 			vi.advanceTimersByTime(2000);
 			// Cancelled, not abandoned: the repeat stops where it was and the
 			// value it reached is still what gets written.

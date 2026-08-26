@@ -17,10 +17,24 @@
  *
  * What counts as a violation, and why the predicate is this narrow:
  *
- * - **`pointerdown` or `pointerup`, spelled as a literal.** A `pointermove` is
- *   only ever part of a drag, and a drag is deliberately not in the module.
- *   An event whose type is a variable is a factory the test chose per call, and
- *   every such factory here carries coordinates.
+ * - **`pointerdown`, `pointerup` or `pointercancel`, spelled as a literal.** A
+ *   `pointermove` is only ever part of a drag, and a drag is deliberately not in
+ *   the module. An event whose type is a variable is a factory the test chose per
+ *   call, and every such factory here carries coordinates.
+ *
+ *   `pointercancel` was added after the fact, and how it was missed is the
+ *   lesson: the rule below is about the *shape* — pointer identity and no
+ *   coordinates — while this list enumerates types, so the two can drift and did.
+ *   Two byte-equal bare cancels sat in `pool.test.ts` and `layout-editor.test.ts`
+ *   while this file reported nothing, because a check can only find what it
+ *   enumerates. **A new bare type belongs here on the second call site**, not the
+ *   third: §1 puts a shape in the same one-step tier as a timing or a set, where
+ *   a guard over two copies could only assert they still agree.
+ *
+ *   Which is also why that sentence describes the construction instead of
+ *   spelling it. The scan reads source text, comments included — the brace walk
+ *   below is the only parsing it does — so a literal written out in prose here is
+ *   a finding this file reports against itself.
  * - **Carrying `pointerId` or `button`.** That pair is the whole of the shape
  *   the module owns. A press with neither — `{ bubbles: true }` on a card's own
  *   surface — routes by hit-testing rather than by pointer identity, and
@@ -72,7 +86,7 @@ interface Construction {
 	init: string;
 }
 
-const OPEN = /new PointerEvent\(\s*'(pointerdown|pointerup)'\s*,\s*\{/g;
+const OPEN = /new PointerEvent\(\s*'(pointerdown|pointerup|pointercancel)'\s*,\s*\{/g;
 
 function constructions(file: string, source: string): Construction[] {
 	const found: Construction[] = [];
