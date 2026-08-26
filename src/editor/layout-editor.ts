@@ -36,8 +36,12 @@ import {
 	serialiseLayout,
 } from '../parse/layout';
 import { WalkEntry, walkComponents } from '../parse/layout-walk';
-import { clamp, describeCell, findOverlaps, lastColumn } from './preview-grid';
+import { describeCell, findOverlaps } from './preview-grid';
 import { renderResetField } from './reset-field';
+import {
+	Schematic,
+	SchematicGestures,
+} from './schematic-gestures';
 import {
 	commitTriggerList,
 	renderTriggerList,
@@ -65,37 +69,6 @@ export const SHEET_DESTINATION = '::sheet::';
 
 /** How long a rebuilt region stays marked, before fading over its own transition. */
 const FLASH_HOLD = 900;
-
-/** Which pair of a block's four numbers a pointer drag is writing. */
-type DragMode = 'move' | 'resize';
-
-/**
- * One schematic in the pane: the sheet's, or the selected container's own.
- *
- * The same drawing twice rather than two drawings, and `preview-grid.ts` is
- * untouched by the second: `clamp`, `lastColumn`, `describeCell` and
- * `findOverlaps` each take a flat component list plus a column count, and a
- * container's children *are* a flat list plus a column count. So the gestures —
- * the pointer capture, the grid arithmetic, the Escape restore, the click a drag
- * leaves behind — are parameterised over which list is being written rather than
- * copied per level.
- */
-interface Schematic {
-	el: HTMLElement;
-	/** The list this draws, and the list a drag writes into. */
-	components: ComponentConfig[];
-	/** Columns at this level: the layout's, or the container's own width. */
-	columns: number;
-	/**
-	 * Rows to draw, for a container whose height is declared.
-	 *
-	 * Absent for the sheet's own schematic, which is correct rather than
-	 * unfinished: `.sheetsmith-grid` sets no `grid-template-rows` at the top
-	 * level either, so the sheet grows down as components are added and the
-	 * preview should too.
-	 */
-	rows?: number;
-}
 
 /**
  * What the editor needs from the pane hosting it.
@@ -176,8 +149,8 @@ export class LayoutEditorSection {
 	private rootEl: HTMLElement | null = null;
 	/** The two regions of the last render, or null before the first. */
 	private regions: Regions | null = null;
-	/** True between a drag ending and the click it produces. */
-	private dragged = false;
+	/** The pointer and keyboard gestures on a schematic block. */
+	private gestures: SchematicGestures;
 	/**
 	 * Inline errors, by the focus token of the field showing them. A redraw
 	 * tears down the DOM they live in, so an error on one field would vanish
@@ -221,6 +194,26 @@ export class LayoutEditorSection {
 			this.pendingFocus ??= this.focusedToken();
 			host.redraw();
 		};
+		// Arrow functions, and two of the six are the reason rather than all of
+		// them. `redrawSchematics` lands on `drawSchematics`, so the mapping is a
+		// rename and a bound method cannot carry one; `persist` needs the `void`,
+		// because `this.persist` is async and `no-misused-promises` refuses a
+		// promise-returning function where a void return is expected — measured,
+		// not assumed: `.bind(this)` there is the one of the six that fails lint.
+		// The other four would bind cleanly, and they are arrows to match, so the
+		// block reads as one mapping rather than four of one kind and two of
+		// another.
+		//
+		// Not the same reason `redraw` above is an arrow: that one composes three
+		// steps, and this precedent is only about naming.
+		this.gestures = new SchematicGestures({
+			persist: () => void this.persist(),
+			persistSoon: () => this.persistSoon(),
+			markOverlaps: (schematic) => this.markOverlaps(schematic),
+			syncPositionFields: (config) => this.syncPositionFields(config),
+			redrawSchematics: () => this.drawSchematics(),
+			select: (id) => this.select(id),
+		});
 	}
 
 	/** The focus token of whatever is focused inside the pane, if anything. */
@@ -620,32 +613,7 @@ export class LayoutEditorSection {
 			cell.setAttribute('aria-label', describeCell(config, overlaps));
 			cell.style.gridColumn = `${config.position.col} / span ${config.position.width}`;
 			cell.style.gridRow = `${config.position.row} / span ${config.position.height}`;
-			// Pointer-only, and hidden from assistive tech on purpose:
-			// shift+arrows on the block already resize it, so the handle adds
-			// no function that would otherwise be unreachable. That is also
-			// what lets it be a span — a button inside a button is invalid.
-			const handle = cell.createSpan({ cls: 'sheetsmith-preview-resize' });
-			handle.setAttribute('aria-hidden', 'true');
-			handle.addEventListener('pointerdown', (event) => {
-				// Grabbing the corner must not also pick the whole block up.
-				event.stopPropagation();
-				this.beginDrag(event, cell, config, 'resize', schematic);
-			});
-			cell.addEventListener('click', () => {
-				// A drag ends in a click on the same element; that click meant
-				// "put it here", not "select it".
-				if (this.dragged) return;
-				// Selects, never deselects. Pressing the selected block again
-				// would empty the panel, and nothing is the wrong thing to
-				// configure — the `Layout` row is how an author gets back out.
-				this.select(config.id);
-			});
-			cell.addEventListener('keydown', (event) =>
-				this.nudge(event, config, schematic),
-			);
-			cell.addEventListener('pointerdown', (event) =>
-				this.beginDrag(event, cell, config, 'move', schematic),
-			);
+			this.gestures.bindBlock(cell, config, schematic);
 		});
 
 		// A colour with no legend is a colour: sighted users were told there
@@ -657,53 +625,6 @@ export class LayoutEditorSection {
 				),
 			);
 		}
-	}
-
-	/**
-	 * The preview's geometry, in the units the grid is actually drawn in.
-	 * Read from the element rather than assumed, so a theme changing the
-	 * padding or the gap moves the drop targets with it.
-	 */
-	private previewMetrics(schematic: Schematic): {
-		left: number;
-		top: number;
-		column: number;
-		row: number;
-		columns: number;
-	} | null {
-		const el = schematic.el;
-		const view = el.ownerDocument.defaultView;
-		if (!view) return null;
-		const styles = view.getComputedStyle(el);
-		const columns = schematic.columns;
-		const columnGap = parseFloat(styles.columnGap) || 0;
-		const rowGap = parseFloat(styles.rowGap) || 0;
-		const padLeft = parseFloat(styles.paddingLeft) || 0;
-		const padTop = parseFloat(styles.paddingTop) || 0;
-		const inner =
-			el.clientWidth - padLeft - (parseFloat(styles.paddingRight) || 0);
-		const track = (inner - (columns - 1) * columnGap) / columns;
-		const rowHeight = parseFloat(styles.gridAutoRows) || 44;
-		if (!(track > 0)) return null;
-		const box = el.getBoundingClientRect();
-		return {
-			left: box.left + padLeft,
-			top: box.top + padTop,
-			column: track + columnGap,
-			row: rowHeight + rowGap,
-			columns,
-		};
-	}
-
-	/** Which grid cell a pointer is over, 1-based, as the layout counts them. */
-	private cellAt(
-		event: PointerEvent,
-		metrics: NonNullable<ReturnType<LayoutEditorSection['previewMetrics']>>,
-	): { col: number; row: number } {
-		return {
-			col: Math.floor((event.clientX - metrics.left) / metrics.column) + 1,
-			row: Math.floor((event.clientY - metrics.top) / metrics.row) + 1,
-		};
 	}
 
 	/**
@@ -721,181 +642,6 @@ export class LayoutEditorSection {
 			const config = schematic.components[index];
 			if (config) cell.setAttribute('aria-label', describeCell(config, overlaps));
 		});
-	}
-
-	/**
-	 * Drag a component around the schematic, or drag its corner to resize it,
-	 * 1:1 with the pointer and snapped to the grid it will actually sit on.
-	 *
-	 * One gesture with two destinations rather than two gestures: the pointer
-	 * capture, the grid arithmetic, the Escape restore, and the click a drag
-	 * leaves behind are the same problem whichever pair of numbers is being
-	 * written, and two copies of them would drift apart.
-	 *
-	 * Only the dragged block's own grid position is written while the pointer
-	 * is down — rebuilding the preview would destroy the element holding the
-	 * pointer capture, and the drag would end on the first move. The rebuild
-	 * happens once, on release.
-	 */
-	private beginDrag(
-		event: PointerEvent,
-		cell: HTMLElement,
-		config: ComponentConfig,
-		mode: DragMode,
-		schematic: Schematic,
-	): void {
-		if (event.button !== 0) return;
-		const metrics = this.previewMetrics(schematic);
-		if (!metrics) return;
-		// Suppress the text selection and the native button drag; the block
-		// itself is the thing being dragged.
-		event.preventDefault();
-
-		const origin = this.cellAt(event, metrics);
-		const start = { ...config.position };
-		let moved = false;
-		cell.setPointerCapture(event.pointerId);
-
-		/**
-		 * Offer the block a position this far from where it was picked up,
-		 * and report whether that changed anything. The delta is measured
-		 * from the origin every time rather than accumulated, so a pointer
-		 * that runs past a bound and comes back resumes exactly.
-		 */
-		const place = (dc: number, dr: number): boolean => {
-			const position = config.position;
-			let { col, row, width, height } = position;
-			if (mode === 'move') {
-				col = clamp(start.col + dc, 1, lastColumn(metrics.columns, width, start.col));
-				row = Math.max(1, start.row + dr);
-			} else {
-				width = clamp(
-					start.width + dc,
-					1,
-					lastColumn(metrics.columns, col, start.width),
-				);
-				height = Math.max(1, start.height + dr);
-			}
-			// Marked before the no-op check, not after: the mark is about where
-			// the block is, not about it having just moved. A block that is
-			// already full-width, or already sitting at the last column, is
-			// held from the first frame of the gesture — which is exactly the
-			// case the feedback exists for, and the case a bail-out first
-			// would never show it in.
-			cell.toggleClass(
-				'sheetsmith-preview-clamped',
-				col + width - 1 >= metrics.columns,
-			);
-			if (
-				col === position.col &&
-				row === position.row &&
-				width === position.width &&
-				height === position.height
-			) {
-				return false;
-			}
-			position.col = col;
-			position.row = row;
-			position.width = width;
-			position.height = height;
-			cell.style.gridColumn = `${col} / span ${width}`;
-			cell.style.gridRow = `${row} / span ${height}`;
-			this.markOverlaps(schematic);
-			return true;
-		};
-
-		const onMove = (move: PointerEvent) => {
-			const at = this.cellAt(move, metrics);
-			if (!place(at.col - origin.col, at.row - origin.row)) return;
-			if (!moved) {
-				moved = true;
-				cell.addClass('sheetsmith-preview-dragging');
-				if (mode === 'resize') cell.addClass('sheetsmith-preview-resizing');
-			}
-		};
-
-		const finish = (commit: boolean) => {
-			cell.removeEventListener('pointermove', onMove);
-			cell.removeEventListener('pointerup', onUp);
-			cell.removeEventListener('pointercancel', onCancel);
-			cell.ownerDocument.removeEventListener('keydown', onKey);
-			cell.removeClass('sheetsmith-preview-dragging');
-			cell.removeClass('sheetsmith-preview-resizing');
-			if (cell.hasPointerCapture(event.pointerId)) {
-				cell.releasePointerCapture(event.pointerId);
-			}
-			if (!moved) return;
-			// No delta from the origin is where the block was picked up, so
-			// the restore is the same arithmetic as every other frame.
-			if (!commit) place(0, 0);
-			// The click that follows a drag is the drag's own; swallow it.
-			this.dragged = true;
-			window.setTimeout(() => {
-				this.dragged = false;
-			}, 0);
-			void this.persist();
-			this.syncPositionFields(config);
-			this.drawSchematics();
-		};
-
-		const onUp = () => finish(true);
-		const onCancel = () => finish(false);
-		const onKey = (key: KeyboardEvent) => {
-			// Forgiveness, on the gesture where a mistake is one slip of the
-			// hand: Escape puts the block back where it was picked up.
-			if (key.key !== 'Escape') return;
-			key.preventDefault();
-			finish(false);
-		};
-
-		cell.addEventListener('pointermove', onMove);
-		cell.addEventListener('pointerup', onUp);
-		cell.addEventListener('pointercancel', onCancel);
-		cell.ownerDocument.addEventListener('keydown', onKey);
-	}
-
-	/** Arrow keys move a component; shift+arrows resize it. */
-	private nudge(
-		event: KeyboardEvent,
-		config: ComponentConfig,
-		schematic: Schematic,
-	): void {
-		const deltas: Record<string, [number, number]> = {
-			ArrowLeft: [-1, 0],
-			ArrowRight: [1, 0],
-			ArrowUp: [0, -1],
-			ArrowDown: [0, 1],
-		};
-		const delta = deltas[event.key];
-		if (!delta) return;
-		event.preventDefault();
-		const position = config.position;
-		// The same bound the pointer gesture holds to, so the two ways of
-		// doing this cannot disagree about where the grid ends.
-		const columns = schematic.columns;
-		if (event.shiftKey) {
-			position.width = clamp(
-				position.width + (delta[0] ?? 0),
-				1,
-				lastColumn(columns, position.col, position.width),
-			);
-			position.height = Math.max(1, position.height + (delta[1] ?? 0));
-		} else {
-			position.col = clamp(
-				position.col + (delta[0] ?? 0),
-				1,
-				lastColumn(columns, position.width, position.col),
-			);
-			position.row = Math.max(1, position.row + (delta[1] ?? 0));
-		}
-		this.persistSoon();
-		this.drawSchematics();
-		// The open form shows the same numbers, so they have to follow — but
-		// by being written, not by rebuilding the pane around them. Holding an
-		// arrow key is the one gesture here that is rapid-fire by design, and
-		// a full teardown per repeat is the latency cliff it would fall off.
-		// The write is already debounced; this is the other half of that.
-		this.syncPositionFields(config);
 	}
 
 	/** Write a component's position back into its open form, if it has one. */
