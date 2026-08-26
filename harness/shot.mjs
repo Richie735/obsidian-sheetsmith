@@ -48,6 +48,19 @@ mkdirSync(outDir, { recursive: true });
  */
 const SHEET_FRAME = '1400,2700';
 
+/**
+ * The editor pane's frame, tall because the tree is the whole layout.
+ *
+ * The pane lists every component the layout holds, one settings row each, under
+ * a schematic of the grid — so it is about as tall as the sheet is and for the
+ * same reason. Same rule as SHEET_FRAME above: the number is the pane's height
+ * and nothing else. Raise it when the harness layout grows — **or when the pane
+ * grows a region**, which is how it last went stale: drawing the grid a nested
+ * selection sits on added a second schematic to the left column and pushed the
+ * add row out of the frame, silently, in the shot that is supposed to show it.
+ */
+const EDITOR_FRAME = '1500,5000';
+
 const DEFAULTS = [
 	{ name: 'sheet-light', query: 'surface=sheet&theme=light', size: SHEET_FRAME },
 	{ name: 'sheet-dark', query: 'surface=sheet&theme=dark', size: SHEET_FRAME },
@@ -102,8 +115,85 @@ const DEFAULTS = [
 	},
 	{ name: 'sheet-empty', query: 'surface=sheet&theme=dark&state=empty', size: SHEET_FRAME },
 	{ name: 'sheet-error', query: 'surface=sheet&theme=dark&state=broken', size: SHEET_FRAME },
-	{ name: 'settings-light', query: 'surface=settings&theme=light', size: '1500,1500' },
-	{ name: 'settings-dark', query: 'surface=settings&theme=dark', size: '1500,1500' },
+	{
+		// The pane above its reflow threshold: the tree beside the panel, with a
+		// container selected so the second schematic is on screen and the rows of
+		// what it holds sit directly under its own row — which is the docs/UI.md
+		// §12 row this pane closed, and the only way to see that it stayed
+		// closed is to look.
+		name: 'editor-light',
+		query: 'surface=editor&theme=light&open=weapons',
+		size: EDITOR_FRAME,
+	},
+	{
+		name: 'editor-dark',
+		query: 'surface=editor&theme=dark&open=weapons',
+		size: EDITOR_FRAME,
+	},
+	{
+		// The pane below it, stacked: schematic, tree, then panel. 1190 rather
+		// than a comfortably narrow width on purpose — the threshold is 1176px of
+		// pane and `.view-content` spends 24px of the window on padding, so this
+		// and the two above bracket the number itself rather than illustrating two
+		// arbitrary widths. Move it with the threshold.
+		//
+		// Taller than EDITOR_FRAME because stacking puts the panel *under* the
+		// tree rather than beside it, and a frame that cropped the panel would
+		// crop the half this view exists to show.
+		name: 'editor-stacked',
+		query: 'surface=editor&theme=light&open=weapons',
+		size: '1190,5700',
+	},
+	{
+		// Forced colors, which the system palette repaints the whole page in and
+		// which discards every `box-shadow` on it. **Chrome does take a switch for
+		// this** — `--force-high-contrast` — which `docs/UI.md` §12's contrast row
+		// had recorded as impossible, having only tried the two flags for
+		// `prefers-contrast`. That is worth a default view rather than a one-off,
+		// because what it shows cannot be reasoned about from the stylesheet: the
+		// pane's selected tree row has no border to recolour (Obsidian gives
+		// `.setting-item` none), so its accent ring is a shadow and nothing else,
+		// and without the transparent-outline companion the row this pane's whole
+		// right-hand column belongs to is unmarked among forty.
+		name: 'editor-forced-colors',
+		query: 'surface=editor&theme=light&open=weapons',
+		size: EDITOR_FRAME,
+		flags: ['--force-high-contrast'],
+	},
+	{
+		// The narrow regime, which had no view at all: `editor-stacked` at 1190 was
+		// the narrowest editor shot, and everything below it was unlooked at. This
+		// one shows a pane that does not fit — the picker's delete clipped, the
+		// schematic running off the right, the panel's `height` field off-screen
+		// entirely. It is here *because* it is wrong: `docs/UI.md` §12 has the row
+		// and this is the picture it points at, and a regime with no shot is how
+		// this shipped. 380 to match the sheet's own narrow view.
+		name: 'editor-narrow',
+		query: 'surface=editor&theme=light&open=weapons',
+		size: '380,5700',
+	},
+	{
+		// No layouts at all: the first thing a new vault shows, and one of the
+		// three states `docs/features/layout-editor-pane.md` says are "worse in a
+		// pane than in a settings tab, which is why they are designed rather than
+		// inherited". Designed, and until now never once drawn — the **State**
+		// buttons break a component's config, which leaves the layout file
+		// perfectly parseable, so neither this nor the one below had any view.
+		name: 'editor-vacant',
+		query: 'surface=editor&theme=light&layout=none',
+		size: '1000,700',
+	},
+	{
+		// A layout file that will not parse. The order is the load-bearing part:
+		// the picker first, because it is how an author leaves a layout they
+		// cannot edit, then the message where the tree would be — and no panel, so
+		// the two-column rule reserves no empty track beside one line of error.
+		name: 'editor-broken',
+		query: 'surface=editor&theme=dark&layout=broken',
+		size: '1400,420',
+	},
+	{ name: 'settings-light', query: 'surface=settings&theme=light', size: '1000,520' },
+	{ name: 'settings-dark', query: 'surface=settings&theme=dark', size: '1000,520' },
 	{
 		// The stylesheet carries five `prefers-reduced-motion` blocks and the
 		// gesture code two more branches, and none of it was ever rendered —
