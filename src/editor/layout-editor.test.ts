@@ -576,6 +576,72 @@ describe('editing a component', () => {
 		expect((await harness.stored()).components[0]).toMatchObject({ signed: false });
 	});
 
+	it('refuses a label another component already uses, and says so', async () => {
+		/*
+		 * The label keys a section in a flat note, so two components sharing one
+		 * would have two forms writing the same heading. Rejected rather than
+		 * disambiguated, because the author is renaming something and the name
+		 * they typed is the one thing here they meant.
+		 *
+		 * **Added after the panel moved out.** The branch was the one validation
+		 * site in the form that did not put its message in the errors map — the
+		 * argument is optional, so nothing said so — and it had no case at all,
+		 * which is why no mutation over the seam could reach it.
+		 */
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+
+		const input = control<HTMLInputElement>(harness, 'label-armour');
+		type(input, 'Hit points');
+		await settle(harness.pane);
+
+		expect(input.classList.contains('sheetsmith-input-invalid')).toBe(true);
+		expect(input.parentElement?.textContent).toContain(
+			'Another component already uses this label.',
+		);
+		// The edit is refused, not applied under another name.
+		const stored = await harness.stored();
+		expect(stored.components[0]?.label).toBe('Armour class');
+		expect(stored.components[1]?.label).toBe('Hit points');
+	});
+
+	it('keeps that refusal visible when the pane is rebuilt around it', async () => {
+		/*
+		 * `field-error.ts` states the policy this holds: every message goes
+		 * through the errors map, because the pane rebuilds on most changes and
+		 * the replay can only put back what the map holds. This is the case that
+		 * makes the label field's duplicate branch obey it.
+		 *
+		 * **What it also pins is a question nobody has asked**, and
+		 * `docs/PATTERNS.md` §11 holds it: the rebuild puts the *old, valid* label
+		 * back in the field, so the message that survives is standing over text
+		 * that no longer earns it. Three cases now assert that it survives. If the
+		 * answer is that a refused edit's complaint should go with the text it was
+		 * about, all three change together and that is the row's business, not
+		 * this case's.
+		 */
+		// The pool, because a rebuild is what this needs and only a control that
+		// may change what the form *offers* asks for one — a select does, and the
+		// position fields deliberately do not, since a redraw would take the field
+		// the author is typing in down with them.
+		control(harness, 'edit-hit_points').click();
+		await settle(harness.pane);
+
+		type(control<HTMLInputElement>(harness, 'label-hit_points'), 'Armour class');
+		choose(
+			control<HTMLSelectElement>(harness, 'cfg-hit_points-maxSource'),
+			'character',
+		);
+		await settle(harness.pane);
+
+		const redrawn = control<HTMLInputElement>(harness, 'label-hit_points');
+		expect(redrawn.value).toBe('Hit points');
+		expect(redrawn.classList.contains('sheetsmith-input-invalid')).toBe(true);
+		expect(redrawn.parentElement?.textContent).toContain(
+			'Another component already uses this label.',
+		);
+	});
+
 	it('never touches the other components', async () => {
 		const before = (await harness.stored()).components[1];
 		type(control<HTMLInputElement>(harness, 'cfg-armour-key'), 'AC');

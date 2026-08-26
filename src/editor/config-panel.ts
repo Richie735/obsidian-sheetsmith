@@ -497,7 +497,14 @@ export class ConfigPanel {
 							(other) => other !== config && other.label === label,
 						)
 					) {
-						showFieldError(
+						// Through the binding, like the branch above it. It was a
+						// bare `showFieldError` — the map argument is optional, so
+						// nothing compiled or linted differently, which is exactly
+						// how one site of six misses a policy. `field-error.ts`
+						// states that one: *every* message goes through the map,
+						// because the pane rebuilds on most changes and the replay
+						// can only put back what the map holds.
+						this.fieldError(
 							text.inputEl,
 							'Another component already uses this label.',
 						);
