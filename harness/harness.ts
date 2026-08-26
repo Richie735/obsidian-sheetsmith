@@ -1,8 +1,8 @@
 /*
  * Sheetsmith harness.
  *
- * Renders both surfaces the plugin has — the sheet and the settings tab that
- * holds the layout editor — outside Obsidian, against the real styles.css, so
+ * Renders the three surfaces the plugin has — the sheet, the layout editor pane,
+ * and the settings tab — outside Obsidian, against the real styles.css, so
  * appearance can be reviewed by looking at it rather than by reading CSS.
  * Not shipped: nothing here is imported by src/main.ts.
  *
@@ -11,7 +11,7 @@
  * would show and the note body under each card is what would be saved. That
  * makes it a check on Constraint 3 as well as on appearance.
  *
- * The two surfaces are joined: saving in the layout editor re-renders the
+ * The sheet and the editor are joined: saving in the editor re-renders the
  * sheet from the layout it just wrote. Stored values survive that, exactly as
  * they must in the app (Constraint 4).
  *
@@ -37,11 +37,13 @@ import {
 	LinkContext,
 } from '../src/types';
 import { renderGrid } from '../src/view/grid-cells';
+import { renderEditorPane } from './editor-pane';
 import { brokenSamples, emptySamples, Sample, SAMPLES } from './samples';
-import { harnessLayout, renderSettings } from './settings-panel';
+import { renderSettings } from './settings-panel';
+import { harnessLayout } from './stub-app';
 
 type StateName = 'populated' | 'empty' | 'broken';
-type Surface = 'sheet' | 'settings' | 'both';
+type Surface = 'sheet' | 'editor' | 'settings' | 'both';
 
 interface Live {
 	config: ComponentConfig;
@@ -255,33 +257,39 @@ function noteBodies(): HTMLElement {
 }
 
 /**
- * The settings tab is rendered once and kept, rather than rebuilt with the
- * sheet. It owns its own redraw — the layout editor rebuilds itself on every
- * change and restores scroll and focus across that — and tearing it down from
- * outside would fight the thing being reviewed.
+ * The editor pane is rendered once and kept, rather than rebuilt with the sheet.
+ * It owns its own redraw — the editor rebuilds itself on every change and the
+ * pane restores the scroll across that — and tearing it down from outside would
+ * fight the thing being reviewed.
  */
-let settingsPane: HTMLElement | null = null;
+let editorPane: HTMLElement | null = null;
 /**
- * Which state the settings pane was built for. The tab reads its layout from
- * the stub vault, written once when the pane is built, so a pane kept across a
- * state change would show the populated layout beside a sheet rendering the
- * broken one — and a reviewer would be looking at a form that says the field
- * is fine and a card that says it is not, with nothing but the instrument
- * between them.
+ * Which state the editor pane was built for. It reads its layout from the stub
+ * vault, written once when the pane is built, so a pane kept across a state
+ * change would show the populated layout beside a sheet rendering the broken
+ * one — and a reviewer would be looking at a form that says the field is fine
+ * and a card that says it is not, with nothing but the instrument between them.
  */
-let settingsState: StateName | null = null;
+let editorState: StateName | null = null;
+/** The settings tab, which reads no layout and so needs no state of its own. */
+let settingsPane: HTMLElement | null = null;
 
-async function ensureSettings(): Promise<HTMLElement> {
-	if (settingsPane && settingsState === state) return settingsPane;
+async function ensureEditor(): Promise<HTMLElement> {
+	if (editorPane && editorState === state) return editorPane;
 	const pane = document.createElement('div');
-	pane.className = 'harness-settings';
-	settingsPane = pane;
-	settingsState = state;
-	// Which of the tab's own controls this view wants driven: a component's form
-	// open, an add-menu option selected. Both are things a reviewer would click
+	pane.className = 'harness-editor';
+	editorPane = pane;
+	editorState = state;
+	// Which of the pane's own controls this view wants driven: a tree row
+	// selected, an add-menu option chosen. Both are things a reviewer would click
 	// and a still cannot.
 	const params = new URLSearchParams(window.location.search);
-	await renderSettings(
+	// What the layout folder holds. The two states the editor draws instead of a
+	// tree — no layouts at all, and one whose file will not parse — are reachable
+	// no other way here: the **State** buttons break a component's *config*, and
+	// a broken config still parses.
+	const file = params.get('layout');
+	await renderEditorPane(
 		pane,
 		{
 			onLayoutChange: (next) => {
@@ -292,7 +300,9 @@ async function ensureSettings(): Promise<HTMLElement> {
 				draw();
 			},
 		},
-		harnessLayout(samplesFor(state)),
+		file === 'none' || file === 'broken'
+			? file
+			: harnessLayout(samplesFor(state)),
 		{
 			open: params.get('open') ?? undefined,
 			choice: params.get('choice') ?? undefined,
@@ -301,21 +311,38 @@ async function ensureSettings(): Promise<HTMLElement> {
 	return pane;
 }
 
+async function ensureSettings(): Promise<HTMLElement> {
+	if (settingsPane) return settingsPane;
+	const pane = document.createElement('div');
+	pane.className = 'harness-settings';
+	settingsPane = pane;
+	await renderSettings(pane, harnessLayout());
+	return pane;
+}
+
+/** Build whatever the chosen surface needs before anything is drawn. */
+async function ensureSurface(): Promise<void> {
+	if (surface === 'editor' || surface === 'both') await ensureEditor();
+	if (surface === 'settings') await ensureSettings();
+}
+
+/** One column per surface the choice asks for, in the order they are named. */
 function draw(): void {
 	stage.replaceChildren();
 
-	if (surface !== 'settings') {
-		const sheetPane = document.createElement('div');
-		sheetPane.className = 'harness-pane';
-		stage.appendChild(sheetPane);
-		renderSheet(sheetPane);
-	}
-
-	if (surface !== 'sheet' && settingsPane) {
+	const column = (build: (into: HTMLElement) => void): void => {
 		const pane = document.createElement('div');
 		pane.className = 'harness-pane';
-		pane.appendChild(settingsPane);
 		stage.appendChild(pane);
+		build(pane);
+	};
+
+	if (surface === 'sheet' || surface === 'both') column(renderSheet);
+	if ((surface === 'editor' || surface === 'both') && editorPane) {
+		column((into) => into.appendChild(editorPane as HTMLElement));
+	}
+	if (surface === 'settings' && settingsPane) {
+		column((into) => into.appendChild(settingsPane as HTMLElement));
 	}
 }
 
@@ -367,29 +394,32 @@ document
 		if (wanted !== undefined) {
 			loadState(wanted as StateName);
 			press('state', wanted);
-			// The settings tab reads the state's own layout, so switching state
+			// The editor pane reads the state's own layout, so switching state
 			// rebuilds it rather than leaving it on the last one.
-			if (surface === 'sheet') draw();
-			else void ensureSettings().then(draw);
+			void ensureSurface().then(draw);
 		}
 		if (pane !== undefined) {
 			surface = pane as Surface;
 			press('surface', pane);
 			stage.classList.toggle('harness-split', surface === 'both');
-			if (surface === 'sheet') draw();
-			else void ensureSettings().then(draw);
+			void ensureSurface().then(draw);
 		}
 	});
 
 /**
  * Open in a named state:
- * `?surface=settings&theme=dark&width=620&text=24&state=empty`.
+ * `?surface=editor&theme=dark&width=620&text=24&state=empty`.
  *
- * Two more for the settings tab, whose controls a still cannot press:
- * `&open=<component id>` opens that component's form, and
- * `&choice=<type>` or `&choice=<type>:<index>` selects an option of the **Add
- * component** menu — which is the only way to see a palette entry's description,
- * since the menu opens on a bare type and those have none.
+ * Two more for the editor pane, whose controls a still cannot press:
+ * `&open=<component id>` selects that component, and `::sheet::` selects the
+ * layout itself; `&choice=<type>` or `&choice=<type>:<index>` selects an option
+ * of the **Add component** menu — which is the only way to see a palette entry's
+ * description, since the menu opens on a bare type and those have none.
+ *
+ * And one for what the layout *folder* holds: `&layout=none` for a vault with no
+ * layouts in it, `&layout=broken` for one whose file will not parse. Neither is
+ * reachable through **State**, which breaks a component's config and leaves the
+ * file perfectly parseable.
  *
  * And one for focus: `&focus=<css selector>` focuses the first element matching
  * it once the surface has drawn. A still cannot press Tab, so until this existed
@@ -422,7 +452,8 @@ function applyQuery(): void {
 	press('state', state);
 
 	const pane = params.get('surface');
-	surface = pane === 'settings' || pane === 'both' ? pane : 'sheet';
+	surface =
+		pane === 'editor' || pane === 'settings' || pane === 'both' ? pane : 'sheet';
 	press('surface', surface);
 	stage.classList.toggle('harness-split', surface === 'both');
 
@@ -433,15 +464,10 @@ function applyQuery(): void {
 		document.querySelector<HTMLElement>(focus)?.focus();
 	};
 
-	if (surface === 'sheet') {
+	void ensureSurface().then(() => {
 		draw();
 		focusWanted();
-	} else {
-		void ensureSettings().then(() => {
-			draw();
-			focusWanted();
-		});
-	}
+	});
 }
 
 applyQuery();

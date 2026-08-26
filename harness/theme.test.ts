@@ -19,6 +19,33 @@ import { describe, expect, it } from 'vitest';
 
 const CSS = readFileSync(new URL('./theme.css', import.meta.url), 'utf8');
 
+/**
+ * A selector list split into its selectors.
+ *
+ * Not `split(',')`: a comma inside `:is(…)` is part of one selector, and
+ * splitting on it produced the fragment `.harness-editor) .clickable-icon` —
+ * which carries no scope, so the check below reported a rule that was in fact
+ * correctly scoped. A guard that misreads the file it is guarding is worse than
+ * no guard, because the fix it invites is to the wrong thing.
+ */
+function split(list: string): string[] {
+	const found: string[] = [];
+	let depth = 0;
+	let buf = '';
+	for (const ch of list) {
+		if (ch === '(') depth++;
+		else if (ch === ')') depth--;
+		if (ch === ',' && depth === 0) {
+			found.push(buf);
+			buf = '';
+			continue;
+		}
+		buf += ch;
+	}
+	found.push(buf);
+	return found.map((part) => part.trim()).filter((part) => part !== '');
+}
+
 /** Every selector in the file, at-rules and declarations stripped. */
 function selectors(): string[] {
 	const withoutComments = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
@@ -26,14 +53,19 @@ function selectors(): string[] {
 	for (const match of withoutComments.matchAll(/(^|[}{;])([^{}@;]+)\{/gm)) {
 		const raw = (match[2] ?? '').trim();
 		if (raw === '' || raw.startsWith('@')) continue;
-		for (const part of raw.split(',')) {
-			const selector = part.trim();
-			if (selector !== '') found.push(selector);
-		}
+		found.push(...split(raw));
 	}
 	return found;
 }
 
+/*
+ * The scope every control rule carries. Written as a substring rather than a
+ * prefix, because the rules are scoped to both of the plugin's surfaces now —
+ * `:is(.vertical-tab-content, .harness-editor)` — and `:is()` takes the highest
+ * specificity of its arguments, so a two-scope selector weighs exactly what the
+ * one-scope selector weighed. The check below is about weight, and that is what
+ * has not changed.
+ */
 const TAB_SCOPE = '.vertical-tab-content';
 
 describe('icon-button rules outweigh the text-button rule', () => {
@@ -62,7 +94,7 @@ describe('the tab styles its controls, not only a Setting row', () => {
 		// the control column is what left them as raw browser widgets.
 		const reachesInputs = all.some(
 			(selector) =>
-				selector.startsWith(TAB_SCOPE) && selector.includes("input[type='text']"),
+				selector.includes(TAB_SCOPE) && selector.includes("input[type='text']"),
 		);
 		expect(reachesInputs).toBe(true);
 	});

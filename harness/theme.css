@@ -223,21 +223,28 @@ body.theme-dark {
 	flex-wrap: wrap;
 }
 
-/* Every control in the tab, not only the ones sitting in a Setting's control
-   column: the list editors build their inputs into containers of their own, and
-   styling only the control column is what left them as raw browser widgets. */
-.vertical-tab-content input[type='text'],
-.vertical-tab-content input[type='number'],
-.vertical-tab-content textarea,
-.vertical-tab-content select,
-.vertical-tab-content button {
+/* Every control in either surface, not only the ones sitting in a Setting's
+   control column: the list editors build their inputs into containers of their
+   own, and styling only the control column is what left them as raw browser
+   widgets.
+
+   Two scopes because the plugin has two surfaces now. `:is()` takes the highest
+   specificity of its arguments and both are classes, so every rule below keeps
+   the weight it had — which is what the icon-button note further down depends
+   on. `.harness-editor` rather than `.view-content`: the harness's own wrapper,
+   so these can never reach a sheet rendered inside a leaf. */
+:is(.vertical-tab-content, .harness-editor) input[type='text'],
+:is(.vertical-tab-content, .harness-editor) input[type='number'],
+:is(.vertical-tab-content, .harness-editor) textarea,
+:is(.vertical-tab-content, .harness-editor) select,
+:is(.vertical-tab-content, .harness-editor) button {
 	box-sizing: border-box;
 }
 
-.vertical-tab-content input[type='text'],
-.vertical-tab-content input[type='number'],
-.vertical-tab-content textarea,
-.vertical-tab-content select {
+:is(.vertical-tab-content, .harness-editor) input[type='text'],
+:is(.vertical-tab-content, .harness-editor) input[type='number'],
+:is(.vertical-tab-content, .harness-editor) textarea,
+:is(.vertical-tab-content, .harness-editor) select {
 	padding: var(--size-4-2) var(--size-4-3);
 	border: 1px solid var(--harness-settings-edge);
 	border-radius: var(--radius-s);
@@ -248,27 +255,69 @@ body.theme-dark {
 	line-height: 1.4;
 }
 
-.vertical-tab-content input[type='text']:focus,
-.vertical-tab-content input[type='number']:focus,
-.vertical-tab-content textarea:focus,
-.vertical-tab-content select:focus {
+:is(.vertical-tab-content, .harness-editor) input[type='text']:focus,
+:is(.vertical-tab-content, .harness-editor) input[type='number']:focus,
+:is(.vertical-tab-content, .harness-editor) textarea:focus,
+:is(.vertical-tab-content, .harness-editor) select:focus {
 	outline: none;
 	border-color: var(--interactive-accent);
 	box-shadow: 0 0 0 2px var(--background-modifier-active-hover);
 }
 
-.vertical-tab-content input::placeholder,
-.vertical-tab-content textarea::placeholder {
+:is(.vertical-tab-content, .harness-editor) input::placeholder,
+:is(.vertical-tab-content, .harness-editor) textarea::placeholder {
 	color: var(--text-faint);
 }
 
-.vertical-tab-content input[type='checkbox'] {
-	width: 16px;
-	height: 16px;
-	accent-color: var(--interactive-accent);
+/* Obsidian's toggle, approximated: a pill carrying the state as a class with an
+   invisible checkbox inside it. `harness:calibrate` replaces this with the real
+   thing (`.checkbox-container` is on its CHROME list), and this is what an
+   uncalibrated clone gets instead — a control that reads as a toggle rather than
+   a bare checkbox with a 34px box around it. */
+.checkbox-container {
+	position: relative;
+	display: inline-block;
+	flex-shrink: 0;
+	width: 34px;
+	height: 22px;
+	border-radius: 18px;
+	background-color: var(--background-modifier-border);
+	cursor: pointer;
 }
 
-.vertical-tab-content button {
+.checkbox-container input[type='checkbox'] {
+	position: absolute;
+	left: 0;
+	opacity: 0;
+}
+
+.checkbox-container::after {
+	content: '';
+	position: absolute;
+	top: 2px;
+	left: 2px;
+	width: 18px;
+	height: 18px;
+	border-radius: 18px;
+	background-color: #ffffff;
+	box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+	transition: transform 150ms ease-in-out;
+}
+
+.checkbox-container.is-enabled {
+	background-color: var(--interactive-accent);
+}
+
+.checkbox-container.is-enabled::after {
+	transform: translateX(12px);
+}
+
+.checkbox-container.is-disabled {
+	cursor: not-allowed;
+	opacity: 0.5;
+}
+
+:is(.vertical-tab-content, .harness-editor) button {
 	padding: var(--size-4-2) var(--size-4-3);
 	border: 1px solid var(--harness-settings-edge);
 	border-radius: var(--radius-s);
@@ -279,11 +328,11 @@ body.theme-dark {
 	cursor: pointer;
 }
 
-.vertical-tab-content button:hover {
+:is(.vertical-tab-content, .harness-editor) button:hover {
 	background-color: var(--background-modifier-hover);
 }
 
-.vertical-tab-content button.mod-cta {
+:is(.vertical-tab-content, .harness-editor) button.mod-cta {
 	background-color: var(--interactive-accent);
 	border-color: var(--interactive-accent);
 	color: var(--text-on-accent);
@@ -293,11 +342,11 @@ body.theme-dark {
    and squared off rather than taking the text button's padding.
 
    Scoped under the tab deliberately. A bare `.clickable-icon` is (0,1,0) and
-   loses to `.vertical-tab-content button` at (0,1,1), so every reset below is
+   loses to `:is(.vertical-tab-content, .harness-editor) button` at (0,1,1), so every reset below is
    silently discarded and an icon button renders with a text button's chrome
    squeezing the glyph down to nothing. Same failure the `.sheetsmith-view`
    scope rule exists to prevent, one stylesheet over. */
-.vertical-tab-content .clickable-icon {
+:is(.vertical-tab-content, .harness-editor) .clickable-icon {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
@@ -311,7 +360,7 @@ body.theme-dark {
 	cursor: pointer;
 }
 
-.vertical-tab-content .clickable-icon:hover {
+:is(.vertical-tab-content, .harness-editor) .clickable-icon:hover {
 	background-color: var(--background-modifier-hover);
 	color: var(--text-normal);
 }
@@ -319,6 +368,71 @@ body.theme-dark {
 .svg-icon {
 	width: var(--icon-s);
 	height: var(--icon-s);
+}
+
+/* ------------------------------------------------------------------------ *
+ * A workspace pane, as of Obsidian 1.13.
+ *
+ * The layout editor is a view in a leaf rather than a settings tab, so its
+ * frame is a different frame: the leaf's own box, the header strip carrying the
+ * view's name, and the scrolling content area a view builds into. Reproduced
+ * here for the same reason the settings card is — `harness:calibrate` replaces
+ * it with the real thing, and without it the pane would be reviewed with no
+ * frame at all, which is the state the settings tab was in before 1.13.
+ *
+ * Faithful rather than convenient, including `height: 100%` and the header's
+ * transparent border. A pane that is taller here than in the app is a pane
+ * whose overflow the harness cannot show.
+ * ------------------------------------------------------------------------ */
+body {
+	--header-height: 40px;
+	--file-header-font-size: var(--font-ui-small);
+	--file-header-font-weight: 400;
+	--file-header-border: 1px solid transparent;
+	--file-header-justify: center;
+}
+
+.workspace-leaf-content {
+	display: flex;
+	flex-direction: column;
+	width: 100%;
+	height: 100%;
+	overflow: hidden;
+	position: relative;
+	background-color: var(--background-primary);
+}
+
+.view-header {
+	display: flex;
+	gap: var(--size-4-2);
+	height: var(--header-height);
+	padding: 0 var(--size-4-3);
+	border-bottom: var(--file-header-border);
+	background-color: var(--background-primary);
+}
+
+.view-header-title-container {
+	display: flex;
+	flex: 1 1 auto;
+	align-items: center;
+	justify-content: var(--file-header-justify);
+	min-width: 0;
+	overflow: hidden;
+	font-size: var(--file-header-font-size);
+	font-weight: var(--file-header-font-weight);
+}
+
+.view-header-title {
+	max-width: 100%;
+	overflow: hidden;
+	color: var(--text-muted);
+	text-overflow: ellipsis;
+	white-space: pre;
+}
+
+.workspace-leaf-content .view-content {
+	padding: var(--size-4-3) var(--size-4-3) var(--size-4-8);
+	overflow: auto;
 }
 
 }
@@ -430,4 +544,34 @@ a {
 
 .harness-settings {
 	container-type: inline-size;
+}
+
+/*
+ * The editor pane, and the one place the harness deliberately disagrees with the
+ * app.
+ *
+ * Obsidian gives a leaf a fixed height and scrolls inside `.view-content`. A
+ * screenshot cannot scroll, so a pane held to the window's height would show its
+ * first frame and hide every finding below it — which is exactly how the sheet
+ * shots came to be reviewed against their top third once already. So the pane is
+ * allowed to grow here.
+ *
+ * The cost is stated rather than hidden: **overflow inside the pane is not
+ * visible in a shot**. The settings tab has always been shown this way for the
+ * same reason, so it is the harness's existing bargain rather than a new one, and
+ * it is unlayered so it beats the calibrated sheet as well as the fallback above.
+ *
+ * **It has cost a real defect once**, which is worth recording rather than
+ * leaving as a caveat. The pane shipped with one scroller for both columns, so
+ * selecting a row near the bottom of a long tree scrolled the panel out of the
+ * leaf entirely — invisible in every shot, because a 4600px full-page capture
+ * has no fold for anything to fall below. Anything about *where the fold is*
+ * has to be checked against a leaf given a real height, which today means a
+ * throwaway override of the two rules below rather than a mode this page
+ * offers.
+ */
+.harness-editor .workspace-leaf-content,
+.harness-editor .view-content {
+	height: auto;
+	overflow: visible;
 }
