@@ -1070,3 +1070,43 @@
 	font-size: var(--font-ui-small);
 	color: var(--text-muted);
 }
+
+/* A ticked flag in forced colors, where a fill is the whole of its state.
+
+   Obsidian repaints its own *toggle* for this mode — `SelectedItem` on the pill,
+   `ButtonBorder` around it and its thumb — and repaints nothing for the bare
+   checkbox. So a checked box's state is a background the mode discards, plus a
+   tick masked out of a second background it also discards, and **Show a total**
+   ticked lands pixel-identical to **Show a total** clear. That is UI §6's
+   one-channel rule, on the one control in the plugin whose state has no second
+   channel to fall back on: the box has no glyph of its own and no word beside it
+   that changes.
+
+   System colours because inside this query nothing else survives, and
+   `SelectedItem` specifically because it is what the app gives its own enabled
+   toggle — a form holding both then says "on" the same way twice.
+
+   Found the first time these were rendered as the app draws them at all; before
+   that the harness's stub put the toggle's own class on the input, and what the
+   review looked at was a native checkbox adrift in a 182px track.
+
+   **The scope is `checkField`'s, not this one class's.** `checkField` in
+   `editor/list-fields.ts` is the only thing in the plugin that makes a bare
+   checkbox, and it stamps the label before it makes the input, so the class is
+   where every one of them ends up rather than where the only one happens to be.
+   Widening this to the pane was weighed and refused: it is a different arbitrary
+   boundary rather than the rule the reason implies, and it would sweep in
+   Obsidian's own toggle, whose input is a grandchild of `.checkbox-container` at
+   `opacity: 0` and is not the plugin's to paint. `styles.test.ts` holds the
+   precondition instead, so a checkbox drawn outside the factory fails the build
+   rather than losing its state in silence. */
+@media (forced-colors: active) {
+	.sheetsmith-entry-check input[type='checkbox']:checked {
+		background-color: SelectedItem;
+		border-color: SelectedItem;
+	}
+
+	.sheetsmith-entry-check input[type='checkbox']:checked::after {
+		background-color: SelectedItemText;
+	}
+}
