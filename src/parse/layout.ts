@@ -8,7 +8,12 @@
 
 import { isName } from '../formula/expression';
 import { walkComponents } from './layout-walk';
-import { ComponentConfig, GridPosition, ResetBinding } from '../types';
+import {
+	ComponentConfig,
+	GRID_POSITION_KEYS,
+	GridPosition,
+	ResetBinding,
+} from '../types';
 
 export class LayoutParseError extends Error {
 	constructor(message: string) {
@@ -95,7 +100,7 @@ function parsePosition(value: unknown, where: string): GridPosition {
 		throw new LayoutParseError(`${where} needs a "position" object.`);
 	}
 	const position: Partial<GridPosition> = {};
-	for (const key of ['col', 'row', 'width', 'height'] as const) {
+	for (const key of GRID_POSITION_KEYS) {
 		const raw = value[key];
 		if (typeof raw !== 'number' || !Number.isInteger(raw) || raw < 1) {
 			throw new LayoutParseError(
