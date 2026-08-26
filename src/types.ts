@@ -32,6 +32,54 @@ export interface GridPosition {
 	height: number;
 }
 
+/**
+ * Every key of a placement, in the order a form offers them, keyed on the type
+ * so it cannot fall short of it.
+ *
+ * Two readers walk these four in order and neither can name them itself: the
+ * parser validates one number per key, and the editor's panel mints one field
+ * per key. A bare list spelled twice is `docs/PATTERNS.md` §1's one-step tier —
+ * the only thing a guard test could assert is that the copies still hold the
+ * same four — and it went from two spellings in one file to two in two when the
+ * panel moved out, which is the drift nothing can see by reading either file.
+ *
+ * **A `Record` rather than an array, and that is the whole of why it looks like
+ * this.** `readonly (keyof GridPosition)[]` is the obvious spelling and it only
+ * rejects a typo: a four-element array satisfies it while `GridPosition` holds
+ * five keys, so the fifth would be skipped by the parser and absent from the
+ * form with nothing saying so. `Record<keyof GridPosition, number>` does not
+ * compile until every key is named, which is §1's "where a type can carry the
+ * guard instead, prefer that" — the same shape as the editor's
+ * `Record<ColumnType, string>`, and for the same reason.
+ *
+ * The numbers are the order, read rather than assumed: `Object.keys` gives
+ * insertion order for string keys, but relying on that would make the order a
+ * property of how this object happens to be typed out.
+ */
+const POSITION_ORDER = {
+	col: 1,
+	row: 2,
+	width: 3,
+	height: 4,
+} satisfies Record<keyof GridPosition, number>;
+
+/**
+ * The four keys of `GridPosition`, in the order a form offers them.
+ *
+ * `readonly`, like `EDITOR_OWNED_KEYS` below and for the same reason: a shared
+ * vocabulary two modules iterate is one that neither may edit. The `satisfies`
+ * above guards what the list *contains* at compile time and says nothing about a
+ * reader calling `.reverse()` or `.push()` on it, which is a way to drift the one
+ * copy this export exists to prevent — measured, not assumed: appending
+ * `GRID_POSITION_KEYS.reverse()` to a consumer compiled before this annotation
+ * and does not after. It cannot be `as const` where its sibling can, because it
+ * is derived from the `Record` rather than written out, and that derivation is
+ * what carries the completeness guard.
+ */
+export const GRID_POSITION_KEYS: readonly (keyof GridPosition)[] = (
+	Object.keys(POSITION_ORDER) as (keyof GridPosition)[]
+).sort((a, b) => POSITION_ORDER[a] - POSITION_ORDER[b]);
+
 /** Reset behaviour for stateful components (SPEC §6). */
 export interface ResetBinding {
 	/** Name of the layout-defined trigger this component responds to. */
