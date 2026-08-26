@@ -16,7 +16,7 @@
  * check that stops it shipping that way twice.
  */
 
-import { readdirSync, readFileSync } from 'node:fs';
+import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { PARTS, renderStyles } from '../styles.build.mjs';
 
@@ -1003,5 +1003,95 @@ describe('styles.css is assembled, not authored', () => {
 			).trim();
 			expect(CSS).toContain(source);
 		}
+	});
+});
+
+describe('the flag rule\'s scope names every bare checkbox there is', () => {
+	/*
+	 * `editor.css` gives a ticked column flag its forced-colors mark through
+	 * `.sheetsmith-entry-check`, because in that mode a checkbox's state is a
+	 * fill and nothing else and the fill is discarded. That scope is only as
+	 * good as the claim that every bare checkbox in the plugin wears the class.
+	 *
+	 * The claim holds because `checkField` in `editor/list-fields.ts` is the sole
+	 * factory — its own header records that a fourth copy of the pattern is what
+	 * earned it a function (PATTERNS §1) — and it stamps the label before it
+	 * makes the input. So the scope tracks the factory rather than happening to
+	 * name the one class that exists today.
+	 *
+	 * **A wider selector was the other option and is worse.** Scoping to the pane
+	 * covers a checkbox drawn anywhere inside it, but it is a different arbitrary
+	 * boundary rather than the rule the reason implies — a checkbox's state is one
+	 * channel wherever it is — and it sweeps in Obsidian's own toggle, whose
+	 * `input` is a grandchild of `.checkbox-container` at `opacity: 0`. Painting a
+	 * background on a control the plugin does not draw is invisible here and
+	 * still not the plugin's to paint.
+	 *
+	 * So the scope stays narrow and this makes its precondition loud. Without it,
+	 * a checkbox built anywhere else keeps its state in the DOM, loses it in the
+	 * paint, and says nothing — visible only to someone shooting forced colors on
+	 * a view that happens to hold the new control.
+	 */
+	const CHECKBOX = /createEl\(\s*'input'\s*,\s*\{\s*type:\s*'checkbox'/g;
+	const LABEL = /cls:\s*'sheetsmith-entry-check'/g;
+
+	/** Every non-test `*.ts` under `src/`, by path relative to it. */
+	function sourceFiles(dir: URL, prefix = ''): string[] {
+		const found: string[] = [];
+		for (const entry of readdirSync(dir)) {
+			const url = new URL(entry, dir);
+			if (statSync(url).isDirectory()) {
+				found.push(
+					...sourceFiles(new URL(`${entry}/`, dir), `${prefix}${entry}/`),
+				);
+			} else if (entry.endsWith('.ts') && !entry.endsWith('.test.ts')) {
+				found.push(`${prefix}${entry}`);
+			}
+		}
+		return found;
+	}
+
+	const SRC = new URL('./', import.meta.url);
+	const counted = sourceFiles(SRC).map((file) => {
+		const source = readFileSync(new URL(file, SRC), 'utf8');
+		return {
+			file,
+			checkboxes: [...source.matchAll(CHECKBOX)].length,
+			labels: [...source.matchAll(LABEL)].length,
+		};
+	});
+
+	it('finds the checkbox it is meant to be checking', () => {
+		// A regex that quietly matched nothing would pass both cases below.
+		expect(counted.reduce((sum, one) => sum + one.checkboxes, 0)).toBeGreaterThan(0);
+	});
+
+	it('scopes the rule it is guarding to that class', () => {
+		// And that the stylesheet still says what this is about. Scoped to the
+		// forced-colors block, since an ordinary-theme rule for the same class is
+		// a different claim.
+		const forced = CSS.replace(/\/\*[\s\S]*?\*\//g, '').match(
+			/@media \(forced-colors: active\) \{[\s\S]*?\n\}/g,
+		);
+		expect(forced?.join('\n')).toContain(
+			".sheetsmith-entry-check input[type='checkbox']:checked",
+		);
+	});
+
+	it('draws none outside a file that makes the label', () => {
+		const stray = counted
+			.filter((one) => one.checkboxes > 0 && one.labels === 0)
+			.map((one) => one.file);
+		expect(stray).toEqual([]);
+	});
+
+	it('makes exactly one label per checkbox', () => {
+		// `checkField` writes the pair together, so a file holding them writes as
+		// many of one as of the other. A second checkbox added beside the factory
+		// rather than through it breaks the count.
+		const mismatched = counted
+			.filter((one) => one.checkboxes !== one.labels)
+			.map((one) => `${one.file}: ${one.checkboxes} boxes, ${one.labels} labels`);
+		expect(mismatched).toEqual([]);
 	});
 });
