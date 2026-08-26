@@ -1,6 +1,12 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it } from 'vitest';
-import { ListContext, renderColumnsEditor, renderRowsEditor } from './list-fields';
+import {
+	ListContext,
+	renderColumnsEditor,
+	renderEntriesEditor,
+	renderRowsEditor,
+} from './list-fields';
+import { EntryColumnSpec } from '../types';
 
 /*
  * The layout editor's list fields, which had no coverage until the obsidian
@@ -55,6 +61,66 @@ function rowsEditor(record: Record<string, unknown>): HTMLElement {
 	const el = host();
 	renderRowsEditor(el, record, 'rows', 'skills', context);
 	return el;
+}
+
+/** A Card set's own columns: a narrow abbreviation, then the word for it. */
+const KEY_AND_NAME: readonly [EntryColumnSpec, EntryColumnSpec] = [
+	{ key: 'key', heading: 'Key' },
+	{ key: 'name', heading: 'Full name' },
+];
+
+/**
+ * Render the entries editor over a config, as the form does.
+ *
+ * The columns are passed in rather than read off a component, which is the
+ * whole point of driving it from here: what the pane's cases assert is that a
+ * component's declaration reaches the field, and what these assert is what the
+ * field does with whatever declaration it is handed.
+ */
+function entriesEditor(
+	record: Record<string, unknown>,
+	options: {
+		key?: string;
+		withCount?: boolean;
+		columns?: readonly [EntryColumnSpec, EntryColumnSpec];
+	} = {},
+): HTMLElement {
+	const el = host();
+	renderEntriesEditor(
+		el,
+		record,
+		options.key ?? 'entries',
+		'abilities',
+		options.withCount ?? false,
+		options.columns ?? KEY_AND_NAME,
+		context,
+	);
+	return el;
+}
+
+/** A text input by its accessible name, which is its column's heading. */
+function cell(el: HTMLElement, label: string, index = 0): HTMLInputElement {
+	const found = el.querySelectorAll<HTMLInputElement>(
+		`.sheetsmith-entry-row input[aria-label="${label}"]`,
+	)[index];
+	if (!found) throw new Error(`no "${label}" cell at ${index}`);
+	return found;
+}
+
+/** Commit a field the way the editor hears it: on change, never per keystroke. */
+function commit(input: HTMLInputElement | HTMLSelectElement, value: string): void {
+	input.value = value;
+	input.dispatchEvent(new Event('change'));
+}
+
+/**
+ * The inline message under a field, as drawn. Read off the DOM rather than out
+ * of `context.errors` because the two are separate claims: this says the reader
+ * can see it now, and the map says it comes back after a rebuild. Both are
+ * asserted below, and the entry list used to make only the first one true.
+ */
+function fieldError(el: HTMLElement): string | null {
+	return el.querySelector('.sheetsmith-field-error')?.textContent ?? null;
 }
 
 function button(el: HTMLElement, text: string): HTMLButtonElement {
@@ -546,6 +612,15 @@ describe('rows editor', () => {
 		expect(() => button(el, 'Add row value')).not.toThrow();
 	});
 
+	it('ends its header with the row\'s control tracks', () => {
+		// Found while covering the entry list's copy of this line: commenting
+		// this call out left the whole suite green, so the last heading could
+		// slide out of line with the last input and nothing would say so.
+		expect(
+			rowsEditor(skills()).querySelectorAll('.sheetsmith-list-control-space'),
+		).toHaveLength(2);
+	});
+
 	it('adds a row carrying the value names its siblings have', () => {
 		const record = skills();
 		const el = rowsEditor(record);
@@ -662,5 +737,249 @@ describe('rows editor', () => {
 		expect(label.value).toBe('Acrobatics');
 		expect(record.rows[0]?.label).toBe('Acrobatics');
 		expect(context.errors.size).toBe(1);
+	});
+});
+
+/*
+ * The entry list, driven directly.
+ *
+ * Its two siblings above have been reachable from here since this file existed;
+ * this one arrived in `list-fields.ts` later and left its cases behind in
+ * `layout-editor.test.ts`, which drives it through a whole pane — a vault, a
+ * layout file and a settle per assertion. Those cases stay there, because what
+ * they assert needs the pane: that a *component's* declared columns reach the
+ * field, and that an edit lands in the file's bytes. What is below is the half
+ * that has no business costing a vault, and the half that was missing here: the
+ * loop this file exists for was green over a broken entry list (PATTERNS §10).
+ */
+describe('entries editor', () => {
+	const abilities = () => ({
+		entries: [{ key: 'STR', name: 'Strength' }, { key: 'DEX' }],
+	});
+
+	/** Spelled once: two cases assert it, and a copy change should find one. */
+	const TAKEN = '"STR" is already used by another entry, so this one was left as "DEX".';
+
+	it('calls its rows entries, and a counted list\'s rows rows', () => {
+		// The noun is the field's, not the caller's: an entries list has
+		// entries and a track's rows have rows, and the empty state is the one
+		// place a reader meets the word before there is anything to look at.
+		expect(entriesEditor({}).textContent).toContain('No entries yet.');
+		expect(entriesEditor({}, { withCount: true }).textContent).toContain(
+			'No rows yet.',
+		);
+	});
+
+	it('heads the two columns it was handed, and nothing else', () => {
+		const headings = Array.from(
+			entriesEditor(abilities()).querySelectorAll(
+				'.sheetsmith-entry-columns > span',
+			),
+		).map((el) => el.textContent);
+		expect(headings).toEqual(['Key', 'Full name']);
+	});
+
+	it('heads a counted list with the two it owns, plus the control tracks', () => {
+		// Segments and Sense are the field's own words, unlike the two above,
+		// because they are what `withCount` *is*. The trailing spacers are not
+		// decoration: without them the last heading stops lining up with the
+		// last input, which is invisible in a two-column list and wrong in this
+		// one.
+		const columns = entriesEditor(abilities(), {
+			withCount: true,
+		}).querySelector('.sheetsmith-entry-columns');
+		expect(
+			Array.from(columns?.querySelectorAll(':scope > span') ?? [])
+				.map((el) => el.textContent)
+				.filter((text) => text !== ''),
+		).toEqual(['Key', 'Full name', 'Segments', 'Sense']);
+		expect(
+			columns?.querySelectorAll('.sheetsmith-list-control-space'),
+		).toHaveLength(2);
+	});
+
+	it('says in a class which shape the list is, for the stylesheet', () => {
+		// Neither is inferable from the markup, and nothing else reports their
+		// loss: the list still renders and still round-trips while a word is
+		// clipped in a track sized for an abbreviation (PATTERNS §10).
+		const plain = entriesEditor(abilities());
+		expect(plain.classList.contains('sheetsmith-entry-counted')).toBe(false);
+		expect(plain.classList.contains('sheetsmith-entry-wide-first')).toBe(false);
+
+		const wide = entriesEditor(abilities(), {
+			withCount: true,
+			columns: [
+				{ key: 'value', heading: 'Value', wide: true },
+				{ key: 'label', heading: 'Label' },
+			],
+		});
+		expect(wide.classList.contains('sheetsmith-entry-counted')).toBe(true);
+		expect(wide.classList.contains('sheetsmith-entry-wide-first')).toBe(true);
+	});
+
+	it('writes each cell under the property name its column declared', () => {
+		// The exposure PATTERNS §11 carries as a row: the two cells write
+		// whatever `key` says, and a component reading a different word finds
+		// nothing while the list stays self-consistent. Asserted on a spelling
+		// no component uses, so it can only pass by reading the spec.
+		const record: Record<string, unknown> = {};
+		const el = entriesEditor(record, {
+			columns: [
+				{ key: 'value', heading: 'Value', wide: true },
+				{ key: 'label', heading: 'Label' },
+			],
+		});
+		button(el, 'Add entry').click();
+		expect(record.entries).toEqual([{ value: 'New entry' }]);
+
+		const again = entriesEditor(record, {
+			columns: [
+				{ key: 'value', heading: 'Value', wide: true },
+				{ key: 'label', heading: 'Label' },
+			],
+		});
+		commit(cell(again, 'Value'), 'Elf');
+		commit(cell(again, 'Label'), 'Elven');
+		expect(record.entries).toEqual([{ value: 'Elf', label: 'Elven' }]);
+	});
+
+	it('names the column when the first cell is cleared, and writes nothing', () => {
+		const record = abilities();
+		const el = entriesEditor(record);
+		commit(cell(el, 'Key'), '');
+		expect(fieldError(el)).toBe('A key is required, so it was left as "STR".');
+		expect(record.entries[0]?.key).toBe('STR');
+		expect(recorded.persists).toBe(0);
+		// The field must not be left displaying a value the file does not have,
+		// which is the rows editor's rule and now this one's.
+		expect(cell(el, 'Key').value).toBe('STR');
+	});
+
+	it('names the row when the first cell would duplicate another', () => {
+		// The refusal above names the column and this one names the row, which
+		// is the entry the author has to go and look at.
+		const record = abilities();
+		const el = entriesEditor(record);
+		commit(cell(el, 'Key', 1), 'STR');
+		expect(fieldError(el)).toBe(TAKEN);
+		expect(record.entries[1]).toEqual({ key: 'DEX' });
+		expect(cell(el, 'Key', 1).value).toBe('DEX');
+	});
+
+	it('remembers a refusal for the rebuild some other control causes', () => {
+		/*
+		 * The failure this closes: a refusal writes nothing and redraws
+		 * nothing, so before the map the message lived only as long as the DOM
+		 * that drew it. Edit anything that *does* redraw — the trigger list
+		 * will do — and the pane comes back with the stored name in the field
+		 * and no message anywhere. The typed value reverted, silently.
+		 *
+		 * The pane's `restoreFieldErrors` is what replays it, and it can only
+		 * replay what reached this map, keyed by the field's focus token.
+		 */
+		const record = abilities();
+		const el = entriesEditor(record);
+		commit(cell(el, 'Key', 1), 'STR');
+		expect([...context.errors]).toEqual([['attr-abilities-1-key', TAKEN]]);
+
+		// And a correction takes it back out, or the message outlives the
+		// mistake and the pane replays it forever.
+		commit(cell(el, 'Key', 1), 'CON');
+		expect(context.errors.size).toBe(0);
+	});
+
+	it('leaves the "left as" clause off when there is nothing to name', () => {
+		// An entry whose first column is blank can only have come from a
+		// hand-edited file, and `left as ""` describes nothing.
+		const record = { entries: [{ name: 'Strength' }] };
+		const el = entriesEditor(record);
+		commit(cell(el, 'Key'), '');
+		expect(fieldError(el)).toBe('A key is required.');
+	});
+
+	it('drops the second column\'s property when its cell is emptied', () => {
+		// Empty is the ordinary state, so the layout should not carry a key
+		// saying so — the same rule the rows editor's publish key follows.
+		const record = abilities();
+		const el = entriesEditor(record);
+		commit(cell(el, 'Full name'), '');
+		expect(record.entries[0]).not.toHaveProperty('name');
+		expect(recorded.persists).toBe(1);
+	});
+
+	it('stores a bare segment count as a number, and an expression as typed', () => {
+		// So a layout file reads `count: 5` rather than `count: "5"`, while a
+		// caster's slots stay the formula they were written as.
+		const record: Record<string, unknown> = { entries: [{ key: 'STR' }] };
+		const el = entriesEditor(record, { withCount: true });
+		commit(cell(el, 'STR segments'), '5');
+		expect(record.entries).toEqual([{ key: 'STR', count: 5 }]);
+		commit(cell(el, 'STR segments'), 'level + 1');
+		expect(record.entries).toEqual([{ key: 'STR', count: 'level + 1' }]);
+		commit(cell(el, 'STR segments'), '');
+		expect(record.entries).toEqual([{ key: 'STR' }]);
+	});
+
+	it('leaves the sense off a row that means what its card means', () => {
+		const record: Record<string, unknown> = { entries: [{ key: 'STR' }] };
+		const el = entriesEditor(record, { withCount: true });
+		const sense = el.querySelector(
+			'select[aria-label="STR sense"]',
+		) as HTMLSelectElement;
+		commit(sense, 'harm');
+		expect(record.entries).toEqual([{ key: 'STR', sense: 'harm' }]);
+		commit(sense, '');
+		expect(record.entries).toEqual([{ key: 'STR' }]);
+	});
+
+	it('reorders on the arrow keys, and names its controls without the entry', () => {
+		/*
+		 * The accessible names are the reason this list's controls are its own
+		 * rather than `addControls`, and the reason PATTERNS §11 carries that
+		 * duplication as a row: a row's and a column's controls name the item
+		 * they act on, and these deliberately do not. With both copies driven
+		 * from this file, the two namings are now side by side — which is what
+		 * a decision on them would have to change.
+		 */
+		const record = abilities();
+		const el = entriesEditor(record);
+		const handle = byLabel(el, 'Reorder: drag, or press the arrow keys');
+		handle.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
+		expect(record.entries.map((entry) => entry.key)).toEqual(['DEX', 'STR']);
+	});
+
+	it('removes an entry without asking, unlike a row or a column', () => {
+		// The other half of the same difference: `addControls` confirms before
+		// destroying something hand-written and this list never does.
+		const record = abilities();
+		const el = entriesEditor(record);
+		byLabel(el, 'Remove entry').click();
+		expect(record.entries).toEqual([{ key: 'DEX' }]);
+		expect(recorded.confirms).toEqual([]);
+	});
+
+	it('attaches the list on the first add and not on merely being shown', () => {
+		/*
+		 * Materialising the array on render wrote `entries: []` into a layout
+		 * for every component whose form was only *opened*, which is the editor
+		 * reformatting a file it was asked to show. The pane's own case holds
+		 * the half that needs the file — the empty list reaches disk on the
+		 * next write, whatever that write was for — and this holds the half
+		 * that does not: the key is absent until an add puts it there.
+		 */
+		const record: Record<string, unknown> = {};
+		const el = entriesEditor(record);
+		expect(Object.keys(record)).toEqual([]);
+		button(el, 'Add entry').click();
+		expect(record.entries).toEqual([{ key: 'New entry' }]);
+	});
+
+	it('numbers a second new entry rather than duplicating the first', () => {
+		const record: Record<string, unknown> = { entries: [{ key: 'New entry' }] };
+		button(entriesEditor(record), 'Add entry').click();
+		expect(record.entries).toEqual([
+			{ key: 'New entry' },
+			{ key: 'New entry 2' },
+		]);
 	});
 });
