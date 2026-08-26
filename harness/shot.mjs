@@ -133,9 +133,11 @@ const DEFAULTS = [
 	{
 		// The pane below it, stacked: schematic, tree, then panel. 1190 rather
 		// than a comfortably narrow width on purpose — the threshold is 1176px of
-		// pane and `.view-content` spends 24px of the window on padding, so this
-		// and the two above bracket the number itself rather than illustrating two
-		// arbitrary widths. Move it with the threshold.
+		// pane and 1190 of window is 1164 of pane, so this and the two above
+		// bracket the number itself rather than illustrating two arbitrary widths.
+		// Move it with the threshold. (The window loses 2px to Chrome before
+		// `.view-content` spends its 24 on padding; this comment used to name the
+		// padding alone and so put the pane 2px high.)
 		//
 		// Taller than EDITOR_FRAME because stacking puts the panel *under* the
 		// tree rather than beside it, and a frame that cropped the panel would
@@ -200,7 +202,30 @@ const DEFAULTS = [
 		query: 'surface=editor&theme=light&open=alignment&bounded',
 		size: '1400,900',
 	},
-
+	{
+		// The narrowest split there is, bounded. 1210 of window is 1184 of pane —
+		// eight pixels above the 1176 threshold, so this is the two-column regime
+		// at its tightest, and `editor-stacked` at 1190 is the same pane twelve
+		// pixels the other side of it. Two subtractions, as with the height:
+		// headless Chrome spends 2px of the width it is given, and `.view-content`
+		// spends 24 more on padding.
+		//
+		// Above the threshold rather than on it, deliberately. `size=1202` lands
+		// the pane on 1176 exactly and the panel on the 580px the CSS comment
+		// names — and sits one pixel from photographing the stacked regime
+		// instead, silently, in the shot that exists to show the split.
+		//
+		// It exists because `editor.css` stopped pinning the panel at 620 there:
+		// the two columns now share what the pane cannot give both, so the form is
+		// 584px here rather than 620 — half of 1184 less the gap. That is 36px
+		// under the width these forms are known at, and the only way to judge a
+		// form is to see it — bounded,
+		// because a form that reads fine laid out flat can still put its last
+		// field below the fold.
+		name: 'editor-threshold',
+		query: 'surface=editor&theme=light&open=inventory&bounded',
+		size: '1210,900',
+	},
 	{
 		// The narrow regime, which had no view at all: `editor-stacked` at 1190 was
 		// the narrowest editor shot, and everything below it was unlooked at. This

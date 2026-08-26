@@ -3376,19 +3376,42 @@ a.sheetsmith-undo {
    540 + 16 of gap + 620 = 1176. Wider than the sheet's own threshold on
    purpose: this is two surfaces side by side and that is one grid.
 
-   **The panel is fixed and the left column takes every pixel above the
-   threshold**, which means that between 1176 and 1256 the panel is the wider of
-   the two. That is deliberate and it is not the two floors disagreeing. 620 is a
-   width these forms are *known* to work at; 540 is a *minimum* below which a
-   grid stops being worth having, and a minimum is not a target — setting the
-   left column's floor to 620 as well would be borrowing the panel's number for
-   the schematic's question, which is the failure docs/UI.md §4 records at
-   length. The band is 80px and closes on its own. Splitting the slack instead
-   would never close it at any width, and raising the threshold to 1256 would
-   stack a pane whose split is perfectly legible — checked at 1176, where the
-   twelve tracks read and only a two-column card truncates, which it does at
-   every pane width. The fixed width goes to what you type into and the slack to
-   what you scan. */
+   **Between the threshold and 1256 neither column can have 620, and the panel
+   never takes more than half of what there is.** That is the whole of the second
+   rule, and it is what `min(620px, half)` says. The panel used to be pinned at
+   620 with the left column taking whatever was left, which answered the question
+   by never asking it: at 1176 the schematic sat at its 540px floor, 45px a track
+   for twelve columns, beside a four-field form at its full width. Measured
+   rather than argued — 45.0px a track at the threshold before, 48.3px after, and
+   from 1256 up the two rules are identical to the pixel, because half of 1256 is
+   620 and the cap takes over exactly where the band closes.
+
+   Which half gives way is the thing that was never decided, and the answer here
+   is *neither preferentially*. 620 is a width these forms are known to work at
+   and 540 is a floor below which a grid stops being worth having; a minimum is
+   not a target, so the left column is not given 620 as a floor of its own —
+   that would borrow the panel's number for the schematic's question, which is
+   the failure docs/UI.md §4 records at length. Sharing the shortfall needs no
+   second number: it is the one number already here, halved.
+
+   What it costs is stated rather than hidden: at the threshold the panel is
+   580px, 40px under the width it is known at. That number is arithmetic and not
+   a photograph — `editor-threshold` in `harness/shot.mjs` is the nearest bounded
+   shot *above* the threshold rather than on it, because a view sitting on a
+   container query's boundary is one pixel from capturing the other regime. Its
+   pane is 1184 and its panel 584, four pixels off the figure above. What it
+   shows at that width is a form that reads: the description column narrows and
+   nothing wraps, collides or leaves the leaf.
+
+   Two things the docs/UI.md §12 row that asked for this named, which measurement
+   says do not work and which are recorded here so they are not tried again.
+   `minmax(0, 1fr) minmax(0, 620px)` on its own changes nothing at any width: a
+   track's max is satisfied before an `fr` expands, so the panel still takes 620
+   first and the `minmax` never binds. And a `min-width` on the outline *element*
+   either does nothing — at 540 it is under the width the column already has — or
+   overflows the pane: at 620 the two items sum to 1256 inside 1176 and the leaf
+   grows a horizontal scrollbar, which is the `editor-narrow` failure arriving
+   80px above the threshold instead of 700px below it. */
 @container (min-width: 1176px) {
 /* Keyed on the panel being drawn, not on the grid existing. A grid track the
    template declares is reserved whether or not anything is in it, so a layout
@@ -3398,7 +3421,8 @@ a.sheetsmith-undo {
    enough: the rule is true by construction rather than by anyone remembering
    to stamp a class beside it. */
 .sheetsmith-layout-editor:has(> .sheetsmith-editor-panel) {
-		grid-template-columns: minmax(0, 1fr) 620px;
+		grid-template-columns: minmax(0, 1fr)
+			min(620px, calc((100% - var(--size-4-4)) / 2));
 		height: 100%;
 	}
 
