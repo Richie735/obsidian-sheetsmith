@@ -7,8 +7,9 @@ import { walkComponents } from '../parse/layout-walk';
 import { renderGrid } from '../view/grid-cells';
 import { App } from '../test/obsidian-stub';
 import { fakePlugin, LAYOUT_FOLDER } from '../test/plugin';
+import { cancel, pressDown, release } from '../test/pointer';
 import { openView } from '../test/workspace';
-import { ComponentConfig } from '../types';
+import { ComponentConfig, GridPosition } from '../types';
 import { getComponent, listComponentTypes, paletteEntries } from '../components';
 
 /*
@@ -186,6 +187,26 @@ function confirmAction(): void {
 	(button as HTMLButtonElement).click();
 }
 
+/**
+ * How many times the layout file has been written since this was installed.
+ *
+ * Counted rather than compared. Asserting the bytes are unchanged passes just as
+ * well when the editor rewrote the file with identical content — and passes
+ * trivially, so it would go on passing if the round trip ever broke. What the
+ * three callers each claim is about *writes*: that opening a form is not an
+ * edit, that a drag persists once on release rather than once a frame, and that
+ * a run of arrow keys goes through one debounce.
+ */
+function writes(harness: Harness): () => number {
+	let count = 0;
+	const modify = harness.app.vault.modify.bind(harness.app.vault);
+	harness.app.vault.modify = async (file, content) => {
+		count++;
+		return modify(file, content);
+	};
+	return () => count;
+}
+
 /** A named setting row's text, for asserting on what the editor offers. */
 function labels(harness: Harness): string[] {
 	return Array.from(
@@ -230,20 +251,11 @@ describe('opening a layout', () => {
 	});
 
 	it('does not write the file for having been opened', async () => {
-		// Counted rather than compared. Asserting the bytes are unchanged
-		// passes just as well when the editor rewrote the file with identical
-		// content — and passes trivially, so it would go on passing if the
-		// round trip below ever broke. The claim here is that opening a form
-		// is not an edit, and that is a claim about writes.
-		let writes = 0;
-		const modify = harness.app.vault.modify.bind(harness.app.vault);
-		harness.app.vault.modify = async (file, content) => {
-			writes++;
-			return modify(file, content);
-		};
-
+		// The claim is that opening a form is not an edit, and that is a claim
+		// about writes rather than about bytes; `writes` carries the argument.
+		const wrote = writes(harness);
 		await settle(harness.pane);
-		expect(writes).toBe(0);
+		expect(wrote()).toBe(0);
 	});
 
 	it('restores the file exactly when an edit is undone', async () => {
@@ -2159,6 +2171,577 @@ describe('a layout that omits its column count', () => {
 	});
 });
 
+/*
+ * The schematic's pointer gestures: dragging a block, dragging its corner, and
+ * the arrow keys.
+ *
+ * Here rather than in a file of their own, and the reason is §10 rather than
+ * convenience: one test file per module, beside it, and the module these drive is
+ * still `layout-editor.ts`. A sibling file would have to be named for the module
+ * `docs/PATTERNS.md` §11 says this gesture layer is going to become, which
+ * prejudges a cut that has not been made — and would leave a test file with no
+ * module beside it in the meantime. When the layer moves, this block moves with
+ * it, which is what the fixture and the helpers below are kept self-contained
+ * for.
+ */
+
+/**
+ * A layout whose three blocks are placed for the gestures, not for the tree.
+ *
+ * `fixture()` and `furnished()` are both shaped by what they were written for —
+ * a component with a reset binding, a container with a child — and every drag
+ * below needs a block with known room on each side of it. Stating that here is
+ * cheaper than reading a bound off a fixture that owes it to something else.
+ */
+function schematic(): Layout {
+	return {
+		name: 'Gesture sheet',
+		columns: 12,
+		components: [
+			// Room on the right and hard against the top and left, so a clamp is
+			// several columns away rather than one.
+			{
+				id: 'left',
+				type: 'card',
+				label: 'Left',
+				position: { col: 1, row: 1, width: 2, height: 1 },
+			},
+			// What `left` is dragged onto, so an overlap is one gesture away —
+			// and off both edges, so all four arrows have somewhere to go.
+			{
+				id: 'right',
+				type: 'card',
+				label: 'Right',
+				position: { col: 5, row: 2, width: 2, height: 1 },
+			},
+			// Ends flush at column 12, so it is against the right-hand bound
+			// before anything touches it.
+			{
+				id: 'edge',
+				type: 'card',
+				label: 'Edge',
+				position: { col: 11, row: 1, width: 2, height: 1 },
+			},
+		],
+		triggers: [],
+	};
+}
+
+/*
+ * The geometry happy-dom does not have.
+ *
+ * `previewMetrics` divides the schematic's `clientWidth` by its column count to
+ * get a track, and happy-dom reports 0 — so `track > 0` is false, the metrics
+ * come back null, and `beginDrag` returns before its first line of arithmetic.
+ * That is the whole reason this file had no pointer case until now, and it is
+ * the enabling step rather than a detail.
+ *
+ * **Spelled here rather than in `src/test/`**, on both rules that bear on it.
+ * §2 keeps that folder for scaffolding shared across tests, and `pointer.ts`'s
+ * own header is explicit that what lives there is the event *shape* every
+ * control is driven by; a grid's track width is not that. §1 is the other half:
+ * one consumer earns no shared module, and this has exactly one — the schematic
+ * is the only surface in the plugin a pointer lands on by grid cell. If a second
+ * ever appears, this moves and the header there says why.
+ *
+ * Only `clientWidth` is faked. Everything else `previewMetrics` reads resolves
+ * to nothing under happy-dom and falls back deliberately: the gaps and the
+ * padding to 0, `getBoundingClientRect` to the origin, and `grid-auto-rows` to
+ * the 44 the module itself names. So `ROW` is that fallback read back rather
+ * than a number chosen here, and a column is exactly `TRACK` wide with the grid
+ * starting at the viewport origin.
+ *
+ * **What that leaves undriven, and why it is left.** `previewMetrics` reads the
+ * gaps and the padding so that a theme moving either moves the drop targets with
+ * it, and nothing below holds it to that. Half of it cannot be held: `left` and
+ * `top` are a uniform offset and every gesture here is a *delta* from where the
+ * block was picked up, so the offset cancels and no drag can observe it. The
+ * other half — the gap coming out of the track width — is observable, but only
+ * at coordinates picked to straddle a cell boundary, since a gap-blind track is
+ * `W / n` against a gap-aware `(W + gap) / n` and the two agree almost
+ * everywhere. A case built on that would fail more readily over its own
+ * coordinates than over the code, which is why the padding and the gap are 0
+ * here and this paragraph is the record instead.
+ */
+const TRACK = 10;
+const ROW = 44;
+
+/** Give a schematic a measurable width: `columns` tracks of `TRACK` px. */
+function measure(el: HTMLElement, columns = 12): HTMLElement {
+	Object.defineProperty(el, 'clientWidth', {
+		value: columns * TRACK,
+		configurable: true,
+	});
+	return el;
+}
+
+/** The sheet's own schematic, measured so a pointer can land on a cell of it. */
+function sheetGrid(harness: Harness, columns = 12): HTMLElement {
+	const el = harness.container.querySelector('.sheetsmith-layout-preview');
+	if (!el) throw new Error('no schematic');
+	return measure(el as HTMLElement, columns);
+}
+
+/** The middle of grid cell (col, row), in client coordinates. */
+function at(col: number, row: number): PointerEventInit {
+	return {
+		clientX: (col - 1) * TRACK + TRACK / 2,
+		clientY: (row - 1) * ROW + ROW / 2,
+	};
+}
+
+/**
+ * Run the pointer to the middle of a grid cell.
+ *
+ * Dispatched directly rather than through `src/test/pointer.ts`, which is
+ * exactly where that module's header puts it: a `pointermove` is only ever part
+ * of a drag, and a drag chooses its own coordinates. `pointer-gestures.test.ts`
+ * scans for the down and the up, and both of those do go through it.
+ */
+function dragTo(cell: HTMLElement, col: number, row: number): void {
+	cell.dispatchEvent(
+		new PointerEvent('pointermove', { pointerId: 1, ...at(col, row) }),
+	);
+}
+
+/** What a block's cell says it is: `describeCell`, as a reader hears it. */
+function reads(harness: Harness, id: string): string {
+	return control(harness, `preview-${id}`).getAttribute('aria-label') ?? '';
+}
+
+/** The inline grid placement a gesture writes straight onto the cell. */
+function box(cell: HTMLElement): string {
+	return `${cell.style.gridColumn}, ${cell.style.gridRow}`;
+}
+
+/** A block's position as the layout file holds it. */
+async function position(
+	harness: Harness,
+	id: string,
+): Promise<GridPosition> {
+	const found = (await harness.stored()).components.find(
+		(component) => component.id === id,
+	);
+	if (!found) throw new Error(`no "${id}" in the stored layout`);
+	return found.position;
+}
+
+/**
+ * Press a key on a block, re-querying the cell every time.
+ *
+ * `nudge` redraws the schematic, so the element that took the last key is
+ * detached by the time the next one is pressed. A test holding one reference
+ * would be typing into a block that is no longer on screen.
+ *
+ * Hands the event back, and always `cancelable`, because whether the block
+ * consumed the key is half of what there is to assert: a key the schematic does
+ * not answer has to reach the browser.
+ *
+ * The third `pressKey` in the repository, after Card's and Track's, and
+ * `src/test/pointer.ts`'s header carries the argument for why three of these and
+ * one pointer press is the right split — read it there rather than trusting a
+ * restatement here. What is local to this one: it addresses a block by focus
+ * token, which is this module's own convention, and it hands the event back.
+ *
+ * **The re-query is a workaround, and it hides something.** Sending every key to
+ * a freshly resolved cell hand-delivers a run a keyboard could not: in the app
+ * the second key of a run reaches the block only because `drawSchematics`
+ * restores focus across the redraw it just caused. So the cases built on this
+ * helper drive the arithmetic and not the thing that lets a run happen at all,
+ * which is §10's `hold-repeat` failure — a caller that never exercises the path
+ * it depends on. `keeps the block focused across its own redraw` presses a run
+ * the way a keyboard does and holds that path; nothing else here does.
+ */
+function pressKey(
+	harness: Harness,
+	id: string,
+	key: string,
+	shift = false,
+): KeyboardEvent {
+	const event = new KeyboardEvent('keydown', {
+		key,
+		shiftKey: shift,
+		cancelable: true,
+	});
+	control(harness, `preview-${id}`).dispatchEvent(event);
+	return event;
+}
+
+describe('dragging a block around the schematic', () => {
+	beforeEach(async () => {
+		harness = await open(schematic());
+	});
+
+	it('starts nothing on a grid it cannot measure, or a press that is not the primary button', () => {
+		/*
+		 * Both of `beginDrag`'s refusals, and between them the vacuity guard for
+		 * every case below (§10). The first half is the untouched happy-dom
+		 * geometry: a schematic of no measurable width has no cell for a pointer
+		 * to be over, and a track of zero width divides every coordinate into an
+		 * infinite column. It is also the proof that `measure` is load bearing —
+		 * if these cases ever start passing without it, they have stopped driving
+		 * `place`.
+		 */
+		const unmeasured = control(harness, 'preview-left');
+		pressDown(unmeasured, at(1, 1));
+		dragTo(unmeasured, 4, 1);
+		expect(box(unmeasured)).toBe('1 / span 2, 1 / span 1');
+		expect(unmeasured.hasPointerCapture(1)).toBe(false);
+
+		sheetGrid(harness);
+		const cell = control(harness, 'preview-left');
+		pressDown(cell, { button: 2, ...at(1, 1) });
+		dragTo(cell, 4, 1);
+		expect(box(cell)).toBe('1 / span 2, 1 / span 1');
+		expect(cell.hasPointerCapture(1)).toBe(false);
+	});
+
+	it('follows the pointer on the cell itself, and writes the file once on release', async () => {
+		/*
+		 * The gesture's two halves at once, because they are the same claim seen
+		 * from either end. Only the dragged block's own grid position is written
+		 * while the pointer is down — rebuilding the preview would destroy the
+		 * element holding the pointer capture, and the drag would end on the
+		 * first move — and the rebuild and the write happen once, at the end.
+		 */
+		sheetGrid(harness);
+		const wrote = writes(harness);
+		const cell = control(harness, 'preview-left');
+
+		// Read off the event rather than asserted about the browser: the press
+		// suppresses the text selection and the native button drag, and it is
+		// also what suppresses the focus change — which is why `redraw` commits
+		// the function library rather than trusting a blur.
+		let down: Event | undefined;
+		cell.addEventListener('pointerdown', (event) => {
+			down = event;
+		});
+		pressDown(cell, { cancelable: true, ...at(1, 1) });
+		expect(down?.defaultPrevented).toBe(true);
+		expect(cell.hasPointerCapture(1)).toBe(true);
+		dragTo(cell, 2, 1);
+		expect(box(cell)).toBe('2 / span 2, 1 / span 1');
+		expect(cell.classList.contains('sheetsmith-preview-dragging')).toBe(true);
+		// Not a resize: the corner is the only thing that sets this.
+		expect(cell.classList.contains('sheetsmith-preview-resizing')).toBe(false);
+
+		dragTo(cell, 4, 3);
+		expect(box(cell)).toBe('4 / span 2, 3 / span 1');
+		// The same element throughout, so the capture it holds is still live.
+		expect(harness.container.contains(cell)).toBe(true);
+		expect(wrote()).toBe(0);
+
+		release(cell);
+		await settle(harness.pane);
+		expect(await position(harness, 'left')).toEqual({
+			col: 4,
+			row: 3,
+			width: 2,
+			height: 1,
+		});
+		expect(wrote()).toBe(1);
+		// One rebuild, on release: the cell that held the capture is gone, and
+		// the block reads out its new place.
+		expect(harness.container.contains(cell)).toBe(false);
+		expect(cell.classList.contains('sheetsmith-preview-dragging')).toBe(false);
+		expect(cell.hasPointerCapture(1)).toBe(false);
+		expect(reads(harness, 'left')).toBe('Left: column 4, row 3, 2×1');
+	});
+
+	it('measures the delta from where the block was picked up, not from the last frame', async () => {
+		/*
+		 * `place`'s own claim: a pointer that runs past a bound and comes back
+		 * resumes exactly. Accumulate the delta instead and the first frame
+		 * spends the block's whole remaining travel, so coming back one column
+		 * from the origin lands it at the bound rather than at column 2.
+		 */
+		sheetGrid(harness);
+		const cell = control(harness, 'preview-left');
+		pressDown(cell, at(1, 1));
+
+		dragTo(cell, 20, 1);
+		expect(box(cell)).toBe('11 / span 2, 1 / span 1');
+
+		// Out the other side, where the bound is a floor rather than a computed
+		// edge. The block is already against it, so an unclamped column shows up
+		// as a negative one the grid has no cell for.
+		dragTo(cell, -3, 1);
+		expect(box(cell)).toBe('1 / span 2, 1 / span 1');
+
+		dragTo(cell, 2, 1);
+		expect(box(cell)).toBe('2 / span 2, 1 / span 1');
+
+		// The row axis has a bound of its own — there is no row 0 for the grid to
+		// place a block on — and it is the same claim: held at 1 on the way out,
+		// and resumed from the origin on the way back rather than from the 1.
+		dragTo(cell, 2, -1);
+		expect(box(cell)).toBe('2 / span 2, 1 / span 1');
+		dragTo(cell, 2, 3);
+		expect(box(cell)).toBe('2 / span 2, 3 / span 1');
+
+		release(cell);
+		await settle(harness.pane);
+		expect(await position(harness, 'left')).toEqual({
+			col: 2,
+			row: 3,
+			width: 2,
+			height: 1,
+		});
+	});
+
+	it('marks a block held at the right-hand bound from the first frame', () => {
+		/*
+		 * The bail-out order inside `place`, which was chosen for this case: the
+		 * mark is about where the block *is*, not about it having just moved. A
+		 * block already flush at the last column is held on the frame it is
+		 * picked up on — the frame that changes nothing and returns early — so a
+		 * no-op check first would never show the feedback in the one case it
+		 * exists for.
+		 */
+		sheetGrid(harness);
+		const held = control(harness, 'preview-edge');
+		pressDown(held, at(11, 1));
+		dragTo(held, 11, 1);
+		expect(held.classList.contains('sheetsmith-preview-clamped')).toBe(true);
+		// And the frame really did change nothing, which is what makes this the
+		// early-return path rather than an ordinary move.
+		expect(box(held)).toBe('11 / span 2, 1 / span 1');
+		expect(held.classList.contains('sheetsmith-preview-dragging')).toBe(false);
+		release(held);
+
+		// The other half of the same toggle: a block with room is not marked, and
+		// gains the mark on the frame that spends the last of it.
+		const free = control(harness, 'preview-left');
+		pressDown(free, at(1, 1));
+		dragTo(free, 2, 1);
+		expect(free.classList.contains('sheetsmith-preview-clamped')).toBe(false);
+		dragTo(free, 11, 1);
+		expect(free.classList.contains('sheetsmith-preview-clamped')).toBe(true);
+		// And off again on the way back, or the block would read as held for the
+		// rest of a gesture that has room on both sides of it.
+		dragTo(free, 2, 1);
+		expect(free.classList.contains('sheetsmith-preview-clamped')).toBe(false);
+		release(free);
+	});
+
+	it('repaints the overlap marks and rewrites the labels mid-gesture', async () => {
+		/*
+		 * `markOverlaps`, driven. The paint-time case above pins the index
+		 * mapping it rests on without a pointer and says so; this is the half it
+		 * could not reach — the marks and the labels being kept true *during* a
+		 * drag, on both blocks of the collision and in both directions.
+		 *
+		 * The label is the part worth the assertion: it carries the block's
+		 * position and size, so a gesture that changes either has to rewrite it
+		 * rather than leave it describing where the block used to be.
+		 */
+		sheetGrid(harness);
+		const cell = control(harness, 'preview-left');
+		pressDown(cell, at(1, 1));
+
+		// Onto `right`, which spans columns 5-6 of row 2.
+		dragTo(cell, 4, 2);
+		expect(reads(harness, 'left')).toBe(
+			'Left: column 4, row 2, 2×1. Overlaps another component',
+		);
+		expect(reads(harness, 'right')).toBe(
+			'Right: column 5, row 2, 2×1. Overlaps another component',
+		);
+		expect(
+			Array.from(
+				harness.container.querySelectorAll('.sheetsmith-preview-overlap'),
+			).map((el) => el.textContent),
+		).toEqual(['Left', 'Right']);
+
+		// And off it again, which has to clear the mark on the block that never
+		// moved as well as on the one that did.
+		dragTo(cell, 8, 2);
+		expect(reads(harness, 'left')).toBe('Left: column 8, row 2, 2×1');
+		expect(reads(harness, 'right')).toBe('Right: column 5, row 2, 2×1');
+		expect(
+			harness.container.querySelectorAll('.sheetsmith-preview-overlap'),
+		).toHaveLength(0);
+
+		release(cell);
+		await settle(harness.pane);
+	});
+
+	it('resizes from the corner without also picking the whole block up', async () => {
+		/*
+		 * What the handle's `stopPropagation` is for. Both `pointerdown`
+		 * listeners are live — the handle's and, one hop up, the cell's — so
+		 * without it the corner starts a resize *and* a move, and every frame
+		 * writes the same delta into both pairs of numbers. `col` staying at 1 is
+		 * the whole assertion: the block grows to the right rather than walking
+		 * there.
+		 */
+		// Open on the block being resized, so the form's own numbers are on
+		// screen to follow. `finish` writes them the way `nudge` does — the drag
+		// is the other call site, and the panel showing a stale size after a
+		// gesture that changed it is the same failure at either.
+		control(harness, 'edit-left').click();
+		await settle(harness.pane);
+		sheetGrid(harness);
+		const cell = control(harness, 'preview-left');
+		const handle = cell.querySelector('.sheetsmith-preview-resize');
+		if (!handle) throw new Error('no resize handle');
+		// Bubbling on purpose, and it is what makes the case a case: an event
+		// that never reaches the cell would pass with the guard deleted.
+		pressDown(handle, { bubbles: true, ...at(2, 1) });
+
+		dragTo(cell, 4, 2);
+		expect(box(cell)).toBe('1 / span 4, 1 / span 2');
+		expect(cell.classList.contains('sheetsmith-preview-resizing')).toBe(true);
+		expect(cell.classList.contains('sheetsmith-preview-dragging')).toBe(true);
+
+		// A corner dragged back past the block's own origin: a block is at least
+		// one cell, and a zero-width or zero-height one is a block the grid
+		// cannot place at all.
+		dragTo(cell, -2, -2);
+		expect(box(cell)).toBe('1 / span 1, 1 / span 1');
+		dragTo(cell, 4, 2);
+
+		release(cell);
+		await settle(harness.pane);
+		expect(await position(harness, 'left')).toEqual({
+			col: 1,
+			row: 1,
+			width: 4,
+			height: 2,
+		});
+		expect(control<HTMLInputElement>(harness, 'pos-left-width').value).toBe('4');
+		expect(control<HTMLInputElement>(harness, 'pos-left-height').value).toBe('2');
+		expect(control<HTMLInputElement>(harness, 'pos-left-col').value).toBe('1');
+	});
+
+	it('puts the block back when the gesture is abandoned, whichever way it ends', async () => {
+		/*
+		 * Forgiveness on the one gesture where a mistake is a slip of the hand.
+		 * Escape and `pointercancel` are the same restore — no delta from the
+		 * origin is where the block was picked up — and neither may leave a
+		 * changed position in the file. The write still happens, because the
+		 * gesture did touch the layout and putting it back is a change to undo,
+		 * so the claim is about the numbers rather than about the write.
+		 */
+		sheetGrid(harness);
+		const escaped = control(harness, 'preview-left');
+		pressDown(escaped, at(1, 1));
+		dragTo(escaped, 6, 3);
+		expect(box(escaped)).toBe('6 / span 2, 3 / span 1');
+		escaped.ownerDocument.dispatchEvent(
+			new KeyboardEvent('keydown', { key: 'Escape' }),
+		);
+		expect(box(escaped)).toBe('1 / span 2, 1 / span 1');
+		await settle(harness.pane);
+		expect(await position(harness, 'left')).toEqual({
+			col: 1,
+			row: 1,
+			width: 2,
+			height: 1,
+		});
+
+		sheetGrid(harness);
+		const cancelled = control(harness, 'preview-left');
+		pressDown(cancelled, at(1, 1));
+		dragTo(cancelled, 6, 3);
+		cancel(cancelled);
+		expect(box(cancelled)).toBe('1 / span 2, 1 / span 1');
+		await settle(harness.pane);
+		expect(await position(harness, 'left')).toEqual({
+			col: 1,
+			row: 1,
+			width: 2,
+			height: 1,
+		});
+	});
+
+	it("writes into a container's own list, against the container's own grid", async () => {
+		/*
+		 * The gesture is parameterised over which list it writes rather than
+		 * copied per level, so both parameters have to follow the schematic and
+		 * not the sheet: the child's new position lands in `defences.children`,
+		 * and the bound it stops at is the container's six columns rather than
+		 * the twelve the sheet has. Every other case here drags on the sheet's
+		 * own schematic, where a column count read from a literal would pass.
+		 */
+		harness = await open(furnished());
+		control(harness, 'edit-defences').click();
+		await settle(harness.pane);
+
+		const inner = harness.container.querySelector(
+			'[data-sheetsmith-grid="defences"]',
+		);
+		if (!inner) throw new Error('no schematic for the container');
+		measure(inner as HTMLElement, 6);
+
+		const cell = control(harness, 'preview-armour');
+		pressDown(cell, at(1, 1));
+		dragTo(cell, 20, 2);
+		// Six columns, so a 2-wide child ends flush at column 6 and is held at 5.
+		// A sheet-width bound would have let it out to 11.
+		expect(box(cell)).toBe('5 / span 2, 2 / span 1');
+		// The repaint follows the schematic too, not the sheet's: the child's
+		// label is rewritten mid-gesture, which only happens if `markOverlaps`
+		// indexed the list it was handed.
+		expect(reads(harness, 'armour')).toBe('Armour class: column 5, row 2, 2×1');
+
+		release(cell);
+		await settle(harness.pane);
+		const stored = (await harness.stored()).components.find(
+			(component) => component.id === 'defences',
+		);
+		expect(stored?.children?.[0]?.position).toEqual({
+			col: 5,
+			row: 2,
+			width: 2,
+			height: 1,
+		});
+		// And nothing was written into the sheet's own list on the way past.
+		expect(await position(harness, 'abilities')).toEqual({
+			col: 7,
+			row: 1,
+			width: 6,
+			height: 1,
+		});
+	});
+
+	it('swallows the click a drag leaves behind, and only that one', async () => {
+		/*
+		 * A drag ends in a click on the same element, and that click meant "put
+		 * it here" rather than "select it". The panel's heading is what says
+		 * which: it stays on the layout's own settings through the drag, and an
+		 * ordinary press on the same block still selects — which is the half that
+		 * keeps the guard from being a way to break selection outright.
+		 */
+		sheetGrid(harness);
+		const heading = () =>
+			harness.container
+				.querySelector('.sheetsmith-editor-panel')
+				?.querySelector('.setting-item-heading')?.textContent;
+		expect(heading()).toBe('Layout');
+
+		const cell = control(harness, 'preview-left');
+		pressDown(cell, at(1, 1));
+		dragTo(cell, 4, 1);
+		release(cell);
+		// Synchronously, the way the browser dispatches it: `dragged` is cleared
+		// on the next turn of the loop.
+		cell.click();
+		await settle(harness.pane);
+		expect(heading()).toBe('Layout');
+
+		// A whole press with no move in it, which is what the guard has to tell
+		// apart from the drag above: `finish` leaves early when nothing moved, so
+		// the click that follows is an ordinary one.
+		const pressed = control(harness, 'preview-left');
+		pressDown(pressed, at(4, 1));
+		release(pressed);
+		pressed.click();
+		await settle(harness.pane);
+		expect(heading()).toBe('Left');
+	});
+});
+
 describe('nudging a block', () => {
 	it('writes the panel\'s four position fields without rebuilding the pane', async () => {
 		/*
@@ -2187,6 +2770,228 @@ describe('nudging a block', () => {
 			panel,
 		);
 		expect(control(harness, 'pos-abilities-col')).toBe(col);
+	});
+
+	it('moves the block with each of the four arrows, and never above row 1', async () => {
+		/*
+		 * All four deltas and the row floor in one run, because they are one
+		 * table: a missing entry is a key the block ignores, and the floor is the
+		 * `Math.max(1, …)` under it. Read off the block's own label rather than
+		 * the file, so what a reader hears is held to the same numbers.
+		 */
+		harness = await open(schematic());
+		expect(reads(harness, 'right')).toBe('Right: column 5, row 2, 2×1');
+
+		pressKey(harness, 'right', 'ArrowRight');
+		expect(reads(harness, 'right')).toBe('Right: column 6, row 2, 2×1');
+		pressKey(harness, 'right', 'ArrowLeft');
+		expect(reads(harness, 'right')).toBe('Right: column 5, row 2, 2×1');
+		pressKey(harness, 'right', 'ArrowDown');
+		expect(reads(harness, 'right')).toBe('Right: column 5, row 3, 2×1');
+		pressKey(harness, 'right', 'ArrowUp');
+		pressKey(harness, 'right', 'ArrowUp');
+		expect(reads(harness, 'right')).toBe('Right: column 5, row 1, 2×1');
+		// Already at the top, so this one has nowhere to go and must not write a
+		// row 0 the sheet's grid has no cell for.
+		pressKey(harness, 'right', 'ArrowUp');
+		expect(reads(harness, 'right')).toBe('Right: column 5, row 1, 2×1');
+
+		await settle(harness.pane);
+		expect(await position(harness, 'right')).toEqual({
+			col: 5,
+			row: 1,
+			width: 2,
+			height: 1,
+		});
+	});
+
+	it('resizes with shift held, and never below one row', async () => {
+		// The same table read the other way: shift writes the other pair of
+		// numbers, and `height` has the same floor `row` does.
+		harness = await open(schematic());
+
+		pressKey(harness, 'right', 'ArrowRight', true);
+		expect(reads(harness, 'right')).toBe('Right: column 5, row 2, 3×1');
+		pressKey(harness, 'right', 'ArrowDown', true);
+		expect(reads(harness, 'right')).toBe('Right: column 5, row 2, 3×2');
+		pressKey(harness, 'right', 'ArrowLeft', true);
+		pressKey(harness, 'right', 'ArrowUp', true);
+		expect(reads(harness, 'right')).toBe('Right: column 5, row 2, 2×1');
+		// A block one row tall cannot shrink further; a zero-height block is one
+		// the grid cannot place.
+		pressKey(harness, 'right', 'ArrowUp', true);
+		expect(reads(harness, 'right')).toBe('Right: column 5, row 2, 2×1');
+
+		await settle(harness.pane);
+		expect(await position(harness, 'right')).toEqual({
+			col: 5,
+			row: 2,
+			width: 2,
+			height: 1,
+		});
+	});
+
+	it('stops where the drag stops, moving and growing alike', async () => {
+		/*
+		 * The failure `preview-grid.test.ts` says it exists to catch, driven
+		 * through the gestures rather than through the function they share. That
+		 * file can only hold the arithmetic half — `lastColumn` returning these
+		 * numbers for these arguments — and not that the callers pass it the same
+		 * ones. The arguments are the part that has already differed: `nudge`
+		 * spells the moving pair `(columns, position.width, position.col)` and the
+		 * drag spells it `(metrics.columns, width, start.col)`, in two places
+		 * nothing keeps in step, and each gesture spells the growing pair a third
+		 * and fourth time.
+		 *
+		 * A fresh layout per run, deliberately. `lastColumn`'s floor lets a block
+		 * already past the edge stay there, so a second gesture on a block the
+		 * first has walked out to the bound would agree for the wrong reason.
+		 */
+		const pushed = async (
+			run: (fresh: Harness) => void,
+		): Promise<GridPosition> => {
+			const fresh = await open(schematic());
+			sheetGrid(fresh);
+			run(fresh);
+			await settle(fresh.pane);
+			return position(fresh, 'left');
+		};
+
+		const byArrows = await pushed((fresh) => {
+			for (let i = 0; i < 20; i++) pressKey(fresh, 'left', 'ArrowRight');
+		});
+		const byDrag = await pushed((fresh) => {
+			const cell = control(fresh, 'preview-left');
+			pressDown(cell, at(1, 1));
+			dragTo(cell, 20, 1);
+			release(cell);
+		});
+		const byShiftArrows = await pushed((fresh) => {
+			for (let i = 0; i < 20; i++) pressKey(fresh, 'left', 'ArrowRight', true);
+		});
+		const byCorner = await pushed((fresh) => {
+			const cell = control(fresh, 'preview-left');
+			// Unguarded, which `pointer.ts` allows only where something after the
+			// gesture would notice a selector that missed: a handle that is not
+			// there presses nothing, and the width below stays at 2.
+			pressDown(cell.querySelector('.sheetsmith-preview-resize'), {
+				bubbles: true,
+				...at(2, 1),
+			});
+			dragTo(cell, 20, 1);
+			release(cell);
+		});
+
+		// Real numbers, not merely equal ones. A 2-wide block pushed right ends
+		// flush at column 12, so its `col` stops at 11; grown from column 1 the
+		// same edge is a width of 12.
+		expect(byArrows.col).toBe(11);
+		expect(byDrag.col).toBe(byArrows.col);
+		expect(byShiftArrows.width).toBe(12);
+		expect(byCorner.width).toBe(byShiftArrows.width);
+	});
+
+	it('keeps the block focused across its own redraw, so a run of keys lands', async () => {
+		/*
+		 * `nudge` redraws the schematic under the block that just took the key, so
+		 * every other case here re-queries the cell between presses. This is the
+		 * one that does not: focus lands on the block once, and every key after
+		 * that goes to whatever holds focus — which is a run only if
+		 * `drawSchematics` put the focus back on the block it redrew out from
+		 * under.
+		 *
+		 * Distinct from the panel's restore below, which is the same idea at a
+		 * different scope: that one is `pendingFocus` across a whole pane rebuild,
+		 * keyed on a control the author was standing in. This is the schematic's
+		 * own, which no rebuild of the pane is involved in.
+		 */
+		/** Whatever holds focus, refusing to carry on once it is the body. */
+		const focused = (): HTMLElement => {
+			const active = document.activeElement;
+			if (!active || active === document.body) {
+				throw new Error('focus was dropped to the body');
+			}
+			return active as HTMLElement;
+		};
+
+		/** Three keys, each sent to whatever holds focus rather than to a cell. */
+		const run = (into: Harness, id: string): void => {
+			control(into, `preview-${id}`).focus();
+			for (let i = 0; i < 3; i++) {
+				const before = focused();
+				before.dispatchEvent(
+					new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true }),
+				);
+				// A different element every time — `drawSchematic` empties the grid
+				// in place — so the focus followed the block by its token rather
+				// than staying on a node no longer in the document.
+				expect(focused()).not.toBe(before);
+				expect(focused()).toBe(control(into, `preview-${id}`));
+			}
+		};
+
+		harness = await open(schematic());
+		run(harness, 'right');
+		await settle(harness.pane);
+		// All three keys landed on the block, which is what the focus was for.
+		expect(await position(harness, 'right')).toEqual({
+			col: 8,
+			row: 2,
+			width: 2,
+			height: 1,
+		});
+
+		// And on a container's own schematic, which is what the restore is scoped
+		// for: it searches the grid the block came out of, and a child is not in
+		// the sheet's.
+		const nested = await open(furnished());
+		control(nested, 'edit-defences').click();
+		await settle(nested.pane);
+		run(nested, 'armour');
+		await settle(nested.pane);
+		const stored = (await nested.stored()).components.find(
+			(component) => component.id === 'defences',
+		);
+		expect(stored?.children?.[0]?.position.col).toBe(4);
+	});
+
+	it('leaves a key it does not answer to the browser', async () => {
+		// Four keys and nothing else, which is what lets Tab out of the schematic
+		// and Enter through to the click that selects. Both halves are the claim:
+		// the block does not move, and the key is not consumed.
+		harness = await open(schematic());
+		const before = reads(harness, 'right');
+
+		for (const key of ['Tab', 'Enter', 'Home', 'PageDown']) {
+			expect(pressKey(harness, 'right', key).defaultPrevented).toBe(false);
+			expect(reads(harness, 'right')).toBe(before);
+		}
+		// And an arrow is consumed, or the schematic would scroll under the block
+		// it just moved.
+		expect(pressKey(harness, 'right', 'ArrowRight').defaultPrevented).toBe(true);
+	});
+
+	it('writes once for a run of arrows, however many were pressed', async () => {
+		// The other half of what `nudge` avoids a rebuild for. Holding an arrow
+		// key is the one rapid-fire gesture in the editor, and a write per repeat
+		// is a file rewritten as fast as the key repeats.
+		harness = await open(schematic());
+		const wrote = writes(harness);
+
+		pressKey(harness, 'right', 'ArrowRight');
+		pressKey(harness, 'right', 'ArrowRight');
+		pressKey(harness, 'right', 'ArrowDown');
+		pressKey(harness, 'right', 'ArrowDown');
+		expect(wrote()).toBe(0);
+
+		await settle(harness.pane);
+		expect(wrote()).toBe(1);
+		expect(await position(harness, 'right')).toEqual({
+			col: 7,
+			row: 4,
+			width: 2,
+			height: 1,
+		});
 	});
 });
 
