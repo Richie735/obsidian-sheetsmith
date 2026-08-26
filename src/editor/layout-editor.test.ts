@@ -2175,14 +2175,22 @@ describe('a layout that omits its column count', () => {
  * The schematic's pointer gestures: dragging a block, dragging its corner, and
  * the arrow keys.
  *
- * Here rather than in a file of their own, and the reason is §10 rather than
- * convenience: one test file per module, beside it, and the module these drive is
- * still `layout-editor.ts`. A sibling file would have to be named for the module
- * `docs/PATTERNS.md` §11 says this gesture layer is going to become, which
- * prejudges a cut that has not been made — and would leave a test file with no
- * module beside it in the meantime. When the layer moves, this block moves with
- * it, which is what the fixture and the helpers below are kept self-contained
- * for.
+ * **The layer these drive now lives in `schematic-gestures.ts`, and these cases
+ * stayed.** That is a departure from §10's one test file per module, and the
+ * reason is the harness above rather than the cases below: every one of them is
+ * driven through a real pane — `open` writes a layout file into a stub vault and
+ * renders `LayoutEditorView` — because the pane's answers to what is open and
+ * what is selected are the ones that ship. A sibling test file cannot import
+ * that harness: §2 keeps `src/test/` for scaffolding and a test file is not
+ * scaffolding, so moving these means designing the workspace fixture §11's third
+ * row prices as its own piece of work. The cheaper alternative — a
+ * `SchematicGestures` built over a fake host and a hand-made cell — would
+ * rewrite every assertion here to test the seam instead of the gesture.
+ *
+ * So the cases did not move when the code did, and this comment is the record of
+ * why rather than an oversight. **The extraction itself left them untouched:** not
+ * one assertion changed and no import either, which is the strongest thing that
+ * can be said for a pure movement.
  */
 
 /**
