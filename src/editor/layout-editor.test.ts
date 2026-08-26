@@ -36,6 +36,27 @@ import { getComponent, listComponentTypes, paletteEntries } from '../components'
  * What is checked here is the editor's contract with the *file*: which edit
  * lands as which key, what is left out, and what is never touched. How it
  * looks is `docs/UI.md`'s business and the harness's.
+ *
+ * **Half the code these drive now lives in `config-panel.ts`, and the cases
+ * stayed.** That is the same departure from §10 the gesture block below records,
+ * and by now a different reason: `src/test/workspace.ts` and `src/test/plugin.ts`
+ * exist, so a sibling file *can* open a real pane — `layout-editor-view.test.ts`
+ * does. What it cannot import is the harness above, which is a test file's own
+ * and not scaffolding (§2), and the panel has no entry point of its own anyway:
+ * every case below reaches a form by pressing a tree row or a schematic block,
+ * both of which are the outline's. Several make one claim about both regions at
+ * once on purpose — a container that may hold nothing gets no grid *and* a
+ * sentence saying why; a tab set draws no schematic *and* lists its tabs — and
+ * splitting those means rewriting them, which is the one thing a movement may
+ * not do.
+ *
+ * **The extraction itself left them untouched:** not one assertion changed and no
+ * import either. Three were added *after* it, and the boundary matters because
+ * commits are split against these records: `reads a typed definition back`,
+ * `reads both fields back`, and `keeps an inline error on a field the rebuild
+ * draws again`. Each is coverage the new seam owed — `commitPending` and the
+ * errors map are the two members of `ConfigPanelHost` that carry state across a
+ * rebuild, and nothing here could tell either of them from a no-op.
  */
 
 /** A layout with one plain component and one that can act on a reset. */
@@ -2128,6 +2149,49 @@ describe("the layout's own settings", () => {
 			panel,
 		);
 	});
+
+	it('reads a typed definition back without waiting for a change event', async () => {
+		/*
+		 * The whole reason the panel's two textareas are *read* on close rather
+		 * than trusted to blur: a pointerdown on the grid calls preventDefault,
+		 * which suppresses the focus change and the textarea's `change` with it,
+		 * so clicking a block after typing a definition would discard it. The
+		 * value is set and no event is fired, which is the state a pane closes in.
+		 *
+		 * **Added after the panel moved out, not during.** `flush` used to read
+		 * the two fields itself; it now asks the panel for them and writes only
+		 * where something changed, and that answer being *used* is a claim
+		 * nothing made — dropping it left every case green, because every other
+		 * path into these fields goes through their own change listener.
+		 */
+		const library = control<HTMLTextAreaElement>(harness, 'function-library');
+		library.value = 'mod(score) = floor((score - 10) / 2)\ndouble(n) = n * 2';
+		await settle(harness.pane);
+
+		expect((await harness.stored()).functions).toEqual([
+			'mod(score) = floor((score - 10) / 2)',
+			'double(n) = n * 2',
+		]);
+	});
+
+	it('reads both fields back, not only the first one that changed', async () => {
+		// Two fields, both dirty, and the trigger list read first. `||` over the
+		// two commits short-circuits past the second whenever the first changed,
+		// which is precisely how a library gets lost — so the panel evaluates
+		// both into locals before combining them, and this is what says so.
+		const triggers = control<HTMLTextAreaElement>(harness, 'trigger-list');
+		const library = control<HTMLTextAreaElement>(harness, 'function-library');
+		triggers.value = 'Long rest\nShort rest';
+		library.value = 'mod(score) = floor((score - 10) / 2)\ndouble(n) = n * 2';
+		await settle(harness.pane);
+
+		const stored = await harness.stored();
+		expect(stored.triggers).toEqual(['Long rest', 'Short rest']);
+		expect(stored.functions).toEqual([
+			'mod(score) = floor((score - 10) / 2)',
+			'double(n) = n * 2',
+		]);
+	});
 });
 
 describe('a layout that omits its column count', () => {
@@ -3088,6 +3152,41 @@ describe('a control that redraws the pane', () => {
 		expect(toggle.classList.contains('checkbox-container')).toBe(true);
 		expect(toggle.dataset.sheetsmithFocus).toBeTruthy();
 		expect(control(harness, toggle.dataset.sheetsmithFocus ?? '')).toBe(toggle);
+	});
+
+	it('keeps an inline error on a field the rebuild draws again', async () => {
+		/*
+		 * The other half of surviving a redraw, and the half focus does not
+		 * cover: an error is drawn into DOM the rebuild tears down, so it lives in
+		 * a map keyed by focus token and is replayed afterwards. Correcting one
+		 * field must not silently clear the message on another, and a message
+		 * about a control that has gone is worse than none — which is why the
+		 * replay also forgets what it cannot find.
+		 *
+		 * **Added after the panel moved out, not during.** The map is now the one
+		 * member of `ConfigPanelHost` that is not a command, precisely because it
+		 * outlives the panel that writes into it; handing the panel a map of its
+		 * own left every case green, which made the decision §11 left open
+		 * unfalsifiable either way.
+		 */
+		control(harness, 'edit-abilities').click();
+		await settle(harness.pane);
+
+		const input = control<HTMLInputElement>(harness, 'pos-abilities-col');
+		type(input, '0');
+		expect(input.classList.contains('sheetsmith-input-invalid')).toBe(true);
+
+		// A control on the same form that redraws the pane, so the field comes
+		// back under the same token rather than going away.
+		choose(control<HTMLSelectElement>(harness, 'cfg-abilities-direction'), 'vertical');
+		await settle(harness.pane);
+
+		const redrawn = control<HTMLInputElement>(harness, 'pos-abilities-col');
+		expect(redrawn).not.toBe(input);
+		expect(redrawn.classList.contains('sheetsmith-input-invalid')).toBe(true);
+		expect(redrawn.parentElement?.textContent).toContain(
+			'Whole number, 1 or more.',
+		);
 	});
 });
 
