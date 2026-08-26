@@ -1788,11 +1788,17 @@ describe('a list field naming its own columns', () => {
 		const value = harness.container.querySelector('input[aria-label="Value"]');
 		type(value as HTMLInputElement, '');
 		await settle(harness.pane);
-		// "A key is required" over a column headed Value points at nothing on
-		// screen.
+		/*
+		 * The column's own word, and only that: "A key is required" over a
+		 * column headed Value points at nothing on screen. Deliberately not the
+		 * whole sentence — `list-fields.test.ts` owns the wording, and spelling
+		 * it in both files means a copy change has to find both. What this case
+		 * is for is that the *component's* heading reached the message, which is
+		 * the half only a pane can show.
+		 */
 		expect(
 			harness.container.querySelector('.sheetsmith-field-error')?.textContent,
-		).toBe('A value is required.');
+		).toContain('A value is required');
 		// And the list is unchanged: a refused edit writes nothing.
 		const stored = (await harness.stored()).components[0] as unknown as {
 			options: { value: string }[];
