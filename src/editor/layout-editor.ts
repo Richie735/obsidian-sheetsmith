@@ -7,47 +7,28 @@ import {
 	Setting,
 	TFile,
 } from 'obsidian';
+import { acceptsChildren } from './accepts-children';
 import { getComponent, listComponentTypes, paletteEntries } from '../components';
-import { conditionMet } from './config-fields';
-import { copyableName } from './copyable-name';
-import { onCommit } from './field-commit';
+import { componentDisplayName, placedComponentName } from './component-name';
+import { ConfigPanel } from './config-panel';
 import { showFieldError } from './field-error';
-import { groupHeading, panelTitle } from './form-group';
 import { ConfirmModal } from '../ui/confirm-modal';
-import {
-	commitFunctionLibrary,
-	FunctionLibraryField,
-	renderFunctionLibrary,
-} from './function-library-field';
 import { createLayout, listLayouts } from '../layouts';
-import {
-	ListContext,
-	moveItem,
-	renderColumnsEditor,
-	renderEntriesEditor,
-	renderRowsEditor,
-} from './list-fields';
+import { ListContext } from './list-fields';
 import type SheetsmithPlugin from '../main';
 import {
 	DEFAULT_COLUMNS,
 	Layout,
-	mayHoldChildren,
 	parseLayout,
 	serialiseLayout,
 } from '../parse/layout';
 import { WalkEntry, walkComponents } from '../parse/layout-walk';
 import { describeCell, findOverlaps } from './preview-grid';
-import { renderResetField } from './reset-field';
 import {
 	Schematic,
 	SchematicGestures,
 } from './schematic-gestures';
-import {
-	commitTriggerList,
-	renderTriggerList,
-	TriggerListField,
-} from './trigger-list-field';
-import { ComponentConfig, isContainer, placesChildren } from '../types';
+import { ComponentConfig, placesChildren } from '../types';
 import { childIsPlaced, innerPlacement } from '../view/grid-cells';
 
 /** Dropdown sentinel; layout file names can never collide with it. */
@@ -117,12 +98,18 @@ interface Regions {
 }
 
 /**
- * The layout editor: the tree of what a layout holds, and the panel configuring
- * whichever one is selected. Covers creating layouts and configuring their
- * components. Knows no component types — component-specific fields come from
- * each `configFields` declaration — and knows nothing about a leaf either: it
- * renders into an element it is handed, and asks its host for the two pieces of
- * posture that are the pane's to remember.
+ * The outline of the layout editor: the picker naming which layout is open, the
+ * schematics of the grids it holds, the tree of everything in it, and the row
+ * that adds one. Knows no component types — the panel beside it builds a form
+ * from each `configFields` declaration, and `config-panel.ts` is what draws it —
+ * and knows nothing about a leaf either: it renders into an element it is
+ * handed, and asks its host for the two pieces of posture that are the pane's to
+ * remember.
+ *
+ * It still owns the *render*, which is why the class is not named for the
+ * outline alone: it loads the file, draws both regions, and applies the pending
+ * focus and flash afterwards. What it no longer holds is the configuration of
+ * whatever is selected (`docs/PATTERNS.md` §11).
  *
  * Text fields commit on change (blur or Enter), never per keystroke, and
  * invalid input shows an inline error instead of being silently ignored.
@@ -160,14 +147,8 @@ export class LayoutEditorSection {
 	private fieldErrors = new Map<string, string>();
 	/** Generation counter; a render that awaits and comes back stale bails. */
 	private renderId = 0;
-	/**
-	 * The function library field, so its text can be read back on close
-	 * rather than waited on. Held with the layout it edits, because a stale
-	 * field must never write into the layout that replaced it.
-	 */
-	private functions: FunctionLibraryField | null = null;
-	/** The trigger list field, read back on close for the same reason. */
-	private triggers: TriggerListField | null = null;
+	/** The panel drawing whatever is selected, and the fields it holds. */
+	private panel: ConfigPanel;
 
 	/** Debounced persist, used only by rapid-fire paths (keyboard nudging). */
 	private persistSoon = debounce(() => void this.persist(), 500, true);
@@ -210,9 +191,31 @@ export class LayoutEditorSection {
 			persist: () => void this.persist(),
 			persistSoon: () => this.persistSoon(),
 			markOverlaps: (schematic) => this.markOverlaps(schematic),
-			syncPositionFields: (config) => this.syncPositionFields(config),
+			// Delegated rather than answered here: those four fields are the
+			// panel's own, minted under the panel's own token, so finding them
+			// again from out here would be this half querying for controls the
+			// other half drew.
+			syncPositionFields: (config) => this.panel.syncPositionFields(config),
 			redrawSchematics: () => this.drawSchematics(),
 			select: (id) => this.select(id),
+		});
+		// The same mapping one region over, and the same reasons for the arrows.
+		// `errors` is the exception and deliberately not a getter: the panel is
+		// handed the map itself, so both halves write into one map rather than two
+		// answering the same question.
+		this.panel = new ConfigPanel({
+			persist: () => void this.persist(),
+			redraw: () => this.redraw(),
+			redrawSchematics: () => this.drawSchematics(),
+			// The sheet's own schematic is the first, and a pane that gave up
+			// before drawing one has none — which is why the guard is here rather
+			// than in the field that asks.
+			setGridColumns: (columns) => {
+				const sheet = this.schematics[0];
+				if (sheet) sheet.columns = columns;
+			},
+			errors: this.fieldErrors,
+			listContext: () => this.listContext(),
 		});
 	}
 
@@ -226,13 +229,11 @@ export class LayoutEditorSection {
 
 	/** Write any pending edit now. Called before a redraw, and on tab close. */
 	flush(): void {
-		// Both are read rather than waited on, and either can be holding an
-		// edit when the pane closes. Evaluated into locals first: `||` would
-		// short-circuit past the second commit whenever the first changed,
-		// which is precisely how a library gets lost.
-		const triggersChanged = commitTriggerList(this.triggers);
-		const functionsChanged = commitFunctionLibrary(this.functions);
-		if (triggersChanged || functionsChanged) void this.persist();
+		// The panel's two textarea fields are read rather than waited on, and
+		// either can be holding an edit when the pane closes. Which fields those
+		// are is the panel's to know; that they are read before the write is
+		// this method's.
+		if (this.panel.commitPending()) void this.persist();
 		this.persistSoon.run();
 	}
 
@@ -385,17 +386,7 @@ export class LayoutEditorSection {
 		this.renderAddRow(outline, layout);
 		this.drawSchematics();
 
-		if (selected) {
-			this.renderComponentForm(
-				panel,
-				layout,
-				selected.config,
-				selected.depth,
-				selected.parent,
-			);
-		} else {
-			this.renderLayoutSettings(panel, layout);
-		}
+		this.panel.render(panel, layout, selected);
 
 		this.restoreFieldErrors(container);
 
@@ -445,11 +436,6 @@ export class LayoutEditorSection {
 		);
 	}
 
-	/** Show an inline error, and remember it across the next rebuild. */
-	private fieldError(input: HTMLInputElement, message: string | null): void {
-		showFieldError(input, message, this.fieldErrors);
-	}
-
 	/**
 	 * Put back the inline errors whose field is still on screen, and forget
 	 * the ones whose field is gone — a message about a control that no longer
@@ -462,7 +448,7 @@ export class LayoutEditorSection {
 				`[data-sheetsmith-focus="${CSS.escape(token)}"]`,
 			);
 			if (input?.instanceOf(HTMLInputElement)) {
-				this.fieldError(input, message);
+				showFieldError(input, message, this.fieldErrors);
 			} else {
 				this.fieldErrors.delete(token);
 			}
@@ -642,20 +628,6 @@ export class LayoutEditorSection {
 			const config = schematic.components[index];
 			if (config) cell.setAttribute('aria-label', describeCell(config, overlaps));
 		});
-	}
-
-	/** Write a component's position back into its open form, if it has one. */
-	private syncPositionFields(config: ComponentConfig): void {
-		const container = this.regions?.panel;
-		if (!container) return;
-		for (const key of ['col', 'row', 'width', 'height'] as const) {
-			const field = container.querySelector(
-				`[data-sheetsmith-focus="${CSS.escape(`pos-${config.id}-${key}`)}"]`,
-			);
-			if (field?.instanceOf(HTMLInputElement)) {
-				field.value = String(config.position[key]);
-			}
-		}
 	}
 
 	/**
@@ -1054,487 +1026,6 @@ export class LayoutEditorSection {
 		});
 	}
 
-	/**
-	 * The layout's own settings: the grid it places components on, the functions
-	 * its formulas may call, and the triggers its components reset on.
-	 *
-	 * Reached by selecting the `Layout` row, which is why there is no second kind
-	 * of panel. Both textarea fields already took a container and a layout and
-	 * knew nothing about a settings tab, so they move rather than being
-	 * rewritten — and the function library's own header asked for exactly this:
-	 * below the component forms "the definitions are a scroll away from the
-	 * formulas calling them, which is a side panel's job to fix".
-	 */
-	private renderLayoutSettings(panel: HTMLElement, layout: Layout): void {
-		const form = panel.createDiv('sheetsmith-component-form');
-		// The tree row that got here says `Layout`, so this does too. The layout's
-		// own name is the picker's, one column over, and saying it twice would be
-		// two answers to "which layout is this".
-		panelTitle(form, 'Layout');
-		this.renderColumnCount(form, layout);
-		this.triggers = renderTriggerList(form, layout, {
-			persist: () => void this.persist(),
-			redraw: () => this.redraw(),
-		});
-		this.functions = renderFunctionLibrary(form, layout, {
-			persist: () => void this.persist(),
-		});
-	}
-
-	/**
-	 * How many columns the grid places components across.
-	 *
-	 * The first control this key has ever had: it round-trips today and is
-	 * reachable only by hand-editing the file. A plain number rather than a
-	 * formula field — a column count is structure, and nothing resolves it.
-	 *
-	 * Two hazards, both spelled out in `parse/layout.ts` and both of a kind this
-	 * codebase has been caught by twice. An absent `columns` has to stay absent
-	 * through a round trip, so a value matching the default deletes the key
-	 * rather than writing `"columns": 12` into a file that merely had the field
-	 * shown — the same answer a select and a boolean already give, and the
-	 * `options: []` trap a third time. And `parseLayout` refuses anything that is
-	 * not a positive integer, so this carries the position fields' own inline
-	 * error rather than letting `persist` refuse the whole file with a `Notice`
-	 * and drop the edit.
-	 */
-	private renderColumnCount(form: HTMLElement, layout: Layout): void {
-		new Setting(form)
-			.setName('Grid columns')
-			.setDesc(
-				'How many columns components are placed across. Reducing it leaves a component already past the new last column where it is, rather than moving something you did not touch.',
-			)
-			.addText((text) => {
-				text.inputEl.type = 'number';
-				text.setValue(String(layout.columns ?? DEFAULT_COLUMNS));
-				text.inputEl.dataset.sheetsmithFocus = 'layout-columns';
-				onCommit(text, (raw) => {
-					const parsed = Number(raw.trim());
-					if (!Number.isInteger(parsed) || parsed < 1) {
-						this.fieldError(text.inputEl, 'Whole number, 1 or more.');
-						return;
-					}
-					this.fieldError(text.inputEl, null);
-					if (parsed === DEFAULT_COLUMNS) delete layout.columns;
-					else layout.columns = parsed;
-					void this.persist();
-					// The schematic is drawn against this number and the tree and
-					// the panel are not, so the grid is redrawn and the pane is
-					// left standing.
-					const sheet = this.schematics[0];
-					if (sheet) sheet.columns = parsed;
-					this.drawSchematics();
-				});
-			});
-	}
-
-	/**
-	 * The tabs of a container that shows one child at a time, in the order its
-	 * strip draws them.
-	 *
-	 * A list rather than a grid, and up/down rather than a drag, because the
-	 * order is the whole of what there is to say: a tab has no placement, so
-	 * there is no second dimension for a gesture to write. `moveItem` is the
-	 * same reorder the entry and row lists use — one consumer more of a
-	 * mechanism already proven, rather than a second answer to "how does a list
-	 * move".
-	 *
-	 * Editing and removing a tab stay on its own row in the disclosure list
-	 * below, where every other component's are. Offering them again here would
-	 * be two controls for one job, and the one that went stale would be this
-	 * copy.
-	 */
-	private renderChildOrder(form: HTMLElement, config: ComponentConfig): void {
-		const tabs = config.children ?? [];
-		form.createDiv({ cls: 'setting-item-description' }, (el) =>
-			el.setText(
-				tabs.length === 0
-					? 'No tabs yet. Add a component to this one and it becomes its first tab.'
-					: 'The strip draws these left to right. Each one fills the panel when it is showing, so none of them has a position of its own.',
-			),
-		);
-		tabs.forEach((tab, index) => {
-			const row = new Setting(form)
-				.setName(`${index + 1}. ${tab.label}`)
-				.setDesc(placedComponentName(tab));
-			// The class alone: these are always one level in, and the indent rule
-			// already defaults `--sheetsmith-row-depth` to 1. Setting it here would
-			// be a static style assignment, which the lint rules refuse — rightly,
-			// since a fixed value belongs in the stylesheet.
-			row.settingEl.addClass('sheetsmith-row-child');
-			row.addExtraButton((button) => {
-				button
-					// The arrows every other reorder control in the plugin uses —
-					// the entry list and both list fields — rather than a
-					// chevron. `docs/UI.md` §9: reuse the vocabulary instead of
-					// inventing a lookalike. A chevron here would also have collided
-					// with the disclosure two rows up, where `chevron-down` means
-					// "this row is open" rather than "move later".
-					.setIcon('arrow-up')
-					.setTooltip('Move earlier')
-					.setDisabled(index === 0)
-					.onClick(() => moveItem(tabs, index, index - 1, this.listContext()));
-				button.extraSettingsEl.dataset.sheetsmithFocus = `tab-up-${tab.id}`;
-			});
-			row.addExtraButton((button) => {
-				button
-					.setIcon('arrow-down')
-					.setTooltip('Move later')
-					.setDisabled(index === tabs.length - 1)
-					.onClick(() => moveItem(tabs, index, index + 1, this.listContext()));
-				button.extraSettingsEl.dataset.sheetsmithFocus = `tab-down-${tab.id}`;
-			});
-		});
-	}
-
-	private renderComponentForm(
-		container: HTMLElement,
-		layout: Layout,
-		config: ComponentConfig,
-		/** How many containers enclose it, which decides whether it may hold any. */
-		depth: number,
-		/** The container holding it, which decides whether it has a placement. */
-		parent: ComponentConfig | null,
-	): void {
-		const form = container.createDiv('sheetsmith-component-form');
-		const definition = getComponent(config.type);
-		panelTitle(form, config.label);
-
-		form.createDiv(
-			{ cls: ['setting-item-description', 'sheetsmith-component-reference'] },
-			(el) => {
-				el.appendText('Formulas reference this component as ');
-				// The id is the one thing about a component that cannot be
-				// discovered anywhere else, and it is what gets retyped into
-				// every formula that reads this component. Make it one click.
-				copyableName(el, config.id);
-			},
-		);
-
-		// A container that may hold nothing says so, rather than being offered a
-		// grid to fill. This is the complement of the schematic's own guard and
-		// the add row's, and the three sit in three places now — the panel, the
-		// left column and the add row — which is why they ask one named question
-		// rather than three spellings of it. Diverge and the author gets a grid in
-		// one column beside a sentence in the other saying nothing can go in it.
-		// The author chose this type deliberately, so silence is worse than a
-		// sentence.
-		if (isContainer(definition) && !acceptsChildren(config, depth)) {
-			form.createDiv({ cls: 'setting-item-description' }, (el) =>
-				el.setText(
-					'This component sits inside two containers, so it can hold nothing: a container may hold containers only one level deep. Move it up a level to put components in it.',
-				),
-			);
-		}
-
-		// A container that shows one child at a time gets an ordered list, not a
-		// grid. Its children have no placement — each fills the region in turn —
-		// so the order is the only thing there is to edit, and it is the one thing
-		// a grid could not have edited. The grid case is the left column's:
-		// `renderContainerSchematic` draws it beside the sheet's own.
-		if (acceptsChildren(config, depth) && !placesChildren(definition)) {
-			this.renderChildOrder(form, config);
-		}
-
-		new Setting(form)
-			.setName('Label')
-			.setDesc(
-				'Also the section heading in character notes. Existing notes keep their data under the old heading; rename those headings manually.',
-			)
-			.addText((text) => {
-				text.setValue(config.label);
-				text.inputEl.dataset.sheetsmithFocus = `label-${config.id}`;
-				onCommit(text, (raw) => {
-					const label = raw.trim();
-					if (label === '') {
-						this.fieldError(text.inputEl, 'A label is required.');
-						return;
-					}
-					if (
-						layout.components.some(
-							(other) => other !== config && other.label === label,
-						)
-					) {
-						showFieldError(
-							text.inputEl,
-							'Another component already uses this label.',
-						);
-						return;
-					}
-					this.fieldError(text.inputEl, null);
-					config.label = label;
-					void this.persist();
-					this.redraw();
-				});
-			});
-
-		// A child of a container that shows one at a time fills the region it is
-		// given, so none of its four numbers is read by anything. Withdrawn rather
-		// than shown inert: a field that edits a number nothing reads is worse
-		// than no field, and this is the same call the columns list makes when it
-		// stops offering a total on a column that cannot carry one.
-		const placed = childIsPlaced(parent);
-		if (!placed) {
-			form.createDiv({ cls: 'setting-item-description' }, (el) =>
-				el.setText(
-					`This fills "${parent?.label ?? ''}" when it is the one showing, so it has no position of its own. Its size is that component's.`,
-				),
-			);
-		}
-
-		const position = placed
-			? new Setting(form)
-					.setName('Position')
-					.setDesc('Grid units.')
-					.setClass('sheetsmith-position-setting')
-			: null;
-		for (const key of placed ? (['col', 'row', 'width', 'height'] as const) : []) {
-			const holder = position!.controlEl.createDiv('sheetsmith-position-field');
-			holder.createSpan({
-				cls: 'sheetsmith-position-label',
-				text: key,
-			});
-			const input = holder.createEl('input', { type: 'number' });
-			input.value = String(config.position[key]);
-			// The span label is visual only; this is the accessible name.
-			input.setAttribute('aria-label', `${config.label} ${key}`);
-			input.dataset.sheetsmithFocus = `pos-${config.id}-${key}`;
-			input.addEventListener('change', () => {
-				const parsed = Number(input.value);
-				if (!Number.isInteger(parsed) || parsed < 1) {
-					this.fieldError(input, 'Whole number, 1 or more.');
-					return;
-				}
-				this.fieldError(input, null);
-				config.position[key] = parsed;
-				this.drawSchematics();
-				void this.persist();
-			});
-		}
-
-		if (!definition) return;
-		const record = config as unknown as Record<string, unknown>;
-
-		// Only components that can act on a reset are offered one, and
-		// implementing `applyReset` is what says so. Why the field is rendered
-		// from here at all rather than declared as config is `reset-field.ts`.
-		if (definition.applyReset !== undefined) {
-			renderResetField(form, layout, config, {
-				persist: () => void this.persist(),
-				redraw: () => this.redraw(),
-				errors: this.fieldErrors,
-			});
-		}
-
-		let currentGroup: string | undefined;
-		for (const field of definition.configFields) {
-			if (
-				field.visibleWhen &&
-				!conditionMet(field.visibleWhen, definition.configFields, record)
-			) {
-				continue;
-			}
-			if (field.group !== currentGroup) {
-				currentGroup = field.group;
-				if (currentGroup !== undefined) groupHeading(form, currentGroup);
-			}
-
-			if (
-				field.kind === 'entries' ||
-				field.kind === 'track-rows' ||
-				field.kind === 'rows' ||
-				field.kind === 'columns'
-			) {
-				// List fields are a table of their own, not a Setting row.
-				// Falling through to the text input below would bind a string
-				// input to an array and destroy it on the first commit.
-				const entries = record[field.key];
-				groupHeading(
-					form,
-					field.label,
-					field.description,
-					Array.isArray(entries) ? entries.length : 0,
-				);
-				const listEl = form.createDiv('sheetsmith-entry-list');
-				if (field.kind === 'entries' || field.kind === 'track-rows') {
-					// One editor for both: a track's rows are a Card set's
-					// entries with a length, which is the shape the
-					// component chose them for. A second table would drift
-					// from this one the first time either changed.
-					//
-					// The columns are the field's own words, and a field of
-					// this kind that declares none has no table to draw. The
-					// registry contract holds every one of them to declaring
-					// them, so what this guard covers is the type rather than a
-					// state a registered component can reach — the heading and
-					// the description above it are drawn either way, so a field
-					// is never silently absent from the form.
-					if (field.entryColumns) {
-						renderEntriesEditor(
-							listEl,
-							record,
-							field.key,
-							config.id,
-							field.kind === 'track-rows',
-							field.entryColumns,
-							this.listContext(),
-						);
-					}
-				} else if (field.kind === 'rows') {
-					renderRowsEditor(listEl, record, field.key, config.id, this.listContext());
-				} else {
-					renderColumnsEditor(
-						listEl,
-						record,
-						field.key,
-						config.id,
-						this.listContext(),
-					);
-				}
-				continue;
-			}
-
-			const setting = new Setting(form).setName(field.label);
-			if (field.description) setting.setDesc(field.description);
-
-			if (field.kind === 'text-list') {
-				/*
-				 * One field holding an ordered list of plain strings, not a
-				 * table of its own: the lists this kind serves are short and
-				 * their order is the whole meaning — a track's levels run from
-				 * none upwards — so a row per entry would cost four controls to
-				 * say what a comma already says. It is the same control the
-				 * level column's names use, which is the list it has to agree
-				 * with.
-				 */
-				setting.addText((text) => {
-					const current = record[field.key];
-					text.setValue(Array.isArray(current) ? current.join(', ') : '');
-					text.inputEl.placeholder = 'Comma separated';
-					text.inputEl.dataset.sheetsmithFocus = `cfg-${config.id}-${field.key}`;
-					onCommit(text, (raw) => {
-						const parsed = raw
-							.split(',')
-							.map((entry) => entry.trim())
-							.filter((entry) => entry !== '');
-						this.fieldError(text.inputEl, null);
-						// Cleared is "this list is not set", which is a state
-						// the component reads — a track with no level names
-						// counts its marks instead.
-						if (parsed.length === 0) delete record[field.key];
-						else record[field.key] = parsed;
-						void this.persist();
-						// The list may decide what another field means.
-						this.redraw();
-					});
-				});
-				continue;
-			}
-
-			if (field.kind === 'select') {
-				const options = field.options ?? [];
-				const fallback = options[0] ?? '';
-				setting.addDropdown((dropdown) => {
-					for (const option of options) dropdown.addOption(option, option);
-					const current = record[field.key];
-					dropdown.setValue(
-						typeof current === 'string' && options.includes(current)
-							? current
-							: fallback,
-					);
-					dropdown.selectEl.dataset.sheetsmithFocus = `cfg-${config.id}-${field.key}`;
-					dropdown.onChange((value) => {
-						if (value === fallback) {
-							delete record[field.key];
-						} else {
-							record[field.key] = value;
-						}
-						void this.persist();
-						// A select may control another field's visibility.
-						this.redraw();
-					});
-				});
-				continue;
-			}
-
-			if (field.kind === 'boolean') {
-				const fallback = field.default ?? false;
-				// Whether anything else on this form appears or disappears with
-				// this key. A boolean commit did not redraw at all until one
-				// controlled a `visibleWhen`, which made such a condition inert
-				// and let the form offer a combination its component refused.
-				//
-				// **No component has one today** — the only boolean that did was
-				// the group's `collapsible`, and it went with the collapse
-				// (SPEC §13) — so this is a guard with no current caller rather
-				// than live behaviour, and `settings.test.ts` says so where it can
-				// only assert the precondition. Kept because the failure it
-				// prevents is silent and the next such field would inherit it,
-				// and left conditional because a redraw tears the whole tab down
-				// and most checkboxes here change nothing but their own key.
-				const controls = definition.configFields.some(
-					(other) => other.visibleWhen?.key === field.key,
-				);
-				setting.addToggle((toggle) => {
-					const current = record[field.key];
-					toggle.setValue(typeof current === 'boolean' ? current : fallback);
-					// Every control on this tab carries one, and a boolean was the
-					// exception only for as long as no boolean redrew: the settings
-					// tab restores focus by this token across the rebuild, so
-					// without it the author presses a checkbox and lands on the
-					// body with the form rebuilt around them. Unconditional rather
-					// than only where `controls` is set, because the trap is
-					// invisible — the next boolean to gain a dependent would
-					// rediscover it.
-					toggle.toggleEl.dataset.sheetsmithFocus = `cfg-${config.id}-${field.key}`;
-					toggle.onChange((value) => {
-						if (value === fallback) {
-							delete record[field.key];
-						} else {
-							record[field.key] = value;
-						}
-						void this.persist();
-						if (controls) this.redraw();
-					});
-				});
-				continue;
-			}
-
-			setting.addText((text) => {
-				if (field.kind === 'number') text.inputEl.type = 'number';
-				const current = record[field.key];
-				text.setValue(
-					typeof current === 'string' || typeof current === 'number'
-						? String(current)
-						: '',
-				);
-				text.inputEl.dataset.sheetsmithFocus = `cfg-${config.id}-${field.key}`;
-				onCommit(text, (raw) => {
-					const trimmed = raw.trim();
-					if (trimmed === '') {
-						this.fieldError(text.inputEl, null);
-						delete record[field.key];
-						void this.persist();
-						return;
-					}
-					if (field.kind === 'number') {
-						const parsed = Number(trimmed);
-						if (Number.isNaN(parsed)) {
-							this.fieldError(text.inputEl, 'This field needs a number.');
-							return;
-						}
-						this.fieldError(text.inputEl, null);
-						record[field.key] = parsed;
-					} else {
-						this.fieldError(text.inputEl, null);
-						record[field.key] = trimmed;
-					}
-					void this.persist();
-				});
-			});
-		}
-	}
-
 	/** What the list editors in list-fields.ts need from this editor. */
 	private listContext(): ListContext {
 		return {
@@ -1651,56 +1142,6 @@ class NameModal extends Modal {
  */
 function indent(depth: number): string {
 	return '\u2007'.repeat(depth * 2);
-}
-
-/**
- * Display name for a component type id: "card-set" → "Card set".
- * Sentence case, per the style guide: only the first word is capitalised.
- */
-function componentDisplayName(type: string): string {
-	const words = type.split('-').join(' ');
-	return words.charAt(0).toUpperCase() + words.slice(1);
-}
-
-/**
- * Whether this component may take a child *where it sits*.
- *
- * Two questions the editor always asks together — is it a container, and is it
- * shallow enough that the parser would still accept a child in it — and the
- * conjunction is the editor's own rather than either half's: `isContainer` is a
- * fact about the type and `mayHoldChildren` is the parser's depth rule, and
- * neither answers this on its own.
- *
- * Named because it is spelled in three regions and in both polarities. The add
- * row withholds a destination, the left column withholds a schematic, and the
- * panel prints a sentence saying nothing can go in it — and while the last two
- * were adjacent lines of one function, a rule growing a clause would have been
- * hard to add to one and miss on the other. They are a column apart now, and a
- * divergence paints a grid beside a sentence denying it: the instrument
- * disagreeing with itself, which `docs/UI.md` §11 calls worse than showing
- * nothing. This is `docs/PATTERNS.md` §1's predicate clause, and the shape is
- * `childIsPlaced`'s: the registry lookup the callers were each doing comes
- * inside, so a caller passes what it has.
- */
-function acceptsChildren(config: ComponentConfig, depth: number): boolean {
-	return isContainer(getComponent(config.type)) && mayHoldChildren(depth);
-}
-
-/**
- * What to call a component the layout has already placed.
- *
- * Its type, unless the component says its configuration has a better name —
- * a Card with options is a Dropdown, and an author who picked Dropdown out of
- * the add menu should not be told a line later that they have a Card. The
- * component answers, never this module: whether options make a dropdown is
- * exactly the kind of thing nothing outside a component may know.
- *
- * The add menu keeps `componentDisplayName`, because there it is naming *types*
- * and the prefills are listed under them by name already.
- */
-function placedComponentName(config: ComponentConfig): string {
-	const named = getComponent(config.type)?.configName?.(config);
-	return named ?? componentDisplayName(config.type);
 }
 
 /**
