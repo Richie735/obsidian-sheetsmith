@@ -1,14 +1,21 @@
 /*
- * List-shaped config fields for the form editor: a Table's rows and
- * columns.
+ * List-shaped config fields for the form editor: a Table's rows and columns,
+ * and the two-column entry list a Card set, a Card and a Track's rows share.
  *
  * These are the fields a Setting row cannot express, because each entry is
- * several inputs plus reorder and remove controls. The entry list in
- * layout-editor.ts is the same shape and predates this module; the two share
- * their chrome here rather than drifting apart.
+ * several inputs plus reorder and remove controls.
+ *
+ * The entry list arrived last and had been in `layout-editor.ts` since before
+ * this module existed — the same shape, drawn from a class method, already
+ * borrowing the chrome here. **The move was decided in the pass that made it**,
+ * not inherited from a plan: the header this one replaced recorded only that the
+ * shared chrome lives here, and said nothing about where the list belonged. What
+ * argued it was §1, applied when the pane slice put the two side by side — the
+ * three editors are one responsibility rather than three, being a list of
+ * records, one row of inputs each, reorder and remove controls, and an add.
  */
 
-import { Notice, Platform, setIcon } from 'obsidian';
+import { Platform, setIcon } from 'obsidian';
 import {
 	levelCount,
 	levelGlyph,
@@ -23,7 +30,10 @@ import {
 	PUBLISHABLE_TYPES,
 	TOTALLED_TYPES,
 } from '../components/column-types';
+import { copyableName } from './copyable-name';
+import { showFieldError } from './field-error';
 import { isName } from '../formula/expression';
+import { EntryColumnSpec } from '../types';
 
 /** What a list editor needs from the editor around it. */
 export interface ListContext {
@@ -46,92 +56,6 @@ export interface ListContext {
 	errors: Map<string, string>;
 	/** Index of the entry being dragged, shared so one list reads its own. */
 	drag: { index: number | null };
-}
-
-/**
- * Inline validation: mark the input and show a message under the field, or
- * clear both. Invalid input is never silently swallowed. The message is keyed
- * to the input's focus id, because several inputs may share one control and
- * each needs its own error.
- */
-export function showFieldError(
-	/**
-	 * Any form field in the editor. A select as readily as a text input: a reset
-	 * binding's trigger is chosen from a dropdown and can still be wrong — two
-	 * bindings on one trigger — and that has to report where it was chosen.
-	 * Nothing below needs more than dataset, classes and a parent.
-	 */
-	input: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement,
-	message: string | null,
-	/**
-	 * Where the message is remembered across a rebuild of the pane. Without it
-	 * an error survives only as long as the DOM that drew it, so correcting
-	 * one field silently clears the message on another.
-	 */
-	errors?: Map<string, string>,
-): void {
-	const token = input.dataset.sheetsmithFocus;
-	if (errors && token !== undefined) {
-		if (message === null) errors.delete(token);
-		else errors.set(token, message);
-	}
-	input.toggleClass('sheetsmith-input-invalid', message !== null);
-	const control = input.parentElement;
-	if (!control) return;
-	const key = input.dataset.sheetsmithFocus ?? '';
-	let existing: HTMLElement | null = null;
-	for (const candidate of Array.from(
-		control.querySelectorAll('.sheetsmith-field-error'),
-	)) {
-		if (
-			candidate.instanceOf(HTMLElement) &&
-			candidate.dataset.sheetsmithFor === key
-		) {
-			existing = candidate;
-			break;
-		}
-	}
-	if (message === null) {
-		existing?.remove();
-		return;
-	}
-	if (existing) {
-		existing.setText(message);
-		return;
-	}
-	control.createDiv('sheetsmith-field-error', (el) => {
-		el.dataset.sheetsmithFor = key;
-		el.setText(message);
-	});
-}
-
-/**
- * A name in code type that copies itself when pressed.
- *
- * The component id wears one at the top of the form, on the argument that it
- * is the one thing about a component that cannot be discovered anywhere else
- * and is what gets retyped into every formula reading it. A published row's
- * name is the same thing one level down, so the two share the control rather
- * than growing a second spelling of it.
- */
-export function copyableName(into: HTMLElement, text: string): HTMLElement {
-	const code = into.createEl('code', { cls: 'sheetsmith-copyable', text });
-	code.setAttribute('tabindex', '0');
-	code.setAttribute('role', 'button');
-	code.setAttribute('aria-label', `Copy "${text}" to the clipboard`);
-	const copy = () => {
-		void navigator.clipboard.writeText(text).then(
-			() => new Notice(`Copied "${text}"`),
-			() => new Notice('Could not copy to the clipboard.'),
-		);
-	};
-	code.addEventListener('click', copy);
-	code.addEventListener('keydown', (event) => {
-		if (event.key !== 'Enter' && event.key !== ' ') return;
-		event.preventDefault();
-		copy();
-	});
-	return code;
 }
 
 export function moveItem<T>(
@@ -262,17 +186,6 @@ function addControls<T>(
 }
 
 /**
- * Reserve the header's trailing tracks, one per control `addControls` will
- * render below it.
- *
- * The header and the rows share a grid template whose field tracks are `1fr`,
- * so a control track left empty in the header is a track that costs the rows
- * width the header keeps — and every heading after the first drifts out of
- * line with the input under it. Exactly as many spacers as there are buttons,
- * because reserving a fixed three would leave desktop with a track nothing
- * ever fills.
- */
-/**
  * A field in a list row, carrying the label the header gives it while there
  * is a header to give one. Narrow enough and the header goes; the label is
  * already in the DOM to take over, rather than the row becoming a stack of
@@ -284,7 +197,23 @@ function listField(row: HTMLElement, name: string): HTMLElement {
 	return field;
 }
 
-export function addControlSpacers(header: HTMLElement): void {
+/**
+ * Reserve the header's trailing tracks, one per control `addControls` will
+ * render below it.
+ *
+ * The header and the rows share a grid template whose field tracks are `1fr`,
+ * so a control track left empty in the header is a track that costs the rows
+ * width the header keeps — and every heading after the first drifts out of
+ * line with the input under it. Exactly as many spacers as there are buttons,
+ * because reserving a fixed three would leave desktop with a track nothing
+ * ever fills.
+ *
+ * Private now the entry list is in this file: all three headers that need it
+ * are here, and `addControls` — the thing it has to stay in step with — has
+ * never been reachable from anywhere else. It was exported only while a call
+ * site sat in `layout-editor.ts`.
+ */
+function addControlSpacers(header: HTMLElement): void {
 	// Keep in step with addControls: a handle and a trash on desktop, up,
 	// down, and trash where there is no drag and no keyboard.
 	const controls = Platform.isMobile ? 3 : 2;
@@ -1194,6 +1123,347 @@ export function renderColumnsEditor(
 		while (taken.has(next)) next = `New column ${counter++}`;
 		context.focusAfterRedraw(`${prefix}-col-${columns.length}-key`);
 		columns.push({ key: next });
+		context.persist();
+		context.redraw();
+	});
+}
+
+/**
+ * One row of an 'entries' list, as the editor handles it: two content columns
+ * the field spec names, plus the two a track's rows add.
+ *
+ * The index signature is what lets one editor serve two vocabularies — a Card
+ * set's `key` and `name`, a Card's `value` and `label` — without either
+ * spelling being written into this module. `count` and `sense` are declared
+ * because only one caller has them and they are not both strings.
+ */
+type EntryRecord = {
+	[property: string]: string | number | undefined;
+	count?: string | number;
+	sense?: string;
+};
+
+/**
+ * Ordered two-column list with add, remove, and reorder controls: a
+ * required name and an optional second string per entry.
+ *
+ * The entry table is plain divs on its own grid template, not
+ * Setting rows — reusing Setting here meant deleting half its structure
+ * and overriding theme-styled internals.
+ *
+ * **What the two columns are called is the caller's**, not this function's.
+ * They were `key` and `name` under "Key" and "Full name" while Card set
+ * was the only caller, which made the field unusable for a Card's options
+ * — those are a `value` and a `label`, and a Card already has a `key`
+ * (SPEC §13). So the vocabulary arrives as an argument, the way a gesture
+ * module is handed the class names of the component driving it
+ * (`docs/PATTERNS.md` §1), and the heading is the whole of what a column
+ * is called: it is the header, the placeholder, the accessible name, and
+ * the word the two field errors below name.
+ *
+ * **Required, with no default**, which is the half of that worked example
+ * that is easy to miss: a default holding one caller's words leaves the
+ * shared editor still naming a component, and picking between two callers'
+ * words with a ternary on `withCount` is the editor asking which caller it
+ * is. Every field of this kind declares its own, and `contract.test.ts`
+ * holds them to it.
+ *
+ * `withCount` stays, and the line between it and the words is worth
+ * stating: it says whether a row carries a length and a sense, which is a
+ * fact about the *kind* this editor serves rather than about who called it.
+ * The same goes for the empty line's noun — an entries list has entries and
+ * a track's rows have rows.
+ *
+ * Focus ids use two schemes on purpose: inputs are keyed by index so
+ * focus holds its position while typing, buttons by the entry's own name
+ * so focus follows the item through a reorder.
+ *
+ * **Its reorder and remove controls are its own, not `addControls`**, and the
+ * difference is what a screen reader says: this list's buttons are named "Move
+ * up" and "Remove entry" where a row's and a column's name the item they act on,
+ * and nothing here asks before removing. Sharing them would change three
+ * accessible names, which is a decision about the interface rather than about
+ * where the code lives — `docs/PATTERNS.md` §11 carries it as its own row.
+ */
+export function renderEntriesEditor(
+	listEl: HTMLElement,
+	record: Record<string, unknown>,
+	key: string,
+	prefix: string,
+	/** Also edit a length and a sense per entry, which is what a track's rows add. */
+	withCount: boolean,
+	columnSpec: readonly [EntryColumnSpec, EntryColumnSpec],
+	context: ListContext,
+): void {
+	// A third content column changes both grids — the header's and the
+	// row's — and neither can be inferred from the markup, so the list
+	// says so once and the stylesheet reads it.
+	listEl.toggleClass('sheetsmith-entry-counted', withCount);
+	const [primary, secondary] = columnSpec;
+	// The geometry follows the vocabulary: a list whose first column holds
+	// the word rather than an abbreviation says so once and the stylesheet
+	// reads it, exactly as the counted list above does.
+	listEl.toggleClass('sheetsmith-entry-wide-first', primary.wide === true);
+	/*
+	 * Held locally where the config has no list yet, and attached by the
+	 * add control below. Materialising it here instead wrote `options: []`
+	 * into a layout for every Card whose form was merely *opened*, which is
+	 * the editor reformatting a file it was only asked to show — the same
+	 * promise the undo round-trip in `layout-editor.test.ts` holds it to.
+	 * Nothing before the first add needs the config to carry the key.
+	 */
+	const stored = record[key];
+	const list = (Array.isArray(stored) ? stored : []) as EntryRecord[];
+	/**
+	 * The entry's own name: whatever its first column holds. It is the cell
+	 * the row is identified by — the duplicate check, the drag payload and
+	 * every button's focus token.
+	 */
+	const nameOf = (entry: EntryRecord) => String(entry[primary.key] ?? '');
+
+	if (list.length === 0) {
+		listEl.createDiv('sheetsmith-entry-empty', (el) =>
+			el.setText(withCount ? 'No rows yet.' : 'No entries yet.'),
+		);
+	} else {
+		const columns = listEl.createDiv('sheetsmith-entry-columns');
+		columns.createSpan({ text: primary.heading });
+		columns.createSpan({ text: secondary.heading });
+		if (withCount) {
+			columns.createSpan({ text: 'Segments' });
+			columns.createSpan({ text: 'Sense' });
+			/*
+			 * The header has to carry the row's control tracks too, or its
+			 * last label does not line up with the last input.
+			 *
+			 * With two content columns this never showed: the second label
+			 * is left-aligned at the start of the `1fr` track, and where a
+			 * track starts does not depend on how wide it is. A column
+			 * after that track does depend on it — the row spends
+			 * width on its buttons, its `1fr` is narrower than the
+			 * header's, and everything past it slides left.
+			 */
+			addControlSpacers(columns);
+		}
+	}
+
+	list.forEach((entry, index) => {
+		const row = listEl.createDiv('sheetsmith-entry-row');
+		row.addEventListener('dragover', (event) => {
+			if (context.drag.index === null) return;
+			event.preventDefault();
+			// moveEntry lands the row above the target on upward
+			// drags and below it on downward ones; the indicator must
+			// say so, not always point above.
+			row.toggleClass(
+				'sheetsmith-entry-drop-below',
+				index > context.drag.index,
+			);
+			row.toggleClass('sheetsmith-entry-drop', index < context.drag.index);
+		});
+		row.addEventListener('dragleave', () => {
+			row.removeClass('sheetsmith-entry-drop');
+			row.removeClass('sheetsmith-entry-drop-below');
+		});
+		row.addEventListener('drop', (event) => {
+			event.preventDefault();
+			row.removeClass('sheetsmith-entry-drop');
+			row.removeClass('sheetsmith-entry-drop-below');
+			if (context.drag.index === null || context.drag.index === index) return;
+			moveItem(list, context.drag.index, index, context);
+			context.drag.index = null;
+		});
+
+		const primaryInput = row.createEl('input', {
+			type: 'text',
+			// The heading, not "Attribute key": that word was the D&D term
+			// for STR/DEX/CON, left behind by the rename that took it out of
+			// the config (SPEC §13), and it survived in the one place only a
+			// screen reader hears.
+			attr: { placeholder: primary.heading, 'aria-label': primary.heading },
+		});
+		primaryInput.value = nameOf(entry);
+		primaryInput.dataset.sheetsmithFocus = `attr-${prefix}-${index}-key`;
+		primaryInput.addEventListener('change', () => {
+			const next = primaryInput.value.trim();
+			if (next === '') {
+				// Names the column, because "a key is required" over a
+				// column headed Value points at nothing on screen. The
+				// duplicate below names the *row* instead, and "entry" is
+				// what this list calls a row whatever its columns are —
+				// which is also what its add control and its empty state
+				// say.
+				showFieldError(primaryInput, `A ${primary.heading.toLowerCase()} is required.`);
+				return;
+			}
+			if (list.some((other, i) => i !== index && nameOf(other) === next)) {
+				showFieldError(
+					primaryInput,
+					`"${next}" is already used by another entry.`,
+				);
+				return;
+			}
+			showFieldError(primaryInput, null);
+			entry[primary.key] = next;
+			context.persist();
+			context.redraw();
+		});
+
+		const secondaryInput = row.createEl('input', {
+			type: 'text',
+			attr: {
+				placeholder: secondary.heading,
+				'aria-label': secondary.heading,
+			},
+		});
+		secondaryInput.value = String(entry[secondary.key] ?? '');
+		// Keyed by identity, unlike the first column: a commit here does not
+		// redraw, so the only redraw this input lives through is a
+		// reorder — where focus should follow the item.
+		secondaryInput.dataset.sheetsmithFocus = `attr-${prefix}-${nameOf(entry)}-name`;
+		secondaryInput.addEventListener('change', () => {
+			const next = secondaryInput.value.trim();
+			if (next === '') {
+				delete entry[secondary.key];
+			} else {
+				entry[secondary.key] = next;
+			}
+			context.persist();
+		});
+
+		if (withCount) {
+			// A formula, not a number field: a caster's slots come from a
+			// level table, so a row's length is as much an expression as
+			// the component's own. Empty falls back to that one, which is
+			// why clearing it is a state rather than an error.
+			const countInput = row.createEl('input', {
+				type: 'text',
+				attr: {
+					placeholder: 'Segments',
+					'aria-label': `${nameOf(entry)} segments`,
+				},
+			});
+			countInput.value =
+				entry.count === undefined ? '' : String(entry.count);
+			countInput.dataset.sheetsmithFocus = `attr-${prefix}-${nameOf(entry)}-count`;
+			countInput.addEventListener('change', () => {
+				const next = countInput.value.trim();
+				if (next === '') {
+					delete entry.count;
+				} else {
+					// A bare number is stored as one, so a layout file
+					// reads `count: 5` rather than `count: "5"`.
+					const parsed = Number(next);
+					entry.count = Number.isFinite(parsed) ? parsed : next;
+				}
+				context.persist();
+			});
+
+			// Blank is the card's own sense, which is what a set whose
+			// rows all mean the same thing leaves it as. Death saves are
+			// why it is here: successes and failures are one shape pointed
+			// two ways, and a card painting both alike says the wrong
+			// thing about one of them.
+			const senseInput = row.createEl('select', {
+				attr: { 'aria-label': `${nameOf(entry)} sense` },
+			});
+			for (const [value, text] of [
+				['', 'Same as card'],
+				['progress', 'Progress'],
+				['harm', 'Harm'],
+			] as const) {
+				senseInput.createEl('option', { value, text });
+			}
+			senseInput.value = entry.sense ?? '';
+			senseInput.dataset.sheetsmithFocus = `attr-${prefix}-${nameOf(entry)}-sense`;
+			senseInput.addEventListener('change', () => {
+				if (senseInput.value === '') {
+					delete entry.sense;
+				} else {
+					entry.sense = senseInput.value;
+				}
+				context.persist();
+			});
+		}
+
+		if (Platform.isMobile) {
+			// HTML5 drag-and-drop is inert on touch, and there is no
+			// keyboard — reordering needs real buttons there.
+			const up = row.createEl('button', {
+				cls: 'clickable-icon',
+				attr: { 'aria-label': 'Move up' },
+			});
+			setIcon(up, 'arrow-up');
+			up.dataset.sheetsmithFocus = `attr-${prefix}-${nameOf(entry)}-up`;
+			up.addEventListener('click', () =>
+				moveItem(list, index, index - 1, context),
+			);
+			const down = row.createEl('button', {
+				cls: 'clickable-icon',
+				attr: { 'aria-label': 'Move down' },
+			});
+			setIcon(down, 'arrow-down');
+			down.dataset.sheetsmithFocus = `attr-${prefix}-${nameOf(entry)}-down`;
+			down.addEventListener('click', () =>
+				moveItem(list, index, index + 1, context),
+			);
+		} else {
+			const handle = row.createEl('button', {
+				cls: 'clickable-icon sheetsmith-entry-handle',
+				attr: {
+					'aria-label': 'Reorder: drag, or press the arrow keys',
+					draggable: 'true',
+				},
+			});
+			setIcon(handle, 'grip-vertical');
+			handle.dataset.sheetsmithFocus = `attr-${prefix}-${nameOf(entry)}-handle`;
+			handle.addEventListener('dragstart', (event) => {
+				context.drag.index = index;
+				event.dataTransfer?.setData('text/plain', nameOf(entry));
+			});
+			handle.addEventListener('dragend', () => {
+				context.drag.index = null;
+			});
+			handle.addEventListener('keydown', (event) => {
+				if (event.key === 'ArrowUp') {
+					event.preventDefault();
+					moveItem(list, index, index - 1, context);
+				} else if (event.key === 'ArrowDown') {
+					event.preventDefault();
+					moveItem(list, index, index + 1, context);
+				}
+			});
+		}
+
+		const remove = row.createEl('button', {
+			cls: 'clickable-icon',
+			attr: { 'aria-label': 'Remove entry' },
+		});
+		setIcon(remove, 'trash');
+		remove.dataset.sheetsmithFocus = `attr-${prefix}-${nameOf(entry)}-remove`;
+		remove.addEventListener('click', () => {
+			list.splice(index, 1);
+			context.persist();
+			context.redraw();
+		});
+	});
+
+	const footer = listEl.createDiv('sheetsmith-entry-footer');
+	const add = footer.createEl('button', { text: 'Add entry' });
+	add.addEventListener('click', () => {
+		const taken = new Set(list.map(nameOf));
+		// Same shape as the row and column lists: a new entry is named for
+		// what it is, capitalised, and focus lands on it to be renamed.
+		let next = 'New entry';
+		let counter = 2;
+		while (taken.has(next)) next = `New entry ${counter++}`;
+		// The obvious next action is typing the first column; put focus
+		// there.
+		context.focusAfterRedraw(`attr-${prefix}-${list.length}-key`);
+		list.push({ [primary.key]: next });
+		// Attaches the list on the first add, and is already a no-op on
+		// every one after it.
+		record[key] = list;
 		context.persist();
 		context.redraw();
 	});

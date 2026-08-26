@@ -4,14 +4,14 @@ import {
 	debounce,
 	Modal,
 	Notice,
-	Platform,
-	setIcon,
 	Setting,
-	TextComponent,
 	TFile,
 } from 'obsidian';
 import { getComponent, listComponentTypes, paletteEntries } from '../components';
 import { conditionMet } from './config-fields';
+import { copyableName } from './copyable-name';
+import { onCommit } from './field-commit';
+import { showFieldError } from './field-error';
 import { groupHeading, panelTitle } from './form-group';
 import { ConfirmModal } from '../ui/confirm-modal';
 import {
@@ -22,12 +22,10 @@ import {
 import { createLayout, listLayouts } from '../layouts';
 import {
 	ListContext,
-	addControlSpacers,
-	copyableName,
 	moveItem,
 	renderColumnsEditor,
+	renderEntriesEditor,
 	renderRowsEditor,
-	showFieldError,
 } from './list-fields';
 import type SheetsmithPlugin from '../main';
 import {
@@ -38,45 +36,21 @@ import {
 	serialiseLayout,
 } from '../parse/layout';
 import { WalkEntry, walkComponents } from '../parse/layout-walk';
-import { parseTriggers } from '../parse/triggers';
 import { clamp, describeCell, findOverlaps, lastColumn } from './preview-grid';
+import { renderResetField } from './reset-field';
 import {
 	commitTriggerList,
 	renderTriggerList,
 	TriggerListField,
 } from './trigger-list-field';
-import {
-	ComponentConfig,
-	EntryColumnSpec,
-	isContainer,
-	placesChildren,
-	ResetBinding,
-} from '../types';
+import { ComponentConfig, isContainer, placesChildren } from '../types';
 import { childIsPlaced, innerPlacement } from '../view/grid-cells';
-
-/**
- * One row of an 'entries' list, as the editor handles it: two content columns
- * the field spec names, plus the two a track's rows add.
- *
- * The index signature is what lets one editor serve two vocabularies — a Card
- * set's `key` and `name`, a Card's `value` and `label` — without either
- * spelling being written into this module. `count` and `sense` are declared
- * because only one caller has them and they are not both strings.
- */
-type EntryRecord = {
-	[property: string]: string | number | undefined;
-	count?: string | number;
-	sense?: string;
-};
 
 /** Dropdown sentinel; layout file names can never collide with it. */
 const CREATE_LAYOUT_OPTION = '::create-layout::';
 
 /** Ties the add menu to the description under it, for a screen reader. */
 const ADD_DESCRIPTION_ID = 'sheetsmith-add-description';
-
-/** Dropdown sentinel for a binding that acts on the buffer only. */
-const NO_ACTION_OPTION = '::none::';
 
 /**
  * The top level, wherever something has to be named that is not a component.
@@ -88,29 +62,6 @@ const NO_ACTION_OPTION = '::none::';
  * collide with neither — `COMPONENT_ID` admits no colon.
  */
 export const SHEET_DESTINATION = '::sheet::';
-
-/** Held as a constant because it is an expression, not prose to be cased. */
-const RESET_FORMULA_EXAMPLE = 'mod(abilities.CON) * level';
-
-/** Held as a constant because the examples are the names of games. */
-const BUFFER_CLEAR_DESC =
-	'Which event empties the buffer is a rule of the system, so the layout says it here: a long rest in 5e, the end of an encounter in 4e, the next score in Blades.';
-
-/**
- * The three reset actions (SPEC §6), labelled as what they do to a component
- * rather than as the words stored. "Restore to max" reads as a pool's ceiling
- * and would read as nonsense over a toggle, which is why the stored names are
- * the states.
- */
-const RESET_ACTIONS: readonly (readonly [string, string])[] = [
-	['full', 'Restore to full'],
-	['empty', 'Set to empty'],
-	['formula', 'Set to a formula'],
-	// A trigger may be about the buffer alone — 4e clears temporary hit points
-	// at the end of an encounter and touches nothing else — so "nothing" is a
-	// real choice here rather than the absence of one.
-	[NO_ACTION_OPTION, 'Leave the value alone'],
-];
 
 /** How long a rebuilt region stays marked, before fading over its own transition. */
 const FLASH_HOLD = 900;
@@ -501,16 +452,16 @@ export class LayoutEditorSection {
 		);
 	}
 
-	/**
-	 * Put back the inline errors whose field is still on screen, and forget
-	 * the ones whose field is gone — a message about a control that no longer
-	 * exists is worse than no message.
-	 */
 	/** Show an inline error, and remember it across the next rebuild. */
 	private fieldError(input: HTMLInputElement, message: string | null): void {
 		showFieldError(input, message, this.fieldErrors);
 	}
 
+	/**
+	 * Put back the inline errors whose field is still on screen, and forget
+	 * the ones whose field is gone — a message about a control that no longer
+	 * exists is worse than no message.
+	 */
 	private restoreFieldErrors(container: HTMLElement): void {
 		if (this.fieldErrors.size === 0) return;
 		for (const [token, message] of [...this.fieldErrors]) {
@@ -1618,12 +1569,15 @@ export class LayoutEditorSection {
 		if (!definition) return;
 		const record = config as unknown as Record<string, unknown>;
 
-		// `reset` is shared config, so the editor renders it rather than the
-		// component declaring it — which is also why RESERVED_KEYS forbids a
-		// component from declaring it. Only components that can act on one are
-		// offered it, and implementing `applyReset` is what says so.
+		// Only components that can act on a reset are offered one, and
+		// implementing `applyReset` is what says so. Why the field is rendered
+		// from here at all rather than declared as config is `reset-field.ts`.
 		if (definition.applyReset !== undefined) {
-			this.renderResetField(form, layout, config);
+			renderResetField(form, layout, config, {
+				persist: () => void this.persist(),
+				redraw: () => this.redraw(),
+				errors: this.fieldErrors,
+			});
 		}
 
 		let currentGroup: string | undefined;
@@ -1670,13 +1624,14 @@ export class LayoutEditorSection {
 					// the description above it are drawn either way, so a field
 					// is never silently absent from the form.
 					if (field.entryColumns) {
-						this.renderEntriesEditor(
+						renderEntriesEditor(
 							listEl,
-							config,
 							record,
 							field.key,
+							config.id,
 							field.kind === 'track-rows',
 							field.entryColumns,
+							this.listContext(),
 						);
 					}
 				} else if (field.kind === 'rows') {
@@ -1834,208 +1789,6 @@ export class LayoutEditorSection {
 		}
 	}
 
-	/**
-	 * The reset binding (SPEC §6), for a component that can act on one.
-	 *
-	 * Three controls rather than one, because the action decides whether the
-	 * expression field means anything: `full` and `empty` need nothing typed,
-	 * and only `formula` carries a `to`. Unbinding is a first-class choice in
-	 * the trigger dropdown rather than a cleared text field, since "resets on
-	 * nothing" is a state a layout holds deliberately.
-	 */
-	private renderResetField(
-		form: HTMLElement,
-		layout: Layout,
-		config: ComponentConfig,
-	): void {
-		const { names, problems } = parseTriggers(layout);
-		const bindings = config.reset ?? [];
-
-		groupHeading(
-			form,
-			'Resets on',
-			names.length === 0
-				? 'This layout declares no triggers yet. Add one below and it appears here.'
-				: 'Which triggers restore this component, and what each restores it to. A system whose long rest also covers its short rest binds to both.',
-			bindings.length,
-		);
-
-		bindings.forEach((reset, index) => {
-			const setting = new Setting(form).setName(`Trigger ${index + 1}`);
-
-			setting.addDropdown((dropdown) => {
-				for (const name of names) dropdown.addOption(name, name);
-				// A binding pointing at a trigger that no longer exists still has
-				// to be selectable, or opening the form would silently rebind the
-				// component to whatever happened to be first.
-				if (!names.includes(reset.trigger)) {
-					dropdown.addOption(reset.trigger, `${reset.trigger} (not declared)`);
-				}
-				dropdown.setValue(reset.trigger);
-				dropdown.selectEl.dataset.sheetsmithFocus = `reset-trigger-${config.id}-${index}`;
-				dropdown.onChange((value) => {
-					// Two bindings on one trigger have no sensible reading, and
-					// the parser refuses the file over it — so it is refused
-					// here, where it can still be corrected.
-					if (bindings.some((other) => other !== reset && other.trigger === value)) {
-						showFieldError(
-							dropdown.selectEl,
-							'This component already resets on that trigger.',
-						);
-						dropdown.setValue(reset.trigger);
-						return;
-					}
-					reset.trigger = value;
-					void this.persist();
-					this.redraw();
-				});
-			});
-
-			// Asked of the component, never inferred: the editor knowing that a
-			// Pool has temporary points and a Track does not is exactly the
-			// coupling the contract exists to prevent.
-			const buffered = getComponent(config.type)?.hasBuffer === true;
-
-			setting.addDropdown((dropdown) => {
-				for (const [value, label] of RESET_ACTIONS) {
-					// Leaving the value alone is only a choice where something
-					// else on the binding can still act; otherwise it would be a
-					// binding that does nothing, which the parser refuses.
-					if (value === NO_ACTION_OPTION && !buffered) continue;
-					dropdown.addOption(value, label);
-				}
-				dropdown.setValue(reset.action ?? NO_ACTION_OPTION);
-				dropdown.selectEl.dataset.sheetsmithFocus = `reset-action-${config.id}-${index}`;
-				dropdown.onChange((value) => {
-					if (value === NO_ACTION_OPTION) {
-						delete reset.action;
-						// Something has to happen, so the buffer takes over.
-						reset.buffer = 'clear';
-					} else {
-						// The expression is kept when the action moves off
-						// formula, so switching away and back does not throw away
-						// what was typed. parseReset keeps it too.
-						reset.action = value as ResetBinding['action'];
-					}
-					void this.persist();
-					this.redraw();
-				});
-			});
-
-			if (buffered) {
-				new Setting(form)
-					.setName('Also clear temporary points')
-					.setDesc(BUFFER_CLEAR_DESC)
-					.addToggle((toggle) => {
-						toggle.setValue(reset.buffer === 'clear');
-						toggle.toggleEl.dataset.sheetsmithFocus = `reset-buffer-${config.id}-${index}`;
-						toggle.onChange((on) => {
-							if (on) reset.buffer = 'clear';
-							else if (reset.action === undefined) {
-								// The binding would be left doing nothing at all.
-								// The container's own checkbox, which is where an
-								// inline error is anchored. The `?? createEl` this
-								// used to carry was there because `toggleEl` *was*
-								// the input, so the query found nothing and the
-								// fallback quietly built a second one.
-								const box = toggle.toggleEl.querySelector('input');
-								if (box?.instanceOf(HTMLInputElement)) {
-									showFieldError(
-										box,
-										'Give the binding an action first, or remove it.',
-									);
-								}
-								toggle.setValue(true);
-								return;
-							} else delete reset.buffer;
-							void this.persist();
-							this.redraw();
-						});
-					});
-			}
-
-			setting.addExtraButton((button) =>
-				button
-					.setIcon('trash-2')
-					.setTooltip('Remove this reset')
-					.onClick(() => {
-						bindings.splice(index, 1);
-						if (bindings.length === 0) delete config.reset;
-						void this.persist();
-						this.redraw();
-					}),
-			);
-
-			if (reset.action === 'formula') {
-				new Setting(form)
-					.setName('Resets to')
-					.setDesc(
-						// The example goes in a code element rather than the prose,
-						// as the function library's does: an expression is not a
-						// sentence, and sentence-casing it would change what it means.
-						createFragment((fragment) => {
-							fragment.appendText('Formula giving the value to restore.');
-							fragment.createEl('br');
-							fragment.createEl('code', { text: RESET_FORMULA_EXAMPLE });
-						}),
-					)
-					.addText((text) => {
-						text.setValue(reset.to ?? '');
-						text.inputEl.dataset.sheetsmithFocus = `reset-to-${config.id}-${index}`;
-						onCommit(text, (raw) => {
-							const trimmed = raw.trim();
-							if (trimmed === '') {
-								// The layout would not load: parseReset requires an
-								// expression for this action.
-								this.fieldError(
-									text.inputEl,
-									'A formula reset needs an expression.',
-								);
-								return;
-							}
-							this.fieldError(text.inputEl, null);
-							reset.to = trimmed;
-							void this.persist();
-						});
-					});
-			}
-		});
-
-		// Only triggers this component is not already bound to: offering one it
-		// answers to already would create the duplicate the parser refuses.
-		const available = names.filter(
-			(name) => !bindings.some((reset) => reset.trigger === name),
-		);
-		new Setting(form).addButton((button) =>
-			button
-				.setButtonText('Add reset')
-				.setDisabled(available.length === 0)
-				.setTooltip(
-					names.length === 0
-						? 'Declare a trigger below first.'
-						: available.length === 0
-							? 'This component already resets on every trigger.'
-							: 'Bind this component to another trigger.',
-				)
-				.onClick(() => {
-					const trigger = available[0];
-					if (trigger === undefined) return;
-					// Restoring to full is what a reset means most of the time,
-					// and an action is required, so it is the one that gets to
-					// be assumed.
-					config.reset = [...bindings, { trigger, action: 'full' }];
-					void this.persist();
-					this.redraw();
-				}),
-		);
-
-		// Only this component's own problems. The trigger list below shows every
-		// one, which is where the whole picture belongs.
-		for (const problem of problems.filter((p) => p.component === config.label)) {
-			form.createDiv('sheetsmith-error', (el) => el.setText(problem.message));
-		}
-	}
-
 	/** What the list editors in list-fields.ts need from this editor. */
 	private listContext(): ListContext {
 		return {
@@ -2052,332 +1805,6 @@ export class LayoutEditorSection {
 			errors: this.fieldErrors,
 			drag: this.drag,
 		};
-	}
-
-	/**
-	 * Ordered two-column list with add, remove, and reorder controls: a
-	 * required name and an optional second string per entry.
-	 *
-	 * The entry table is plain divs on its own grid template, not
-	 * Setting rows — reusing Setting here meant deleting half its structure
-	 * and overriding theme-styled internals.
-	 *
-	 * **What the two columns are called is the caller's**, not this method's.
-	 * They were `key` and `name` under "Key" and "Full name" while Card set
-	 * was the only caller, which made the field unusable for a Card's options
-	 * — those are a `value` and a `label`, and a Card already has a `key`
-	 * (SPEC §13). So the vocabulary arrives as an argument, the way a gesture
-	 * module is handed the class names of the component driving it
-	 * (`docs/PATTERNS.md` §1), and the heading is the whole of what a column
-	 * is called: it is the header, the placeholder, the accessible name, and
-	 * the word the two field errors below name.
-	 *
-	 * **Required, with no default**, which is the half of that worked example
-	 * that is easy to miss: a default holding one caller's words leaves the
-	 * shared method still naming a component, and picking between two callers'
-	 * words with a ternary on `withCount` is the method asking which caller it
-	 * is. Every field of this kind declares its own, and `contract.test.ts`
-	 * holds them to it.
-	 *
-	 * `withCount` stays, and the line between it and the words is worth
-	 * stating: it says whether a row carries a length and a sense, which is a
-	 * fact about the *kind* this method serves rather than about who called it.
-	 * The same goes for the empty line's noun — an entries list has entries and
-	 * a track's rows have rows.
-	 *
-	 * Focus ids use two schemes on purpose: inputs are keyed by index so
-	 * focus holds its position while typing, buttons by the entry's own name
-	 * so focus follows the item through a reorder.
-	 */
-	private renderEntriesEditor(
-		listEl: HTMLElement,
-		config: ComponentConfig,
-		record: Record<string, unknown>,
-		key: string,
-		/** Also edit a length and a sense per entry, which is what a track's rows add. */
-		withCount: boolean,
-		columnSpec: readonly [EntryColumnSpec, EntryColumnSpec],
-	): void {
-		// A third content column changes both grids — the header's and the
-		// row's — and neither can be inferred from the markup, so the list
-		// says so once and the stylesheet reads it.
-		listEl.toggleClass('sheetsmith-entry-counted', withCount);
-		const [primary, secondary] = columnSpec;
-		// The geometry follows the vocabulary: a list whose first column holds
-		// the word rather than an abbreviation says so once and the stylesheet
-		// reads it, exactly as the counted list above does.
-		listEl.toggleClass('sheetsmith-entry-wide-first', primary.wide === true);
-		/*
-		 * Held locally where the config has no list yet, and attached by the
-		 * add control below. Materialising it here instead wrote `options: []`
-		 * into a layout for every Card whose form was merely *opened*, which is
-		 * the editor reformatting a file it was only asked to show — the same
-		 * promise the undo round-trip in `layout-editor.test.ts` holds it to.
-		 * Nothing before the first add needs the config to carry the key.
-		 */
-		const stored = record[key];
-		const list = (Array.isArray(stored) ? stored : []) as EntryRecord[];
-		/**
-		 * The entry's own name: whatever its first column holds. It is the cell
-		 * the row is identified by — the duplicate check, the drag payload and
-		 * every button's focus token.
-		 */
-		const nameOf = (entry: EntryRecord) => String(entry[primary.key] ?? '');
-
-		if (list.length === 0) {
-			listEl.createDiv('sheetsmith-entry-empty', (el) =>
-				el.setText(withCount ? 'No rows yet.' : 'No entries yet.'),
-			);
-		} else {
-			const columns = listEl.createDiv('sheetsmith-entry-columns');
-			columns.createSpan({ text: primary.heading });
-			columns.createSpan({ text: secondary.heading });
-			if (withCount) {
-				columns.createSpan({ text: 'Segments' });
-				columns.createSpan({ text: 'Sense' });
-				/*
-				 * The header has to carry the row's control tracks too, or its
-				 * last label does not line up with the last input.
-				 *
-				 * With two content columns this never showed: the second label
-				 * is left-aligned at the start of the `1fr` track, and where a
-				 * track starts does not depend on how wide it is. A column
-				 * after that track does depend on it — the row spends
-				 * width on its buttons, its `1fr` is narrower than the
-				 * header's, and everything past it slides left.
-				 */
-				addControlSpacers(columns);
-			}
-		}
-
-		list.forEach((entry, index) => {
-			const row = listEl.createDiv('sheetsmith-entry-row');
-			row.addEventListener('dragover', (event) => {
-				if (this.drag.index === null) return;
-				event.preventDefault();
-				// moveEntry lands the row above the target on upward
-				// drags and below it on downward ones; the indicator must
-				// say so, not always point above.
-				row.toggleClass(
-					'sheetsmith-entry-drop-below',
-					index > this.drag.index,
-				);
-				row.toggleClass('sheetsmith-entry-drop', index < this.drag.index);
-			});
-			row.addEventListener('dragleave', () => {
-				row.removeClass('sheetsmith-entry-drop');
-				row.removeClass('sheetsmith-entry-drop-below');
-			});
-			row.addEventListener('drop', (event) => {
-				event.preventDefault();
-				row.removeClass('sheetsmith-entry-drop');
-				row.removeClass('sheetsmith-entry-drop-below');
-				if (this.drag.index === null || this.drag.index === index) return;
-				this.moveEntry(list, this.drag.index, index);
-				this.drag.index = null;
-			});
-
-			const primaryInput = row.createEl('input', {
-				type: 'text',
-				// The heading, not "Attribute key": that word was the D&D term
-				// for STR/DEX/CON, left behind by the rename that took it out of
-				// the config (SPEC §13), and it survived in the one place only a
-				// screen reader hears.
-				attr: { placeholder: primary.heading, 'aria-label': primary.heading },
-			});
-			primaryInput.value = nameOf(entry);
-			primaryInput.dataset.sheetsmithFocus = `attr-${config.id}-${index}-key`;
-			primaryInput.addEventListener('change', () => {
-				const next = primaryInput.value.trim();
-				if (next === '') {
-					// Names the column, because "a key is required" over a
-					// column headed Value points at nothing on screen. The
-					// duplicate below names the *row* instead, and "entry" is
-					// what this list calls a row whatever its columns are —
-					// which is also what its add control and its empty state
-					// say.
-					showFieldError(primaryInput, `A ${primary.heading.toLowerCase()} is required.`);
-					return;
-				}
-				if (list.some((other, i) => i !== index && nameOf(other) === next)) {
-					showFieldError(
-						primaryInput,
-						`"${next}" is already used by another entry.`,
-					);
-					return;
-				}
-				showFieldError(primaryInput, null);
-				entry[primary.key] = next;
-				void this.persist();
-				this.redraw();
-			});
-
-			const secondaryInput = row.createEl('input', {
-				type: 'text',
-				attr: {
-					placeholder: secondary.heading,
-					'aria-label': secondary.heading,
-				},
-			});
-			secondaryInput.value = String(entry[secondary.key] ?? '');
-			// Keyed by identity, unlike the first column: a commit here does not
-			// redraw, so the only redraw this input lives through is a
-			// reorder — where focus should follow the item.
-			secondaryInput.dataset.sheetsmithFocus = `attr-${config.id}-${nameOf(entry)}-name`;
-			secondaryInput.addEventListener('change', () => {
-				const next = secondaryInput.value.trim();
-				if (next === '') {
-					delete entry[secondary.key];
-				} else {
-					entry[secondary.key] = next;
-				}
-				void this.persist();
-			});
-
-			if (withCount) {
-				// A formula, not a number field: a caster's slots come from a
-				// level table, so a row's length is as much an expression as
-				// the component's own. Empty falls back to that one, which is
-				// why clearing it is a state rather than an error.
-				const countInput = row.createEl('input', {
-					type: 'text',
-					attr: {
-						placeholder: 'Segments',
-						'aria-label': `${nameOf(entry)} segments`,
-					},
-				});
-				countInput.value =
-					entry.count === undefined ? '' : String(entry.count);
-				countInput.dataset.sheetsmithFocus = `attr-${config.id}-${nameOf(entry)}-count`;
-				countInput.addEventListener('change', () => {
-					const next = countInput.value.trim();
-					if (next === '') {
-						delete entry.count;
-					} else {
-						// A bare number is stored as one, so a layout file
-						// reads `count: 5` rather than `count: "5"`.
-						const parsed = Number(next);
-						entry.count = Number.isFinite(parsed) ? parsed : next;
-					}
-					void this.persist();
-				});
-
-				// Blank is the card's own sense, which is what a set whose
-				// rows all mean the same thing leaves it as. Death saves are
-				// why it is here: successes and failures are one shape pointed
-				// two ways, and a card painting both alike says the wrong
-				// thing about one of them.
-				const senseInput = row.createEl('select', {
-					attr: { 'aria-label': `${nameOf(entry)} sense` },
-				});
-				for (const [value, text] of [
-					['', 'Same as card'],
-					['progress', 'Progress'],
-					['harm', 'Harm'],
-				] as const) {
-					senseInput.createEl('option', { value, text });
-				}
-				senseInput.value = entry.sense ?? '';
-				senseInput.dataset.sheetsmithFocus = `attr-${config.id}-${nameOf(entry)}-sense`;
-				senseInput.addEventListener('change', () => {
-					if (senseInput.value === '') {
-						delete entry.sense;
-					} else {
-						entry.sense = senseInput.value;
-					}
-					void this.persist();
-				});
-			}
-
-			if (Platform.isMobile) {
-				// HTML5 drag-and-drop is inert on touch, and there is no
-				// keyboard — reordering needs real buttons there.
-				const up = row.createEl('button', {
-					cls: 'clickable-icon',
-					attr: { 'aria-label': 'Move up' },
-				});
-				setIcon(up, 'arrow-up');
-				up.dataset.sheetsmithFocus = `attr-${config.id}-${nameOf(entry)}-up`;
-				up.addEventListener('click', () =>
-					this.moveEntry(list, index, index - 1),
-				);
-				const down = row.createEl('button', {
-					cls: 'clickable-icon',
-					attr: { 'aria-label': 'Move down' },
-				});
-				setIcon(down, 'arrow-down');
-				down.dataset.sheetsmithFocus = `attr-${config.id}-${nameOf(entry)}-down`;
-				down.addEventListener('click', () =>
-					this.moveEntry(list, index, index + 1),
-				);
-			} else {
-				const handle = row.createEl('button', {
-					cls: 'clickable-icon sheetsmith-entry-handle',
-					attr: {
-						'aria-label': 'Reorder: drag, or press the arrow keys',
-						draggable: 'true',
-					},
-				});
-				setIcon(handle, 'grip-vertical');
-				handle.dataset.sheetsmithFocus = `attr-${config.id}-${nameOf(entry)}-handle`;
-				handle.addEventListener('dragstart', (event) => {
-					this.drag.index = index;
-					event.dataTransfer?.setData('text/plain', nameOf(entry));
-				});
-				handle.addEventListener('dragend', () => {
-					this.drag.index = null;
-				});
-				handle.addEventListener('keydown', (event) => {
-					if (event.key === 'ArrowUp') {
-						event.preventDefault();
-						this.moveEntry(list, index, index - 1);
-					} else if (event.key === 'ArrowDown') {
-						event.preventDefault();
-						this.moveEntry(list, index, index + 1);
-					}
-				});
-			}
-
-			const remove = row.createEl('button', {
-				cls: 'clickable-icon',
-				attr: { 'aria-label': 'Remove entry' },
-			});
-			setIcon(remove, 'trash');
-			remove.dataset.sheetsmithFocus = `attr-${config.id}-${nameOf(entry)}-remove`;
-			remove.addEventListener('click', () => {
-				list.splice(index, 1);
-				void this.persist();
-				this.redraw();
-			});
-		});
-
-		const footer = listEl.createDiv('sheetsmith-entry-footer');
-		const add = footer.createEl('button', { text: 'Add entry' });
-		add.addEventListener('click', () => {
-			const taken = new Set(list.map(nameOf));
-			// Same shape as the row and column lists: a new entry is named for
-			// what it is, capitalised, and focus lands on it to be renamed.
-			let next = 'New entry';
-			let counter = 2;
-			while (taken.has(next)) next = `New entry ${counter++}`;
-			// The obvious next action is typing the first column; put focus
-			// there.
-			this.pendingFocus = `attr-${config.id}-${list.length}-key`;
-			list.push({ [primary.key]: next });
-			// Attaches the list on the first add, and is already a no-op on
-			// every one after it.
-			record[key] = list;
-			void this.persist();
-			this.redraw();
-		});
-	}
-
-	private moveEntry(
-		list: EntryRecord[],
-		from: number,
-		to: number,
-	): void {
-		moveItem(list, from, to, this.listContext());
 	}
 
 	/**
@@ -2458,14 +1885,6 @@ class NameModal extends Modal {
 	}
 }
 
-
-/** Commit on change (blur or Enter), never per keystroke. */
-function onCommit(
-	text: TextComponent,
-	handler: (value: string) => void,
-): void {
-	text.inputEl.addEventListener('change', () => handler(text.inputEl.value));
-}
 
 /**
  * Leading space for a dropdown option that sits under another, by how many
