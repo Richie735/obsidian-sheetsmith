@@ -99,6 +99,13 @@ const CHROME = [
 	/^\.checkbox-container/,
 	/^\.dropdown$/,
 	/^\.svg-icon/,
+	// The workspace pane the layout editor is a view in. A settings tab and a
+	// leaf are two different frames, and the editor now sits in the second: the
+	// leaf's own box, its header, and the scrolling content area a view builds
+	// into. Without these the pane would be reviewed with no frame at all.
+	/^\.workspace-leaf-content/,
+	/^\.view-header/,
+	/^\.view-content/,
 ];
 
 /**
