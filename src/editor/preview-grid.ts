@@ -5,8 +5,8 @@
  * block may sit, how far it may grow, whether two of them collide, and how
  * that reads out loud. Dragging a block, dragging its corner, and the arrow
  * keys all answer to the same rules, and the failure worth catching is the
- * three of them disagreeing — which is testable here without an app around
- * it, and not testable at all while it lives inside the settings tab.
+ * three of them disagreeing — which is testable here without an app around it,
+ * and was not testable at all while it lived inside the editor's own module.
  */
 
 import { ComponentConfig, GridPosition } from '../types';

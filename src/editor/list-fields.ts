@@ -29,7 +29,7 @@ import { isName } from '../formula/expression';
 export interface ListContext {
 	/** Write the layout. */
 	persist: () => void;
-	/** Rebuild the settings tab. */
+	/** Rebuild the pane. */
 	redraw: () => void;
 	/** Focus this token once the redraw has happened. */
 	focusAfterRedraw: (token: string) => void;
@@ -42,7 +42,7 @@ export interface ListContext {
 	flashAfterRedraw?: (token: string) => void;
 	/** Ask before something authored is destroyed, then do it if confirmed. */
 	confirm: (message: string, cta: string, onConfirm: () => void) => void;
-	/** Inline errors by focus token, so they outlive a rebuild of the tab. */
+	/** Inline errors by focus token, so they outlive a rebuild of the pane. */
 	errors: Map<string, string>;
 	/** Index of the entry being dragged, shared so one list reads its own. */
 	drag: { index: number | null };
@@ -56,7 +56,7 @@ export interface ListContext {
  */
 export function showFieldError(
 	/**
-	 * Any form field on the tab. A select as readily as a text input: a reset
+	 * Any form field in the editor. A select as readily as a text input: a reset
 	 * binding's trigger is chosen from a dropdown and can still be wrong — two
 	 * bindings on one trigger — and that has to report where it was chosen.
 	 * Nothing below needs more than dataset, classes and a parent.
@@ -64,7 +64,7 @@ export function showFieldError(
 	input: HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement,
 	message: string | null,
 	/**
-	 * Where the message is remembered across a rebuild of the tab. Without it
+	 * Where the message is remembered across a rebuild of the pane. Without it
 	 * an error survives only as long as the DOM that drew it, so correcting
 	 * one field silently clears the message on another.
 	 */
@@ -321,7 +321,7 @@ export function renderRowsEditor(
 	// the focus prefix that happens to hold the same string today.
 	const componentId = typeof record.id === 'string' ? record.id : '';
 	listEl.addClass('sheetsmith-list');
-	/** Bound once: every inline error here outlives a rebuild of the tab. */
+	/** Bound once: every inline error here outlives a rebuild of the pane. */
 	const fieldError = (input: HTMLInputElement, message: string | null) =>
 		showFieldError(input, message, context.errors);
 
@@ -742,7 +742,7 @@ export function renderColumnsEditor(
 	// Three tracks, fixed by the column form itself: key, heading, and what
 	// the column holds. The count lives in the stylesheet with them.
 	listEl.addClass('sheetsmith-list');
-	/** Bound once: every inline error here outlives a rebuild of the tab. */
+	/** Bound once: every inline error here outlives a rebuild of the pane. */
 	const fieldError = (input: HTMLInputElement, message: string | null) =>
 		showFieldError(input, message, context.errors);
 	listEl.addClass('sheetsmith-list-columns');

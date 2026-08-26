@@ -1,5 +1,5 @@
 /*
- * The layout's own arithmetic (SPEC §5, §7), as a field in the settings tab.
+ * The layout's own arithmetic (SPEC §5, §7), as a field in the layout editor.
  *
  * A textarea rather than a row per function: definitions are read as a set,
  * and a 5e library is four lines that want to be looked at together. A
@@ -7,17 +7,20 @@
  * library, rather than refused at load — the sheets using this layout go on
  * rendering while it is being fixed.
  *
- * It renders last, below the component list, and that is a choice rather than
- * an accident. A library is written once per layout; component forms are
- * opened and closed constantly. Putting six rows of textarea between the grid
- * preview and those forms would charge the frequent task to shorten the trip
- * to the rare one. The cost is real and worth stating: on a long layout the
- * definitions are a scroll away from the formulas calling them, which is a
- * side panel's job to fix, and the M4 canvas editor is where that panel
- * arrives (SPEC §7).
+ * It renders in the panel, under the layout's own row in the tree, and that is
+ * the fix this comment used to ask for. It rendered last on the settings tab,
+ * below every component form, deliberately — a library is written once per
+ * layout and component forms are opened and closed constantly, so six rows of
+ * textarea between the grid preview and those forms would have charged the
+ * frequent task to shorten the trip to the rare one. The cost of that, recorded
+ * here at the time, was that on a long layout the definitions were a scroll away
+ * from the formulas calling them, "which is a side panel's job to fix". The pane
+ * is that side panel (SPEC §7), and the move cost this module nothing: it takes
+ * a container and a layout and never knew which surface it was on.
  */
 
 import { bindFitToContent } from './list-field-height';
+import { groupHeading } from './form-group';
 import { Setting } from 'obsidian';
 import { parseFunctions } from '../formula/functions';
 import { Layout } from '../parse/layout';
@@ -49,10 +52,10 @@ export interface FunctionLibraryField {
  * changed. Returns false for a field whose DOM is gone.
  *
  * Separate from the field's own change listener because `change` is not
- * guaranteed on the paths that matter: closing the settings tab detaches a
- * focused textarea, and a pointerdown on the grid preview calls
- * preventDefault, which suppresses the focus change and the change event with
- * it. Every other field on the tab risks a word that way. This one risks a
+ * guaranteed on the paths that matter: closing the pane detaches a focused
+ * textarea, and a pointerdown on the grid preview calls preventDefault, which
+ * suppresses the focus change and the change event with it. Every other field in
+ * the editor risks a word that way. This one risks a
  * layout's entire arithmetic, so it is read rather than waited on.
  */
 export function commitFunctionLibrary(
@@ -89,7 +92,9 @@ export function renderFunctionLibrary(
 	layout: Layout,
 	context: FunctionLibraryContext,
 ): FunctionLibraryField {
-	new Setting(container).setHeading().setName('Function library');
+	// A section of the panel, not a panel: the title above it names the
+	// layout, and `.setting-item-heading` is the rank that title holds.
+	groupHeading(container, 'Function library');
 
 	const setting = new Setting(container)
 		.setDesc(
@@ -162,7 +167,7 @@ export function renderFunctionLibrary(
 		};
 
 		field = { input, layout, showProblems };
-		// Commit on blur, like every other text field on the tab. Parsing per
+		// Commit on blur, like every other text field here. Parsing per
 		// keystroke would report a half-typed definition as broken.
 		input.addEventListener('change', () => {
 			if (commitFunctionLibrary(field)) context.persist();

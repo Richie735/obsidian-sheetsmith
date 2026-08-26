@@ -3312,18 +3312,165 @@ a.sheetsmith-undo {
 }
 
 /*
- * The layout editor, which lives in the settings tab (docs/SPEC.md §12).
+ * The layout editor, which lives in a workspace pane of its own
+ * (docs/SPEC.md §7).
  *
  * This is what an author looks at, and it is a settings surface rather than a
- * sheet: it carries Obsidian's own rhythm and hairlines, and its job is to be
- * unremarkable next to the app's other settings.
+ * sheet: it carries Obsidian's own rows and rhythm, and its job is to be
+ * unremarkable next to the app's own chrome.
  *
- * Last in the cascade. It is also the only part scoped to a surface the sheet
+ * Last in the cascade. It is also the only part scoped to surfaces the sheet
  * never renders into, so nothing here can reach a card.
  */
 
-/* The open row paints a 2px accent inset at x = 0; the form continues the
-   same line in the same color at the same x, one continuous bracket. */
+/* ------------------------------------------------------------------------ *
+ * The pane: a tree of what the layout holds, beside a panel configuring
+ * whichever one is selected.
+ * ------------------------------------------------------------------------ */
+
+/* The query container the two-column rule reads. It has to be the grid's
+   ancestor rather than the grid itself, because an element cannot query its
+   own width — and a container query rather than a media query because a
+   narrow split in a wide window has to stack and a media query cannot see
+   that (docs/UI.md §4). */
+.sheetsmith-layout-editor-pane {
+	container-type: inline-size;
+	/* The leaf's height, so the two columns below can bound themselves against
+	   something definite. Unconditional, because this element is the query
+	   container and a rule inside `@container` cannot reach it — an element
+	   cannot query its own width. Harmless in the stacked case: nothing there
+	   bounds itself, the grid overflows visibly, and the leaf's own scroller
+	   takes it exactly as before. */
+	height: 100%;
+}
+
+/* Stacked is the base case, and the order is schematic, tree, panel — the
+   panel last, because it is what an author scrolls to after choosing what to
+   configure. */
+.sheetsmith-layout-editor {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	gap: var(--size-4-4);
+	align-items: start;
+}
+
+.sheetsmith-editor-outline,
+.sheetsmith-editor-panel {
+	min-width: 0;
+}
+
+/* Two columns at 1176px of pane, and every part of that number is measured
+   here rather than borrowed from the sheet — which is the failure docs/UI.md
+   §4 records against reusing 480px at a different scale.
+
+   620px is the panel's floor: the width these same forms are reviewed at in
+   the harness, so it is the width they are known to work at rather than one
+   assumed for them.
+
+   540px is the left column's floor, and it is the schematic's rather than the
+   tree's: twelve columns at the 40px UI.md §4 already calls the width below
+   which a grid stops being worth having, plus eleven 4px gaps and the
+   schematic's own 8px of padding either side. Below that the split is worse
+   than stacking, because stacked the schematic gets the whole pane.
+
+   540 + 16 of gap + 620 = 1176. Wider than the sheet's own threshold on
+   purpose: this is two surfaces side by side and that is one grid.
+
+   **The panel is fixed and the left column takes every pixel above the
+   threshold**, which means that between 1176 and 1256 the panel is the wider of
+   the two. That is deliberate and it is not the two floors disagreeing. 620 is a
+   width these forms are *known* to work at; 540 is a *minimum* below which a
+   grid stops being worth having, and a minimum is not a target — setting the
+   left column's floor to 620 as well would be borrowing the panel's number for
+   the schematic's question, which is the failure docs/UI.md §4 records at
+   length. The band is 80px and closes on its own. Splitting the slack instead
+   would never close it at any width, and raising the threshold to 1256 would
+   stack a pane whose split is perfectly legible — checked at 1176, where the
+   twelve tracks read and only a two-column card truncates, which it does at
+   every pane width. The fixed width goes to what you type into and the slack to
+   what you scan. */
+@container (min-width: 1176px) {
+/* Keyed on the panel being drawn, not on the grid existing. A grid track the
+   template declares is reserved whether or not anything is in it, so a layout
+   whose file will not parse — picker, one line of error where the tree would
+   be, no panel — would otherwise sit squeezed beside 620px of empty pane. The
+   editor answers by not drawing a panel, and `:has()` is what makes that
+   enough: the rule is true by construction rather than by anyone remembering
+   to stamp a class beside it. */
+.sheetsmith-layout-editor:has(> .sheetsmith-editor-panel) {
+		grid-template-columns: minmax(0, 1fr) 620px;
+		height: 100%;
+	}
+
+/* Two columns, two scrollers — and this is what makes the split worth having
+   rather than a decoration.
+
+   One scroller for both put the panel at the top of a page the tree ran
+   thousands of pixels past, so selecting the last row scrolled the settings you
+   had just asked for out of the window: nothing on screen said anything had
+   happened, and every edit meant scrolling up and back down again. The
+   two-column promise is that the tree and the settings are visible together,
+   and it held only while the tree was shorter than the leaf.
+
+   Bounded against the pane rather than the viewport. `100vh` was the obvious
+   reach and it is wrong in a split: a leaf sharing the window horizontally is
+   half as tall, so a panel allowed a full viewport would pin its top and put its
+   own lower half permanently below the fold, unreachable by either scrollbar.
+   `100%` of a pane that is `height: 100%` of the leaf is the leaf, whatever the
+   split.
+
+   Only inside the two-column branch. Stacked, the panel is *under* the tree and
+   must scroll with it — two nested scrollers there would be a scroll trap. */
+.sheetsmith-layout-editor:has(> .sheetsmith-editor-panel) > .sheetsmith-editor-outline,
+.sheetsmith-layout-editor:has(> .sheetsmith-editor-panel) > .sheetsmith-editor-panel {
+		max-height: 100%;
+		overflow-y: auto;
+	}
+}
+
+/* No layouts yet: the one state with neither a tree nor a panel to draw.
+   Centred on the pane, because a settings row is what everything else looks
+   like in a settings tab and is one line stranded in a corner here. */
+.sheetsmith-editor-vacant {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	gap: var(--size-4-3);
+	min-height: 60vh;
+	text-align: center;
+}
+
+/* A tree row's own control: its name is what selects it. A button rather than
+   a click handler on the row, so it has a tab stop and a focus ring — and
+   stripped of the app's button chrome, because it is a name that answers a
+   press rather than a thing that looks pressable. One rule is enough: a class
+   is (0,1,0) and beats the app's bare `button` element rule at (0,0,1). */
+.sheetsmith-tree-name {
+	padding: 0;
+	border: none;
+	border-radius: 0;
+	background: none;
+	box-shadow: none;
+	color: inherit;
+	font: inherit;
+	text-align: start;
+	cursor: pointer;
+}
+
+.sheetsmith-tree-name:hover {
+	color: var(--text-accent);
+}
+
+/* The panel's body, whether it holds a component's settings or the layout's own.
+
+   The accent border used to be half of a bracket: the open row painted a 2px
+   accent inset at x = 0 and the form continued the same line at the same x,
+   directly beneath it. The form is in a panel now and the row is a column away,
+   so the continuity is gone — and the border is kept because what it says
+   instead is true and needed: the selected row is ringed in this colour, and
+   this is the edge of the thing that row is configuring. It is the only mark
+   tying one column to the other. */
 .sheetsmith-component-form {
 	margin: 0 0 var(--size-4-4) 0;
 	padding-left: var(--size-4-3);
@@ -3798,11 +3945,6 @@ a.sheetsmith-undo {
 	display: none;
 }
 
-/* Paint-only highlight: an inset shadow never shifts the row's layout. */
-.sheetsmith-row-open {
-	box-shadow: inset 2px 0 0 var(--interactive-accent);
-}
-
 /* A component sitting inside a container, one level of disclosure in the list.
 
    Indented by its depth rather than by a class per level: the bound is two
@@ -3917,10 +4059,27 @@ a.sheetsmith-undo {
 	background-color: var(--background-modifier-hover);
 }
 
+/* The selected mark, on a schematic block and on its tree row alike.
+
+   The transparent outline is the forced-colors escape hatch the sheet's own
+   rings use (docs/UI.md §6), and this is the first state ring the editor has
+   drawn, so it is the first place in here to need one. It is load bearing on
+   both halves and for two different reasons. A block has a real 1px border, but
+   forced-colors mode overrides every border on the page to one system colour, so
+   recolouring it says nothing there; a **tree row has no border at all** —
+   Obsidian 1.13 sets `--setting-items-border-width: 0`, so the declaration
+   above paints nothing on one and the inset shadow is the whole of the mark.
+   Discard the shadow and a sighted forced-colors user is left with a panel full
+   of fields and nothing in a tree of forty rows saying which one it belongs to.
+
+   Offset inward by the shadow's own width, so the repainted ring lands where
+   the shadow was rather than a pixel outside it. */
 .sheetsmith-preview-editing {
 	border-color: var(--interactive-accent);
 	color: var(--text-normal);
 	box-shadow: 0 0 0 1px var(--interactive-accent) inset;
+	outline: 1px solid transparent;
+	outline-offset: -1px;
 }
 
 .sheetsmith-preview-dragging {

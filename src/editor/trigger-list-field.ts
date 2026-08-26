@@ -1,5 +1,5 @@
 /*
- * The layout's reset triggers (SPEC §6, §7), as a field in the settings tab.
+ * The layout's reset triggers (SPEC §6, §7), as a field in the layout editor.
  *
  * A textarea, one name per line, for the same reasons the function library is
  * one: a trigger list is read as a set, a 5e layout's is two lines, and the
@@ -15,6 +15,7 @@
  */
 
 import { bindFitToContent } from './list-field-height';
+import { groupHeading } from './form-group';
 import { Setting } from 'obsidian';
 import { Layout } from '../parse/layout';
 import { parseTriggers } from '../parse/triggers';
@@ -68,7 +69,7 @@ export function commitTriggerList(field: TriggerListField | null): boolean {
 export interface TriggerListContext {
 	/** Called after a commit that changed something. */
 	persist: () => void;
-	/** Redraw the tab, so component forms pick up the new trigger list. */
+	/** Redraw the pane, so component forms pick up the new trigger list. */
 	redraw: () => void;
 }
 
@@ -77,7 +78,9 @@ export function renderTriggerList(
 	layout: Layout,
 	context: TriggerListContext,
 ): TriggerListField {
-	new Setting(container).setHeading().setName('Reset triggers');
+	// A section of the panel, not a panel: the title above it names the
+	// layout, and `.setting-item-heading` is the rank that title holds.
+	groupHeading(container, 'Reset triggers');
 
 	const setting = new Setting(container)
 		.setDesc(

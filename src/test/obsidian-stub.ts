@@ -243,12 +243,11 @@ export class Notice {
 /* ------------------------------------------------------------------------ *
  * Settings UI.
  *
- * Added so the layout editor can be rendered outside the app — by the harness
- * today, and by a test whenever `layout-editor.ts` gets one, which it does not
- * have. The DOM shape matters and is not incidental: styles.css targets
- * `.setting-item`, `.setting-item-control`, `.setting-item-name` and
- * `.clickable-icon`, so a stub emitting a different structure would render the
- * editor in a way no user would ever see.
+ * Added so the layout editor and the settings tab can be rendered outside the
+ * app, by a test and by the harness alike. The DOM shape matters and is not
+ * incidental: styles.css targets `.setting-item`, `.setting-item-control`,
+ * `.setting-item-name` and `.clickable-icon`, so a stub emitting a different
+ * structure would render the editor in a way no user would ever see.
  *
  * Still a test double. Each method does the least that makes the code under
  * test behave as it does in the app, and no more.
@@ -330,25 +329,63 @@ export class TextAreaComponent extends ValueComponent<
 	}
 }
 
-export class ToggleComponent extends ValueComponent<boolean, HTMLInputElement> {
-	get toggleEl(): HTMLInputElement {
+/**
+ * Obsidian's toggle: a `.checkbox-container` div carrying the state as a class,
+ * with an invisible checkbox inside it.
+ *
+ * **The structure is the whole of what this has to get right**, and it did not.
+ * The input itself used to carry `.checkbox-container`, which is one element
+ * where the app has two — and that is not a harmless simplification, because
+ * both the plugin's CSS and the app's select on the difference. `editor.css`
+ * widens a form's direct-child `input` to 14em, which in the app never matches a
+ * toggle and in the stub matched every one of them, so every boolean in the pane
+ * rendered as a 182px track with a bare checkbox adrift in it. An instrument
+ * harsher than the thing costs a review as surely as a kinder one: no toggle in
+ * the pane had ever been looked at, because what was drawn was not what ships.
+ *
+ * `toggleEl` is the container, as it is in the app — it is the element that takes
+ * focus and the one a caller hangs a focus token on.
+ */
+export class ToggleComponent extends ValueComponent<boolean, HTMLElement> {
+	private input: HTMLInputElement;
+
+	get toggleEl(): HTMLElement {
 		return this.el;
 	}
+
 	constructor(parent: HTMLElement) {
-		const input = parent.ownerDocument.createElement('input');
+		const doc = parent.ownerDocument;
+		const container = doc.createElement('div');
+		container.classList.add('checkbox-container');
+		const input = doc.createElement('input');
 		input.type = 'checkbox';
-		input.classList.add('checkbox-container');
-		parent.appendChild(input);
-		super(input);
-		input.addEventListener('change', () =>
-			this.changeCallback?.(input.checked),
-		);
+		container.appendChild(input);
+		parent.appendChild(container);
+		super(container);
+		this.input = input;
+		input.addEventListener('change', () => {
+			// The state lives on the container as a class, which is what the app's
+			// own stylesheet paints the pill and the thumb from.
+			container.classList.toggle('is-enabled', input.checked);
+			this.changeCallback?.(input.checked);
+		});
 	}
+
 	getValue(): boolean {
-		return this.el.checked;
+		return this.input.checked;
 	}
+
 	setValue(value: boolean): this {
-		this.el.checked = value;
+		this.input.checked = value;
+		this.el.classList.toggle('is-enabled', value);
+		return this;
+	}
+
+	setDisabled(disabled: boolean): this {
+		// Not the base class's: a div has no `disabled`, and the app marks a
+		// toggle with a class it actually styles.
+		this.input.disabled = disabled;
+		this.el.classList.toggle('is-disabled', disabled);
 		return this;
 	}
 }
@@ -618,40 +655,274 @@ export class Vault {
 	}
 }
 
-export class Workspace {
-	getLeavesOfType(): unknown[] {
-		return [];
-	}
-	on(): unknown {
-		return {};
-	}
-}
-
 export class FileManager {
 	async trashFile(file: TAbstractFile): Promise<void> {
 		await file.vault.delete(file);
 	}
 }
 
-export class App {
-	vault = new Vault();
-	workspace = new Workspace();
-	fileManager = new FileManager();
+/* ------------------------------------------------------------------------ *
+ * Component lifecycle, leaves and views.
+ *
+ * Added so a workspace view can be rendered outside the app. The layout editor
+ * lives in one, and a pane nothing can construct is a pane nothing can test or
+ * photograph. Three things here are load bearing and the rest is the least that
+ * makes them work.
+ *
+ * **The lifecycle is real, not a no-op.** "Registers on load, drops on unload"
+ * is a claim a view makes, and a `register` that discards its callback turns
+ * that claim into an assertion nothing can fail.
+ *
+ * **The element nesting is contract**, exactly as the settings builders above
+ * are. Obsidian wraps a view in `.workspace-leaf-content` holding a
+ * `.view-header` and a `.view-content`; `harness/calibrate.mjs` lifts the real
+ * rules for those three out of the app, and the harness reviews the pane inside
+ * them. A stub nesting them differently would review a frame no user has.
+ *
+ * **A leaf is asked for, never conjured.** `Workspace.getLeaf` is what hands one
+ * out, so `getLeavesOfType` has something to look through and the refresh hop a
+ * view makes into other views is drivable rather than stubbed to nothing.
+ *
+ * What is deliberately *not* here: a `file`, and a vault fixture to load one
+ * from. That is what a rendered `SheetView` needs beyond this
+ * (`docs/PATTERNS.md` §11), and it is a piece of work of its own rather than
+ * something to half-build here.
+ * ------------------------------------------------------------------------ */
+
+/** What `Workspace.on` hands back, and what `registerEvent` detaches. */
+export interface EventRef {
+	off(): void;
 }
 
-export class WorkspaceLeaf {}
+/**
+ * Obsidian's `Component`: a load/unload lifecycle with children and registered
+ * teardowns.
+ */
+export class Component {
+	private children: Component[] = [];
+	private cleanups: (() => void)[] = [];
+	/** Whether `load` has run, which is what decides when a late child loads. */
+	loaded = false;
+
+	load(): void {
+		if (this.loaded) return;
+		this.loaded = true;
+		this.onload();
+		for (const child of this.children) child.load();
+	}
+
+	onload(): void {}
+
+	unload(): void {
+		if (!this.loaded) return;
+		this.loaded = false;
+		for (const child of [...this.children]) child.unload();
+		// Last registered, first undone — the app's order, and the only one that
+		// cannot run a teardown before something it depends on.
+		for (const cleanup of [...this.cleanups].reverse()) cleanup();
+		this.cleanups = [];
+		this.onunload();
+	}
+
+	onunload(): void {}
+
+	addChild<T extends Component>(child: T): T {
+		this.children.push(child);
+		if (this.loaded) child.load();
+		return child;
+	}
+
+	removeChild<T extends Component>(child: T): T {
+		this.children = this.children.filter((candidate) => candidate !== child);
+		child.unload();
+		return child;
+	}
+
+	register(cb: () => void): void {
+		this.cleanups.push(cb);
+	}
+
+	registerEvent(ref: EventRef): void {
+		this.register(() => ref.off());
+	}
+
+	registerDomEvent(
+		el: HTMLElement | Document | Window,
+		type: string,
+		callback: EventListener,
+	): void {
+		el.addEventListener(type, callback);
+		this.register(() => el.removeEventListener(type, callback));
+	}
+
+	registerInterval(id: number): number {
+		this.register(() => window.clearInterval(id));
+		return id;
+	}
+}
+
+/**
+ * A workspace view, and the DOM Obsidian wraps one in.
+ *
+ * `onOpen` and `onClose` are public here where the app declares them
+ * protected: a leaf is what calls them, and in the app the leaf is inside the
+ * boundary. Widening is the only way a stub outside it can play the same part.
+ */
+export class View extends Component {
+	app: App;
+	containerEl: HTMLElement;
+	contentEl: HTMLElement;
+	/** Obsidian's own flag: false for a view that is not navigated to a file. */
+	navigation = false;
+	/** The header's title, which `WorkspaceLeaf.open` fills from the view. */
+	readonly titleEl: HTMLElement;
+
+	constructor(public leaf: WorkspaceLeaf) {
+		super();
+		this.app = leaf.app;
+		const doc = leaf.containerEl.ownerDocument;
+		this.containerEl = doc.createElement('div');
+		this.containerEl.classList.add('workspace-leaf-content');
+		const header = doc.createElement('div');
+		header.classList.add('view-header');
+		const titleContainer = doc.createElement('div');
+		titleContainer.classList.add('view-header-title-container');
+		this.titleEl = doc.createElement('div');
+		this.titleEl.classList.add('view-header-title');
+		titleContainer.appendChild(this.titleEl);
+		header.appendChild(titleContainer);
+		this.contentEl = doc.createElement('div');
+		this.contentEl.classList.add('view-content');
+		this.containerEl.append(header, this.contentEl);
+	}
+
+	getViewType(): string {
+		return '';
+	}
+
+	getDisplayText(): string {
+		return '';
+	}
+
+	getIcon(): string {
+		return 'document';
+	}
+
+	async onOpen(): Promise<void> {}
+
+	async onClose(): Promise<void> {}
+
+	getState(): Record<string, unknown> {
+		return {};
+	}
+
+	async setState(_state: unknown, _result: unknown): Promise<void> {}
+
+	getEphemeralState(): Record<string, unknown> {
+		return {};
+	}
+
+	setEphemeralState(_state: unknown): void {}
+}
+
+export class ItemView extends View {}
 
 /** Only ever extended, never constructed by anything the harness renders. */
-export class TextFileView {
-	containerEl: HTMLElement = document.createElement('div');
+export class TextFileView extends ItemView {
 	data = '';
-	constructor(public leaf: WorkspaceLeaf) {}
-	registerEvent(): void {}
-	registerDomEvent(): void {}
-	registerInterval(): void {}
 }
 
 export class MarkdownView extends TextFileView {}
+
+export class WorkspaceLeaf {
+	/** The view showing here, or null until one is opened. */
+	view: View | null = null;
+	/** The element the app gives a leaf; a view's own container goes inside it. */
+	containerEl: HTMLElement;
+
+	constructor(public app: App) {
+		this.containerEl = document.createElement('div');
+		this.containerEl.classList.add('workspace-leaf');
+	}
+
+	/**
+	 * Show a view here, in the app's own order: attach, load, then `onOpen`.
+	 *
+	 * The order is the point rather than an accident. A pane's first render is
+	 * inside `onOpen`, and anything that measures itself there measures an
+	 * element that is already in a document — so a stub that opened before
+	 * attaching would give a pane geometry the app never gives it.
+	 */
+	async open<T extends View>(view: T): Promise<T> {
+		this.view = view;
+		this.containerEl.replaceChildren(view.containerEl);
+		view.titleEl.textContent = view.getDisplayText();
+		view.load();
+		await view.onOpen();
+		return view;
+	}
+
+	/** Close whatever is showing, unloading it as the app does. */
+	async detach(): Promise<void> {
+		const view = this.view;
+		this.view = null;
+		this.containerEl.replaceChildren();
+		if (!view) return;
+		await view.onClose();
+		view.unload();
+	}
+}
+
+export class Workspace {
+	/** Every leaf handed out, in the order they were asked for. */
+	leaves: WorkspaceLeaf[] = [];
+	/** The leaf `revealLeaf` last brought forward, which is "active" here. */
+	activeLeaf: WorkspaceLeaf | null = null;
+	private listeners = new Map<string, Set<(...args: unknown[]) => unknown>>();
+
+	constructor(public app: App) {}
+
+	/**
+	 * A leaf to open a view in.
+	 *
+	 * Always a new one, whatever the argument. The app reuses the active leaf for
+	 * `getLeaf(false)`, and reproducing that would mean modelling which leaf is
+	 * active and what is already in it — state nothing here reads. A caller that
+	 * wants the leaf a view is already in asks `getLeavesOfType` for it, which is
+	 * what the plugin's own command does.
+	 */
+	getLeaf(_newLeaf?: boolean | string): WorkspaceLeaf {
+		const leaf = new WorkspaceLeaf(this.app);
+		this.leaves.push(leaf);
+		return leaf;
+	}
+
+	getLeavesOfType(type: string): WorkspaceLeaf[] {
+		return this.leaves.filter((leaf) => leaf.view?.getViewType() === type);
+	}
+
+	async revealLeaf(leaf: WorkspaceLeaf): Promise<void> {
+		this.activeLeaf = leaf;
+	}
+
+	on(name: string, callback: (...args: unknown[]) => unknown): EventRef {
+		const set = this.listeners.get(name) ?? new Set();
+		set.add(callback);
+		this.listeners.set(name, set);
+		return { off: () => set.delete(callback) };
+	}
+
+	/** Fire an event, so a test can drive what the app would have fired. */
+	trigger(name: string, ...args: unknown[]): void {
+		for (const callback of this.listeners.get(name) ?? []) callback(...args);
+	}
+}
+
+export class App {
+	vault = new Vault();
+	workspace = new Workspace(this);
+	fileManager = new FileManager();
+}
 
 export class Modal {
 	containerEl: HTMLElement;

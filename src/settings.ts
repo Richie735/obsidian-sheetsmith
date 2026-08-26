@@ -1,7 +1,7 @@
 import { App, PluginSettingTab, Setting } from 'obsidian';
-import { LayoutEditorSection } from './editor/layout-editor';
 import SheetsmithPlugin from './main';
 import { LAYOUT_KEY } from './types';
+import { openLayoutEditor } from './view/layout-editor-view';
 
 export interface SheetsmithSettings {
 	/** Vault folder holding layout files. */
@@ -19,18 +19,37 @@ export const DEFAULT_SETTINGS: SheetsmithSettings = {
  * Obsidian 1.13 asks a settings tab to describe itself declaratively through
  * `getSettingDefinitions()`, so the app can index each setting for search.
  *
- * This tab cannot, yet, and the obstacle is not effort. Most of it is not a
- * list of settings at all: it is the interim layout editor (SPEC §12), an
- * authoring form that rebuilds itself on every edit, carries a debounced
- * draft, and generates a component's fields from its own `configFields` at
- * runtime. Static definitions cannot express a form whose shape is decided by
- * which component the author selected a moment ago.
+ * This tab used to answer that with "most of it is the interim layout editor,
+ * and static definitions cannot describe a form whose shape is decided at
+ * runtime". That answer has expired: the editor is a workspace pane now, and
+ * what is left here is two preferences and a button, which is exactly the shape
+ * the declarative API is for.
  *
- * The M4 workspace view takes the editor out of settings, leaving exactly the
- * two preferences the declarative API is for. That is when this gets adopted,
- * and adopting it earlier would mean describing the editor as something it is
- * not. The rule is turned off for this file in eslint.config.mts, because the
- * plugin's own config forbids silencing it inline.
+ * Two things still block it, and both are about being able to tell whether the
+ * adoption worked.
+ *
+ * **The storage seam is documented but not specified.** A `control` definition
+ * names a key and the framework reads and writes it through `getControlValue`
+ * and `setControlValue`, which `PluginSettingTab` overrides to reach "their
+ * conventional settings storage". Whether a write also persists — this plugin
+ * saves through `saveSettings`, and nothing in the typings says the framework
+ * calls it — is the difference between preferences that save and preferences
+ * that silently stop saving. Nothing here can catch that either way:
+ * `src/test/obsidian-stub.ts` renders `Setting` rows, and rendering a tab built
+ * from definitions would mean reimplementing Obsidian's own renderer rather
+ * than doubling it, so neither a test nor the harness could look at the result.
+ *
+ * **The folder preference is not a plain bind.** An emptied field falls back to
+ * the default rather than being rejected, because an empty folder silently
+ * relocates layout lookup and creation to the vault root — and the displayed
+ * value is rewritten on blur so what is on screen is what is in effect.
+ * `validate` rejects a value; it does not substitute one.
+ *
+ * **Waiting on:** a stub that renders `getSettingDefinitions()`, so the
+ * adoption can be looked at rather than assumed, and a decision on whether an
+ * emptied folder is an error or a fallback. The rule is turned off for this file
+ * in eslint.config.mts, because the plugin's own config forbids silencing it
+ * inline.
  */
 export class SheetsmithSettingTab extends PluginSettingTab {
 	/*
@@ -45,46 +64,14 @@ export class SheetsmithSettingTab extends PluginSettingTab {
 	 * happens to repair it, which is exactly why this needed writing down.
 	 */
 	declare plugin: SheetsmithPlugin;
-	private layoutEditor: LayoutEditorSection;
 
 	constructor(app: App, plugin: SheetsmithPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
-		this.layoutEditor = new LayoutEditorSection(plugin, () => this.redraw());
-	}
-
-	hide(): void {
-		// A debounced edit may still be pending; closing the tab must never
-		// lose it.
-		this.layoutEditor.flush();
 	}
 
 	display(): void {
-		this.redraw();
-	}
-
-	/*
-	 * The body of `display`, under a name of its own.
-	 *
-	 * Obsidian deprecated `display()` in 1.13, so anything calling it lands on
-	 * a deprecated symbol — including this tab calling itself to redraw, which
-	 * is the one caller that has nothing to do with the deprecation. Obsidian
-	 * still invokes `display()`; the plugin does not have to.
-	 */
-	private redraw(): void {
 		const { containerEl } = this;
-
-		// A redraw empties and rebuilds the tab. Preserve the scroll
-		// position and the focused control (by its focus id) across it, or
-		// every interaction snaps the page to the top and drops focus.
-		const scroller = this.findScroller();
-		const scrollTop = scroller.scrollTop;
-		const active = containerEl.ownerDocument.activeElement;
-		const focusId =
-			active && active.instanceOf(HTMLElement)
-				? active.dataset.sheetsmithFocus
-				: undefined;
-
 		containerEl.empty();
 
 		new Setting(containerEl)
@@ -136,41 +123,19 @@ export class SheetsmithSettingTab extends PluginSettingTab {
 					}),
 			);
 
-		// Restore only after the async layout section has appended, or the
-		// still-short page would clamp the position back toward zero.
-		void this.layoutEditor.render(containerEl).then(() => {
-			scroller.scrollTop = scrollTop;
-			if (focusId) this.refocus(focusId);
-		});
-	}
-
-	private refocus(focusId: string): void {
-		for (const candidate of Array.from(
-			this.containerEl.querySelectorAll('[data-sheetsmith-focus]'),
-		)) {
-			if (
-				candidate.instanceOf(HTMLElement) &&
-				candidate.dataset.sheetsmithFocus === focusId
-			) {
-				candidate.focus({ preventScroll: true });
-				return;
-			}
-		}
-	}
-
-	/** The nearest scrollable ancestor of the tab content. */
-	private findScroller(): HTMLElement {
-		let el: HTMLElement | null = this.containerEl;
-		while (el) {
-			const style = el.win.getComputedStyle(el);
-			if (
-				el.scrollHeight > el.clientHeight &&
-				(style.overflowY === 'auto' || style.overflowY === 'scroll')
-			) {
-				return el;
-			}
-			el = el.parentElement;
-		}
-		return this.containerEl;
+		new Setting(containerEl)
+			.setName('Layout editor')
+			.setDesc(
+				// Where it went, not what it is. The editor used to be on this
+				// page, so a reader who remembers it here needs the sentence to
+				// say that it moved rather than to describe authoring in general.
+				'Layouts are designed in a pane of their own, so a sheet can sit beside one.',
+			)
+			.addButton((button) =>
+				button
+					.setButtonText('Open layout editor')
+					.setCta()
+					.onClick(() => void openLayoutEditor(this.plugin)),
+			);
 	}
 }

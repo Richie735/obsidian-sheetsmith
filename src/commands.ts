@@ -1,9 +1,16 @@
 import { MarkdownView } from 'obsidian';
 import type SheetsmithPlugin from './main';
 import { LAYOUT_KEY } from './types';
+import { openLayoutEditor } from './view/layout-editor-view';
 import { SheetView, VIEW_TYPE_SHEET } from './view/sheet-view';
 
 export function registerCommands(plugin: SheetsmithPlugin): void {
+	plugin.addCommand({
+		id: 'open-layout-editor',
+		name: 'Open layout editor',
+		callback: () => void openLayoutEditor(plugin),
+	});
+
 	plugin.addCommand({
 		id: 'open-as-sheet',
 		name: 'Open as sheet',

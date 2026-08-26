@@ -34,8 +34,8 @@ export const MIN_ROWS = 3;
 
 /**
  * The ceiling. A layout with more triggers than this is possible and must not
- * push the rest of the settings tab off the screen; at that point scrolling
- * inside the field is the lesser cost.
+ * push the rest of the panel off the screen; at that point scrolling inside the
+ * field is the lesser cost.
  */
 export const MAX_ROWS = 12;
 
