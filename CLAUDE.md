@@ -32,7 +32,7 @@ The registry contract in `src/components/contract.test.ts` runs the §4.1 checks
 ## Architecture
 
 - **Character note.** One frontmatter key (`sheet-layout`), all values in the body, one `##` section per component. Scalar components store fenced YAML; link-bearing components store markdown tables or prose. See `SPEC` §3.
-- **Layout file.** A separate vault file holding structure, formulas, function library, and reset triggers. No per-character data. Shared by many characters.
+- **Layout file.** A separate vault file holding structure, formulas, function library, and reset triggers. No per-character data. Shared by many characters. Edited in a workspace pane of its own (`SPEC` §7); the settings tab keeps two preferences and a button that opens it.
 - **Sections key on the component's `label`**, which is also its heading. The `id` is stable identity for formula references, so renaming a label breaks no formulas but does require migrating existing notes.
 
 ## Component contract
@@ -102,17 +102,18 @@ npm run harness:calibrate  # extract Obsidian's real theme + settings chrome
 npm run harness:shot       # render every view to harness/shots/*.png
 ```
 
-The harness renders the plugin's two screens outside Obsidian against the real
-`styles.css`: the sheet, and the settings tab holding the layout editor. Both
-themes, any width, and the two joined so an editor change re-renders the sheet.
-Review appearance by looking at it, not by reading CSS.
+The harness renders the plugin's three screens outside Obsidian against the real
+`styles.css`: the sheet, the layout editor pane, and the settings tab. Both
+themes, any width, and the sheet and the editor joined so an editor change
+re-renders the sheet. Review appearance by looking at it, not by reading CSS.
 
 It runs on `src/test/obsidian-stub.ts`, the same stub vitest uses. Anything the
 stub gains for the harness a test can also use.
 
 `harness:calibrate` reads the installed Obsidian's own `app.css` out of its asar
 and generates `harness/obsidian.generated.css`, so the harness borrows the real
-palette and the real settings chrome instead of approximating them. That file is
+palette, the real settings chrome and the real workspace-leaf chrome instead of
+approximating them. That file is
 gitignored: it is Obsidian's CSS, and this repository is public.
 
 ## Conventions
