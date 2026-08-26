@@ -652,6 +652,20 @@ where the fold is* — and it is the one to fix first, because two of the other
 four could only be checked with throwaway overrides pasted into `index.html`, and
 one real defect had already shipped behind it.
 
+**Three of the five are since closed, in that order**, and what the order bought
+is worth recording because it is the argument for fixing an instrument first.
+`&bounded` went in, so a leaf can be given the window's own height for one shot.
+The booleans were then looked at for the first time — and the pair of them that
+are checkboxes rather than toggles turned out to carry no state at all in forced
+colors, since Obsidian repaints its toggle for that mode and repaints nothing for
+a bare checkbox, which `editor.css` now answers. And the threshold row, which had
+named `&bounded` as what it was waiting on, was taken third against a bounded
+shot of the form at 584px. Its named fix did not survive being measured: `minmax(0,
+1fr) minmax(0, 620px)` changes nothing at any width, and the `min-width` on the
+outline overflows the pane. What the two columns do instead is share what the
+pane cannot give both — the panel never takes more than half — and the reasoning
+is at the rule in `editor.css`.
+
 **Two of the three seams in `layout-editor.ts` stay unsplit.** Commit 3 takes the
 tree-from-form seam because it cannot avoid it. `renderEntriesEditor` moving to
 `list-fields.ts` — where that module's own header says it belongs — and the reset
