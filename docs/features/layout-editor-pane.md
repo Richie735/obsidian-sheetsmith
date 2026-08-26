@@ -564,6 +564,41 @@ implementation and every round of findings.
    amended to say the surface half is answered and the field kind is not; SPEC §7
    updated where it describes the interim editor as living in settings.
 
+### What the findings rounds added, and why one of them is not a refactor
+
+The rounds after the slice worked produced three more boundaries. They are
+listed apart because the slice's own plan above was written before them, and
+because the third one breaks the premise the first two share.
+
+8. **`refactor: Give the editor's field helpers modules of their own`.**
+   `showFieldError` to `field-error.ts` and `copyableName` to
+   `copyable-name.ts`, both out of `list-fields.ts`, which is now only
+   list-shaped fields; `addControlSpacers` made private, its last outside caller
+   having left with the entry list. Import rewiring, no behaviour.
+9. **`test: Drive the editor's fields without a pane`.** `reset-field.test.ts`
+   and `trigger-list-field.test.ts`, neither of which existed — both of §6's
+   halves were reachable only through a pane that could assert they were on
+   screen and nothing else — plus `renderEntriesEditor` driven directly in
+   `list-fields.test.ts`, and the rows header's control tracks, which nothing
+   covered.
+10. **`fix: Put the stored name back when an entry's key is refused`.**
+    **Behaviour and copy, so not a refactor and not free to ride inside one.**
+    The entry list's refused primary cell now reverts to the stored value and
+    remembers its message across a rebuild, which is what its two siblings in
+    the same file already did, one of them stating the rule in a comment. Two
+    user-visible strings gained a clause naming what the field was left as,
+    converging on the columns editor's shipped wording. **Ordering constraint:**
+    the assertions that depend on the new wording must not land before it —
+    `list-fields.test.ts`'s entries cases and one `layout-editor.test.ts`
+    assertion — so this commit carries them, or precedes the commit that does.
+
+Two doc corrections belong with boundary 7 rather than a commit of their own:
+PATTERNS §11's `layout-editor.ts` row had claimed the field code came out
+covered and that this module's header had long said the entry list belonged in
+`list-fields.ts`. Neither was true. `git log -L` shows the replaced header
+recorded only where the shared chrome lives, and the move was argued in the pass
+that took it.
+
 ## Deliberately not doing
 
 **No canvas, and no live components.** The schematic keeps its abstract blocks.
@@ -668,9 +703,12 @@ is at the rule in `editor.css`.
 
 **Two of the three seams in `layout-editor.ts` stay unsplit.** Commit 3 takes the
 tree-from-form seam because it cannot avoid it. `renderEntriesEditor` moving to
-`list-fields.ts` — where that module's own header says it belongs — and the reset
+`list-fields.ts` — which already lends it the chrome it draws with, though that
+module's header claims nothing about where the list belongs — and the reset
 binding becoming its own module are a separate slice, along with the schematic's
-gesture layer and **the pointer and keyboard tests it has never had.** That last
+gesture layer and **the pointer and keyboard tests it has never had.** (The first
+two were taken in the findings rounds after this slice worked; boundaries 8 to 10
+above are the record. The argument for each was made there, not here.) That last
 is the one worth restating: 350 lines of drag, resize and nudge arithmetic have no
 behavioural coverage, only the pure arithmetic under them does, and this slice
 carries them into a new host without adding any. It is a deliberate cut and it is
