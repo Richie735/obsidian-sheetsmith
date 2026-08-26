@@ -196,6 +196,13 @@ function confirmAction(): void {
  * three callers each claim is about *writes*: that opening a form is not an
  * edit, that a drag persists once on release rather than once a frame, and that
  * a run of arrow keys goes through one debounce.
+ *
+ * **When it is counted is half of what it says.** The two gesture callers make
+ * opposite claims about the same number, and both are only readable either side
+ * of a flush: the drag counts its write after a bare tick, before `settle` runs
+ * any pending timer, so a debounced write there fails; the arrow run counts 0
+ * before `settle` and 1 after. Count both after the flush and the two policies
+ * are indistinguishable.
  */
 function writes(harness: Harness): () => number {
 	let count = 0;
@@ -2191,6 +2198,14 @@ describe('a layout that omits its column count', () => {
  * why rather than an oversight. **The extraction itself left them untouched:** not
  * one assertion changed and no import either, which is the strongest thing that
  * can be said for a pure movement.
+ *
+ * One assertion has been added *since*, and the boundary matters because commits
+ * are split against these records. `follows the pointer on the cell itself` now
+ * counts the drag's write after a bare `tick()` as well as after `settle`. That
+ * is coverage the new seam owed rather than fallout from the move: `persist` and
+ * `persistSoon` became two members of `SchematicHost` precisely because which one
+ * a gesture uses is its own policy, and counting only after the flush could not
+ * tell them apart.
  */
 
 /**
@@ -2440,6 +2455,13 @@ describe('dragging a block around the schematic', () => {
 		expect(wrote()).toBe(0);
 
 		release(cell);
+		// Counted before anything flushes, which is what makes this the drag's own
+		// write rather than a debounce's. `settle` runs the pending timer, so a
+		// `persistSoon` here would land one write too and read the same after it —
+		// and `nudge`, which is meant to be debounced, is held to the reverse.
+		await tick();
+		expect(wrote()).toBe(1);
+
 		await settle(harness.pane);
 		expect(await position(harness, 'left')).toEqual({
 			col: 4,
