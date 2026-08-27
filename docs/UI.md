@@ -282,6 +282,7 @@ belongs to the component that is only that, not to whoever renders one.
 | --- | --- | --- |
 | The card | `.sheetsmith-card`, `.sheetsmith-card-single` | Card, Card set, Pool |
 | A heading over a region | `.sheetsmith-group-heading` | Group, Tab set |
+| A component's own name | `.sheetsmith-component-label` | the card face, Pool, Track, Rich text, Image |
 | A strip of alternatives over a region | `.sheetsmith-tabset-strip` | Tab set's tabs |
 | The level ring | `paintLevelRing`, `.sheetsmith-level-ring` | Table's `level` and `toggle` columns, Track's flag, the editor's level sample |
 | The editing gesture | `editable.ts` | every stored value on a sheet |
@@ -290,7 +291,9 @@ belongs to the component that is only that, not to whoever renders one.
 | Arm, then commit | `.sheetsmith-table-remove-button` | Table's row delete |
 | A total under a table | `tfoot` + `.sheetsmith-table-value` | Table's column totals |
 | A control in the row position | `.sheetsmith-table-add` | Table's add row |
-| Rendered text over its own field | `.sheetsmith-table-linked` | Table's wikilinks |
+| Rendered text over its own field | `.sheetsmith-table-linked`, `.sheetsmith-rich-text-box`, `.sheetsmith-image-box` | Table's wikilinks, Rich text's prose, Image's reference |
+| Text with its wikilinks as links | `components/linked-text.ts` | Table's cells, Rich text's fallback |
+| A box sized by its placement | `.sheetsmith-placed`, `.sheetsmith-placed-box` | Rich text, Image |
 | Reveal on hover, only when clipped | `ui/truncation.ts` | The card's label, Table's links |
 | A choice from a closed list | a native `<select>`; `.sheetsmith-card-select`, `.sheetsmith-table-select` | Card's options, Table's `level` column set to a select |
 
@@ -318,6 +321,78 @@ display layer is opaque over a field whose own text is transparent, and only the
 links inside it take a press — everything else falls through to the field, so a
 click still puts the caret where it landed. A cell with nothing to render gets
 none of it, which is what keeps an eighteen-row card the DOM it always had.
+
+**The same arrangement at block scale is Rich text's, with three stated
+departures** [judgement]. A cell and a prose box share the rule above and differ
+in three mechanical ways, each with its reason, because a shared gesture is only
+shared if the differences are written down. **The rendered layer is hidden rather
+than left transparent**: a cell's two layers hold one line in one shape and can
+overlap, while a block's hold one text in two — a rendered heading is not the
+height of its source line — and two differently-shaped copies of one text
+overlaid are unreadable. **The caret is not moved**, for the same reason: a point
+in the rendered view is not the same character in the source, so there is no
+landing position to preserve and pretending otherwise puts the caret confidently
+in the wrong place. **The box never changes size, but its scroll extent does** —
+the rule above holds where it was written, since the placement is fixed and
+nothing on the sheet moves; inside the box, a focused field scrolls to its caret,
+which is what the reader asked for by clicking. The two layers are separately
+scrolled for that reason: one offset shared between two shapes puts them out of
+step.
+
+**A component's box is never sized by its content** [checked: `styles.test.ts`].
+Rich text is where this first bit, and it is `SPEC` §8's "a component fills its
+placement" read for a component whose content has no natural height. The prior
+art is four issues over four years on the closest analogue — a prose block with
+no vertical size, at zero height, squished, or absent — and the oldest states the
+defect exactly: it "grows according to its content which does not allow to
+control its position in the sheet in a stable way". Three CSS facts hold it and
+each answers a different one of those four: a `min-height` from the placement, so
+the row is sized by the layout and cannot collapse; `overflow-y: auto`, so the
+text scrolls rather than escaping; and both layers out of flow, so nothing inside
+contributes intrinsic height and the floor cannot be pushed past. None is visible
+in a unit test, which is why all three are scanned rather than trusted.
+
+**The box is one thing and not two, and naming only the number is how it nearly
+was not.** This table's row for it used to name `--sheetsmith-rows` ×
+`--sheetsmith-grid-row`, which is the arithmetic and not the object — and while
+that was all it named, both components wrote the *rule* out in full: fourteen
+identical declarations in two copies, including the coarse-pointer and
+high-contrast blocks. That is `PATTERNS.md` §1's `roundSum` mistake exactly, "a
+policy shared and its application duplicated", and the drift it allowed was
+silent: change the surface's radius for a portrait and prose keeps the old one,
+with no type, lint or test reporting it. One class each for the component and its
+surface, and what a component keeps is only what it does *inside* the box — which
+is the one thing the two do not share. The guard moved with the risk: the
+stylesheet is checked for what the shared rule says and for nobody writing it out
+again, and each component's own test checks that it asks for the class.
+
+**Image is the same rule on the harder case, and it is where the token got its
+name.** A picture *has* an intrinsic size, so the failure is not a box that
+collapses but a box sized by the *file* — a character's note deciding a box the
+layout author placed. The answer is identical: the picture is out of flow and the
+block takes its floor from `--sheetsmith-rows` × `--sheetsmith-grid-row`. The
+token was `--sheetsmith-rich-text-row` while prose was the only consumer, and a
+reader raising it to give backstories more room would silently have resized every
+portrait; it is named for the grid because that is whose fact it is. Duplicating
+the number instead is what `PATTERNS.md` §1's one-step tier refuses outright.
+
+**A picture fits its box and is never stretched to fill it** [checked:
+`styles.test.ts`]. `object-fit: contain`, bounded in both directions, with the
+slack left as the frame's own surface. The convergent prior art is width-and-height
+where two dimensions may distort, so a stretched picture is exactly what a reviewer
+would mistake for correct — and a still cannot show it unless the sample happens to
+have the wrong aspect ratio for its box, which is why the harness draws the *same
+file* in a wide box and a tall one and puts a circle in it.
+
+**Content the app or the vault renders into a sheet inherits the reader's theme
+and snippets** [judgement], and that is correct rather than a defect — the same
+bargain this section records for a borrowed class name. The plugin styles the box,
+not what is drawn in it. What it does own is the element: a picture carries
+`.sheetsmith-image-picture` rather than being a bare `<img>`, so this plugin's own
+`object-fit` is stated rather than hoped for. The caution is a real report, open and
+unanswered elsewhere: an image whose *filename* ended in `-portrait` rendered
+cropped while the same file renamed displayed whole, which is a filename-keyed rule
+in the reporter's own theme reaching an element that had nothing of its own to say.
 
 **Borrowing one of Obsidian's class names buys the name, not the styling**
 [checked: `styles.test.ts`]. Every `.internal-link` rule in `app.css` is scoped to
@@ -350,6 +425,37 @@ ring's measurements through `--sheetsmith-table-control`, because two glyph
 buttons in one table row must not measure differently under the same finger, and
 that number is the whole of the agreement: two consumers earn duplication, not a
 module (`PATTERNS.md` §1). This table gains a class when a third appears.
+
+**A component's own name is one rank, and the table above had no row for it until
+it had five copies** [checked: `styles.test.ts`]. Uppercase, tracked, muted,
+`--font-ui-smaller`: quiet enough that the value under it is what the eye lands
+on, and distinct from the row above it, which is a name over a *region of other
+components*. The card face, Pool, Track, Rich text and Image each wrote the nine
+declarations out in full, because the agreement was recorded in each file's
+comment — "on the pool's and the track's rank" — rather than in a name, and a
+comment is not something the next component can reuse. Four were byte-identical
+and the fifth declared the same properties in a different order, which is why a
+review counting copies found four: the fifth was found by checking for the *rank*
+rather than for the text of a rule.
+
+**What did not move is each component's own narrow-card override**, and that is
+the interesting half. Three of the five tighten the tracking on a narrow card and
+they do not agree on the threshold — 130px for a card's label against 160px for a
+pool's — because the two are not the same width. The other two *cannot*: the card
+face, Pool and Track set `container-type` on their own card, so a container query
+asks about the card, while a Rich text block establishes none and the same query
+inside one resolves against the sheet and fires essentially never. So a shared
+rank does not mean a shared reflow, the overrides stay with the components that
+have a container to ask, and each has to sit after the shared rule in the cascade
+to win. **Two things at two different tiers, in one place, is what the single copy
+was hiding.**
+
+Note which half is *tested* and why, because it is not symmetry. The stylesheet is
+checked for declaring the rank exactly once; whether each component asks for it is
+not, while the placed box's equivalent is. The difference is what failure looks
+like: a box that forgot its class has no height and may be subtly wrong, and a name
+that forgot its class renders in the body font and is obviously wrong the first
+time anyone looks at it. `§11` is the check for the second kind.
 
 **One hairline under a container's chrome, whichever container drew it**
 [judgement]. A Group's heading carries the rule; a Tab set's strip carries the
@@ -501,14 +607,15 @@ that keeps solved rows stops being read.
 
 | Gap | Where | Fix |
 | --- | --- | --- |
+| Focus cannot be put back onto content the app has not finished rendering | `view/cell-focus.ts`, `components/rich-text.ts` | `restoreFocus` identifies a control by its index among `FOCUSABLE` inside its cell, and a Rich text block drawn by the app's own renderer holds *fewer* controls at restore time than at capture time: `MarkdownRenderer.render` is asynchronous, so the rendered layer is empty for a microtask while its anchors were tabbable when focus was captured. Reachable by Shift-Tab backwards out of an edited field in the component after a prose block — the layer is tabbable whenever its field is not focused, so focus lands on the block's last anchor, and that same Shift-Tab commits and rebuilds the sheet. **The loss is fixed and the miss is not.** A past-the-end index now lands on the cell's last control, so focus stays inside the component instead of falling to the body, which is the outcome `PATTERNS.md` §5 records as the reason not to repaint a cell optimistically; `cell-focus.test.ts` drives it. What remains is that the reader wanted the anchor and gets the block's field, and **no identity scheme fixes that** — the anchor does not exist yet, so matching on `data-href` finds nothing that matching on an index did not. The cure is for the restore to wait until every render started by the pass has landed, which is a change to the view's render loop and costs a focus jump on every rebuild whether or not any block is drawing. Invisible in the harness by construction: the fallback painter is synchronous and its anchors are there, which is why this is a row rather than a look criterion. **Waiting on:** a second component that draws asynchronously, or evidence that the miss is felt — one more Shift-Tab currently resumes where the reader was going. |
 | An unlabelled example reads as the field's value | `editor/trigger-list-field.ts`, `editor/function-library-field.ts`, `editor/layout-editor.ts` | Each renders a bare `<code>` under its description with no framing word, while the textarea's own `setPlaceholder` already carries a *different* example in the idiomatic place. In the harness sample the function library's visible example is byte-identical to the saved value, so the field reads as though the value were printed twice, and the triggers field shows "Short rest" both as the example and as a real entry. Frame it with "For example: …", or drop it and let the placeholder do the work. |
-| The stat note clips mid-word | `.sheetsmith-card-note-input` | No `text-overflow`, so at a 620px container "chain mail, shield" renders as "chain mail, sl": a hard cut with room to spare inside the pill, which reads as damaged data rather than as truncation. Five other rules in `sheet.css` already set `text-overflow: ellipsis`, and the card label directly above it correctly shows "ARMOUR C…". Set it here too, since it applies to an unfocused input, and carry the full value in `title`. |
+| The stat note clips mid-word | `.sheetsmith-card-note-input` | No `text-overflow`, so at a 620px container "chain mail, shield" renders as "chain mail, sl": a hard cut with room to spare inside the pill, which reads as damaged data rather than as truncation. Five other rules in `sheet.css` already set `text-overflow: ellipsis`, and the card label directly above it correctly shows "ARMOUR C…". Set it here too, since it applies to an unfocused input, and carry the full value in `title`. **Image's reference field is a second instance and it is worse**, because that field's text is *transparent* when unfocused rather than merely clipped: at a two-column placement it holds about 26 characters, `![[Sildar Hallwinter.png]]` fills it exactly, and a real vault path — `Assets/Portraits/Sildar Hallwinter.png` — cannot be read at all without focusing and arrowing through it. **And the blocker is shared, which is why neither is a one-liner:** the answer this table names for a clipped value is `ui/truncation.ts`, and `revealWhenTruncated` reads `el.textContent`, which is the empty string on a form control. So the fix for both is to teach that module a control's `value`, on the same argument its own header already makes for reading the element rather than a string passed in — one change, two rows. |
 | A value the file already holds is never marked as wrong | `editor/list-fields.ts`, `editor/layout-editor.ts` | Every inline error in the editor fires from a `change` handler, so validation happens to what is typed and never to what is loaded. A layout arriving with a value its component refuses — a row key that is not a name, a totalled column key with a space in it, a duplicate row label — draws a field that looks perfectly normal beside a card rendered entirely as an error, and a layout file is a thing people hand-edit and share, so arriving invalid is its ordinary way of being wrong. Visible now that `state=broken` reaches the editor pane. The fix is to run each list field's own rule over its stored value as it renders and seed `context.errors` from it, which is the same rule in the same place rather than a second copy of it. |
 | A flag outlives the control that sets it | `editor/list-fields.ts` | **Show a total** and **Publish per row** are offered only on the column types that can carry them, but changing a column's type leaves the flag where it was. Tick either on a number column, switch it to text, and the layout still holds it while the checkbox that would clear it is gone: the card renders a configuration error and the form offers no way out of it except guessing that the type has to go back. The total's own message even says "or turn the total off", naming a control that is no longer on screen. Either clear a flag the new type cannot carry, or keep offering the control while the flag is set. Found reviewing publication, which inherited the behaviour rather than introduced it. |
 | No view renders `prefers-contrast: more`, for any component | `harness/shot.mjs`, `styles/sheet.css` | The stylesheet carries several `prefers-contrast: more` blocks — the card's border, the abbreviation, the unresolved glyph, a dropdown's chevron — and not one of them has ever been looked at. The reduced-motion block is photographed because Chrome takes `--force-prefers-reduced-motion` on the command line. **`forced-colors` turned out to have one too — `--force-high-contrast` — and `editor-forced-colors` now uses it**, which is how the editor pane's selected row was found to have no mark at all in that mode. `prefers-contrast: more` still has none: the two obvious guesses do nothing (`--force-prefers-contrast` renders a byte-identical PNG), so this row is now about that feature alone. It is reachable only through the DevTools protocol's `Emulation.setEmulatedMedia`, which means driving a browser rather than screenshotting a page — and `shot.mjs` opens with the reason it does not: the harness is a static page and a screenshot of it is not worth a hundred megabytes of `node_modules`. So these blocks are read rather than seen, and a mark that is *only* legible because of one would look fine in every shot the review has. **Waiting on:** a reason to drive a browser at all — the same fixture a hover or a press would need, which `docs/UI.md` §11 already says a still cannot capture. |
-| An error card renders without its component name | `components/card.ts`, `view/sheet-view.ts` | The view prefixes a failed `read` with the component's label, so a broken card says "Armour class: …". A failure raised in `render` instead — a Card with an unusable key and no stored value yet — carries no prefix, and the error replaces the whole card including its heading, so nothing on screen says which component failed. The same misconfiguration is labelled or not depending on whether the note happens to have a body for it. **A dropdown card is the first component that takes the bare path unconditionally**, and the first to draw it in the harness at all: an options list that will not configure is not a reason `read` can fail — a card with two options sharing a value parses its note perfectly well — so the guard is `render`'s alone, and `sheet-error.png` now shows a prefixed table error directly above a card error naming nothing. On a sheet holding three dropdowns, nothing on screen says which one to open. Fix it in the view, which already composes the prefix, rather than in each component, or the labelled path ends up saying it twice — and note what that costs, since it is why this is still a row: the view can only prefix what it is handed, and a render-time guard draws into the cell itself, so the fix is a contract member the view asks *before* rendering rather than a change inside any component. |
+| An error card renders without its component name | `components/card.ts`, `view/sheet-view.ts` | The view prefixes a failed `read` with the component's label, so a broken card says "Armour class: …". A failure raised in `render` instead — a Card with an unusable key and no stored value yet — carries no prefix, and the error replaces the whole card including its heading, so nothing on screen says which component failed. The same misconfiguration is labelled or not depending on whether the note happens to have a body for it. **A dropdown card is the first component that takes the bare path unconditionally**, and the first to draw it in the harness at all: an options list that will not configure is not a reason `read` can fail — a card with two options sharing a value parses its note perfectly well — so the guard is `render`'s alone, and `sheet-error.png` now shows a prefixed table error directly above a card error naming nothing. On a sheet holding three dropdowns, nothing on screen says which one to open. Fix it in the view, which already composes the prefix, rather than in each component, or the labelled path ends up saying it twice — and note what that costs, since it is why this is still a row: the view can only prefix what it is handed, and a render-time guard draws into the cell itself, so the fix is a contract member the view asks *before* rendering rather than a change inside any component. **The second half of this row arrived with Image, and the same member closes it**: that component has three failure paths and draws them in *two shapes*. A `render` failure goes in the frame, centred, under the label the component drew; a failed `read` never reaches `render`, so the view replaces the whole cell and the message arrives as a bare prefixed box at its top-left, with no frame and no label row. Both are legible and both name the component, so nothing is broken — but `sheet-error.png` shows two cells of one component treating the same class of event two different ways, side by side, which is a thing a reader notices and cannot explain. Whatever member lets the view ask a component to draw its own failure would let it hand a failed `read` back too, and then both paths land in the frame. |
 | A wide table with few columns clips its first and last while a middle one takes the slack | `components/table.ts`, `.sheetsmith-table` | Measured on the Features sample at 1400px and 12 grid columns: three columns — Feature, Source, Notes — and the middle one spans roughly x=130 to x=1230 while the row name truncates to "Fey Ance…" and every Notes cell clips ("advantage agair", "once per short r"). So text is being cut with about 500px of that row empty. **Not `secondary`, and not the palette entry that found it**: rendering the identical sample with `secondary` off gives a pixel-identical layout, so this is how a table distributes width whenever it has few columns and plenty of it, and the Features prefill is only the first sample shaped to show it. Truncation itself is intended — §9's reveal-on-hover row — and the defect is the distribution, not the ellipsis. Not diagnosed further here: the fix is a column-width rule for a table that has more room than columns, which is a design question about which column should absorb slack (the name, the last, or all of them evenly) and not a one-line change. Visible in the default `sheet-light` shot since the sample grew. |
-| `hideLabel` drops a group's children a heading's height below its siblings' | `components/group.ts`, `.sheetsmith-group-heading` | Measured: two sibling groups on one inner grid row, one labelled and one not, put their first cards 39px apart — exactly the heading's height. In the harness sample "Tool bonus" floats a whole heading above "Attack bonus". `card-face.ts` already answers this exact question for cards in a row, and its answer is the shape of the problem: `reserveAbbreviation` keeps an empty slot "so cards in a row share a baseline. Defaults to true; a lone card has no row to align with, and an empty slot there is just a gap." So reserving is right beside a labelled sibling and wrong for a group standing alone, and a group cannot tell which it is — the three fixes are always reserve (a gap over a lone group), never reserve (today), or let something that knows the row decide, which means a config key or a new `RenderContext` member for one appearance case. **Not the same call as two headings in one row putting their hairlines at the same height**: there both are a heading the author asked for, so differing heights were unambiguously wrong, where here the author asked for no heading and the space arguably should differ. Left as a design decision rather than picked here. The sample keeps the mixed pair on purpose, so the cost of the flag is on screen. **Worse once stacked**: at 380px every level is one column, so an unlabelled group's cards follow the previous sibling's with nothing between them and read as that sibling's — a heading is the only thing that says a new region starts here, and `hideLabel` removes it. Whatever fixes the baseline should answer this too. |
+| `hideLabel` puts a component out of line with its labelled siblings | `components/group.ts`, `components/image.ts`, `components/rich-text.ts` | **Three components now, and the newest instance is the legible one.** Measured on a row of six Image frames: the unlabelled one's box top sits at +0px within its cell where all five labelled ones sit at +19px, and it is 19px taller — 228px against 209px. The empty view is plainer still, five identical `![[Portrait.png]]` placeholders with one of them on a different line, and two copies of the *same file* eight pixels apart vertically. A row of frames side by side says this far louder than the group case does, which is the argument for the row's priority rather than for a different fix: everything below is unchanged and still governs. Measured: two sibling groups on one inner grid row, one labelled and one not, put their first cards 39px apart — exactly the heading's height. In the harness sample "Tool bonus" floats a whole heading above "Attack bonus". `card-face.ts` already answers this exact question for cards in a row, and its answer is the shape of the problem: `reserveAbbreviation` keeps an empty slot "so cards in a row share a baseline. Defaults to true; a lone card has no row to align with, and an empty slot there is just a gap." So reserving is right beside a labelled sibling and wrong for a group standing alone, and a group cannot tell which it is — the three fixes are always reserve (a gap over a lone group), never reserve (today), or let something that knows the row decide, which means a config key or a new `RenderContext` member for one appearance case. **Not the same call as two headings in one row putting their hairlines at the same height**: there both are a heading the author asked for, so differing heights were unambiguously wrong, where here the author asked for no heading and the space arguably should differ. Left as a design decision rather than picked here. The sample keeps the mixed pair on purpose, so the cost of the flag is on screen, and the Image row now keeps a second one for the same reason — `symbol` is unlabelled beside five labelled frames. **The same three fixes and the same blocker reach all three components**: a component cannot tell whether it has a labelled sibling on its row, only something that knows the row can, so this stays a design decision rather than a component's bug. **Worse once stacked**: at 380px every level is one column, so an unlabelled group's cards follow the previous sibling's with nothing between them and read as that sibling's — a heading is the only thing that says a new region starts here, and `hideLabel` removes it. Whatever fixes the baseline should answer this too. |
 | No fenced component's read error is drawn except one | `harness/samples.ts` | `brokenSamples()` breaks *config* — a key, a column, a row, a child — so until a review found it, no section holding something its component cannot parse had ever been rendered, for Card, Card set, Pool or Track. That is the state a hand-edited note actually arrives in, and the state whose text §10 says has to name the fix; the flag's said "not a number of marks" on a card that writes yes and no, and nothing on screen would have shown it. Track's flag now carries a broken body and the error is in `sheet-error.png`. The rest are not, because which breakage is worth a picture is a choice per component — a malformed fence, a duplicate key, a value of the wrong kind — and four of those judgements do not belong in the diff that found the first. Whoever adds the next one needs only an id and a body: the mechanism is there. |
 | A disabled control looks exactly like an enabled one | `editor/layout-editor.ts`, `styles/editor.css` | The tab-order arrows are the first control in the plugin to call `setDisabled` on an icon button — the ↑ on the first tab and the ↓ on the last. Obsidian's own CSS carries `is-disabled` rules for `.setting-item.mod-action` and `.checkbox-container` and none for `.clickable-icon`, and the plugin styles no disabled state at all, so all six arrows render identically in the harness. Behaviour is right either way: the buttons carry `disabled` and `moveItem` refuses an out-of-range move, which a test asserts. What is missing is the paint, and UI §6's rule read backwards — state in the DOM that never reaches the paint is half a control. Not fixed here because the smaller half of the fix is four lines of `editor.css` and the larger half is a question this pass should not answer alone: the plugin's three *other* reorder controls never disable their ends at all, relying on the same range guard, so styling this one makes it the odd one out and styling all four is a change to controls this feature never touched. Found only because a missing stub glyph was fixed and the control became reviewable for the first time. |
 | A nested component's placement is edited against a grid the pane never draws | `editor/layout-editor.ts` | Select a card inside a container — `open=weapon_bonus`, two levels in — and the panel offers **col 1, row 1, width 2, height 1** while the only schematic on screen is the sheet's twelve-column grid, which does not contain that card. No block anywhere carries the selected mark, because `renderContainerSchematic` draws a grid only when the *selected* entry is itself a container that places children. So the two ways to work on a nested component are mutually exclusive: select its parent and the grid appears with the card as a draggable block, but the panel then configures the parent; select the card and the four numbers appear with no grid that they address. Four editable fields pointing at something off screen is worse than the settings tab's version of the same gap, where the form at least sat under the row it belonged to. The fix is to draw the *parent's* grid when the selection has one, with the selected child marked — which is a third schematic case and a question about what the left column shows when the selection is three levels deep, so it is a slice rather than a patch. **Waiting on:** a decision about whether the left column follows the selection or the container. |
