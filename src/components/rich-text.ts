@@ -229,17 +229,31 @@ export const richText: ComponentDefinition<RichTextConfig, RichTextData> = {
 		 * 2. **The caret is not placed from the click**, for the same reason: a
 		 *    point in the rendered view is not the same character in the source, so
 		 *    there is no landing position to preserve and pretending otherwise
-		 *    would put the caret confidently in the wrong place. It lands wherever
-		 *    the field's own position already was. This used to read "where the
-		 *    browser puts it", which stopped being true when the rendered layer
-		 *    became the pointer target — a click no longer reaches the field — and
-		 *    the *reason* is unchanged, which is why the departure stands: the
+		 *    would put the caret confidently in the wrong place. It lands at the
+		 *    start of the text, which is a choice and not an inheritance — see the
+		 *    `setSelectionRange` below for what it is chosen over. This used to read
+		 *    "where the browser puts it", which stopped being true when the rendered
+		 *    layer became the pointer target — a click no longer reaches the field —
+		 *    and the *reason* is unchanged, which is why the departure stands: the
 		 *    position given up was never meaningful. Whether a better landing
 		 *    exists is its own question and not this one.
-		 * 3. **The box never changes size, but its scroll extent does.** Each
-		 *    layer scrolls on its own, so a focused field scrolls to its caret —
-		 *    which is what the reader asked for by clicking — while nothing on the
+		 * 3. **The box never changes size, but its scroll extent does.** Each layer
+		 *    scrolls on its own — they hold the same text in two different shapes,
+		 *    so one shared offset would put them out of step — while nothing on the
 		 *    sheet moves, since the box is the placement.
+		 *
+		 *    **The reader's place is not carried across, and that is the accepted
+		 *    cost rather than an oversight.** This used to claim the focused field
+		 *    "scrolls to its caret — which is what the reader asked for by
+		 *    clicking", and departure 2 is precisely that there is no such caret:
+		 *    the click is prevented, so the browser places nothing. Scroll a long
+		 *    backstory to paragraph twelve, click, and the field opens at
+		 *    paragraph one. Carrying the offset over is possible — map it
+		 *    proportionally on focus — but only honest if the caret moves with it,
+		 *    since a reader looking at paragraph twelve whose keystrokes land in
+		 *    paragraph forty is worse off than one who can see where they are.
+		 *    That trade reverses departure 2, so it is a decision rather than a
+		 *    fix, and it has not been taken.
 		 */
 		const box = doc.createElement('div');
 		box.classList.add('sheetsmith-placed-box', 'sheetsmith-rich-text-box');
@@ -248,6 +262,15 @@ export const richText: ComponentDefinition<RichTextConfig, RichTextData> = {
 		const field = doc.createElement('textarea');
 		field.classList.add('sheetsmith-rich-text-input');
 		field.value = data?.text ?? '';
+		// **The start, chosen, rather than the end, inherited.** Assigning `value`
+		// moves the text entry cursor to the end of the control (HTML's own rule for
+		// the setter), and focusing scrolls that cursor into view — so a backstory
+		// long enough to scroll opened at its last line, which is the one position
+		// in the text nobody asked for. Departure 2 gives up placing the caret from
+		// the click; it does not follow that the caret should land wherever an
+		// unrelated setter left it. Measured in Chrome before and after: a
+		// forty-paragraph block focused at `scrollTop` 2062 of a possible 2062.
+		field.setSelectionRange(0, 0);
 		field.placeholder = PLACEHOLDER;
 		// The label may be hidden and the field still has to have a name. Always
 		// the label, never the placeholder: `docs/UI.md` §6, and a placeholder is

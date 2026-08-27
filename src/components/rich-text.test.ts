@@ -268,6 +268,17 @@ describe('richText.render — the text and the field', () => {
 		expect(input.readOnly).toBe(false);
 	});
 
+	it('opens the field at the start of the text, not at its end', () => {
+		// Assigning `value` moves the cursor to the end (HTML's rule for the
+		// setter) and focusing scrolls it into view, so a backstory long enough to
+		// scroll opened at its last line. Measured in Chrome: `scrollTop` 2062 of a
+		// possible 2062. The start is not where the reader was either — departure 3
+		// says why that is accepted — but it is a position somebody chose.
+		const input = field(render());
+		expect(input.selectionStart).toBe(0);
+		expect(input.selectionEnd).toBe(0);
+	});
+
 	it('is not spellchecked while the rendered prose is what is on screen', () => {
 		// Transparent text still gets its squiggles painted, and they land on the
 		// layer's words, positioned by the source line rather than by where the
