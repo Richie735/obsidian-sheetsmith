@@ -549,40 +549,137 @@ describe('richText.render — the layer answers presses because it scrolls', () 
 		done();
 	});
 
-	it('leaves a press on a link the *app* rendered to the link', () => {
-		/*
-		 * The case the one above cannot make, and the one that matters. The
-		 * fallback's own anchors call `stopPropagation`, so a press on one never
-		 * reaches the layer's listener and the guard is never consulted — which
-		 * means the case above passes with the guard deleted. Measured: removing it
-		 * left every other case here green.
-		 *
-		 * Obsidian's renderer draws its own anchors and does no such thing, so a
-		 * press on a rendered link *does* bubble. Without the guard the layer would
-		 * `preventDefault` it and kill the app's own navigation, on every link in
-		 * every prose block — the path that only exists with a real renderer, which
-		 * is exactly the path the harness cannot show.
-		 */
-		const renderMarkdown = (
-			_markdown: string,
-			into: HTMLElement,
-			_onFailure: () => void,
-		) => {
+	/**
+	 * An anchor shaped exactly as Obsidian's renderer draws a wikilink, since the
+	 * whole class of bug here is that these are *not* the fallback's anchors.
+	 */
+	const appRenders =
+		(target: string, external = false) =>
+		(_markdown: string, into: HTMLElement, _onFailure: () => void) => {
 			const anchor = into.ownerDocument.createElement('a');
-			anchor.setAttribute('href', 'Neverwinter');
-			anchor.setAttribute('data-href', 'Neverwinter');
-			anchor.classList.add('internal-link');
-			anchor.textContent = 'Neverwinter';
+			anchor.setAttribute('href', target);
+			// `className`, not `classList.add`, and deliberately: `styles.test.ts`
+			// scans every `.ts` under `src/` for the plugin claiming an unprefixed
+			// class, and this is a fake of *Obsidian's* output rather than anything
+			// the plugin paints. Widening that guard's `BORROWED` list to let a test
+			// double through would weaken it for the next real one.
+			anchor.className = external ? 'external-link' : 'internal-link';
+			if (!external) anchor.setAttribute('data-href', target);
+			anchor.textContent = target;
 			into.appendChild(anchor);
 		};
-		const el = render({}, { text: TEXT }, { renderMarkdown });
+
+	it('opens a link the *app* rendered, which is the only path that ships', () => {
+		/*
+		 * **The case the one above cannot make, and it shipped broken.** The fallback
+		 * painter wires every anchor as it draws it — and it only runs where there is
+		 * no app. In Obsidian the renderer runs instead and produces its own anchors,
+		 * which nothing was listening to: a wikilink worked in a unit test and in the
+		 * harness and did nothing in the app, exactly inverted. External links went on
+		 * working the whole time because those are Electron's to open.
+		 *
+		 * This test used to assert the defect as a feature — "the app's own click
+		 * handling is left intact" — which was the assumption that hid it: there is no
+		 * app click handling for anchors inside a plugin's own view. It now asserts
+		 * the press is answered.
+		 */
+		const opened: string[] = [];
+		const el = render({}, { text: TEXT }, {
+			renderMarkdown: appRenders('Neverwinter'),
+			link: {
+				resolves: () => true,
+				open: (target) => opened.push(target),
+				preview: () => undefined,
+			},
+		});
 		document.body.appendChild(el);
-		const anchor = links(el)[0] as HTMLElement;
-		const event = press(anchor);
-		// The app's own click handling is left intact, and the field is not stolen.
-		expect(event.defaultPrevented).toBe(false);
-		expect(document.activeElement).not.toBe(field(el));
-		el.remove();
+		try {
+			const anchor = links(el)[0] as HTMLElement;
+			const event = press(anchor);
+			expect(opened).toEqual(['Neverwinter']);
+			// The target comes from `data-href`, and the browser's own navigation is
+			// refused — a bare `href` of "Neverwinter" would be a relative URL.
+			expect(event.defaultPrevented).toBe(true);
+			// And the field behind the layer is not stolen.
+			expect(document.activeElement).not.toBe(field(el));
+		} finally {
+			el.remove();
+		}
+	});
+
+	it('offers a rendered link to the hover preview', () => {
+		// Same cause, same fix: `hover-link` was never fired for a block's links, so
+		// Page preview had nothing to open a popover on.
+		const previews: string[] = [];
+		const el = render({}, { text: TEXT }, {
+			renderMarkdown: appRenders('Neverwinter'),
+			link: {
+				resolves: () => true,
+				open: () => undefined,
+				preview: (target) => previews.push(target),
+			},
+		});
+		document.body.appendChild(el);
+		try {
+			const anchor = links(el)[0] as HTMLElement;
+			anchor.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+			expect(previews).toEqual(['Neverwinter']);
+		} finally {
+			el.remove();
+		}
+	});
+
+	it('carries the modifier through, so cmd-click can open a new pane', () => {
+		// The component never decides what a modifier means — the view reads it off
+		// the event — so what this holds is that the event arrives at all.
+		const events: MouseEvent[] = [];
+		const el = render({}, { text: TEXT }, {
+			renderMarkdown: appRenders('Neverwinter'),
+			link: {
+				resolves: () => true,
+				open: (_t, event) => events.push(event),
+				preview: () => undefined,
+			},
+		});
+		document.body.appendChild(el);
+		try {
+			const anchor = links(el)[0] as HTMLElement;
+			anchor.dispatchEvent(
+				new MouseEvent('click', { bubbles: true, cancelable: true, metaKey: true }),
+			);
+			expect(events).toHaveLength(1);
+			expect(events[0]?.metaKey).toBe(true);
+		} finally {
+			el.remove();
+		}
+	});
+
+	it('leaves an external link entirely alone', () => {
+		/*
+		 * The half that was never broken, held so the fix cannot break it. An
+		 * `https://` link is Electron's to open, and intercepting it here would route
+		 * a working link at a vault holding no such note.
+		 */
+		const opened: string[] = [];
+		const el = render({}, { text: TEXT }, {
+			renderMarkdown: appRenders('https://example.com', true),
+			link: {
+				resolves: () => true,
+				open: (target) => opened.push(target),
+				preview: () => undefined,
+			},
+		});
+		document.body.appendChild(el);
+		try {
+			const anchor = links(el)[0] as HTMLElement;
+			const event = press(anchor);
+			expect(opened).toEqual([]);
+			// Untouched: the app's own handling is what opens it.
+			expect(event.defaultPrevented).toBe(false);
+			expect(document.activeElement).not.toBe(field(el));
+		} finally {
+			el.remove();
+		}
 	});
 
 	it('refuses the browser\'s default, so a rendered task stays inert', () => {

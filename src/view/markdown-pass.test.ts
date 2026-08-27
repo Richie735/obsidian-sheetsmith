@@ -45,11 +45,75 @@ const noFallback = () => {
 	throw new Error('the render was not expected to fail');
 };
 
+/**
+ * A vault that holds every note, for the cases that are not about resolution.
+ *
+ * The pass marks unresolved links once a render lands, because the renderer does
+ * not — so every `begin` now says what the vault holds, and a case with no
+ * opinion says "everything".
+ */
+const everythingResolves = () => true;
+
 describe('MarkdownPasses', () => {
+	it('marks the unresolved links once the render has landed', async () => {
+		/*
+		 * The renderer produces `a.internal-link` and marks none of them, because
+		 * the class comes from the app's preview machinery rather than from the
+		 * render call — so without this every link in a backstory painted as live.
+		 * Here rather than in the component because this is the only place that
+		 * knows the render finished.
+		 *
+		 * The anchors go in before the render lands rather than after, and that is
+		 * the staleness guard's doing rather than a convenience: beginning a second
+		 * pass to get a second marking would end the first, and the first's `.then`
+		 * clears the box it no longer owns.
+		 */
+		const passes = new MarkdownPasses(owner(), new App());
+		const into = box();
+		const known = into.ownerDocument.createElement('a');
+		known.className = 'internal-link';
+		known.setAttribute('data-href', 'Neverwinter');
+		const unknown = into.ownerDocument.createElement('a');
+		unknown.className = 'internal-link';
+		unknown.setAttribute('data-href', 'Nowhere');
+		into.append(known, unknown);
+
+		passes.begin('Sildar.md', (t) => t === 'Neverwinter')(
+			'prose',
+			into,
+			noFallback,
+		);
+		await Promise.resolve();
+		await Promise.resolve();
+		await Promise.resolve();
+
+		expect(unknown.classList.contains('is-unresolved')).toBe(true);
+		expect(known.classList.contains('is-unresolved')).toBe(false);
+	});
+
+	it('marks nothing when the render failed, since the box is empty', async () => {
+		// The fallback painter owns that path and writes its own anchors, with the
+		// resolution state on them already.
+		const passes = new MarkdownPasses(owner(), new App());
+		const into = box();
+		const el = into.ownerDocument.createElement('a');
+		el.className = 'internal-link';
+		el.setAttribute('data-href', 'Nowhere');
+		into.appendChild(el);
+		MarkdownRenderer.failNextRender = true;
+		let told = 0;
+		passes.begin('Sildar.md', () => false)('prose', into, () => told++);
+		await Promise.resolve();
+		await Promise.resolve();
+		await Promise.resolve();
+		expect(told).toBe(1);
+		expect(el.classList.contains('is-unresolved')).toBe(false);
+	});
+
 	it('draws markdown into the element it was given', () => {
 		const passes = new MarkdownPasses(owner(), new App());
 		const into = box();
-		passes.begin('Sildar.md')('Grew up in Neverwinter.', into, noFallback);
+		passes.begin('Sildar.md', everythingResolves)('Grew up in Neverwinter.', into, noFallback);
 		return Promise.resolve().then(() => {
 			expect(drawn(into)).toBe('Grew up in Neverwinter.');
 		});
@@ -80,20 +144,20 @@ describe('MarkdownPasses', () => {
 		}
 
 		const first = box();
-		passes.begin('Sildar.md')('First.', first, noFallback);
+		passes.begin('Sildar.md', everythingResolves)('First.', first, noFallback);
 		await Promise.resolve();
 		// Hung on the pass's own child, which is where the renderer hangs the
 		// children it creates: the component it was handed is the parent.
 		firstChildOf(passes).addChild(new Embed('first'));
 		expect(unloaded).toEqual([]);
 
-		passes.begin('Sildar.md');
+		passes.begin('Sildar.md', everythingResolves);
 		expect(unloaded).toEqual(['first']);
 	});
 
 	it('leaves the current pass loaded, so a late render still lands', async () => {
 		const passes = new MarkdownPasses(owner(), new App());
-		const draw = passes.begin('Sildar.md');
+		const draw = passes.begin('Sildar.md', everythingResolves);
 		const into = box();
 		draw('Still current.', into, noFallback);
 		await Promise.resolve();
@@ -111,12 +175,12 @@ describe('MarkdownPasses', () => {
 		 * see is a detached subtree the post-processors are still holding.
 		 */
 		const passes = new MarkdownPasses(owner(), new App());
-		const draw = passes.begin('Sildar.md');
+		const draw = passes.begin('Sildar.md', everythingResolves);
 		const into = box();
 		draw('From a pass that is over.', into, noFallback);
 		// The rebuild lands between the call and its resolution, which is exactly
 		// the race: one committed edit is enough to produce it.
-		passes.begin('Sildar.md');
+		passes.begin('Sildar.md', everythingResolves);
 		await Promise.resolve();
 		await Promise.resolve();
 		await Promise.resolve();
@@ -127,7 +191,7 @@ describe('MarkdownPasses', () => {
 		// A file change, which is `clear()` on the view: the outgoing note's embeds
 		// go with it and no render of its may still arrive.
 		const passes = new MarkdownPasses(owner(), new App());
-		const draw = passes.begin('Sildar.md');
+		const draw = passes.begin('Sildar.md', everythingResolves);
 		const into = box();
 		draw('From the note just closed.', into, noFallback);
 		passes.end();
@@ -149,7 +213,7 @@ describe('MarkdownPasses', () => {
 		const into = box();
 		let told = 0;
 		MarkdownRenderer.failNextRender = true;
-		passes.begin('Sildar.md')('Grew up in Neverwinter.', into, () => {
+		passes.begin('Sildar.md', everythingResolves)('Grew up in Neverwinter.', into, () => {
 			told++;
 			// What the component actually does with it: draws what it can from the
 			// text alone, which is the same thing it draws with no renderer at all.
@@ -169,7 +233,7 @@ describe('MarkdownPasses', () => {
 		const passes = new MarkdownPasses(owner(), new App());
 		const into = box();
 		let told = 0;
-		passes.begin('Sildar.md')('Grew up in Neverwinter.', into, () => told++);
+		passes.begin('Sildar.md', everythingResolves)('Grew up in Neverwinter.', into, () => told++);
 		await Promise.resolve();
 		await Promise.resolve();
 		expect(told).toBe(0);
@@ -184,8 +248,8 @@ describe('MarkdownPasses', () => {
 		const into = box();
 		let told = 0;
 		MarkdownRenderer.failNextRender = true;
-		passes.begin('Sildar.md')('From a pass that is over.', into, () => told++);
-		passes.begin('Sildar.md');
+		passes.begin('Sildar.md', everythingResolves)('From a pass that is over.', into, () => told++);
+		passes.begin('Sildar.md', everythingResolves);
 		await Promise.resolve();
 		await Promise.resolve();
 		await Promise.resolve();
@@ -200,7 +264,7 @@ describe('MarkdownPasses', () => {
 		// `Component.loaded` is the stub's and not part of Obsidian's own type.
 		const view = owner();
 		const passes = new MarkdownPasses(view, new App());
-		passes.begin('Sildar.md');
+		passes.begin('Sildar.md', everythingResolves);
 		let unloaded = false;
 		const embed = new Component();
 		embed.onunload = () => {

@@ -296,14 +296,20 @@ export class SheetView extends TextFileView {
 		// the next render or by the file changing. Resolved against this note's own
 		// path, exactly as `linkContext` is, so a relative link or embed inside a
 		// block means what it would mean written in the note body.
-		const renderMarkdown = this.markdown.begin(this.file?.path ?? '');
+		// The link context is built once here rather than per component, because
+		// the markdown pass needs its `resolves` too: the renderer draws its own
+		// anchors and marks none of them unresolved.
+		const link = this.linkContext();
+		const renderMarkdown = this.markdown.begin(this.file?.path ?? '', (target) =>
+			link.resolves(target),
+		);
 
 		renderGrid(grid, walk, prepared, ({ config, component, data }) => ({
 			resolved: resolveFormulaFields(component, config, data, env),
 			resolveField: makeFieldResolver(component, config, data, env),
 			explainField: makeFieldExplainer(component, config, data, env),
 			onChange: (edited: unknown) => this.applyEdit(component, config, edited),
-			link: this.linkContext(),
+			link,
 			renderMarkdown,
 			resource: (target) => this.resourceUrl(target),
 			activeTab: this.activeTab.get(config.id),

@@ -34,6 +34,126 @@
 import { parseLinks } from '../parse/wikilink';
 import { LinkContext } from '../types';
 
+/**
+ * Follow a link, wherever the anchor came from.
+ *
+ * The press belongs to the link and not to the box behind it, which is PATTERNS
+ * §6's rule that a real control owns its own presses — and `stopPropagation` is
+ * load-bearing rather than tidy, because in a Rich text block the layer under the
+ * anchor answers presses by focusing the field.
+ */
+function followLink(
+	event: MouseEvent,
+	target: string,
+	link: LinkContext | undefined,
+): void {
+	event.preventDefault();
+	event.stopPropagation();
+	link?.open(target, event);
+}
+
+/**
+ * Offer an anchor to whatever draws hover previews.
+ *
+ * The Page preview plugin owns the popover and owns whether the user asked for
+ * one at all, so this only makes the offer.
+ */
+function offerPreview(
+	event: MouseEvent,
+	target: string,
+	anchor: HTMLElement,
+	link: LinkContext | undefined,
+): void {
+	link?.preview(target, anchor, event);
+}
+
+/**
+ * Give the links inside `container` this module's behaviour, for anchors this
+ * module did not draw.
+ *
+ * **The app's renderer produces its own anchors, and nothing was listening to
+ * them.** `paintLinkedText` wires each anchor as it paints it, and it only runs
+ * on the *fallback* path — the one with no app. So a wikilink worked in a unit
+ * test and in the harness and was dead in Obsidian, which is exactly inverted,
+ * and it was invisible because every criterion covering links was written against
+ * the fallback. External links went on working throughout, because those are
+ * Electron's to open and never this plugin's.
+ *
+ * Delegated rather than wired per anchor, and that is the difference forced by
+ * not owning the paint: the renderer is asynchronous and may replace what it drew,
+ * so there is no moment at which the anchors are all present to walk. One listener
+ * on the container outlives every repaint underneath it.
+ *
+ * **Internal links only.** `a.internal-link[data-href]` is what Obsidian's own
+ * renderer marks a wikilink with, and an external link must fall straight through
+ * — intercepting `https://` here would take a working link and route it at a
+ * vault that has no such note.
+ *
+ * The anchors themselves need almost nothing: the renderer writes `internal-link`
+ * and `data-href`, so this adopts rather than repaints. **It does not write the
+ * resolution state**, though — that came back as a second report once the presses
+ * worked, and {@link markRenderedResolution} is the other half.
+ */
+export function adoptRenderedLinks(
+	container: HTMLElement,
+	link: LinkContext | undefined,
+): void {
+	/** The internal anchor a pointer event happened inside, if any. */
+	const anchorOf = (event: Event): HTMLElement | null => {
+		const from = event.target;
+		if (!(from instanceof HTMLElement)) return null;
+		return from.closest<HTMLElement>('a.internal-link[data-href]');
+	};
+
+	container.addEventListener('click', (event) => {
+		const anchor = anchorOf(event);
+		if (anchor === null) return;
+		// `data-href` and never `href`: the app writes the raw target into the
+		// first and may put a resolved or empty value in the second.
+		followLink(event, anchor.getAttribute('data-href') ?? '', link);
+	});
+
+	container.addEventListener('mouseover', (event) => {
+		const anchor = anchorOf(event);
+		if (anchor === null) return;
+		offerPreview(event, anchor.getAttribute('data-href') ?? '', anchor, link);
+	});
+}
+
+/**
+ * Mark which of the links inside `container` name notes the vault does not hold.
+ *
+ * **`MarkdownRenderer.render` does not do this**, which is the second half of the
+ * same surprise as the presses: a detached render produces `a.internal-link` with
+ * no `is-unresolved` on it, because the class is applied by the app's own preview
+ * machinery and not by the render call. So every link in a backstory painted as
+ * live, whether or not the note existed — and an inventory of things with no notes
+ * yet is the ordinary case, which is exactly the lie `paintLinkedText` refuses to
+ * tell on the fallback path.
+ *
+ * Idempotent, and it clears as well as sets: the same container is re-marked after
+ * every render, and a note created since the last one has to stop being dimmed.
+ *
+ * Separate from {@link adoptRenderedLinks} because the two need different moments.
+ * A press can be delegated and bound before anything exists; a *class* has to be
+ * put on an anchor that is already there, and the renderer is asynchronous — so
+ * this is called by whoever knows the render has landed.
+ */
+export function markRenderedResolution(
+	container: HTMLElement,
+	resolves: (target: string) => boolean,
+): void {
+	const anchors = container.querySelectorAll<HTMLElement>(
+		'a.internal-link[data-href]',
+	);
+	// `forEach` rather than `for…of`: the DOM lib this project targets types a
+	// `NodeListOf` without `Symbol.iterator`.
+	anchors.forEach((anchor) => {
+		const target = anchor.getAttribute('data-href') ?? '';
+		anchor.classList.toggle('is-unresolved', !resolves(target));
+	});
+}
+
 /** What a caller whose box clips its text does about a link inside it. */
 export interface LinkClipping {
 	/**
@@ -117,17 +237,9 @@ export function paintLinkedText(
 		// app's styled one, which is also what every other tooltip on this sheet
 		// uses: the level ring's name, a computed cell's formula, a clipped value.
 		if (display !== target) anchor.setAttribute('title', target);
-		anchor.addEventListener('click', (event) => {
-			// The press belongs to the link, not to the box behind it: PATTERNS §6
-			// has this rule, that a real control owns its own presses.
-			event.preventDefault();
-			event.stopPropagation();
-			link?.open(target, event);
-		});
-		// The Page preview plugin owns the popover and owns whether the user
-		// asked for one at all, so this only offers the anchor to it.
+		anchor.addEventListener('click', (event) => followLink(event, target, link));
 		anchor.addEventListener('mouseover', (event) => {
-			link?.preview(target, anchor, event);
+			offerPreview(event, target, anchor, link);
 		});
 		if (clipping !== undefined && display === target) clipping.reveal(anchor);
 		into.appendChild(anchor);
