@@ -1,10 +1,18 @@
 /*
- * The editing gesture, shared by every stored value on a sheet: cards
- * and table cells alike (SPEC §4.2, "Card interaction").
+ * The editing gesture, shared by every stored value on a sheet: cards, table
+ * cells and a block of prose alike (SPEC §4.2, "Card interaction").
  *
  * Feedback and persistence are deliberately separate. Typing, Enter, and
  * arrow steps all only change the draft; leaving the field commits it, and
  * Escape abandons it. Nothing reaches the file until a commit.
+ *
+ * Two bindings, over one policy. `bindEditable` is the one-line field, and
+ * `bindMultiline` at the foot of the file is the same policy on a `<textarea>`:
+ * what differs is mechanical — Enter is a newline rather than a commit, the
+ * arrows are caret movement, the value is not flattened to one line, and nothing
+ * is drawn per keystroke — and what is identical is the part that matters, that
+ * typing only drafts, blur commits, and Escape restores the stored value and
+ * says so.
  */
 
 import { EMPTY_SCOPE, evaluate } from '../formula/expression';
@@ -223,4 +231,86 @@ export function bindEditable(
 			redraw();
 		},
 	};
+}
+
+
+/** A multi-line draft, for the component whose value is a block of prose. */
+export interface MultilineOptions {
+	initial: string;
+	/** Announced once per commit, before the view reacts to the change. */
+	announceCommit?: (next: string) => void;
+	/** Announced when Escape puts the stored value back. */
+	announceRestore?: (restored: string) => void;
+	onCommit: (next: string) => void;
+}
+
+/**
+ * Bind the editing gesture to a `<textarea>`.
+ *
+ * A binding here rather than in the component that wanted it, because the
+ * policy is exactly what must not drift: `docs/UI.md` §9 names `editable.ts` as
+ * the editing gesture for "every stored value on a sheet", and a block of prose
+ * that abandoned a draft differently from a card would be the instrument
+ * disagreeing with itself. Three differences from the field above, each
+ * mechanical rather than a departure from the policy:
+ *
+ * - **Enter inserts a newline and commits nothing.** A paragraph break is what
+ *   the key means inside prose, and a block whose Enter committed could not hold
+ *   a second paragraph. Blur is what commits, which the field already agrees on.
+ * - **The arrows are caret movement.** There is no `step`, no `onStep` and no
+ *   `arithmetic`: none of the three has a reading over prose, and a block of
+ *   text is the case the field's own numeric check already declines to step.
+ * - **The value is not flattened.** It is trimmed at each end, which is what
+ *   `read` stores, and untouched in between.
+ *
+ * **Three of the field's members are deliberately absent**, on one rule —
+ * PATTERNS §1's "do not generalise ahead of evidence" — and the third of them was
+ * declared here and caught in review, which is why they are listed rather than
+ * left to symmetry with the field above:
+ *
+ * - No `set` or `sync`, and so no `EditableHandle`: nothing sets a block of prose
+ *   from outside, the way a Pool's step buttons set its value.
+ * - No `step`, `onStep`, `arithmetic`, `min` or `max`, per the second bullet
+ *   above.
+ * - **No `onDraft`**, and it has a reason of its own rather than only the rule:
+ *   there is nothing on a prose block derived from its draft. A card repaints a
+ *   `derived` per keystroke and a table repaints its totals; the rendered layer
+ *   here is deliberately not repainted even on *commit*, since the rebuild always
+ *   comes and a repaint would destroy an anchor the browser had just focused. A
+ *   component that later finds something to draw per keystroke adds the member
+ *   back with its caller.
+ */
+export function bindMultiline(
+	textarea: HTMLTextAreaElement,
+	options: MultilineOptions,
+): void {
+	let committed = options.initial;
+
+	const commitIfChanged = () => {
+		// Trimmed at each end and nowhere else, because that is what `read`
+		// hands back: a body's own leading and trailing whitespace is the
+		// note's spelling and belongs to `write`, not to the draft.
+		const next = textarea.value.trim();
+		if (next === committed) return;
+		committed = next;
+		options.announceCommit?.(next);
+		options.onCommit(next);
+	};
+
+	// No `input` listener: with nothing drawn from the draft there is nothing for
+	// one to do. Typing changes the textarea and nothing else until a commit.
+	textarea.addEventListener('blur', commitIfChanged);
+	textarea.addEventListener('keydown', (event) => {
+		// Enter is deliberately not handled: the browser's own newline is the
+		// whole of what it should do here, and intercepting it to commit is the
+		// one change that would make a two-paragraph block impossible to type.
+		if (event.key !== 'Escape') return;
+		// Forgiveness, unchanged from the field: abandon the draft, restore what
+		// is stored — and say so, since an undo nobody can perceive is not
+		// obviously one (SPEC §5).
+		const abandoned = textarea.value.trim() !== committed;
+		textarea.value = committed;
+		if (abandoned) options.announceRestore?.(committed);
+		textarea.blur();
+	});
 }

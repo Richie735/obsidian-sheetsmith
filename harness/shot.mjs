@@ -44,9 +44,15 @@ mkdirSync(outDir, { recursive: true });
  * tab set, and then the flag row below it, were only ever looked at through a
  * one-off `size=` on the command line. Raise this when the sample sheet grows
  * again; the number is the sheet's height and nothing else. Last raised when the
- * row of dropdown cards was added to the sample.
+ * row of Image frames was added to the sample, at which point it measured 3442.
+ *
+ * **All three sheet frames are one number in three places and go stale together.**
+ * `sheet-narrow` and `sheet-large-text` were left behind when this one was raised
+ * for the Image row, and each then cropped the feature it was supposed to show.
+ * Measure all three when the sample grows: load the harness at the view's width
+ * and read `document.scrollingElement.scrollHeight`.
  */
-const SHEET_FRAME = '1400,2700';
+const SHEET_FRAME = '1400,3700';
 
 /**
  * The editor pane's frame, tall because the tree is the whole layout.
@@ -75,16 +81,24 @@ const DEFAULTS = [
 		size: '1900,1100',
 	},
 	{
-		// 4200 because the one-column sheet is about 4100 tall, and the frame
-		// was 1400 — so every look criterion ever settled "at 380" was settled
-		// against a picture holding the top third of the sheet. The row of
-		// dropdown cards sits at y ~3600 and was cropped out entirely, which is
-		// how three criteria came to be ticked against a shot that did not
-		// contain them. Same rule as SHEET_FRAME above: the number is the
-		// sheet's height in this reflow and nothing else.
+		// 6600 because the one-column sheet measures 6280, and it was 4200 — so
+		// every look criterion ever settled "at 380" was settled against a
+		// picture holding part of the sheet. **This is the second time this
+		// number went stale, and the second time it hid a whole feature:** it
+		// was 1400 while the sheet was 4100 and cropped the dropdown row, and
+		// 4200 while the sheet was 6280, which cut three of the four Rich text
+		// blocks and every Image frame. Same rule as SHEET_FRAME above — the
+		// number is the sheet's height in this reflow and nothing else — and the
+		// same instruction: raise it when the sample sheet grows.
+		//
+		// **Measure it rather than guessing.** Eyeballing a shot is what let it
+		// go stale twice, because a cropped shot looks like a finished sheet. In
+		// a browser on the harness page: `document.scrollingElement.scrollHeight`
+		// at the width this view uses. A test cannot hold it — that needs a real
+		// browser, and this file opens with the reason it does not drive one.
 		name: 'sheet-narrow',
 		query: 'surface=sheet&theme=dark&width=380',
-		size: '520,4200',
+		size: '520,6600',
 	},
 	{
 		// UI.md §5 puts the card's headline number in `em` rather than pixels
@@ -96,10 +110,14 @@ const DEFAULTS = [
 		// invented worst case. What it shows is truncation that grew, a
 		// hierarchy that reordered, and controls that collided. See
 		// `reference/legibility.md` §4. Taller frame because everything on the
-		// sheet gets taller with it.
+		// sheet gets taller with it: 4500 against a measured 4201, where 3000
+		// cut the whole Image row and most of the prose. It went stale in the
+		// same pass as `sheet-narrow` and for the same reason — SHEET_FRAME was
+		// raised for the wide views and these two were missed, which is the
+		// argument for measuring all three together whenever the sample grows.
 		name: 'sheet-large-text',
 		query: 'surface=sheet&theme=light&text=24',
-		size: '1400,3000',
+		size: '1400,4500',
 	},
 	{
 		// The first view to photograph a focus ring at all. A still cannot press
