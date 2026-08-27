@@ -2144,6 +2144,18 @@ describe('table link cells', () => {
 		expect(input.value).toBe('[[Sunblade|sword]]');
 	});
 
+	it('is not spellchecked while the link layer is what is on screen', () => {
+		// `[[Sunblade|sword]]` is not two words, and the field's text is
+		// transparent unfocused, so the marks would land on the rendered link.
+		const { el } = driven();
+		const input = el.querySelector(
+			'.sheetsmith-table-linked .sheetsmith-table-name-input',
+		) as HTMLInputElement;
+		expect(input.getAttribute('spellcheck')).toBe('false');
+		input.dispatchEvent(new Event('focus'));
+		expect(input.getAttribute('spellcheck')).toBe('true');
+	});
+
 	it('leaves the anchor alone when a commit lands, so focus survives', () => {
 		/*
 		 * The anchor is the next tab stop inside the cell, so tabbing out of the
@@ -2185,6 +2197,13 @@ describe('table link cells', () => {
 		const plain = el.querySelectorAll('tbody tr')[2] as HTMLElement;
 		expect(plain.querySelector('.sheetsmith-table-linked')).toBeNull();
 		expect(plain.querySelector('.sheetsmith-table-link-layer')).toBeNull();
+		// Including the spellcheck toggle: it is the stacking that needs it, and an
+		// unstacked cell is an ordinary text field.
+		expect(
+			plain
+				.querySelector('.sheetsmith-table-name-input')
+				?.hasAttribute('spellcheck'),
+		).toBe(false);
 		expect(
 			(plain.querySelector('.sheetsmith-table-name-input') as HTMLInputElement)
 				.value,
