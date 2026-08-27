@@ -28,7 +28,9 @@
  * free-form prose. `read` hands back the body with the whitespace run at each
  * end removed and can never fail, since every body is legal text; `write` puts
  * the new text back inside the runs the body already had, so a hand-written
- * section keeps its own spacing and an edit changes exactly the prose.
+ * section keeps its own spacing and an edit changes exactly the prose. Both
+ * halves are `parse/markdown-body.ts`, shared with Image, which stores one embed
+ * under the same rule.
  *
  * **Its one piece of reserved syntax is `## ` at the start of a line**, and it is
  * the note format's rather than this component's: SPEC §3.1 gives a character note
@@ -63,6 +65,7 @@
  */
 
 import { bindMultiline } from '../interaction/editable';
+import { bodyText, writeBodyText } from '../parse/markdown-body';
 import {
 	ComponentDefinition,
 	ReadResult,
@@ -89,29 +92,6 @@ const PLACEHOLDER = 'Write anything.';
  * several empty paragraphs. Both line endings, since a note may hold either.
  */
 const PARAGRAPH_BREAK = /(?:\r?\n[ \t]*)+\r?\n/;
-
-/**
- * A section body split into the whitespace runs at each end and the text
- * between them.
- *
- * One helper for both directions, because `read` and `write` have to agree
- * about where the text starts to the character: read one way and written the
- * other, an untouched note would be reformatted on every save, which is
- * Constraint 3's whole point. Derived from `trim` itself rather than from a
- * `\s` pattern of its own, so there is no second definition of whitespace to
- * drift from the one `read` returns.
- *
- * Private to this component, which has the only body that *is* its value. A
- * second such component would take this out to `parse/` rather than copy it.
- */
-function frame(body: string): { lead: string; text: string; tail: string } {
-	const lead = body.slice(0, body.length - body.trimStart().length);
-	const text = body.trim();
-	// An all-whitespace body has no text, so it has no two runs around one —
-	// the whole body is the leading run and there is nothing after it.
-	const tail = text === '' ? '' : body.slice(lead.length + text.length);
-	return { lead, text, tail };
-}
 
 export interface RichTextConfig extends ComponentConfig {
 	type: 'rich-text';
@@ -186,7 +166,7 @@ export const richText: ComponentDefinition<RichTextConfig, RichTextData> = {
 	 * reader to infer it from the absence of a branch.
 	 */
 	read(body): ReadResult<RichTextData> {
-		const { text } = frame(body);
+		const text = bodyText(body);
 		// Nothing but whitespace is an editable empty block, not an error and not
 		// a stored empty string: PATTERNS §4, and the first commit writes it.
 		if (text === '') return { ok: true, data: null };
@@ -194,15 +174,7 @@ export const richText: ComponentDefinition<RichTextConfig, RichTextData> = {
 	},
 
 	write(data, body): string {
-		// A section that does not exist yet, or one holding only whitespace: the
-		// canonical shape, matching what `freshBody` writes for a fence. There is
-		// no prose to preserve in either case, because the body *is* the prose.
-		if (body === null || body.trim() === '') return `\n${data.text}\n`;
-		const { lead, text, tail } = frame(body);
-		// Byte for byte where nothing changed (Constraint 3): the body is returned
-		// rather than rebuilt, so there is nothing for a rebuild to get wrong.
-		if (data.text === text) return body;
-		return lead + data.text + tail;
+		return writeBodyText(body, data.text);
 	},
 
 	/*
