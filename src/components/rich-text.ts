@@ -36,11 +36,14 @@
  * the note format's rather than this component's: SPEC §3.1 gives a character note
  * one `##` section per component, so a block holding such a line splits the note
  * there and shows only what was above it. Not escaped, because that would put a
- * plugin's syntax into a file the user owns; not refused, because `read` returning
- * an error would make this the one body that is not legal text. What is guaranteed
- * is the part that matters — nothing is lost from the file, and the note still
- * round-trips — and `rich-text.test.ts` pins it. Every other heading level is
- * content, `#` and `###` included.
+ * plugin's syntax into a file the user owns, and `read` is not failed either,
+ * because an error there would make this the one body that is not legal text.
+ * **The *write* is declined instead**, which is the third answer and reaches
+ * neither of those objections: `read` stays total, every body that gets to it is
+ * still legal text, and a draft holding such a line simply never reaches the file
+ * — the field keeps it, and the message names the offending line and `### `. See
+ * `refuse` in `render` for why byte survival was the wrong thing to guarantee.
+ * Every other heading level is content, `#` and `###` included.
  *
  * **It publishes nothing.** No `scopeValues`, no `scopeRows`, no `applyReset`.
  * SPEC §4.1 names this case — "a heading, an image, a block of prose" — and
