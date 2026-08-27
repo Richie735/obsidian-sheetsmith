@@ -88,48 +88,40 @@ describe('image.read', () => {
 	});
 
 	/*
-	 * Every refusal, with the fix it names. The message matters as much as the
-	 * refusal: PATTERNS §4 asks the text to name the fix, and these are two
-	 * different fixes — write the bracket form, or use a different component.
+	 * **The refusals moved to `render`, and the reason is the whole finding.** A
+	 * failed `read` never reaches `render`: the view replaces the cell, so there is
+	 * no frame, no label and no field. Image is the first component whose own
+	 * editing gesture can produce a body it refuses, so refusing at `read` locked
+	 * the reader out of a value they had just typed. They are driven through
+	 * `render` below, where the field survives them.
 	 */
-	it('names the syntax when the body is not an embed', () => {
+	it('holds a body it cannot use, so the field is still there to fix it', () => {
 		for (const body of [
 			'Sildar Hallwinter.png',
 			'[[Sildar Hallwinter.png]]',
 			'![](Sildar.png)',
 			'A picture goes here.',
 			'![[a.png]] ![[b.png]]',
-			'![[a.png]] and a caption',
+			'![[https://example.com/p.png]]',
 		]) {
 			const result = image.read(body, config);
-			expect(result.ok).toBe(false);
-			if (result.ok) throw new Error('expected a refusal');
-			expect(result.error).toBe('A picture is an embed: ![[Portrait.png]].');
+			expect(result.ok).toBe(true);
+			if (!result.ok) throw new Error('expected a value');
+			expect(result.data).toEqual({ source: body });
 		}
 	});
 
-	it('sends a web address to the component that can carry one', () => {
-		/*
-		 * The refusal that is policy rather than syntax. `![[https://…]]` is a
-		 * well-formed embed, and an `<img src>` this plugin wrote would be a request
-		 * it makes on the reader's behalf on every render, to a host named in
-		 * someone else's note. The message has to carry the positive answer or it is
-		 * a dead end: Obsidian fetches a remote picture in a Rich text block under
-		 * its own settings.
-		 */
-		const result = image.read('![[https://example.com/p.png]]', config);
-		expect(result.ok).toBe(false);
-		if (result.ok) throw new Error('expected a refusal');
-		expect(result.error).toContain('web address');
-		expect(result.error).toContain('Rich text');
-		// And it does not say "no file in this vault is called https://…", which is
-		// what a resolution failure would have said and would lead nowhere.
-		expect(result.error).not.toContain('No file in this vault');
+	it('still treats an empty body as the editable empty state', () => {
+		// Unchanged, and the one body that is `data: null` rather than a value.
+		expect(image.read('  \n\t\n ', config)).toEqual({ ok: true, data: null });
 	});
 
 	it('does not refuse a filename that merely contains a colon-slash', () => {
-		// The remote check is anchored, so a file whose name is odd is still a file.
-		expect(image.read('![[weird:name.png]]', config).ok).toBe(true);
+		// The remote check is anchored, so a file whose name is odd is still a file:
+		// it goes to resolution and fails there, as a filename, rather than being
+		// sent to a different component as a web address.
+		const el = render({}, { source: '![[weird:name.png]]' });
+		expect(error(el)).toBe('No file in this vault is called "weird:name.png".');
 	});
 });
 
@@ -255,6 +247,23 @@ describe('image.render — the picture', () => {
 		);
 	});
 
+	it('names it inside a container too, where the strip is not the heading', () => {
+		/*
+		 * The second way to lose the heading, and the acceptance box named only the
+		 * first: `showsOwnLabel` is false either because `hideLabel` is set *or*
+		 * because a parent already named it, and a Tab set is the second.
+		 *
+		 * The label is right there, and empty alt would be the bug: `alt=""` means
+		 * decorative, so a screen reader skips the element entirely — which in a tab
+		 * panel whose only content is the picture announces nothing at all. The
+		 * heading case can afford silence because the heading is adjacent and says
+		 * the same word; a strip is not.
+		 */
+		const el = render({}, { source: SOURCE }, { parentShowsLabel: true });
+		expect(el.querySelector('.sheetsmith-image-label')).toBeNull();
+		expect(picture(el)?.getAttribute('alt')).toBe('Portrait');
+	});
+
 	it('takes its height from its placement, whatever it holds', () => {
 		// The same floor a prose block takes, and for the same reason: an `<img>`
 		// has an intrinsic size, so left in flow it would size the box from the
@@ -314,6 +323,97 @@ describe('image.render — it is a placed box', () => {
 		expect(input.getAttribute('spellcheck')).toBe('false');
 		input.dispatchEvent(new Event('focus'));
 		expect(input.getAttribute('spellcheck')).toBe('true');
+	});
+});
+
+describe('image.render — a body it cannot use is still editable', () => {
+	/*
+	 * The finding: "when an image card has this error it is impossible to edit it."
+	 * Reachable in one gesture — type a web address into the field, blur, and the
+	 * old build rebuilt into a cell the view had replaced, with no field in it. The
+	 * reader was locked out of a value they entered one second ago and the only way
+	 * back was markdown view, while the message told them to do something they could
+	 * not do from where they were standing (PATTERNS §4).
+	 */
+	const cases: [string, string][] = [
+		['![](https://example.com/p.png)', 'web address'],
+		['![[https://example.com/p.png]]', 'web address'],
+		['Sildar Hallwinter.png', 'A picture is an embed'],
+		['![](Sildar.png)', 'A picture is an embed'],
+		['A picture goes here.', 'A picture is an embed'],
+		['![[a.png]] ![[b.png]]', 'A picture is an embed'],
+	];
+
+	it.each(cases)('keeps the field for %s', (source, expected) => {
+		const el = render({}, { source });
+		// The message is in the frame, under the label the component drew.
+		expect(error(el)).toContain(expected);
+		expect(frame(el).querySelector('.sheetsmith-error')).not.toBeNull();
+		// And the way out is on screen: the field, holding exactly what the note
+		// holds, editable, and named.
+		const input = field(el);
+		expect(input).not.toBeNull();
+		expect(input.value).toBe(source);
+		expect(input.readOnly).toBe(false);
+		expect(input.disabled).toBe(false);
+		// The label is drawn too, so the cell says which component failed.
+		expect(el.querySelector('.sheetsmith-image-label')?.textContent).toBe(
+			'Portrait',
+		);
+	});
+
+	it('draws no picture for a body it refused', () => {
+		// The refusal short-circuits resolution: there is no target to resolve, and
+		// "no file in this vault is called ![](https://…)" would lead nowhere.
+		const el = render({}, { source: '![](https://example.com/p.png)' });
+		expect(picture(el)).toBeNull();
+		expect(error(el)).not.toContain('No file in this vault');
+	});
+
+	it('names itself in the error where it drew no heading', () => {
+		/*
+		 * UI §12's error-card row, on this component's own failures. With the label
+		 * hidden there is no heading over the frame, so an unnamed red box on a sheet
+		 * holding three portraits says nothing about which one to fix — and the view
+		 * no longer composes a prefix, because this component has no failing `read`.
+		 */
+		const hidden = render({ hideLabel: true }, { source: 'Sildar.png' });
+		expect(hidden.querySelector('.sheetsmith-image-label')).toBeNull();
+		expect(error(hidden)).toBe(
+			'Portrait: A picture is an embed: ![[Portrait.png]].',
+		);
+
+		// A container that already named it is the second way to have no heading.
+		const nested = render({}, { source: 'Sildar.png' }, { parentShowsLabel: true });
+		expect(error(nested)).toContain('Portrait: ');
+
+		// And it never says it twice: with the heading drawn, the message is bare.
+		expect(error(render({}, { source: 'Sildar.png' }))).toBe(
+			'A picture is an embed: ![[Portrait.png]].',
+		);
+	});
+
+	it('names itself in the failures that were always render-time too', () => {
+		// The same rule reaches the resolution failures, which had the gap already.
+		const el = render({ hideLabel: true }, { source: '![[Portrait of Sera.png]]' });
+		expect(error(el)).toBe(
+			'Portrait: No file in this vault is called "Portrait of Sera.png".',
+		);
+	});
+
+	it('says it to assistive tech as well as drawing it', () => {
+		const el = render({}, { source: '![](https://example.com/p.png)' });
+		const status = el.querySelector('.sheetsmith-sr-only');
+		expect(status?.textContent).toContain('web address');
+	});
+
+	it('lifts once the reader fixes the reference', () => {
+		// The gesture the old build made impossible, end to end.
+		const el = render({}, { source: '![](https://example.com/p.png)' });
+		expect(error(el)).toContain('web address');
+		const fixed = render({}, { source: SOURCE });
+		expect(error(fixed)).toBeNull();
+		expect(picture(fixed)).not.toBeNull();
 	});
 });
 
