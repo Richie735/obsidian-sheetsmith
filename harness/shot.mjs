@@ -81,7 +81,12 @@ const DEFAULTS = [
 		size: '1900,1100',
 	},
 	{
-		// 6600 because the one-column sheet measures 6280, and it was 4200 — so
+		// 6600 because the one-column sheet measures about 6500 — it was 6280 until
+		// the second sizing pair added a seventh Image frame, which in this reflow
+		// is another full-width block and about 230px of it, leaving roughly 100px
+		// of slack here where there used to be 320. **Measure before adding the
+		// next sample rather than after**, because this frame is now the tightest
+		// of the three. It was 4200 before that — so
 		// every look criterion ever settled "at 380" was settled against a
 		// picture holding part of the sheet. **This is the second time this
 		// number went stale, and the second time it hid a whole feature:** it
