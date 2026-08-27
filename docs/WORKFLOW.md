@@ -9,37 +9,49 @@ nobody has to remember which one.
 Picking up once a feature has been chosen and researched, which happens outside
 this repository.
 
+The loop is normally driven end to end by `/ship <route> [feature]`, which runs
+it as one orchestrated session: a persistent dev agent, fresh reviewer agents
+per wave, and hard stops wherever the owner decides. The table is the
+definition either way; running it by hand, one session per step, remains the
+fallback when the orchestrator misbehaves.
+
 | # | Step | Session | What runs |
 | --- | --- | --- | --- |
 | 1 | Settle the model question, then design | design | `/feature-spec` |
 | 2 | Build | build | ordinary work against the spec |
-| 3 | Check the patterns, and check the spec | review | `/patterns-review` and `/spec-review` |
-| 4 | Look at it | review | `npm run harness:shot`, then `/design-review` |
-| 5 | Judge the findings, address the real ones | build | `/findings`, tree stays uncommitted |
-| 6 | Land it | build | `/ship` |
+| 3 | Check the patterns, and check the spec | review | `/patterns-review` and `/spec-review`, in parallel on the same diff |
+| 4 | Judge those findings, fix the real ones | build | `/findings`, tree stays uncommitted |
+| 5 | Look at it | review | `npm run harness:shot` fresh, then `/design-review` |
+| 6 | Judge those findings, fix the real ones | build | `/findings` |
+| 7 | Land it | build | `/land-it` |
 
-Steps 3 and 4 are in that order on purpose. Structural drift is expensive to fix
+Steps 3 and 4 sit before 5 on purpose. Structural drift is expensive to fix
 once polish is built on top of it; appearance is cheap to fix late. Discovering
 that the wrong thing was built is dearer than either, which is why the spec axis
-sits beside the patterns one rather than after the polish.
+sits beside the patterns one rather than after the polish. And the design review
+reads the structurally settled tree, so its findings are not invalidated by a
+patterns fix landing after it looked.
 
 The reviews report separately and nothing merges or reranks them. Code can follow
 every pattern and implement the wrong feature, or implement the right feature and
 look wrong; keeping the axes apart is what stops one from masking another.
-`/ship` reads them and reconciles none of them.
+`/land-it` reads them and reconciles none of them.
 
 ### Why the sessions are separate
 
 **The review session must not be the one that produced the work.** This is the
 boundary that matters. A session that wrote the design is anchored on it and
 will check conformance rather than critique it, and a session that wrote the
-code already believes its own reasoning. Start the reviewer fresh, hand it the
-spec and the screenshots, and let it disagree.
+code already believes its own reasoning. Under `/ship` this is structural:
+reviewers are spawned fresh with no memory of the build. By hand, it is a habit:
+start the reviewer fresh, hand it the spec and the screenshots, and let it
+disagree.
 
-**Design and build can share a session or not.** The spec is a committed file, so
-the handoff is a path rather than a conversation. Splitting them keeps the
-builder from inheriting assumptions the spec never wrote down; keeping them
-together is faster on a small feature. Judgement call.
+**Design and build do not share a head.** The spec is a committed file, so the
+handoff is a path rather than a conversation, and splitting them keeps the
+builder from inheriting assumptions the spec never wrote down. `/ship` always
+splits them; by hand, sharing a session is faster on a small feature and stays a
+judgement call.
 
 **Findings come back to the build session**, a few at a time rather than as one
 dump, and `/findings` is what works them there. The review session stays out of
@@ -53,16 +65,41 @@ whichever reviewer went last.
 A bug does not start at step 1, because there is nothing to design yet. Run
 `/diagnose`, which refuses to theorise until one command goes red on the bug, then
 minimises it, fixes at the layer that owns it, and locks it with a regression
-test. It rejoins the loop at step 3 and lands through `/ship` like anything else.
+test. It rejoins the loop at step 3 and lands through `/land-it` like anything else.
 With no feature spec to read, `/spec-review` says so and skips: the regression
-test is what stands in for an acceptance criterion.
+test is what stands in for an acceptance criterion. On the orchestrated path
+this is the `bug` route, and the dev agent is the one running `/diagnose`.
 
 Planning and issue tracking live outside this repository, and nothing here reads
 them or should learn where they are.
 
+## Routes
+
+The planning handoff names one of four routes; `/ship` runs the steps that route
+keeps and records every skip with its reason. Under-routing is the worse failure
+of the two: a surface built without a spec gets rebuilt.
+
+- **Full.** Gated on an open `SPEC` §13 question, or a surface nobody has built
+  before. Every step, opening with the model question before any design exists.
+  Stops: the model question, spec approval, the findings stop, land approval.
+- **Standard.** A surface whose mechanism the repository already has. Spec it
+  briefly, or skip the spec where named precedent files carry the design. Build,
+  both review waves, the design wave only where there are pixels. Stops: spec
+  approval where a spec was written, the findings stop, land approval.
+- **Short.** A decision, a chore, or debt with no user-facing surface. Build,
+  structural wave, land. One stop: land approval, with the findings summary
+  folded in.
+- **Bug.** `/diagnose` first, no spec. Rejoins at the structural wave, lands like
+  anything else. Stops: the findings stop where the fix touched pixels, land
+  approval.
+
+Whatever the route, the findings stop fires whenever the work touched pixels,
+even when `/design-review` came back clean. The look at the PNGs belongs to the
+owner, and a clean report is exactly when it would be skipped silently.
+
 ## Commits
 
-One uncommitted tree through steps 2 to 5. `/ship` is the only thing that
+One uncommitted tree through steps 2 to 6. `/land-it` is the only thing that
 commits, at the end, once. One tracked issue usually spans several commits;
 never force it into one.
 
@@ -102,7 +139,7 @@ was enforced that only warned.
 | `/diagnose` | TypeScript API | Whether the behaviour is the platform's own, before it is called a bug |
 | `/patterns-review` | Developer policies, plugin guidelines | Anything touching the network, user data, or the release surface |
 | `/design-review` | CSS variables, style guide | Which theme variables exist, and casing for user-facing text |
-| `/ship` | Plugin guidelines | Release artifacts, manifest and `versions.json` rules |
+| `/land-it` | Plugin guidelines | Release artifacts, manifest and `versions.json` rules |
 
 Links are in `AGENTS.md` § References. Cite what the documentation says when it
 settles a question, so the next session does not look it up again.
