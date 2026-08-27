@@ -62,6 +62,7 @@
  */
 
 import { bindEditable } from '../interaction/editable';
+import { spellcheckWhileFocused } from '../ui/spellcheck';
 import { bodyText, writeBodyText } from '../parse/markdown-body';
 import { parseEmbed } from '../parse/wikilink';
 import {
@@ -230,6 +231,10 @@ export const image: ComponentDefinition<ImageConfig, ImageData> = {
 		field.placeholder = PLACEHOLDER;
 		// The label may be hidden and the field still has to have a name.
 		field.setAttribute('aria-label', config.label);
+		// A reference is not prose — `Sildar Hallwinter.png` squiggles — and the
+		// field's text is transparent unfocused, so the marks would land on the
+		// portrait rather than on anything the reader is reading.
+		spellcheckWhileFocused(field);
 		box.appendChild(field);
 
 		/** Why the frame is empty, in the frame, under the label. */

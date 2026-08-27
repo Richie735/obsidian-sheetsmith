@@ -268,6 +268,16 @@ describe('richText.render — the text and the field', () => {
 		expect(input.readOnly).toBe(false);
 	});
 
+	it('is not spellchecked while the rendered prose is what is on screen', () => {
+		// Transparent text still gets its squiggles painted, and they land on the
+		// layer's words, positioned by the source line rather than by where the
+		// rendered word is.
+		const input = field(render());
+		expect(input.getAttribute('spellcheck')).toBe('false');
+		input.dispatchEvent(new Event('focus'));
+		expect(input.getAttribute('spellcheck')).toBe('true');
+	});
+
 	it('gives the field the component\'s name even with the label hidden', () => {
 		// The visible heading goes; the accessible name never does.
 		const el = render({ hideLabel: true });

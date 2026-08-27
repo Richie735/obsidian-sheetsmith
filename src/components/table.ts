@@ -69,6 +69,7 @@ import { paintLinkedText } from './linked-text';
 import { flagReading, flagText, isFlagSet } from './stored-flag';
 import { bindLongPress, showPopover } from '../ui/popover';
 import { revealWhenTruncated } from '../ui/truncation';
+import { spellcheckWhileFocused } from '../ui/spellcheck';
 
 export interface TableColumn {
 	/** Header text in the note, and the name a formula reads the cell by. */
@@ -1259,6 +1260,9 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			}
 			const stack = element('div', 'sheetsmith-table-linked', cell);
 			const input = element('input', 'sheetsmith-table-input', stack);
+			// This branch is the stacked one: unfocused, the input's text is
+			// transparent under the link layer, and its spelling marks would not be.
+			spellcheckWhileFocused(input);
 			const layer = element('div', 'sheetsmith-table-link-layer', stack);
 			paintLinkedText(layer, raw, { link: context.link, clipping: CELL_CLIPPING });
 			// A name column is as narrow as the table lets it be, so a link is the

@@ -74,6 +74,7 @@ import {
 	showsOwnLabel,
 } from '../types';
 import { paintLinkedText } from './linked-text';
+import { spellcheckWhileFocused } from '../ui/spellcheck';
 
 /**
  * Hint shown while the block is empty. Fixed rather than configured: SPEC §4.2
@@ -252,6 +253,9 @@ export const richText: ComponentDefinition<RichTextConfig, RichTextData> = {
 		// the label, never the placeholder: `docs/UI.md` §6, and a placeholder is
 		// gone the moment anything is typed.
 		field.setAttribute('aria-label', config.label);
+		// Its text is transparent unfocused and the rendered prose is drawn over
+		// it, so its squiggles would be too.
+		spellcheckWhileFocused(field);
 		box.appendChild(field);
 
 		const rendered = doc.createElement('div');

@@ -306,6 +306,15 @@ describe('image.render — it is a placed box', () => {
 		expect(el.querySelector('.sheetsmith-image')).not.toBeNull();
 		expect(el.querySelector('.sheetsmith-image-box')).not.toBeNull();
 	});
+
+	it('is not spellchecked while the picture is what is on screen', () => {
+		// A reference is not prose, and the field's text is transparent unfocused:
+		// its squiggles would be painted across the portrait.
+		const input = field(render());
+		expect(input.getAttribute('spellcheck')).toBe('false');
+		input.dispatchEvent(new Event('focus'));
+		expect(input.getAttribute('spellcheck')).toBe('true');
+	});
 });
 
 describe('image.render — every failure is on screen (the prior art)', () => {
