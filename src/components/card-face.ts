@@ -239,7 +239,9 @@ export function renderCardFace(
 
 	if (options.hideTitle !== true) {
 		const label = doc.createElement('div');
-		label.classList.add('sheetsmith-card-label');
+		// The shared rank (docs/UI.md §9); the card's own class carries only the
+		// narrow-card widening, which needs a container to ask about.
+		label.classList.add('sheetsmith-component-label', 'sheetsmith-card-label');
 		label.textContent = options.title;
 		// The label ellipsises in narrow cards, and the full text has to stay
 		// reachable — but a tooltip repeating a label that is already fully

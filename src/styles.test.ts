@@ -760,6 +760,112 @@ describe('a link over a field survives its own press', () => {
 	});
 });
 
+describe('a component\'s own name is one rank, not five', () => {
+	/*
+	 * The rank that means "this is what this component is called", as against a
+	 * heading over a region of other components (§9 of docs/UI.md).
+	 *
+	 * **It was written out four times, byte for byte** — Pool, Track, Rich text,
+	 * Image — because the agreement lived in each file's comment ("on the pool's
+	 * and the track's rank") rather than in a name. PATTERNS §1 extracts at three.
+	 *
+	 * Two guards, for the two ways one rank becomes several: the rank is declared
+	 * once, and no component re-declares it. Whether each component *asks* for it
+	 * is a claim about a component and lives in its own test file.
+	 */
+	const withoutComments = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+
+	/**
+	 * Selector → declarations, for every rule in the file, **at-rules included**.
+	 *
+	 * The at-rule preludes are deleted before splitting rather than skipped after
+	 * it, and that is not tidiness — it is the difference between seeing a rule and
+	 * not. Splitting on `}` makes a chunk's first `{` the selector's, so a rule
+	 * that is the *first* thing inside `@container (…) {` has the at-rule's brace
+	 * found instead of its own and reports as `@container (max-width: 130px)`. Both
+	 * spellings were live here: Pool's override is preceded by a sibling rule and
+	 * read correctly, while the card's is first in its block and did not. Skipping
+	 * anything starting with `@` therefore *hid* the card's rule rather than the
+	 * at-rule, and the check below silently stopped seeing one of the three.
+	 */
+	function rules(): { selector: string; body: string }[] {
+		const found: { selector: string; body: string }[] = [];
+		const flat = withoutComments.replace(/@[a-z-]+[^{}]*\{/g, '');
+		for (const block of flat.split('}')) {
+			const brace = block.indexOf('{');
+			if (brace === -1) continue;
+			found.push({
+				selector: block.slice(0, brace).trim(),
+				body: block.slice(brace + 1),
+			});
+		}
+		return found;
+	}
+
+	/**
+	 * What makes a rule *the rank* rather than a rule that happens to set a font.
+	 *
+	 * Three of the nine declarations together, and the combination is what earns
+	 * it: `--font-ui-smaller` alone appears on a card's abbreviation and a table's
+	 * secondary column, and uppercase alone on a table heading. Uppercase *and*
+	 * this tracking *and* this size is the rank and nothing else on the sheet.
+	 */
+	const RANK = (body: string) =>
+		/text-transform\s*:\s*uppercase/.test(body) &&
+		/letter-spacing\s*:\s*0\.05em/.test(body) &&
+		body.includes('--font-ui-smaller');
+
+	it('declares it exactly once', () => {
+		const declaring = rules().filter(({ body }) => RANK(body));
+		expect(declaring.map(({ selector }) => selector)).toEqual([
+			'.sheetsmith-component-label',
+		]);
+	});
+
+	it('would catch a component declaring it again', () => {
+		// The check above pins one selector, so it would also pass if the rank were
+		// renamed out from under it. This drives the predicate over the shape that
+		// was actually here, four times.
+		const copy =
+			'.sheetsmith-image-label { color: var(--text-muted); ' +
+			'font-size: var(--font-ui-smaller); letter-spacing: 0.05em; ' +
+			'text-transform: uppercase; }';
+		expect(RANK(copy.slice(copy.indexOf('{') + 1))).toBe(true);
+		// And the rules it must not fire on: a size without the rest of the rank.
+		expect(RANK('font-size: var(--font-ui-smaller); color: var(--text-faint);')).toBe(
+			false,
+		);
+		expect(RANK('text-transform: uppercase; font-size: var(--font-ui-small);')).toBe(
+			false,
+		);
+	});
+
+	it('leaves the narrow-card tracking with the cards that can ask', () => {
+		/*
+		 * Three of the five tighten the tracking on a narrow card and two cannot:
+		 * the card face, Pool and Track set `container-type` on their own card, so a
+		 * container query asks about the card — and they do not agree on the
+		 * threshold either, 130px against 160px, because a card's label and a pool's
+		 * are not the same width. A Rich text block establishes no container, so the
+		 * same query inside one resolves against the *sheet* and fires essentially
+		 * never.
+		 *
+		 * So this is a deliberate asymmetry rather than a leftover, and the check is
+		 * that it stayed asymmetric: moving an override onto the shared class would
+		 * look like it applied to all five and would silently apply to three.
+		 */
+		const overriding = rules()
+			.filter(({ body }) => /letter-spacing\s*:\s*0\.02em/.test(body))
+			.map(({ selector }) => selector)
+			.sort();
+		expect(overriding).toEqual([
+			'.sheetsmith-card-label',
+			'.sheetsmith-pool-label',
+			'.sheetsmith-track-label',
+		]);
+	});
+});
+
 describe('every colour on the sheet comes from the theme', () => {
 	/*
 	 * A literal colour is a colour that does not change with the theme. It
