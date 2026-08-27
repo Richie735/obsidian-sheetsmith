@@ -807,6 +807,21 @@ export const SAMPLES: Sample[] = [
 			'',
 			'Born in [[Neverwinter]] to a family of ore miners, and apprenticed young to [[Sildar Hallwinter|Sildar]], who taught the sword and very little else.',
 			'',
+			// The one target the harness refuses to resolve, in prose rather than in
+			// a cell: an unresolved link mid-paragraph is a state worth looking at
+			// on its own, since what has to read as faint here sits between two
+			// words rather than alone in a column.
+			//
+			// **Second paragraph because a review found it was in the twelfth**, and
+			// this body is deliberately longer than its box — so the one sample
+			// written to show an unresolved link was scrolled out of every shot the
+			// harness takes, and every link a reviewer could actually see resolved.
+			// It sits between the two paragraphs with the most resolved links in
+			// them, which is the comparison it exists for. Moved rather than
+			// shortened: the body has to stay longer than the box, because the
+			// scroll is another criterion judged from this same sample.
+			'There is also the matter of the [[Torch of Revealing]], which nobody has written up and which two people have now died over. That is a problem for a later road.',
+			'',
 			'The debt to the [[Zhentarim]] is not settled and will not be settled by talking. Three of them know the face; one of them knows the name, and none of them has been seen south of the coast road in a year.',
 			'',
 			'- Owes a debt to the [[Zhentarim]]',
@@ -818,12 +833,6 @@ export const SAMPLES: Sample[] = [
 			'Wintered at [[Phandalin]] doing work nobody writes down, and came out of it with a name that is not the one on the letter. There is a woman there who would say where the money went, if she were asked in the right room and not the wrong one.',
 			'',
 			'What is left is the road, the debt, and the sword. In that order on a good day, and in the reverse order on most of them.',
-			'',
-			// The one target the harness refuses to resolve, in prose rather than in
-			// a cell: an unresolved link mid-paragraph is a state worth looking at
-			// on its own, since what has to read as faint here sits between two
-			// words rather than alone in a column.',
-			'There is also the matter of the [[Torch of Revealing]], which nobody has written up and which two people have now died over. That is a problem for a later road.',
 			'',
 			'The plan, such as it is: south to the coast, sell the sword if it comes to that, and be somewhere the [[Zhentarim]] have no reason to look before the thaw.',
 			'',
@@ -877,31 +886,48 @@ export const SAMPLES: Sample[] = [
 		body: '```sheet\nvalue: still here\n```',
 	},
 	/*
-	 * Image, five ways, and every one of them is about a *failure* except the
-	 * first two — because every image failure in the prior art is silent. An empty
+	 * Image, seven placements over four files, and most of them are about a
+	 * *failure* — because every image failure in the prior art is silent. An empty
 	 * div with the diagnosis in the console; a broken-image icon; a value reverting
-	 * with "console is not outputing any warning nor error". So what this row is
+	 * with "console is not outputing any warning nor error". So what these rows are
 	 * for is checking that each of those states says something on the sheet:
 	 *
-	 * 1. **Portrait**, 2×3, a tall picture in a tall box. The ordinary case, and
-	 *    the one that says whether the frame reads as a portrait rather than as a
-	 *    card with a picture in it.
-	 * 2. **Crest**, 4×3, a *wide* picture in a wide box, and **Symbol**, 2×3, the
-	 *    same wide file in a *tall* one. The pair is the sizing check: both must be
-	 *    whole, centred, and undistorted, with the slack left as the frame's own
-	 *    surface. A circle in the sample is what makes a stretch visible — it
-	 *    becomes an ellipse — and nothing else in the shape would say so.
-	 * 3. **Missing portrait**, 2×3, naming a file the vault does not hold. It must
+	 * 1. **Portrait**, 2×3, a tall picture in a box of about its own shape. The
+	 *    ordinary case, and the one that says whether the frame reads as a portrait
+	 *    rather than as a card with a picture in it.
+	 * 2. **The two sizing pairs**, which are what `object-fit: contain` is
+	 *    reviewable through, since a still cannot resize anything. **Crest**, 4×3, a
+	 *    wide picture in a wide box, against **Symbol**, 2×3, the *same file* in a
+	 *    tall one. And **Portrait** above against **Portrait in a wide box**, 4×3,
+	 *    the same tall file in a box wider than its ratio at every width these shots
+	 *    are taken at. Both must be whole, centred and undistorted, with the slack
+	 *    left as the frame's own surface. A disc in the sample is what makes a
+	 *    stretch visible — it becomes an ellipse — and nothing else in the shape
+	 *    would say so.
+	 *
+	 *    **The second pair was missing and a review found it**: the wide file was in
+	 *    both shapes of box and the tall file was only ever in a tall one, so half of
+	 *    "a tall picture in a wide box and a wide picture in a tall box" rested on
+	 *    the difference between a 0.71 file and a 1.04 box — and vanished altogether
+	 *    at `text=24`, where the taller rows make a 2×3 frame *taller* than it is
+	 *    wide and Sildar all but fills it. The new frame is 4 columns by 3 rows for
+	 *    that reason: it stays wider than 0.71 at 1400, at 1900, at `text=24`, and in
+	 *    the one-column reflow at 380, where a full-width block is still about half
+	 *    again as wide as three rows are tall.
+	 * 3. **A 48px sigil**, 2×3, the small-file case: it has to scale *up* to its
+	 *    placement, because the grid is the sizing control and a file's pixel count
+	 *    is not (SPEC §8).
+	 * 4. **Missing portrait**, 2×3, naming a file the vault does not hold. It must
 	 *    name the file it cannot find, in the frame, under its own label. This is
 	 *    the state the closest analogue rendered as `<div class="statblock-inline-
 	 *    item group-container"></div>` with the explanation in the console.
-	 * 4. **Not a picture**, 2×3, naming a file that resolves and that the browser
+	 * 5. **Not a picture**, 2×3, naming a file that resolves and that the browser
 	 *    cannot draw. It must say so *after* trying, because the plugin holds no
 	 *    list of formats — which is the one shape of the webp report that cannot be
 	 *    written here.
 	 *
-	 * The empty state is the `Empty` view's, as everything else here is, and the
-	 * read error is `brokenSamples`'.
+	 * The empty state is the `Empty` view's, as everything else here is, and the two
+	 * refusals over a body this component cannot use are `brokenSamples`'.
 	 */
 	{
 		config: {
@@ -966,6 +992,25 @@ export const SAMPLES: Sample[] = [
 			position: { col: 3, row: 28, width: 2, height: 3 },
 		},
 		body: '\n![[Notes.md]]\n',
+	},
+	{
+		config: {
+			id: 'wide_portrait',
+			type: 'image',
+			label: 'Portrait in a wide box',
+			position: { col: 5, row: 28, width: 4, height: 3 },
+		},
+		// The *same file* as the portrait above, in a box wider than the file is:
+		// 300×420 at a ratio of 0.71, in a frame that measures about 450×209 at
+		// 1400px. It has to pillarbox — whole, centred, its disc a circle, with the
+		// slack left and right as the frame's own surface — and it is the only
+		// placement here that can show the tall-file-in-a-wide-box half of
+		// `object-fit: contain`.
+		//
+		// On this row rather than beside the portrait because the row above is full
+		// at ten of twelve columns, and this row's two frames are three rows tall
+		// already, so nothing on the sheet moves to make room for it.
+		body: '\n![[Sildar Hallwinter.png]]\n',
 	},
 	/* Beside the set rather than inside it, so a tab press has something to not
 	   move. */
@@ -1106,22 +1151,25 @@ export function brokenSamples(): Sample[] {
 			config.id === 'inspiration' ? '```sheet\nvalue: maybe\n```' : sample.body;
 		/*
 		 * A picture written the way every analogue accepts it and this one refuses:
-		 * a bare path. It is the `read` error, which is the *labelled* path — the
-		 * view prefixes a failed read with the component's label — so this view is
-		 * the only place that message is ever drawn, and the reason it is worth
-		 * staging is that the message has to carry the fix rather than the fault:
+		 * a bare path. `image.read` cannot fail, so this is refused in `render` like
+		 * every other Image failure: the message is in the frame, under the label the
+		 * component drew, with the field still there to fix it. Nothing else stages a
+		 * body this component holds and will not draw, which is why it is worth
+		 * staging — and the message has to carry the fix rather than the fault:
 		 * "A picture is an embed" plus the syntax.
 		 *
-		 * On the portrait alone. Breaking all five would put one error five times on
-		 * a view whose whole job is the states side by side, and the other four are
-		 * already showing states nothing else can: two fits, an unresolvable target,
-		 * and a file the browser will not draw. Those last two are *populated*
-		 * samples on purpose — they are render-time failures, not read failures, so
-		 * they belong beside the working picture rather than here.
+		 * On the portrait alone. Breaking every Image sample would put one error
+		 * across the whole row on a view whose whole job is the states side by side,
+		 * and the rest are already showing states nothing else can: two sizing pairs,
+		 * a file that scales up, an unresolvable target, and a file the browser will
+		 * not draw. Those last two are *populated* samples on purpose — every Image
+		 * failure is render-time now, and what separates them is that they need a
+		 * target the vault answers for rather than a body rewritten here, so they
+		 * belong beside the working pictures.
 		 */
 		if (config.id === 'portrait') body = '\nSildar Hallwinter.png\n';
 		/*
-		 * The *other* read refusal, and the one whose copy is worth looking at: a
+		 * The *other* refusal, and the one whose copy is worth looking at: a
 		 * web address, refused by policy rather than by syntax (SPEC §4.2). At 200
 		 * characters with a real URL in it, it is five times the bare-path message
 		 * and the longest user-facing string either of these two components has —
@@ -1131,9 +1179,9 @@ export function brokenSamples(): Sample[] {
 		 * On `symbol` because that is the **tightest** image frame here, two columns
 		 * by three rows: the longest message in the smallest box is the pairing
 		 * worth a picture. It also draws a second thing worth confirming — `symbol`
-		 * sets `hideLabel`, and a failed `read` is prefixed with the label by the
-		 * view regardless, which is right rather than a bug: the prefix is the only
-		 * name on screen once the component never renders.
+		 * sets `hideLabel`, so the *component* prefixes its own message with the
+		 * label, which is the only case in which any of these messages is prefixed:
+		 * with no heading drawn, the prefix is the only name on screen.
 		 */
 		if (config.id === 'symbol') body = '\n![[https://example.com/portrait.png]]\n';
 		return { config, body, children: sample.children };
