@@ -145,8 +145,14 @@ the harness both show a real link. What is absent without this is the vault."
  *
  * Optional on the same terms as `link`: without it a component draws what it can
  * from the text alone, which is the truth where there is no app to ask.
+ *
+ * `onFailure` is a required third argument, not an optional one — see below.
  */
-renderMarkdown?: (markdown: string, into: HTMLElement) => void;
+renderMarkdown?: (
+	markdown: string,
+	into: HTMLElement,
+	onFailure: () => void,
+) => void;
 
 /**
  * A URL an `<img>` can take for a file the vault holds, or null where the
@@ -218,6 +224,28 @@ not take it.
 **Its text as paragraphs, split on blank lines, with its wikilinks live.** Nothing else:
 `*italic*` shows its asterisks, exactly as a cell does today.
 
+**And the same module wires the anchors the *renderer* drew**, which is not a symmetry
+but a repair. `paintLinkedText` attaches the press and the hover to each anchor as it
+paints it, and it runs only on the fallback path — so in Obsidian, where the app's
+renderer draws its own anchors instead, nothing was listening: a wikilink in a backstory
+worked in a unit test and in the harness and did nothing in the app. External links went
+on working throughout, because those are Electron's to open and never this plugin's, which
+is what made it look like a wikilink problem rather than a wiring one. `adoptRenderedLinks`
+delegates one listener on the layer — delegated because the renderer is asynchronous and
+may replace what it drew, so there is no moment at which the anchors are all present to
+walk. It adopts rather than repaints, since the renderer writes `internal-link` and
+`data-href` itself.
+
+**It does not write the resolution state, and that was a second report.** With the
+presses working, every link in a backstory still painted as live whether or not the
+note existed — `is-unresolved` comes from the app's own preview machinery and not from
+a detached `render()` call, so nothing applied it. `markRenderedResolution` is the other
+half, and it is called from `view/markdown-pass.ts` rather than from the component: a
+class has to go on anchors that already exist, and the only place that knows the render
+landed is the pass that started it. The rule itself stays in `linked-text.ts` so the two
+paths cannot disagree about what an unresolved link looks like. It clears as well as
+sets, because a note created since the last render has to stop being dimmed.
+
 That is where `table.ts`'s private `paintText` goes. Its own header says so: "Rich text
 is the obvious second consumer and is not built, and PATTERNS §1 says a painter moves
 out on the second consumer rather than in anticipation of one." It moves to
@@ -228,11 +256,35 @@ and `data-href`, `title` and never `aria-label`, and the rule that a link paints
 resolved where there is no vault. Drift between two copies of that set is the entire
 risk, and a guard test could only assert they still spell the same thing.
 
-**The branch is exclusive: with a renderer the fallback is not drawn at all.** Painting
-the fallback first and letting the renderer replace it would give a synchronous first
+**The branch is exclusive up front: with a renderer the fallback is not drawn first.**
+Painting the fallback and letting the renderer replace it would give a synchronous first
 frame, and it would also flash raw `# Heading` before every rendered heading on every
 rebuild — and a sheet rebuilds on every edit anywhere on it. A momentarily empty box is
 cheaper than that.
+
+**The one case where both run is a renderer that rejects, and it is why `onFailure` is a
+required third argument rather than an optional one.** `MarkdownRenderer.render` returns
+a promise, and a post-processor from a theme or another plugin can throw inside it. The
+render is asynchronous, so the component has already returned by the time that happens
+and has no other route to hear about it — and the box it left empty on the strength of
+the exclusive branch above would simply stay empty, under a filled-in label, with the
+prose still in the note and nothing on screen saying so. That is the one way this
+component can look like it lost somebody's words, which is a worse failure than any it
+was built to report.
+
+So the rejection falls back to the fallback: the component draws exactly what it draws
+with no renderer at all, because that is the case it already handles. **Not an error
+message**, per PATTERNS §4 — a theme's post-processor throwing is not something the
+reader caused or can fix, so there is no fix for the text to name, and the reader would
+rather have their prose than be told it exists somewhere else. Required rather than
+optional because a renderer that can fail and a consumer that ignores it is the defect;
+making it optional makes the empty box the default. Not called once the pass has ended,
+since the element is detached by then and what it drew would belong to nothing.
+
+**Added during the build and recorded here afterwards.** The snippet above shipped with
+two arguments and this paragraph did not exist; the behaviour is argued in `types.ts`,
+`view/markdown-pass.ts` and `components/rich-text.ts`, and a review found the doc had
+none of it.
 
 **What it costs, named rather than discovered in review.** The harness therefore shows
 paragraphs and links and no other markdown, so *how a rendered heading, list or embed
@@ -254,8 +306,11 @@ tempted to disagree: **a component fills its placement**, and a component that s
 itself to its content would be the same defect the collapse was (§13) — the sheet moving
 because of something the author never placed.
 
-So: the block is `width × height` grid units, `overflow-y: auto`, and a long backstory
-scrolls. An author who wants a taller box places a taller component, which is §8's own
+So: the block is `width × height` grid units and a long backstory scrolls. **The
+`overflow-y: auto` is on the two layers rather than on the block** — they are what hold
+the text, and they are out of flow inside the box precisely so nothing inside can decide
+its height. Same outcome; worth stating exactly, because it is also why each layer
+scrolls on its own (departure 3). An author who wants a taller box places a taller component, which is §8's own
 sentence — "the grid is the sizing control".
 
 **The gesture is the sheet's own stacked edit, not a second editor.** UI §9 already
@@ -263,9 +318,22 @@ settles the shape: "Rendered text and the field that edits it are stacked, never
 swapped… the field stays in the DOM and in the tab order in both states, which is what
 keeps the view's focus restoration counting the same controls across a rebuild." Both
 layers fill the box. Unfocused, the rendered layer is opaque over a field that is
-invisible but present and tabbable, and only the links inside it take a press —
-everything else falls through to the field. Focused, the rendered layer is hidden and
-the field is the box.
+invisible but present and tabbable. Focused, the rendered layer is hidden and the field
+is the box.
+
+**The rendered layer answers the press itself, and that is the fourth departure — found
+by measurement, not by design.** This paragraph first said what the cell does: only the
+links take a press, everything else falls through to the field. That spelling is
+`pointer-events: none` on the layer, and it shipped. A cell is one line with nothing to
+scroll; **this layer is a scrollport**, and a scrollport that is not a hit target never
+receives a wheel — so the gesture went to the *invisible* field behind it, which scrolled
+150px in a real browser while the visible prose stayed at 0. The layer is now the pointer
+target and routes the press in `rich-text.ts`: a link owns its own, a drag that selected
+text is left alone so a backstory can be copied without entering edit mode, and
+everything else focuses the field. `styles.test.ts` forbids the declaration by name, as a
+scan rather than a look, because this is the class PATTERNS §10 names — a still cannot
+show a scroll and happy-dom has no hit testing, so the harness and every unit test signed
+the regression off.
 
 Three departures from the cell's version of that pattern, each with its reason, because
 a shared gesture is only shared if the differences are stated:
@@ -275,15 +343,26 @@ a shared gesture is only shared if the differences are stated:
    they hold the same text in two *different* shapes — a rendered heading is not the
    height of its source line — and two differently-shaped copies of one text overlaid
    would be unreadable.
-2. **The caret lands where the browser puts it and is not moved.** For the same reason:
-   a click at a given point in the rendered view is not the same character in the source,
-   so there is no landing position to preserve and pretending otherwise would put the
-   caret confidently in the wrong place. For a block of plain paragraphs the two
-   geometries nearly agree, which is the common case.
+2. **The caret is not placed from the click.** A click at a given point in the rendered
+   view is not the same character in the source, so there is no landing position to
+   preserve and pretending otherwise would put the caret confidently in the wrong place.
+   This first read "the caret lands where the browser puts it and is not moved", which
+   stopped being true with the departure above: the layer answers the press and calls
+   `preventDefault`, so the browser never reaches the field and places nothing. The
+   *reason* is unchanged, which is why the departure stands — the position given up was
+   never meaningful. It lands at the start of the text, chosen rather than inherited:
+   assigning `value` moves the cursor to the end of the control and focusing scrolls it
+   into view, so a long backstory opened at its last line, measured in Chrome at
+   `scrollTop` 2062 of a possible 2062.
 3. **The box never changes size, but its scroll extent does.** UI §9's rule is that
    nothing reflows under a pointer resting on the cell, and it holds where it was
-   written: the placement is fixed, so nothing on the sheet moves. Inside the box, a
-   focused field scrolls to its caret, which is what the reader asked for by clicking.
+   written: the placement is fixed, so nothing on the sheet moves. Each layer scrolls on
+   its own, because they hold the same text in two different shapes and one shared
+   offset would put them out of step. This first added that a focused field "scrolls to
+   its caret, which is what the reader asked for by clicking", and departure 2 is
+   precisely that there is no such caret. **The reader's place is not carried across**,
+   and that is an accepted cost with a row in UI §12: scroll to paragraph twelve, click,
+   and the field opens at paragraph one.
 
 **`editable.ts` gains a multi-line binding rather than Rich text writing its own.** The
 policy is exactly what must not drift, and UI §9's vocabulary table already names
@@ -445,7 +524,16 @@ paragraph said only the first. A failure `render` raises draws `.sheetsmith-erro
 inside the component's own frame, under the label the component has already drawn.
 A failed **`read` never reaches `render` at all**: `view/grid-cells.ts` replaces the
 whole cell and prefixes the message with the component's label, so there is no frame
-and no label row, and the name arrives as `Portrait: …`. Both satisfy the clause that
+and no label row, and the name arrives as `Portrait: …`. **This paragraph records the
+mechanism and never asked what happens next, which is the defect a user report found:
+a replaced cell has no field in it.** Image is the first component whose own editing
+gesture can produce a body its `read` refuses — type `![](https://…)`, blur, and the
+sheet rebuilds into a cell with nothing to edit, so the only way back is markdown view.
+Rich text cannot reach it because its `read` never fails, which is why nobody hit it
+before. **So Image's `read` no longer fails either**: all four of its failures are
+raised in `render`, in the frame, with the field still there to fix them, and the
+component names itself in the message where it drew no heading. The rows below are
+marked accordingly. Both satisfy the clause that
 is actually load-bearing, and it is how this feature avoids adding a new instance of
 UI §12's "error card renders without its component name" row: the row's actual complaint is that
 "the error replaces the whole card including its heading, so nothing on screen says which
@@ -456,8 +544,8 @@ does not say it twice. The row is untouched and no case is added to it.
 
 | What happened | Where it is known | What the reader sees |
 | --- | --- | --- |
-| Image: the body is not an embed (`Portrait.png`, or prose) | `read` | `A picture is an embed: ![[Portrait.png]].` — and this path is the *labelled* one, since the view prefixes a failed `read` with the component's label |
-| Image: the body is an embed naming a web address (`![[https://…]]`) | `read` | `"https://…" is a web address, and a picture has to be a file in this vault. Put a remote picture in a Rich text block instead, where Obsidian fetches it under your own settings.` — the labelled path again, and a *second* read message rather than a reuse of the one above, because the fix differs: that one is fixed by writing the bracket form and this one by using a different component. **Added after the build**: question 5 settles the refusal and §4.2 records it, but this table was written with four rows and the code shipped five. It is also the longest user-facing string either component has, at 200 characters with a real URL in it, and it was the only failure state with no sample — so nothing had drawn it until a review asked. Drawing it found the defect: an unbreakable URL painted through the error box's border, 211px of text in a 205px box, now fixed on `.sheetsmith-error` itself since any component's message can name a path or a formula with no space in it |
+| Image: the body is not an embed (`Portrait.png`, or prose) | `render` | `A picture is an embed: ![[Portrait.png]].` — and this path is the *labelled* one, since the view prefixes a failed `read` with the component's label |
+| Image: the body names a web address, in any of its three spellings — `![[https://…]]`, `![](https://…)`, or a bare paste | `render` | `"https://…" is a web address, and a picture has to be a file in this vault. Put a remote picture in a Rich text block instead, where Obsidian fetches it under your own settings.` — the labelled path again, and a *second* read message rather than a reuse of the one above, because the fix differs: that one is fixed by writing the bracket form and this one by using a different component. **Added after the build**: question 5 settles the refusal and §4.2 records it, but this table was written with four rows and the code shipped five. It is also the longest user-facing string either component has, at 200 characters with a real URL in it, and it was the only failure state with no sample — so nothing had drawn it until a review asked. Drawing it found the defect: an unbreakable URL painted through the error box's border, 211px of text in a 205px box, now fixed on `.sheetsmith-error` itself since any component's message can name a path or a formula with no space in it. **The spelling was wrong too, and a later review caught it**: this row was keyed on the embed form, the code tested `parseEmbed` first, and so `![](https://…)` — the spelling question 5 names as the demand that exists, because it is the one Obsidian renders — got the *syntax* message instead. Following that advice produces `![[https://…]]` and lands on this message one step later, which is PATTERNS §4 failing on the one body readers actually arrive with. `addressed()` in `image.ts` now finds the target ahead of the syntax refusal, so all three spellings get this message first time |
 | Image: the target names no file in the vault | `render`, `resource()` returned null | `No file in this vault is called "Portrait.png".` in the frame, under the label |
 | Image: the file is not something the browser can draw | `render`, the `<img>` fired `error` | `"Notes.md" is not a picture.` in the frame, under the label. The plugin holds no extension list, so it reports what happened rather than predicting it — which is the one shape of FS 455's bug that cannot be written here |
 | Image: the section is empty or missing | `read` returns `data: null` | **Not an error.** An empty frame, the label above it, and a field whose placeholder is `![[Portrait.png]]` — the syntax, in the idiomatic place |
@@ -480,11 +568,27 @@ writes the section.
 "what this adds is the two things only a vault can answer… Everything resolves except one
 target, so both link states are on screen at once."
 
-- **`resource`**: the same shape. A small inline SVG data URI for the sample portrait, so
-  a real picture is on screen and its fit inside the box is reviewable; `null` for one
+- **`resource`**: the same shape. Inline SVG data URIs for the pictures that resolve, so
+  real pictures are on screen and their fit inside the box is reviewable; `null` for one
   deliberately missing target, so the unresolvable error is on screen beside it; and a
-  non-image data URI for a third, so the load failure is on screen too. Three samples,
-  three states, no binary asset in the repository.
+  non-image data URI, so the load failure is on screen too — genuine rather than
+  simulated, since the browser really does refuse it. No binary asset in the repository.
+
+  **Four targets feeding six placements, plus two `brokenSamples` overrides**, and this
+  bullet said "three samples, three states" until a review counted them. What the extra
+  ones buy is the sizing cases, which are not states of the *vault* and so were missed by
+  a sentence organised around what only a vault can answer: one wide file placed in both a
+  wide box and a tall one, which is the pair a stretch shows up in; a size hint in the
+  embed, which the sheet ignores; and **a 48px file in a three-row frame, which exists
+  because of a defect this document never absorbed** — with `max-width`/`max-height` and
+  no size the element's box *is* the intrinsic ratio shrunk to fit, so `object-fit` never
+  applied and the sigil drew at 48×48 in a 205×194 frame, a speck the author could not
+  make bigger. `SPEC` §4.2 records the fix and its cost. The sample is what says so if it
+  ever regresses, and the sizeless SVGs it replaced are what hid it. **It still cannot
+  show what the upscale looks like**, though, which is the sample's own limit: every
+  picture here is an SVG, so it scales losslessly and draws clean at any size, while a
+  real 48px raster in a three-row box is visibly blocky — found in Obsidian, and not
+  reportable by any shot taken here. §4.2's word for it was "soft" until then.
 - **`renderMarkdown`**: **deliberately absent**, so the harness draws the fallback. The
   alternative is a second markdown implementation in the stub, in a repository whose whole
   point is not to have one, and it would drift from Obsidian's. The cost is stated above
@@ -546,8 +650,49 @@ where nothing but whitespace is left. `write` returns the body unchanged when th
 has not changed, and otherwise re-inserts the new text between the body's existing
 leading and trailing whitespace runs. A missing section writes `\n${text}\n`.
 
-There is no reserved syntax and nothing to escape: a body holding a fence, a heading or a
-table is content, and Rich text renders it as such.
+**A body that is only whitespace takes that same fresh shape rather than keeping its
+runs**, which is the clause this paragraph was missing: preserving them literally would
+give `body + text` with no trailing newline, and there is nothing there worth preserving
+— `read` already calls such a body `data: null`, so the two agree that an all-whitespace
+section is an empty one. `writeBodyText` tests `body === null || body.trim() === ''`
+together for that reason.
+
+Nothing is escaped, and a body holding a fence, a table or a heading is content — with
+**one reserved line, which this paragraph used to deny outright**. `## ` at the start of
+a line is the character note's own section delimiter (§3.1), so a body holding one splits
+the note there: everything below the heading becomes a section the layout does not map,
+and the block re-renders showing only what was above it. Put the heading first and the
+block comes back empty. `#`, `###` and `##` with no space after it are all content and
+must stay content; only `## ` at line start is reserved.
+
+**The commit is declined, and that is a reversal.** The spec weighed two answers and
+rejected both on principle — escaping would put a plugin's syntax into a file the user
+owns, and failing `read` would make this the one body that is not legal text — and
+settled on neither, guaranteeing instead that "nothing is lost from the file, and the
+note still round-trips". **A user report showed that was the wrong criterion**: "Every
+time I write an `##` and leave edit mode, the text is not saved… I tried to add a `##`
+before them and all the block was gone." The bytes were in the file the whole time, in a
+section nothing draws — so from the reader's seat it is silent destruction of everything
+they typed, with no warning and nothing saying where it went, which is the exact failure
+class this document was written against. It was worse than silent: `announceCommit` fired
+"Backstory saved" at the moment the box emptied.
+
+The third answer the original argument never considered is to **decline the write and
+say why**, and neither original objection reaches it: nothing is escaped, and `read` is
+untouched — every body that reaches it is still legal text, which is what that argument
+actually cared about. So `bindMultiline` gains `refuse`, the field keeps the draft rather
+than discarding it, and the message names the offending line and the fix: `Not saved.
+"## After the fire" would start a new section in this note — use "### " instead.` The
+draft is *shown* while refused, which needs a rule of its own: this field's text is
+transparent unfocused, so a refusal left alone would put the stored prose back on screen
+with an error under it and the reader's actual words invisible.
+
+`parse/character.ts` exports `startsSection` for it, rather than the component holding a
+second copy of the pattern — PATTERNS §1's policy tier, the same argument that puts
+`parseEmbed` in `wikilink.ts`. It is scanned line by line with no fence awareness because
+`parseCharacter` has none either: a `## ` inside a fenced block in a prose body splits the
+note just the same, so the predicate gives the parser's real answer rather than a politer
+one.
 
 ### Image
 
@@ -598,8 +743,13 @@ rest are open for three different reasons, and none of them is "probably fine":
 
 - [ ] `RenderContext` declares `renderMarkdown` and `resource`, both optional, both
       documented against `link`'s reason for being optional.
-- [ ] `src/components/` still imports nothing from `obsidian` beyond `setIcon`;
-      `components/isolation.test.ts` passes unchanged.
+- [ ] `src/components/` still imports nothing from `obsidian` beyond `setIcon` — the
+      `FROM_OBSIDIAN` half of `components/isolation.test.ts` is unchanged. **Its sibling
+      allowlist necessarily grows**, and this box said "passes unchanged" until a review
+      pointed out that commit boundary 2 cannot be met while that is true: extracting
+      `linked-text.ts` adds two entries there and two in `eslint.config.mts`, one per
+      import path. The isolation that matters is from the app, not from a sibling
+      painter, and the sibling list is a declaration rather than a bound.
 - [ ] The view holds one child `Component` per render pass and unloads the previous one,
       asserted by a test that renders twice and checks the first child was unloaded.
 - [ ] A `renderMarkdown` result landing after its pass was unloaded writes nothing.
@@ -617,8 +767,28 @@ rest are open for three different reasons, and none of them is "probably fine":
       trailing blank lines, CRLF).
 - [ ] An edit changes only the prose: the leading and trailing whitespace runs of the
       body survive it.
-- [ ] With `renderMarkdown` supplied, the box holds what the renderer produced and the
-      fallback painter was not called.
+- [x] A draft holding `## ` at the start of a line is **not committed**: `onChange` never
+      fires, the block draws `.sheetsmith-error` naming the offending line and `###`, the
+      announcement is that message and never "saved", and the field still holds what was
+      typed with the box in the state that shows it. `#`, `###` and `##NoSpace` all
+      commit normally, and Escape leaves a refused draft and clears the message.
+- [ ] With `renderMarkdown` supplied and succeeding, the box holds what the renderer
+      produced and the fallback painter was not called.
+- [x] **A wikilink the *renderer* drew opens, previews and honours a modifier.** A press
+      on `a.internal-link[data-href]` inside the rendered layer calls `link.open` with
+      the `data-href` target and the original event, refuses the browser's default, and
+      does not focus the field; a hover calls `link.preview`; an `a.external-link` is
+      left entirely untouched. **This box is the one that was missing**, and its absence
+      is why links shipped working in the fallback and dead in the app — every criterion
+      here was written against the path no reader uses.
+- [ ] **A wikilink the renderer drew is dimmed when the vault holds no such note**, and
+      undimmed once it does: `is-unresolved` is applied after each render lands, from the
+      same `link.resolves` the fallback painter uses. The renderer does not apply it, so
+      without this every link in a block paints as live — which is the same shape of gap
+      as the presses and was found the same way, in the app rather than here.
+- [ ] With `renderMarkdown` supplied and rejecting, `onFailure` runs and the box holds
+      what the fallback painter draws — never an empty box under a filled-in label, and
+      never an error message.
 - [ ] Without it, the box holds one `<p>` per blank-line-separated paragraph, and a
       wikilink inside prose is an `a.internal-link` carrying `href` and `data-href`, with
       `is-unresolved` where `link.resolves` says so.
@@ -638,10 +808,31 @@ rest are open for three different reasons, and none of them is "probably fine":
       and refuses `[[Target]]`, `![](path)`, `![](https://…)` and a bare path.
 - [x] Round-trip: an unchanged embed returns the body byte-for-byte, pipe options
       included.
-- [x] The `<img>` `src` is exactly what `resource()` returned; nothing in `src/` matches
-      a search for an image file extension.
-- [x] `alt` is the component's label where the visible heading is hidden and empty where
-      it is drawn.
+- [x] **`image.read` never returns `{ ok: false }`.** A body it cannot use — prose, a
+      bare path, two embeds, a web address in any spelling — reads back as a value, and
+      the refusal is raised in `render`: the message is in the frame, the label is above
+      it, and the field is present, editable and holding exactly what the note holds.
+      Driven for every refusal, because the failure it protects against is a reader
+      locked out of a value their own edit produced.
+- [ ] An Image that drew no heading — `hideLabel`, or inside a container that named it —
+      prefixes its own error with the component's label, and never does so when the
+      heading is drawn.
+- [x] The `<img>` `src` is exactly what `resource()` returned; no file in `src/` holds a
+      *list* of image formats — two distinct ones close enough together to be one
+      construct, in any spelling: an array, a regex alternation, a switch, a set. **A
+      list, not a mention**, which is what the shipped guard scans for and what this box
+      should always have said: it read "nothing matches a search for an image file
+      extension", which is literally false — `PLACEHOLDER` is `![[Portrait.png]]` — and
+      the first spelling of the check made exactly that mistake, firing on the component's
+      own placeholder and on the comments explaining the rule.
+- [x] `alt` is empty where this component draws its own heading, and the component's
+      label wherever it does not — **which is two cases and this box named one**:
+      `showsOwnLabel` is false either because `hideLabel` is set or because a container
+      already named it, and a Tab set is the second. The behaviour is right in both and
+      the wording was narrow: `alt=""` means decorative, so a screen reader skips the
+      element, and a tab panel whose only content is a skipped picture announces nothing.
+      A heading can afford that silence because it is adjacent and says the same word; a
+      tab strip is not.
 - [ ] The picture fills its placement with `object-fit: contain`; a tall picture in a wide
       box and a wide picture in a tall box are both whole and undistorted in the harness.
 - [x] A stored `|200` changes nothing about how the sheet draws it, and survives the
@@ -662,8 +853,14 @@ rest are open for three different reasons, and none of them is "probably fine":
 - [ ] `npm test`, `npm run lint` and `npm run build` pass.
 - [ ] Neither component declares `scopeValues`, `scopeRows`, `applyReset` or `hasBuffer`,
       and neither appears in any name a formula can resolve.
-- [ ] Neither draws a border, panel or surface the sheet does not already have a name for
-      (UI §9).
+- [ ] The shared box is `--background-primary-alt` at `--radius-m` — the card's own
+      surface tokens — with no border of its own; `pointer: coarse` adds a
+      `border-bottom` and `prefers-contrast: more` a full border, both the table input's
+      existing idiom. **The narrow claim, because the wide one cannot be decided**: this
+      box read "neither draws a border, panel or surface the sheet does not already have
+      a name for", and the same commits invent `.sheetsmith-placed-box` and give it a UI
+      §9 row, so it is satisfied by its own definition. What is checkable is which tokens
+      it takes and whose idiom the two media rules follow.
 - [ ] Both are placed in the throwaway test vault in more than one shape — a wide
       backstory, a small captioned box, a portrait, a symbol — per the working note that a
       component is not done until its variations are in the vault. **Name the files
@@ -812,6 +1009,22 @@ follow while building.
   usefully until the formula language has strings.
 - **A markdown implementation in `src/test/obsidian-stub.ts`**, and therefore full
   markdown in the harness. The cost is stated under the fallback.
+- **Obsidian's editing affordances inside the field:** no bracket auto-close, no list
+  continuation on Enter, and no `[[` suggester. The field is a plain `<textarea>`, which
+  follows from "the gesture is the sheet's own stacked edit, not a second editor" — so
+  the element is a decision and not an oversight, and this bullet is the price of it,
+  which the decision never wrote down. Typing `[[Neverwinter]]` by hand works, renders
+  and resolves; what is absent is everything around it.
+
+  **The three are not one problem, which an attempt established before being reverted.**
+  Bracket closing and list continuation need nothing from the app — they are keystrokes
+  over a string, and `bindMultiline` lives in `interaction/`, so the component boundary
+  the first analysis leaned on never applied to them. The `[[` suggester does need the
+  vault's filenames, and so does need the seam (§13). What the attempt also established
+  is that `keydown` is the wrong event to build them on: it keys on physical keys and
+  modifiers, so a layout that composes `[` with Option never reaches the handler, and
+  every unit test passes while the app does nothing. `beforeinput` keys on the character
+  actually being inserted. Tracked outside this document as its own piece of work.
 - **Interactive content inside a rendered embed.** Links work; a task checkbox in an
   embedded note does not.
 - **Pasting a file into a Rich text block or an Image field.** Obsidian's paste handler

@@ -243,6 +243,14 @@ const PICTURES: Record<string, string> = {
 	// in a three-row frame. It draws scaled up to fill, which is the decision
 	// `styles/sheet.css` records — and if it ever draws as a speck again, this is
 	// the sample that says so.
+	//
+	// **What it cannot show is what the upscale looks like**, and that is worth
+	// knowing before trusting the shot: this is an SVG, so it scales losslessly and
+	// draws clean at any size. A real 48px raster in the same box is visibly blocky,
+	// which is a review in Obsidian's finding and not something any shot here would
+	// have reported. Making it visible means a base64 PNG in this file — no binary
+	// asset, but binary content inline — which is a call about what this harness is
+	// willing to hold rather than a fix.
 	'Tiny sigil.png': portrait(48, 48, ''),
 	// Well-formed text that is not an image, which is what a note is.
 	'Notes.md': 'data:text/plain;charset=utf-8,not%20a%20picture',
