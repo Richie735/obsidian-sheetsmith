@@ -87,7 +87,36 @@ export function restoreFocus(
 	if (!saved) return;
 	const cell = root.querySelectorAll('.sheetsmith-cell')[saved.cell];
 	if (!cell) return;
-	const control = cell.querySelectorAll(FOCUSABLE)[saved.control];
+	const controls = cell.querySelectorAll(FOCUSABLE);
+	/*
+	 * **A saved index past the end lands on the cell's last control, not on
+	 * nothing.** The cell can hold *fewer* controls after a rebuild than before
+	 * one, and the index then resolves to `undefined` — which used to return
+	 * silently and drop focus to the body, the exact outcome PATTERNS §5 records
+	 * as the reason not to repaint a cell optimistically.
+	 *
+	 * The case that made it reachable is a Rich text block drawn by the app's own
+	 * renderer. Its rendered layer is tabbable whenever its field is not focused,
+	 * so Shift-Tab backwards out of an edited field in the next component lands on
+	 * the last anchor in the block — and that same Shift-Tab commits, which
+	 * rebuilds the sheet. `MarkdownRenderer.render` is asynchronous, so at restore
+	 * time the block holds its textarea and an empty layer, and an anchor captured
+	 * at index 2 has nowhere to go. Measured, not reasoned: `cell-focus.test.ts`
+	 * drives it, and the fallback painter is synchronous so the harness cannot
+	 * show it.
+	 *
+	 * A near-miss rather than a cure, and the difference is worth stating: the
+	 * anchor the reader was on does not exist yet and cannot be restored by index
+	 * or by identity. What this buys is that focus stays inside the component the
+	 * reader was in, so one more Shift-Tab resumes where they were going instead of
+	 * starting again from the top of the sheet. `docs/UI.md` §12 holds the residue.
+	 *
+	 * It is also the right answer for the cases that were already reachable and
+	 * silently doing nothing — a table row deleted under the caret, a card that
+	 * lost a field to a layout edit — where the last remaining control in the cell
+	 * is the nearest thing to where focus was.
+	 */
+	const control = controls[saved.control] ?? controls[controls.length - 1];
 	if (!control || !control.instanceOf(HTMLElement)) return;
 	control.focus({ preventScroll: true });
 	if (control.instanceOf(HTMLInputElement) && saved.start !== null) {
