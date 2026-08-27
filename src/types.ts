@@ -578,6 +578,25 @@ export interface RenderContext<TData = unknown> {
 		onFailure: () => void,
 	) => void;
 	/**
+	 * A URL an `<img>` can take for a file the vault holds, or null where the
+	 * target names no file.
+	 *
+	 * The third member on `link`'s terms, and the smallest of them: two calls the
+	 * app already offers, resolving a linkpath against this note and asking the
+	 * vault for a resource URL. A component draws its own frame, its own label and
+	 * its own field either way — what is absent without this is the picture, which
+	 * is the truth where there is no vault to hold one.
+	 *
+	 * **Null means "no file", never "not an image".** Nothing here enumerates
+	 * image extensions and nothing should: Fantasy Statblocks 455 is webp silently
+	 * ceasing to render inside a plugin while the same syntax worked one line
+	 * outside it, which is what a resolution path diverging from the app's own
+	 * looks like. There is no list here to diverge from, the app answers whether
+	 * the file exists, and the browser answers whether it can draw it — so a
+	 * component reports what happened rather than predicting it.
+	 */
+	resource?: (target: string) => string | null;
+	/**
 	 * Draw this component's `children` into an element of its own choosing
 	 * (SPEC §4.2).
 	 *

@@ -1092,6 +1092,91 @@ describe('a prose block is sized by its placement, never by its text', () => {
 
 });
 
+describe('a picture fits its placement rather than deciding it', () => {
+	/*
+	 * The same two facts a prose box needs, on a component whose content has an
+	 * intrinsic size — which makes it the *worse* case: left in flow an `<img>`
+	 * would give the box a height, so the failure is not a collapse but a box
+	 * sized by the file. That is a character's note deciding a box the layout
+	 * author placed, which is the first thing SPEC §8 forbids.
+	 *
+	 * Plus the one that is Image's alone: `object-fit: contain`. Invisible in a
+	 * still unless the sample happens to have the wrong aspect ratio for its box —
+	 * and the convergent prior art is width-and-height where two dimensions may
+	 * distort, so a picture stretched to fill is precisely what a reviewer would
+	 * mistake for correct.
+	 *
+	 * Per selector rather than over a union, which is the lesson the prose box's
+	 * equivalent had to learn: a check for "some rule declares this" is satisfied
+	 * by one rule when two elements share it.
+	 */
+	const withoutComments = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+
+	function declaring(match: RegExp): string[] {
+		const found: string[] = [];
+		for (const block of withoutComments.split('}')) {
+			const brace = block.indexOf('{');
+			if (brace === -1) continue;
+			if (!match.test(block.slice(0, brace))) continue;
+			found.push(block.slice(brace + 1));
+		}
+		return found;
+	}
+
+	it('finds the rules it is meant to be checking', () => {
+		expect(declaring(/\.sheetsmith-image\b/)).not.toHaveLength(0);
+		expect(declaring(/\.sheetsmith-image-picture\b/)).not.toHaveLength(0);
+	});
+
+	it('takes the frame out of flow, so its content cannot grow the box', () => {
+		// The picture and any error live in the frame, and both would otherwise
+		// contribute intrinsic height past the floor — a `min-height` is a floor and
+		// not a ceiling.
+		expect(
+			declaring(/\.sheetsmith-image-frame\s*$/).some((body) =>
+				/position\s*:\s*absolute/.test(body),
+			),
+		).toBe(true);
+	});
+
+	it('gives the picture the whole box, so the fit has work to do', () => {
+		/*
+		 * **`width`/`height`, not `max-width`/`max-height`, and this case exists
+		 * because the first spelling made the next one vacuous.** With only the
+		 * `max-*` pair and no size, a replaced element's box *is* its intrinsic ratio
+		 * shrunk to fit — the box never disagrees with the image, so `object-fit`
+		 * never applies and asserting it proved nothing. Measured against real files:
+		 * a 48×48 sigil drew at 48×48 in a 205×194 frame while the harness's sizeless
+		 * SVGs stretched to fill and hid it.
+		 *
+		 * `100%` in both directions and nothing else: a length here would be a second
+		 * sizing control disagreeing with the grid (SPEC §8), and `100%` is the
+		 * placement rather than a size of this stylesheet's own.
+		 */
+		const rules = declaring(/\.sheetsmith-image-picture\s*$/);
+		expect(rules).toHaveLength(1);
+		const [body = ''] = rules;
+		for (const property of ['width', 'height']) {
+			const declared = new RegExp(
+				`(?:^|;)\\s*${property}\\s*:\\s*([^;]+)`,
+			).exec(body);
+			expect(declared, `${property} must be declared`).not.toBeNull();
+			expect(declared?.[1]?.trim()).toBe('100%');
+		}
+		// And no `max-*` pair left behind: harmless, but it is what the box used to
+		// be sized by, and leaving it reads as though it still is.
+		expect(/max-width\s*:/.test(body)).toBe(false);
+		expect(/max-height\s*:/.test(body)).toBe(false);
+	});
+
+	it('fits the picture inside that box rather than stretching it', () => {
+		// The declaration that does the work now the box is the frame: scaled to fit
+		// in both directions, up as well as down, ratio preserved, never cropped.
+		const [body = ''] = declaring(/\.sheetsmith-image-picture\s*$/);
+		expect(/object-fit\s*:\s*contain/.test(body)).toBe(true);
+	});
+});
+
 describe('every colour on the sheet comes from the theme', () => {
 	/*
 	 * A literal colour is a colour that does not change with the theme. It

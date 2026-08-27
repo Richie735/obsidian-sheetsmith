@@ -3406,3 +3406,147 @@ a.sheetsmith-undo {
 }
 
 
+/* ---------------------------------------------------------------------------
+   Image — a portrait or a symbol.
+
+   The same shape as a Rich text block and for the same reason: a label, and a box
+   under it whose height is the *placement* rather than the content. A picture has
+   an intrinsic size, so left in flow it would decide the box — and the size it
+   would decide is the file's, which is a character's note sizing a box the layout
+   author placed (SPEC §8). So the picture is out of flow and the block carries a
+   floor from its row count, exactly as prose does.
+
+   **`object-fit: contain`, and it is the whole sizing story.** The picture fits
+   inside the box, centred, aspect ratio preserved, never cropped and never
+   stretched. A size hint in the stored embed is honoured by markdown view and
+   ignored here, because a number out of the character's note may not override the
+   layout's own placement.
+
+   The picture carries a class this stylesheet owns rather than being a bare
+   `<img>`. Content drawn into a themed surface inherits the reader's theme and
+   snippets, and the caution is a real report: a picture cropped because a rule in
+   the reporter's own theme was keyed on its filename ending in `-portrait`.
+   Stating the fit here is what makes it this plugin's answer rather than
+   whatever a snippet happens to say.
+   --------------------------------------------------------------------------- */
+/* Drawn above the box, so the name is on screen whichever failure the frame below
+   ends up holding. The rank itself is `.sheetsmith-component-label`. */
+
+/* Where the picture goes, or the reason there is none. Out of flow, so nothing
+   inside it can grow the box — which is as true of a long error message as it is
+   of a large picture. */
+.sheetsmith-image-frame {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: var(--size-4-2);
+	border-radius: inherit;
+	/* A long "no file in this vault is called…" has to be readable in a box that
+	   may be one grid row tall, so it scrolls rather than escaping. */
+	overflow: auto;
+	/* The frame is what a press lands on, and a press means "edit the reference". */
+	cursor: pointer;
+}
+
+.sheetsmith-image-picture {
+	/* Whole and undistorted inside whatever box the layout gave it: a tall picture
+	   in a wide box and a wide one in a tall box both fit, with the slack left as
+	   the box's own surface rather than filled by stretching.
+
+	   **`width`/`height` rather than `max-width`/`max-height`, and that is a
+	   correction.** With only the `max-*` pair and no size, a replaced element's box
+	   *is* its intrinsic ratio shrunk to fit — so `object-fit` never has anything to
+	   do, and the declaration this component is built around was inert. Measured
+	   against real files: a 48×48 sigil drew at 48×48 inside a 205×194 frame, a
+	   speck the author could not make bigger, while the sizeless SVGs in the harness
+	   stretched to fill and hid it.
+
+	   The decision it exposed is settled by SPEC §8 and by this component's own
+	   refusal of the stored size hint. Honouring `|200` out of a character's note
+	   was refused because it would let the note size a box the layout author placed
+	   — and drawing at native size is that same defect with the file's pixel
+	   dimensions in place of the number, since a 48px file and a 4000px file in one
+	   3-row box would draw at wildly different sizes with the *file* deciding. "The
+	   grid is the sizing control: an author who wants a small card places a small
+	   component." So the picture scales in both directions, up as well as down.
+
+	   The cost, stated because "never cropped and never distorted" does not cover
+	   it: a picture smaller than its frame is enlarged and may look soft. That is
+	   neither a crop nor a distortion, and the author's answer is a smaller
+	   placement. */
+	width: 100%;
+	height: 100%;
+	object-fit: contain;
+	/* An inline image sits on the text baseline and leaves a few pixels of
+	   descender space under it, which reads as the picture hanging high in its
+	   frame. */
+	display: block;
+	border-radius: var(--radius-s);
+}
+
+/* One line across the middle of the box, not the whole of it: the picture is what
+   the reader is looking at, and the reference is what they are editing. Invisible
+   but present and tabbable when unfocused, which is what keeps the view's focus
+   restoration counting the same controls across a rebuild (§9 of docs/UI.md).
+
+   The view scope is §2's rule and not hypothetical: Obsidian styles
+   `input[type='text']` at a specificity a bare class loses to, so every
+   declaration below that takes chrome off would be dropped and the box would hold
+   a form control floating over a portrait. */
+.sheetsmith-view .sheetsmith-image-input {
+	position: absolute;
+	top: 50%;
+	left: 0;
+	width: 100%;
+	transform: translateY(-50%);
+	padding: var(--size-2-1) var(--size-2-2);
+	border: 1px solid transparent;
+	border-radius: var(--radius-s);
+	background-color: transparent;
+	color: transparent;
+	font-size: var(--font-ui-small);
+	font-family: inherit;
+	text-align: center;
+	/* The frame under it owns the press: the field is one line and the box is the
+	   hit target, so a press near the top of a portrait has to reach the frame
+	   rather than dying on an invisible input stretched across the middle. */
+	pointer-events: none;
+}
+
+/* Its caret is otherwise the one visible thing left of an invisible field: a
+   blinking bar across the middle of a picture nobody is editing. */
+.sheetsmith-view .sheetsmith-image-input:not(:focus) {
+	caret-color: transparent;
+}
+
+/* A hint the reader can act on is worth showing through, so the placeholder is
+   the one part of an unfocused field that stays visible — it is what says an
+   empty frame is one click from holding a picture. */
+.sheetsmith-view .sheetsmith-image-input::placeholder {
+	color: var(--text-faint);
+	opacity: 1;
+}
+
+/* Focused, it is a band across the box with its own background, so the reference
+   is legible over whatever is behind it — and it takes the press back, since the
+   caret and a selection are the point once the field is the thing being used. */
+.sheetsmith-view .sheetsmith-image-input:focus {
+	border-color: var(--interactive-accent);
+	background-color: var(--background-primary);
+	color: var(--text-normal);
+	pointer-events: auto;
+	/* Invisible normally, repainted as a real ring where forced colours override
+	   every border on the page and the accent stops meaning anything. */
+	outline: 2px solid transparent;
+	outline-offset: 0;
+}
+
+/* An error in the frame reads as the frame's content rather than as a banner
+   across it: centred, wrapping, and at the size the rest of the box is. */
+.sheetsmith-image-frame .sheetsmith-error {
+	margin: 0;
+	text-align: center;
+}
+

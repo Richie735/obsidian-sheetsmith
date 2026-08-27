@@ -12,6 +12,7 @@ import {
 import { card } from './card';
 import { cardSet } from './card-set';
 import { group } from './group';
+import { image } from './image';
 import { pool } from './pool';
 import { richText } from './rich-text';
 import { table } from './table';
@@ -27,6 +28,7 @@ function register(component: ComponentDefinition): void {
 register(card);
 register(cardSet);
 register(group);
+register(image);
 register(pool);
 register(richText);
 register(table);
