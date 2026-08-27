@@ -3560,6 +3560,34 @@ a.sheetsmith-undo {
 	visibility: hidden;
 }
 
+/* **A refused draft is the one time the field's text shows while unfocused.**
+   `## ` at the start of a line is the note's own section delimiter, so the commit
+   is declined and the draft stays in the field — and the field is invisible
+   unfocused, which would put the *stored* prose back on screen with an error
+   under it and the reader's actual words nowhere. Both halves of the unfocused
+   treatment are undone together: the layer stays hidden as it is on focus, and
+   the field keeps its colour.
+
+   Keyed on the box rather than the field, because the component sets it on the
+   commit attempt and there is no selector for "was refused". */
+.sheetsmith-view .sheetsmith-rich-text-refused .sheetsmith-rich-text-rendered {
+	visibility: hidden;
+}
+
+.sheetsmith-view
+	.sheetsmith-rich-text-refused
+	.sheetsmith-rich-text-input:not(:focus) {
+	color: var(--text-normal);
+}
+
+/* The message sits under the box rather than in it: the box is full, both layers
+   fill it, and the block's height is its placement — so the error takes its room
+   from the box and nothing on the sheet moves. */
+.sheetsmith-view .sheetsmith-rich-text .sheetsmith-error {
+	flex: 0 0 auto;
+	margin: 0;
+}
+
 /* The fallback, where there is no app to render markdown: paragraphs with their
    wikilinks live and nothing else.
 

@@ -75,6 +75,7 @@ import {
 } from '../types';
 import { paintLinkedText } from './linked-text';
 import { spellcheckWhileFocused } from '../ui/spellcheck';
+import { startsSection } from '../parse/character';
 
 /**
  * Hint shown while the block is empty. Fixed rather than configured: SPEC §4.2
@@ -367,7 +368,69 @@ export const richText: ComponentDefinition<RichTextConfig, RichTextData> = {
 		status.setAttribute('aria-live', 'polite');
 		block.appendChild(status);
 
+		/**
+		 * The refusal, and the only one this component has.
+		 *
+		 * `read` stays total — every body that reaches it is legal text, which is
+		 * what makes this component the one with no read error state — and what is
+		 * refused is the *write*. `## ` at the start of a line is the note's own
+		 * section delimiter, so committing one splits the note underneath the block
+		 * and the box comes back holding only what was above the heading.
+		 *
+		 * **The spec settled this on the wrong criterion and a report corrected
+		 * it.** It weighed two options and rejected both on principle — escaping
+		 * would put a plugin's syntax into a file the user owns, and failing `read`
+		 * would make this the one body that is not legal text — and concluded that
+		 * "nothing is lost from the file" was the part that mattered. From the
+		 * reader's seat it is not: the bytes survive in a section nothing maps, the
+		 * box empties, and the announcement said *saved*. That is the silent-failure
+		 * class this whole component was specified against. Declining the write
+		 * reaches neither original objection: nothing is escaped and `read` is
+		 * untouched.
+		 *
+		 * The offending line is quoted because a backstory is long and "somewhere in
+		 * here" is not a fix (PATTERNS §4).
+		 */
+		const refuse = (next: string): string | null => {
+			const heading = startsSection(next);
+			if (heading === null) return null;
+			// The outcome first, because "was it saved?" is the reader's question and
+			// the old behaviour answered it wrongly.
+			return `Not saved. "${heading.trim()}" would start a new section in this note — use "### " instead.`;
+		};
+
+		/** The standing refusal, drawn under the box and cleared when it lifts. */
+		let notice: HTMLElement | null = null;
+
 		bindMultiline(field, {
+			refuse,
+			/*
+			 * **The draft is shown, not hidden, for as long as it is refused.**
+			 * Unfocused, this field's text is transparent under the rendered layer,
+			 * so a refusal left alone would put the *stored* prose back on screen
+			 * with an error under it and the reader's actual words invisible in a box
+			 * they had just been told was not saved. The class swaps that round: the
+			 * layer stays hidden and the field keeps its colour, so what is on screen
+			 * is the text the message is about.
+			 *
+			 * Focus is not taken back, deliberately. Refocusing on blur is the other
+			 * way to keep the draft visible and it steals the pointer from wherever
+			 * the reader just clicked; this leaves them free to go and come back, and
+			 * the draft is still there when they do.
+			 */
+			onRefusal: (message) => {
+				box.classList.toggle('sheetsmith-rich-text-refused', message !== null);
+				notice?.remove();
+				notice = null;
+				if (message === null) return;
+				notice = doc.createElement('div');
+				notice.classList.add('sheetsmith-error');
+				notice.textContent = message;
+				block.appendChild(notice);
+				// Said as well as drawn: the reader who cannot see the box is the one
+				// the old "saved" announcement misled worst.
+				status.textContent = message;
+			},
 			initial: text,
 			// The label and the outcome, never the prose: reading a backstory back
 			// at its author is not feedback, and the announcement is what says the

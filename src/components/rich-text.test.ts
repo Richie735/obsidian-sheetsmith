@@ -47,6 +47,8 @@ const block = (el: HTMLElement) =>
 	el.querySelector('.sheetsmith-rich-text') as HTMLElement;
 const links = (el: HTMLElement) =>
 	Array.from(el.querySelectorAll<HTMLAnchorElement>('a'));
+const status = (el: HTMLElement) =>
+	el.querySelector('.sheetsmith-sr-only');
 
 /** A `read` that must have succeeded with data, as every round trip needs. */
 function readData(body: string): RichTextData {
@@ -78,6 +80,10 @@ describe('richText.read', () => {
 			'\n```sheet\nvalue: 3\n```\n',
 			'\n| Item | Qty |\n| --- | --- |\n| Rope | 1 |\n',
 			'\n# A heading\n\nAnd a paragraph.\n',
+			// `##` specifically, because it is the file model's own section marker:
+			// the body handed to `read` has already been split on it, so a line
+			// starting with one is prose like any other and must not fail here.
+			'\n## Not a section heading\n\nStill prose.\n',
 			'\n![[Portrait.png]]\n',
 			'\r\nCRLF prose.\r\n',
 			'\nUnclosed [[bracket\n',
@@ -890,11 +896,19 @@ describe('richText — the one line of markdown a block cannot hold', () => {
 	 * can raise it. Every other component stores a fence or a markdown table, and
 	 * neither can contain a line beginning `## `.
 	 *
-	 * **Not escaped and not refused**, and both refusals are the file model's.
-	 * Escaping would put a plugin's syntax into a note the user owns, and `read`
-	 * returning an error would make this the one body that is not legal text. What
-	 * is guaranteed instead is the thing that actually matters: nothing is lost
-	 * from the file (Constraint 4), and the note still round-trips.
+	 * **Not escaped, and `read` is not failed — the write is declined.** Escaping
+	 * would put a plugin's syntax into a note the user owns, and a read error would
+	 * make this the one body that is not legal text; both objections stand, and
+	 * neither reaches the third answer. This block used to end "what is guaranteed
+	 * instead is the thing that actually matters: nothing is lost from the file,
+	 * and the note still round-trips" — and a user report showed that was the wrong
+	 * criterion. The bytes survived in a section nothing draws while the box
+	 * emptied and the plugin announced "saved".
+	 *
+	 * The two cases below are kept as a pair on purpose. The first is what the file
+	 * model does with such a body if one ever reaches it — hand-edited, or written
+	 * before the refusal — and its guarantee is unchanged. The second is that no
+	 * body typed into the field ever gets there.
 	 */
 	const NOTE = (body: string) =>
 		`---\nsheet-layout: Prose\n---\n\n## Backstory\n${body}`;
@@ -943,6 +957,122 @@ describe('richText — the one line of markdown a block cannot hold', () => {
 		// The block now reads back only its own half, which is the visible cost.
 		const read = richText.read(reparsed.sections[0]?.body ?? '', config);
 		expect(read).toEqual({ ok: true, data: { text: 'Before the fire.' } });
+	});
+
+	/*
+	 * The sibling the case above needed, and the reason the spec's judgement
+	 * changed: byte survival was never the part that mattered. What the reader saw
+	 * was a box emptying with no warning while the plugin announced "saved".
+	 */
+	it('never reaches the file, because the commit is refused and says why', () => {
+		const commits: RichTextData[] = [];
+		const el = render({}, { text: 'Before the fire.' }, {
+			onChange: (d) => commits.push(d),
+		});
+		document.body.appendChild(el);
+		try {
+			const input = field(el);
+			input.focus();
+			input.value = 'Before the fire.\n\n## After the fire\n\nAfter it.';
+			input.dispatchEvent(new Event('blur'));
+
+			// Nothing was written, so the note never splits in the first place.
+			expect(commits).toEqual([]);
+
+			// And the reader is told, in the block and to assistive tech, naming
+			// the offending line and the fix.
+			const notice = el.querySelector('.sheetsmith-error');
+			expect(notice?.textContent).toContain('"## After the fire"');
+			expect(notice?.textContent).toContain('### ');
+			expect(status(el)?.textContent).toBe(notice?.textContent);
+			// Never the commit announcement. That it fired on this path is the
+			// finding: the reader heard "Backstory saved" as the box emptied.
+			expect(status(el)?.textContent).not.toContain('Backstory saved');
+
+			// The draft is kept and shown: the field still holds what was typed, and
+			// the box is in the state that makes it visible rather than the stored
+			// prose with an error under it.
+			expect(input.value).toContain('## After the fire');
+			expect(
+				el
+					.querySelector('.sheetsmith-rich-text-box')
+					?.classList.contains('sheetsmith-rich-text-refused'),
+			).toBe(true);
+		} finally {
+			el.remove();
+		}
+	});
+
+	it('lifts the refusal once the draft no longer splits the note', () => {
+		const commits: RichTextData[] = [];
+		const el = render({}, { text: 'Before the fire.' }, {
+			onChange: (d) => commits.push(d),
+		});
+		document.body.appendChild(el);
+		try {
+			const input = field(el);
+			input.focus();
+			input.value = '## After the fire';
+			input.dispatchEvent(new Event('blur'));
+			expect(commits).toEqual([]);
+
+			// The reader takes the advice.
+			input.focus();
+			input.value = '### After the fire';
+			input.dispatchEvent(new Event('blur'));
+			expect(commits).toEqual([{ text: '### After the fire' }]);
+			expect(el.querySelector('.sheetsmith-error')).toBeNull();
+			expect(
+				el
+					.querySelector('.sheetsmith-rich-text-box')
+					?.classList.contains('sheetsmith-rich-text-refused'),
+			).toBe(false);
+			expect(status(el)?.textContent).toBe('Backstory saved');
+		} finally {
+			el.remove();
+		}
+	});
+
+	it('lets Escape out of a refused draft, and clears the message', () => {
+		// Otherwise the one way out of a refusal is to fix it, and a reader who
+		// wants their old backstory back has no gesture for it.
+		const el = render({}, { text: 'Before the fire.' });
+		document.body.appendChild(el);
+		try {
+			const input = field(el);
+			input.focus();
+			input.value = '## After the fire';
+			input.dispatchEvent(new Event('blur'));
+			expect(el.querySelector('.sheetsmith-error')).not.toBeNull();
+
+			input.focus();
+			input.dispatchEvent(
+				new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+			);
+			expect(input.value).toBe('Before the fire.');
+			expect(el.querySelector('.sheetsmith-error')).toBeNull();
+		} finally {
+			el.remove();
+		}
+	});
+
+	it('leaves every other heading level committable', () => {
+		// `#` and `###` are content and must stay content: only `## ` at the start
+		// of a line is the note's delimiter.
+		const commits: RichTextData[] = [];
+		const el = render({}, { text: '' }, { onChange: (d) => commits.push(d) });
+		document.body.appendChild(el);
+		try {
+			const input = field(el);
+			const body = '# One\n\n### Three\n\n#Tight\n\n##NoSpace';
+			input.focus();
+			input.value = body;
+			input.dispatchEvent(new Event('blur'));
+			expect(commits).toEqual([{ text: body }]);
+			expect(el.querySelector('.sheetsmith-error')).toBeNull();
+		} finally {
+			el.remove();
+		}
 	});
 });
 

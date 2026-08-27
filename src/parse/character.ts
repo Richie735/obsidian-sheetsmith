@@ -38,6 +38,32 @@ export interface CharacterNote {
 const LAYOUT_KEY_LINE = /^sheet-layout[ \t]*:[ \t]*(.*?)[ \t]*$/m;
 const HEADING = /^##[ \t]+\S/;
 
+/**
+ * The first line of `body` that would start a new section, or null where none
+ * would.
+ *
+ * Exported because a component storing free markdown has to be able to *ask*.
+ * `## ` at the start of a line is the note's own delimiter and the only reserved
+ * syntax such a body has, so a Rich text block that saved one would split the
+ * note underneath itself — and the answer has to be this module's, on PATTERNS
+ * §1's policy tier: one module knows what starts a section, exactly as
+ * `wikilink.ts` is the only module that knows what an embed is. A second copy of
+ * `HEADING` in a component is a copy that drifts silently, and what it would
+ * drift about is whether somebody's backstory survives.
+ *
+ * **Scanned line by line with no fence awareness, because `parseCharacter` has
+ * none either.** A `## ` inside a fenced block in a prose body splits the note
+ * just the same, so a caller asking this question gets the parser's real answer
+ * rather than a politer one.
+ */
+export function startsSection(body: string): string | null {
+	for (const line of splitLines(body)) {
+		const text = lineText(line);
+		if (HEADING.test(text)) return text;
+	}
+	return null;
+}
+
 function splitFrontmatter(
 	source: string,
 ): { frontmatter: string; rest: string } | null {
