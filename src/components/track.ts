@@ -780,7 +780,9 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 
 		if (showsOwnLabel(config, context)) {
 			const label = doc.createElement('div');
-			label.classList.add('sheetsmith-track-label');
+			// The shared rank (docs/UI.md §9); this component's own class carries only
+			// the narrow-card tracking, which needs a container to ask about.
+			label.classList.add('sheetsmith-component-label', 'sheetsmith-track-label');
 			label.textContent = config.label;
 			card.appendChild(label);
 		}

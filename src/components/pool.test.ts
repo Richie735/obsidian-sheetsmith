@@ -2080,7 +2080,13 @@ describe('pool controls sit together under the reading', () => {
 		const visible = Array.from(card?.children ?? []).filter(
 			(child) => !child.classList.contains('sheetsmith-sr-only'),
 		);
-		expect(visible.map((child) => child.className)).toEqual([
+		// Named by this component's own class rather than by the whole `className`,
+		// which is what this case used to read: the claim is about *order*, and a
+		// child gaining an unrelated class — the shared label rank did — is not a
+		// change to the order it asserts.
+		const named = (child: Element) =>
+			Array.from(child.classList).find((name) => name.startsWith('sheetsmith-pool-'));
+		expect(visible.map(named)).toEqual([
 			'sheetsmith-pool-label',
 			'sheetsmith-pool-row',
 			'sheetsmith-pool-temp',

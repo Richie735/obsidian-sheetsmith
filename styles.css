@@ -194,6 +194,50 @@ body {
 
 }
 
+/* ---------------------------------------------------------------------------
+   A component's own name — shared vocabulary (§9 of docs/UI.md).
+
+   The rank that means "this is what this component is called", as against
+   `.sheetsmith-group-heading`, which is a name over a *region* of other
+   components. Uppercase, tracked, muted, `--font-ui-smaller`: quiet enough that
+   the value under it is what the eye lands on.
+
+   **It was written out five times** — the card face, Pool, Track, Rich text and
+   Image — and each new component added a copy because the agreement was recorded
+   as a comment ("on the pool's and the track's rank") rather than as a name.
+   PATTERNS §1 extracts at three; five is well past where this is a judgement, and
+   §9's own rule about two headings of the same rank not measuring differently is
+   what it fails. Four of the five were byte-identical and the card face's declared
+   the same nine properties in a different order, which is why a review counting
+   copies found four: the fifth was found by a check for the *rank* rather than for
+   the text of a rule.
+
+   **Added beside the existing names rather than replacing them**, so nothing
+   renames: each component keeps its own class for whatever it does differently.
+   Today that is the narrow-card tracking, and it is the reason this rule sits up
+   here rather than beside the placed box further down: **three of the five tighten
+   the tracking on a narrow card and two cannot.** The card face, Pool and Track
+   establish `container-type` on their own card, so a container query asks about
+   the card — and they do not even agree on the threshold, 130px against 160px,
+   because a card's label and a pool's are not the same width. A Rich text block
+   establishes no container at all, so the same query inside one would resolve
+   against the *sheet* and fire essentially never. So each override stays with the
+   component that has a container to ask, and every one of them has to come after
+   this rule in the cascade to win — which is what fixes this rule's position in
+   the file (see styles.build.mjs on order being the cascade).
+   --------------------------------------------------------------------------- */
+.sheetsmith-component-label {
+	max-width: 100%;
+	overflow: hidden;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-semibold);
+	letter-spacing: 0.05em;
+	text-overflow: ellipsis;
+	text-transform: uppercase;
+	white-space: nowrap;
+}
+
 .sheetsmith-notice {
 	max-width: var(--file-line-width, 700px);
 	margin: var(--size-4-4) auto;
@@ -703,17 +747,6 @@ body {
 	transition-duration: 0s;
 }
 
-.sheetsmith-card-label {
-	font-size: var(--font-ui-smaller);
-	font-weight: var(--font-semibold);
-	text-transform: uppercase;
-	letter-spacing: 0.05em;
-	color: var(--text-muted);
-	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	max-width: 100%;
-}
 
 /* Always present, so cards with and without an abbreviation keep their
    numbers on one baseline across a row.
@@ -1960,17 +1993,6 @@ body {
    full contrast is the block-heading rank the stat group and table labels
    hold; a pool is one value on one card, so it takes the card label's
    uppercase, tracked, muted treatment instead. */
-.sheetsmith-pool-label {
-	max-width: 100%;
-	overflow: hidden;
-	color: var(--text-muted);
-	font-size: var(--font-ui-smaller);
-	font-weight: var(--font-semibold);
-	letter-spacing: 0.05em;
-	text-overflow: ellipsis;
-	text-transform: uppercase;
-	white-space: nowrap;
-}
 
 /* The reading alone, now that the controls have their own row below it. The
    flex box stays: the value and its ceiling are still laid out against each
@@ -2870,17 +2892,6 @@ a.sheetsmith-undo {
 
 /* The card's own name, on the pool label's rank: uppercase, tracked, muted.
    A track is one control on one card, not a heading over a set of things. */
-.sheetsmith-track-label {
-	max-width: 100%;
-	overflow: hidden;
-	color: var(--text-muted);
-	font-size: var(--font-ui-smaller);
-	font-weight: var(--font-semibold);
-	letter-spacing: 0.05em;
-	text-overflow: ellipsis;
-	text-transform: uppercase;
-	white-space: nowrap;
-}
 
 /* The runs, one per row, stacked. Collects the card's free space so a tall
    cell keeps them with the label rather than stranding them at the top —

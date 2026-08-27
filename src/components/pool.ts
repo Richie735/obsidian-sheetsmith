@@ -640,7 +640,9 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 		// untouched either way.
 		if (showsOwnLabel(config, context)) {
 			const label = doc.createElement('div');
-			label.classList.add('sheetsmith-pool-label');
+			// The shared rank (docs/UI.md §9); this component's own class carries only
+			// the narrow-card tracking, which needs a container to ask about.
+			label.classList.add('sheetsmith-component-label', 'sheetsmith-pool-label');
 			label.textContent = config.label;
 			card.appendChild(label);
 		}
