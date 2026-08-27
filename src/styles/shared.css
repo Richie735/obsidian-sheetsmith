@@ -16,6 +16,16 @@
 	border-radius: var(--radius-m);
 	color: var(--text-error);
 	font-size: var(--font-ui-small);
+	/* An error message names the thing that is wrong, and the things this plugin's
+	   messages name are file paths, formulas, column keys and web addresses —
+	   tokens with no space in them to break at. Without this, one longer than its
+	   box paints straight through the border: measured at 211px of text in a
+	   205px box on Image's remote-URL refusal, which is the longest message either
+	   of the two markdown components has and was the only one of twelve on the
+	   error view to overflow. `anywhere` rather than `break-word` because these
+	   boxes sit inside flex and grid items that may size to min-content, where
+	   `break-word` still lets the token set the width. */
+	overflow-wrap: anywhere;
 }
 
 /* The second door onto what a hover shows, for the pointer that has no

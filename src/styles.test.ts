@@ -760,6 +760,39 @@ describe('a link over a field survives its own press', () => {
 	});
 });
 
+describe('an inline error wraps whatever it names', () => {
+	/*
+	 * The shared inline error (§9 of docs/UI.md) names the thing that is wrong, and
+	 * the things this plugin's messages name are file paths, formulas, column keys
+	 * and web addresses — tokens with no space in them to break at. Without an
+	 * explicit wrap, one longer than its box paints straight through the border.
+	 *
+	 * Measured rather than supposed: Image's remote-URL refusal is 200 characters
+	 * with a real URL in it, five times the next longest message either markdown
+	 * component has, and it was the only one of twelve errors on the harness's
+	 * error view to overflow — 211px of text in a 205px box. It was also the only
+	 * failure state with no sample, so nothing had ever drawn it. Both halves of
+	 * that are why this is a scan: the message is generated, the box is the grid's,
+	 * and whether the two fit is invisible until someone renders the pair.
+	 */
+	const withoutComments = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+
+	it('declares a wrap that can break a token with no spaces in it', () => {
+		const rules = withoutComments
+			.split('}')
+			.filter((block) => {
+				const brace = block.indexOf('{');
+				return brace !== -1 && block.slice(0, brace).trim() === '.sheetsmith-error';
+			});
+		expect(rules).toHaveLength(1);
+		const [body = ''] = rules;
+		// `anywhere` rather than `break-word`: these boxes sit inside flex and grid
+		// items that may size to min-content, where `break-word` still lets the
+		// token set the width.
+		expect(/overflow-wrap\s*:\s*anywhere/.test(body)).toBe(true);
+	});
+});
+
 describe('a component\'s own name is one rank, not five', () => {
 	/*
 	 * The rank that means "this is what this component is called", as against a
