@@ -93,11 +93,40 @@ at both sites, which is a policy shared and its application duplicated. **Share
 the application, not the number**, or the copy that can still drift is the one
 nothing is watching;
 `editor/list-field-height.ts` holds the row bounds because the two list fields
-had already drifted apart twice, once on `rows` and once on their width; and
+had already drifted apart twice, once on `rows` and once on their width;
 `components/column-types.ts` holds the typed-column vocabulary because a
 component and the editor field that configures it were each carrying their own
-copy of which types exist, which one is the default, and which can be totalled.
-All three say so in their headers, which is what a deliberate departure owes.
+copy of which types exist, which one is the default, and which can be totalled;
+`styles/sheet.css` holds `.sheetsmith-component-label` on the strength of five
+consumers, which is two past where this ladder stops arguing — and it bred to five
+for a reason worth naming: the agreement lived in each file's comment, "on the
+pool's and the track's rank", and a comment is not something the next component
+can reuse. `docs/UI.md` §9's vocabulary table had no row for it, so there was
+nothing to reuse *by name* either;
+`styles/sheet.css` holds `.sheetsmith-placed` and `.sheetsmith-placed-box` on the
+strength of Rich text and Image, and it is the clearest instance of the trap this
+paragraph warns about, because the number was extracted *first* and the rule was
+not: `--sheetsmith-grid-row` became one name while the five declarations using it
+stayed written out at both sites, which is a policy shared and its application
+duplicated, in the same diff that cited this rule;
+`parse/markdown-body.ts` holds the whitespace framing of a body that *is* its
+value on the strength of Rich text and Image, because what is shared is *where the
+text starts* — read one way and written the other, an untouched note is
+reformatted on every save of any component on the sheet, and a guard test could
+only assert the two copies still agree to the character;
+and `components/linked-text.ts` holds the anchor policy on the strength of Table
+and Rich text, because what is shared is a *set* — `internal-link`,
+`is-unresolved`, both `href` and `data-href`, `title` and never `aria-label`, and
+that a link paints as resolved where there is no vault — and a guard test over two
+copies of it could only assert they still spell the same thing. All seven say so in
+their headers, which is what a deliberate departure owes.
+
+That last one also shows what does **not** climb with the policy. Table clips its
+text and Rich text wraps, so clipping stayed with the callers: the painter takes
+one optional argument a caller that does not clip omits whole, and the class name
+is passed in rather than named there — `'sheetsmith-table-link-only'` arrives from
+`table.ts`, because a module beside the components must not know that a table
+exists. That is the pool gesture engine's rule above, applied to a painter.
 
 That last one also shows how to tell the tiers apart. Two copies of a *set* is
 the same case as two copies of a number: a guard test could only assert they are
@@ -396,6 +425,20 @@ A component inventing its own is the failure mode to watch for.
 - **Focus on `pointerdown`, commit on `click`.** A tap has no hover to say what
   it is about to hit, so focus moves while the finger is down; committing on
   release is what lets a press slide off and be taken back.
+  **The two halves separate only where focus is *preparation* for an outcome**,
+  and on a control where focusing *is* the outcome they collapse onto release.
+  A card's field is the first kind: focus, type, commit, and the press that
+  slid off has taken nothing with it. A prose block and a picture are the
+  second — the whole of what their press does is hand over the field — so
+  focusing on `pointerdown` would open a mobile keyboard on a press that slid
+  off, with nothing left to abandon it with. That is this rule's own forgiveness
+  argument reaching the same event from the other side, not an exemption from it.
+  `rich-text.ts` and `image.ts` are the two consumers; each has a *second*,
+  narrower reason of its own, and the narrow ones are why this general one is
+  written here rather than in either file — Rich text's is that its display layer
+  is a scroll container and a touch drag begins with a `pointerdown`, which is
+  true there and not of a picture, so a component reading only that comment finds
+  the reason absent and the precedent unexplained.
 - **One route in.** Keyboard activation arrives at the same handler by bubbling.
   Never a second code path for the keyboard. That is how the two drift. **The
   exception is a gesture the other input does not have**: a key cannot express a
@@ -548,12 +591,14 @@ decided.
   habit. The predicate is narrow on purpose — a drag carries coordinates and a
   card's own surface press carries neither `pointerId` nor `button`, and both are
   hand-written by design — so the check only ever reports what it can prove.
-- **Two kinds of module are tested through their consumers instead.** Both are
+- **Three kinds of module are tested through their consumers instead.** All are
   stated exceptions to one test file per module. What they share is that the
   consumer is the only place what the module owns becomes observable; the reason
-  differs, and collapsing the two into one reason is what let the condition below
+  differs, and collapsing them into one reason is what let the condition below
   read as attaching to just the first of them. A gesture has nothing to act on
   without a control. A vocabulary has nothing to assert that is not a tautology.
+  A note-format primitive has nothing to be *wrong* about except a caller's
+  round trip.
 
   **A gesture module is tested through a control that drives it.**
   `src/interaction/` is the first: `scrub.ts`, `hold-repeat.ts` and `editable.ts`
@@ -580,8 +625,24 @@ decided.
   member is deleted from it, because the deletion takes the iteration with it,
   which is the vacuous pass this section forbids above. One member of
   `stored-flag.ts` does not meet the condition below, and §11 holds it.
-- **Both exceptions carry the same condition, and the condition is what makes
-  either of them safe: what the module owns has to actually be driven
+  **A note-format primitive is tested through the round trip it is part of.**
+  `parse/lines.ts`, `parse/layout-walk.ts` and `parse/markdown-body.ts` are the
+  third, and this clause is written because the two above did not describe them —
+  settled practice that the rule as stated left out, and the last of the three
+  widened the gap. What they share is that the claim each makes only exists
+  relative to a caller: `bodyText` alone is `trim`, and `splitLines` alone is a
+  split, so a test of either asserts a standard-library call. What is worth
+  asserting is Constraint 3 — parse then serialise returns the input byte for
+  byte — and that is a *component's* contract, not a primitive's. So
+  `character.test.ts` and `fenced.test.ts` hold `lines.ts`, `rich-text.test.ts`
+  and `image.test.ts` hold `markdown-body.ts` over ten spellings of a body's
+  whitespace each, and `view/grid-cells.test.ts` holds the walk. The tell that
+  separates this from a coverage gap is the same one the other two exceptions use:
+  a test of its own here could only restate the implementation, while a consumer's
+  round trip fails on a real drift.
+
+- **All three exceptions carry the same condition, and the condition is what makes
+  any of them safe: what the module owns has to actually be driven
   somewhere.** Read as a licence
   instead, it is how `hold-repeat.ts` came to have its repeat untested — every
   caller released the button on the tick it pressed it, so the ramp, its floor
@@ -612,6 +673,7 @@ pass precisely because each said what would close it.
 
 | Gap | Where | Fix |
 | --- | --- | --- |
+| Nothing checks that two selectors do not declare the same rule twice | `src/styles.test.ts`, `styles/sheet.css` | Two §1 violations shipped in one feature and **both were found by normalising every rule body and diffing them**, which is a scan `styles.test.ts` could run today — it already parses every rule. It is exactly §10's case: invisible in review, findable only by reading two files side by side. **What stops it being added in the pass that found it is the threshold, and the number is measured rather than guessed.** As proposed — "no two selectors declare an identical property set" — it fires 42 times and is unusable: most are one-declaration rules saying `color: var(--text-normal)`, which is not duplication but `docs/UI.md` §1 being obeyed. By declaration count the hits are 42, 16, 7, **3**, 2, 0 at thresholds of one to six, so ≥4 is where a *rank* or a *box* lives rather than a palette reference, and ≥6 is now empty because the two biggest were the ones extracted. The three at ≥4: `.sheetsmith-card-set-label` against `.sheetsmith-table-label` (five declarations, the "name over a strip or a table" rank, entirely pre-existing); `table thead th` against `table tfoot .sheetsmith-table-name` (five, one table's header and footer agreeing on purpose, and arguably one selector list rather than two rules); and `.sheetsmith-table-input:focus` against `.sheetsmith-rich-text-input:focus` (four, a field's focus treatment, one half of it new). So adding the guard means either three more extractions — touching Table, Card set and Card, none of which this feature opened — or an allowlist, which is a backlog kept in a test file and is what this table is for instead. **Waiting on:** a decision on the three, taken as its own diff; the guard lands with it, since a guard added before them would only be red. |
 | Two extracted modules' cases live beside the editor rather than beside them | `editor/schematic-gestures.ts`, `editor/config-panel.ts` | **This row replaces the gesture engine's, which said it was waiting on a workspace fixture in `src/test/`. That fixture now exists, the cases did not move, and the row was wrong about why.** `src/test/workspace.ts` and `src/test/plugin.ts` open a real pane from a sibling file — `view/layout-editor-view.test.ts` does exactly that — so the import that was named as the blocker is available. What a sibling file still cannot import is the *harness* in `layout-editor.test.ts`: `fixture`, `open`, `control`, `has`, `type`, `choose`, `toggle`, `checkbox`, `confirmAction`, `writes`, `labels`, `grids`, `groups`, `settle`. That is roughly 200 lines and it is a test file's own, not scaffolding (§2), so moving cases means either duplicating it — the duplication §1 forbids — or designing it into `src/test/` as a fixture of its own. **And two harder facts the old row never named.** Neither module has an entry point of its own: every case reaches a gesture or a form by pressing a tree row or a schematic block, both of which the editor draws, so a sibling file would drive the outline to get anywhere. And several cases make one claim about *both* regions deliberately, because the contract is that the two agree — a container that may hold nothing gets no grid *and* a sentence saying why; a tab set draws no schematic *and* lists its tabs in order; a nested component's grid is drawn *and* its position fields offered. Those cannot be assigned to one file without being rewritten, which is the one thing a movement may not do. The cheaper alternative is worse in both cases: a `SchematicGestures` or a `ConfigPanel` over a fake host would rewrite every assertion to test the seam instead of the behaviour. The five small modules the same file drives — `accepts-children.ts`, `component-name.ts`, `copyable-name.ts`, `field-commit.ts`, `form-group.ts` — are the same fact in miniature and are the settled practice here rather than new debt; each says so in its own header. **Waiting on:** the pane harness promoted to `src/test/` as a designed fixture, at which point the cases that make a single-region claim move as they are, and the joint-region ones are the residue this row would shrink to. |
 | The pane still holds which layout is open alongside what is in it | `editor/layout-editor.ts` | **This row replaces the one that said the pane's job needed an "and" and that no row named it. The cut it asked for was taken and this is the smaller gap left.** `config-panel.ts` is the panel — the component form, the layout's own settings, the tab order and the two textarea fields the pane reads back on close — parameterised over a `ConfigPanelHost` of six members, five commands and the inline-error map. The whole region moved rather than only `renderComponentForm`, which was the largest cluster: leaving the layout's own settings behind would have left the file drawing into both regions and §1's "and" exactly where it was. 1820 lines became roughly 1260 and 790 — rounded on purpose, unlike the cluster counts below, which the trigger re-runs and which have to be exact; a file total is context and a total stated to the line goes stale on the next comment — with `accepts-children.ts` and `component-name.ts` taking the predicate and the naming policy both halves ask for — §1's one-step tier, since a guard test over two copies could only assert they still agree. **The decisions the old row left open, recorded here because it named them as the decision rather than a detail.** The error map is the *host's*: it outlives the render that fills it, the editor replays it over the whole pane and forgets the entries whose field has gone, so a panel holding its own would lose an error the moment an unrelated field was corrected. The `fieldError` wrapper did not survive as a shared member at all — it was a one-line binding of `field-error.ts`'s `showFieldError` to that map, so each half binds its own and the application stays in one place. `renderChildOrder` moved, every caller being in the panel; `listContext` stayed behind the host, because moving it would replace one member with four the panel has no other use for — `ListContext` has seven and the host already carries `persist`, `redraw` and `errors` — and would hand it state only the outer render loop can apply. **What is left is a smaller "and" in the same file:** the render loop and the outline are one job, but the layout picker with `deleteLayout`, `promptCreateLayout`, `createLayoutNamed` and `NameModal` is another — *which* layout is open rather than what is in it — and it is 87 lines plus the modal. It is not cut here because it is the smallest of the four clusters that were measured and the only one with no host to speak of: it reaches `plugin.app`, `plugin.settings`, `releaseLayout` and `setLayoutName`, which is most of the editor's own state, so the seam would be wider than the code. **What made this move checkable:** not one assertion and not one import changed in the cases as part of it, and thirteen mutations turn one red each — six, one per member of `ConfigPanelHost`; two, one per call site of the new module; three, one per export of the two helper modules; one over the panel's own binding of the error map, which is the half of the old pair that did not become a member; and one over `commitPending`'s reading of both fields before it combines them. Four of the thirteen survived at first and are closed by the three assertions added *after* the move rather than during it. They are the same finding twice over: the errors map and `commitPending` are what carry state across a rebuild, every other path into either goes through a control's own change listener, and a no-op on the path that does not was invisible. **A review then found the one control the panel drew that something outside it wrote:** `syncPositionFields` had stayed with the editor and reached into the panel by DOM query for inputs the panel minted, which is the header's own rule about held references broken by another means, and it left the four keys and the field token spelled in two files. It is the panel's now, `SchematicHost` still names the member because the gesture is what asks for it, and the editor answers by delegating. The token has one spelling, in the panel; the four keys have one in `types.ts`, beside the type they are the keys of, because the parser walks the same four to validate them and a list spelled per reader is one that can fall short of `GridPosition`. Four more mutations over that — the token, the key set, the remembered element and the delegation — each turn a case red. **Waiting on:** the picker ceasing to be the smallest of this file's clusters, which the grid canvas or undo landing here would do — a state, re-checkable by running the same count this row did rather than a judgement about when someone feels like it. |
 | A refused edit's complaint outlives the text it was about | `editor/field-error.ts`, `editor/config-panel.ts` | Every validation site in the panel refuses the edit and returns: an empty label, a duplicate label, a position or column count below one, a config number that is not one. None of them writes the layout, so the next rebuild draws the field from the value the layout still holds — the *old, valid* one — and `restoreFieldErrors` replays the message over it. The author sees a red field saying "Whole number, 1 or more." above the number 7. `field-error.ts`'s header states the policy that produces this and states only half of it: invalid input is never silently swallowed and never silently lost, so every message goes through the errors map. It does not say what a message *means* once the input that earned it has been reverted, and that is the open half. **Found as an inconsistency rather than as this.** The label field's duplicate branch was the one site of six calling `showFieldError` without the map, so a rebuild dropped that message and kept the other five — the argument is optional, so nothing compiled or linted differently. That much is fixed: one field's two branches disagreeing is the instrument disagreeing with itself (`docs/UI.md` §11), the policy of record is written down, and the outlier now conforms and has the two cases it never had. **What is not fixed is which way the policy should go**, and it is a decision about the interface rather than about code. Either a refused edit's complaint belongs to the text it was about and goes when the text does — which is the bare call, and means five sites lose the map and three cases invert — or it belongs to the field and the *value* is what should be restored, not reverted. A third answer is likelier than either and it is already in the backlog: `docs/UI.md` §12's row on a stored value never being marked as wrong asks for each field's own rule to run at render and seed the errors map from it. Validation at render makes this question disappear — a reverted field validates clean and clears its own message — so the two rows want the same change and neither should be taken alone. Three cases currently pin the surviving behaviour: the position field's, and the label field's two. **Waiting on:** validation at render time, which is `docs/UI.md` §12's row and not a second trigger; failing that, a decision on which half of `field-error.ts`'s policy governs. |

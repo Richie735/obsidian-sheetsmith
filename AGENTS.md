@@ -76,6 +76,15 @@ npm run build
 
 - **Use a throwaway test vault, never a real one.** This plugin rewrites note
   bodies, and a parser bug destroys user data.
+- **A vault fixture lives outside the repository, so its recipe lives inside it.**
+  Those two rules pull against each other — the vault is deliberately outside by
+  the rule above, and `docs/PATTERNS.md` §2 says nothing the workflow depends on
+  may live outside it, while a design review genuinely does depend on the fixture
+  for anything only the app can show (a rename propagating, a real markdown
+  render). The resolution is that the *feature doc* records what its fixture holds
+  and what to press, in enough detail that a clone can rebuild it. A criterion
+  saying "it is in the vault" is a claim; a list of what the vault holds is
+  something the next reviewer can check against their own copy.
 - Symlink the repo to `<TestVault>/.obsidian/plugins/sheetsmith/` and keep a
   `.hotreload` marker in the repo root so the Hot Reload plugin picks up
   rebuilds. With `npm run dev` running there is no disable/enable cycle.
