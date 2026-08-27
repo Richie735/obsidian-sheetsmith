@@ -85,6 +85,41 @@ const PLACEHOLDER = '![[Portrait.png]]';
 /** What a remote address looks like, for the one target this refuses by policy. */
 const REMOTE = /^[a-z][a-z0-9+.-]*:\/\//i;
 
+/** `![alt](target)`, the other spelling of an image markdown has. */
+const MARKDOWN_IMAGE = /^!\[[^\]]*\]\(([^)]*)\)$/;
+
+/**
+ * What the body is pointing at, whichever way it spells it, for the remote check
+ * alone.
+ *
+ * The refusal below has to know this *before* it decides the body is not an
+ * embed, and that ordering is the whole of the bug it fixes. `parseEmbed` only
+ * recognises `![[…]]`, so `![](https://…)` — which question 5 names as the
+ * spelling the demand actually arrives in, because it is the one Obsidian itself
+ * renders — was falling through to "a picture is an embed". Doing what that says
+ * produces `![[https://…]]`, which is refused again by a different message
+ * sending the reader to a different component. Two refusals to reach one answer,
+ * and the first one's advice was wrong: PATTERNS §4 asks the text to name the
+ * fix, and a fix that leads to a second refusal does not.
+ *
+ * A title is dropped — `![](url "Portrait")` — so the message quotes the address
+ * rather than the address and a caption.
+ *
+ * Deliberately not `parseEmbed`'s job, and not a shared parser: this is the
+ * remote *policy* asking what host a body would reach, not the file model asking
+ * what an embed means. Nothing else needs it, so it stays here (PATTERNS §1).
+ */
+function addressed(source: string): string {
+	const trimmed = source.trim();
+	const embed = parseEmbed(trimmed);
+	if (embed !== null) return embed;
+	const markdown = MARKDOWN_IMAGE.exec(trimmed);
+	// The bare paste is the third spelling and gets the same answer: a reader who
+	// drops a URL in on its own is asking for exactly what the other two ask for.
+	const target = (markdown?.[1] ?? trimmed).trim();
+	return target.split(/\s/)[0] ?? target;
+}
+
 export interface ImageConfig extends ComponentConfig {
 	type: 'image';
 	hideLabel?: boolean;
@@ -124,12 +159,16 @@ export interface ImageData {
  * own disclosure, so the message sends the reader to a Rich text block.
  */
 function refusal(source: string): string | null {
-	const target = parseEmbed(source);
-	if (target === null) {
-		return `A picture is an embed: ${PLACEHOLDER}.`;
-	}
+	// Remote first, and that order is load-bearing rather than incidental: the
+	// syntax refusal names a fix, and for a body naming a web address that fix is
+	// wrong — writing the bracket form around a URL only reaches this message one
+	// step later. See `addressed` for the three spellings this now covers.
+	const target = addressed(source);
 	if (REMOTE.test(target)) {
 		return `"${target}" is a web address, and a picture has to be a file in this vault. Put a remote picture in a Rich text block instead, where Obsidian fetches it under your own settings.`;
+	}
+	if (parseEmbed(source) === null) {
+		return `A picture is an embed: ${PLACEHOLDER}.`;
 	}
 	return null;
 }
@@ -150,15 +189,32 @@ export const image: ComponentDefinition<ImageConfig, ImageData> = {
 		},
 	],
 
+	/*
+	 * **`read` cannot fail, and that is a correction rather than a simplification.**
+	 * It used to refuse a body that is not a usable embed, and a failed `read` never
+	 * reaches `render`: `view/grid-cells.ts` replaces the whole cell, so there is no
+	 * frame, no label row and **no field**.
+	 *
+	 * Every other component's read failure comes from a hand-edited note. Image is
+	 * the first whose own editing gesture can produce one: type `![](https://…)`
+	 * into the field, blur, and the sheet rebuilds into a cell with nothing in it to
+	 * edit — the reader is locked out of a value they entered one second ago, and
+	 * the only way back is markdown view. It also broke PATTERNS §4 where it matters
+	 * most, since the message said "Put a remote picture in a Rich text block
+	 * instead" and the reader could not act on it from where they were standing.
+	 *
+	 * So a body this component cannot use is still a body it can *hold*: `read`
+	 * hands it back, the field draws it, and `render` puts the reason in the frame.
+	 * That is what the other three failures already did, so all four now land in one
+	 * place — which is the outcome `docs/UI.md` §12's error-card row asked for, and
+	 * why that row no longer names this component. Constraint 3 is untouched: `write`
+	 * returns an unchanged body byte-for-byte whether or not the source is usable.
+	 */
 	read(body): ReadResult<ImageData> {
 		const source = bodyText(body);
 		// No section, an empty one, or one holding only blank lines: an editable
 		// empty frame, not an error (PATTERNS §4). The first commit writes it.
 		if (source === '') return { ok: true, data: null };
-		const error = refusal(source);
-		// The view prefixes a failed read with the component's label, so this path
-		// is the labelled one and must not name itself again.
-		if (error !== null) return { ok: false, error };
 		return { ok: true, data: { source } };
 	},
 
@@ -237,16 +293,40 @@ export const image: ComponentDefinition<ImageConfig, ImageData> = {
 		spellcheckWhileFocused(field);
 		box.appendChild(field);
 
-		/** Why the frame is empty, in the frame, under the label. */
+		/**
+		 * Why the frame is empty, in the frame, under the label.
+		 *
+		 * **It names itself where it drew no label**, which is `docs/UI.md` §12's
+		 * error-card row applied to this component's own failures rather than to the
+		 * view's. With `hideLabel` set, or inside a container that already named it,
+		 * there is no heading above the frame — so an error would be a red box on a
+		 * sheet with nothing saying which component it belongs to, and on a sheet
+		 * holding three portraits, nothing saying which one to fix.
+		 *
+		 * It cannot say it twice: this component has no failing `read` any more, so
+		 * the view never composes a prefix for it, and the branch is the same one
+		 * that decided whether to draw the heading at all.
+		 */
 		const fail = (message: string): void => {
 			frame.replaceChildren();
 			const error = doc.createElement('div');
 			error.classList.add('sheetsmith-error');
-			error.textContent = message;
+			error.textContent = labelled ? message : `${config.label}: ${message}`;
 			frame.appendChild(error);
 		};
 
-		const target = source === '' ? null : parseEmbed(source);
+		// The two refusals `read` used to raise, now raised where the field survives
+		// them. First, because a body that is not a usable reference has no target
+		// to resolve and "no file in this vault is called ![](https://…)" would lead
+		// nowhere.
+		const unusable = source === '' ? null : refusal(source);
+		if (unusable !== null) {
+			fail(unusable);
+			// Said as well as drawn, since the reader who cannot see the frame has
+			// only the label and an empty box otherwise.
+			status.textContent = unusable;
+		}
+		const target = unusable !== null || source === '' ? null : parseEmbed(source);
 		if (target !== null && context.resource !== undefined) {
 			const url = context.resource(target);
 			if (url === null) {
