@@ -81,4 +81,4 @@ changed, and where the regression test lives. If the bug was reachable because a
 is the signal `PATTERNS.md` §11 wants, and it is worth more than the fix.
 
 **Leave the work uncommitted.** The tree stays open through the reviews, and
-`/ship` is the only thing that commits. Never commit here, and never push.
+`/land-it` is the only thing that commits. Never commit here, and never push.

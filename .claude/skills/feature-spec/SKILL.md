@@ -63,7 +63,7 @@ by reading a test name. "Feels right" is not one.
 A list of commits in order, each a coherent step that builds and passes tests.
 This is what stops the work being retro-sliced at the end.
 
-**These are a plan for `/ship`, not a schedule to follow while building.** The
+**These are a plan for `/land-it`, not a schedule to follow while building.** The
 work stays in one uncommitted tree through implementation and every round of
 findings; the boundaries are applied once, at the end, when the user says the
 change is settled. See `CLAUDE.md` § "When to commit".
@@ -120,5 +120,5 @@ Board card: <text of the card this implements>
   taken as agreed. Flip `Status` to `agreed` only when the user says so.
 - Do not write implementation code. This skill produces a spec, nothing else.
 - Where the spec settles a §13 question, the `Resolved:` entry in `docs/SPEC.md` is
-  written by `/ship`, not here. It is not resolved until it is built.
+  written by `/land-it`, not here. It is not resolved until it is built.
 - If the feature contradicts a hard constraint in `CLAUDE.md`, say so and stop.

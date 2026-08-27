@@ -44,7 +44,7 @@ each one:
   and it is the one finding here that asks for a doc edit rather than a code
   change.
 
-Never tick a box. Reporting the state is this skill's job and `/ship` is what
+Never tick a box. Reporting the state is this skill's job and `/land-it` is what
 writes it down.
 
 ## Three classes of finding
