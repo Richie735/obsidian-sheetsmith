@@ -130,4 +130,83 @@ describe('restoreFocus', () => {
 		document.body.replaceChildren(shrunk);
 		expect(() => restoreFocus(shrunk, saved)).not.toThrow();
 	});
+
+	it('lands on the cell\'s last control where the cell lost controls', () => {
+		/*
+		 * A cell can hold *fewer* controls after a rebuild than before one, and the
+		 * saved index then resolved to `undefined` and returned silently — dropping
+		 * focus to the body, which is the exact outcome PATTERNS §5 records as the
+		 * reason not to repaint a cell optimistically.
+		 *
+		 * A near-miss beats a loss: focus stays inside the component the reader was
+		 * in, so one more Tab resumes where they were going rather than starting
+		 * again from the top of the sheet.
+		 */
+		const root = document.createElement('div');
+		document.body.replaceChildren(root);
+		const cell = root.createDiv('sheetsmith-cell');
+		const field = cell.createEl('input');
+		cell.createEl('a', { href: '#' });
+		const last = cell.createEl('a', { href: '#' });
+		last.focus();
+		const saved = captureFocus(root);
+		expect(saved?.control).toBe(2);
+
+		// The same cell rebuilt holding fewer controls, which is a prose block whose
+		// asynchronous render has landed only partly. Two, not one, so "the last
+		// control" is distinguishable from "the first".
+		const shrunk = document.createElement('div');
+		document.body.replaceChildren(shrunk);
+		const rebuilt = shrunk.createDiv('sheetsmith-cell');
+		rebuilt.createEl('input');
+		const rebuiltLast = rebuilt.createEl('a', { href: '#' });
+		restoreFocus(shrunk, saved);
+		expect(shrunk.ownerDocument.activeElement).toBe(rebuiltLast);
+		// And not the body, which is what it used to be.
+		expect(shrunk.ownerDocument.activeElement).not.toBe(document.body);
+		expect(field).toBeTruthy();
+	});
+
+	it('leaves an index that is still in range alone', () => {
+		// The clamp fires only past the end. Reaching for the last control whenever
+		// the cell has one would move focus off the control the reader was actually
+		// on, which is a louder bug than the one it was added for — so the middle
+		// control has to come back as the middle control.
+		const root = document.createElement('div');
+		document.body.replaceChildren(root);
+		const cell = root.createDiv('sheetsmith-cell');
+		cell.createEl('input');
+		const middle = cell.createEl('a', { href: '#' });
+		cell.createEl('a', { href: '#' });
+		middle.focus();
+		const saved = captureFocus(root);
+		expect(saved?.control).toBe(1);
+
+		const rebuilt = document.createElement('div');
+		document.body.replaceChildren(rebuilt);
+		const rebuiltCell = rebuilt.createDiv('sheetsmith-cell');
+		rebuiltCell.createEl('input');
+		const rebuiltMiddle = rebuiltCell.createEl('a', { href: '#' });
+		const rebuiltLast = rebuiltCell.createEl('a', { href: '#' });
+		restoreFocus(rebuilt, saved);
+		expect(rebuilt.ownerDocument.activeElement).toBe(rebuiltMiddle);
+		expect(rebuilt.ownerDocument.activeElement).not.toBe(rebuiltLast);
+	});
+
+	it('still does nothing where the cell has no controls at all', () => {
+		// The clamp reaches for the last control, so a cell that has none has to
+		// stay a silent return rather than becoming an error.
+		const root = document.createElement('div');
+		document.body.replaceChildren(root);
+		const cell = root.createDiv('sheetsmith-cell');
+		const field = cell.createEl('input');
+		field.focus();
+		const saved = captureFocus(root);
+
+		const empty = document.createElement('div');
+		document.body.replaceChildren(empty);
+		empty.createDiv('sheetsmith-cell');
+		expect(() => restoreFocus(empty, saved)).not.toThrow();
+		expect(empty.ownerDocument.activeElement).toBe(document.body);
+	});
 });
