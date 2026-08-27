@@ -15,7 +15,7 @@ any reviewer.
 ## This stays on
 
 Findings arrive one at a time, so this is a standing mode rather than one task.
-Until the user says otherwise, or the work moves on to `/ship`:
+Until the user says otherwise, or the work moves on to `/land-it`:
 
 - Open every response with `[FINDINGS]`, so the mode survives a compaction.
 - Take one finding at a time, all the way through, before reading the next. A
@@ -62,7 +62,7 @@ Smallest change that addresses the mechanism. Then verify: `npm test`,
 again and look at the PNG, because the finding was about what it looks like and
 so is the check.
 
-Leave the work **uncommitted**. `/ship` is the only thing that commits, at the
+Leave the work **uncommitted**. `/land-it` is the only thing that commits, at the
 end, once.
 
 ## Honesty rules

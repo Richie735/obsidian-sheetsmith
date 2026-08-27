@@ -61,7 +61,7 @@ Resist building the layout editor and the formula engine early. Both assume a wo
 and it stays uncommitted until the change is settled.
 
 The loop is: build the thing, the user looks at it, findings come back, address
-them, repeat. Only when the user says the work is done does `/ship` split the
+them, repeat. Only when the user says the work is done does `/land-it` split the
 whole result into commits.
 
 Do **not** commit after implementing a feature, after addressing a finding, after
@@ -78,9 +78,9 @@ change cheap to undo right up until the moment it is not.
 Verification is continuous and committing is not: run `npm test`, `npm run lint`
 and `npm run build` as often as they are useful.
 
-- `/ship` is the only thing that commits, and only when invoked.
+- `/land-it` is the only thing that commits, and only when invoked.
 - Subjects are Conventional Commits: `type: Subject`, standard types only, with
-  the subject itself in the log's existing voice. `/ship` carries the mapping
+  the subject itself in the log's existing voice. `/land-it` carries the mapping
   and the traps.
 - Never push. That is always the user's call.
 - Do not add `Co-Authored-By` trailers to commit messages.

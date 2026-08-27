@@ -1,5 +1,5 @@
 ---
-name: ship
+name: land-it
 description: "Use when a feature is finished and ready to commit: verifies, splits the work into the spec's commits, and updates docs/SPEC.md. Does not push."
 argument-hint: "[feature name, or path to its docs/features file]"
 allowed-tools: Read, Glob, Grep, Bash, Edit
