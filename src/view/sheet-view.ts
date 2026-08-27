@@ -37,6 +37,7 @@ import {
 } from '../types';
 import { captureFocus, restoreFocus } from './cell-focus';
 import { renderGrid } from './grid-cells';
+import { MarkdownPasses } from './markdown-pass';
 
 export const VIEW_TYPE_SHEET = 'sheetsmith-sheet';
 
@@ -112,10 +113,24 @@ export class SheetView extends TextFileView {
 	 * the first tab rather than inheriting the last note's.
 	 */
 	private activeTab = new Map<string, number>();
+	/**
+	 * The lifecycle of markdown a component asked the app to draw.
+	 *
+	 * Here rather than in the component that wants it, because
+	 * `MarkdownRenderer.render` needs an `App` and a parent `Component` and a
+	 * component has neither — it takes a callback on its `RenderContext`, on
+	 * `link`'s own terms. Bounded by this view, so closing the leaf unloads
+	 * whatever the last render left loaded.
+	 */
+	private markdown: MarkdownPasses;
 
 	constructor(leaf: WorkspaceLeaf, plugin: SheetsmithPlugin) {
 		super(leaf);
 		this.plugin = plugin;
+		// In the constructor body rather than as a field initialiser: `app` is the
+		// base class's, and a field depending on one is an initialisation order a
+		// reader has to know the class hierarchy to check.
+		this.markdown = new MarkdownPasses(this, this.app);
 	}
 
 	getViewType(): string {
@@ -146,6 +161,9 @@ export class SheetView extends TextFileView {
 		this.data = '';
 		this.renderId++;
 		this.activeTab.clear();
+		// The outgoing note's embeds go with it: a transclusion loaded for the
+		// file just closed has nothing left to be attached to.
+		this.markdown.end();
 		this.contentEl.empty();
 		// A popover lives on document.body, so emptying this element does not
 		// reach it — it would be left pointing at a cell of the file just
@@ -274,12 +292,19 @@ export class SheetView extends TextFileView {
 		// harness builds the same thing and the two must not disagree.
 		const env = buildSheetEnv(prepared.map(publishedComponent), library);
 
+		// One pass per render, begun before the first component draws and ended by
+		// the next render or by the file changing. Resolved against this note's own
+		// path, exactly as `linkContext` is, so a relative link or embed inside a
+		// block means what it would mean written in the note body.
+		const renderMarkdown = this.markdown.begin(this.file?.path ?? '');
+
 		renderGrid(grid, walk, prepared, ({ config, component, data }) => ({
 			resolved: resolveFormulaFields(component, config, data, env),
 			resolveField: makeFieldResolver(component, config, data, env),
 			explainField: makeFieldExplainer(component, config, data, env),
 			onChange: (edited: unknown) => this.applyEdit(component, config, edited),
 			link: this.linkContext(),
+			renderMarkdown,
 			activeTab: this.activeTab.get(config.id),
 			onActivateTab: (index: number) => this.activeTab.set(config.id, index),
 		}));

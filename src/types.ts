@@ -538,6 +538,46 @@ export interface RenderContext<TData = unknown> {
 	 */
 	link?: LinkContext;
 	/**
+	 * Draw markdown into an element, using the app's own renderer.
+	 *
+	 * Optional on exactly `link`'s terms: without it a component draws what it
+	 * can from the text alone, which is the truth where there is no app to ask.
+	 * A Rich text block falls back to paragraphs with their wikilinks live, so a
+	 * unit test and the harness both show real prose and real links, and what is
+	 * absent without this is every other piece of markdown.
+	 *
+	 * It passes §4.1's rule for an optional member read one level out: the
+	 * alternative is `obsidian` inside `src/components/`, which is the boundary
+	 * the whole component layer rests on — `MarkdownRenderer` needs an `App`, a
+	 * source path and a `Component` for the lifecycle of what it draws, and none
+	 * of the three is a component's to hold.
+	 *
+	 * **Not offered to a table cell**, though the member is on the context and a
+	 * cell could reach it. `parse/wikilink.ts`'s header holds the argument: block
+	 * markup in a row whose height its neighbours already agreed is the case this
+	 * is right for and that is wrong for. A Rich text block's height is its
+	 * placement, so markup arriving a frame later cannot move anything.
+	 *
+	 * The caller owns the lifecycle, so a result landing after its render pass
+	 * ended writes nothing (`view/markdown-pass.ts`).
+	 *
+	 * **`onFailure` fires where the app's renderer rejected**, and it is a required
+	 * argument rather than an optional one because a renderer that can fail and a
+	 * consumer that ignores it is the defect: the render is asynchronous, so a
+	 * component has already returned by then and has no other route to hear about
+	 * it. What a component should do with it is what it does without a renderer at
+	 * all — draw what it can from the text alone — which is why this is a callback
+	 * back into the component rather than an error the view writes into the box.
+	 * There is no fix to name in such a message (PATTERNS §4), and the reader would
+	 * rather have their prose than be told it exists somewhere else. Not called
+	 * where the pass has already ended, since the element is detached by then.
+	 */
+	renderMarkdown?: (
+		markdown: string,
+		into: HTMLElement,
+		onFailure: () => void,
+	) => void;
+	/**
 	 * Draw this component's `children` into an element of its own choosing
 	 * (SPEC §4.2).
 	 *

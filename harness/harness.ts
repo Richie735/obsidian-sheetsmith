@@ -224,6 +224,9 @@ function renderSheet(into: HTMLElement): void {
 				// `applyEdit` writes the re-read section back into it.
 				onChange: (edited: unknown) => applyEdit(entry as Live, edited),
 				link: linkContext(),
+				// The one member Image needs, on `link`'s own terms. `renderMarkdown`
+				// stays absent on purpose (see `samples.ts`), so a reviewer sees the
+				// fallback for prose and a real picture for an image.
 				// The view's own answer, so a tab survives an edit here exactly as
 				// it does in the app: a re-render is what would otherwise reset it.
 				activeTab: activeTab.get(config.id),

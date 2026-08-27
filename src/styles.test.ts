@@ -866,6 +866,232 @@ describe('a component\'s own name is one rank, not five', () => {
 	});
 });
 
+describe('a placed box is one thing, not two', () => {
+	/*
+	 * A component whose size is its placement and not its content, shared by Rich
+	 * text and Image (§9 of docs/UI.md).
+	 *
+	 * **It was written out twice, identically**, and that is the mistake PATTERNS
+	 * §1 records against `roundSum` word for word: the number went into
+	 * `--sheetsmith-grid-row` and its *application* stayed at both sites, which is
+	 * "a policy shared and its application duplicated". Fourteen declarations in
+	 * two copies, agreeing with each other and with nothing watching.
+	 *
+	 * So the guards here are in two halves, because the risk moved rather than
+	 * went away. It is no longer "the two copies drift" — there is one copy — it is
+	 * **"a component forgets to add the class"**, which is a claim about a
+	 * component and lives in `rich-text.test.ts` and `image.test.ts`. What is left
+	 * for the stylesheet is that the one rule says what both components need, and
+	 * that nobody has quietly written it out a third time.
+	 */
+	const withoutComments = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+
+	function declaring(match: RegExp): string[] {
+		const found: string[] = [];
+		for (const block of withoutComments.split('}')) {
+			const brace = block.indexOf('{');
+			if (brace === -1) continue;
+			if (!match.test(block.slice(0, brace))) continue;
+			found.push(block.slice(brace + 1));
+		}
+		return found;
+	}
+
+	it('finds the rules it is meant to be checking', () => {
+		expect(declaring(/\.sheetsmith-placed\s*$/)).toHaveLength(1);
+		expect(declaring(/\.sheetsmith-placed-box\b/)).not.toHaveLength(0);
+	});
+
+	it('floors the component at its placement, so it cannot collapse', () => {
+		// The arithmetic that turns a placement into a height. Both consumers put
+		// their content out of flow, so without this there is nothing for the box to
+		// take a height *from* at all — which is the prior art's second failure, a
+		// box rendering at zero height.
+		const [body = ''] = declaring(/\.sheetsmith-placed\s*$/);
+		expect(/min-height\s*:/.test(body)).toBe(true);
+		expect(body).toContain('--sheetsmith-rows');
+		expect(body).toContain('--sheetsmith-grid-row');
+		// And it still fills the cell it was placed in, which is the other half and
+		// the rule every component on the sheet follows.
+		expect(/height\s*:\s*100%/.test(body)).toBe(true);
+	});
+
+	it('makes the surface the containing block, and lets it shrink', () => {
+		// `relative`, or a child's `inset: 0` resolves against the pane and the
+		// component draws over the sheet. `min-height: 0`, or the flex item's
+		// automatic minimum is its content — the one route left by which the content
+		// could still decide the height.
+		const rules = declaring(/\.sheetsmith-placed-box\s*$/);
+		expect(rules).toHaveLength(1);
+		const [body = ''] = rules;
+		expect(/position\s*:\s*relative/.test(body)).toBe(true);
+		expect(/min-height\s*:\s*0/.test(body)).toBe(true);
+	});
+
+	it('is not written out again on any component\'s own class', () => {
+		/*
+		 * The regression guard, and the one this describe exists for: the shape it
+		 * forbids is exactly the shape that was here. A component class carrying the
+		 * floor arithmetic is a second copy of the box, whether it was left behind
+		 * or added by the next component to want one.
+		 *
+		 * Keyed on the floor rather than on all five declarations, because the floor
+		 * is the load-bearing one and the only one nothing else on the sheet has a
+		 * reason to write.
+		 */
+		const rewritten = withoutComments
+			.split('}')
+			.filter((block) => {
+				const brace = block.indexOf('{');
+				if (brace === -1) return false;
+				const selector = block.slice(0, brace);
+				if (!/\.sheetsmith-/.test(selector)) return false;
+				if (/\.sheetsmith-placed\b/.test(selector)) return false;
+				return block.slice(brace + 1).includes('--sheetsmith-grid-row');
+			})
+			.map((block) => block.slice(0, block.indexOf('{')).trim());
+		expect(rewritten).toEqual([]);
+	});
+
+	it('would catch the copy it forbids', () => {
+		// The check above asserts an empty list, so it reads the same on a
+		// stylesheet with no placed box at all. This drives it over the duplication
+		// that was actually here.
+		const broken =
+			'.sheetsmith-image { min-height: calc(var(--sheetsmith-rows, 1) * ' +
+			'var(--sheetsmith-grid-row)); }';
+		const caught = broken.split('}').filter((block) => {
+			const brace = block.indexOf('{');
+			if (brace === -1) return false;
+			const selector = block.slice(0, brace);
+			return (
+				/\.sheetsmith-/.test(selector) &&
+				!/\.sheetsmith-placed\b/.test(selector) &&
+				block.slice(brace + 1).includes('--sheetsmith-grid-row')
+			);
+		});
+		expect(caught).toHaveLength(1);
+	});
+});
+
+describe('a prose block is sized by its placement, never by its text', () => {
+	/*
+	 * The longest-running defect in the prior art, and the one this component was
+	 * written against: a rich text area with "no vertical size", which "grows
+	 * according to its content which does not allow to control its position in
+	 * the sheet in a stable way" — open 47 months at the time of writing, beside
+	 * three siblings for the same box rendering with zero height, squished, or
+	 * absent.
+	 *
+	 * A guard rather than a unit test because none of it is visible in one: happy-dom
+	 * lays nothing out, so a component test can prove what the box is *told* and
+	 * never what it becomes. `rich-text.test.ts` holds the told half — the block
+	 * carries its placement's row count and carries the same one whatever the text
+	 * is — and this holds the three CSS facts that turn that number into a height.
+	 *
+	 * All three, because each alone is a different one of the prior art's four
+	 * failures: no floor is the collapse to zero, no `overflow` is the growth, and
+	 * a layer left in flow is the growth again by a route the floor cannot stop.
+	 */
+	const withoutComments = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+
+	/** The declarations of every rule whose selector matches. */
+	function declaring(match: RegExp): string[] {
+		const found: string[] = [];
+		for (const block of withoutComments.split('}')) {
+			const brace = block.indexOf('{');
+			if (brace === -1) continue;
+			if (!match.test(block.slice(0, brace))) continue;
+			found.push(block.slice(brace + 1));
+		}
+		return found;
+	}
+
+	it('finds the rules it is meant to be checking', () => {
+		// The assertions below all read as satisfied on a stylesheet that has no
+		// rich text rules at all, which is exactly how this component would come
+		// back if somebody deleted the section. The block's floor and the box's own
+		// surface are the shared placed box's now — see the describe below this one.
+		expect(declaring(/\.sheetsmith-rich-text\b/)).not.toHaveLength(0);
+	});
+
+	/*
+	 * Asked **per layer**, never over the union of the two.
+	 *
+	 * The two layers are written as one shared rule today, so a regex matching
+	 * either of them returns one block and a check for "some block declares this"
+	 * is satisfied by that one block. Split the rule in two and drop the
+	 * declaration from the rendered layer alone and the union check stays green
+	 * while that layer is back in flow, growing the block past its placement —
+	 * which is the original defect with a `min-height` on it, and precisely what
+	 * these cases exist to catch. Measured rather than reasoned: that mutation
+	 * passed every case here before this was split.
+	 *
+	 * `some` over a per-layer list also fails on an empty list, so a selector
+	 * that stopped matching cannot make either check below vacuous.
+	 */
+	const LAYERS = ['input', 'rendered'] as const;
+
+	const layerRules = (layer: string) =>
+		declaring(new RegExp(`\\.sheetsmith-rich-text-${layer}\\b`));
+
+	it.each(LAYERS)('scrolls the %s layer rather than letting it out of the box', (layer) => {
+		expect(
+			layerRules(layer).some((body) => /overflow-y\s*:\s*auto/.test(body)),
+		).toBe(true);
+	});
+
+	it.each(LAYERS)('takes the %s layer out of flow, so it cannot grow the box', (layer) => {
+		/*
+		 * The half a floor cannot cover. A layer left in flow contributes its
+		 * intrinsic height to the flex column, and `min-height` is a floor rather
+		 * than a ceiling — so a long backstory would push the block past its
+		 * placement even with the floor in place.
+		 */
+		expect(
+			layerRules(layer).some((body) => /position\s*:\s*absolute/.test(body)),
+		).toBe(true);
+	});
+
+	it('leaves the scrolling layer able to receive a pointer', () => {
+		/*
+		 * **The regression this exists for shipped.** The rendered layer was
+		 * `pointer-events: none`, copied from the table cell where a click falls
+		 * through to the field behind it and the browser places the caret. A cell is
+		 * one line with nothing to scroll; this layer is a scrollport, and a
+		 * scrollport that is not a hit target never receives a wheel. Measured in a
+		 * real browser: the gesture went to the *invisible* field behind it, which
+		 * scrolled 150px while the visible prose stayed at 0.
+		 *
+		 * A scan rather than a look, because this is the class PATTERNS §10 names —
+		 * a still cannot show a scroll and happy-dom has no hit testing, so the
+		 * harness and every unit test signed it off. The press routing that replaced
+		 * the cascade's is held by `rich-text.test.ts`.
+		 */
+		const inert = layerRules('rendered').filter((body) =>
+			/pointer-events\s*:\s*none/.test(body),
+		);
+		expect(inert).toEqual([]);
+	});
+
+	it('would catch the declaration it forbids', () => {
+		// The check above asserts an empty list, so it reads exactly the same on a
+		// stylesheet with no rich text rules at all. This drives it over the shape
+		// it exists to reject.
+		const broken = '.sheetsmith-rich-text-rendered { pointer-events: none; }';
+		expect(
+			broken
+				.split('}')
+				.filter(
+					(block) =>
+						block.includes('.sheetsmith-rich-text-rendered') &&
+						/pointer-events\s*:\s*none/.test(block),
+				),
+		).toHaveLength(1);
+	});
+
+});
+
 describe('every colour on the sheet comes from the theme', () => {
 	/*
 	 * A literal colour is a colour that does not change with the theme. It

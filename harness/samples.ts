@@ -764,6 +764,118 @@ export const SAMPLES: Sample[] = [
 		// after its author edited the layout.
 		body: '```sheet\nvalue: Chaotic neutral\n```',
 	},
+	/*
+	 * Rich text, four ways, and the thing to look at is the **box** rather than
+	 * the prose in it.
+	 *
+	 * The prior art is why: on the closest analogue a prose block with no vertical
+	 * size has been open since 2022 — "it grows according to its content which does
+	 * not allow to control its position in the sheet in a stable way" — beside
+	 * three siblings for the same box rendering at zero height, squished, or
+	 * absent. So the four here are chosen to make the box's independence from its
+	 * text visible side by side:
+	 *
+	 * 1. **Backstory**, 8×3, holding far more than fits. It has to scroll inside
+	 *    its own box, and the two one-row blocks under it must sit exactly where
+	 *    the grid put them however far the backstory is scrolled.
+	 * 2. **Appearance**, 4×3, holding two short lines. Identical box, a third of
+	 *    the content: the two must be the same height, and the short one must not
+	 *    have shrunk to its text.
+	 * 3. **A creed**, 6×1, unlabelled — prose that reads as prose, and the
+	 *    thinnest box the grid can give. Check it is one row of a card tall and
+	 *    that the label's absence has not left the box floating.
+	 * 4. **Session notes**, 6×1, labelled and empty. The placeholder is the whole
+	 *    empty state: one click from typing, and no error anywhere.
+	 *
+	 * **The harness passes no `renderMarkdown`**, deliberately, so what is drawn
+	 * is the fallback: paragraphs with their wikilinks live and no other markdown.
+	 * A second markdown implementation in the stub would drift from Obsidian's,
+	 * and this repository's whole point is not to have one. The cost is bounded
+	 * and stated — how a *rendered* heading, list or embed sits inside the box is
+	 * the one part of this component reviewed in Obsidian rather than here — and
+	 * the list in the backstory below is on purpose: its hyphens show, which is
+	 * exactly what the fallback promises and the app will not.
+	 */
+	{
+		config: {
+			id: 'backstory',
+			type: 'rich-text',
+			label: 'Backstory',
+			position: { col: 1, row: 20, width: 8, height: 3 },
+		},
+		body: [
+			'',
+			'Born in [[Neverwinter]] to a family of ore miners, and apprenticed young to [[Sildar Hallwinter|Sildar]], who taught the sword and very little else.',
+			'',
+			'The debt to the [[Zhentarim]] is not settled and will not be settled by talking. Three of them know the face; one of them knows the name, and none of them has been seen south of the coast road in a year.',
+			'',
+			'- Owes a debt to the [[Zhentarim]]',
+			'- Cannot swim, and will not say why',
+			'- Carries a letter from [[Sildar Hallwinter|Sildar]], unopened',
+			'',
+			'Left the city the winter the docks burned, walked south along the coast road for eleven days, and has not written home since. Whatever is in the letter has kept until now and can keep a while longer.',
+			'',
+			'Wintered at [[Phandalin]] doing work nobody writes down, and came out of it with a name that is not the one on the letter. There is a woman there who would say where the money went, if she were asked in the right room and not the wrong one.',
+			'',
+			'What is left is the road, the debt, and the sword. In that order on a good day, and in the reverse order on most of them.',
+			'',
+			// The one target the harness refuses to resolve, in prose rather than in
+			// a cell: an unresolved link mid-paragraph is a state worth looking at
+			// on its own, since what has to read as faint here sits between two
+			// words rather than alone in a column.',
+			'There is also the matter of the [[Torch of Revealing]], which nobody has written up and which two people have now died over. That is a problem for a later road.',
+			'',
+			'The plan, such as it is: south to the coast, sell the sword if it comes to that, and be somewhere the [[Zhentarim]] have no reason to look before the thaw.',
+			'',
+		].join('\n'),
+	},
+	{
+		config: {
+			id: 'appearance',
+			type: 'rich-text',
+			label: 'Appearance',
+			position: { col: 9, row: 20, width: 4, height: 3 },
+		},
+		// Two short lines beside a box of the same size holding fifteen: the pair
+		// is the comparison, so this one is deliberately not filled.
+		body: '\nTall, and stooped from it. A miner\u2019s hands.\n\nGrey at the temples, earlier than it should be.\n',
+	},
+	{
+		config: {
+			id: 'creed',
+			type: 'rich-text',
+			label: 'Creed',
+			position: { col: 1, row: 23, width: 6, height: 1 },
+			hideLabel: true,
+		} as ComponentConfig,
+		body: '\nHold the line. Pay the debt. Do not open the letter.\n',
+	},
+	{
+		config: {
+			id: 'session_notes',
+			type: 'rich-text',
+			label: 'Session notes',
+			position: { col: 7, row: 23, width: 6, height: 1 },
+		},
+		// Empty in the *populated* view, which no other component here is: an
+		// author's notes block is empty at the start of every session, so its
+		// placeholder is a resting state rather than a state the empty view
+		// reaches for.
+		body: null,
+	},
+	{
+		config: {
+			id: 'below_the_prose',
+			type: 'card',
+			label: 'Below the prose',
+			position: { col: 1, row: 24, width: 3, height: 1 },
+			hideNote: true,
+		} as ComponentConfig,
+		// A known neighbour under the blocks, so "the content scrolls and nothing
+		// on the sheet moves" is something a shot can actually show rather than a
+		// claim about the CSS.
+		body: '```sheet\nvalue: still here\n```',
+	},
 	/* Beside the set rather than inside it, so a tab press has something to not
 	   move. */
 	{

@@ -39,6 +39,34 @@ body {
 	/* The card's headline number. Relative rather than a pixel size, so it
 	   follows the vault's text size setting and the card scales with it. */
 	--sheetsmith-card-value-size: 1.75em;
+	/* How tall one row of the sheet's grid is, for a component whose content has
+	   no height the grid could take one from: a block of prose, a picture. Both
+	   put their content out of flow so it cannot decide the box, which leaves the
+	   box needing a floor, and the floor is `height` of these.
+
+	   A number rather than a derivation because the grid genuinely has no row
+	   height — the sheet's rows are content-sized, and every card happens to come
+	   out at about this — so this is the one place such a box is agreed with the
+	   cards beside it. Relative rather than a pixel size, so it follows the
+	   vault's text size the way the card's own headline does.
+
+	   **It is a floor, and that is what bounds the risk of it being a number.** A
+	   review asked whether approximating a card's height here is a second statement
+	   of it, and the measured answer is no: where a card in the same grid row is
+	   taller, the row grows and a placed box fills it — both came out at 178px —
+	   so the two cannot drift apart upward. What this decides is only the minimum
+	   height of a row nothing else makes taller. There is also no second copy to
+	   drift *from*: a card's height is emergent from its padding, its label and its
+	   value size and is written down nowhere, so deriving this in `calc()` would
+	   invent a coupling rather than remove one, and changing a card's padding would
+	   then resize every backstory on the sheet.
+
+	   **Named for the grid rather than for either component**, which is the
+	   correction Image forced: it was `--sheetsmith-rich-text-row` while prose was
+	   the only consumer, and a reader raising it to give backstories more room
+	   would silently have resized every portrait on the sheet. Duplicating the
+	   number instead is what PATTERNS §1's one-step tier refuses outright. */
+	--sheetsmith-grid-row: 4.75em;
 	/* How wide the sheet may grow. A sheet is a dashboard, not prose: the
 	   grid is a fixed number of columns the author placed components into,
 	   so holding it at reading width leaves a wide pane mostly empty and

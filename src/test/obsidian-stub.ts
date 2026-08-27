@@ -762,6 +762,66 @@ export class Component {
 }
 
 /**
+ * The app's markdown renderer, as far as a test can be told about it.
+ *
+ * **Deliberately not a markdown implementation.** A second one in this
+ * repository would drift from Obsidian's, and this stub's whole job is to be the
+ * least that makes the code under test behave as it does in the app. What the
+ * code under test cares about is the *shape*: that the call is asynchronous, that
+ * it appends into the element it was given, and that it is bounded by a
+ * `Component` — which is what `view/markdown-pass.ts` exists to get right, and
+ * what nothing else could drive.
+ *
+ * So the markup is one `<p>` holding the source. That is enough for a test to
+ * say whether anything landed and whose pass it landed in, and honest about
+ * being a stand-in. The harness passes no renderer at all, for the same reason
+ * this one is not real: a component's fallback is what a reviewer should be
+ * looking at where there is no app.
+ */
+export class MarkdownRenderer {
+	/**
+	 * Make the next render reject, which is a state the real app is genuinely in
+	 * whenever a theme's or another plugin's post-processor throws.
+	 *
+	 * A flag rather than a sentinel inside the markdown, because the caller under
+	 * test passes the markdown through untouched and a magic string in it would be
+	 * a second thing to keep in step. Set it, drive the call, and it clears itself
+	 * — so a test that forgets to reset it cannot poison the next one.
+	 */
+	static failNextRender = false;
+
+	static async render(
+		_app: App,
+		markdown: string,
+		el: HTMLElement,
+		_sourcePath: string,
+		_component: Component,
+	): Promise<void> {
+		// A microtask, so a test can drive "the pass ended before this landed" by
+		// awaiting nothing in between.
+		await Promise.resolve();
+		if (MarkdownRenderer.failNextRender) {
+			MarkdownRenderer.failNextRender = false;
+			throw new Error('a post-processor threw');
+		}
+		/*
+		 * **It appends whether or not the component is still loaded**, and that is
+		 * a decision rather than a shortcut. Unloading a `Component` stops the app
+		 * creating more render children under it; whether it also abandons a call
+		 * already in flight is not documented and not something this repository can
+		 * verify, so the stub takes the case a caller has to survive. Assuming the
+		 * kinder behaviour here would have made `markdown-pass.ts`'s whole reason
+		 * for existing pass vacuously — measured, not supposed: with a `loaded`
+		 * check in this method, deleting that module's staleness guard altogether
+		 * left every case green.
+		 */
+		const p = el.ownerDocument.createElement('p');
+		p.textContent = markdown;
+		el.appendChild(p);
+	}
+}
+
+/**
  * A workspace view, and the DOM Obsidian wraps one in.
  *
  * `onOpen` and `onClose` are public here where the app declares them

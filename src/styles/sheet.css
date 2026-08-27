@@ -3172,3 +3172,237 @@ a.sheetsmith-undo {
 }
 
 
+/* ---------------------------------------------------------------------------
+   A placed box — a component whose size is its placement and not its content.
+
+   Shared vocabulary (§9 of docs/UI.md), on the terms that section opens with: a
+   new component reuses this rather than inventing a lookalike. Two consumers
+   today, Rich text and Image, and it is extracted at two rather than three
+   because what is shared is a *policy* — the arithmetic that turns a placement
+   into a height, and the surface a reader is invited to edit — and PATTERNS §1
+   extracts a policy in one step: drift is the entire risk, and a guard test could
+   only assert the two copies still say the same thing.
+
+   **It was two copies, and that was the mistake §1 records against `roundSum`
+   verbatim:** the number went into `--sheetsmith-grid-row` and its *application*
+   stayed written out at both sites, which is "a policy shared and its application
+   duplicated". Fourteen declarations in two copies, agreeing with each other and
+   with nothing watching — change the radius or the coarse-pointer rule for a
+   portrait and prose keeps the old one, with no type, lint or test reporting it.
+
+   The two halves are one idea and are named as a pair:
+
+   - `.sheetsmith-placed` is the component. It fills the cell it was placed in,
+     like everything else on the sheet, **and** is at least its placement tall —
+     which is the half `height: 100%` cannot give, because a grid row here is
+     sized by its content, so `100%` of it would be `100%` of whatever the content
+     happens to be.
+   - `.sheetsmith-placed-box` is the surface under the label. It takes whatever
+     the label left, and `min-height: 0` is what lets it shrink below its content
+     rather than growing the flex line — the one route by which the content could
+     still decide the height.
+
+   Both consumers put their content **out of flow** inside the box, which is what
+   makes the floor load-bearing rather than decorative: nothing inside contributes
+   intrinsic height, so without a floor the box has nothing to be tall from at all.
+   That rule stays with each component, because what goes in the box is the one
+   thing they do not share.
+   --------------------------------------------------------------------------- */
+.sheetsmith-placed {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-2);
+	height: 100%;
+	min-height: calc(var(--sheetsmith-rows, 1) * var(--sheetsmith-grid-row));
+}
+
+.sheetsmith-placed-box {
+	position: relative;
+	flex: 1 1 auto;
+	min-height: 0;
+	border-radius: var(--radius-m);
+	background-color: var(--background-primary-alt);
+}
+
+/* There is no hover on a phone, so nothing else would say the box invites an
+   edit. A rule under it is enough without becoming a second border. */
+@media (pointer: coarse) {
+.sheetsmith-placed-box {
+		border-bottom: 1px solid var(--background-modifier-border);
+	}
+
+}
+
+@media (prefers-contrast: more) {
+.sheetsmith-placed-box {
+		border: 1px solid var(--text-muted);
+	}
+
+}
+
+/* ---------------------------------------------------------------------------
+   Rich text — a free markdown block.
+
+   Not a fourth kind of panel (§9 of docs/UI.md). Prose beside cards should read
+   as prose, not as a card with a paragraph in it, so there is no border and no
+   surface of its own: a label, and a box under it taking
+   `--background-primary-alt` at the card's radius so it reads as editable.
+
+   **The placement is the box.** This is the longest-running complaint in the
+   prior art — a prose block with no vertical size, growing with its content so
+   its position on the sheet cannot be controlled — and it is what two rules here
+   exist to stop:
+
+   1. The block declares `min-height` from its placement, so the grid row is
+      sized by the layout rather than by the text.
+   2. Both layers inside the box are `position: absolute`, so they contribute no
+      intrinsic height and content can never push the box outward. Which is also
+      why (1) is load-bearing rather than a nicety: without a floor the box has
+      nothing to take its height from and collapses to zero, which is the same
+      prior art's second failure.
+
+   Both are held by src/styles.test.ts, because a unit test does no layout and
+   neither is visible in one.
+   --------------------------------------------------------------------------- */
+/* The rank is `.sheetsmith-component-label`: this is one block on the sheet, not
+   a heading over a set of things. */
+
+/* Both layers fill the box and scroll on their own. Out of flow, so neither can
+   grow it — and separately scrolled, because they hold the same text in two
+   different shapes: a rendered heading is not the height of its source line, so
+   one shared scroll offset would put the two out of step.
+
+   The field carries the view scope for the reason §2 of docs/UI.md gives, and it
+   is not hypothetical here: Obsidian styles bare `textarea` with a background, a
+   border, a font size and a `resize`, so every declaration below that takes
+   chrome off would be dropped without it and the box would hold a form control
+   with a corner handle. */
+.sheetsmith-view .sheetsmith-rich-text-input,
+.sheetsmith-rich-text-rendered {
+	position: absolute;
+	inset: 0;
+	overflow-y: auto;
+	padding: var(--size-4-2);
+	border-radius: inherit;
+	font-size: var(--font-ui-small);
+	line-height: var(--line-height-tight, 1.4);
+}
+
+.sheetsmith-view .sheetsmith-rich-text-input {
+	width: 100%;
+	height: 100%;
+	border: 1px solid transparent;
+	background-color: transparent;
+	color: var(--text-normal);
+	font-family: inherit;
+	/* The box is the sizing control, so the browser's own corner handle would be
+	   a second one disagreeing with it (SPEC §8). */
+	resize: none;
+}
+
+/* Unfocused, the field is the thing underneath the rendered layer: its text
+   would show through, so it is hidden rather than the layer being made opaque.
+   Colour only — the field keeps its box and its place in the tab order, which
+   is what keeps the view's focus restoration counting the same controls across
+   a rebuild (§9 of docs/UI.md). */
+.sheetsmith-view .sheetsmith-rich-text-input:not(:focus) {
+	color: transparent;
+	/* And its caret, which is otherwise the one visible thing left of an
+	   invisible field: a blinking bar in a box nobody is editing. */
+	caret-color: transparent;
+}
+
+/* A hint the reader can act on is worth showing through, so the placeholder is
+   the one part of an unfocused field that stays visible — it is what says an
+   empty box is one click from being typed in. */
+.sheetsmith-view .sheetsmith-rich-text-input::placeholder {
+	color: var(--text-faint);
+	opacity: 1;
+}
+
+.sheetsmith-view .sheetsmith-rich-text-input:focus {
+	border-color: var(--interactive-accent);
+	background-color: var(--background-primary);
+	/* Invisible normally, repainted as a real ring where forced colours override
+	   every border on the page and the accent stops meaning anything. */
+	outline: 2px solid transparent;
+	outline-offset: 0;
+}
+
+/* **The layer takes the pointer, and that is a correction.** It was
+   `pointer-events: none`, on the table cell's pattern — a click fell through to
+   the field behind it and the browser put the caret where it landed. A cell is one
+   line with nothing to scroll; a prose box is the one place on the sheet where
+   that pattern costs something, and what it cost was the whole feature: the layer
+   *was* a scrollport (292px of content in a 209px box) and, not being a hit
+   target, never received a wheel. The gesture went to the invisible field behind
+   it, which scrolled 150px while the visible prose stayed exactly where it was.
+   Measured in a real browser, because a still cannot show a scroll and happy-dom
+   has no hit testing — so nothing in the harness or the unit tests could have
+   caught it.
+
+   What this gives up is the caret landing near the click, and the component's own
+   header already says that landing is not worth preserving: a point in the
+   rendered view is not the same character in the source. What it gains besides the
+   scroll is selecting and copying a backstory without entering edit mode.
+
+   The press routing is now the component's (`rich-text.ts`): a link owns its own,
+   and everything else focuses the field — PATTERNS §6, stated as code rather than
+   left to the cascade. */
+.sheetsmith-rich-text-rendered {
+	color: var(--text-normal);
+	/* The box is one click from being typed in, and with the layer over it the
+	   field's own text cursor no longer shows through. */
+	cursor: text;
+}
+
+/* Hidden on focus rather than left transparent, which is this component's one
+   departure from the cell's version of the stack: the two hold the same text in
+   two different shapes, and two differently-shaped copies of one text overlaid
+   would be unreadable. `visibility`, so the box's own size does not change.
+
+   Keyed on the *field's* focus rather than the box's, for the reason the cell's
+   is: an anchor is focusable, so under `:focus-within` the layer would go inert
+   between a link's mousedown and its mouseup, the mouseup would hit the field
+   underneath, and the link would quietly stop working. */
+.sheetsmith-view
+	.sheetsmith-rich-text-box:has(.sheetsmith-rich-text-input:focus)
+	.sheetsmith-rich-text-rendered {
+	visibility: hidden;
+}
+
+/* The fallback, where there is no app to render markdown: paragraphs with their
+   wikilinks live and nothing else.
+
+   **Soft line breaks collapse, deliberately**, which is the one place this branch
+   agrees with markdown rather than showing the source. `white-space: pre-line`
+   was the first answer and it was wrong for the reason the harness exists: a
+   `<textarea>` soft-wraps, but a paragraph that *was* hard-wrapped drew as a
+   narrow ragged column down the left of an eight-column box — a shape Obsidian's
+   renderer never produces, in the instrument used to review how prose sits in the
+   box. An instrument that signs off on a layout the plugin cannot make is worse
+   than one that omits a feature, and prose rhythm at the box's real width is
+   named as something the harness has to answer. A list still shows its hyphens on
+   one line, which is the stated cost and is honest: this branch is not markdown
+   and should not half-look like it. */
+.sheetsmith-rich-text-plain p {
+	margin: 0 0 var(--size-4-2);
+}
+
+.sheetsmith-rich-text-plain p:last-child {
+	margin-bottom: 0;
+}
+
+/* The vault's own reading treatment for what the app rendered: the plugin styles
+   the box and never what the renderer puts in it (§1 of docs/UI.md). Only the
+   outer margins are ours, so the first line sits against the top of the box
+   rather than under a paragraph's own space above it. */
+.sheetsmith-rich-text-rendered > :first-child {
+	margin-top: 0;
+}
+
+.sheetsmith-rich-text-rendered > :last-child {
+	margin-bottom: 0;
+}
+
+
