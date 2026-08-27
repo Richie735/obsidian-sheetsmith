@@ -184,10 +184,12 @@ export default defineConfig(
 								'!./column-types',
 								'!./level-ring',
 								'!./card-face',
+								'!./linked-text',
 								'!./stored-flag',
 								'!../components/column-types',
 								'!../components/level-ring',
 								'!../components/card-face',
+								'!../components/linked-text',
 								'!../components/stored-flag',
 							],
 							message:

@@ -38,7 +38,7 @@
 import { setIcon } from 'obsidian';
 import { isName, roundSum } from '../formula/expression';
 import { MarkdownTable, readTable, writeTable } from '../parse/table';
-import { displayText, hasLink, parseLinks } from '../parse/wikilink';
+import { displayText, hasLink } from '../parse/wikilink';
 import {
 	ColumnType,
 	DEFAULT_COLUMN_TYPE,
@@ -50,7 +50,6 @@ import {
 	ComponentDefinition,
 	FieldResolver,
 	FieldValue,
-	LinkContext,
 	ReadResult,
 	RowsSource,
 	RowValues,
@@ -66,6 +65,7 @@ import {
 	paintLevelRing,
 	parseLevel,
 } from './level-ring';
+import { paintLinkedText } from './linked-text';
 import { flagReading, flagText, isFlagSet } from './stored-flag';
 import { bindLongPress, showPopover } from '../ui/popover';
 import { revealWhenTruncated } from '../ui/truncation';
@@ -260,6 +260,19 @@ const REMOVE_ICON = 'trash';
  * to tell they are the same row.
  */
 const UNNAMED_ROW = 'Unnamed row';
+
+/**
+ * What clipping means in a cell, for the shared linked-text painter.
+ *
+ * A cell is one line in a row whose height its neighbours already agreed, so it
+ * clips — and the class name stays here rather than in the painter, which is
+ * PATTERNS §1's rule: a module beside the components must not name a table. A
+ * caller whose box wraps, such as a Rich text block, passes none of this.
+ */
+const CELL_CLIPPING = {
+	soleLinkClass: 'sheetsmith-table-link-only',
+	reveal: revealWhenTruncated,
+};
 
 /**
  * What a row is called, for anything that has to say which row it means.
@@ -579,95 +592,6 @@ function rowValues(
 		if (value !== null) values[column.key] = value;
 	});
 	return { label: rowLabel(view.label), values };
-}
-
-/**
- * Draw a cell's text, with any wikilink in it as a link.
- *
- * The anchor is Obsidian's own markup — `internal-link`, `is-unresolved`, and
- * both `href` and `data-href` — so it takes the user's theme and whatever a
- * theme or another plugin does to links, rather than a colour of this plugin's
- * (UI.md §1). Nothing app-shaped is needed to draw it; `context` is what makes it
- * resolve, open and preview, and without one the link paints and a press does
- * nothing, which is the truth when there is no vault behind it.
- *
- * Private to this component. Rich text is the obvious second consumer and is not
- * built, and PATTERNS §1 says a painter moves out on the second consumer rather
- * than in anticipation of one.
- */
-function paintText(
-	into: HTMLElement,
-	text: string,
-	context: LinkContext | undefined,
-): void {
-	const doc = into.ownerDocument;
-	into.replaceChildren();
-	const segments = parseLinks(text);
-	// Whether the whole cell is one link, which decides who does the clipping —
-	// see the styles. Marked rather than left to `a:only-child`, which counts
-	// element children only: a cell of prose *and* one link matched it, the anchor
-	// became a block, and "in Bag of Holding" broke onto two lines.
-	into.classList.toggle(
-		'sheetsmith-table-link-only',
-		segments.length === 1 && segments[0]?.kind === 'link',
-	);
-	for (const segment of segments) {
-		if (segment.kind === 'text') {
-			into.appendChild(doc.createTextNode(segment.text));
-			continue;
-		}
-		const { target, display } = segment;
-		const anchor = doc.createElement('a');
-		anchor.classList.add('internal-link');
-		// An inventory of things that have no notes yet is the ordinary case, and
-		// painting them as live links would be a lie the theme already has a
-		// colour for. Absent a context every link paints as resolved: a missing
-		// vault is not evidence that a note is missing.
-		if (context !== undefined && !context.resolves(target)) {
-			anchor.classList.add('is-unresolved');
-		}
-		// Both, because that is what Obsidian's own markup carries and what
-		// anything styling or intercepting links looks for.
-		anchor.setAttribute('href', target);
-		anchor.setAttribute('data-href', target);
-		anchor.textContent = display;
-		// An aliased link shows the alias, so the target is otherwise nowhere on
-		// the card. Only where the two differ: a tooltip repeating text that is
-		// already legible is noise fired at every pass, which is the lesson the
-		// card's label learned.
-		//
-		// **`title`, not `aria-label`**, and that is a correction rather than a
-		// preference. `aria-label` is what Obsidian's own aliased links carry, and
-		// what its tooltip reads, but it *replaces* the name computed from the
-		// element's contents: a link reading "sword" announced as "Sunblade" is a
-		// name that appears nowhere in the cell, which fails WCAG 2.5.3 (label in
-		// name, level A) and leaves voice control with nothing to match when the
-		// user says "click sword". `title` is supplementary instead — the name
-		// stays "sword" and the target is announced after it as the description, so
-		// a listener gets both. The cost is the browser's tooltip rather than the
-		// app's styled one, which is also what every other tooltip on this sheet
-		// uses: the level ring's name, a computed cell's formula, a clipped value.
-		if (display !== target) anchor.setAttribute('title', target);
-		anchor.addEventListener('click', (event) => {
-			// The press belongs to the link, not to the cell behind it: PATTERNS §6
-			// has this rule, that a real control owns its own presses.
-			event.preventDefault();
-			event.stopPropagation();
-			context?.open(target, event);
-		});
-		// The Page preview plugin owns the popover and owns whether the user
-		// asked for one at all, so this only offers the anchor to it.
-		anchor.addEventListener('mouseover', (event) => {
-			context?.preview(target, anchor, event);
-		});
-		// Where the whole cell is one link the anchor is what clips, so it is the
-		// box whose overflow can be measured — the layer around it no longer
-		// reports any. Skipped for an aliased link, which already carries the app's
-		// own tooltip naming its target: two tooltips on one anchor is worse than
-		// either, and the alias's remainder is a cell focus away.
-		if (display === target) revealWhenTruncated(anchor);
-		into.appendChild(anchor);
-	}
 }
 
 /**
@@ -1336,7 +1260,7 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			const stack = element('div', 'sheetsmith-table-linked', cell);
 			const input = element('input', 'sheetsmith-table-input', stack);
 			const layer = element('div', 'sheetsmith-table-link-layer', stack);
-			paintText(layer, raw, context.link);
+			paintLinkedText(layer, raw, { link: context.link, clipping: CELL_CLIPPING });
 			// A name column is as narrow as the table lets it be, so a link is the
 			// text on this card most likely to clip — and a clipped one had no route
 			// to the rest of itself, since the layer is what is on screen and the
@@ -1792,7 +1716,7 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			 * A wikilink typed here stays plain markdown in the note, so
 			 * backlinks, graph view, hover preview and rename all work
 			 * (CLAUDE.md 2) — and the sheet draws it as a link, which is
-			 * `paintText` above. What stays parked is the `link` column *type*
+			 * `linked-text.ts`. What stays parked is the `link` column *type*
 			 * (§12): a column whose value is always a note, with a picker and a
 			 * resolved state as data, which is a different feature.
 			 */
@@ -1802,7 +1726,10 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 				if (!rowView.owned || rowView.at === null) {
 					// A declared row's name is static text from the layout, so it
 					// needs the display alone and no field to stack it over.
-					paintText(cell, rowView.label, context.link);
+					paintLinkedText(cell, rowView.label, {
+						link: context.link,
+						clipping: CELL_CLIPPING,
+					});
 					return;
 				}
 				const at = rowView.at;
