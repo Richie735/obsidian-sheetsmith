@@ -72,6 +72,8 @@ const ALLOWED = [
 	"import { isFlagSet } from '../components/stored-flag';",
 	"import { TOTALLED_TYPES } from '../components/column-types';",
 	"import { formatDerived } from './card-face';",
+	"import { paintLinkedText } from './linked-text';",
+	"import { paintLinkedText } from '../components/linked-text';",
 	"import { paintLevelRing } from '../components/level-ring';",
 	"import { bindEditable } from '../interaction/editable';",
 	"import { showPopover } from '../ui/popover';",
