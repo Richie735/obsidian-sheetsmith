@@ -241,6 +241,23 @@ export interface MultilineOptions {
 	announceCommit?: (next: string) => void;
 	/** Announced when Escape puts the stored value back. */
 	announceRestore?: (restored: string) => void;
+	/**
+	 * Why this draft must not be written, or null where it may be.
+	 *
+	 * The one case that needs it is a body the *file model* cannot hold: `## ` at
+	 * the start of a line is the note's own section delimiter, so a prose block
+	 * saving one splits the note underneath itself and comes back showing only
+	 * what was above it. Checked here rather than left to `onCommit` because a
+	 * refusal has to stop the write, and `onCommit` is the write.
+	 */
+	refuse?: (next: string) => string | null;
+	/**
+	 * The standing refusal's message, or null where the draft is acceptable.
+	 *
+	 * Called on every commit attempt including the ones that succeed, so the
+	 * caller can clear a message it is showing without tracking when to.
+	 */
+	onRefusal?: (message: string | null) => void;
 	onCommit: (next: string) => void;
 }
 
@@ -291,7 +308,20 @@ export function bindMultiline(
 		// hands back: a body's own leading and trailing whitespace is the
 		// note's spelling and belongs to `write`, not to the draft.
 		const next = textarea.value.trim();
-		if (next === committed) return;
+		// A draft equal to what is stored is not a write, and it is also not a
+		// refusal: Escape restores the stored value and blurs, and this is the path
+		// that clears a message the last attempt put up.
+		if (next === committed) {
+			options.onRefusal?.(null);
+			return;
+		}
+		const refused = options.refuse?.(next) ?? null;
+		options.onRefusal?.(refused);
+		// **The draft is kept, not discarded.** `committed` is left alone so the
+		// next blur tries again, and the caller shows the draft rather than the
+		// stored text — a refusal that hid what the reader typed would be the
+		// silent loss this exists to stop, wearing a message.
+		if (refused !== null) return;
 		committed = next;
 		options.announceCommit?.(next);
 		options.onCommit(next);

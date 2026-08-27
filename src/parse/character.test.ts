@@ -6,6 +6,7 @@ import {
 	parseCharacter,
 	serialiseCharacter,
 	setSectionBody,
+	startsSection,
 } from './character';
 import { readFenced, writeFenced } from './fenced';
 
@@ -300,5 +301,46 @@ describe('applySectionWrites', () => {
 		]);
 		expect(fenced(result.text, 'HP', 'current')).toBe('5');
 		expect(fenced(result.text, 'HP', 'temp')).toBe('9');
+	});
+});
+
+describe('startsSection', () => {
+	/*
+	 * The question a component storing free markdown has to ask before it writes.
+	 * Here rather than in the component, because the answer is this module's: the
+	 * point of exporting it is that there is one definition of what starts a
+	 * section, and a second copy in a component is one that drifts silently.
+	 */
+	it('finds the line that would split the note, and quotes it', () => {
+		expect(startsSection('Before.\n\n## After the fire\n\nAfter.')).toBe(
+			'## After the fire',
+		);
+	});
+
+	it('says nothing where every heading is content', () => {
+		// `#` and `###` are content, and so is `##` with no space after it.
+		expect(startsSection('# One\n\n### Three\n\n#Tight\n\n##NoSpace')).toBeNull();
+		expect(startsSection('')).toBeNull();
+		expect(startsSection('Just prose.')).toBeNull();
+	});
+
+	it('agrees with the parser, including inside a fence', () => {
+		// `parseCharacter` scans lines with no fence awareness, so a `## ` inside a
+		// fenced block splits the note just the same. The predicate has to give the
+		// parser's real answer rather than a politer one, or a body it waved
+		// through would still split.
+		const body = 'Prose.\n\n```markdown\n## Example\n```\n';
+		expect(startsSection(body)).toBe('## Example');
+		const note = parseCharacter(
+			`---\nsheet-layout: Prose\n---\n\n## Backstory\n${body}`,
+		);
+		expect(note.sections.map((section) => section.label)).toEqual([
+			'Backstory',
+			'Example',
+		]);
+	});
+
+	it('takes a tab as the delimiter too, exactly as the parser does', () => {
+		expect(startsSection('##\tChapter')).toBe('##\tChapter');
 	});
 });
