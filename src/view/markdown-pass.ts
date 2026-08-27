@@ -36,6 +36,7 @@
  */
 
 import { App, Component, MarkdownRenderer } from 'obsidian';
+import { markRenderedResolution } from '../components/linked-text';
 
 /** What a pass hands a component, matching `RenderContext.renderMarkdown`. */
 export type RenderMarkdown = (
@@ -71,7 +72,10 @@ export class MarkdownPasses {
 	 * pass has no end a caller could name: the renders it started are still
 	 * arriving when `renderSheet` returns.
 	 */
-	begin(sourcePath: string): RenderMarkdown {
+	begin(
+		sourcePath: string,
+		resolves: (target: string) => boolean,
+	): RenderMarkdown {
 		this.end();
 		const run = ++this.generation;
 		const child = this.owner.addChild(new Component());
@@ -110,7 +114,19 @@ export class MarkdownPasses {
 						into.replaceChildren();
 						return;
 					}
-					if (failed) onFailure();
+					if (failed) {
+						onFailure();
+						return;
+					}
+					// **The renderer does not mark unresolved links and the app's
+					// preview machinery is not here to do it**, so every link in a
+					// rendered block painted as live whether or not the note existed.
+					// Done here because this is the only place that knows the render
+					// landed: a component returns long before it does, and the class
+					// has to go on anchors that exist. The rule itself is
+					// `linked-text.ts`'s, so the two paths cannot disagree about what
+					// an unresolved link looks like.
+					markRenderedResolution(into, resolves);
 				});
 		};
 	}

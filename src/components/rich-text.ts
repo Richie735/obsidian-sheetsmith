@@ -73,7 +73,7 @@ import {
 	ComponentConfig,
 	showsOwnLabel,
 } from '../types';
-import { paintLinkedText } from './linked-text';
+import { adoptRenderedLinks, paintLinkedText } from './linked-text';
 import { spellcheckWhileFocused } from '../ui/spellcheck';
 import { startsSection } from '../parse/character';
 
@@ -286,6 +286,15 @@ export const richText: ComponentDefinition<RichTextConfig, RichTextData> = {
 		rendered.classList.add('sheetsmith-rich-text-rendered');
 		box.appendChild(rendered);
 
+		// **The links the app draws, given this plugin's behaviour.** Bound to the
+		// layer once, before anything is painted into it: the fallback painter wires
+		// each anchor as it makes it, and the app's renderer makes its own, so
+		// without this a wikilink worked in a unit test and in the harness and did
+		// nothing in Obsidian. Delegated, so it survives the renderer replacing what
+		// it drew, and harmless on the fallback path — that painter's anchors call
+		// `stopPropagation`, so this never sees them twice.
+		adoptRenderedLinks(rendered, context.link);
+
 		/*
 		 * The layer is the pointer target, so the press routing is this
 		 * component's rather than the cascade's (PATTERNS §6).
@@ -403,6 +412,7 @@ export const richText: ComponentDefinition<RichTextConfig, RichTextData> = {
 		let notice: HTMLElement | null = null;
 
 		bindMultiline(field, {
+			initial: text,
 			refuse,
 			/*
 			 * **The draft is shown, not hidden, for as long as it is refused.**
@@ -431,7 +441,6 @@ export const richText: ComponentDefinition<RichTextConfig, RichTextData> = {
 				// the old "saved" announcement misled worst.
 				status.textContent = message;
 			},
-			initial: text,
 			// The label and the outcome, never the prose: reading a backstory back
 			// at its author is not feedback, and the announcement is what says the
 			// note was written rather than what was written into it.
