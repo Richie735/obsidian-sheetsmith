@@ -305,6 +305,7 @@ export class SheetView extends TextFileView {
 			onChange: (edited: unknown) => this.applyEdit(component, config, edited),
 			link: this.linkContext(),
 			renderMarkdown,
+			resource: (target) => this.resourceUrl(target),
 			activeTab: this.activeTab.get(config.id),
 			onActivateTab: (index: number) => this.activeTab.set(config.id, index),
 		}));
@@ -355,6 +356,25 @@ export class SheetView extends TextFileView {
 				});
 			},
 		};
+	}
+
+	/**
+	 * A URL for a file a component names, or null where the vault holds no such
+	 * file.
+	 *
+	 * `linkContext`'s `resolves` with one more step on the end, and resolved
+	 * against the same source path, so an embed in a section means what it would
+	 * mean written in the note body. **No extension list, deliberately** — the app
+	 * answers whether the file exists and the browser answers whether it can draw
+	 * it, and a plugin holding its own idea of which formats count is how webp
+	 * stopped rendering inside one while working one line outside it.
+	 */
+	private resourceUrl(target: string): string | null {
+		const file = this.app.metadataCache.getFirstLinkpathDest(
+			getLinkpath(target),
+			this.file?.path ?? '',
+		);
+		return file ? this.app.vault.getResourcePath(file) : null;
 	}
 
 	/**

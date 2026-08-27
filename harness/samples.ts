@@ -876,6 +876,97 @@ export const SAMPLES: Sample[] = [
 		// claim about the CSS.
 		body: '```sheet\nvalue: still here\n```',
 	},
+	/*
+	 * Image, five ways, and every one of them is about a *failure* except the
+	 * first two — because every image failure in the prior art is silent. An empty
+	 * div with the diagnosis in the console; a broken-image icon; a value reverting
+	 * with "console is not outputing any warning nor error". So what this row is
+	 * for is checking that each of those states says something on the sheet:
+	 *
+	 * 1. **Portrait**, 2×3, a tall picture in a tall box. The ordinary case, and
+	 *    the one that says whether the frame reads as a portrait rather than as a
+	 *    card with a picture in it.
+	 * 2. **Crest**, 4×3, a *wide* picture in a wide box, and **Symbol**, 2×3, the
+	 *    same wide file in a *tall* one. The pair is the sizing check: both must be
+	 *    whole, centred, and undistorted, with the slack left as the frame's own
+	 *    surface. A circle in the sample is what makes a stretch visible — it
+	 *    becomes an ellipse — and nothing else in the shape would say so.
+	 * 3. **Missing portrait**, 2×3, naming a file the vault does not hold. It must
+	 *    name the file it cannot find, in the frame, under its own label. This is
+	 *    the state the closest analogue rendered as `<div class="statblock-inline-
+	 *    item group-container"></div>` with the explanation in the console.
+	 * 4. **Not a picture**, 2×3, naming a file that resolves and that the browser
+	 *    cannot draw. It must say so *after* trying, because the plugin holds no
+	 *    list of formats — which is the one shape of the webp report that cannot be
+	 *    written here.
+	 *
+	 * The empty state is the `Empty` view's, as everything else here is, and the
+	 * read error is `brokenSamples`'.
+	 */
+	{
+		config: {
+			id: 'portrait',
+			type: 'image',
+			label: 'Portrait',
+			position: { col: 1, row: 25, width: 2, height: 3 },
+		},
+		body: '\n![[Sildar Hallwinter.png]]\n',
+	},
+	{
+		config: {
+			id: 'crest',
+			type: 'image',
+			label: 'Crest',
+			position: { col: 3, row: 25, width: 4, height: 3 },
+		},
+		// A size hint the sheet ignores and the file keeps, which is SPEC §8's rule
+		// on a value out of the character's note: markdown view goes on honouring
+		// it and the placement decides the box here. If the crest is 200px wide on
+		// screen, that rule has broken.
+		body: '\n![[Crest.png|200x120]]\n',
+	},
+	{
+		config: {
+			id: 'symbol',
+			type: 'image',
+			label: 'Symbol',
+			hideLabel: true,
+			position: { col: 7, row: 25, width: 2, height: 3 },
+		} as ComponentConfig,
+		// The *same file* as the crest, in a box of the opposite shape. The two
+		// together are the only way `object-fit: contain` is reviewable in a still.
+		body: '\n![[Crest.png]]\n',
+	},
+	{
+		config: {
+			id: 'sigil',
+			type: 'image',
+			label: 'A 48px sigil',
+			position: { col: 9, row: 25, width: 2, height: 3 },
+		},
+		// The small-file case, which nothing showed while the samples were sizeless
+		// SVGs stretching to fill: it has to scale *up* to its placement, because
+		// the grid is the sizing control and a file's pixel count is not (SPEC §8).
+		body: '\n![[Tiny sigil.png]]\n',
+	},
+	{
+		config: {
+			id: 'missing_portrait',
+			type: 'image',
+			label: 'Missing portrait',
+			position: { col: 1, row: 28, width: 2, height: 3 },
+		},
+		body: '\n![[Portrait of Sera.png]]\n',
+	},
+	{
+		config: {
+			id: 'not_a_picture',
+			type: 'image',
+			label: 'Not a picture',
+			position: { col: 3, row: 28, width: 2, height: 3 },
+		},
+		body: '\n![[Notes.md]]\n',
+	},
 	/* Beside the set rather than inside it, so a tab press has something to not
 	   move. */
 	{
@@ -1011,8 +1102,40 @@ export function brokenSamples(): Sample[] {
 		 * other fenced cards is a choice per component about which breakage is
 		 * worth a picture, and is a `docs/UI.md` §12 row rather than this diff.
 		 */
-		const body =
+		let body =
 			config.id === 'inspiration' ? '```sheet\nvalue: maybe\n```' : sample.body;
+		/*
+		 * A picture written the way every analogue accepts it and this one refuses:
+		 * a bare path. It is the `read` error, which is the *labelled* path — the
+		 * view prefixes a failed read with the component's label — so this view is
+		 * the only place that message is ever drawn, and the reason it is worth
+		 * staging is that the message has to carry the fix rather than the fault:
+		 * "A picture is an embed" plus the syntax.
+		 *
+		 * On the portrait alone. Breaking all five would put one error five times on
+		 * a view whose whole job is the states side by side, and the other four are
+		 * already showing states nothing else can: two fits, an unresolvable target,
+		 * and a file the browser will not draw. Those last two are *populated*
+		 * samples on purpose — they are render-time failures, not read failures, so
+		 * they belong beside the working picture rather than here.
+		 */
+		if (config.id === 'portrait') body = '\nSildar Hallwinter.png\n';
+		/*
+		 * The *other* read refusal, and the one whose copy is worth looking at: a
+		 * web address, refused by policy rather than by syntax (SPEC §4.2). At 200
+		 * characters with a real URL in it, it is five times the bare-path message
+		 * and the longest user-facing string either of these two components has —
+		 * so it is the one most likely to overflow the box it lands in, and until
+		 * this sample existed nothing drew it anywhere.
+		 *
+		 * On `symbol` because that is the **tightest** image frame here, two columns
+		 * by three rows: the longest message in the smallest box is the pairing
+		 * worth a picture. It also draws a second thing worth confirming — `symbol`
+		 * sets `hideLabel`, and a failed `read` is prefixed with the label by the
+		 * view regardless, which is right rather than a bug: the prefix is the only
+		 * name on screen once the component never renders.
+		 */
+		if (config.id === 'symbol') body = '\n![[https://example.com/portrait.png]]\n';
 		return { config, body, children: sample.children };
 	});
 }

@@ -190,6 +190,75 @@ function linkContext(): LinkContext {
 	};
 }
 
+/**
+ * A picture the harness can hold without a binary in the repository.
+ *
+ * An inline SVG, so a real image is on screen and its *fit* inside the box is
+ * reviewable — which is the whole of Image's sizing story and the one thing a
+ * placeholder rectangle could not show. Deliberately **not square**: a portrait
+ * shape in a wide box and the same file in a tall one is how `object-fit:
+ * contain` is checked, and a square sample would have looked correct under a
+ * stretch as well.
+ */
+function portrait(width: number, height: number, label: string): string {
+	const svg = [
+		// **`width` and `height` as well as `viewBox`**, so the file has an
+		// *intrinsic size* the way every real one does. Without them an SVG is
+		// sizeless and stretches to whatever the box offers — which made every shot
+		// show a picture filling its frame edge to edge, the one behaviour a real
+		// file will not necessarily produce, on the single property this component is
+		// built around. An instrument that can only draw the flattering case is
+		// worse than one that omits the case.
+		`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
+		`<rect width="${width}" height="${height}" fill="#8a7fbe"/>`,
+		// A circle, because a circle drawn as an ellipse is what a distorted
+		// picture looks like and nothing else in the shape would say so.
+		`<circle cx="${width / 2}" cy="${height / 2}" r="${Math.min(width, height) / 3}" fill="#f2efff"/>`,
+		`<text x="${width / 2}" y="${height - 12}" fill="#f2efff" font-family="sans-serif" font-size="14" text-anchor="middle">${label}</text>`,
+		'</svg>',
+	].join('');
+	return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+/**
+ * The vault half of a drawn picture, faked — `linkContext`'s shape for `<img>`.
+ *
+ * Three targets for the three states only a vault can put a component into, so
+ * all three are on screen at once rather than one at a time:
+ *
+ * - two that resolve, at different aspect ratios, so the fit is reviewable;
+ * - one that resolves to nothing, which is the commonest way a vault reference
+ *   goes stale and the state every analogue drew as an empty box;
+ * - one that resolves to something the browser cannot draw, which is the failure
+ *   a plugin can only report and never predict.
+ *
+ * A data URI for the last one too, so the load failure is genuine rather than
+ * simulated: the browser really does refuse it, and the component really does
+ * hear `error`.
+ */
+const PICTURES: Record<string, string> = {
+	'Sildar Hallwinter.png': portrait(300, 420, 'Sildar'),
+	'Crest.png': portrait(480, 260, 'Crest'),
+	// Deliberately tiny, and the case the sizeless SVGs used to hide: a 48px file
+	// in a three-row frame. It draws scaled up to fill, which is the decision
+	// `styles/sheet.css` records — and if it ever draws as a speck again, this is
+	// the sample that says so.
+	'Tiny sigil.png': portrait(48, 48, ''),
+	// Well-formed text that is not an image, which is what a note is.
+	'Notes.md': 'data:text/plain;charset=utf-8,not%20a%20picture',
+};
+
+/*
+ * Which target is unresolvable is decided by *absence* from the table above,
+ * unlike `MISSING_NOTE` below — a link has to be resolved by name to be painted
+ * unresolved, while a picture the vault does not hold simply is not in the vault.
+ * `samples.ts` names one, and the only thing keeping the two in step is that the
+ * name is not a key here.
+ */
+function resource(target: string): string | null {
+	return PICTURES[target] ?? null;
+}
+
 /** Which tab the reader has opened where, exactly as the view holds it. */
 const activeTab = new Map<string, number>();
 
@@ -227,6 +296,7 @@ function renderSheet(into: HTMLElement): void {
 				// The one member Image needs, on `link`'s own terms. `renderMarkdown`
 				// stays absent on purpose (see `samples.ts`), so a reviewer sees the
 				// fallback for prose and a real picture for an image.
+				resource,
 				// The view's own answer, so a tab survives an edit here exactly as
 				// it does in the app: a re-render is what would otherwise reset it.
 				activeTab: activeTab.get(config.id),
