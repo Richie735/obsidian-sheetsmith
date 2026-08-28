@@ -1,0 +1,139 @@
+{
+	"name": "Modifier variations",
+	"columns": 6,
+	"components": [
+		{
+			"id": "abilities",
+			"type": "card-set",
+			"label": "Abilities",
+			"position": {
+				"col": 1,
+				"row": 1,
+				"width": 6,
+				"height": 1
+			},
+			"entries": [
+				{
+					"key": "STR",
+					"name": "Strength"
+				},
+				{
+					"key": "DEX",
+					"name": "Dexterity"
+				},
+				{
+					"key": "CON",
+					"name": "Constitution"
+				},
+				{
+					"key": "INT",
+					"name": "Intelligence"
+				},
+				{
+					"key": "WIS",
+					"name": "Wisdom"
+				},
+				{
+					"key": "CHA",
+					"name": "Charisma"
+				}
+			],
+			"derived": "floor((value - 10) / 2) + mod.self"
+		},
+		{
+			"id": "armour_class",
+			"type": "card",
+			"label": "Armour class",
+			"position": {
+				"col": 1,
+				"row": 2,
+				"width": 3,
+				"height": 1
+			},
+			"derived": "10 + abilities.DEX + mod.self",
+			"signed": false,
+			"hideValue": true,
+			"hideNote": true
+		},
+		{
+			"id": "passive_perception",
+			"type": "card",
+			"label": "Passive perception",
+			"position": {
+				"col": 4,
+				"row": 2,
+				"width": 3,
+				"height": 1
+			},
+			"derived": "10 + abilities.WIS",
+			"signed": false,
+			"hideValue": true,
+			"hideNote": true
+		},
+		{
+			"id": "magic_items",
+			"type": "table",
+			"label": "Magic items",
+			"position": {
+				"col": 1,
+				"row": 3,
+				"width": 6,
+				"height": 2
+			},
+			"rowHeader": "Item",
+			"openRows": true,
+			"columns": [
+				{
+					"key": "Modifies",
+					"type": "target"
+				},
+				{
+					"key": "Bonus",
+					"type": "number",
+					"modifier": true,
+					"modifierType": "item"
+				},
+				{
+					"key": "Aid",
+					"type": "number",
+					"modifier": true,
+					"modifierType": "status"
+				},
+				{
+					"key": "Notes",
+					"type": "text"
+				}
+			]
+		},
+		{
+			"id": "worn_items",
+			"type": "table",
+			"label": "Worn items",
+			"position": {
+				"col": 1,
+				"row": 5,
+				"width": 6,
+				"height": 2
+			},
+			"rowHeader": "Worn",
+			"openRows": true,
+			"columns": [
+				{
+					"key": "Modifies",
+					"type": "target"
+				},
+				{
+					"key": "Bonus",
+					"type": "number",
+					"modifier": true,
+					"modifierType": "item"
+				}
+			]
+		}
+	],
+	"modifierTypes": [
+		"item",
+		"status",
+		"circumstance"
+	]
+}
