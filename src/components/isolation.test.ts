@@ -73,6 +73,8 @@ const ALLOWED = [
 	"import { TOTALLED_TYPES } from '../components/column-types';",
 	"import { formatDerived } from './card-face';",
 	"import { paintLinkedText } from './linked-text';",
+	"import { modifierBreakdown } from './modifier-breakdown';",
+	"import { MODIFIED_CLASS } from '../components/modifier-breakdown';",
 	"import { paintLinkedText } from '../components/linked-text';",
 	"import { paintLevelRing } from '../components/level-ring';",
 	"import { bindEditable } from '../interaction/editable';",

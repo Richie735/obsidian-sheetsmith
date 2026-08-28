@@ -17,6 +17,7 @@ import {
 	showsOwnLabel,
 } from '../types';
 import { renderCardFace, toDerived } from './card-face';
+import { modifierBreakdown } from './modifier-breakdown';
 
 export interface CardSetEntry {
 	/** Entry key in the fenced block, and the abbreviation on the card. */
@@ -286,12 +287,20 @@ export const cardSet: ComponentDefinition<CardSetConfig, CardSetData> = {
 		// blank when that value is missing.
 		const needsValue =
 			config.derived !== undefined && referencesName(config.derived, 'value');
-		const deriveFrom = (raw: string) => {
+		/*
+		 * One formula per entry, so the name it becomes is per entry too:
+		 * `abilities.DEX`, which is what makes `mod.self` mean DEX's own slot and
+		 * not the strip's. This is the case that needed a relative spelling at
+		 * all — no name inside `derived` can say which entry it is running for, so
+		 * without `mod.self` the six ability scores could not be modified.
+		 */
+		const deriveFor = (key: string) => (raw: string) => {
+			const name = `${config.id}.${key}`;
 			// An empty value is a blank, not a broken formula.
 			if (needsValue && raw.trim() === '') return { text: '—', unresolved: false };
-			const resolved = context.resolveField('derived', { value: raw });
+			const resolved = context.resolveField('derived', { value: raw }, name);
 			return toDerived(resolved, signed, () =>
-				context.explainField?.('derived', { value: raw }) ?? null,
+				context.explainField?.('derived', { value: raw }, name) ?? null,
 			);
 		};
 		for (const entry of config.entries ?? []) {
@@ -318,8 +327,16 @@ export const cardSet: ComponentDefinition<CardSetConfig, CardSetData> = {
 					config.derived === undefined
 						? undefined
 						: {
-								...deriveFrom(values[entry.key] ?? ''),
-								compute: deriveFrom,
+								...deriveFor(entry.key)(values[entry.key] ?? ''),
+								compute: deriveFor(entry.key),
+								// Per entry, like the formula above it: pushing at
+								// `abilities.DEX` moves DEX and leaves STR alone, and
+								// the breakdown on DEX's card lists DEX's own rows.
+								modifiers: modifierBreakdown(
+									context.modifiers?.breakdown(
+										`${config.id}.${entry.key}`,
+									),
+								),
 							},
 			});
 		}

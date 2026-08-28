@@ -25,7 +25,12 @@ import {
 	resolveFormulaFields,
 } from '../formula/resolve';
 import { parseFunctions } from '../formula/functions';
-import { buildSheetEnv, publishedComponent } from '../formula/sheet';
+import { modifierTargetSource } from '../formula/modifier-targets';
+import {
+	buildSheetEnv,
+	publishedComponent,
+	sheetModifiers,
+} from '../formula/sheet';
 import { DEFAULT_COLUMNS, Layout } from '../parse/layout';
 import { walkComponents } from '../parse/layout-walk';
 import { parseTriggers } from '../parse/triggers';
@@ -290,7 +295,22 @@ export class SheetView extends TextFileView {
 		// Every component, including the ones that publish nothing at all —
 		// `publishedComponent` holds why, and holds it in one place because the
 		// harness builds the same thing and the two must not disagree.
-		const env = buildSheetEnv(prepared.map(publishedComponent), library);
+		const published = prepared.map(publishedComponent);
+		const env = buildSheetEnv(published, library);
+
+		// What a component cannot work out about modifiers for itself (SPEC §5).
+		// Built by the shared builder rather than here, for `publishedComponent`'s
+		// own reason: the harness builds the same thing and the two must not drift.
+		//
+		// The sources come from the *configuration*, through the same assembly the
+		// layout editor uses, because which names accept a modifier is a property
+		// of the layout and not of this note (SPEC §7).
+		const modifiers = sheetModifiers(
+			prepared.map((entry) =>
+				modifierTargetSource(entry.config, entry.component),
+			),
+			env,
+		);
 
 		// One pass per render, begun before the first component draws and ended by
 		// the next render or by the file changing. Resolved against this note's own
@@ -310,6 +330,7 @@ export class SheetView extends TextFileView {
 			explainField: makeFieldExplainer(component, config, data, env),
 			onChange: (edited: unknown) => this.applyEdit(component, config, edited),
 			link,
+			modifiers,
 			renderMarkdown,
 			resource: (target) => this.resourceUrl(target),
 			activeTab: this.activeTab.get(config.id),

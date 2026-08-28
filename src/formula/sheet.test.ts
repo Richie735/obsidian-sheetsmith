@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { evaluate, Scope } from './expression';
 import { parseFunctions } from './functions';
@@ -7,7 +8,13 @@ import {
 	NO_ENV,
 	resolveFormulaFields,
 } from './resolve';
-import { buildSheetEnv, buildSheetScope, PublishedComponent } from './sheet';
+import {
+	buildSheetEnv,
+	buildSheetScope,
+	PublishedComponent,
+	sheetModifiers,
+} from './sheet';
+import { ModifierTargetSource } from './modifier-targets';
 import { ComponentConfig, FieldValue } from '../types';
 
 /** A card set with the 5e modifier formula on every entry. */
@@ -540,5 +547,214 @@ describe('buildSheetEnv', () => {
 			/holds no rows/,
 		);
 		expect(env.sheet('armour_class')).toBe(16);
+	});
+});
+
+/*
+ * The sheet-wide half of item modifiers (SPEC §5).
+ */
+/** A static source, with what a case is not about left alone. */
+function source(over: Partial<ModifierTargetSource>): ModifierTargetSource {
+	return { id: 'x', label: 'X', values: {}, formulas: [], ...over };
+}
+
+describe('sheetModifiers', () => {
+	/** A card reading its own slot, and a component pushing at it. */
+	function sheet(formula: string) {
+		const components: PublishedComponent[] = [
+			{
+				id: 'armour_class',
+				values: { self: { display: { field: 'derived', scope: {} } } },
+				resolver: (env) => (field, _scope, published) =>
+					field === 'derived'
+						? evaluate(formula, (name) =>
+								name === 'mod.self' && published !== undefined
+									? env.sheet(`mod.${published}`)
+									: env.sheet(name),
+							)
+						: null,
+			},
+			{
+				id: 'speed',
+				values: { self: { value: 30 } },
+			},
+			{
+				id: 'items',
+				values: {},
+				modifiers: () => [
+					{
+						target: 'armour_class',
+						type: 'item',
+						label: 'Ring',
+						source: 'Magic items',
+						amount: 2,
+					},
+					{
+						target: 'speed',
+						type: null,
+						label: 'Boots',
+						source: 'Magic items',
+						amount: 10,
+					},
+				],
+			},
+		];
+		const env = buildSheetEnv(components);
+		// The static sources, which is what this takes: the accepting set and the
+		// published-name set are properties of the layout rather than of a note.
+		return sheetModifiers(
+			[
+				source({
+					id: 'armour_class',
+					label: 'Armour class',
+					values: { self: { value: 1 } },
+					formulas: [formula],
+				}),
+				source({ id: 'speed', label: 'Speed', values: { self: { value: 1 } } }),
+			],
+			env,
+		);
+	}
+
+	it('offers the accepting targets and nothing else', () => {
+		expect(sheet('10 + mod.self').targets).toEqual([
+			{ name: 'armour_class', label: 'Armour class' },
+		]);
+	});
+
+	it('breaks down a name that accepts a modifier', () => {
+		expect(sheet('10 + mod.self').breakdown('armour_class')).toEqual({
+			total: 2,
+			lines: [
+				{
+					label: 'Ring',
+					source: 'Magic items',
+					type: 'item',
+					amount: 2,
+					suppressed: null,
+				},
+			],
+		});
+	});
+
+	it('gives no breakdown for a name that accepts none, though it is pushed at', () => {
+		/*
+		 * The rule that keeps a card from drawing a mark over a push that is not
+		 * being applied: `speed` reads no slot, so however many rows target it,
+		 * nothing changes and no mark says otherwise. The place that says so is the
+		 * row that wrote it, where the fix is.
+		 */
+		expect(sheet('10 + mod.self').breakdown('speed')).toEqual({
+			total: 0,
+			lines: [],
+		});
+	});
+
+	it('answers whether the sheet publishes a name at all', () => {
+		// What separates a typo from a formula that reads no slot, which is the
+		// difference between the target cell's two stray titles.
+		const modifiers = sheet('10 + mod.self');
+		expect(modifiers.publishes('speed')).toBe(true);
+		expect(modifiers.publishes('armour_class')).toBe(true);
+		expect(modifiers.publishes('armor_class')).toBe(false);
+	});
+
+	it('gives no breakdown where the slot itself was refused', () => {
+		// The refusal is already on the card as "?" with the row named under it,
+		// through the formula that read the slot. There is no number to take apart.
+		const components: PublishedComponent[] = [
+			{
+				id: 'armour_class',
+				values: { self: { value: 10 } },
+			},
+			{
+				id: 'items',
+				values: {},
+				modifiers: () => [
+					{
+						target: 'armour_class',
+						type: null,
+						label: 'Ring',
+						source: 'Magic items',
+						unreadable: 'no.',
+					},
+				],
+			},
+		];
+		const env = buildSheetEnv(components);
+		expect(
+			sheetModifiers(components, env).breakdown('armour_class'),
+		).toEqual({ total: 0, lines: [] });
+	});
+});
+
+/*
+ * That both hosts still build the modifier context through `sheetModifiers`.
+ *
+ * The same guard `view/grid-cells.test.ts` puts on the renderer, and for the
+ * same reason: the sheet view and the harness have diverged three times, and the
+ * harness is how appearance is reviewed — one that reported modifiers
+ * differently would sign off on marks the plugin never draws. Written against
+ * the imports and the member names, because a comment can mention `breakdown`
+ * without meaning it and an import cannot.
+ */
+describe('the sheet has one modifier context', () => {
+	const HOSTS = ['../view/sheet-view.ts', '../../harness/harness.ts'] as const;
+
+	it.each(HOSTS)('%s builds it through sheetModifiers alone', (host) => {
+		const source = readFileSync(new URL(host, import.meta.url), 'utf8');
+		// A path that stopped resolving would read an empty string and pass
+		// everything below by having nothing in it.
+		expect(source.length).toBeGreaterThan(2000);
+		expect(source).toContain('sheetModifiers');
+		// And builds no context of its own: the two members are the whole of what
+		// a hand-rolled one would have to spell.
+		expect(source).not.toContain('breakdown:');
+		expect(source).not.toContain('publishes:');
+	});
+});
+
+/*
+ * That every reader of the accepting set assembles its sources one way.
+ *
+ * The sibling of the scan above, and the half it was missing. Three doc comments
+ * asserted that the sheet and the layout editor compute the accepting set "from
+ * the same input" while two independent assemblies produced it from different
+ * ones — the sheet from a note's data, the editor from `null` — and the
+ * divergence was reachable in two ways (`modifier-targets.test.ts` drives both).
+ *
+ * A scan for the same reason that one is: the tests either side prove the
+ * *answer* is right, and this proves it is the only one, which is the half that
+ * decays. Nothing stops a later edit spelling `scopeValues?.(` here again, and
+ * nothing would fail if it did — both divergences over-reported in the editor, so
+ * neither would put anything wrong on a screen.
+ */
+describe('the accepting set has one assembly', () => {
+	const READERS = [
+		'../view/sheet-view.ts',
+		'../../harness/harness.ts',
+		'../editor/config-panel.ts',
+	] as const;
+
+	it.each(READERS)('%s goes through modifierTargetSource', (reader) => {
+		const source = readFileSync(new URL(reader, import.meta.url), 'utf8');
+		expect(source.length).toBeGreaterThan(2000);
+		expect(source).toContain('modifierTargetSource');
+		/*
+		 * And assembles no source of its own. `scopeValues` is the member whose
+		 * `data` argument *is* the question — passing a note's data is what made
+		 * the two disagree — so a call to it outside the shared assembly is the
+		 * shape of the bug rather than a lookalike. `formulaTexts` is the other
+		 * half of a source and has no other reader.
+		 */
+		expect(source).not.toContain('scopeValues?.(');
+		expect(source).not.toContain('formulaTexts(');
+	});
+
+	it('would catch the assembly it forbids', () => {
+		// The predicate is narrow, so it has to be shown to match the thing it is
+		// written against rather than trusted to.
+		const rebuilt = `values: definition?.scopeValues?.(null, entry.config) ?? {}`;
+		expect(rebuilt).toContain('scopeValues?.(');
 	});
 });

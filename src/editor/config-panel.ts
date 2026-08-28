@@ -84,6 +84,12 @@ import { acceptsChildren } from './accepts-children';
 import { getComponent } from '../components';
 import { placedComponentName } from './component-name';
 import { conditionMet } from './config-fields';
+import {
+	acceptingTargets,
+	modifierTargetSource,
+} from '../formula/modifier-targets';
+import { parseModifierTypes } from '../parse/modifier-types';
+import { WalkEntry, walkComponents } from '../parse/layout-walk';
 import { copyableName } from './copyable-name';
 import { onCommit } from './field-commit';
 import { showFieldError } from './field-error';
@@ -100,8 +106,13 @@ import {
 	renderEntriesEditor,
 	renderRowsEditor,
 } from './list-fields';
+import {
+	commitModifierTypes,
+	ModifierTypesField,
+	renderModifierTypes,
+} from './modifier-types-field';
 import { DEFAULT_COLUMNS, Layout } from '../parse/layout';
-import { WalkEntry } from '../parse/layout-walk';
+
 import { renderResetField } from './reset-field';
 import {
 	commitTriggerList,
@@ -216,6 +227,8 @@ export class ConfigPanel {
 	private functions: FunctionLibraryField | null = null;
 	/** The trigger list field, read back on close for the same reason. */
 	private triggers: TriggerListField | null = null;
+	/** The bonus type list, read back on close for the same reason again. */
+	private modifierTypes: ModifierTypesField | null = null;
 	/**
 	 * The element the last render drew into, so a gesture can write the position
 	 * fields without the pane being rebuilt around them.
@@ -257,18 +270,19 @@ export class ConfigPanel {
 	}
 
 	/**
-	 * Read both textarea fields back into the layout, reporting whether either
+	 * Read every textarea field back into the layout, reporting whether any
 	 * changed. Called before a redraw and on the pane closing.
 	 *
-	 * Both are read rather than waited on, and either can be holding an edit
+	 * All are read rather than waited on, and any of them can be holding an edit
 	 * when the pane closes. Evaluated into locals first: `||` would
-	 * short-circuit past the second commit whenever the first changed, which is
-	 * precisely how a library gets lost.
+	 * short-circuit past the later commits whenever an earlier one changed, which
+	 * is precisely how a library gets lost.
 	 */
 	commitPending(): boolean {
 		const triggersChanged = commitTriggerList(this.triggers);
 		const functionsChanged = commitFunctionLibrary(this.functions);
-		return triggersChanged || functionsChanged;
+		const typesChanged = commitModifierTypes(this.modifierTypes);
+		return triggersChanged || functionsChanged || typesChanged;
 	}
 
 	/**
@@ -299,7 +313,8 @@ export class ConfigPanel {
 
 	/**
 	 * The layout's own settings: the grid it places components on, the functions
-	 * its formulas may call, and the triggers its components reset on.
+	 * its formulas may call, the triggers its components reset on, and the bonus
+	 * types its modifier columns may name.
 	 *
 	 * Reached by selecting the `Layout` row, which is why there is no second kind
 	 * of panel. Both textarea fields already took a container and a layout and
@@ -321,6 +336,12 @@ export class ConfigPanel {
 		});
 		this.functions = renderFunctionLibrary(form, layout, {
 			persist: () => this.host.persist(),
+		});
+		// Beside the library because it is the same category: the layout's own
+		// vocabulary, shared by every component using it (SPEC §5).
+		this.modifierTypes = renderModifierTypes(form, layout, {
+			persist: () => this.host.persist(),
+			redraw: () => this.host.redraw(),
 		});
 	}
 
@@ -427,6 +448,111 @@ export class ConfigPanel {
 				button.extraSettingsEl.dataset.sheetsmithFocus = `tab-down-${tab.id}`;
 			});
 		});
+	}
+
+	/**
+	 * Which values on this layout take a modifier, under the columns of a
+	 * component holding a target column (SPEC §5).
+	 *
+	 * **The editor's half of a rule the sheet also has to state**, and both
+	 * halves are needed: the editor cannot see an open row's target, because that
+	 * is character data in a file the layout has never opened, and the sheet
+	 * cannot tell an author their layout reads no modifier before a character
+	 * exists. So the sheet says it at the cell and this says it here.
+	 *
+	 * **Where the set is empty this is an error**, and it is the strongest
+	 * false-positive-free statement the static set supports: a layout with a
+	 * modifier table and nothing reading a slot is a layout whose modifiers do
+	 * nothing. That is Foundry's dnd5e#3900 caught in the editor rather than on a
+	 * card three sessions later.
+	 *
+	 * The set is computed from the layout alone — every component's published
+	 * names against every formula's text — so this and the sheet compute the same
+	 * answer from the same input. It over-reports at the component, which is
+	 * SPEC §5's aggregate edge in the same direction, and the sheet's stray line
+	 * at the row is the backstop.
+	 */
+	/**
+	 * What this table's target column may point at, in the list it belongs to.
+	 *
+	 * **In the columns list rather than under it**, which is where it went wrong:
+	 * on the page it sat 22px below the list's bottom border and 2px above the
+	 * next setting's card, so the one line describing the columns list read as a
+	 * caption for **Characters may add rows** — eleven times closer to the setting
+	 * it says nothing about. `sheetsmith-entry-footnote` inside the list is the
+	 * shape the total's note and the published column's note already use, and both
+	 * are notes about a column shown under the columns they are about.
+	 *
+	 * **It also carries the target column's mechanics**, which the COLUMNS
+	 * description used to. That description had grown to four sentences plus
+	 * three, seven rendered lines, and at the editor's threshold width the reader
+	 * got the whole explanation and none of the form — the columns list's header
+	 * row was the last thing above the leaf's bottom edge. `docs/UI.md` §11's test
+	 * is whether a description is a consequence or a restatement, and at that
+	 * length it was neither: it was documentation.
+	 *
+	 * What stayed up there is the one sentence a reader needs *before* they have a
+	 * target column, because that is the sentence that says the feature exists.
+	 * What moved down here is what only matters once they have one — the `mod.self`
+	 * requirement and the one-per-table limit — and it is now beside the control it
+	 * governs, next to the list of names that control will offer.
+	 */
+	private renderAcceptingTargets(
+		container: HTMLElement,
+		layout: Layout,
+		config: ComponentConfig,
+	): void {
+		const columns = (config as {
+			columns?: readonly { type?: string; modifier?: boolean }[];
+		}).columns;
+		/*
+		 * **Either half of a modifier row earns this surface**, and the rule is
+		 * that rather than "a target column" for a reason the spec's own gate
+		 * makes plainer than the first draft did: a row is a target naming what
+		 * changes plus an amount saying by how much, and a table carrying one
+		 * without the other is a modifier table mid-build rather than a table of
+		 * something else.
+		 *
+		 * Gated on the target alone, the case this section exists for was the one
+		 * it missed: a modifier column added before the target column, on a layout
+		 * where no formula reads a slot, got the columns list's "no target column"
+		 * footnote and *not* the error saying the modifiers would do nothing even
+		 * with one. That is dnd5e#3900 arriving one edit late.
+		 *
+		 * And the other direction wants the list too, because the list *is* the
+		 * target cell's picker: a component drawing that picker has as much claim
+		 * on knowing what is in it as one carrying the amount.
+		 */
+		const modifying = columns?.some(
+			(column) => column.type === 'target' || column.modifier === true,
+		);
+		if (modifying !== true) return;
+
+		// Through the shared assembly, which is where the "with no data" decision
+		// is taken and argued: a published name is a property of the
+		// configuration, so this needs no character in hand — and neither does
+		// the sheet, which reaches the same answer through the same function.
+		const targets = acceptingTargets(
+			walkComponents(layout.components).map((entry) =>
+				modifierTargetSource(entry.config, getComponent(entry.config.type)),
+			),
+		);
+
+		if (targets.length === 0) {
+			container.createDiv({ cls: 'sheetsmith-field-error' }, (el) =>
+				el.setText(
+					'No formula on this layout reads a modifier, so nothing this table targets will change. Add "+ mod.self" to the formula of the value that should be modified — a card\'s derived, a card set\'s derived, or a computed column.',
+				),
+			);
+			return;
+		}
+		container.createDiv({ cls: 'sheetsmith-entry-footnote' }, (el) =>
+			el.setText(
+				`A target column holds the name of a value published elsewhere on the sheet, and the row changes it by whatever a modifier column holds. The target's own formula has to read it as mod.self, or the row changes nothing. One target column per table, and it can be neither totalled nor published. This layout takes modifiers for: ${targets
+					.map((target) => target.name)
+					.join(', ')}.`,
+			),
+		);
 	}
 
 	private renderComponentForm(
@@ -638,7 +764,9 @@ export class ConfigPanel {
 						field.key,
 						config.id,
 						this.host.listContext(),
+						parseModifierTypes(layout).names,
 					);
+					this.renderAcceptingTargets(listEl, layout, config);
 				}
 				continue;
 			}

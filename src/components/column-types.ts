@@ -34,6 +34,10 @@ export const COLUMN_TYPES = [
 	'level',
 	'toggle',
 	'computed',
+	// **Appended, never inserted.** The order decides the default (below), so a
+	// new type put first would silently reread every untyped column in every
+	// layout as that type.
+	'target',
 ] as const;
 
 export type ColumnType = (typeof COLUMN_TYPES)[number];
@@ -58,6 +62,7 @@ export const DEFAULT_COLUMN_TYPE: ColumnType = COLUMN_TYPES[0];
  * happens to have. `text` has nothing to add up, and a `computed` column stores
  * nothing to sum — its values are derived per row, which is a different
  * question from publishing one row's value and is answered separately, below.
+ * `target` holds a name, and a name is not a number.
  */
 const TOTALLABLE: readonly ColumnType[] = ['number', 'level', 'toggle'];
 
@@ -82,6 +87,27 @@ const PUBLISHABLE: readonly ColumnType[] = [
 	'toggle',
 	'computed',
 ];
+
+/**
+ * Column types whose cell may be a modifier amount: the ones that are a number
+ * to a formula (SPEC §5).
+ *
+ * Named for the *amount*, not for the bonus type: a layout's `modifierTypes` are
+ * the stacking vocabulary an author writes, and these are column kinds. One word
+ * meaning both is the defect the card pair's rename was taken to fix.
+ *
+ * `toggle` is left out where `TOTALLABLE` has it, and the difference is the
+ * point: a total maps yes to 1 on its way into its own sum, while a modifier
+ * amount is read as a value and a `toggle` cell is `true` to a formula, which
+ * the language has no numeric meaning for. What an author wants there is a
+ * computed column — `if(Worn, 2, 0)` — which is the fix the refusal names.
+ * `text` and `target` hold text, and a `computed` column is a number by the time
+ * anything reads it.
+ */
+const MODIFIABLE: readonly ColumnType[] = ['number', 'level', 'computed'];
+
+/** As above: strings, so a type read out of a layout file can be asked about. */
+export const MODIFIER_AMOUNT_TYPES: ReadonlySet<string> = new Set(MODIFIABLE);
 
 /** As above: strings, so a type read out of a layout file can be asked about. */
 export const PUBLISHABLE_TYPES: ReadonlySet<string> = new Set(PUBLISHABLE);

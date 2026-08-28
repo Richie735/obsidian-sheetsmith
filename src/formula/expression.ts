@@ -492,9 +492,21 @@ const AGGREGATES: ReadonlyMap<string, Aggregate> = new Map<string, Aggregate>([
  */
 function inRow(label: string, error: unknown): FormulaError {
 	const said = error instanceof FormulaError ? error.message : String(error);
-	return new FormulaError(
-		`Row "${label}": ${said.charAt(0).toLowerCase()}${said.slice(1)}`,
-	);
+	return new FormulaError(inRowMessage(label, said));
+}
+
+/**
+ * The naming itself, without an error to wrap.
+ *
+ * Exported because a second thing now has to say which row stopped it: a
+ * modifier slot refuses when one row's amount will not resolve, and it holds a
+ * reason rather than a thrown error (`formula/modifiers.ts`). Two spellings of
+ * one sentence is PATTERNS §1's policy tier — the only thing a guard test over
+ * them could assert is that they still read alike — so `inRow` is now this plus
+ * a `FormulaError`.
+ */
+export function inRowMessage(label: string, said: string): string {
+	return `Row "${label}": ${said.charAt(0).toLowerCase()}${said.slice(1)}`;
 }
 
 /**

@@ -51,9 +51,13 @@ function host(): HTMLElement {
 }
 
 /** Render the columns editor over a config, as the form does. */
-function columnsEditor(record: Record<string, unknown>): HTMLElement {
+function columnsEditor(
+	record: Record<string, unknown>,
+	/** The layout's bonus types, which one cell of this list offers. */
+	modifierTypes: readonly string[] = [],
+): HTMLElement {
 	const el = host();
-	renderColumnsEditor(el, record, 'columns', 'skills', context);
+	renderColumnsEditor(el, record, 'columns', 'skills', context, modifierTypes);
 	return el;
 }
 
@@ -268,9 +272,11 @@ describe('columns editor', () => {
 		// anything on the other kind of column. Publishing a row is offered
 		// beside the total and refused on a text column for its own reason: a
 		// cell holding a link has no one value for a name to mean.
+		// A modifier amount is offered on the number for the same reason again:
+		// the sheet has to read the cell as a number before it can push it.
 		expect(checks).toEqual([
 			['Secondary text', 'Hide heading'],
-			['Show a total', 'Publish per row', 'Hide heading'],
+			['Show a total', 'Publish per row', 'Modifier', 'Hide heading'],
 		]);
 	});
 
@@ -981,5 +987,146 @@ describe('entries editor', () => {
 			{ key: 'New entry' },
 			{ key: 'New entry 2' },
 		]);
+	});
+});
+
+/*
+ * The two cells item modifiers add to a column (SPEC §5).
+ */
+describe('the columns editor and modifiers', () => {
+	const detail = (el: HTMLElement) =>
+		el.querySelector('.sheetsmith-entry-detail') as HTMLElement;
+
+	const checks = (el: HTMLElement) =>
+		Array.from(detail(el).querySelectorAll('.sheetsmith-entry-check')).map(
+			(one) => one.textContent,
+		);
+
+	const modifierBox = (el: HTMLElement) =>
+		Array.from(
+			detail(el).querySelectorAll('.sheetsmith-entry-check'),
+		).find((one) => one.textContent === 'Modifier')
+			?.querySelector('input') as HTMLInputElement;
+
+	const typeSelect = (el: HTMLElement) =>
+		Array.from(detail(el).querySelectorAll('select')).find((one) =>
+			(one.getAttribute('aria-label') ?? '').endsWith('bonus type'),
+		);
+
+	it('offers a modifier only where the cell is a number to a formula', () => {
+		// A `toggle` cell is `true` to a formula and the language has no numeric
+		// meaning for yes and no, so the fix is a computed column rather than a
+		// coercion — and offering the flag there would only lead to the refusal.
+		for (const [type, offered] of [
+			['text', false],
+			['number', true],
+			['level', true],
+			['toggle', false],
+			['computed', true],
+			['target', false],
+		] as const) {
+			const el = columnsEditor({ columns: [{ key: 'Bonus', type }] });
+			expect(checks(el).includes('Modifier'), type).toBe(offered);
+		}
+	});
+
+	it('offers the bonus type only once the column is a modifier', () => {
+		const off = columnsEditor({ columns: [{ key: 'Bonus', type: 'number' }] });
+		expect(typeSelect(off)).toBeUndefined();
+		const on = columnsEditor(
+			{ columns: [{ key: 'Bonus', type: 'number', modifier: true }] },
+			['item'],
+		);
+		expect(typeSelect(on)).toBeDefined();
+	});
+
+	it('offers the layout own types over an untyped first line', () => {
+		// The options come from the layout rather than from a list inside the
+		// column, which is why this does not reopen SPEC §13's `select` column
+		// question: there is no per-column list here to be one.
+		const el = columnsEditor(
+			{ columns: [{ key: 'Bonus', type: 'number', modifier: true }] },
+			['item', 'status'],
+		);
+		expect(
+			Array.from(typeSelect(el)?.options ?? []).map((one) => one.textContent),
+		).toEqual(['Untyped', 'item', 'status']);
+	});
+
+	it('leaves an untyped column out of the file', () => {
+		const record: {
+			columns: { key: string; type: string; modifier: boolean; modifierType?: string }[];
+		} = { columns: [{ key: 'Bonus', type: 'number', modifier: true }] };
+		const el = columnsEditor(record, ['item']);
+		const select = typeSelect(el) as HTMLSelectElement;
+		select.value = 'item';
+		select.dispatchEvent(new Event('change'));
+		expect(record.columns[0]?.modifierType).toBe('item');
+		select.value = '';
+		select.dispatchEvent(new Event('change'));
+		expect(record.columns[0]).not.toHaveProperty('modifierType');
+	});
+
+	it('carries a stored type the layout no longer declares', () => {
+		/*
+		 * §4.2's rule for a Card's stray option, read on a third control. It
+		 * cannot lose character data — no cell ever names a type — but silently
+		 * retyping the author's column would change the arithmetic on every sheet
+		 * using the layout.
+		 */
+		const el = columnsEditor(
+			{
+				columns: [
+					{ key: 'Bonus', type: 'number', modifier: true, modifierType: 'status' },
+				],
+			},
+			['item'],
+		);
+		const select = typeSelect(el) as HTMLSelectElement;
+		expect(Array.from(select.options).map((one) => one.textContent)).toEqual([
+			'Untyped',
+			'item',
+			'status (not declared)',
+		]);
+		expect(select.value).toBe('status');
+	});
+
+	it('rebuilds the line when the modifier flag changes', () => {
+		// The bonus type appears and disappears with it, so the line has to be
+		// redrawn — the same reason **Publish per row** redraws.
+		const record = { columns: [{ key: 'Bonus', type: 'number' }] };
+		const el = columnsEditor(record, ['item']);
+		const before = recorded.redraws;
+		const box = modifierBox(el);
+		box.checked = true;
+		box.dispatchEvent(new Event('change'));
+		expect(recorded.redraws).toBe(before + 1);
+	});
+
+	it('says so where a modifier column has no target to aim at', () => {
+		// A footnote rather than a refusal: a half-built table is the ordinary way
+		// a table is built, and blanking the card mid-edit would be worse.
+		const el = columnsEditor({
+			columns: [{ key: 'Bonus', type: 'number', modifier: true }],
+		});
+		expect(
+			Array.from(el.querySelectorAll('.sheetsmith-entry-footnote')).some(
+				(one) => (one.textContent ?? '').includes('no target column'),
+			),
+		).toBe(true);
+	});
+
+	it('says nothing once the table has one', () => {
+		const el = columnsEditor({
+			columns: [
+				{ key: 'Modifies', type: 'target' },
+				{ key: 'Bonus', type: 'number', modifier: true },
+			],
+		});
+		expect(
+			Array.from(el.querySelectorAll('.sheetsmith-entry-footnote')).some(
+				(one) => (one.textContent ?? '').includes('no target column'),
+			),
+		).toBe(false);
 	});
 });

@@ -34,7 +34,38 @@
 .sheetsmith-popover {
 	position: fixed;
 	z-index: var(--layer-popover, 30);
-	max-width: min(20em, calc(100vw - 2 * var(--size-4-4)));
+	/* **This bubble carries three payloads and the cap used to be chosen for the
+	   shortest.** A level ring's name is a word, a computed cell's formula is one
+	   long line, and a modifier breakdown is a list of sentences — and at
+	   `max-width: 20em` (240px, about 34 characters of `--font-ui-smaller`) a
+	   two-contributor breakdown rendered as six wrapped visual lines with no way
+	   to tell where one contributor ended and the next began.
+
+	   A hanging indent was tried here first and does not work, which is worth
+	   recording so it is not tried again: `text-indent` applies to the first line
+	   of a *block*, and a newline under `pre-wrap` starts a line rather than a
+	   block. So exactly one line of the bubble was flush — the first — and the
+	   second contributor shared its left edge with the first contributor's
+	   continuation. That is worse than flat, because the single flush line implies
+	   a hierarchy that is not there.
+
+	   Per-line styling is not available to fix it either: `showPopover` sets
+	   `textContent`, and a second kind of panel is what `docs/UI.md` §9 opens
+	   against. So the fix is the cap, and the number is measured rather than
+	   picked: the longest line a breakdown draws in the harness is 100 characters
+	   ("Worn items · Ring of Protection — item +1 (not applied: another item bonus
+	   of the same size applies)") at about 5.8px a character, so ~580px of ink and
+	   ~600px of box. 52em is that with a little headroom for a wider UI font.
+
+	   **What it does to the other two payloads: nothing they lose by.** This is a
+	   cap and not a width, so a level ring's one-word name is content-sized as it
+	   always was, and a formula — one long line of code, the payload the 20em was
+	   chosen for — now wraps later or not at all. A long resolution error in a
+	   computed cell goes from about five wrapped lines to two. The `100vw` term is
+	   unchanged, so a phone still clamps to its own width and the sentences still
+	   wrap there; that is the floor this rule cannot lift, and it is the one place
+	   the indent would have been worth having if it had worked. */
+	max-width: min(52em, calc(100vw - 2 * var(--size-4-4)));
 	padding: var(--size-2-2) var(--size-4-2);
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-m);

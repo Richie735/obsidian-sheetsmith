@@ -28,15 +28,35 @@
 import {
 	ComponentConfig,
 	ComponentDefinition,
+	FieldExplainer,
 	FieldResolver,
+	ModifierContext,
+	ModifierSource,
 	RowsSource,
 	ScopeEntry,
 	ScopeValues,
 } from '../types';
-import { FunctionLibrary, NO_FUNCTIONS, Scope, Value } from './expression';
+import {
+	FormulaError,
+	FunctionLibrary,
+	NO_FUNCTIONS,
+	Scope,
+	Value,
+} from './expression';
+import {
+	acceptingTargets,
+	ModifierTargetSource,
+	publishedNames,
+} from './modifier-targets';
+import {
+	buildModifierTable,
+	ModifierComponent,
+	modifierSlot,
+} from './modifiers';
 import {
 	coerceValue,
 	FormulaEnv,
+	makeFieldExplainer,
 	makeFieldResolver,
 	NO_ENV,
 } from './resolve';
@@ -61,6 +81,18 @@ export interface PublishedComponent {
 	 * may reference any of them.
 	 */
 	resolver?: (env: FormulaEnv) => FieldResolver;
+	/**
+	 * The companion to `resolver`, and the modifier table is what needs it: a
+	 * slot that refuses because one row's amount would not resolve has to say
+	 * *why*, and a resolver returning null cannot (`ModifierSource`).
+	 */
+	explainer?: (env: FormulaEnv) => FieldExplainer;
+	/**
+	 * The changes this component declares against names that are not its own
+	 * (SPEC §5). Absent on every component but a Table, and on a Table with no
+	 * modifier column.
+	 */
+	modifiers?: ModifierSource;
 }
 
 /** One component as the sheet found it: read, or the reason it was not. */
@@ -113,8 +145,12 @@ export function publishedComponent({
 		id: config.id,
 		values: readable?.scopeValues?.(data, config) ?? {},
 		rows: readable?.scopeRows?.(data, config),
+		modifiers: readable?.scopeModifiers?.(data, config),
 		resolver: component
 			? (env) => makeFieldResolver(component, config, data, env)
+			: undefined,
+		explainer: component
+			? (env) => makeFieldExplainer(component, config, data, env)
 			: undefined,
 	};
 }
@@ -131,15 +167,16 @@ function clean(raw: unknown): Value | undefined {
 
 /**
  * Build everything a formula on the sheet resolves against: the names
- * components publish, the layout's functions, and the rows an aggregate walks.
+ * components publish, the layout's functions, the rows an aggregate walks, and
+ * what has been pushed at each published name.
  *
- * The two tables are mutually lazy, and that is the whole of the construction.
- * `env` is handed out before either exists, holding closures that reach the
- * tables built on the next two lines; nothing calls them until a formula is
- * evaluated, which is long after both are in place. Each table keeps its own
- * memoisation and its own re-entry guard, because they guard different things:
- * one a name that needs its own result, the other a row set being walked while
- * it is already being walked.
+ * The three tables are mutually lazy, and that is the whole of the construction.
+ * `env` is handed out before any of them exists, holding closures that reach the
+ * tables built below it; nothing calls them until a formula is evaluated, which
+ * is long after all three are in place. Each keeps its own memoisation and its
+ * own re-entry guard, because they guard different things: one a name that needs
+ * its own result, one a row set being walked while it is already being walked,
+ * and one a modifier amount waiting on the total it is part of.
  */
 export function buildSheetEnv(
 	components: readonly PublishedComponent[],
@@ -149,6 +186,7 @@ export function buildSheetEnv(
 		library,
 		sheet: (name) => names(name),
 		rows: (id, caller) => rows(id, caller),
+		modifiers: (name) => modifiers(name),
 	};
 	const names = buildSheetScope(components, env);
 	const rows = buildRowTable(
@@ -162,7 +200,70 @@ export function buildSheetEnv(
 			return { id: component.id, rows: () => source(resolve) };
 		}),
 	);
+	const modifiers = buildModifierTable(
+		components.map((component): ModifierComponent => {
+			const source = component.modifiers;
+			if (source === undefined) return { id: component.id };
+			// The same pair the name table binds, so a computed amount column
+			// resolves through exactly the path a published row's cell does — and
+			// the explainer is what lets a refused slot name the reason as well as
+			// the row. A component with neither still declares pushes; what it
+			// gets is a reader that finds no field, which is what a component
+			// declaring no formula fields would have anyway.
+			const resolve = component.resolver?.(env) ?? ((): null => null);
+			const explain = component.explainer?.(env) ?? ((): null => null);
+			return { id: component.id, pushes: () => source(resolve, explain) };
+		}),
+	);
 	return env;
+}
+
+/**
+ * What a component cannot work out about modifiers for itself (SPEC §5): which
+ * names on this layout accept one, and what has been pushed at a given name.
+ *
+ * Here beside `buildSheetEnv` and `publishedComponent` for exactly their reason:
+ * two callers build it — the sheet view and the harness — and they must not
+ * disagree, because the harness is how appearance is reviewed and one that
+ * reported modifiers differently would sign off on marks the plugin never draws.
+ *
+ * **Takes the static sources rather than the published list**, which is the half
+ * that had a bug in it. Both members it computes — which names accept a modifier,
+ * and which names the sheet publishes at all — are properties of the *layout*
+ * (SPEC §7), and deriving them from data made a transient fact about one
+ * character decide them: a broken section or an unreadable column total dropped
+ * names the editor still offered. `modifierTargetSource` is the one answer, and
+ * the sheet reaches it through the same function the editor does.
+ *
+ * **Nothing at all for a name that accepts no modifier**, and that is a rule
+ * rather than an optimisation. It is what keeps a card from drawing a mark over a
+ * push that is not being applied — a row targeting a value whose formula reads no
+ * slot changes nothing, and the place that says so is the row that wrote it. It
+ * also means a name nothing could read never sets the walk going.
+ *
+ * **A refused slot has no breakdown either.** The refusal is already on the card
+ * as `?` with the row named under it, through the formula that read the slot; a
+ * breakdown of nothing is the honest companion, because there is no number to
+ * take apart.
+ */
+export function sheetModifiers(
+	sources: readonly ModifierTargetSource[],
+	env: FormulaEnv,
+): ModifierContext {
+	const targets = acceptingTargets(sources);
+	const accepting = new Set(targets.map((target) => target.name));
+	const published = new Set(publishedNames(sources));
+	return {
+		targets,
+		breakdown: (name) => {
+			if (!accepting.has(name)) return { lines: [], total: 0 };
+			const result = env.modifiers(name);
+			return 'error' in result
+				? { lines: [], total: 0 }
+				: { lines: result.lines, total: result.total };
+		},
+		publishes: (name) => published.has(name),
+	};
 }
 
 /**
@@ -219,18 +320,22 @@ export function buildSheetScope(
 
 	const bound: FormulaEnv = env ?? { ...NO_ENV, sheet: scope };
 
+	/** Every name registered below, in declaration order, for the slot pass. */
+	const published: string[] = [];
+
 	for (const component of components) {
 		const resolve = component.resolver?.(bound);
 
 		const register = (name: string, entry: ScopeEntry): void => {
 			// The stored value is always reachable, whatever the card shows.
+			published.push(name);
 			thunks.set(`${name}.value`, () => clean(entry.value));
 
 			// A display that will not resolve publishes nothing rather than
 			// falling back to the stored value: handing back 22 where 6 was
 			// meant is a worse answer than none at all. The same holds for a
 			// computed entry, which is why both go through this.
-			const published = (result: Value | null | undefined) =>
+			const worth = (result: Value | null | undefined) =>
 				result === null || result === undefined ? undefined : clean(result);
 
 			const { display, compute } = entry;
@@ -238,20 +343,58 @@ export function buildSheetScope(
 				// A component with no resolver of its own still computes: what
 				// it is handed is a resolver that finds no field, which is what
 				// a component declaring no formula fields would have anyway.
-				thunks.set(name, () => published(compute(resolve ?? (() => null))));
+				thunks.set(name, () => worth(compute(resolve ?? (() => null))));
 				return;
 			}
 			if (display === undefined || resolve === undefined) {
 				thunks.set(name, () => clean(entry.value));
 				return;
 			}
-			thunks.set(name, () => published(resolve(display.field, display.scope)));
+			// The name it is being registered under goes to the resolver, so
+			// `mod.self` inside a `display` means the slot of the name this
+			// formula's result becomes — and publication and render resolve the
+			// same expression against the same scope, which is the existing rule
+			// that a name and the cell it came from must not disagree.
+			thunks.set(name, () =>
+				worth(resolve(display.field, display.scope, name)),
+			);
 		};
 
 		if (component.values.self) register(component.id, component.values.self);
 		for (const [name, entry] of Object.entries(component.values.named ?? {})) {
 			register(`${component.id}.${name}`, entry);
 		}
+	}
+
+	/*
+	 * One slot per published name (SPEC §5), registered after every name so the
+	 * namespace's domain *is* the published-name set. That is what makes the two
+	 * rules structural rather than checked: `mod.armour_class` resolves to 0 on a
+	 * sheet publishing `armour_class` and nothing pushing at it, and
+	 * `mod.armor_class` on the same sheet fails as an unknown name rather than
+	 * quietly reading zero.
+	 *
+	 * A slot is a name in this table, behind this table's guard, and so is lazy
+	 * like every other name — deliberately, since warming them in a fixed order
+	 * would bias which of the two cycle guards closes a ring both could catch,
+	 * and that is SPEC §13's open question rather than this feature's to take.
+	 *
+	 * Only the bare names get one. `mod.<name>.value` is not a thing to ask for:
+	 * a `mod.` entry is not a `ScopeEntry` and answers to no `.value`, which is
+	 * what keeps §13's published-name depth question closed.
+	 *
+	 * A refused slot throws rather than answering undefined, because that is the
+	 * only route to the sentence: a thrown `FormulaError` reaches `fieldReaders`'
+	 * `explain` and lands under the reader's eye naming the row that stopped it,
+	 * where an absent name would only ever say `mod.self` is unknown. The memo
+	 * above holds only what resolved, so nothing caches the refusal.
+	 */
+	for (const name of published) {
+		thunks.set(modifierSlot(name), () => {
+			const result = bound.modifiers(name);
+			if ('error' in result) throw new FormulaError(result.error);
+			return result.total;
+		});
 	}
 
 	return scope;

@@ -42,7 +42,11 @@ export const SAMPLES: Sample[] = [
 				{ key: 'WIS', name: 'Wisdom' },
 				{ key: 'CHA', name: 'Charisma' },
 			],
-			derived: 'floor((value - 10) / 2)',
+			// `+ mod.self` is what makes the six abilities modifiable, and it is the
+			// case the relative spelling exists for: one formula runs per entry,
+			// and no absolute name inside it could say which entry it is running
+			// for. Watch the Magic items table below move STR and leave DEX alone.
+			derived: 'floor((value - 10) / 2) + mod.self',
 		} as ComponentConfig,
 		body: '```sheet\nSTR: 15\nDEX: 14\nCON: 13\nINT: 12\nWIS: 10\nCHA: 8\n```',
 	},
@@ -53,7 +57,10 @@ export const SAMPLES: Sample[] = [
 			label: 'Armour class',
 			position: { col: 1, row: 2, width: 2, height: 1 },
 			key: 'AC',
-			derived: '10 + abilities.DEX',
+			// The absolute half of the same rule: a Card publishes under its bare
+			// id, so `mod.armour_class` would work too — `mod.self` is the one to
+			// reach for, exactly as `value` is over `<name>.value`.
+			derived: '10 + abilities.DEX + mod.self',
 			notePlaceholder: 'armour worn',
 			signed: false,
 		} as ComponentConfig,
@@ -118,7 +125,11 @@ export const SAMPLES: Sample[] = [
 				{
 					key: 'Bonus',
 					type: 'computed',
-					formula: 'ability + Training * 2',
+					// `+ mod.self` on a *published* column, which is the third
+					// surface a modifier reaches and the only one that is a table
+					// cell: the Perception row carries a key, so it has a slot, and
+					// the rows that carry none read the slot as 0 rather than "?".
+					formula: 'ability + Training * 2 + mod.self',
 					// The published column: every row carrying a key answers to
 					// `skills.<key>`, which is what the passive perception card
 					// above reads.
@@ -1011,6 +1022,99 @@ export const SAMPLES: Sample[] = [
 		// at ten of twelve columns, and this row's two frames are three rows tall
 		// already, so nothing on the sheet moves to make room for it.
 		body: '\n![[Sildar Hallwinter.png]]\n',
+	},
+	/*
+	 * Item modifiers (SPEC §5): one row declaring a change against a value
+	 * published somewhere else on the sheet.
+	 *
+	 * Seven rows, one per state worth looking at — counted against the body below
+	 * rather than remembered, because this list said five while holding six and
+	 * skipping the one row that shows a wikilink surviving a target cell:
+	 *
+	 * - two item bonuses on the same target at different amounts, so the
+	 *   stacking rule has something to suppress — and the breakdown on the STR
+	 *   card is what says the smaller one is being ignored and why;
+	 * - a status bonus on that same target, so two types add over one target;
+	 * - a **wikilink** in the row name, which is what says a target cell reaches
+	 *   Constraint 2 not at all: the table is markdown storage, the link is real,
+	 *   and the breakdown names the row "as a reader sees it" rather than as the
+	 *   file spells it (`rowLabel`). Its target is a **Card**;
+	 * - a target that is a **Table cell** rather than a card — the skills card's
+	 *   published Perception row — which is the third surface a modifier reaches
+	 *   and the only one where the mark lands in a table;
+	 * - a target the sheet publishes and no formula reads a modifier for,
+	 *   which the select carries as its own last line;
+	 * - a target the sheet does not publish at all, which is what a hand-edited
+	 *   note arrives holding, and which the select carries with a different
+	 *   title saying so.
+	 *
+	 * The row it shares with **Worn items** below is that table's business rather
+	 * than this one's: two tables pushing at one card is what makes a breakdown
+	 * name its source component.
+	 *
+	 * Most cells in the two amount columns are blank, and that is the stated cost
+	 * of putting the bonus type on the column rather than on the row: a table
+	 * whose rows carry different types needs one column per type.
+	 */
+	{
+		config: {
+			id: 'magic_items',
+			type: 'table',
+			label: 'Magic items',
+			position: { col: 1, row: 31, width: 8, height: 2 },
+			rowHeader: 'Item',
+			openRows: true,
+			columns: [
+				{ key: 'Modifies', type: 'target' },
+				{ key: 'Bonus', type: 'number', modifier: true, modifierType: 'item' },
+				{ key: 'Aid', type: 'number', modifier: true, modifierType: 'status' },
+				{ key: 'Notes' },
+			],
+		} as ComponentConfig,
+		body: [
+			'| Item | Modifies | Bonus | Aid | Notes |',
+			'| --- | --- | --- | --- | --- |',
+			'| Belt of Giant Strength | abilities.STR | 2 |  | attuned |',
+			'| Gauntlets of Ogre Power | abilities.STR | 1 |  | the smaller item bonus |',
+			"| Bull's Strength | abilities.STR |  | 1 | a different type, so it adds |",
+			'| [[Ring of Protection]] | armour_class | 1 |  |  |',
+			'| Cloak of Displacement | passive_perception | 2 |  | reads no modifier |',
+			'| Eyes of the Eagle | skills.perception | 2 |  | a table cell, not a card |',
+			'| Amulet of Misspelling | armor_class | 1 |  | not a name this sheet has |',
+		].join('\n'),
+	},
+	/*
+	 * A *second* modifier table, and it is here for one reason: a breakdown
+	 * drawing on two components is the only state in which a contributor line
+	 * carries the component's label, so without this the qualified form could not
+	 * be looked at.
+	 *
+	 * Its row shares a name with one in Magic items on purpose. That is the
+	 * failure the row label alone cannot carry — two lines a reader cannot tell
+	 * apart — so the armour class breakdown reads
+	 * `Worn items · Ring of Protection — item +1` beside
+	 * `Magic items · Ring of Protection — item +1`, while the STR card one table
+	 * over still reads `Belt of Giant Strength — item +2` with no prefix at all.
+	 * Both forms on one sheet is the comparison the rule is worth judging on.
+	 */
+	{
+		config: {
+			id: 'worn_items',
+			type: 'table',
+			label: 'Worn items',
+			position: { col: 9, row: 31, width: 4, height: 2 },
+			rowHeader: 'Worn',
+			openRows: true,
+			columns: [
+				{ key: 'Modifies', type: 'target' },
+				{ key: 'Bonus', type: 'number', modifier: true, modifierType: 'item' },
+			],
+		} as ComponentConfig,
+		body: [
+			'| Worn | Modifies | Bonus |',
+			'| --- | --- | --- |',
+			'| Ring of Protection | armour_class | 1 |',
+		].join('\n'),
 	},
 	/* Beside the set rather than inside it, so a tab press has something to not
 	   move. */

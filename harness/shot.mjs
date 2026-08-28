@@ -136,6 +136,49 @@ const DEFAULTS = [
 		query: 'surface=sheet&theme=light&focus=.sheetsmith-card-select',
 		size: SHEET_FRAME,
 	},
+	{
+		/*
+		 * The modifier breakdown, which is what a press reveals and so what no
+		 * still could reach until `&press=` existed (see harness.ts).
+		 *
+		 * The armour class card rather than an ability score, and for two reasons.
+		 * Its breakdown draws on *two* modifier tables, which is the only state in
+		 * which a contributor line carries its component's label — so this is the
+		 * qualified form, and the unqualified one is on the STR card a row above,
+		 * unpressed, in every other sheet shot. And it sits low enough on the page
+		 * that the bubble is not laid over the harness bar: the bubble is fixed to
+		 * the viewport and a card near the top puts it behind chrome the app does
+		 * not have, which is the instrument's own artefact rather than the
+		 * plugin's.
+		 *
+		 * What to look at: whether the lines read as a list — one visual line per
+		 * contributor, and the total separated from them by a blank one. Both are
+		 * answers to what this shot caught twice. At `max-width: 20em`, a cap
+		 * chosen when this bubble only ever held a formula, a two-contributor
+		 * breakdown rendered as six wrapped lines with nothing saying where a
+		 * contributor began; a hanging indent then made exactly one line flush,
+		 * because `text-indent` addresses the first line of a block and a newline
+		 * under `pre-wrap` starts no block. The cap is the fix, and `shared.css`
+		 * carries the measurement it was set from. So a wrapped contributor line
+		 * here is a regression, not a cosmetic quibble.
+		 */
+		name: 'sheet-breakdown',
+		query:
+			'surface=sheet&theme=light&press=.sheetsmith-card-single .sheetsmith-card-derived.sheetsmith-modified',
+		size: SHEET_FRAME,
+	},
+	{
+		// The same door on a table cell, where the payload is *joined*: the cell
+		// has carried a second door onto its own formula since computed columns
+		// shipped, so a modified cell shows the formula, a blank line, the
+		// contributors and the total in one bubble rather than growing a second
+		// control. Dark, so the one surface that stacks two payloads is
+		// photographed in both themes across these two views.
+		name: 'sheet-breakdown-cell',
+		query:
+			'surface=sheet&theme=dark&press=.sheetsmith-table-value.sheetsmith-modified',
+		size: SHEET_FRAME,
+	},
 	{ name: 'sheet-empty', query: 'surface=sheet&theme=dark&state=empty', size: SHEET_FRAME },
 	{ name: 'sheet-error', query: 'surface=sheet&theme=dark&state=broken', size: SHEET_FRAME },
 	{
@@ -224,6 +267,81 @@ const DEFAULTS = [
 		name: 'editor-bounded',
 		query: 'surface=editor&theme=light&open=alignment&bounded',
 		size: '1400,900',
+	},
+	{
+		/*
+		 * The layout editor with a modifier table selected, which is where three of
+		 * this feature's editor surfaces live and where none of them had ever been
+		 * photographed: the **Modifier** checkbox and the **Bonus type** select on
+		 * a ticked column, and the accepting-targets list under the columns field.
+		 *
+		 * **The panel here is the table's, and only the table's.** This comment used
+		 * to claim the layout's own **Bonus types** field was "further down" in the
+		 * same shot; it is not, and never was — the layout's fields are behind the
+		 * tree's `Layout` row, so selecting a component replaces them. `editor-layout`
+		 * below is the view that has them. A comment naming a surface a shot does not
+		 * hold is worse than no comment, because a reviewer checks it off unlooked at.
+		 *
+		 * 1500 rather than the usual editor width because the panel is what this is
+		 * about, and the columns list is the widest thing in it — a modifier column
+		 * puts seven controls on one detail line, which is what earned that line
+		 * its `flex-wrap`.
+		 */
+		name: 'editor-modifiers',
+		query: 'surface=editor&theme=light&open=magic_items',
+		size: '1500,1500',
+	},
+	{
+		/*
+		 * The same panel at the split's tightest, which is the width the detail
+		 * line's wrap has to survive: seven controls on one line at 1184 of pane is
+		 * where a collapsed field shows, and a **Bonus type** select rendering as
+		 * an empty 8px box is the defect this exists to catch.
+		 *
+		 * **Not `&bounded`, and that was measured rather than assumed.** Bounded
+		 * gives the leaf the window's height, and the columns list sits well below
+		 * a 900px fold — so the bounded version of this view photographs a panel
+		 * whose subject is off-screen, which is worse than no shot because the name
+		 * promises otherwise. A still has no scroll position, which `editor-bounded`
+		 * already records as the thing it cannot show; that limitation decides this
+		 * view rather than being worked around by it.
+		 */
+		name: 'editor-modifiers-narrow',
+		query: 'surface=editor&theme=light&open=magic_items',
+		size: '1210,2600',
+	},
+	{
+		/*
+		 * The layout's own settings, which no default view had ever shown: the grid
+		 * column count, the reset triggers, the function library, and the **Bonus
+		 * types** field this feature added beside it. Every editor shot above opens
+		 * a component, and selecting one replaces the layout's form with it — so the
+		 * pane's other half was reachable only by rendering with no `open` at all,
+		 * which is how two verified findings here (the field's "For example:" line
+		 * and the heading reading **Bonus types** rather than "Modifier types") came
+		 * to have no view to be checked against.
+		 *
+		 * `open=::sheet::` rather than omitting `open`, deliberately: the layout is
+		 * what the pane falls back to, but a shot whose subject is a *default* says
+		 * nothing about what it is showing, and a later change to the fallback would
+		 * silently repoint it. Naming the selection is the same argument
+		 * `editor-light` makes for naming a container.
+		 *
+		 * The usual editor width, because these are ordinary `.setting-item` rows and
+		 * three of the four are textarea fields that size to their content — none of
+		 * them is the columns list, which is what earns the two shots above their
+		 * 1500.
+		 *
+		 * **Framed to the panel, not to the pane**, which is why the height is 1200
+		 * against EDITOR_FRAME's 5000: the layout's form ends about 1020px down and
+		 * the rest of that 5000 is the tree, which `editor-light` and `editor-dark`
+		 * already photograph whole. So the tree is cut here on purpose, the way
+		 * `editor-modifiers` cuts it — the cut edge is the frame and not a clip, and
+		 * the number to raise is this one if the layout ever grows a fifth field.
+		 */
+		name: 'editor-layout',
+		query: 'surface=editor&theme=light&open=::sheet::',
+		size: '1400,1200',
 	},
 	{
 		// The narrowest split there is, bounded. 1210 of window is 1184 of pane —

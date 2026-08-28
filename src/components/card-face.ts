@@ -13,7 +13,9 @@
  */
 
 import { bindEditable, UNRESOLVED_DELAY } from '../interaction/editable';
+import { showPopover } from '../ui/popover';
 import { revealWhenTruncated } from '../ui/truncation';
+import { MODIFIED_CLASS } from './modifier-breakdown';
 
 /**
  * What nothing stored looks like in the value slot (SPEC §4.2). One constant
@@ -28,6 +30,14 @@ const EMPTY_MARK = '—';
 /** Said of the one line in the menu that the layout did not put there. */
 const STRAY_TITLE =
 	'Not one of this card\'s options. The note keeps it until something else is chosen.';
+
+/**
+ * Ids for the sr-only breakdown twins, so each anchor names its own.
+ *
+ * Module scope for `popover.ts`'s reason: an id has to be unique across every
+ * card on the sheet, and a counter inside one render would restart at every card.
+ */
+let breakdowns = 0;
 
 export interface CardFaceDerived {
 	text: string;
@@ -78,6 +88,23 @@ export interface CardFaceOptions {
 	 */
 	derived?: CardFaceDerived & {
 		compute?: (draft: string) => CardFaceDerived;
+		/**
+		 * What has been pushed at the name this number publishes, as one block of
+		 * text, or null where nothing has (SPEC §5).
+		 *
+		 * **The floor is nearly free and that is worth noticing.** A modifiable
+		 * value has a `derived` by construction, and the card already shows the
+		 * derived number in large type over the stored value — so "this number is
+		 * not the number you typed" is on screen the moment a target reads its
+		 * slot. What this adds is the answer to "why", which is the half nothing
+		 * in the surveyed category puts at the number.
+		 *
+		 * A block of text rather than the lines themselves, because the same text
+		 * has to reach two carriers — the popover and an `.sheetsmith-sr-only`
+		 * twin — and one builder is what stops them saying different things
+		 * (`modifier-breakdown.ts`).
+		 */
+		modifiers?: string | null;
 	};
 	/**
 	 * Editable free-text line under the value, for the qualifier a number
@@ -259,7 +286,15 @@ export function renderCardFace(
 		container.appendChild(abbreviation);
 	}
 
+	/**
+	 * The sr-only breakdown's id, for the value control to point at. The card
+	 * holds one builder's text in two carriers, so the field's `aria-describedby`
+	 * and the popover cannot describe the number differently.
+	 */
+	let describedBy: string | null = null;
 	let derivedEl: HTMLElement | null = null;
+	/** The breakdown, where this number has one, for the press routing below. */
+	const breakdown = options.derived?.modifiers ?? null;
 	if (options.derived) {
 		derivedEl = doc.createElement('div');
 		derivedEl.classList.add('sheetsmith-card-derived');
@@ -268,6 +303,41 @@ export function renderCardFace(
 		if (!options.value) derivedEl.setAttribute('aria-label', options.title);
 		setDerived(derivedEl, options.derived);
 		container.appendChild(derivedEl);
+		if (breakdown !== null) {
+			/*
+			 * A dotted underline and `cursor: help`, opening the shared popover
+			 * on a press. No new gesture (UI §6, §9): a press on the derived is
+			 * the same second door a computed cell and a level ring already use,
+			 * and on touch it is an ordinary tap — a read-only number has no
+			 * other use for one, so the tap is free to mean "why this number?".
+			 *
+			 * Its own listener rather than a branch of the card's hit target,
+			 * because a card with `hideValue` and no note has no controls and so
+			 * installs no `onclick` at all — and the routing below stands aside
+			 * for it rather than focusing the field underneath.
+			 */
+			derivedEl.classList.add(MODIFIED_CLASS);
+			const anchor = derivedEl;
+			anchor.addEventListener('click', () => showPopover(anchor, breakdown));
+			/*
+			 * The same text where a pointer is not available. `showPopover`
+			 * already sets `role="tooltip"` and `aria-describedby` while it is
+			 * open, and this is what makes the breakdown reachable without one:
+			 * the value's own field points at it below.
+			 *
+			 * **What is not fixed here** is that the anchor is not a tab stop.
+			 * That is the existing computed cell's gap carried across rather than
+			 * one this introduces — making a value display focusable would add a
+			 * tab stop per modified card, which is a change to the card's
+			 * keyboard model and not to this.
+			 */
+			const twin = doc.createElement('div');
+			twin.classList.add('sheetsmith-sr-only');
+			twin.id = `sheetsmith-breakdown-${++breakdowns}`;
+			twin.textContent = breakdown;
+			container.appendChild(twin);
+			describedBy = twin.id;
+		}
 	}
 
 	// Announces once per commit. Built up front and attached below, because a
@@ -429,6 +499,12 @@ export function renderCardFace(
 
 	if (status) container.appendChild(status);
 
+	// The breakdown reaches the keyboard through the control the reader is already
+	// on, because the number itself is not a tab stop (see above).
+	if (describedBy !== null && controls[0]) {
+		controls[0].setAttribute('aria-describedby', describedBy);
+	}
+
 	const primary = controls[0];
 	if (primary) {
 		// The card only promises an edit when it has one to give; the cursor
@@ -439,6 +515,13 @@ export function renderCardFace(
 		// stealing focus from a field the click already landed in.
 		container.onclick = (event) => {
 			if (controls.some((candidate) => candidate === event.target)) return;
+			// The derived owns its own press where it has a breakdown to show, so
+			// the routing stands aside rather than focusing the field under it.
+			// Everywhere else on the card the press still goes to the nearest
+			// control — the padding under the note belongs to the note.
+			if (derivedEl?.contains(event.target as Node | null) === true && breakdown) {
+				return;
+			}
 			const selection = doc.getSelection?.();
 			if (selection && !selection.isCollapsed) return;
 			// Proximity has to mean something: a click in the padding under

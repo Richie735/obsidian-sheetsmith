@@ -19,6 +19,7 @@
  * a container and a layout and never knew which surface it was on.
  */
 
+import { codeLines } from './field-lines';
 import { bindFitToContent } from './list-field-height';
 import { groupHeading } from './form-group';
 import { Setting } from 'obsidian';
@@ -34,7 +35,7 @@ const FUNCTION_EXAMPLE = 'mod(score) = floor((score - 10) / 2)';
 const FUNCTION_PLACEHOLDER = 'prof = ceil(level / 4) + 1';
 
 /** Ties the problems block to the textarea for assistive tech. */
-const PROBLEMS_ID = 'sheetsmith-function-problems';
+const PROBLEMS_ID = 'sheetsmith-field-problems';
 
 /**
  * A rendered field, held by the editor so its text can be read back rather
@@ -63,9 +64,10 @@ export function commitFunctionLibrary(
 ): boolean {
 	if (!field || !field.input.isConnected) return false;
 
-	const definitions = field.input.value.split('\n').map((line) => line.trimEnd());
-	// Trailing blank lines are an artefact of typing, not content.
-	while (definitions.length > 0 && definitions.at(-1) === '') definitions.pop();
+	// The code rule from `field-lines.ts`, and it is the one that differs from its
+	// two siblings on purpose: `parseFunctions` trims each line before reading it,
+	// so leading space changes no arithmetic and is the author's own layout.
+	const definitions = codeLines(field.input.value);
 
 	field.showProblems(definitions);
 
@@ -103,12 +105,19 @@ export function renderFunctionLibrary(
 					'The functions this layout defines, one per line. Formulas anywhere on the sheet can call them, and a function sees only its own parameters and the sheet — never the card that called it. Lines starting with # are notes to yourself.',
 				);
 				fragment.createEl('br');
+				// Framed, for `line-list-field.ts`'s reason: unframed, a `<code>` under
+				// a description sits where a value would — and in the harness sample
+				// this one is byte-identical to the saved value, so the field reads as
+				// printing it twice. Fixed alongside the two list fields rather than
+				// left for the backlog row, because four call sites drawing an example
+				// two different ways is the inconsistency D10 is about.
+				fragment.appendText('For example: ');
 				fragment.createEl('code', { text: FUNCTION_EXAMPLE });
 			}),
 		)
 		.setClass('sheetsmith-function-library');
 
-	const problemsEl = container.createDiv('sheetsmith-function-problems');
+	const problemsEl = container.createDiv('sheetsmith-field-problems');
 	problemsEl.id = PROBLEMS_ID;
 	// Blurring the field is the moment a definition is judged, and a screen
 	// reader is looking elsewhere by then. Polite, so it waits for a pause
@@ -138,9 +147,9 @@ export function renderFunctionLibrary(
 				// Small inline text, not the bordered box that says a layout
 				// file is unreadable: a half-typed definition is a work in
 				// progress, and three of them must not read as a disaster.
-				problemsEl.createDiv('sheetsmith-function-problem', (el) => {
+				problemsEl.createDiv('sheetsmith-field-problem', (el) => {
 					el.createSpan({
-						cls: 'sheetsmith-function-problem-line',
+						cls: 'sheetsmith-field-problem-line',
 						text: `Line ${problem.line}`,
 					});
 					// The offending text in the field's own font, so the eye can

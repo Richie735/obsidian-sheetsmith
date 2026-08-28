@@ -67,6 +67,10 @@ const MEMBER_ORDER = [
 	'read',
 	'scopeValues',
 	'scopeRows',
+	// Beside the other two because it is the same job read a third way: one
+	// publishes this component's names, one the rows that have none, and this
+	// the changes it declares against names that are not its own.
+	'scopeModifiers',
 	'write',
 	'hasBuffer',
 	'applyReset',
@@ -192,6 +196,23 @@ describe('component registry', () => {
 			(type) => getComponent(type)?.scopeRows !== undefined,
 		);
 		expect(holding).toEqual(['table']);
+	});
+
+	it('leaves the modifier source off unless a component declares any', () => {
+		/*
+		 * `scopeModifiers` is optional under §4.1's rule and it passes squarely:
+		 * the alternative is the formula engine knowing that a Table has a target
+		 * column, which column holds the amount, that a blank target is not a
+		 * push, and that a computed amount is a formula evaluated in a row scope.
+		 *
+		 * **Named rather than counted**, on the row source's own argument: a bound
+		 * like "fewer than all of them" permits the member spreading, so a second
+		 * component gaining one means somebody edits this line.
+		 */
+		const pushing = types.filter(
+			(type) => getComponent(type)?.scopeModifiers !== undefined,
+		);
+		expect(pushing).toEqual(['table']);
 	});
 
 	it('names the types that can hold components when one cannot', () => {
@@ -435,6 +456,7 @@ describe.each(types)('component "%s"', (type) => {
 		// same question this way.
 		expect(typeof component.scopeValues).toBe('undefined');
 		expect(typeof component.scopeRows).toBe('undefined');
+		expect(typeof component.scopeModifiers).toBe('undefined');
 		expect(typeof component.applyReset).toBe('undefined');
 		expect(component.hasBuffer).toBeUndefined();
 		// Containment is not addressing, so there is no name to compute either.
@@ -467,6 +489,14 @@ describe.each(types)('component "%s"', (type) => {
 		// on its config publishes none here and asserts the same rule over a
 		// configured card in its own test file.
 		expect(publishedEntries(type).filter(saysTwoThings)).toEqual([]);
+	});
+
+	it('declares modifiers as a function, or not at all', () => {
+		// The same optional-member rule as scopeValues and scopeRows: a component
+		// either declares changes against names that are not its own or it does
+		// not, never something in between that the formula engine would have to
+		// guard against.
+		expect(['function', 'undefined']).toContain(typeof component?.scopeModifiers);
 	});
 
 	it('publishes rows as a function, or not at all', () => {

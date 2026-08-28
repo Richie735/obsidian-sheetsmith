@@ -71,14 +71,14 @@ function commit(field: TriggerListField, text: string): void {
 
 function problems(container: HTMLElement): string[] {
 	return Array.from(
-		container.querySelectorAll('.sheetsmith-function-problem'),
+		container.querySelectorAll('.sheetsmith-field-problem'),
 	).map((el) => el.textContent ?? '');
 }
 
 function count(container: HTMLElement): string | null {
 	return (
 		container.querySelector(
-			'.sheetsmith-function-problems .setting-item-description',
+			'.sheetsmith-field-problems .setting-item-description',
 		)?.textContent ?? null
 	);
 }
@@ -209,7 +209,7 @@ describe('what the field says about the list', () => {
 		const { container } = render(
 			layout(['Long rest'], [pool([{ trigger: 'Solstice', action: 'full' }])]),
 		);
-		const line = container.querySelector('.sheetsmith-function-problem-line');
+		const line = container.querySelector('.sheetsmith-field-problem-line');
 		expect(line?.textContent).toBe('Hit points');
 		expect(problems(container)[0]).toContain('Solstice');
 	});

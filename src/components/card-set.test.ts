@@ -450,3 +450,94 @@ describe('cardSet contract', () => {
 		).toBe('start');
 	});
 });
+
+/*
+ * Modifiers (SPEC §5). The headline case of the whole feature: "+2 STR from a
+ * Belt of Giant Strength", which is unbuildable without the relative spelling —
+ * one `derived` runs per entry, and no absolute name inside it could say which
+ * entry it is running for.
+ *
+ * The first case is Risk 1 in the feature spec, accepted deliberately: the
+ * resolver's third argument is optional, so a component that forgot to pass its
+ * per-entry name would read `mod.self` as 0 with nothing reporting it.
+ */
+describe('cardSet and its modifier slots', () => {
+	/** A resolver that adds 2 only to the entry it is told it is producing. */
+	const beltOfStrength = (
+		field: string,
+		scope: Readonly<Record<string, FieldValue>>,
+		published?: string,
+	) => {
+		if (field !== 'derived' || typeof scope.value !== 'string') return null;
+		const base = Math.floor((Number(scope.value) - 10) / 2);
+		return published === 'card-set.STR' ? base + 2 : base;
+	};
+
+	const derivedText = (el: HTMLElement) =>
+		Array.from(el.querySelectorAll('.sheetsmith-card-derived')).map(
+			(one) => one.textContent,
+		);
+
+	const render = (ctx: Partial<RenderContext> = {}) => {
+		const el = document.createElement('div');
+		cardSet.render(
+			el,
+			config,
+			{ values: { STR: '8', DEX: '16', WIS: '12' } },
+			{ ...context, ...ctx },
+		);
+		return el;
+	};
+
+	it('modifies only the entry a row targeted', () => {
+		// STR moves and DEX and WIS do not, which is what the per-entry name buys.
+		expect(derivedText(render({ resolveField: beltOfStrength }))).toEqual([
+			'+1',
+			'+3',
+			'+1',
+		]);
+		// Unmodified, for the comparison: STR is -1 on its own.
+		expect(derivedText(render())).toEqual(['-1', '+3', '+1']);
+	});
+
+	it('passes the entry name on every re-derive', () => {
+		const el = render({ resolveField: beltOfStrength });
+		const input = el.querySelectorAll<HTMLInputElement>(
+			'.sheetsmith-card-input',
+		)[0] as HTMLInputElement;
+		input.value = '10';
+		input.dispatchEvent(new Event('input'));
+		// 0 plus the belt's 2, not 0: the draft path passes the name too.
+		expect(derivedText(el)[0]).toBe('+2');
+	});
+
+	it('marks the entry that was modified and no other', () => {
+		const el = render({
+			resolveField: beltOfStrength,
+			modifiers: {
+				publishes: () => true,
+				targets: [{ name: 'card-set.STR', label: 'Abilities · STR' }],
+				breakdown: (name) =>
+					name === 'card-set.STR'
+						? {
+								total: 2,
+								lines: [
+									{
+										label: 'Belt of Giant Strength',
+										source: 'Magic items',
+										type: 'item',
+										amount: 2,
+										suppressed: null,
+									},
+								],
+							}
+						: { total: 0, lines: [] },
+			},
+		});
+		expect(
+			Array.from(el.querySelectorAll('.sheetsmith-card-derived')).map((one) =>
+				one.classList.contains('sheetsmith-modified'),
+			),
+		).toEqual([true, false, false]);
+	});
+});
