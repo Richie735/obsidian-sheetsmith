@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { parseFunctions } from './functions';
 import {
+	formulaTexts,
 	makeFieldExplainer,
 	makeFieldResolver,
 	NO_ENV,
 	resolveFormulaFields,
 } from './resolve';
+import { ComponentConfig } from '../types';
 
 const component = { formulaFields: ['derived'] as const };
 const config = {
@@ -154,5 +156,88 @@ describe('the layout function library, from a component', () => {
 			{ ...NO_ENV, sheet, library: looping },
 		);
 		expect(resolve('derived', {})).toBeNull();
+	});
+});
+
+/*
+ * Every expression a component's configuration holds.
+ *
+ * The counterpart to `readPath`, and the half that needs a test of its own: the
+ * `*` expansion is what makes the modifier accepting set see a Table's computed
+ * column at all, and `acceptingTargets` is handed a list of strings, so a test
+ * of that alone would pass with this returning nothing.
+ */
+describe('formulaTexts', () => {
+	/** A Table's declarations: one per column, and one per row value. */
+	const repeating = {
+		formulaFields: ['columns.*.formula', 'rows.*.values.*'] as const,
+	};
+
+	const table = {
+		id: 'skills',
+		type: 'table',
+		label: 'Skills',
+		position: { col: 1, row: 1, width: 6, height: 4 },
+		rows: [
+			{ label: 'Acrobatics', values: { ability: 'abilities.DEX' } },
+			{ label: 'Perception', values: { ability: 'abilities.WIS' } },
+		],
+		columns: [
+			{ key: 'Training', type: 'number' },
+			{ key: 'Total', type: 'computed', formula: 'ability + mod.self' },
+		],
+	} as unknown as ComponentConfig;
+
+	it('expands a * over whatever the config has there', () => {
+		// A static list could not name these: a Table's expressions live one per
+		// column and one per row, and the count is the layout's.
+		expect(formulaTexts(repeating, table)).toEqual([
+			'ability + mod.self',
+			'abilities.DEX',
+			'abilities.WIS',
+		]);
+	});
+
+	it('reads a plain field with no star in it', () => {
+		expect(
+			formulaTexts(component, {
+				...config,
+				derived: 'floor((value - 10) / 2)',
+			} as ComponentConfig),
+		).toEqual(['floor((value - 10) / 2)']);
+	});
+
+	it('holds each expression separately rather than joining them', () => {
+		/*
+		 * `referencesName` tokenises, so one unparseable definition joined to the
+		 * rest would report the whole component as mentioning nothing — which is
+		 * the accepting set silently losing a target.
+		 */
+		const broken = {
+			...table,
+			columns: [
+				{ key: 'A', type: 'computed', formula: '(((' },
+				{ key: 'B', type: 'computed', formula: 'mod.self' },
+			],
+		} as unknown as ComponentConfig;
+		expect(formulaTexts(repeating, broken)).toEqual([
+			'(((',
+			'mod.self',
+			'abilities.DEX',
+			'abilities.WIS',
+		]);
+	});
+
+	it('leaves a blank or absent expression out', () => {
+		const bare = {
+			...table,
+			rows: [{ label: 'Acrobatics' }],
+			columns: [{ key: 'A', type: 'computed' }, { key: 'B', formula: '  ' }],
+		} as unknown as ComponentConfig;
+		expect(formulaTexts(repeating, bare)).toEqual([]);
+	});
+
+	it('has nothing to say about a component declaring no formula fields', () => {
+		expect(formulaTexts({ formulaFields: [] }, table)).toEqual([]);
 	});
 });

@@ -31,6 +31,7 @@ import {
 	Scope,
 	Value,
 } from './expression';
+import { ModifierLookup, modifierSlot, NO_MODIFIERS, SELF_SLOT } from './modifiers';
 import { NO_ROWS, RowLookup } from './rows';
 
 /**
@@ -50,6 +51,12 @@ export interface FormulaEnv {
 	library: FunctionLibrary;
 	/** The rows an aggregate may walk, by component id. */
 	rows: RowLookup;
+	/**
+	 * What has been pushed at each published name (SPEC §5), on `rows`' exact
+	 * terms: a lookup rather than a table, because the pushes are built from
+	 * formulas that read the sheet, and the sheet is the thing being built.
+	 */
+	modifiers: ModifierLookup;
 }
 
 /**
@@ -61,6 +68,7 @@ export const NO_ENV: FormulaEnv = {
 	sheet: EMPTY_SCOPE,
 	library: NO_FUNCTIONS,
 	rows: NO_ROWS,
+	modifiers: NO_MODIFIERS,
 };
 
 /**
@@ -125,6 +133,53 @@ function readPath(record: Record<string, unknown>, field: string): unknown {
 	return current;
 }
 
+/**
+ * Every expression this component's configuration holds, in declaration order.
+ *
+ * The counterpart to `readPath`: that answers *one* field for the resolver, and
+ * this answers the whole family, expanding a `*` in a declaration over whatever
+ * the config has there. Two walkers rather than one because they answer two
+ * questions — a resolver is handed a concrete field and must not guess, and this
+ * is handed a pattern and has nothing else to do — and the second cannot be
+ * written in terms of the first, since expanding `*` means reading the array
+ * lengths the first is never given.
+ *
+ * Its one consumer today is the modifier accepting set (SPEC §5), which asks
+ * whether any formula on a component mentions `mod.self`. Held per expression
+ * rather than joined into one string: `referencesName` tokenises, and one
+ * unparseable definition joined to the rest would report the whole component as
+ * mentioning nothing.
+ */
+export function formulaTexts(
+	component: Pick<ComponentDefinition, 'formulaFields'>,
+	config: ComponentConfig,
+): readonly string[] {
+	const found: string[] = [];
+	const collect = (current: unknown, segments: readonly string[]): void => {
+		const [head, ...rest] = segments;
+		if (head === undefined) {
+			if (typeof current === 'string' && current.trim() !== '') found.push(current);
+			return;
+		}
+		if (typeof current !== 'object' || current === null) return;
+		if (head === '*') {
+			for (const value of Object.values(current)) collect(value, rest);
+			return;
+		}
+		if (Array.isArray(current)) {
+			const index = Number(head);
+			if (!Number.isInteger(index) || index < 0) return;
+			collect(current[index], rest);
+			return;
+		}
+		collect((current as Record<string, unknown>)[head], rest);
+	};
+	for (const pattern of component.formulaFields) {
+		collect(config, pattern.split('.'));
+	}
+	return found;
+}
+
 function scopeFromData(data: unknown): Scope {
 	const record =
 		typeof data === 'object' && data !== null
@@ -159,6 +214,8 @@ function fieldReaders(
 	const read = (
 		field: string,
 		extra: Record<string, unknown>,
+		/** The published name this evaluation produces, where it produces one. */
+		published: string | undefined,
 	): { literal: Value } | { evaluated: Value } | null => {
 		if (!isDeclared(component.formulaFields, field)) return null;
 		const expression = readPath(record, field);
@@ -178,6 +235,38 @@ function fieldReaders(
 			if (Object.hasOwn(extra, name)) {
 				return coerceValue(extra[name]);
 			}
+			/*
+			 * `mod.self` is what has been pushed at the name this evaluation
+			 * *becomes*, which is the exact shape `value` already has read one
+			 * layer out: `value` is the number this evaluation is about.
+			 *
+			 * **Through the sheet, not around it.** The slot is an ordinary name
+			 * in the ordinary name table, so it keeps that table's memo and its
+			 * re-entry guard — a modifier whose amount reads the target it
+			 * modifies is a ring the guard closes loudly, and the slot then throws
+			 * with the row named rather than answering with a silent zero.
+			 *
+			 * **Zero where the evaluation publishes no name, and only there.** A
+			 * Table's computed column runs on declared rows carrying a `key` and on
+			 * rows carrying none, from one formula; a row with no key cannot be
+			 * pushed at, so its slot is empty, so it is zero — and a column reading
+			 * `mod.self` shows numbers down every row rather than `?` on half of
+			 * them. The same answer covers a formula field nothing publishes at
+			 * all, and the cost is the risk `FieldResolver` records: a component
+			 * that forgets to pass its own name reads 0 and nothing says so.
+			 *
+			 * **Where a name *is* given, the sheet's answer stands as it is.** No
+			 * fallback, deliberately: the slot's own guard answers `undefined` for a
+			 * ring — a modifier whose amount reads the target it modifies — and a
+			 * `?? 0` there would turn the one failure this shape is built to make
+			 * loud into a silently wrong number. Unresolved, the formula fails, the
+			 * amount is unreadable, and the slot throws naming the row. That
+			 * loudness is the argument for the whole design (SPEC §5), not a side
+			 * effect of it.
+			 */
+			if (name === SELF_SLOT) {
+				return published === undefined ? 0 : env.sheet(modifierSlot(published));
+			}
 			// The component's own data shadows the sheet, so a card's `value`
 			// always means its own — never some other component that happens
 			// to share the name.
@@ -187,18 +276,18 @@ function fieldReaders(
 	};
 
 	return {
-		resolve: (field, extra) => {
+		resolve: (field, extra, published) => {
 			try {
-				const outcome = read(field, extra);
+				const outcome = read(field, extra, published);
 				if (outcome === null) return null;
 				return 'literal' in outcome ? outcome.literal : outcome.evaluated;
 			} catch {
 				return null;
 			}
 		},
-		explain: (field, extra) => {
+		explain: (field, extra, published) => {
 			try {
-				read(field, extra);
+				read(field, extra, published);
 				return null;
 			} catch (error) {
 				return error instanceof FormulaError ? error.message : String(error);

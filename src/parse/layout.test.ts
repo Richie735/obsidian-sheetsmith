@@ -53,6 +53,39 @@ describe('parseLayout: triggers', () => {
 	});
 });
 
+describe('parseLayout: modifier types', () => {
+	const withTypes = (modifierTypes: unknown) =>
+		JSON.stringify({ name: 'L', modifierTypes, components: [] });
+
+	it('keeps the list as written, and round-trips it', () => {
+		const layout = parseLayout(withTypes(['item', 'status']));
+		expect(layout.modifierTypes).toEqual(['item', 'status']);
+		expect(parseLayout(serialiseLayout(layout))).toEqual(layout);
+	});
+
+	it('leaves the key absent where the layout declares none', () => {
+		const layout = parseLayout(JSON.stringify({ name: 'L', components: [] }));
+		expect('modifierTypes' in layout).toBe(false);
+		expect(serialiseLayout(layout)).not.toContain('modifierTypes');
+	});
+
+	it('refuses a key that is not a list of strings', () => {
+		// The same split the triggers and the function library follow: the shape
+		// refuses the file, and what the names say is reported in the editor.
+		expect(() => parseLayout(withTypes('item'))).toThrow(LayoutParseError);
+		expect(() => parseLayout(withTypes([1]))).toThrow(LayoutParseError);
+		expect(() => parseLayout(withTypes({}))).toThrow(LayoutParseError);
+	});
+
+	it('accepts names it will later report as unusable', () => {
+		expect(parseLayout(withTypes(['', 'item', 'item'])).modifierTypes).toEqual([
+			'',
+			'item',
+			'item',
+		]);
+	});
+});
+
 describe('parseLayout: reset bindings', () => {
 	const withReset = (reset: unknown) =>
 		JSON.stringify({
@@ -235,6 +268,33 @@ describe('parseLayout: component ids', () => {
 			'armour_class_2',
 			'armour_class_3',
 		]);
+	});
+
+	it('migrates the reserved modifier namespace off a component', () => {
+		/*
+		 * `mod` is the modifier namespace (SPEC §5). `buildSheetScope` registers
+		 * `${id}` and `${id}.${name}` into the same flat table the slots go into,
+		 * so a component called `mod` would register `mod.DEX` beside
+		 * `mod.armour_class` and one name would mean two things.
+		 *
+		 * Rewritten rather than refused, on the hyphen's own argument, and safe
+		 * three times over: a note is keyed by label and not by id, so no
+		 * character data moves; a formula that said `mod` was already ambiguous
+		 * between a component and a library function; and nothing is released.
+		 */
+		expect(idsOf(withId('mod'))).toEqual(['mod_2']);
+		// And the label is untouched, which is the whole of why the rewrite is
+		// safe: a note's sections are keyed by label, so no stored value moves.
+		expect(
+			parseLayout(withId('mod')).components.map((one) => one.label),
+		).toEqual(['A']);
+	});
+
+	it('leaves a name merely starting with the namespace alone', () => {
+		// Only the exact spelling collides: `mod` plus a dot is the namespace, and
+		// `modifier` is an ordinary name.
+		expect(idsOf(withId('modifier'))).toEqual(['modifier']);
+		expect(idsOf(withId('mod_bonus'))).toEqual(['mod_bonus']);
 	});
 
 	it('still reports two components genuinely sharing an id', () => {

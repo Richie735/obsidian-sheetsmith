@@ -7,6 +7,7 @@
  */
 
 import { isName } from '../formula/expression';
+import { MODIFIER_NAMESPACE } from '../formula/modifiers';
 import { walkComponents } from './layout-walk';
 import {
 	ComponentConfig,
@@ -50,6 +51,20 @@ export interface Layout {
 	 * report in the editor, not a reason to refuse the file.
 	 */
 	triggers?: string[];
+	/**
+	 * The bonus types this layout's modifiers may declare (SPEC §5), such as
+	 * item, status and circumstance.
+	 *
+	 * The layout's own vocabulary rather than a per-table list, and that is the
+	 * arithmetic rather than tidiness: one table's "item" and another table's
+	 * "item" have to be the *same* type, or two item bonuses stack for a reason
+	 * nothing on screen shows.
+	 *
+	 * Held as written, like `functions` and `triggers`, and safer than either:
+	 * a modifier column names one of these and **nothing stored ever names a
+	 * type**, so a layout edit that drops one cannot orphan a character note.
+	 */
+	modifierTypes?: string[];
 	/**
 	 * Top-level keys this version does not understand (promoted fields) are
 	 * preserved verbatim, so editing a layout never strips them from the file.
@@ -364,6 +379,21 @@ export function parseLayout(source: string): Layout {
 		);
 	}
 
+	// The third key on the same terms as the two above: the shape of the key is
+	// the file format's business and refuses the layout, while what the names say
+	// is reported where it can be fixed. A type nothing declares is nothing
+	// stored, so an unusable name here cannot orphan character data.
+	const modifierTypes = raw.modifierTypes;
+	if (
+		modifierTypes !== undefined &&
+		(!Array.isArray(modifierTypes) ||
+			modifierTypes.some((name) => typeof name !== 'string'))
+	) {
+		throw new LayoutParseError(
+			'"modifierTypes" must be an array of strings, one bonus type per entry.',
+		);
+	}
+
 	const components = raw.components.map((component, index) =>
 		parseComponent(component, index),
 	);
@@ -387,7 +417,22 @@ export function parseLayout(source: string): Layout {
 		// A component id is what formulas reference (SPEC §4.1), so it has to be
 		// a name the expression parser accepts. `isName` owns that question and
 		// carries the hyphen trap that made this rewrite necessary.
-		if (isName(component.id)) continue;
+		//
+		// **And it has to be a name the sheet has not reserved.** `mod` is the
+		// modifier namespace (SPEC §5): `buildSheetScope` registers `${id}` and
+		// `${id}.${name}` into the same flat table the slots go into, so a
+		// component called `mod` would register `mod.DEX` beside
+		// `mod.armour_class` and one name would mean two things. Rewritten rather
+		// than refused on the same argument the hyphen gets, and it is the safe
+		// half of the choice three times over: a note is keyed by `label` and not
+		// by `id`, so no character data moves (Constraint 4); a formula that said
+		// `mod` was already ambiguous between a component and a library function,
+		// so nothing well-formed breaks; and the constant is imported from beside
+		// the namespace it protects rather than spelled twice.
+		//
+		// It becomes `mod_2` rather than `mod`, because `usable` holds every id
+		// that already reads as a name and this component's own is one of them.
+		if (isName(component.id) && component.id !== MODIFIER_NAMESPACE) continue;
 		component.id = migrateId(component.id, usable);
 		usable.add(component.id);
 	}
@@ -415,6 +460,9 @@ export function parseLayout(source: string): Layout {
 		...(columns !== undefined ? { columns } : {}),
 		...(functions !== undefined ? { functions: functions as string[] } : {}),
 		...(triggers !== undefined ? { triggers: triggers as string[] } : {}),
+		...(modifierTypes !== undefined
+			? { modifierTypes: modifierTypes as string[] }
+			: {}),
 		components,
 	};
 }

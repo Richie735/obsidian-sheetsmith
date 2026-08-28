@@ -142,7 +142,38 @@ body {
 .sheetsmith-popover {
 	position: fixed;
 	z-index: var(--layer-popover, 30);
-	max-width: min(20em, calc(100vw - 2 * var(--size-4-4)));
+	/* **This bubble carries three payloads and the cap used to be chosen for the
+	   shortest.** A level ring's name is a word, a computed cell's formula is one
+	   long line, and a modifier breakdown is a list of sentences — and at
+	   `max-width: 20em` (240px, about 34 characters of `--font-ui-smaller`) a
+	   two-contributor breakdown rendered as six wrapped visual lines with no way
+	   to tell where one contributor ended and the next began.
+
+	   A hanging indent was tried here first and does not work, which is worth
+	   recording so it is not tried again: `text-indent` applies to the first line
+	   of a *block*, and a newline under `pre-wrap` starts a line rather than a
+	   block. So exactly one line of the bubble was flush — the first — and the
+	   second contributor shared its left edge with the first contributor's
+	   continuation. That is worse than flat, because the single flush line implies
+	   a hierarchy that is not there.
+
+	   Per-line styling is not available to fix it either: `showPopover` sets
+	   `textContent`, and a second kind of panel is what `docs/UI.md` §9 opens
+	   against. So the fix is the cap, and the number is measured rather than
+	   picked: the longest line a breakdown draws in the harness is 100 characters
+	   ("Worn items · Ring of Protection — item +1 (not applied: another item bonus
+	   of the same size applies)") at about 5.8px a character, so ~580px of ink and
+	   ~600px of box. 52em is that with a little headroom for a wider UI font.
+
+	   **What it does to the other two payloads: nothing they lose by.** This is a
+	   cap and not a width, so a level ring's one-word name is content-sized as it
+	   always was, and a formula — one long line of code, the payload the 20em was
+	   chosen for — now wraps later or not at all. A long resolution error in a
+	   computed cell goes from about five wrapped lines to two. The `100vw` term is
+	   unchanged, so a phone still clamps to its own width and the sentences still
+	   wrap there; that is the floor this rule cannot lift, and it is the one place
+	   the indent would have been worth having if it had worked. */
+	max-width: min(52em, calc(100vw - 2 * var(--size-4-4)));
 	padding: var(--size-2-2) var(--size-4-2);
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-m);
@@ -1054,9 +1085,67 @@ body {
 	font-weight: var(--font-normal);
 }
 
+/* A number something has been pushed at, on a card or in a cell (SPEC §5).
+
+   One rule for both consumers, and the mark is a *shape* channel rather than a
+   colour one: §1 gives the plugin no colours of its own, and Sandbox System
+   Builder's green — the closest prior art — is exactly what may not be drawn
+   here. `text-decoration` also survives forced-colors mode, where a border or a
+   box-shadow would be repainted or dropped. `cursor: help` is the computed
+   cell's own word for "there is an answer behind this", reused rather than
+   restated.
+
+   **`--text-muted` and not `--text-faint`, because this mark is the only channel
+   there is.** `legibility.md` §3 asks 3:1 of "a border or fill that is the only
+   thing marking a state", and nothing else on the card says the number is not
+   the number that was typed. Measured from the theme variables: faint gives
+   2.12:1 on a light card, 2.20 on a light row, 2.57 and 2.74 dark — under the bar
+   in all four, and worse in practice, because a cell's mark is three 2px dots and
+   antialiasing never lets one reach its own colour. Muted gives 6.19, 6.41, 7.03
+   and 7.50.
+
+   It was faint with the escalation to muted behind `prefers-contrast: more`,
+   which put the only legible version of the mark behind a query `docs/UI.md` §12
+   records as never having been rendered by anything. A mark that is legible only
+   in a mode nobody can photograph is not a legible mark.
+
+   `text-decoration-thickness` is the other half of the cell's problem: three 2px
+   dots at the default thickness are mostly antialiasing, so the thickness is
+   stated rather than inherited from the font. */
+.sheetsmith-view .sheetsmith-modified {
+	text-decoration: underline dotted var(--text-muted);
+	text-decoration-thickness: 2px;
+	/* Close enough to read as the number's own. At `0.2em` of a 1.75em digit the
+	   mark sat six pixels under the number and none above the stored-value pill,
+	   so what a reader saw was a divider between two numbers rather than an
+	   underline belonging to one. */
+	text-underline-offset: 0.12em;
+	cursor: help;
+}
+
 .sheetsmith-card-has-derived .sheetsmith-card-value {
 	width: auto;
-	margin-top: var(--size-2-1);
+	/* Room under the derived for a modifier mark, on **every** card that has a
+	   derived rather than only the marked ones.
+
+	   The conditional version was tried and reverted, and the reason is the whole
+	   of this rule: it put the marked card's pill six pixels below its unmarked
+	   siblings', so a row of six ability scores with one modified had one pill out
+	   of line. `card-face.ts`'s `reserveAbbreviation` already settles that trade —
+	   it keeps an empty slot precisely "so cards in a row share a baseline" — and a
+	   misalignment across a row is a worse defect than the one being fixed, because
+	   it reads as damage rather than as meaning.
+
+	   **What reserving uniformly costs is a few pixels of height on every derived
+	   card, marked or not.** That is the real price and the reason the conditional
+	   looked attractive. It is the better trade because the *mark* is the channel:
+	   spacing that changed with it would be a second, weaker channel saying the
+	   same thing, and one that breaks the row to say it.
+
+	   In `em` and not `--size-2-1`, because the fixed 2px against an offset that
+	   scales with a 1.75em number is exactly how the two converged: at `Text → 24`
+	   the dots landed one pixel above the pill's border. */
+	margin-top: 0.4em;
 	padding: var(--size-2-1) var(--size-4-2);
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-l);
@@ -1869,6 +1958,37 @@ body {
 	max-width: 100%;
 	padding: var(--size-2-1) var(--size-4-1);
 	font-size: var(--font-ui-small);
+}
+
+/* A target cell holding a name that changes nothing: the sheet publishes no such
+   value, or it publishes it and no formula reads a modifier for it.
+
+   **Two channels, because one of them used to be none.** The state lived only in
+   the `title`, so a stray target was pixel-identical to a working one and a
+   screen reader heard neither — `docs/UI.md` §6 wants it in the paint *and* in
+   ARIA, and the accessible name carries the other half.
+
+   `--text-muted` and not `--text-faint`, which is D1's lesson applied a second
+   time: faint measures 2.20:1 on a row fill and would be the same illegible
+   marking the modified number had. Muted is 6.41:1 and is the register this
+   wants anyway — quiet, not an error. It is deliberately *not* `--text-error`:
+   the value resolved perfectly well and is exactly what the note says, so §4.2's
+   "rendered, not corrected" rule governs and red would claim a fault that is not
+   there.
+
+   Dashed rather than dotted, so the two marks this feature draws stay
+   distinguishable: a dotted underline on a number means "something changed
+   this", and a dashed outline on a cell means "this changes nothing".
+
+   **Both classes in the selector**, which is doing two jobs. It sits below the
+   rule it could override, per §4's cascade note — an equal selector placed above
+   simply loses. And naming the select is what puts this under
+   `styles.test.ts`'s field guard: that scan matches on the `-select` spelling, so
+   a rule for a control named entirely outside the pattern would need the test
+   widened (§2), and this needs no widening because it says what it styles. */
+.sheetsmith-view .sheetsmith-table-select.sheetsmith-table-inert {
+	color: var(--text-muted);
+	border: 1px dashed var(--text-muted);
 }
 
 .sheetsmith-view .sheetsmith-table-value {
@@ -4007,24 +4127,36 @@ a.sheetsmith-undo {
    inputs — a definition wraps at about forty characters there, and a wrapped
    formula is unreadable.
 
-   One rule for both, deliberately. They were one rule and one class until the
-   trigger list was given a class of its own that styled nothing, so it fell
+   One rule for all three, deliberately. They were one rule and one class until
+   the trigger list was given a class of its own that styled nothing, so it fell
    back to the narrow column and the two fields disagreed on screen about what
    the same kind of field looks like. Sharing the rule is what stops that
-   happening again. */
+   happening again.
+
+   **It did not stop it.** The bonus-types field arrived with a class of its own
+   and was left out of these three selector lists, so it drew its textarea beside
+   its description at about a third of the width while its two neighbours drew
+   theirs below at full width — the same failure this comment was written about,
+   one field later. A comment predicting a mistake is not a check against it, so
+   `styles.test.ts` now holds every field of this kind to carrying all three
+   rules, and finding the classes by scanning the modules rather than by a list
+   here is what makes a fourth field covered without anyone remembering. */
 .sheetsmith-function-library,
-.sheetsmith-trigger-list {
+.sheetsmith-trigger-list,
+.sheetsmith-modifier-types {
 	display: block;
 }
 
 .sheetsmith-function-library .setting-item-control,
-.sheetsmith-trigger-list .setting-item-control {
+.sheetsmith-trigger-list .setting-item-control,
+.sheetsmith-modifier-types .setting-item-control {
 	width: 100%;
 	padding-top: var(--size-4-2);
 }
 
 .sheetsmith-function-library textarea,
-.sheetsmith-trigger-list textarea {
+.sheetsmith-trigger-list textarea,
+.sheetsmith-modifier-types textarea {
 	width: 100%;
 	font-family: var(--font-monospace);
 	font-size: var(--font-ui-small);
@@ -4037,21 +4169,29 @@ a.sheetsmith-undo {
 /* The heading above already names the field; the empty name div a
    description-only Setting leaves behind is structure with nothing in it. */
 .sheetsmith-function-library .setting-item-name:empty,
-.sheetsmith-trigger-list .setting-item-name:empty {
+.sheetsmith-trigger-list .setting-item-name:empty,
+.sheetsmith-modifier-types .setting-item-name:empty {
 	display: none;
 }
 
-.sheetsmith-function-problems:not(:empty) {
+.sheetsmith-field-problems:not(:empty) {
 	display: flex;
 	flex-direction: column;
 	gap: var(--size-2-1);
 	padding-bottom: var(--size-4-3);
 }
 
-/* Inline validation, not the bordered box that means a layout file is
-   unreadable: a definition being typed is work in progress, and three of
-   them stacked must not read as three catastrophes. */
-.sheetsmith-function-problem {
+/* Inline validation under a textarea field holding a list of lines — the
+   function library, the reset triggers, the bonus types. Not the bordered box
+   that means a layout file is unreadable: a line being typed is work in
+   progress, and three of them stacked must not read as three catastrophes.
+
+   **Named for the field rather than for the first field to need one.** These
+   were `.sheetsmith-function-problem*` while the function library was the only
+   consumer, and the third one arriving put a class called `function` on a
+   bonus-types field — a name a reader would believe, which is the correction
+   `.sheetsmith-level-ring` already records (docs/UI.md §9). */
+.sheetsmith-field-problem {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: baseline;
@@ -4061,7 +4201,7 @@ a.sheetsmith-undo {
 }
 
 /* The line number is the locator, quieter than the message it introduces. */
-.sheetsmith-function-problem-line {
+.sheetsmith-field-problem-line {
 	color: var(--text-faint);
 	font-variant-numeric: tabular-nums;
 }
@@ -4074,7 +4214,7 @@ a.sheetsmith-undo {
    makes min-width mandatory — a flex item defaults to min-width: auto, so
    unwrappable text would refuse to shrink and push the settings pane wider
    than the window instead of scrolling inside its own row. */
-.sheetsmith-function-problem code {
+.sheetsmith-field-problem code {
 	min-width: 0;
 	max-width: 100%;
 	overflow-x: auto;
@@ -4290,7 +4430,24 @@ a.sheetsmith-undo {
 	flex-direction: column;
 	gap: var(--size-2-1);
 	flex: 1;
-	min-width: 0;
+	/* A floor rather than 0, because this is the only flexible child of the
+	   detail line and so the only one squeezing lands on. Wide enough for a
+	   select's own chevron plus a word, which is the narrowest of these fields;
+	   the line wraps rather than honouring it by clipping. */
+	min-width: 7em;
+	/* And a ceiling, which the floor turned out to need. `flex: 1` grows as well
+	   as shrinks, and once the line wraps this field can be the only thing on its
+	   row — so it took all the slack: **438px to hold the word "item"** at a 584px
+	   panel, against 122px for the same control one width up where the line does
+	   not wrap. A closed list of short names, 3.6x wider at the adjacent width,
+	   with an unrelated checkbox 10px off its right edge.
+
+	   Wide enough for the longest bonus type anyone is likely to declare plus the
+	   chevron, and a cap rather than `flex-grow: 0` because growing is right in
+	   the unwrapped case: this field shares that line with several others and
+	   should take the room they leave. What it should not do is take a whole
+	   row. */
+	max-width: 14em;
 }
 
 .sheetsmith-detail-field > input,
@@ -4393,6 +4550,15 @@ a.sheetsmith-undo {
 	text-align: right;
 	color: var(--text-error);
 	font-size: var(--font-smallest);
+}
+
+/* A message about the form rather than about one control: the "no formula reads
+   a modifier" line under a table's columns. It is a line of the form, not a
+   note beside an input, so it reads left to right like the descriptions around
+   it rather than pinned to the right edge. Below the rule it overrides, because
+   an equal selector placed above it simply loses (docs/UI.md §4). */
+.sheetsmith-component-form > .sheetsmith-field-error {
+	text-align: left;
 }
 
 /* The Add component row, whose description is a second line rather than copy
@@ -4774,6 +4940,15 @@ a.sheetsmith-undo {
 	padding: 0 var(--size-2-2) var(--size-2-2);
 	/* The fade for the mark below; colour only, nothing motion-shaped. */
 	transition: background-color 400ms ease;
+	/* **Wraps at every width, not only a narrow one.** This used to wrap under
+	   the container query below and squeeze above it, and squeezing lands on
+	   whichever child is the flexible one — `.sheetsmith-detail-field`, which had
+	   `min-width: 0` and so collapsed to nothing. A modifier number column put
+	   seven controls on this line and its **Bonus type** select rendered as an
+	   empty 8px box with its label wrapped across two lines into its neighbour.
+	   Wrapping is the honest answer to a full line at any width; the floor below
+	   is what makes the wrap happen rather than the collapse. */
+	flex-wrap: wrap;
 }
 
 /* Changing what a column holds rebuilds these fields through a full redraw.
@@ -4845,10 +5020,6 @@ a.sheetsmith-undo {
 		display: block;
 	}
 
-.sheetsmith-entry-detail {
-		flex-wrap: wrap;
-	}
-
 }
 
 /* The layout editor's sample of a level column: every state of the ring, as
@@ -4888,6 +5059,27 @@ a.sheetsmith-undo {
 	gap: var(--size-2-2);
 	font-size: var(--font-ui-small);
 	color: var(--text-muted);
+}
+
+/* **The pair has to be tighter than the space beside it**, and it was not.
+
+   These gaps read the right way round in the stylesheet — 4px inside a pair
+   against the detail line's 8px between them — and rendered the wrong way round,
+   because the box brought its own margin: measured on `editor-modifiers`, the
+   checkbox-to-its-label gap came out at 12px and the gap to the *next* pair at
+   9-10px, so every checkbox sat marginally closer to the label it does not name
+   than to the one it does. `reference/legibility.md` §5 is what that breaks, and
+   with four flags on this line — this feature added the fourth — the pairing was
+   ambiguous four times over.
+
+   Zeroing it rather than compensating for it, because the margin is not ours:
+   unstyled, this input takes whatever the browser or the theme sets, so
+   compensating would be tuned to one of them and wrong in the others. With the
+   margin gone the two flex gaps are the only spacing there is and the ratio is
+   the declared 2:1. It also *narrows* the line, which is the right direction for
+   a line that wraps. */
+.sheetsmith-entry-check input[type='checkbox'] {
+	margin: 0;
 }
 
 /* A ticked flag in forced colors, where a fill is the whole of its state.

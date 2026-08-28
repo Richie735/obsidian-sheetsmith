@@ -33,6 +33,10 @@ export function harnessLayout(samples: readonly Sample[] = SAMPLES): Layout {
 		components: samples.map((sample) => sample.config),
 		functions: ['mod(score) = floor((score - 10) / 2)'],
 		triggers: ['Long rest', 'Short rest'],
+		// The layout's own bonus-type vocabulary (SPEC §5). Two are used by the
+		// Magic items table's two columns; the third is declared and unused, which
+		// is what a layout carrying a system's whole list looks like.
+		modifierTypes: ['item', 'status', 'circumstance'],
 	};
 }
 

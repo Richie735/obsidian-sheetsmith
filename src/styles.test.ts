@@ -1545,3 +1545,86 @@ describe('the flag rule\'s scope names every bare checkbox there is', () => {
 		expect(mismatched).toEqual([]);
 	});
 });
+
+describe('a textarea field over a list of lines looks like its siblings', () => {
+	/*
+	 * Three fields in the layout editor hold a list one-per-line, and all three
+	 * need the same three rules to draw their textarea below the description at
+	 * full width rather than beside it in the narrow control column.
+	 *
+	 * **The rule's own comment predicted this failure and did not prevent it,
+	 * twice.** It records the trigger list being given a class of its own that
+	 * styled nothing, falling back to the narrow column, and the two fields
+	 * disagreeing on screen about what the same kind of field looks like — and
+	 * then the bonus-types field arrived and did exactly that again. A comment is
+	 * not a check, which is §10's case for a guard: the failure is invisible in a
+	 * unit test and in a type check, and visible in the harness only to someone
+	 * who happens to compare three fields.
+	 *
+	 * The classes are found by scanning the modules rather than listed here, so a
+	 * fourth field of this kind is covered without anyone remembering to come
+	 * back. Two spellings, because two of the three now declare their class as
+	 * data for the shared form (`line-list-field.ts`) while the function library
+	 * still calls `setClass` itself.
+	 */
+	const FIELDS = readdirSync(new URL('./editor', import.meta.url)).filter(
+		(name) => name.endsWith('-field.ts'),
+	);
+
+	/** The class a field module gives its own Setting, if it is one of these. */
+	function fieldClass(source: string): string | null {
+		// The tell that a module is one of these fields rather than an ordinary
+		// helper: it either draws the textarea or hands a spec to the module that
+		// does.
+		if (!source.includes('addTextArea') && !source.includes('renderLineList')) {
+			return null;
+		}
+		return (
+			/(?:\.setClass\(|className: )'(sheetsmith-[a-z-]+)'/.exec(source)?.[1] ??
+			null
+		);
+	}
+
+	const classes = FIELDS.map((name) =>
+		fieldClass(
+			readFileSync(new URL(`./editor/${name}`, import.meta.url), 'utf8'),
+		),
+	).filter((name): name is string => name !== null);
+
+	/**
+	 * Every selector in the file that ends in this suffix, so a class can be
+	 * asked whether it is named in the rule that suffix belongs to.
+	 *
+	 * **Per selector rather than per rule body**, which is the correction: this
+	 * used to split the stylesheet on `}` and look for the block containing both
+	 * a marker word and a known class, so the marker `textarea` could select some
+	 * other chunk and the case that reported red was not reliably the case whose
+	 * rule was broken. The failure was real and the attribution was approximate.
+	 * Asking about selectors names exactly one thing.
+	 */
+	function selectorsEndingIn(suffix: string): string[] {
+		return selectors().filter((selector) => selector.endsWith(suffix));
+	}
+
+	it('finds the fields it is meant to be checking', () => {
+		// A scan that matched nothing would pass the cases below by having nothing
+		// in it, and the count is the whole premise: this rule is about fields
+		// agreeing with each other, so fewer than two cannot disagree.
+		expect(classes.length).toBeGreaterThanOrEqual(3);
+	});
+
+	it.each([
+		['the block rule', ''],
+		['the control rule', ' .setting-item-control'],
+		['the textarea rule', ' textarea'],
+	])('names every one of them in %s', (_name, suffix) => {
+		const found = selectorsEndingIn(suffix);
+		// The suffix has to select something, or the case passes by asking about a
+		// rule that is not there.
+		expect(found.length).toBeGreaterThan(0);
+		const missing = classes.filter(
+			(name) => !found.includes(`.${name}${suffix}`),
+		);
+		expect(missing).toEqual([]);
+	});
+});

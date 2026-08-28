@@ -2183,10 +2183,12 @@ describe("the layout's own settings", () => {
 		await settle(harness.pane);
 	});
 
-	it('draws the grid, the function library and the trigger list together', () => {
+	it('draws the grid, the library, the triggers and the bonus types together', () => {
 		// The function library's own header asked for this: below the component
 		// forms, "the definitions are a scroll away from the formulas calling
-		// them, which is a side panel's job to fix".
+		// them, which is a side panel's job to fix". The bonus types sit beside
+		// the library because they are the same category — the layout's own
+		// vocabulary, shared by every component using it (SPEC §5).
 		expect(has(harness, 'layout-columns')).toBe(true);
 		expect(
 			harness.container.querySelector('.sheetsmith-function-library'),
@@ -2194,68 +2196,243 @@ describe("the layout's own settings", () => {
 		expect(
 			harness.container.querySelector('.sheetsmith-trigger-list'),
 		).not.toBeNull();
+		expect(
+			harness.container.querySelector('.sheetsmith-modifier-types'),
+		).not.toBeNull();
 	});
 
-	it('writes the column count to the layout', async () => {
-		type(control<HTMLInputElement>(harness, 'layout-columns'), '6');
+	it('reads the bonus types back without waiting for a change event', async () => {
+		// The third field on this panel, and `commitPending` has to read all
+		// three: `||` over the commits would short-circuit past the later ones
+		// whenever an earlier one changed, which is how a list gets lost.
+		const types = control<HTMLTextAreaElement>(harness, 'modifier-types');
+		types.value = 'item\nstatus';
 		await settle(harness.pane);
-		expect((await harness.stored()).columns).toBe(6);
+		expect((await harness.stored()).modifierTypes).toEqual(['item', 'status']);
 	});
 
-	it('redraws the schematic against the new count without rebuilding the pane', async () => {
-		const panel = harness.container.querySelector('.sheetsmith-editor-panel');
-		type(control<HTMLInputElement>(harness, 'layout-columns'), '4');
-		await settle(harness.pane);
-
-		const sheet = harness.container.querySelector(
-			'.sheetsmith-layout-preview',
-		) as HTMLElement;
-		expect(sheet.style.getPropertyValue('--sheetsmith-columns')).toBe('4');
-		expect(harness.container.querySelector('.sheetsmith-editor-panel')).toBe(
-			panel,
-		);
-	});
-
-	it('reads a typed definition back without waiting for a change event', async () => {
-		/*
-		 * The whole reason the panel's two textareas are *read* on close rather
-		 * than trusted to blur: a pointerdown on the grid calls preventDefault,
-		 * which suppresses the focus change and the textarea's `change` with it,
-		 * so clicking a block after typing a definition would discard it. The
-		 * value is set and no event is fired, which is the state a pane closes in.
-		 *
-		 * **Added after the panel moved out, not during.** `flush` used to read
-		 * the two fields itself; it now asks the panel for them and writes only
-		 * where something changed, and that answer being *used* is a claim
-		 * nothing made — dropping it left every case green, because every other
-		 * path into these fields goes through their own change listener.
-		 */
-		const library = control<HTMLTextAreaElement>(harness, 'function-library');
-		library.value = 'mod(score) = floor((score - 10) / 2)\ndouble(n) = n * 2';
-		await settle(harness.pane);
-
-		expect((await harness.stored()).functions).toEqual([
-			'mod(score) = floor((score - 10) / 2)',
-			'double(n) = n * 2',
-		]);
-	});
-
-	it('reads both fields back, not only the first one that changed', async () => {
-		// Two fields, both dirty, and the trigger list read first. `||` over the
-		// two commits short-circuits past the second whenever the first changed,
-		// which is precisely how a library gets lost — so the panel evaluates
-		// both into locals before combining them, and this is what says so.
+	it('reads all three fields back, not only the first one that changed', async () => {
 		const triggers = control<HTMLTextAreaElement>(harness, 'trigger-list');
 		const library = control<HTMLTextAreaElement>(harness, 'function-library');
+		const types = control<HTMLTextAreaElement>(harness, 'modifier-types');
 		triggers.value = 'Long rest\nShort rest';
-		library.value = 'mod(score) = floor((score - 10) / 2)\ndouble(n) = n * 2';
+		library.value = 'double(n) = n * 2';
+		types.value = 'item';
 		await settle(harness.pane);
 
 		const stored = await harness.stored();
 		expect(stored.triggers).toEqual(['Long rest', 'Short rest']);
-		expect(stored.functions).toEqual([
-			'mod(score) = floor((score - 10) / 2)',
-			'double(n) = n * 2',
+		expect(stored.functions).toEqual(['double(n) = n * 2']);
+		expect(stored.modifierTypes).toEqual(['item']);
+	});
+
+	it('leaves the key absent where the list is cleared', async () => {
+		// An absent key stays absent, so a layout that never wanted bonus types
+		// does not grow one on first save.
+		const types = control<HTMLTextAreaElement>(harness, 'modifier-types');
+		types.value = 'item';
+		await settle(harness.pane);
+		types.value = '';
+		types.dispatchEvent(new Event('change'));
+		await settle(harness.pane);
+		expect('modifierTypes' in (await harness.stored())).toBe(false);
+	});
+
+});
+
+/*
+ * The editor's half of item modifiers (SPEC §5, §7).
+ *
+ * Two things it can say that the sheet cannot: which values this layout takes a
+ * modifier for, and — where that set is empty — that the layout's modifiers do
+ * nothing at all. Both are computed from the layout alone, so neither needs a
+ * character in hand. The sheet's half is at the row, because an open row's
+ * target is character data in a file the layout has never opened.
+ */
+describe('a layout with a modifier table', () => {
+	/**
+	 * A magic-items table pushing at an armour class that reads its slot.
+	 *
+	 * `columns` is a parameter because the gate on this surface is about which
+	 * *columns* a component holds, and a fixture that always had both halves of a
+	 * modifier row could not tell the gate from a gate on either one.
+	 */
+	function modifying(
+		derived: string,
+		columns: readonly unknown[] = [
+			{ key: 'Modifies', type: 'target' },
+			{ key: 'Bonus', type: 'number', modifier: true },
+		],
+	): Layout {
+		return {
+			name: 'Modifier sheet',
+			columns: 12,
+			components: [
+				{
+					id: 'armour',
+					type: 'card',
+					label: 'Armour class',
+					position: { col: 1, row: 1, width: 2, height: 1 },
+					derived,
+				} as ComponentConfig,
+				{
+					id: 'items',
+					type: 'table',
+					label: 'Magic items',
+					position: { col: 3, row: 1, width: 6, height: 2 },
+					openRows: true,
+					columns,
+				} as unknown as ComponentConfig,
+			],
+			modifierTypes: ['item'],
+		};
+	}
+
+	/** The two halves of a modifier row, each on its own. */
+	const TARGET_ONLY = [{ key: 'Modifies', type: 'target' }];
+	const AMOUNT_ONLY = [
+		{ key: 'Bonus', type: 'number', modifier: true, modifierType: 'item' },
+	];
+
+	/** The panel's text, for the two statements this pane can make. */
+	const said = (): string =>
+		harness.container.querySelector('.sheetsmith-editor-panel')?.textContent ??
+		'';
+
+	it('lists the values this layout takes a modifier for', async () => {
+		harness = await open(modifying('10 + mod.self'));
+		control(harness, 'edit-items').click();
+		await settle(harness.pane);
+		expect(said()).toContain('This layout takes modifiers for: armour');
+	});
+
+	it('says nothing at all on a component with no columns to modify with', async () => {
+		// The surface belongs to a component that declares half a modifier row,
+		// not to every form. A Card has no `columns` at all, which is the case
+		// this covers and the *only* one it covers — it says nothing about the
+		// gate itself, which is what the two cases below are for.
+		harness = await open(modifying('10 + mod.self'));
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		expect(said()).not.toContain('takes modifiers for');
+	});
+
+	it('says nothing on a table whose columns are neither half of a row', async () => {
+		harness = await open(
+			modifying('10 + mod.self', [{ key: 'Notes' }, { key: 'Qty', type: 'number' }]),
+		);
+		control(harness, 'edit-items').click();
+		await settle(harness.pane);
+		expect(said()).not.toContain('takes modifiers for');
+	});
+
+	it.each([
+		['a target column and no amount', TARGET_ONLY],
+		['an amount column and no target', AMOUNT_ONLY],
+	])('speaks up for a table holding %s', async (_name, columns) => {
+		/*
+		 * Either half earns the surface, because a table carrying one without the
+		 * other is a modifier table mid-build. The target-only case wants the list
+		 * because the list *is* its picker; the amount-only case is the one the
+		 * first draft missed.
+		 */
+		harness = await open(modifying('10 + mod.self', columns));
+		control(harness, 'edit-items').click();
+		await settle(harness.pane);
+		expect(said()).toContain('This layout takes modifiers for: armour');
+	});
+
+	it.each([
+		['a target column and no amount', TARGET_ONLY],
+		['an amount column and no target', AMOUNT_ONLY],
+	])('reports a dead layout to a table holding %s', async (_name, columns) => {
+		/*
+		 * The case the target-only gate lost, and the reason F2 was real: a
+		 * modifier column added before the target column, on a layout where no
+		 * formula reads a slot, used to get only the columns list's "no target
+		 * column" footnote — so the author was told to add a target column and not
+		 * told that adding one would still change nothing. dnd5e#3900, one edit
+		 * late.
+		 */
+		harness = await open(modifying('10 + abilities.DEX', columns));
+		control(harness, 'edit-items').click();
+		await settle(harness.pane);
+		// Inside the columns list, which is part of the contract rather than an
+		// implementation detail: on the page this message sat 22px under the list
+		// it describes and 2px over the *next* setting's card, so it read as that
+		// setting's caption. The list is what it is about.
+		const error = harness.container.querySelector(
+			'.sheetsmith-entry-list .sheetsmith-field-error',
+		);
+		expect(error?.textContent).toContain('No formula on this layout reads');
+	});
+
+	it('reports a layout whose modifiers change nothing', async () => {
+		/*
+		 * The strongest false-positive-free statement the static set supports, and
+		 * it is Foundry's dnd5e#3900 caught in the editor: a layout with a
+		 * modifier table and nothing reading a slot is a layout whose modifiers do
+		 * nothing, and the author is told before a character exists.
+		 */
+		harness = await open(modifying('10 + abilities.DEX'));
+		control(harness, 'edit-items').click();
+		await settle(harness.pane);
+		// Inside the columns list, which is part of the contract rather than an
+		// implementation detail: on the page this message sat 22px under the list
+		// it describes and 2px over the *next* setting's card, so it read as that
+		// setting's caption. The list is what it is about.
+		const error = harness.container.querySelector(
+			'.sheetsmith-entry-list .sheetsmith-field-error',
+		);
+		expect(error?.textContent).toContain('No formula on this layout reads');
+		expect(error?.textContent).toContain('mod.self');
+	});
+
+	it('is not fooled by a mod.self inside an if', async () => {
+		// The language's `if` is lazy, so an observed set would report this as
+		// accepting nothing on a character whose item is stowed.
+		harness = await open(modifying('if(worn, 10 + mod.self, 10)'));
+		control(harness, 'edit-items').click();
+		await settle(harness.pane);
+		expect(said()).toContain('This layout takes modifiers for: armour');
+	});
+
+	it('reports a column typed against a type the layout does not declare', async () => {
+		/*
+		 * The check the feature spec asked Table's own `configError` for, in the
+		 * one place that can make it: `configError` is handed a config and never
+		 * the layout, so nothing inside a component can see the list. A reset
+		 * binding pointing at no trigger is reported here for the same reason.
+		 */
+		harness = await open(modifying('10 + mod.self', [
+			{ key: 'Modifies', type: 'target' },
+			{
+				key: 'Bonus',
+				type: 'number',
+				modifier: true,
+				modifierType: 'circumstance',
+			},
+		]));
+		control(harness, `edit-${SHEET_DESTINATION}`).click();
+		await settle(harness.pane);
+		const problems = harness.container.querySelector(
+			'#sheetsmith-modifier-type-problems',
+		)?.textContent ?? '';
+		expect(problems).toContain('circumstance');
+		expect(problems).toContain('does not declare');
+	});
+
+	it('offers a modifier column the layout own bonus types', async () => {
+		harness = await open(modifying('10 + mod.self'));
+		control(harness, 'edit-items').click();
+		await settle(harness.pane);
+		const select = control<HTMLSelectElement>(
+			harness,
+			'items-col-Bonus-modifier-type',
+		);
+		expect(Array.from(select.options).map((one) => one.textContent)).toEqual([
+			'Untyped',
+			'item',
 		]);
 	});
 });

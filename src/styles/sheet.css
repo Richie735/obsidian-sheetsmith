@@ -865,9 +865,67 @@
 	font-weight: var(--font-normal);
 }
 
+/* A number something has been pushed at, on a card or in a cell (SPEC §5).
+
+   One rule for both consumers, and the mark is a *shape* channel rather than a
+   colour one: §1 gives the plugin no colours of its own, and Sandbox System
+   Builder's green — the closest prior art — is exactly what may not be drawn
+   here. `text-decoration` also survives forced-colors mode, where a border or a
+   box-shadow would be repainted or dropped. `cursor: help` is the computed
+   cell's own word for "there is an answer behind this", reused rather than
+   restated.
+
+   **`--text-muted` and not `--text-faint`, because this mark is the only channel
+   there is.** `legibility.md` §3 asks 3:1 of "a border or fill that is the only
+   thing marking a state", and nothing else on the card says the number is not
+   the number that was typed. Measured from the theme variables: faint gives
+   2.12:1 on a light card, 2.20 on a light row, 2.57 and 2.74 dark — under the bar
+   in all four, and worse in practice, because a cell's mark is three 2px dots and
+   antialiasing never lets one reach its own colour. Muted gives 6.19, 6.41, 7.03
+   and 7.50.
+
+   It was faint with the escalation to muted behind `prefers-contrast: more`,
+   which put the only legible version of the mark behind a query `docs/UI.md` §12
+   records as never having been rendered by anything. A mark that is legible only
+   in a mode nobody can photograph is not a legible mark.
+
+   `text-decoration-thickness` is the other half of the cell's problem: three 2px
+   dots at the default thickness are mostly antialiasing, so the thickness is
+   stated rather than inherited from the font. */
+.sheetsmith-view .sheetsmith-modified {
+	text-decoration: underline dotted var(--text-muted);
+	text-decoration-thickness: 2px;
+	/* Close enough to read as the number's own. At `0.2em` of a 1.75em digit the
+	   mark sat six pixels under the number and none above the stored-value pill,
+	   so what a reader saw was a divider between two numbers rather than an
+	   underline belonging to one. */
+	text-underline-offset: 0.12em;
+	cursor: help;
+}
+
 .sheetsmith-card-has-derived .sheetsmith-card-value {
 	width: auto;
-	margin-top: var(--size-2-1);
+	/* Room under the derived for a modifier mark, on **every** card that has a
+	   derived rather than only the marked ones.
+
+	   The conditional version was tried and reverted, and the reason is the whole
+	   of this rule: it put the marked card's pill six pixels below its unmarked
+	   siblings', so a row of six ability scores with one modified had one pill out
+	   of line. `card-face.ts`'s `reserveAbbreviation` already settles that trade —
+	   it keeps an empty slot precisely "so cards in a row share a baseline" — and a
+	   misalignment across a row is a worse defect than the one being fixed, because
+	   it reads as damage rather than as meaning.
+
+	   **What reserving uniformly costs is a few pixels of height on every derived
+	   card, marked or not.** That is the real price and the reason the conditional
+	   looked attractive. It is the better trade because the *mark* is the channel:
+	   spacing that changed with it would be a second, weaker channel saying the
+	   same thing, and one that breaks the row to say it.
+
+	   In `em` and not `--size-2-1`, because the fixed 2px against an offset that
+	   scales with a 1.75em number is exactly how the two converged: at `Text → 24`
+	   the dots landed one pixel above the pill's border. */
+	margin-top: 0.4em;
 	padding: var(--size-2-1) var(--size-4-2);
 	border: 1px solid var(--background-modifier-border);
 	border-radius: var(--radius-l);
@@ -1680,6 +1738,37 @@ body {
 	max-width: 100%;
 	padding: var(--size-2-1) var(--size-4-1);
 	font-size: var(--font-ui-small);
+}
+
+/* A target cell holding a name that changes nothing: the sheet publishes no such
+   value, or it publishes it and no formula reads a modifier for it.
+
+   **Two channels, because one of them used to be none.** The state lived only in
+   the `title`, so a stray target was pixel-identical to a working one and a
+   screen reader heard neither — `docs/UI.md` §6 wants it in the paint *and* in
+   ARIA, and the accessible name carries the other half.
+
+   `--text-muted` and not `--text-faint`, which is D1's lesson applied a second
+   time: faint measures 2.20:1 on a row fill and would be the same illegible
+   marking the modified number had. Muted is 6.41:1 and is the register this
+   wants anyway — quiet, not an error. It is deliberately *not* `--text-error`:
+   the value resolved perfectly well and is exactly what the note says, so §4.2's
+   "rendered, not corrected" rule governs and red would claim a fault that is not
+   there.
+
+   Dashed rather than dotted, so the two marks this feature draws stay
+   distinguishable: a dotted underline on a number means "something changed
+   this", and a dashed outline on a cell means "this changes nothing".
+
+   **Both classes in the selector**, which is doing two jobs. It sits below the
+   rule it could override, per §4's cascade note — an equal selector placed above
+   simply loses. And naming the select is what puts this under
+   `styles.test.ts`'s field guard: that scan matches on the `-select` spelling, so
+   a rule for a control named entirely outside the pattern would need the test
+   widened (§2), and this needs no widening because it says what it styles. */
+.sheetsmith-view .sheetsmith-table-select.sheetsmith-table-inert {
+	color: var(--text-muted);
+	border: 1px dashed var(--text-muted);
 }
 
 .sheetsmith-view .sheetsmith-table-value {

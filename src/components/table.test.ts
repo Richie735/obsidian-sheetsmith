@@ -1365,7 +1365,6 @@ describe('table with open rows', () => {
 	const load: TableConfig = {
 		...inventory,
 		id: 'load',
-		label: 'Load',
 		rows: [{ label: 'Blade or two' }, { label: 'Throwing knives' }],
 	};
 
@@ -2674,5 +2673,839 @@ describe('a column total and sum() over the same rows agree', () => {
 		expect(() => evaluate('sum(inventory, Worn)', env.sheet, callsFrom(env))).toThrow(
 			'Row "Dagger": sum() adds numbers up and this is yes or no. Count the rows it holds for instead, with count(inventory, <condition>).',
 		);
+	});
+});
+
+/*
+ * Item modifiers (SPEC §5): a row of a table declaring a change against a value
+ * published elsewhere on the sheet.
+ *
+ * A magic-items list, which is what a target column exists for: nothing
+ * declared, every row the character's, and each one naming what it changes. The
+ * value being changed is a Computed component elsewhere, so nothing here
+ * publishes the number a modifier lands on — which is the whole point.
+ */
+describe('table and its modifiers', () => {
+	const items: TableConfig = {
+		id: 'items',
+		type: 'table',
+		label: 'Magic items',
+		position: { col: 1, row: 1, width: 6, height: 2 },
+		rowHeader: 'Item',
+		openRows: true,
+		columns: [
+			{ key: 'Modifies', type: 'target' },
+			{ key: 'Bonus', type: 'number', modifier: true, modifierType: 'item' },
+			{ key: 'Aid', type: 'number', modifier: true, modifierType: 'status' },
+		],
+	};
+
+	const ITEMS_BODY = `
+| Item | Modifies | Bonus | Aid |
+|---|---|---|---|
+| Belt of Giant Strength | abilities.STR | 2 |  |
+| Gauntlets of Ogre Power | abilities.STR | 1 |  |
+| Bull's Strength | abilities.STR |  | 1 |
+| Chalk |  |  |  |
+`;
+
+	/** The pushes this card declares, resolved against a bare environment. */
+	function pushesOf(over: TableConfig, body: string) {
+		const data = stored(body, over);
+		const source = table.scopeModifiers?.(data, over);
+		if (source === undefined) throw new Error('expected a modifier source');
+		return source(
+			makeFieldResolver(table, over, data, NO_ENV),
+			makeFieldExplainer(table, over, data, NO_ENV),
+		);
+	}
+
+	it('pushes one modifier per amount cell, and none from a blank target', () => {
+		// A blank target is the ordinary case on an inventory, not a degenerate
+		// one: most rows change nothing.
+		// Every push carries the card's own label as well as the row's: a row
+		// label alone cannot name a source when two modifier tables on one sheet
+		// each hold a "Ring".
+		const from = { target: 'abilities.STR', source: 'Magic items' };
+		expect(pushesOf(items, ITEMS_BODY)).toEqual([
+			{ ...from, type: 'item', label: 'Belt of Giant Strength', amount: 2 },
+			{ ...from, type: 'status', label: 'Belt of Giant Strength', amount: 0 },
+			{ ...from, type: 'item', label: 'Gauntlets of Ogre Power', amount: 1 },
+			{ ...from, type: 'status', label: 'Gauntlets of Ogre Power', amount: 0 },
+			{ ...from, type: 'item', label: "Bull's Strength", amount: 0 },
+			{ ...from, type: 'status', label: "Bull's Strength", amount: 1 },
+		]);
+	});
+
+	it('names a row as a reader sees it, never as the file spells it', () => {
+		// `RowValues.label`'s rule one layer out: a breakdown reading
+		// "[[Sunblade|sword]]" names nothing anybody can find on the card.
+		const body = `
+| Item | Modifies | Bonus | Aid |
+|---|---|---|---|
+| [[Ring of Protection\\|ring]] | armour_class | 1 |  |
+`;
+		expect(pushesOf(items, body)[0]?.label).toBe('ring');
+	});
+
+	it('declares nothing where the layout gave it no target column', () => {
+		const { columns, ...rest } = items;
+		const noTarget = { ...rest, columns: (columns ?? []).slice(1) } as TableConfig;
+		expect(table.scopeModifiers?.(stored(ITEMS_BODY, noTarget), noTarget)).toBeUndefined();
+	});
+
+	it('declares nothing where no column is a modifier', () => {
+		const noAmount = {
+			...items,
+			columns: [{ key: 'Modifies', type: 'target' as const }],
+		};
+		expect(
+			table.scopeModifiers?.(stored(ITEMS_BODY, noAmount), noAmount),
+		).toBeUndefined();
+	});
+
+	it('declares nothing from a configuration it is refusing to draw', () => {
+		// The same argument `scopeRows` makes: filling a slot from a config nobody
+		// has agreed to yet would be a number derived from an error.
+		const broken = {
+			...items,
+			columns: [...(items.columns ?? []), { key: 'Modifies', type: 'target' as const }],
+		};
+		expect(table.scopeModifiers?.(null, broken)).toBeUndefined();
+	});
+
+	it('reports the row where a number cell holds prose, rather than pushing 0', () => {
+		const body = `
+| Item | Modifies | Bonus | Aid |
+|---|---|---|---|
+| Rope | armour_class | coil |  |
+`;
+		expect(pushesOf(items, body)[0]).toEqual({
+			target: 'armour_class',
+			type: 'item',
+			label: 'Rope',
+			source: 'Magic items',
+			unreadable:
+				'"coil" is not a number, so the "Bonus" column cannot be an amount.',
+		});
+	});
+
+	it('reports the row where a computed amount will not resolve, and why', () => {
+		// The message the acceptance criterion asks for: the row *and* the reason.
+		// A resolver returning null could only ever produce "did not resolve",
+		// which is why the source is handed an explainer as well.
+		const computedAmount: TableConfig = {
+			...items,
+			columns: [
+				{ key: 'Modifies', type: 'target' },
+				{ key: 'Bonus', type: 'computed', formula: 'ability + 1', modifier: true },
+			],
+		};
+		const body = `
+| Item | Modifies |
+|---|---|
+| Belt of Giant Strength | abilities.STR |
+`;
+		expect(pushesOf(computedAmount, body)[0]).toEqual({
+			target: 'abilities.STR',
+			type: null,
+			label: 'Belt of Giant Strength',
+			source: 'Magic items',
+			unreadable: 'Unknown name "ability".',
+		});
+	});
+
+	it('reads an untyped modifier column as untyped, so every one stacks', () => {
+		const untyped: TableConfig = {
+			...items,
+			columns: [
+				{ key: 'Modifies', type: 'target' },
+				{ key: 'Bonus', type: 'number', modifier: true },
+			],
+		};
+		const body = `
+| Item | Modifies | Bonus |
+|---|---|---|
+| Cloak | armour_class | 1 |
+`;
+		expect(pushesOf(untyped, body)[0]?.type).toBeNull();
+	});
+
+	it('publishes no name for a row that pushes', () => {
+		/*
+		 * The sentence the whole design rests on: `<id>.<name>` is a fixed-row
+		 * mechanism and stays one, so a row a character typed publishes nothing
+		 * however many values it changes.
+		 *
+		 * **Named against the rows this body actually holds.** This used to probe
+		 * `items.Belt`, which is nobody's row — the label is "Belt of Giant
+		 * Strength" — so it asserted that an arbitrary string is unknown rather
+		 * than that a real row publishes nothing, and would have passed just as
+		 * well if every row had been published.
+		 */
+		const values = table.scopeValues?.(stored(ITEMS_BODY, items), items) ?? {};
+		// Nothing at all: no `self`, and not one named entry.
+		expect(values).toEqual({});
+		const scope = buildSheetScope([{ id: 'items', values }]);
+		expect(scope('items')).toBeUndefined();
+		for (const row of [
+			'Belt of Giant Strength',
+			'Gauntlets of Ogre Power',
+			"Bull's Strength",
+			'Chalk',
+		]) {
+			expect(scope(`items.${row}`), row).toBeUndefined();
+		}
+	});
+
+	it('reaches a row scope as its own text, with no special case', () => {
+		/*
+		 * A target cell is exactly what a `text` cell already is to a formula:
+		 * `rowScope` layers every non-computed cell by column key and `cellValue`
+		 * falls through to the trimmed string. So `sum(items, Modifies)` fails
+		 * naming the row and the value, as it already does over a text column —
+		 * no special case, and none wanted.
+		 */
+		const data = stored(ITEMS_BODY, items);
+		const source = table.scopeRows?.(data, items);
+		const rows = source?.(makeFieldResolver(table, items, data, NO_ENV)) ?? [];
+		expect(rows[0]?.values.Modifies).toBe('abilities.STR');
+		const env = buildSheetEnv([
+			{ id: 'items', values: {}, rows: source },
+		]);
+		expect(() =>
+			evaluate('sum(items, Modifies)', env.sheet, callsFrom(env)),
+		).toThrow('Row "Belt of Giant Strength"');
+	});
+
+	it('round-trips a target column byte for byte', () => {
+		// Constraint 3, over a filled target cell and a blank one.
+		const data = stored(ITEMS_BODY, items);
+		expect(table.write(data, ITEMS_BODY, items)).toBe(ITEMS_BODY);
+	});
+
+	it('keeps a stored target the sheet does not publish, on write', () => {
+		const body = `
+| Item | Modifies | Bonus | Aid |
+|---|---|---|---|
+| Amulet | armor_class | 1 |  |
+`;
+		const data = stored(body, items);
+		expect(table.write(data, body, items)).toBe(body);
+		// And it is what a formula would be asked for, spelled exactly as typed.
+		expect(pushesOf(items, body)[0]?.target).toBe('armor_class');
+	});
+});
+
+describe('table.configError over a target column', () => {
+	const base: TableConfig = {
+		id: 'items',
+		type: 'table',
+		label: 'Magic items',
+		position: { col: 1, row: 1, width: 6, height: 2 },
+		openRows: true,
+	};
+
+	/** The refusal, or null: read through `read`, which is where it is reported. */
+	const refusal = (columns: TableConfig['columns']) => {
+		const result = table.read('', { ...base, columns });
+		return result.ok ? null : result.error;
+	};
+
+	it('refuses two target columns, naming the fix', () => {
+		// The reason is not `publish`'s: a modifier amount has no way to say which
+		// of two target columns it belongs to.
+		const said = refusal([
+			{ key: 'Modifies', type: 'target' },
+			{ key: 'Also', type: 'target' },
+		]);
+		expect(said).toContain('both targets');
+		expect(said).toContain('two rows');
+	});
+
+	it('refuses a total on a target column', () => {
+		expect(refusal([{ key: 'Modifies', type: 'target', total: true }])).toContain(
+			'a target holds the name of a value',
+		);
+	});
+
+	it('refuses a published target column', () => {
+		expect(
+			refusal([{ key: 'Modifies', type: 'target', publish: true }]),
+		).toContain('the language has no text');
+	});
+
+	it('refuses a modifier on a text column', () => {
+		expect(
+			refusal([
+				{ key: 'Modifies', type: 'target' },
+				{ key: 'Notes', modifier: true },
+			]),
+		).toContain('this column holds text');
+	});
+
+	it('refuses a modifier on a toggle column, naming a computed one as the fix', () => {
+		// The same rule that refuses `sum(inventory, Worn)`: the language has no
+		// numeric meaning for yes and no, so the answer is a formula rather than a
+		// coercion.
+		const said = refusal([
+			{ key: 'Modifies', type: 'target' },
+			{ key: 'Worn', type: 'toggle', modifier: true },
+		]);
+		expect(said).toContain('yes/no cell is not a number');
+		expect(said).toContain('if(Worn, 2, 0)');
+	});
+
+	it('says a refused modifier table withdraws the bonuses it was pushing', () => {
+		/*
+		 * `scopeModifiers` returns undefined for a card that will not configure, so
+		 * every target it was pushing at falls back to a slot of 0 — a plausible
+		 * number carrying no mark. The clause goes on this card's own error because
+		 * it is the only place that can say it: a card refused here has never read
+		 * a row (`read` refuses before `readTable`), so it does not know which
+		 * targets its rows named, and no card can know that a table which would
+		 * have pushed at it is broken.
+		 */
+		const said = refusal([
+			{ key: 'Modifies', type: 'target' },
+			{ key: 'Bonus', type: 'number', modifier: true },
+			{ key: 'Notes', total: true },
+		]);
+		expect(said).toContain('a text column has nothing to add up');
+		expect(said).toContain('are not applied');
+	});
+
+	it('says nothing about modifiers where the card was pushing none', () => {
+		// A modifier column with no target pushes nothing whether the card
+		// configures or not, so the clause would be a false sentence.
+		const said = refusal([
+			{ key: 'Bonus', type: 'number', modifier: true },
+			{ key: 'Notes', total: true },
+		]);
+		expect(said).toContain('a text column has nothing to add up');
+		expect(said).not.toContain('are not applied');
+	});
+
+	it('accepts a modifier on a number, a level and a computed column', () => {
+		for (const type of ['number', 'level', 'computed'] as const) {
+			expect(
+				refusal([
+					{ key: 'Modifies', type: 'target' },
+					{ key: 'Bonus', type, modifier: true },
+				]),
+			).toBeNull();
+		}
+	});
+});
+
+/*
+ * The target cell and the mark, on the sheet (SPEC §5).
+ */
+describe('table renders a target cell', () => {
+	const items: TableConfig = {
+		id: 'items',
+		type: 'table',
+		label: 'Magic items',
+		position: { col: 1, row: 1, width: 6, height: 2 },
+		rowHeader: 'Item',
+		openRows: true,
+		columns: [
+			{ key: 'Modifies', type: 'target' },
+			{ key: 'Bonus', type: 'number', modifier: true, modifierType: 'item' },
+		],
+	};
+
+	const TARGETS = [
+		{ name: 'armour_class', label: 'Armour class' },
+		{ name: 'abilities.STR', label: 'Abilities · STR' },
+	];
+
+	const modifiers = {
+		targets: TARGETS,
+		breakdown: () => ({ total: 0, lines: [] }),
+		// The sheet publishes both targets and one name that reads no modifier,
+		// which is what the two stray titles are told apart by.
+		publishes: (name: string) =>
+			name === 'passive_perception' ||
+			TARGETS.some((target) => target.name === name),
+	};
+
+	const body = (target: string) => `
+| Item | Modifies | Bonus |
+|---|---|---|
+| Ring | ${target} | 1 |
+`;
+
+	function drawn(target: string, ctx: Partial<RenderContext> = {}) {
+		const data = stored(body(target), items);
+		const el = document.createElement('div');
+		const changes: unknown[] = [];
+		table.render(el, items, data, {
+			...contextFor(data, items),
+			onChange: (edited) => changes.push(edited),
+			...ctx,
+		});
+		const select = el.querySelector('select') as HTMLSelectElement;
+		return {
+			select,
+			changes,
+			options: Array.from(select.options).map((one) => one.textContent),
+			values: Array.from(select.options).map((one) => one.value),
+		};
+	}
+
+	it('offers exactly the accepting targets, over an empty first line', () => {
+		// The picker is the answer to a need the prior art fails outright:
+		// Foundry's own article tells users to press F12 and run a console script
+		// to enumerate attribute keys. The sheet already knows every name it
+		// publishes, so this is available rather than clever.
+		const { options, values } = drawn('armour_class', { modifiers });
+		expect(options).toEqual(['—', 'Armour class', 'Abilities · STR']);
+		expect(values).toEqual(['', 'armour_class', 'abilities.STR']);
+	});
+
+	it('shows a blank cell as the empty line, which is no choice at all', () => {
+		const { select } = drawn('', { modifiers });
+		expect(select.value).toBe('');
+	});
+
+	it('renders a stored target the picker does not offer, as its last line', () => {
+		// Rendered, not corrected: snapping to blank or to the first target would
+		// be a layout edit deleting character data (Constraint 4, SPEC §10).
+		const { select, options } = drawn('armor_class', { modifiers });
+		expect(options.at(-1)).toBe('armor_class');
+		expect(select.value).toBe('armor_class');
+	});
+
+	it('marks a stray target on the row and in ARIA, not only in a title', () => {
+		/*
+		 * `docs/UI.md` §6: state goes in ARIA, not only in paint — and here it was
+		 * in neither. A stray target was pixel-identical to a working one and a
+		 * screen reader heard only "Ring Modifies", so the one thing a reader
+		 * needed to know, that this row changes nothing, was reachable only by
+		 * hovering.
+		 */
+		const working = drawn('armour_class', { modifiers });
+		const strayed = drawn('armor_class', { modifiers });
+		expect(working.select.classList.contains('sheetsmith-table-inert')).toBe(
+			false,
+		);
+		expect(strayed.select.classList.contains('sheetsmith-table-inert')).toBe(
+			true,
+		);
+		// The state in the accessible name, on the level ring's own shape.
+		expect(working.select.getAttribute('aria-label')).toBe('Ring Modifies');
+		expect(strayed.select.getAttribute('aria-label')).toBe(
+			'Ring Modifies: armor_class, changes nothing',
+		);
+	});
+
+	it('marks a published target that reads no modifier too', () => {
+		// Both reasons make the row inert, so both get the mark; only the title
+		// tells them apart, because they name two different fixes.
+		const { select } = drawn('passive_perception', { modifiers });
+		expect(select.classList.contains('sheetsmith-table-inert')).toBe(true);
+		expect(select.getAttribute('title')).toContain('reads no modifier');
+	});
+
+	it('says which of the two reasons a stray target is stray', () => {
+		/*
+		 * The two have different fixes: a name the sheet does not publish is a
+		 * spelling to correct in this cell, and a name it publishes that reads no
+		 * modifier is a formula to edit somewhere else. A title saying "either …
+		 * or …" would send half its readers to the wrong place.
+		 */
+		expect(
+			drawn('armor_class', { modifiers }).select.getAttribute('title'),
+		).toContain('publishes no "armor_class"');
+		expect(
+			drawn('passive_perception', { modifiers }).select.getAttribute('title'),
+		).toContain('reads no modifier');
+	});
+
+	it('is not corrected by an edit to another cell in the row', () => {
+		/*
+		 * Criterion 13's own clause, and it was the unasserted half: the stray
+		 * target survives the reader editing a *different* cell of the same row.
+		 *
+		 * The mechanism is that the select is drawn from stored data and the other
+		 * cell's commit is a delta naming only itself — so a rebuild redraws the
+		 * stray from the note. Driven rather than reasoned, because a component
+		 * that repainted the row on commit would break it silently (PATTERNS §5's
+		 * own worked example is a repaint destroying a focused anchor).
+		 */
+		const data = stored(body('armor_class'), items);
+		const changes: unknown[] = [];
+		const el = document.createElement('div');
+		table.render(el, items, data, {
+			...contextFor(data, items),
+			modifiers,
+			onChange: (edited) => changes.push(edited),
+		});
+		const select = el.querySelector('select') as HTMLSelectElement;
+		// The Bonus cell's field, by its column class: the first input in the row
+		// is the *name* field, which an open row gets and which is a different
+		// cell again.
+		const amount = el.querySelector(
+			'td.sheetsmith-table-number input',
+		) as HTMLInputElement;
+
+		// Edit the Bonus cell and commit it, which is what a blur does.
+		amount.value = '4';
+		amount.dispatchEvent(new Event('input'));
+		amount.dispatchEvent(new Event('blur'));
+
+		// The commit names only the cell that changed, so nothing can rewrite the
+		// target — and the select still shows the value the note holds.
+		expect(changes).toEqual([
+			{ rows: { 0: { cells: { Bonus: '4' } } } },
+		]);
+		expect(select.value).toBe('armor_class');
+		expect(
+			Array.from(select.options).map((one) => one.value),
+		).toContain('armor_class');
+		expect(select.getAttribute('title')).toContain('publishes no "armor_class"');
+	});
+
+	it('drops the stray line once something else is chosen', () => {
+		const { select, changes } = drawn('armor_class', { modifiers });
+		select.value = 'armour_class';
+		select.dispatchEvent(new Event('change'));
+		expect(select.getAttribute('title')).toBeNull();
+		expect(changes).toEqual([
+			{ rows: { 0: { cells: { Modifies: 'armour_class' } } } },
+		]);
+	});
+
+	it('offers only the stored value where there is no sheet', () => {
+		// A component draws what it can without the context, which is `link`'s own
+		// rule: the truth where nothing is published is the value the note holds.
+		const { options } = drawn('armour_class');
+		expect(options).toEqual(['—', 'armour_class']);
+	});
+});
+
+describe('table and mod.self', () => {
+	/*
+	 * A skills card whose Total column reads its own slot. One declared row
+	 * carries a key and the other does not, which is the case the zero rule
+	 * exists for: a row with no key cannot be pushed at, so a column reading
+	 * `mod.self` shows numbers down every row rather than "?" on half of them.
+	 */
+	const modifiable: TableConfig = {
+		...config,
+		rows: [
+			{ label: 'Acrobatics', key: 'acrobatics', values: { ability: 'abilities.DEX' } },
+			{ label: 'Perception', values: { ability: 'abilities.WIS' } },
+		],
+		columns: [
+			{ key: 'Training', type: 'number', min: 0, max: 2 },
+			{ key: 'Bonus', type: 'number' },
+			{
+				key: 'Total',
+				type: 'computed',
+				formula: 'ability + Training * prof + Bonus + mod.self',
+				signed: true,
+				publish: true,
+			},
+		],
+	};
+
+	/** A sheet where two are pushed at `skills.acrobatics` and nothing else. */
+	function sheetWith(pushes: readonly [string, number][]) {
+		return buildSheetEnv([
+			{
+				id: 'abilities',
+				values: { named: { DEX: { value: 3 }, WIS: { value: 2 } } },
+			},
+			{ id: 'prof', values: { self: { value: 3 } } },
+			{
+				id: 'skills',
+				values: table.scopeValues?.(stored(BODY, modifiable), modifiable) ?? {},
+				resolver: (env) =>
+					makeFieldResolver(table, modifiable, stored(BODY, modifiable), env),
+			},
+			{
+				id: 'items',
+				values: {},
+				modifiers: () =>
+					pushes.map(([target, amount]) => ({
+						target,
+						amount,
+						type: null,
+						label: 'A row',
+						source: 'Items',
+					})),
+			},
+		]);
+	}
+
+	it('modifies a declared row carrying a key, and only that row', () => {
+		const env = sheetWith([['skills.acrobatics', 2]]);
+		// 3 + 1*3 + 0 = 6, plus the 2 pushed at it.
+		expect(env.sheet('skills.acrobatics')).toBe(8);
+	});
+
+	it('resolves to the unmodified number on a row with no key', () => {
+		// Not "?": a row the layout gave no name cannot be pushed at, so its slot
+		// is empty and its cell reads the number it always read.
+		const data = stored(BODY, modifiable);
+		const env = sheetWith([['skills.acrobatics', 2]]);
+		const el = document.createElement('div');
+		table.render(el, modifiable, data, {
+			resolved: {},
+			resolveField: makeFieldResolver(table, modifiable, data, env),
+			explainField: makeFieldExplainer(table, modifiable, data, env),
+			onChange: () => undefined,
+		});
+		expect(totals(el)).toEqual(['+8', '+9']);
+	});
+
+	it('marks the cell of the row that was modified and no other', () => {
+		const data = stored(BODY, modifiable);
+		const env = sheetWith([['skills.acrobatics', 2]]);
+		const el = document.createElement('div');
+		table.render(el, modifiable, data, {
+			resolved: {},
+			resolveField: makeFieldResolver(table, modifiable, data, env),
+			explainField: makeFieldExplainer(table, modifiable, data, env),
+			onChange: () => undefined,
+			modifiers: {
+				publishes: () => true,
+				targets: [{ name: 'skills.acrobatics', label: 'Skills · acrobatics' }],
+				breakdown: (name) =>
+					name === 'skills.acrobatics'
+						? {
+								total: 2,
+								lines: [
+									{
+										label: 'Belt',
+										source: 'Magic items',
+										type: null,
+										amount: 2,
+										suppressed: null,
+									},
+								],
+							}
+						: { total: 0, lines: [] },
+			},
+		});
+		const marked = Array.from(
+			el.querySelectorAll('tbody .sheetsmith-table-value'),
+		).map((cell) => cell.classList.contains('sheetsmith-modified'));
+		expect(marked).toEqual([true, false]);
+	});
+
+	it('draws no mark on a computed column with no formula to modify', () => {
+		/*
+		 * A computed column with no formula and a published row key. `configError`
+		 * does not refuse it — nothing there requires a computed column to carry a
+		 * formula — and `scopeValues` still registers the row's name, so the slot
+		 * exists and a row can be pushed at it.
+		 *
+		 * The cell reads "—", because nothing to compute is an empty cell rather
+		 * than a value that failed. So there is no number for a modifier to have
+		 * changed, and marking it would be a mark with nothing behind it: no
+		 * title, no popover, and `modifier-breakdown.ts`'s own rule broken — the
+		 * mark and the text are the same fact.
+		 *
+		 * What is left over is Risk 2 in the feature spec, recorded and accepted:
+		 * the accepting set is coarse at the component, so the picker offers a
+		 * target that ignores the row and the stray line cannot fire for it.
+		 */
+		const formulaless: TableConfig = {
+			...modifiable,
+			columns: [
+				{ key: 'Training', type: 'number' },
+				{ key: 'Bonus', type: 'number' },
+				{ key: 'Total', type: 'computed', publish: true },
+			],
+		};
+		// The column parses: this is the reachability half of the case.
+		expect(table.read(BODY, formulaless).ok).toBe(true);
+		const data = stored(BODY, formulaless);
+		const el = document.createElement('div');
+		table.render(el, formulaless, data, {
+			resolved: {},
+			resolveField: makeFieldResolver(table, formulaless, data, NO_ENV),
+			onChange: () => undefined,
+			modifiers: {
+				publishes: () => true,
+				targets: [{ name: 'skills.acrobatics', label: 'Skills · acrobatics' }],
+				breakdown: () => ({
+					total: 2,
+					lines: [
+						{
+							label: 'Belt',
+							source: 'Magic items',
+							type: 'item',
+							amount: 2,
+							suppressed: null,
+						},
+					],
+				}),
+			},
+		});
+		const cell = el.querySelector('tbody .sheetsmith-table-value') as HTMLElement;
+		expect(cell.textContent).toBe('—');
+		expect(cell.classList.contains('sheetsmith-modified')).toBe(false);
+		// And no bubble is one press away either, which is the half a mark
+		// promises.
+		cell.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		expect(document.querySelector('.sheetsmith-popover')).toBeNull();
+	});
+
+	it('carries the breakdown for a reader with no pointer', () => {
+		/*
+		 * The mark is `text-decoration` and the class carries no ARIA, so without
+		 * this a screen reader on a modified cell hears the number and not even
+		 * that it was modified. In a span inside the `td`, which is this
+		 * component's own idiom — a hidden column heading and the delete column's
+		 * name already use it — and needs no wiring: the cell is read as its
+		 * contents.
+		 *
+		 * The same text the popover shows, from the one builder, so the two
+		 * carriers cannot say different things.
+		 */
+		const data = stored(BODY, modifiable);
+		const env = sheetWith([['skills.acrobatics', 2]]);
+		const el = document.createElement('div');
+		table.render(el, modifiable, data, {
+			resolved: {},
+			resolveField: makeFieldResolver(table, modifiable, data, env),
+			explainField: makeFieldExplainer(table, modifiable, data, env),
+			onChange: () => undefined,
+			modifiers: {
+				publishes: () => true,
+				targets: [{ name: 'skills.acrobatics', label: 'Skills · acrobatics' }],
+				breakdown: (name) =>
+					name === 'skills.acrobatics'
+						? {
+								total: 2,
+								lines: [
+									{
+										label: 'Belt',
+										source: 'Magic items',
+										type: 'item',
+										amount: 2,
+										suppressed: null,
+									},
+								],
+							}
+						: { total: 0, lines: [] },
+			},
+		});
+		const cells = Array.from(el.querySelectorAll('tbody td'));
+		const twins = cells.map(
+			(td) => td.querySelector('.sheetsmith-sr-only')?.textContent ?? null,
+		);
+		// One, on the row that was modified, and nothing on the row that was not.
+		expect(twins.filter((said) => said !== null)).toEqual([
+			'Belt — item +2\n\nTotal +2',
+		]);
+		// And it does not disturb what the cell reads as a value, which is what
+		// keeps the totals and the computed cells asserting on one element.
+		expect(totals(el)).toEqual(['+8', '+9']);
+	});
+
+	it('joins the breakdown to the popover the cell already opens', () => {
+		// A modified computed cell has one door, not two: the tap that already
+		// asks "why this number?" answers with the formula and the breakdown.
+		const data = stored(BODY, modifiable);
+		const env = sheetWith([['skills.acrobatics', 2]]);
+		const el = document.createElement('div');
+		table.render(el, modifiable, data, {
+			resolved: {},
+			resolveField: makeFieldResolver(table, modifiable, data, env),
+			explainField: makeFieldExplainer(table, modifiable, data, env),
+			onChange: () => undefined,
+			modifiers: {
+				publishes: () => true,
+				targets: [{ name: 'skills.acrobatics', label: 'Skills · acrobatics' }],
+				breakdown: () => ({
+					total: 2,
+					lines: [
+						{
+							label: 'Belt',
+							source: 'Magic items',
+							type: 'item',
+							amount: 2,
+							suppressed: null,
+						},
+					],
+				}),
+			},
+		});
+		const cell = el.querySelector('tbody .sheetsmith-table-value') as HTMLElement;
+		cell.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		const said = document.querySelector('.sheetsmith-popover')?.textContent ?? '';
+		expect(said).toContain('mod.self');
+		expect(said).toContain('Belt — item +2');
+		closePopover();
+	});
+
+	it('publishes the modified number under the row key', () => {
+		// The cell on screen and the name the sheet reads are the same number,
+		// which is what passing the published name from both paths buys.
+		const env = sheetWith([['skills.acrobatics', 2]]);
+		expect(env.sheet('skills.acrobatics')).toBe(8);
+		const data = stored(BODY, modifiable);
+		const el = document.createElement('div');
+		table.render(el, modifiable, data, {
+			resolved: {},
+			resolveField: makeFieldResolver(table, modifiable, data, env),
+			explainField: makeFieldExplainer(table, modifiable, data, env),
+			onChange: () => undefined,
+		});
+		expect(totals(el)[0]).toBe('+8');
+	});
+
+	it('reports the row that stopped a slot, on the card reading it', () => {
+		/*
+		 * The acceptance criterion's own case: a modifier whose amount will not
+		 * resolve makes the slot publish nothing, and the reading card's
+		 * `explainField` names the row and the reason. Here the slot is refused,
+		 * so the Total cell shows "?" and its title says which row.
+		 */
+		const data = stored(BODY, modifiable);
+		const env = buildSheetEnv([
+			{
+				id: 'abilities',
+				values: { named: { DEX: { value: 3 }, WIS: { value: 2 } } },
+			},
+			{ id: 'prof', values: { self: { value: 3 } } },
+			{
+				id: 'skills',
+				values: table.scopeValues?.(data, modifiable) ?? {},
+				resolver: (inner) => makeFieldResolver(table, modifiable, data, inner),
+			},
+			{
+				id: 'items',
+				values: {},
+				modifiers: () => [
+					{
+						target: 'skills.acrobatics',
+						type: null,
+						label: 'Belt of Giant Strength',
+						source: 'Magic items',
+						unreadable: 'ability is not defined on this sheet.',
+					},
+				],
+			},
+		]);
+		const el = document.createElement('div');
+		table.render(el, modifiable, data, {
+			resolved: {},
+			resolveField: makeFieldResolver(table, modifiable, data, env),
+			explainField: makeFieldExplainer(table, modifiable, data, env),
+			onChange: () => undefined,
+		});
+		const cells = el.querySelectorAll('tbody .sheetsmith-table-value');
+		expect(cells[0]?.textContent).toBe('?');
+		expect(cells[0]?.getAttribute('title')).toContain(
+			'Row "Belt of Giant Strength"',
+		);
+		// The other row is not in the cycle and keeps working.
+		expect(cells[1]?.textContent).toBe('+9');
 	});
 });

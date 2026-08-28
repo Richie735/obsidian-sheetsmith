@@ -185,11 +185,13 @@ export default defineConfig(
 								'!./level-ring',
 								'!./card-face',
 								'!./linked-text',
+								'!./modifier-breakdown',
 								'!./stored-flag',
 								'!../components/column-types',
 								'!../components/level-ring',
 								'!../components/card-face',
 								'!../components/linked-text',
+								'!../components/modifier-breakdown',
 								'!../components/stored-flag',
 							],
 							message:

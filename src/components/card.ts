@@ -28,6 +28,7 @@ import {
 	showsOwnLabel,
 } from '../types';
 import { renderCardFace, toDerived } from './card-face';
+import { modifierBreakdown } from './modifier-breakdown';
 
 /**
  * SPEC §3.1: single-value components store their value under `value`, so
@@ -356,12 +357,16 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 		// would hide a working number.
 		const needsValue =
 			config.derived !== undefined && referencesName(config.derived, 'value');
+		// A Card publishes its `derived` under its bare id, so that id is the name
+		// this evaluation *becomes* — and passing it is what makes `mod.self` mean
+		// this card's own slot. Forgetting it reads as 0 with nothing saying so
+		// (`FieldResolver`), which is why `card.test.ts` drives it.
 		const deriveFrom = (raw: string) => {
 			// An empty value is a blank, not a broken formula.
 			if (needsValue && raw.trim() === '') return { text: '—', unresolved: false };
-			const resolved = context.resolveField('derived', { value: raw });
+			const resolved = context.resolveField('derived', { value: raw }, config.id);
 			return toDerived(resolved, signed, () =>
-				context.explainField?.('derived', { value: raw }) ?? null,
+				context.explainField?.('derived', { value: raw }, config.id) ?? null,
 			);
 		};
 
@@ -388,7 +393,18 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 			derived:
 				config.derived === undefined
 					? undefined
-					: { ...deriveFrom(value), compute: deriveFrom },
+					: {
+							...deriveFrom(value),
+							compute: deriveFrom,
+							// The lines and the total come from the sheet, which is
+							// the only thing that knows what pushed at this name.
+							// Empty where nothing did, and empty where the name
+							// accepts no modifier — so a card can never draw a mark
+							// for a modifier that is not being applied.
+							modifiers: modifierBreakdown(
+								context.modifiers?.breakdown(config.id),
+							),
+						},
 			note:
 				config.hideNote === true
 					? undefined

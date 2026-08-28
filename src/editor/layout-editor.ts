@@ -844,7 +844,7 @@ export class LayoutEditorSection {
 			outline,
 			SHEET_DESTINATION,
 			'Layout',
-			'The grid, the function library and the reset triggers.',
+			'The grid, the function library, the reset triggers and the bonus types.',
 			0,
 		);
 		for (const { config, depth, siblings } of walkComponents(

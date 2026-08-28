@@ -967,3 +967,182 @@ describe('card palette', () => {
 		expect(entry?.config).not.toHaveProperty('hideNote');
 	});
 });
+
+/*
+ * Modifiers (SPEC §5): the card's own name, and the mark over the number.
+ *
+ * The first case is the one `docs/features/item-modifiers.md` calls Risk 1 and
+ * accepts: `FieldResolver`'s third argument is optional, so a component that
+ * forgets to pass its published name reads `mod.self` as 0 with nothing
+ * reporting it — the static accepting set still claims the name takes a
+ * modifier, and `contract.test.ts` cannot see a missing argument. A test per
+ * publishing component is the only thing that catches it, so this one is
+ * load-bearing rather than routine.
+ */
+describe('card and its modifier slot', () => {
+	/** A resolver that only answers when told which name it is producing. */
+	const slotAware = vi.fn(
+		(
+			field: string,
+			scope: Readonly<Record<string, FieldValue>>,
+			published?: string,
+		) => {
+			if (field !== 'derived' || typeof scope.value !== 'string') return null;
+			const parsed = Number(scope.value);
+			if (!Number.isFinite(parsed)) return null;
+			return published === 'armour-class' ? parsed + 2 : parsed;
+		},
+	);
+
+	afterEach(() => slotAware.mockClear());
+
+	it('passes its own published name to the resolver', () => {
+		const el = render({ derived: 'value + mod.self' }, { value: '15' }, {
+			resolveField: slotAware,
+		});
+		// 17 rather than 15: the card told the resolver which name this
+		// evaluation becomes, so `mod.self` had a slot to read.
+		expect(
+			el.querySelector('.sheetsmith-card-derived')?.textContent,
+		).toBe('+17');
+		expect(slotAware).toHaveBeenCalledWith(
+			'derived',
+			{ value: '15' },
+			'armour-class',
+		);
+	});
+
+	it('passes it on every re-derive, not only the first', () => {
+		// The draft path is a second call site, and one that forgot the name
+		// would make the number jump while the value was being typed.
+		const el = render({ derived: 'value + mod.self' }, { value: '15' }, {
+			resolveField: slotAware,
+		});
+		const input = inputs(el).value as HTMLInputElement;
+		input.value = '16';
+		input.dispatchEvent(new Event('input'));
+		expect(
+			el.querySelector('.sheetsmith-card-derived')?.textContent,
+		).toBe('+18');
+	});
+
+	it('marks the number and puts the breakdown one press away', () => {
+		const el = render({ derived: 'value + mod.self' }, { value: '15' }, {
+			modifiers: {
+				publishes: () => true,
+				targets: [{ name: 'armour-class', label: 'Armour class' }],
+				breakdown: () => ({
+					total: 2,
+					lines: [
+						{
+							label: 'Ring of Protection',
+							source: 'Magic items',
+							type: 'item',
+							amount: 2,
+							suppressed: null,
+						},
+						{
+							label: 'Cloak',
+							source: 'Magic items',
+							type: 'item',
+							amount: 1,
+							suppressed: 'a larger item bonus applies',
+						},
+					],
+				}),
+			},
+		});
+		const derived = el.querySelector('.sheetsmith-card-derived') as HTMLElement;
+		expect(derived.classList.contains('sheetsmith-modified')).toBe(true);
+		derived.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		const bubble = document.querySelector('.sheetsmith-popover');
+		expect(bubble?.textContent).toContain('Ring of Protection — item +2');
+		// The suppressed line is listed and says why, which is the whole reason
+		// the breakdown beats a mark.
+		expect(bubble?.textContent).toContain(
+			'Cloak — item +1 (not applied: a larger item bonus applies)',
+		);
+		expect(bubble?.textContent).toContain('Total +2');
+		bubble?.remove();
+	});
+
+	it('carries the same text for a reader with no pointer', () => {
+		// One builder, two carriers, so the two cannot say different things.
+		const el = render({ derived: 'value + mod.self' }, { value: '15' }, {
+			modifiers: {
+				publishes: () => true,
+				targets: [],
+				breakdown: () => ({
+					total: 2,
+					lines: [
+						{
+							label: 'Ring',
+							source: 'Magic items',
+							type: null,
+							amount: 2,
+							suppressed: null,
+						},
+					],
+				}),
+			},
+		});
+		const twin = el.querySelector('.sheetsmith-sr-only[id]') as HTMLElement;
+		expect(twin.textContent).toBe('Ring — +2\n\nTotal +2');
+		expect(
+			inputs(el).value?.getAttribute('aria-describedby'),
+		).toBe(twin.id);
+	});
+
+	it('draws no mark where nothing has been pushed', () => {
+		// The empty state of every new character: a sheet full of marks for
+		// modifiers that do not exist is worse than a quiet one.
+		const el = render({ derived: 'value + mod.self' }, { value: '15' }, {
+			modifiers: {
+				publishes: () => true,
+				targets: [],
+				breakdown: () => ({ total: 0, lines: [] }),
+			},
+		});
+		expect(
+			el.querySelector('.sheetsmith-card-derived')?.classList.contains(
+				'sheetsmith-modified',
+			),
+		).toBe(false);
+	});
+
+	it('leaves the press on the rest of the card alone', () => {
+		/*
+		 * A press on the derived opens the breakdown; a press anywhere else still
+		 * routes to a control, which is the card's existing region rule. Asserted
+		 * on *which* press opens a bubble rather than on where focus landed:
+		 * proximity is decided by `getBoundingClientRect`, which is all zeroes
+		 * under happy-dom, so a landing position here would be the stub's answer
+		 * rather than the card's.
+		 */
+		const el = render({ derived: 'value + mod.self' }, { value: '15' }, {
+			modifiers: {
+				publishes: () => true,
+				targets: [],
+				breakdown: () => ({
+					total: 2,
+					lines: [
+						{
+							label: 'Ring',
+							source: 'Magic items',
+							type: null,
+							amount: 2,
+							suppressed: null,
+						},
+					],
+				}),
+			},
+		});
+		const note = el.querySelector('.sheetsmith-card-note') as HTMLElement;
+		note.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		expect(document.querySelector('.sheetsmith-popover')).toBeNull();
+		const derived = el.querySelector('.sheetsmith-card-derived') as HTMLElement;
+		derived.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		expect(document.querySelector('.sheetsmith-popover')).not.toBeNull();
+		document.querySelector('.sheetsmith-popover')?.remove();
+	});
+});

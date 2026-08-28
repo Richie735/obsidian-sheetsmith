@@ -27,7 +27,12 @@ import {
 	makeFieldResolver,
 	resolveFormulaFields,
 } from '../src/formula/resolve';
-import { buildSheetEnv, publishedComponent } from '../src/formula/sheet';
+import { modifierTargetSource } from '../src/formula/modifier-targets';
+import {
+	buildSheetEnv,
+	publishedComponent,
+	sheetModifiers,
+} from '../src/formula/sheet';
 import { Layout } from '../src/parse/layout';
 import { walkComponents } from '../src/parse/layout-walk';
 import {
@@ -35,6 +40,7 @@ import {
 	ComponentDefinition,
 	isContainer,
 	LinkContext,
+	ModifierContext,
 } from '../src/types';
 import { renderGrid } from '../src/view/grid-cells';
 import { renderEditorPane } from './editor-pane';
@@ -128,13 +134,25 @@ function prepare(): void {
  * rows. An instrument that publishes differently from the thing it measures
  * signs off on messages the plugin never produces.
  */
-function sheetEnv(entries: Live[]): FormulaEnv {
+function sheetEnv(entries: Live[]): {
+	env: FormulaEnv;
+	modifiers: ModifierContext;
+} {
 	// The layout's own arithmetic, which the harness sheet has needed since a
 	// card could read a function the settings pane is editing.
-	return buildSheetEnv(
-		entries.map(publishedComponent),
-		parseFunctions(layout.functions).library,
-	);
+	const published = entries.map(publishedComponent);
+	const env = buildSheetEnv(published, parseFunctions(layout.functions).library);
+	// Through the same builder the view uses, for the same reason the list above
+	// goes through `publishedComponent`: an instrument that reported modifiers
+	// differently would sign off on marks the plugin never draws. The sources are
+	// the shared static assembly, which is where the "no data" decision is taken.
+	return {
+		env,
+		modifiers: sheetModifiers(
+			entries.map((entry) => modifierTargetSource(entry.config, entry.component)),
+			env,
+		),
+	};
 }
 
 /**
@@ -280,7 +298,7 @@ function renderSheet(into: HTMLElement): void {
 	grid.style.setProperty('--sheetsmith-columns', String(layout.columns ?? 12));
 	view.appendChild(grid);
 
-	const env = sheetEnv(live);
+	const { env, modifiers } = sheetEnv(live);
 
 	// The view's own walk and the view's own descent through it, so the harness
 	// cannot order or nest the sheet differently from the thing it is measuring.
@@ -301,6 +319,9 @@ function renderSheet(into: HTMLElement): void {
 				// `applyEdit` writes the re-read section back into it.
 				onChange: (edited: unknown) => applyEdit(entry as Live, edited),
 				link: linkContext(),
+				// The sheet-wide half of modifiers, on `link`'s own terms: what
+				// accepts one, and what has been pushed at each name.
+				modifiers,
 				// The one member Image needs, on `link`'s own terms. `renderMarkdown`
 				// stays absent on purpose (see `samples.ts`), so a reviewer sees the
 				// fallback for prose and a real picture for an image.
@@ -550,6 +571,11 @@ document
  * `:focus-visible`, so a programmatic focus paints exactly what a tab press
  * would.
  *
+ * And one for a press: `&press=<css selector>` clicks the first element matching
+ * it once the surface has drawn. Same argument as focus one step on — a still
+ * cannot press either, and the modifier breakdown lives behind a press, so until
+ * this existed the feature's own differentiator had never been photographed.
+ *
  * A screenshot has no way to click, so without this only the default view can
  * ever be captured — and the settings tab, which is most of what needs looking
  * at, would be unreachable to any automated shot or to a link in a review.
@@ -589,9 +615,41 @@ function applyQuery(): void {
 		document.querySelector<HTMLElement>(focus)?.focus();
 	};
 
+	const pressed = params.get('press');
+	/**
+	 * Press one element once the surface has drawn, so a still can capture what a
+	 * press reveals.
+	 *
+	 * `&focus=`'s sibling and its argument exactly: until that existed no focus
+	 * treatment had ever been photographed, and until this existed neither had the
+	 * modifier breakdown, in either of its two forms. Five of item modifiers'
+	 * surfaces were in none of the twenty default shots and had to be reviewed by
+	 * driving a browser, which means the next reviewer is blind to the same
+	 * things — and `CLAUDE.md`'s whole method is to review appearance by looking
+	 * at it.
+	 *
+	 * A synthetic `click()` and not a pointer sequence, which is what makes this
+	 * five lines rather than a mouse-event harness: every surface worth pressing
+	 * here answers a plain `click` — the card's derived and the table's computed
+	 * cell both bind one directly. The gestures that genuinely need a pointer are
+	 * `bindLongPress` and the pool's scrub, and neither is a second door onto
+	 * something a still cannot otherwise reach, so nothing here is waiting on
+	 * them.
+	 *
+	 * A press, unlike a focus, can change what is on screen — which is the point.
+	 * It runs after `draw()` so the element exists, and the popover it opens is
+	 * fixed to the viewport and dismissed only by a real pointerdown, so it
+	 * survives to be captured.
+	 */
+	const pressWanted = () => {
+		if (pressed === null) return;
+		document.querySelector<HTMLElement>(pressed)?.click();
+	};
+
 	void ensureSurface().then(() => {
 		draw();
 		focusWanted();
+		pressWanted();
 	});
 }
 

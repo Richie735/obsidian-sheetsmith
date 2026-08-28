@@ -429,10 +429,24 @@ export interface ScopeValues {
  * Evaluates one of the component's formula fields against extra names, such
  * as a table row or one ability's value. Returns null when the field has no
  * expression or it cannot be evaluated.
+ *
+ * `published` is what makes `mod.self` mean anything (SPEC §5): a modifier is
+ * pushed at a published name, and a formula reads what was pushed at the name
+ * its own result becomes. It is the exact shape `value` already has, read one
+ * layer out — `value` is the number this evaluation is about, and `mod.self` is
+ * what has been pushed at the name this evaluation becomes.
+ *
+ * **Optional, and that is a live risk rather than a convenience.** A component
+ * that publishes a name and forgets to say so here reads `mod.self` as 0, and
+ * nothing reports it: the accepting set is computed from the formula text, so it
+ * still claims the name takes a modifier. `contract.test.ts` cannot see it
+ * either, since passing an argument is not a member. It is caught only by a test
+ * per publishing component, which is why Card, Card set and Table each have one.
  */
 export type FieldResolver = (
 	field: string,
 	scope: Readonly<Record<string, FieldValue>>,
+	published?: string,
 ) => FieldValue | null;
 
 /**
@@ -469,6 +483,145 @@ export interface RowValues {
 export type RowsSource = (resolve: FieldResolver) => readonly RowValues[];
 
 /**
+ * One change a component declares against a name that is not its own (SPEC §5).
+ *
+ * The push side of a modifier: a row says what it changes and by how much, and
+ * the target names no source however many rows push at it. What reaches the
+ * sheet is a number under the *target's* name, which the target's own component
+ * publishes — so a row that pushes still publishes nothing, and `<id>.<name>`
+ * stays the fixed-row mechanism it has always been.
+ *
+ * Either an amount or the reason there is none, spelled the way `ColumnTotal`
+ * already spells it: an amount that will not resolve must not become a silent
+ * zero, so it publishes nothing at the target and every formula reading the slot
+ * fails naming this row.
+ */
+export type ModifierPush = {
+	/** The published name this pushes at, as the cell spells it. */
+	target: string;
+	/** The declared stacking type, or null for an untyped modifier. */
+	type: string | null;
+	/** The row as a reader sees it, never as the file spells it. */
+	label: string;
+	/**
+	 * The component this row lives on, as its label reads.
+	 *
+	 * Set by the component, which is the only thing holding its own label at
+	 * this point — the alternative is threading it through the modifier table
+	 * and its component list to arrive at the same string.
+	 *
+	 * It is here because a row's label is not enough to name a source: two
+	 * modifier tables on one sheet, worn items and weapons, can each hold a row
+	 * called "Ring", and a breakdown listing both gives the reader two lines
+	 * they cannot tell apart. `modifierBreakdown` decides when to show it.
+	 */
+	source: string;
+} & (
+	| { amount: number; unreadable?: never }
+	| { amount?: never; unreadable: string }
+);
+
+/**
+ * A component's modifiers, built with a resolver and an explainer bound to the
+ * finished sheet.
+ *
+ * A factory for exactly `RowsSource`'s reason: an amount may be a computed
+ * column reading the rest of the sheet, and the sheet is the thing being built.
+ *
+ * **The explainer is not decoration.** A resolver returns null both for a field
+ * that was never declared and for one whose expression threw, so on its own it
+ * can only ever produce some flavour of "could not resolve" — and SPEC §5 wants
+ * the slot's refusal to name the row *and the reason*: `Row "Belt of Giant
+ * Strength": ability is not defined on this sheet.` That is `ResetContext`'s
+ * argument, reached from a third direction.
+ */
+export type ModifierSource = (
+	resolve: FieldResolver,
+	explain: FieldExplainer,
+) => readonly ModifierPush[];
+
+/**
+ * One contributor to a modified number, as a reader is shown it.
+ *
+ * A suppressed line is listed rather than dropped, and that is the whole reason
+ * a breakdown beats a mark: a reader who bought two rings of protection and
+ * watched the number not move will otherwise conclude the plugin is broken.
+ */
+export interface ModifierLine {
+	/** The row as a reader sees it — `RowValues.label`'s rule, one layer out. */
+	label: string;
+	/** The component the row lives on, for wherever the row alone is ambiguous. */
+	source: string;
+	/** The declared stacking type, or null where the modifier is untyped. */
+	type: string | null;
+	amount: number;
+	/** Why this line contributes nothing, or null where it does. */
+	suppressed: string | null;
+}
+
+/**
+ * What applies at one name, and what it comes to.
+ *
+ * The total travels with the lines rather than being re-added by whoever draws
+ * them. It is `roundSum`'s answer over the pushes, and a second addition of the
+ * applied lines could only be held to it by a test asserting the two still agree
+ * — which is what one number says for free (PATTERNS §1). The number on the
+ * card, the last line of the breakdown and a formula reading the slot all come
+ * from the same sum.
+ */
+export interface ModifierBreakdown {
+	lines: readonly ModifierLine[];
+	total: number;
+}
+
+/** One name a modifier may be pushed at, and what to show for it. */
+export interface ModifierTarget {
+	/** The published name, as a formula and a stored target cell spell it. */
+	name: string;
+	/** What to show for it, which is the component's own label. */
+	label: string;
+}
+
+/**
+ * What a component cannot work out about modifiers for itself (SPEC §5).
+ *
+ * On `LinkContext`'s terms: sheet-wide knowledge, absent where there is no
+ * sheet, and a component draws what it can without it — a target cell with no
+ * context offers only its stored value, which is the truth where nothing is
+ * published.
+ */
+export interface ModifierContext {
+	/**
+	 * Targets that accept a modifier, in the order the layout declares them.
+	 *
+	 * The accepting set rather than every published name, which is what keeps the
+	 * picker short enough to read and makes pushing at something that ignores you
+	 * nearly unreachable through the UI.
+	 */
+	targets: readonly ModifierTarget[];
+	/**
+	 * What applies at this name, in declaration order. No lines where nothing
+	 * does, and none for a name that accepts no modifier — so a card can never
+	 * draw a mark for a modifier that is not being applied, and the component
+	 * never holds the accepting-set rule itself. The stray target is reported at
+	 * the row that wrote it, which is where the fix is.
+	 */
+	breakdown(name: string): ModifierBreakdown;
+	/**
+	 * Whether the sheet publishes this name at all, whether or not it accepts a
+	 * modifier.
+	 *
+	 * The one thing `targets` cannot answer, and a stored target needs it: a cell
+	 * holding a name the picker does not offer is wrong for one of two reasons,
+	 * and they have different fixes. Either the sheet publishes no such value —
+	 * a typo, or a component renamed — or it publishes it and no formula reads
+	 * `mod.self`, which is a formula to edit rather than a cell. A message saying
+	 * "either … or …" would send half its readers to the wrong place.
+	 */
+	publishes(name: string): boolean;
+}
+
+/**
  * Why a formula field did not resolve, in words, or null where it did. The
  * component asks only about a field it has already seen fail, so the cost of
  * evaluating twice is paid on the error path alone.
@@ -476,6 +629,8 @@ export type RowsSource = (resolve: FieldResolver) => readonly RowValues[];
 export type FieldExplainer = (
 	field: string,
 	scope: Readonly<Record<string, FieldValue>>,
+	/** As `FieldResolver`'s: the name this evaluation publishes, for `mod.self`. */
+	published?: string,
 ) => string | null;
 
 /**
@@ -537,6 +692,18 @@ export interface RenderContext<TData = unknown> {
 	 * does nothing, which is the truth where there is no vault to navigate.
 	 */
 	link?: LinkContext;
+	/**
+	 * What has been pushed at the names this component publishes, and which names
+	 * anywhere on the sheet accept a modifier (SPEC §5).
+	 *
+	 * Optional on exactly `link`'s terms: sheet-wide knowledge a component cannot
+	 * reach for itself, absent where there is no sheet, and a component draws what
+	 * it can without it. A target cell with no context offers only its stored
+	 * value, which is the truth where nothing is published, and a number with no
+	 * context carries no mark — which is also the truth, since nothing has been
+	 * pushed at it.
+	 */
+	modifiers?: ModifierContext;
 	/**
 	 * Draw markdown into an element, using the app's own renderer.
 	 *
@@ -773,6 +940,29 @@ export interface ComponentDefinition<
 	 * summing rows the card is refusing to show.
 	 */
 	scopeRows?(data: TData | null, config: TConfig): RowsSource | undefined;
+	/**
+	 * The changes this component declares against names that are not its own
+	 * (SPEC §5), where it declares any.
+	 *
+	 * The third reading of one job, which is why it sits here: `scopeValues`
+	 * publishes this component's names, `scopeRows` the rows that have none, and
+	 * this the changes it pushes at names belonging to somebody else.
+	 *
+	 * Optional under §4.1's rule, and it passes squarely — the alternative is the
+	 * formula engine knowing that a Table has a target column, which column holds
+	 * the amount, that a blank target is not a push, that a blank number cell is
+	 * zero, and that a computed amount is a formula evaluated in a row scope.
+	 * `scopeRows` cannot be reused for it either: `RowValues` carries cells by
+	 * column key with no way to say which key is the target.
+	 *
+	 * Returns undefined where there is nothing to push, which is how a
+	 * misconfigured card declines: a slot must not be filled from a configuration
+	 * the card is refusing to draw.
+	 */
+	scopeModifiers?(
+		data: TData | null,
+		config: TConfig,
+	): ModifierSource | undefined;
 	/**
 	 * Apply a reset trigger to this component's data (SPEC §6).
 	 *

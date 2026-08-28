@@ -27,6 +27,7 @@ import {
 	COLUMN_TYPES,
 	ColumnType,
 	DEFAULT_COLUMN_TYPE,
+	MODIFIER_AMOUNT_TYPES,
 	PUBLISHABLE_TYPES,
 	TOTALLED_TYPES,
 } from '../components/column-types';
@@ -571,6 +572,8 @@ interface ColumnEntry extends Record<string, unknown> {
 	secondary?: boolean;
 	total?: boolean;
 	publish?: boolean;
+	modifier?: boolean;
+	modifierType?: string;
 }
 
 /**
@@ -590,6 +593,7 @@ const COLUMN_TYPE_LABELS: Record<ColumnType, string> = {
 	level: 'Level',
 	toggle: 'Yes or no',
 	computed: 'Computed',
+	target: 'Target',
 };
 
 const LEVEL_INPUTS: readonly { id: string; label: string }[] = [
@@ -665,6 +669,15 @@ export function renderColumnsEditor(
 	key: string,
 	prefix: string,
 	context: ListContext,
+	/**
+	 * The bonus types this layout declares, for a modifier column's own select.
+	 *
+	 * A parameter rather than a member of `ListContext`, because it belongs to
+	 * one of the three lists this module draws and the other two have no use for
+	 * it — the same reason `entryColumns` arrives as an argument rather than
+	 * being known here (PATTERNS §1).
+	 */
+	modifierTypes: readonly string[] = [],
 ): void {
 	if (!Array.isArray(record[key])) record[key] = [];
 	const columns = record[key] as ColumnEntry[];
@@ -1072,6 +1085,61 @@ export function renderColumnsEditor(
 			});
 		}
 
+		/*
+		 * A modifier amount, and only on a column that is a number to a formula.
+		 *
+		 * It redraws, because the bonus type below appears and disappears with it
+		 * — the same reason **Publish per row** does, and the token is what keeps
+		 * the hand in place across the rebuild.
+		 */
+		if (MODIFIER_AMOUNT_TYPES.has(effective)) {
+			checkField(detail, 'Modifier', column, 'modifier', context, {
+				token: `${prefix}-col-${column.key}-modifier`,
+			});
+		}
+
+		/*
+		 * Which of the layout's bonus types this column's modifiers are.
+		 *
+		 * The options come from the layout rather than from a list inside the
+		 * column, which is why this does **not** reopen SPEC §13's `select` column
+		 * question: that one is blocked on a field kind — "a list whose cells are
+		 * themselves lists" — and there is no per-column list here to be one.
+		 *
+		 * A stored type the layout no longer declares is carried as an extra last
+		 * line rather than snapped to blank, which is §4.2's rule for a Card's
+		 * stray option read on a third control. It cannot lose character data — no
+		 * cell ever names a type — but silently retyping an author's column would
+		 * change the arithmetic on every sheet using the layout. The modifier
+		 * types field reports it with the whole picture; this keeps the value on
+		 * screen where the column is.
+		 */
+		if (column.modifier === true) {
+			const type = labelled(detail, 'Bonus type').createEl('select', {
+				attr: { 'aria-label': `${column.key} bonus type` },
+			});
+			const stored = (column.modifierType ?? '').trim();
+			// Blank first, and not one of the types: it is what a column with no
+			// type already is, and every modifier in it stacks.
+			type.createEl('option', { value: '', text: 'Untyped' });
+			for (const name of modifierTypes) {
+				type.createEl('option', { value: name, text: name });
+			}
+			if (stored !== '' && !modifierTypes.includes(stored)) {
+				type.createEl('option', {
+					value: stored,
+					text: `${stored} (not declared)`,
+				});
+			}
+			type.value = stored;
+			type.dataset.sheetsmithFocus = `${prefix}-col-${column.key}-modifier-type`;
+			type.addEventListener('change', () => {
+				setOptional(column, 'modifierType', type.value);
+				context.persist();
+				context.redraw();
+			});
+		}
+
 		// Every column has this one.
 		checkField(detail, 'Hide heading', column, 'hideHeading', context);
 	});
@@ -1113,6 +1181,20 @@ export function renderColumnsEditor(
 		listEl.createDiv('sheetsmith-entry-footnote', (el) =>
 			el.setText(
 				'A published column gives every row below a name of its own, "<component id>.<row key>", so a formula elsewhere on the sheet can read that row. Give each row a key in the rows list above. Only one column can be published.',
+			),
+		);
+	}
+	// A modifier with nothing to aim at. Refused nowhere, because a half-built
+	// table is the ordinary way a table is built and blanking the card mid-edit
+	// would be worse than a sentence — the same call the total's note makes,
+	// rather than the row key's refusal.
+	if (
+		columns.some((column) => column.modifier === true) &&
+		!columns.some((column) => column.type === 'target')
+	) {
+		listEl.createDiv('sheetsmith-entry-footnote', (el) =>
+			el.setText(
+				'A modifier column is an amount pushed at whatever the row targets, and this table has no target column, so nothing is pushed. Add a column that holds a target.',
 			),
 		);
 	}

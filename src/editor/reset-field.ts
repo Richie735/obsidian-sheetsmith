@@ -215,6 +215,10 @@ export function renderResetField(
 					createFragment((fragment) => {
 						fragment.appendText('Formula giving the value to restore.');
 						fragment.createEl('br');
+						// Framed, for `line-list-field.ts`'s reason. The fourth of the
+						// four call sites that drew a bare example, and the one the
+						// backlog row did not name.
+						fragment.appendText('For example: ');
 						fragment.createEl('code', { text: RESET_FORMULA_EXAMPLE });
 					}),
 				)
