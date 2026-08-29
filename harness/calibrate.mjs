@@ -90,6 +90,28 @@ function readFromAsar(asarPath, name) {
  */
 const RESET = /^\*$/;
 
+/**
+ * A bare element carrying one attribute selector, in either of CSS's spellings.
+ *
+ * `[type=text]`, `[type='text']` and `[type="text"]` are the same selector, and
+ * Obsidian's own stylesheet uses two of the three — unquoted for the checkbox,
+ * single-quoted for the text input, within a few thousand lines of each other.
+ * Nothing warns when a hand-written pattern picks the wrong one: the entry simply
+ * matches no rule, `calibrate` reports a smaller count than expected, and the
+ * harness falls back to `theme.css` for that control while claiming to be
+ * calibrated. That is the failure this file's `customProperties` comment already
+ * calls the worst one available — an instrument claiming a fidelity it does not
+ * have — so the spelling is not a thing to get right once.
+ *
+ * Anchored, and still refusing a class or an id after the bracket, which is what
+ * keeps the app's own `button.mod-cta`-shaped scoped rules out. A pseudo-class or
+ * a second attribute after it is wanted: `:disabled` and `:focus` are the same
+ * control's states.
+ */
+function attribute(element, name, value) {
+	return new RegExp(`^${element}\\[${name}=['"]?${value}['"]?\\](?![.#])`);
+}
+
 /** Rules whose *whole* body is wanted: Obsidian's real settings chrome. */
 const CHROME = [
 	/^\.setting-item/,
@@ -103,8 +125,52 @@ const CHROME = [
 	// reviewed against something the app never draws. Anchored, and refused a
 	// class or an id after it, so the app's own `.metadata-input-checkbox` and
 	// the gallery's scoped rules do not come with it.
-	/^input\[type=checkbox\](?![.#])/,
+	attribute('input', 'type', 'checkbox'),
 	/^\.dropdown$/,
+	/*
+	 * **A bare `select`, which `.dropdown` above does *not* stand in for.** Obsidian
+	 * paints the two together — `select, .combobox-button, .dropdown { … }` — so the
+	 * base rule arrived here through the `.dropdown` half of that list and the
+	 * control looked right. Every *state* rule spells the same list, and none of
+	 * those was carried: `.dropdown:focus-visible` is not `.dropdown`, so an entry
+	 * anchored with `$` matched the one rule where the class stands alone and missed
+	 * `:focus-visible`, `:disabled` and the forced-colors border.
+	 *
+	 * What that cost is a whole finding rather than a shade of paint. The panel opens
+	 * on an empty cell with **Changes** focused, which is the claim that path exists
+	 * to make; the app draws that focus with `select:focus-visible`; nothing carried
+	 * it, and `theme.css`'s fallback is inside `@layer harness-fallback`, which loses
+	 * to *any* unlayered rule whatever the specificity — so the base rule alone was
+	 * enough to suppress the fallback's focus ring as well. The shot showed a select
+	 * with no focus mark on it, and the surface was reviewed as though focus never
+	 * landed.
+	 */
+	/^select(?![.#\w-])/,
+	/*
+	 * A bare text input and a bare button, which the sheet's anchored panel leaves
+	 * to the host on purpose — `.sheetsmith-panel-input` sets flex and a width and
+	 * nothing else, and the three action buttons take the app's chrome whole
+	 * (`docs/UI.md` §1). Without these the panel photographed **unpainted**: white
+	 * boxes with black text on a dark panel, native grey buttons, and this wave's
+	 * largest surface reviewed against something the app never draws.
+	 *
+	 * Anchored and refused a class or an id after them, on the checkbox entry's own
+	 * argument, so the app's own `button.mod-cta` and its scoped input rules do not
+	 * come along and outrank a plugin class they should lose to. What arrives is the
+	 * bare element rule at (0,0,1), which is exactly what a plugin class beats in the
+	 * app.
+	 *
+	 * **The text input goes through `attribute()`, and that is the whole finding.**
+	 * Written as a literal `input[type=text]` it matched **nothing**: Obsidian spells
+	 * that one selector quoted — `input[type='text']` — while it spells the checkbox
+	 * unquoted, in the same stylesheet. So the entry above it worked, this one was
+	 * dead, and the panel was re-photographed *still* unpainted while the diff said
+	 * it had been fixed. An attribute selector's quotes are optional in CSS and
+	 * Obsidian uses both spellings, so matching one of them by hand is a coin flip
+	 * that has to come up right on every machine this is ever run on.
+	 */
+	attribute('input', 'type', 'text'),
+	/^button(?![.#\w-])/,
 	/^\.svg-icon/,
 	// The workspace pane the layout editor is a view in. A settings tab and a
 	// leaf are two different frames, and the editor now sits in the second: the
