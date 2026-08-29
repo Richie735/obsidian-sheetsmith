@@ -1,26 +1,29 @@
 ---
 name: findings
-description: "Use when the user passes review findings, feedback, or a critique to act on: judge each one honestly, fix what is real, and say plainly what is not. Stays active while findings arrive one at a time."
+description: "Use when the user passes review findings, feedback, or a critique to act on: judge each one honestly, fix what is real, and say plainly what is not. Stays active while the batch is worked."
 argument-hint: "[the first finding, or nothing if it follows in the next message]"
 allowed-tools: Read, Glob, Grep, Bash, Edit, Write
 ---
 
 Work through findings the user passes you. **First finding:** $ARGUMENTS
 
-This is step 5 of the loop, in the build session. The three reviews report on
+This runs at steps 4 and 6 of the workflow, in the build session. The three reviews report on
 their own axes and nothing merges them, so this is the one place all of them
 converge, and the judgement about what is worth doing lives here rather than in
 any reviewer.
 
 ## This stays on
 
-Findings arrive one at a time, so this is a standing mode rather than one task.
-Until the user says otherwise, or the work moves on to `/land-it`:
+Findings arrive as a batch, one batch per review wave, so this is a standing
+mode rather than one task. Until the batch is done, or the work moves on to
+`/land-it`:
 
 - Open every response with `[FINDINGS]`, so the mode survives a compaction.
-- Take one finding at a time, all the way through, before reading the next. A
-  batch judged together gets judged by its worst member.
-- If the next message is plainly another finding, treat it as one without being
+- Take one finding at a time, all the way through, before reading the next. The
+  batch is how they arrive, not how they are judged: judged together, they get
+  judged by their worst member.
+- Report back once, when every finding in the batch has a verdict.
+- If a later message is plainly another batch, treat it as one without being
   told again.
 
 ## 1. Check the claim before judging it
@@ -57,10 +60,11 @@ Four, and each demands something different:
 
 ## 3. Fix it
 
-Smallest change that addresses the mechanism. Then verify: `npm test`,
-`npm run lint`, `npm run build`. For anything visual, `npm run harness:shot`
-again and look at the PNG, because the finding was about what it looks like and
-so is the check.
+Smallest change that addresses the mechanism. Then run `npm test`. Lint and
+build run once at the wave's close, not after every fix: they cost minutes each
+and catch what the wave-close run catches anyway. For anything visual,
+`npm run harness:shot` again and look at the PNG, because the finding was about
+what it looks like and so is the check.
 
 Leave the work **uncommitted**. `/land-it` is the only thing that commits, at the
 end, once.
