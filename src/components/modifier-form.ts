@@ -60,6 +60,7 @@ import {
 	ModifierDefinitionView,
 	ModifierOutcome,
 	ModifierTarget,
+	phaseOf,
 	PromoteResult,
 	TypedEffect,
 } from '../types';
@@ -763,10 +764,13 @@ function renderFields(
 		const phase = select('Applies to', 'applies');
 		option(phase, 'value', 'The value');
 		option(phase, 'result', 'The derived number');
-		phase.value = shown.applies === 'result' ? 'result' : 'value';
+		phase.value = phaseOf(shown);
 		phase.disabled = !editable;
 		phase.addEventListener('change', () => {
-			put({ applies: phase.value === 'result' ? 'result' : 'value' });
+			// Through the shared reading rather than a ternary of its own: this
+			// select's two options are the two phases, so the last hand-written
+			// spelling of the fallback would be here (PATTERNS §1's call sites).
+			put({ applies: phaseOf({ applies: phase.value }) });
 		});
 	}
 

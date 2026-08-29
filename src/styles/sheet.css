@@ -964,23 +964,43 @@
 }
 
 /* A pill reading a number nobody typed: a score with modifiers layered over it,
-   17 where 15 is stored. Accent on the number rather than a badge beside it —
-   it is still the value, one step removed, and a card set of six abilities
-   wants six quiet numbers rather than six markers competing with the derived
-   above them. The colour is a second channel and not the only one: the field
-   carries a title naming both numbers (docs/UI.md §6).
+   17 where 15 is stored.
 
-   Written at three classes to match the rule above it, which sets
-   `--text-normal` at the same specificity and would otherwise win on order. */
-.sheetsmith-view .sheetsmith-card-has-derived .sheetsmith-card-input-effective {
-	color: var(--text-accent);
+   **The mark is `.sheetsmith-modified`'s own dotted underline, and this is a
+   replacement of the treatment that shipped rather than a patch on it.** An
+   accent-coloured number was the first answer, and a design pass found two
+   things wrong with it that a shape does not have. First, colour was the
+   *only* channel painted: forced-colors mode repaints every foreground to one
+   system colour, so an accented "19" and an unaccented "14" came out
+   pixel-identical, and the mark that survives that mode everywhere else on
+   this card — the dotted underline under a modified `derived` — was reachable
+   two lines away and not used. Second, `--text-accent` on this field measured
+   4.26:1 in the light theme against the 4.5:1 bar `legibility.md` §3 sets for
+   body text, where `--text-muted` under a `--text-normal` number clears every
+   theme's bar by a wide margin (see the rule above this one). Reusing the
+   card's own mark rather than inventing a second one is `docs/UI.md` §9's
+   argument as well: a reader who has already learned what the dotted line
+   under a derived number means does not have to learn a second thing for the
+   pill below it.
+
+   `.sheetsmith-card-input-effective` stays as the class this file's tests and
+   `card-face.ts`'s own logic key on; `MODIFIED_CLASS` is added beside it so the
+   paint is literally shared rather than a second copy of the same three
+   declarations (`docs/PATTERNS.md` §1). What is written *here* is only the two
+   ways this control is not the derived text's: an editable pill invites a
+   caret rather than a click for an explanation, so the shared rule's
+   `cursor: help` is put back to the field's own cursor; and the mark itself
+   goes quiet the moment the field is focused, because focused it is showing
+   the stored number and the mark would then be describing a value no longer
+   on screen. Written at three classes each, on the same specificity argument
+   as the accent-coloured rule this replaces: the pill's own rules two entries
+   up are (0,3,0) and a subject of fewer classes loses to them silently. */
+.sheetsmith-view .sheetsmith-card .sheetsmith-card-input-effective {
+	cursor: text;
 }
 
-/* Focused, the field is the stored number again, so it reads as one. */
-.sheetsmith-view
-	.sheetsmith-card-has-derived
-	.sheetsmith-card-input-effective:focus {
-	color: var(--text-normal);
+.sheetsmith-view .sheetsmith-card .sheetsmith-card-input-effective:focus {
+	text-decoration: none;
 }
 
 /* The menu in the pill, on the field's own three rules: the pill is what

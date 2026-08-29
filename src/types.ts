@@ -499,11 +499,22 @@ export type RowsSource = (resolve: FieldResolver) => readonly RowValues[];
 /**
  * The two things a modifier definition can do to a number (SPEC §5).
  *
- * Two named phases and no priority integer: **an override applies first and the
+ * Two named steps and no priority integer: **an override applies first and the
  * additions land on top of it.** That is the property the whole design rests on
  * — overrides reduce to one number (the highest) and additions reduce to one
- * number (typed stacking), so there is nothing to sequence *within* either phase
+ * number (typed stacking), so there is nothing to sequence *within* either step
  * and the result cannot depend on the order the enrolments are walked in.
+ *
+ * **"Step" and not "phase", deliberately, because this file now holds both
+ * senses.** `ModifierPhase` above is SPEC §5's word for *where a modifier lands*
+ * — inside the formula or on what it came to — and that is the spec's own
+ * vocabulary, so it keeps the word. This one is *when the engine resolves it*,
+ * overrides then additions, and it is comment text with no type behind it. The
+ * two sat fifteen lines apart saying "phase" at each other until a review read
+ * them together. "Step" is already this repository's word for it — the override
+ * step is what `docs/features/modifier-definitions.md` calls this.
+
+ *
  *
  * Foundry carried a user-facing priority integer for thirteen major versions and
  * added phases in v14 to "avoid priority competition"; its own #14519 is what
@@ -542,7 +553,40 @@ export type ModifierOperator = 'add' | 'override';
 export type ModifierPhase = 'value' | 'result';
 
 /**
- * Which phase a definition belongs to, from whatever its `operator` holds.
+ * Which phase a modifier lands in, from whatever its `applies` holds.
+ *
+ * **This predicate is the backward-compatibility guarantee, not a convenience.**
+ * Every modifier in every layout and every note written before the phase existed
+ * says nothing, and all of them must go on meaning what `mod.self` has always
+ * meant. So the default is load-bearing in the direction it points: anything but
+ * the literal `result` is `value`, which leaves a hand-edited typo doing what it
+ * did before rather than silently moving it onto a number the author never aimed
+ * at.
+ *
+ * Beside the type on `operatorOf`'s own terms, and it arrives with that entry's
+ * history rather than repeating it: the operator's default was spelled out at
+ * four sites after being extracted at one, and this one had reached **five** —
+ * twice as a private function of this exact name and body in two files that do
+ * not mention each other, each re-arguing the fallback in its own words. `PATTERNS`
+ * §1's one-step tier is explicit that a predicate extracts on the *second*
+ * consumer, because the only thing a guard test over two copies could assert is
+ * that they still agree, and one name says that for free. One copy drifting to
+ * `!== 'value'` is the whole risk, and it is silent.
+ *
+ * `unknown` rather than `ModifierPhase | undefined`, for `operatorOf`'s reason and
+ * one more of its own: the parse tier holds a definition straight out of a layout
+ * file where every member is still free, and it reads the key **trimmed**, so the
+ * trim belongs here or the parser and its four siblings disagree about
+ * `" result "`.
+ */
+export function phaseOf(raw: { applies?: unknown }): ModifierPhase {
+	return typeof raw.applies === 'string' && raw.applies.trim() === 'result'
+		? 'result'
+		: 'value';
+}
+
+/**
+ * Which step a definition belongs to, from whatever its `operator` holds.
  *
  * **The fact worth naming is the default**: anything but the literal `override`
  * is `add`, which is what a definition that says nothing is — and a misspelt
@@ -803,9 +847,11 @@ export interface ModifierLine {
 	 * Which phase this addition landed in, so a breakdown can say so where it
 	 * matters and stay quiet where it does not.
 	 *
-	 * Always `value` on an override, whose own phase is fixed and whose line
-	 * already reads "sets to": saying the phase there would be a second answer to
-	 * a question the wording has answered.
+	 * Always `result` on an override, whose phase is fixed by construction (SPEC
+	 * §5): it replaces the number the formula came to, which is where the result
+	 * phase lands. The *line* does not say so — `change()` reads "sets to N" and
+	 * never reaches this — but the field carries the phase rather than the wording,
+	 * and it read `value` until a review put the two sentences side by side.
 	 *
 	 * **Optional, and absent means `value`** — the same default `TypedEffect` and
 	 * `ModifierDefinition` already carry, for the same reason. `stackModifiers`

@@ -26,10 +26,10 @@
  * a `ScopeEntry` and a Table column's `total` are all derived, so this project
  * would be *more* exposed to that bug than Foundry is.
  *
- * **The two phases are two reductions, not two evaluation passes**, and that
+ * **The two steps are two reductions, not two evaluation passes**, and that
  * sentence is what keeps the override inside the shipped engine. There is still
  * one walk over the enrolments producing one contribution set per target; the
- * phases are two reductions of that one set, combined by one expression. Nothing
+ * steps are two reductions of that one set, combined by one expression. Nothing
  * is evaluated twice, and there is no boundary for an ordering bug to live at.
  *
  * **A `mod.` entry is not a `ScopeEntry` and answers to no `.value`.** That rule
@@ -49,6 +49,7 @@ import {
 	ModifierOutcome,
 	ModifierPhase,
 	ModifierPush,
+	phaseOf,
 } from '../types';
 import { FunctionEnv, inRowMessage, roundSum } from './expression';
 import {
@@ -421,18 +422,23 @@ function contest(type: string, amount: number): string {
 /**
  * Combine the contributions at one target into one number and one breakdown.
  *
- * **Two fixed named phases, and no priority integer.** Phase one resolves
- * overrides: the highest wins, and every other one is listed saying so. Phase two
- * resolves the typed additive stacking below. The published name's own thunk then
+ * **Two fixed named steps, and no priority integer.** Step one resolves
+ * overrides: the highest wins, and every other one is listed saying so. Step two
+ * resolves the typed additive stacking below.
+ *
+ * *Step* rather than *phase* throughout, because `ModifierPhase` is a different
+ * question this same function answers — value or result, *where* a modifier lands
+ * — and one word for both is how the line below came to read "Phase two's …  per
+ * phase" with the two senses in it.* The published name's own thunk then
  * combines them — `override + total` where one applies, and the formula's own
  * result plus `total` where none does — so the owner's arithmetic falls out:
  * override 18, addition +1, result 19.
  *
  * Foundry carried a user-facing priority integer for thirteen major versions and
- * added phases in v14 precisely to "avoid priority competition"; CSB applies
+ * added its own phases in v14 precisely to "avoid priority competition"; CSB applies
  * `set` first and addition last; and dnd5e#6622 is an open bug from a user
  * hitting Foundry's opposite default, arguing a Bless `+1d4` "should stack on top
- * of the overridden attack bonus". **Why two phases are enough** is that each
+ * of the overridden attack bonus". **Why two steps are enough** is that each
  * reduces to one number, so there is nothing to sequence within either — which is
  * the property to check any future operator against. A multiply does not have it,
  * which is where the priority integer comes back.
@@ -464,9 +470,9 @@ function contest(type: string, amount: number): string {
  * and it contests.
  *
  * **No priority field, and that is a property rather than a hand-wave.** Max, min
- * and `+` are all commutative and associative, so neither phase's result depends
+ * and `+` are all commutative and associative, so neither step's result depends
  * on the order the enrolments are walked in — asserted by shuffling rather than
- * argued, over both phases. The sum runs through `roundSum`, the helper the totals
+ * argued, over both steps. The sum runs through `roundSum`, the helper the totals
  * row and `sum()` already share, so the breakdown's total, the number on the card
  * and a formula reading the slot cannot disagree about `0.30000000000000004`.
  *
@@ -475,23 +481,12 @@ function contest(type: string, amount: number): string {
  * an override's line says "sets to" rather than needing a place in the list to
  * say what it is.
  */
-/**
- * Which phase one enrolment lands in.
- *
- * Absent is `value`, and the default is load-bearing rather than tidy: every
- * modifier in every layout and every note written before the phase existed says
- * nothing, and all of them must go on meaning what `mod.self` has always meant.
- */
-function phaseOf(entry: { applies?: ModifierPhase }): ModifierPhase {
-	return entry.applies === 'result' ? 'result' : 'value';
-}
-
 export function stackModifiers(
 	contributions: readonly Contributor[],
 ): ModifierResult {
 	/*
-	 * Phase one. The winner is the highest, and 0 is a value here where it is
-	 * nothing in phase two: an override to 0 sets a number, and refusing to list
+	 * Step one. The winner is the highest, and 0 is a value here where it is
+	 * nothing in step two: an override to 0 sets a number, and refusing to list
 	 * it would leave a reader with a zero nobody claims.
 	 */
 	let override: number | null = null;
@@ -512,7 +507,7 @@ export function stackModifiers(
 	 */
 	const keyed = (phase: ModifierPhase, type: string) => `${phase}\u0000${type}`;
 
-	/** Phase two's winning bonus and penalty per phase and declared type. */
+	/** Step two's winning bonus and penalty, per phase and declared type. */
 	const best = new Map<string, number>();
 	const worst = new Map<string, number>();
 	for (const entry of contributions) {
@@ -546,9 +541,11 @@ export function stackModifiers(
 				definition,
 				operator,
 				type,
-				// An override's phase is fixed and its line already reads "sets to",
-				// so it is reported as `value` rather than growing a third answer.
-				applies: operator === 'override' ? 'value' : applies,
+				// An override is in the result phase (SPEC §5): it replaces the number
+				// the formula came to, which is where that phase lands. The line does
+				// not *say* so — `change()` returns "sets to N" before reading this —
+				// but the field is what the phase is, not what the wording shows.
+				applies: operator === 'override' ? 'result' : applies,
 				amount,
 				suppressed,
 			});

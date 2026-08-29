@@ -36,11 +36,7 @@ import {
 } from '../formula/modifier-targets';
 import { Layout } from './layout';
 import { unspellableName } from './modifier-cell';
-import {
-	ModifierDefinitionView,
-	ModifierPhase,
-	operatorOf,
-} from '../types';
+import { ModifierDefinitionView, operatorOf, phaseOf } from '../types';
 import { parseExpression } from '../formula/expression';
 
 /** Something wrong with one modifier definition, or with the list. */
@@ -193,7 +189,7 @@ export function parseModifierDefinitions(
 		 * whatever was typed.
 		 */
 		const storedPhase = text(raw, 'applies');
-		const applies: ModifierPhase = storedPhase === 'result' ? 'result' : 'value';
+		const applies = phaseOf(raw);
 		const when = text(raw, 'when');
 
 		if (target === '') {

@@ -251,21 +251,37 @@
 }
 
 /* An outline rather than a ring, because it is the one mark that survives
-   forced-colors mode where a `box-shadow` is discarded (§6). */
+   forced-colors mode where a `box-shadow` is discarded (§6).
+
+   **Six controls, and the panel's own seven fields were missing from the
+   list.** `.sheetsmith-panel-select` and `.sheetsmith-panel-input` carried
+   Obsidian's ordinary `input:focus` / `select:focus` border instead — a
+   `--background-modifier-border-focus` measured at 1.88:1 in the light theme
+   and 1.69:1 in dark, against the 3:1 `legibility.md` §3 asks of a border that
+   is the only thing marking a state. So the first control the panel actually
+   focuses on opening — **Modifier**, a select — carried the weaker of the
+   two treatments this file has, and every typed field in the six-field form
+   after it did too. Added rather than given a rule of their own, because it is
+   the same mark for the same reason: one focus treatment per component (§6),
+   not one per control kind. */
 .sheetsmith-panel .sheetsmith-panel-line:focus-visible,
 .sheetsmith-panel .sheetsmith-panel-add:focus-visible,
 .sheetsmith-panel .sheetsmith-panel-remove:focus-visible,
 .sheetsmith-panel .sheetsmith-panel-save:focus-visible,
 .sheetsmith-panel .sheetsmith-panel-confirm:focus-visible,
-.sheetsmith-panel .sheetsmith-panel-cancel:focus-visible {
+.sheetsmith-panel .sheetsmith-panel-cancel:focus-visible,
+.sheetsmith-panel .sheetsmith-panel-select:focus-visible,
+.sheetsmith-panel .sheetsmith-panel-input:focus-visible {
 	outline: 2px solid var(--interactive-accent);
 	outline-offset: 1px;
 	/* Obsidian's own `button:focus-visible` swaps the resting shadow for a 3px
-	   ring, so without this the four buttons that keep the app's chrome carry two
-	   focus marks at once — §6's "one focus treatment per component", broken only
-	   where the app is co-author. The outline is the one that stays, because it is
-	   the one forced-colors mode does not discard; `none` rather than restoring
-	   `--input-shadow`, so the mark reads the same on all six. */
+	   ring, and its `input:focus` / `select:focus` swap the border colour for
+	   `--background-modifier-border-focus` — so without this every one of these
+	   eight controls carried two focus marks at once, or the app's own weaker
+	   one alone: §6's "one focus treatment per component", broken only where the
+	   app is co-author. The outline is the one that stays, because it is the one
+	   forced-colors mode does not discard; `none` rather than restoring
+	   `--input-shadow`, so the mark reads the same on all eight. */
 	box-shadow: none;
 }
 

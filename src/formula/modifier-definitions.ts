@@ -45,6 +45,7 @@ import {
 	ModifierOperator,
 	ModifierPhase,
 	operatorOf,
+	phaseOf,
 	RowValues,
 	TypedEffect,
 } from '../types';
@@ -192,18 +193,6 @@ function read(
 	}
 }
 
-/**
- * Which phase a stored modifier names, settled once for both tiers.
- *
- * Anything that is not the word `result` is the value phase, which is what makes
- * the default survive a hand-edited layout: a typo in a JSON file leaves the
- * modifier doing what it did before the phase existed rather than silently
- * moving it somewhere else.
- */
-function phaseOf(stored: { applies?: ModifierPhase }): ModifierPhase {
-	return stored.applies === 'result' ? 'result' : 'value';
-}
-
 /** A definition's five facts, as the fields both tiers reduce to. */
 function fieldsOfDefinition(definition: ModifierDefinitionView): PartFields {
 	const bonusType = (definition.bonusType ?? '').trim();
@@ -346,9 +335,22 @@ export function resolveEnrolment(
 			// what an author who has never heard of bonus types expects. An
 			// override carries none whatever the part says.
 			type: fields.operator === 'override' ? null : fields.bonusType,
-			// An override's phase is fixed — it replaces the published number — so
-			// it is reported as `value` and `stackModifiers` never reads it.
-			applies: fields.operator === 'override' ? 'value' : fields.applies,
+			/*
+			 * **An override is in the result phase**, which is what SPEC §5 means by
+			 * "by construction": it replaces the number the formula came to, which is
+			 * where the result phase lands. Its own `applies` is refused rather than
+			 * stored precisely *because* the answer is already known, so this states
+			 * the known answer rather than the default.
+			 *
+			 * It reported `value` until a review read the two against each other —
+			 * arithmetically invisible, because `stackModifiers` takes an override
+			 * through `Math.max` into `override` and never through `add()`, and
+			 * because the phase key is only ever built for a contested type, which an
+			 * override never has. That is exactly what made it worth fixing rather
+			 * than leaving: the one field named for the phase carried the opposite of
+			 * the phase, and nothing would have said so until something read it.
+			 */
+			applies: fields.operator === 'override' ? 'result' : fields.applies,
 			amount: amount.value,
 		},
 	};

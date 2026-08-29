@@ -187,7 +187,7 @@ describe('the mod. namespace', () => {
 	});
 });
 
-describe('stackModifiers: the additive phase', () => {
+describe('stackModifiers: the stacking step', () => {
 	/*
 	 * The arithmetic, one case per line (SPEC §5).
 	 *
@@ -278,7 +278,7 @@ describe('stackModifiers: the additive phase', () => {
 	});
 });
 
-describe('stackModifiers: the override phase', () => {
+describe('stackModifiers: the override step', () => {
 	const override = (amount: number, label: string): Contributor =>
 		at('x', amount, null, label, 'override');
 
@@ -293,7 +293,10 @@ describe('stackModifiers: the override phase', () => {
 				operator: 'override',
 				type: null,
 				amount: 18,
-				applies: 'value',
+				// An override is in the result phase by construction (SPEC §5): it
+				// replaces the number the formula came to. The line does not *say*
+				// so — `change()` reads "sets to 18" — but the field is the phase.
+				applies: 'result',
 				suppressed: null,
 			},
 			{
@@ -303,7 +306,7 @@ describe('stackModifiers: the override phase', () => {
 				operator: 'override',
 				type: null,
 				amount: 13,
-				applies: 'value',
+				applies: 'result',
 				suppressed: 'a higher override applies',
 			},
 		]);
@@ -358,11 +361,11 @@ describe('stackModifiers: the override phase', () => {
 	});
 });
 
-describe('the shuffle assertion, over both phases', () => {
+describe('the shuffle assertion, over both steps', () => {
 	/*
 	 * The assertion standing in for a priority field, and it now covers the
 	 * override too. Max, min and `+` are all commutative and associative, and each
-	 * phase reduces to one number, so the result cannot depend on the walk order —
+	 * step reduces to one number, so the result cannot depend on the walk order —
 	 * which is what keeps the single pass and what makes "no priority field" a
 	 * checkable property rather than a hand-wave.
 	 *
@@ -1415,18 +1418,37 @@ describe('stackModifiers: the two phases', () => {
 		expect(result.lines.map((one) => one.applies)).toEqual(['value', 'result']);
 	});
 
-	it('reports an override in the value phase, whatever it stored', () => {
+	it('reports an override in the result phase, whatever it stored', () => {
 		/*
-		 * An override replaces the published number, which *is* the result phase —
-		 * so it needs no second spelling, and a line saying one would be a second
-		 * answer to a question "sets to 18" has already settled.
+		 * **An override is in the result phase by construction**, which is SPEC §5's
+		 * own words and the reason a stored `applies` beside one is refused: the
+		 * answer is already known, so a second spelling of it would be two spellings
+		 * for one behaviour.
+		 *
+		 * This reported `value` until a review read the field against the sentence.
+		 * Arithmetically invisible — an override goes through `Math.max` into
+		 * `override` and never through `add()`, so `resultTotal` stays 0 either way,
+		 * and the phase key is only built for a contested type, which an override
+		 * never has. That is what made it worth fixing: the one field named for the
+		 * phase carried the opposite of the phase, and nothing would have said so
+		 * until something read it.
+		 *
+		 * Whatever it stored, in both directions: the stored key is ignored, so a
+		 * definition that says `value` and one that says nothing land here the same.
 		 */
-		const result = stackModifiers([
-			{ ...at('x', 18, null, 'Plate', 'override'), applies: 'result' },
-		]);
-		if ('error' in result) throw new Error('expected a result');
-		expect(result.override).toBe(18);
-		expect(result.resultTotal).toBe(0);
-		expect(result.lines[0]?.applies).toBe('value');
+		for (const stored of ['result', 'value', undefined] as const) {
+			const result = stackModifiers([
+				{
+					...at('x', 18, null, 'Plate', 'override'),
+					...(stored === undefined ? {} : { applies: stored }),
+				},
+			]);
+			if ('error' in result) throw new Error('expected a result');
+			expect(result.override, String(stored)).toBe(18);
+			// Never added twice: the override is the base, not a contributor to the
+			// phase that lands on top of it.
+			expect(result.resultTotal, String(stored)).toBe(0);
+			expect(result.lines[0]?.applies, String(stored)).toBe('result');
+		}
 	});
 });

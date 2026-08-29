@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 import { cardSet, CardSetConfig } from './card-set';
 import { FieldValue, ModifierOutcome, RenderContext } from '../types';
 
@@ -662,11 +662,28 @@ describe('cardSet.render: an effective value over a stored one', () => {
 		return null;
 	};
 
+	/*
+	 * **Rendered into the document, and focus is real.** Every gesture case below
+	 * turns on the field's *focus state* rather than on a listener firing, and a
+	 * detached element has none: happy-dom dispatches `focus` and `blur` from
+	 * `.focus()` / `.blur()` only for an element that is actually in the document,
+	 * so a detached one never becomes `activeElement` and `editable.ts`'s own
+	 * `input.blur()` at the end of Escape reaches nothing.
+	 *
+	 * That is not a nicety about test hygiene. Driven synthetically, the Escape
+	 * case asserted the *absence* of the restore listener and recorded happy-dom's
+	 * behaviour as though it were the plugin's — it read `8` where a browser reads
+	 * `12`. Measured rather than assumed: an attached input fires both events, a
+	 * detached one fires neither.
+	 */
+	afterEach(() => document.body.replaceChildren());
+
 	const draw = (
 		values: Record<string, string> = { STR: '8', DEX: '16', WIS: '12' },
 		on: Partial<RenderContext> = {},
 	) => {
 		const el = document.createElement('div');
+		document.body.appendChild(el);
 		const edits: unknown[] = [];
 		cardSet.render(el, boosted, { values }, {
 			...context,
@@ -686,10 +703,39 @@ describe('cardSet.render: an effective value over a stored one', () => {
 		expect(
 			inputs[0]?.classList.contains('sheetsmith-card-input-effective'),
 		).toBe(true);
-		// The state is in the accessible name and not only in the paint
-		// (docs/UI.md §6): a pill has no room to explain itself, so both numbers
-		// are named where hovering and a screen reader can both reach them.
-		expect(inputs[0]?.getAttribute('title')).toBe('12 with modifiers · 8 stored');
+		/*
+		 * **The painted mark is `sheetsmith-modified`, not a colour** — the same
+		 * dotted underline a card's own `derived` wears where a modifier has
+		 * touched it, added here rather than a colour invented for the pill alone
+		 * (docs/UI.md §9). A design pass replaced the accent this test used to
+		 * check: it was the only channel painted, so forced-colors mode — which
+		 * repaints every foreground to one system colour — made an accented pill
+		 * pixel-identical to an unmarked one, where a shape survives it.
+		 */
+		expect(inputs[0]?.classList.contains('sheetsmith-modified')).toBe(true);
+		/*
+		 * **The state is in the accessible name and not only in the paint**
+		 * (docs/UI.md §6): a pill has no room to explain itself, so both numbers
+		 * are said as well as shown.
+		 *
+		 * **Asserted on `aria-label` and not only on `title`, because this comment
+		 * used to be false.** The two carriers were a colour and a tooltip, and the
+		 * bare `aria-label` beside them *won* the accessible-name computation — so a
+		 * reader without a pointer was told nothing at all while the comment claimed
+		 * they were. Both are checked now, and they are built from one string so
+		 * they cannot drift apart.
+		 */
+		expect(inputs[0]?.getAttribute('title')).toBe('12 with modifiers, 8 stored');
+		expect(inputs[0]?.getAttribute('aria-label')).toBe(
+			'Strength, 12 with modifiers, 8 stored',
+		);
+	});
+
+	it('leaves the name alone on an entry nothing was pushed at', () => {
+		// The other half: a pill reading what the note stores is an ordinary field
+		// and says so, rather than announcing a state it is not in.
+		const { inputs } = draw();
+		expect(inputs[1]?.getAttribute('aria-label')).toBe('Dexterity');
 	});
 
 	it('leaves an entry nothing was pushed at exactly as it was', () => {
@@ -705,7 +751,7 @@ describe('cardSet.render: an effective value over a stored one', () => {
 
 	it('puts the stored number back the moment the field is focused', () => {
 		const { inputs } = draw();
-		inputs[0]?.dispatchEvent(new Event('focus'));
+		inputs[0]?.focus();
 		expect(inputs[0]?.value).toBe('8');
 	});
 
@@ -717,33 +763,101 @@ describe('cardSet.render: an effective value over a stored one', () => {
 		 * pressing an arrow key once.
 		 */
 		const { edits, inputs } = draw();
-		inputs[0]?.dispatchEvent(new Event('focus'));
+		inputs[0]?.focus();
 		inputs[0]?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp' }));
 		inputs[0]?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp' }));
 		expect(inputs[0]?.value).toBe('10');
 		expect(edits).toEqual([]);
-		inputs[0]?.dispatchEvent(new Event('blur'));
+		inputs[0]?.blur();
 		expect(edits).toEqual([{ values: { STR: '10' } }]);
 	});
 
-	it('restores the stored number on Escape, not the effective one', () => {
+	it('abandons the draft to the stored number on Escape, and writes nothing', () => {
+		/*
+		 * **What Escape restores is the baseline, and the baseline is the stored
+		 * number.** `bindEditable`'s `committed` starts at `current`, so an
+		 * abandoned draft goes back to 8 and not to 12 — and the next arrow press
+		 * therefore steps from 8. That is the whole of what the swap protects
+		 * (CLAUDE.md 4); what the field then *displays* is the case below.
+		 */
 		const { edits, inputs } = draw();
-		inputs[0]?.dispatchEvent(new Event('focus'));
+		inputs[0]?.focus();
 		inputs[0]!.value = '99';
 		inputs[0]?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-		expect(inputs[0]?.value).toBe('8');
 		expect(edits).toEqual([]);
+		// And the baseline really is 8 rather than merely displayed as it: step
+		// once from the restored state and the commit says which number it stepped.
+		inputs[0]?.focus();
+		inputs[0]?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp' }));
+		inputs[0]?.blur();
+		expect(edits).toEqual([{ values: { STR: '9' } }]);
+	});
+
+	it('leaves the pill at rest after Escape, which is the effective number', () => {
+		/*
+		 * **Escape ends by blurring** (`editable.ts`), so the field it leaves behind
+		 * is not under a caret — and SPEC §4.2's rule for a pill that is not under a
+		 * caret is the effective number. This case exists because it used to assert
+		 * `8`, which was neither the rule nor the app: the element was focused with
+		 * a synthetic event, so it never became `activeElement`, so Escape's own
+		 * `input.blur()` dispatched nothing and the restore never ran. The
+		 * assertion was a record of happy-dom's behaviour.
+		 *
+		 * **And 8 would be the wrong answer even if it were reachable**, because it
+		 * puts the card's three channels into disagreement: the accent still says
+		 * this number is computed and the accessible name still says
+		 * `12 with modifiers, 8 stored`, over a field reading 8. The mark exists to
+		 * stop a number nobody typed reading like one they did, and an unfocused
+		 * pill showing the stored value under it is that failure with the colour
+		 * left on.
+		 */
+		const { inputs } = draw();
+		inputs[0]?.focus();
+		inputs[0]!.value = '99';
+		inputs[0]?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+		expect(inputs[0]?.value).toBe('12');
+		expect(inputs[0]?.getAttribute('aria-label')).toBe(
+			'Strength, 12 with modifiers, 8 stored',
+		);
 	});
 
 	it('reads the effective number again after a blur that changed nothing', () => {
 		// The one path no re-render follows: focused, nothing typed, moved on. A
 		// commit rebuilds the face with a fresh effective and owns the display.
 		const { edits, inputs } = draw();
-		inputs[0]?.dispatchEvent(new Event('focus'));
+		inputs[0]?.focus();
 		expect(inputs[0]?.value).toBe('8');
-		inputs[0]?.dispatchEvent(new Event('blur'));
+		inputs[0]?.blur();
 		expect(inputs[0]?.value).toBe('12');
 		expect(edits).toEqual([]);
+	});
+
+	it('leaves a number spelled differently alone, rather than calling it modified', () => {
+		/*
+		 * **The same number in two spellings is not a modifier.** `shown` arrives as
+		 * `String(n)`, so a note holding `15.0` on an entry nothing is pushed at
+		 * produced `'15' !== '15.0'` — and the card then carried the accent, the
+		 * title, the accessible name and the focus swap, all announcing modifiers on
+		 * a value no modifier reaches. That is the mark's own failure mode arrived at
+		 * from the other side, and it is why the comparison is numeric.
+		 *
+		 * **The reader's spelling survives**, which is the second half: the pill
+		 * still shows `15.0`, because nothing changed it and §10's "rendered, not
+		 * corrected" is what a note the reader owns is owed.
+		 */
+		const { inputs } = draw({ STR: '8', DEX: '15.0', WIS: '12' });
+		expect(inputs[1]?.value).toBe('15.0');
+		expect(
+			inputs[1]?.classList.contains('sheetsmith-card-input-effective'),
+		).toBe(false);
+		expect(inputs[1]?.hasAttribute('title')).toBe(false);
+		expect(inputs[1]?.getAttribute('aria-label')).toBe('Dexterity');
+		// And the entry that really is modified still is, so the fold is about
+		// spelling rather than about switching the mark off.
+		expect(inputs[0]?.value).toBe('12');
+		expect(
+			inputs[0]?.classList.contains('sheetsmith-card-input-effective'),
+		).toBe(true);
 	});
 
 	it('shows the stored number where the formula does not resolve', () => {
@@ -771,6 +885,44 @@ describe('cardSet.render: an effective value over a stored one', () => {
 		expect(
 			inputs[0]?.classList.contains('sheetsmith-card-input-effective'),
 		).toBe(false);
+	});
+
+	it('asks for the pill display-only, and for the derived number not', () => {
+		/*
+		 * **The call site's own case, and it exists because every other case here
+		 * is blind to it.** `withModifier` above returns a number and never looks
+		 * at its fourth argument, so deleting `true` from `card-set.ts` leaves all
+		 * of them green — measured, not assumed. What ships then is SPEC §5's
+		 * "only the evaluation that becomes the published name takes the result
+		 * phase, and the override with it" quietly reversed: an override *of the
+		 * ability modifier* would read as the score, and a `+1 to checks` would be
+		 * counted into it. `resolve.test.ts` holds what the two answers are; this
+		 * holds that this component asks the right question.
+		 */
+		const asked: { field: string; displayOnly: boolean }[] = [];
+		const recording: RenderContext['resolveField'] = (
+			field,
+			scope,
+			published,
+			displayOnly,
+		) => {
+			asked.push({ field, displayOnly: displayOnly === true });
+			return withModifier(field, scope, published);
+		};
+		draw(undefined, { resolveField: recording });
+		expect(asked.filter((one) => one.field === 'effective')).not.toHaveLength(0);
+		expect(
+			asked
+				.filter((one) => one.field === 'effective')
+				.every((one) => one.displayOnly),
+		).toBe(true);
+		// The other half of the same claim: the number above the pill is the one
+		// that becomes `card-set.STR`, so it must ask as the publisher.
+		expect(
+			asked
+				.filter((one) => one.field === 'derived')
+				.every((one) => !one.displayOnly),
+		).toBe(true);
 	});
 
 	it('leaves a set that declares no effective formula alone', () => {

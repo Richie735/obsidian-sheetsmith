@@ -591,6 +591,24 @@
 	text-overflow: ellipsis;
 }
 
+/* **A forced line break inside a wrapping flex line**, which is what groups the
+   Modifiers list's five fields into two rows on purpose rather than by however
+   much fits.
+
+   `.sheetsmith-entry-detail` already wraps at every width (`flex-wrap: wrap`),
+   so a full-width, zero-height flex item forces every field after it onto the
+   next row regardless of how much space the current one has left — the same
+   trick a plain grid would need a second `grid-template-columns` for, done with
+   no media query and nothing measured against a breakpoint that would drift.
+   `Changes`, `Operator` and `Amount` name what a definition *is*; `Applies to`,
+   `Bonus type` and `Only when` refine it, and grouping them is also what let
+   `Changes` stop losing its width to a third content-sized field competing for
+   the line's slack (see `-detail-field-tight` below). */
+.sheetsmith-detail-break {
+	flex-basis: 100%;
+	height: 0;
+}
+
 /* One field on a detail line worth more than an equal share of it.
 
    **Changes** is the case: it names what a definition *does*, its values are

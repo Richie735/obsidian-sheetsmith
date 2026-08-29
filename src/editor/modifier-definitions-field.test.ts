@@ -190,6 +190,57 @@ describe('what the list writes to the layout', () => {
 		expect(from.modifiers?.[0]).not.toHaveProperty('operator');
 	});
 
+	it('takes the phase with the operator when a definition becomes a Sets', () => {
+		/*
+		 * **The key the pane could otherwise not clear.** An override is in the
+		 * result phase by construction, so `parseModifierDefinitions` reports an
+		 * `applies` beside one and says *"Clear it, or make this modifier add to the
+		 * value instead"* — and on this branch the phase field is reserved and inert,
+		 * so this handler is the only thing left that writes the key. Without this
+		 * the author reads an instruction the surface cannot satisfy.
+		 *
+		 * **Not "rendered, not corrected."** That rule protects character data a
+		 * layout no longer declares; this is the author's own layout file, one
+		 * keystroke after they wrote the key, edited through the pane that just took
+		 * the control away.
+		 */
+		const from = layout([{ ...RING, applies: 'result' }]);
+		const el = render(from);
+		const phase = control<HTMLSelectElement>(
+			el,
+			'modifier-Ring of Protection-applies',
+		);
+		expect(phase.value).toBe('result');
+		const operator = control<HTMLSelectElement>(
+			el,
+			'modifier-Ring of Protection-operator',
+		);
+		operator.value = 'override';
+		operator.dispatchEvent(new Event('change'));
+		expect(from.modifiers?.[0]).not.toHaveProperty('applies');
+		// And the parser therefore has nothing to report about it, which is the
+		// point rather than a second assertion about the same fact.
+		expect(from.modifiers?.[0]?.operator).toBe('override');
+	});
+
+	it('writes the phase only where it is not the default', () => {
+		// The value phase is the absent key, so choosing it clears rather than
+		// stores: one spelling per meaning (PATTERNS §8).
+		const from = layout([{ ...RING }]);
+		const el = render(from);
+		const phase = control<HTMLSelectElement>(
+			el,
+			'modifier-Ring of Protection-applies',
+		);
+		expect(phase.value).toBe('value');
+		phase.value = 'result';
+		phase.dispatchEvent(new Event('change'));
+		expect(from.modifiers?.[0]?.applies).toBe('result');
+		phase.value = 'value';
+		phase.dispatchEvent(new Event('change'));
+		expect(from.modifiers?.[0]).not.toHaveProperty('applies');
+	});
+
 	it('deletes a key an empty field clears rather than storing ""', () => {
 		const from = layout([{ ...RING, when: 'Worn' }]);
 		const el = render(from);
@@ -313,6 +364,23 @@ describe('the controls a definition offers', () => {
 		]);
 	});
 
+	/**
+	 * The reserved slot standing in for one named control, by its own label.
+	 *
+	 * **By label and not by class**, because a Sets row now reserves *two* — the
+	 * phase and the bonus type — and a bare `querySelector` would hand every case
+	 * the first one in the DOM. That is not hypothetical: this file's bonus-type
+	 * case went on passing while it was actually asserting about the phase field
+	 * built above it, which is a check quietly changing what it is a check of.
+	 */
+	function reservedField(el: HTMLElement, label: string): HTMLElement | null {
+		return (
+			Array.from(
+				el.querySelectorAll<HTMLElement>('.sheetsmith-detail-field-reserved'),
+			).find((field) => field.textContent?.startsWith(label)) ?? null
+		);
+	}
+
 	it('offers the bonus type on Adds to and not on Sets', () => {
 		// An override is not contested by type, so the control goes rather than
 		// standing there meaning nothing — the same call **Publish per row** makes
@@ -333,12 +401,35 @@ describe('the controls a definition offers', () => {
 		 * `flex: 0 0 auto`, and the 31px difference went back to the line's grow and
 		 * moved `Changes`, `Operator` and `Amount` on every Sets row.
 		 */
-		const reserved = sets.querySelector('.sheetsmith-detail-field-reserved');
+		const reserved = reservedField(sets, 'Bonus type');
 		expect(reserved).not.toBeNull();
 		expect(reserved?.getAttribute('aria-hidden')).toBe('true');
 		expect(reserved?.querySelector('select')).not.toBeNull();
 		// And no such slot where the control is real.
 		expect(adds.querySelector('.sheetsmith-detail-field-reserved')).toBeNull();
+	});
+
+	it('offers the phase on Adds to and not on Sets, reserving its slot too', () => {
+		/*
+		 * **The same rule and the same reason, and it shipped as the other answer.**
+		 * An override is in the result phase by construction, so the control goes —
+		 * but the field was wrapped in an `if` rather than built and hidden, under a
+		 * comment claiming it did what the bonus type does. A field that is not
+		 * created gives its width back to the line's grow, which is the defect the
+		 * bonus type's own reservation was measured and added to fix.
+		 */
+		const adds = render(layout([{ ...RING }]));
+		expect(
+			adds.querySelector('[data-sheetsmith-focus="modifier-Ring of Protection-applies"]'),
+		).not.toBeNull();
+		const sets = render(layout([{ ...RING, operator: 'override' }]));
+		expect(
+			sets.querySelector('[data-sheetsmith-focus="modifier-Ring of Protection-applies"]'),
+		).toBeNull();
+		const reserved = reservedField(sets, 'Applies to');
+		expect(reserved).not.toBeNull();
+		expect(reserved?.getAttribute('aria-hidden')).toBe('true');
+		expect(reserved?.querySelector('select')).not.toBeNull();
 	});
 
 	it('offers the layout\'s own bonus types over an untyped first line', () => {

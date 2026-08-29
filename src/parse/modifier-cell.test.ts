@@ -460,6 +460,31 @@ describe('the phase a typed effect applies to', () => {
 		).toBe('armour_class = 18');
 	});
 
+	it('drops a phase a reader typed on an override, deliberately', () => {
+		/*
+		 * **The one place this file corrects rather than carries, and SPEC licenses
+		 * it in terms**: §5 says a phase beside an override is "refused in the
+		 * layout editor, dropped in a cell, and never spelled back out". So
+		 * `armour_class = 18 to result` reads as an override of 18 and respells
+		 * without the clause — the reader's bytes are not what comes back.
+		 *
+		 * **The case exists because nothing said the drop was on purpose.** The
+		 * assertion above spells a *constructed* effect and never a stored one, so
+		 * the parse-then-spell path — the only one a note reaches — was uncovered,
+		 * and a reviewer meeting it could not tell a ruling from an oversight. It is
+		 * the reading `spellTypedEffect` already refuses, arrived at from the file.
+		 *
+		 * **Constraint 3 is untouched**: `parse/table.ts` re-joins every part the
+		 * reader did not edit from its own stored text, so no cell is rewritten by
+		 * being read. What the drop costs is the fragment, on the next edit of *this*
+		 * part — and `18 to result` was never an amount that could resolve.
+		 */
+		const effect = typed('armour_class = 18 to result');
+		expect(effect.operator).toBe('override');
+		expect(effect.amount).toBe('18');
+		expect(spellTypedEffect(effect)).toBe('armour_class = 18');
+	});
+
 	/*
 	 * **The clause checks its own value, where ` as ` and ` when ` do not.** Those
 	 * take arbitrary text, so finding the keyword is enough. ` to ` cannot borrow
