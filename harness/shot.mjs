@@ -50,9 +50,32 @@ mkdirSync(outDir, { recursive: true });
  * `sheet-narrow` and `sheet-large-text` were left behind when this one was raised
  * for the Image row, and each then cropped the feature it was supposed to show.
  * Measure all three when the sample grows: load the harness at the view's width
- * and read `document.scrollingElement.scrollHeight`.
+ * and read `document.scrollingElement.scrollHeight`. Last raised when the modifier
+ * tables gained a `Worn` column and a row, at which point the default measured
+ * 3810, the narrow one 7000 and the large-text one 3800 — which is why only two of
+ * the three moved.
+ *
+ * **And the third one's measurement was wrong, which is worth recording because it
+ * is the failure mode this comment exists to prevent.** Re-measured at the view's
+ * own width *and its own text size*, `sheet-large-text` is 4716 and not 3800 — the
+ * 3800 was the sheet at the default text size, so the one view whose whole subject
+ * is a larger text size was measured without it. `sheet-narrow` has the same trap
+ * with `&width=`. Measure each view **through its own query**, not at its own
+ * width; `document.body.scrollHeight` is the steadier number, because
+ * `scrollingElement.scrollHeight` returns the greater of the content and the
+ * viewport and so agrees with any frame big enough.
+ *
+ * **And all three moved again for a reason that is not the sample growing.**
+ * `harness:calibrate` never carried Obsidian's `input[type='text']` rule — the
+ * entry meant to match it was spelled unquoted and matched nothing — so every text
+ * field on a sheet was photographed at its padding's height instead of the app's
+ * `--input-height: 30px`. There are 110 of them on the sample sheet, and putting
+ * the app's own rule back added about 500px to it: 3810 to **4312** here, 7020 to
+ * **7613** narrow, and 4760 to **4965** at `text=24`. Nothing in the plugin
+ * changed. The instrument had been drawing a shorter sheet than Obsidian does
+ * since before this feature, and every frame in this file was measured against it.
  */
-const SHEET_FRAME = '1400,3700';
+const SHEET_FRAME = '1400,4340';
 
 /**
  * The editor pane's frame, tall because the tree is the whole layout.
@@ -65,7 +88,33 @@ const SHEET_FRAME = '1400,3700';
  * selection sits on added a second schematic to the left column and pushed the
  * add row out of the frame, silently, in the shot that is supposed to show it.
  */
-const EDITOR_FRAME = '1500,5000';
+/*
+ * Re-measured with the Modifiers list in the pane: 6650 at 1500 through
+ * `open=weapons`, against the 5000 this was set to, so `editor-light`,
+ * `editor-dark` and `editor-forced-colors` were each cutting about 1650px off the
+ * bottom of the tree — the column this frame's own comment says it is tall for.
+ * Stale before this feature rather than by it; found by measuring, which is the
+ * instruction above.
+ *
+ * Re-measured again after the calibration fix SHEET_FRAME's comment describes,
+ * which grows the pane for the same reason and by about the same proportion:
+ * 7372 at 1500 through `open=weapons`, 7766 stacked and 8018 at 380.
+ */
+const EDITOR_FRAME = '1500,7400';
+
+/**
+ * The presses that open the panel on the sample's *mixed* row, and then its typed
+ * part's own fields.
+ *
+ * One spelling, because there are now six views behind it and each was carrying its
+ * own copy of the same URL-encoded selector — `docs/PATTERNS.md` §1 extracts at
+ * three. The row is named by the one thing only a mixed row's `title` says, and the
+ * line by `data-sheetsmith-part`, so neither can be moved by a fixture growing a row
+ * or a part above it.
+ */
+const OPEN_MIXED_GLYPH =
+	"press=.sheetsmith-table-modifier-button%5Btitle*%3D'item%20%2B1%20%28changes%20nothing%29'%5D";
+const OPEN_MIXED_FORM = `${OPEN_MIXED_GLYPH}&press=.sheetsmith-panel-line%5Bdata-sheetsmith-part%3D'typed'%5D`;
 
 const DEFAULTS = [
 	{ name: 'sheet-light', query: 'surface=sheet&theme=light', size: SHEET_FRAME },
@@ -103,7 +152,7 @@ const DEFAULTS = [
 		// browser, and this file opens with the reason it does not drive one.
 		name: 'sheet-narrow',
 		query: 'surface=sheet&theme=dark&width=380',
-		size: '520,6600',
+		size: '520,7640',
 	},
 	{
 		// UI.md §5 puts the card's headline number in `em` rather than pixels
@@ -122,7 +171,11 @@ const DEFAULTS = [
 		// argument for measuring all three together whenever the sample grows.
 		name: 'sheet-large-text',
 		query: 'surface=sheet&theme=light&text=24',
-		size: '1400,4500',
+		// 4760 against a measured 4716, which is 216 more than the 4500 this was set
+		// to: see SHEET_FRAME's note above — the earlier figure was taken without
+		// `text=24`, so the view existing to show a larger text size had its frame
+		// measured at the smaller one and cropped the bottom 204px of the sheet.
+		size: '1400,5000',
 	},
 	{
 		// The first view to photograph a focus ring at all. A still cannot press
@@ -138,6 +191,52 @@ const DEFAULTS = [
 	},
 	{
 		/*
+		 * The focus ring on a control whose whole face is a glyph.
+		 *
+		 * **It moved onto the thing being focused**, which is the correction the
+		 * control kind bought. The cell used to stack a transparent `<select>` over
+		 * the glyph, so the ring had to be drawn on the *box* around an invisible
+		 * half; the cell is a `<button>` now, so the ring is on the button. Still an
+		 * `outline`, because that is the one mark that survives forced-colors mode
+		 * where a `box-shadow` is discarded. Worth photographing for the reason
+		 * `sheet-focus` exists: a ring nobody photographs is a ring that regresses
+		 * quietly, and this control resets `box-shadow` — where Obsidian's own ring
+		 * lives — to strip the app's button chrome.
+		 *
+		 * Light rather than dark, matching `sheet-focus`, so the two rings are
+		 * comparable side by side.
+		 */
+		name: 'sheet-modifier-focus',
+		query: 'surface=sheet&theme=light&focus=.sheetsmith-table-modifier-button',
+		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * **The first sheet shot in forced colors, for any component.**
+		 * `editor-forced-colors` has existed since the pane found that its selected
+		 * tree row had no mark at all in this mode; the sheet had none, so every
+		 * `forced-colors` rule on it — the card's border, the table's, the dotted
+		 * mark on a modified number — was reasoned about and never rendered.
+		 *
+		 * The modifier column is what makes it a default view rather than a one-off.
+		 * It is the first control on a sheet whose *entire* state is a glyph, and
+		 * this mode is where a colour channel goes: forced colors repaints the page
+		 * in one system palette, so `zap` and `zap-off` both paint the same colour
+		 * and the distinction survives on shape alone. That is the strongest
+		 * evidence the glyph *pair* was the right call rather than one glyph with two
+		 * strengths, and it belongs in the repository instead of in a reviewer's
+		 * scratch directory.
+		 *
+		 * `theme=light`, which forced colors overrides anyway — the flag decides the
+		 * palette, so naming a theme here only says which one the page asked for.
+		 */
+		name: 'sheet-forced-colors',
+		query: 'surface=sheet&theme=light',
+		size: SHEET_FRAME,
+		flags: ['--force-high-contrast'],
+	},
+	{
+		/*
 		 * The modifier breakdown, which is what a press reveals and so what no
 		 * still could reach until `&press=` existed (see harness.ts).
 		 *
@@ -146,10 +245,14 @@ const DEFAULTS = [
 		 * which a contributor line carries its component's label — so this is the
 		 * qualified form, and the unqualified one is on the STR card a row above,
 		 * unpressed, in every other sheet shot. And it sits low enough on the page
-		 * that the bubble is not laid over the harness bar: the bubble is fixed to
-		 * the viewport and a card near the top puts it behind chrome the app does
-		 * not have, which is the instrument's own artefact rather than the
-		 * plugin's.
+		 * that the bubble *used to* clear the harness bar — which stopped being true
+		 * the moment the breakdown grew: the bubble is fixed to the viewport, and at
+		 * nine contributors it opens at y=76 under a bar whose bottom is 85, slicing
+		 * the first contributor's ascenders and taking the bubble's own top border
+		 * out of frame. **So this shot passes `&bar=off`**, which drops chrome the
+		 * app does not have; there is no lower card with two sources to press
+		 * instead, and lengthening the frame cannot help a surface positioned against
+		 * the viewport.
 		 *
 		 * What to look at: whether the lines read as a list — one visual line per
 		 * contributor, and the total separated from them by a blank one. Both are
@@ -164,7 +267,7 @@ const DEFAULTS = [
 		 */
 		name: 'sheet-breakdown',
 		query:
-			'surface=sheet&theme=light&press=.sheetsmith-card-single .sheetsmith-card-derived.sheetsmith-modified',
+			'surface=sheet&theme=light&bar=off&press=.sheetsmith-card-single .sheetsmith-card-derived.sheetsmith-modified',
 		size: SHEET_FRAME,
 	},
 	{
@@ -179,7 +282,203 @@ const DEFAULTS = [
 			'surface=sheet&theme=dark&press=.sheetsmith-table-value.sheetsmith-modified',
 		size: SHEET_FRAME,
 	},
+	{
+		/*
+		 * **The form, which is the one surface of this feature a still cannot
+		 * otherwise reach**: it is behind a press, and `docs/UI.md` §11 is the
+		 * standing argument against reviewing a surface by reading its code.
+		 *
+		 * **Two presses, in order**, which is why `&press=` now takes several. The
+		 * first opens the panel on the *mixed* row — a name and an effect typed on
+		 * the row, in one cell — and the second opens the typed part's own six
+		 * fields. One press would photograph the list and none of the form.
+		 *
+		 * **Selected by state, never by position.** The row is named by the one thing
+		 * only a *mixed* row's `title` says — a suppressed line with `(changes
+		 * nothing)` appended, which is the several-part summary form — and the line by
+		 * `data-sheetsmith-part`, so neither selector can be moved by a fixture
+		 * growing a row or a part above it. An `:nth-child` here has already gone
+		 * quietly wrong once in this repository.
+		 *
+		 * What is in the frame: the list with a `zap-off` line and its reason under
+		 * it, the `zap` line for the typed part, the six labelled fields, the promote
+		 * row and **Remove**. The panel is this plugin's own surface rather than
+		 * Obsidian's, so — unlike the menu it replaces — it is fully reviewable
+		 * without `harness:calibrate` having been run.
+		 *
+		 * **The same state in both themes**, on `sheet-light` / `sheet-dark`'s own
+		 * arrangement rather than the menu round's two different rows: the surface is
+		 * the plugin's now, so what a reviewer checks is its own palette in each
+		 * theme rather than whether borrowed chrome and the words inside it read
+		 * together.
+		 */
+		name: 'sheet-modifier-form-light',
+		query:
+			`surface=sheet&theme=light&${OPEN_MIXED_FORM}`,
+		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * The same row and the same disclosure in the dark palette. **Taller than
+		 * `SHEET_FRAME` on purpose**: the panel is the largest surface this plugin
+		 * draws on a sheet — six fields plus a list plus a promote row — and at the
+		 * standard height it ran past the bottom of the page, so the shot evidenced
+		 * the list and quietly did not evidence the fields. The app clamps and the
+		 * harness has no such logic and should not grow one to make a screenshot
+		 * work, so the page is taller instead.
+		 */
+		name: 'sheet-modifier-form-dark',
+		query:
+			`surface=sheet&theme=dark&${OPEN_MIXED_FORM}`,
+		size: '1400,4200',
+	},
+	{
+		/*
+		 * **The panel as a first press leaves it**, which neither form shot above
+		 * reaches: both press twice, so what a reader actually sees when they press a
+		 * glyph — the list, and nothing open — was unphotographed.
+		 *
+		 * It is also the only view of the list at its own length: two lines, a reason
+		 * under the first, the heading that says a line answers a press, and
+		 * `+ Add a modifier` under them. What to look at is whether a line reads as
+		 * pressable, which is the question the heading now answers in words because
+		 * nothing in the line's own paint does.
+		 */
+		name: 'sheet-modifier-form-closed',
+		query:
+			`surface=sheet&theme=light&bar=off&${OPEN_MIXED_GLYPH}`,
+		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * **The empty-cell path, which is first use and the case the design argues
+		 * hardest for**: press the faint `plus` and the panel opens with
+		 * `This row applies no modifier.` and one part *already open*, `Changes`
+		 * focused — one opening where the menu round needed two. Nothing photographed
+		 * it, so the claim was reviewable only by reading the code.
+		 *
+		 * The `Chalk` row, which is the sample's blank one, and the `plus` is the only
+		 * mark in its cell.
+		 */
+		name: 'sheet-modifier-form-empty',
+		query:
+			"surface=sheet&theme=light&bar=off&press=.sheetsmith-table-modifier-button%5Baria-label%3D'Chalk%20Modifiers'%5D",
+		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * **A named part open**, which is the most common configuration on a shared
+		 * layout and had never been rendered: `Modifier` showing a definition, the
+		 * four fields below it read-only, the line saying where they are edited, and
+		 * **no promote row** — a part that already names a definition has nothing to
+		 * promote.
+		 *
+		 * Dark, because the read-only treatment is a contrast question and dark is
+		 * where a quieted control has least room; the pair measures 7.0:1 light and
+		 * 5.83:1 dark, so what this shot is for is whether it *reads* as read-only
+		 * rather than as broken.
+		 */
+		name: 'sheet-modifier-form-named',
+		query:
+			"surface=sheet&theme=dark&bar=off&press=.sheetsmith-table-modifier-button%5Btitle%3D'Armour%20class%20%E2%80%94%20sets%20to%2018'%5D&press=.sheetsmith-panel-line",
+		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * **One cell naming the same modifier twice, with the second line open.**
+		 * Two lines are drawn for one enrolment, so the second says
+		 * `Already applied above; removing either takes both` and **Remove** on it
+		 * reads `Remove all 2`.
+		 *
+		 * Here because that pair is the fix for the only real defect the owner found
+		 * in this feature — a **Remove** that took one of two byte ranges and left the
+		 * row still applying the modifier — and no sample spelled a name twice, so the
+		 * fix for the loudest bug was the one thing in the feature nobody could look
+		 * at. The `Warded bracers` row exists for this and nothing else.
+		 */
+		name: 'sheet-modifier-form-repeat',
+		query:
+			"surface=sheet&theme=light&bar=off&press=.sheetsmith-table-modifier-button%5Baria-label%5E%3D'Warded%20bracers'%5D&press=.sheetsmith-panel-entry:last-of-type .sheetsmith-panel-line",
+		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * **The armed Remove**, which is the other half of the gesture and had never
+		 * been photographed: the error tint mixed most of the way back to the page,
+		 * and the word becoming `Remove — select again`.
+		 *
+		 * A third press, on the control the second press disclosed. It is also the one
+		 * state where the panel's own paint has to beat the host's — Obsidian gives a
+		 * `button` `--interactive-normal`, so an unscoped arming tint would leave the
+		 * first press changing nothing a reader can see.
+		 */
+		name: 'sheet-modifier-form-armed',
+		query: `surface=sheet&theme=light&bar=off&${OPEN_MIXED_FORM}&press=.sheetsmith-panel-remove`,
+		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * **The panel at `Text → 24`, and the answer is that nothing in it moves.**
+		 * Taken expecting the height cap to bite here — a cap in px over type that
+		 * follows a vault setting is the shape of a clip — and it does not, for a
+		 * reason worth having a shot of rather than a sentence: the panel hangs off
+		 * `document.body` and sets `font-size: var(--font-ui-small)` on itself, so
+		 * neither the stage's font size nor the reader's text setting reaches it. It
+		 * is 390 x 479 here and 390 x 479 at the default, beside a sheet that grew
+		 * 650px.
+		 *
+		 * That is Obsidian's own regime — every panel the app draws is `--font-ui-*`,
+		 * and `docs/UI.md` §1 is why the plugin does not invent a type scale to
+		 * follow the sheet instead — so what this view evidences is the *pairing*: a
+		 * reader who has enlarged their sheet gets a panel at the app's UI size, and
+		 * whether that reads as consistent or as small is a question a shot can put
+		 * and prose cannot.
+		 */
+		name: 'sheet-modifier-form-large-text',
+		query: `surface=sheet&theme=light&text=24&bar=off&${OPEN_MIXED_FORM}`,
+		size: '1400,5000',
+	},
+	{
+		/*
+		 * **The panel on a narrow pane**, where it clamps to the viewport minus a
+		 * gutter and sits inside a table that is itself scrolling. `docs/UI.md` §12
+		 * holds the sub-500px floor; 520 is the narrowest a shot can honestly show,
+		 * and it is still narrower than the panel's own 30em.
+		 */
+		name: 'sheet-modifier-form-narrow',
+		query: `surface=sheet&theme=dark&width=380&bar=off&${OPEN_MIXED_FORM}`,
+		size: '520,7640',
+	},
+	{
+		/*
+		 * **The panel in forced-colors mode.** Every fill and border on the page is
+		 * repainted one system colour, so what is left has to be shape and text: the
+		 * read-only fields' missing box, the list line's outline focus mark, and the
+		 * armed **Remove**'s tint — which forced colors discards outright, leaving the
+		 * word `— select again` as the whole of the mark.
+		 */
+		name: 'sheet-modifier-form-forced-colors',
+		query: `surface=sheet&theme=light&bar=off&${OPEN_MIXED_FORM}`,
+		size: SHEET_FRAME,
+		flags: ['--force-high-contrast'],
+	},
 	{ name: 'sheet-empty', query: 'surface=sheet&theme=dark&state=empty', size: SHEET_FRAME },
+	{
+		/*
+		 * **A fresh character: rows entered, no modifiers named.** The one state
+		 * `sheet-empty` cannot reach — that view drops the bodies, so both modifier
+		 * tables draw `No rows yet.` and the column is never photographed at all.
+		 *
+		 * Here for a ruling rather than for completeness. An empty cell's `plus` is
+		 * the *only* mark in its column here, with no bolt anywhere to read the
+		 * absence against, and that is the state where its contrast has teeth — the
+		 * glyph was `--text-faint` at 2.20:1 and is now `--text-muted`. Light,
+		 * because light is where faint measured worst.
+		 */
+		name: 'sheet-no-modifiers',
+		query: 'surface=sheet&theme=light&state=unmodified',
+		size: SHEET_FRAME,
+	},
 	{ name: 'sheet-error', query: 'surface=sheet&theme=dark&state=broken', size: SHEET_FRAME },
 	{
 		// The pane above its reflow threshold: the tree beside the panel, with a
@@ -210,7 +509,10 @@ const DEFAULTS = [
 		// crop the half this view exists to show.
 		name: 'editor-stacked',
 		query: 'surface=editor&theme=light&open=weapons',
-		size: '1190,5700',
+		// 7100 against a measured 7046 at this width. Stacking is taller than the
+		// split by about 400px, for the reason above, and 5700 was cutting the
+		// panel this view exists to put under the tree.
+		size: '1190,7800',
 	},
 	{
 		// Forced colors, which the system palette repaints the whole page in and
@@ -341,7 +643,69 @@ const DEFAULTS = [
 		 */
 		name: 'editor-layout',
 		query: 'surface=editor&theme=light&open=::sheet::',
-		size: '1400,1200',
+		/*
+		 * Raised from 1200 when the Modifiers list arrived, and from 2300 when the
+		 * report went out of frame: ten definitions, each a row plus a five-control
+		 * detail line, and **the problem report under them is the whole point of the
+		 * view** — it is the only thing explaining why one `Changes` select shows a
+		 * bare `passive_perception` where the other nine show reader-facing labels.
+		 * At 2300 it was cut off below `Add modifier` and survived only in
+		 * `editor-layout-forced-colors`, whose frame is 2600, so the report had a
+		 * shot in the one mode nobody reviews copy in.
+		 */
+		size: '1400,2600',
+	},
+	{
+		/*
+		 * The Layout panel in forced colors, which `editor-forced-colors` cannot
+		 * show: that view opens `inventory`, and selecting a component replaces the
+		 * layout's own form with it — so the Modifiers list, the newest and the
+		 * densest form in the pane, had no shot in this mode at all.
+		 *
+		 * What it is for: five controls on one detail line, of which three are
+		 * pickers and two are typed, and forced colors is the mode that flattens
+		 * every one of them to the same box with the same border. It is where a
+		 * missing affordance is most visible and where the chevron that now says
+		 * "this opens a menu" either survives or does not.
+		 */
+		name: 'editor-layout-forced-colors',
+		query: 'surface=editor&theme=light&open=::sheet::',
+		/*
+		 * **Taller than `editor-layout`, because this mode's own finding lives at
+		 * the bottom.** The two frames used to match on the measurement that forced
+		 * colors changes no height — true of the panel, and it left the
+		 * per-definition problem report clipped off the end, which is exactly the
+		 * thing this view is now the evidence for: ordinarily three tiers of colour,
+		 * here one system foreground plus the left rule that replaces them.
+		 */
+		size: '1400,2600',
+		flags: ['--force-high-contrast'],
+	},
+	{
+		/*
+		 * The Modifiers list at the split's tightest, which is the regime the
+		 * detail line's widths have to survive and which had no view: every editor
+		 * shot of the Layout panel was 1400, so wide and narrow failed differently
+		 * and only one was photographed. 1210 of window is 1184 of pane, eight
+		 * pixels above the 1176 threshold — the same bracketing `editor-threshold`
+		 * and `editor-stacked` do for the pane's other half. Move it with the
+		 * threshold.
+		 *
+		 * **What this now shows is not what it was added for**, and that is worth
+		 * the reader knowing before they check it off. It was added because at 1210
+		 * the five-control line wrapped to two rows, hiding the truncation the wide
+		 * shot had: `Abilities · ST` with the T sliced through, `Armour clas`,
+		 * `Skills · perc(`. The fix for that gave **Changes** more than an equal
+		 * share and brought the shared floor down, so at 1210 the line is one row
+		 * again and every value fits — measured, 177px of box against 149 needed for
+		 * the longest. So what this photographs is the line at its tightest *fitting*,
+		 * and a wrap here is now the finding rather than the subject.
+		 */
+		name: 'editor-layout-threshold',
+		query: 'surface=editor&theme=light&open=::sheet::',
+		// 2300 against a measured 2231: the panel is 68px taller here than at 1400,
+		// because the entry rows are narrower and nothing else moves.
+		size: '1210,2300',
 	},
 	{
 		// The narrowest split there is, bounded. 1210 of window is 1184 of pane —
@@ -377,7 +741,8 @@ const DEFAULTS = [
 		// this shipped. 380 to match the sheet's own narrow view.
 		name: 'editor-narrow',
 		query: 'surface=editor&theme=light&open=weapons',
-		size: '380,5700',
+		// 7300 against a measured 7252 at 380, where every row is at its tallest.
+		size: '380,8050',
 	},
 	{
 		// No layouts at all: the first thing a new vault shows, and one of the
