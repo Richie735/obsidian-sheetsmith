@@ -29,6 +29,7 @@ import {
 	SchematicGestures,
 } from './schematic-gestures';
 import { ComponentConfig, placesChildren } from '../types';
+import { UndoStack } from './undo-stack';
 import { childIsPlaced, innerPlacement } from '../view/grid-cells';
 
 /** Dropdown sentinel; layout file names can never collide with it. */
@@ -149,6 +150,20 @@ export class LayoutEditorSection {
 	private renderId = 0;
 	/** The panel drawing whatever is selected, and the fields it holds. */
 	private panel: ConfigPanel;
+	/**
+	 * The layout's bytes as this session last knew them on disk: what the
+	 * initial read produced, or what the last successful `persist` wrote.
+	 *
+	 * The undo stack's baseline. `persist` cannot diff against `this.layout`
+	 * itself, because every mutation site has already changed it in place by
+	 * the time `persist` runs — this is the only record of what the file held
+	 * *before* the write about to happen, which is exactly what a step needs
+	 * to push. Null before a layout has been loaded.
+	 */
+	private onDisk: string | null = null;
+	/** Undo and redo history, one snapshot per `persist` that changed a byte. */
+	private undoStack = new UndoStack();
+	private redoStack = new UndoStack();
 
 	/** Debounced persist, used only by rapid-fire paths (keyboard nudging). */
 	private persistSoon = debounce(() => void this.persist(), 500, true);
@@ -247,11 +262,22 @@ export class LayoutEditorSection {
 	 * on to make flushes too, but by then it is too late — which is exactly
 	 * the kind of ordering that should not be left to each call site to
 	 * remember.
+	 *
+	 * Every caller of this method is a real change of which layout is open —
+	 * the picker, deleting the open one, creating a new one, or `render`
+	 * correcting a name that no longer exists — so this is also where the
+	 * undo history is scoped per layout (`docs/features/editor-undo.md`): an
+	 * author's undo posture belongs to the file they were editing, and Mod+Z
+	 * reaching across a switch to rewrite a *different* layout would be a
+	 * worse surprise than an empty stack.
 	 */
 	private releaseLayout(): void {
 		this.flush();
 		this.file = null;
 		this.layout = null;
+		this.onDisk = null;
+		this.undoStack.clear();
+		this.redoStack.clear();
 	}
 
 	/**
@@ -355,6 +381,10 @@ export class LayoutEditorSection {
 				);
 				return;
 			}
+			// The undo baseline for this freshly loaded layout. Constraint 3
+			// makes `source` itself safe to use rather than re-serialising: a
+			// parse then serialise with nothing changed is byte-identical.
+			this.onDisk = source;
 		}
 		const layout = this.layout;
 
@@ -1047,8 +1077,20 @@ export class LayoutEditorSection {
 	/**
 	 * Validate and write the layout, then refresh open sheet views. Invalid
 	 * states stay in memory with a notice and are written once corrected.
+	 *
+	 * `record` is the only thing that separates an author's own edit from an
+	 * undo or a redo replaying one: every ordinary call site keeps calling
+	 * this with no argument, so `true` is what a mutation has always meant,
+	 * and `undo`/`redo` below are the only two callers that pass `false`. A
+	 * `record` write pushes what the file held *before* this write onto the
+	 * undo stack and clears the redo stack — the standard rule that a fresh
+	 * edit forgets whatever a redo could have replayed — but only where the
+	 * write actually changes a byte: opening a form calls this on the way
+	 * past nothing that changed it, and a step that did nothing is not a step
+	 * to undo. An `undo`/`redo` write skips both, because the caller already
+	 * did its own push onto the *other* stack before calling this.
 	 */
-	private async persist(): Promise<void> {
+	private async persist(record = true): Promise<void> {
 		if (!this.file || !this.layout) return;
 		let serialised: string;
 		try {
@@ -1058,8 +1100,57 @@ export class LayoutEditorSection {
 			new Notice(error instanceof Error ? error.message : String(error));
 			return;
 		}
+		if (record && serialised !== this.onDisk) {
+			if (this.onDisk !== null) this.undoStack.push(this.onDisk);
+			this.redoStack.clear();
+		}
+		this.onDisk = serialised;
 		await this.plugin.app.vault.modify(this.file, serialised);
 		this.host.refreshSheets();
+	}
+
+	/**
+	 * Put the layout back to a snapshot popped off an undo or a redo stack.
+	 *
+	 * Re-parses rather than diffing, on the same argument the mechanism as a
+	 * whole rests on (`docs/features/editor-undo.md`): a whole-file snapshot
+	 * restores everything a multi-part mutation touched by construction. The
+	 * write goes through `persist(false)`, so this does not itself touch
+	 * either stack — the caller already pushed what it is leaving onto the
+	 * other one.
+	 *
+	 * The selection fallback the feature promises needs no code of its own:
+	 * `render`'s existing rule already corrects `host.selection` to
+	 * `SHEET_DESTINATION` whenever it names a component the current
+	 * `this.layout` does not hold, and that rule runs on every redraw
+	 * regardless of why `this.layout` changed.
+	 */
+	private restoreSnapshot(snapshot: string): void {
+		this.layout = parseLayout(snapshot);
+		this.redraw();
+		void this.persist(false);
+	}
+
+	/**
+	 * Undo the most recent recorded mutation. Returns whether there was one.
+	 */
+	undo(): boolean {
+		const snapshot = this.undoStack.pop();
+		if (snapshot === undefined || !this.file) return false;
+		if (this.onDisk !== null) this.redoStack.push(this.onDisk);
+		this.restoreSnapshot(snapshot);
+		return true;
+	}
+
+	/**
+	 * Redo the most recently undone mutation. Returns whether there was one.
+	 */
+	redo(): boolean {
+		const snapshot = this.redoStack.pop();
+		if (snapshot === undefined || !this.file) return false;
+		if (this.onDisk !== null) this.undoStack.push(this.onDisk);
+		this.restoreSnapshot(snapshot);
+		return true;
 	}
 }
 

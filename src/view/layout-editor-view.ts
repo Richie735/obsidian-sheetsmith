@@ -85,6 +85,24 @@ export class LayoutEditorView extends ItemView implements LayoutEditorHost {
 		this.editor.flush();
 	}
 
+	/**
+	 * Undo or redo the most recent mutation the editor recorded.
+	 *
+	 * Both delegate straight to `LayoutEditorSection`, which owns the two
+	 * stacks and what a snapshot means; this only gives the pane's own
+	 * commands (`docs/features/editor-undo.md`) something on the view to call,
+	 * the same shape `flush` above already has. Each returns whether it
+	 * actually undid or redid something, which is what a command uses to
+	 * decide whether its own feedback fires.
+	 */
+	undo(): boolean {
+		return this.editor.undo();
+	}
+
+	redo(): boolean {
+		return this.editor.redo();
+	}
+
 	/* --- What the editor asks of its host ------------------------------- */
 
 	get layoutName(): string | null {
