@@ -404,6 +404,51 @@ export function renderModifierDefinitions(
 			 * reports it with the whole picture; this keeps the value on screen
 			 * where the definition is.
 			 */
+			/*
+			 * **Applies to**, ahead of the bonus type and offered on the same terms.
+			 *
+			 * It decides *which number* the modifier moves — the value behind the
+			 * formula, or what the formula came to — where the type decides how it
+			 * contests with whatever else is already moving that number. The coarser
+			 * question is asked first, so an author is not choosing how a bonus
+			 * stacks before saying what it stacks against.
+			 *
+			 * Absent on an override, which replaces the published number and is in
+			 * the result phase by construction; the branch below reserves the slot
+			 * the same way the bonus type does, for the same "the tracks do not
+			 * move" reason.
+			 */
+			if (effective === 'add') {
+				const phaseField = labelled(detail, 'Applies to');
+				phaseField.addClass('sheetsmith-detail-field-tight');
+				const phase = phaseField.createEl('select', {
+					cls: 'dropdown',
+					attr: { 'aria-label': `${named || 'Modifier'} applies to` },
+				});
+				// The reader's words rather than the file's: `value` and `result` are
+				// what a layout stores, and neither is a thing anyone has seen on a
+				// sheet. A score with a modifier over it is.
+				phase.createEl('option', { value: 'value', text: 'The value' });
+				phase.createEl('option', {
+					value: 'result',
+					text: 'The derived number',
+				});
+				phase.value = definition.applies === 'result' ? 'result' : 'value';
+				titleChosen(phase);
+				phase.dataset.sheetsmithFocus = `modifier-${named}-applies`;
+				phase.addEventListener('change', () => {
+					// The value phase is the absent key, so choosing it clears rather
+					// than stores: one spelling per meaning (PATTERNS §8).
+					setOptional(
+						definition,
+						'applies',
+						phase.value === 'result' ? 'result' : '',
+					);
+					context.persist();
+					context.redraw();
+				});
+			}
+
 			// The same, and it is the field the clip was first seen on:
 			// `circumstance` rendered as `circu…`.
 			const typeField = labelled(detail, 'Bonus type');

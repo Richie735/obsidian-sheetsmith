@@ -47,6 +47,7 @@ import {
 	ModifierLine,
 	ModifierOperator,
 	ModifierOutcome,
+	ModifierPhase,
 	ModifierPush,
 } from '../types';
 import { FunctionEnv, inRowMessage, roundSum } from './expression';
@@ -125,8 +126,17 @@ export type ModifierResult =
 			 * than one an author should have to write.
 			 */
 			override: number | null;
-			/** The additive total, which is what `mod.<name>` resolves to. */
+			/** The value-phase total, which is what `mod.<name>` resolves to. */
 			total: number;
+			/**
+			 * The result-phase total, added to the number the target's formula came
+			 * to — the phase an override has always been in.
+			 *
+			 * Read only by the evaluation that becomes the published name, so a
+			 * display-only field like a Card's `effective` shows the value phase
+			 * alone and does not double-count what lands after the formula.
+			 */
+			resultTotal: number;
 			lines: readonly ModifierLine[];
 	  }
 	| { error: string };
@@ -163,7 +173,12 @@ export interface ModifierComponent {
 	pushes?: () => readonly ModifierPush[];
 }
 
-const EMPTY: ModifierResult = { override: null, total: 0, lines: [] };
+const EMPTY: ModifierResult = {
+	override: null,
+	total: 0,
+	resultTotal: 0,
+	lines: [],
+};
 
 /**
  * The table for the paths with no sheet around them: a component rendered on its
@@ -460,6 +475,17 @@ function contest(type: string, amount: number): string {
  * an override's line says "sets to" rather than needing a place in the list to
  * say what it is.
  */
+/**
+ * Which phase one enrolment lands in.
+ *
+ * Absent is `value`, and the default is load-bearing rather than tidy: every
+ * modifier in every layout and every note written before the phase existed says
+ * nothing, and all of them must go on meaning what `mod.self` has always meant.
+ */
+function phaseOf(entry: { applies?: ModifierPhase }): ModifierPhase {
+	return entry.applies === 'result' ? 'result' : 'value';
+}
+
 export function stackModifiers(
 	contributions: readonly Contributor[],
 ): ModifierResult {
@@ -474,7 +500,19 @@ export function stackModifiers(
 		override = override === null ? entry.amount : Math.max(override, entry.amount);
 	}
 
-	/** Phase two's winning bonus and penalty per declared type, by amount. */
+	/*
+	 * **A type contests within its phase and not across it**, which is why every
+	 * key below carries the phase. An item bonus to a Strength *score* and an item
+	 * bonus to a Strength *check* are two different quantities that happen to share
+	 * a word; contested together, a belt would silently suppress a blessing that
+	 * lands somewhere else entirely, and the breakdown would tell the reader a
+	 * larger bonus of the same type applied while pointing at a number it never
+	 * touched. Keying by phase is the whole of the fix, and it is why this is one
+	 * walk with a wider key rather than the function run twice.
+	 */
+	const keyed = (phase: ModifierPhase, type: string) => `${phase}\u0000${type}`;
+
+	/** Phase two's winning bonus and penalty per phase and declared type. */
 	const best = new Map<string, number>();
 	const worst = new Map<string, number>();
 	for (const entry of contributions) {
@@ -483,16 +521,24 @@ export function stackModifiers(
 		// Zero neither pushes nor suppresses anything: a breakdown is about what
 		// changed the number.
 		if (amount === 0 || type === null) continue;
-		if (amount > 0) best.set(type, Math.max(best.get(type) ?? amount, amount));
-		else worst.set(type, Math.min(worst.get(type) ?? amount, amount));
+		const key = keyed(phaseOf(entry), type);
+		if (amount > 0) best.set(key, Math.max(best.get(key) ?? amount, amount));
+		else worst.set(key, Math.min(worst.get(key) ?? amount, amount));
 	}
 
 	/** Which winner has already been spent, so a tie takes the first. */
 	const taken = new Set<string>();
 	const lines: ModifierLine[] = [];
 	let total = 0;
+	let resultTotal = 0;
 	for (const entry of contributions) {
 		const { label, source, definition, operator, type, amount } = entry;
+		const applies = phaseOf(entry);
+		/** Add to the phase this entry landed in, and to no other. */
+		const add = (by: number) => {
+			if (applies === 'result') resultTotal += by;
+			else total += by;
+		};
 		const line = (suppressed: string | null) =>
 			lines.push({
 				label,
@@ -500,6 +546,9 @@ export function stackModifiers(
 				definition,
 				operator,
 				type,
+				// An override's phase is fixed and its line already reads "sets to",
+				// so it is reported as `value` rather than growing a third answer.
+				applies: operator === 'override' ? 'value' : applies,
 				amount,
 				suppressed,
 			});
@@ -516,20 +565,26 @@ export function stackModifiers(
 		if (amount === 0) continue;
 		if (type === null) {
 			line(null);
-			total += amount;
+			add(amount);
 			continue;
 		}
-		const winner = (amount > 0 ? best.get(type) : worst.get(type)) ?? amount;
-		const slot = contest(type, amount);
+		const key = keyed(applies, type);
+		const winner = (amount > 0 ? best.get(key) : worst.get(key)) ?? amount;
+		const slot = keyed(applies, contest(type, amount));
 		if (amount === winner && !taken.has(slot)) {
 			taken.add(slot);
 			line(null);
-			total += amount;
+			add(amount);
 			continue;
 		}
-		line(suppressionWording(slot, amount === winner, 'size'));
+		line(suppressionWording(contest(type, amount), amount === winner, 'size'));
 	}
-	return { override, total: roundSum(total), lines };
+	return {
+		override,
+		total: roundSum(total),
+		resultTotal: roundSum(resultTotal),
+		lines,
+	};
 }
 
 /**

@@ -70,6 +70,25 @@ export interface CardFaceOptions {
 	value?: {
 		current: string;
 		/**
+		 * What the pill reads **at rest**, where that differs from what is stored.
+		 *
+		 * The one case is a score something else is layered over: a Strength of 15
+		 * with an item +2 on it is a 17, and 17 is the number a player looks for.
+		 * Absent — every card that declares no `effective` formula — leaves the
+		 * pill exactly what it has always been, the number that was typed.
+		 *
+		 * **It is display only, and the field goes back to `current` the moment it
+		 * is focused.** That is not a nicety: `current` is `bindEditable`'s
+		 * `initial`, which is the baseline Escape restores to, the number an arrow
+		 * step increments, and what a blur compares against to decide whether
+		 * anything changed. A field left reading 17 would step to 18 and commit 18
+		 * as the *stored* score, which is character data drifting under a reader
+		 * who only pressed an arrow key (CLAUDE.md 4). So the swap is what makes
+		 * the whole feature safe rather than what makes it pretty: at rest the
+		 * effective number, under a caret the number you typed.
+		 */
+		shown?: string;
+		/**
 		 * Closed list of choices, which turns the value slot into a menu over
 		 * them. Absent is the field, and that is the whole switch: a card with
 		 * options is a dropdown and a card without is a field (SPEC §4.2), so
@@ -77,6 +96,10 @@ export interface CardFaceOptions {
 		 *
 		 * Each choice stores its `value` and shows its `label`, or its value
 		 * where it has no label.
+		 *
+		 * **`shown` is ignored here**, and a dropdown never takes one: its text is
+		 * a *label* for the stored value, chosen from a closed list, so a
+		 * computed reading would be a word the list does not contain.
 		 */
 		options?: readonly { value: string; label?: string }[];
 		onCommit: (next: string) => void;
@@ -406,7 +429,21 @@ export function renderCardFace(
 		// A derived formula implies the value is used numerically.
 		if (options.derived) input.inputMode = 'numeric';
 		input.classList.add('sheetsmith-card-input');
-		input.value = options.value.current;
+		/*
+		 * At rest the effective number, where the layout declared one. Focus puts
+		 * the stored number back before a caret can reach it — see `shown` — and
+		 * the two listeners below are the whole of that swap.
+		 */
+		const stored = options.value.current;
+		const atRest = options.value.shown ?? stored;
+		input.value = atRest;
+		if (atRest !== stored) {
+			// A number the reader did not type reads as one they did, so the
+			// difference is said rather than only painted (docs/UI.md §6). The
+			// breakdown behind the big number is where the *why* already lives.
+			input.classList.add('sheetsmith-card-input-effective');
+			input.setAttribute('title', `${atRest} with modifiers · ${stored} stored`);
+		}
 		// With a derived above it, the em dash would be the card's second
 		// copy of the same nothing; the pill's own outline says "field".
 		input.placeholder = options.derived ? '' : EMPTY_MARK;
@@ -464,6 +501,31 @@ export function renderCardFace(
 			},
 			onCommit: options.value.onCommit,
 		});
+
+		/*
+		 * **The swap, and it is bound after `bindEditable` on purpose.** Listeners
+		 * on one element fire in the order they were added, so the binding's own
+		 * blur — the one that commits — runs before this one puts the effective
+		 * number back. Bound first, this would hand the commit a number nobody
+		 * typed.
+		 *
+		 * A commit re-renders the sheet and rebuilds this face with a fresh
+		 * `shown`, so the restore below is for the other blur: a reader who focused
+		 * the field, changed nothing, and moved on.
+		 */
+		if (atRest !== stored) {
+			input.addEventListener('focus', () => {
+				// Before any caret, any arrow key and any draft: from here on the
+				// field is the stored score and every gesture acts on that.
+				input.value = stored;
+			});
+			input.addEventListener('blur', () => {
+				// Only where the field still holds what it was given. Anything else
+				// is a draft the binding has just committed, and the re-render that
+				// follows owns the display.
+				if (input.value.trim() === stored) input.value = atRest;
+			});
+		}
 	}
 
 	if (options.note) {

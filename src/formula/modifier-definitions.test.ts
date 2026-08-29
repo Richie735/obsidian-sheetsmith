@@ -113,6 +113,9 @@ describe('resolveEnrolment', () => {
 			target: 'abilities.STR',
 			operator: 'add',
 			type: 'item',
+			// A definition saying nothing about a phase lands in the value phase,
+			// which is what every modifier written before phases existed is.
+			applies: 'value',
 			amount: 2,
 		});
 		expect(found.kind === 'applies' ? found.conditional : null).toBe(false);

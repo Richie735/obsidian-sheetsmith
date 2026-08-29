@@ -408,10 +408,11 @@ describe('cardSet.scopeValues', () => {
 describe('cardSet contract', () => {
 	it('declares fenced storage, formula fields, and config fields', () => {
 		expect(cardSet.storage).toBe('fenced');
-		expect(cardSet.formulaFields).toEqual(['derived']);
+		expect(cardSet.formulaFields).toEqual(['derived', 'effective']);
 		expect(cardSet.configFields.map((field) => field.key)).toEqual([
 			'entries',
 			'derived',
+			'effective',
 			'direction',
 			'sizing',
 			'align',
@@ -558,6 +559,7 @@ describe('cardSet and its modifier slots', () => {
 						? {
 								override: null,
 								total: 2,
+								resultTotal: 0,
 								lines: [
 									{
 										label: 'Belt of Giant Strength',
@@ -624,5 +626,160 @@ describe('cardSet and its modifier slots', () => {
 		const twin = el.querySelector('.sheetsmith-sr-only[id]');
 		expect(derivedText(el)[0]).toBe('+19');
 		expect((twin?.textContent ?? '').split('\n').at(-1)).toBe('Total 19');
+	});
+});
+
+/*
+ * **The value pill reading a number nobody typed** — a Strength of 8 with +4
+ * layered over it is a 12, and 12 is the number a player looks for.
+ *
+ * What these are really about is the half that is not visual. `current` is
+ * `bindEditable`'s `initial`: the baseline Escape restores to, the number an
+ * arrow steps, and what a blur compares against to decide whether anything
+ * changed. A field left reading the effective number would step to 13 and commit
+ * 13 as the *stored* score — character data drifting under a reader who pressed
+ * an arrow key (CLAUDE.md 4). So the swap on focus is the feature, and the four
+ * gesture tests below are why it exists rather than extra coverage of it.
+ */
+describe('cardSet.render: an effective value over a stored one', () => {
+	const boosted: CardSetConfig = {
+		...config,
+		derived: 'floor((value + mod.self - 10) / 2)',
+		effective: 'value + mod.self',
+	};
+
+	/** A resolver with +4 pushed at STR's slot and nothing at anyone else's. */
+	const withModifier: RenderContext['resolveField'] = (
+		field,
+		scope,
+		published,
+	) => {
+		const raw = typeof scope.value === 'string' ? Number(scope.value) : NaN;
+		if (Number.isNaN(raw)) return null;
+		const pushed = published === 'card-set.STR' ? 4 : 0;
+		if (field === 'effective') return raw + pushed;
+		if (field === 'derived') return Math.floor((raw + pushed - 10) / 2);
+		return null;
+	};
+
+	const draw = (
+		values: Record<string, string> = { STR: '8', DEX: '16', WIS: '12' },
+		on: Partial<RenderContext> = {},
+	) => {
+		const el = document.createElement('div');
+		const edits: unknown[] = [];
+		cardSet.render(el, boosted, { values }, {
+			...context,
+			resolveField: withModifier,
+			onChange: (data) => edits.push(data),
+			...on,
+		});
+		const inputs = Array.from(
+			el.querySelectorAll<HTMLInputElement>('.sheetsmith-card-input'),
+		);
+		return { el, edits, inputs };
+	};
+
+	it('reads the effective number at rest and marks it as one', () => {
+		const { inputs } = draw();
+		expect(inputs[0]?.value).toBe('12');
+		expect(
+			inputs[0]?.classList.contains('sheetsmith-card-input-effective'),
+		).toBe(true);
+		// The state is in the accessible name and not only in the paint
+		// (docs/UI.md §6): a pill has no room to explain itself, so both numbers
+		// are named where hovering and a screen reader can both reach them.
+		expect(inputs[0]?.getAttribute('title')).toBe('12 with modifiers · 8 stored');
+	});
+
+	it('leaves an entry nothing was pushed at exactly as it was', () => {
+		// The same rule `mod.self` exists for, read on the pill: DEX resolves its
+		// own effective, gets its own number back, and so carries no marker.
+		const { inputs } = draw();
+		expect(inputs[1]?.value).toBe('16');
+		expect(
+			inputs[1]?.classList.contains('sheetsmith-card-input-effective'),
+		).toBe(false);
+		expect(inputs[1]?.hasAttribute('title')).toBe(false);
+	});
+
+	it('puts the stored number back the moment the field is focused', () => {
+		const { inputs } = draw();
+		inputs[0]?.dispatchEvent(new Event('focus'));
+		expect(inputs[0]?.value).toBe('8');
+	});
+
+	it('steps from the stored number, never from the effective one', () => {
+		/*
+		 * The trap this whole shape exists to close. Stepping the pill as it reads
+		 * would take 12 to 13 and write 13 into the note as Strength — a score the
+		 * player never typed, four higher than the one they did, arrived at by
+		 * pressing an arrow key once.
+		 */
+		const { edits, inputs } = draw();
+		inputs[0]?.dispatchEvent(new Event('focus'));
+		inputs[0]?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp' }));
+		inputs[0]?.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp' }));
+		expect(inputs[0]?.value).toBe('10');
+		expect(edits).toEqual([]);
+		inputs[0]?.dispatchEvent(new Event('blur'));
+		expect(edits).toEqual([{ values: { STR: '10' } }]);
+	});
+
+	it('restores the stored number on Escape, not the effective one', () => {
+		const { edits, inputs } = draw();
+		inputs[0]?.dispatchEvent(new Event('focus'));
+		inputs[0]!.value = '99';
+		inputs[0]?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+		expect(inputs[0]?.value).toBe('8');
+		expect(edits).toEqual([]);
+	});
+
+	it('reads the effective number again after a blur that changed nothing', () => {
+		// The one path no re-render follows: focused, nothing typed, moved on. A
+		// commit rebuilds the face with a fresh effective and owns the display.
+		const { edits, inputs } = draw();
+		inputs[0]?.dispatchEvent(new Event('focus'));
+		expect(inputs[0]?.value).toBe('8');
+		inputs[0]?.dispatchEvent(new Event('blur'));
+		expect(inputs[0]?.value).toBe('12');
+		expect(edits).toEqual([]);
+	});
+
+	it('shows the stored number where the formula does not resolve', () => {
+		/*
+		 * A pill is one number with nowhere to say why it is not one — the derived
+		 * above it owns the `?` and the reason behind it — so the fallback is the
+		 * number that was typed rather than a mark saying the layout is broken in
+		 * a slot that cannot say how.
+		 */
+		const { inputs } = draw(
+			{ STR: '8', DEX: '16', WIS: '12' },
+			{ resolveField: (field, scope) => (field === 'effective' ? null : 0) },
+		);
+		expect(inputs[0]?.value).toBe('8');
+		expect(
+			inputs[0]?.classList.contains('sheetsmith-card-input-effective'),
+		).toBe(false);
+	});
+
+	it('shows nothing where nothing is stored yet', () => {
+		// An empty value is a blank the reader types into, and a modifier over
+		// nothing is not a score.
+		const { inputs } = draw({ DEX: '16' });
+		expect(inputs[0]?.value).toBe('');
+		expect(
+			inputs[0]?.classList.contains('sheetsmith-card-input-effective'),
+		).toBe(false);
+	});
+
+	it('leaves a set that declares no effective formula alone', () => {
+		const el = document.createElement('div');
+		cardSet.render(el, config, { values: { STR: '8' } }, context);
+		const input = el.querySelector('.sheetsmith-card-input') as HTMLInputElement;
+		expect(input.value).toBe('8');
+		expect(input.classList.contains('sheetsmith-card-input-effective')).toBe(
+			false,
+		);
 	});
 });

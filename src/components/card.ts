@@ -66,6 +66,12 @@ export interface CardConfig extends ComponentConfig {
 	options?: CardOption[];
 	/** Formula computed from the stored value, which it reads as `value`. */
 	derived?: string;
+	/**
+	 * What the value pill reads once modifiers are applied; `value` is the
+	 * stored value, as in `derived`. Blank leaves the pill the stored number,
+	 * which is what every card did before this existed.
+	 */
+	effective?: string;
 	/** Hint shown while the note line is empty. */
 	notePlaceholder?: string;
 	hideLabel?: boolean;
@@ -165,7 +171,7 @@ function drawableCard(
 export const card: ComponentDefinition<CardConfig, CardData> = {
 	type: 'card',
 	storage: 'fenced',
-	formulaFields: ['derived'],
+	formulaFields: ['derived', 'effective'],
 	configFields: [
 		{
 			key: 'key',
@@ -193,6 +199,13 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 			label: 'Derived',
 			description:
 				'Formula computed from the stored value, which it reads as "value", e.g. 10 + value.',
+		},
+		{
+			key: 'effective',
+			kind: 'formula',
+			label: 'Effective value',
+			description:
+				'What the small value pill reads once modifiers are applied, e.g. value + mod.self. Leave blank and it reads the stored number. Editing the pill always edits the stored number, whatever this shows. Ignored on a card with options, whose pill shows a label rather than a number.',
 		},
 		{
 			key: 'notePlaceholder',
@@ -387,6 +400,35 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 		const stored = derivedFrom(value);
 		const deriveFrom = (raw: string) => derivedFrom(raw).face;
 
+		/**
+		 * What the pill reads at rest, or undefined to leave it the stored number.
+		 *
+		 * Card set's own rule, for its own reason: undefined wherever the answer is
+		 * not a number worth trusting — no formula, nothing stored, or a formula
+		 * that did not resolve — because a pill is one number with nowhere to say
+		 * why it is not one. The derived above it owns the `?` and the explanation.
+		 *
+		 * **A dropdown never gets one.** Its text is a label from a closed list, so
+		 * a computed reading would be a word the list does not hold; `card-face.ts`
+		 * ignores `shown` on that branch and this leaves it undefined rather than
+		 * relying on that.
+		 */
+		const effective =
+			config.effective === undefined ||
+			value.trim() === '' ||
+			drawable.options.length > 0
+				? undefined
+				: (() => {
+						const resolved = context.resolveField(
+							'effective',
+							{ value },
+							config.id,
+							// Display only; see Card set for the whole of why.
+							true,
+						);
+						return typeof resolved === 'number' ? String(resolved) : undefined;
+					})();
+
 		renderCardFace(face, {
 			title: config.label,
 			// The strip of a container showing one child at a time has already
@@ -397,6 +439,7 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 			value: showValue
 				? {
 						current: value,
+						shown: effective,
 						// Absent where the layout declared none, which is what
 						// leaves the value a field. Hiding the value hides the
 						// menu with it, the same trade the field already makes.

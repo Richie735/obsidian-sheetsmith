@@ -480,11 +480,17 @@ describe('the arithmetic the fixture\'s press steps promise', () => {
 		 * The Belt's item +2 with the Gauntlets' item +1 suppressed by it; Bull's
 		 * Strength's status +1; and **a typed `luck +1` from a cell**, whose type
 		 * the layout does not declare and which therefore contests as its own kind.
-		 * So `mod.abilities.STR` is +4, and the entry's own `derived` —
-		 * `floor((value - 10) / 2) + mod.self` — adds it to the +2 a score of 15
-		 * already reads, giving +6.
+		 * So `mod.abilities.STR` is +4.
+		 *
+		 * **That +4 lands on the score and not on the ability modifier**, which is
+		 * where `floor((value + mod.self - 10) / 2)` puts it: a score of 15 with +4
+		 * on it is a 19, reading +4. Spelled `floor((value - 10) / 2) + mod.self`
+		 * instead — which this fixture carried until a reader met it — a Belt of
+		 * Giant Strength moved the modifier by the whole +2 rather than raising the
+		 * score by it, so the one thing the item's own name promises was the one
+		 * thing it did not do.
 		 */
-		expect(built.sheet('abilities.STR')).toBe(6);
+		expect(built.sheet('abilities.STR')).toBe(4);
 		expect(built.sheet('mod.abilities.STR')).toBe(4);
 		// Constraint 4's own half of it: the stored score is what the player typed,
 		// whatever is layered over it.
@@ -1077,7 +1083,7 @@ describe('the press steps that change the note', () => {
 		expect(edited).not.toBe(NOTE_TEXT);
 		const after = sheetFrom(LAYOUT_TEXT, edited);
 		expect(after.derivedFor('armour_class')).toBe(22);
-		expect(after.sheet('abilities.STR')).toBe(6);
+		expect(after.sheet('abilities.STR')).toBe(4);
 		// And the file is unchanged by opening it, byte for byte.
 		expect(serialiseCharacter(parseCharacter(edited))).toBe(edited);
 	});
@@ -1147,7 +1153,7 @@ describe('the press steps that change the layout', () => {
 			'circumstance',
 			'morale',
 		]);
-		expect(after.sheet('abilities.STR')).toBe(6);
+		expect(after.sheet('abilities.STR')).toBe(4);
 		expect(after.derivedFor('armour_class')).toBe(22);
 	});
 
@@ -1162,9 +1168,9 @@ describe('the press steps that change the layout', () => {
 		);
 		expect(edited).not.toBe(LAYOUT_TEXT);
 		const after = sheetFrom(edited, NOTE_TEXT);
-		// The Belt at +4 suppresses the Gauntlets' +1 as before, so the slot totals
-		// +6, and the entry's `derived` adds that to the +2 a 15 already reads.
-		expect(after.sheet('abilities.STR')).toBe(8);
+		// The Belt at +4 suppresses the Gauntlets' +1 as before, so the total is
+		// +6 on a score of 15 — a 21, reading +5.
+		expect(after.sheet('abilities.STR')).toBe(5);
 		const lines = after.modifiers.breakdown('abilities.STR').lines;
 		expect(lines[0]?.amount).toBe(4);
 		expect(lines[1]?.suppressed).toBe('a larger item bonus applies');
@@ -1181,5 +1187,80 @@ describe('the trap the fixture is a witness to', () => {
 		// nothing anywhere saying so.
 		expect(built.derivedFor('armour_class')).toBe(22);
 		expect(built.derivedWithoutName('armour_class')).toBe(12);
+	});
+});
+
+/*
+ * **The two phases, end to end on the fixture.**
+ *
+ * The engine's own unit tests are `formula/modifiers.test.ts`'s. What this adds
+ * is the whole path: a cell in a note, through the parse, the stacking, the slot
+ * and the card's own formula, to two numbers that differ — which is the claim the
+ * feature makes and the one thing a unit test on `stackModifiers` cannot show.
+ */
+describe('a modifier choosing which number it moves', () => {
+	/**
+	 * Ilona, with the Lucky charm *row* retyped to land on the derived number.
+	 *
+	 * Anchored on the whole table row rather than on the cell's text, because the
+	 * note's own prose quotes that text a hundred lines above the table — so a
+	 * bare replace edits the walkthrough and leaves the row it is describing
+	 * untouched, and every number below then asserts the unmodified sheet.
+	 */
+	const onResult = NOTE_TEXT.replace(
+		'| Lucky charm | abilities.STR += 1 as luck |',
+		'| Lucky charm | abilities.STR += 1 to result as luck |',
+	);
+
+	it('is a different number from the same modifier in the value phase', () => {
+		expect(onResult).not.toBe(NOTE_TEXT);
+		const before = sheetFrom(LAYOUT_TEXT, NOTE_TEXT);
+		const after = sheetFrom(LAYOUT_TEXT, onResult);
+
+		/*
+		 * **Same +1, same row, same target, two answers** — which is the whole
+		 * feature in one assertion.
+		 *
+		 * In the value phase it raises a score of 15 by a total of 4 to 19, and
+		 * `floor((19 - 10) / 2)` is 4. Moved to the result phase it raises the
+		 * score by 3 instead, to 18, and `floor((18 - 10) / 2)` is 4 — then the +1
+		 * lands on that, giving 5. The luck +1 is worth one *ability modifier*
+		 * where it was worth half of one, because half a score point is what a
+		 * point of score is worth.
+		 */
+		expect(before.sheet('abilities.STR')).toBe(4);
+		expect(after.sheet('abilities.STR')).toBe(5);
+	});
+
+	it('leaves the stored score alone in either phase', () => {
+		// Constraint 4 does not care which number a modifier moves.
+		const after = sheetFrom(LAYOUT_TEXT, onResult);
+		expect(after.sheet('abilities.STR.value')).toBe(15);
+	});
+
+	it('keeps the value phase out of the slot the formula reads', () => {
+		/*
+		 * `mod.abilities.STR` is the *value* phase and nothing else, which is what
+		 * lets a formula go on meaning what it meant: the result phase is added to
+		 * what the formula came to, by the engine, and is never visible to
+		 * `mod.self`.
+		 */
+		const after = sheetFrom(LAYOUT_TEXT, onResult);
+		expect(after.sheet('mod.abilities.STR')).toBe(3);
+	});
+
+	it('names the phase on the line, and only where it is not the default', () => {
+		const after = sheetFrom(LAYOUT_TEXT, onResult);
+		const said = modifierBreakdown(after.modifiers.breakdown('abilities.STR'));
+		// The one line that behaves differently says so; the three that behave as
+		// they always did stay quiet, which is what keeps the difference visible.
+		expect(said).toContain('Lucky charm — luck +1 to the derived number');
+		expect(said).toContain('Belt of Giant Strength — item +2');
+		expect(said).not.toContain('item +2 to the derived number');
+	});
+
+	it('round-trips the retyped cell byte for byte', () => {
+		// Constraint 3, on the clause this feature added to the grammar.
+		expect(serialiseCharacter(parseCharacter(onResult))).toBe(onResult);
 	});
 });

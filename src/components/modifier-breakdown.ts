@@ -62,6 +62,7 @@
 import {
 	ModifierBreakdown,
 	ModifierOperator,
+	ModifierPhase,
 	ModifierOutcome,
 } from '../types';
 
@@ -239,14 +240,24 @@ export function modifierBreakdown(
  * rather than saying "untyped": every modifier is untyped on a layout that has
  * never heard of bonus types, and a word repeated down every line of every
  * breakdown carries no information.
+ *
+ * **The phase is named only where it is not the default**, on exactly that rule.
+ * A value-phase line is what every modifier was before phases existed and is
+ * what most still are, so saying so on every line would bury the one line that
+ * behaves differently. A result-phase line says `to the derived number`, because
+ * without it two lines reading `item +2` under one total would be indistinguishable
+ * while landing on different numbers — which is the question a breakdown exists
+ * to answer.
  */
 function change(line: {
 	operator: ModifierOperator;
 	type: string | null;
+	applies?: ModifierPhase;
 	amount: number;
 }): string {
 	if (line.operator === 'override') return `sets to ${line.amount}`;
-	return `${line.type === null ? '' : `${line.type} `}${signed(line.amount)}`;
+	const said = `${line.type === null ? '' : `${line.type} `}${signed(line.amount)}`;
+	return line.applies === 'result' ? `${said} to the derived number` : said;
 }
 
 /**

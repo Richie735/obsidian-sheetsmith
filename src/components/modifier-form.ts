@@ -540,6 +540,7 @@ function renderFields(
 					target: named.target,
 					operator: named.operator ?? 'add',
 					amount: named.amount,
+					...(named.applies === undefined ? {} : { applies: named.applies }),
 					...(named.bonusType === undefined ? {} : { bonusType: named.bonusType }),
 					...(named.when === undefined ? {} : { when: named.when }),
 				}
@@ -559,7 +560,15 @@ function renderFields(
 		 */
 		const base = stored === null ? state.draft : shown;
 		const effect: TypedEffect = { ...base, ...next };
-		if (effect.operator === 'override') delete effect.bonusType;
+		if (effect.operator === 'override') {
+			delete effect.bonusType;
+			// An override is in the result phase by construction, so a phase stored
+			// beside it would be a second answer to a settled question.
+			delete effect.applies;
+		}
+		// The value phase is the absent key, so choosing it clears rather than
+		// stores — one spelling per meaning, in the cell and in the layout alike.
+		if (effect.applies === 'value') delete effect.applies;
 		if (stored === null) {
 			state.draft = effect;
 			// A part with no target cannot be spelled in a cell at all, so it stays
@@ -732,6 +741,32 @@ function renderFields(
 				options.announce(next === '' ? 'Amount cleared' : `Amount ${next}`),
 			announceRestore: () => options.announce('Amount restored'),
 			onCommit: (next) => put({ amount: next }),
+		});
+	}
+
+	/*
+	 * **Applies to**, and like **Bonus type** it is **not offered on Sets**: an
+	 * override replaces the published number, which is the result phase by
+	 * construction, so a choice there would be a second spelling for one
+	 * behaviour.
+	 *
+	 * **Above Bonus type because it is the coarser question.** The phase decides
+	 * *which number* moves; the type decides how this modifier contests with the
+	 * others already moving it. Asked the other way round, a reader picks how a
+	 * bonus stacks before they have said what it stacks against.
+	 *
+	 * The words are the reader's rather than the engine's: `value` and `result`
+	 * are what a layout file stores, and neither is a thing a player has ever seen
+	 * on their sheet. What they have seen is a score with a modifier over it.
+	 */
+	if (shown.operator !== 'override') {
+		const phase = select('Applies to', 'applies');
+		option(phase, 'value', 'The value');
+		option(phase, 'result', 'The derived number');
+		phase.value = shown.applies === 'result' ? 'result' : 'value';
+		phase.disabled = !editable;
+		phase.addEventListener('change', () => {
+			put({ applies: phase.value === 'result' ? 'result' : 'value' });
 		});
 	}
 
@@ -963,6 +998,18 @@ function renderRemove(
 	button.addEventListener('focus', () => {
 		state.focused = 'remove';
 	});
+	/*
+	 * **Arming triggers its own blur, and the listener below must not answer it.**
+	 * `redraw()` clears `body` with `replaceChildren()`, which removes this very
+	 * button — still focused from the click that is arming it — and a focused
+	 * element being detached fires `blur` on it synchronously, mid-teardown. Left
+	 * unguarded, that blur read `state.armed` as true (this click had just set it)
+	 * and called `redraw()` a second time while the first `replaceChildren()` was
+	 * still tearing down the same body, which is two removals racing one node and
+	 * throwing `NotFoundError`. The flag marks a blur this button caused for
+	 * itself so only a blur from the reader moving away for real disarms it.
+	 */
+	let armingBlur = false;
 	button.addEventListener('click', () => {
 		if (state.armed) {
 			state.armed = false;
@@ -971,11 +1018,16 @@ function renderRemove(
 			return;
 		}
 		state.armed = true;
+		armingBlur = true;
 		options.announce(`${named}? Select again to confirm.`);
 		redraw();
 	});
 	// A keyboard has both gestures a finger does not: focus moves off, and Escape.
 	button.addEventListener('blur', () => {
+		if (armingBlur) {
+			armingBlur = false;
+			return;
+		}
 		if (!state.armed) return;
 		state.armed = false;
 		redraw();

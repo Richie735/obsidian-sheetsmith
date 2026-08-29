@@ -284,6 +284,7 @@ describe('component registry', () => {
 			'operator',
 			'amount',
 			'bonusType',
+			'applies',
 			'when',
 		]);
 		expect(typed).toEqual(

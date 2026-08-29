@@ -32,6 +32,12 @@ export interface CardSetConfig extends ComponentConfig {
 	entries?: CardSetEntry[];
 	/** Formula computed per entry; `value` is that entry's value. */
 	derived?: string;
+	/**
+	 * What the value pill reads once modifiers are applied; `value` is the
+	 * entry's stored value, as in `derived`. Blank leaves the pill the stored
+	 * number, which is what every card did before this existed.
+	 */
+	effective?: string;
 	/** Card flow. Defaults to horizontal. */
 	direction?: 'horizontal' | 'vertical';
 	hideLabel?: boolean;
@@ -65,7 +71,7 @@ export interface CardSetData {
 export const cardSet: ComponentDefinition<CardSetConfig, CardSetData> = {
 	type: 'card-set',
 	storage: 'fenced',
-	formulaFields: ['derived'],
+	formulaFields: ['derived', 'effective'],
 	configFields: [
 		{
 			key: 'entries',
@@ -87,6 +93,13 @@ export const cardSet: ComponentDefinition<CardSetConfig, CardSetData> = {
 			label: 'Derived',
 			description:
 				'Formula computed per entry, where "value" is that entry\'s value, e.g. floor((value - 10) / 2).',
+		},
+		{
+			key: 'effective',
+			kind: 'formula',
+			label: 'Effective value',
+			description:
+				'What the small value pill reads once modifiers are applied, e.g. value + mod.self. Leave blank and it reads the stored number. Editing the pill always edits the stored number, whatever this shows.',
 		},
 		{
 			key: 'direction',
@@ -316,6 +329,30 @@ export const cardSet: ComponentDefinition<CardSetConfig, CardSetData> = {
 		};
 		const deriveFor = (key: string) => (raw: string) =>
 			derivedFor(key)(raw).face;
+		/**
+		 * What the pill reads at rest, or undefined to leave it the stored number.
+		 *
+		 * **Undefined wherever the answer is not a number the reader can trust**:
+		 * no formula declared, nothing stored yet, or a formula that did not
+		 * resolve. A pill is one number with no room to explain itself — the
+		 * derived above it owns the `?` and the reason behind it — so the honest
+		 * fallback here is the number that was typed rather than a mark saying the
+		 * layout is broken in a slot that cannot say how.
+		 */
+		const effectiveFor = (key: string, raw: string): string | undefined => {
+			if (config.effective === undefined || raw.trim() === '') return undefined;
+			const resolved = context.resolveField(
+				'effective',
+				{ value: raw },
+				`${config.id}.${key}`,
+				// Display only: the pill is a second reading of this entry's slot, not
+				// the evaluation that becomes `abilities.STR`. It shows the value
+				// phase — what was pushed at the score — and leaves the result phase
+				// and any override to the derived number above it.
+				true,
+			);
+			return typeof resolved === 'number' ? String(resolved) : undefined;
+		};
 		for (const entry of config.entries ?? []) {
 			/** What the note says for this entry, which is what its breakdown is about. */
 			const stored = derivedFor(entry.key)(values[entry.key] ?? '');
@@ -330,6 +367,7 @@ export const cardSet: ComponentDefinition<CardSetConfig, CardSetData> = {
 				value: showValue
 					? {
 							current: values[entry.key] ?? '',
+							shown: effectiveFor(entry.key, values[entry.key] ?? ''),
 							// Delta, not snapshot: writing only this key
 							// cannot revert a sibling's fresher edit.
 							onCommit: (next) =>

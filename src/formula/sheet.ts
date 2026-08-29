@@ -552,12 +552,17 @@ export function sheetModifiers(
 		},
 		breakdown: (name) => {
 			if (!modifiers.accepting.has(name)) {
-				return { lines: [], override: null, total: 0 };
+				return { lines: [], override: null, total: 0, resultTotal: 0 };
 			}
 			const result = env.modifiers(name);
 			return 'error' in result
-				? { lines: [], override: null, total: 0 }
-				: { lines: result.lines, override: result.override, total: result.total };
+				? { lines: [], override: null, total: 0, resultTotal: 0 }
+				: {
+						lines: result.lines,
+						override: result.override,
+						total: result.total,
+						resultTotal: result.resultTotal,
+					};
 		},
 		/*
 		 * **Refused rather than absent where the host has no writer**, so the form
