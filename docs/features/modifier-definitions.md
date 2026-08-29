@@ -1388,8 +1388,9 @@ error.
 asks what `.sheetsmith-list-scroll`'s `20em` cap is for and expected this surface
 change to answer it by deletion. It is answered in that direction — the two controls
 that overran a column's detail line are gone, so the line is one line again — but the
-definitions list has six controls on a detail line, so **it must not go inside that
-capped scroller**, and neither may the sheet's form. The cap question stays open for
+definitions list has seven controls on a detail line — six until wave 4's own
+**Applies to** joined them — so **it must not go inside that capped scroller**, and
+neither may the sheet's form. The cap question stays open for
 the lists still inside it.
 
 ### What it reuses
@@ -1621,7 +1622,7 @@ means. A round-trip test over `spellTypedEffect` then `parseModifierPart` is wha
 it, and it is the cheapest guard this design has.
 
 - **`src/components/modifier-form.ts`** — **new**. The form's markup: the list of the
-  row's parts, the six fields, the promote row, Remove. It knows what a modifier is,
+  row's parts, the seven fields, the promote row, Remove. It knows what a modifier is,
   imports nothing from `obsidian`, touches no file, and takes its labels, its options
   and its four callbacks as arguments. Beside `modifier-breakdown.ts`, `card-face.ts`
   and `linked-text.ts`, which is where a shared component-layer surface lives.
@@ -1752,10 +1753,11 @@ layout-level field. Each description states a consequence, per PATTERNS §8.
 | `modifiers.*.target` | select | Changes | Which value on this sheet the modifier changes, from the ones whose own formula reads a modifier. A value whose formula does not read one is listed as a problem rather than offered. |
 | `modifiers.*.operator` | select | Operator | **Adds to** stacks with the other bonuses of its type; **Sets** replaces the value, and the bonuses then land on top of it. Where two modifiers set one value, the higher wins and the other says so. |
 | `modifiers.*.amount` | formula | Amount | How much it adds, or what it sets the value to. Evaluated on the row that named it, so it may read that row's own cells by column heading. |
+| `modifiers.*.applies` | select | Applies to | Which of the target's two numbers this addition moves: the value inside the formula, where `mod.self` resolves — the default, and what every modifier written before wave 4 is — or what the formula came to, after it ran. Not offered on **Sets**, which is already in the second by construction. |
 | `modifiers.*.bonusType` | select | Bonus type | Which of the layout's bonus types this modifier's amount is. Only the largest bonus and the smallest penalty of one type apply; different types add. Left blank, it stacks with everything. Not offered on **Sets**, which is not contested by type. |
 | `modifiers.*.when` | formula | Only when | A condition evaluated on the row that named it, so `Equipped` reads that row's Equipped cell. Left blank, the modifier always applies. A row whose condition is false changes nothing and says so on the row. |
 
-**And the form's six fields are configuration a character writes rather than a layout
+**And the form's seven fields are configuration a character writes rather than a layout
 author**, so they are not `configFields` and appear in no config form. They are listed
 under Design, with the same discipline — a label, a control and a consequence — because
 that is what a field owes whoever fills it in, whichever file it lands in.
@@ -2031,7 +2033,7 @@ condition, the slot's failure — is unchanged and its criteria are unchanged wi
       select holds `Typed on this row` plus every definition the layout declares, each
       resolved against this row; choosing a definition makes the four fields read-only
       and writes the name into the cell; choosing `Typed on this row` hands them back;
-      each of the six fields commits on its own gesture and writes one part; a row with
+      each of the seven fields commits on its own gesture and writes one part; a row with
       no parts opens with one blank typed effect already open and `Changes` focused;
       and a layout with no definitions shows a `Modifier` select with one option and
       **no error**.
@@ -2398,7 +2400,7 @@ changed their mind", and `check-menu.ts` never appears in the history at all.
     plugin gets a floating surface subtly wrong. Six criteria exist for exactly this
     reason. And **nothing below a 500px viewport has ever been photographed**, so the
     phone regime is read rather than seen — first real look is a press step.
-11. **The form is the largest surface this plugin draws on a sheet**, six fields plus a
+11. **The form is the largest surface this plugin draws on a sheet**, seven fields plus a
     list plus a promote row, inside a panel with a capped height. On a narrow pane it
     will scroll, and a scrolling form inside a table that also scrolls is two scroll
     contexts under one finger. Recorded because it is the thing a reviewer will ask
@@ -2442,7 +2444,10 @@ Not Aramil, who is deliberately a plain sheet.
 - The **Card set** `abilities`, the two **Cards** `armour_class`
   (`10 + abilities.DEX + mod.self`, and Ilona's DEX is +2, so its base is 12) and
   `passive_perception` (reading no modifier on purpose), and the **Table** `skills`
-  with a published `perception` row.
+  with a published `perception` row. **`abilities` also declares `effective: value +
+  mod.self`** (wave 4), so Strength's pill — the one entry anything is pushed at —
+  reads the computed number rather than the stored one, marked, and the other five
+  read what they store and carry no mark at all.
 - **`modifiers`**, declaring: `Belt of Giant Strength` (adds `2` item to
   `abilities.STR`); `Gauntlets of Ogre Power` (adds `1` item to the same, so it is
   suppressed); `Bull's Strength` (adds `1` status, so it adds); `Ring of Protection`
@@ -2540,31 +2545,66 @@ sums.
     one blank typed effect already open and **Changes** focused. Choose
     `Armour class`, type `1`, Enter. One opening, where wave 2 needed two.
 14. **The keyboard, which is the half the panel owes rather than borrows.** Tab to a
-    glyph, press Enter, Tab through the six fields, press Escape — focus is back on the
-    glyph. Then repeat under a finger on a phone, which is the one surface here nothing
-    in the harness can photograph.
+    glyph, press Enter, Tab through the seven fields, press Escape — focus is back on
+    the glyph. Then repeat under a finger on a phone, which is the one surface here
+    nothing in the harness can photograph. **Reopened by wave 4, and not silently
+    renumbered**: this step was true at six fields, and wave 4 grew the form to seven
+    without re-pressing it. The design pass did press it, and found the seventh —
+    **Applies to** — carrying Obsidian's own weaker border-focus instead of the
+    panel's outline (D3); `shared.css`'s outline rule now names the panel's select and
+    input fields beside its six buttons, and the tab order was driven for real across
+    all seven rather than assumed from six.
 15. **Hand-edit the note in a text editor beside the vault.** Change row 1's
     `Belt of Giant Strength ;Bracers of Defence +1` spacing and row 4's typed part to
     `armour_class+=2 as item when Worn`. Reopen the sheet: every number is identical.
     Close it without editing anything: the file is unchanged, byte for byte.
+16. **Read Strength's pill and watch it separate from the score under it (wave 4).**
+    `mod.abilities.STR` is **+4** — the Belt's item +2, Bull's Strength's status +1,
+    and the undeclared `luck` +1 from `Lucky charm` — so Strength's pill reads **19**
+    with a dotted underline under it, the same mark its own `+4` above already
+    carries. Press it: the field shows **15**, the stored score, under the caret.
+    Escape without typing, and the field is back to 19 the moment focus leaves it.
+    Tab to Dexterity, which nothing is pushed at: its pill reads **14**, unmarked —
+    the same field, showing the same number it stores.
 
 ## Wave 4: the effective pill and the two-phase slot
 
 > **Written retroactively, by the session that shipped it, from the code and from
 > `SPEC`'s own diff — not from a review.** This wave was built after the three
-> review axes had run on everything above it, and it has been through none of
-> them: no `/spec-review`, no `/patterns-review`, no design pass. It was written
-> against no spec, so this section is a description of what exists rather than the
-> plan it was built to, and the criteria below are **stated, not verified**. They
-> are deliberately left unticked. A reader who wants the confidence the rest of
-> this document carries has to run the axes on it.
+> review axes had run on everything above it, and at the time it went through none
+> of them: no `/spec-review`, no `/patterns-review`, no design pass. It was written
+> against no spec, so this section was a description of what existed rather than
+> the plan it was built to.
 >
-> It is recorded here rather than left out because the alternative is worse: a
+> **All three axes have since run on it, and the criteria below are verified rather
+> than stated.** Twenty-one findings came back across them — F1 through F17 on the
+> correctness and patterns axes, D1 through D4 on the design axis — twenty real and
+> fixed, one real and declined: F17, the swap's correctness resting on the order of
+> two `addEventListener` calls across a module boundary, judged not worth
+> generalising on a single consumer and recorded instead in `docs/PATTERNS.md` §11
+> rather than fixed here. `npm test`, `npm run lint` and `npm run build` are green
+> on the settled tree. Criterion 6 below was found false in its second half, and is
+> corrected in place rather than silently reworded — see the Corrections table.
+> Every other criterion holds as first written, now with the evidence beside it.
+>
+> It is recorded here rather than left out because the alternative was worse: a
 > future reader finding `effective` and `applies` in the code with nothing
 > anywhere saying what they are for would reasonably assume they had been through
-> the same loop as their neighbours.
+> the same loop as their neighbours. They now have.
 
-**Two changes, and they answer the same reader's question from opposite ends.**
+**Two changes, and they answer the same reader's question from opposite ends —
+though the diff holds three things past that count, and this section never named
+them.** `effective` and `applies` are data-model changes, and neither is reachable
+from anywhere without an authoring surface: the sheet's own modifier form gained an
+**Applies to** select, and the layout editor's Modifiers list gained one too — the
+field this session's own findings had to repair twice, since it neither reserved
+its slot on an override row nor cleared itself when a definition was flipped to
+one (criterion 6, below). And the diff carries one thing neither change is about
+at all: `armingBlur` in `components/modifier-form.ts`, a guard against a
+`NotFoundError` race where arming **Remove** could re-enter `redraw()` while an
+earlier teardown of the same panel body was still in flight. Real, and unrelated
+to either `effective` or `applies` — worth naming rather than letting "two
+changes" stand for a diff that has five things in it.
 
 ### `effective`: what the value pill reads
 
@@ -2616,26 +2656,113 @@ name promises was the thing it did not do. It is now
 `floor((value + mod.self - 10) / 2)`, and the numbers in
 `view/vault-fixture.test.ts` move with it.
 
-### Criteria — stated, not verified
+### Criteria — verified
 
-- [ ] A Card and a Card set declaring `effective` show the computed number at rest
+- [x] A Card and a Card set declaring `effective` show the computed number at rest
       and the stored number under a caret, and an arrow key steps the stored one.
-- [ ] A dropdown ignores `effective` entirely.
-- [ ] `effective` absent leaves the pill exactly what it was.
-- [ ] `armour_class += 1 to result` round-trips byte for byte, and a part with no
-      clause spells no phase.
-- [ ] A `to` inside an amount — `armour_class += Bonus to Hit` — is not read as a
-      phase.
-- [ ] An override never spells a phase, and never carries one out of the editor.
-- [ ] The two phases contest separately, and a breakdown line names the phase only
-      where it is not the default.
-- [ ] The fixture's ability formula raises the score, and the fixture test's
-      numbers say so.
-- [ ] `npm test`, `npm run lint` and `npm run build` pass. *(This one is checked:
-      2353 tests green at the land stop.)*
-- [ ] The pill is photographed in the harness, in both themes. **Not done** — no
-      harness view renders a card declaring `effective`, so the accent colour and
-      the focus swap have never been looked at.
+      Traced on every path *in* — a press, Tab, `restoreFocus` after a rebuild, and
+      Escape — because `bindEditable`'s baseline is the stored number on all of
+      them: `card-face.ts`'s own focus listener puts the stored number back before
+      any of them can read the field, bound after `bindEditable` on purpose so the
+      binding's own commit never sees a number nobody typed. `card-set.test.ts`'s
+      `reads the effective number at rest and marks it as one`, `puts the stored
+      number back the moment the field is focused`, `steps from the stored number,
+      never from the effective one`, `abandons the draft to the stored number on
+      Escape, and writes nothing` and `leaves the pill at rest after Escape, which
+      is the effective number` now render into the document and drive real
+      `focus()`/`blur()` rather than synthetic events — the first draft of these
+      cases used `dispatchEvent(new Event('focus'))` on a detached element, which
+      happy-dom never follows with a `blur`, and asserted the gap in coverage as
+      though it were the behaviour.
+- [x] A dropdown ignores `effective` entirely. Refused twice, so neither side
+      depends on the other holding: `card.ts`'s own `effective` short-circuits on
+      `drawable.options.length > 0` before ever resolving the field, and
+      `card-face.ts` ignores `shown` on the `<select>` branch regardless.
+      `card.test.ts`'s `ignores it on a card with options, whose pill shows a
+      label`, and now photographed — `sheet-effective-light`, `-dark` and `-focus`
+      all carry the Stealth dropdown reading `Expertise`, unmarked.
+- [x] `effective` absent leaves the pill exactly what it was.
+      `components/effective-value.ts`'s `effectiveReading` returns `undefined` the
+      moment `formula === undefined`, before any resolve is attempted, and
+      `card-set.test.ts`'s `leaves a set that declares no effective formula alone`
+      asserts it. Every card and card set rendered before this wave carries no
+      `effective` key at all and is unchanged.
+- [x] `armour_class += 1 to result` round-trips byte for byte, and a part with no
+      clause spells no phase. Confirmed independently by both reviewers,
+      hand-probed against `2 as bonus to result`, `2 to result as item`,
+      `2 when Worn to result`, `x to result to result`, a blank amount and a bare
+      `to` — all byte-identical — and by this session's own probe of
+      `armour_class += 2 to result as item when Worn`, `armour_class += 1 to
+      result as item`, `armour_class += sum(inventory, Weight to Hit) to result`
+      and `armour_class += to result`. `parse/modifier-cell.test.ts`'s `reads and
+      spells the result phase` and `leaves an effect that says nothing in the
+      value phase` hold the round trip. The one deliberate exception — a phase
+      stored beside an override is dropped rather than carried, which `SPEC` §5
+      licenses in terms ("refused in the layout editor, dropped in a cell, and
+      never spelled back out") — had no case over a *stored* effect until `drops a
+      phase a reader typed on an override, deliberately`, which is the
+      parse-then-spell path a note actually takes.
+- [x] A `to` inside an amount — `armour_class += Bonus to Hit` — is not read as a
+      phase. `clauseAt`'s scan is right to left, and the phase clause checks its
+      own value rather than trusting the keyword the way ` as ` and ` when ` do,
+      because `to` is a common word an amount may need to hold. Confirmed by hand
+      against `Bonus to Hit to result` (keeps the whole phrase in the amount) and
+      `Damage to Hit to result` (takes only the trailing clause), and
+      `modifier-cell.test.ts`'s `leaves a "to" that is not a phase inside the
+      amount` asserts it.
+- [x] **Was wrong about the code, and is corrected below rather than silently
+      ticked.** This criterion read "An override never spells a phase, and never
+      carries one out of the editor." The first half held; the second did not.
+      The layout editor could leave `applies: 'result'` on a definition after its
+      **Operator** was flipped to **Sets**, with the phase field reserved and
+      inert on that branch and no other control left to clear the key — so the
+      parser's own message told the author to "clear it", from a pane that gave
+      them nothing to clear it with. Fixed: the operator's `change` handler now
+      deletes `applies` in the same edit that sets `operator: 'override'`, and the
+      phase field is built and reserved on that branch rather than skipped — the
+      shape it always claimed to follow, Bonus type's, and did not. Both halves
+      hold now; see the Corrections table.
+- [x] The two phases contest separately, and a breakdown line names the phase only
+      where it is not the default. `stackModifiers` keys its `best`/`worst` maps on
+      phase and type together, so an item bonus to a score and an item bonus to a
+      check no longer share a contest; `modifier-breakdown.ts`'s `change()` appends
+      "to the derived number" only when `applies === 'result'`. Driven end to end
+      rather than only per unit: `view/vault-fixture.test.ts`'s `a modifier
+      choosing which number it moves` — `is a different number from the same
+      modifier in the value phase`, `leaves the stored score alone in either
+      phase`, `keeps the value phase out of the slot the formula reads`, and
+      `names the phase on the line, and only where it is not the default`.
+- [x] The fixture's ability formula raises the score, and the fixture test's
+      numbers say so. Worked by hand, independently, by both reviewers, matching
+      exactly: value-phase total **+4** on a stored 15 gives `floor((15+4-10)/2) =
+      4`; the Belt raised to +4 (its own item +2 now reading +4, the Gauntlets
+      still suppressed) gives a total of **+6** and `floor((15+6-10)/2) = 5`; and
+      the phase-split case — the same Lucky charm `+1` moved to the result phase —
+      leaves the value-phase total at **+3**, `floor((15+3-10)/2) = 4`, with the
+      result-phase **+1** landing after, for **5**. `view/vault-fixture.test.ts`
+      carries all three.
+- [x] `npm test`, `npm run lint` and `npm run build` pass. **2373 tests green, 2
+      todo, across 58 files; lint clean at `--max-warnings 0`; build clean** — the
+      count the findings passes actually closed on, correcting the 2353 an earlier
+      draft of this criterion recorded before any of them ran.
+- [x] **Done, and not what the criterion originally asked to see.** It read "the
+      pill is photographed in the harness, in both themes... Not done — no harness
+      view renders a card declaring `effective`, so the accent colour and the
+      focus swap have never been looked at." Both halves are stale in a way worth
+      stating rather than quietly re-ticking: there is no accent colour left to
+      look at. A design pass found the accent-only mark failed a contrast bar in
+      the light theme and vanished outright in forced-colors mode — an accented
+      19 and an unaccented 14 came out pixel-identical, the whole signal gone —
+      and replaced it with `.sheetsmith-modified`'s own dotted underline, the mark
+      a card's own `derived` number already wears where something has touched it,
+      shared rather than invented a second time. What is photographed now: a
+      Card, a Card set and a dropdown, all three declaring `effective`, in
+      `sheet-effective-light` and `sheet-effective-dark` — the pill reading the
+      computed number at rest, distinct from its five unmarked siblings on the
+      same card set, the dropdown carrying no mark at all — and
+      `sheet-effective-focus`, the same pill under a caret reading the stored
+      number instead. Checked separately under forced colors, where the dotted
+      underline survives and the accent it replaced would not have.
 
 ## Corrections after review
 
@@ -2683,7 +2810,10 @@ character's sheet.
 
 | What was wrong | Corrected to | Why, and which finding |
 | --- | --- | --- |
-| **Eleven commit boundaries**, each named for a slice of the build | **Four**, and the reason is a fact about the code rather than a shortcut taken while shipping | **The boundaries were a plan and the plan did not survive the type contract.** `ModifierPush`, `ModifierSource`, `ModifierContext` and `SheetModifiers` all change shape together, and `npm run build` type-checks the whole repository — so `parse/`, `formula/`, Table, the layout editor, the sheet view and the harness stub stop compiling at the same instant. Every boundary in the list was tried at the land stop and each left the tree red: the parse commit pulled in the formula layer, the formula commit pulled in Table and the view, and Table pulled in the editor, because `config-panel.ts` imports the Modifiers field and `list-fields.ts` imports a column-type constant this feature deletes. Splitting further would have needed hunk surgery on a 1657-line test diff, and a commit that does not build is worse than a coarse boundary. What *did* separate cleanly is everything the type checker never sees: the harness's calibration, its views, and the documentation. **The wave-4 work landed in commits of its own for a different reason** — it has not been through the review axes, and the log is the only durable record of which work has. |
+| Wave 4's own criterion 6, "An override never spells a phase, and never carries one out of the editor" | Half held — the spelling half, in the cell and in the parser. The editor half did not | **Found by the review this wave had not yet been through when it was written.** `editor/modifier-definitions-field.ts`'s operator `change` handler touched only `definition.operator`, so flipping an addition to **Sets** left `applies: 'result'` in the layout file with the phase field reserved and inert on that branch — and the parser's own message told the author to "clear it", from a pane that gave them nothing to clear it with. Two findings, two fixes: the phase field is now built and reserved on the override branch rather than skipped, which is what it always claimed to do and did not (patterns finding F3); and the operator handler now deletes `applies` in the same edit that sets `operator: 'override'` (patterns finding F4). The "rendered, not corrected" precedent does not cover this, and the difference is whose file it is: that rule protects *character* data a layout no longer declares, where correcting it would lose a player's work, and this is the *author's own layout*, edited through the control that had just removed the other one |
+| "Two changes, and they answer the same reader's question from opposite ends" | Two changes, plus three the count left out | **Not a correction so much as an undercount, closed the same way a wrong sentence is.** `effective` and `applies` are data-model changes, and neither is reachable from anywhere without an authoring surface: the sheet's modifier form needed its own **Applies to** select, and the layout editor's Modifiers list needed one too — the field the row above this one records repairing twice. The diff also carries `armingBlur` in `components/modifier-form.ts`, a guard against a `NotFoundError` race in **Remove**'s arm-then-commit that has nothing to do with either change (found reviewing the diff for what the design axis should look at). None of the three were named where the section counts what it did |
+| Wave 3's own press step 14, "Tab through the six fields" | Seven | **Neither a correction nor a decision, and the table's own escape hatch is written for exactly this**: true when written, and "the cause was another sentence of this same document" — wave 4's own field addition, two sections down. Re-verified rather than silently renumbered: the design axis's own finding here was that the seventh field, the new one, initially carried Obsidian's weaker border-focus instead of the panel's outline (design finding D3); `shared.css`'s outline rule now names the panel's select and input fields beside its six buttons, and the tab order was driven for real across all seven rather than assumed from six |
+| **Eleven commit boundaries**, each named for a slice of the build | **Four**, and the reason is a fact about the code rather than a shortcut taken while shipping | **The boundaries were a plan and the plan did not survive the type contract.** `ModifierPush`, `ModifierSource`, `ModifierContext` and `SheetModifiers` all change shape together, and `npm run build` type-checks the whole repository — so `parse/`, `formula/`, Table, the layout editor, the sheet view and the harness stub stop compiling at the same instant. Every boundary in the list was tried at the land stop and each left the tree red: the parse commit pulled in the formula layer, the formula commit pulled in Table and the view, and Table pulled in the editor, because `config-panel.ts` imports the Modifiers field and `list-fields.ts` imports a column-type constant this feature deletes. Splitting further would have needed hunk surgery on a 1657-line test diff, and a commit that does not build is worse than a coarse boundary. What *did* separate cleanly is everything the type checker never sees: the harness's calibration, its views, and the documentation. **The wave-4 work landed in commits of its own for a different reason** — at the time, it had not been through the review axes, and the log was the only durable record of which work had. It has since: see this table's own newest three rows. |
 | The panel "caps its height in `em`", and the rule said 34em was "about 500px at the app's default UI font" | **A measured 500px**, and the measurement is now named and repeatable | **The `em` did not mean what the sentence beside it meant.** `.sheetsmith-panel` sets its own `font-size: var(--font-ui-small)`, and `em` outside `font-size` resolves against the element's own computed size — so `34em` was 13 x 34 = **442px**. The panel measured 441 and read as a fit by a hair. It was not: every text field in it was 8px short of Obsidian's `--input-height`, because the harness had never carried the app's `input` rule. With the app's own control heights on all six the state the cap was measured against comes to **479px**, so at 442 the promote row and `Add a modifier` scrolled off the end of the surface they belong to. The cap is px now, the number is a measurement of `sheet-modifier-form-light`, and the comment says how to retake it |
 | Nothing said what weight a rule in the anchored panel has to carry, and `styles.test.ts` reasoned from "(0,0,1) of a bare element rule" | Every rule whose subject is a control in the panel carries `.sheetsmith-panel` in front of it, at **(0,2,0)**, and there is a check for it | **The wrong number, two documents from the right one.** `docs/UI.md` §2 opens by saying Obsidian styles `input[type='text']` at **(0,1,1)**; `button:not(.clickable-icon)` is (0,1,1) too, because a `:not()` argument counts. Only `select` is (0,0,1). So the panel's single-class rules beat the app on its selects and lost to it on its inputs and its buttons: the list lines kept Obsidian's button fill and shadow, were clamped to `height: var(--input-height)` with their reason lines struck through the line below, could not wrap, and the arming tint on **Remove** was discarded — a destructive gesture whose first press changed nothing a reader could see. Nothing failed and nothing could: the panel is outside `.sheetsmith-view`, so §2's own check exempted it, and the exemption's replacement claim was about a class being present rather than about weight |
 | The read-only fields were `opacity: 0.75` and nothing else | A printed summary: no border, no fill, no chevron, value at the label's left edge, and a blank field not drawn | `legibility.md` §2 names a fill at a different strength as the thing that **cannot** carry a state, and measured against the panel behind them the enabled and quieted fills were three values apart. Four controls that looked like the fifth, with the only real signal a sentence *underneath* — which a reader reaches after trying to change one. The box coming off is a shape difference, so it holds with no colour at all and survives forced colors |
