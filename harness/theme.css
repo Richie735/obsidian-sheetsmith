@@ -232,7 +232,14 @@ body.theme-dark {
    specificity of its arguments and both are classes, so every rule below keeps
    the weight it had — which is what the icon-button note further down depends
    on. `.harness-editor` rather than `.view-content`: the harness's own wrapper,
-   so these can never reach a sheet rendered inside a leaf. */
+   so these can never reach a sheet rendered inside a leaf.
+
+   **The sheet's anchored panel is deliberately not a third scope here**, and the
+   block after this one is why: adding `.sheetsmith-panel` to this `:is()` would
+   raise every rule below to (0,1,1) over a surface whose own controls are single
+   classes at (0,1,0), so the harness would repaint the list lines and the add row
+   with text-button chrome — the exact icon-button failure the note further down
+   records. The panel gets rules named for its own controls instead. */
 :is(.vertical-tab-content, .harness-editor) input[type='text'],
 :is(.vertical-tab-content, .harness-editor) input[type='number'],
 :is(.vertical-tab-content, .harness-editor) textarea,
@@ -267,6 +274,75 @@ body.theme-dark {
 :is(.vertical-tab-content, .harness-editor) input::placeholder,
 :is(.vertical-tab-content, .harness-editor) textarea::placeholder {
 	color: var(--text-faint);
+}
+
+/* ------------------------------------------------------------------------ *
+ * The sheet's anchored panel, whose controls the plugin leaves to the host.
+ *
+ * **This is the first sheet-side surface that paints none of its own controls**,
+ * and it is why the block above says "these can never reach a sheet" and is now
+ * only half right. `.sheetsmith-panel-input` sets flex, widths and a font size and
+ * nothing else; the selects take Obsidian's own `dropdown`; the three action
+ * buttons take the app's button chrome. In the app that is correct and deliberate
+ * (`docs/UI.md` §1: the plugin has no control appearance of its own). In an
+ * uncalibrated harness it meant **no paint at all** — white boxes with black text
+ * on a dark panel, and native grey buttons — so this wave's largest surface was
+ * photographed unpainted and reviewed that way.
+ *
+ * `harness:calibrate` now pulls the app's real `input` and `button` rules through
+ * `CHROME`, which is the faithful answer at the app's own (0,0,1). This is the
+ * fallback for a clone that has never calibrated.
+ *
+ * **Named for the panel's own controls rather than by element**, so nothing here
+ * outranks a plugin rule it should lose to: the list lines, the add row and the
+ * armed **Remove** are all single classes in `styles.css`, which loads after this
+ * file and therefore wins every tie. What is set below is only what the plugin
+ * leaves unset — box, border, background — so there is nothing for the two to
+ * disagree about.
+ * ------------------------------------------------------------------------ */
+.sheetsmith-panel input[type='text'],
+.sheetsmith-panel select {
+	box-sizing: border-box;
+	padding: var(--size-2-1) var(--size-4-1);
+	border: 1px solid var(--harness-settings-edge);
+	border-radius: var(--radius-s);
+	background-color: var(--background-modifier-form-field);
+	color: var(--text-normal);
+	font-family: inherit;
+	line-height: 1.4;
+}
+
+.sheetsmith-panel input[type='text']:focus,
+.sheetsmith-panel select:focus {
+	outline: none;
+	border-color: var(--interactive-accent);
+	box-shadow: 0 0 0 2px var(--background-modifier-active-hover);
+}
+
+.sheetsmith-panel input::placeholder {
+	color: var(--text-faint);
+}
+
+/* The three action buttons, and only those: the list lines and the add row are
+   the plugin's own and are painted by `styles.css`. */
+.sheetsmith-panel-save,
+.sheetsmith-panel-remove,
+.sheetsmith-panel-confirm,
+.sheetsmith-panel-cancel {
+	box-sizing: border-box;
+	padding: var(--size-2-1) var(--size-4-2);
+	border: 1px solid var(--harness-settings-edge);
+	border-radius: var(--radius-s);
+	background-color: var(--background-modifier-form-field);
+	color: var(--text-normal);
+	font-family: inherit;
+}
+
+.sheetsmith-panel-save:hover,
+.sheetsmith-panel-remove:hover,
+.sheetsmith-panel-confirm:hover,
+.sheetsmith-panel-cancel:hover {
+	background-color: var(--background-modifier-hover);
 }
 
 /* Obsidian's toggle, approximated: a pill carrying the state as a class with an
