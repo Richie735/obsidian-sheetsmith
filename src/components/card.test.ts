@@ -1335,6 +1335,41 @@ describe('card.render: an effective value over a stored one', () => {
 		// The pair the feature is for: a 15 with an item +2 is a 17 reading +3.
 		expect(input.value).toBe('17');
 		expect(el.querySelector('.sheetsmith-card-derived')?.textContent).toBe('+3');
+		// Card's own half of card-set.test.ts's mark case: the shared dotted
+		// underline, not a colour of its own (docs/UI.md §9).
+		expect(input.classList.contains('sheetsmith-modified')).toBe(true);
+	});
+
+	it('asks for the pill display-only, and for the derived number not', () => {
+		/*
+		 * Card set's own case, for the reason it is written out twice rather than
+		 * proved once: this is the *call site*, and there are two of them. Both
+		 * stubs in this file answer `resolveField` without reading its fourth
+		 * argument, so removing `true` from `card.ts` is invisible to every other
+		 * assertion here — and what it ships is the pill taking the override and
+		 * the result phase, which are the published number's and not the value's
+		 * (SPEC §5).
+		 */
+		const asked: { field: string; displayOnly: boolean }[] = [];
+		const el = document.createElement('div');
+		card.render(el, boosted, { value: '15' }, {
+			...context,
+			resolveField: (field, scope, published, displayOnly) => {
+				asked.push({ field, displayOnly: displayOnly === true });
+				return withModifier(field, scope, published);
+			},
+		});
+		expect(asked.filter((one) => one.field === 'effective')).not.toHaveLength(0);
+		expect(
+			asked
+				.filter((one) => one.field === 'effective')
+				.every((one) => one.displayOnly),
+		).toBe(true);
+		expect(
+			asked
+				.filter((one) => one.field === 'derived')
+				.every((one) => !one.displayOnly),
+		).toBe(true);
 	});
 
 	it('ignores it on a card with options, whose pill shows a label', () => {

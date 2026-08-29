@@ -173,6 +173,31 @@ export function formatDerived(
 	return String(value);
 }
 
+/**
+ * Whether two field spellings are the same number, so one is not a *change* to
+ * the other.
+ *
+ * **Textual first, numeric second, and neither alone is enough.** A pill's stored
+ * value is raw note text while its effective reading is `String(n)`, so `15.0`
+ * and `15` are one number in two spellings and would otherwise read as a modifier
+ * that is not there. And a card's value need not be a number at all — a Card set
+ * entry may hold a word — so a purely numeric comparison would answer `0 === 0`
+ * for two different pieces of text, `Number('')` being 0 and `Number(' ')` too.
+ * Hence the empty guard: blank against blank is caught by the text arm above it,
+ * and blank against anything else is a real difference.
+ */
+function sameNumber(a: string, b: string): boolean {
+	const left = a.trim();
+	const right = b.trim();
+	if (left === right) return true;
+	if (left === '' || right === '') return false;
+	return (
+		Number.isFinite(Number(left)) &&
+		Number.isFinite(Number(right)) &&
+		Number(left) === Number(right)
+	);
+}
+
 function setDerived(el: HTMLElement, derived: CardFaceDerived): void {
 	el.textContent = derived.text;
 	el.classList.toggle(
@@ -435,19 +460,80 @@ export function renderCardFace(
 		 * the two listeners below are the whole of that swap.
 		 */
 		const stored = options.value.current;
-		const atRest = options.value.shown ?? stored;
+		/*
+		 * **Marked only where the number is genuinely different, not merely spelled
+		 * differently.** `shown` arrives as `String(resolvedNumber)`, so a note
+		 * holding `15.0` with nothing pushed at it produced `'15' !== '15.0'` — the
+		 * accent, the title, the accessible name and the focus swap, all of them
+		 * announcing modifiers on a card no modifier reaches. That is exactly the
+		 * failure the mark exists to prevent, arrived at from the other side.
+		 */
+		const shown = options.value.shown;
+		const atRest =
+			shown !== undefined && !sameNumber(shown, stored) ? shown : stored;
+		/*
+		 * Exactly `sameNumber`'s answer read back: the line above folds a reading
+		 * that is only a respelling onto `stored` itself, and `sameNumber` is true
+		 * of two identical strings — so this is textual again only because the one
+		 * case that would fool it has already been folded away.
+		 */
+		const differs = atRest !== stored;
 		input.value = atRest;
-		if (atRest !== stored) {
-			// A number the reader did not type reads as one they did, so the
-			// difference is said rather than only painted (docs/UI.md §6). The
-			// breakdown behind the big number is where the *why* already lives.
+		/**
+		 * What the two numbers are, in one string, or null where they are one.
+		 *
+		 * **One builder, because it has to reach two carriers and they must not
+		 * disagree** — the same rule the modifier glyph's three depths already
+		 * follow. A number the reader did not type reads exactly like one they did,
+		 * so this is the said channel (`docs/UI.md` §6); the breakdown behind the
+		 * big number is where the *why* already lives.
+		 */
+		const bothNumbers = differs
+			? `${atRest} with modifiers, ${stored} stored`
+			: null;
+		if (bothNumbers !== null) {
 			input.classList.add('sheetsmith-card-input-effective');
-			input.setAttribute('title', `${atRest} with modifiers · ${stored} stored`);
+			/*
+			 * **The painted channel is the dotted underline, not a colour** — a
+			 * design change from what shipped, replacing an accent-coloured number
+			 * rather than adding to it. `MODIFIED_CLASS` is the mark a card's own
+			 * `derived` already wears where a modifier has touched it (above this
+			 * field, on the same card), so a number nobody typed reads the same way
+			 * wherever it appears rather than in a second, invented vocabulary
+			 * (`docs/UI.md` §9). Two things a shared colour could not give it: it
+			 * survives forced-colors mode, which repaints every foreground the same
+			 * and left an accent-only mark pixel-identical to an unmarked one — and
+			 * it does not need `--text-accent` to clear a contrast bar a muted line
+			 * under a normal-coloured number never has to.
+			 *
+			 * **Not the derived text's whole vocabulary**, because the two elements
+			 * are not the same control. `.sheetsmith-modified`'s `cursor: help`
+			 * assumes a read-only value whose only use for a click is opening the
+			 * breakdown; this field is still an editable pill, so `sheet.css`
+			 * restores the ordinary text cursor for it. The click-to-open-popover
+			 * behaviour is not added either — the field already reaches the same
+			 * breakdown through `aria-describedby`, and a click here means "put a
+			 * caret here", which the field's own focus swap already owns.
+			 */
+			input.classList.add(MODIFIED_CLASS);
+			input.setAttribute('title', bothNumbers);
 		}
 		// With a derived above it, the em dash would be the card's second
 		// copy of the same nothing; the pill's own outline says "field".
 		input.placeholder = options.derived ? '' : EMPTY_MARK;
-		input.setAttribute('aria-label', options.title);
+		/*
+		 * **The two numbers go in the accessible name, not only in the `title`.**
+		 * `aria-label` beats `title` outright in the accessible-name computation, so
+		 * a bare label here left the tooltip unreachable to every reader without a
+		 * pointer — the paint and the tooltip both said the number was computed and
+		 * assistive technology was told nothing at all, which is a state carried on
+		 * one channel and §6 refuses that. Hover keeps the `title`, which is the
+		 * shorter reading for the input that already has one.
+		 */
+		input.setAttribute(
+			'aria-label',
+			bothNumbers === null ? options.title : `${options.title}, ${bothNumbers}`,
+		);
 		value.appendChild(input);
 		controls.push(input);
 
@@ -513,7 +599,7 @@ export function renderCardFace(
 		 * `shown`, so the restore below is for the other blur: a reader who focused
 		 * the field, changed nothing, and moved on.
 		 */
-		if (atRest !== stored) {
+		if (differs) {
 			input.addEventListener('focus', () => {
 				// Before any caret, any arrow key and any draft: from here on the
 				// field is the stored score and every gesture acts on that.
@@ -523,7 +609,16 @@ export function renderCardFace(
 				// Only where the field still holds what it was given. Anything else
 				// is a draft the binding has just committed, and the re-render that
 				// follows owns the display.
-				if (input.value.trim() === stored) input.value = atRest;
+				//
+				// **Both sides trimmed, because the left one already was.** `stored`
+				// is a free string from whatever built this face, and comparing a
+				// trimmed draft against an untrimmed baseline means a value with
+				// surrounding space never matches itself — the field would then be
+				// left on the stored number with the accent still on it, saying
+				// "computed" over a number that is not. Unreachable through either
+				// caller today, since a fenced block's values arrive trimmed
+				// (SPEC §4.2); reachable the moment a third one does not.
+				if (input.value.trim() === stored.trim()) input.value = atRest;
 			});
 		}
 	}

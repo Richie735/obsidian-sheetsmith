@@ -1175,6 +1175,71 @@ describe('a placed box is one thing, not two', () => {
 	});
 });
 
+describe('the effective pill is marked on every card that has one', () => {
+	/*
+	 * **A rule losing to another rule, which is precisely what nothing else here
+	 * can see.** `card-face.ts` adds `.sheetsmith-card-input-effective` whenever
+	 * the pill reads a number the reader did not type, and adds
+	 * `.sheetsmith-card-has-derived` on a *different* condition —
+	 * `options.derived !== undefined`. Nothing couples them: neither `CardConfig`
+	 * nor `CardSetConfig` requires a `derived` beside an `effective`, and `SPEC`
+	 * §4.2 does not either. The mark was written under `has-derived` anyway, so a
+	 * card declaring only `effective` showed a modified number with no mark at
+	 * all.
+	 *
+	 * **And the obvious fix is the trap this holds shut.** Simply dropping
+	 * `has-derived` would take these rules to (0,2,0), where the `cursor: text`
+	 * override loses to nothing but the `:focus` decoration-off would still lose
+	 * to the pill's own `color`/`box-shadow` rules at (0,3,0) the moment either
+	 * grows a `text-decoration` of its own — the fragility is in the *weight*,
+	 * not in one property that happens to be safe today. Both halves are
+	 * asserted: the condition is gone, and the weight is still three.
+	 *
+	 * **What moved since this was written**: the mark itself is no longer a
+	 * colour. `.sheetsmith-modified` — the same dotted underline a card's own
+	 * `derived` wears when a modifier touches it — is added to the pill's
+	 * classList beside `-input-effective` now, replacing the accent this guard
+	 * used to hold shut; what these two rules alone still own is the field's
+	 * cursor and turning the mark off while focused. A component test cannot
+	 * reach any of it. happy-dom applies no cascade, so `card-set.test.ts` can
+	 * prove the classes are *on* the input and never what either one paints,
+	 * which is §10's case for a guard exactly.
+	 */
+	const withoutComments = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+
+	/** Every selector in the file that mentions the effective mark. */
+	function marking(): string[] {
+		const found: string[] = [];
+		for (const block of withoutComments.split('}')) {
+			const brace = block.indexOf('{');
+			if (brace === -1) continue;
+			const selector = block.slice(0, brace).replace(/\s+/g, ' ').trim();
+			if (selector.includes('.sheetsmith-card-input-effective')) found.push(selector);
+		}
+		return found;
+	}
+
+	it('finds the rules it is meant to be checking', () => {
+		// Both assertions below are satisfied by a stylesheet with no accent rule
+		// in it at all, which is how this would come back if the mark were dropped.
+		expect(marking()).toHaveLength(2);
+	});
+
+	it('marks it whether or not the card also shows a derived number', () => {
+		expect(marking().filter((one) => one.includes('has-derived'))).toEqual([]);
+	});
+
+	it('still outweighs the pill\'s own colour, which is written at three classes', () => {
+		// The rule it has to beat is
+		// `.sheetsmith-view .sheetsmith-card-has-derived .sheetsmith-card-input`,
+		// so anything less than three classes paints nothing on a card with a
+		// derived — every card the mark has ever been looked at on.
+		for (const selector of marking()) {
+			expect((selector.match(/\./g) ?? []).length).toBeGreaterThanOrEqual(3);
+		}
+	});
+});
+
 describe('a prose block is sized by its placement, never by its text', () => {
 	/*
 	 * The longest-running defect in the prior art, and the one this component was

@@ -164,6 +164,87 @@ describe('parseModifierDefinitions: what is usable', () => {
 		expect(definitions[0]?.operator).toBe('override');
 	});
 
+	it('reads anything but "result" as the value phase, whatever kind it is', () => {
+		/*
+		 * **`operatorOf`'s case one field over, and this predicate carries more.**
+		 * It *is* the backward-compatibility guarantee: every modifier in every
+		 * layout written before the phase existed says nothing about one, and all of
+		 * them must go on meaning what `mod.self` has always meant. So the default
+		 * points the safe way — a hand-edited typo leaves the modifier doing what it
+		 * did rather than silently moving it onto a number the author never aimed at
+		 * — and it is reported rather than swallowed.
+		 *
+		 * Written out here because `phaseOf` is `types.ts`' and has no file of its
+		 * own, on §10's shared-vocabulary exception: it is driven through the
+		 * consumers that speak it, and this is the one that meets free text.
+		 */
+		for (const applies of ['Result', 'sideways', 'values', 7, true, null] as const) {
+			const { definitions } = parseModifierDefinitions(
+				layout([
+					{ name: 'Ring', target: 'armour_class', amount: '1', applies },
+				]),
+				SOURCES,
+			);
+			// Absent, not `"value"`: the default is the missing key, which is what
+			// keeps a layout written before phases existed byte-identical.
+			expect(definitions[0], String(applies)).not.toHaveProperty('applies');
+		}
+		// The one spelling that is not the value phase, and it survives a trim,
+		// because the parser reads the key trimmed and `phaseOf` must agree with it.
+		for (const applies of ['result', '  result  ']) {
+			const { definitions } = parseModifierDefinitions(
+				layout([
+					{ name: 'Ring', target: 'armour_class', amount: '1', applies },
+				]),
+				SOURCES,
+			);
+			expect(definitions[0]?.applies, applies).toBe('result');
+		}
+	});
+
+	it('reports a phase it could not read, rather than silently defaulting it', () => {
+		// Rendered, not corrected: the layout file keeps whatever was typed and the
+		// author is told what it did instead.
+		expect(
+			said([
+				{ name: 'Ring', target: 'armour_class', amount: '1', applies: 'sideways' },
+			]),
+		).toContain('applies to "sideways", which is not a phase');
+	});
+
+	it('drops a phase stored beside an override, and says why', () => {
+		/*
+		 * An override replaces the published number, which *is* the result phase, so
+		 * a phase beside one would be a second spelling for one behaviour. Dropped
+		 * from what the sheet reads and reported to the author — who can now act on
+		 * it, since the operator's own change handler clears the key.
+		 */
+		const { definitions } = parseModifierDefinitions(
+			layout([
+				{
+					name: 'Plate',
+					target: 'armour_class',
+					amount: '18',
+					operator: 'override',
+					applies: 'result',
+				},
+			]),
+			SOURCES,
+		);
+		expect(definitions[0]).not.toHaveProperty('applies');
+		expect(
+			said([
+				{
+					name: 'Plate',
+					target: 'armour_class',
+					amount: '18',
+					operator: 'override',
+					applies: 'result',
+				},
+			]),
+		).toContain('so it always applies to the result');
+	});
+
 	it('reads a member of the wrong kind as absent rather than throwing', () => {
 		// A hand-edited file may hold a number where a name goes: `parseLayout`
 		// checked that each entry is an object and nothing more.

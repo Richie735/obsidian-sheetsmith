@@ -8,6 +8,7 @@ import {
 	resolveFormulaFields,
 } from './resolve';
 import { ComponentConfig } from '../types';
+import { modifierSlot } from './modifiers';
 
 const component = { formulaFields: ['derived'] as const };
 const config = {
@@ -97,6 +98,75 @@ describe('makeFieldResolver', () => {
 			{ constructor: '4' },
 		);
 		expect(resolve('derived', { constructor: 10 })).toBe(11);
+	});
+});
+
+/*
+ * **The fork that decides which of two evaluations of one name takes the
+ * override and the result phase** (SPEC §5).
+ *
+ * A component may evaluate one published name twice: a Card's `derived`, which
+ * *becomes* `armour_class`, and its `effective`, which is a second reading of the
+ * same value for the pill. Both see the value phase; only the first may take the
+ * override and the result-phase total, because those land on the published number
+ * rather than on a display of what is behind it.
+ *
+ * **Here rather than in a component's file, and that is the whole point of the
+ * case.** Both `card.test.ts` and `card-set.test.ts` drive the pill through a stub
+ * `resolveField` that returns a number and never looks at its fourth argument, so
+ * every assertion about what the pill reads passes with the flag deleted at the
+ * call site. Measured, not assumed: removing `true` from `card.ts` and
+ * `card-set.ts` left the whole suite green, and the failure that would then ship
+ * is a Strength pill reading an override *of the ability modifier* as the score.
+ * This is the one file where the branch is observable at all.
+ */
+describe('an evaluation that publishes a name, and one that only displays it', () => {
+	const publishing = { formulaFields: ['derived'] as const };
+	const reading = {
+		...config,
+		id: 'armour_class',
+		derived: 'value + mod.self',
+	} as typeof config;
+
+	/**
+	 * A slot carrying all three quantities at once, because the two branches
+	 * differ by two of them and a case holding one could not tell which was live.
+	 */
+	const env = {
+		...NO_ENV,
+		sheet: (name: string) => (name === modifierSlot('armour_class') ? 4 : undefined),
+		modifiers: () => ({ override: 21, total: 4, resultTotal: 1, lines: [] }),
+	};
+
+	const resolve = makeFieldResolver(publishing, reading, { value: '15' }, env);
+
+	it('lands the override and the result phase on the number that publishes', () => {
+		// 15 + the value-phase 4 is 19; the override replaces it at 21, the same
+		// value phase goes back on top for 25, and the result-phase 1 lands after.
+		expect(resolve('derived', {}, 'armour_class')).toBe(26);
+	});
+
+	it('leaves a display-only reading the value phase alone', () => {
+		// The same slot, the same formula, the same 4 — and neither the override
+		// nor the phase that lands after the formula ran.
+		expect(resolve('derived', {}, 'armour_class', true)).toBe(19);
+	});
+
+	it('reads the same slot in both, so the difference is the fork and not the scope', () => {
+		/*
+		 * Without this the two cases above are also satisfied by a display-only
+		 * evaluation that never reached the slot at all — which is a different bug
+		 * with the same two numbers, and the one the `published === undefined`
+		 * branch three lines up would produce.
+		 */
+		const noSlot = makeFieldResolver(
+			publishing,
+			{ ...reading, derived: 'value' } as typeof config,
+			{ value: '15' },
+			env,
+		);
+		expect(noSlot('derived', {}, 'armour_class', true)).toBe(15);
+		expect(resolve('derived', {}, 'armour_class', true)).toBe(19);
 	});
 });
 

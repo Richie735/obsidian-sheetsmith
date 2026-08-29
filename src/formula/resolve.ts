@@ -312,7 +312,7 @@ function fieldReaders(
 			return dataScope(name) ?? env.sheet(name);
 		};
 		const value = evaluate(expression, scope, calls);
-		return { evaluated: displayOnly ? value : published_(asked, value) };
+		return { evaluated: displayOnly ? value : withPublishedModifiers(asked, value) };
 	};
 
 	/**
@@ -348,7 +348,10 @@ function fieldReaders(
 	 * canonical spelling everywhere, and unavoidable without a base to replace —
 	 * which `10 + abilities.DEX + mod.self` does not have.
 	 */
-	const published_ = (asked: string | null, value: Value): Value => {
+	const withPublishedModifiers = (
+		asked: string | null,
+		value: Value,
+	): Value => {
 		if (asked === null) return value;
 		const pushed = env.modifiers(asked);
 		// A refused slot has already thrown out of the scope above, so this only
@@ -370,7 +373,17 @@ function fieldReaders(
 		 * place, which is why the choice only ever *matters* on a card that
 		 * transforms its value, and why it is harmless everywhere else.
 		 */
-		const after = pushed.resultTotal ?? 0;
+		/*
+		 * No `?? 0`: this is a `ModifierResult`, the engine's own shape, where
+		 * `resultTotal` is required and the error branch has already returned above.
+		 * The fallback that used to sit here was dead and read as though this were
+		 * the *component*-facing `ModifierBreakdown`, whose `resultTotal` is
+		 * deliberately optional so a breakdown built to ask about something else
+		 * need not state a second number. Two shapes, two audiences, one of them
+		 * total — and a defensive `??` at the seam is what makes a reader think
+		 * otherwise.
+		 */
+		const after = pushed.resultTotal;
 		/*
 		 * **Only onto a number.** A formula may come to a string or a boolean, and a
 		 * result modifier has nothing to add to one — the honest answer there is the

@@ -67,6 +67,7 @@ import {
 	ModifierDefinition,
 	ModifierOperator,
 	operatorOf,
+	phaseOf,
 } from '../types';
 import { parseModifierDefinitions } from '../parse/modifier-definitions';
 import { parseModifierTypes } from '../parse/modifier-types';
@@ -366,6 +367,33 @@ export function renderModifierDefinitions(
 			// said which it was.
 			if (operator.value === 'add') delete definition.operator;
 			else definition.operator = 'override';
+			/*
+			 * **And the phase goes with it, because the control that sets it does.**
+			 * An override is in the result phase by construction, so `applies` beside
+			 * one is ignored and `parseModifierDefinitions` reports it — telling the
+			 * author to *clear it*, which from this pane they could not do: the field
+			 * is reserved and inert on this branch, and this handler is the only
+			 * other thing that writes the key. A message naming a gesture the surface
+			 * does not offer is worse than no message.
+			 *
+			 * **Not the "rendered, not corrected" case, and the difference is whose
+			 * file it is.** That rule protects *character* data a layout no longer
+			 * declares, where correcting would lose a player's work. This is the
+			 * author's own layout, being edited through the editor that just took the
+			 * control away, one keystroke after they wrote the key.
+			 *
+			 * The cost is a round trip: Sets and back leaves the phase at its default
+			 * rather than at what it was. That is the price of one spelling per
+			 * meaning, and it is the same trade `delete definition.operator` above
+			 * makes for the operator itself.
+			 *
+			 * `bonusType` has this hole exactly and is **deliberately left alone** —
+			 * it predates the phase, no criterion here covers it, and deleting a
+			 * stored type on one press of this select is a behaviour change owed its
+			 * own look. `docs/UI.md` §12's "a flag outlives the control that sets it"
+			 * row holds it.
+			 */
+			if (operator.value !== 'add') delete definition.applies;
 			context.persist();
 			context.list.flashAfterRedraw?.(`modifier-${named}-detail`);
 			context.redraw();
@@ -414,27 +442,66 @@ export function renderModifierDefinitions(
 			 * stacks before saying what it stacks against.
 			 *
 			 * Absent on an override, which replaces the published number and is in
-			 * the result phase by construction; the branch below reserves the slot
-			 * the same way the bonus type does, for the same "the tracks do not
-			 * move" reason.
+			 * the result phase by construction — and **built and hidden rather than
+			 * skipped**, exactly as the bonus type below it is, for the reason that
+			 * block spells out at length: a field that is simply not created gives
+			 * its width back to the line's `2:1:1:1` grow, so a list holding both
+			 * kinds reads as two different forms. This shipped as an `if` around the
+			 * whole block with a comment claiming it did what the bonus type does,
+			 * which is worse than either answer: measured on `editor-layout`, the
+			 * eight `Adds to` rows wrapped **Only when** onto a second line with
+			 * `Changes` clipped to `Abiliti…` while the two `Sets` rows sat on one
+			 * line with `Armour class` in full.
 			 */
+			/*
+			 * **A forced line break, not a width cut.** `Applies to` sizes to its
+			 * longest option — "The derived number", the reader's own words rather
+			 * than the file's (below) — and that is 163px at this control's size,
+			 * wider than `Changes` was ever measured needing to lose. Two fields on
+			 * this line already size to content rather than to a share
+			 * (`Operator`, `Bonus type`), on the argument that a closed list has a
+			 * knowable longest member and a share is the one thing it does not need
+			 * — but a *third* one competing for the line's slack took the dividend
+			 * `Changes` needs it for. Measured on `editor-layout` at 1400: `Changes`
+			 * down to 92px from 191, ten rows reading `Abiliti…`, `Armou…`,
+			 * `Skills ·…` with nothing to hover, because a clipped `<select>` has no
+			 * `title`.
+			 *
+			 * `Applies to` and `Bonus type` are a pair — the coarser question and
+			 * the finer one about the same modifier — so they move to their own
+			 * line together with `Only when`, which is already a refinement rather
+			 * than an identifier and already sits below the line that names what a
+			 * definition *is*. `Changes`, `Operator` and `Amount` are back to
+			 * exactly the three-field line they were before this field existed, and
+			 * reclaim the width measured for it.
+			 *
+			 * A zero-height, full-width flex item rather than a media query or a
+			 * `flex-basis` bump on `Applies to` itself: `.sheetsmith-entry-detail`
+			 * already wraps at every width (`flex-wrap: wrap`), so a spacer that
+			 * claims the whole row forces everything after it onto the next one
+			 * regardless of how much room is left — which is what a real 1210px
+			 * shot has to be checked against rather than assumed, since a fixed
+			 * threshold here would drift the moment a bonus type or an amount grew.
+			 */
+			detail.createDiv('sheetsmith-detail-break');
+
+			const phaseField = labelled(detail, 'Applies to');
+			phaseField.addClass('sheetsmith-detail-field-tight');
+			const phase = phaseField.createEl('select', {
+				cls: 'dropdown',
+				attr: { 'aria-label': `${named || 'Modifier'} applies to` },
+			});
+			// The reader's words rather than the file's: `value` and `result` are
+			// what a layout stores, and neither is a thing anyone has seen on a
+			// sheet. A score with a modifier over it is.
+			phase.createEl('option', { value: 'value', text: 'The value' });
+			phase.createEl('option', {
+				value: 'result',
+				text: 'The derived number',
+			});
+			phase.value = phaseOf(definition);
+			titleChosen(phase);
 			if (effective === 'add') {
-				const phaseField = labelled(detail, 'Applies to');
-				phaseField.addClass('sheetsmith-detail-field-tight');
-				const phase = phaseField.createEl('select', {
-					cls: 'dropdown',
-					attr: { 'aria-label': `${named || 'Modifier'} applies to` },
-				});
-				// The reader's words rather than the file's: `value` and `result` are
-				// what a layout stores, and neither is a thing anyone has seen on a
-				// sheet. A score with a modifier over it is.
-				phase.createEl('option', { value: 'value', text: 'The value' });
-				phase.createEl('option', {
-					value: 'result',
-					text: 'The derived number',
-				});
-				phase.value = definition.applies === 'result' ? 'result' : 'value';
-				titleChosen(phase);
 				phase.dataset.sheetsmithFocus = `modifier-${named}-applies`;
 				phase.addEventListener('change', () => {
 					// The value phase is the absent key, so choosing it clears rather
@@ -447,6 +514,12 @@ export function renderModifierDefinitions(
 					context.persist();
 					context.redraw();
 				});
+			} else {
+				// The same box at the same width, out of the tab order and out of the
+				// accessibility tree. See the bonus type's own block below for why a
+				// spacer cannot stand in and why a disabled control was refused.
+				phaseField.addClass('sheetsmith-detail-field-reserved');
+				phaseField.setAttribute('aria-hidden', 'true');
 			}
 
 			// The same, and it is the field the clip was first seen on:

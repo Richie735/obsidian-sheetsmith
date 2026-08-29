@@ -28,6 +28,7 @@ import {
 	showsOwnLabel,
 } from '../types';
 import { renderCardFace, toDerived } from './card-face';
+import { effectiveReading } from './effective-value';
 import { modifierBreakdown } from './modifier-breakdown';
 
 /**
@@ -403,31 +404,28 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 		/**
 		 * What the pill reads at rest, or undefined to leave it the stored number.
 		 *
-		 * Card set's own rule, for its own reason: undefined wherever the answer is
-		 * not a number worth trusting — no formula, nothing stored, or a formula
-		 * that did not resolve — because a pill is one number with nowhere to say
-		 * why it is not one. The derived above it owns the `?` and the explanation.
+		 * The reading itself is `effective-value.ts`', shared with Card set, because
+		 * what the two had in common was four *policies* and drift between two
+		 * copies of a policy is the whole risk (PATTERNS §1). This used to say "Card
+		 * set's own rule, for its own reason", which is that section's named trap:
+		 * an agreement living in a comment is not one the next component can reuse.
 		 *
-		 * **A dropdown never gets one.** Its text is a label from a closed list, so
-		 * a computed reading would be a word the list does not hold; `card-face.ts`
-		 * ignores `shown` on that branch and this leaves it undefined rather than
-		 * relying on that.
+		 * **A dropdown never gets one, and that rule stays here**, on the precedent
+		 * `linked-text.ts` set by leaving a clip with its callers: Card set has no
+		 * options, so the shared module never learns what one is. Its text is a
+		 * label from a closed list, so a computed reading would be a word the list
+		 * does not hold — `card-face.ts` ignores `shown` on that branch too, and
+		 * this refuses to ask rather than relying on that.
 		 */
 		const effective =
-			config.effective === undefined ||
-			value.trim() === '' ||
 			drawable.options.length > 0
 				? undefined
-				: (() => {
-						const resolved = context.resolveField(
-							'effective',
-							{ value },
-							config.id,
-							// Display only; see Card set for the whole of why.
-							true,
-						);
-						return typeof resolved === 'number' ? String(resolved) : undefined;
-					})();
+				: effectiveReading(
+						config.effective,
+						value,
+						config.id,
+						context.resolveField,
+					);
 
 		renderCardFace(face, {
 			title: config.label,

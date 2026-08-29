@@ -199,6 +199,19 @@ export default defineConfig(
 								 * the form is a second job in it (PATTERNS §1).
 								 */
 								'!./modifier-form',
+								/*
+								 * **The reading a value pill shows once modifiers are
+								 * applied**, shared by Card and Card set. In no registry,
+								 * declaring no `ComponentDefinition`, importing nothing
+								 * from `obsidian` and touching no file: it turns a stored
+								 * value and an `effective` formula into a number or into
+								 * nothing. On the list for *reuse* rather than atomicity,
+								 * unlike `modifier-form` above — four policies had a copy
+								 * in each component, and PATTERNS §1's one-step tier
+								 * extracts a policy on the second consumer because a guard
+								 * test over two copies could only assert they still agree.
+								 */
+								'!./effective-value',
 								'!./stored-flag',
 								'!../components/column-types',
 								'!../components/level-ring',
@@ -206,6 +219,7 @@ export default defineConfig(
 								'!../components/linked-text',
 								'!../components/modifier-breakdown',
 								'!../components/modifier-form',
+								'!../components/effective-value',
 								'!../components/stored-flag',
 							],
 							message:

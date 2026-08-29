@@ -83,6 +83,11 @@ const ALLOWED = [
 	// registry and declaring no component. Added to the allowlist deliberately,
 	// which is what that tier means.
 	"import { renderModifierForm } from './modifier-form';",
+	// The reading a value pill shows once modifiers are applied: four policies
+	// Card and Card set had a copy of each, extracted on the second consumer
+	// because drift between two copies of a policy is the whole risk (§1).
+	"import { effectiveReading } from './effective-value';",
+	"import { effectiveReading } from '../components/effective-value';",
 	"import { MODIFIED_CLASS } from '../components/modifier-breakdown';",
 	"import { paintLinkedText } from '../components/linked-text';",
 	"import { paintLevelRing } from '../components/level-ring';",
