@@ -43,6 +43,7 @@ import { renderGrid } from '../src/view/grid-cells';
 import { renderEditorPane } from './editor-pane';
 import {
 	brokenSamples,
+	effectiveSamples,
 	emptySamples,
 	Sample,
 	SAMPLES,
@@ -51,7 +52,12 @@ import {
 import { renderSettings } from './settings-panel';
 import { harnessLayout } from './stub-app';
 
-type StateName = 'populated' | 'empty' | 'unmodified' | 'broken';
+type StateName =
+	| 'populated'
+	| 'empty'
+	| 'unmodified'
+	| 'effective'
+	| 'broken';
 type Surface = 'sheet' | 'editor' | 'settings' | 'both';
 
 interface Live {
@@ -74,6 +80,7 @@ let live: Live[] = [];
 function samplesFor(name: StateName): Sample[] {
 	if (name === 'empty') return emptySamples();
 	if (name === 'unmodified') return unmodifiedSamples();
+	if (name === 'effective') return effectiveSamples();
 	if (name === 'broken') return brokenSamples();
 	return SAMPLES;
 }
@@ -632,7 +639,10 @@ function applyQuery(): void {
 
 	const wanted = params.get('state');
 	loadState(
-		wanted === 'empty' || wanted === 'unmodified' || wanted === 'broken'
+		wanted === 'empty' ||
+			wanted === 'unmodified' ||
+			wanted === 'effective' ||
+			wanted === 'broken'
 			? wanted
 			: 'populated',
 	);
