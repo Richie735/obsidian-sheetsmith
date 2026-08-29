@@ -36,7 +36,7 @@
  * `../types` and nothing else.
  */
 
-import { ModifierOperator, TypedEffect } from '../types';
+import { ModifierOperator, ModifierPhase, TypedEffect } from '../types';
 
 /**
  * What separates two parts in one modifier cell (SPEC §4.2).
@@ -61,6 +61,15 @@ export const ADDS_TO = '+=';
 
 /** How a cell spells "sets". */
 export const SETS = '=';
+
+/**
+ * The one phase a cell ever spells.
+ *
+ * The value phase is the *absent* clause rather than the word `value`, so a cell
+ * written before phases existed round-trips byte for byte and there is one
+ * spelling per meaning rather than two for the default.
+ */
+export const RESULT_PHASE = 'result';
 
 /**
  * One published-name token then an assignment, which is the whole discriminator.
@@ -326,6 +335,22 @@ export function parseModifierPart(part: string): ModifierPart {
 		bonusType = rest.slice(as + ' as '.length).trim();
 		rest = rest.slice(0, as);
 	}
+	/*
+	 * **The phase clause, and it is the one clause that checks its own value.**
+	 * ` as ` and ` when ` take arbitrary text, so finding the keyword is enough to
+	 * know a clause is there. ` to ` cannot borrow that: it is a common word, and
+	 * an amount reading a column headed `to` — which `SPEC` §5 makes reachable,
+	 * since a row expression may read a column by heading — would otherwise lose
+	 * everything after it. Only `result` is ever spelled, so anything else after
+	 * the keyword means this was never a phase clause and the text stays in the
+	 * amount where it was written.
+	 */
+	let applies: ModifierPhase | undefined;
+	const to = clauseAt(rest, 'to');
+	if (to >= 0 && rest.slice(to + ' to '.length).trim() === RESULT_PHASE) {
+		applies = 'result';
+		rest = rest.slice(0, to);
+	}
 
 	return {
 		kind: 'typed',
@@ -333,6 +358,7 @@ export function parseModifierPart(part: string): ModifierPart {
 			target,
 			operator,
 			amount: rest.trim(),
+			...(applies !== undefined ? { applies } : {}),
 			...(bonusType !== undefined && bonusType !== '' ? { bonusType } : {}),
 			...(when !== undefined && when !== '' ? { when } : {}),
 		},
@@ -354,6 +380,15 @@ export function spellTypedEffect(effect: TypedEffect): string {
 	const said = [effect.target, effect.operator === 'override' ? SETS : ADDS_TO];
 	const amount = effect.amount.trim();
 	if (amount !== '') said.push(amount);
+	/*
+	 * Spelled only for the result phase, and never on an override — which already
+	 * replaces the published number and so is in that phase by construction.
+	 * The value phase is the absent clause, so every cell written before phases
+	 * existed round-trips byte for byte (Constraint 3).
+	 */
+	if (effect.applies === 'result' && effect.operator !== 'override') {
+		said.push('to', RESULT_PHASE);
+	}
 	const bonusType = (effect.bonusType ?? '').trim();
 	if (bonusType !== '') said.push('as', bonusType);
 	const when = (effect.when ?? '').trim();

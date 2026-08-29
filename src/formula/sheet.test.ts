@@ -648,6 +648,7 @@ describe('sheetModifiers', () => {
 		expect(sheet('10 + mod.self').breakdown('armour_class')).toEqual({
 			override: null,
 			total: 2,
+			resultTotal: 0,
 			lines: [
 				{
 					label: 'Ring',
@@ -656,6 +657,7 @@ describe('sheetModifiers', () => {
 					operator: 'add',
 					type: 'item',
 					amount: 2,
+					applies: 'value',
 					suppressed: null,
 				},
 			],
@@ -672,6 +674,7 @@ describe('sheetModifiers', () => {
 		expect(sheet('10 + mod.self').breakdown('speed')).toEqual({
 			override: null,
 			total: 0,
+			resultTotal: 0,
 			lines: [],
 		});
 	});
@@ -740,6 +743,7 @@ describe('sheetModifiers', () => {
 		expect(sheetModifiers(input, env).breakdown('armour_class')).toEqual({
 			override: null,
 			total: 0,
+			resultTotal: 0,
 			lines: [],
 		});
 	});

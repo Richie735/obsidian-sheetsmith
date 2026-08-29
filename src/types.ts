@@ -447,6 +447,20 @@ export type FieldResolver = (
 	field: string,
 	scope: Readonly<Record<string, FieldValue>>,
 	published?: string,
+	/**
+	 * Whether this evaluation is for display only rather than the one that
+	 * becomes the published name (SPEC §5).
+	 *
+	 * A component evaluating one name twice — a Card's `derived`, which becomes
+	 * the name, and its `effective`, which is a second reading for the value pill
+	 * — passes `true` for the second. Both see the value phase; only the one that
+	 * publishes takes the result phase and the override, which land on the
+	 * published number rather than on a display of what is behind it.
+	 *
+	 * Absent is `false`, so a component that publishes one number per name says
+	 * nothing and means what it always meant.
+	 */
+	displayOnly?: boolean,
 ) => FieldValue | null;
 
 /**
@@ -499,6 +513,33 @@ export type RowsSource = (resolve: FieldResolver) => readonly RowValues[];
  * one thing — which is the priority integer arriving under a new name.
  */
 export type ModifierOperator = 'add' | 'override';
+
+/**
+ * Which part of a target's arithmetic an addition lands on (SPEC §5).
+ *
+ * A published name has one slot and its formula decides where the slot's total
+ * goes, which is what makes `floor((value + mod.self - 10) / 2)` raise a score
+ * and `floor((value - 10) / 2) + mod.self` raise a modifier. That is right for
+ * the *layout* and wrong for the *character*: on one ability card a belt raises
+ * the score and a blessing adds to the check, and the formula cannot be both.
+ *
+ * So the slot has two totals and a modifier says which it joins.
+ *
+ * - `value` — inside the formula, which is what `mod.self` resolves to. The
+ *   default, and what every modifier written before this existed is.
+ * - `result` — added to the number the formula came to, after it ran. The phase
+ *   an override has always been in.
+ *
+ * **They contest separately**, which falls out of what they are: an item bonus to
+ * a score and an item bonus to a check are two different quantities, so the
+ * best-of-a-type rule runs once per phase rather than across both.
+ *
+ * **Only additions carry one.** An override sets the published number and stays
+ * where it has always been, in the result phase; a "set your Strength score to
+ * 21" would be a value-phase override and needs the *component* to take part,
+ * since `value` is passed into the evaluation rather than owned by it.
+ */
+export type ModifierPhase = 'value' | 'result';
 
 /**
  * Which phase a definition belongs to, from whatever its `operator` holds.
@@ -562,6 +603,12 @@ export interface ModifierDefinition {
 	amount: string;
 	/** One of the layout's `modifierTypes`. Absent is untyped. */
 	bonusType?: string;
+	/**
+	 * Which phase this addition lands in. Omitted for `value`, which is what a
+	 * definition that says nothing is, and what every definition written before
+	 * the phase existed stays.
+	 */
+	applies?: ModifierPhase;
 	/** An expression; absent means always. */
 	when?: string;
 }
@@ -606,6 +653,12 @@ export interface TypedEffect {
 	 * corrected — the effect applies and contests as its own kind.
 	 */
 	bonusType?: string;
+	/**
+	 * Which phase this addition lands in. Omitted for `value`, which is what an
+	 * effect that says nothing is — so every cell written before the phase
+	 * existed keeps meaning exactly what it meant.
+	 */
+	applies?: ModifierPhase;
 	/** An expression; absent means always. */
 	when?: string;
 }
@@ -746,6 +799,20 @@ export interface ModifierLine {
 	 */
 	type: string | null;
 	amount: number;
+	/**
+	 * Which phase this addition landed in, so a breakdown can say so where it
+	 * matters and stay quiet where it does not.
+	 *
+	 * Always `value` on an override, whose own phase is fixed and whose line
+	 * already reads "sets to": saying the phase there would be a second answer to
+	 * a question the wording has answered.
+	 *
+	 * **Optional, and absent means `value`** — the same default `TypedEffect` and
+	 * `ModifierDefinition` already carry, for the same reason. `stackModifiers`
+	 * always sets it; what the default buys is that a reader constructing a line
+	 * to ask a question about something else need not state a phase to do it.
+	 */
+	applies?: ModifierPhase;
 	/** Why this line contributes nothing, or null where it does. */
 	suppressed: string | null;
 }
@@ -771,8 +838,20 @@ export interface ModifierBreakdown {
 	 * signed number there would invite the reader to add it to something.
 	 */
 	override: number | null;
-	/** The additive total, which is what `mod.<name>` itself resolves to. */
+	/** The value-phase total, which is what `mod.<name>` itself resolves to. */
 	total: number;
+	/**
+	 * The result-phase total, added to what the target's formula came to.
+	 *
+	 * Separate from `total` because they are separately contested and land in
+	 * different places: a formula reading `mod.self` gets the first, and only the
+	 * evaluation that becomes the published name gets the second.
+	 *
+	 * **Optional, and absent means 0**, on `applies` above's rule: the phase is
+	 * what a sheet gains here, and a breakdown built to ask about anything else
+	 * does not acquire a second number to state.
+	 */
+	resultTotal?: number;
 }
 
 /**

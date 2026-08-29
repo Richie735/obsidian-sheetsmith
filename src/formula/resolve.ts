@@ -28,6 +28,7 @@ import {
 	FunctionEnv,
 	FunctionLibrary,
 	NO_FUNCTIONS,
+	roundSum,
 	Scope,
 	Value,
 } from './expression';
@@ -216,6 +217,18 @@ function fieldReaders(
 		extra: Record<string, unknown>,
 		/** The published name this evaluation produces, where it produces one. */
 		published: string | undefined,
+		/**
+		 * Whether this evaluation is for display only rather than the one that
+		 * *becomes* the published name (SPEC §5).
+		 *
+		 * One name may be evaluated twice: a Card's `derived` becomes the name, and
+		 * its `effective` is a second reading of the same slot for the value pill.
+		 * Both want the value phase; only the first may take the result phase and
+		 * the override, which land on the published number. Without the
+		 * distinction the pill would show a "+1 to checks" as part of the score and
+		 * an override of the ability modifier as the score itself.
+		 */
+		displayOnly = false,
 	): { literal: Value } | { evaluated: Value } | null => {
 		/**
 		 * The name whose slot this evaluation actually read, or null.
@@ -299,7 +312,7 @@ function fieldReaders(
 			return dataScope(name) ?? env.sheet(name);
 		};
 		const value = evaluate(expression, scope, calls);
-		return { evaluated: overridden(asked, value) };
+		return { evaluated: displayOnly ? value : published_(asked, value) };
 	};
 
 	/**
@@ -335,20 +348,44 @@ function fieldReaders(
 	 * canonical spelling everywhere, and unavoidable without a base to replace —
 	 * which `10 + abilities.DEX + mod.self` does not have.
 	 */
-	const overridden = (asked: string | null, value: Value): Value => {
+	const published_ = (asked: string | null, value: Value): Value => {
 		if (asked === null) return value;
 		const pushed = env.modifiers(asked);
 		// A refused slot has already thrown out of the scope above, so this only
 		// ever sees one that resolved; the guard is what makes that readable rather
 		// than assumed.
-		if ('error' in pushed || pushed.override === null) return value;
-		return pushed.override + pushed.total;
+		if ('error' in pushed) return value;
+		/*
+		 * The override first, exactly as before: it replaces what the formula came
+		 * to and the value-phase total is re-added on top.
+		 */
+		const base =
+			pushed.override === null ? value : pushed.override + pushed.total;
+		/*
+		 * **Then the result phase, on top of either.** It is added rather than
+		 * folded into `mod.self` because that is what distinguishes it: a modifier
+		 * here lands on the number the formula produced, wherever the author put
+		 * `mod.self` inside it. On a formula with no transform — `10 +
+		 * abilities.DEX + mod.self` — the two phases are arithmetically the same
+		 * place, which is why the choice only ever *matters* on a card that
+		 * transforms its value, and why it is harmless everywhere else.
+		 */
+		const after = pushed.resultTotal ?? 0;
+		/*
+		 * **Only onto a number.** A formula may come to a string or a boolean, and a
+		 * result modifier has nothing to add to one — the honest answer there is the
+		 * value the formula gave, not a concatenation. `roundSum` is the same helper
+		 * the totals row and `sum()` use, so the number on the card and the
+		 * breakdown's own total cannot disagree about `0.30000000000000004`.
+		 */
+		if (after === 0 || typeof base !== 'number') return base;
+		return roundSum(base + after);
 	};
 
 	return {
-		resolve: (field, extra, published) => {
+		resolve: (field, extra, published, displayOnly) => {
 			try {
-				const outcome = read(field, extra, published);
+				const outcome = read(field, extra, published, displayOnly);
 				if (outcome === null) return null;
 				return 'literal' in outcome ? outcome.literal : outcome.evaluated;
 			} catch {

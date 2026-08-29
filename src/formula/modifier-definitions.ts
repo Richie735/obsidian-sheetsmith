@@ -43,6 +43,7 @@ import { parseModifierPart } from '../parse/modifier-cell';
 import {
 	ModifierDefinitionView,
 	ModifierOperator,
+	ModifierPhase,
 	operatorOf,
 	RowValues,
 	TypedEffect,
@@ -85,6 +86,11 @@ export interface Contribution {
 	 */
 	type: string | null;
 	amount: number;
+	/**
+	 * Which phase the addition lands in. Absent is `value`, so an enrolment that
+	 * says nothing means what it has always meant.
+	 */
+	applies?: ModifierPhase;
 }
 
 /**
@@ -113,6 +119,11 @@ export interface PartFields {
 	/** The amount as an expression, before it is evaluated. Blank is unfinished. */
 	amount: string;
 	bonusType: string | null;
+	/**
+	 * Which phase an addition lands in (SPEC §5). Never null: absent storage
+	 * settles to `value` here, so nothing downstream repeats the default.
+	 */
+	applies: ModifierPhase;
 	when: string | null;
 }
 
@@ -181,6 +192,18 @@ function read(
 	}
 }
 
+/**
+ * Which phase a stored modifier names, settled once for both tiers.
+ *
+ * Anything that is not the word `result` is the value phase, which is what makes
+ * the default survive a hand-edited layout: a typo in a JSON file leaves the
+ * modifier doing what it did before the phase existed rather than silently
+ * moving it somewhere else.
+ */
+function phaseOf(stored: { applies?: ModifierPhase }): ModifierPhase {
+	return stored.applies === 'result' ? 'result' : 'value';
+}
+
 /** A definition's five facts, as the fields both tiers reduce to. */
 function fieldsOfDefinition(definition: ModifierDefinitionView): PartFields {
 	const bonusType = (definition.bonusType ?? '').trim();
@@ -190,6 +213,7 @@ function fieldsOfDefinition(definition: ModifierDefinitionView): PartFields {
 		operator: operatorOf(definition),
 		amount: (definition.amount ?? '').trim(),
 		bonusType: bonusType === '' ? null : bonusType,
+		applies: phaseOf(definition),
 		when: when === '' ? null : when,
 	};
 }
@@ -203,6 +227,7 @@ function fieldsOfTyped(effect: TypedEffect): PartFields {
 		operator: effect.operator,
 		amount: effect.amount.trim(),
 		bonusType: bonusType === '' ? null : bonusType,
+		applies: phaseOf(effect),
 		when: when === '' ? null : when,
 	};
 }
@@ -321,6 +346,9 @@ export function resolveEnrolment(
 			// what an author who has never heard of bonus types expects. An
 			// override carries none whatever the part says.
 			type: fields.operator === 'override' ? null : fields.bonusType,
+			// An override's phase is fixed — it replaces the published number — so
+			// it is reported as `value` and `stackModifiers` never reads it.
+			applies: fields.operator === 'override' ? 'value' : fields.applies,
 			amount: amount.value,
 		},
 	};

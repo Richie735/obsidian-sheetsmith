@@ -596,11 +596,12 @@ describe('card.render: why a formula failed', () => {
 describe('card contract', () => {
 	it('declares fenced storage, formula fields, and config fields', () => {
 		expect(card.storage).toBe('fenced');
-		expect(card.formulaFields).toEqual(['derived']);
+		expect(card.formulaFields).toEqual(['derived', 'effective']);
 		expect(card.configFields.map((field) => field.key)).toEqual([
 			'key',
 			'options',
 			'derived',
+			'effective',
 			'notePlaceholder',
 			'hideLabel',
 			'hideValue',
@@ -1077,7 +1078,8 @@ describe('card and its modifier slot', () => {
 					total: 2,
 					lines: [
 						{
-									label: 'Ring of Protection',
+							applies: 'value',
+							label: 'Ring of Protection',
 							source: 'Magic items',
 							definition: 'Ring of Protection',
 							operator: 'add',
@@ -1086,7 +1088,8 @@ describe('card and its modifier slot', () => {
 							suppressed: null,
 						},
 						{
-									label: 'Cloak',
+							applies: 'value',
+							label: 'Cloak',
 							source: 'Magic items',
 							definition: 'Cloak',
 							operator: 'add',
@@ -1124,7 +1127,8 @@ describe('card and its modifier slot', () => {
 					total: 2,
 					lines: [
 						{
-									label: 'Ring',
+							applies: 'value',
+							label: 'Ring',
 							source: 'Magic items',
 							definition: 'Ring',
 							operator: 'add',
@@ -1178,6 +1182,7 @@ describe('card and its modifier slot', () => {
 			total: 1,
 			lines: [
 				{
+					applies: 'value',
 					label: 'Plate armour',
 					source: 'Magic items',
 					definition: 'Plate armour',
@@ -1187,6 +1192,7 @@ describe('card and its modifier slot', () => {
 					suppressed: null,
 				},
 				{
+					applies: 'value',
 					label: 'Ring',
 					source: 'Magic items',
 					definition: 'Ring',
@@ -1273,7 +1279,8 @@ describe('card and its modifier slot', () => {
 					total: 2,
 					lines: [
 						{
-									label: 'Ring',
+							applies: 'value',
+							label: 'Ring',
 							source: 'Magic items',
 							definition: 'Ring',
 							operator: 'add',
@@ -1292,5 +1299,59 @@ describe('card and its modifier slot', () => {
 		derived.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 		expect(document.querySelector('.sheetsmith-popover')).not.toBeNull();
 		document.querySelector('.sheetsmith-popover')?.remove();
+	});
+});
+
+/*
+ * A Card's own half of the effective value. Card set carries the gesture tests —
+ * the swap on focus is one implementation in `card-face.ts` and proving it twice
+ * proves nothing new — so what is here is the two rules that are Card's alone.
+ */
+describe('card.render: an effective value over a stored one', () => {
+	const boosted: CardConfig = {
+		id: 'strength',
+		type: 'card',
+		label: 'Strength',
+		position: { col: 1, row: 1, width: 2, height: 1 },
+		derived: 'floor((value + mod.self - 10) / 2)',
+		effective: 'value + mod.self',
+	};
+
+	const withModifier: RenderContext['resolveField'] = (field, scope) => {
+		const raw = typeof scope.value === 'string' ? Number(scope.value) : NaN;
+		if (Number.isNaN(raw)) return null;
+		if (field === 'effective') return raw + 2;
+		if (field === 'derived') return Math.floor((raw + 2 - 10) / 2);
+		return null;
+	};
+
+	it('reads the effective number in the pill and the derived above it', () => {
+		const el = document.createElement('div');
+		card.render(el, boosted, { value: '15' }, {
+			...context,
+			resolveField: withModifier,
+		});
+		const input = el.querySelector('.sheetsmith-card-input') as HTMLInputElement;
+		// The pair the feature is for: a 15 with an item +2 is a 17 reading +3.
+		expect(input.value).toBe('17');
+		expect(el.querySelector('.sheetsmith-card-derived')?.textContent).toBe('+3');
+	});
+
+	it('ignores it on a card with options, whose pill shows a label', () => {
+		/*
+		 * A dropdown's text is a *label* for the stored value, chosen from a closed
+		 * list, so a computed reading would be a word the list does not contain —
+		 * and the control could not round-trip its own choice. The rule is here
+		 * rather than only in `card-face.ts` so a Card never asks for one.
+		 */
+		const el = document.createElement('div');
+		card.render(
+			el,
+			{ ...boosted, options: [{ value: '15' }, { value: '16' }] },
+			{ value: '15' },
+			{ ...context, resolveField: withModifier },
+		);
+		const select = el.querySelector('.sheetsmith-card-select') as HTMLSelectElement;
+		expect(select.value).toBe('15');
 	});
 });

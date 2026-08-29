@@ -407,3 +407,71 @@ describe('the read list and the write list', () => {
 		expect(cellParts(cell)).toHaveLength(2);
 	});
 });
+
+/*
+ * **The phase clause.** Only the result phase is ever spelled: the value phase is
+ * the absent clause, so every cell written before phases existed round-trips byte
+ * for byte (Constraint 3) and there is one spelling per meaning.
+ */
+describe('the phase a typed effect applies to', () => {
+	it('reads and spells the result phase', () => {
+		const part = 'abilities.STR += 1 to result';
+		const read = parseModifierPart(part);
+		expect(read.kind === 'typed' ? read.effect.applies : null).toBe('result');
+		expect(read.kind === 'typed' ? read.effect.amount : null).toBe('1');
+		expect(
+			read.kind === 'typed' ? spellTypedEffect(read.effect) : null,
+		).toBe(part);
+	});
+
+	it('leaves an effect that says nothing in the value phase', () => {
+		const read = parseModifierPart('abilities.STR += 1');
+		// Absent rather than 'value': the storage carries no key, which is what
+		// keeps the round trip byte-identical for every cell written before this.
+		expect(read.kind === 'typed' ? read.effect.applies : 'x').toBeUndefined();
+		expect(
+			read.kind === 'typed' ? spellTypedEffect(read.effect) : null,
+		).toBe('abilities.STR += 1');
+	});
+
+	it('reads the phase beside the other two clauses, in one spelling', () => {
+		const part = 'armour_class += 2 to result as item when Worn';
+		const read = parseModifierPart(part);
+		if (read.kind !== 'typed') throw new Error('expected a typed effect');
+		expect(read.effect).toEqual({
+			target: 'armour_class',
+			operator: 'add',
+			amount: '2',
+			applies: 'result',
+			bonusType: 'item',
+			when: 'Worn',
+		});
+		expect(spellTypedEffect(read.effect)).toBe(part);
+	});
+
+	it('never spells a phase on an override, which is in one by construction', () => {
+		expect(
+			spellTypedEffect({
+				target: 'armour_class',
+				operator: 'override',
+				amount: '18',
+				applies: 'result',
+			}),
+		).toBe('armour_class = 18');
+	});
+
+	/*
+	 * **The clause checks its own value, where ` as ` and ` when ` do not.** Those
+	 * take arbitrary text, so finding the keyword is enough. ` to ` cannot borrow
+	 * that: it is a common word, and an amount reading a column headed `to` — which
+	 * SPEC §5 makes reachable — would otherwise lose everything after it.
+	 */
+	it('leaves a "to" that is not a phase inside the amount', () => {
+		const part = 'armour_class += Bonus to Hit';
+		const read = parseModifierPart(part);
+		if (read.kind !== 'typed') throw new Error('expected a typed effect');
+		expect(read.effect.applies).toBeUndefined();
+		expect(read.effect.amount).toBe('Bonus to Hit');
+		expect(spellTypedEffect(read.effect)).toBe(part);
+	});
+});

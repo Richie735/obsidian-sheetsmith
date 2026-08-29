@@ -36,7 +36,11 @@ import {
 } from '../formula/modifier-targets';
 import { Layout } from './layout';
 import { unspellableName } from './modifier-cell';
-import { ModifierDefinitionView, operatorOf } from '../types';
+import {
+	ModifierDefinitionView,
+	ModifierPhase,
+	operatorOf,
+} from '../types';
 import { parseExpression } from '../formula/expression';
 
 /** Something wrong with one modifier definition, or with the list. */
@@ -180,6 +184,16 @@ export function parseModifierDefinitions(
 		const operator = operatorOf(raw);
 		const amount = text(raw, 'amount');
 		const bonusType = text(raw, 'bonusType');
+		/*
+		 * **Anything but the word `result` is the value phase** (SPEC §5), which is
+		 * what keeps a hand-edited layout safe: a typo leaves the modifier doing
+		 * what it did before phases existed rather than moving it somewhere the
+		 * author did not ask for. A stray spelling is reported below and dropped to
+		 * the default, on §10's "rendered, not corrected" — the layout file keeps
+		 * whatever was typed.
+		 */
+		const storedPhase = text(raw, 'applies');
+		const applies: ModifierPhase = storedPhase === 'result' ? 'result' : 'value';
 		const when = text(raw, 'when');
 
 		if (target === '') {
@@ -221,6 +235,21 @@ export function parseModifierDefinitions(
 			});
 		}
 
+		if (storedPhase !== '' && storedPhase !== 'value' && storedPhase !== 'result') {
+			problems.push({
+				definition: name,
+				message: `"${name}" applies to "${storedPhase}", which is not a phase. Use "value" to change the number behind the formula, or "result" to change what the formula came to.`,
+			});
+		} else if (applies === 'result' && operator === 'override') {
+			// An override already replaces the published number, which is the result
+			// phase by construction; saying so a second way would be two spellings
+			// for one behaviour.
+			problems.push({
+				definition: name,
+				message: `"${name}" sets a value, so it always applies to the result and "applies" is ignored. Clear it, or make this modifier add to the value instead.`,
+			});
+		}
+
 		if (bonusType !== '' && operator === 'override') {
 			// Ignored in the arithmetic rather than refused, because overrides do
 			// not contest by type: the highest wins whatever either was called.
@@ -236,6 +265,11 @@ export function parseModifierDefinitions(
 			operator,
 			amount,
 			...(bonusType !== '' ? { bonusType } : {}),
+			// Omitted for the value phase, so a layout gains a key only where it
+			// means something other than the default (PATTERNS §8).
+			...(applies === 'result' && operator !== 'override'
+				? { applies }
+				: {}),
 			...(when !== '' ? { when } : {}),
 			/*
 			 * The reader's own words for the value, wherever there are any.

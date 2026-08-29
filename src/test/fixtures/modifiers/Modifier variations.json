@@ -38,7 +38,8 @@
 					"name": "Charisma"
 				}
 			],
-			"derived": "floor((value - 10) / 2) + mod.self"
+			"derived": "floor((value + mod.self - 10) / 2)",
+			"effective": "value + mod.self"
 		},
 		{
 			"id": "armour_class",

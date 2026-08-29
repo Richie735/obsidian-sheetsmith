@@ -963,6 +963,26 @@
 	outline: none;
 }
 
+/* A pill reading a number nobody typed: a score with modifiers layered over it,
+   17 where 15 is stored. Accent on the number rather than a badge beside it —
+   it is still the value, one step removed, and a card set of six abilities
+   wants six quiet numbers rather than six markers competing with the derived
+   above them. The colour is a second channel and not the only one: the field
+   carries a title naming both numbers (docs/UI.md §6).
+
+   Written at three classes to match the rule above it, which sets
+   `--text-normal` at the same specificity and would otherwise win on order. */
+.sheetsmith-view .sheetsmith-card-has-derived .sheetsmith-card-input-effective {
+	color: var(--text-accent);
+}
+
+/* Focused, the field is the stored number again, so it reads as one. */
+.sheetsmith-view
+	.sheetsmith-card-has-derived
+	.sheetsmith-card-input-effective:focus {
+	color: var(--text-normal);
+}
+
 /* The menu in the pill, on the field's own three rules: the pill is what
    reacts, and a second rectangle inside it would be a second control. */
 .sheetsmith-view .sheetsmith-card-has-derived .sheetsmith-card-select {

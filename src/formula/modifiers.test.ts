@@ -234,6 +234,7 @@ describe('stackModifiers: the additive phase', () => {
 				operator: 'add',
 				type: 'item',
 				amount: 2,
+				applies: 'value',
 				suppressed: null,
 			},
 			{
@@ -243,6 +244,7 @@ describe('stackModifiers: the additive phase', () => {
 				operator: 'add',
 				type: 'item',
 				amount: 1,
+				applies: 'value',
 				suppressed: 'a larger item bonus applies',
 			},
 		]);
@@ -291,6 +293,7 @@ describe('stackModifiers: the override phase', () => {
 				operator: 'override',
 				type: null,
 				amount: 18,
+				applies: 'value',
 				suppressed: null,
 			},
 			{
@@ -300,6 +303,7 @@ describe('stackModifiers: the override phase', () => {
 				operator: 'override',
 				type: null,
 				amount: 13,
+				applies: 'value',
 				suppressed: 'a higher override applies',
 			},
 		]);
@@ -589,6 +593,7 @@ describe('buildModifierTable', () => {
 		expect(table('armour_class')).toEqual({
 			override: null,
 			total: 0,
+			resultTotal: 0,
 			lines: [],
 		});
 	});
@@ -598,6 +603,7 @@ describe('buildModifierTable', () => {
 		expect(table('speed')).toEqual({
 			override: null,
 			total: 0,
+			resultTotal: 0,
 			lines: [],
 		});
 	});
@@ -1324,5 +1330,103 @@ describe('sheetModifierInput', () => {
 		);
 		expect(input.definitions.map((d) => d.name)).toEqual(['Ring']);
 		expect([...input.accepting]).toEqual(['armour_class']);
+	});
+});
+
+/*
+ * **The two phases**, which is the whole of what a modifier's `applies` buys.
+ *
+ * One published name has one slot, and its formula decides where the slot's
+ * total goes — which is right for the layout and wrong for the character: on one
+ * ability card a belt raises the *score* and a blessing adds to the *check*, and
+ * `floor((value + mod.self - 10) / 2)` cannot be both. So the slot carries two
+ * totals and each modifier says which it joins.
+ */
+describe('stackModifiers: the two phases', () => {
+	/** `at`, with the phase the case is about. */
+	const phased = (
+		amount: number,
+		applies: 'value' | 'result',
+		type: string | null = null,
+		label = 'A row',
+	): Contributor => ({ ...at('x', amount, type, label), applies });
+
+	it('keeps the two totals apart', () => {
+		const result = stackModifiers([
+			phased(2, 'value', 'item', 'Belt'),
+			phased(1, 'result', 'item', 'Blessing'),
+		]);
+		if ('error' in result) throw new Error('expected a result');
+		// The belt raises the number behind the formula; the blessing lands on what
+		// the formula came to. Summed together they would be one number landing in
+		// one place, which is the shape this feature exists to break.
+		expect(result.total).toBe(2);
+		expect(result.resultTotal).toBe(1);
+	});
+
+	it('reads a modifier that says nothing as the value phase', () => {
+		// Every modifier written before phases existed says nothing, and all of them
+		// must go on meaning what `mod.self` has always meant.
+		const result = stackModifiers([at('x', 2, 'item'), at('x', 3)]);
+		if ('error' in result) throw new Error('expected a result');
+		expect(result.total).toBe(5);
+		expect(result.resultTotal).toBe(0);
+	});
+
+	it('contests a type within its phase and not across it', () => {
+		/*
+		 * The case that makes the phase key load-bearing rather than tidy. An item
+		 * bonus to a score and an item bonus to a check are two quantities sharing a
+		 * word. Contested together the smaller would be suppressed — and the
+		 * breakdown would tell a reader "a larger item bonus applies" while pointing
+		 * at a number that bonus never touched.
+		 */
+		const result = stackModifiers([
+			phased(2, 'value', 'item', 'Belt'),
+			phased(1, 'result', 'item', 'Bracers'),
+		]);
+		if ('error' in result) throw new Error('expected a result');
+		expect(result.total).toBe(2);
+		expect(result.resultTotal).toBe(1);
+		expect(result.lines.map((one) => one.suppressed)).toEqual([null, null]);
+	});
+
+	it('still suppresses within one phase', () => {
+		// The other half of the same rule: two item bonuses landing in the same
+		// place contest exactly as they always did.
+		const result = stackModifiers([
+			phased(2, 'result', 'item', 'Belt'),
+			phased(1, 'result', 'item', 'Gauntlets'),
+		]);
+		if ('error' in result) throw new Error('expected a result');
+		expect(result.resultTotal).toBe(2);
+		expect(result.lines.map((one) => one.suppressed)).toEqual([
+			null,
+			'a larger item bonus applies',
+		]);
+	});
+
+	it('carries the phase onto every line, so a breakdown can say so', () => {
+		const result = stackModifiers([
+			phased(2, 'value', null, 'Belt'),
+			phased(1, 'result', null, 'Blessing'),
+		]);
+		if ('error' in result) throw new Error('expected a result');
+		expect(result.lines.map((one) => one.applies)).toEqual(['value', 'result']);
+	});
+
+	it('reports an override in the value phase, whatever it stored', () => {
+		/*
+		 * An override replaces the published number, which *is* the result phase —
+		 * so it needs no second spelling, and a line saying one would be a second
+		 * answer to a question "sets to 18" has already settled.
+		 */
+		const result = stackModifiers([
+			{ ...at('x', 18, null, 'Plate', 'override'), applies: 'result' },
+		]);
+		if ('error' in result) throw new Error('expected a result');
+		expect(result.override).toBe(18);
+		expect(result.resultTotal).toBe(0);
+		expect(result.lines[0]?.applies).toBe('value');
 	});
 });
