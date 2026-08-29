@@ -27,12 +27,7 @@ import {
 	makeFieldResolver,
 	resolveFormulaFields,
 } from '../src/formula/resolve';
-import { modifierTargetSource } from '../src/formula/modifier-targets';
-import {
-	buildSheetEnv,
-	publishedComponent,
-	sheetModifiers,
-} from '../src/formula/sheet';
+import { buildSheet } from '../src/formula/sheet';
 import { Layout } from '../src/parse/layout';
 import { walkComponents } from '../src/parse/layout-walk';
 import {
@@ -42,13 +37,21 @@ import {
 	LinkContext,
 	ModifierContext,
 } from '../src/types';
+import { nameAlreadyDeclared } from '../src/layouts';
+import { dropDetachedAnchoredPanel } from '../src/ui/anchored-panel';
 import { renderGrid } from '../src/view/grid-cells';
 import { renderEditorPane } from './editor-pane';
-import { brokenSamples, emptySamples, Sample, SAMPLES } from './samples';
+import {
+	brokenSamples,
+	emptySamples,
+	Sample,
+	SAMPLES,
+	unmodifiedSamples,
+} from './samples';
 import { renderSettings } from './settings-panel';
 import { harnessLayout } from './stub-app';
 
-type StateName = 'populated' | 'empty' | 'broken';
+type StateName = 'populated' | 'empty' | 'unmodified' | 'broken';
 type Surface = 'sheet' | 'editor' | 'settings' | 'both';
 
 interface Live {
@@ -70,6 +73,7 @@ let live: Live[] = [];
 
 function samplesFor(name: StateName): Sample[] {
 	if (name === 'empty') return emptySamples();
+	if (name === 'unmodified') return unmodifiedSamples();
 	if (name === 'broken') return brokenSamples();
 	return SAMPLES;
 }
@@ -138,21 +142,41 @@ function sheetEnv(entries: Live[]): {
 	env: FormulaEnv;
 	modifiers: ModifierContext;
 } {
-	// The layout's own arithmetic, which the harness sheet has needed since a
-	// card could read a function the settings pane is editing.
-	const published = entries.map(publishedComponent);
-	const env = buildSheetEnv(published, parseFunctions(layout.functions).library);
-	// Through the same builder the view uses, for the same reason the list above
-	// goes through `publishedComponent`: an instrument that reported modifiers
-	// differently would sign off on marks the plugin never draws. The sources are
-	// the shared static assembly, which is where the "no data" decision is taken.
-	return {
-		env,
-		modifiers: sheetModifiers(
-			entries.map((entry) => modifierTargetSource(entry.config, entry.component)),
-			env,
-		),
-	};
+	// **Through the view's own `buildSheet`, not a copy of its steps.** That is
+	// this function's whole reason, one layer up from `publishedComponent`: an
+	// instrument that wired modifiers differently from the plugin would sign off
+	// on marks the plugin never draws — and a copy of the sequence is exactly what
+	// it was, until three separate mutations of it were measured to leave the
+	// suite green. The layout's own arithmetic goes in beside it, which the
+	// harness sheet has needed since a card could read a function the settings
+	// pane is editing.
+	return buildSheet(
+		layout,
+		entries,
+		parseFunctions(layout.functions).library,
+		/*
+		 * §8's layout write, faked the only way it can be here: there is no vault,
+		 * so the definition is appended to the layout this module holds and the sheet
+		 * is redrawn. That is enough for the surface — the promote row, its refusals
+		 * and the row converting to a reference are all reviewable — and it is the
+		 * same *order* the view uses, the layout first and the cell only on success,
+		 * because the form is what enforces that and the form is the real one.
+		 */
+		(name, effect) => {
+			const held = layout.modifiers ?? [];
+			if (held.some((one) => (one.name ?? '').trim() === name)) {
+				// The plugin's own sentence, imported rather than copied: an instrument
+				// showing a refusal the plugin does not give is the same class of bug
+				// the host scan one file over exists to prevent.
+				return Promise.resolve({ error: nameAlreadyDeclared(name) });
+			}
+			// The effect whole, exactly as the view hands it over: a `TypedEffect` is a
+			// `ModifierDefinition` minus its name, so spelling the five fields here
+			// would be a second place to drop a member the contract added.
+			layout.modifiers = [...held, { name, ...effect }];
+			return Promise.resolve({ ok: true as const });
+		},
+	);
 }
 
 /**
@@ -334,6 +358,14 @@ function renderSheet(into: HTMLElement): void {
 		},
 	);
 
+
+	/*
+	 * The view's own last step: a modifier form the render before this one left
+	 * open has been handed to the cell it belongs to during the walk above, and one
+	 * that nothing claimed goes rather than floating over a sheet it has nothing to
+	 * do with.
+	 */
+	dropDetachedAnchoredPanel();
 
 	// Always present, so a link gesture has somewhere to write without a rebuild.
 	linkLog = document.createElement('p');
@@ -599,7 +631,11 @@ function applyQuery(): void {
 	press('text', text);
 
 	const wanted = params.get('state');
-	loadState(wanted === 'empty' || wanted === 'broken' ? wanted : 'populated');
+	loadState(
+		wanted === 'empty' || wanted === 'unmodified' || wanted === 'broken'
+			? wanted
+			: 'populated',
+	);
 	press('state', state);
 
 	const pane = params.get('surface');
@@ -615,7 +651,28 @@ function applyQuery(): void {
 		document.querySelector<HTMLElement>(focus)?.focus();
 	};
 
-	const pressed = params.get('press');
+	/*
+	 * **`&bar=off` drops the harness's own toolbar**, for a shot whose subject is a
+	 * floating surface anchored near the top of the page.
+	 *
+	 * The bar is sticky chrome the app does not have, and `showPopover` places a
+	 * bubble above its anchor wherever `box.top - height - 8 >= 0` — measured against
+	 * the *viewport*, which knows nothing about a toolbar sitting in the first 85px.
+	 * Armour class is the only card on this sheet whose breakdown draws on two
+	 * components, so it is the only one that can show the qualified form, and at nine
+	 * contributors its bubble opens at y=76 under a bar whose bottom is 85: nine
+	 * pixels of the first contributor's ascenders, sliced.
+	 *
+	 * Dropping the bar rather than moving the card, because there is no lower card
+	 * with two sources; rather than padding the stage, which would shift every sheet
+	 * shot by 85px to fix one; and rather than teaching `placeAnchored` about a bar,
+	 * which is production code that would then carry the instrument's artefact.
+	 */
+	if (params.get('bar') === 'off') {
+		document.querySelector('.harness-bar')?.remove();
+	}
+
+	const pressed = params.getAll('press');
 	/**
 	 * Press one element once the surface has drawn, so a still can capture what a
 	 * press reveals.
@@ -642,8 +699,18 @@ function applyQuery(): void {
 	 * survives to be captured.
 	 */
 	const pressWanted = () => {
-		if (pressed === null) return;
-		document.querySelector<HTMLElement>(pressed)?.click();
+		/*
+		 * **Several, in order**, because the form this now opens has a second
+		 * disclosure inside it: the panel opens with its list, and a press on a line
+		 * opens that part's own six fields. One press could photograph the list or
+		 * nothing, and `docs/UI.md` §11's whole argument is against reviewing a
+		 * surface by reading its code. Each press runs against the DOM the one
+		 * before it left, which is what makes a second selector able to name
+		 * something only the first press drew.
+		 */
+		for (const selector of pressed) {
+			document.querySelector<HTMLElement>(selector)?.click();
+		}
 	};
 
 	void ensureSurface().then(() => {

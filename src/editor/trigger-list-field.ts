@@ -55,7 +55,15 @@ function spec(layout: Layout): LineListSpec {
 				...layout,
 				triggers: [...names],
 			});
-			return { usable, problems };
+			// A binding's problem belongs to a component; the shared field names
+			// the member for the job rather than for either producer.
+			return {
+				usable,
+				problems: problems.map(({ message, component }) => ({
+					message,
+					...(component !== undefined ? { locator: component } : {}),
+				})),
+			};
 		},
 	};
 }

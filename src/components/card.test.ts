@@ -1,7 +1,12 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { card, CardConfig, CardOption } from './card';
-import { FieldValue, RenderContext } from '../types';
+import {
+	FieldValue,
+	ModifierBreakdown,
+	ModifierOutcome,
+	RenderContext,
+} from '../types';
 
 const config: CardConfig = {
 	id: 'armour-class',
@@ -979,6 +984,41 @@ describe('card palette', () => {
  * publishing component is the only thing that catches it, so this one is
  * load-bearing rather than routine.
  */
+/**
+ * What a modifier cell's outcome is where a case is not about one.
+ *
+ * A Card never asks for one — `outcome` is the modifier *cell's* question — so a
+ * stub context needs a member it can hand back and nothing more.
+ */
+const NO_OUTCOME: ModifierOutcome = {
+	definition: null,
+	typed: null,
+	target: '',
+	targetLabel: '',
+	applies: false,
+	amount: null,
+	condition: null,
+	suppressed: null,
+};
+
+/**
+ * The three members a Card never reaches, so a stub context can declare them
+ * once.
+ *
+ * `targets`, `published` and `bonusTypes` are the form's option lists and
+ * `promote` is §8's layout write: all four are the modifier *cell's* business,
+ * and a Card is the thing being modified rather than the thing modifying.
+ */
+const NO_AUTHORING = {
+	targets: [],
+	published: [],
+	bonusTypes: [],
+	promote: () =>
+		Promise.resolve({
+			error: 'This sheet cannot save a modifier to its layout.',
+		}),
+};
+
 describe('card and its modifier slot', () => {
 	/** A resolver that only answers when told which name it is producing. */
 	const slotAware = vi.fn(
@@ -1029,21 +1069,27 @@ describe('card and its modifier slot', () => {
 	it('marks the number and puts the breakdown one press away', () => {
 		const el = render({ derived: 'value + mod.self' }, { value: '15' }, {
 			modifiers: {
-				publishes: () => true,
-				targets: [{ name: 'armour-class', label: 'Armour class' }],
+				definitions: [],
+				...NO_AUTHORING,
+				outcome: () => NO_OUTCOME,
 				breakdown: () => ({
+					override: null,
 					total: 2,
 					lines: [
 						{
-							label: 'Ring of Protection',
+									label: 'Ring of Protection',
 							source: 'Magic items',
+							definition: 'Ring of Protection',
+							operator: 'add',
 							type: 'item',
 							amount: 2,
 							suppressed: null,
 						},
 						{
-							label: 'Cloak',
+									label: 'Cloak',
 							source: 'Magic items',
+							definition: 'Cloak',
+							operator: 'add',
 							type: 'item',
 							amount: 1,
 							suppressed: 'a larger item bonus applies',
@@ -1070,14 +1116,18 @@ describe('card and its modifier slot', () => {
 		// One builder, two carriers, so the two cannot say different things.
 		const el = render({ derived: 'value + mod.self' }, { value: '15' }, {
 			modifiers: {
-				publishes: () => true,
-				targets: [],
+				definitions: [],
+				...NO_AUTHORING,
+				outcome: () => NO_OUTCOME,
 				breakdown: () => ({
+					override: null,
 					total: 2,
 					lines: [
 						{
-							label: 'Ring',
+									label: 'Ring',
 							source: 'Magic items',
+							definition: 'Ring',
+							operator: 'add',
 							type: null,
 							amount: 2,
 							suppressed: null,
@@ -1093,14 +1143,108 @@ describe('card and its modifier slot', () => {
 		).toBe(twin.id);
 	});
 
+	/*
+	 * That the face and its own breakdown's total line cannot disagree.
+	 *
+	 * Two predicates answer "does this override reach this name": a lazy-proof text
+	 * scan decides whether a breakdown is offered at all, and the slot actually
+	 * having been read decides whether the arithmetic applies. Both are right —
+	 * `modifier-targets.ts` argues the first at length and `resolve.ts` argues the
+	 * second — and while the popover did its own `override + total` they printed
+	 * `Total 19` over the number 10.
+	 *
+	 * Driven over the two shapes that reach it, because neither is exotic: a lazy
+	 * `if` on a stowed item, and a name that reaches the accepting set through some
+	 * *other* formula's `mod.<name>` while an override only ever arrives via
+	 * `mod.self` — which needs no `if` at all and is offered by the editor's own
+	 * target picker.
+	 */
+	describe('the face and its breakdown agree about the value', () => {
+		/*
+		 * **One of three drawers, and the other two now hold the same rule.**
+		 * `modifierBreakdown`'s `shown` argument is passed by Card, Card set and
+		 * Table, and this pair was the only thing holding it — so dropping the
+		 * argument in either of the other two passed the whole suite. The
+		 * equivalents are 'prints the entry's own number in the total line, under
+		 * an override' in `card-set.test.ts` and 'prints the cell's own number in
+		 * the total line, under an override' in `table.test.ts`. Three cases rather
+		 * than one parameterised over three components, because a component's rules
+		 * live in its own test file and a test importing three of them would be the
+		 * sibling coupling `contract.test.ts` is the one exception to.
+		 */
+		/** The lines an override plus an addition produce at one name. */
+		const OVERRIDDEN: ModifierBreakdown = {
+			override: 18,
+			total: 1,
+			lines: [
+				{
+					label: 'Plate armour',
+					source: 'Magic items',
+					definition: 'Plate armour',
+					operator: 'override',
+					type: null,
+					amount: 18,
+					suppressed: null,
+				},
+				{
+					label: 'Ring',
+					source: 'Magic items',
+					definition: 'Ring',
+					operator: 'add',
+					type: 'item',
+					amount: 1,
+					suppressed: null,
+				},
+			],
+		};
+
+		/** The face, and the total line of its own popover. */
+		function drawn(resolved: number) {
+			const el = render({ derived: 'anything' }, { value: '15' }, {
+				resolveField: () => resolved,
+				modifiers: {
+					definitions: [],
+					...NO_AUTHORING,
+					outcome: () => NO_OUTCOME,
+					breakdown: () => OVERRIDDEN,
+				},
+			});
+			const twin = el.querySelector('.sheetsmith-sr-only[id]');
+			return {
+				face: el.querySelector('.sheetsmith-card-derived')?.textContent ?? '',
+				total: (twin?.textContent ?? '').split('\n').at(-1) ?? '',
+			};
+		}
+
+		it('prints the number the card drew, where the override applied', () => {
+			// The ordinary case: `resolve.ts` returned `override + total`, so the
+			// two agree because they are the same number rather than because two
+			// sums happened to match.
+			const { face, total } = drawn(19);
+			expect(face).toBe('+19');
+			expect(total).toBe('Total 19');
+		});
+
+		it('prints the number the card drew, where the override did not apply', () => {
+			// The finding. The card's formula never read its slot on the path it
+			// took, so the override is inert and the face is 10 — and the total line
+			// used to say 19, which is a false statement about the number under the
+			// cursor rather than a confusing delta.
+			const { face, total } = drawn(10);
+			expect(face).toBe('+10');
+			expect(total).toBe('Total 10');
+		});
+	});
+
 	it('draws no mark where nothing has been pushed', () => {
 		// The empty state of every new character: a sheet full of marks for
 		// modifiers that do not exist is worse than a quiet one.
 		const el = render({ derived: 'value + mod.self' }, { value: '15' }, {
 			modifiers: {
-				publishes: () => true,
-				targets: [],
-				breakdown: () => ({ total: 0, lines: [] }),
+				definitions: [],
+				...NO_AUTHORING,
+				outcome: () => NO_OUTCOME,
+				breakdown: () => ({ override: null, total: 0, lines: [] }),
 			},
 		});
 		expect(
@@ -1121,14 +1265,18 @@ describe('card and its modifier slot', () => {
 		 */
 		const el = render({ derived: 'value + mod.self' }, { value: '15' }, {
 			modifiers: {
-				publishes: () => true,
-				targets: [],
+				definitions: [],
+				...NO_AUTHORING,
+				outcome: () => NO_OUTCOME,
 				breakdown: () => ({
+					override: null,
 					total: 2,
 					lines: [
 						{
-							label: 'Ring',
+									label: 'Ring',
 							source: 'Magic items',
+							definition: 'Ring',
+							operator: 'add',
 							type: null,
 							amount: 2,
 							suppressed: null,

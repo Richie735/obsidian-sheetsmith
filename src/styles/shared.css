@@ -109,3 +109,386 @@
 .sheetsmith-affected + .setting-item {
 	margin-top: var(--size-4-3);
 }
+
+/* ------------------------------------------------------------------------ *
+ * The anchored panel (`ui/anchored-panel.ts`).
+ *
+ * **The popover's kind grown a body, so it wears the popover's clothes.** Every
+ * box property below is `.sheetsmith-popover`'s, deliberately: `docs/UI.md` §9
+ * blesses one transient surface anchored to the control that opened it, and two
+ * floating surfaces on one sheet that did not read as the same kind of thing would
+ * be the fourth kind of panel §9 opens against. What differs is only what a body
+ * needs and a block of text does not — it takes pointer events, it caps its height
+ * and scrolls, and it lays controls out.
+ *
+ * **The panel is its own scope, and that is the correction.** Both this and the
+ * popover are attached to `document.body`, because the table they belong to scrolls
+ * inside an overflow box that would clip them — so nothing inside either is under
+ * `.sheetsmith-view` at any time and §2's selector would simply never match. What
+ * was taken from that is that a single class is enough here, and it is not:
+ * **§2's number is (0,1,1), not (0,0,1)**. Obsidian styles `input[type='text']` and
+ * `button:not(.clickable-icon)` at (0,1,1) — the `:not()` argument counts — so a
+ * bare `.sheetsmith-panel-line` at (0,1,0) *loses*, and every declaration taking
+ * chrome off this panel's controls was being dropped with no warning. Only `select`
+ * is the (0,0,1) the old reading assumed, which is why the selects looked right and
+ * the inputs and the buttons did not: one column, two heights, and list lines drawn
+ * as raised buttons clamped to `--input-height` with their reason lines overflowing
+ * the line below.
+ *
+ * So every rule whose subject is a control in here carries `.sheetsmith-panel` in
+ * front of it, at (0,2,0). That is the same move `.sheetsmith-view` makes for the
+ * same reason, against the same rules, on the one surface that cannot use it —
+ * `styles.test.ts` holds it, and it is the check that has to be about specificity
+ * rather than about a class being present anywhere in the selector.
+ *
+ * What the controls then keep is the app's, deliberately: the selects take
+ * Obsidian's own `dropdown`, and the four action buttons take its button chrome
+ * whole (§1). What the scope buys back is the two places this plugin *is* the
+ * author — a list line, which is a button with no button in it, and a read-only
+ * field, which has to stop looking like a control.
+ * ------------------------------------------------------------------------ */
+.sheetsmith-panel {
+	position: fixed;
+	z-index: var(--layer-popover, 30);
+	display: flex;
+	flex-direction: column;
+	/* Wide enough for a labelled control and a resolved definition's own words on
+	   one line, and clamped to the viewport minus a gutter below that — which is
+	   the phone regime, read rather than seen: nothing below a 500px viewport has
+	   ever been photographed (`docs/UI.md` §12). */
+	width: min(30em, calc(100vw - 2 * var(--size-4-4)));
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background-color: var(--background-secondary);
+	box-shadow: 0 2px 12px var(--background-modifier-box-shadow);
+	font-size: var(--font-ui-small);
+	color: var(--text-normal);
+	/* The cap is on the box and the scroll is on the body, one element in, so the
+	   panel's own edge stays put while its contents move. Deliberately **not**
+	   `.sheetsmith-list-scroll`, whose `20em` cap is a layout-editor list's and
+	   whose purpose SPEC §13 still asks about.
+
+	   **In px, because the em was measured against a number the em did not mean.**
+	   The rule sets its own `font-size: var(--font-ui-small)`, and `em` outside
+	   `font-size` resolves against the element's *own* computed size — so `34em`
+	   here is 13px x 34 = **442px**, not the "about 500px" the comment reasoned
+	   from. Nobody could have caught that by reading, because the surface it caps
+	   had never been photographed with the host's own control chrome on it: the
+	   panel measured 441px against a 442px cap and looked like a fit by a hair,
+	   while every text field in it was 8px short of the height Obsidian gives one.
+
+	   **The number is a measurement of the tallest ordinary state**, taken from
+	   `sheet-modifier-form-light` once that shot was true: a heading, two list lines
+	   each with a reason under it, six labelled fields with **Modifier** stacked over
+	   its own, the promote row and **Remove** comes to **479px** with the app's
+	   `--input-height: 30px` on all six controls. 500 is that with a little headroom.
+	   The `100vh` term is what keeps a short viewport from being overrun instead, and
+	   a row with three parts and one of them open still scrolls — the honest cost of
+	   the largest surface this plugin draws on a sheet.
+
+	   The other four states measure well under it: 437 with a repeated name, 350 on
+	   an empty cell, 325 on a named part. **Re-measure rather than adjusting by eye**
+	   — open the harness at `sheet-modifier-form-light` and read the body's
+	   `scrollHeight`; a cap one pixel over the content is what the `em` left behind
+	   and it looks exactly like a fit. */
+	max-height: min(500px, calc(100vh - 2 * var(--size-4-4)));
+	overflow: hidden;
+}
+
+.sheetsmith-panel-body {
+	padding: var(--size-2-3) var(--size-4-2) var(--size-4-2);
+	overflow-y: auto;
+}
+
+/* The rank the menu's section heading used to carry, kept: muted, one step down,
+   and weight rather than the sheet's uppercase rank — `styles.test.ts` pins that
+   to `.sheetsmith-component-label` as one declaration, and a panel heading is not
+   a component's name. */
+.sheetsmith-panel-heading {
+	margin-bottom: var(--size-2-2);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-semibold);
+}
+
+.sheetsmith-panel-empty {
+	margin: 0 0 var(--size-2-3);
+	color: var(--text-muted);
+}
+
+/* One line per part, and the whole line is the control: a press opens it.
+
+   **Everything Obsidian's `button` gives it has to come off, and three of the
+   declarations doing that were being discarded.** `button:not(.clickable-icon)`
+   is (0,1,1), so the fill and the shadow came back and the line drew as a raised
+   control in a list of them; `button` itself sets `height: var(--input-height)`
+   and `white-space: nowrap`, so a line with a reason under it was clamped to 30px
+   and its second line struck through the line below, and nothing here wrapped.
+   The scope is what makes the resets land, and `height`/`white-space` are the two
+   that were never written because the harness never showed them. */
+.sheetsmith-panel .sheetsmith-panel-line {
+	display: flex;
+	align-items: flex-start;
+	justify-content: flex-start;
+	gap: var(--size-4-2);
+	width: 100%;
+	height: auto;
+	padding: var(--size-2-2) var(--size-2-3);
+	border: none;
+	border-radius: var(--radius-s);
+	background-color: transparent;
+	box-shadow: none;
+	font-size: inherit;
+	font-weight: inherit;
+	color: inherit;
+	text-align: left;
+	white-space: normal;
+	cursor: pointer;
+}
+
+.sheetsmith-panel .sheetsmith-panel-line:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+/* An outline rather than a ring, because it is the one mark that survives
+   forced-colors mode where a `box-shadow` is discarded (§6). */
+.sheetsmith-panel .sheetsmith-panel-line:focus-visible,
+.sheetsmith-panel .sheetsmith-panel-add:focus-visible,
+.sheetsmith-panel .sheetsmith-panel-remove:focus-visible,
+.sheetsmith-panel .sheetsmith-panel-save:focus-visible,
+.sheetsmith-panel .sheetsmith-panel-confirm:focus-visible,
+.sheetsmith-panel .sheetsmith-panel-cancel:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 1px;
+	/* Obsidian's own `button:focus-visible` swaps the resting shadow for a 3px
+	   ring, so without this the four buttons that keep the app's chrome carry two
+	   focus marks at once — §6's "one focus treatment per component", broken only
+	   where the app is co-author. The outline is the one that stays, because it is
+	   the one forced-colors mode does not discard; `none` rather than restoring
+	   `--input-shadow`, so the mark reads the same on all six. */
+	box-shadow: none;
+}
+
+/* The icon column is a fixed width whether or not the glyph is a bolt, so the
+   words line up down the list — which is what makes the *shape* readable as a
+   state rather than as a shift in the text. */
+.sheetsmith-panel-glyph {
+	display: flex;
+	flex: 0 0 auto;
+	align-items: center;
+	height: calc(var(--font-ui-small) * 1.5);
+	color: var(--text-muted);
+}
+
+.sheetsmith-panel-glyph .svg-icon {
+	width: var(--icon-s);
+	height: var(--icon-s);
+}
+
+.sheetsmith-panel-line-words {
+	display: flex;
+	flex: 1 1 auto;
+	flex-direction: column;
+	min-width: 0;
+}
+
+.sheetsmith-panel-said {
+	line-height: 1.4;
+	overflow-wrap: anywhere;
+}
+
+/* A quiet, subordinate line under the entry it belongs to, which is exactly what
+   the editor's `.sheetsmith-field-problems` is at that surface. Indented nowhere,
+   because the glyph column already carries the attachment here. */
+.sheetsmith-panel-why {
+	margin: 0;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	line-height: 1.4;
+	overflow-wrap: anywhere;
+}
+
+/* A refusal, in the shared error colour rather than one of this plugin's. It is
+   `--text-error` at 4.20:1 in the light theme, which is a host pair the plugin
+   does not own and `docs/UI.md` §12 holds. */
+.sheetsmith-panel-problem {
+	margin: var(--size-2-2) 0 0;
+	color: var(--text-error);
+	font-size: var(--font-ui-smaller);
+	overflow-wrap: anywhere;
+}
+
+/* The open part's fields, disclosed in place under the line the reader chose. The
+   left inset lines them up under the words rather than under the glyph, so the
+   line above reads as what they belong to. */
+.sheetsmith-panel-fields {
+	display: flex;
+	flex-direction: column;
+	gap: var(--size-2-2);
+	padding: var(--size-2-2) var(--size-2-3) var(--size-4-2)
+		calc(var(--size-2-3) + var(--icon-s) + var(--size-4-2));
+}
+
+.sheetsmith-panel-field {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+}
+
+/* **Modifier**, and only it: label above, control across the panel. Its options
+   are whole resolved sentences and the label column left about two-thirds of one,
+   so it clipped mid-word under the chevron on every named part. Stacking buys the
+   6.5em column plus the gap back — enough for the sample layout's longest, with
+   `text-overflow` still there for a layout whose names are longer. */
+.sheetsmith-panel-field-wide {
+	flex-direction: column;
+	align-items: stretch;
+	gap: var(--size-2-1);
+}
+
+.sheetsmith-panel-field-wide .sheetsmith-panel-field-label {
+	width: auto;
+}
+
+/* A fixed label column, so six labels of different lengths do not step their
+   controls in and out down the form. */
+.sheetsmith-panel-field-label {
+	flex: 0 0 auto;
+	width: 6.5em;
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.sheetsmith-panel .sheetsmith-panel-select,
+.sheetsmith-panel .sheetsmith-panel-input {
+	flex: 1 1 auto;
+	min-width: 0;
+	max-width: 100%;
+	font-size: var(--font-ui-small);
+	/* A name longer than the box degrades to an ellipsis rather than to a hard cut
+	   mid-word, which is `docs/UI.md` §12's stat-note row applied before it is
+	   reported: a value that stops has to look truncated and not damaged. */
+	text-overflow: ellipsis;
+}
+
+/* Read-only, because this part names one of the layout's own modifiers and one
+   edit there moves every character using it.
+
+   **The box comes off, and that is the second channel.** It was `opacity: 0.75`
+   and nothing else, which `legibility.md` §2 names outright as the thing that
+   cannot carry a state: a fill at a different strength is one channel, and
+   measured against the panel behind them the enabled and quieted fills were three
+   values apart. Four controls that look like the fifth, and the only real signal
+   was the sentence underneath — which a reader reaches *after* trying to change
+   something.
+
+   So a read-only field stops being a box: no border, no fill, no shadow, no
+   chevron, and the value sits at the label's own left edge as text. That is a
+   shape difference and it holds with no colour at all, which is also what makes
+   it survive forced-colors mode. Full opacity back, because there is no longer a
+   control to quieten — the values are what the reader opened the form to read,
+   and §3's 4.5:1 is easier to hold at 1 than at 0.75. */
+.sheetsmith-panel .sheetsmith-panel-select:disabled,
+.sheetsmith-panel .sheetsmith-panel-input:read-only {
+	opacity: 1;
+	padding-left: 0;
+	border: none;
+	background: none;
+	box-shadow: none;
+	color: var(--text-normal);
+}
+
+.sheetsmith-panel .sheetsmith-panel-add {
+	display: flex;
+	align-items: center;
+	justify-content: flex-start;
+	gap: var(--size-4-2);
+	width: 100%;
+	height: auto;
+	padding: var(--size-2-2) var(--size-2-3);
+	border: none;
+	border-radius: var(--radius-s);
+	background-color: transparent;
+	box-shadow: none;
+	font-size: inherit;
+	font-weight: inherit;
+	color: var(--text-muted);
+	text-align: left;
+	white-space: normal;
+	cursor: pointer;
+}
+
+.sheetsmith-panel .sheetsmith-panel-add:hover {
+	background-color: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+/* A rule above the promote row, because it is a different question from the five
+   fields over it: those say what this row does, and this says whether the layout
+   should learn it. */
+.sheetsmith-panel-promote {
+	margin-top: var(--size-2-2);
+	padding-top: var(--size-4-2);
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+.sheetsmith-panel-promote-row {
+	display: flex;
+	align-items: center;
+	gap: var(--size-4-2);
+}
+
+.sheetsmith-panel .sheetsmith-panel-promote-row .sheetsmith-panel-input {
+	flex: 1 1 auto;
+}
+
+.sheetsmith-panel .sheetsmith-panel-save,
+.sheetsmith-panel .sheetsmith-panel-confirm,
+.sheetsmith-panel .sheetsmith-panel-cancel {
+	flex: 0 0 auto;
+	font-size: var(--font-ui-smaller);
+	white-space: nowrap;
+	cursor: pointer;
+}
+
+/* The tier change waiting on its second gesture: the select's own change wrote
+   nothing, and this is what does. Boxed, so the sentence and the button read as
+   one question rather than as two more fields. */
+.sheetsmith-panel-pending {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: var(--size-2-2);
+	padding: var(--size-2-2) var(--size-2-3);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+}
+
+.sheetsmith-panel-pending .sheetsmith-panel-confirm + .sheetsmith-panel-cancel {
+	margin-top: 0;
+}
+
+/* Arm, then commit — the sheet's own destructive gesture, borrowed from
+   `.sheetsmith-table-remove-button` rather than invented. The armed state is the
+   error tint mixed most of the way back to the page, exactly as a row about to be
+   deleted is: the control still has to be read. */
+.sheetsmith-panel .sheetsmith-panel-remove {
+	align-self: flex-start;
+	margin-top: var(--size-2-2);
+	font-size: var(--font-ui-smaller);
+	cursor: pointer;
+}
+
+/* The armed fill has to beat `button:not(.clickable-icon)`'s `--interactive-normal`
+   at (0,1,1), which is the one declaration in this block whose loss would be
+   invisible in a review and total in the app: the arming tint is the whole of the
+   mark, so an unscoped rule here means pressing **Remove** changes nothing a reader
+   can see and the second press deletes the part anyway. */
+.sheetsmith-panel .sheetsmith-panel-remove-armed {
+	background-color: color-mix(
+		in srgb,
+		var(--text-error) 25%,
+		var(--background-primary)
+	);
+	color: var(--text-error);
+}

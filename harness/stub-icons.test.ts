@@ -40,17 +40,29 @@ function requested(): string[] {
 			}
 			if (!entry.name.endsWith('.ts') || entry.name.includes('.test.')) continue;
 			const source = readFileSync(at, 'utf8');
-			// `setIcon(el, 'name')` and Obsidian's `.setIcon('name')` builder,
-			// which is the spelling every Setting row uses.
-			for (const match of source.matchAll(/setIcon\(\s*(?:[\w.]+,\s*)?'([a-z0-9-]+)'/g)) {
-				found.add(match[1] as string);
-			}
-			// The ternary form, `open ? 'chevron-down' : 'chevron-right'`, which
-			// the loop above only catches the first arm of.
-			for (const match of source.matchAll(
-				/setIcon\(\s*[\w.?:'\s-]*?'([a-z0-9-]+)'\s*\)/g,
-			)) {
-				found.add(match[1] as string);
+			/*
+			 * Every quoted kebab-case string inside a `setIcon(...)` call, and
+			 * Obsidian's `.setIcon('name')` builder, which is the spelling every
+			 * Setting row uses.
+			 *
+			 * **One pattern over the call's whole argument list, where there were
+			 * two over its shapes**, and that is a correction rather than a tidy-up.
+			 * The pair before it read `setIcon(el, 'name')` and a bare ternary
+			 * `open ? 'a' : 'b'`, and between them they matched **neither arm** of
+			 * `setIcon(el, applies ? 'zap' : 'zap-off')` — the first stopped at the
+			 * `?` and the second's character class excluded the comma. So the
+			 * modifier cell's two glyphs were invisible to a check whose whole job
+			 * is to notice a glyph the stub cannot draw, and the case above is what
+			 * says the scan is still matching anything at all.
+			 *
+			 * No `)` inside a `setIcon` call in this repository, and a stray match
+			 * costs a missing-icon report rather than a silent pass — which is the
+			 * safe direction for this check to be wrong in.
+			 */
+			for (const call of source.matchAll(/\.?setIcon\(([^)]*)\)/g)) {
+				for (const match of (call[1] ?? '').matchAll(/'([a-z0-9-]+)'/g)) {
+					found.add(match[1] as string);
+				}
 			}
 		}
 	};
@@ -66,6 +78,12 @@ describe('the stub can draw every icon the plugin asks for', () => {
 		const names = requested();
 		expect(names.length).toBeGreaterThan(4);
 		expect(names).toContain('trash');
+		// Every arm of a nested ternary, which is the spelling the pair of patterns
+		// this scan replaced caught none of — and the modifier cell now has three
+		// states in one call, so all three arms are the case.
+		expect(names).toContain('plus');
+		expect(names).toContain('zap');
+		expect(names).toContain('zap-off');
 	});
 
 	it('draws each one as an svg rather than as its own name', () => {

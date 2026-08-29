@@ -20,7 +20,7 @@ import {
 	makeFieldExplainer,
 	makeFieldResolver,
 } from '../formula/resolve';
-import { buildSheetEnv, publishedComponent } from '../formula/sheet';
+import { buildSheet } from '../formula/sheet';
 import { applySectionWrites, getSection, parseCharacter } from '../parse/character';
 import { parseLayout } from '../parse/layout';
 import { walkComponents } from '../parse/layout-walk';
@@ -166,7 +166,14 @@ function applyTrigger(
 		};
 	});
 
-	const env: FormulaEnv = buildSheetEnv(prepared.map(publishedComponent), library);
+	/*
+	 * **Through the view's own `buildSheet`, not the steps it is made of.** This
+	 * file declares itself a mirror of the view's walk, and it was spelling two of
+	 * those steps with no modifier input — so a reset whose formula read `mod.self`
+	 * would have resolved against nothing here and asserted the view's arithmetic
+	 * while staying green. `sheet.test.ts`'s host scan now names this file.
+	 */
+	const { env }: { env: FormulaEnv } = buildSheet(layout, prepared, library);
 
 	/*
 	 * What the trigger reaches, which is `SheetView.renderTriggers`' filter: a

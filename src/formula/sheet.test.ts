@@ -12,10 +12,15 @@ import {
 	buildSheetEnv,
 	buildSheetScope,
 	PublishedComponent,
+	sheetModifierInput,
 	sheetModifiers,
 } from './sheet';
 import { ModifierTargetSource } from './modifier-targets';
-import { ComponentConfig, FieldValue } from '../types';
+import {
+	ComponentConfig,
+	FieldValue,
+	ModifierDefinitionView,
+} from '../types';
 
 /** A card set with the 5e modifier formula on every entry. */
 const abilities: PublishedComponent = {
@@ -559,7 +564,26 @@ function source(over: Partial<ModifierTargetSource>): ModifierTargetSource {
 }
 
 describe('sheetModifiers', () => {
-	/** A card reading its own slot, and a component pushing at it. */
+	/** The two definitions every case here shares. */
+	const DEFINITIONS: readonly ModifierDefinitionView[] = [
+		{
+			name: 'Ring',
+			target: 'armour_class',
+			targetLabel: 'Armour class',
+			operator: 'add',
+			amount: '2',
+			bonusType: 'item',
+		},
+		{
+			name: 'Boots',
+			target: 'speed',
+			targetLabel: 'Speed',
+			operator: 'add',
+			amount: '10',
+		},
+	];
+
+	/** A card reading its own slot, and a component whose rows enrol. */
 	function sheet(formula: string) {
 		const components: PublishedComponent[] = [
 			{
@@ -583,52 +607,53 @@ describe('sheetModifiers', () => {
 				values: {},
 				modifiers: () => [
 					{
-						target: 'armour_class',
-						type: 'item',
-						label: 'Ring',
+						part: 'Ring',
 						source: 'Magic items',
-						amount: 2,
+						row: { label: 'Ring', values: {} },
 					},
 					{
-						target: 'speed',
-						type: null,
-						label: 'Boots',
+						part: 'Boots',
 						source: 'Magic items',
-						amount: 10,
+						row: { label: 'Boots', values: {} },
 					},
 				],
 			},
 		];
-		const env = buildSheetEnv(components);
-		// The static sources, which is what this takes: the accepting set and the
-		// published-name set are properties of the layout rather than of a note.
-		return sheetModifiers(
-			[
-				source({
-					id: 'armour_class',
-					label: 'Armour class',
-					values: { self: { value: 1 } },
-					formulas: [formula],
-				}),
-				source({ id: 'speed', label: 'Speed', values: { self: { value: 1 } } }),
-			],
-			env,
-		);
+		// The static sources, which is what the accepting set is derived from: it
+		// is a property of the layout rather than of a note.
+		const input = sheetModifierInput(DEFINITIONS, [
+			source({
+				id: 'armour_class',
+				label: 'Armour class',
+				values: { self: { value: 1 } },
+				formulas: [formula],
+			}),
+			source({ id: 'speed', label: 'Speed', values: { self: { value: 1 } } }),
+		]);
+		const env = buildSheetEnv(components, undefined, input);
+		return sheetModifiers(input, env);
 	}
 
-	it('offers the accepting targets and nothing else', () => {
-		expect(sheet('10 + mod.self').targets).toEqual([
-			{ name: 'armour_class', label: 'Armour class' },
+	it('offers the layout\'s definitions to a modifier cell\'s picker', () => {
+		// Every definition, whatever a table it is drawn on holds: a definition is
+		// the layout's, so which ones a row may enrol in has nothing to do with
+		// which table the row is on.
+		expect(sheet('10 + mod.self').definitions.map((one) => one.name)).toEqual([
+			'Ring',
+			'Boots',
 		]);
 	});
 
 	it('breaks down a name that accepts a modifier', () => {
 		expect(sheet('10 + mod.self').breakdown('armour_class')).toEqual({
+			override: null,
 			total: 2,
 			lines: [
 				{
 					label: 'Ring',
 					source: 'Magic items',
+					definition: 'Ring',
+					operator: 'add',
 					type: 'item',
 					amount: 2,
 					suppressed: null,
@@ -637,26 +662,40 @@ describe('sheetModifiers', () => {
 		});
 	});
 
-	it('gives no breakdown for a name that accepts none, though it is pushed at', () => {
+	it('gives no breakdown for a name that accepts none, though it is changed', () => {
 		/*
-		 * The rule that keeps a card from drawing a mark over a push that is not
-		 * being applied: `speed` reads no slot, so however many rows target it,
-		 * nothing changes and no mark says otherwise. The place that says so is the
-		 * row that wrote it, where the fix is.
+		 * The rule that keeps a card from drawing a mark over a modifier that is
+		 * not being applied: `speed` reads no slot, so however many rows enrol in a
+		 * definition aimed at it, nothing changes and no mark says otherwise. The
+		 * place that says so is the editor's report beside the target picker.
 		 */
 		expect(sheet('10 + mod.self').breakdown('speed')).toEqual({
+			override: null,
 			total: 0,
 			lines: [],
 		});
 	});
 
-	it('answers whether the sheet publishes a name at all', () => {
-		// What separates a typo from a formula that reads no slot, which is the
-		// difference between the target cell's two stray titles.
-		const modifiers = sheet('10 + mod.self');
-		expect(modifiers.publishes('speed')).toBe(true);
-		expect(modifiers.publishes('armour_class')).toBe(true);
-		expect(modifiers.publishes('armor_class')).toBe(false);
+	it('answers what one row\'s enrolment comes to, on that row', () => {
+		// The modifier cell's own question, and the reason the context carries a
+		// second member: the glyph and the mark on the number must agree.
+		const outcome = sheet('10 + mod.self').outcome('Ring', {
+			label: 'Ring of Protection',
+			values: {},
+		});
+		expect(outcome.definition?.name).toBe('Ring');
+		expect(outcome.applies).toBe(true);
+		expect(outcome.amount).toBe(2);
+		expect(outcome.suppressed).toBeNull();
+	});
+
+	it('says nothing at all for a name the layout does not declare', () => {
+		const outcome = sheet('10 + mod.self').outcome('Ring of Nonexistence', {
+			label: 'Amulet',
+			values: {},
+		});
+		expect(outcome.definition).toBeNull();
+		expect(outcome.applies).toBe(false);
 	});
 
 	it('gives no breakdown where the slot itself was refused', () => {
@@ -672,45 +711,157 @@ describe('sheetModifiers', () => {
 				values: {},
 				modifiers: () => [
 					{
-						target: 'armour_class',
-						type: null,
-						label: 'Ring',
+						part: 'Broken',
 						source: 'Magic items',
-						unreadable: 'no.',
+						row: { label: 'Ring', values: {} },
 					},
 				],
 			},
 		];
-		const env = buildSheetEnv(components);
-		expect(
-			sheetModifiers(components, env).breakdown('armour_class'),
-		).toEqual({ total: 0, lines: [] });
+		const input = sheetModifierInput(
+			[
+				{
+					name: 'Broken',
+					target: 'armour_class',
+					targetLabel: 'Armour class',
+					operator: 'add',
+					amount: 'nothing_publishes_this',
+				},
+			],
+			[
+				source({
+					id: 'armour_class',
+					values: { self: { value: 1 } },
+					formulas: ['10 + mod.self'],
+				}),
+			],
+		);
+		const env = buildSheetEnv(components, undefined, input);
+		expect(sheetModifiers(input, env).breakdown('armour_class')).toEqual({
+			override: null,
+			total: 0,
+			lines: [],
+		});
 	});
 });
 
 /*
- * That both hosts still build the modifier context through `sheetModifiers`.
+ * That every host wires this feature through `buildSheet` and spells none of it.
  *
- * The same guard `view/grid-cells.test.ts` puts on the renderer, and for the
- * same reason: the sheet view and the harness have diverged three times, and the
- * harness is how appearance is reviewed — one that reported modifiers
- * differently would sign off on marks the plugin never draws. Written against
- * the imports and the member names, because a comment can mention `breakdown`
- * without meaning it and an import cannot.
+ * The same guard `view/grid-cells.test.ts` puts on the renderer, and for the same
+ * reason read one layer up: the sheet view and the harness have diverged three
+ * times, and the harness is how appearance is reviewed — one that wired modifiers
+ * differently would sign off on marks the plugin never draws.
+ *
+ * **This scan exists because three separate mutations of the old wiring were
+ * measured to leave the whole suite green**: dropping the third argument to
+ * `buildSheetEnv` in the view, the same in the harness, and handing `[]` where the
+ * parsed definitions go. None of them crashes — nothing applies, every card reads
+ * unmodified, and every enrolled cell still draws `zap` because `outcome` resolves
+ * against `modifiers.definitions` regardless. That is a failure no assertion in
+ * this suite was positioned to see, and a scan over the call sites is the check
+ * that class of bug earns (§10).
+ *
+ * Written against the spellings rather than against behaviour, because that is
+ * what a copy of the sequence *is*: naming any step of it here is the finding.
  */
-describe('the sheet has one modifier context', () => {
-	const HOSTS = ['../view/sheet-view.ts', '../../harness/harness.ts'] as const;
+describe('the sheet has one modifier assembly', () => {
+	/**
+	 * Every host that builds a sheet's formula environment.
+	 *
+	 * **Six, and two were missing while the roster's own sentence claimed to name
+	 * them all.** Both declare themselves mirrors of `renderSheet` in their
+	 * own comments — which is exactly the class this scan was written for — and both
+	 * were calling `buildSheetEnv(prepared.map(publishedComponent), library)` with
+	 * **no modifier input at all**. So a worked example reading `mod.self`, which
+	 * `SPEC` §5's own examples do, would have resolved through `NO_SHEET_MODIFIERS`,
+	 * taken the unmodified number, and asserted the view's arithmetic while staying
+	 * green.
+	 *
+	 * A test file counts as a host wherever it builds a sheet at all: the fixture
+	 * check was the third for that reason, and three more followed it.
+	 */
+	const HOSTS = [
+		'../view/sheet-view.ts',
+		'../../harness/harness.ts',
+		// The fixture check counts: it was the third copy, and a fixture that wired
+		// modifiers its own way would assert the arithmetic of a lookalike.
+		'../view/vault-fixture.test.ts',
+		'../view/worked-examples.test.ts',
+		'../view/reset-flow.test.ts',
+		// The sixth, added with the numeric half of §8's own criterion: a promotion
+		// check has to read a card either side of the write, which means building a
+		// sheet, which makes it a host.
+		'../view/promote-flow.test.ts',
+	] as const;
 
-	it.each(HOSTS)('%s builds it through sheetModifiers alone', (host) => {
+	/** The steps `buildSheet` owns, which a host naming any of them has copied. */
+	const STEPS = [
+		'buildSheetEnv(',
+		'sheetModifierInput(',
+		'publishedComponent(',
+		'parseModifierDefinitions(layout',
+	] as const;
+
+	/** The two hosts that implement §8's layout write. The fixture check does not. */
+	const PROMOTING = ['../view/sheet-view.ts', '../../harness/harness.ts'] as const;
+
+	it.each(PROMOTING)('%s hands a promoted effect over whole', (host) => {
+		/*
+		 * **A promotion carries the effect, never a copy of its five fields.** A
+		 * `TypedEffect` *is* a `ModifierDefinition` minus its name, so it satisfies
+		 * the writer as it stands — and both hosts once rebuilt it member by member
+		 * with a conditional spread each for `bonusType` and `when`.
+		 *
+		 * The failure that earns a scan rather than a test: `contract.test.ts` forces
+		 * any member added to one of those two interfaces onto the other, and a host
+		 * spelling the fields would then silently drop it, because an optional member
+		 * missing from an object literal type-checks. `promote-flow.test.ts` passes
+		 * the effect whole, so it would keep passing — the mirror cannot detect the
+		 * drift its own header promises to catch, which is exactly why the check goes
+		 * at the call sites.
+		 */
+		const source = readFileSync(new URL(host, import.meta.url), 'utf8');
+		expect(source.length).toBeGreaterThan(2000);
+		// Not vacuous: both hosts do implement the write.
+		expect(source).toContain('effect');
+		for (const member of ['effect.bonusType', 'effect.when', 'effect.target']) {
+			expect(source, member).not.toContain(member);
+		}
+	});
+
+	it.each(HOSTS)('%s goes through buildSheet and spells no step of it', (host) => {
 		const source = readFileSync(new URL(host, import.meta.url), 'utf8');
 		// A path that stopped resolving would read an empty string and pass
 		// everything below by having nothing in it.
 		expect(source.length).toBeGreaterThan(2000);
-		expect(source).toContain('sheetModifiers');
-		// And builds no context of its own: the two members are the whole of what
-		// a hand-rolled one would have to spell.
+		/*
+		 * **A call and never a declaration**, which is the half that would have gone
+		 * quietly wrong the moment the roster grew: `worked-examples.test.ts` used to
+		 * declare `function buildSheet(layoutSource, noteSource)` of its own, so a
+		 * bare `toContain('buildSheet(')` would have matched that and turned the
+		 * strongest assertion here into a tautology on the very file it was added to
+		 * catch. Its helper is `sheetFrom` now, and this is what keeps a future one
+		 * from re-creating the hole.
+		 */
+		expect(source).toMatch(/(?<!function )\bbuildSheet\(/);
+		expect(source).not.toMatch(/function\s+buildSheet\(/);
+		for (const step of STEPS) {
+			expect(source, step).not.toContain(step);
+		}
+		// And builds no context of its own: these two are the members a
+		// hand-rolled one cannot avoid spelling.
 		expect(source).not.toContain('breakdown:');
-		expect(source).not.toContain('publishes:');
+		expect(source).not.toContain('outcome:');
+		/*
+		 * Nor a source of its own, which is the half the accepting-set scan below
+		 * used to hold for these three files and cannot any more — they no longer
+		 * name `modifierTargetSource` at all. `scopeValues` is the member whose
+		 * `data` argument *is* the question: passing a note's data is what made the
+		 * sheet and the editor disagree once already.
+		 */
+		expect(source).not.toContain('scopeValues?.(');
+		expect(source).not.toContain('formulaTexts(');
 	});
 });
 
@@ -730,10 +881,17 @@ describe('the sheet has one modifier context', () => {
  * neither would put anything wrong on a screen.
  */
 describe('the accepting set has one assembly', () => {
+	/**
+	 * The editor's two readers.
+	 *
+	 * The sheet's three hosts left this list when they moved to `buildSheet`,
+	 * which is the one place the sequence is now spelled — and the scan above
+	 * carries their half of this claim, forbidding them the two spellings a
+	 * hand-built source cannot avoid.
+	 */
 	const READERS = [
-		'../view/sheet-view.ts',
-		'../../harness/harness.ts',
 		'../editor/config-panel.ts',
+		'../editor/modifier-definitions-field.ts',
 	] as const;
 
 	it.each(READERS)('%s goes through modifierTargetSource', (reader) => {

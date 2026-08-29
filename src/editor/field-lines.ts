@@ -10,10 +10,10 @@
  * is why this names them rather than unifying them:
  *
  * - **A stored identifier is trimmed at both ends.** A trigger name and a bonus
- *   type are matched byte for byte against what a component stored — a binding's
- *   `trigger`, a column's `modifierType` — so `  item` and `item` surviving as
- *   two entries makes two types that stack, which is the arithmetic being wrong
- *   for a reason nothing on screen shows.
+ *   type are matched byte for byte against what something else stored — a
+ *   binding's `trigger`, a modifier definition's `bonusType` — so `  item` and
+ *   `item` surviving as two entries makes two types that stack, which is the
+ *   arithmetic being wrong for a reason nothing on screen shows.
  * - **A line of code keeps its leading layout.** A function definition is parsed
  *   after `parseFunctions` trims it anyway, so the leading space changes no
  *   arithmetic; what it changes is the file, and indentation an author typed is

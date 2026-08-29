@@ -26,6 +26,27 @@ import {
  * belongs in that component's own test file.
  */
 
+/**
+ * The contract's own source, for the two facts below that no value can carry.
+ *
+ * A type is gone at runtime, and both of these are *declarations*: which member a
+ * push carries, and which members two deliberately parallel interfaces hold. The
+ * alternative is a value-level check that cannot be written, or no check at all.
+ */
+const TYPES = readFileSync(
+	new URL('../types.ts', import.meta.url),
+	'utf8',
+);
+
+/** One interface's body, by name, from a module's source. */
+function declaration(source: string, name: string): string {
+	const at = source.indexOf(`export interface ${name} {`);
+	if (at < 0) throw new Error(`no interface called "${name}"`);
+	const from = source.indexOf('{', at) + 1;
+	const to = source.indexOf('\n}', from);
+	return source.slice(from, to);
+}
+
 const KINDS = [
 	'text',
 	'number',
@@ -201,9 +222,10 @@ describe('component registry', () => {
 	it('leaves the modifier source off unless a component declares any', () => {
 		/*
 		 * `scopeModifiers` is optional under §4.1's rule and it passes squarely:
-		 * the alternative is the formula engine knowing that a Table has a target
-		 * column, which column holds the amount, that a blank target is not a
-		 * push, and that a computed amount is a formula evaluated in a row scope.
+		 * the alternative is the formula engine knowing that a Table has a modifier
+		 * column, that a blank cell enrols in nothing, that a row may hold several
+		 * such cells, and that a row's names are its cells layered under its
+		 * computed columns.
 		 *
 		 * **Named rather than counted**, on the row source's own argument: a bound
 		 * like "fewer than all of them" permits the member spreading, so a second
@@ -214,6 +236,72 @@ describe('component registry', () => {
 		);
 		expect(pushing).toEqual(['table']);
 	});
+
+	it('holds a push to one part of a cell, and never to a definition name', () => {
+		/*
+		 * **`ModifierPush.part` is the whole of wave 3's change to the contract**,
+		 * and it is a *narrowing* of what a component knows rather than a widening:
+		 * the push carries one part's raw text, so the formula layer decides whether
+		 * that text is a definition's name or an effect the row spells out. A member
+		 * called `definition` would be the component knowing which tier it is.
+		 *
+		 * Read off the declaration, because a push is one component's data shape and
+		 * this file cannot build one (see the note below). What a *real* push looks
+		 * like is `table.test.ts`'s.
+		 */
+		const declared = declaration(TYPES, 'ModifierPush');
+		expect(declared).toMatch(/^\s*part: string;$/m);
+		expect(declared).not.toContain('definition:');
+	});
+
+	it('declares a typed effect as a definition minus its name, and no more', () => {
+		/*
+		 * **The field list, held once.** `TypedEffect` and `ModifierDefinition` are
+		 * deliberately two interfaces of the same shape rather than one expressed as
+		 * `Omit<ModifierDefinition, 'name'>` — because §7's edge is precisely that
+		 * being *nameable* is what separates them, and naming one in terms of the
+		 * other invites the next feature to give a typed effect a name in place.
+		 *
+		 * The cost of that decision is that the two can drift, and this is what
+		 * stops them: a member added to one and not the other fails here rather than
+		 * as a modifier that behaves differently depending on which file it came out
+		 * of.
+		 */
+		const members = (name: string) =>
+			[...declaration(TYPES, name).matchAll(/^\t(\w+)\??:/gm)].map(
+				(match) => match[1],
+			);
+		const typed = members('TypedEffect');
+		/*
+		 * **The floor first**, because without it this case passes on two empty
+		 * lists: a regex that stopped matching members would make both sides `[]` and
+		 * `toEqual` perfectly happy. §10's rule is that a test which could pass
+		 * vacuously must assert it is testing something, and an equality between two
+		 * derived lists is the shape most exposed to it.
+		 */
+		expect(typed).toEqual([
+			'target',
+			'operator',
+			'amount',
+			'bonusType',
+			'when',
+		]);
+		expect(typed).toEqual(
+			members('ModifierDefinition').filter((one) => one !== 'name'),
+		);
+	});
+
+	/*
+	 * **The narrowed signature is the compiler's rather than this file's**, and
+	 * saying so here is what stops somebody adding the vacuous version.
+	 * `ModifierSource` used to take a `FieldExplainer` beside the resolver, so a
+	 * slot refused for an unreadable amount could name the row *and* the reason;
+	 * the amount is the definition's now and is evaluated in the formula layer,
+	 * which holds the reason in hand, so both left the component. Nothing here can
+	 * *call* a source without building a config with a modifier column in it,
+	 * which is one component's data shape — so the arity is held where a real one
+	 * is built (`table.test.ts`) and by every call site compiling.
+	 */
 
 	it('names the types that can hold components when one cannot', () => {
 		// `children` is shared config the parser walks without knowing any type,

@@ -483,62 +483,219 @@ export interface RowValues {
 export type RowsSource = (resolve: FieldResolver) => readonly RowValues[];
 
 /**
- * One change a component declares against a name that is not its own (SPEC §5).
+ * The two things a modifier definition can do to a number (SPEC §5).
  *
- * The push side of a modifier: a row says what it changes and by how much, and
- * the target names no source however many rows push at it. What reaches the
- * sheet is a number under the *target's* name, which the target's own component
- * publishes — so a row that pushes still publishes nothing, and `<id>.<name>`
- * stays the fixed-row mechanism it has always been.
+ * Two named phases and no priority integer: **an override applies first and the
+ * additions land on top of it.** That is the property the whole design rests on
+ * — overrides reduce to one number (the highest) and additions reduce to one
+ * number (typed stacking), so there is nothing to sequence *within* either phase
+ * and the result cannot depend on the order the enrolments are walked in.
  *
- * Either an amount or the reason there is none, spelled the way `ColumnTotal`
- * already spells it: an amount that will not resolve must not become a silent
- * zero, so it publishes nothing at the target and every formula reading the slot
- * fails naming this row.
+ * Foundry carried a user-facing priority integer for thirteen major versions and
+ * added phases in v14 to "avoid priority competition"; its own #14519 is what
+ * that fragility costs, an ADD change silently losing to a DOWNGRADE because a
+ * default priority read 0. The operator is what an author picks and the phase is
+ * what it implies, so naming the phase as well would be a second field saying
+ * one thing — which is the priority integer arriving under a new name.
  */
-export type ModifierPush = {
-	/** The published name this pushes at, as the cell spells it. */
-	target: string;
-	/** The declared stacking type, or null for an untyped modifier. */
-	type: string | null;
-	/** The row as a reader sees it, never as the file spells it. */
-	label: string;
-	/**
-	 * The component this row lives on, as its label reads.
-	 *
-	 * Set by the component, which is the only thing holding its own label at
-	 * this point — the alternative is threading it through the modifier table
-	 * and its component list to arrive at the same string.
-	 *
-	 * It is here because a row's label is not enough to name a source: two
-	 * modifier tables on one sheet, worn items and weapons, can each hold a row
-	 * called "Ring", and a breakdown listing both gives the reader two lines
-	 * they cannot tell apart. `modifierBreakdown` decides when to show it.
-	 */
-	source: string;
-} & (
-	| { amount: number; unreadable?: never }
-	| { amount?: never; unreadable: string }
-);
+export type ModifierOperator = 'add' | 'override';
 
 /**
- * A component's modifiers, built with a resolver and an explainer bound to the
- * finished sheet.
+ * Which phase a definition belongs to, from whatever its `operator` holds.
  *
- * A factory for exactly `RowsSource`'s reason: an amount may be a computed
- * column reading the rest of the sheet, and the sheet is the thing being built.
+ * **The fact worth naming is the default**: anything but the literal `override`
+ * is `add`, which is what a definition that says nothing is — and a misspelt
+ * operator adding rather than setting is the safe direction to be wrong in, since
+ * an addition of the wrong size is visible in the breakdown where a silent
+ * override replaces a number the reader can no longer account for.
  *
- * **The explainer is not decoration.** A resolver returns null both for a field
- * that was never declared and for one whose expression threw, so on its own it
- * can only ever produce some flavour of "could not resolve" — and SPEC §5 wants
- * the slot's refusal to name the row *and the reason*: `Row "Belt of Giant
- * Strength": ability is not defined on this sheet.` That is `ResetContext`'s
- * argument, reached from a third direction.
+ * Beside the type rather than in a reader, on `isContainer`'s own terms: a
+ * predicate over a shape is the shape's, and this one was spelled out at four
+ * sites after being extracted at one. The drift the one-step tier warns about is
+ * concrete here — add a third operator and the editor's
+ * `Record<ModifierOperator, string>` stops compiling, deliberately, while four
+ * hand-written ternaries silently map it to `add`.
+ *
+ * `unknown` rather than the declared type, because two of the four callers hold a
+ * definition straight out of a layout file where every member is still free.
  */
-export type ModifierSource = (
-	resolve: FieldResolver,
-	explain: FieldExplainer,
-) => readonly ModifierPush[];
+export function operatorOf(raw: { operator?: unknown }): ModifierOperator {
+	return raw.operator === 'override' ? 'override' : 'add';
+}
+
+/**
+ * One change the layout names, which a character's row may enrol in (SPEC §5).
+ *
+ * **It lives in the layout and never in a note.** A row that enrols in one holds
+ * the name and nothing else, so editing a definition moves every character on the
+ * layout at once — which is what the named tier is *for*, and every tool surveyed
+ * recommends it for whatever repeats.
+ *
+ * **The other tier is `TypedEffect` below**, and the difference between the two is
+ * exactly §7's edge: a definition has a name something else can spell, and a typed
+ * effect has none. That is why the two are separate interfaces of the same shape
+ * rather than one expressed in terms of the other.
+ *
+ * **The note holds no derived record of what a modifier did**, either. Everything
+ * recomputes from the layout on every render, which is what makes every answer to
+ * a layout edit "the cell keeps its text" rather than "the number is stuck at
+ * what it was set to" — Sandbox System Builder's issue #15, which caches on the
+ * actor what a shared definition did and cannot reverse it once the definition
+ * moves.
+ */
+export interface ModifierDefinition {
+	/**
+	 * What a cell stores and what the form shows.
+	 *
+	 * Contains no `;` and reads as no assignment (SPEC §4.2): whatever
+	 * separates two parts of a cell, a name containing it breaks, and whatever
+	 * discriminates a typed part, a name matching it is read as one.
+	 * `parse/modifier-definitions.ts` reports and drops both, through the two
+	 * tests `parse/modifier-cell.ts` exports.
+	 */
+	name: string;
+	/** The published name this changes. */
+	target: string;
+	/** Omitted for 'add', which is what a definition that says nothing is. */
+	operator?: ModifierOperator;
+	/** An expression, evaluated in the enrolling row's scope. */
+	amount: string;
+	/** One of the layout's `modifierTypes`. Absent is untyped. */
+	bonusType?: string;
+	/** An expression; absent means always. */
+	when?: string;
+}
+
+/**
+ * One effect typed on a row: a definition with no name and no home in the layout
+ * (SPEC §2, and §13's two-tier entry).
+ *
+ * **Deliberately the same shape as `ModifierDefinition` minus its name, and
+ * deliberately not `Omit<ModifierDefinition, 'name'>`.** The two are the same
+ * shape for a reason that will not hold forever: a definition is a thing with a
+ * name in a shared file and an effect is an anonymous fact in a note, and §7's
+ * edge is precisely that being nameable is what separates them. Naming one in
+ * terms of the other invites the next feature to give a typed effect a name in
+ * place, which is the thing §7 forbids. Two interfaces, one comment each pointing
+ * at the other, and `contract.test.ts` holds the field list once.
+ *
+ * **It is not a cache of anything**, which is §1's one absolute rule. A cache is a
+ * second copy of a fact whose first copy can move underneath it; a typed effect
+ * has no first copy, because nothing else holds it. That is also why promotion
+ * *converts* the row it promoted (§8) rather than leaving the text behind.
+ */
+export interface TypedEffect {
+	/** The published name this changes. */
+	target: string;
+	operator: ModifierOperator;
+	/**
+	 * An expression, evaluated on the row that typed it.
+	 *
+	 * **May be blank, which is an unfinished effect: it changes nothing and is not
+	 * an error** (SPEC §4.2). That is what makes the form safe to commit one
+	 * field at a time — the part exists the moment a target is chosen, and it must
+	 * not blank a card while the reader is still typing.
+	 */
+	amount: string;
+	/**
+	 * One of the layout's `modifierTypes`. Absent is untyped.
+	 *
+	 * **The one thing stored in a note that names the layout's vocabulary**, which
+	 * amends SPEC §5's "nothing stored ever names a type" from a construction
+	 * guarantee to a rule: a type the layout no longer declares is rendered, not
+	 * corrected — the effect applies and contests as its own kind.
+	 */
+	bonusType?: string;
+	/** An expression; absent means always. */
+	when?: string;
+}
+
+/**
+ * A definition as a sheet shows one: the layout's own words, plus what to call
+ * the value it changes.
+ *
+ * The label travels with the definition rather than being looked up per surface,
+ * so the editor's list, the form's line and a breakdown all call the value the
+ * same thing: "Armour class" where `armour_class` is the name. A typed effect has
+ * no view of its own — the form and the sheet label its target through
+ * `ModifierContext.published`, which is the same derivation.
+ */
+export interface ModifierDefinitionView extends ModifierDefinition {
+	/** The publishing component's own label, or the bare name where none. */
+	targetLabel: string;
+}
+
+/**
+ * One part of one row's modifier cell (SPEC §5).
+ *
+ * **A push is one part, as raw text.** The row says what its cell says and hands
+ * over its own scope; the formula layer decides whether that text is a name or an
+ * assignment and resolves it. So the push holds no operator, no bonus type, no
+ * amount column and no failure channel, and **`scopeModifiers` cannot know what a
+ * definition is** — which is Sandbox System Builder's actor entry, the one shape
+ * in the surveyed category that a shared definition is safe under.
+ *
+ * **That sentence is true of the push and no longer true of the component**, which
+ * this wave has to say rather than leave standing. The form shows and writes a
+ * target, an operator, an amount, a bonus type and a condition, so Table knows a
+ * modifier has five slots. It still does not resolve one, does not know what a
+ * bonus type means arithmetically, and does not know what an operator does: the
+ * parse and the spelling are `parse/modifier-cell.ts`'s, the resolution is
+ * `formula/`'s, the labels and the option lists are the context's. The honest
+ * statement is that the component knows the *shape* of a modifier and none of its
+ * meaning.
+ *
+ * What it publishes is unchanged: nothing. A modifier row publishes no name; a
+ * slot is published by the sheet under `mod.<name>`; `<id>.<row name>` still
+ * fails as an unknown name. **And a typed effect publishes nothing either**, which
+ * is §7's edge read at the contract: it has no name, so there is no spelling by
+ * which anything could reach it.
+ */
+export interface ModifierPush {
+	/**
+	 * One part of one modifier cell, as the cell spells it: a definition's name,
+	 * or an assignment.
+	 *
+	 * **Raw text rather than a parsed part, deliberately.** That is what keeps
+	 * `scopeModifiers` unable to know what a modifier *is*: Table splits a cell on
+	 * `;` and pushes each part's own bytes, and nothing in the push says which tier
+	 * it is.
+	 */
+	part: string;
+	/**
+	 * The component the row lives on, as its label reads.
+	 *
+	 * Set by the component, which is the only thing holding its own label at
+	 * this point. It is here because a row's label is not enough to name a
+	 * source: two modifier tables on one sheet, worn items and weapons, can each
+	 * hold a row called "Ring", and a breakdown listing both gives the reader two
+	 * lines they cannot tell apart. `modifierBreakdown` decides when to show it.
+	 */
+	source: string;
+	/**
+	 * The row: its reader-facing label and the names its expressions may read.
+	 *
+	 * `RowValues` whole rather than its two members spread, because the row is
+	 * already a named thing in the contract and an enrolment is a row plus which
+	 * definition it enrols in.
+	 */
+	row: RowValues;
+}
+
+/**
+ * A component's enrolments, built with a resolver bound to the finished sheet.
+ *
+ * A factory for exactly `RowsSource`'s reason: a row may hold a computed column,
+ * which is a formula that reads the rest of the sheet, and the sheet is the
+ * thing being built.
+ *
+ * **The explainer went with the definition.** It was here because a slot refused
+ * for an unreadable amount had to name the row *and the reason*, and a resolver
+ * returning null could not. The amount is now evaluated in the formula layer,
+ * which holds the reason in hand, so the failure channel and its explainer both
+ * leave the component.
+ */
+export type ModifierSource = (resolve: FieldResolver) => readonly ModifierPush[];
 
 /**
  * One contributor to a modified number, as a reader is shown it.
@@ -552,7 +709,41 @@ export interface ModifierLine {
 	label: string;
 	/** The component the row lives on, for wherever the row alone is ambiguous. */
 	source: string;
-	/** The declared stacking type, or null where the modifier is untyped. */
+	/**
+	 * The modifier, as the layout spells its name, or absent where it has none.
+	 *
+	 * **Here because a row is not a contributor once a row can apply two.** While a
+	 * cell held one name, an item's row was named after the modifier it applied and
+	 * the two words were the same word — so a line naming the row named the change
+	 * too, by coincidence. A cell holding a list breaks that: the Bracers of
+	 * Defence reach armour class from a row called *Belt of Giant Strength*, and a
+	 * line carrying only the row told a player a Strength item was giving them
+	 * armour class.
+	 *
+	 * The layout's own spelling rather than the cell's, so this line, the form's
+	 * line and the editor's list all say one thing — a stray never reaches a
+	 * breakdown at all, so there is no case where the cell's text is the only
+	 * spelling there is.
+	 *
+	 * **Optional, because a typed effect has no name and §7's edge says it never
+	 * will.** The line then falls back to the row's own label, and **the outcome
+	 * half is what tells two lines on one row apart** — a row applying a typed
+	 * `item +2` and a typed `circumstance +1` reads as two lines with the same label
+	 * and two different changes, which is exactly the question the reader is asking.
+	 */
+	definition?: string;
+	/**
+	 * Which phase this line belongs to, so a line can read "sets to 18" rather
+	 * than "+18". A fact rather than text: the wording is assembled in
+	 * `components/modifier-breakdown.ts`, which is where it already is.
+	 */
+	operator: ModifierOperator;
+	/**
+	 * The declared stacking type, or null where the modifier is untyped.
+	 *
+	 * Always null on an override, because overrides do not contest by type: the
+	 * highest wins whatever either of them was called.
+	 */
 	type: string | null;
 	amount: number;
 	/** Why this line contributes nothing, or null where it does. */
@@ -571,55 +762,179 @@ export interface ModifierLine {
  */
 export interface ModifierBreakdown {
 	lines: readonly ModifierLine[];
+	/**
+	 * The winning override, or null where nothing overrode the value.
+	 *
+	 * The total line changes shape on this and on nothing else: with nothing
+	 * overriding it is `Total +3`, and with an override it is the value —
+	 * `Total 19` — because base-plus-total is no longer the arithmetic and a
+	 * signed number there would invite the reader to add it to something.
+	 */
+	override: number | null;
+	/** The additive total, which is what `mod.<name>` itself resolves to. */
 	total: number;
 }
 
-/** One name a modifier may be pushed at, and what to show for it. */
+/**
+ * One name a modifier may be pushed at, and what to show for it.
+ *
+ * The layout editor's **Changes** picker, now that a definition names its target
+ * once instead of every row naming one. Foundry's own Active Effects article
+ * tells users to press F12 and run a console script to enumerate attribute keys;
+ * this is the answer to that, moved from the sheet to the one place a target is
+ * chosen.
+ */
 export interface ModifierTarget {
-	/** The published name, as a formula and a stored target cell spell it. */
+	/** The published name, as a formula and a definition's target spell it. */
 	name: string;
 	/** What to show for it, which is the component's own label. */
 	label: string;
 }
 
 /**
+ * What one part of one row's modifier cell comes to, as the cell draws itself.
+ *
+ * Members rather than a discriminated union, because every consumer reads
+ * `applies`, `amount`, `targetLabel` and `suppressed` regardless of tier — so a
+ * union would make four common reads a narrow each. Keeping the rule in one
+ * boolean is also what stops a component re-deriving it from the nullable members
+ * and getting a different answer from the mark on the number.
+ */
+export interface ModifierOutcome {
+	/**
+	 * The definition this part names, or null where it names none or is typed.
+	 *
+	 * **`definition` and `typed` are both nullable and never both set**: a stray
+	 * part has neither, a named part has the first, a typed part has the second.
+	 */
+	definition: ModifierDefinitionView | null;
+	/** The effect this part spells out, or null where it names a definition. */
+	typed: TypedEffect | null;
+	/**
+	 * What the reader is shown this modifier changes, and its label.
+	 *
+	 * Both are blank on a stray, where there is no target to name. The label is
+	 * the component's own word for the value wherever the sheet publishes it, so a
+	 * player reads `Passive perception` and never `passive_perception`.
+	 */
+	target: string;
+	targetLabel: string;
+	/**
+	 * Whether this row is changing its target's value. The glyph reads this and
+	 * nothing else.
+	 */
+	applies: boolean;
+	/**
+	 * What the amount comes to on this row, or null where it could not be worked
+	 * out — an unknown definition, an unfinished typed effect, or an expression
+	 * that will not resolve.
+	 *
+	 * Present on a row whose condition is false, deliberately: the form then says
+	 * what the row *would* do, which is the question a reader looking at a stowed
+	 * item is asking — and it is what a line in the form's `Modifier` select says
+	 * about a definition the row does not apply at all.
+	 */
+	amount: number | null;
+	/**
+	 * Whether the condition holds on this row, or null where there is none.
+	 * Carried rather than folded into `suppressed` because "not right now" and
+	 * "not applied" are different facts and the form says them in different words.
+	 */
+	condition: boolean | null;
+	/**
+	 * Why it is not applying, where the reason is not the condition: a larger
+	 * bonus of its type, a higher override, an amount that will not resolve.
+	 * Null where it applies, and null where the condition is what stopped it.
+	 */
+	suppressed: string | null;
+}
+
+/**
  * What a component cannot work out about modifiers for itself (SPEC §5).
  *
  * On `LinkContext`'s terms: sheet-wide knowledge, absent where there is no
- * sheet, and a component draws what it can without it — a target cell with no
- * context offers only its stored value, which is the truth where nothing is
- * published.
+ * sheet, and a component draws what it can without it — a modifier cell with no
+ * context offers only its stored value, which is the truth where there is no
+ * layout to look a definition up in.
+ *
+ * **`targets`, `published` and `bonusTypes` are a wave-2 deletion undone.** They
+ * were removed and the removal was argued as "the model change paying for itself
+ * in deleted surface", on the grounds that a target had become layout data. A
+ * target can be typed on a row again, so the sheet needs the accepting set to
+ * offer, the published set for a label, and the bonus types for a select. That is
+ * this wave's cost in added surface, named rather than performed quietly.
  */
 export interface ModifierContext {
 	/**
-	 * Targets that accept a modifier, in the order the layout declares them.
+	 * Every definition this layout declares, in declaration order.
 	 *
-	 * The accepting set rather than every published name, which is what keeps the
-	 * picker short enough to read and makes pushing at something that ignores you
-	 * nearly unreachable through the UI.
+	 * What the form's **Modifier** select offers beside `Typed on this row`, and
+	 * the same list for every table on the sheet: a definition is the layout's, so
+	 * which ones a row may pick has nothing to do with which table it is on.
+	 */
+	definitions: readonly ModifierDefinitionView[];
+	/**
+	 * The values a modifier may be aimed at, for the form's **Changes** select.
+	 *
+	 * The accepting set — every published name whose own formula reads a modifier —
+	 * derived once in `formula/modifier-targets.ts` and shared with the layout
+	 * editor's own picker, so the sheet and the pane cannot offer different lists.
 	 */
 	targets: readonly ModifierTarget[];
 	/**
-	 * What applies at this name, in declaration order. No lines where nothing
-	 * does, and none for a name that accepts no modifier — so a card can never
-	 * draw a mark for a modifier that is not being applied, and the component
-	 * never holds the accepting-set rule itself. The stray target is reported at
-	 * the row that wrote it, which is where the fix is.
+	 * Every published name and its label, so a stored target outside the accepting
+	 * set still has a word.
+	 *
+	 * A typed effect's target lives in a note, so the sheet is where that check
+	 * happens — and a target the layout publishes but whose formula reads no
+	 * modifier has a *label*, which is what keeps `passive_perception` out of a
+	 * popover on a player's inventory row.
+	 */
+	published: readonly ModifierTarget[];
+	/** The layout's bonus types, for the form's **Bonus type** select. */
+	bonusTypes: readonly string[];
+	/**
+	 * What one part of one cell comes to on this row.
+	 *
+	 * Takes the part's raw text rather than a name, and the row rather than an
+	 * index, so nothing about a row's position leaves the component (SPEC §4.2).
+	 */
+	outcome(part: string, row: RowValues): ModifierOutcome;
+	/**
+	 * What applies at this name, in declaration order, and what it comes to. No
+	 * lines where nothing does, and none for a name that accepts no modifier — so
+	 * a card can never draw a mark for a modifier that is not being applied.
 	 */
 	breakdown(name: string): ModifierBreakdown;
 	/**
-	 * Whether the sheet publishes this name at all, whether or not it accepts a
-	 * modifier.
+	 * Add one definition to the layout under `name`, then answer whether it landed
+	 * (SPEC §7).
 	 *
-	 * The one thing `targets` cannot answer, and a stored target needs it: a cell
-	 * holding a name the picker does not offer is wrong for one of two reasons,
-	 * and they have different fixes. Either the sheet publishes no such value —
-	 * a typo, or a component renamed — or it publishes it and no formula reads
-	 * `mod.self`, which is a formula to edit rather than a cell. A message saying
-	 * "either … or …" would send half its readers to the wrong place.
+	 * **Additive only**: it appends, it refuses a name the layout already declares,
+	 * it never edits a definition and never deletes one. That bound is the whole of
+	 * why the first sheet-side layout edit in this plugin is safe under Constraint
+	 * 4 — nothing that resolved a moment ago stops resolving.
+	 *
+	 * **Reported, not performed** (PATTERNS §5: the sheet view owns writing). The
+	 * component hands over a name and an effect and awaits an answer; the view does
+	 * the layout write *first* and tells the caller, and only then does the caller
+	 * rewrite the cell. The reverse order would leave a cell naming a definition
+	 * that does not exist.
+	 *
+	 * The one asynchronous member on this context, because a vault write is.
 	 */
-	publishes(name: string): boolean;
+	promote(name: string, effect: TypedEffect): Promise<PromoteResult>;
 }
+
+/**
+ * Whether a promotion landed, or why not.
+ *
+ * A value and never an exception (PATTERNS §4), because every failure here is one
+ * a user can cause: a blank name, a name a cell could not spell, a name the layout
+ * already declares, or a vault that refused the write. The form shows the message
+ * in the shared `.sheetsmith-field-problems` clothes.
+ */
+export type PromoteResult = { ok: true } | { error: string };
 
 /**
  * Why a formula field did not resolve, in words, or null where it did. The
@@ -949,11 +1264,12 @@ export interface ComponentDefinition<
 	 * this the changes it pushes at names belonging to somebody else.
 	 *
 	 * Optional under §4.1's rule, and it passes squarely — the alternative is the
-	 * formula engine knowing that a Table has a target column, which column holds
-	 * the amount, that a blank target is not a push, that a blank number cell is
-	 * zero, and that a computed amount is a formula evaluated in a row scope.
-	 * `scopeRows` cannot be reused for it either: `RowValues` carries cells by
-	 * column key with no way to say which key is the target.
+	 * formula engine knowing that a Table has a modifier column, that a blank
+	 * cell enrols in nothing, that a row may hold several such cells, and that a
+	 * row's names are its stored cells layered under its declared values layered
+	 * under its computed columns. `scopeRows` cannot be reused for it either:
+	 * `RowValues` carries cells by column key with no way to say which of them
+	 * names a definition.
 	 *
 	 * Returns undefined where there is nothing to push, which is how a
 	 * misconfigured card declines: a slot must not be filled from a configuration

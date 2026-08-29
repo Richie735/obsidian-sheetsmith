@@ -361,14 +361,31 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 		// this evaluation *becomes* — and passing it is what makes `mod.self` mean
 		// this card's own slot. Forgetting it reads as 0 with nothing saying so
 		// (`FieldResolver`), which is why `card.test.ts` drives it.
-		const deriveFrom = (raw: string) => {
+		/**
+		 * The derived, and the number behind it.
+		 *
+		 * The pair rather than the text alone because two things need the number
+		 * and only one of them needs it formatted: the face shows it, and the
+		 * breakdown's total line has to *be* it wherever an override applies rather
+		 * than recomputing an override the card may not have taken
+		 * (`modifier-breakdown.ts`). One evaluation, read twice.
+		 */
+		const derivedFrom = (raw: string) => {
 			// An empty value is a blank, not a broken formula.
-			if (needsValue && raw.trim() === '') return { text: '—', unresolved: false };
+			if (needsValue && raw.trim() === '') {
+				return { value: null, face: { text: '—', unresolved: false } };
+			}
 			const resolved = context.resolveField('derived', { value: raw }, config.id);
-			return toDerived(resolved, signed, () =>
-				context.explainField?.('derived', { value: raw }, config.id) ?? null,
-			);
+			return {
+				value: typeof resolved === 'number' ? resolved : null,
+				face: toDerived(resolved, signed, () =>
+					context.explainField?.('derived', { value: raw }, config.id) ?? null,
+				),
+			};
 		};
+		/** What the note says, which is what the breakdown is about. */
+		const stored = derivedFrom(value);
+		const deriveFrom = (raw: string) => derivedFrom(raw).face;
 
 		renderCardFace(face, {
 			title: config.label,
@@ -394,15 +411,23 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 				config.derived === undefined
 					? undefined
 					: {
-							...deriveFrom(value),
+							...stored.face,
 							compute: deriveFrom,
 							// The lines and the total come from the sheet, which is
 							// the only thing that knows what pushed at this name.
 							// Empty where nothing did, and empty where the name
 							// accepts no modifier — so a card can never draw a mark
 							// for a modifier that is not being applied.
+							//
+							// The number goes with them, so the total line under an
+							// override is the number on the face rather than a second
+							// answer to what the override came to. The note's number
+							// and not the draft's: the breakdown is fixed for the life
+							// of a render, and an override makes the face independent
+							// of the stored value anyway.
 							modifiers: modifierBreakdown(
 								context.modifiers?.breakdown(config.id),
+								stored.value,
 							),
 						},
 			note:

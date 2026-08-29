@@ -194,6 +194,36 @@ const ICONS: Readonly<Record<string, readonly IconShape[]>> = {
 		['path', { d: 'm19 12-7 7-7-7' }],
 	],
 	'grip-vertical': gripDots(),
+	// An empty modifier cell, which is the entry point for adding one: `plus`
+	// rather than a fainter `zap`, because "none" against "applying" would then be
+	// a difference of fill strength alone (`docs/UI.md` §6).
+	plus: [
+		['path', { d: 'M5 12h14' }],
+		['path', { d: 'M12 5v14' }],
+	],
+	// The modifier cell's two filled states (SPEC §5). A shape difference rather
+	// than a fill strength, which is what `docs/UI.md` §6 asks of a new mark — and
+	// it is what a review has to be able to *see*, since the whole control is a
+	// glyph.
+	zap: [
+		[
+			'path',
+			{
+				d: 'M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z',
+			},
+		],
+	],
+	'zap-off': [
+		['path', { d: 'M10.513 4.856 13.12 2.17a.5.5 0 0 1 .86.46l-1.377 4.317' }],
+		['path', { d: 'M15.656 10H20a1 1 0 0 1 .78 1.63l-1.72 1.773' }],
+		[
+			'path',
+			{
+				d: 'M16.273 16.273 10.88 21.83a.5.5 0 0 1-.86-.46l1.917-6.01A1 1 0 0 0 11 14H4a1 1 0 0 1-.78-1.63l4.507-4.643',
+			},
+		],
+		['path', { d: 'm2 2 20 20' }],
+	],
 };
 
 /**
@@ -458,7 +488,7 @@ export class ButtonComponent extends ValueComponent<void, HTMLButtonElement> {
 		this.el.classList.add(cls);
 		return this;
 	}
-	onClick(cb: (event: MouseEvent) => unknown): this {
+	onClick(cb: (event: Event) => unknown): this {
 		this.el.addEventListener('click', (event) => cb(event as MouseEvent));
 		return this;
 	}

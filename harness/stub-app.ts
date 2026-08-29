@@ -33,10 +33,108 @@ export function harnessLayout(samples: readonly Sample[] = SAMPLES): Layout {
 		components: samples.map((sample) => sample.config),
 		functions: ['mod(score) = floor((score - 10) / 2)'],
 		triggers: ['Long rest', 'Short rest'],
-		// The layout's own bonus-type vocabulary (SPEC §5). Two are used by the
-		// Magic items table's two columns; the third is declared and unused, which
-		// is what a layout carrying a system's whole list looks like.
-		modifierTypes: ['item', 'status', 'circumstance'],
+		// The layout's own bonus-type vocabulary (SPEC §5). Three are used by the
+		// modifier definitions below; the fourth is declared and unused, which is
+		// what a layout carrying a system's whole list looks like. `circumstance`
+		// used to be the unused one and is now the Bracers' type, because a row
+		// that changes two *different* values needs a second target and every type
+		// at `armour_class` was already taken.
+		modifierTypes: ['item', 'status', 'circumstance', 'morale'],
+		/*
+		 * The changes this layout's items can make (SPEC §5). A character's row
+		 * enrols in one by name; nothing about the change is in a note.
+		 *
+		 * Ten, one per state worth looking at, and the count is against the list
+		 * rather than remembered:
+		 *
+		 * - **two item bonuses at one target at different amounts**, so the
+		 *   stacking rule has something to suppress and the STR card's breakdown
+		 *   says which and why;
+		 * - **a status bonus at that same target**, so two types add over one name;
+		 * - **an item bonus at a card**, enrolled in from *two* tables, which is
+		 *   what makes the qualified breakdown form and the same-size suppression
+		 *   wording reachable on one sheet;
+		 * - **an override**, and **a second, lower override**, so both the applied
+		 *   and the suppressed override lines are on screen and the total line
+		 *   reads as a value rather than an addend;
+		 * - **a conditional bonus**, whose row's `Worn` cell is no, so a `zap-off`
+		 *   glyph and an absence from the breakdown are both on the sheet;
+		 * - **a bonus at a table cell** rather than a card — the skills card's
+		 *   published Perception row — which is the third surface a modifier
+		 *   reaches and the only one where the mark lands in a table;
+		 * - **a bonus at a value that reads no modifier**, which is the one
+		 *   definition here to be *reported* in the editor rather than to work;
+		 * - **a second bonus at `armour_class` of a third type**, which exists so
+		 *   one row's cell can name two modifiers that both apply, to two
+		 *   different values — one glyph, two numbers moving.
+		 */
+		modifiers: [
+			{
+				name: 'Belt of Giant Strength',
+				target: 'abilities.STR',
+				amount: '2',
+				bonusType: 'item',
+			},
+			{
+				name: 'Gauntlets of Ogre Power',
+				target: 'abilities.STR',
+				amount: '1',
+				bonusType: 'item',
+			},
+			{
+				name: "Bull's Strength",
+				target: 'abilities.STR',
+				amount: '1',
+				bonusType: 'status',
+			},
+			{
+				name: 'Ring of Protection',
+				target: 'armour_class',
+				amount: '1',
+				bonusType: 'item',
+			},
+			{
+				// **The `+1` in the name is deliberate**: a name carrying arithmetic,
+				// sitting in a cell, and *not* being read as arithmetic is the
+				// discriminator's hardest case, and it belongs in a file rather than
+				// only in a test.
+				name: 'Bracers of Defence +1',
+				target: 'armour_class',
+				amount: '1',
+				bonusType: 'circumstance',
+			},
+			{
+				name: 'Plate armour',
+				target: 'armour_class',
+				operator: 'override',
+				amount: '18',
+			},
+			{
+				name: 'Mage armour',
+				target: 'armour_class',
+				operator: 'override',
+				amount: '13',
+			},
+			{
+				name: 'Cloak of Elvenkind',
+				target: 'armour_class',
+				amount: '1',
+				bonusType: 'status',
+				when: 'Worn',
+			},
+			{
+				name: 'Eyes of the Eagle',
+				target: 'skills.perception',
+				amount: '2',
+				bonusType: 'item',
+			},
+			{
+				name: 'Cloak of Displacement',
+				target: 'passive_perception',
+				amount: '2',
+				bonusType: 'item',
+			},
+		],
 	};
 }
 

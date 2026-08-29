@@ -564,7 +564,164 @@
 .sheetsmith-detail-field > input,
 .sheetsmith-detail-field > select {
 	width: 100%;
+	/* **The shared baseline these fields had nothing giving them.** Obsidian's own
+	   text input is 36.2px — `--input-padding` of `4px 8px` plus a 1px border
+	   around a 18.2px line — and its `select` is a flat `--input-height` of 30, so
+	   a detail line mixing the two put two of five labels 3.1px above the other
+	   three, on every row of the Modifiers list: the line's `align-items: center`
+	   centres each field, and a field 6.2px taller centres 3.1px higher. Measured
+	   in the pane, and worse than it sounds because it varies *within* a row where
+	   the widths vary only between rows, so the raggedness is on screen five times
+	   per definition.
+
+	   Fixed by making the two kinds one height rather than by changing how the
+	   line aligns them: `align-items: baseline` would align the labels and leave
+	   the boxes ragged at the bottom instead, and the checkbox rows sharing this
+	   line in the columns list have no label above them to align to. `padding` is
+	   restated rather than dropped because the horizontal half is Obsidian's and
+	   worth keeping. */
+	height: var(--input-height);
+	padding-block: 0;
+	/* A select clips its face with no mark and no recovery — `ui/truncation.ts`
+	   reads `textContent`, which is empty on a form control, and a select reports
+	   `scrollWidth === clientWidth` however long the chosen option is. So the
+	   ellipsis is the only thing on the page that can say the value continues, and
+	   `titleChosen` carries what it continues into. `docs/UI.md` §12's
+	   clipped-value row, read on the control it did not name. */
+	text-overflow: ellipsis;
 }
+
+/* One field on a detail line worth more than an equal share of it.
+
+   **Changes** is the case: it names what a definition *does*, its values are
+   authored labels rather than a closed list of short words, and it was the field
+   losing them. Measured at 1400 before this: five controls at 113px each, of
+   which 41.6px is the dropdown's own padding, so `Abilities · STR` rendered as
+   `Abilities · ST` with the T sliced through its right arm — and the same stored
+   value showed in full two rows away, where a **Sets** definition drops the
+   **Bonus type** field and the remaining four take 144px each. One value, two
+   spellings, adjacent.
+
+   `flex-grow` rather than a width, so the extra share comes out of the slack the
+   short fields do not need and the line still wraps rather than clipping when
+   there is none. The ceiling is raised with it: 14em was set against the longest
+   bonus type, and these values are component labels joined to a field name. */
+.sheetsmith-detail-field-wide {
+	flex-grow: 2;
+	max-width: 22em;
+}
+
+/* **And the floor comes down here, because the premise it was written under is
+   false on this line.** It exists "because this is the only flexible child of the
+   detail line and so the only one squeezing lands on" — true of a column's line,
+   which is checkboxes and one field. The Modifiers line is five flexible fields
+   and nothing else, so at `7em` (112px against this field's own 16px em) four
+   floors take 480 of the 574px available at 1400 and the fifth gets whatever is
+   left, whatever its `flex-grow` says: the grow above moved **Changes** by six
+   pixels until this rule existed.
+
+   `5.5em` is chosen against the values rather than picked: measured at the
+   control's own 13px, the longest target label is `Skills · perception` at 107.6px
+   and a dropdown spends 41.6px on padding, so **Changes** wants ~150px; `Adds to`
+   wants 88px, `Untyped` 94px, and the two expression inputs want what they can
+   get. Equal shares give every one of them 115px, which is the one distribution
+   that fits none of them. A floor of 88px lets the 2:1:1:1:1 above land where it
+   was aimed — 191px and 96px at 1400 — and the two values that still do not fit,
+   a long bonus type and a long expression, now ellipsise with the whole of
+   themselves in a `title`. */
+.sheetsmith-list-modifiers .sheetsmith-detail-field {
+	min-width: 5.5em;
+}
+
+/* **The two closed-list fields size to their own longest option instead of
+   sharing.**
+
+   `Operator` and `Bonus type` hold a *closed* list of short strings, and a share
+   of the line is the one thing they do not need. Sharing clipped both of them:
+   measured on `editor-layout`, `Bracers of Defence +1` showed its type as
+   `circu…` — inside a `<select>`, where §9's reveal-on-hover answer cannot reach,
+   because a closed list has no `title` to open and the value is not text the
+   reader typed. `editor-layout-threshold` was worse: **nine consecutive rows read
+   `Adds …`** down the Operator column, which is a column of two possible values
+   rendered as one unreadable one.
+
+   The floor above was measured against the *field* and the clip happens in the
+   *select*: 5.5em is 88px, of which the dropdown spends 41.6px on its own padding,
+   so `Adds to` had 46.4px of text box for ~46px of text and lost the race by a
+   pixel. Sizing to content rather than to a floor is the fix that cannot be lost
+   to a rounding: a `select` at `width: auto` is as wide as its widest option, which
+   is exactly what "size it to its longest option" means, and the space it does not
+   take goes to the three fields that genuinely want it.
+
+   **This is not `docs/UI.md` §12's slack-distribution row**, which is about a
+   table with more room than columns and no principled answer. These two have one:
+   a closed list has a longest member, and it is knowable without measuring. */
+.sheetsmith-list-modifiers .sheetsmith-detail-field-tight {
+	flex: 0 0 auto;
+	min-width: 0;
+	/* A layout may declare a long bonus type, and `<type> (not declared)` is longer
+	   still. The cap is the same one the wide field takes, so a pathological name
+	   ellipsises rather than pushing the other four off the line. */
+	max-width: 14em;
+}
+
+.sheetsmith-list-modifiers .sheetsmith-detail-field-tight > select {
+	width: auto;
+	max-width: 100%;
+}
+
+/* **Bonus type on a Sets definition: laid out, not drawn.** An override is not
+   contested by type, so the control goes — but the *track* it sits in has to stay,
+   and it is `-tight` above, sized to the widest type the layout declares. That
+   width is a fact about the layout rather than a number this file can hold, so the
+   field is built and hidden instead of replaced by a spacer: `visibility: hidden`
+   keeps the box, and its width, and takes the control out of the tab order and the
+   accessibility tree. See `editor/modifier-definitions-field.ts`, which measures
+   what the spacer cost. */
+.sheetsmith-list-modifiers .sheetsmith-detail-field-reserved {
+	visibility: hidden;
+}
+
+/* **Every `<select>` in the Modifiers list carries `.dropdown`, and the class was
+   simply missing there.** No rule here does that — it is three `cls: 'dropdown'` in
+   `modifier-definitions-field.ts` — and the note is here because this is where the
+   consequence was measured.
+
+   **The three hand-rolled `<select>`s in `list-fields.ts` do not carry it**, and that
+   is a live gap rather than an oversight in this paragraph. They were given it and the
+   change was reverted: it fixes a *pre-existing* inconsistency in the columns and rows
+   editors, unrelated to modifiers, and it does not belong inside a feature diff. The
+   measurement below still describes them exactly — a bare `<select>` reserving 2.4em
+   for a chevron nothing draws — so it is `docs/UI.md` §12's row to close and not this
+   rule's. The selects Obsidian builds through its own `Setting.addDropdown` were never
+   affected: that API applies the class itself.
+
+   The ones that were bare had no class at all, so they inherited
+   Obsidian's `select` rule *including* `--dropdown-padding-end: 2.4em` — 31.2px of
+   a 112px box — while the chevron, which lives on `.dropdown` and nowhere else,
+   was never drawn. So a third of every box was reserved for a mark that was not
+   there, and `Bonus type` showing `item` was pixel-identical to `Amount` showing
+   `2`: one opens a menu, one takes a keystroke, and nothing said which. The class
+   draws Obsidian's own mark in Obsidian's own place, which is `docs/UI.md` §1
+   rather than a chevron of this plugin's invention, and it makes the padding
+   honest.
+
+   **What it does not fix is forced colors, and that is recorded rather than
+   worked around** (`docs/UI.md` §12). Obsidian's chevron is a data URI whose
+   stroke is a literal black; forced colors repaints backgrounds and borders and
+   leaves a background *image* alone, so measured off
+   `editor-layout-forced-colors.png` the mark lands at 5–17 on a background of 18 —
+   no mark at all, and the five controls on a detail line go back to being one box
+   five times. Three answers were tried and measured: a CSS gradient can name
+   `ButtonText` where a data URI cannot, and **Chrome forces a gradient
+   `background-image` to `none` in this mode** while keeping a `url()` one, so the
+   computed value came back `none, none`; a second data URI with a light stroke
+   fixes one forced palette and breaks the other; and the border-drawn chevron this
+   plugin already owns — `.sheetsmith-card-dropdown::after` in `sheet.css`, which
+   *does* survive the mode — rides on a wrapper, because a `<select>` carries no
+   pseudo-element, and these controls have none. So the pane matches the app
+   exactly here, in a mode the app is no better in, and the gap now has a default
+   view photographing it. */
 
 /* The one line explaining the row-value mechanism, under the buttons it
    explains rather than beside them. */
@@ -1011,6 +1168,17 @@
 	--sheetsmith-list-fields: 3;
 }
 
+/* The modifiers list has one field on its entry row — the name — and its five
+   others on the detail line under it. Declared rather than left to the default
+   of two, because the empty second track put a whole column of gap between the
+   name box and the reorder handle, and an unexplained gap in a list of otherwise
+   full-width boxes reads as a control that failed to draw. The name is also the
+   longest thing in the list, being what a cell stores, so it is the one field
+   worth the whole width. */
+.sheetsmith-list-modifiers {
+	--sheetsmith-list-fields: 1;
+}
+
 .sheetsmith-entry-row > select {
 	width: 100%;
 }
@@ -1230,5 +1398,28 @@
 
 	.sheetsmith-entry-check input[type='checkbox']:checked::after {
 		background-color: SelectedItemText;
+	}
+
+	/* **A problem report and a success confirmation must not be typographically
+	   identical, and in this mode they were.** Ordinarily the report is three
+	   tiers of colour — `--text-faint` locator, `--text-error` sentence,
+	   `--text-muted` count — and forced colors repaints all three as the same
+	   system foreground, so the only thing separating a diagnosis from
+	   "8 modifiers defined." was the words. The words do carry it, which is why
+	   this is glanceability rather than lost information; `editor-layout-forced-colors`
+	   is a view added to catch exactly this.
+
+	   **A border, because the mode recolours borders and deletes shadows.** A
+	   presence/absence difference is the only kind that survives here — the same
+	   reasoning behind every `outline` in this repository standing in for a
+	   `box-shadow` — and the count line has no border, so the two are now
+	   distinguishable at a glance rather than by reading.
+
+	   Scoped to this mode deliberately: in ordinary mode the three-tier colour
+	   report is doing its job and has been reviewed, so this adds a channel where
+	   one was lost rather than restyling one that works. */
+	.sheetsmith-field-problem {
+		border-inline-start: 2px solid currentColor;
+		padding-inline-start: var(--size-2-3);
 	}
 }

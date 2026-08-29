@@ -89,9 +89,11 @@ export function acceptingTargets(
 	// layout makes X accepting wherever X is published, so this cannot be answered
 	// component by component.
 	const byName = new Set(
-		publishedNames(components).filter((name) =>
-			formulas.some((formula) => referencesName(formula, modifierSlot(name))),
-		),
+		publishedTargets(components)
+			.map((target) => target.name)
+			.filter((name) =>
+				formulas.some((formula) => referencesName(formula, modifierSlot(name))),
+			),
 	);
 
 	const targets: ModifierTarget[] = [];
@@ -113,24 +115,40 @@ export function acceptingTargets(
 }
 
 /**
- * Every name this layout publishes, in declaration order.
+ * Every name this layout publishes, with the label a reader knows it by, in
+ * declaration order.
  *
- * Exported beside the accepting set because a stored target needs both: the
- * accepting set says whether a cell's name is offered, and this says whether it
- * exists at all, which is what separates a typo from a formula that reads no
- * slot (`ModifierContext.publishes`).
+ * Exported beside the accepting set because a *definition's* target needs both:
+ * the accepting set says whether the target picker offers it, and this says
+ * whether the layout publishes it at all — which is what separates a typo from a
+ * value whose own formula reads no slot, and those have different fixes
+ * (`parse/modifier-definitions.ts`).
+ *
+ * **It carries the label as well as the name, and the accepting set is the reason
+ * it has to.** `ModifierDefinitionView.targetLabel` is what the sheet says to a
+ * reader, and taking it from the accepting map alone left the one case that is
+ * *not* accepting falling back to the bare identifier — so a popover on an
+ * inventory row read `passive_perception — item +2` at a player. A published name
+ * always has a label, whether or not anything reads a modifier for it, and the
+ * derivation is `label ?? id`, plus ` · key`, exactly as above. One derivation,
+ * used twice, rather than a second spelling of it in the parser.
+ *
+ * It answered `ModifierContext.publishes` while a *cell* held the target and the
+ * sheet had to tell the two apart at the row. A target is layout data now, so the
+ * question is asked once in the editor and that member is gone.
  */
-export function publishedNames(
+export function publishedTargets(
 	components: readonly ModifierTargetSource[],
-): readonly string[] {
-	const names: string[] = [];
+): readonly ModifierTarget[] {
+	const targets: ModifierTarget[] = [];
 	for (const component of components) {
-		if (component.values.self) names.push(component.id);
+		const label = component.label ?? component.id;
+		if (component.values.self) targets.push({ name: component.id, label });
 		for (const key of Object.keys(component.values.named ?? {})) {
-			names.push(`${component.id}.${key}`);
+			targets.push({ name: `${component.id}.${key}`, label: `${label} · ${key}` });
 		}
 	}
-	return names;
+	return targets;
 }
 /**
  * What one component contributes to the accepting set.

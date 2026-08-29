@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
 import { cardSet, CardSetConfig } from './card-set';
-import { FieldValue, RenderContext } from '../types';
+import { FieldValue, ModifierOutcome, RenderContext } from '../types';
 
 const config: CardSetConfig = {
 	id: 'card-set',
@@ -461,6 +461,41 @@ describe('cardSet contract', () => {
  * resolver's third argument is optional, so a component that forgot to pass its
  * per-entry name would read `mod.self` as 0 with nothing reporting it.
  */
+/**
+ * What a modifier cell's outcome is where a case is not about one.
+ *
+ * A Card set never asks for one — `outcome` is the modifier *cell's* question —
+ * so a stub context needs a member it can hand back and nothing more.
+ */
+const NO_OUTCOME: ModifierOutcome = {
+	definition: null,
+	typed: null,
+	target: '',
+	targetLabel: '',
+	applies: false,
+	amount: null,
+	condition: null,
+	suppressed: null,
+};
+
+/**
+ * The three members a Card never reaches, so a stub context can declare them
+ * once.
+ *
+ * `targets`, `published` and `bonusTypes` are the form's option lists and
+ * `promote` is §8's layout write: all four are the modifier *cell's* business,
+ * and a Card is the thing being modified rather than the thing modifying.
+ */
+const NO_AUTHORING = {
+	targets: [],
+	published: [],
+	bonusTypes: [],
+	promote: () =>
+		Promise.resolve({
+			error: 'This sheet cannot save a modifier to its layout.',
+		}),
+};
+
 describe('cardSet and its modifier slots', () => {
 	/** A resolver that adds 2 only to the entry it is told it is producing. */
 	const beltOfStrength = (
@@ -515,23 +550,27 @@ describe('cardSet and its modifier slots', () => {
 		const el = render({
 			resolveField: beltOfStrength,
 			modifiers: {
-				publishes: () => true,
-				targets: [{ name: 'card-set.STR', label: 'Abilities · STR' }],
+				definitions: [],
+				...NO_AUTHORING,
+				outcome: () => NO_OUTCOME,
 				breakdown: (name) =>
 					name === 'card-set.STR'
 						? {
+								override: null,
 								total: 2,
 								lines: [
 									{
 										label: 'Belt of Giant Strength',
 										source: 'Magic items',
+										definition: 'Belt of Giant Strength',
+										operator: 'add',
 										type: 'item',
 										amount: 2,
 										suppressed: null,
 									},
 								],
 							}
-						: { total: 0, lines: [] },
+						: { override: null, total: 0, lines: [] },
 			},
 		});
 		expect(
@@ -539,5 +578,51 @@ describe('cardSet and its modifier slots', () => {
 				one.classList.contains('sheetsmith-modified'),
 			),
 		).toEqual([true, false, false]);
+	});
+
+	/*
+	 * **The `shown` guard, on this drawer.** `modifierBreakdown`'s second argument
+	 * exists so a total line prints the number its caller drew rather than
+	 * recomputing `override + total`, and there are three drawers passing it —
+	 * Card, Card set and Table. The equivalent case in `card.test.ts` was the only
+	 * one, so dropping the argument here passed every test in the suite: a wrong
+	 * shape rather than a wrong value, milder than the original defect, and
+	 * `docs/PATTERNS.md` §1's recurring lesson is that an extraction is not
+	 * finished at the declarations. One case per drawer, cross-referenced, rather
+	 * than one parameterised test importing three components.
+	 */
+	it('prints the entry\'s own number in the total line, under an override', () => {
+		// Per entry, like the formula above it: the number that reaches the
+		// breakdown is this card's face and not the set's first one.
+		const el = render({
+			resolveField: (field, scope, published) =>
+				published === 'card-set.STR' ? 19 : 3,
+			modifiers: {
+				definitions: [],
+				...NO_AUTHORING,
+				outcome: () => NO_OUTCOME,
+				breakdown: (name) =>
+					name === 'card-set.STR'
+						? {
+								override: 18,
+								total: 1,
+								lines: [
+									{
+										label: 'Plate armour',
+										source: 'Magic items',
+										definition: 'Plate armour',
+										operator: 'override',
+										type: null,
+										amount: 18,
+										suppressed: null,
+									},
+								],
+							}
+						: { override: null, total: 0, lines: [] },
+			},
+		});
+		const twin = el.querySelector('.sheetsmith-sr-only[id]');
+		expect(derivedText(el)[0]).toBe('+19');
+		expect((twin?.textContent ?? '').split('\n').at(-1)).toBe('Total 19');
 	});
 });

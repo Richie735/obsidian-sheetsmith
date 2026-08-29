@@ -4,86 +4,69 @@
  * The same split `parse/triggers.ts` and the function library follow, and for
  * the same reason: whether `modifierTypes` is a list of strings at all is the
  * file format's business and refuses the layout in `parseLayout`, while whether
- * a name in it is usable — blank, repeated, or named by a column that no
+ * a name in it is usable — blank, repeated, or named by a definition that no
  * longer matches one — is contents, reported where it can be fixed while every
  * sheet on the layout goes on rendering.
  *
- * **The dangling-column check has to live here, and that is a correction to the
- * feature spec rather than a preference.** The spec asked for "a column whose
- * `modifierType` is not in the layout's list" as a configuration error in
- * Table's own `configError` — and `configError` is reached from `read(body,
- * config)`, which is handed one component's config and never the layout. A
- * component cannot see the list, so it cannot check against it. This is exactly
- * where a reset binding pointing at no trigger is reported, for exactly the
- * reason that comment gives: a component is parsed without the layout around it,
- * so nothing at that point knows which names exist.
+ * **The dangling check reads the layout's modifier definitions**, where it used
+ * to walk every component's columns looking for a `modifierType`. Same check,
+ * moved input: the bonus type is on the definition now, which is what lets one
+ * table's rows carry different types. What that also buys is that the check no
+ * longer has to read a component's config as a shape to find the columns in it.
  *
- * The stakes are also lower than the spec assumed, which is why reporting rather
- * than refusing is the right answer here. **Nothing stored ever names a type**:
- * the type is on the column, so a layout edit that drops one cannot orphan a
- * character note (SPEC §10), and the arithmetic on the sheet is whatever the
- * column says — an undeclared type still stacks with its own kind. What is lost
- * is only the author's own vocabulary, and the editor is where they are looking.
+ * **It has to live here rather than in a component's own `configError`, and that
+ * is not a preference.** `configError` is reached from `read(body, config)`,
+ * which is handed one component's config and never the layout, so no component
+ * can see the declared list — and a definition is not a component's at all now.
+ * This is exactly where a reset binding pointing at no trigger is reported, for
+ * exactly the reason that comment gives.
+ *
+ * The stakes are also lower than a refusal would assume, and **the reason is now a
+ * rule rather than a construction guarantee.** SPEC §5 used to say that nothing
+ * stored ever names a type, so a layout edit dropping one could not reach a
+ * character note at all; a row can now type its own effect and name a type in it,
+ * which amends that sentence (SPEC §5). What replaces it is the rule §10
+ * gains: **a stored type the layout no longer declares is rendered, not
+ * corrected** — the effect applies, contests as its own kind, and the form shows
+ * it as `<type> (not declared)`.
+ *
+ * So a dropped type still loses no character data and still changes no number,
+ * because the arithmetic contests by the *string* a modifier carries and never by
+ * this list. What is lost is the author's own vocabulary, and the editor is where
+ * they are looking. The conclusion is the same; the premise it rests on is the
+ * rule and not the guarantee, and a comment still citing the guarantee would be
+ * arguing from something this feature removed.
  */
 
 import { Layout } from './layout';
-import { ComponentConfig } from '../types';
-import { walkComponents } from './layout-walk';
 
-/** Something wrong with a bonus type or with a column naming one. */
+/** Something wrong with a bonus type or with a definition naming one. */
 export interface ModifierTypeProblem {
 	message: string;
 	/**
-	 * The label of the component whose column is at fault, where the problem is
-	 * a column rather than a declaration. The editor shows the problem on that
-	 * component's form; a declaration problem belongs to the list.
+	 * The modifier definition whose bonus type is at fault, where the problem is
+	 * a definition rather than a declaration. Drawn as a quieter locator before
+	 * the message; a declaration problem belongs to the list itself.
 	 */
-	component?: string;
+	definition?: string;
 }
 
 export interface ParsedModifierTypes {
 	/**
 	 * The usable type names, in declaration order, with blanks dropped and
-	 * repeats collapsed to their first appearance. This is what a modifier
-	 * column's **Bonus type** select offers.
+	 * repeats collapsed to their first appearance. This is what a definition's
+	 * **Bonus type** select offers.
 	 */
 	names: readonly string[];
 	problems: readonly ModifierTypeProblem[];
 }
 
-/** A column as this reads one: enough to see what type it claims. */
-interface TypedColumn {
-	modifier?: boolean;
-	modifierType?: string;
-}
-
 /**
- * Every bonus type a component's columns claim.
- *
- * Reads `columns` off the config as a shape rather than asking the registry
- * which component has any, because that is what keeps this module pure
- * (Constraint 5) — and `columns` is already a key the parser walks past
- * untouched. A component with no columns claims nothing, which is the answer for
- * every component but one.
- */
-function claimed(config: ComponentConfig): readonly string[] {
-	const columns = (config as { columns?: unknown }).columns;
-	if (!Array.isArray(columns)) return [];
-	const found: string[] = [];
-	for (const entry of columns as readonly TypedColumn[]) {
-		if (entry.modifier !== true) continue;
-		const name = (entry.modifierType ?? '').trim();
-		if (name !== '') found.push(name);
-	}
-	return found;
-}
-
-/**
- * Read a layout's bonus types and check every modifier column against them.
+ * Read a layout's bonus types and check every definition against them.
  *
  * Takes the whole layout because the two questions have one answer, exactly as
- * `parseTriggers` does: a type nothing declares and a column naming no type are
- * the same mistake seen from either end.
+ * `parseTriggers` does: a type nothing declares and a definition naming no type
+ * are the same mistake seen from either end.
  */
 export function parseModifierTypes(layout: Layout): ParsedModifierTypes {
 	const problems: ModifierTypeProblem[] = [];
@@ -93,7 +76,7 @@ export function parseModifierTypes(layout: Layout): ParsedModifierTypes {
 	for (const raw of layout.modifierTypes ?? []) {
 		const name = raw.trim();
 		if (name === '') {
-			// A column stores the name it was given, and an empty one already
+			// A definition stores the name it was given, and an empty one already
 			// means untyped — so a blank line here would offer a second spelling
 			// of "no type" in the select.
 			problems.push({ message: 'A bonus type needs a name.' });
@@ -109,14 +92,14 @@ export function parseModifierTypes(layout: Layout): ParsedModifierTypes {
 		names.push(name);
 	}
 
-	for (const { config } of walkComponents(layout.components)) {
-		for (const name of claimed(config)) {
-			if (seen.has(name)) continue;
-			problems.push({
-				component: config.label,
-				message: `"${config.label}" has a modifier column typed "${name}", which this layout does not declare. Those modifiers still stack only against each other, and the type will not appear in the list until a bonus type of that name exists.`,
-			});
-		}
+	for (const definition of layout.modifiers ?? []) {
+		const label = (definition.name ?? '').trim();
+		const named = (definition.bonusType ?? '').trim();
+		if (label === '' || named === '' || seen.has(named)) continue;
+		problems.push({
+			definition: label,
+			message: `"${label}" is typed "${named}", which this layout does not declare. It still stacks only against modifiers of that same type, and the type will not appear in the list until a bonus type of that name exists.`,
+		});
 	}
 
 	return { names, problems };

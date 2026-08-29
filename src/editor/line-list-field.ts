@@ -44,10 +44,15 @@ import { Layout } from '../parse/layout';
 export interface LineProblem {
 	message: string;
 	/**
-	 * The component whose configuration is at fault, where the problem belongs to
-	 * one rather than to the list. Drawn as a quieter locator before the message.
+	 * What the problem belongs to, where it belongs to something rather than to
+	 * the list: a component whose binding is at fault, a definition whose bonus
+	 * type is. Drawn as a quieter locator before the message.
+	 *
+	 * Named for the job rather than for either producer, because there are now
+	 * two and they name different things — a component's label and a definition's
+	 * name — and each spec's `read` is what maps its own onto this.
 	 */
-	component?: string;
+	locator?: string;
 }
 
 /** The keys of `Layout` this field may edit. */
@@ -216,10 +221,10 @@ export function renderLineList(
 
 			for (const problem of problems) {
 				problemsEl.createDiv('sheetsmith-field-problem', (el) => {
-					if (problem.component !== undefined) {
+					if (problem.locator !== undefined) {
 						el.createSpan({
 							cls: 'sheetsmith-field-problem-line',
-							text: problem.component,
+							text: problem.locator,
 						});
 					}
 					el.createSpan({ text: problem.message });

@@ -80,17 +80,59 @@ type Target = Element | null | undefined;
  * The half a hold is made of, and on its own the whole of a press that must not
  * end: a `pointerup` cancels the long-press timer, so a test waiting for one
  * presses without releasing.
+ *
+ * **`cancelable`, because a real `pointerdown` is** — and without it the
+ * instrument was kinder than the thing in a way that hid a whole fact. A control
+ * that takes the press from something underneath it does so with
+ * `preventDefault`, and on a non-cancelable event that call runs and observes as
+ * nothing: `defaultPrevented` stays false whether the line is there or not. So a
+ * gesture whose entire reason was taking the press could not be driven, and
+ * deleting the line left the suite green (`docs/UI.md` §11's own rule about the
+ * instrument agreeing with the thing). Overridable through `init` for a case that
+ * wants the other shape.
  */
 export function pressDown(el: Target, init: PointerEventInit = {}): void {
 	el?.dispatchEvent(
-		new PointerEvent('pointerdown', { pointerId: 1, button: 0, ...init }),
+		new PointerEvent('pointerdown', {
+			pointerId: 1,
+			button: 0,
+			cancelable: true,
+			...init,
+		}),
 	);
 }
 
+/**
+ * Press, and report whether the control took the press for itself.
+ *
+ * The observable half of `preventDefault` on a `pointerdown`, which is how a
+ * control claims a gesture the browser would otherwise spend on it. It exists
+ * now to assert the *negative*: a modifier cell has one gesture, so nothing
+ * takes its press away, and a case saying so is what keeps the second gesture
+ * from being reintroduced quietly. Here rather than in a component's own cases
+ * because it is a gesture a test presses a control with, which is what this
+ * file holds (`docs/PATTERNS.md` §2).
+ */
+export function prevented(el: Target, pointerType: string): boolean {
+	const down = new PointerEvent('pointerdown', {
+		pointerId: 1,
+		button: 0,
+		cancelable: true,
+		pointerType,
+	});
+	el?.dispatchEvent(down);
+	return down.defaultPrevented;
+}
+
 /** Lift the pointer, ending whatever gesture was under it. */
-export function release(el: Target): void {
+export function release(el: Target, init: PointerEventInit = {}): void {
 	el?.dispatchEvent(
-		new PointerEvent('pointerup', { pointerId: 1, button: 0 }),
+		new PointerEvent('pointerup', {
+			pointerId: 1,
+			button: 0,
+			cancelable: true,
+			...init,
+		}),
 	);
 }
 
