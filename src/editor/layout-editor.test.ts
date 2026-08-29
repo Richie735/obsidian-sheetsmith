@@ -3532,3 +3532,398 @@ describe('the panel says what it is configuring', () => {
 		).toBe('Saves');
 	});
 });
+
+/*
+ * `docs/features/editor-undo.md`: every mutation the pane makes is one step on
+ * an undo stack, because `persist()` is the one place every one of them
+ * already funnels through. What is driven below is every mutation kind the
+ * feature's acceptance criteria name, plus the stack's own cross-cutting
+ * rules — the depth cap has its own unit test beside `undo-stack.ts`, on
+ * `docs/PATTERNS.md` §10: it is far cheaper to prove by pushing 101 strings
+ * onto the module directly than by driving 101 edits through this pane.
+ *
+ * Undo is driven through `LayoutEditorView.undo`/`.redo` rather than through
+ * the commands in `commands.ts`: those are a `checkCallback` gating an
+ * `App.workspace.getActiveViewOfType` lookup and a `Notice`, the same shape
+ * `open-as-sheet` and `open-as-markdown` already have with no test of their
+ * own, and the pane's own methods are what they call.
+ */
+
+/** Undo, and let the write and the redraw it triggers settle. */
+async function undo(harness: Harness): Promise<boolean> {
+	const result = harness.pane.undo();
+	await tick();
+	return result;
+}
+
+/** Redo, and let the write and the redraw it triggers settle. */
+async function redo(harness: Harness): Promise<boolean> {
+	const result = harness.pane.redo();
+	await tick();
+	return result;
+}
+
+/** A button anywhere in the pane, found by its exact text. */
+function button(harness: Harness, text: string): HTMLButtonElement {
+	const found = Array.from(harness.container.querySelectorAll('button')).find(
+		(el) => el.textContent === text,
+	);
+	if (!found) throw new Error(`no button "${text}"`);
+	return found;
+}
+
+/** The panel's own heading, for asserting on what is selected. */
+function panelHeading(harness: Harness): string | null | undefined {
+	return harness.container
+		.querySelector('.sheetsmith-editor-panel')
+		?.querySelector('.setting-item-heading')?.textContent;
+}
+
+/** A Table with one computed column carrying a formula, and one row. */
+function withComputedColumn(): Layout {
+	return {
+		name: 'Table sheet',
+		columns: 12,
+		components: [
+			{
+				id: 'skills',
+				type: 'table',
+				label: 'Skills',
+				columns: [
+					{
+						key: 'total',
+						name: 'Total',
+						type: 'computed',
+						formula: 'ability + 2',
+					},
+				],
+				rows: [{ label: 'Acrobatics' }],
+				position: { col: 1, row: 1, width: 6, height: 3 },
+			},
+		] as unknown as Layout['components'],
+		triggers: [],
+	};
+}
+
+describe('undo and redo', () => {
+	describe('one step per mutation kind', () => {
+		it('undoes a field commit', async () => {
+			harness = await open();
+			const before = await harness.raw();
+			control(harness, 'edit-armour').click();
+			await settle(harness.pane);
+			type(control<HTMLInputElement>(harness, 'cfg-armour-key'), 'AC');
+			await settle(harness.pane);
+			expect(await harness.raw()).not.toBe(before);
+
+			expect(await undo(harness)).toBe(true);
+			expect(await harness.raw()).toBe(before);
+		});
+
+		it('undoes a rename', async () => {
+			harness = await open();
+			const before = await harness.raw();
+			control(harness, 'edit-armour').click();
+			await settle(harness.pane);
+			type(control<HTMLInputElement>(harness, 'label-armour'), 'Defence');
+			await settle(harness.pane);
+			expect(await harness.raw()).not.toBe(before);
+
+			expect(await undo(harness)).toBe(true);
+			expect(await harness.raw()).toBe(before);
+		});
+
+		it('undoes adding a component', async () => {
+			harness = await open();
+			const before = await harness.raw();
+			choose(control<HTMLSelectElement>(harness, 'add-choice'), 'track:0');
+			pressAdd(harness);
+			await settle(harness.pane);
+			expect((await harness.stored()).components).toHaveLength(3);
+
+			expect(await undo(harness)).toBe(true);
+			expect(await harness.raw()).toBe(before);
+		});
+
+		it('undoes removing a component whose children move to the sheet', async () => {
+			harness = await open(nested());
+			const before = await harness.raw();
+			control(harness, 'remove-defences').click();
+			confirmAction();
+			await settle(harness.pane);
+			expect((await harness.stored()).components.map((c) => c.id)).toEqual([
+				'hit_points',
+				'armour',
+			]);
+
+			expect(await undo(harness)).toBe(true);
+			expect(await harness.raw()).toBe(before);
+		});
+
+		it('undoes a drag to release', async () => {
+			harness = await open(schematic());
+			const before = await harness.raw();
+			sheetGrid(harness);
+			const cell = control(harness, 'preview-left');
+			pressDown(cell, at(1, 1));
+			dragTo(cell, 4, 3);
+			release(cell);
+			await settle(harness.pane);
+			expect(await harness.raw()).not.toBe(before);
+
+			expect(await undo(harness)).toBe(true);
+			expect(await harness.raw()).toBe(before);
+		});
+
+		it('undoes a resize to release', async () => {
+			harness = await open(schematic());
+			const before = await harness.raw();
+			control(harness, 'edit-left').click();
+			await settle(harness.pane);
+			sheetGrid(harness);
+			const cell = control(harness, 'preview-left');
+			const handle = cell.querySelector('.sheetsmith-preview-resize');
+			if (!handle) throw new Error('no resize handle');
+			pressDown(handle, { bubbles: true, ...at(2, 1) });
+			dragTo(cell, 4, 2);
+			release(cell);
+			await settle(harness.pane);
+			expect(await harness.raw()).not.toBe(before);
+
+			expect(await undo(harness)).toBe(true);
+			expect(await harness.raw()).toBe(before);
+		});
+
+		it('undoes a whole debounced run of nudges as one step', async () => {
+			harness = await open(schematic());
+			const before = await harness.raw();
+			pressKey(harness, 'right', 'ArrowRight');
+			pressKey(harness, 'right', 'ArrowRight');
+			pressKey(harness, 'right', 'ArrowDown');
+			await settle(harness.pane);
+			expect(await harness.raw()).not.toBe(before);
+
+			expect(await undo(harness)).toBe(true);
+			expect(await harness.raw()).toBe(before);
+		});
+
+		it('undoes a list entry being added', async () => {
+			harness = await open(twoLists());
+			control(harness, 'edit-abilities').click();
+			await settle(harness.pane);
+			const before = await harness.raw();
+			button(harness, 'Add entry').click();
+			await settle(harness.pane);
+			expect(
+				(await harness.stored()).components.find((c) => c.id === 'abilities'),
+			).toMatchObject({
+				entries: [{ key: 'STR', name: 'Strength' }, { key: 'New entry' }],
+			});
+
+			expect(await undo(harness)).toBe(true);
+			expect(await harness.raw()).toBe(before);
+		});
+
+		it('undoes a list entry being removed, which confirms nothing today', async () => {
+			harness = await open(twoLists());
+			control(harness, 'edit-abilities').click();
+			await settle(harness.pane);
+			const before = await harness.raw();
+
+			control(harness, 'attr-abilities-STR-remove').click();
+			await settle(harness.pane);
+			expect(document.body.querySelector('.modal-container')).toBeNull();
+			expect(
+				(await harness.stored()).components.find((c) => c.id === 'abilities'),
+			).toMatchObject({ entries: [] });
+
+			expect(await undo(harness)).toBe(true);
+			expect(await harness.raw()).toBe(before);
+		});
+
+		it('undoes a list reorder', async () => {
+			harness = await open(twoLists());
+			control(harness, 'edit-abilities').click();
+			await settle(harness.pane);
+			// A second entry to reorder the first one against.
+			button(harness, 'Add entry').click();
+			await settle(harness.pane);
+			const before = await harness.raw();
+
+			control(harness, 'attr-abilities-STR-handle').dispatchEvent(
+				new KeyboardEvent('keydown', { key: 'ArrowDown' }),
+			);
+			await settle(harness.pane);
+			expect(await harness.raw()).not.toBe(before);
+
+			expect(await undo(harness)).toBe(true);
+			expect(await harness.raw()).toBe(before);
+		});
+
+		it('undoes a reset binding being added', async () => {
+			harness = await open();
+			control(harness, 'edit-hit_points').click();
+			await settle(harness.pane);
+			const before = await harness.raw();
+			button(harness, 'Add reset').click();
+			await settle(harness.pane);
+			expect(await harness.raw()).not.toBe(before);
+
+			expect(await undo(harness)).toBe(true);
+			expect(await harness.raw()).toBe(before);
+		});
+
+		it('undoes a reset binding being removed, which confirms nothing today', async () => {
+			harness = await open();
+			control(harness, 'edit-hit_points').click();
+			await settle(harness.pane);
+			button(harness, 'Add reset').click();
+			await settle(harness.pane);
+			const before = await harness.raw();
+
+			const remove = harness.container.querySelector(
+				'[aria-label="Remove this reset"]',
+			);
+			if (!remove) throw new Error('no remove-reset button');
+			(remove as HTMLButtonElement).click();
+			await settle(harness.pane);
+			expect(document.body.querySelector('.modal-container')).toBeNull();
+			expect(await harness.raw()).not.toBe(before);
+
+			expect(await undo(harness)).toBe(true);
+			expect(await harness.raw()).toBe(before);
+		});
+
+		it('undoes a column-type change away from computed, which confirms nothing today', async () => {
+			harness = await open(withComputedColumn());
+			control(harness, 'edit-skills').click();
+			await settle(harness.pane);
+			const before = await harness.raw();
+
+			choose(
+				control<HTMLSelectElement>(harness, 'skills-col-total-type'),
+				'number',
+			);
+			await settle(harness.pane);
+			expect(document.body.querySelector('.modal-container')).toBeNull();
+			expect(await harness.raw()).not.toBe(before);
+
+			expect(await undo(harness)).toBe(true);
+			expect(await harness.raw()).toBe(before);
+		});
+	});
+
+	describe('redo', () => {
+		it('restores what undo took back, until the next author edit clears it', async () => {
+			harness = await open();
+			const original = await harness.raw();
+			control(harness, 'edit-armour').click();
+			await settle(harness.pane);
+			type(control<HTMLInputElement>(harness, 'cfg-armour-key'), 'AC');
+			await settle(harness.pane);
+			const edited = await harness.raw();
+
+			expect(await undo(harness)).toBe(true);
+			expect(await harness.raw()).toBe(original);
+			expect(await redo(harness)).toBe(true);
+			expect(await harness.raw()).toBe(edited);
+
+			// Undo again so there is something to lose, then make a fresh edit —
+			// which is an author-triggered `persist()` at its default, and that
+			// clears whatever redo could have replayed.
+			expect(await undo(harness)).toBe(true);
+			type(control<HTMLInputElement>(harness, 'cfg-armour-key'), 'CA');
+			await settle(harness.pane);
+			expect(await redo(harness)).toBe(false);
+		});
+
+		it('reports nothing to redo where nothing has been undone', async () => {
+			harness = await open();
+			expect(await redo(harness)).toBe(false);
+		});
+	});
+
+	describe('scoped per open layout', () => {
+		it('clears both stacks when the pane switches to a different layout', async () => {
+			harness = await open();
+			control(harness, 'edit-armour').click();
+			await settle(harness.pane);
+			type(control<HTMLInputElement>(harness, 'cfg-armour-key'), 'AC');
+			await settle(harness.pane);
+
+			await harness.app.vault.create(
+				`${LAYOUT_FOLDER}/Second sheet.json`,
+				serialiseLayout({
+					name: 'Second sheet',
+					columns: 12,
+					components: [],
+					triggers: [],
+				}),
+			);
+			await harness.redraw();
+
+			choose(
+				control<HTMLSelectElement>(harness, 'layout-picker'),
+				'Second sheet',
+			);
+			await settle(harness.pane);
+
+			expect(await undo(harness)).toBe(false);
+		});
+
+		it('does not share a stack between two panes open on different layouts', async () => {
+			const a = await open(fixture());
+			const b = await open({
+				name: 'Other sheet',
+				columns: 12,
+				components: [],
+				triggers: [],
+			});
+
+			control(a, 'edit-armour').click();
+			await settle(a.pane);
+			type(control<HTMLInputElement>(a, 'cfg-armour-key'), 'AC');
+			await settle(a.pane);
+
+			expect(await undo(b)).toBe(false);
+			expect(await undo(a)).toBe(true);
+		});
+	});
+
+	describe('the stale-selection fallback', () => {
+		it('falls back to the Layout row when undo removes what was selected', async () => {
+			harness = await open();
+			choose(control<HTMLSelectElement>(harness, 'add-choice'), 'track:0');
+			pressAdd(harness);
+			await settle(harness.pane);
+			// Opened for editing, per "appends the chosen type and opens it".
+			expect(panelHeading(harness)).not.toBe('Layout');
+
+			expect(await undo(harness)).toBe(true);
+			expect(panelHeading(harness)).toBe('Layout');
+		});
+
+		it('falls back to the Layout row when redo removes what was selected', async () => {
+			harness = await open();
+			control(harness, 'edit-armour').click();
+			await settle(harness.pane);
+			control(harness, 'remove-armour').click();
+			confirmAction();
+			await settle(harness.pane);
+			// Already the ordinary fallback `render` has always had: the
+			// removal itself dropped the selection it held.
+			expect(panelHeading(harness)).toBe('Layout');
+
+			expect(await undo(harness)).toBe(true);
+			// Armour is back. Select it again before replaying the removal,
+			// so redo is the thing that makes the selection stale rather than
+			// it having been stale all along.
+			control(harness, 'edit-armour').click();
+			await settle(harness.pane);
+			expect(panelHeading(harness)).toBe('Armour class');
+
+			expect(await redo(harness)).toBe(true);
+			expect(panelHeading(harness)).toBe('Layout');
+		});
+	});
+});
