@@ -1,19 +1,21 @@
 # Workflow
 
-The loop a feature goes through, and which command owns each step. Everything
+The steps a feature goes through, and which command owns each. Everything
 here is a pointer: the rules live in the documents named, and this page exists so
 nobody has to remember which one.
 
-## The loop
+## The steps
 
 Picking up once a feature has been chosen and researched, which happens outside
 this repository.
 
-The loop is normally driven end to end by `/ship <route> [feature]`, which runs
-it as one orchestrated session: a persistent dev agent, fresh reviewer agents
-per wave, and hard stops wherever the owner decides. The table is the
-definition either way; running it by hand, one session per step, remains the
-fallback when the orchestrator misbehaves.
+The steps are normally driven end to end by `/ship <route> [feature]`, which
+runs them as one orchestrated session: a persistent dev agent, fresh reviewer
+agents per wave, and hard stops wherever the owner decides. One run is one
+feature and ends when it lands; follow-on work the feature revealed comes back
+through planning as its own route. The table is the definition either way;
+running it by hand, one session per step, remains the fallback when the
+orchestrator misbehaves.
 
 | # | Step | Session | What runs |
 | --- | --- | --- | --- |
@@ -53,8 +55,9 @@ builder from inheriting assumptions the spec never wrote down. `/ship` always
 splits them; by hand, sharing a session is faster on a small feature and stays a
 judgement call.
 
-**Findings come back to the build session**, a few at a time rather than as one
-dump, and `/findings` is what works them there. The review session stays out of
+**Findings come back to the build session** as one batch per wave, worked one at
+a time within the batch, and `/findings` is what works them there. The review
+session stays out of
 the code, so its next pass reads what changed rather than remembering what it
 asked for. Whether a finding is worth acting on is the build session's call and
 no reviewer's: a session that fixes everything it is handed writes code shaped by
@@ -65,7 +68,7 @@ whichever reviewer went last.
 A bug does not start at step 1, because there is nothing to design yet. Run
 `/diagnose`, which refuses to theorise until one command goes red on the bug, then
 minimises it, fixes at the layer that owns it, and locks it with a regression
-test. It rejoins the loop at step 3 and lands through `/land-it` like anything else.
+test. It rejoins the workflow at step 3 and lands through `/land-it` like anything else.
 With no feature spec to read, `/spec-review` says so and skips: the regression
 test is what stands in for an acceptance criterion. On the orchestrated path
 this is the `bug` route, and the dev agent is the one running `/diagnose`.

@@ -1,19 +1,31 @@
 ---
 name: ship
-description: "Orchestrate one feature end to end: spec, build, review waves, findings, landing. Spawns a persistent dev agent and per-wave reviewers, and stops at the owner's breakpoints. Invoked with a route by the planning handoff."
+description: "Orchestrate one feature end to end: spec, build, review waves, findings, landing. Spawns a persistent dev agent and per-wave reviewers, and stops at the owner's breakpoints. One run is one feature and ends at the land stop. Invoked with a route by the planning handoff."
 argument-hint: "[route: full | standard | short | bug] [feature]"
 allowed-tools: Read, Glob, Grep, Bash, Agent, SendMessage
 disable-model-invocation: true
 ---
 
-Run the loop for one feature, as its project manager. **Route and feature:**
+Run the workflow for one feature, as its project manager. **Route and feature:**
 $ARGUMENTS
 
 The prompt that invoked this carries the scope, the reading list, the evidence,
 and the route. The routes themselves are defined in `docs/WORKFLOW.md` § Routes:
 read that section first, state which steps this route runs, and record every
 skip on one line with its reason. A skip recorded is a decision; a skip omitted
-is how the loop rots.
+is how the workflow rots.
+
+## One feature, one run
+
+This session ends at the land stop. Nothing that arrives after it re-enters
+here: a design note implying a redesign, a follow-on the spec deferred, a second
+surface the feature revealed. Each is a new route through the planning handoff
+and a new `/ship`.
+
+The pull is strongest right after a wave, when the dev is primed and a follow-on
+looks like an amendment. An amendment has no edge, and that is how one feature
+becomes four. A spec amendment is in scope only while the feature has not landed
+and only where the current spec is wrong. Anything that adds a surface is out.
 
 ## What the PM is
 
@@ -36,6 +48,12 @@ Context discipline, because this session spans the whole feature:
 
 ## The agents
 
+Five on the full route: the spec agent, the dev, two structural reviewers, one
+design reviewer. Shorter routes carry fewer. A sixth is a decision, not a
+convenience: name on one line what it is for and why no agent already alive can
+do it, before spawning. Every extra agent looks reasonable on its own, which is
+why the constraint is a count.
+
 **The spec agent** (full and standard routes). Spawned after the model question
 is settled, with the scope, the settled §13 answer, and the instruction to run
 `/feature-spec` for this feature. It writes `docs/features/<slug>.md` and
@@ -52,6 +70,12 @@ reads the big docs once and keeps them; every later exchange is a follow-up
 message, never a respawn. On the bug route the dev runs `/diagnose` instead of
 building against a spec. At the end the dev runs `/land-it`.
 
+The dev has died mid-feature to network errors and to machine sleep. A
+replacement is primed on the spec path and `git diff`, not on the full reading
+list: `PATTERNS.md` and `UI.md` are what made the first prime expensive, and the
+tree already embodies them. Say in the replacement's prompt what the dead one
+had done.
+
 After building, the dev reports back three things, not a narrative: what changed
 by file, what it decided that the spec did not dictate, and what it deliberately
 did not do. The middle one is what reviewers will flag and what the PM otherwise
@@ -60,7 +84,7 @@ cannot judge.
 **Early eyes.** The moment the build's gates run green, and where the work
 touches pixels, run `npm run harness:shot` and hand the owner the PNG paths in
 one line, non-blocking, then spawn the structural wave. The owner glances
-whenever; this costs the loop nothing because the wave runs meanwhile. Design
+whenever; this costs the run nothing because the wave runs meanwhile. Design
 feedback arriving here re-enters as a spec amendment before any remediation is
 built on top of the wrong shape, which is hours cheaper than the same feedback
 arriving at the findings stop or after land.
@@ -87,7 +111,14 @@ findings stop presents them separate.
 
 ## Findings
 
-One at a time to the dev, never as a dump. For each finding:
+One batch per wave. The wave's findings go to the dev together and the dev works
+them with `/findings`, one at a time inside the batch: batching the delivery is
+what saves the round trips, batching the judgement is what gets a finding judged
+by its worst neighbour. A second batch exists only when the first batch's fixes
+uncovered something. A third says the wave was wrong, not that the work is
+thorough.
+
+For each finding:
 
 1. The dev, holding the code, judges validity via `/findings`: real, not real,
    or real but costlier than it looks. It says why from the code.
@@ -95,26 +126,31 @@ One at a time to the dev, never as a dump. For each finding:
 3. Where the two disagree, neither wins by rank. The finding goes on the ledger
    as disputed and the owner settles it at the findings stop.
 
-**Verification.** When the dev reports a wave's accepted findings fixed, message
-that wave's reviewers to verify: scope is the accepted findings plus any
-regression the fixes introduced, nothing else. Run the gates yourself once per
-wave, at its close, and once more before the land stop, not after every fix
-batch: nothing is reported fixed without a green run, and per-batch reruns of
-the full suite buy no extra guarantee for their minutes. A brand-new, non-regression
-finding on a verification pass goes on the ledger for the owner, not back to
-the dev; acting on it restarts the loop the verification exists to close.
+**Verification closes the wave, it is not a pass of its own.** When the dev
+reports the batch fixed, run the gates yourself, then message that wave's
+reviewers once with the accepted findings and the result: scope is those
+findings plus any regression the fixes introduced, nothing else. Nothing is
+reported fixed without a green run. A brand-new, non-regression finding goes on
+the ledger for the owner, not back to the dev; acting on it restarts the work
+the verification exists to close.
 
-No automatic re-review of an axis. Respawning one is justified only when the
-fixes were large enough to reshape the code, and either way it is stated as a
-decision.
+No re-review of an axis. If the fixes reshaped the code enough to want one, that
+is the owner's call at the findings stop.
+
+## Gates
+
+`npm test`, `npm run lint`, `npm run build`. The PM runs all three at each wave's
+close and once at the land stop, never after a fix batch. The dev runs `npm test`
+alone after a fix; lint and build after every fix cost minutes each and catch
+what the wave-close run catches anyway.
 
 ## Breakpoints
 
-Every stop is a hard stop: present, then wait. The owner's answer is the only
-thing that resumes the loop.
+Which stops a route carries is in `docs/WORKFLOW.md` § Routes. Every stop it
+carries is a hard stop: present, then wait. The owner's answer is the only thing
+that resumes the work.
 
-1. **The model question** (full route, or any route the scope marks as gated).
-   Before the spec agent exists: read the named §13 entry, put the question with
+1. **The model question.** Before the spec agent exists: read the named §13 entry, put the question with
    the live arguments, wait. The settled answer goes to the spec agent. The
    `Resolved:` entry in `docs/SPEC.md` is still written by `/land-it`, because
    nothing is resolved until it is built.
@@ -132,8 +168,6 @@ thing that resumes the loop.
    and present the results. On approval, the dev runs `/land-it`. Nothing
    commits before this stop, and nothing pushes after it.
 
-The short route keeps only the land stop, with the findings summary folded in.
-
 ## Resume
 
 If this session dies mid-feature, re-invoke with the same route and feature. Do
@@ -143,7 +177,7 @@ was agreed, `git status` says whether the build started, the ledger is gone but
 the reviews are cheap to re-run. Spawn a fresh dev primed with the spec and the
 current diff, and continue from the first phase whose artifact is missing.
 
-## Boundary
+## Planning stays outside
 
 Planning and issue tracking live outside this repository. Nothing here reads
 them, writes to them, or names them: no board, no card titles, no planning
