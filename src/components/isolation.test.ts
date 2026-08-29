@@ -114,9 +114,19 @@ const FROM_OBSIDIAN = {
 };
 
 describe('a component cannot import a sibling', () => {
-	it.each(FORBIDDEN)('refuses %s', async (source) => {
-		expect(await lintAsComponent(source)).not.toEqual([]);
-	});
+	// The typescript-eslint project service builds its program on the first
+	// lint in the process — parsing tsconfig and every file it references — and
+	// that one-time cost lands wherever the first `lintAsComponent` call in the
+	// file happens to be. On a loaded CI runner it can outrun the 5s default;
+	// every later call reuses the warm program and finishes in well under a
+	// second, which is why only this describe block needs the longer timeout.
+	it.each(FORBIDDEN)(
+		'refuses %s',
+		async (source) => {
+			expect(await lintAsComponent(source)).not.toEqual([]);
+		},
+		20_000,
+	);
 });
 
 describe('a component can still import what it is meant to', () => {
