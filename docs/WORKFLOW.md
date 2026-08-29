@@ -149,6 +149,10 @@ settles a question, so the next session does not look it up again.
 Nothing lands without `npm test`, `npm run lint` and `npm run build`. Lint runs
 at `--max-warnings 0`, so a warning fails exactly like an error.
 
+Run `caffeinate -dis` for the duration of an orchestrated session. The dev
+agent has died to machine sleep mid-response; keeping the machine awake is
+cheaper than the respawn.
+
 For anything visual, `npm run harness:calibrate` once per Obsidian version, then
 `npm run harness:shot` and **look at the PNGs**. A review that reads CSS instead
 of looking invents findings and misses real ones.

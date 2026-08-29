@@ -57,6 +57,14 @@ by file, what it decided that the spec did not dictate, and what it deliberately
 did not do. The middle one is what reviewers will flag and what the PM otherwise
 cannot judge.
 
+**Early eyes.** The moment the build's gates run green, and where the work
+touches pixels, run `npm run harness:shot` and hand the owner the PNG paths in
+one line, non-blocking, then spawn the structural wave. The owner glances
+whenever; this costs the loop nothing because the wave runs meanwhile. Design
+feedback arriving here re-enters as a spec amendment before any remediation is
+built on top of the wrong shape, which is hours cheaper than the same feedback
+arriving at the findings stop or after land.
+
 **The reviewers.** Fresh read-only agents, one per axis, spawned per wave and
 dismissed when their wave closes. Each runs the existing skill (`/patterns-review`,
 `/spec-review`, `/design-review`) and reports findings verbatim. Freshness is
@@ -89,7 +97,10 @@ One at a time to the dev, never as a dump. For each finding:
 
 **Verification.** When the dev reports a wave's accepted findings fixed, message
 that wave's reviewers to verify: scope is the accepted findings plus any
-regression the fixes introduced, nothing else. A brand-new, non-regression
+regression the fixes introduced, nothing else. Run the gates yourself once per
+wave, at its close, and once more before the land stop, not after every fix
+batch: nothing is reported fixed without a green run, and per-batch reruns of
+the full suite buy no extra guarantee for their minutes. A brand-new, non-regression
 finding on a verification pass goes on the ledger for the owner, not back to
 the dev; acting on it restarts the loop the verification exists to close.
 
