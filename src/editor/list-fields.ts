@@ -27,7 +27,6 @@ import {
 	COLUMN_TYPES,
 	ColumnType,
 	DEFAULT_COLUMN_TYPE,
-	MODIFIER_AMOUNT_TYPES,
 	PUBLISHABLE_TYPES,
 	TOTALLED_TYPES,
 } from '../components/column-types';
@@ -80,7 +79,7 @@ export function moveItem<T>(
  * keyed by index so focus holds its position while typing, buttons by the
  * entry's own name so focus follows the item through a reorder.
  */
-function addControls<T>(
+export function addControls<T>(
 	row: HTMLElement,
 	list: T[],
 	index: number,
@@ -192,7 +191,7 @@ function addControls<T>(
  * already in the DOM to take over, rather than the row becoming a stack of
  * unlabelled boxes.
  */
-function listField(row: HTMLElement, name: string): HTMLElement {
+export function listField(row: HTMLElement, name: string): HTMLElement {
 	const field = row.createDiv('sheetsmith-field');
 	field.createSpan({ cls: 'sheetsmith-field-name', text: name });
 	return field;
@@ -209,12 +208,12 @@ function listField(row: HTMLElement, name: string): HTMLElement {
  * because reserving a fixed three would leave desktop with a track nothing
  * ever fills.
  *
- * Private now the entry list is in this file: all three headers that need it
- * are here, and `addControls` — the thing it has to stay in step with — has
- * never been reachable from anywhere else. It was exported only while a call
- * site sat in `layout-editor.ts`.
+ * Exported again for the modifier definitions list, which is a fourth header of
+ * this shape and lives in its own module — the same reason `addControls` and
+ * `listField` below it are: the four lists share the geometry and only this file
+ * knows how many controls a row draws.
  */
-function addControlSpacers(header: HTMLElement): void {
+export function addControlSpacers(header: HTMLElement): void {
 	// Keep in step with addControls: a handle and a trash on desktop, up,
 	// down, and trash where there is no drag and no keyboard.
 	const controls = Platform.isMobile ? 3 : 2;
@@ -572,8 +571,6 @@ interface ColumnEntry extends Record<string, unknown> {
 	secondary?: boolean;
 	total?: boolean;
 	publish?: boolean;
-	modifier?: boolean;
-	modifierType?: string;
 }
 
 /**
@@ -593,7 +590,7 @@ const COLUMN_TYPE_LABELS: Record<ColumnType, string> = {
 	level: 'Level',
 	toggle: 'Yes or no',
 	computed: 'Computed',
-	target: 'Target',
+	modifier: 'Modifier',
 };
 
 const LEVEL_INPUTS: readonly { id: string; label: string }[] = [
@@ -607,7 +604,7 @@ const LEVEL_INPUTS: readonly { id: string; label: string }[] = [
  * only label a control would get — and a placeholder disappears at the first
  * keystroke, exactly when the label is still wanted.
  */
-function labelled(detail: HTMLElement, text: string): HTMLElement {
+export function labelled(detail: HTMLElement, text: string): HTMLElement {
 	const field = detail.createDiv('sheetsmith-detail-field');
 	field.createSpan({ cls: 'sheetsmith-position-label', text });
 	return field;
@@ -652,7 +649,7 @@ function checkField(
 }
 
 /** Optional string config: an empty field means the key is absent. */
-function setOptional(
+export function setOptional(
 	target: Record<string, unknown>,
 	key: string,
 	raw: string,
@@ -670,14 +667,22 @@ export function renderColumnsEditor(
 	prefix: string,
 	context: ListContext,
 	/**
-	 * The bonus types this layout declares, for a modifier column's own select.
+	 * How many usable modifiers this layout declares, for the note under the
+	 * list — and for the error where there are none.
+	 *
+	 * **A count rather than the names, and the names are what it used to be.** The
+	 * note enumerated all of them inline, which grew with the layout and restated
+	 * the Modifiers list one panel away — `docs/UI.md` §9's two answers to one
+	 * question, and the uncapped list the bonus types field had already been
+	 * corrected for. What this surface can say that the two sentences cannot is
+	 * whether the picker will have anything in it, which is a number.
 	 *
 	 * A parameter rather than a member of `ListContext`, because it belongs to
 	 * one of the three lists this module draws and the other two have no use for
 	 * it — the same reason `entryColumns` arrives as an argument rather than
 	 * being known here (PATTERNS §1).
 	 */
-	modifierTypes: readonly string[] = [],
+	modifierCount = 0,
 ): void {
 	if (!Array.isArray(record[key])) record[key] = [];
 	const columns = record[key] as ColumnEntry[];
@@ -1086,59 +1091,15 @@ export function renderColumnsEditor(
 		}
 
 		/*
-		 * A modifier amount, and only on a column that is a number to a formula.
-		 *
-		 * It redraws, because the bonus type below appears and disappears with it
-		 * — the same reason **Publish per row** does, and the token is what keeps
-		 * the hand in place across the rebuild.
+		 * **The two controls a modifier column used to need are gone**, and their
+		 * going is what answers half of SPEC §13's question about
+		 * `.sheetsmith-list-scroll`'s cap: **Modifier** and **Bonus type** put
+		 * seven controls on a column's detail line, the line wrapped, and a
+		 * four-column table overran the columns list's `20em`. An amount and a
+		 * bonus type are the definition's now, so a column's detail line is one
+		 * line again. The cap question stays open for the lists still inside the
+		 * scroller.
 		 */
-		if (MODIFIER_AMOUNT_TYPES.has(effective)) {
-			checkField(detail, 'Modifier', column, 'modifier', context, {
-				token: `${prefix}-col-${column.key}-modifier`,
-			});
-		}
-
-		/*
-		 * Which of the layout's bonus types this column's modifiers are.
-		 *
-		 * The options come from the layout rather than from a list inside the
-		 * column, which is why this does **not** reopen SPEC §13's `select` column
-		 * question: that one is blocked on a field kind — "a list whose cells are
-		 * themselves lists" — and there is no per-column list here to be one.
-		 *
-		 * A stored type the layout no longer declares is carried as an extra last
-		 * line rather than snapped to blank, which is §4.2's rule for a Card's
-		 * stray option read on a third control. It cannot lose character data — no
-		 * cell ever names a type — but silently retyping an author's column would
-		 * change the arithmetic on every sheet using the layout. The modifier
-		 * types field reports it with the whole picture; this keeps the value on
-		 * screen where the column is.
-		 */
-		if (column.modifier === true) {
-			const type = labelled(detail, 'Bonus type').createEl('select', {
-				attr: { 'aria-label': `${column.key} bonus type` },
-			});
-			const stored = (column.modifierType ?? '').trim();
-			// Blank first, and not one of the types: it is what a column with no
-			// type already is, and every modifier in it stacks.
-			type.createEl('option', { value: '', text: 'Untyped' });
-			for (const name of modifierTypes) {
-				type.createEl('option', { value: name, text: name });
-			}
-			if (stored !== '' && !modifierTypes.includes(stored)) {
-				type.createEl('option', {
-					value: stored,
-					text: `${stored} (not declared)`,
-				});
-			}
-			type.value = stored;
-			type.dataset.sheetsmithFocus = `${prefix}-col-${column.key}-modifier-type`;
-			type.addEventListener('change', () => {
-				setOptional(column, 'modifierType', type.value);
-				context.persist();
-				context.redraw();
-			});
-		}
 
 		// Every column has this one.
 		checkField(detail, 'Hide heading', column, 'hideHeading', context);
@@ -1184,19 +1145,62 @@ export function renderColumnsEditor(
 			),
 		);
 	}
-	// A modifier with nothing to aim at. Refused nowhere, because a half-built
-	// table is the ordinary way a table is built and blanking the card mid-edit
-	// would be worse than a sentence — the same call the total's note makes,
-	// rather than the row key's refusal.
-	if (
-		columns.some((column) => column.modifier === true) &&
-		!columns.some((column) => column.type === 'target')
-	) {
+	/*
+	 * What a modifier cell holds, once a table has one. Refused nowhere, because a
+	 * half-built table is the ordinary way a table is built and blanking the card
+	 * mid-edit would be worse than a sentence — the same call the total's note
+	 * makes, rather than the row key's refusal.
+	 *
+	 * **The empty-layout error is gone, and this is the one report this wave
+	 * retires rather than adds.** It said a table with a modifier column on a layout
+	 * declaring no definitions had cells nobody could fill, and that was true while
+	 * a cell could only *name* one. A row can now type its own effect, so a layout
+	 * with no named modifiers is an ordinary layout and the error would be false —
+	 * the form's **Modifier** select simply offers the one option that types a new
+	 * effect. The note below stays and covers both cases, counting whatever the
+	 * layout happens to declare.
+	 */
+	const modifierColumns = columns.filter((column) => column.type === 'modifier');
+	if (modifierColumns.length > 0) {
+		/*
+		 * **The count is what the retired error leaves behind**, which is why it stays
+		 * rather than being dropped with it. A layout naming no modifiers used to be
+		 * an error here; it is an ordinary layout now, and the fact an author still
+		 * wants — how many the form's **Modifier** select is about to offer — is a
+		 * number rather than a refusal. At zero it says the thing the error said,
+		 * without claiming anything is wrong.
+		 */
 		listEl.createDiv('sheetsmith-entry-footnote', (el) =>
 			el.setText(
-				'A modifier column is an amount pushed at whatever the row targets, and this table has no target column, so nothing is pushed. Add a column that holds a target.',
+				`A modifier cell holds every modifier its row applies — each either one this layout names or one typed on the row — separated by a semicolon. This layout names ${modifierCount} of them, in its own settings, which the top row of the tree opens.`,
 			),
 		);
+		/*
+		 * **A second modifier column, reported and never refused.**
+		 *
+		 * One is enough now that a cell holds every modifier its row applies, so
+		 * every column after the first is redundant — and the sheet keeps drawing
+		 * both, keeps pushing from both, and refuses neither. Refusing would take
+		 * the table and every modifier its rows apply down with it, which is §10's
+		 * worst trade and Constraint 4's (`table.ts`'s `configError` says so where
+		 * the refusal would have gone).
+		 *
+		 * **An error rather than a footnote, which is the one judgement here.** The
+		 * footnote above says how a modifier cell works; this says the layout has a
+		 * column too many and names the edit. A note nobody reads as a call to act
+		 * would leave the two glyphs on a row exactly where this wave found them —
+		 * and this is the only place the retired cap is enforced at all, as advice,
+		 * which is the honest shape for a rule about how a layout is best written.
+		 * It is now the only non-fatal error at this surface: the empty-layout case
+		 * that set that precedent has been retired one paragraph up.
+		 */
+		for (const column of modifierColumns.slice(1)) {
+			listEl.createDiv('sheetsmith-field-error', (el) =>
+				el.setText(
+					`"${column.key}" is a second modifier column. A modifier cell holds every modifier its row applies, so one modifier column is enough. Move this column's modifiers into the first and remove it.`,
+				),
+			);
+		}
 	}
 	add.addEventListener('click', () => {
 		const taken = new Set(columns.map((column) => column.key));

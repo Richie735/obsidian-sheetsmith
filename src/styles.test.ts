@@ -54,9 +54,52 @@ function selectors(): string[] {
  */
 const FIELD_CLASS = /\.sheetsmith-[a-z-]*(?:-input|-current|-select)\b/;
 
+/**
+ * The one family of rules that may not carry the scope, and the reason it cannot
+ * rather than a licence to omit it.
+ *
+ * `ui/anchored-panel.ts` appends its panel to `document.body`, because the table
+ * whose cell opened it scrolls inside an overflow box that would clip anything
+ * inside it — which is exactly why `.sheetsmith-popover` is unscoped too. So
+ * nothing in the panel is under `.sheetsmith-view` *at any time*, and a rule
+ * carrying the scope would simply never match.
+ *
+ * **Anything mentioning the panel, not just anything starting with it**, and the
+ * difference is what made the first version of this exemption a licence. Anchored
+ * at the front, `.sheetsmith-panel input.sheetsmith-panel-input` fell out of the
+ * exemption and into the *scope* case, which it can never satisfy — a false
+ * failure — while `.sheetsmith-panel-body input` matched neither this nor
+ * `FIELD_CLASS` and escaped both cases silently. A rule losing to Obsidian's bare
+ * `select` is exactly the invisible-in-review failure this file exists for.
+ */
+function inThePanel(selector: string): boolean {
+	return selector.includes('.sheetsmith-panel');
+}
+
+/**
+ * What a selector actually selects: its last compound, after the combinators.
+ *
+ * The specificity claim the panel's exemption rests on is about the *subject* and
+ * nothing else — `.sheetsmith-panel-glyph .svg-icon` is (0,2,0) and perfectly
+ * safe, and so is `input.sheetsmith-panel-input` at (0,1,1), while
+ * `.sheetsmith-panel-body input` selects a bare `input` that Obsidian's own
+ * (0,0,1) rule also matches at the same weight, and source order then decides
+ * which of two rules a plugin does not both own sets the height of a `select`.
+ */
+function subjectOf(selector: string): string {
+	const compounds = selector
+		.trim()
+		.split(/[\s>+~]+/)
+		.filter((one) => one !== '');
+	return compounds[compounds.length - 1] ?? '';
+}
+
 describe('field rules outweigh Obsidian\'s input styling', () => {
-	const fieldRules = selectors().filter((selector) =>
+	const allFieldRules = selectors().filter((selector) =>
 		FIELD_CLASS.test(selector),
+	);
+	const fieldRules = allFieldRules.filter(
+		(selector) => !inThePanel(selector),
 	);
 
 	it('finds the field rules it is meant to be checking', () => {
@@ -69,6 +112,112 @@ describe('field rules outweigh Obsidian\'s input styling', () => {
 			(selector) => !selector.includes('.sheetsmith-view'),
 		);
 		expect(unscoped).toEqual([]);
+	});
+
+	it('selects every control in the anchored panel by a class, never an element', () => {
+		/*
+		 * The panel cannot carry the view scope — it lives on `document.body` — so
+		 * the weakest thing that has to hold everywhere in it is that **the subject
+		 * of every rule is class-led**, which is at least (0,1,0) against the (0,0,1)
+		 * of a bare element rule.
+		 *
+		 * **Over every panel selector rather than only the field ones**, because
+		 * `FIELD_CLASS` names three class spellings and the way to lose this is to
+		 * use none of them: `.sheetsmith-panel-body input` is the rule that would
+		 * revert a `select` to Obsidian's own height, and it matches no field class
+		 * at all.
+		 *
+		 * **And it asserts the subject rather than the string's prefix**, which is
+		 * the correction. The first version tested `startsWith('.sheetsmith-panel')`
+		 * over a list already filtered on a regex anchored to that same prefix, so it
+		 * held by construction — and its own comment's claim that every panel rule is
+		 * a single class was already false, since
+		 * `.sheetsmith-panel-promote-row .sheetsmith-panel-input` is (0,2,0). That is
+		 * perfectly safe, and nothing noticed either way, which is the shape of an
+		 * assertion entailed by its own filter.
+		 *
+		 * **"Carries a class" and not "begins with one"**, because the claim is about
+		 * specificity and nothing else: `input.sheetsmith-panel-input` is (0,1,1) and
+		 * beats the (0,0,1) it has to, so demanding the subject *start* with a class
+		 * would refuse a safe rule. What is refused is a bare element or `*` as the
+		 * subject, which is the only shape that ties with Obsidian's own.
+		 */
+		const panelRules = selectors().filter(inThePanel);
+		// A filter that stopped matching would pass this by having nothing in it.
+		expect(panelRules.length).toBeGreaterThan(20);
+		const elementLed = panelRules.filter(
+			(selector) => !subjectOf(selector).includes('.'),
+		);
+		expect(elementLed).toEqual([]);
+	});
+
+	it('scopes every control in it under .sheetsmith-panel, for (0,2,0)', () => {
+		/*
+		 * **And one class is not enough, which is what the test above quietly
+		 * assumed.** Its comment reasons against "the (0,0,1) of a bare element
+		 * rule", and that is the wrong number for two of the three control kinds in
+		 * here: this file's own opening paragraph says Obsidian styles
+		 * `input[type='text']` at **(0,1,1)**, and `button:not(.clickable-icon)` is
+		 * (0,1,1) too, because a `:not()` argument counts. Only `select` is (0,0,1).
+		 *
+		 * So the panel's single-class rules beat the app on its selects and lost to
+		 * it on its inputs and its buttons — every declaration taking chrome off a
+		 * list line, and the arming tint on **Remove**, silently discarded. It
+		 * photographed as one column of controls at two heights, list lines drawn as
+		 * raised buttons clamped to `--input-height` with their reason lines
+		 * overflowing, and a **Remove** whose first press changed nothing visible.
+		 * Nothing failed. It took calibrating the harness against the app's real
+		 * `input` and `button` rules for any of it to appear.
+		 *
+		 * The fix is the panel's own scope, which is `.sheetsmith-view`'s move made
+		 * on the one surface that cannot use `.sheetsmith-view`. **The list is
+		 * explicit rather than derived**, because what needs the scope is exactly the
+		 * classes that land on a `<button>` or an `<input>` — a fact about
+		 * `components/modifier-form.ts`, not about a name — and a regex over the
+		 * spelling would either miss `-line` and `-add` or drag in `-body` and
+		 * `-heading`, which are divs with nothing to beat. Add to it when the panel
+		 * grows a control.
+		 */
+		const CONTROLS = [
+			'sheetsmith-panel-line',
+			'sheetsmith-panel-add',
+			'sheetsmith-panel-select',
+			'sheetsmith-panel-input',
+			'sheetsmith-panel-save',
+			'sheetsmith-panel-confirm',
+			'sheetsmith-panel-cancel',
+			'sheetsmith-panel-remove',
+			'sheetsmith-panel-remove-armed',
+		];
+		/**
+		 * The classes on the subject compound, exactly — not a substring of it.
+		 *
+		 * `.sheetsmith-panel-line-words` is a span inside the line and has nothing to
+		 * beat, and it contains `.sheetsmith-panel-line` as a prefix. A substring test
+		 * dragged it in, which is the shape of a guard that grows a false failure and
+		 * gets loosened until it stops guarding.
+		 */
+		const classesOf = (compound: string): string[] =>
+			compound
+				.split(/(?=[.:[])/)
+				.filter((one) => one.startsWith('.'))
+				.map((one) => one.slice(1));
+		const controlRules = selectors().filter((selector) =>
+			classesOf(subjectOf(selector)).some((cls) => CONTROLS.includes(cls)),
+		);
+		expect(controlRules.length).toBeGreaterThan(8);
+		/*
+		 * **At least two classes in the whole selector, which is the (0,2,0) claim.**
+		 * Not "starts with `.sheetsmith-panel `": the scope is the ordinary way to buy
+		 * the second class, and it is not the only one —
+		 * `.sheetsmith-panel-pending .sheetsmith-panel-confirm + .sheetsmith-panel-cancel`
+		 * is already (0,3,0) and safe. What the check is about is the weight, so the
+		 * weight is what it counts.
+		 */
+		const underweight = controlRules.filter(
+			(selector) => (selector.match(/\.[a-zA-Z_-][\w-]*/g) ?? []).length < 2,
+		);
+		expect(underweight).toEqual([]);
 	});
 });
 
@@ -644,26 +793,45 @@ describe('the armed delete keeps its warning under the pointer', () => {
 	const ARMED = ['sheetsmith-table-remove-armed', 'sheetsmith-table-row-arming'];
 	const PAINTED = ['color', 'background-color', 'background-image'];
 
-	/** Rules that paint a state onto the delete control or a table row. */
+	/**
+	 * Rules that paint a state onto the delete control or a table row.
+	 *
+	 * **Per comma part, and on the *subject* of the selector**, which is what this
+	 * comment always said and what the check did not do. It tested the whole
+	 * selector for the two names anywhere in it, so any rule painting *anything*
+	 * that happens to sit inside a hovered row was caught — a modifier cell's own
+	 * faint-to-muted step, for instance, which competes with nothing here because
+	 * neither armed rule paints that element. Read on the subject, the check means
+	 * what it was written for: the rules that can actually outrank the armed
+	 * treatment are the ones drawing the delete control or the row itself.
+	 *
+	 * Per part rather than over the joined string for the same reason: a pair where
+	 * only one half stands down would have passed on the other half's `:not`.
+	 */
 	function stateRules(): string[] {
 		const withoutComments = CSS_TEXT.replace(/\/\*[\s\S]*?\*\//g, '');
 		const found: string[] = [];
 		for (const block of withoutComments.split('}')) {
 			const brace = block.indexOf('{');
 			if (brace === -1) continue;
-			const selector = block.slice(0, brace).replace(/\s+/g, ' ').trim();
 			const body = block.slice(brace + 1);
-			if (!/:hover|:focus-visible/.test(selector)) continue;
-			if (
-				!selector.includes('.sheetsmith-table-remove-button') &&
-				!/\.sheetsmith-table tbody tr/.test(selector)
-			) {
-				continue;
-			}
 			const paints = body
 				.split(';')
 				.some((d) => PAINTED.includes(d.split(':')[0]?.trim() ?? ''));
-			if (paints) found.push(selector);
+			if (!paints) continue;
+			for (const part of block.slice(0, brace).split(',')) {
+				const selector = part.replace(/\s+/g, ' ').trim();
+				if (selector === '' || !/:hover|:focus-visible/.test(selector)) continue;
+				/** The compound the rule is actually about, which is the last one. */
+				const subject = selector.split(/[\s>]+/).pop() ?? '';
+				if (
+					!subject.includes('.sheetsmith-table-remove-button') &&
+					!/^tr\b/.test(subject)
+				) {
+					continue;
+				}
+				found.push(selector);
+			}
 		}
 		return found;
 	}
@@ -1424,6 +1592,36 @@ describe('a stacked ring keeps its neighbour\'s hit target off its own', () => {
 		// two-value `inset` is block-then-inline, and stacking is the block axis.
 		expect(token(reach)).toBe(token(gap));
 		expect(gap).toMatch(/^calc\(\s*2\s*\*/);
+	});
+});
+
+describe('the modifier column paints one colour, and shape is the channel', () => {
+	it('gives no glyph in it a colour rule of its own', () => {
+		/*
+		 * **The whole column is `--text-muted` and the shape says the rest** —
+		 * `zap`, `zap-off`, `plus`. Pinned because the value has already drifted
+		 * twice: `.sheetsmith-table-inert` carried a `--text-muted` byte-identical
+		 * to the rule it was written to override and painted nothing for months,
+		 * and an empty cell carried `--text-faint`, which measured **2.20:1 light
+		 * and 2.74:1 dark** — under `legibility.md` §3's 4.5:1 and under even the
+		 * 3:1 a state mark owes.
+		 *
+		 * The empty cell's is the one worth a test rather than a comment, because
+		 * the argument that lost was a *plausible* one: that a `plus` is an
+		 * affordance for the press rather than a state mark, so it owes no bar. It
+		 * is an affordance, and that convicts the value rather than saving it —
+		 * `docs/UI.md` §7 renders the glyph always precisely because an unmarked
+		 * entry point is a dead end on a phone with no hover, and at 2.20:1 it was
+		 * functionally unmarked.
+		 */
+		const faint = CSS.replace(/\/\*[\s\S]*?\*\//g, '')
+			.split('}')
+			.filter(
+				(block) =>
+					block.includes('sheetsmith-table-modifier') &&
+					/color:\s*var\(--text-faint\)/.test(block),
+			);
+		expect(faint).toEqual([]);
 	});
 });
 

@@ -15,7 +15,7 @@ import { describe, expect, it } from 'vitest';
 import { getComponent } from '../components';
 import { parseFunctions } from '../formula/functions';
 import { makeFieldExplainer, resolveFormulaFields } from '../formula/resolve';
-import { buildSheetEnv, publishedComponent } from '../formula/sheet';
+import { buildSheet } from '../formula/sheet';
 import { getSection, parseCharacter } from '../parse/character';
 import { parseLayout } from '../parse/layout';
 import { walkComponents } from '../parse/layout-walk';
@@ -70,8 +70,17 @@ DEX: 18
 \`\`\`
 `;
 
-/** What SheetView.renderSheet does, minus the DOM. */
-function buildSheet(layoutSource: string, noteSource: string) {
+/**
+ * What SheetView.renderSheet does, minus the DOM.
+ *
+ * **Named `sheetFrom` rather than after the function in `formula/sheet.ts`**, which
+ * this file now calls. A local declaration of that name made `sheet.test.ts`'s
+ * host scan match this file's own declaration of it and turned the strongest
+ * assertion in that scan into a tautology on the very file it was added to catch.
+ * The scan refuses the declaring spelling outright now, so it cannot come back —
+ * which is also why this paragraph does not quote it.
+ */
+function sheetFrom(layoutSource: string, noteSource: string) {
 	const layout = parseLayout(layoutSource);
 	const { library, problems } = parseFunctions(layout.functions);
 	const note = parseCharacter(noteSource);
@@ -95,7 +104,16 @@ function buildSheet(layoutSource: string, noteSource: string) {
 		};
 	});
 
-	const env = buildSheetEnv(prepared.map(publishedComponent), library);
+	/*
+	 * **Through the view's own `buildSheet`, not the steps it is made of.** This
+	 * file declares itself a mirror of `renderSheet`, and it was spelling two of
+	 * those steps with **no modifier input at all** — so a worked example reading
+	 * `mod.self`, which `SPEC` §5's own examples do, would have resolved through
+	 * `NO_SHEET_MODIFIERS`, got the unmodified number, and asserted the view's
+	 * arithmetic while staying green. `sheet.test.ts`'s host scan now names this
+	 * file, which is what stops the copy coming back.
+	 */
+	const { env } = buildSheet(layout, prepared, library);
 
 	const resolvedFor = (id: string) => {
 		const entry = prepared.find((item) => item.config.id === id);
@@ -119,7 +137,7 @@ function buildSheet(layoutSource: string, noteSource: string) {
 }
 
 describe('a 5e layout with its own function library', () => {
-	const { problems, sheet, resolvedFor } = buildSheet(LAYOUT, NOTE);
+	const { problems, sheet, resolvedFor } = sheetFrom(LAYOUT, NOTE);
 
 	it('reads the library without complaint', () => {
 		expect(problems).toEqual([]);
@@ -143,7 +161,7 @@ describe('a 5e layout with its own function library', () => {
 	it('keeps working when a definition is broken, and says which', () => {
 		const broken = JSON.parse(LAYOUT) as { functions: string[] };
 		broken.functions = [...broken.functions, 'half(x = x / 2'];
-		const sheetWithTypo = buildSheet(JSON.stringify(broken), NOTE);
+		const sheetWithTypo = sheetFrom(JSON.stringify(broken), NOTE);
 		expect(sheetWithTypo.problems).toHaveLength(1);
 		expect(sheetWithTypo.problems[0]?.source).toBe('half(x = x / 2');
 		// The typo costs its own line. Everything else still renders.
@@ -154,7 +172,7 @@ describe('a 5e layout with its own function library', () => {
 	it('fails on the calling component alone when a function is missing', () => {
 		const without = JSON.parse(LAYOUT) as { functions: string[] };
 		without.functions = ['mod(score) = floor((score - 10) / 2)'];
-		const sheetWithoutProf = buildSheet(JSON.stringify(without), NOTE);
+		const sheetWithoutProf = sheetFrom(JSON.stringify(without), NOTE);
 		// spell_dc calls prof and cannot resolve; the abilities beside it are
 		// untouched, which is SPEC §5's promise about a failing formula.
 		expect(sheetWithoutProf.resolvedFor('spell_dc').derived).toBeNull();
@@ -251,7 +269,7 @@ sheet-layout: Blades in the Dark
 `;
 
 describe('a load list totalling a column', () => {
-	const { sheet, resolvedFor, explainFor } = buildSheet(INVENTORY, PACK);
+	const { sheet, resolvedFor, explainFor } = sheetFrom(INVENTORY, PACK);
 
 	it('publishes the total of a stored column under the column key', () => {
 		// Two daggers at 1 and climbing gear at 2. Keyed by name the two daggers
@@ -325,7 +343,7 @@ sheet-layout: Blades in the Dark
 | Climbing gear | 1 | 2 | no |
 `;
 
-	const sheet = buildSheet(INVENTORY, PROSE);
+	const sheet = sheetFrom(INVENTORY, PROSE);
 
 	it('fails on an unfiltered aggregate too, not only the filtered one', () => {
 		// `carried_weight` reaches the rope only because it is carried. An
@@ -396,7 +414,7 @@ sheet-layout: Blades in the Dark
 | Climbing gear | 1 | 2 | no |
 `;
 
-	const sheet = buildSheet(INVENTORY, AMBIGUOUS);
+	const sheet = sheetFrom(INVENTORY, AMBIGUOUS);
 
 	it('reports the section as unreadable rather than as empty', () => {
 		// The premise. Without this the rest of the describe passes vacuously
@@ -426,7 +444,7 @@ sheet-layout: Blades in the Dark
 	it('leaves every card that does not read it working', () => {
 		// One component's failure never takes down the sheet (SPEC §10), and the
 		// cards that do read it fail on themselves and say why.
-		const other = buildSheet(LAYOUT, NOTE);
+		const other = sheetFrom(LAYOUT, NOTE);
 		expect(other.sheet('abilities.DEX')).toBe(4);
 		expect(sheet.explainFor('load', 'derived')).toContain('inventory.Weight');
 	});
@@ -469,8 +487,8 @@ describe('the same layout with its cards inside two containers', () => {
 		});
 	}
 
-	const flat = buildSheet(LAYOUT, NOTE);
-	const deep = buildSheet(nest(LAYOUT), NOTE);
+	const flat = sheetFrom(LAYOUT, NOTE);
+	const deep = sheetFrom(nest(LAYOUT), NOTE);
 
 	it('reaches the cards inside the containers at all', () => {
 		// The premise. Without it every assertion below passes over a sheet whose
@@ -578,7 +596,7 @@ value: 2
 `;
 
 describe('a card whose value is chosen from a list', () => {
-	const { sheet, resolvedFor } = buildSheet(PROFICIENCY, ROGUE);
+	const { sheet, resolvedFor } = sheetFrom(PROFICIENCY, ROGUE);
 
 	it('publishes the chosen value as a number', () => {
 		expect(sheet('training')).toBe(2);
@@ -599,7 +617,7 @@ describe('a card whose value is chosen from a list', () => {
 	});
 
 	it('publishes nothing at all where nothing has been chosen', () => {
-		const unset = buildSheet(
+		const unset = sheetFrom(
 			PROFICIENCY,
 			ROGUE.replace('## Training\n```sheet\nvalue: 2\n```\n', ''),
 		);

@@ -50,7 +50,8 @@ function spec(layout: Layout): LineListSpec {
 		 * defined", and the per-column control **Bonus type**. `docs/UI.md` §9
 		 * wants one, and the count is not close — seven of the eight user-facing
 		 * strings already said bonus type, including the control an author actually
-		 * touches and both parse messages.
+		 * touches and both parse messages. The control it names is a definition's
+		 * **Bonus type** now rather than a column's; the word did not move.
 		 *
 		 * The layout key stays `modifierTypes`. It is a file-format name rather
 		 * than a label, renaming it would need a migration of every layout that
@@ -59,7 +60,7 @@ function spec(layout: Layout): LineListSpec {
 		 */
 		heading: 'Bonus types',
 		description:
-			'The bonus types this layout\'s modifiers may declare, one per line. Two modifiers of one type do not add: the best bonus and the worst penalty apply, and different types add. A modifier column names one of these, so nothing stored ever names a type and removing one changes no character note.',
+			'The bonus types this layout\'s modifiers may declare, one per line. Two modifiers of one type do not add: the best bonus and the worst penalty apply, and different types add. A modifier this layout names picks one of these; a modifier typed on a character\'s row may name a type this list does not have, which still stacks only against its own kind and is shown as not declared. Removing one changes no character note.',
 		example: TYPE_EXAMPLE,
 		placeholder: TYPE_PLACEHOLDER,
 		className: 'sheetsmith-modifier-types',
@@ -71,7 +72,15 @@ function spec(layout: Layout): LineListSpec {
 				...layout,
 				modifierTypes: [...names],
 			});
-			return { usable, problems };
+			// A dangling type belongs to a definition now rather than to a
+			// component's column, which is the whole of what moved here.
+			return {
+				usable,
+				problems: problems.map(({ message, definition }) => ({
+					message,
+					...(definition !== undefined ? { locator: definition } : {}),
+				})),
+			};
 		},
 	};
 }

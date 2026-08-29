@@ -86,6 +86,103 @@ describe('parseLayout: modifier types', () => {
 	});
 });
 
+describe('parseLayout: modifier definitions', () => {
+	const withModifiers = (modifiers: unknown) =>
+		JSON.stringify({ name: 'L', modifiers, components: [] });
+
+	it('keeps every key a definition carries, in order, through a round trip', () => {
+		/*
+		 * **Not byte identity, which this was named for and never asserted.**
+		 * Constraint 3 reaches a character note and not a layout file, and
+		 * `serialiseLayout` pretty-prints — measured: `serialiseLayout(parseLayout(
+		 * src)) === src` is false for the compact source below, so the old name was
+		 * describing a claim the assertion could not make. Byte identity over a
+		 * layout carrying `modifiers` is the fixture's, in
+		 * `view/vault-fixture.test.ts`, where the file is already in the
+		 * serialiser's own formatting.
+		 *
+		 * What is worth proving here is what a round trip can prove: every key a
+		 * definition carries survives, in the order the file wrote them, and a key
+		 * this version does not understand survives with them (below). A definition
+		 * that lost its `when` on the first save would take a condition off every
+		 * character on the layout.
+		 */
+		const source = withModifiers([
+			{
+				name: 'Belt of Giant Strength',
+				target: 'abilities.STR',
+				amount: '2',
+				bonusType: 'item',
+			},
+			{
+				name: 'Plate armour',
+				target: 'armour_class',
+				operator: 'override',
+				amount: '18',
+			},
+			{
+				name: 'Cloak of Elvenkind',
+				target: 'armour_class',
+				amount: '1',
+				when: 'Worn',
+			},
+		]);
+		const layout = parseLayout(source);
+		expect(layout.modifiers).toHaveLength(3);
+		expect(layout.modifiers?.[1]?.operator).toBe('override');
+		expect(layout.modifiers?.[2]?.when).toBe('Worn');
+		expect(parseLayout(serialiseLayout(layout))).toEqual(layout);
+		// Key order too, which `toEqual` says nothing about and which decides what
+		// a reader of the file sees after their first save.
+		expect(Object.keys(layout.modifiers?.[0] ?? {})).toEqual([
+			'name',
+			'target',
+			'amount',
+			'bonusType',
+		]);
+		// And the word the old name claimed, measured rather than assumed.
+		expect(serialiseLayout(layout)).not.toBe(source);
+	});
+
+	it('leaves the key absent where the layout declares none', () => {
+		// `parse/layout.ts`'s recorded trap, a fourth time: a layout that never
+		// wanted definitions must not grow the key on first save.
+		const layout = parseLayout(JSON.stringify({ name: 'L', components: [] }));
+		expect('modifiers' in layout).toBe(false);
+		expect(serialiseLayout(layout)).not.toContain('modifiers');
+	});
+
+	it('refuses a key that is not an array of objects', () => {
+		// The same split the triggers, the function library and the bonus types
+		// follow: the shape refuses the file, and what each definition says is
+		// reported in the editor.
+		expect(() => parseLayout(withModifiers('Belt'))).toThrow(LayoutParseError);
+		expect(() => parseLayout(withModifiers(['Belt']))).toThrow(LayoutParseError);
+		expect(() => parseLayout(withModifiers([1]))).toThrow(LayoutParseError);
+		expect(() => parseLayout(withModifiers([null]))).toThrow(LayoutParseError);
+		expect(() => parseLayout(withModifiers([[]]))).toThrow(LayoutParseError);
+		expect(() => parseLayout(withModifiers({}))).toThrow(LayoutParseError);
+	});
+
+	it('accepts definitions it will later report as unusable', () => {
+		// Contents are the editor's business, so a blank name and a name declared
+		// twice both survive the parse and the round trip.
+		const layout = parseLayout(
+			withModifiers([{ name: '' }, { name: 'Ring' }, { name: 'Ring' }]),
+		);
+		expect(layout.modifiers).toHaveLength(3);
+	});
+
+	it('preserves a key this version does not understand', () => {
+		// The same promise `parseComponent` makes: a promoted field survives a
+		// round trip rather than being stripped from somebody's file.
+		const layout = parseLayout(
+			withModifiers([{ name: 'Ring', target: 'ac', amount: '1', priority: 5 }]),
+		);
+		expect(serialiseLayout(layout)).toContain('"priority": 5');
+	});
+});
+
 describe('parseLayout: reset bindings', () => {
 	const withReset = (reset: unknown) =>
 		JSON.stringify({

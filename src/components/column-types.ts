@@ -37,7 +37,14 @@ export const COLUMN_TYPES = [
 	// **Appended, never inserted.** The order decides the default (below), so a
 	// new type put first would silently reread every untyped column in every
 	// layout as that type.
-	'target',
+	//
+	// `target` was here and is gone: a row no longer names what it changes, it
+	// names one of the layout's modifier definitions, and the definition names the
+	// target. A column a layout still types `target` reads as the default, which
+	// is `text` — so its cells keep their names on screen and in the note, and the
+	// author retypes the column to `modifier` when they have written the
+	// definitions those names should have been.
+	'modifier',
 ] as const;
 
 export type ColumnType = (typeof COLUMN_TYPES)[number];
@@ -62,7 +69,7 @@ export const DEFAULT_COLUMN_TYPE: ColumnType = COLUMN_TYPES[0];
  * happens to have. `text` has nothing to add up, and a `computed` column stores
  * nothing to sum — its values are derived per row, which is a different
  * question from publishing one row's value and is answered separately, below.
- * `target` holds a name, and a name is not a number.
+ * `modifier` holds the name of a definition, and a name is not a number.
  */
 const TOTALLABLE: readonly ColumnType[] = ['number', 'level', 'toggle'];
 
@@ -79,7 +86,9 @@ export const TOTALLED_TYPES: ReadonlySet<string> = new Set(TOTALLABLE);
  * has to mean one value. A text cell does not: the card shows "sword" where the
  * note holds "[[Sunblade|sword]]", and a name meaning either is a name meaning
  * both. A computed column is here where it is absent from the set above,
- * because one row's derived value is a value and a sum of them is not.
+ * because one row's derived value is a value and a sum of them is not. A
+ * `modifier` cell holds a definition's name, and the language has nothing to
+ * compare a name to.
  */
 const PUBLISHABLE: readonly ColumnType[] = [
 	'number',
@@ -87,27 +96,6 @@ const PUBLISHABLE: readonly ColumnType[] = [
 	'toggle',
 	'computed',
 ];
-
-/**
- * Column types whose cell may be a modifier amount: the ones that are a number
- * to a formula (SPEC §5).
- *
- * Named for the *amount*, not for the bonus type: a layout's `modifierTypes` are
- * the stacking vocabulary an author writes, and these are column kinds. One word
- * meaning both is the defect the card pair's rename was taken to fix.
- *
- * `toggle` is left out where `TOTALLABLE` has it, and the difference is the
- * point: a total maps yes to 1 on its way into its own sum, while a modifier
- * amount is read as a value and a `toggle` cell is `true` to a formula, which
- * the language has no numeric meaning for. What an author wants there is a
- * computed column — `if(Worn, 2, 0)` — which is the fix the refusal names.
- * `text` and `target` hold text, and a `computed` column is a number by the time
- * anything reads it.
- */
-const MODIFIABLE: readonly ColumnType[] = ['number', 'level', 'computed'];
-
-/** As above: strings, so a type read out of a layout file can be asked about. */
-export const MODIFIER_AMOUNT_TYPES: ReadonlySet<string> = new Set(MODIFIABLE);
 
 /** As above: strings, so a type read out of a layout file can be asked about. */
 export const PUBLISHABLE_TYPES: ReadonlySet<string> = new Set(PUBLISHABLE);

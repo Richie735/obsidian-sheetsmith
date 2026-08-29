@@ -53,11 +53,18 @@ function host(): HTMLElement {
 /** Render the columns editor over a config, as the form does. */
 function columnsEditor(
 	record: Record<string, unknown>,
-	/** The layout's bonus types, which one cell of this list offers. */
-	modifierTypes: readonly string[] = [],
+	/** How many modifiers this layout declares, which the note under the list counts. */
+	modifierCount = 0,
 ): HTMLElement {
 	const el = host();
-	renderColumnsEditor(el, record, 'columns', 'skills', context, modifierTypes);
+	renderColumnsEditor(
+		el,
+		record,
+		'columns',
+		'skills',
+		context,
+		modifierCount,
+	);
 	return el;
 }
 
@@ -272,11 +279,13 @@ describe('columns editor', () => {
 		// anything on the other kind of column. Publishing a row is offered
 		// beside the total and refused on a text column for its own reason: a
 		// cell holding a link has no one value for a name to mean.
-		// A modifier amount is offered on the number for the same reason again:
-		// the sheet has to read the cell as a number before it can push it.
+		//
+		// **A column's detail line is one line again**, which is half of SPEC §13's
+		// answer about `.sheetsmith-list-scroll`'s cap: the **Modifier** flag and
+		// the **Bonus type** select that overran it are the definition's now.
 		expect(checks).toEqual([
 			['Secondary text', 'Hide heading'],
-			['Show a total', 'Publish per row', 'Modifier', 'Hide heading'],
+			['Show a total', 'Publish per row', 'Hide heading'],
 		]);
 	});
 
@@ -993,7 +1002,7 @@ describe('entries editor', () => {
 /*
  * The two cells item modifiers add to a column (SPEC §5).
  */
-describe('the columns editor and modifiers', () => {
+describe('the columns editor and a modifier column', () => {
 	const detail = (el: HTMLElement) =>
 		el.querySelector('.sheetsmith-entry-detail') as HTMLElement;
 
@@ -1002,131 +1011,130 @@ describe('the columns editor and modifiers', () => {
 			(one) => one.textContent,
 		);
 
-	const modifierBox = (el: HTMLElement) =>
-		Array.from(
-			detail(el).querySelectorAll('.sheetsmith-entry-check'),
-		).find((one) => one.textContent === 'Modifier')
-			?.querySelector('input') as HTMLInputElement;
-
-	const typeSelect = (el: HTMLElement) =>
-		Array.from(detail(el).querySelectorAll('select')).find((one) =>
-			(one.getAttribute('aria-label') ?? '').endsWith('bonus type'),
+	const footnotes = (el: HTMLElement) =>
+		Array.from(el.querySelectorAll('.sheetsmith-entry-footnote')).map(
+			(one) => one.textContent ?? '',
 		);
 
-	it('offers a modifier only where the cell is a number to a formula', () => {
-		// A `toggle` cell is `true` to a formula and the language has no numeric
-		// meaning for yes and no, so the fix is a computed column rather than a
-		// coercion — and offering the flag there would only lead to the refusal.
-		for (const [type, offered] of [
-			['text', false],
-			['number', true],
-			['level', true],
-			['toggle', false],
-			['computed', true],
-			['target', false],
-		] as const) {
-			const el = columnsEditor({ columns: [{ key: 'Bonus', type }] });
-			expect(checks(el).includes('Modifier'), type).toBe(offered);
-		}
-	});
-
-	it('offers the bonus type only once the column is a modifier', () => {
-		const off = columnsEditor({ columns: [{ key: 'Bonus', type: 'number' }] });
-		expect(typeSelect(off)).toBeUndefined();
-		const on = columnsEditor(
-			{ columns: [{ key: 'Bonus', type: 'number', modifier: true }] },
-			['item'],
+	const errors = (el: HTMLElement) =>
+		Array.from(el.querySelectorAll('.sheetsmith-field-error')).map(
+			(one) => one.textContent ?? '',
 		);
-		expect(typeSelect(on)).toBeDefined();
-	});
 
-	it('offers the layout own types over an untyped first line', () => {
-		// The options come from the layout rather than from a list inside the
-		// column, which is why this does not reopen SPEC §13's `select` column
-		// question: there is no per-column list here to be one.
-		const el = columnsEditor(
-			{ columns: [{ key: 'Bonus', type: 'number', modifier: true }] },
-			['item', 'status'],
+	it('offers Modifier as a column type', () => {
+		const el = columnsEditor({ columns: [{ key: 'Effect' }] });
+		const type = detail(el)
+			.closest('.sheetsmith-list-entry')
+			?.querySelector('select') as HTMLSelectElement;
+		expect(Array.from(type.options).map((one) => one.textContent)).toContain(
+			'Modifier',
 		);
-		expect(
-			Array.from(typeSelect(el)?.options ?? []).map((one) => one.textContent),
-		).toEqual(['Untyped', 'item', 'status']);
 	});
 
-	it('leaves an untyped column out of the file', () => {
-		const record: {
-			columns: { key: string; type: string; modifier: boolean; modifierType?: string }[];
-		} = { columns: [{ key: 'Bonus', type: 'number', modifier: true }] };
-		const el = columnsEditor(record, ['item']);
-		const select = typeSelect(el) as HTMLSelectElement;
-		select.value = 'item';
-		select.dispatchEvent(new Event('change'));
-		expect(record.columns[0]?.modifierType).toBe('item');
-		select.value = '';
-		select.dispatchEvent(new Event('change'));
-		expect(record.columns[0]).not.toHaveProperty('modifierType');
-	});
-
-	it('carries a stored type the layout no longer declares', () => {
+	it('puts a modifier column\'s detail line back to one line', () => {
 		/*
-		 * §4.2's rule for a Card's stray option, read on a third control. It
-		 * cannot lose character data — no cell ever names a type — but silently
-		 * retyping the author's column would change the arithmetic on every sheet
-		 * using the layout.
+		 * The two controls the shipped design needed here are gone: an amount and
+		 * a bonus type are the definition's now. That is the half of SPEC §13's
+		 * `.sheetsmith-list-scroll` question this feature answers by deletion — a
+		 * modifier column cost two lines instead of one and a four-column table
+		 * overran the cap.
+		 */
+		const el = columnsEditor({ columns: [{ key: 'Effect', type: 'modifier' }] });
+		expect(checks(el)).toEqual(['Hide heading']);
+		expect(detail(el).querySelectorAll('select')).toHaveLength(0);
+	});
+
+	it('offers neither a total nor a publication on a modifier column', () => {
+		// The component refuses both, so offering them here would only lead to the
+		// refusal — and a modifier cell holds a name, which is neither a number to
+		// add up nor a value a formula can compare to anything.
+		const el = columnsEditor({ columns: [{ key: 'Effect', type: 'modifier' }] });
+		expect(checks(el)).not.toContain('Show a total');
+		expect(checks(el)).not.toContain('Publish per row');
+	});
+
+	it('counts the modifiers a cell will offer, once the table has a column', () => {
+		// The note the columns list gains, replacing the accepting-targets list the
+		// shipped design put here: the targets moved to the definitions field,
+		// where a target is chosen once instead of per row.
+		//
+		// **A count and not the names.** Enumerating them grew with the layout and
+		// restated the Modifiers list one panel away; what this surface can add is
+		// whether the picker will have anything in it.
+		const el = columnsEditor({ columns: [{ key: 'Effect', type: 'modifier' }] }, 2);
+		const said = footnotes(el).join('\n');
+		expect(said).toContain('holds every modifier its row applies');
+		// And **both tiers**, because a cell can hold either: naming only the
+		// layout's own would leave an author reading this with no way to know a row
+		// may type its own effect.
+		expect(said).toContain('either one this layout names or one typed on the row');
+		// And the separator, which is a syntax in a file people hand-edit: the one
+		// place an author is told what it is before they meet it in a cell.
+		expect(said).toContain('separated by a semicolon');
+		expect(said).toContain('names 2 of them');
+		expect(said).not.toContain('Belt of Giant Strength');
+		expect(errors(el)).toEqual([]);
+	});
+
+	it('reports every modifier column after the first, naming the fix', () => {
+		/*
+		 * One is enough now that a cell holds every modifier its row applies, so a
+		 * second is redundant — and **this is the only place the retired cap is
+		 * enforced at all, as advice.** The sheet keeps drawing both columns, keeps
+		 * pushing from both and refuses neither: a `configError` would take the
+		 * table and every modifier its rows apply down with it, which is §10's worst
+		 * trade and Constraint 4's.
 		 */
 		const el = columnsEditor(
 			{
 				columns: [
-					{ key: 'Bonus', type: 'number', modifier: true, modifierType: 'status' },
+					{ key: 'Modifiers', type: 'modifier' },
+					{ key: 'Aid', type: 'modifier' },
+					{ key: 'More', type: 'modifier' },
 				],
 			},
-			['item'],
+			2,
 		);
-		const select = typeSelect(el) as HTMLSelectElement;
-		expect(Array.from(select.options).map((one) => one.textContent)).toEqual([
-			'Untyped',
-			'item',
-			'status (not declared)',
-		]);
-		expect(select.value).toBe('status');
+		const said = errors(el);
+		// One per redundant column, and named, so the reader knows which to move.
+		expect(said).toHaveLength(2);
+		expect(said[0]).toBe(
+			'"Aid" is a second modifier column. A modifier cell holds every modifier its row applies, so one modifier column is enough. Move this column\'s modifiers into the first and remove it.',
+		);
+		expect(said[1]).toContain('"More" is a second modifier column');
+		// And the footnote is still there: the fact about how a cell works does not
+		// go away because the layout has a column too many.
+		expect(footnotes(el).join('\n')).toContain('separated by a semicolon');
 	});
 
-	it('rebuilds the line when the modifier flag changes', () => {
-		// The bonus type appears and disappears with it, so the line has to be
-		// redrawn — the same reason **Publish per row** redraws.
-		const record = { columns: [{ key: 'Bonus', type: 'number' }] };
-		const el = columnsEditor(record, ['item']);
-		const before = recorded.redraws;
-		const box = modifierBox(el);
-		box.checked = true;
-		box.dispatchEvent(new Event('change'));
-		expect(recorded.redraws).toBe(before + 1);
+	it('says nothing about a second column where there is only one', () => {
+		const el = columnsEditor(
+			{ columns: [{ key: 'Modifiers', type: 'modifier' }] },
+			2,
+		);
+		expect(errors(el)).toEqual([]);
 	});
 
-	it('says so where a modifier column has no target to aim at', () => {
-		// A footnote rather than a refusal: a half-built table is the ordinary way
-		// a table is built, and blanking the card mid-edit would be worse.
-		const el = columnsEditor({
-			columns: [{ key: 'Bonus', type: 'number', modifier: true }],
-		});
-		expect(
-			Array.from(el.querySelectorAll('.sheetsmith-entry-footnote')).some(
-				(one) => (one.textContent ?? '').includes('no target column'),
-			),
-		).toBe(true);
+	it('says no error where the layout names no modifiers at all', () => {
+		/*
+		 * **The report this wave retires**, and it runs the opposite way to every
+		 * other row of the feature's corrections table. It was true under a
+		 * reference-only model — a column with nothing to point at *was* pointless —
+		 * and it is false the moment a row can type its own effect. So a layout with
+		 * no named modifiers is an ordinary layout, and the note stays and counts
+		 * zero.
+		 */
+		const el = columnsEditor({ columns: [{ key: 'Effect', type: 'modifier' }] });
+		expect(errors(el)).toEqual([]);
+		const said = footnotes(el).join('\n');
+		expect(said).toContain('holds every modifier its row applies');
+		expect(said).toContain('names 0 of them');
+		expect(said).toContain('top row of the tree');
 	});
 
-	it('says nothing once the table has one', () => {
-		const el = columnsEditor({
-			columns: [
-				{ key: 'Modifies', type: 'target' },
-				{ key: 'Bonus', type: 'number', modifier: true },
-			],
-		});
-		expect(
-			Array.from(el.querySelectorAll('.sheetsmith-entry-footnote')).some(
-				(one) => (one.textContent ?? '').includes('no target column'),
-			),
-		).toBe(false);
+	it('says nothing at all where the table has no modifier column', () => {
+		const el = columnsEditor({ columns: [{ key: 'Bonus', type: 'number' }] });
+		expect(errors(el)).toEqual([]);
+		expect(footnotes(el).join('\n')).not.toContain('modifier');
 	});
 });

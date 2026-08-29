@@ -186,12 +186,26 @@ export default defineConfig(
 								'!./card-face',
 								'!./linked-text',
 								'!./modifier-breakdown',
+								/*
+								 * **Added deliberately, which is what this tier means.**
+								 * `modifier-form.ts` is a shared component-layer surface
+								 * and not a component: it is in no registry, declares no
+								 * `ComponentDefinition`, imports nothing from `obsidian`
+								 * and touches no file — it is the markup of the form a
+								 * modifier glyph opens, beside `card-face.ts` and
+								 * `linked-text.ts`. Table is its one consumer today, and
+								 * the reason it is a module rather than a paragraph inside
+								 * `table.ts` is that the file was already 2450 lines and
+								 * the form is a second job in it (PATTERNS §1).
+								 */
+								'!./modifier-form',
 								'!./stored-flag',
 								'!../components/column-types',
 								'!../components/level-ring',
 								'!../components/card-face',
 								'!../components/linked-text',
 								'!../components/modifier-breakdown',
+								'!../components/modifier-form',
 								'!../components/stored-flag',
 							],
 							message:

@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { table, TableConfig, TableData } from './table';
 import { closePopover, LONG_PRESS } from '../ui/popover';
 import { UNRESOLVED_DELAY } from '../interaction/editable';
-import { hold, pressDown, release } from '../test/pointer';
+import { hold, pressDown, prevented, release } from '../test/pointer';
 import { FOCUSABLE } from '../view/cell-focus';
 import {
 	callsFrom,
@@ -13,7 +13,14 @@ import {
 } from '../formula/resolve';
 import { evaluate, Scope } from '../formula/expression';
 import { buildSheetEnv, buildSheetScope } from '../formula/sheet';
-import { RenderContext } from '../types';
+import {
+	ModifierContext,
+	ModifierDefinitionView,
+	ModifierOutcome,
+	RenderContext,
+} from '../types';
+import { cellParts, parseModifierPart } from '../parse/modifier-cell';
+import { closeAnchoredPanel } from '../ui/anchored-panel';
 
 /*
  * A D&D skill list, which is what fixed rows exist for: the layout owns the
@@ -2685,7 +2692,72 @@ describe('a column total and sum() over the same rows agree', () => {
  * value being changed is a Computed component elsewhere, so nothing here
  * publishes the number a modifier lands on — which is the whole point.
  */
-describe('table and its modifiers', () => {
+/**
+ * One part's outcome, with only the members a case cares about spelled out.
+ *
+ * A builder rather than a literal per case, because `ModifierOutcome` has eight
+ * members and six of them are the same in almost every case here: what a case is
+ * about is `applies`, `amount` and `suppressed`, and eight-member literals were
+ * hiding that. It also means adding a member to the contract is one edit.
+ */
+function outcomeOf(over: Partial<ModifierOutcome> = {}): ModifierOutcome {
+	return {
+		definition: null,
+		typed: null,
+		target: '',
+		targetLabel: '',
+		applies: false,
+		amount: null,
+		condition: null,
+		suppressed: null,
+		...over,
+	};
+}
+
+/**
+ * A named part's outcome: the definition, the label of what it changes, and the
+ * two members a case is usually about.
+ *
+ * Applying with an amount of 1 by default, because that is the state most cases
+ * start from and vary one member of.
+ */
+function named(
+	definition: ModifierDefinitionView,
+	over: Partial<ModifierOutcome> = {},
+): ModifierOutcome {
+	return outcomeOf({
+		definition,
+		target: definition.target,
+		targetLabel: definition.targetLabel,
+		applies: true,
+		amount: 1,
+		...over,
+	});
+}
+
+/** A modifier context whose definitions and breakdowns a case supplies. */
+function modifierContext(
+	over: Partial<ModifierContext> = {},
+): ModifierContext {
+	return {
+		definitions: [],
+		targets: [],
+		published: [],
+		bonusTypes: [],
+		outcome: () => outcomeOf(),
+		breakdown: () => ({ override: null, total: 0, lines: [] }),
+		// The host's write, absent here: a component drawn with no view around it
+		// has nothing to write a layout with, and the form says so rather than
+		// hiding the gesture.
+		promote: () =>
+			Promise.resolve({
+				error: 'This sheet cannot save a modifier to its layout.',
+			}),
+		...over,
+	};
+}
+
+describe('table and its enrolments', () => {
 	const items: TableConfig = {
 		id: 'items',
 		type: 'table',
@@ -2694,73 +2766,172 @@ describe('table and its modifiers', () => {
 		rowHeader: 'Item',
 		openRows: true,
 		columns: [
-			{ key: 'Modifies', type: 'target' },
-			{ key: 'Bonus', type: 'number', modifier: true, modifierType: 'item' },
-			{ key: 'Aid', type: 'number', modifier: true, modifierType: 'status' },
+			{ key: 'Effect', type: 'modifier' },
+			{ key: 'Aid', type: 'modifier' },
+			{ key: 'Worn', type: 'toggle' },
 		],
 	};
 
 	const ITEMS_BODY = `
-| Item | Modifies | Bonus | Aid |
+| Item | Effect | Aid | Worn |
 |---|---|---|---|
-| Belt of Giant Strength | abilities.STR | 2 |  |
-| Gauntlets of Ogre Power | abilities.STR | 1 |  |
-| Bull's Strength | abilities.STR |  | 1 |
+| Belt of Giant Strength | Belt | Bull's Strength | yes |
+| Gauntlets of Ogre Power | Gauntlets |  |  |
 | Chalk |  |  |  |
 `;
 
-	/** The pushes this card declares, resolved against a bare environment. */
+	/** The enrolments this card declares, resolved against a bare environment. */
 	function pushesOf(over: TableConfig, body: string) {
 		const data = stored(body, over);
 		const source = table.scopeModifiers?.(data, over);
 		if (source === undefined) throw new Error('expected a modifier source');
-		return source(
-			makeFieldResolver(table, over, data, NO_ENV),
-			makeFieldExplainer(table, over, data, NO_ENV),
-		);
+		return source(makeFieldResolver(table, over, data, NO_ENV));
 	}
 
-	it('pushes one modifier per amount cell, and none from a blank target', () => {
-		// A blank target is the ordinary case on an inventory, not a degenerate
-		// one: most rows change nothing.
-		// Every push carries the card's own label as well as the row's: a row
-		// label alone cannot name a source when two modifier tables on one sheet
-		// each hold a "Ring".
-		const from = { target: 'abilities.STR', source: 'Magic items' };
-		expect(pushesOf(items, ITEMS_BODY)).toEqual([
-			{ ...from, type: 'item', label: 'Belt of Giant Strength', amount: 2 },
-			{ ...from, type: 'status', label: 'Belt of Giant Strength', amount: 0 },
-			{ ...from, type: 'item', label: 'Gauntlets of Ogre Power', amount: 1 },
-			{ ...from, type: 'status', label: 'Gauntlets of Ogre Power', amount: 0 },
-			{ ...from, type: 'item', label: "Bull's Strength", amount: 0 },
-			{ ...from, type: 'status', label: "Bull's Strength", amount: 1 },
+	it('enrols once per filled cell, and not at all from a blank one', () => {
+		/*
+		 * A blank cell is the ordinary case on an inventory, not a degenerate one:
+		 * most rows change nothing.
+		 *
+		 * **Two modifier columns still push from both, and that is asserted rather
+		 * than assumed.** One column is now enough — a cell holds every modifier its
+		 * row applies — but a layout already declaring two keeps working: the
+		 * redundancy is reported in the layout editor and refused nowhere here,
+		 * because `configError` would take the table and every modifier its rows
+		 * apply down with it (§10, Constraint 4).
+		 *
+		 * Every enrolment carries the card's own label as well as the row's: a row
+		 * label alone cannot name a source when two modifier tables on one sheet
+		 * each hold a "Ring".
+		 */
+		const pushes = pushesOf(items, ITEMS_BODY);
+		expect(
+			pushes.map((push) => [push.part, push.row.label, push.source]),
+		).toEqual([
+			['Belt', 'Belt of Giant Strength', 'Magic items'],
+			["Bull's Strength", 'Belt of Giant Strength', 'Magic items'],
+			['Gauntlets', 'Gauntlets of Ogre Power', 'Magic items'],
 		]);
+	});
+
+	it('enrols once per name in one cell, in the cell\'s own order', () => {
+		/*
+		 * The second wave's whole footprint on this side: a cell holds a list, so
+		 * three names in one cell reach the formula layer as three pushes over one
+		 * `RowValues` — exactly as three cells did. `ModifierPush`,
+		 * `ModifierSource` and this method's signature are all untouched.
+		 */
+		const body = `
+| Item | Effect | Aid | Worn |
+|---|---|---|---|
+| Belt | Belt; Bull's Strength ;Plate armour |  | yes |
+`;
+		const pushes = pushesOf(items, body);
+		expect(pushes.map((push) => push.part)).toEqual([
+			'Belt',
+			"Bull's Strength",
+			'Plate armour',
+		]);
+		// One row object, still: the split changed how many names a cell yields
+		// and nothing about how many accounts of the row there are.
+		expect(new Set(pushes.map((push) => push.row)).size).toBe(1);
+	});
+
+	it('collapses a repeat within one cell, and drops an empty part', () => {
+		// A read and never a write: the cell keeps its own text until the reader
+		// changes that row's modifiers.
+		const body = `
+| Item | Effect | Aid | Worn |
+|---|---|---|---|
+| Belt | Belt;;Belt; Gauntlets |  |  |
+`;
+		expect(pushesOf(items, body).map((push) => push.part)).toEqual([
+			'Belt',
+			'Gauntlets',
+		]);
+	});
+
+	it('round-trips a cell spelled the way a hand-editor spells one', () => {
+		/*
+		 * Constraint 3, over the property §6 rests on. `parse/table.ts` rewrites
+		 * only the cells whose text actually changed, so every tolerated spelling
+		 * keeps its own bytes — and the canonical `'; '` join reaches the file only
+		 * where the reader has just changed that row's modifiers. There is no
+		 * normalising pass for byte identity to lose to, which a canonical join
+		 * running on *read* would have broken here.
+		 */
+		for (const cell of [
+			'Belt ;Gauntlets',
+			'Belt;;Gauntlets',
+			'Belt ; Gauntlets',
+			// **And every spelling the second tier makes reachable**, which is where
+			// the property has teeth: a typed part's internal spacing is as
+			// hand-editable as the separator's, and neither is normalised.
+			'armour_class+=2',
+			'armour_class  +=  2 as item',
+			'Plate armour ;armour_class += 2 as item when Worn',
+			'armour_class +=',
+		]) {
+			const body = `
+| Item | Effect | Aid | Worn |
+|---|---|---|---|
+| Belt | ${cell} |  |  |
+`;
+			expect(table.write(stored(body, items), body, items), cell).toBe(body);
+		}
+	});
+
+	it('hands over one row object however many of its cells enrol', () => {
+		// Built once per row rather than per cell: the two enrolments on one row
+		// are evaluated against one account of it, so a definition reading a cell
+		// cannot see two different values for it.
+		const pushes = pushesOf(items, ITEMS_BODY);
+		expect(pushes[0]?.row).toBe(pushes[1]?.row);
+	});
+
+	it('hands over the row\'s own names, including its toggle cells', () => {
+		// Which is what makes `when: "Worn"` an ordinary cell rather than a second
+		// stored fact: the flag reaches the definition through the row scope.
+		expect(pushesOf(items, ITEMS_BODY)[0]?.row.values.Worn).toBe(true);
+	});
+
+	it('hands over a computed column too, so an amount may read one', () => {
+		const computedRow: TableConfig = {
+			...items,
+			columns: [
+				{ key: 'Effect', type: 'modifier' },
+				{ key: 'Charges', type: 'number' },
+				{ key: 'Doubled', type: 'computed', formula: 'Charges * 2' },
+			],
+		};
+		const body = `
+| Item | Effect | Charges |
+|---|---|---|
+| Wand | Charge | 3 |
+`;
+		const row = pushesOf(computedRow, body)[0]?.row;
+		expect(row?.values.Charges).toBe(3);
+		expect(row?.values.Doubled).toBe(6);
 	});
 
 	it('names a row as a reader sees it, never as the file spells it', () => {
 		// `RowValues.label`'s rule one layer out: a breakdown reading
 		// "[[Sunblade|sword]]" names nothing anybody can find on the card.
 		const body = `
-| Item | Modifies | Bonus | Aid |
+| Item | Effect | Aid | Worn |
 |---|---|---|---|
-| [[Ring of Protection\\|ring]] | armour_class | 1 |  |
+| [[Ring of Protection\\|ring]] | Ring |  |  |
 `;
-		expect(pushesOf(items, body)[0]?.label).toBe('ring');
-	});
-
-	it('declares nothing where the layout gave it no target column', () => {
-		const { columns, ...rest } = items;
-		const noTarget = { ...rest, columns: (columns ?? []).slice(1) } as TableConfig;
-		expect(table.scopeModifiers?.(stored(ITEMS_BODY, noTarget), noTarget)).toBeUndefined();
+		expect(pushesOf(items, body)[0]?.row.label).toBe('ring');
 	});
 
 	it('declares nothing where no column is a modifier', () => {
-		const noAmount = {
+		const noneAtAll = {
 			...items,
-			columns: [{ key: 'Modifies', type: 'target' as const }],
+			columns: [{ key: 'Worn', type: 'toggle' as const }],
 		};
 		expect(
-			table.scopeModifiers?.(stored(ITEMS_BODY, noAmount), noAmount),
+			table.scopeModifiers?.(stored(ITEMS_BODY, noneAtAll), noneAtAll),
 		).toBeUndefined();
 	});
 
@@ -2769,79 +2940,29 @@ describe('table and its modifiers', () => {
 		// has agreed to yet would be a number derived from an error.
 		const broken = {
 			...items,
-			columns: [...(items.columns ?? []), { key: 'Modifies', type: 'target' as const }],
+			columns: [...(items.columns ?? []), { key: 'Effect', type: 'modifier' as const }],
 		};
 		expect(table.scopeModifiers?.(null, broken)).toBeUndefined();
 	});
 
-	it('reports the row where a number cell holds prose, rather than pushing 0', () => {
+	it('keeps the cell\'s spelling whatever the layout declares', () => {
+		// The component cannot know what a definition is, so a name nothing
+		// declares travels exactly as a name something does.
 		const body = `
-| Item | Modifies | Bonus | Aid |
+| Item | Effect | Aid | Worn |
 |---|---|---|---|
-| Rope | armour_class | coil |  |
+| Amulet | Ring of Nonexistence |  |  |
 `;
-		expect(pushesOf(items, body)[0]).toEqual({
-			target: 'armour_class',
-			type: 'item',
-			label: 'Rope',
-			source: 'Magic items',
-			unreadable:
-				'"coil" is not a number, so the "Bonus" column cannot be an amount.',
-		});
+		expect(pushesOf(items, body)[0]?.part).toBe('Ring of Nonexistence');
+		const data = stored(body, items);
+		expect(table.write(data, body, items)).toBe(body);
 	});
 
-	it('reports the row where a computed amount will not resolve, and why', () => {
-		// The message the acceptance criterion asks for: the row *and* the reason.
-		// A resolver returning null could only ever produce "did not resolve",
-		// which is why the source is handed an explainer as well.
-		const computedAmount: TableConfig = {
-			...items,
-			columns: [
-				{ key: 'Modifies', type: 'target' },
-				{ key: 'Bonus', type: 'computed', formula: 'ability + 1', modifier: true },
-			],
-		};
-		const body = `
-| Item | Modifies |
-|---|---|
-| Belt of Giant Strength | abilities.STR |
-`;
-		expect(pushesOf(computedAmount, body)[0]).toEqual({
-			target: 'abilities.STR',
-			type: null,
-			label: 'Belt of Giant Strength',
-			source: 'Magic items',
-			unreadable: 'Unknown name "ability".',
-		});
-	});
-
-	it('reads an untyped modifier column as untyped, so every one stacks', () => {
-		const untyped: TableConfig = {
-			...items,
-			columns: [
-				{ key: 'Modifies', type: 'target' },
-				{ key: 'Bonus', type: 'number', modifier: true },
-			],
-		};
-		const body = `
-| Item | Modifies | Bonus |
-|---|---|---|
-| Cloak | armour_class | 1 |
-`;
-		expect(pushesOf(untyped, body)[0]?.type).toBeNull();
-	});
-
-	it('publishes no name for a row that pushes', () => {
+	it('publishes no name for a row that enrols', () => {
 		/*
 		 * The sentence the whole design rests on: `<id>.<name>` is a fixed-row
 		 * mechanism and stays one, so a row a character typed publishes nothing
 		 * however many values it changes.
-		 *
-		 * **Named against the rows this body actually holds.** This used to probe
-		 * `items.Belt`, which is nobody's row — the label is "Belt of Giant
-		 * Strength" — so it asserted that an arbitrary string is unknown rather
-		 * than that a real row publishes nothing, and would have passed just as
-		 * well if every row had been published.
 		 */
 		const values = table.scopeValues?.(stored(ITEMS_BODY, items), items) ?? {};
 		// Nothing at all: no `self`, and not one named entry.
@@ -2851,7 +2972,6 @@ describe('table and its modifiers', () => {
 		for (const row of [
 			'Belt of Giant Strength',
 			'Gauntlets of Ogre Power',
-			"Bull's Strength",
 			'Chalk',
 		]) {
 			expect(scope(`items.${row}`), row).toBeUndefined();
@@ -2860,44 +2980,84 @@ describe('table and its modifiers', () => {
 
 	it('reaches a row scope as its own text, with no special case', () => {
 		/*
-		 * A target cell is exactly what a `text` cell already is to a formula:
+		 * A modifier cell is exactly what a `text` cell already is to a formula:
 		 * `rowScope` layers every non-computed cell by column key and `cellValue`
-		 * falls through to the trimmed string. So `sum(items, Modifies)` fails
+		 * falls through to the trimmed string. So `sum(items, Effect)` fails
 		 * naming the row and the value, as it already does over a text column —
 		 * no special case, and none wanted.
 		 */
 		const data = stored(ITEMS_BODY, items);
 		const source = table.scopeRows?.(data, items);
 		const rows = source?.(makeFieldResolver(table, items, data, NO_ENV)) ?? [];
-		expect(rows[0]?.values.Modifies).toBe('abilities.STR');
-		const env = buildSheetEnv([
-			{ id: 'items', values: {}, rows: source },
-		]);
+		expect(rows[0]?.values.Effect).toBe('Belt');
+		const env = buildSheetEnv([{ id: 'items', values: {}, rows: source }]);
 		expect(() =>
-			evaluate('sum(items, Modifies)', env.sheet, callsFrom(env)),
+			evaluate('sum(items, Effect)', env.sheet, callsFrom(env)),
 		).toThrow('Row "Belt of Giant Strength"');
 	});
 
-	it('round-trips a target column byte for byte', () => {
-		// Constraint 3, over a filled target cell and a blank one.
+	it('round-trips a modifier column byte for byte', () => {
+		// Constraint 3, over two filled cells and two blank ones.
 		const data = stored(ITEMS_BODY, items);
 		expect(table.write(data, ITEMS_BODY, items)).toBe(ITEMS_BODY);
 	});
 
-	it('keeps a stored target the sheet does not publish, on write', () => {
-		const body = `
-| Item | Modifies | Bonus | Aid |
+	it('round-trips a note written against the shipped shape', () => {
+		/*
+		 * The acceptance criterion's own case, and the only migration there is:
+		 * none. A note written against the shipped design holds a `Modifies` cell
+		 * naming a published value and a `Bonus` cell holding an amount; the
+		 * layout now declares neither, and §4.2's existing rule for a column the
+		 * layout no longer declares leaves both in the note, unrendered and
+		 * untouched. So Constraint 3 holds by not being in the diff.
+		 *
+		 * Nothing could have rewritten them either: a target cell names a value
+		 * and there is no definition of that name to point it at, so any automatic
+		 * rewrite would be a guess.
+		 */
+		const shipped: TableConfig = {
+			...items,
+			columns: [{ key: 'Effect', type: 'modifier' }],
+		};
+		const old = `
+| Item | Modifies | Bonus | Effect |
 |---|---|---|---|
-| Amulet | armor_class | 1 |  |
+| Belt of Giant Strength | abilities.STR | 2 |  |
 `;
-		const data = stored(body, items);
-		expect(table.write(data, body, items)).toBe(body);
-		// And it is what a formula would be asked for, spelled exactly as typed.
-		expect(pushesOf(items, body)[0]?.target).toBe('armor_class');
+		const data = stored(old, shipped);
+		expect(table.write(data, old, shipped)).toBe(old);
+		// And nothing enrols, because the cell the layout does read is blank.
+		expect(pushesOf(shipped, old)).toEqual([]);
+	});
+
+	it('reads a column a layout still types "target" as the default', () => {
+		/*
+		 * The type is gone from the vocabulary, so `columnType` falls through to
+		 * `text` and the cell draws as a text field holding the name the note has.
+		 * Rendered, not corrected: the author retypes the column to Modifier once
+		 * they have written the definitions those names should have been.
+		 */
+		const stale = {
+			...items,
+			columns: [{ key: 'Modifies', type: 'target' }],
+		} as unknown as TableConfig;
+		const old = `
+| Item | Modifies |
+|---|---|
+| Belt of Giant Strength | abilities.STR |
+`;
+		const data = stored(old, stale);
+		expect(table.write(data, old, stale)).toBe(old);
+		expect(table.scopeModifiers?.(data, stale)).toBeUndefined();
+		const el = document.createElement('div');
+		table.render(el, stale, data, contextFor(data, stale));
+		expect(
+			el.querySelector<HTMLInputElement>('tbody td input')?.value,
+		).toBe('abilities.STR');
 	});
 });
 
-describe('table.configError over a target column', () => {
+describe('table.configError over a modifier column', () => {
 	const base: TableConfig = {
 		id: 'items',
 		type: 'table',
@@ -2912,96 +3072,81 @@ describe('table.configError over a target column', () => {
 		return result.ok ? null : result.error;
 	};
 
-	it('refuses two target columns, naming the fix', () => {
-		// The reason is not `publish`'s: a modifier amount has no way to say which
-		// of two target columns it belongs to.
-		const said = refusal([
-			{ key: 'Modifies', type: 'target' },
-			{ key: 'Also', type: 'target' },
-		]);
-		expect(said).toContain('both targets');
-		expect(said).toContain('two rows');
+	it('refuses a total on a modifier column, naming the fix', () => {
+		const said = refusal([{ key: 'Effect', type: 'modifier', total: true }]);
+		expect(said).toContain('a modifier cell holds the changes a row applies');
+		expect(said).toContain('turn the total off');
 	});
 
-	it('refuses a total on a target column', () => {
-		expect(refusal([{ key: 'Modifies', type: 'target', total: true }])).toContain(
-			'a target holds the name of a value',
-		);
-	});
-
-	it('refuses a published target column', () => {
-		expect(
-			refusal([{ key: 'Modifies', type: 'target', publish: true }]),
-		).toContain('the language has no text');
-	});
-
-	it('refuses a modifier on a text column', () => {
+	it('refuses nothing at all for a second modifier column', () => {
+		/*
+		 * Asserted, because refusing here is the tempting answer and the worst one:
+		 * `withdrawnNotice` means a refusal takes the table *and every modifier its
+		 * rows apply* down with it, so a player's inventory would disappear because
+		 * a layout has a column too many (§10, Constraint 4). One column is enough
+		 * and the redundancy is reported in the layout editor, where the fix is.
+		 *
+		 * **Why the shipped cap went at all**, since this is the case that replaced
+		 * it: the refusal existed because a modifier *amount* cell had no way to say
+		 * which of two target columns it belonged to. A cell holds every modifier its
+		 * row applies now, so there is nothing to pair and nothing to be ambiguous
+		 * about.
+		 */
 		expect(
 			refusal([
-				{ key: 'Modifies', type: 'target' },
-				{ key: 'Notes', modifier: true },
+				{ key: 'Modifiers', type: 'modifier' },
+				{ key: 'Aid', type: 'modifier' },
+				{ key: 'More', type: 'modifier' },
 			]),
-		).toContain('this column holds text');
+		).toBeNull();
 	});
 
-	it('refuses a modifier on a toggle column, naming a computed one as the fix', () => {
-		// The same rule that refuses `sum(inventory, Worn)`: the language has no
-		// numeric meaning for yes and no, so the answer is a formula rather than a
-		// coercion.
-		const said = refusal([
-			{ key: 'Modifies', type: 'target' },
-			{ key: 'Worn', type: 'toggle', modifier: true },
-		]);
-		expect(said).toContain('yes/no cell is not a number');
-		expect(said).toContain('if(Worn, 2, 0)');
+	it('refuses a published modifier column, naming the fix', () => {
+		const said = refusal([{ key: 'Effect', type: 'modifier', publish: true }]);
+		expect(said).toContain('the language has no text');
+		expect(said).toContain('Publish a number or computed column instead');
 	});
 
-	it('says a refused modifier table withdraws the bonuses it was pushing', () => {
+	it('says a refused modifier table withdraws the modifiers its rows applied', () => {
 		/*
 		 * `scopeModifiers` returns undefined for a card that will not configure, so
-		 * every target it was pushing at falls back to a slot of 0 — a plausible
+		 * every name its rows were changing falls back to a slot of 0 — a plausible
 		 * number carrying no mark. The clause goes on this card's own error because
 		 * it is the only place that can say it: a card refused here has never read
 		 * a row (`read` refuses before `readTable`), so it does not know which
-		 * targets its rows named, and no card can know that a table which would
-		 * have pushed at it is broken.
+		 * definitions its cells named.
 		 */
 		const said = refusal([
-			{ key: 'Modifies', type: 'target' },
-			{ key: 'Bonus', type: 'number', modifier: true },
+			{ key: 'Effect', type: 'modifier' },
 			{ key: 'Notes', total: true },
 		]);
 		expect(said).toContain('a text column has nothing to add up');
 		expect(said).toContain('are not applied');
 	});
 
-	it('says nothing about modifiers where the card was pushing none', () => {
-		// A modifier column with no target pushes nothing whether the card
-		// configures or not, so the clause would be a false sentence.
-		const said = refusal([
-			{ key: 'Bonus', type: 'number', modifier: true },
-			{ key: 'Notes', total: true },
-		]);
+	it('says nothing about modifiers where the card had none to withdraw', () => {
+		const said = refusal([{ key: 'Notes', total: true }]);
 		expect(said).toContain('a text column has nothing to add up');
 		expect(said).not.toContain('are not applied');
-	});
-
-	it('accepts a modifier on a number, a level and a computed column', () => {
-		for (const type of ['number', 'level', 'computed'] as const) {
-			expect(
-				refusal([
-					{ key: 'Modifies', type: 'target' },
-					{ key: 'Bonus', type, modifier: true },
-				]),
-			).toBeNull();
-		}
 	});
 });
 
 /*
- * The target cell and the mark, on the sheet (SPEC §5).
+ * The modifier cell, its glyph and its popup, on the sheet (SPEC §5).
  */
-describe('table renders a target cell', () => {
+describe('table renders a modifier cell', () => {
+	/*
+	 * **One panel is open at a time, so a case that leaves one open is a case the
+	 * next one inherits.** `showAnchoredPanel` holds a module-level singleton and
+	 * `table.ts` re-anchors it during render wherever the key matches — which is the
+	 * mechanism that keeps a form open across a commit, and which makes a stray
+	 * panel look to the next case like a cell that opened itself. `opened()` clears
+	 * one on the way in; this clears one on the way out, so a case using `drawn()`
+	 * alone starts closed too.
+	 */
+	afterEach(() => closeAnchoredPanel());
+
+
 	const items: TableConfig = {
 		id: 'items',
 		type: 'table',
@@ -3010,34 +3155,104 @@ describe('table renders a target cell', () => {
 		rowHeader: 'Item',
 		openRows: true,
 		columns: [
-			{ key: 'Modifies', type: 'target' },
-			{ key: 'Bonus', type: 'number', modifier: true, modifierType: 'item' },
+			{ key: 'Modifiers', type: 'modifier', hideHeading: true },
+			{ key: 'Bonus', type: 'number' },
 		],
 	};
 
+	const RING: ModifierDefinitionView = {
+		name: 'Ring of Protection',
+		target: 'armour_class',
+		targetLabel: 'Armour class',
+		operator: 'add',
+		amount: '1',
+		bonusType: 'item',
+	};
+	const PLATE: ModifierDefinitionView = {
+		name: 'Plate armour',
+		target: 'armour_class',
+		targetLabel: 'Armour class',
+		operator: 'override',
+		amount: '18',
+	};
+	/** A third, with a condition, so a line can say which way it went here. */
+	const CLOAK: ModifierDefinitionView = {
+		name: 'Cloak of Elvenkind',
+		target: 'armour_class',
+		targetLabel: 'Armour class',
+		operator: 'add',
+		amount: '1',
+		bonusType: 'status',
+		when: 'Worn',
+	};
+
+	/** The values a modifier may be aimed at, for the form's Changes select. */
 	const TARGETS = [
 		{ name: 'armour_class', label: 'Armour class' },
 		{ name: 'abilities.STR', label: 'Abilities · STR' },
 	];
 
-	const modifiers = {
-		targets: TARGETS,
-		breakdown: () => ({ total: 0, lines: [] }),
-		// The sheet publishes both targets and one name that reads no modifier,
-		// which is what the two stray titles are told apart by.
-		publishes: (name: string) =>
-			name === 'passive_perception' ||
-			TARGETS.some((target) => target.name === name),
-	};
+	/** What a part comes to, resolved the way `sheetModifiers` would resolve it. */
+	function resolve(part: string, over: Partial<ModifierOutcome>): ModifierOutcome {
+		const declared = [RING, PLATE, CLOAK].find((one) => one.name === part);
+		if (declared !== undefined) {
+			return outcomeOf({
+				definition: declared,
+				target: declared.target,
+				targetLabel: declared.targetLabel,
+				applies: true,
+				amount: 1,
+				...over,
+			});
+		}
+		const read = parseModifierPart(part);
+		if (read.kind === 'typed') {
+			return outcomeOf({
+				typed: read.effect,
+				target: read.effect.target,
+				targetLabel:
+					TARGETS.find((one) => one.name === read.effect.target)?.label ??
+					read.effect.target,
+				applies: read.effect.amount !== '',
+				amount: read.effect.amount === '' ? null : Number(read.effect.amount),
+				...(read.effect.amount === ''
+					? { applies: false, suppressed: 'it needs an amount.' }
+					: {}),
+				...over,
+			});
+		}
+		// A stray: carried, rendered, never corrected.
+		return outcomeOf();
+	}
 
-	const body = (target: string) => `
-| Item | Modifies | Bonus |
+	/** A context offering the two definitions and whatever outcome is given. */
+	const withOutcome = (over: Partial<ModifierOutcome> = {}) =>
+		modifierContext({
+			definitions: [RING, PLATE],
+			targets: TARGETS,
+			published: TARGETS,
+			bonusTypes: ['item', 'status'],
+			outcome: (part: string) => resolve(part, over),
+		});
+
+	/** A stray: the layout declares nothing of the name the cell holds. */
+	const strayContext = () =>
+		modifierContext({
+			definitions: [RING],
+			targets: TARGETS,
+			published: TARGETS,
+			bonusTypes: ['item', 'status'],
+			outcome: (part: string) => resolve(part, {}),
+		});
+
+	const body = (cell: string) => `
+| Item | Modifiers | Bonus |
 |---|---|---|
-| Ring | ${target} | 1 |
+| Ring | ${cell} | 1 |
 `;
 
-	function drawn(target: string, ctx: Partial<RenderContext> = {}) {
-		const data = stored(body(target), items);
+	function drawn(cell: string, ctx: Partial<RenderContext> = {}) {
+		const data = stored(body(cell), items);
 		const el = document.createElement('div');
 		const changes: unknown[] = [];
 		table.render(el, items, data, {
@@ -3045,143 +3260,1162 @@ describe('table renders a target cell', () => {
 			onChange: (edited) => changes.push(edited),
 			...ctx,
 		});
-		const select = el.querySelector('select') as HTMLSelectElement;
 		return {
-			select,
+			el,
 			changes,
-			options: Array.from(select.options).map((one) => one.textContent),
-			values: Array.from(select.options).map((one) => one.value),
+			cell: el.querySelector('.sheetsmith-table-modifier-cell') as HTMLElement,
+			button: el.querySelector(
+				'.sheetsmith-table-modifier-button',
+			) as HTMLButtonElement,
+			glyph: el.querySelector(
+				'.sheetsmith-table-modifier-glyph',
+			) as HTMLElement,
 		};
 	}
 
-	it('offers exactly the accepting targets, over an empty first line', () => {
-		// The picker is the answer to a need the prior art fails outright:
-		// Foundry's own article tells users to press F12 and run a console script
-		// to enumerate attribute keys. The sheet already knows every name it
-		// publishes, so this is available rather than clever.
-		const { options, values } = drawn('armour_class', { modifiers });
-		expect(options).toEqual(['—', 'Armour class', 'Abilities · STR']);
-		expect(values).toEqual(['', 'armour_class', 'abilities.STR']);
-	});
+	/**
+	 * The popup a press opens, read off the stub's own markup.
+	 *
+	 * The stub builds the app's markup rather than a shape of its own, so what is
+	 * asserted here is what a calibrated harness paints: `.menu`, `.menu-item`,
+	 * `.menu-item-icon`, `.menu-item-title`, `.menu-separator` and `is-label`.
+	 */
+	/**
+	 * Open the form on the row's glyph, and hand back the ways into it.
+	 *
+	 * The panel is attached to the document, so one left by an earlier case would
+	 * be the one `querySelector` finds. Closed rather than counted from the end, so
+	 * a case reads about its own panel and nothing else.
+	 */
+	function opened(cell: string, ctx: Partial<RenderContext> = {}) {
+		closeAnchoredPanel();
+		const drew = drawn(cell, ctx);
+		drew.button.click();
+		const panel = document.querySelector('.sheetsmith-panel') as HTMLElement;
+		return { ...drew, panel, lines: () => lines(panel), field: (label: string) => field(panel, label) };
+	}
 
-	it('shows a blank cell as the empty line, which is no choice at all', () => {
-		const { select } = drawn('', { modifiers });
-		expect(select.value).toBe('');
-	});
+	/** Every line of the list: its words, its reason, its mark and its tier. */
+	function lines(panel: HTMLElement) {
+		return Array.from(panel.querySelectorAll('.sheetsmith-panel-line')).map(
+			(line) => ({
+				text: line.querySelector('.sheetsmith-panel-said')?.textContent ?? '',
+				why: line.querySelector('.sheetsmith-panel-why')?.textContent ?? null,
+				icon:
+					line
+						.querySelector('.sheetsmith-panel-glyph')
+						?.getAttribute('data-icon') ?? null,
+				tier: (line as HTMLElement).dataset.sheetsmithPart ?? null,
+				open: line.getAttribute('aria-expanded'),
+				name: line.getAttribute('aria-label'),
+				press: () => (line as HTMLElement).click(),
+			}),
+		);
+	}
 
-	it('renders a stored target the picker does not offer, as its last line', () => {
-		// Rendered, not corrected: snapping to blank or to the first target would
-		// be a layout edit deleting character data (Constraint 4, SPEC §10).
-		const { select, options } = drawn('armor_class', { modifiers });
-		expect(options.at(-1)).toBe('armor_class');
-		expect(select.value).toBe('armor_class');
-	});
+	/** One labelled control of the open part, by the label a reader sees. */
+	function field(panel: HTMLElement, label: string) {
+		for (const row of Array.from(
+			panel.querySelectorAll('.sheetsmith-panel-field'),
+		)) {
+			const said = row.querySelector('.sheetsmith-panel-field-label')?.textContent;
+			if (said !== label) continue;
+			return row.querySelector<HTMLSelectElement | HTMLInputElement>(
+				'select, input',
+			);
+		}
+		return null;
+	}
 
-	it('marks a stray target on the row and in ARIA, not only in a title', () => {
+	/** Every button in the panel whose words are `text`, pressed by the first. */
+	function control(panel: HTMLElement, text: string): HTMLElement | null {
+		return (
+			Array.from(panel.querySelectorAll('button')).find((button) =>
+				(button.textContent ?? '').includes(text),
+			) ?? null
+		);
+	}
+
+	/** Choose `value` in a select and fire the `change` the form listens for. */
+	function choose(select: HTMLSelectElement | HTMLInputElement | null, value: string) {
+		if (select === null) throw new Error('no such control');
+		(select as HTMLSelectElement).value = value;
+		select.dispatchEvent(new Event('change'));
+	}
+
+	/** Type into a field and commit it the way `editable.ts` does. */
+	function type(input: HTMLSelectElement | HTMLInputElement | null, value: string) {
+		if (input === null) throw new Error('no such control');
+		input.value = value;
+		input.dispatchEvent(new Event('input'));
+		input.dispatchEvent(new Event('blur'));
+	}
+
+	it('draws plus on a cell with no modifier, because it is the entry point', () => {
 		/*
-		 * `docs/UI.md` §6: state goes in ARIA, not only in paint — and here it was
-		 * in neither. A stray target was pixel-identical to a working one and a
-		 * screen reader heard only "Ring Modifies", so the one thing a reader
-		 * needed to know, that this row changes nothing, was reachable only by
-		 * hovering.
+		 * The blank row used to draw nothing, which was right for a control that
+		 * only *chose* and is wrong for one that manages: an empty cell is now where
+		 * a modifier is added, and an unmarked entry point is a dead end. `docs/UI.md`
+		 * §7 refuses a hover-only affordance and a phone has no hover to reveal one
+		 * with, which is the argument the delete glyph one column over already
+		 * carries.
 		 */
-		const working = drawn('armour_class', { modifiers });
-		const strayed = drawn('armor_class', { modifiers });
-		expect(working.select.classList.contains('sheetsmith-table-inert')).toBe(
-			false,
-		);
-		expect(strayed.select.classList.contains('sheetsmith-table-inert')).toBe(
-			true,
-		);
-		// The state in the accessible name, on the level ring's own shape.
-		expect(working.select.getAttribute('aria-label')).toBe('Ring Modifies');
-		expect(strayed.select.getAttribute('aria-label')).toBe(
-			'Ring Modifies: armor_class, changes nothing',
-		);
+		const { glyph, cell } = drawn('', { modifiers: withOutcome() });
+		expect(glyph.dataset.icon).toBe('plus');
+		// And the faint treatment is a class rather than an inline paint, so the
+		// hover and focus steps are the stylesheet's.
+		expect(cell.classList.contains('sheetsmith-table-modifier-empty')).toBe(true);
 	});
 
-	it('marks a published target that reads no modifier too', () => {
-		// Both reasons make the row inert, so both get the mark; only the title
-		// tells them apart, because they name two different fixes.
-		const { select } = drawn('passive_perception', { modifiers });
-		expect(select.classList.contains('sheetsmith-table-inert')).toBe(true);
-		expect(select.getAttribute('title')).toContain('reads no modifier');
+	it('draws zap where the row is applying and zap-off where it is not', () => {
+		// Three shapes, because `docs/UI.md` §6 refuses a mark whose only channel is
+		// fill strength, and `zap-off` against `zap` carries itself.
+		expect(
+			drawn('Ring of Protection', { modifiers: withOutcome() }).glyph.dataset
+				.icon,
+		).toBe('zap');
+		expect(
+			drawn('Ring of Protection', {
+				modifiers: withOutcome({
+					applies: false,
+					suppressed: 'a larger item bonus applies',
+				}),
+			}).glyph.dataset.icon,
+		).toBe('zap-off');
 	});
 
-	it('says which of the two reasons a stray target is stray', () => {
+	it('draws one zap for two names where one applies, because the glyph reads the row', () => {
 		/*
-		 * The two have different fixes: a name the sheet does not publish is a
-		 * spelling to correct in this cell, and a name it publishes that reads no
-		 * modifier is a formula to edit somewhere else. A title saying "either …
-		 * or …" would send half its readers to the wrong place.
+		 * The state the old three shapes could not describe, and the second wave's
+		 * most direct consequence. One row is one item and an item reads as one
+		 * mark: a row changing something is changing something, and the rest is
+		 * carried in words. Deliberately not a fourth shape for "some" — a
+		 * partial-state glyph is a mark most readers meet once and could not name.
 		 */
+		const { glyph } = drawn('Ring of Protection; Plate armour', {
+			modifiers: modifierContext({
+				definitions: [RING, PLATE],
+				outcome: (name: string) =>
+					name === RING.name
+						? named(RING, { applies: true, amount: 1 })
+						: named(PLATE, { applies: false, amount: 18, suppressed: 'a higher override applies' }),
+			}),
+		});
+		expect(glyph.dataset.icon).toBe('zap');
+	});
+
+	it('draws zap-off for two names where neither applies', () => {
+		const { glyph } = drawn('Ring of Protection; Plate armour', {
+			modifiers: withOutcome({ applies: false, suppressed: 'nothing doing' }),
+		});
+		expect(glyph.dataset.icon).toBe('zap-off');
+	});
+
+	it('carries the state in the accessible name, in all five of its forms', () => {
+		/*
+		 * `docs/UI.md` §6: state goes in ARIA, not only in paint. The count form is
+		 * where the second wave shows, and it gives a count rather than the names —
+		 * which is parity, because the glyph gives a sighted reader no names either.
+		 */
+		const nameOf = (cell: string, ctx: Partial<RenderContext>) =>
+			drawn(cell, ctx).button.getAttribute('aria-label');
+		// The row's own name is in front of the column's, which is the shape every
+		// cell control on this component already uses: "Ring Modifiers".
+		expect(nameOf('', { modifiers: withOutcome() })).toBe('Ring Modifiers');
+		expect(nameOf('Ring of Protection', { modifiers: withOutcome() })).toBe(
+			'Ring Modifiers: Ring of Protection',
+		);
 		expect(
-			drawn('armor_class', { modifiers }).select.getAttribute('title'),
-		).toContain('publishes no "armor_class"');
+			nameOf('Ring of Nonexistence', { modifiers: strayContext() }),
+		).toBe('Ring Modifiers: Ring of Nonexistence, changes nothing');
 		expect(
-			drawn('passive_perception', { modifiers }).select.getAttribute('title'),
-		).toContain('reads no modifier');
+			nameOf('Ring of Protection; Plate armour', { modifiers: withOutcome() }),
+		).toBe('Ring Modifiers: 2 applying');
+		expect(
+			nameOf('Ring of Protection; Ring of Nonexistence', {
+				modifiers: strayContext(),
+			}),
+		).toBe('Ring Modifiers: 1 applying, 1 changing nothing');
+	});
+
+	it('carries what one modifier does in a title, through the shared builder', () => {
+		const { button } = drawn('Plate armour', {
+			modifiers: modifierContext({
+				definitions: [RING, PLATE],
+				outcome: () => (named(PLATE, { applies: true, amount: 18 })),
+			}),
+		});
+		expect(button.getAttribute('title')).toBe('Armour class — sets to 18');
+	});
+
+	it('summarises several in the title, marking the line that changes nothing', () => {
+		// One line each, with the reason left to the popup and the fact of it
+		// inline, so the block stays bounded however many the row applies.
+		const { button } = drawn('Ring of Protection; Ring of Nonexistence', {
+			modifiers: strayContext(),
+		});
+		expect(button.getAttribute('title')).toBe(
+			[
+				'Armour class — item +1',
+				'"Ring of Nonexistence" is not a modifier this layout declares.',
+			].join('\n'),
+		);
+		const suppressed = drawn('Ring of Protection; Plate armour', {
+			modifiers: modifierContext({
+				definitions: [RING, PLATE],
+				outcome: (name: string) =>
+					name === RING.name
+						? named(RING, { applies: true, amount: 1 })
+						: named(PLATE, { applies: false, amount: 18, suppressed: 'a higher override applies' }),
+			}),
+		});
+		expect(suppressed.button.getAttribute('title')).toBe(
+			['Armour class — item +1', 'Armour class — sets to 18 (changes nothing)'].join(
+				'\n',
+			),
+		);
+	});
+
+	it('says the layout declares no such modifier where it does not', () => {
+		const { button } = drawn('Ring of Nonexistence', {
+			modifiers: strayContext(),
+		});
+		expect(button.getAttribute('title')).toContain(
+			'is not a modifier this layout declares',
+		);
+	});
+
+	it('never carries the class that never painted', () => {
+		/*
+		 * `.sheetsmith-table-inert` is gone. Its only declaration on this cell was
+		 * `color: var(--text-muted)`, byte-identical to the base rule it was written
+		 * to override, so a stray cell and a working one were always the same
+		 * colour — the shape and the accessible name were doing all of the work.
+		 * The test that asserted the class asserts the glyph instead, which is the
+		 * channel that was actually carrying the state.
+		 */
+		const { el, glyph } = drawn('Ring of Nonexistence', {
+			modifiers: strayContext(),
+		});
+		expect(el.innerHTML).not.toContain('sheetsmith-table-inert');
+		expect(glyph.dataset.icon).toBe('zap-off');
+	});
+
+	it('has one gesture: a press, and no long press anywhere on the cell', () => {
+		/*
+		 * The cell had two gestures because it had two jobs on one control: a press
+		 * opened the picker and a press-and-hold opened the explanation. The popup
+		 * carries the explanation now, so there is one job and one gesture — and
+		 * `bindLongPress` is back to the two-argument helper the level ring and Track
+		 * use, with no `claimTouchPress` to take a press away from anything.
+		 */
+		vi.useFakeTimers();
+		try {
+			const { button } = drawn('Plate armour', { modifiers: withOutcome() });
+			hold(button, LONG_PRESS + 10, { pointerType: 'touch' });
+			expect(document.querySelector('.sheetsmith-popover')).toBeNull();
+			// And nothing takes the press: the button's own click is the gesture.
+			expect(prevented(button, 'touch')).toBe(false);
+		} finally {
+			closePopover();
+			vi.useRealTimers();
+		}
+	});
+
+	it('names the row on the panel it opens', () => {
+		/*
+		 * Criterion 33's other half. `ui/anchored-panel.test.ts` asserts that a label
+		 * handed in comes back out; **what nothing asserted is the wiring** — that
+		 * Table builds it from the row's own reader-facing label, so a screen reader
+		 * arriving in the dialog is told which row it belongs to rather than which
+		 * column.
+		 *
+		 * `rowLabel`, so a row spelled `[[Ring of Protection|ring]]` in the file is
+		 * named `ring` here, exactly as it is in a breakdown.
+		 */
+		const { panel } = opened('Ring of Protection', { modifiers: withOutcome() });
+		expect(panel.getAttribute('role')).toBe('dialog');
+		expect(panel.getAttribute('aria-label')).toBe('Modifiers on "Ring"');
+	});
+
+	it('says it opens a dialog, and puts aria-expanded back when it closes', () => {
+		/*
+		 * `"dialog"` and not `"menu"`: what opens is a form, and a screen reader
+		 * should say so. The focus cycle inside it is the platform's own contract
+		 * for a dialog, which is what makes this attribute true rather than
+		 * decorative — `ui/anchored-panel.test.ts` holds that half.
+		 */
+		const { button } = drawn('Plate armour', { modifiers: withOutcome() });
+		expect(button.getAttribute('aria-haspopup')).toBe('dialog');
+		expect(button.getAttribute('aria-expanded')).toBe('false');
+		button.click();
+		expect(button.getAttribute('aria-expanded')).toBe('true');
+		document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+		expect(button.getAttribute('aria-expanded')).toBe('false');
+	});
+
+	/** RING applying, PLATE suppressed, CLOAK unworn — one context, three states. */
+	const threeStates = () =>
+		modifierContext({
+			definitions: [RING, PLATE, CLOAK],
+			targets: TARGETS,
+			published: TARGETS,
+			bonusTypes: ['item', 'status'],
+			outcome: (part: string) =>
+				part === RING.name
+					? named(RING, { applies: true, amount: 1 })
+					: part === PLATE.name
+						? named(PLATE, {
+								applies: false,
+								amount: 18,
+								suppressed: 'a higher override applies',
+							})
+						: part === CLOAK.name
+							? named(CLOAK, { applies: false, amount: 1, condition: false })
+							: resolve(part, {}),
+		});
+
+	it('lists one line per part in the cell\'s own order, with its own wording', () => {
+		/*
+		 * One list, labelled `On this row`, and a press on a line *opens* it. Under
+		 * the menu round there were two sections and position carried membership;
+		 * there is one list now, so the label carries it and the second section's
+		 * job — offering what the row could apply — is the `Modifier` select inside
+		 * the form.
+		 */
+		const { panel, lines: read } = opened('Plate armour; Ring of Protection', {
+			modifiers: threeStates(),
+		});
+		expect(
+			panel.querySelector('.sheetsmith-panel-heading')?.textContent,
+		).toBe('On this row · select to edit');
+		const list = read();
+		expect(list[0]?.text).toBe('Plate armour · Armour class — sets to 18');
+		expect(list[0]?.icon).toBe('zap-off');
+		// A reason on a line of its own under the line it is about, which is
+		// `.sheetsmith-field-problems`' shape in the editor.
+		expect(list[0]?.why).toBe('Not applied: a higher override applies');
+		expect(list[1]?.text).toBe('Ring of Protection · Armour class — item +1');
+		expect(list[1]?.icon).toBe('zap');
+		expect(list[1]?.why).toBeNull();
+		// The modifier's own words plus its state, which is the whole of what the
+		// line and its reason carry together.
+		expect(list[0]?.name).toBe(
+			'Plate armour · Armour class — sets to 18, Not applied: a higher override applies',
+		);
+	});
+
+	it('spells a typed part by what it does, because it has no name', () => {
+		// §7's edge at the surface: a typed effect has no name and never will, so
+		// the line is the outcome and nothing else — and the *outcome* half is what
+		// tells two typed lines on one row apart.
+		const { lines: read } = opened(
+			'armour_class += 2 as item; abilities.STR += 1',
+			{ modifiers: withOutcome() },
+		);
+		const list = read();
+		expect(list[0]?.text).toBe('Armour class — item +2');
+		expect(list[0]?.tier).toBe('typed');
+		expect(list[1]?.text).toBe('Abilities · STR — +1');
+		expect(list[1]?.tier).toBe('typed');
+	});
+
+	it('draws zap-off and says what it needs for a typed effect with no amount', () => {
+		// The sixth `zap-off` reason, and the one the form's own per-field commit
+		// depends on: the part exists the moment a target is chosen.
+		const { glyph, lines: read } = opened('armour_class +=', {
+			modifiers: withOutcome(),
+		});
+		expect(glyph.dataset.icon).toBe('zap-off');
+		expect(read()[0]?.why).toBe('Not applied: it needs an amount.');
+	});
+
+	it('opens one part on a press, and closes any other', () => {
+		/*
+		 * **One at a time, and no navigation.** Five controls times three is a panel
+		 * nobody can scan, and a back-stack inside a transient surface would be a
+		 * second dismissal regime. Disclosure in place keeps the line the reader
+		 * chose visible above the fields they are filling in.
+		 */
+		const { lines: read } = opened('Plate armour; Ring of Protection', {
+			modifiers: threeStates(),
+		});
+		expect(read().map((line) => line.open)).toEqual(['false', 'false']);
+		read()[0]?.press();
+		expect(read().map((line) => line.open)).toEqual(['true', 'false']);
+		read()[1]?.press();
+		expect(read().map((line) => line.open)).toEqual(['false', 'true']);
+		// And a second press on the open line closes it.
+		read()[1]?.press();
+		expect(read().map((line) => line.open)).toEqual(['false', 'false']);
+	});
+
+	it('offers Typed on this row plus every definition, resolved against the row', () => {
+		/*
+		 * The whole difference between a picker and a list of words: the reader
+		 * choosing a named modifier reads what it would do *here*, not a bare name.
+		 * One `outcome` call per definition, and it happens on a **press** — after a
+		 * render has finished — so it can never be the first entry into the modifier
+		 * walk in a render.
+		 */
+		const { panel, lines: read } = opened('Plate armour', {
+			modifiers: threeStates(),
+		});
+		read()[0]?.press();
+		const tier = field(panel, 'Modifier') as HTMLSelectElement;
+		expect(Array.from(tier.options).map((one) => one.textContent)).toEqual([
+			'Typed on this row',
+			'Ring of Protection · Armour class — item +1',
+			'Plate armour · Armour class — sets to 18',
+			'Cloak of Elvenkind · Armour class — status +1',
+		]);
+		expect(tier.value).toBe('Plate armour');
+	});
+
+	it('shows a named part\'s fields read-only, and says where they are edited', () => {
+		// One edit in the layout editor moves every character on the layout at once,
+		// and a sheet that could make that edit would be a far larger change than
+		// this feature (SPEC §7).
+		const { panel, lines: read } = opened('Ring of Protection', {
+			modifiers: threeStates(),
+		});
+		read()[0]?.press();
+		expect((field(panel, 'Changes') as HTMLSelectElement).disabled).toBe(true);
+		expect((field(panel, 'Operator') as HTMLSelectElement).disabled).toBe(true);
+		expect((field(panel, 'Amount') as HTMLInputElement).readOnly).toBe(true);
+		expect((field(panel, 'Bonus type') as HTMLSelectElement).disabled).toBe(true);
+		/*
+		 * **And no Only when row at all**, because this definition has no condition.
+		 * The four read-only fields draw as a printed summary rather than as four
+		 * quieted controls — which is what gives read-only a second channel that is
+		 * not a fill strength — so a row whose value is empty would be a label with
+		 * nothing after it, reading as a fault in the summary rather than as "no
+		 * condition". Same rule **Bonus type** already follows for **Sets**.
+		 */
+		expect(field(panel, 'Only when')).toBeNull();
+		expect(panel.textContent).toContain('Edit it in the layout editor');
+		// And nothing to promote: a part that already names a definition has none.
+		expect(control(panel, 'Save to the layout')).toBeNull();
+	});
+
+	it('keeps a named part\'s condition, read-only, where it has one', () => {
+		// The other half of the rule above: a blank read-only field is not drawn, and
+		// a filled one is — so the omission is "nothing to say" rather than "this
+		// field is gone".
+		const { panel, lines: read } = opened('Cloak of Elvenkind', {
+			modifiers: threeStates(),
+		});
+		read()[0]?.press();
+		const when = field(panel, 'Only when') as HTMLInputElement;
+		expect(when.readOnly).toBe(true);
+		expect(when.value).toBe('Worn');
+	});
+
+	it('carries a stray as its own option, and never offers it to be chosen', () => {
+		// Rendered, not corrected: the stored spelling is the thing the reader has
+		// to recognise as theirs before they replace it, and the fix goes under it.
+		const { panel, lines: read } = opened('Ring of Nonexistence', {
+			modifiers: strayContext(),
+		});
+		const list = read();
+		expect(list[0]?.text).toBe(
+			'"Ring of Nonexistence" is not a modifier this layout declares.',
+		);
+		expect(list[0]?.why).toBe('Choose one it does, or add it in the layout editor.');
+		expect(list[0]?.icon).toBe('zap-off');
+		expect(list[0]?.tier).toBe('stray');
+		list[0]?.press();
+		const tier = field(panel, 'Modifier') as HTMLSelectElement;
+		expect(tier.selectedOptions[0]?.textContent).toBe(
+			'Ring of Nonexistence · not a modifier this layout declares',
+		);
+		// Offered nowhere else: the carried option is the stored value's own line.
+		expect(
+			Array.from(tier.options).filter((one) =>
+				(one.textContent ?? '').startsWith('Ring of Nonexistence'),
+			),
+		).toHaveLength(1);
+	});
+
+	it('arms before it replaces a part with a named modifier, and commits on the second gesture', () => {
+		/*
+		 * **Both tier changes arm and commit, and neither runs on the first press.**
+		 * Picking a definition replaces the row's own text and detaching replaces a
+		 * name with a copy of the definition's fields: both are destructive, so
+		 * neither may land on a stray change of a select.
+		 */
+		const { panel, changes, lines: read } = opened('armour_class += 2 as item', {
+			modifiers: threeStates(),
+		});
+		read()[0]?.press();
+		choose(field(panel, 'Modifier'), 'Ring of Protection');
+		expect(changes).toEqual([]);
+		control(panel, 'Use this modifier')?.click();
+		expect(changes).toEqual([
+			{ rows: { 0: { cells: { Modifiers: 'Ring of Protection' } } } },
+		]);
+	});
+
+	it('copies a definition\'s fields onto the row when it is detached', () => {
+		/*
+		 * Foundry's own #4451 "detach to instance", one-way — and **not the cache §1
+		 * forbids**: a cache is a copy of what something else still owns, and a
+		 * detached effect is the effect itself, owned by this row from that moment
+		 * and referring to nothing.
+		 */
+		const { panel, changes, lines: read } = opened('Cloak of Elvenkind', {
+			modifiers: threeStates(),
+		});
+		read()[0]?.press();
+		choose(field(panel, 'Modifier'), 'sheetsmith-typed');
+		expect(changes).toEqual([]);
+		control(panel, 'Copy onto this row')?.click();
+		expect(changes).toEqual([
+			{
+				rows: {
+					0: {
+						cells: {
+							Modifiers: 'armour_class += 1 as status when Worn',
+						},
+					},
+				},
+			},
+		]);
+	});
+
+	it('commits each field on its own gesture, writing one part', () => {
+		/*
+		 * **No OK button**, on `editable.ts`'s own gesture: the selects commit on
+		 * `change` and the two text fields on Enter or blur. A form with its own
+		 * commit button would be a second commit regime on one sheet.
+		 */
+		const each = (start: string, act: (panel: HTMLElement) => void) => {
+			const { panel, changes, lines: read } = opened(start, {
+				modifiers: withOutcome(),
+			});
+			read()[0]?.press();
+			act(panel);
+			return changes;
+		};
+		expect(
+			each('armour_class += 2 as item', (panel) =>
+				choose(field(panel, 'Changes'), 'abilities.STR'),
+			),
+		).toEqual([
+			{ rows: { 0: { cells: { Modifiers: 'abilities.STR += 2 as item' } } } },
+		]);
+		// **Sets** takes the bonus type away, because an override is not contested
+		// by type — so the written part loses its `as item` with it.
+		expect(
+			each('armour_class += 2 as item', (panel) =>
+				choose(field(panel, 'Operator'), 'override'),
+			),
+		).toEqual([{ rows: { 0: { cells: { Modifiers: 'armour_class = 2' } } } }]);
+		expect(
+			each('armour_class += 2 as item', (panel) =>
+				type(field(panel, 'Amount'), '3'),
+			),
+		).toEqual([
+			{ rows: { 0: { cells: { Modifiers: 'armour_class += 3 as item' } } } },
+		]);
+		expect(
+			each('armour_class += 2 as item', (panel) =>
+				choose(field(panel, 'Bonus type'), 'status'),
+			),
+		).toEqual([
+			{ rows: { 0: { cells: { Modifiers: 'armour_class += 2 as status' } } } },
+		]);
+		expect(
+			each('armour_class += 2 as item', (panel) =>
+				type(field(panel, 'Only when'), 'Worn'),
+			),
+		).toEqual([
+			{
+				rows: {
+					0: { cells: { Modifiers: 'armour_class += 2 as item when Worn' } },
+				},
+			},
+		]);
+	});
+
+	it('carries a bonus type the layout does not declare, and never offers it', () => {
+		// Rendered, not corrected. The effect applies and contests as its own kind;
+		// this is the one thing stored in a note that names the layout's vocabulary.
+		const { panel, lines: read } = opened('abilities.STR += 1 as luck', {
+			modifiers: withOutcome(),
+		});
+		read()[0]?.press();
+		const bonus = field(panel, 'Bonus type') as HTMLSelectElement;
+		expect(bonus.selectedOptions[0]?.textContent).toBe('luck (not declared)');
+		expect(Array.from(bonus.options).map((one) => one.textContent)).toEqual([
+			'Untyped',
+			'item',
+			'status',
+			'luck (not declared)',
+		]);
+	});
+
+	it('offers no bonus type on Sets', () => {
+		const { panel, lines: read } = opened('armour_class = 18', {
+			modifiers: withOutcome(),
+		});
+		read()[0]?.press();
+		expect(field(panel, 'Bonus type')).toBeNull();
+	});
+
+	it('arms Remove, then drops that part alone', () => {
+		// A control rather than a press on a line, because a press now *opens* a
+		// line and one gesture cannot both open and delete. It borrows the delete
+		// glyph's own arm-then-commit rather than inventing one.
+		const { panel, changes, lines: read } = opened(
+			'Plate armour; Ring of Protection',
+			{ modifiers: threeStates() },
+		);
+		read()[0]?.press();
+		control(panel, 'Remove')?.click();
+		expect(changes).toEqual([]);
+		control(panel, 'Remove')?.click();
+		expect(changes).toEqual([
+			{ rows: { 0: { cells: { Modifiers: 'Ring of Protection' } } } },
+		]);
+	});
+
+	it('takes a repeated name off the row, note and all', () => {
+		/*
+		 * **Reported from the app as "the remove modifier isn't working"**, and every
+		 * layer test was green. A cell holding one name twice is *one* enrolment, so
+		 * Remove dropping a single byte range left the row still applying it: the
+		 * reader pressed the only control there is, twice, and the modifier stayed.
+		 *
+		 * **Carried through `table.write` to the note**, which is the assertion the
+		 * suite was missing rather than the one it got wrong: the emitted delta was
+		 * asserted, and a delta that still names the modifier looks exactly like a
+		 * delta that does not.
+		 *
+		 * The state is two presses away without touching the file — **Add a
+		 * modifier**, then pick a definition another part already names — which the
+		 * case below drives.
+		 */
+		const source = `
+| Item | Modifiers | Bonus |
+|---|---|---|
+| Ring | Ring of Protection; Plate armour; Ring of Protection | 1 |
+`;
+		closeAnchoredPanel();
+		const data = stored(source, items);
+		const el = document.createElement('div');
+		const changes: Parameters<typeof table.write>[0][] = [];
+		table.render(el, items, data, {
+			...contextFor(data, items),
+			onChange: (edited) => changes.push(edited),
+			modifiers: threeStates(),
+		});
+		(el.querySelector('.sheetsmith-table-modifier-button') as HTMLElement).click();
+		const panel = document.querySelector('.sheetsmith-panel') as HTMLElement;
+		// Three parts, so three lines: what the cell *holds*. The row is doing two
+		// things, which is what the glyph counts.
+		expect(lines(panel)).toHaveLength(3);
+		lines(panel)[0]?.press();
+		control(panel, 'Remove')?.click();
+		control(panel, 'Remove')?.click();
+		const written = table.write(
+			changes[0] as Parameters<typeof table.write>[0],
+			source,
+			items,
+		);
+		// Both copies gone, and `Plate armour` keeps its own bytes.
+		expect(written).toContain('| Plate armour |');
+		expect(written).not.toContain('Ring of Protection');
+	});
+
+	it('says a repeated name is a second drawing, and Remove says it takes both', () => {
+		/*
+		 * **Two lines is the right shape** — a typed part is named by nothing (§7's
+		 * edge), so two typed effects draw identically with no duplicate name in
+		 * sight, and filtering duplicate *names* would close one instance of a
+		 * general property. What was missing is the sentence: the second line drew a
+		 * second time for one enrolment with nothing saying so, and **Remove** on
+		 * either takes both while the button said "Remove this modifier", singular,
+		 * in the one state where it is plural.
+		 */
+		const { panel, lines: read } = opened(
+			'Ring of Protection; Plate armour; Ring of Protection',
+			{ modifiers: threeStates() },
+		);
+		const list = read();
+		// The first copy reads as an ordinary line, because it is one.
+		expect(list[0]?.why).toBeNull();
+		expect(list[2]?.why).toBe(
+			'Already applied above; removing either takes both',
+		);
+		expect(list[2]?.name).toContain('one of 2 lines naming it');
+		list[2]?.press();
+		const remove = control(panel, 'Remove') as HTMLElement;
+		expect(remove.textContent).toBe('Remove all 2');
+		expect(remove.getAttribute('aria-label')).toBe(
+			'Remove this modifier from all 2 lines that name it',
+		);
+		remove.click();
+		expect(
+			(control(panel, 'Remove') as HTMLElement).getAttribute('aria-label'),
+		).toBe(
+			'Remove this modifier from all 2 lines that name it. Select again to confirm.',
+		);
+	});
+
+	it('puts Remove under the fields, above the promote block', () => {
+		/*
+		 * Under the promote block it read as belonging to the naming block — a
+		 * hairline, `Reuse this elsewhere`, the name row, then Remove at the same
+		 * left edge with no rule between and the only bordered box being the promote
+		 * one. "Remove" could plausibly have been read as removing the *name*.
+		 *
+		 * Asserted by document order rather than by pixels, which is the half a
+		 * shot cannot check: it also has to land in the same place for a **named**
+		 * part, which draws no promote block at all.
+		 */
+		const { panel, lines: read } = opened('armour_class += 2 as item', {
+			modifiers: threeStates(),
+		});
+		read()[0]?.press();
+		const order = Array.from(
+			panel.querySelectorAll(
+				'.sheetsmith-panel-remove, .sheetsmith-panel-promote',
+			),
+		).map((el) => el.className);
+		expect(order).toEqual([
+			'sheetsmith-panel-remove',
+			'sheetsmith-panel-promote',
+		]);
+	});
+
+	it('lets the reader reach a repeated name in two presses', () => {
+		/*
+		 * The path the report came in on, so the case above is not about a state only
+		 * a hand-edit reaches. The **Modifier** select offers every definition the
+		 * layout declares, including one another part of this cell already names —
+		 * deliberately, because that is also how a reader points a *stray* part at a
+		 * definition a sibling part already uses, and filtering it would take away
+		 * the option they need.
+		 */
+		const { panel, changes } = opened('Ring of Protection', {
+			modifiers: threeStates(),
+		});
+		control(panel, 'Add a modifier')?.click();
+		choose(field(panel, 'Modifier'), 'Ring of Protection');
+		control(panel, 'Use this modifier')?.click();
+		expect(changes).toEqual([
+			{
+				rows: {
+					0: { cells: { Modifiers: 'Ring of Protection; Ring of Protection' } },
+				},
+			},
+		]);
+	});
+
+	it('opens a row with no parts straight into one, with Changes focused', () => {
+		/*
+		 * The common case in one opening: press the `plus`, choose the value, type
+		 * the number, done. Under the menu round it was two presses and two
+		 * openings. **Changes** is first of the four because a part with no target
+		 * could not be spelled in the cell at all, and a part with no amount can.
+		 */
+		const { panel } = opened('', { modifiers: withOutcome() });
+		expect(panel.textContent).toContain('This row applies no modifier.');
+		const changesField = field(panel, 'Changes') as HTMLSelectElement;
+		expect(changesField).not.toBeNull();
+		expect(changesField.value).toBe('');
+		expect(document.activeElement).toBe(changesField);
+		expect(control(panel, 'Add a modifier')).toBeNull();
+		/*
+		 * **And no offer to publish an effect that does not exist yet.** On the
+		 * first-use path the panel's last word was `Save to the layout` under a form
+		 * with nothing in it, so the reader met a publish control before they had
+		 * anything to publish. A target and an amount are the two slots a part needs
+		 * to do anything at all (§6), so they are the two the offer waits for.
+		 */
+		expect(control(panel, 'Save to the layout')).toBeNull();
+	});
+
+	it('offers Reuse this elsewhere once the effect has a target and an amount', () => {
+		// The other side of the guard, at the two states either side of it: a part
+		// with a target and no amount changes nothing and is not offered, and the
+		// same part with an amount is.
+		const half = opened('armour_class +=', { modifiers: withOutcome() });
+		half.lines()[0]?.press();
+		expect(control(half.panel, 'Save to the layout')).toBeNull();
+
+		const whole = opened('armour_class += 2', { modifiers: withOutcome() });
+		whole.lines()[0]?.press();
+		expect(control(whole.panel, 'Save to the layout')).not.toBeNull();
+	});
+
+	it('brings a part into existence when Changes is chosen, and not before', () => {
+		// A part with no target could not be spelled in a cell at all (§6's
+		// discriminator needs a name token), so nothing is written until there is
+		// one — and then an unfinished effect is written, which changes nothing.
+		const { panel, changes } = opened('', { modifiers: withOutcome() });
+		choose(field(panel, 'Changes'), 'armour_class');
+		expect(changes).toEqual([
+			{ rows: { 0: { cells: { Modifiers: 'armour_class +=' } } } },
+		]);
+	});
+
+	it('does not append a twin when a second field commits before the re-read', () => {
+		/*
+		 * **Criterion 21's last clause**, and it is named there because it is the one
+		 * that would break silently. The form's `parts` list comes from the render
+		 * that drew it, so a commit that does not re-render leaves the *next* commit
+		 * working from a stale list — and a form that appended rather than replacing
+		 * would grow a second part out of one edit.
+		 *
+		 * It holds by two mechanisms rather than one, which is the other half of why
+		 * it earns a case: `put` writes the whole cell text, so a stale list still
+		 * overwrites; and choosing **Changes** moves the open part off `'new'`, so the
+		 * amount that follows replaces rather than appends.
+		 *
+		 * Driven without a re-render between the two commits, which is exactly the
+		 * state the app is in for the instant before `onChange` comes back.
+		 */
+		const { panel, changes } = opened('', { modifiers: withOutcome() });
+		choose(field(panel, 'Changes'), 'armour_class');
+		type(field(panel, 'Amount'), '2');
+		expect(changes).toEqual([
+			{ rows: { 0: { cells: { Modifiers: 'armour_class +=' } } } },
+			{ rows: { 0: { cells: { Modifiers: 'armour_class += 2' } } } },
+		]);
+		// One part in the second delta, not two: the whole of the clause.
+		const last = changes[changes.length - 1] as {
+			rows: Record<number, { cells: Record<string, string> }>;
+		};
+		expect(
+			cellParts(last.rows[0]?.cells.Modifiers ?? ''),
+		).toEqual(['armour_class += 2']);
+	});
+
+	it('shows one Modifier option and no error where the layout names none', () => {
+		/*
+		 * **The report this wave retires.** A layout with no named modifiers was an
+		 * error under a reference-only model — a column with nothing to point at
+		 * *was* pointless — and is an ordinary layout the moment a row can type its
+		 * own effect.
+		 */
+		const { panel } = opened('', {
+			modifiers: modifierContext({
+				definitions: [],
+				targets: TARGETS,
+				published: TARGETS,
+			}),
+		});
+		const tier = field(panel, 'Modifier') as HTMLSelectElement;
+		expect(Array.from(tier.options).map((one) => one.textContent)).toEqual([
+			'Typed on this row',
+		]);
+		expect(panel.querySelector('.sheetsmith-panel-problem')).toBeNull();
+	});
+
+	it('converts the part into the name once the layout write has landed', () => {
+		/*
+		 * **§8's order, driven through the form rather than re-implemented beside
+		 * it.** The layout write lands first and the cell is rewritten *only* on
+		 * `ok`, which is the whole of Constraint 4 here — and `promote-flow.test.ts`
+		 * proves that rule against a helper of its own, so this is the case that
+		 * proves it against `modifier-form.ts`.
+		 *
+		 * The promoting part becomes a reference and every other part is re-joined as
+		 * its own stored text: an inline copy left beside the definition it was lifted
+		 * from is a cache of what that definition says, which is the one thing §1
+		 * forbids absolutely.
+		 */
+		const landed = vi.fn(() => Promise.resolve({ ok: true as const }));
+		const { panel, changes, lines: read } = opened(
+			'Ring of Protection; armour_class += 2 as item',
+			{ modifiers: modifierContext({ ...withOutcome(), promote: landed }) },
+		);
+		read()[1]?.press();
+		const name = panel.querySelector(
+			'[data-sheetsmith-panel-field="promote-name"]',
+		) as HTMLInputElement;
+		name.value = 'Bracers of Warding';
+		name.dispatchEvent(new Event('input'));
+		control(panel, 'Save to the layout')?.click();
+		// The effect goes over whole, which is what the host scan holds one layer up.
+		expect(landed).toHaveBeenCalledWith('Bracers of Warding', {
+			target: 'armour_class',
+			operator: 'add',
+			amount: '2',
+			bonusType: 'item',
+		});
+		return Promise.resolve().then(() => {
+			expect(changes).toEqual([
+				{
+					rows: {
+						0: {
+							cells: {
+								Modifiers: 'Ring of Protection; Bracers of Warding',
+							},
+						},
+					},
+				},
+			]);
+		});
+	});
+
+	it('leaves the cell alone where the layout write failed', () => {
+		/*
+		 * **The reverse order would manufacture a stray**: a cell naming a definition
+		 * that does not exist. Recoverable, since that is rendered rather than
+		 * corrected, but it would be this feature creating one. So a refusal from the
+		 * host reaches the reader as a message and touches no byte.
+		 */
+		const refused = vi.fn(() =>
+			Promise.resolve({ error: 'The layout file is read-only.' }),
+		);
+		const { panel, changes, lines: read } = opened('armour_class += 2 as item', {
+			modifiers: modifierContext({ ...withOutcome(), promote: refused }),
+		});
+		read()[0]?.press();
+		const name = panel.querySelector(
+			'[data-sheetsmith-panel-field="promote-name"]',
+		) as HTMLInputElement;
+		name.value = 'Bracers of Warding';
+		name.dispatchEvent(new Event('input'));
+		control(panel, 'Save to the layout')?.click();
+		return Promise.resolve().then(() => {
+			expect(changes).toEqual([]);
+			expect(
+				panel.querySelector('.sheetsmith-panel-problem')?.textContent,
+			).toBe('The layout file is read-only.');
+		});
+	});
+
+	it('refuses a promotion the form can judge itself, naming the fix', () => {
+		// Two of §8's four refusals are checked where the name is being typed
+		// rather than in another pane afterwards, and in the parser's own words.
+		const { panel, changes, lines: read } = opened('armour_class += 2 as item', {
+			modifiers: withOutcome(),
+		});
+		read()[0]?.press();
+		control(panel, 'Save to the layout')?.click();
+		expect(
+			panel.querySelector('.sheetsmith-panel-problem')?.textContent,
+		).toBe('Give it a name to reuse it by.');
+		const name = panel.querySelector(
+			'[data-sheetsmith-panel-field="promote-name"]',
+		) as HTMLInputElement;
+		name.value = 'armour_class = 4';
+		name.dispatchEvent(new Event('input'));
+		control(panel, 'Save to the layout')?.click();
+		expect(
+			panel.querySelector('.sheetsmith-panel-problem')?.textContent,
+		).toContain('cannot be a name, because a row spells its own modifiers');
+		// And in neither case is the cell touched.
+		expect(changes).toEqual([]);
+	});
+
+	it('writes only the cell it changed, byte for byte outside it', () => {
+		/*
+		 * The commit is a delta naming one cell, so the note is compared byte for
+		 * byte everywhere else and the cell itself against the canonical spelling.
+		 * Driven through the real writer rather than reasoned about the delta,
+		 * because the whole of Constraint 3 on this side is that no other cell moves.
+		 */
+		const source = `
+| Item | Modifiers | Bonus |
+|---|---|---|
+| Ring | Plate armour ;Ring of Protection | 1 |
+| Chalk |  | 0 |
+`;
+		closeAnchoredPanel();
+		const data = stored(source, items);
+		const el = document.createElement('div');
+		const changes: Parameters<typeof table.write>[0][] = [];
+		table.render(el, items, data, {
+			...contextFor(data, items),
+			onChange: (edited) => changes.push(edited),
+			modifiers: threeStates(),
+		});
+		(el.querySelector('.sheetsmith-table-modifier-button') as HTMLElement).click();
+		const panel = document.querySelector('.sheetsmith-panel') as HTMLElement;
+		lines(panel)[0]?.press();
+		control(panel, 'Remove')?.click();
+		control(panel, 'Remove')?.click();
+		expect(changes).toHaveLength(1);
+		const written = table.write(
+			changes[0] as Parameters<typeof table.write>[0],
+			source,
+			items,
+		);
+		// The canonical spelling in the cell that changed, and every other byte —
+		// including the second row and the hand-edited spacing's own line ending —
+		// exactly as it was.
+		expect(written).toBe(
+			source.replace(
+				'| Plate armour ;Ring of Protection |',
+				'| Ring of Protection |',
+			),
+		);
+	});
+
+	it('carries the cell\'s own spelling where there is no sheet to resolve it', () => {
+		/*
+		 * A component draws what it can without the context, which is `link`'s own
+		 * rule. With no layout there is nothing to resolve any part against, so every
+		 * part lands in the case a stray already has — the cell's own spelling,
+		 * carried, with the fields read-only. **The point of pinning it is that the
+		 * form derives its fields from `outcome` rather than from a parse of its own**,
+		 * so a missing outcome has to have a defined answer.
+		 */
+		closeAnchoredPanel();
+		const drew = drawn('armour_class += 2 as item');
+		drew.button.click();
+		const panel = document.querySelector('.sheetsmith-panel') as HTMLElement;
+		expect(lines(panel)[0]?.text).toBe('armour_class += 2 as item');
+		lines(panel)[0]?.press();
+		const tier = field(panel, 'Modifier') as HTMLSelectElement;
+		expect(tier.selectedOptions[0]?.textContent).toContain(
+			'armour_class += 2 as item',
+		);
+		expect((field(panel, 'Amount') as HTMLInputElement).readOnly).toBe(true);
+	});
+
+	it('keeps a repeated name when another part of the cell is edited', () => {
+		/*
+		 * **The collapse is a read and never a write** (§6, stated three times), and
+		 * this is the case that would prove otherwise: a cell holding the same name
+		 * twice is *one enrolment*, so the arithmetic is unaffected — but the second
+		 * copy is a part the reader did not touch, and deleting it on an unrelated
+		 * edit is the byte loss §10 and Constraint 4 forbid.
+		 *
+		 * Driven rather than reasoned, because the write list being built from the
+		 * collapsed read is invisible in review: the numbers never move.
+		 */
+		const source = `
+| Item | Modifiers | Bonus |
+|---|---|---|
+| Ring | Ring of Protection; Plate armour; Ring of Protection | 1 |
+`;
+		closeAnchoredPanel();
+		const data = stored(source, items);
+		const el = document.createElement('div');
+		const changes: Parameters<typeof table.write>[0][] = [];
+		table.render(el, items, data, {
+			...contextFor(data, items),
+			onChange: (edited) => changes.push(edited),
+			modifiers: threeStates(),
+		});
+		(el.querySelector('.sheetsmith-table-modifier-button') as HTMLElement).click();
+		const panel = document.querySelector('.sheetsmith-panel') as HTMLElement;
+		// The cell holds three parts, so the form lists three: what the *cell* holds
+		// is a different question from what the row is *doing*, which is two.
+		expect(lines(panel)).toHaveLength(3);
+		// Edit the middle part, which is the one part that is not the repeat.
+		lines(panel)[1]?.press();
+		control(panel, 'Remove')?.click();
+		control(panel, 'Remove')?.click();
+		expect(changes).toHaveLength(1);
+		const written = table.write(
+			changes[0] as Parameters<typeof table.write>[0],
+			source,
+			items,
+		);
+		expect(written).toContain(
+			'| Ring of Protection; Ring of Protection |',
+		);
+	});
+
+	it('re-joins every part the reader did not touch, byte for byte', () => {
+		/*
+		 * **Constraint 3's one new rule** (§6), and the case a canonical join over
+		 * the whole cell would quietly lose: editing one part of a three-part cell
+		 * must not canonicalise the other two, which would be a correction §10
+		 * forbids arriving as a side effect of an unrelated edit.
+		 */
+		const source = `
+| Item | Modifiers | Bonus |
+|---|---|---|
+| Ring | Plate armour;Ring of  Protection;armour_class+=2  as item | 1 |
+`;
+		closeAnchoredPanel();
+		const data = stored(source, items);
+		const el = document.createElement('div');
+		const changes: Parameters<typeof table.write>[0][] = [];
+		table.render(el, items, data, {
+			...contextFor(data, items),
+			onChange: (edited) => changes.push(edited),
+			modifiers: threeStates(),
+		});
+		(el.querySelector('.sheetsmith-table-modifier-button') as HTMLElement).click();
+		const panel = document.querySelector('.sheetsmith-panel') as HTMLElement;
+		// The third part is the typed one; edit its amount and nothing else.
+		const typedLine = panel.querySelector(
+			'.sheetsmith-panel-line[data-sheetsmith-part="typed"]',
+		) as HTMLElement;
+		typedLine.click();
+		type(field(panel, 'Amount'), '3');
+		const written = table.write(
+			changes[0] as Parameters<typeof table.write>[0],
+			source,
+			items,
+		);
+		/*
+		 * **Compared part by part**, which is what the rule is about: the edited part
+		 * is written canonically and every other part comes back as its own stored
+		 * text, internal spacing and all — `Ring of  Protection`'s double space
+		 * survives, where a canonical join over the whole cell would have re-spelled
+		 * it as a name the layout does not declare.
+		 *
+		 * What the join *does* re-canonicalise is the spacing around the separators
+		 * of a cell the reader edited, which is what "writing is canonical" means
+		 * and is not a part's own text. A cell nobody edited is never written at all,
+		 * which is where byte identity lives.
+		 */
+		expect(written).toContain(
+			'| Plate armour; Ring of  Protection; armour_class += 3 as item |',
+		);
+		// And the third part, the one that was edited, is the only one that moved.
+		const cell = (written.split('\n')[3] ?? '').split('|')[2] ?? '';
+		expect(cell.split(';').map((part) => part.trim())).toEqual([
+			'Plate armour',
+			'Ring of  Protection',
+			'armour_class += 3 as item',
+		]);
 	});
 
 	it('is not corrected by an edit to another cell in the row', () => {
 		/*
-		 * Criterion 13's own clause, and it was the unasserted half: the stray
-		 * target survives the reader editing a *different* cell of the same row.
-		 *
-		 * The mechanism is that the select is drawn from stored data and the other
-		 * cell's commit is a delta naming only itself — so a rebuild redraws the
-		 * stray from the note. Driven rather than reasoned, because a component
-		 * that repainted the row on commit would break it silently (PATTERNS §5's
-		 * own worked example is a repaint destroying a focused anchor).
+		 * The stray reference survives the reader editing a *different* cell of the
+		 * same row. Driven rather than reasoned, because a component that repainted
+		 * the row on commit would break it silently.
 		 */
-		const data = stored(body('armor_class'), items);
-		const changes: unknown[] = [];
-		const el = document.createElement('div');
-		table.render(el, items, data, {
-			...contextFor(data, items),
-			modifiers,
-			onChange: (edited) => changes.push(edited),
+		const { el, button, changes } = drawn('Ring of Nonexistence', {
+			modifiers: strayContext(),
 		});
-		const select = el.querySelector('select') as HTMLSelectElement;
-		// The Bonus cell's field, by its column class: the first input in the row
-		// is the *name* field, which an open row gets and which is a different
-		// cell again.
 		const amount = el.querySelector(
 			'td.sheetsmith-table-number input',
 		) as HTMLInputElement;
-
-		// Edit the Bonus cell and commit it, which is what a blur does.
 		amount.value = '4';
 		amount.dispatchEvent(new Event('input'));
 		amount.dispatchEvent(new Event('blur'));
 
-		// The commit names only the cell that changed, so nothing can rewrite the
-		// target — and the select still shows the value the note holds.
-		expect(changes).toEqual([
-			{ rows: { 0: { cells: { Bonus: '4' } } } },
-		]);
-		expect(select.value).toBe('armor_class');
-		expect(
-			Array.from(select.options).map((one) => one.value),
-		).toContain('armor_class');
-		expect(select.getAttribute('title')).toContain('publishes no "armor_class"');
+		expect(changes).toEqual([{ rows: { 0: { cells: { Bonus: '4' } } } }]);
+		expect(button.getAttribute('aria-label')).toBe(
+			'Ring Modifiers: Ring of Nonexistence, changes nothing',
+		);
 	});
 
-	it('drops the stray line once something else is chosen', () => {
-		const { select, changes } = drawn('armor_class', { modifiers });
-		select.value = 'armour_class';
-		select.dispatchEvent(new Event('change'));
-		expect(select.getAttribute('title')).toBeNull();
-		expect(changes).toEqual([
-			{ rows: { 0: { cells: { Modifies: 'armour_class' } } } },
-		]);
-	});
-
-	it('offers only the stored value where there is no sheet', () => {
+	it('draws the stored names where there is no sheet to resolve them against', () => {
 		// A component draws what it can without the context, which is `link`'s own
-		// rule: the truth where nothing is published is the value the note holds.
-		const { options } = drawn('armour_class');
-		expect(options).toEqual(['—', 'armour_class']);
+		// rule: the truth where there is no layout to look a definition up in is
+		// the value the note holds. The glyph then says nothing is applying, which
+		// is the honest answer where nothing could be asked.
+		const { glyph, button } = drawn('Ring of Protection');
+		expect(glyph.dataset.icon).toBe('zap-off');
+		expect(button.getAttribute('aria-label')).toBe(
+			'Ring Modifiers: Ring of Protection, changes nothing',
+		);
+		// And no title, because there is nothing to say about it.
+		expect(button.getAttribute('title')).toBeNull();
 	});
 });
 
@@ -3228,16 +4462,29 @@ describe('table and mod.self', () => {
 			{
 				id: 'items',
 				values: {},
+				// One push per part, in a definition named for its target: the
+				// component hands over one part's raw text and a row, and the formula
+				// layer is what turns that into an amount at a target.
 				modifiers: () =>
-					pushes.map(([target, amount]) => ({
-						target,
-						amount,
-						type: null,
-						label: 'A row',
+					pushes.map(([target]) => ({
+						part: target,
 						source: 'Items',
+						row: { label: 'A row', values: {} },
 					})),
 			},
-		]);
+		], undefined, {
+			definitions: pushes.map(([target, amount]) => ({
+				name: target,
+				target,
+				targetLabel: target,
+				operator: 'add' as const,
+				amount: String(amount),
+			})),
+			targets: pushes.map(([target]) => ({ name: target, label: target })),
+			published: pushes.map(([target]) => ({ name: target, label: target })),
+			bonusTypes: [],
+			accepting: new Set(pushes.map(([target]) => target)),
+		});
 	}
 
 	it('modifies a declared row carrying a key, and only that row', () => {
@@ -3270,25 +4517,26 @@ describe('table and mod.self', () => {
 			resolveField: makeFieldResolver(table, modifiable, data, env),
 			explainField: makeFieldExplainer(table, modifiable, data, env),
 			onChange: () => undefined,
-			modifiers: {
-				publishes: () => true,
-				targets: [{ name: 'skills.acrobatics', label: 'Skills · acrobatics' }],
-				breakdown: (name) =>
+			modifiers: modifierContext({
+				breakdown: (name: string) =>
 					name === 'skills.acrobatics'
 						? {
+								override: null,
 								total: 2,
 								lines: [
 									{
 										label: 'Belt',
 										source: 'Magic items',
+										definition: 'Belt',
+										operator: 'add',
 										type: null,
 										amount: 2,
 										suppressed: null,
 									},
 								],
 							}
-						: { total: 0, lines: [] },
-			},
+						: { override: null, total: 0, lines: [] },
+			}),
 		});
 		const marked = Array.from(
 			el.querySelectorAll('tbody .sheetsmith-table-value'),
@@ -3329,22 +4577,23 @@ describe('table and mod.self', () => {
 			resolved: {},
 			resolveField: makeFieldResolver(table, formulaless, data, NO_ENV),
 			onChange: () => undefined,
-			modifiers: {
-				publishes: () => true,
-				targets: [{ name: 'skills.acrobatics', label: 'Skills · acrobatics' }],
+			modifiers: modifierContext({
 				breakdown: () => ({
+					override: null,
 					total: 2,
 					lines: [
 						{
 							label: 'Belt',
 							source: 'Magic items',
+							definition: 'Belt',
+							operator: 'add',
 							type: 'item',
 							amount: 2,
 							suppressed: null,
 						},
 					],
 				}),
-			},
+			}),
 		});
 		const cell = el.querySelector('tbody .sheetsmith-table-value') as HTMLElement;
 		expect(cell.textContent).toBe('—');
@@ -3375,37 +4624,96 @@ describe('table and mod.self', () => {
 			resolveField: makeFieldResolver(table, modifiable, data, env),
 			explainField: makeFieldExplainer(table, modifiable, data, env),
 			onChange: () => undefined,
-			modifiers: {
-				publishes: () => true,
-				targets: [{ name: 'skills.acrobatics', label: 'Skills · acrobatics' }],
-				breakdown: (name) =>
+			modifiers: modifierContext({
+				breakdown: (name: string) =>
 					name === 'skills.acrobatics'
 						? {
+								override: null,
 								total: 2,
 								lines: [
 									{
 										label: 'Belt',
 										source: 'Magic items',
+										definition: 'Belt',
+										operator: 'add',
 										type: 'item',
 										amount: 2,
 										suppressed: null,
 									},
 								],
 							}
-						: { total: 0, lines: [] },
-			},
+						: { override: null, total: 0, lines: [] },
+			}),
 		});
 		const cells = Array.from(el.querySelectorAll('tbody td'));
 		const twins = cells.map(
 			(td) => td.querySelector('.sheetsmith-sr-only')?.textContent ?? null,
 		);
 		// One, on the row that was modified, and nothing on the row that was not.
+		/*
+		 * **Qualified even though one component is the only source**, which is the
+		 * one place the drop rule stands down. A breakdown read *inside a table*
+		 * names a row, and the reader is looking at a list of rows — so an
+		 * unqualified `Belt` reads as one of the skills in front of them rather than
+		 * as an item in an inventory two components away.
+		 */
 		expect(twins.filter((said) => said !== null)).toEqual([
-			'Belt — item +2\n\nTotal +2',
+			'Magic items · Belt — item +2\n\nTotal +2',
 		]);
 		// And it does not disturb what the cell reads as a value, which is what
 		// keeps the totals and the computed cells asserting on one element.
 		expect(totals(el)).toEqual(['+8', '+9']);
+	});
+
+	it('prints the cell\'s own number in the total line, under an override', () => {
+		/*
+		 * **The `shown` guard, on this drawer.** `modifierBreakdown`'s second
+		 * argument exists so a total line prints the number its caller drew rather
+		 * than recomputing `override + total`, and three components pass it — Card,
+		 * Card set and Table. Only `card.test.ts` held the rule, so dropping the
+		 * argument here passed every test in the suite: a wrong shape rather than a
+		 * wrong value, milder than the original defect, and `docs/PATTERNS.md` §1's
+		 * recurring lesson is that an extraction is not finished at the
+		 * declarations. One case per drawer, cross-referenced from each.
+		 *
+		 * The cell reads +8 and the breakdown claims an override to 18, which is
+		 * the divergence the correction is about: the number under the cursor is
+		 * the cell's, so the total line has to be 8 and not 20.
+		 */
+		const data = stored(BODY, modifiable);
+		const env = sheetWith([['skills.acrobatics', 2]]);
+		const el = document.createElement('div');
+		table.render(el, modifiable, data, {
+			resolved: {},
+			resolveField: makeFieldResolver(table, modifiable, data, env),
+			explainField: makeFieldExplainer(table, modifiable, data, env),
+			onChange: () => undefined,
+			modifiers: modifierContext({
+				breakdown: (name: string) =>
+					name === 'skills.acrobatics'
+						? {
+								override: 18,
+								total: 2,
+								lines: [
+									{
+										label: 'Plate armour',
+										source: 'Magic items',
+										definition: 'Plate armour',
+										operator: 'override',
+										type: null,
+										amount: 18,
+										suppressed: null,
+									},
+								],
+							}
+						: { override: null, total: 0, lines: [] },
+			}),
+		});
+		const twin = Array.from(el.querySelectorAll('tbody .sheetsmith-sr-only'))
+			.map((one) => one.textContent ?? '')
+			.find((said) => said.includes('Plate armour'));
+		expect(totals(el)[0]).toBe('+8');
+		expect((twin ?? '').split('\n').at(-1)).toBe('Total 8');
 	});
 
 	it('joins the breakdown to the popover the cell already opens', () => {
@@ -3419,22 +4727,23 @@ describe('table and mod.self', () => {
 			resolveField: makeFieldResolver(table, modifiable, data, env),
 			explainField: makeFieldExplainer(table, modifiable, data, env),
 			onChange: () => undefined,
-			modifiers: {
-				publishes: () => true,
-				targets: [{ name: 'skills.acrobatics', label: 'Skills · acrobatics' }],
+			modifiers: modifierContext({
 				breakdown: () => ({
+					override: null,
 					total: 2,
 					lines: [
 						{
 							label: 'Belt',
 							source: 'Magic items',
+							definition: 'Belt',
+							operator: 'add',
 							type: 'item',
 							amount: 2,
 							suppressed: null,
 						},
 					],
 				}),
-			},
+			}),
 		});
 		const cell = el.querySelector('tbody .sheetsmith-table-value') as HTMLElement;
 		cell.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -3484,15 +4793,29 @@ describe('table and mod.self', () => {
 				values: {},
 				modifiers: () => [
 					{
-						target: 'skills.acrobatics',
-						type: null,
-						label: 'Belt of Giant Strength',
+						part: 'Belt',
 						source: 'Magic items',
-						unreadable: 'ability is not defined on this sheet.',
+						row: { label: 'Belt of Giant Strength', values: {} },
 					},
 				],
 			},
-		]);
+		], undefined, {
+			// A definition whose amount reads a name nothing publishes, which is
+			// the shape a layout arrives in after a card was renamed.
+			definitions: [
+				{
+					name: 'Belt',
+					target: 'skills.acrobatics',
+					targetLabel: 'Skills · acrobatics',
+					operator: 'add',
+					amount: 'ability',
+				},
+			],
+			targets: [],
+			published: [],
+			bonusTypes: [],
+			accepting: new Set(['skills.acrobatics']),
+		});
 		const el = document.createElement('div');
 		table.render(el, modifiable, data, {
 			resolved: {},

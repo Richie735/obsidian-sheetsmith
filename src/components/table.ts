@@ -37,19 +37,22 @@
 
 import { setIcon } from 'obsidian';
 import { isName, roundSum } from '../formula/expression';
+import {
+	cellParts,
+	spellParts,
+	storedParts,
+} from '../parse/modifier-cell';
 import { MarkdownTable, readTable, writeTable } from '../parse/table';
 import { displayText, hasLink } from '../parse/wikilink';
 import {
 	ColumnType,
 	DEFAULT_COLUMN_TYPE,
-	MODIFIER_AMOUNT_TYPES,
 	PUBLISHABLE_TYPES,
 	TOTALLED_TYPES,
 } from './column-types';
 import {
 	ComponentConfig,
 	ComponentDefinition,
-	FieldExplainer,
 	FieldResolver,
 	FieldValue,
 	ModifierPush,
@@ -70,8 +73,26 @@ import {
 	parseLevel,
 } from './level-ring';
 import { paintLinkedText } from './linked-text';
-import { MODIFIED_CLASS, modifierBreakdown } from './modifier-breakdown';
+import {
+	MODIFIED_CLASS,
+	modifierBreakdown,
+	modifierRowName,
+	modifierRowText,
+	rowModifiers,
+} from './modifier-breakdown';
+import {
+	ModifierFormState,
+	modifierFormState,
+	renderModifierForm,
+} from './modifier-form';
 import { flagReading, flagText, isFlagSet } from './stored-flag';
+import {
+	AnchoredPanel,
+	focusFirstControl,
+	openAnchoredPanelKey,
+	reanchorAnchoredPanel,
+	showAnchoredPanel,
+} from '../ui/anchored-panel';
 import { bindLongPress, showPopover } from '../ui/popover';
 import { revealWhenTruncated } from '../ui/truncation';
 import { spellcheckWhileFocused } from '../ui/spellcheck';
@@ -143,25 +164,6 @@ export interface TableColumn {
 	 * and the row is already the second.
 	 */
 	publish?: boolean;
-	/**
-	 * This column's cell is an amount pushed at the row's target (SPEC §5).
-	 *
-	 * The target's own formula has to read it as `mod.self`, or the row changes
-	 * nothing — which is the mirror image of the bug this shape avoids, and why
-	 * the sheet says so at the row rather than leaving it to be discovered.
-	 */
-	modifier?: boolean;
-	/**
-	 * Which of the layout's bonus types this column's modifiers are.
-	 *
-	 * **On the column rather than on the row**, which is what makes the type
-	 * layout data and never character data: nothing stored ever names a type, so
-	 * a layout edit that drops one cannot orphan a cell. It also matches how the
-	 * systems work — an item's bonus *is* an item bonus — and needs no new cell
-	 * control. What it costs is a table whose rows carry different types, which
-	 * needs one modifier column per type.
-	 */
-	modifierType?: string;
 }
 
 export interface TableRow {
@@ -650,45 +652,6 @@ function rowValues(
 }
 
 /**
- * What one row pushes through one amount column, or why it cannot be read.
- *
- * A number cell holding prose is the same failure a total already reports, and a
- * computed cell that will not resolve is the one the aggregate reports — both
- * refuse the whole slot rather than contributing a silent zero, because a
- * quietly wrong number is worse than a missing one (SPEC §5). The reason comes
- * from `explain` rather than from the resolver, which is the only way the
- * refusal can say more than "did not resolve".
- */
-function amountOfCell(
-	config: TableConfig,
-	view: RowView,
-	cell: CellReader,
-	stored: Record<string, FieldValue>,
-	column: TableColumn,
-	at: number,
-	readers: { resolve: FieldResolver; explain: FieldExplainer },
-): { amount: number } | { unreadable: string } {
-	const field = `columns.${at}.formula`;
-	if (columnType(column) === 'computed') {
-		const name = publishedName(config, view, at);
-		const value = readers.resolve(field, stored, name);
-		if (typeof value === 'number') return { amount: value };
-		return {
-			unreadable:
-				value === null
-					? (readers.explain(field, stored, name) ??
-						`the "${column.key}" formula did not resolve.`)
-					: `"${String(value)}" is not a number, so the "${column.key}" column cannot be an amount.`,
-		};
-	}
-	const value = cellValue(column, cell(column));
-	if (typeof value === 'number') return { amount: value };
-	return {
-		unreadable: `"${String(value)}" is not a number, so the "${column.key}" column cannot be an amount.`,
-	};
-}
-
-/**
  * Configuration errors that make the table unreadable rather than merely
  * empty. Reported on this component alone, per SPEC §10.
  */
@@ -697,8 +660,6 @@ function baseConfigError(config: TableConfig): string | null {
 	const seen = new Set<string>();
 	/** The column published per row, once one has been met. */
 	let published: string | null = null;
-	/** The column naming what a row modifies, once one has been met. */
-	let targeting: string | null = null;
 	/** Column keys already answering to `<id>.<key>` as a total. */
 	const totalled = new Set<string>();
 	for (const column of columns) {
@@ -711,32 +672,27 @@ function baseConfigError(config: TableConfig): string | null {
 			return `Two columns are both called "${key}".`;
 		}
 		seen.add(key.toLowerCase());
-		if (column.type === 'target') {
-			if (targeting !== null) {
-				// One target column per table, and the reason is not `publish`'s:
-				// a modifier amount cell has no way to say which of two target
-				// columns it belongs to, and pairing them by position would be a
-				// rule nothing on screen states. A row that changes two values is
-				// two rows, which an open table already allows.
-				return `The columns "${targeting}" and "${key}" are both targets, and only one can be: a modifier amount has no way to say which target column it belongs to. An item that changes two values is two rows.`;
-			}
-			targeting = key;
+		/*
+		 * **Nothing here refuses a second modifier column, and that is a decision
+		 * rather than an omission.** One modifier column is now enough — a cell
+		 * holds every modifier its row applies — so a second is redundant, and the
+		 * redundancy is *reported in the layout editor* while this component draws
+		 * both, pushes from both and refuses neither.
+		 *
+		 * Refusing would take the whole table down, and `withdrawnNotice` means it
+		 * would take every modifier that table's rows apply down with it: a
+		 * player's inventory disappearing because a layout has a column too many
+		 * is the worst trade available here (§10, Constraint 4). A rule about how a
+		 * layout is best written is advice, and advice belongs where the layout is
+		 * edited.
+		 */
+		if (columnType(column) === 'modifier') {
 			if (column.total === true) {
-				return `The column "${key}" cannot show a total, because a total adds up stored numbers and a target holds the name of a value. Total the modifier column instead, or turn the total off.`;
+				return `The column "${key}" cannot show a total, because a total adds up stored numbers and a modifier cell holds the changes a row applies. Total the column the amounts are in, or turn the total off.`;
 			}
 			if (column.publish === true) {
-				return `The column "${key}" cannot be published per row, because a target cell holds a name and a formula has nothing to compare a name to — the language has no text. Publish the modifier column instead.`;
+				return `The column "${key}" cannot be published per row, because a modifier cell holds the changes a row applies and a formula has nothing to compare those to — the language has no text. Publish a number or computed column instead.`;
 			}
-		}
-		if (column.modifier === true && !MODIFIER_AMOUNT_TYPES.has(columnType(column))) {
-			// A modifier amount is read as a value, so it has to be one. A
-			// `toggle` cell is `true` to a formula and the language has no numeric
-			// meaning for yes and no — which is the same rule that refuses
-			// `sum(inventory, Worn)` — so the fix is the computed column that
-			// turns the tick into a number.
-			return columnType(column) === 'toggle'
-				? `The column "${key}" cannot be a modifier, because a yes/no cell is not a number and the sheet has to add one. Add a computed column with a formula such as if(${key}, 2, 0) and make that the modifier.`
-				: `The column "${key}" cannot be a modifier, because a modifier is an amount and this column holds text. Make it a number, level or computed column, or turn the modifier off.`;
 		}
 		if (column.levels !== undefined && column.levels.length < 2) {
 			// The first name is what "none" is called, so a single name
@@ -833,47 +789,42 @@ function baseConfigError(config: TableConfig): string | null {
 
 /**
  * Configuration errors, with a clause where refusing this card also withdraws
- * modifiers it was pushing at other cards.
+ * modifiers its rows were making elsewhere.
  *
  * **A misconfigured modifier table takes its bonuses down with it, silently.**
  * `scopeModifiers` returns undefined for a card that will not configure — on the
  * same argument `scopeRows` and `scopeValues` do, that filling a slot from a
  * configuration nobody has agreed to yet is a number derived from an error — so
- * every target it was pushing at falls back to `mod.self` of 0, which is a
+ * every name its rows were changing falls back to `mod.self` of 0, which is a
  * *plausible* number and carries no mark, because nothing was pushed. A reader
  * sees a strength of +2 where it said +5, four cards deriving from it move with
  * it, and no card says why.
  *
  * **This clause is the half that can be said from here, and it is not the whole
  * answer.** What it cannot do is tell those cards. The precise message — "this
- * number is missing its modifiers" — would have to name the targets this table
- * was pushing at, and a card that will not configure has never read a row:
+ * number is missing its modifiers" — would have to name the values this table's
+ * rows were changing, and a card that will not configure has never read a row:
  * `read` refuses on this error before `readTable`, so `data` is null, and an open
- * table declares no rows, so there is nothing to take a target from. The
- * information the message would need is in the data the component refused to
- * read. From the other side it is worse: for a card to know that a table which
- * *would* have pushed at it is broken, the sheet would have to know which tables
- * target which names, which is character data in the table that will not read.
+ * table declares no rows, so there is no cell to take a definition's name from.
+ * The information the message would need is in the data the component refused to
+ * read.
  *
  * So the sentence goes where the fix is rather than where the symptom is, which
  * is the honest half: the author is standing in front of this card's error, and
  * the clause tells them that fixing it also brings numbers back elsewhere.
- * `docs/features/item-modifiers.md` carries the rest as an open decision.
  *
- * Only where this card was actually pushing something: a target column and a
- * modifier column both present, which is `scopeModifiers`' own condition. A
- * modifier column with no target pushes nothing whether the card configures or
- * not, so the clause would be false there.
+ * Only where this card had something to withdraw: a modifier column, which is
+ * `scopeModifiers`' own condition. One column is now the whole condition, where
+ * the shipped design needed a target column *and* an amount column.
  */
 function configError(config: TableConfig): string | null {
 	const error = baseConfigError(config);
 	if (error === null) return null;
-	const columns = config.columns ?? [];
-	const pushing =
-		columns.some((column) => columnType(column) === 'target') &&
-		columns.some((column) => column.modifier === true);
+	const pushing = (config.columns ?? []).some(
+		(column) => columnType(column) === 'modifier',
+	);
 	if (!pushing) return error;
-	return `${error} Until this is fixed, the modifiers this table pushes are not applied, so the values its rows target read as though nothing changed them.`;
+	return `${error} Until this is fixed, the modifiers this table's rows apply are not applied, so the values they change read as though nothing changed them.`;
 }
 
 export const table: ComponentDefinition<TableConfig, TableData> = {
@@ -1137,68 +1088,75 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 	},
 
 	/**
-	 * The changes this card's rows declare against names published elsewhere on
-	 * the sheet (SPEC §5).
+	 * The enrolments this card's rows declare in the layout's modifier
+	 * definitions (SPEC §5).
 	 *
 	 * **A modifier row publishes nothing**, and that sentence is what the whole
 	 * design rests on. `<id>.<name>` is a fixed-row mechanism and stays one, so
 	 * `inventory.Dagger` still fails as an unknown name — what reaches the sheet
 	 * is a number under the *target's* name, which the target's own component
-	 * publishes. That is why push works for rows the layout does not know about:
+	 * publishes. That is why this works for rows the layout does not know about:
 	 * it never needs a name for the row.
 	 *
-	 * Built from the same `rowViews` / `rowScope` / `storedCells` helpers `render`
-	 * and `scopeRows` use, so the amount in a breakdown is the number in the cell.
+	 * **A push is one part, as raw text.** The cell hands over each part's own bytes
+	 * and the row hands over its own scope; the formula layer decides whether that
+	 * text is a definition's name or an effect this row spells out, then resolves it.
+	 * So nothing here holds an operator, a bonus type, an amount column or a failure
+	 * channel, and **`scopeModifiers` cannot know what a definition is** — which is
+	 * why a cell holding two tiers needs no rule here beyond the split.
 	 *
-	 * Undefined where there is nothing to push — no target column, no modifier
-	 * column, or a configuration this card is refusing to draw — on `scopeRows`'
-	 * own argument: filling a slot from a configuration nobody has agreed to yet
-	 * would be a number derived from an error.
+	 * That sentence is about *this member*. The form one press away knows a modifier
+	 * has five slots, because it writes them; it still resolves none of them.
+	 *
+	 * Built from the same `rowViews` / `rowValues` helpers `render` and `scopeRows`
+	 * use, so a definition's amount is evaluated against the same account of the
+	 * row the cells on screen are — including its computed columns.
+	 *
+	 * Undefined where there is nothing to enrol — no modifier column, or a
+	 * configuration this card is refusing to draw — on `scopeRows`' own argument:
+	 * filling a slot from a configuration nobody has agreed to yet would be a
+	 * number derived from an error.
 	 */
 	scopeModifiers(data, config): ModifierSource | undefined {
 		if (configError(config) !== null) return undefined;
-		const columns = config.columns ?? [];
-		const target = columns.find((column) => columnType(column) === 'target');
-		if (target === undefined) return undefined;
-		/** Every amount column, in column order, which is declaration order. */
-		const amounts = columns
-			.map((column, at) => ({ column, at }))
-			.filter(
-				({ column }) =>
-					column.modifier === true &&
-					MODIFIER_AMOUNT_TYPES.has(columnType(column)),
-			);
-		if (amounts.length === 0) return undefined;
+		/** Every modifier column, in column order, which is declaration order. */
+		const enrolling = (config.columns ?? []).filter(
+			(column) => columnType(column) === 'modifier',
+		);
+		if (enrolling.length === 0) return undefined;
 		const views = rowViews(config, data);
 
-		return (resolve, explain) => {
+		return (resolve) => {
 			const pushes: ModifierPush[] = [];
 			for (const view of views) {
 				const cell = storedCells(data, view);
-				const to = (cell(target) ?? '').trim();
-				// A blank target pushes nothing and is not an error: on an
-				// inventory with a target column, most rows are blank.
-				if (to === '') continue;
-				const label = rowLabel(view.label);
-				const stored = rowScope(config, view.declared, cell, resolve);
-				for (const { column, at } of amounts) {
-					// Blank is untyped, so every modifier in the column stacks —
-					// which is what an author who has never heard of bonus types
-					// expects.
-					const type = (column.modifierType ?? '').trim() || null;
-					pushes.push({
-						target: to,
-						type,
-						label,
-						// The card's own name, which is the half a row label cannot
-						// carry: two modifier tables on one sheet can each hold a
-						// "Ring". `modifierBreakdown` decides when to show it.
-						source: config.label,
-						...amountOfCell(config, view, cell, stored, column, at, {
-							resolve,
-							explain,
-						}),
-					});
+				/** Built once per row, however many cells on it enrol. */
+				let row: RowValues | null = null;
+				for (const column of enrolling) {
+					/*
+					 * **One cell, as many parts as it holds**, split by `cellParts`:
+					 * `;` separates them, each part is trimmed, an empty part is
+					 * dropped and a repeated *name* is one enrolment. A blank cell
+					 * pushes nothing and is not an error — on an inventory with a
+					 * modifier column, most rows are blank.
+					 *
+					 * The loop below is unchanged in shape, which is the point: three
+					 * parts in one cell yield three pushes over one `RowValues`,
+					 * typed and named alike, so nothing about `ModifierPush` or
+					 * `ModifierSource` moved for the second tier beyond the member's
+					 * name.
+					 */
+					for (const part of cellParts(cell(column) ?? '')) {
+						row ??= rowValues(config, data, view, resolve);
+						pushes.push({
+							part,
+							// The card's own name, which is the half a row label cannot
+							// carry: two modifier tables on one sheet can each hold a
+							// "Ring". `modifierBreakdown` decides when to show it.
+							source: config.label,
+							row,
+						});
+					}
 				}
 			}
 			return pushes;
@@ -1337,12 +1295,24 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 		container.replaceChildren();
 		const element = <K extends keyof HTMLElementTagNameMap>(
 			tag: K,
+			/** One class, or several separated by spaces. */
 			className: string,
 			parent: HTMLElement,
 			text?: string,
 		): HTMLElementTagNameMap[K] => {
 			const el = doc.createElement(tag);
-			if (className !== '') el.classList.add(className);
+			/*
+			 * **Split, because `classList.add` throws on a space** — and the trap is
+			 * invisible until the harness draws it. A `DOMException` here aborts the
+			 * whole render mid-row, so a call site passing two classes drew one cell
+			 * and then stopped; `src/test/obsidian-stub.ts` accepts the space, so the
+			 * suite stayed green while the sheet lost every row below the first. That
+			 * is `docs/UI.md` §11's kinder instrument, and the cheapest fix is to
+			 * make the helper mean what its callers already read it as.
+			 */
+			for (const one of className.split(' ')) {
+				if (one !== '') el.classList.add(one);
+			}
 			if (text !== undefined) el.textContent = text;
 			parent.appendChild(el);
 			return el;
@@ -1668,6 +1638,20 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			 */
 			const scopeNow = (): Record<string, FieldValue> =>
 				rowScope(config, rowIndex, cellText, context.resolveField);
+			/**
+			 * This row as the *note* gives it: its stored cells, its declared
+			 * values, and its computed columns over the top.
+			 *
+			 * The same helper `scopeRows` and `scopeModifiers` use, so a definition
+			 * resolved here and a number published elsewhere cannot disagree about
+			 * what the row says. Built at most once per row and shared by every cell
+			 * that needs it — a row with two filled modifier cells used to build it
+			 * twice — and from the note rather than the drafts, which is the rule the
+			 * breakdown already follows: a published name reads the note.
+			 */
+			let noteValues: RowValues | null = null;
+			const noteRow = (): RowValues =>
+				(noteValues ??= rowValues(config, data, rowView, context.resolveField));
 
 			const computed: { column: TableColumn; el: HTMLElement; index: number }[] =
 				[];
@@ -1789,10 +1773,30 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 					 * in the feature spec — the accepting set is coarse at the
 					 * component, so the row's stray line cannot fire for it.
 					 */
+					/*
+					 * The number this cell publishes, from the note, so the total
+					 * line under an override *is* the cell's own value rather than a
+					 * second answer to what the override came to
+					 * (`modifier-breakdown.ts`). Through `noteRow` and not through a
+					 * fresh evaluation, so the cell, the published name and the
+					 * breakdown are one account of the row.
+					 */
+					const shown =
+						name === undefined || column.formula === undefined
+							? null
+							: noteRow().values[column.key];
 					const pushed =
 						name === undefined || column.formula === undefined
 							? null
-							: modifierBreakdown(context.modifiers?.breakdown(name));
+							: modifierBreakdown(
+									context.modifiers?.breakdown(name),
+									typeof shown === 'number' ? shown : null,
+									// This breakdown is read inside a table, so every
+									// line names its component however few there are:
+									// an unqualified row name here reads as one of the
+									// rows the reader is looking at.
+									true,
+								);
 					if (pushed !== null) {
 						cell.classList.add(MODIFIED_CLASS);
 						/*
@@ -1832,6 +1836,30 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 						// phone. A read-only cell has no other use for a tap, so
 						// the tap is free to mean "why this number?" — which is
 						// the question, and the one the failure message answers.
+						//
+						/*
+						 * **`mod.self` reaches a player here, and it stays.** This
+						 * feature is why a computed column's formula carries the token
+						 * at all, so a reader now meets it one line above a breakdown
+						 * that was deliberately rewritten to avoid it — which looks
+						 * like the same defect and is not.
+						 *
+						 * A breakdown line is a sentence *this plugin composes*, so it
+						 * owes the reader's vocabulary. A formula line is a
+						 * **quotation of the author's own text**, and rewriting a
+						 * quotation is the worse failure: the string here would stop
+						 * matching the string in the layout editor, and a reader
+						 * comparing the two to work out why a number is wrong could no
+						 * longer match them. It is the rule
+						 * `.sheetsmith-field-problem code` already follows — the
+						 * offending text in the field's own font, so the eye can match
+						 * the two rather than translate between them.
+						 *
+						 * The residue is real and is recorded rather than chased:
+						 * `docs/UI.md` §12. `ability` and `Training` at least name
+						 * things visible on the sheet; `mod.self` names nothing a
+						 * player can see.
+						 */
 						cell.classList.add('sheetsmith-table-askable');
 						cell.addEventListener('click', () => {
 							const said = cell.getAttribute('title');
@@ -1867,100 +1895,237 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 				};
 
 				/*
-				 * A target cell: a choice from a closed list, in the `level`
-				 * column's existing clothes (`.sheetsmith-table-select`, UI §9's
-				 * row for "a choice from a closed list").
+				 * A modifier cell: **one glyph and nothing else, however many parts
+				 * the cell holds** (SPEC §2, §4.2).
 				 *
-				 * **The list is the targets that accept a modifier**, not every
-				 * name the sheet publishes, which is what keeps it short enough to
-				 * read and makes the mirror-image bug nearly unreachable through
-				 * the UI: to push at something that ignores you, the note has to
-				 * have been hand-edited or the layout has to have changed under it.
+				 * `hideHeading` is what makes the column draw as the glyph alone,
+				 * and this is the second good case for it after the level ring — the
+				 * glyph names itself, and a word above it several times its width
+				 * sets the column's width against a control that needs none of it.
 				 *
-				 * **A stored target the list does not offer is rendered, not
-				 * corrected**, carried as one extra last line showing it raw. That
-				 * is §4.2's rule for a Card's stray option and for a `level`
-				 * column's out-of-range value, read on a third control rather than
-				 * answered a third way — snapping to blank or to the first target
-				 * would be a layout edit deleting character data, which Constraint
-				 * 4 and §10 both refuse.
+				 * **One glyph per row, because one row is one item and an item should
+				 * read as one mark.** The cell holds a list, so a row applying two
+				 * changes draws one bolt rather than two: two bolts say "two things"
+				 * about a row whose reader is asking one question, which is
+				 * `docs/UI.md` §9's two-answers-to-one-question in the smallest space
+				 * available. What carries the rest is words, at three depths from one
+				 * builder so they cannot disagree — the accessible name's count, the
+				 * `title`'s one line each, and the form's own lines.
 				 *
-				 * Most rows leave it blank, which is the `—` line: the same first
-				 * line a Card's dropdown shows, and the same rule that no option
-				 * is a default.
+				 * **The control is a `<button>` and the glyph is the whole of it**,
+				 * with one gesture: a press opens the form, on a pointer and under a
+				 * finger alike, and Enter or Space opens it from the keyboard. The
+				 * `title` is the zero-press shortcut a pointer happens to have, which
+				 * is not a duplicate — hover to read, press to change.
+				 * `aria-haspopup` is `"dialog"` rather than `"menu"`, because what
+				 * opens is a form and a screen reader should say so.
+				 *
+				 * **Three shapes for four states**, because `docs/UI.md` §6 refuses a
+				 * mark whose only channel is fill strength:
+				 *
+				 * - no part: `plus`, faint. The empty cell is the entry point for
+				 *   adding one and an unmarked entry point is a dead end (§7 refuses
+				 *   a hover-only affordance and a phone has no hover) — the delete
+				 *   glyph one column over carries the same argument. `plus` and not a
+				 *   fainter `zap`, or "none" against "applying" would be a difference
+				 *   of fill strength alone.
+				 * - any applying: `zap`. **Including a row where one applies and one
+				 *   does not**, because the glyph is about the row: a row changing
+				 *   something is changing something. Deliberately not a fourth shape
+				 *   for "some" — a partial-state glyph is a mark most readers meet
+				 *   once and could not name, and a count is words the moment anyone
+				 *   asks for it.
+				 * - filled, none applying: `zap-off`, which now has **six** reasons —
+				 *   a false condition; the layout declares no modifier of that name;
+				 *   an override lost or a larger bonus of its type took the slot; an
+				 *   amount will not resolve; a target's own formula reads no
+				 *   modifier; and a typed effect with no amount yet.
+				 *
+				 * **A stray part is rendered, not corrected** — carried as a line of
+				 * its own in the form, with the row reading `zap-off` where nothing
+				 * else on it applies. §4.2's rule for a Card's stray option, read per
+				 * part rather than per cell: rewriting it would be a layout edit
+				 * deleting character data, which Constraint 4 and §10 both refuse.
 				 */
-				if (type === 'target') {
-					const select = element('select', 'sheetsmith-table-select', td);
-					const targets = context.modifiers?.targets ?? [];
-					const line = (value: string, text: string) => {
-						const option = element('option', '', select, text);
-						option.value = value;
-						return option;
-					};
-					line('', '—');
-					for (const target of targets) line(target.name, target.label);
-					const stray =
-						raw !== '' && !targets.some((target) => target.name === raw)
-							? line(raw, raw)
-							: null;
-					select.value = raw;
-					select.setAttribute('aria-label', label);
-					if (stray) {
-						/*
-						 * **A row that changes nothing has to look like one.** The
-						 * state lived only in the `title` below: not in the paint, and
-						 * not in ARIA, so a stray target was pixel-indistinguishable
-						 * from a working one and a screen reader heard only the row
-						 * and the column. `docs/UI.md` §6 asks for both.
-						 *
-						 * **Marked where a Card's stray option deliberately is not**,
-						 * and the difference is the one that matters rather than an
-						 * oversight. `card-face.ts` records its reason — a stored
-						 * option "resolved fine; it is exactly what the note says" —
-						 * and that is true there, because the card's value *is* that
-						 * option and a formula reading the card gets it. A stray
-						 * target resolves fine too and then does *nothing*: the row
-						 * pushes at a name no formula reads, or at no name at all.
-						 * One is a value in use that the layout no longer lists; the
-						 * other is a value with no effect.
-						 *
-						 * The state goes in the accessible name, which is the level
-						 * ring's own shape (`${label}: ${state}`) rather than a
-						 * fourth way of saying a control's state. The `title` keeps
-						 * the two reasons, because those name two different fixes and
-						 * a name is not the place for a sentence.
-						 */
-						select.classList.add('sheetsmith-table-inert');
-						select.setAttribute('aria-label', `${label}: ${raw}, changes nothing`);
-						/*
-						 * **Two reasons, and the title says which**, because they have
-						 * different fixes: a name the sheet does not publish is a
-						 * spelling to correct in this cell, and a name it publishes
-						 * that reads no modifier is a formula to edit somewhere else.
-						 *
-						 * The sheet has to say this at all because the layout editor
-						 * cannot: an open row's target is character data, so half the
-						 * pushes on a sheet live in a file the layout has never seen.
-						 */
-						select.setAttribute(
-							'title',
-							context.modifiers === undefined
-								? `"${raw}" is what this note holds. There is no sheet here to check it against.`
-								: context.modifiers.publishes(raw)
-									? `"${raw}" reads no modifier, so this row changes nothing. Add "+ mod.self" to that value's own formula.`
-									: `This sheet publishes no "${raw}", so this row changes nothing. Choose a value it does publish, or correct the spelling in the layout.`,
-						);
+				if (type === 'modifier') {
+					const cell = element('span', 'sheetsmith-table-modifier-cell', td);
+					const button = element(
+						'button',
+						'sheetsmith-table-modifier-button',
+						cell,
+					);
+					button.type = 'button';
+					const glyph = element(
+						'span',
+						'sheetsmith-table-modifier-glyph',
+						button,
+					);
+					glyph.setAttribute('aria-hidden', 'true');
+
+					/*
+					 * **Two lists, and the difference between them is §6's "the collapse
+					 * is a read and never a write".**
+					 *
+					 * `stored` is every part the cell holds, so every index the form
+					 * addresses is an index into the note and a commit re-joins the
+					 * parts the reader did not touch *as their own stored text*.
+					 * Building the write list from the collapsed read instead deleted a
+					 * repeated name on any unrelated edit — silently, because a repeat
+					 * was one enrolment either way and no number moved.
+					 *
+					 * `enrolled` is what the row is *doing*: a repeated name is one
+					 * enrolment, exactly as `scopeModifiers` pushes it, so the glyph,
+					 * the `title` and the accessible name's count all read this one and
+					 * agree with the arithmetic.
+					 *
+					 * The residue is that a cell holding one name twice draws three
+					 * lines in the form and says "2 applying" — two true answers to two
+					 * different questions, which is the same shape §3's tie already
+					 * settles. It is reachable only by a hand-edited typo, and the
+					 * alternative is deleting bytes.
+					 */
+					const stored = storedParts(raw);
+					const enrolled = cellParts(raw);
+					/*
+					 * What each part comes to on this row, from the note rather than
+					 * from the drafts: a part is resolved against the row a formula
+					 * elsewhere reads, so the glyph and the number over the card it
+					 * changes cannot say different things. Built once with the cell for
+					 * the same reason the breakdown is.
+					 */
+					const ask = (part: string) =>
+						context.modifiers?.outcome(part, noteRow()) ?? null;
+					const applied = rowModifiers(enrolled, ask);
+					const applying = applied.filter(
+						(one) => one.outcome?.applies === true,
+					).length;
+					if (enrolled.length === 0) {
+						cell.classList.add('sheetsmith-table-modifier-empty');
 					}
-					select.addEventListener('change', () => {
-						// Choosing anything else drops the stray line, exactly as a
-						// Card's dropdown drops its own.
-						if (stray && select.value !== stray.value) {
-							stray.remove();
-							select.removeAttribute('title');
-						}
-						drafts.set(column.key, select.value);
+					setIcon(
+						glyph,
+						enrolled.length === 0 ? 'plus' : applying > 0 ? 'zap' : 'zap-off',
+					);
+
+					/*
+					 * **The state is in the accessible name, not only in the paint**
+					 * (`docs/UI.md` §6), in the level ring's own `${label}: ${state}`
+					 * shape rather than a fifth way of saying a control's state. The
+					 * parts are not on screen as words, so `aria-label` is the right
+					 * carrier here rather than a `title` addition: the visible mark is
+					 * a glyph.
+					 */
+					button.setAttribute('aria-label', modifierRowName(label, applied));
+					const said = modifierRowText(applied);
+					if (said !== null) button.setAttribute('title', said);
+					button.setAttribute('aria-haspopup', 'dialog');
+					button.setAttribute('aria-expanded', 'false');
+
+					/**
+					 * Which cell this panel belongs to, so a rebuild can hand it back.
+					 *
+					 * The component's id, the row's own position in the note and the
+					 * column's key: the three things that identify a cell across a
+					 * re-render where the layout has not changed, which is
+					 * `view/cell-focus.ts`' own bargain read on a floating surface.
+					 */
+					const panelKey = `${config.id}:${rowView.at ?? rowView.label}:${column.key}`;
+
+					/**
+					 * Rewrite the cell with exactly one part replaced, added or
+					 * dropped.
+					 *
+					 * **Every other part is re-joined as its own stored text, byte for
+					 * byte** — Constraint 3's one new rule. The form hands back the
+					 * list it was given with one entry changed, so nothing here
+					 * re-spells a part the reader did not touch: a canonical join over
+					 * the whole cell would quietly canonicalise the others as a side
+					 * effect of an unrelated edit, which §10 forbids.
+					 */
+					const put = (next: readonly string[]) => {
+						const text = spellParts(next);
+						drafts.set(column.key, text);
 						recompute(true);
-						commit(select.value);
+						commit(text);
+					};
+
+					/** Fill an open panel's body with the form, and place it. */
+					const fill = (panel: AnchoredPanel<ModifierFormState>) => {
+						renderModifierForm(panel.body, panel.state, {
+							label: rowLabel(rowView.label),
+							// The stored list, never the collapsed one: the form's
+							// indices are indices into the note.
+							parts: stored,
+							outcome: ask,
+							definitions: context.modifiers?.definitions ?? [],
+							targets: context.modifiers?.targets ?? [],
+							published: context.modifiers?.published ?? [],
+							bonusTypes: context.modifiers?.bonusTypes ?? [],
+							// The one import from `obsidian` in this folder, passed on
+							// rather than taken again: the allowlist stays one name long.
+							icon: (into, name) => setIcon(into, name),
+							onCommit: put,
+							onPromote: (name, effect) =>
+								context.modifiers?.promote(name, effect) ??
+								Promise.resolve({
+									error: 'This sheet cannot save a modifier to its layout.',
+								}),
+							announce: (text) => {
+								status.textContent = text;
+							},
+							onResize: () => panel.place(),
+						});
+						panel.place();
+					};
+
+					/*
+					 * **The panel stays open across every commit**, which is the best
+					 * thing this surface buys over the menu it replaced. A commit
+					 * re-renders the sheet, so this button is a *new* button and the
+					 * panel — which lives on `document.body` — is handed to it with the
+					 * reader's own posture intact.
+					 */
+					const held = reanchorAnchoredPanel<ModifierFormState>(
+						panelKey,
+						button,
+					);
+					if (held !== null) {
+						button.setAttribute('aria-expanded', 'true');
+						fill(held);
+					}
+
+					button.addEventListener('click', () => {
+						if (openAnchoredPanelKey() === panelKey) {
+							// A second press on the same glyph closes it, which is what
+							// a control carrying `aria-expanded` owes.
+							held?.close();
+							return;
+						}
+						const panel = showAnchoredPanel<ModifierFormState>(
+							button,
+							`Modifiers on "${rowLabel(rowView.label)}"`,
+							panelKey,
+							modifierFormState(stored),
+							() => {
+								button.setAttribute('aria-expanded', 'false');
+							},
+						);
+						button.setAttribute('aria-expanded', 'true');
+						fill(panel);
+						/*
+						 * Focus moves to the first control on open, which is the
+						 * platform's own contract for a `dialog` and is what makes
+						 * `aria-haspopup="dialog"` true rather than decorative.
+						 *
+						 * Unless the form has already placed it, which it does on a row
+						 * with no parts: that opens straight into a new effect with
+						 * **Changes** focused, and the first control is the `Modifier`
+						 * select one line above it. Two answers to "where does focus
+						 * go" would make the common case land on the wrong field.
+						 */
+						if (!panel.body.contains(doc.activeElement)) {
+							focusFirstControl(panel);
+						}
 					});
 					return;
 				}

@@ -71,12 +71,47 @@
 			"hideNote": true
 		},
 		{
+			"id": "skills",
+			"type": "table",
+			"label": "Skills",
+			"position": {
+				"col": 1,
+				"row": 3,
+				"width": 6,
+				"height": 2
+			},
+			"rowHeader": "Skill",
+			"columns": [
+				{
+					"key": "Bonus",
+					"type": "computed",
+					"formula": "ability + mod.self",
+					"publish": true
+				}
+			],
+			"rows": [
+				{
+					"label": "Acrobatics",
+					"values": {
+						"ability": "abilities.DEX"
+					}
+				},
+				{
+					"label": "Perception",
+					"key": "perception",
+					"values": {
+						"ability": "abilities.WIS"
+					}
+				}
+			]
+		},
+		{
 			"id": "magic_items",
 			"type": "table",
 			"label": "Magic items",
 			"position": {
 				"col": 1,
-				"row": 3,
+				"row": 5,
 				"width": 6,
 				"height": 2
 			},
@@ -84,20 +119,13 @@
 			"openRows": true,
 			"columns": [
 				{
-					"key": "Modifies",
-					"type": "target"
+					"key": "Modifiers",
+					"type": "modifier",
+					"hideHeading": true
 				},
 				{
-					"key": "Bonus",
-					"type": "number",
-					"modifier": true,
-					"modifierType": "item"
-				},
-				{
-					"key": "Aid",
-					"type": "number",
-					"modifier": true,
-					"modifierType": "status"
+					"key": "Worn",
+					"type": "toggle"
 				},
 				{
 					"key": "Notes",
@@ -111,7 +139,7 @@
 			"label": "Worn items",
 			"position": {
 				"col": 1,
-				"row": 5,
+				"row": 7,
 				"width": 6,
 				"height": 2
 			},
@@ -119,14 +147,9 @@
 			"openRows": true,
 			"columns": [
 				{
-					"key": "Modifies",
-					"type": "target"
-				},
-				{
-					"key": "Bonus",
-					"type": "number",
-					"modifier": true,
-					"modifierType": "item"
+					"key": "Modifiers",
+					"type": "modifier",
+					"hideHeading": true
 				}
 			]
 		}
@@ -134,6 +157,70 @@
 	"modifierTypes": [
 		"item",
 		"status",
-		"circumstance"
+		"circumstance",
+		"morale"
+	],
+	"modifiers": [
+		{
+			"name": "Belt of Giant Strength",
+			"target": "abilities.STR",
+			"amount": "2",
+			"bonusType": "item"
+		},
+		{
+			"name": "Gauntlets of Ogre Power",
+			"target": "abilities.STR",
+			"amount": "1",
+			"bonusType": "item"
+		},
+		{
+			"name": "Bull's Strength",
+			"target": "abilities.STR",
+			"amount": "1",
+			"bonusType": "status"
+		},
+		{
+			"name": "Ring of Protection",
+			"target": "armour_class",
+			"amount": "1",
+			"bonusType": "item"
+		},
+		{
+			"name": "Bracers of Defence +1",
+			"target": "armour_class",
+			"amount": "1",
+			"bonusType": "circumstance"
+		},
+		{
+			"name": "Plate armour",
+			"target": "armour_class",
+			"operator": "override",
+			"amount": "18"
+		},
+		{
+			"name": "Mage armour",
+			"target": "armour_class",
+			"operator": "override",
+			"amount": "13"
+		},
+		{
+			"name": "Cloak of Elvenkind",
+			"target": "armour_class",
+			"amount": "1",
+			"bonusType": "status",
+			"when": "Worn"
+		},
+		{
+			"name": "Cloak of Displacement",
+			"target": "passive_perception",
+			"amount": "2",
+			"bonusType": "item"
+		},
+		{
+			"name": "Eyes of the Eagle",
+			"target": "skills.perception",
+			"amount": "2",
+			"bonusType": "item"
+		}
 	]
 }

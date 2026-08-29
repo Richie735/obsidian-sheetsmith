@@ -41,10 +41,10 @@ describe('what the two rules share', () => {
 
 describe('where the two rules differ, and it is on purpose', () => {
 	it('trims a stored identifier at both ends', () => {
-		// A bonus type is matched byte for byte against a column's `modifierType`
-		// and a trigger name against a binding's own, so `  item` surviving as a
-		// separate entry makes two types that stack with nothing on screen saying
-		// why.
+		// A bonus type is matched byte for byte against a modifier definition's
+		// `bonusType` and a trigger name against a binding's own, so `  item`
+		// surviving as a separate entry makes two types that stack with nothing on
+		// screen saying why.
 		expect(storedLines('  item  \n\tstatus')).toEqual(['item', 'status']);
 	});
 

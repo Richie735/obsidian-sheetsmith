@@ -13,6 +13,7 @@ import {
 	ComponentConfig,
 	GRID_POSITION_KEYS,
 	GridPosition,
+	ModifierDefinition,
 	ResetBinding,
 } from '../types';
 
@@ -65,6 +66,29 @@ export interface Layout {
 	 * type**, so a layout edit that drops one cannot orphan a character note.
 	 */
 	modifierTypes?: string[];
+	/**
+	 * The changes this layout's items can make (SPEC §5), each with a name a
+	 * character's row enrols in.
+	 *
+	 * The layout's own vocabulary, beside the function library, the triggers and
+	 * the bonus types — and the reason the authoring surface is a reference
+	 * rather than a target column and an amount column: a target, an operator, an
+	 * expression and a condition in a character note would be structure in
+	 * character data, against SPEC §2's "holds values only, never structure".
+	 *
+	 * Held as written, like the three keys above: whether `modifiers` is an array
+	 * of objects at all is the file format's business and refuses the layout
+	 * below, while whether a definition is usable — no name, a name twice, a
+	 * target this layout does not publish, an amount that will not parse — is
+	 * contents, reported in the editor while every sheet on the layout goes on
+	 * rendering (`parse/modifier-definitions.ts`).
+	 *
+	 * **Editing one changes every character on the layout, silently**, which is
+	 * the point of the model and also its exposure: nothing is cached, so the
+	 * change is visible the moment a sheet is opened rather than fossilised in
+	 * notes, and there is no undo in the editor (SPEC §7).
+	 */
+	modifiers?: ModifierDefinition[];
 	/**
 	 * Top-level keys this version does not understand (promoted fields) are
 	 * preserved verbatim, so editing a layout never strips them from the file.
@@ -394,6 +418,27 @@ export function parseLayout(source: string): Layout {
 		);
 	}
 
+	/*
+	 * The fourth key on the same terms, and the one where the shape check earns
+	 * its place: a `modifiers` holding strings, or numbers, or one object rather
+	 * than a list of them, is a file nothing downstream can read a `name` or a
+	 * `target` off, exactly as a `columns` that is not an array is. What each
+	 * definition *says* is contents and is reported in the editor.
+	 */
+	const modifiers = raw.modifiers;
+	if (
+		modifiers !== undefined &&
+		(!Array.isArray(modifiers) ||
+			modifiers.some(
+				(entry) =>
+					typeof entry !== 'object' || entry === null || Array.isArray(entry),
+			))
+	) {
+		throw new LayoutParseError(
+			'"modifiers" must be an array of objects, one modifier definition per entry.',
+		);
+	}
+
 	const components = raw.components.map((component, index) =>
 		parseComponent(component, index),
 	);
@@ -462,6 +507,9 @@ export function parseLayout(source: string): Layout {
 		...(triggers !== undefined ? { triggers: triggers as string[] } : {}),
 		...(modifierTypes !== undefined
 			? { modifierTypes: modifierTypes as string[] }
+			: {}),
+		...(modifiers !== undefined
+			? { modifiers: modifiers as ModifierDefinition[] }
 			: {}),
 		components,
 	};

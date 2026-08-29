@@ -6,7 +6,7 @@ import {
 	renderModifierTypes,
 } from './modifier-types-field';
 import { Layout } from '../parse/layout';
-import { ComponentConfig } from '../types';
+import { ModifierDefinition } from '../types';
 
 /*
  * The layout's bonus types (SPEC §5, §7), driven directly.
@@ -41,33 +41,25 @@ const context = {
 
 function layout(
 	modifierTypes?: string[],
-	components: ComponentConfig[] = [],
+	modifiers: ModifierDefinition[] = [],
 ): Layout {
 	return {
 		name: 'Sheet',
 		columns: 12,
-		components,
+		components: [],
 		...(modifierTypes ? { modifierTypes } : {}),
+		...(modifiers.length > 0 ? { modifiers } : {}),
 	};
 }
 
-/** A table whose one modifier column claims the type given. */
-function items(modifierType?: string): ComponentConfig {
+/** A definition claiming the bonus type given, or none. */
+function ring(bonusType?: string): ModifierDefinition {
 	return {
-		id: 'items',
-		type: 'table',
-		label: 'Magic items',
-		position: { col: 1, row: 1, width: 6, height: 2 },
-		columns: [
-			{ key: 'Modifies', type: 'target' },
-			{
-				key: 'Bonus',
-				type: 'number',
-				modifier: true,
-				...(modifierType === undefined ? {} : { modifierType }),
-			},
-		],
-	} as unknown as ComponentConfig;
+		name: 'Ring of Protection',
+		target: 'armour_class',
+		amount: '1',
+		...(bonusType === undefined ? {} : { bonusType }),
+	};
 }
 
 function render(from: Layout): {
@@ -176,29 +168,29 @@ describe('what the field says is wrong', () => {
 		expect(count(container)).toBe('2 bonus types defined.');
 	});
 
-	it('reports a column claiming a type the layout does not declare', () => {
+	it('reports a definition claiming a type the layout does not declare', () => {
 		/*
 		 * The one message that can only appear here. A component's `configError`
 		 * is handed a config and never the layout, so nothing inside Table can
-		 * check its own column against this list — which is the argument
-		 * `parse/modifier-types.ts` is built on, and this is what holds the
-		 * rendering of it.
+		 * check anything against this list — and a bonus type is a *definition's*
+		 * now, which no component can see at all. That is the argument
+		 * `parse/modifier-types.ts` is built on, and this holds the rendering of it.
 		 */
-		const { container } = render(layout(['item'], [items('circumstance')]));
+		const { container } = render(layout(['item'], [ring('circumstance')]));
 		const said = problems(container);
 		expect(said).toHaveLength(1);
-		// The component's name, in its own span, so the reader knows which card.
+		// The definition's name, in its own span, so the reader knows which one.
 		expect(
 			container.querySelector('.sheetsmith-field-problem-line')?.textContent,
-		).toBe('Magic items');
+		).toBe('Ring of Protection');
 		expect(said[0]).toContain('circumstance');
 		expect(said[0]).toContain('does not declare');
 	});
 
-	it('stops reporting the column once the type is declared', () => {
+	it('stops reporting the definition once the type is declared', () => {
 		// Against the names as typed rather than as last saved, so the report
 		// follows the field instead of trailing a commit behind it.
-		const { field, container } = render(layout(['item'], [items('status')]));
+		const { field, container } = render(layout(['item'], [ring('status')]));
 		expect(problems(container)).toHaveLength(1);
 		commit(field, 'item\nstatus');
 		expect(problems(container)).toEqual([]);

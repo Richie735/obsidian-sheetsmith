@@ -8,8 +8,12 @@ import {
 } from 'obsidian';
 import { getComponent } from '../components';
 import { closePopover } from '../ui/popover';
+import {
+	closeAnchoredPanel,
+	dropDetachedAnchoredPanel,
+} from '../ui/anchored-panel';
 import { ConfirmModal } from '../ui/confirm-modal';
-import { loadLayout } from '../layouts';
+import { appendModifierDefinition, loadLayout } from '../layouts';
 import type SheetsmithPlugin from '../main';
 import {
 	applySectionWrites,
@@ -25,12 +29,7 @@ import {
 	resolveFormulaFields,
 } from '../formula/resolve';
 import { parseFunctions } from '../formula/functions';
-import { modifierTargetSource } from '../formula/modifier-targets';
-import {
-	buildSheetEnv,
-	publishedComponent,
-	sheetModifiers,
-} from '../formula/sheet';
+import { buildSheet } from '../formula/sheet';
 import { DEFAULT_COLUMNS, Layout } from '../parse/layout';
 import { walkComponents } from '../parse/layout-walk';
 import { parseTriggers } from '../parse/triggers';
@@ -39,6 +38,8 @@ import {
 	ComponentDefinition,
 	isContainer,
 	LinkContext,
+	PromoteResult,
+	TypedEffect,
 } from '../types';
 import { captureFocus, restoreFocus } from './cell-focus';
 import { renderGrid } from './grid-cells';
@@ -170,14 +171,17 @@ export class SheetView extends TextFileView {
 		// file just closed has nothing left to be attached to.
 		this.markdown.end();
 		this.contentEl.empty();
-		// A popover lives on document.body, so emptying this element does not
-		// reach it — it would be left pointing at a cell of the file just
-		// closed.
+		// A popover and a modifier form both live on document.body, so emptying
+		// this element does not reach either — they would be left pointing at a
+		// cell of the file just closed. The form survives a *render*, deliberately,
+		// which is why the file changing has to say so explicitly.
 		closePopover();
+		closeAnchoredPanel();
 	}
 
 	async onClose(): Promise<void> {
 		closePopover();
+		closeAnchoredPanel();
 	}
 
 	/** Re-render from current data, e.g. after the layout file changed. */
@@ -292,24 +296,43 @@ export class SheetView extends TextFileView {
 		// to build each component's resolver rather than finished numbers:
 		// it is what closes the loop between "this card reads the sheet" and
 		// "the sheet reads this card".
-		// Every component, including the ones that publish nothing at all —
-		// `publishedComponent` holds why, and holds it in one place because the
-		// harness builds the same thing and the two must not disagree.
-		const published = prepared.map(publishedComponent);
-		const env = buildSheetEnv(published, library);
-
-		// What a component cannot work out about modifiers for itself (SPEC §5).
-		// Built by the shared builder rather than here, for `publishedComponent`'s
-		// own reason: the harness builds the same thing and the two must not drift.
 		//
-		// The sources come from the *configuration*, through the same assembly the
-		// layout editor uses, because which names accept a modifier is a property
-		// of the layout and not of this note (SPEC §7).
-		const modifiers = sheetModifiers(
-			prepared.map((entry) =>
-				modifierTargetSource(entry.config, entry.component),
-			),
-			env,
+		// **One call rather than the five steps it is made of**, and the reason is
+		// that review could not see the five: dropping the modifier input here left
+		// the whole suite green while every card read unmodified and every modifier
+		// cell still drew `zap`. `buildSheet` holds the sequence, the harness and
+		// the fixture test go through the same one, and `sheet.test.ts` scans all
+		// three for it.
+		const { env, modifiers } = buildSheet(
+			layout,
+			prepared,
+			library,
+			/*
+			 * **The one path in this plugin where a character's sheet writes the
+			 * layout file** (SPEC §7), and it is the view's because a
+			 * component never touches a file (PATTERNS §5). Bounded to appending one
+			 * definition, ordered so the layout lands before the cell is rewritten,
+			 * and every failure is a value the form puts in front of the reader.
+			 */
+			(name: string, effect: TypedEffect): Promise<PromoteResult> =>
+				/*
+				 * **The effect goes over whole, never rebuilt member by member.** A
+				 * `TypedEffect` is a `ModifierDefinition` minus its name, so it
+				 * satisfies this parameter as it stands — and `contract.test.ts` forces
+				 * any member added to one interface onto the other, which a host
+				 * spelling the five fields would then silently drop, because an
+				 * optional member missing from an object literal type-checks. The
+				 * harness would go on drawing a promotion this never performed, which
+				 * is the class of bug the host scan in `sheet.test.ts` exists for — and
+				 * that scan holds this too.
+				 */
+				appendModifierDefinition(
+					this.app,
+					this.plugin.settings.layoutFolder,
+					note.layoutName,
+					name,
+					effect,
+				),
 		);
 
 		// One pass per render, begun before the first component draws and ended by
@@ -343,6 +366,14 @@ export class SheetView extends TextFileView {
 		this.renderTriggers(triggerBar, layout, prepared, env);
 
 		restoreFocus(root, focus);
+		/*
+		 * A modifier form left over from the render before this one is handed to the
+		 * cell it belongs to while the grid is being built, which is what keeps it
+		 * open across a commit. If this render no longer draws that cell — the file
+		 * changed, the layout changed, the row went — nothing claimed it, so it goes
+		 * rather than floating over a sheet it has nothing to do with.
+		 */
+		dropDetachedAnchoredPanel();
 	}
 
 	/**

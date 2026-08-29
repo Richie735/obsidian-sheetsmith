@@ -1,6 +1,11 @@
 import { ESLint } from 'eslint';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+
+/** `src/`, for the one check here that is a scan rather than an eslint case. */
+const SRC = fileURLToPath(new URL('..', import.meta.url));
 
 /*
  * The rules about what a component may import, driven through eslint itself.
@@ -74,6 +79,10 @@ const ALLOWED = [
 	"import { formatDerived } from './card-face';",
 	"import { paintLinkedText } from './linked-text';",
 	"import { modifierBreakdown } from './modifier-breakdown';",
+	// The form a modifier glyph opens: a shared component-layer surface, in no
+	// registry and declaring no component. Added to the allowlist deliberately,
+	// which is what that tier means.
+	"import { renderModifierForm } from './modifier-form';",
 	"import { MODIFIED_CLASS } from '../components/modifier-breakdown';",
 	"import { paintLinkedText } from '../components/linked-text';",
 	"import { paintLevelRing } from '../components/level-ring';",
@@ -108,6 +117,157 @@ describe('a component cannot import a sibling', () => {
 describe('a component can still import what it is meant to', () => {
 	it.each(ALLOWED)('allows %s', async (source) => {
 		expect(await lintAsComponent(source)).toEqual([]);
+	});
+});
+
+/**
+ * Every `.ts` file under `dir`, and which of them `matches`.
+ *
+ * **It returns the count as well as the hits, and every caller asserts a floor on
+ * it.** §10's rule is that a test which could pass vacuously must assert it is
+ * testing something, and an absence scan is the shape most exposed to it: the
+ * whole assertion is `toEqual([])`, which an empty walk satisfies perfectly. A
+ * missing directory throws, so the realistic failure is *narrowing* rather than
+ * zeroing — this file moving one level down would silently scan a subtree and go
+ * on reporting green over whatever it no longer reads, while `PATTERNS.md` §2
+ * cites it as the thing making a rule [checked].
+ *
+ * `skipTests` because two of the three callers are about what *shipping* code
+ * reaches for, and a test file standing in for another layer is entitled to
+ * spellings the layer it doubles owns.
+ */
+function scan(
+	dir: string,
+	matches: (source: string) => boolean,
+	skipTests = false,
+): { files: number; hits: string[] } {
+	let files = 0;
+	const hits: string[] = [];
+	for (const name of readdirSync(dir, { withFileTypes: true })) {
+		const path = join(dir, name.name);
+		if (name.isDirectory()) {
+			const inner = scan(path, matches, skipTests);
+			files += inner.files;
+			hits.push(...inner.hits);
+			continue;
+		}
+		if (!name.name.endsWith('.ts')) continue;
+		if (skipTests && name.name.endsWith('.test.ts')) continue;
+		files += 1;
+		if (matches(readFileSync(path, 'utf8'))) hits.push(name.name);
+	}
+	return { files, hits };
+}
+
+describe('the app\'s own menu is imported nowhere in src', () => {
+	/*
+	 * **The `Menu` import is gone from `src/` entirely**, and this is what says so.
+	 * It lived in `ui/check-menu.ts`, which was the only shape available while the
+	 * modifier cell's popup was Obsidian's own menu: `Menu` closes on selection and
+	 * `MenuItem` takes a title, an icon and a click, so it hosts no controls at all
+	 * — and the cell now opens a *form* with six labelled controls in it.
+	 * `ui/anchored-panel.ts` is plain DOM, so nothing imports it any more.
+	 *
+	 * A source scan rather than an eslint case, because what is being checked is an
+	 * *absence across a folder* and not a rule about one file: eslint can refuse an
+	 * import in `components/`, and `src/ui/` sits outside that restriction on
+	 * purpose. This is the check that would go red if the next floating surface
+	 * reached for the menu again.
+	 */
+	it('imports Menu and MenuItem in no file under src', () => {
+		// The import statement, never the word: `Menu` appears in prose in several
+		// headers arguing why it is *not* used, and a scan that matched those could
+		// never go green.
+		const imported = (source: string): boolean => {
+			for (const match of source.matchAll(
+				/^import\s*\{([^}]*)\}\s*from\s*'obsidian';/gm,
+			)) {
+				const names = (match[1] ?? '').split(',').map((one) => one.trim());
+				if (names.includes('Menu') || names.includes('MenuItem')) return true;
+			}
+			return false;
+		};
+		const { files, hits } = scan(SRC, imported);
+		// The floor is the breadth: `src/` holds well over a hundred `.ts` files, so
+		// a walk that read a subtree instead would fail here rather than reporting
+		// green over whatever it stopped reading.
+		expect(files).toBeGreaterThan(100);
+		expect(hits).toEqual([]);
+	});
+});
+
+describe('a cell part is parsed in one place, on the formula side of the seam', () => {
+	/*
+	 * **Two readings of one part's text is the one way this design could have the
+	 * form and the number disagree**, so the rule is that a component *spells* a
+	 * part and never *reads* one: `spellTypedEffect` because Table writes the cell,
+	 * and every field the form draws off `ModifierContext.outcome`, which the
+	 * formula layer has already resolved.
+	 *
+	 * A scan and not an eslint case, for the `Menu` check's reason one paragraph up:
+	 * what is checked is an *absence across a folder*, and the module being reached
+	 * for is one a component is otherwise entitled to import — `parse/modifier-cell.ts`
+	 * is where the separator, the join and the spelling live, and Table needs all
+	 * three.
+	 *
+	 * **Test files are outside it, and that is a decision rather than an oversight.**
+	 * `table.test.ts` calls `parseModifierPart` to build a stand-in for
+	 * `sheetModifiers` — it is playing the formula layer, which is the one caller
+	 * entitled to parse. What holds the real agreement is the round trip over
+	 * `spellTypedEffect` then `parseModifierPart` and `vault-fixture.test.ts` driving
+	 * the real context.
+	 */
+	const parses = (source: string) => source.includes('parseModifierPart');
+
+	it('is named in exactly two files under src, and they are the right two', () => {
+		/*
+		 * **Over all of `src/` rather than over `components/`**, which is wider than
+		 * the criterion's own wording and costs nothing: only the file that *defines*
+		 * the parse and the one layer entitled to call it name it at all, so the
+		 * allowlist is two entries and every other folder is covered for free. Scoped
+		 * to `components/` it would have missed a second parse landing in `editor/`,
+		 * `view/` or `ui/` — none of which is entitled to one either, and each of
+		 * which is somewhere a future surface could plausibly put it.
+		 *
+		 * An exact list rather than an emptiness check, so the *positive* half is
+		 * asserted too: a scan that stopped finding `formula/modifier-definitions.ts`
+		 * would mean the parse had moved, and reporting green for that is the vacuous
+		 * pass §10 forbids.
+		 */
+		const { files, hits } = scan(SRC, parses, true);
+		expect(files).toBeGreaterThan(60);
+		expect(hits.sort()).toEqual(['modifier-cell.ts', 'modifier-definitions.ts']);
+	});
+});
+
+describe('a refusal sentence is written in one place', () => {
+	/*
+	 * **The predicates were extracted and the sentences were not**, which is §1's
+	 * named trap and the shape it already records happening once with
+	 * `--sheetsmith-grid-row` "in the same diff that cited this rule". Three files
+	 * held verbatim copies of two refusals, and all three headers claimed that could
+	 * not happen — "reused verbatim, so a reader who meets the rule twice meets one
+	 * sentence", which a comment cannot make true.
+	 *
+	 * The failure a scan catches and a test cannot: a design pass softens the
+	 * wording in one file, the layout editor's report shows the new sentence and the
+	 * panel where the reader is typing the name shows the old one, and nothing goes
+	 * red because every copy still matches its own assertion.
+	 *
+	 * Written against the distinctive clause of each sentence rather than the whole
+	 * of it, so a reworded copy is caught as surely as a duplicated one.
+	 */
+	const CLAUSES = [
+		'separates the modifiers it applies with a semicolon',
+		'spells its own modifiers that way',
+		'Give it a name to reuse it by',
+		'already has a modifier called',
+	] as const;
+
+	it.each(CLAUSES)('writes "%s" once in src', (clause) => {
+		const { files, hits } = scan(SRC, (source) => source.includes(clause), true);
+		expect(files).toBeGreaterThan(50);
+		expect(hits).toHaveLength(1);
 	});
 });
 

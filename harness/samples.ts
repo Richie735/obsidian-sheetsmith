@@ -42,11 +42,17 @@ export const SAMPLES: Sample[] = [
 				{ key: 'WIS', name: 'Wisdom' },
 				{ key: 'CHA', name: 'Charisma' },
 			],
-			// `+ mod.self` is what makes the six abilities modifiable, and it is the
+			// `mod.self` is what makes the six abilities modifiable, and it is the
 			// case the relative spelling exists for: one formula runs per entry,
 			// and no absolute name inside it could say which entry it is running
 			// for. Watch the Magic items table below move STR and leave DEX alone.
-			derived: 'floor((value - 10) / 2) + mod.self',
+			//
+			// **Inside the parenthesis, not after it**, which is where a `+2 Str`
+			// item belongs: a belt raises the *score* and the ability modifier is
+			// derived from the raised score, so 15 with an item +2 is a 17 reading
+			// +3. Added to the result instead, the same belt moved the modifier by
+			// a whole +2 — twice what the item says it does.
+			derived: 'floor((value + mod.self - 10) / 2)',
 		} as ComponentConfig,
 		body: '```sheet\nSTR: 15\nDEX: 14\nCON: 13\nINT: 12\nWIS: 10\nCHA: 8\n```',
 	},
@@ -1024,37 +1030,69 @@ export const SAMPLES: Sample[] = [
 		body: '\n![[Sildar Hallwinter.png]]\n',
 	},
 	/*
-	 * Item modifiers (SPEC §5): one row declaring a change against a value
-	 * published somewhere else on the sheet.
+	 * Modifier definitions (SPEC §5): one row enrolling in as many changes as it
+	 * needs, each named in **one** cell that draws as **one** glyph.
 	 *
-	 * Seven rows, one per state worth looking at — counted against the body below
-	 * rather than remembered, because this list said five while holding six and
-	 * skipping the one row that shows a wikilink surviving a target cell:
+	 * Ten rows, one per state worth looking at, counted against the body below
+	 * rather than remembered:
 	 *
-	 * - two item bonuses on the same target at different amounts, so the
-	 *   stacking rule has something to suppress — and the breakdown on the STR
-	 *   card is what says the smaller one is being ignored and why;
-	 * - a status bonus on that same target, so two types add over one target;
-	 * - a **wikilink** in the row name, which is what says a target cell reaches
+	 * - **one row whose cell names two modifiers that both apply, to two
+	 *   different values** — one glyph, two numbers moving. This is what one
+	 *   modifier column per table is *for*;
+	 * - **the mixed cell**, `Ring of Protection; armour_class += 2 as item when
+	 *   Worn`: a name and an effect typed on the row, both item bonuses at armour
+	 *   class, the typed `+2` winning and the named `+1` on the same row suppressed.
+	 *   It is the row `&press=` opens the form on, and the row this wave exists for.
+	 *   Its own name carries a `+2`, and `Bracers of Defence +1` is a *definition*
+	 *   name carrying arithmetic that is deliberately not read as arithmetic;
+	 * - **a typed override**, `armour_class = 16`, contesting with two named ones
+	 *   and losing, so a push carrying no tier is on the sheet rather than in a
+	 *   test;
+	 * - **a typed effect naming a bonus type the layout does not declare**,
+	 *   `abilities.STR += 1 as luck`: it applies and contests as its own kind, and
+	 *   the form says `luck (not declared)`;
+	 * - **a typed effect with no amount**, `armour_class +=`, which changes nothing,
+	 *   refuses nothing and draws `zap-off` — the sixth `zap-off` reason;
+	 * - **and that cell is spelled `A ;B`, by hand**, so the tolerant read is
+	 *   visible in the sample rather than only in a test — the Cloak row below
+	 *   carries the canonical `'; '` and the two read identically;
+	 * - **one row naming two of which one applies**, which is the state the old
+	 *   three glyph shapes could not describe: the glyph reads the *row*, so it is
+	 *   `zap`, and the popup is where the second line says it changes nothing;
+	 * - **an item bonus suppressed by a larger one of its type**, whose glyph is
+	 *   `zap-off` and whose popup says which wording is true, and **a status bonus
+	 *   at that same target** beside it, so two types adding over one name is on
+	 *   the sheet rather than something a reader has to build;
+	 * - a **wikilink** in the row name, which is what says a modifier cell reaches
 	 *   Constraint 2 not at all: the table is markdown storage, the link is real,
 	 *   and the breakdown names the row "as a reader sees it" rather than as the
-	 *   file spells it (`rowLabel`). Its target is a **Card**;
-	 * - a target that is a **Table cell** rather than a card — the skills card's
-	 *   published Perception row — which is the third surface a modifier reaches
-	 *   and the only one where the mark lands in a table;
-	 * - a target the sheet publishes and no formula reads a modifier for,
-	 *   which the select carries as its own last line;
-	 * - a target the sheet does not publish at all, which is what a hand-edited
-	 *   note arrives holding, and which the select carries with a different
-	 *   title saying so.
+	 *   file spells it (`rowLabel`);
+	 * - an **override**, and a **lower override** beside it, so the breakdown
+	 *   carries a "sets to" line, a suppressed one, and a total that reads as a
+	 *   value;
+	 * - a **conditional row switched off**, its `Worn` cell unticked, which is one
+	 *   of the five `zap-off` reasons and the one that leaves no line in the
+	 *   breakdown at all — the breakdown is the number's story and the row is the
+	 *   item's;
+	 * - **one cell naming the same modifier twice**, `Bracers of Defence +1;
+	 *   Bracers of Defence +1`: two lines drawn for **one** enrolment, so the
+	 *   second carries `Already applied above; removing either takes both` and both
+	 *   lines' **Remove** reads `Remove all 2`. It is here because that pair is the
+	 *   fix for the owner's only real defect in this feature — a **Remove** that
+	 *   took one of the two byte ranges and left the row still applying the
+	 *   modifier — and until now no sample spelled a name twice, so neither the
+	 *   sentence nor the button had ever been rendered anywhere but a test;
+	 * - a modifier aimed at a **table cell** rather than a card, the skills card's
+	 *   published Perception row;
+	 * - a cell naming a definition **the layout does not declare**, which is what
+	 *   a hand-edited note arrives holding and what a renamed definition leaves
+	 *   behind: rendered, not corrected;
+	 * - and **a blank cell**, which now draws a faint `plus` rather than nothing,
+	 *   because it is the entry point for adding a modifier.
 	 *
-	 * The row it shares with **Worn items** below is that table's business rather
-	 * than this one's: two tables pushing at one card is what makes a breakdown
-	 * name its source component.
-	 *
-	 * Most cells in the two amount columns are blank, and that is the stated cost
-	 * of putting the bonus type on the column rather than on the row: a table
-	 * whose rows carry different types needs one column per type.
+	 * The `Worn` toggle is here rather than as a second modifier column, because
+	 * the condition lives on the definition and the flag it reads is an ordinary
+	 * cell — which is the whole of what the condition mechanism is.
 	 */
 	{
 		config: {
@@ -1065,22 +1103,34 @@ export const SAMPLES: Sample[] = [
 			rowHeader: 'Item',
 			openRows: true,
 			columns: [
-				{ key: 'Modifies', type: 'target' },
-				{ key: 'Bonus', type: 'number', modifier: true, modifierType: 'item' },
-				{ key: 'Aid', type: 'number', modifier: true, modifierType: 'status' },
+				// `hideHeading`, which is what a column drawing as one glyph is for:
+				// the glyph names itself, and a word above it several times its width
+				// sets the column's width against a control that needs none of it.
+				// The key is plural because it is what the cell's accessible name
+				// reads — "Modifiers: 2 applying".
+				{ key: 'Modifiers', type: 'modifier', hideHeading: true },
+				{ key: 'Worn', type: 'toggle' },
 				{ key: 'Notes' },
 			],
 		} as ComponentConfig,
 		body: [
-			'| Item | Modifies | Bonus | Aid | Notes |',
-			'| --- | --- | --- | --- | --- |',
-			'| Belt of Giant Strength | abilities.STR | 2 |  | attuned |',
-			'| Gauntlets of Ogre Power | abilities.STR | 1 |  | the smaller item bonus |',
-			"| Bull's Strength | abilities.STR |  | 1 | a different type, so it adds |",
-			'| [[Ring of Protection]] | armour_class | 1 |  |  |',
-			'| Cloak of Displacement | passive_perception | 2 |  | reads no modifier |',
-			'| Eyes of the Eagle | skills.perception | 2 |  | a table cell, not a card |',
-			'| Amulet of Misspelling | armor_class | 1 |  | not a name this sheet has |',
+			'| Item | Modifiers | Worn | Notes |',
+			'| --- | --- | --- | --- |',
+			'| Belt of Giant Strength | Belt of Giant Strength ;Bracers of Defence +1 | yes | two values from one glyph |',
+			'| Gauntlets of Ogre Power | Gauntlets of Ogre Power | yes | the smaller item bonus |',
+			"| Bull's Strength | Bull's Strength |  | a different type, so it adds |",
+			'| [[Ring of Protection]] | Ring of Protection | yes |  |',
+			'| Bracers of Warding +2 | Ring of Protection; armour_class += 2 as item when Worn | yes | a name and a typed effect in one cell |',
+			'| Plate armour | Plate armour | yes | sets it, and the bonuses land on top |',
+			'| Barkskin | armour_class = 16 | yes | a typed override, losing to a named one |',
+			'| Mage armour | Mage armour |  | the lowest override |',
+			'| Cloak of Elvenkind | Cloak of Elvenkind; Cloak of Displacement | yes | two named, one applying |',
+			'| Warded bracers | Bracers of Defence +1; Bracers of Defence +1 | yes | one name, twice: two lines, one enrolment |',
+			'| Lucky charm | abilities.STR += 1 as luck | yes | a bonus type the layout does not declare |',
+			'| Unfinished ward | armour_class += | yes | typed, with no amount yet |',
+			'| Eyes of the Eagle | Eyes of the Eagle |  | a table cell, not a card |',
+			'| Ring of Nonexistence | Ring of Nonexistence |  | no such modifier |',
+			'| Chalk |  |  | nothing on this row yet |',
 		].join('\n'),
 	},
 	/*
@@ -1089,13 +1139,15 @@ export const SAMPLES: Sample[] = [
 	 * carries the component's label, so without this the qualified form could not
 	 * be looked at.
 	 *
-	 * Its row shares a name with one in Magic items on purpose. That is the
-	 * failure the row label alone cannot carry — two lines a reader cannot tell
-	 * apart — so the armour class breakdown reads
-	 * `Worn items · Ring of Protection — item +1` beside
-	 * `Magic items · Ring of Protection — item +1`, while the STR card one table
-	 * over still reads `Belt of Giant Strength — item +2` with no prefix at all.
-	 * Both forms on one sheet is the comparison the rule is worth judging on.
+	 * Its row enrols in the same definition as one in Magic items, on purpose.
+	 * That is the failure the row label alone cannot carry — two lines a reader
+	 * cannot tell apart — so the armour class breakdown reads
+	 * `Worn items · Ring of Protection` beside `Magic items · Ring of Protection`,
+	 * while the STR card one table over reads `Belt of Giant Strength` with no
+	 * prefix at all. Both forms on one sheet is the comparison the rule is worth
+	 * judging on. It is also the *tie* that puts the second suppression wording
+	 * there, and the one row on the sheet whose glyph says it is applying while
+	 * the breakdown attributes the number to the other half of the pair.
 	 */
 	{
 		config: {
@@ -1105,15 +1157,12 @@ export const SAMPLES: Sample[] = [
 			position: { col: 9, row: 31, width: 4, height: 2 },
 			rowHeader: 'Worn',
 			openRows: true,
-			columns: [
-				{ key: 'Modifies', type: 'target' },
-				{ key: 'Bonus', type: 'number', modifier: true, modifierType: 'item' },
-			],
+			columns: [{ key: 'Modifiers', type: 'modifier', hideHeading: true }],
 		} as ComponentConfig,
 		body: [
-			'| Worn | Modifies | Bonus |',
-			'| --- | --- | --- |',
-			'| Ring of Protection | armour_class | 1 |',
+			'| Worn | Modifiers |',
+			'| --- | --- |',
+			'| Ring of Protection | Ring of Protection |',
 		].join('\n'),
 	},
 	/* Beside the set rather than inside it, so a tab press has something to not
@@ -1135,6 +1184,50 @@ export const SAMPLES: Sample[] = [
 /** The same layout with nothing stored: every component's empty state. */
 export function emptySamples(): Sample[] {
 	return SAMPLES.map((sample) => ({ config: sample.config, body: null }));
+}
+
+/**
+ * The populated sheet with **every modifier cell cleared and every row kept**.
+ *
+ * A state of its own because it is the one `sheet-empty` cannot reach: that view
+ * drops the bodies, so both modifier tables draw `No rows yet.` and the modifier
+ * column is never photographed at all. This is a fresh character — rows entered,
+ * no modifiers named yet — and it is the state where an empty cell's `plus` is the
+ * *only* mark in its column, with no bolt anywhere to read the absence against.
+ *
+ * That is what the design axis needed to see to rule on the glyph's contrast, and
+ * a review cannot rule on a state no shot contains.
+ */
+export function unmodifiedSamples(): Sample[] {
+	return SAMPLES.map((sample) => {
+		const columns = (sample.config as { columns?: { type?: string }[] }).columns;
+		if (sample.body === null || columns === undefined) return sample;
+		const blank = columns
+			.map((column, index) => (column.type === 'modifier' ? index + 1 : -1))
+			.filter((index) => index >= 0);
+		if (blank.length === 0) return sample;
+		/*
+		 * By the column's position rather than by matching the names, because what
+		 * this state means is "this cell holds nothing" — and a transform that
+		 * searched for definition names would quietly stop clearing the column the
+		 * day a sample gained a modifier this file does not spell. `+ 1` for the row
+		 * header, which is a column in the markdown and not in `columns`.
+		 */
+		const body = sample.body
+			.split('\n')
+			.map((line, row) => {
+				if (!line.startsWith('|') || row === 1) return line;
+				// The heading row keeps its text: what this state clears is values.
+				if (row === 0) return line;
+				const cells = line.split('|');
+				for (const index of blank) {
+					if (cells[index + 1] !== undefined) cells[index + 1] = ' ';
+				}
+				return cells.join('|');
+			})
+			.join('\n');
+		return { config: sample.config, body };
+	});
 }
 
 /**

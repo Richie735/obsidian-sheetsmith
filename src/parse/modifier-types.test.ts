@@ -1,36 +1,30 @@
 import { describe, expect, it } from 'vitest';
 import { Layout } from './layout';
 import { parseModifierTypes } from './modifier-types';
-import { ComponentConfig } from '../types';
+import { ComponentConfig, ModifierDefinition } from '../types';
 
-/** A table whose modifier columns claim the types given. */
-const items = (
-	label: string,
-	claims: readonly (string | undefined)[],
-): ComponentConfig =>
-	({
-		id: label.toLowerCase(),
-		type: 'table',
-		label,
-		position: { col: 1, row: 1, width: 1, height: 1 },
-		columns: [
-			{ key: 'Modifies', type: 'target' },
-			...claims.map((modifierType, at) => ({
-				key: `Bonus ${at}`,
-				type: 'number',
-				modifier: true,
-				...(modifierType === undefined ? {} : { modifierType }),
-			})),
-		],
-	}) as ComponentConfig;
+/** A definition claiming the bonus type given, or none. */
+const modifier = (
+	name: string,
+	bonusType?: string,
+	operator?: 'add' | 'override',
+): ModifierDefinition => ({
+	name,
+	target: 'armour_class',
+	amount: '1',
+	...(bonusType === undefined ? {} : { bonusType }),
+	...(operator === undefined ? {} : { operator }),
+});
 
 const layout = (
 	modifierTypes: string[] | undefined,
+	modifiers: ModifierDefinition[] = [],
 	components: ComponentConfig[] = [],
 ): Layout => ({
 	name: 'L',
 	components,
 	...(modifierTypes ? { modifierTypes } : {}),
+	...(modifiers.length > 0 ? { modifiers } : {}),
 });
 
 describe('parseModifierTypes: declarations', () => {
@@ -73,76 +67,72 @@ describe('parseModifierTypes: declarations', () => {
 	});
 });
 
-describe('parseModifierTypes: columns', () => {
-	it('says nothing about a column naming a declared type', () => {
+describe('parseModifierTypes: the definitions naming one', () => {
+	it('says nothing about a definition naming a declared type', () => {
 		expect(
-			parseModifierTypes(layout(['item'], [items('Magic items', ['item'])]))
-				.problems,
+			parseModifierTypes(layout(['item'], [modifier('Ring', 'item')])).problems,
 		).toEqual([]);
 	});
 
-	it('says nothing about an untyped modifier column', () => {
+	it('says nothing about an untyped definition', () => {
 		// Untyped is the default and every one of them stacks, so there is nothing
 		// to check it against.
-		expect(
-			parseModifierTypes(layout(['item'], [items('Magic items', [undefined])]))
-				.problems,
-		).toEqual([]);
+		expect(parseModifierTypes(layout(['item'], [modifier('Ring')])).problems).toEqual(
+			[],
+		);
 	});
 
-	it('reports a column naming a type the layout does not declare', () => {
+	it('reports a definition naming a type the layout does not declare', () => {
 		/*
-		 * **This is the check the feature spec asked Table's own `configError` for,
-		 * and it cannot live there**: `configError` is reached from `read(body,
-		 * config)`, which is handed one component's config and never the layout. A
+		 * **This is the check the shipped feature spec asked Table's own
+		 * `configError` for, and it cannot live there**: `configError` is reached
+		 * from `read(body, config)`, which is handed one component's config and
+		 * never the layout — and a definition is not a component's at all now. A
 		 * reset binding pointing at no trigger is reported in exactly this place
 		 * for exactly this reason.
 		 *
-		 * Reported rather than refused, which the stakes allow: no cell ever names
-		 * a type, so nothing stored can be orphaned by the mismatch.
+		 * Reported rather than refused, which the stakes allow — on the rule and no
+		 * longer on the construction guarantee. A row may now type an effect that
+		 * names a type, so "nothing stored ever names a type" is amended (feature doc
+		 * §1); what holds instead is that a type the layout does not declare is
+		 * **rendered, not corrected**, and the arithmetic contests by the string a
+		 * modifier carries rather than by this list. So the mismatch orphans nothing
+		 * and moves no number either way.
 		 */
 		const { problems } = parseModifierTypes(
-			layout(['item'], [items('Magic items', ['status'])]),
+			layout(['item'], [modifier('Ring', 'status')]),
 		);
 		expect(problems).toHaveLength(1);
-		expect(problems[0]?.component).toBe('Magic items');
+		expect(problems[0]?.definition).toBe('Ring');
 		expect(problems[0]?.message).toContain('"status"');
 		expect(problems[0]?.message).toContain('does not declare');
 	});
 
-	it('reaches a table inside a container', () => {
-		// Containment is arrangement and never addressing, so a nested table's
-		// columns are as much the layout's business as a top-level one's.
-		const group: ComponentConfig = {
-			id: 'gear',
-			type: 'group',
-			label: 'Gear',
-			position: { col: 1, row: 1, width: 4, height: 2 },
-			children: [items('Magic items', ['status'])],
-		};
-		expect(parseModifierTypes(layout(['item'], [group])).problems).toHaveLength(1);
+	it('reports it against a definition that sets a value too', () => {
+		// The type is ignored in the arithmetic there, which the definitions list
+		// says separately — but the vocabulary is still undeclared, and this list
+		// is where the vocabulary is kept.
+		const { problems } = parseModifierTypes(
+			layout(['item'], [modifier('Plate', 'status', 'override')]),
+		);
+		expect(problems).toHaveLength(1);
 	});
 
-	it('ignores a type on a column that is not a modifier', () => {
-		// A stale `modifierType` left behind when the flag was cleared claims
-		// nothing, because nothing reads it.
-		const stale: ComponentConfig = {
-			id: 'items',
-			type: 'table',
-			label: 'Magic items',
-			position: { col: 1, row: 1, width: 1, height: 1 },
-			columns: [{ key: 'Bonus', type: 'number', modifierType: 'status' }],
-		} as ComponentConfig;
-		expect(parseModifierTypes(layout(['item'], [stale])).problems).toEqual([]);
+	it('says nothing about a definition with no name', () => {
+		// An unnamed definition is dropped by the definitions parser, so reporting
+		// its type here would be a problem about something no row can reach.
+		expect(
+			parseModifierTypes(layout(['item'], [modifier('', 'status')])).problems,
+		).toEqual([]);
 	});
 
-	it('says nothing about a component with no columns at all', () => {
+	it('says nothing about a layout declaring no modifiers at all', () => {
 		const card: ComponentConfig = {
 			id: 'ac',
 			type: 'card',
 			label: 'Armour class',
 			position: { col: 1, row: 1, width: 1, height: 1 },
 		};
-		expect(parseModifierTypes(layout(['item'], [card])).problems).toEqual([]);
+		expect(parseModifierTypes(layout(['item'], [], [card])).problems).toEqual([]);
 	});
 });

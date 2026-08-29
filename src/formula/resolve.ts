@@ -217,6 +217,30 @@ function fieldReaders(
 		/** The published name this evaluation produces, where it produces one. */
 		published: string | undefined,
 	): { literal: Value } | { evaluated: Value } | null => {
+		/**
+		 * The name whose slot this evaluation actually read, or null.
+		 *
+		 * **This is the bound on the override step, and it is the tightest one
+		 * available.** SPEC §5's rule is that "an override reaches a target on
+		 * exactly the same condition an addition does — the target's own formula
+		 * reads `mod.self`", and this is that sentence made exact: the slot was
+		 * asked for, on the path this evaluation actually took. A static set over
+		 * the formula *text* would be wider, and wider in a way that shows: the
+		 * language's `if` is lazy, so `if(equipped, value + mod.self, value)` on a
+		 * stowed item reads no slot, takes no addition, and must take no override
+		 * either.
+		 *
+		 * **It also means the override step widens nothing**, which is half of what
+		 * SPEC §13's finding says and the half that is now wrong there: nothing here
+		 * asks the walk a question the formula did not already ask it, so *this*
+		 * step leaves the two cycle guards the shares of a ring they had before the
+		 * feature. The widening the finding describes is real and comes from
+		 * somewhere else — `ModifierContext.outcome`, which a modifier cell asks for
+		 * every filled cell it draws, bounded by the accepting set and by nothing
+		 * narrower, and which running at render can be the first entry into the walk
+		 * in a render (`formula/sheet.ts`).
+		 */
+		let asked: string | null = null;
 		if (!isDeclared(component.formulaFields, field)) return null;
 		const expression = readPath(record, field);
 		// A field configured as a bare number or boolean is its own answer.
@@ -265,14 +289,60 @@ function fieldReaders(
 			 * effect of it.
 			 */
 			if (name === SELF_SLOT) {
-				return published === undefined ? 0 : env.sheet(modifierSlot(published));
+				if (published === undefined) return 0;
+				asked = published;
+				return env.sheet(modifierSlot(published));
 			}
 			// The component's own data shadows the sheet, so a card's `value`
 			// always means its own — never some other component that happens
 			// to share the name.
 			return dataScope(name) ?? env.sheet(name);
 		};
-		return { evaluated: evaluate(expression, scope, calls) };
+		const value = evaluate(expression, scope, calls);
+		return { evaluated: overridden(asked, value) };
+	};
+
+	/**
+	 * An override applied to what a formula that read its own slot came to.
+	 *
+	 * ```
+	 * name = override applies ? highest override + additive total
+	 *                         : the formula's own result
+	 * ```
+	 *
+	 * So an override replaces **the result of the formula that read the slot**,
+	 * and the additive total is re-added on top: override 18, addition +1, result
+	 * 19. That is the owner's arithmetic and CSB's operator order — "set are
+	 * applied first, then … addition" — against Foundry's, whose override has
+	 * priority 50 and so wipes the additions; dnd5e#6622 is an open bug from a
+	 * user hitting exactly that.
+	 *
+	 * **Here rather than in `buildSheetScope`'s thunk**, and that is a correction
+	 * to the feature spec rather than a preference. The name table is only one of
+	 * the two callers of this evaluation: a Card draws its number through
+	 * `context.resolveField('derived', …, config.id)` and the sheet publishes it
+	 * through `resolve(display.field, …, name)`, and an override applied in the
+	 * thunk alone would put 20 into every formula reading the card and 14 on the
+	 * card's own face. That is the existing rule that a name and the cell it came
+	 * from must not disagree, and it is why one place is the only correct number
+	 * of places.
+	 *
+	 * **What it costs, stated because it is a real edge.** A formula using
+	 * `mod.self` as anything but a plain addend gets different arithmetic under an
+	 * override: `value + mod.self * 2` doubles the additive total when nothing
+	 * overrides and adds it once when something does, because this can only re-add
+	 * what the slot holds, which is the total. Small, because `+ mod.self` is the
+	 * canonical spelling everywhere, and unavoidable without a base to replace —
+	 * which `10 + abilities.DEX + mod.self` does not have.
+	 */
+	const overridden = (asked: string | null, value: Value): Value => {
+		if (asked === null) return value;
+		const pushed = env.modifiers(asked);
+		// A refused slot has already thrown out of the scope above, so this only
+		// ever sees one that resolved; the guard is what makes that readable rather
+		// than assumed.
+		if ('error' in pushed || pushed.override === null) return value;
+		return pushed.override + pushed.total;
 	};
 
 	return {
