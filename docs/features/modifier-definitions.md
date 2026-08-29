@@ -2548,6 +2548,95 @@ sums.
     `armour_class+=2 as item when Worn`. Reopen the sheet: every number is identical.
     Close it without editing anything: the file is unchanged, byte for byte.
 
+## Wave 4: the effective pill and the two-phase slot
+
+> **Written retroactively, by the session that shipped it, from the code and from
+> `SPEC`'s own diff — not from a review.** This wave was built after the three
+> review axes had run on everything above it, and it has been through none of
+> them: no `/spec-review`, no `/patterns-review`, no design pass. It was written
+> against no spec, so this section is a description of what exists rather than the
+> plan it was built to, and the criteria below are **stated, not verified**. They
+> are deliberately left unticked. A reader who wants the confidence the rest of
+> this document carries has to run the axes on it.
+>
+> It is recorded here rather than left out because the alternative is worse: a
+> future reader finding `effective` and `applies` in the code with nothing
+> anywhere saying what they are for would reasonably assume they had been through
+> the same loop as their neighbours.
+
+**Two changes, and they answer the same reader's question from opposite ends.**
+
+### `effective`: what the value pill reads
+
+A new formula field on **Card** and **Card set**, beside `derived`. Where it is
+declared, the value pill shows what the formula comes to rather than what the
+note stores — a Strength of 15 with an item +2 reads **17** — and the derived
+number above it is unchanged.
+
+- **Opt-in, because the plugin cannot work it out.** A modifier lands in whatever
+  slot the formula gives it, so `floor((value + mod.self - 10) / 2)` raises the
+  score and `floor((value - 10) / 2) + mod.self` raises the modifier. Both are
+  legitimate arithmetic and only the author knows which they wrote. A card that
+  guessed would print a confident wrong number on `10 + abilities.DEX + mod.self`,
+  which has no effective stored value at all.
+- **The field goes back to the stored number the moment it is focused**, and that
+  is a data rule rather than a display one. The pill is editable, and what it
+  reads is `bindEditable`'s baseline: what Escape restores to, what an arrow key
+  steps, and what a blur compares against. Left reading 17, one arrow press would
+  commit **18** as the character's stored Strength — a note rewritten by a reader
+  who never typed a digit, which is CLAUDE.md 4.
+- **A dropdown never takes one**, because its text is a label from a closed list
+  and a computed reading would be a word the list does not contain.
+- It falls back to the stored number rather than to `?`: a pill is one number
+  with nowhere to say why it is not one.
+
+### `applies`: which of a formula's two numbers a modifier moves
+
+A modifier now carries a phase — **`value`**, the default, which lands wherever
+the author put `mod.self` in the formula, and **`result`**, added to the number
+the formula came to, after it ran.
+
+- The two **contest separately**: the best-of-a-type rule runs once per phase, so
+  an item bonus to a score and an item bonus to a check are not made to suppress
+  one another.
+- **Only additions carry one.** An override replaces the published number, which
+  is the result phase by construction.
+- **A cell spells only the result phase**, as a ` to result` clause —
+  `abilities.STR += 1 to result`. The value phase is the absent clause, so every
+  cell written before this round-trips byte for byte (Constraint 3). Unlike ` as `
+  and ` when `, the clause checks its own value, because `to` is a common word and
+  an amount reading a column headed `to` must not lose everything after it.
+
+### What it also changed, and this one is a fix
+
+The throwaway vault fixture's `abilities` set was spelled
+`floor((value - 10) / 2) + mod.self`, so a Belt of Giant Strength moved the
+ability *modifier* by +2 — twice what the item says it does, and the one thing its
+name promises was the thing it did not do. It is now
+`floor((value + mod.self - 10) / 2)`, and the numbers in
+`view/vault-fixture.test.ts` move with it.
+
+### Criteria — stated, not verified
+
+- [ ] A Card and a Card set declaring `effective` show the computed number at rest
+      and the stored number under a caret, and an arrow key steps the stored one.
+- [ ] A dropdown ignores `effective` entirely.
+- [ ] `effective` absent leaves the pill exactly what it was.
+- [ ] `armour_class += 1 to result` round-trips byte for byte, and a part with no
+      clause spells no phase.
+- [ ] A `to` inside an amount — `armour_class += Bonus to Hit` — is not read as a
+      phase.
+- [ ] An override never spells a phase, and never carries one out of the editor.
+- [ ] The two phases contest separately, and a breakdown line names the phase only
+      where it is not the default.
+- [ ] The fixture's ability formula raises the score, and the fixture test's
+      numbers say so.
+- [ ] `npm test`, `npm run lint` and `npm run build` pass. *(This one is checked:
+      2353 tests green at the land stop.)*
+- [ ] The pill is photographed in the harness, in both themes. **Not done** — no
+      harness view renders a card declaring `effective`, so the accent colour and
+      the focus swap have never been looked at.
+
 ## Corrections after review
 
 What review found this document had got wrong about its own code — or about itself —
