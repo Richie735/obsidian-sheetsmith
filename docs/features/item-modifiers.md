@@ -1007,8 +1007,22 @@ to it:
   unused on purpose, which is what a layout carrying a system's whole list looks
   like.
 - A **Card set** `abilities`, six entries,
-  `derived = floor((value - 10) / 2) + mod.self`. The headline case: one formula
+  `derived = floor((value + mod.self - 10) / 2)`. The headline case: one formula
   per entry, so only the entry a row targeted moves. Scores 15/14/13/12/10/8.
+  **`mod.self` sits inside the parenthesis, and where an author puts it is the
+  whole of what their modifiers mean.** A `+2 Str` item raises the *score*, and
+  the ability modifier is derived from the raised score — 15 with an item +2 is a
+  17 reading +3. Spelled `floor((value - 10) / 2) + mod.self`, which this fixture
+  carried until a reader met it, the same belt moved the ability modifier by +2,
+  which is twice what it says it does. Neither spelling is wrong to the engine —
+  a modifier lands in the slot the formula gives it and nowhere else — so this is
+  the example worth getting right, because it is the one people copy.
+  It also declares `effective = value + mod.self`, so the pill under the modifier
+  reads **17** where the note stores 15. That is the other half of the same
+  reader's question — the formula fix made the *modifier* right, and until the
+  pill moved too there was nothing on screen saying the belt had raised a score
+  at all. Focus the pill and it reads 15 again, which is the number every gesture
+  on it acts on (`docs/SPEC.md` §4.2).
 - A **Card** `armour_class`, `derived = 10 + abilities.DEX + mod.self`.
 - A **Card** `passive_perception`, `derived = 10 + abilities.WIS` — no
   `mod.self`, so it is published and accepts nothing. This is the row the sheet
