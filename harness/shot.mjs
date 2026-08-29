@@ -479,6 +479,57 @@ const DEFAULTS = [
 		query: 'surface=sheet&theme=light&state=unmodified',
 		size: SHEET_FRAME,
 	},
+	{
+		/*
+		 * **The value pill reading a number nobody typed**, which is the one
+		 * surface of the effective value that no shot has ever contained.
+		 *
+		 * `effective` is opt-in — the plugin cannot work out where a modifier
+		 * landed (SPEC §4.2) — so the populated layout does not declare it, and
+		 * until this state existed the accent on a computed pill and its swap back
+		 * to the stored number under a caret had only ever been reasoned about. A
+		 * colour that nobody has looked at is exactly what `docs/UI.md` §11 refuses
+		 * to take on trust, and a pill is the smallest surface on the sheet.
+		 *
+		 * What is in the frame, top to bottom. The **Abilities** strip, where STR
+		 * reads 19 against a stored 15 and carries the accent while the other five
+		 * read what they store and do not — one marked number among six, which is
+		 * the comparison the accent has to survive. The **Armour class** card just
+		 * under it, where the pill reads 20 and the number above it 22, because
+		 * only the evaluation that becomes the published name takes the override.
+		 * And the **Stealth** dropdown far down the sheet, which declares
+		 * `effective` and must ignore it: a menu reading `Expertise`, unaccented.
+		 *
+		 * Both themes, because the accent is `--text-accent` and the two palettes
+		 * put it at different strengths against the pill's own fill.
+		 */
+		name: 'sheet-effective-light',
+		query: 'surface=sheet&theme=light&state=effective',
+		size: SHEET_FRAME,
+	},
+	{
+		name: 'sheet-effective-dark',
+		query: 'surface=sheet&theme=dark&state=effective',
+		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * The same pill **under a caret**, which is the half that is not decoration:
+		 * `current` is `bindEditable`'s baseline, so a field left reading 19 would
+		 * step to 20 and commit 20 as the character's *stored* Strength — a note
+		 * rewritten by a reader who never typed a digit (CLAUDE.md 4). Focused, the
+		 * field is the stored 15 and reads as one, in `--text-normal` rather than
+		 * the accent.
+		 *
+		 * `sheet-focus`'s own argument, on the one control where focus changes the
+		 * text rather than only the ring: a swap nobody photographs is a swap that
+		 * regresses quietly, and this one is a data rule wearing a display.
+		 */
+		name: 'sheet-effective-focus',
+		query:
+			'surface=sheet&theme=light&state=effective&focus=.sheetsmith-card-input-effective',
+		size: SHEET_FRAME,
+	},
 	{ name: 'sheet-error', query: 'surface=sheet&theme=dark&state=broken', size: SHEET_FRAME },
 	{
 		// The pane above its reflow threshold: the tree beside the panel, with a
@@ -644,16 +695,17 @@ const DEFAULTS = [
 		name: 'editor-layout',
 		query: 'surface=editor&theme=light&open=::sheet::',
 		/*
-		 * Raised from 1200 when the Modifiers list arrived, and from 2300 when the
-		 * report went out of frame: ten definitions, each a row plus a five-control
-		 * detail line, and **the problem report under them is the whole point of the
-		 * view** — it is the only thing explaining why one `Changes` select shows a
-		 * bare `passive_perception` where the other nine show reader-facing labels.
-		 * At 2300 it was cut off below `Add modifier` and survived only in
-		 * `editor-layout-forced-colors`, whose frame is 2600, so the report had a
-		 * shot in the one mode nobody reviews copy in.
+		 * Raised from 1200 when the Modifiers list arrived, from 2300 when the
+		 * report went out of frame, and from 2600 when **Applies to** arrived and
+		 * split each definition's detail across two rows: ten definitions, each a
+		 * row plus a six-control detail line over two lines, and **the problem
+		 * report under them is the whole point of the view** — it is the only thing
+		 * explaining why one `Changes` select shows a bare `passive_perception`
+		 * where the other nine show reader-facing labels. Measured at 2941; 3000
+		 * clears it with a small margin rather than cutting `10 modifiers defined.`
+		 * the way 2600 now does.
 		 */
-		size: '1400,2600',
+		size: '1400,3000',
 	},
 	{
 		/*
@@ -670,15 +722,11 @@ const DEFAULTS = [
 		 */
 		name: 'editor-layout-forced-colors',
 		query: 'surface=editor&theme=light&open=::sheet::',
-		/*
-		 * **Taller than `editor-layout`, because this mode's own finding lives at
-		 * the bottom.** The two frames used to match on the measurement that forced
-		 * colors changes no height — true of the panel, and it left the
-		 * per-definition problem report clipped off the end, which is exactly the
-		 * thing this view is now the evidence for: ordinarily three tiers of colour,
-		 * here one system foreground plus the left rule that replaces them.
-		 */
-		size: '1400,2600',
+		// Matches `editor-layout`'s own measurement: forced colors repaints the
+		// page and reflows nothing, so the two frames move together whenever the
+		// panel's content does — as they did not for a while, which is why this one
+		// used to carry the finding the other view's frame was too short to show.
+		size: '1400,3000',
 		flags: ['--force-high-contrast'],
 	},
 	{
@@ -691,21 +739,29 @@ const DEFAULTS = [
 		 * and `editor-stacked` do for the pane's other half. Move it with the
 		 * threshold.
 		 *
-		 * **What this now shows is not what it was added for**, and that is worth
-		 * the reader knowing before they check it off. It was added because at 1210
-		 * the five-control line wrapped to two rows, hiding the truncation the wide
-		 * shot had: `Abilities · ST` with the T sliced through, `Armour clas`,
-		 * `Skills · perc(`. The fix for that gave **Changes** more than an equal
-		 * share and brought the shared floor down, so at 1210 the line is one row
-		 * again and every value fits — measured, 177px of box against 149 needed for
-		 * the longest. So what this photographs is the line at its tightest *fitting*,
-		 * and a wrap here is now the finding rather than the subject.
+		 * **What this shows changed twice, and is worth stating rather than
+		 * assumed.** It was added because at 1210 the five-control line wrapped to
+		 * two rows, hiding the truncation the wide shot had: `Abilities · ST` with
+		 * the T sliced through, `Armour clas`, `Skills · perc(`. A later fix gave
+		 * `Changes` more than an equal share, which for a while made this the one
+		 * view where the line still fit at five controls. **`Applies to`'s own
+		 * arrival broke that fix**, not by narrowing further but by adding a sixth
+		 * content-sized field that outgrew the dividend `Changes` had just been
+		 * given — which is why this view and the wide one both regressed together
+		 * rather than trading places, and why the fix this time is a forced line
+		 * break rather than another width redistribution: `Changes`, `Operator` and
+		 * `Amount` group on one row and `Applies to`, `Bonus type` and `Only when`
+		 * on the next, at *every* width, so there is no regime left for a wrap to
+		 * arrive in unannounced. What this now photographs is that grouping at the
+		 * narrowest split, not a line surviving at five.
 		 */
 		name: 'editor-layout-threshold',
 		query: 'surface=editor&theme=light&open=::sheet::',
-		// 2300 against a measured 2231: the panel is 68px taller here than at 1400,
-		// because the entry rows are narrower and nothing else moves.
-		size: '1210,2300',
+		// Measured at 2975, close to `editor-layout`'s own 2941: the forced break
+		// makes every detail line two rows regardless of width, so the panel is
+		// only slightly taller narrow than wide rather than a different shape.
+		// 3000 clears both with the same small margin.
+		size: '1210,3000',
 	},
 	{
 		// The narrowest split there is, bounded. 1210 of window is 1184 of pane —

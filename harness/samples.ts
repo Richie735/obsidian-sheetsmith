@@ -1187,6 +1187,107 @@ export function emptySamples(): Sample[] {
 }
 
 /**
+ * The populated sheet with **`effective` declared where a modifier lands**, so
+ * the value pill reads what the note's items come to rather than what it stores.
+ *
+ * A state of its own, and for `unmodifiedSamples`' reason rather than for
+ * tidiness: no view rendered a card declaring `effective` at all, so its accent
+ * and its focus swap had never been looked at — and `docs/UI.md` §11 is the
+ * standing argument against ruling on a surface by reading its stylesheet. It is
+ * a state rather than a change to `SAMPLES` because `effective` is *opt-in*
+ * (SPEC §4.2), and the populated sheet is the layout that does not opt in: every
+ * other shot would otherwise show a Strength pill reading 19, which is a
+ * different sheet from the one every look criterion above was settled against.
+ *
+ * Three cards, one per rule the state exists to show.
+ */
+export function effectiveSamples(): Sample[] {
+	/**
+	 * How many samples this transform actually reached.
+	 *
+	 * **Counted and checked, because the function directly below argues against
+	 * exactly what this one does.** `unmodifiedSamples` clears cells *by column
+	 * position* rather than by matching names, on the ground that "a transform that
+	 * searched for definition names would quietly stop clearing the column the day
+	 * a sample gained a modifier this file does not spell." Three hard-coded ids
+	 * are that same trap: rename `armour_class` and this state silently becomes the
+	 * populated sheet — and the three shots would go on being taken, with their own
+	 * comments describing an accented pill that is no longer in the frame. A shot
+	 * cannot notice; nothing else looks. So the count is the guard, and it throws
+	 * rather than warns because a harness state that is not the state it claims is
+	 * worth more than a picture.
+	 */
+	let reached = 0;
+	const transformed = SAMPLES.map((sample) => {
+		/*
+		 * **The Card set, and it is the canonical case.** `derived` is already
+		 * `floor((value + mod.self - 10) / 2)` — the spelling that raises the
+		 * *score* — so the pill has an effective stored value to read: STR is 15
+		 * with an item +2, a status +1 and an undeclared `luck +1` on it, which is
+		 * a 19 reading +4. The five entries nothing pushes at read what they store
+		 * and carry no mark, which is the comparison the accent has to survive: one
+		 * accented pill among six, not six markers competing with the derived
+		 * numbers above them.
+		 */
+		if (sample.config.id === 'abilities') {
+			reached += 1;
+			return {
+				...sample,
+				config: { ...sample.config, effective: 'value + mod.self' } as ComponentConfig,
+			};
+		}
+		/*
+		 * **The Card, and its `derived` is respelled because the sample's own is
+		 * SPEC §4.2's counter-example.** `10 + abilities.DEX + mod.self` reads no
+		 * `value` at all, so there is no effective *stored* number for a pill to
+		 * show and a card declaring one would print a confident wrong figure. The
+		 * other legitimate arithmetic — a card that stores its armour class and
+		 * takes its modifiers on that — is what this state spells instead.
+		 *
+		 * **Three numbers, deliberately.** 16 is stored; the pill reads **20**, the
+		 * stored number plus the value-phase total; and the number above it reads
+		 * **22**, because only the evaluation that *becomes* the published name
+		 * takes the override (`Plate armour`'s 18) and the result phase (SPEC §5).
+		 * The pill is a second reading of the value, so it takes neither — which is
+		 * the rule `displayOnly` exists for and the one thing about it that cannot
+		 * be checked by looking at a card whose formula has no override on it.
+		 */
+		if (sample.config.id === 'armour_class') {
+			reached += 1;
+			return {
+				...sample,
+				config: {
+					...sample.config,
+					derived: 'value + mod.self',
+					effective: 'value + mod.self',
+				} as ComponentConfig,
+			};
+		}
+		/*
+		 * **The dropdown, which never takes one.** Its text is a *label* from a
+		 * closed list, so a computed reading would be a word the list does not
+		 * contain and the control could not round-trip its own choice. Declared
+		 * here precisely so the state shows it being ignored: the pill stays the
+		 * menu reading `Expertise`, with no accent and no title.
+		 */
+		if (sample.config.id === 'stealth') {
+			reached += 1;
+			return {
+				...sample,
+				config: { ...sample.config, effective: 'value + mod.self' } as ComponentConfig,
+			};
+		}
+		return sample;
+	});
+	if (reached !== 3) {
+		throw new Error(
+			`The effective-value state expects three samples — abilities, armour_class and stealth — and matched ${reached}. An id was renamed; fix the names above, or this state is the populated sheet wearing its label.`,
+		);
+	}
+	return transformed;
+}
+
+/**
  * The populated sheet with **every modifier cell cleared and every row kept**.
  *
  * A state of its own because it is the one `sheet-empty` cannot reach: that view
