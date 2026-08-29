@@ -1,8 +1,24 @@
-import { MarkdownView } from 'obsidian';
+import { MarkdownView, Notice } from 'obsidian';
 import type SheetsmithPlugin from './main';
 import { LAYOUT_KEY } from './types';
 import { LayoutEditorView, openLayoutEditor } from './view/layout-editor-view';
 import { SheetView, VIEW_TYPE_SHEET } from './view/sheet-view';
+
+/**
+ * How long the undo/redo confirmation stays on screen.
+ *
+ * Explicit and short, on purpose, and a different call from `sheet-view.ts`'s
+ * own `UNDO_TIMEOUT`: that one keeps a clickable "Undo" link alive long enough
+ * to press, where this is a passive ping with nothing to press. A run of
+ * undos — holding Mod+Z, or several taps in a few seconds — is the ordinary
+ * way this stack gets used, and Obsidian stacks concurrent notices as
+ * separate toasts rather than replacing one another, so the default ~5s
+ * lifetime would pile a column of "Undone." toasts over the exact
+ * tree/schematic/panel surface this Notice exists to help scan. Short enough
+ * that a run of presses does not outlive itself into that pile, long enough
+ * to register.
+ */
+const UNDO_NOTICE_DURATION = 1500;
 
 export function registerCommands(plugin: SheetsmithPlugin): void {
 	plugin.addCommand({
@@ -45,7 +61,10 @@ export function registerCommands(plugin: SheetsmithPlugin): void {
 		checkCallback: (checking) => {
 			const view = plugin.app.workspace.getActiveViewOfType(LayoutEditorView);
 			if (!view) return false;
-			if (!checking) view.undo();
+			// Only when something actually happened: an empty stack is a
+			// silent no-op, deliberately, rather than a Notice claiming an
+			// undo that did not occur.
+			if (!checking && view.undo()) new Notice('Undone.', UNDO_NOTICE_DURATION);
 			return true;
 		},
 	});
@@ -57,7 +76,9 @@ export function registerCommands(plugin: SheetsmithPlugin): void {
 		checkCallback: (checking) => {
 			const view = plugin.app.workspace.getActiveViewOfType(LayoutEditorView);
 			if (!view) return false;
-			if (!checking) view.redo();
+			// Same guard as undo above: silent on an empty stack rather than
+			// claiming a redo that did not occur.
+			if (!checking && view.redo()) new Notice('Redone.', UNDO_NOTICE_DURATION);
 			return true;
 		},
 	});
