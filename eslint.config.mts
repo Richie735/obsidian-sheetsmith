@@ -290,6 +290,31 @@ export default defineConfig(
 		},
 	},
 	{
+		// The layout editor's undo and redo commands (`docs/features/editor-undo.md`).
+		// Both rules ask for exactly what the feature spec rules out on purpose.
+		//
+		// `no-plugin-id-in-command-id`: the two ids are named verbatim in the
+		// spec's design section, its acceptance criteria and its commit
+		// boundaries — `sheetsmith-layout-editor-undo` and
+		// `sheetsmith-layout-editor-redo` — and `AGENTS.md` holds every command
+		// id stable from the moment it ships, so renaming them to satisfy a
+		// lint rule after the fact is exactly the renaming that rule exists to
+		// prevent needing.
+		//
+		// `no-default-hotkeys`: Mod+Z and Mod+Shift+Z are an acceptance
+		// criterion of their own, on the argument that undo and redo are the
+		// one pair of commands where *not* shipping the convention every other
+		// editor uses would be the surprise.
+		//
+		// Off here rather than inline: `eslint-comments/no-restricted-disable`
+		// in the recommended config forbids disabling either rule at its site.
+		files: ['src/commands.ts'],
+		rules: {
+			'obsidianmd/commands/no-plugin-id-in-command-id': 'off',
+			'obsidianmd/commands/no-default-hotkeys': 'off',
+		},
+	},
+	{
 		// Test scaffolding. The obsidian stub exists precisely to implement
 		// the helpers these rules ask code to use, so telling it to use them
 		// is circular; tests build fixtures with the standard API for the
