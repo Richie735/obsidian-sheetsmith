@@ -1124,7 +1124,168 @@ describe('removing a container', () => {
 		]);
 		expect(stored.components[0]?.children).toEqual([]);
 	});
+
+	it('stacks two promoted children without overlapping each other or a sibling', async () => {
+		// `nextFreeRow` is recomputed against `layout.components` fresh on each
+		// iteration of the promotion loop, so it already sees the previous
+		// child once pushed — this is the case that would show it if it did not.
+		harness = await open(containerWithTwoChildren());
+		control(harness, 'remove-defences').click();
+		confirmAction();
+		await settle(harness.pane);
+
+		const stored = await harness.stored();
+		const armour = stored.components.find((c) => c.id === 'armour');
+		const shield = stored.components.find((c) => c.id === 'shield');
+		const hitPoints = stored.components.find((c) => c.id === 'hit_points');
+		expect(armour?.position).toEqual({ col: 1, row: 2, width: 3, height: 1 });
+		expect(shield?.position).toEqual({ col: 1, row: 3, width: 3, height: 1 });
+		// Untouched: it was never a held child.
+		expect(hitPoints?.position).toEqual({ col: 7, row: 1, width: 4, height: 1 });
+	});
+
+	it('promotes a container holding a container, keeping the grandchild subtree intact', async () => {
+		harness = await open(deep());
+		control(harness, 'remove-defences').click();
+		confirmAction();
+		await settle(harness.pane);
+
+		const stored = await harness.stored();
+		expect(stored.components.map((c) => c.id)).toEqual(['spellbook', 'melee']);
+		const melee = stored.components.find((c) => c.id === 'melee');
+		expect(melee?.position).toEqual({ col: 1, row: 2, width: 4, height: 1 });
+		// Untouched: its own children are still relative to its own subgrid,
+		// which does not depend on where `melee` itself now sits.
+		expect(melee?.children).toEqual([
+			{
+				id: 'armour',
+				type: 'card',
+				label: 'Armour class',
+				position: { col: 1, row: 1, width: 2, height: 1 },
+			},
+		]);
+	});
+
+	it('gives a promoted tab the size it was actually drawn at, not its own stale one', async () => {
+		/*
+		 * A container that is itself a tab is never sized by its own stored
+		 * width/height while nested — `innerPlacement` (`view/grid-cells.ts`)
+		 * draws it at the tab set's own placement instead, so its own numbers
+		 * are free to go stale exactly as `staleTab()` above demonstrates for
+		 * rendering. Removing the tab set promotes each tab as a direct held
+		 * child, and until this was fixed the promotion copied that stale
+		 * width/height straight onto a now-independent top-level container:
+		 * `combat` came out 4x2 while its own child `strike` was placed at
+		 * row 4, landing `strike` entirely outside its own container's box —
+		 * and directly on top of `spells`, promoted right after it. Constraint
+		 * 4 is not about `strike`'s section text here, but the same failure in
+		 * miniature: character data surviving into a placement that overlaps
+		 * another component is not "kept".
+		 */
+		harness = await open(staleTabSheet());
+		control(harness, 'remove-pages').click();
+		confirmAction();
+		await settle(harness.pane);
+
+		const stored = await harness.stored();
+		const combat = stored.components.find((c) => c.id === 'combat');
+		const spells = stored.components.find((c) => c.id === 'spells');
+		const strike = combat?.children?.find((c) => c.id === 'strike');
+		// The tab set's own real size (8x5), not the stale stored one (4x2).
+		expect(combat?.position).toEqual({ col: 1, row: 2, width: 8, height: 5 });
+		expect(strike?.position).toEqual({ col: 1, row: 4, width: 2, height: 1 });
+		// `strike`'s row is relative to `combat`'s own subgrid, so it has to
+		// fit inside `combat`'s own declared height in that same local space —
+		// which the stale 4x2 did not, and the real 8x5 does.
+		const strikeBottom = (strike?.position.row ?? 0) + (strike?.position.height ?? 0) - 1;
+		expect(strikeBottom).toBeLessThanOrEqual(combat?.position.height ?? 0);
+		// `spells` starts only after `combat`'s real (not stale) height.
+		expect(spells?.position.row).toBe(7);
+	});
 });
+
+function staleTabSheet(): Layout {
+	return {
+		name: 'Stale tab sheet',
+		columns: 12,
+		components: [
+			{
+				id: 'pages',
+				type: 'tab-set',
+				label: 'Pages',
+				position: { col: 1, row: 1, width: 8, height: 5 },
+				children: [
+					{
+						id: 'combat',
+						type: 'group',
+						label: 'Combat',
+						// Stale: what the add row wrote when the tab set was smaller.
+						position: { col: 1, row: 1, width: 4, height: 2 },
+						children: [
+							{
+								id: 'strike',
+								type: 'card',
+								label: 'Strike bonus',
+								// Placed using the tab set's real, current size (8x5),
+								// which `innerPlacement` supplies while nested.
+								position: { col: 1, row: 4, width: 2, height: 1 },
+							},
+						],
+					},
+					{
+						id: 'spells',
+						type: 'group',
+						label: 'Spells',
+						position: { col: 1, row: 1, width: 8, height: 5 },
+					},
+				],
+			},
+			{
+				id: 'other',
+				type: 'card',
+				label: 'Other',
+				position: { col: 9, row: 1, width: 2, height: 1 },
+			},
+		],
+		triggers: [],
+	};
+}
+
+function containerWithTwoChildren(): Layout {
+	return {
+		name: 'Two children sheet',
+		columns: 12,
+		components: [
+			{
+				id: 'defences',
+				type: 'group',
+				label: 'Defences',
+				position: { col: 1, row: 1, width: 6, height: 2 },
+				children: [
+					{
+						id: 'armour',
+						type: 'card',
+						label: 'Armour class',
+						position: { col: 1, row: 1, width: 3, height: 1 },
+					},
+					{
+						id: 'shield',
+						type: 'card',
+						label: 'Shield',
+						position: { col: 4, row: 1, width: 3, height: 1 },
+					},
+				],
+			},
+			{
+				id: 'hit_points',
+				type: 'pool',
+				label: 'Hit points',
+				position: { col: 7, row: 1, width: 4, height: 1 },
+			},
+		],
+		triggers: ['Long rest'],
+	};
+}
 
 describe('a container that may hold nothing', () => {
 	/*

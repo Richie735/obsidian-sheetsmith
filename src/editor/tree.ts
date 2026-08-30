@@ -26,6 +26,7 @@ import { canReparent, reparent } from './reparent';
 import { Layout } from '../parse/layout';
 import { WalkEntry, walkComponents } from '../parse/layout-walk';
 import { ComponentConfig, isContainer } from '../types';
+import { innerPlacement } from '../view/grid-cells';
 
 /**
  * The top level, wherever something has to be named that is not a component.
@@ -244,6 +245,19 @@ function renderComponentRow(
 						// Children move out rather than going with it, the same
 						// promise a reparent keeps (Constraint 4).
 						for (const child of held) {
+							// A child of a container that shows one at a time (a tab)
+							// was never sized by its own stored width/height —
+							// `innerPlacement` drew it at the container's own size
+							// instead, so its stored numbers were free to go stale
+							// while nested (`view/grid-cells.ts`'s own comment on
+							// `innerPlacement`). Promoting the child makes its own
+							// position authoritative again, so it has to inherit the
+							// size it was actually drawn at first, or its own
+							// children — never touched by this loop — land outside
+							// the box that now governs them.
+							const { width, height } = innerPlacement(child, config);
+							child.position.width = width;
+							child.position.height = height;
 							child.position.col = 1;
 							child.position.row = nextFreeRow(layout.components);
 							layout.components.push(child);
