@@ -55,6 +55,24 @@ function selectors(): string[] {
 const FIELD_CLASS = /\.sheetsmith-[a-z-]*(?:-input|-current|-select)\b/;
 
 /**
+ * Controls that need exactly the same `.sheetsmith-view` scope FIELD_CLASS's
+ * naming would catch, but whose class does not end in `-input`/`-current`/
+ * `-select` — the gap this file's own header already names as something to
+ * widen for on purpose rather than a licence to let slide.
+ *
+ * `sheetsmith-canvas-overlay` is a real `<button>` on the sheet's own grid
+ * (`docs/features/grid-canvas.md` §2). Unscoped it was (0,1,0) and lost
+ * `background-color` and `box-shadow` to Obsidian's own
+ * `button:not(.clickable-icon)` at (0,1,1) — rendering as an opaque button
+ * pinned over the very component it exists to sit over transparently,
+ * exactly the invisible-in-review failure this file exists for. The
+ * anchored panel's own `CONTROLS` list below is the same idea for a surface
+ * that cannot carry `.sheetsmith-view` at all; this is for a control that
+ * can and should, but was named outside `FIELD_CLASS`'s own pattern.
+ */
+const NAMED_FIELD_CLASSES = ['sheetsmith-canvas-overlay'];
+
+/**
  * The one family of rules that may not carry the scope, and the reason it cannot
  * rather than a licence to omit it.
  *
@@ -95,8 +113,10 @@ function subjectOf(selector: string): string {
 }
 
 describe('field rules outweigh Obsidian\'s input styling', () => {
-	const allFieldRules = selectors().filter((selector) =>
-		FIELD_CLASS.test(selector),
+	const allFieldRules = selectors().filter(
+		(selector) =>
+			FIELD_CLASS.test(selector) ||
+			NAMED_FIELD_CLASSES.some((cls) => selector.includes(`.${cls}`)),
 	);
 	const fieldRules = allFieldRules.filter(
 		(selector) => !inThePanel(selector),
@@ -637,12 +657,26 @@ describe('the sheet paints its own surfaces', () => {
 		// Load-bearing for the review that produced this file: the grid hands a
 		// component nothing, which is why a component with no surface of its
 		// own reads as loose chrome beside the ones that have one.
+		//
+		// **One exception, scoped to the editor and carrying no surface at
+		// all.** The canvas's overlay is an absolutely-positioned sibling of a
+		// component's own rendered root, attached to the cell
+		// (`docs/features/grid-canvas.md` §2), and `inset: 0` on it only covers
+		// the cell's own box if the cell is a positioning context — so
+		// `.sheetsmith-layout-editor-pane .sheetsmith-cell` gets `position:
+		// relative` and nothing else. `position` paints nothing on its own; the
+		// sheet itself never carries that class, so a rendered character sheet
+		// is untouched.
 		const cellRules = selectors().filter((selector) =>
 			/\.sheetsmith-cell\b/.test(selector),
 		);
-		expect(cellRules.every((selector) => selector.includes('-error'))).toBe(
-			true,
-		);
+		expect(
+			cellRules.every(
+				(selector) =>
+					selector.includes('-error') ||
+					selector.includes('sheetsmith-layout-editor-pane'),
+			),
+		).toBe(true);
 	});
 });
 

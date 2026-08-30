@@ -4613,6 +4613,33 @@ a.sheetsmith-undo {
 	color: var(--text-accent);
 }
 
+/* A tree row a drag is currently over, and the drop would succeed
+   (`docs/features/grid-canvas.md` §5). The accent inset the schematic's own
+   selection mark already uses, so a reader learns the one ring in this pane
+   once: `.sheetsmith-preview-editing` says "this is what is selected" and
+   this says "this is where it would land." */
+.sheetsmith-tree-drop-valid {
+	box-shadow: 0 0 0 1px var(--interactive-accent) inset;
+	background-color: var(--background-modifier-hover);
+}
+
+/* A refused drop's reason, on the row the drag ended on. Left-aligned and
+   full width, `.sheetsmith-component-form > .sheetsmith-field-error`'s own
+   correction read one level out: a tree row's own message is prose about the
+   drag, not a value pinned to the trailing edge of a field.
+
+   Scoped under `.sheetsmith-wrapping-row` rather than the bare `.setting-item`
+   every row is: `flex-basis: 100%` alone only squeezes the row's siblings on
+   an ordinary `.setting-item`, which has no `flex-wrap` of its own — landing
+   the message on the same line as the name and the icon controls rather than
+   below them, truncating the name and forcing the controls to wrap on their
+   own. `.sheetsmith-wrapping-row` is the other half this needs. */
+.sheetsmith-wrapping-row > .sheetsmith-field-error {
+	flex-basis: 100%;
+	text-align: left;
+	padding-top: var(--size-2-1);
+}
+
 /* The panel's body, whether it holds a component's settings or the layout's own.
 
    The accent border used to be half of a bracket: the open row painted a 2px
@@ -5287,25 +5314,35 @@ a.sheetsmith-undo {
 	text-align: left;
 }
 
+/* A settings row whose extra line grows downward instead of squeezing its
+   siblings sideways (docs/UI.md §9). Obsidian draws a setting row as one
+   centred flex line with no wrap of its own, so anything that grows in the
+   info column — or a third flex child appended after the controls — has
+   nowhere to go but to shrink the row's other children on the same line,
+   which is how selecting a palette entry used to move the **Add** button
+   35px down while the menu it was chosen from stayed put.
+
+   Shared rather than declared per row: the Add component row's own
+   description and the tree's refused-drop message are two rows with the
+   same growing-copy problem, and docs/UI.md §9 already says the second one
+   reuses this rather than inventing its own. */
+.sheetsmith-wrapping-row {
+	flex-wrap: wrap;
+}
+
 /* The Add component row, whose description is a second line rather than copy
    beside the name (docs/UI.md §12).
 
    The description element is moved out of the info column and appended after
    the controls, so it is a flex child of the row itself; `flex-basis: 100%`
-   then puts it on a line of its own. Same mechanism as the field error above,
-   and for the same reason: a settings row is one centred flex line, so anything
-   that grows inside the info column squeezes the control column until it wraps
-   — which is how selecting a palette entry used to move the **Add** button
-   35px down while the menu it was chosen from stayed put.
+   then puts it on a line of its own, once `.sheetsmith-wrapping-row` above
+   lets the row wrap at all. Same mechanism as the field error above, and for
+   the same reason.
 
    Out here the first line's height is fixed whatever is selected, and the
    description grows downward. An empty one collapses, so a bare type still
    shows the single-line row this had before the palette existed, and nothing is
    reserved for copy that is not there. */
-.sheetsmith-add-row {
-	flex-wrap: wrap;
-}
-
 .sheetsmith-add-row > .setting-item-description {
 	flex-basis: 100%;
 }
@@ -5333,6 +5370,64 @@ a.sheetsmith-undo {
 
 .sheetsmith-component-reference {
 	padding-bottom: var(--size-4-1);
+}
+
+/* The canvas: the layout's real components, rendered live
+   (`docs/features/grid-canvas.md`). A margin to match the schematic it
+   replaces at the top level, and nothing else — everything about how a
+   component looks is `.sheetsmith-view`'s own rules, already reused
+   verbatim. */
+.sheetsmith-editor-canvas {
+	margin: var(--size-4-2) 0 var(--size-4-4);
+}
+
+/* A positioning context for the overlay button the canvas adds as this
+   cell's only interactive child (§2). Scoped to the editor, not to
+   `.sheetsmith-cell` itself: the sheet never has an overlay to position,
+   and this rule would be dead weight there. */
+.sheetsmith-layout-editor-pane .sheetsmith-cell {
+	position: relative;
+}
+
+/* The gesture surface: a sibling of the live component's own rendered root,
+   covering the cell, transparent so the real render paints through it. Its
+   own class rather than `.sheetsmith-preview-cell` — that class is the
+   interim schematic's abstract-block look (a grey box, a label, a border),
+   none of which this wants, since the box underneath is already drawn. What
+   it borrows from that block is only the state marks —
+   `.sheetsmith-preview-editing`, `-clamped`, `-overlap`, `-dragging`,
+   `-resizing` — reused unchanged.
+
+   Scoped under `.sheetsmith-view`, `docs/UI.md` §2's rule, because the
+   overlay is a real `<button>`: unscoped it is (0,1,0), and Obsidian's own
+   `button:not(.clickable-icon)` is (0,1,1) and was winning `background-color`
+   and `box-shadow` outright — an opaque button instead of a transparent
+   sibling. `height: 100%` is the other half of the same defect and is not a
+   specificity fix at all: nothing here declared `height` before, so
+   Obsidian's plain `button { height: var(--input-height) }` applied
+   unopposed and, combined with `inset: 0`'s `top`/`bottom`, pinned the
+   overlay to a ~30px strip at the top of the cell rather than stretching it
+   — the drop-through the design review caught. Declaring it here beats that
+   rule regardless of scope, since nothing else touches `height` at a higher
+   weight. */
+.sheetsmith-view .sheetsmith-canvas-overlay {
+	position: absolute;
+	inset: 0;
+	height: 100%;
+	margin: 0;
+	padding: 0;
+	border: 1px solid transparent;
+	border-radius: var(--radius-s);
+	background-color: transparent;
+	box-shadow: none;
+	cursor: grab;
+	/* A touch drag must move the block, not scroll the sheet underneath it. */
+	touch-action: none;
+}
+
+.sheetsmith-view .sheetsmith-canvas-overlay:hover,
+.sheetsmith-view .sheetsmith-canvas-overlay:focus-visible {
+	border-color: var(--interactive-accent);
 }
 
 .sheetsmith-layout-preview {
@@ -5456,8 +5551,21 @@ a.sheetsmith-undo {
    right to a place on the left.
 
    Offset inward by the shadow's own width, so the repainted ring lands where
-   the shadow was rather than a pixel outside it. */
+   the shadow was rather than a pixel outside it.
+
+   `z-index: 1` is the canvas's own overlap fix (grid-canvas §2): a selected
+   cell's overlay is a grid item with `z-index: auto` like every unselected
+   one, so two overlapping cells paint in DOM order and the later one always
+   wins — exactly the hazard this class exists to answer. Giving only the
+   selected cell a positive value pulls its overlay into a later paint step,
+   above every unselected sibling's whole box, without touching how the
+   *live* content underneath still paints (DOM order, untouched) — an
+   unselected overlay carries none of this, so nothing about which
+   component wins on the sheet changes. Harmless on a tree row and on the
+   interim schematic's block, neither of which has an unselected sibling to
+   be raised above. */
 .sheetsmith-preview-editing {
+	z-index: 1;
 	border-color: var(--interactive-accent);
 	color: var(--text-normal);
 	box-shadow: 0 0 0 1px var(--interactive-accent) inset;
@@ -5483,8 +5591,9 @@ a.sheetsmith-undo {
 .sheetsmith-preview-dragging {
 	cursor: grabbing;
 	/* Lifted, and above every other block so it is never dragged underneath
-	   one it is passing over. */
-	z-index: 1;
+	   one it is passing over — including a selected-but-not-dragged block's
+	   own raised overlay. */
+	z-index: 2;
 	border-color: var(--interactive-accent);
 	box-shadow: 0 2px 8px var(--background-modifier-box-shadow);
 }

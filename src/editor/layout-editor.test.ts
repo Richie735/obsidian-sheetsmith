@@ -946,12 +946,14 @@ describe('the component list', () => {
 		expect(has(harness, 'remove-armour')).toBe(true);
 	});
 
-	it('draws the container on the schematic and not what it holds', () => {
-		// The children sit on the container's own grid, not the sheet's, so the
-		// sheet's schematic has nowhere to put them. Theirs is drawn beside the
-		// container's form, where the width they are placed against is known.
+	it('draws both the container and what it holds, live', () => {
+		// The canvas draws every grid-placing container's own grid in the same
+		// pass, whatever is selected (`docs/features/grid-canvas.md` §4) — so a
+		// nested component's overlay always exists, unlike the interim
+		// schematic which drew a container as one block with nothing reachable
+		// inside it.
 		expect(has(harness, 'preview-defences')).toBe(true);
-		expect(has(harness, 'preview-armour')).toBe(false);
+		expect(has(harness, 'preview-armour')).toBe(true);
 	});
 });
 
@@ -1144,10 +1146,12 @@ describe('a container that may hold nothing', () => {
 		const inner = (await harness.stored()).components[0]?.children?.[0]
 			?.children?.[1];
 		expect(inner?.type).toBe('group');
-		// A grid of its own is what it does not get. The grid it *sits on* is
-		// drawn either way, because it has a position and four editable numbers
-		// with no grid to read them against is worse than no mark at all.
-		expect(grids(harness)).toEqual(['melee']);
+		// A grid of its own is what it does not get, whatever else the canvas
+		// is showing — `melee`'s own grid is drawn either way, because it has a
+		// position and four editable numbers with no grid to read them against
+		// is worse than no mark at all.
+		expect(grids(harness)).toContain('melee');
+		expect(grids(harness)).not.toContain(inner?.id);
 	});
 
 	it('says why, rather than saying nothing', () => {
@@ -1160,27 +1164,24 @@ describe('a container that may hold nothing', () => {
 
 	it('still offers a grid to a container that may hold one', async () => {
 		// The other side of the same rule: `melee` is one level in, so it takes
-		// children and gets its schematic — under the grid it sits on, which is
-		// the chain the left column reads in.
-		control(harness, 'edit-melee').click();
-		await settle(harness.pane);
-		expect(grids(harness)).toEqual(['defences', 'melee']);
-		expect(harness.container.textContent).toContain('on its own grid of');
+		// children and gets its own grid — live and always drawn now, not
+		// gated behind selecting it.
+		expect(grids(harness)).toContain('melee');
+		expect(grids(harness)).toContain('defences');
 	});
 
 	it('draws the grid a nested component sits on, and marks its block', async () => {
 		/*
 		 * The panel offers `col`, `row`, `width` and `height` for anything with a
 		 * placement, wherever it sits. Those four numbers address one grid, and
-		 * until this the pane drew that grid only when the *container* was
-		 * selected — so selecting a card inside a Group left four editable fields
-		 * pointing at a grid nowhere on screen, and the selected mark the tree row
-		 * carried had no block to agree with.
+		 * the canvas draws every such grid at once, so the grid a selected card
+		 * sits on is always already on screen — closing the UI §12 row the
+		 * grid canvas spec names.
 		 */
 		control(harness, 'edit-armour').click();
 		await settle(harness.pane);
 
-		expect(grids(harness)).toEqual(['melee']);
+		expect(grids(harness)).toContain('melee');
 		expect(has(harness, 'pos-armour-col')).toBe(true);
 		expect(
 			control(harness, 'preview-armour').classList.contains(
@@ -1256,18 +1257,18 @@ describe('the form of an open container', () => {
 		expect(labels(harness)).not.toContain('Start collapsed');
 	});
 
-	it('draws a second schematic for the children, on its own grid', () => {
-		const previews = harness.container.querySelectorAll(
-			'.sheetsmith-layout-preview',
+	it('draws a grid for the children, on the container\'s own grid, live', () => {
+		// Found by id rather than by counting how many grids are on screen —
+		// the canvas draws every container's grid at once now, not only a
+		// selected one.
+		const defencesGrid = harness.container.querySelector<HTMLElement>(
+			'[data-sheetsmith-grid="defences"]',
 		);
-		expect(previews).toHaveLength(2);
 		// Six columns, which is the container's width rather than the layout's.
-		expect(
-			(previews[1] as HTMLElement).style.getPropertyValue(
-				'--sheetsmith-columns',
-			),
-		).toBe('6');
-		expect(previews[1]?.querySelector('.sheetsmith-preview-cell')).not.toBeNull();
+		expect(defencesGrid?.style.getPropertyValue('--sheetsmith-columns')).toBe(
+			'6',
+		);
+		expect(defencesGrid?.querySelector('.sheetsmith-cell')).not.toBeNull();
 	});
 });
 
@@ -1327,10 +1328,9 @@ describe('a container that shows one child at a time', () => {
 	});
 
 	it('draws no schematic for it, and lists its tabs in order instead', async () => {
-		// One schematic on the tab — the sheet's — where an open Group has two.
-		expect(
-			harness.container.querySelectorAll('.sheetsmith-layout-preview'),
-		).toHaveLength(1);
+		// A tab has no placement, so there is nothing to drag it onto — where
+		// an open Group gets its own grid, the tab set gets none.
+		expect(grids(harness)).not.toContain('pages');
 		expect(labels(harness)).toContain('1. Combat');
 		expect(labels(harness)).toContain('2. Spells');
 		expect(labels(harness)).toContain('3. Rest');
@@ -1447,39 +1447,28 @@ describe('a container that is itself a tab', () => {
 
 	it('draws its grid at the tab set\'s width, not its own stale one', async () => {
 		const harness = await open(staleTab());
-		control(harness, 'edit-combat').click();
-		await settle(harness.pane);
-
-		const previews = harness.container.querySelectorAll(
-			'.sheetsmith-layout-preview',
+		const combatGrid = harness.container.querySelector<HTMLElement>(
+			'[data-sheetsmith-grid="combat"]',
 		);
-		expect(previews).toHaveLength(2);
 		// Six, the tab set's. Four would be the Group's own stored width, which is
 		// what the sheet ignores and what this used to draw.
-		expect(
-			(previews[1] as HTMLElement).style.getPropertyValue(
-				'--sheetsmith-columns',
-			),
-		).toBe('6');
+		expect(combatGrid?.style.getPropertyValue('--sheetsmith-columns')).toBe(
+			'6',
+		);
 	});
 
 	it('draws the declared rows, so the preview shows the box not the content', async () => {
-		// The premise of a tab set is that its box is its placement — and the editor
-		// is the only surface where an author can see a declared row nothing fills.
-		// The schematic drew only the rows blocks occupied, so an 8×3 tab holding
-		// one row of cards previewed as one row while the sheet drew three.
-		//
-		// Six rows here rather than three, because the stale fixture's tab set is
-		// what governs: `innerPlacement` again, the same function the columns come
-		// from.
+		// The premise of a tab set is that its box is its placement — and the
+		// canvas is the same real `openSubgrid` the sheet itself opens, so an
+		// author sees the same fixed box on both. Three rows here rather than
+		// four, because the stale fixture's tab set is what governs —
+		// `innerPlacement` again, the same function the columns come from.
 		const harness = await open(staleTab());
-		control(harness, 'edit-combat').click();
-		await settle(harness.pane);
-		const inner = harness.container.querySelectorAll(
-			'.sheetsmith-layout-preview',
-		)[1] as HTMLElement;
-		expect(inner.style.gridTemplateRows).toBe(
-			'repeat(3, var(--sheetsmith-preview-row))',
+		const combatGrid = harness.container.querySelector<HTMLElement>(
+			'[data-sheetsmith-grid="combat"]',
+		);
+		expect(combatGrid?.style.gridTemplateRows).toBe(
+			'repeat(3, minmax(0, 1fr))',
 		);
 	});
 
@@ -1490,41 +1479,23 @@ describe('a container that is itself a tab', () => {
 		// the bug above, and the reason `rows` is optional rather than always set.
 		const harness = await open(staleTab());
 		const sheet = harness.container.querySelector(
-			'.sheetsmith-layout-preview',
+			'.sheetsmith-editor-canvas .sheetsmith-grid',
 		) as HTMLElement;
 		expect(sheet.style.gridTemplateRows).toBe('');
 	});
 
-	it('describes the same width it draws', async () => {
-		// The two said different things fifty lines apart: the schematic read the
-		// stored width while the child's own form printed "it has no position of
-		// its own".
-		const harness = await open(staleTab());
-		control(harness, 'edit-combat').click();
-		await settle(harness.pane);
-		const descriptions = Array.from(
-			harness.container.querySelectorAll('.setting-item-description'),
-		).map((el) => el.textContent ?? '');
-		expect(
-			descriptions.some((text) => text.includes('6 columns by 3 rows')),
-		).toBe(true);
-		expect(descriptions.some((text) => text.includes('4 columns'))).toBe(false);
-	});
-
 	it('agrees with the sheet, which is the divergence that mattered', async () => {
-		// Both drawings through one function: the editor's schematic column count
-		// and the subgrid `renderGrid` opens for the same component. Asserted
-		// against each other rather than against 6 twice, so a change to either
-		// side has to move both.
+		// Both drawings through one function: the canvas's own grid for this
+		// container and the subgrid `renderGrid` opens for the same component —
+		// which on the canvas is now literally the same call, since the canvas
+		// draws through `renderGrid` directly rather than a copy of it.
+		// Asserted against each other rather than against 6 twice, so a change
+		// to either side has to move both.
 		const layout = staleTab();
 		const harness = await open(layout);
-		control(harness, 'edit-combat').click();
-		await settle(harness.pane);
-		const drawn = (
-			harness.container.querySelectorAll(
-				'.sheetsmith-layout-preview',
-			)[1] as HTMLElement
-		).style.getPropertyValue('--sheetsmith-columns');
+		const drawn = harness.container
+			.querySelector<HTMLElement>('[data-sheetsmith-grid="combat"]')
+			?.style.getPropertyValue('--sheetsmith-columns');
 
 		const stage = document.createElement('div');
 		document.body.appendChild(stage);
@@ -1622,22 +1593,22 @@ describe('overlap inside a tab, and never across tabs', () => {
 		};
 	}
 
+	/** The label an overlay's own `describeCell` aria-label leads with. */
+	function overlayLabel(el: Element): string | undefined {
+		return el.getAttribute('aria-label')?.split(':')[0];
+	}
+
 	it('marks the two blocks sharing a cell inside the open tab', async () => {
 		const harness = await open(overlappingTabs());
-		control(harness, 'edit-combat').click();
-		await settle(harness.pane);
 
-		// One schematic for the sheet and one for the open container tab. The tab
-		// set contributes none, which is why the count is two rather than three.
-		const previews = harness.container.querySelectorAll(
-			'.sheetsmith-layout-preview',
+		// Combat's own grid, always drawn now rather than gated behind
+		// selecting it — the tab set itself contributes none.
+		const combatGrid = harness.container.querySelector(
+			'[data-sheetsmith-grid="combat"]',
 		);
-		expect(previews).toHaveLength(2);
 		const marked = Array.from(
-			(previews[1] as HTMLElement).querySelectorAll(
-				'.sheetsmith-preview-overlap',
-			),
-		).map((el) => el.textContent);
+			combatGrid?.querySelectorAll('.sheetsmith-preview-overlap') ?? [],
+		).map(overlayLabel);
 		expect(marked.sort()).toEqual(['One', 'Two']);
 	});
 
@@ -1646,63 +1617,57 @@ describe('overlap inside a tab, and never across tabs', () => {
 		 * The invariant `markOverlaps` rests on, and the reason it is worth an
 		 * assertion of its own.
 		 *
-		 * The two cases either side of this one check the marks as
-		 * `drawSchematic` paints them, and there the mark is set inside the same
-		 * loop that creates the cell, so it cannot land on the wrong block. The
-		 * *repaint* is the hazard: `markOverlaps` maps
-		 * `querySelectorAll('.sheetsmith-preview-cell')` onto
-		 * `schematic.components` **by index**, and `renderGrid` keys by identity
-		 * for exactly the reason that breaks — a list indexed against another
-		 * breaks silently the moment either side grows a filter, which is how
-		 * those two diverged once already.
-		 *
-		 * It has one caller, inside the drag, and this slice carried the gesture
-		 * layer into a new host without adding a test to it — a cut it states.
-		 * So the pin is the invariant rather than the gesture: a filter in
-		 * `drawSchematic` fails here, at the paint, without a pointer.
+		 * The two cases either side of this one check the marks as `wireLevel`
+		 * paints them, and there the mark is set inside the same loop that
+		 * wires the cell, so it cannot land on the wrong one. The *repaint* is
+		 * the hazard: `markOverlaps` maps `schematic.el`'s direct children onto
+		 * `schematic.components` **by index**, and `renderGrid` keys by
+		 * identity for exactly the reason that breaks — a list indexed against
+		 * another breaks silently the moment either side grows a filter, which
+		 * is how those two diverged once already.
 		 */
 		const layout = overlappingTabs();
 		const harness = await open(layout);
-		control(harness, 'edit-combat').click();
-		await settle(harness.pane);
 
-		const previews = harness.container.querySelectorAll(
-			'.sheetsmith-layout-preview',
-		);
-		const cellsIn = (preview: Element): (string | null)[] =>
-			Array.from(preview.querySelectorAll('.sheetsmith-preview-cell')).map(
-				(el) => el.textContent,
+		// Scoped to one level's *direct* cells, since combat's own grid is now
+		// genuinely nested inside the top grid's own DOM (live rendering,
+		// unlike the interim schematic's separate, sibling elements).
+		const cellsIn = (grid: Element): (string | undefined)[] =>
+			Array.from(grid.children).map((cell) =>
+				overlayLabel(cell.querySelector(':scope > .sheetsmith-canvas-overlay')!),
 			);
 
-		// Array order, not the tree's reading order: a schematic iterates the list
-		// it was handed, and that list is what `markOverlaps` indexes into.
 		const tabs = layout.components[0]?.children ?? [];
 		const combat = tabs.find((tab) => tab.id === 'combat')?.children ?? [];
 		expect(combat.length).toBeGreaterThan(1);
 
-		expect(cellsIn(previews[0] as Element)).toEqual(
+		const topGrid = harness.container.querySelector(
+			'.sheetsmith-editor-canvas .sheetsmith-grid',
+		) as Element;
+		const combatGrid = harness.container.querySelector(
+			'[data-sheetsmith-grid="combat"]',
+		) as Element;
+		expect(cellsIn(topGrid)).toEqual(
 			layout.components.map((component) => component.label),
 		);
-		expect(cellsIn(previews[1] as Element)).toEqual(
-			combat.map((child) => child.label),
-		);
+		expect(cellsIn(combatGrid)).toEqual(combat.map((child) => child.label));
 	});
 
 	it('never marks a block on another tab, whatever position it shares', async () => {
 		const harness = await open(overlappingTabs());
-		control(harness, 'edit-combat').click();
-		await settle(harness.pane);
 		// "Three" sits at the same coordinates as both of the above and is on no
-		// schematic that draws them, so it is drawn nowhere here and marked
-		// nowhere either.
+		// grid that draws them, so it is marked nowhere.
 		const all = Array.from(
-			harness.container.querySelectorAll('.sheetsmith-preview-cell'),
-		).map((el) => el.textContent);
+			harness.container.querySelectorAll('.sheetsmith-preview-overlap'),
+		).map(overlayLabel);
 		expect(all).not.toContain('Three');
 		// And the tabs themselves, which share one position, are never compared:
-		// no schematic draws them, so neither can be marked.
+		// no grid draws them, so neither can be marked.
 		expect(all).not.toContain('Combat');
 		expect(all).not.toContain('Spells');
+		// Vacuity guard: One and Two are still marked, so this is not passing
+		// because nothing was found at all.
+		expect(all.sort()).toEqual(['One', 'Two']);
 	});
 });
 
@@ -2119,6 +2084,290 @@ describe('the tree', () => {
 		const container = treeRow(harness, 'edit-defences');
 		const child = treeRow(harness, 'edit-armour');
 		expect(container.nextElementSibling).toBe(child);
+	});
+});
+
+/** Three plain leaves at the top level, for a reorder that involves no container. */
+function threeLeaves(): Layout {
+	return {
+		name: 'Three leaves',
+		columns: 12,
+		components: [
+			{ id: 'a', type: 'card', label: 'A', position: { col: 1, row: 1, width: 2, height: 1 } },
+			{ id: 'b', type: 'card', label: 'B', position: { col: 3, row: 1, width: 2, height: 1 } },
+			{ id: 'c', type: 'card', label: 'C', position: { col: 5, row: 1, width: 2, height: 1 } },
+		],
+		triggers: [],
+	};
+}
+
+/**
+ * Drag `fromId`'s tree row onto `toId`'s, dispatched directly by focus
+ * token. The drag itself starts on the row's own handle, not the row —
+ * `bindDragSource`'s drag source is the handle alone, the same split
+ * `list-fields.ts` already draws, so a real drag never begins from the name
+ * button or the up/down/indent/outdent/trash controls.
+ */
+function dragRow(harness: Harness, fromId: string, toId: string): void {
+	const from = control(harness, `tree-handle-${fromId}`);
+	const to = treeRow(harness, `edit-${toId}`);
+	from.dispatchEvent(new Event('dragstart', { bubbles: true }));
+	to.dispatchEvent(new Event('dragover', { bubbles: true, cancelable: true }));
+	to.dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }));
+	from.dispatchEvent(new Event('dragend', { bubbles: true }));
+}
+
+describe('reparenting a tree row', () => {
+	it('drops onto a container row and appends the dragged component as its last child', async () => {
+		harness = await open(nested());
+		const wrote = writes(harness);
+		dragRow(harness, 'hit_points', 'defences');
+		await settle(harness.pane);
+
+		const stored = await harness.stored();
+		expect(
+			stored.components.find((c) => c.id === 'defences')?.children?.map(
+				(c) => c.id,
+			),
+		).toEqual(['armour', 'hit_points']);
+		expect(wrote()).toBeGreaterThan(0);
+	});
+
+	it('drops onto a sibling within its own current parent and reorders it there', async () => {
+		harness = await open(threeLeaves());
+		dragRow(harness, 'a', 'c');
+		await settle(harness.pane);
+
+		expect((await harness.stored()).components.map((c) => c.id)).toEqual([
+			'b',
+			'c',
+			'a',
+		]);
+	});
+
+	it('refuses a drop that would push a container past the depth cap, with no write', async () => {
+		harness = await open(deep());
+		const before = await harness.raw();
+		const wrote = writes(harness);
+
+		// `defences` holds `melee`, which holds `armour` — dropping the whole
+		// subtree into `spellbook` would land `melee` two containers deep,
+		// where a container may hold no children at all.
+		dragRow(harness, 'defences', 'spellbook');
+		await settle(harness.pane);
+
+		expect(await harness.raw()).toBe(before);
+		expect(wrote()).toBe(0);
+	});
+
+	it('refuses a drop onto a non-container, with no write', async () => {
+		harness = await open(nested());
+		const before = await harness.raw();
+		const wrote = writes(harness);
+
+		dragRow(harness, 'hit_points', 'armour');
+		await settle(harness.pane);
+
+		expect(await harness.raw()).toBe(before);
+		expect(wrote()).toBe(0);
+	});
+
+	it('refuses a row dropped onto itself, with no write', async () => {
+		harness = await open(nested());
+		const before = await harness.raw();
+		const wrote = writes(harness);
+
+		dragRow(harness, 'defences', 'defences');
+		await settle(harness.pane);
+
+		expect(await harness.raw()).toBe(before);
+		expect(wrote()).toBe(0);
+	});
+
+	it('refuses a row dropped onto one of its own descendants, with no write', async () => {
+		harness = await open(nested());
+		const before = await harness.raw();
+		const wrote = writes(harness);
+
+		dragRow(harness, 'defences', 'armour');
+		await settle(harness.pane);
+
+		expect(await harness.raw()).toBe(before);
+		expect(wrote()).toBe(0);
+	});
+
+	it('shows a refused drop inline, naming the fix, rather than ignoring it silently', async () => {
+		harness = await open(nested());
+		dragRow(harness, 'hit_points', 'armour');
+		await settle(harness.pane);
+
+		const row = treeRow(harness, 'edit-armour');
+		const message = row.querySelector('.sheetsmith-field-error')?.textContent;
+		expect(message).toContain('is not a container');
+	});
+
+	it('reparents with the indent button, no pointer event dispatched', async () => {
+		// The keyboard-operable equivalent of dropping a row onto the row
+		// before it: `hit_points` moves into `defences`, its only earlier
+		// sibling, with nothing but a click on the control.
+		harness = await open(nested());
+		control(harness, 'tree-indent-hit_points').click();
+		await settle(harness.pane);
+
+		const stored = await harness.stored();
+		expect(
+			stored.components.find((c) => c.id === 'defences')?.children?.map(
+				(c) => c.id,
+			),
+		).toEqual(['armour', 'hit_points']);
+	});
+
+	it('reparents with the outdent button, no pointer event dispatched', async () => {
+		harness = await open(nested());
+		control(harness, 'tree-outdent-armour').click();
+		await settle(harness.pane);
+
+		const stored = await harness.stored();
+		expect(stored.components.map((c) => c.id)).toEqual([
+			'defences',
+			'hit_points',
+			'armour',
+		]);
+		expect(stored.components[0]?.children).toEqual([]);
+	});
+
+	it('reorders with the up and down buttons, no pointer event dispatched', async () => {
+		// The keyboard-operable equivalent of dragging a row onto a sibling
+		// within its own current parent — `list-fields.ts`'s own `moveItem`
+		// semantics, reused rather than reinvented, exactly as the drag-based
+		// reorder test above already proves for the pointer (`tree.ts`'s own
+		// header names both as new in this slice; only the drag half had a
+		// test).
+		harness = await open(threeLeaves());
+		control(harness, 'tree-down-a').click();
+		await settle(harness.pane);
+		expect((await harness.stored()).components.map((c) => c.id)).toEqual([
+			'b',
+			'a',
+			'c',
+		]);
+
+		control(harness, 'tree-up-c').click();
+		await settle(harness.pane);
+		expect((await harness.stored()).components.map((c) => c.id)).toEqual([
+			'b',
+			'c',
+			'a',
+		]);
+	});
+
+	it('disables indent and outdent exactly where the drag equivalent would be refused', async () => {
+		harness = await open(nested());
+		// `defences` is the first row among its own siblings, so there is no
+		// earlier sibling to move into.
+		expect(control(harness, 'tree-indent-defences').hasAttribute('disabled')).toBe(
+			true,
+		);
+		// `defences` is already at the top level.
+		expect(
+			control(harness, 'tree-outdent-defences').hasAttribute('disabled'),
+		).toBe(true);
+		// `armour` is inside `defences` already, so outdent is live.
+		expect(control(harness, 'tree-outdent-armour').hasAttribute('disabled')).toBe(
+			false,
+		);
+	});
+
+	it('disables indent exactly where it would push a subtree past the depth cap', async () => {
+		/*
+		 * The trivial cases above (`disables indent and outdent exactly
+		 * where...`) never reach the interesting refusal the drag path has
+		 * its own dedicated test for (`refuses a drop that would push a
+		 * container past the depth cap, with no write`, against `deep()`):
+		 * a container that itself holds a container of its own, indented
+		 * into a sibling that is already one level in. `zone` holds two
+		 * depth-1 children — `holder`, empty, and `nested`, which holds
+		 * `leaf` — so indenting `nested` into its previous sibling `holder`
+		 * would land `leaf` three containers deep.
+		 */
+		const withDepthCap: Layout = {
+			name: 'Depth-capped sheet',
+			columns: 12,
+			components: [
+				{
+					id: 'zone',
+					type: 'group',
+					label: 'Zone',
+					position: { col: 1, row: 1, width: 6, height: 3 },
+					children: [
+						{
+							id: 'holder',
+							type: 'group',
+							label: 'Holder',
+							position: { col: 1, row: 1, width: 3, height: 1 },
+						},
+						{
+							id: 'nested',
+							type: 'group',
+							label: 'Nested',
+							position: { col: 1, row: 2, width: 3, height: 1 },
+							children: [
+								{
+									id: 'leaf',
+									type: 'card',
+									label: 'Leaf',
+									position: { col: 1, row: 1, width: 2, height: 1 },
+								},
+							],
+						},
+					],
+				},
+			],
+			triggers: [],
+		};
+		harness = await open(withDepthCap);
+
+		expect(control(harness, 'tree-indent-nested').hasAttribute('disabled')).toBe(
+			true,
+		);
+	});
+
+	it('undoes a reparent at depth as one step', async () => {
+		/*
+		 * `dragRow` rather than the outdent button — CSB #486/#366, the prior
+		 * art §5 was written against, is undo/redo failing to restore a
+		 * *drag*-triggered move at depth specifically, so this is the trigger
+		 * the criterion actually names. `dragRow(harness, 'armour',
+		 * 'defences')` reaches the exact same write the outdent button does
+		 * (both call `reparent(layout, armour, defences)`), which is what lets
+		 * this reuse that test's own assertions unchanged.
+		 */
+		harness = await open(deep());
+		const before = await harness.raw();
+
+		dragRow(harness, 'armour', 'defences');
+		await settle(harness.pane);
+		expect(await harness.raw()).not.toBe(before);
+
+		harness.pane.undo();
+		await settle(harness.pane);
+		expect(await harness.raw()).toBe(before);
+	});
+
+	it('redoes an undone reparent back to the moved state', async () => {
+		// `dragRow`, the same drag-based trigger the undo test above uses,
+		// for the same reason: the risk named at depth is a drag, not a button.
+		harness = await open(deep());
+		dragRow(harness, 'armour', 'defences');
+		await settle(harness.pane);
+		const afterMove = await harness.raw();
+
+		harness.pane.undo();
+		await settle(harness.pane);
+		harness.pane.redo();
+		await settle(harness.pane);
+
+		expect(await harness.raw()).toBe(afterMove);
 	});
 });
 
@@ -2635,10 +2884,21 @@ function measure(el: HTMLElement, columns = 12): HTMLElement {
 	return el;
 }
 
-/** The sheet's own schematic, measured so a pointer can land on a cell of it. */
+/**
+ * The sheet's own canvas grid, measured so a pointer can land on a cell of
+ * it.
+ *
+ * `.sheetsmith-editor-canvas .sheetsmith-grid` rather than the interim
+ * schematic's `.sheetsmith-layout-preview`: the canvas renders the layout's
+ * real components on the sheet's own grid class
+ * (`docs/features/grid-canvas.md`), and that grid element is exactly what
+ * `previewMetrics` reads geometry off.
+ */
 function sheetGrid(harness: Harness, columns = 12): HTMLElement {
-	const el = harness.container.querySelector('.sheetsmith-layout-preview');
-	if (!el) throw new Error('no schematic');
+	const el = harness.container.querySelector(
+		'.sheetsmith-editor-canvas .sheetsmith-grid',
+	);
+	if (!el) throw new Error('no canvas grid');
 	return measure(el as HTMLElement, columns);
 }
 
@@ -2669,8 +2929,17 @@ function reads(harness: Harness, id: string): string {
 	return control(harness, `preview-${id}`).getAttribute('aria-label') ?? '';
 }
 
-/** The inline grid placement a gesture writes straight onto the cell. */
-function box(cell: HTMLElement): string {
+/**
+ * The inline grid placement a gesture writes.
+ *
+ * Read off the overlay's own parent `.sheetsmith-cell` rather than off the
+ * overlay itself: the overlay is what receives the gesture, but the canvas
+ * writes the grid placement onto the live cell so the real component
+ * reflows during the drag (§3) — `control(harness, 'preview-<id>')` is the
+ * overlay, one level in from the cell this reads.
+ */
+function box(overlay: HTMLElement): string {
+	const cell = overlay.parentElement ?? overlay;
 	return `${cell.style.gridColumn}, ${cell.style.gridRow}`;
 }
 
@@ -2763,7 +3032,13 @@ describe('dragging a block around the schematic', () => {
 		 * while the pointer is down — rebuilding the preview would destroy the
 		 * element holding the pointer capture, and the drag would end on the
 		 * first move — and the rebuild and the write happen once, at the end.
+		 *
+		 * `unevenSchematic()` rather than the `beforeEach`'s own `schematic()`:
+		 * this is the spec's canonical drag proof, asked to run against a
+		 * fixture with a real multi-row component sharing it — `left` sits at
+		 * the same place either fixture holds it, so nothing below changes.
 		 */
+		harness = await open(unevenSchematic());
 		sheetGrid(harness);
 		const wrote = writes(harness);
 		const cell = control(harness, 'preview-left');
@@ -2917,7 +3192,7 @@ describe('dragging a block around the schematic', () => {
 		expect(
 			Array.from(
 				harness.container.querySelectorAll('.sheetsmith-preview-overlap'),
-			).map((el) => el.textContent),
+			).map((el) => el.getAttribute('aria-label')?.split(':')[0]),
 		).toEqual(['Left', 'Right']);
 
 		// And off it again, which has to clear the mark on the block that never
@@ -2941,7 +3216,12 @@ describe('dragging a block around the schematic', () => {
 		 * writes the same delta into both pairs of numbers. `col` staying at 1 is
 		 * the whole assertion: the block grows to the right rather than walking
 		 * there.
+		 *
+		 * `unevenSchematic()`, the spec's canonical resize proof: `left` grows
+		 * to column 4 at most, well clear of `right`'s columns 5-6, so nothing
+		 * about the resize below changes for sharing a schematic with `tall`.
 		 */
+		harness = await open(unevenSchematic());
 		// Open on the block being resized, so the form's own numbers are on
 		// screen to follow. `finish` writes them the way `nudge` does — the drag
 		// is the other call site, and the panel showing a stale size after a
@@ -2989,7 +3269,13 @@ describe('dragging a block around the schematic', () => {
 		 * changed position in the file. The write still happens, because the
 		 * gesture did touch the layout and putting it back is a change to undo,
 		 * so the claim is about the numbers rather than about the write.
+		 *
+		 * `unevenSchematic()`, the spec's canonical Escape proof: both drags
+		 * below land at column 6, row 3, clear of `right`'s row 2 and `tall`'s
+		 * columns 9-10, so the restore below is unaffected by sharing the
+		 * schematic with a real multi-row component.
 		 */
+		harness = await open(unevenSchematic());
 		sheetGrid(harness);
 		const escaped = control(harness, 'preview-left');
 		pressDown(escaped, at(1, 1));
@@ -3109,6 +3395,144 @@ describe('dragging a block around the schematic', () => {
 	});
 });
 
+/**
+ * Give a schematic explicit, unequal row tracks — the geometry a browser
+ * reports once a grid's rows are no longer alike, which is exactly what a
+ * live component's rows are not (§3 of the grid canvas spec).
+ *
+ * Monkeypatches `getComputedStyle` for this one element, on the same argument
+ * `measure` already makes for `clientWidth`: happy-dom does not run layout, so
+ * `grid-template-rows` never resolves into pixels on its own. Restored is not
+ * needed — the whole environment is disposed with the test.
+ */
+function measureRows(el: HTMLElement, tracks: string): void {
+	const view = el.ownerDocument.defaultView;
+	if (!view) throw new Error('no window');
+	const original = view.getComputedStyle.bind(view);
+	view.getComputedStyle = ((target: Element, pseudo?: string | null) => {
+		const styles = original(target, pseudo);
+		if (target === el) {
+			Object.defineProperty(styles, 'gridTemplateRows', {
+				value: tracks,
+				configurable: true,
+			});
+		}
+		return styles;
+	});
+}
+
+/**
+ * A schematic with a real two-row-tall component sharing space with a
+ * one-row one.
+ *
+ * `schematic()`'s own three blocks (`left`, `right`, `edge`) are all
+ * `height: 1` — a dozen other tests key off their exact placements, so
+ * reshaping one of them risks every test that drags onto or clamps against
+ * it rather than proving anything new here. `docs/features/grid-canvas.md`'s
+ * "canvas gestures" criterion asks for a fixture where a multi-row component
+ * genuinely shares a schematic with a one-row one, so this is its own small
+ * fixture rather than a `schematic()` edit: `tall` spans two real grid rows,
+ * `short` is one row directly beneath it, and `left` is what the row-boundary
+ * tests below drag down across the boundary between them.
+ *
+ * **`right` is `schematic()`'s own block, unchanged, at the same place.** The
+ * spec's own "all four" line does not stop at the row-boundary drag — the
+ * plain drag, resize, Escape and keyboard-nudge proofs are asked to run
+ * against a fixture with a real multi-row component in it too, and the
+ * cheapest way to give them that without rewriting their own numbers is a
+ * component here they already know. `tall`/`short` move to a column of their
+ * own to make room, which nothing below depends on: the row-boundary tests
+ * only ever read `left`'s column off a fixed pointer X, never `tall`'s.
+ */
+function unevenSchematic(): Layout {
+	return {
+		name: 'Uneven gesture sheet',
+		columns: 12,
+		components: [
+			// Dragged across the row boundary below — starts level with `tall`.
+			{
+				id: 'left',
+				type: 'card',
+				label: 'Left',
+				position: { col: 1, row: 1, width: 2, height: 1 },
+			},
+			// `schematic()`'s own `right`, same place — what the nudge tests
+			// below drag and step, now sharing a schematic with a real
+			// multi-row component rather than only ever `height: 1` siblings.
+			{
+				id: 'right',
+				type: 'card',
+				label: 'Right',
+				position: { col: 5, row: 2, width: 2, height: 1 },
+			},
+			// Two rows tall — the real multi-row placement the drag below
+			// crosses, moved off `right`'s columns so the two never overlap.
+			{
+				id: 'tall',
+				type: 'card',
+				label: 'Tall',
+				position: { col: 9, row: 1, width: 2, height: 2 },
+			},
+			// One row, directly under `tall` — the one-row component's band
+			// the drag below lands in once it passes `tall`'s own two rows.
+			{
+				id: 'short',
+				type: 'card',
+				label: 'Short',
+				position: { col: 9, row: 3, width: 2, height: 1 },
+			},
+		],
+		triggers: [],
+	};
+}
+
+describe('row geometry read off the grid rather than assumed', () => {
+	it('lands a drag in the row the pointer is actually over, not a uniform pitch\'s', async () => {
+		harness = await open(unevenSchematic());
+		const grid = sheetGrid(harness);
+		// `tall`'s own two rows, resolved to 88px then 44px — so a uniform
+		// 44px pitch (the old behaviour, and what `measure`'s own ROW
+		// constant is) would place a pointer at y=100 one row further down
+		// than the grid it is actually drawn on says: still inside `tall`'s
+		// own band (its second row), not past it.
+		measureRows(grid, '88px 44px');
+
+		const cell = control(harness, 'preview-left');
+		pressDown(cell, { clientX: TRACK / 2, clientY: 10 });
+		cell.dispatchEvent(
+			new PointerEvent('pointermove', {
+				pointerId: 1,
+				clientX: TRACK / 2,
+				clientY: 100,
+			}),
+		);
+		expect(box(cell)).toBe('1 / span 2, 2 / span 1');
+		release(cell);
+	});
+
+	it('drags across a two-row-tall component into a one-row component\'s band', async () => {
+		harness = await open(unevenSchematic());
+		const grid = sheetGrid(harness);
+		measureRows(grid, '88px 44px');
+
+		const cell = control(harness, 'preview-left');
+		pressDown(cell, { clientX: TRACK / 2, clientY: 10 });
+		// 88 + 44 = 132 is the end of `tall`'s own two resolved rows; ten
+		// pixels past it is still short of a further 44px pitch, so it counts
+		// as the first row after the known ones — row 3, which is exactly
+		// where `short`, the one-row component, already sits.
+		cell.dispatchEvent(
+			new PointerEvent('pointermove', {
+				pointerId: 1,
+				clientX: TRACK / 2,
+				clientY: 132 + 10,
+			}),
+		);
+		expect(box(cell)).toBe('1 / span 2, 3 / span 1');
+		release(cell);
+	});
+});
+
 describe('nudging a block', () => {
 	it('writes the panel\'s four position fields without rebuilding the pane', async () => {
 		/*
@@ -3145,8 +3569,12 @@ describe('nudging a block', () => {
 		 * table: a missing entry is a key the block ignores, and the floor is the
 		 * `Math.max(1, …)` under it. Read off the block's own label rather than
 		 * the file, so what a reader hears is held to the same numbers.
+		 *
+		 * `unevenSchematic()`, the spec's canonical keyboard-nudge proof:
+		 * `right` never leaves columns 5-7, clear of `tall`/`short` at 9-10, so
+		 * every number below is unchanged from `schematic()`'s own `right`.
 		 */
-		harness = await open(schematic());
+		harness = await open(unevenSchematic());
 		expect(reads(harness, 'right')).toBe('Right: column 5, row 2, 2×1');
 
 		pressKey(harness, 'right', 'ArrowRight');
@@ -3175,7 +3603,10 @@ describe('nudging a block', () => {
 	it('resizes with shift held, and never below one row', async () => {
 		// The same table read the other way: shift writes the other pair of
 		// numbers, and `height` has the same floor `row` does.
-		harness = await open(schematic());
+		//
+		// `unevenSchematic()`, the spec's canonical keyboard-resize proof —
+		// `right` grows only as far as row 3, column 7, clear of `tall`/`short`.
+		harness = await open(unevenSchematic());
 
 		pressKey(harness, 'right', 'ArrowRight', true);
 		expect(reads(harness, 'right')).toBe('Right: column 5, row 2, 3×1');
