@@ -820,6 +820,64 @@ const DEFAULTS = [
 		query: 'surface=editor&theme=dark&layout=broken',
 		size: '1400,420',
 	},
+	{
+		// The grid canvas's own layout (`docs/features/grid-canvas.md`):
+		// two overlapping cards and a Group holding a Table, all rendered
+		// live — real card faces and a real `<table>`, not the interim
+		// schematic's grey blocks. Nothing selected, so `Behind` and
+		// `Front` paint in layout order, `Front` on top.
+		name: 'canvas-live-light',
+		query: 'surface=editor&theme=light&layout=canvas-demo',
+		size: '1400,1400',
+	},
+	{
+		name: 'canvas-live-dark',
+		query: 'surface=editor&theme=dark&layout=canvas-demo',
+		size: '1400,1400',
+	},
+	{
+		/*
+		 * The covered-component hazard, resolved (§2): `Behind` is drawn
+		 * first and `Front` overlaps it, so selecting `Behind` is the case
+		 * where its own handles would be invisible without the raise —
+		 * `.sheetsmith-preview-editing`'s `z-index: 1`. What to look at:
+		 * `Behind`'s resize corner and selection ring sit on top of
+		 * `Front`'s card, and `Front` still paints over `Behind` everywhere
+		 * neither is selected.
+		 */
+		name: 'canvas-overlap-selected',
+		query: 'surface=editor&theme=light&layout=canvas-demo&open=behind',
+		size: '1400,1400',
+	},
+	{
+		/*
+		 * Mid-resize, a real pointer gesture left in flight rather than a
+		 * static end state (`editor-pane.ts`'s `resizeInPlace`): the
+		 * `Inventory` table's own box has genuinely grown under a real
+		 * browser's layout, so its columns have real width to reflow into.
+		 * §3's own claim — a component visibly reflows as its box changes,
+		 * with no re-render — is a look criterion, and this is the frame
+		 * that has to show it rather than assert it.
+		 */
+		name: 'canvas-resize',
+		query: 'surface=editor&theme=light&layout=canvas-demo&resize=gear%3A150%2C0',
+		size: '1400,1400',
+	},
+	{
+		// A valid drop, hovering: `Front` dragged onto `Gear`, a container
+		// that accepts it, showing the drop highlight before release.
+		name: 'canvas-tree-drag-valid',
+		query: 'surface=editor&theme=light&layout=canvas-demo&treeHover=front%3Agear',
+		size: '1400,1400',
+	},
+	{
+		// A refused drop, completed: `Front` onto `Inventory`, a Table
+		// rather than a container, which shows the inline message in place
+		// rather than the drag being silently ignored.
+		name: 'canvas-tree-drag-refused',
+		query: 'surface=editor&theme=light&layout=canvas-demo&treeDrop=front%3Ainventory',
+		size: '1400,1400',
+	},
 	{ name: 'settings-light', query: 'surface=settings&theme=light', size: '1000,520' },
 	{ name: 'settings-dark', query: 'surface=settings&theme=dark', size: '1000,520' },
 	{

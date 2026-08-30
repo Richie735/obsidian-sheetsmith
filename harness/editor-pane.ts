@@ -28,6 +28,28 @@ export interface PaneView {
 	open?: string;
 	/** An **Add component** option to select, as a type id or `<type>:<index>`. */
 	choice?: string;
+	/**
+	 * `<id>:<dx>,<dy>` — drag that component's own resize corner by `(dx,
+	 * dy)` pixels and leave the gesture mid-flight rather than releasing. A
+	 * still cannot drag, and the grid canvas's own reflow-during-resize
+	 * criterion (`docs/features/grid-canvas.md` §3, §7) has no other way to
+	 * be photographed: the live component genuinely reflows, in a real
+	 * browser, because this dispatches the same `pointerdown`/`pointermove`
+	 * pair a real drag would rather than assigning an end state.
+	 */
+	resize?: string;
+	/**
+	 * `<fromId>:<toId>` — drag `fromId`'s tree row onto `toId`'s and leave
+	 * it hovering, showing the valid-drop highlight if the drop would
+	 * succeed. Never completes the drop.
+	 */
+	treeHover?: string;
+	/**
+	 * `<fromId>:<toId>` — the same drag, completed. For a refused pair this
+	 * is what leaves the inline message on screen; for a valid one it is an
+	 * ordinary reparent, which the other views already cover.
+	 */
+	treeDrop?: string;
 }
 
 export interface PaneHost {
@@ -64,6 +86,29 @@ export async function renderEditorPane(
 	);
 	if (view.open !== undefined) await select(pane.contentEl, view.open);
 	if (view.choice !== undefined) await chooseAdd(pane.contentEl, view.choice);
+	// `resize` is deliberately not driven here: it reads real geometry
+	// (`getBoundingClientRect`), and `container` has not been attached to
+	// the visible document by the caller yet at this point — every rect on
+	// it reads zero. `driveResize` below is `harness.ts`'s to call once its
+	// own `draw()` has appended the pane, which `select` and `chooseAdd`
+	// never needed because a synthetic `click`/`change` dispatches
+	// correctly whether or not the element is on screen.
+	if (view.treeHover !== undefined) {
+		await dragTreeRow(pane.contentEl, view.treeHover, false);
+	}
+	if (view.treeDrop !== undefined) {
+		await dragTreeRow(pane.contentEl, view.treeDrop, true);
+	}
+}
+
+/**
+ * Drive `view.resize` against an already-attached pane. Exported
+ * separately from `renderEditorPane` for the reason named above it: a
+ * resize gesture needs the pane's own real layout, which only exists once
+ * the caller has put it on screen.
+ */
+export async function driveResize(pane: HTMLElement, spec: string): Promise<void> {
+	await resizeInPlace(pane, spec);
 }
 
 /**
@@ -118,4 +163,98 @@ async function chooseAdd(root: HTMLElement, value: string): Promise<void> {
 	}
 	menu.value = value;
 	menu.dispatchEvent(new Event('change'));
+}
+
+/**
+ * Drag a component's own resize corner by `(dx, dy)` pixels, in `"<id>:<dx>,
+ * <dy>"` form, and leave the gesture mid-flight rather than releasing.
+ *
+ * A real pointer gesture rather than a static end state, so the live
+ * component genuinely reflows under a real browser's own layout — the whole
+ * point of the shot this drives (`docs/features/grid-canvas.md` §3, §7).
+ * `pointerId: 1` throughout, matching `src/test/pointer.ts`'s own
+ * convention, so `setPointerCapture` is asked to capture the same pointer
+ * every event in the sequence claims to be.
+ */
+async function resizeInPlace(root: HTMLElement, spec: string): Promise<void> {
+	const [id, delta] = spec.split(':');
+	const [rawX, rawY] = (delta ?? '').split(',');
+	const dx = Number(rawX);
+	const dy = Number(rawY);
+	if (!id || !Number.isFinite(dx) || !Number.isFinite(dy)) {
+		console.warn(`Bad resize spec "${spec}"; want "<id>:<dx>,<dy>".`);
+		return;
+	}
+	const overlay = await control(root, `preview-${id}`);
+	const handle = overlay?.querySelector('.sheetsmith-preview-resize');
+	if (!handle) {
+		console.warn(`No resize handle on "${id}".`);
+		return;
+	}
+	// The real stylesheet may still be loading when this runs — under
+	// Chrome's headless virtual-time clock a script can run several
+	// simulated seconds ahead of a `<link>`'s own load event, which leaves
+	// every rect zero. `position: absolute` only ever comes from
+	// `styles.css`, so waiting for it is waiting for the sheet itself.
+	for (let attempt = 0; attempt < 40; attempt++) {
+		if (window.getComputedStyle(handle).position === 'absolute') break;
+		await new Promise((resolve) => window.setTimeout(resolve, 25));
+	}
+	const box = handle.getBoundingClientRect();
+	const startX = box.left + box.width / 2;
+	const startY = box.top + box.height / 2;
+	handle.dispatchEvent(
+		new PointerEvent('pointerdown', {
+			pointerId: 1,
+			button: 0,
+			clientX: startX,
+			clientY: startY,
+			bubbles: true,
+			cancelable: true,
+		}),
+	);
+	overlay?.dispatchEvent(
+		new PointerEvent('pointermove', {
+			pointerId: 1,
+			clientX: startX + dx,
+			clientY: startY + dy,
+			bubbles: true,
+		}),
+	);
+}
+
+/**
+ * Drag `fromId`'s tree row onto `toId`'s, and either leave it hovering
+ * (`complete: false`) or complete the drop (`complete: true`).
+ *
+ * `tree.ts`'s own drag reads a component id off a shared cursor rather than
+ * off the event's `DataTransfer`, so a plain `Event` answers exactly as a
+ * real `DragEvent` would — nothing here needs a native drag session. The
+ * drag itself starts on the row's own handle (`bindDragSource`'s drag
+ * source, `list-fields.ts`'s own split), never the row: the row is only ever
+ * a drop target.
+ */
+async function dragTreeRow(
+	root: HTMLElement,
+	spec: string,
+	complete: boolean,
+): Promise<void> {
+	const [fromId, toId] = spec.split(':');
+	if (!fromId || !toId) {
+		console.warn(`Bad tree-drag spec "${spec}"; want "<fromId>:<toId>".`);
+		return;
+	}
+	const from = await control(root, `tree-handle-${fromId}`);
+	const to = await control(root, `edit-${toId}`);
+	if (!from || !to) {
+		console.warn(`No tree row for "${fromId}" or "${toId}".`);
+		return;
+	}
+	const toRow = to.closest('.setting-item') ?? to;
+	from.dispatchEvent(new Event('dragstart', { bubbles: true }));
+	toRow.dispatchEvent(new Event('dragover', { bubbles: true, cancelable: true }));
+	if (complete) {
+		toRow.dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }));
+		from.dispatchEvent(new Event('dragend', { bubbles: true }));
+	}
 }
