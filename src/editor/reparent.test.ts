@@ -165,4 +165,104 @@ describe('reparent', () => {
 
 		expect(empty.children.map((c) => c.id)).toEqual(['a', 'stat', 'b']);
 	});
+
+	it('leaves position untouched when the old parent already placed its children', () => {
+		// The no-op guarantee the tab-set fix below rests on: `innerPlacement`
+		// returns the dragged component's own position unchanged whenever its
+		// old parent placed its children itself, which every container in
+		// `fixture()` does. Distinct numbers rather than `pos()`'s shared
+		// {2,1}, or an unwitting change of every field to itself would pass
+		// just as well.
+		const layout = fixture();
+		const stat = layout.components[2]!;
+		const empty = layout.components[1]!;
+		stat.position = { col: 3, row: 5, width: 6, height: 4 };
+
+		reparent(layout, stat, empty);
+
+		expect(stat.position).toEqual({ col: 3, row: 5, width: 6, height: 4 });
+	});
+});
+
+/**
+ * A tab's own stored width/height is never read while it sits inside a tab
+ * set — `innerPlacement` (`view/grid-cells.ts`) draws it at the tab set's own
+ * placement instead, so the tab's own numbers are free to drift stale (see
+ * `layout-editor.test.ts`'s `staleTab()`). `layout-editor.test.ts`'s "gives a
+ * promoted tab the size it was actually drawn at" locks the same fix for
+ * container removal; this is the identical defect reached through
+ * `reparent()`, which every one of `tree.ts`'s indent, outdent and drag-drop
+ * controls call — outdent is driven here since it is the cheapest of the
+ * three to call directly.
+ */
+function tabbedFixture(): Layout {
+	const strike: ComponentConfig = {
+		id: 'strike',
+		type: 'card',
+		label: 'Strike bonus',
+		// Placed using the tab set's real, current size (8x5), which
+		// `innerPlacement` supplies while `combat` is nested.
+		position: { col: 1, row: 4, width: 2, height: 1 },
+	};
+	const combat: ComponentConfig = {
+		id: 'combat',
+		type: 'group',
+		label: 'Combat',
+		// Stale: what the add row wrote when the tab set was smaller.
+		position: { col: 1, row: 1, width: 4, height: 2 },
+		children: [strike],
+	};
+	const spells: ComponentConfig = {
+		id: 'spells',
+		type: 'group',
+		label: 'Spells',
+		position: { col: 1, row: 1, width: 8, height: 5 },
+	};
+	const pages: ComponentConfig = {
+		id: 'pages',
+		type: 'tab-set',
+		label: 'Pages',
+		position: { col: 1, row: 1, width: 8, height: 5 },
+		children: [combat, spells],
+	};
+	return {
+		name: 'Tabbed fixture',
+		components: [pages],
+	};
+}
+
+describe('reparenting a tab out of its tab set', () => {
+	it('gives it the size it was actually drawn at, not its own stale one', () => {
+		const layout = tabbedFixture();
+		const pages = layout.components[0]!;
+		const combat = pages.children![0]!;
+		const strike = combat.children![0]!;
+
+		// The outdent button's own call (`tree.ts`): move `combat` out of
+		// `pages` to the top level.
+		reparent(layout, combat, null);
+
+		// The tab set's own real size (8x5), not the stale stored one (4x2).
+		expect(combat.position).toMatchObject({ width: 8, height: 5 });
+		// `strike`'s row is relative to `combat`'s own subgrid, so it has to
+		// fit inside `combat`'s own declared height in that same local
+		// space — which the stale 4x2 did not, and the real 8x5 does.
+		const strikeBottom = strike.position.row + strike.position.height - 1;
+		expect(strikeBottom).toBeLessThanOrEqual(combat.position.height);
+	});
+
+	it('leaves col and row alone, which this fix does not touch', () => {
+		// Named so a reader does not mistake the width/height correction for
+		// a general position fix: `reparent` still carries whatever col/row
+		// `dragged` already had, meaningless in the new destination's
+		// coordinate space or not — a separate, pre-existing gap this change
+		// deliberately leaves open.
+		const layout = tabbedFixture();
+		const pages = layout.components[0]!;
+		const combat = pages.children![0]!;
+
+		reparent(layout, combat, null);
+
+		expect(combat.position).toMatchObject({ col: 1, row: 1 });
+	});
 });

@@ -18,6 +18,7 @@ import { getComponent } from '../components';
 import { Layout, mayHoldChildren } from '../parse/layout';
 import { walkComponents } from '../parse/layout-walk';
 import { ComponentConfig, isContainer } from '../types';
+import { innerPlacement } from '../view/grid-cells';
 
 export type ReparentCheck = { ok: true } | { error: string };
 
@@ -126,6 +127,21 @@ export function reparent(
 	if (!entry) return;
 	const from = entry.siblings.indexOf(dragged);
 	if (from === -1) return;
+
+	// A child of a container that shows one at a time (a tab) is never sized
+	// by its own stored width/height while nested there — `innerPlacement`
+	// (`view/grid-cells.ts`) draws it at the *old* parent's own placement
+	// instead, so its stored numbers are free to have gone stale. Once moved,
+	// `dragged`'s own position governs again wherever it lands next — inside
+	// an ordinary container, at the top level, or even inside a different tab
+	// set that will itself ignore it — so it has to carry the size it was
+	// actually last drawn at rather than whatever it happened to still say.
+	// A no-op everywhere else: `innerPlacement` returns `dragged.position`
+	// unchanged whenever the old parent placed its children itself.
+	const { width, height } = innerPlacement(dragged, entry.parent);
+	dragged.position.width = width;
+	dragged.position.height = height;
+
 	entry.siblings.splice(from, 1);
 
 	const into = target === null ? layout.components : (target.children ??= []);
