@@ -40,7 +40,7 @@ import {
 import { nameAlreadyDeclared } from '../src/layouts';
 import { dropDetachedAnchoredPanel } from '../src/ui/anchored-panel';
 import { renderGrid } from '../src/view/grid-cells';
-import { renderEditorPane } from './editor-pane';
+import { driveResize, renderEditorPane } from './editor-pane';
 import {
 	brokenSamples,
 	effectiveSamples,
@@ -441,12 +441,15 @@ async function ensureEditor(): Promise<HTMLElement> {
 				draw();
 			},
 		},
-		file === 'none' || file === 'broken'
+		file === 'none' || file === 'broken' || file === 'canvas-demo'
 			? file
 			: harnessLayout(samplesFor(state)),
 		{
 			open: params.get('open') ?? undefined,
 			choice: params.get('choice') ?? undefined,
+			resize: params.get('resize') ?? undefined,
+			treeHover: params.get('treeHover') ?? undefined,
+			treeDrop: params.get('treeDrop') ?? undefined,
 		},
 	);
 	return pane;
@@ -723,10 +726,25 @@ function applyQuery(): void {
 		}
 	};
 
-	void ensureSurface().then(() => {
+	/**
+	 * `&resize=<id>:<dx>,<dy>` — drag that component's own resize corner by
+	 * `(dx, dy)` pixels and leave the gesture mid-flight, pointer still
+	 * captured, so the shot shows a real reflow rather than a static end
+	 * state (`docs/features/grid-canvas.md` §3, §7). Driven here rather than
+	 * inside `ensureEditor`, after `draw()` has appended the pane: a resize
+	 * reads real geometry (`getBoundingClientRect`), and every rect on an
+	 * unattached element reads zero, which `open=`/`choice=` never hit
+	 * because a synthetic `click`/`change` dispatches correctly either way.
+	 */
+	const resize = params.get('resize');
+
+	void ensureSurface().then(async () => {
 		draw();
 		focusWanted();
 		pressWanted();
+		if (resize !== null && editorPane) {
+			await driveResize(editorPane, resize);
+		}
 	});
 }
 

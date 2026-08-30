@@ -13,6 +13,7 @@
 import { App, Vault } from '../src/test/obsidian-stub';
 import { LAYOUT_FOLDER } from '../src/test/plugin';
 import { Layout, parseLayout, serialiseLayout } from '../src/parse/layout';
+import type { ComponentConfig } from '../src/types';
 import { Sample, SAMPLES } from './samples';
 
 const LAYOUT_NAME = 'Harness sheet';
@@ -139,14 +140,66 @@ export function harnessLayout(samples: readonly Sample[] = SAMPLES): Layout {
 }
 
 /**
- * What the layout folder holds: a layout, or one of the two states the editor
- * has to draw instead of one.
- *
- * `'none'` is a configured folder with nothing in it, which is what a new vault
- * looks like. `'broken'` is a file that will not parse, which is the ordinary
- * way a layout is wrong — it is a thing people hand-edit and share.
+ * A small layout built for the grid canvas's own shots
+ * (`docs/features/grid-canvas.md` §"Acceptance criteria"): two components
+ * whose grid rectangles genuinely overlap, and a Group with children sized
+ * for a resize gesture to have somewhere to grow. The main sample sheet
+ * stays free of a deliberate overlap, so this is its own small layout rather
+ * than one more thing threaded through it.
  */
-export type LayoutSource = Layout | 'none' | 'broken';
+export function canvasDemoLayout(): Layout {
+	return {
+		name: LAYOUT_NAME,
+		columns: 12,
+		components: [
+			// Drawn first, so it is the one a later sibling paints over —
+			// `behind`'s own overlay is what a selection has to be raised
+			// above (`docs/features/grid-canvas.md` §2's overlap hazard).
+			{
+				id: 'behind',
+				type: 'card',
+				label: 'Behind',
+				position: { col: 1, row: 1, width: 4, height: 1 },
+			},
+			{
+				id: 'front',
+				type: 'card',
+				label: 'Front',
+				position: { col: 3, row: 1, width: 4, height: 1 },
+			},
+			{
+				id: 'gear',
+				type: 'group',
+				label: 'Gear',
+				position: { col: 1, row: 3, width: 6, height: 3 },
+				children: [
+					{
+						id: 'inventory',
+						type: 'table',
+						label: 'Inventory',
+						position: { col: 1, row: 1, width: 6, height: 3 },
+						columns: [{ key: 'item' }, { key: 'weight', type: 'number' }],
+						rows: [{ label: 'Rope' }, { label: 'Torch' }],
+					} as ComponentConfig,
+				],
+			},
+		],
+		triggers: [],
+	};
+}
+
+/**
+ * What the layout folder holds: a layout, or one of the three states the
+ * editor has to draw instead of one.
+ *
+ * `'none'` is a configured folder with nothing in it, which is what a new
+ * vault looks like. `'broken'` is a file that will not parse, which is the
+ * ordinary way a layout is wrong — it is a thing people hand-edit and
+ * share. `'canvas-demo'` is `canvasDemoLayout` above, addressed by name for
+ * the same reason the other two are: `harness.ts`'s `&layout=` query has no
+ * way to hand over a whole object.
+ */
+export type LayoutSource = Layout | 'none' | 'broken' | 'canvas-demo';
 
 /** A truncated file, which is what a hand edit interrupted actually leaves. */
 const UNPARSEABLE = '{\n\t"name": "Harness sheet",\n\t"components": [\n';
@@ -172,7 +225,9 @@ export async function plantLayout(
 	if (layout === 'none') return;
 	await app.vault.create(
 		`${LAYOUT_FOLDER}/${LAYOUT_NAME}.json`,
-		layout === 'broken' ? UNPARSEABLE : serialiseLayout(layout),
+		layout === 'broken'
+			? UNPARSEABLE
+			: serialiseLayout(layout === 'canvas-demo' ? canvasDemoLayout() : layout),
 	);
 }
 
