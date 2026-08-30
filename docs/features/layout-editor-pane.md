@@ -601,14 +601,10 @@ that took it.
 
 ## Deliberately not doing
 
-**No canvas, and no live components.** The schematic keeps its abstract blocks.
-The survey found five separate ways a live-component editing surface makes an
-editing control unreachable — a hidden tab panel is `inert`, an overlapping
-component draws on top and eats the handles beneath it, cards and tables clip at
-`overflow: hidden`, the sheet's own scrub and hold gestures take the pointer
-first, and the cell popover attaches to `document.body` — and each is a decision
-the canvas slice owes an answer to. None of them has to be answered to move the
-editor into a pane.
+**No canvas, and no live components — superseded.** `docs/features/grid-canvas.md`
+is where the schematic's abstract blocks were retired and each of the five
+reachability hazards this row named was answered. Left standing here only as a
+pointer, not as a claim that is still true.
 
 **No preview panel.** SPEC §7 item 7 is a separate slice and needs a decision
 about where sample values live, since `harness/samples.ts` is harness scaffolding
@@ -636,9 +632,9 @@ question: a character names its layout by filename, so a rename has to migrate
 every character that names it, and SPEC §10's migration promise is written about
 component labels rather than layout names.
 
-**No reparenting.** A component cannot be moved between containers today by any
-route except deleting its container, and it still cannot after this. It is the
-operation a canvas most invites, and it is the canvas slice's to design.
+**No reparenting — superseded.** `docs/features/grid-canvas.md` §5 designed and
+shipped it: dragging a row in the tree, or its indent/outdent controls, moves a
+component between containers. Left standing here only as a pointer.
 
 **No contract growth.** No size hint, no icon, no formula-field marking, no
 `validateConfig`, no pre-render error member, no minimum column count.
