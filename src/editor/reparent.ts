@@ -12,6 +12,13 @@
  *
  * `docs/features/grid-canvas.md` §5 is the design this implements; the tree
  * drag and the indent/outdent controls in `tree.ts` are its only callers.
+ *
+ * The dependency runs both ways: `reparent()` also draws on `tree.ts`'s own
+ * `nextFreeRow` for the destination row a cross-container move lands on,
+ * rather than reimplementing the same answer a promoted child already gets.
+ * A real cycle, not a mistake to unwind — both sides export only function
+ * declarations, so the circular import resolves the same way an ordinary one
+ * would at the point either function is actually called.
  */
 
 import { getComponent } from '../components';
@@ -19,6 +26,7 @@ import { Layout, mayHoldChildren } from '../parse/layout';
 import { walkComponents } from '../parse/layout-walk';
 import { ComponentConfig, isContainer } from '../types';
 import { innerPlacement } from '../view/grid-cells';
+import { nextFreeRow } from './tree';
 
 export type ReparentCheck = { ok: true } | { error: string };
 
@@ -145,6 +153,24 @@ export function reparent(
 	entry.siblings.splice(from, 1);
 
 	const into = target === null ? layout.components : (target.children ??= []);
+
+	// `col`/`row` describe a place in the *old* parent's grid, which means
+	// nothing — or means the wrong thing — once `dragged` sits in a
+	// different one: past its last column, or on top of a sibling that
+	// already occupies that cell. `docs/features/grid-canvas.md` §5 is the
+	// design; the answer matches what a child promoted out of a removed
+	// container already gets (`renderTreeRow` in `tree.ts`). Computed over
+	// `into` before `dragged` is spliced in below, so it never counts
+	// itself. Skipped when `target` is `dragged`'s own current parent
+	// already: `resolveDrop` sends a drop on your own parent's row through
+	// this same function as a same-container reorder, not a move across
+	// grids, and reassigning position there would visibly move a component
+	// the user only asked to reorder.
+	if (target !== entry.parent) {
+		dragged.position.col = 1;
+		dragged.position.row = nextFreeRow(into);
+	}
+
 	const at = index === undefined ? into.length : Math.min(index, into.length);
 	into.splice(at, 0, dragged);
 }

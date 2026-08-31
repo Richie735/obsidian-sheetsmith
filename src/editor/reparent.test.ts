@@ -128,7 +128,7 @@ describe('canReparent', () => {
 });
 
 describe('reparent', () => {
-	it('moves a component from one container into another', () => {
+	it('moves a component from one container into another, landing at col 1, row 1 of the empty destination', () => {
 		const layout = fixture();
 		const outer = layout.components[0]!;
 		const inner = outer.children![0]!;
@@ -139,17 +139,39 @@ describe('reparent', () => {
 
 		expect(inner.children).toEqual([]);
 		expect(empty.children).toEqual([leaf]);
+		// `empty` held nothing, so the first free row is row 1 — the same
+		// answer an empty top level would give.
+		expect(leaf.position).toMatchObject({ col: 1, row: 1 });
 	});
 
-	it('moves a component to the top level', () => {
+	it('moves a component to the top level, landing at the first row nothing else occupies', () => {
 		const layout = fixture();
 		const outer = layout.components[0]!;
 		const inner = outer.children![0]!;
-
+		// `outer`, `empty` and `stat` all sit at row 1 with height 1
+		// (`pos()`'s defaults), so the top level's first free row is row 2.
 		reparent(layout, inner, null);
 
 		expect(outer.children).toEqual([]);
 		expect(layout.components).toContain(inner);
+		expect(inner.position).toMatchObject({ col: 1, row: 2 });
+	});
+
+	it('lands at col 1, the first free row, when it moves into a container with existing children', () => {
+		const layout = fixture();
+		const stat = layout.components[2]!;
+		const empty = layout.components[1]!;
+		empty.children = [
+			{ id: 'a', type: 'card', label: 'A', position: pos({ row: 1, height: 2 }) },
+			{ id: 'b', type: 'card', label: 'B', position: pos({ row: 3, height: 1 }) },
+		];
+
+		reparent(layout, stat, empty);
+
+		// Row 4 is the first row neither `a` (rows 1-2) nor `b` (row 3)
+		// occupies — and `stat` itself, not yet in `empty.children` when this
+		// is computed, is never counted as its own obstacle.
+		expect(stat.position).toMatchObject({ col: 1, row: 4 });
 	});
 
 	it('inserts at the given index rather than always at the end', () => {
@@ -166,13 +188,14 @@ describe('reparent', () => {
 		expect(empty.children.map((c) => c.id)).toEqual(['a', 'stat', 'b']);
 	});
 
-	it('leaves position untouched when the old parent already placed its children', () => {
+	it('leaves width/height untouched, and reassigns col/row, when the old parent already placed its children', () => {
 		// The no-op guarantee the tab-set fix below rests on: `innerPlacement`
-		// returns the dragged component's own position unchanged whenever its
-		// old parent placed its children itself, which every container in
-		// `fixture()` does. Distinct numbers rather than `pos()`'s shared
-		// {2,1}, or an unwitting change of every field to itself would pass
-		// just as well.
+		// returns the dragged component's own width/height unchanged whenever
+		// its old parent placed its children itself, which every container in
+		// `fixture()` does. Position is a different story now — `stat` moves
+		// from the top level into `empty`, an actual change of parent, so
+		// col/row are reassigned to `empty`'s first free row regardless of
+		// what they used to say.
 		const layout = fixture();
 		const stat = layout.components[2]!;
 		const empty = layout.components[1]!;
@@ -180,7 +203,36 @@ describe('reparent', () => {
 
 		reparent(layout, stat, empty);
 
-		expect(stat.position).toEqual({ col: 3, row: 5, width: 6, height: 4 });
+		expect(stat.position).toEqual({ col: 1, row: 1, width: 6, height: 4 });
+	});
+
+	it("leaves col/row untouched when the drop resolves to the component's own current parent", () => {
+		// `resolveDrop` (`tree.ts`) sends a drop on a container row through
+		// `reparent()` even when that container already holds the dragged
+		// row — its own comment says a container row is never reinterpreted
+		// as a reorder. That call must not treat `a`'s existing col/row as
+		// meaningless just because `reparent()` ran; nothing about which grid
+		// it sits on changed.
+		const layout = fixture();
+		const empty = layout.components[1]!;
+		const a: ComponentConfig = {
+			id: 'a',
+			type: 'card',
+			label: 'A',
+			position: pos({ col: 5, row: 9 }),
+		};
+		const b: ComponentConfig = {
+			id: 'b',
+			type: 'card',
+			label: 'B',
+			position: pos({ col: 1, row: 1 }),
+		};
+		empty.children = [a, b];
+
+		reparent(layout, a, empty);
+
+		expect(a.position).toMatchObject({ col: 5, row: 9 });
+		expect(empty.children.map((c) => c.id)).toEqual(['b', 'a']);
 	});
 });
 
@@ -251,18 +303,16 @@ describe('reparenting a tab out of its tab set', () => {
 		expect(strikeBottom).toBeLessThanOrEqual(combat.position.height);
 	});
 
-	it('leaves col and row alone, which this fix does not touch', () => {
-		// Named so a reader does not mistake the width/height correction for
-		// a general position fix: `reparent` still carries whatever col/row
-		// `dragged` already had, meaningless in the new destination's
-		// coordinate space or not — a separate, pre-existing gap this change
-		// deliberately leaves open.
+	it('also reassigns col/row to the top level\'s own first free row, not whatever it held inside the tab set', () => {
+		// `combat`'s own stale col/row (1, 1) meant a place in `pages`' inner
+		// grid, which the top level does not share. `pages` itself already
+		// occupies rows 1-5 there, so the first free row is row 6.
 		const layout = tabbedFixture();
 		const pages = layout.components[0]!;
 		const combat = pages.children![0]!;
 
 		reparent(layout, combat, null);
 
-		expect(combat.position).toMatchObject({ col: 1, row: 1 });
+		expect(combat.position).toMatchObject({ col: 1, row: 6 });
 	});
 });
