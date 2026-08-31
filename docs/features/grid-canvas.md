@@ -330,6 +330,60 @@ row's two triggers, the honest accounting (matching how undo's own landing
 "did not close it") is that this slice does not either. Recorded so a
 reviewer does not expect that row gone.
 
+### §5. Tree reparenting
+
+**A reparent that actually changes which container holds a component lands
+it at that container's first free row, column 1** — `col`/`row` are never
+carried over from the old parent's grid. Those two numbers describe a place
+in a specific grid's own coordinate space; once `dragged` leaves that grid,
+they describe nothing. A destination grid may not even be as wide as the
+column the component sat in, and even where it is, the coordinate is as
+likely to land on top of an existing sibling as into empty space. This is
+the same problem commit `84b39b9` and `24d7d77` already closed for
+`width`/`height` — a value that means something in the old parent's grid and
+something else, or nothing, in the new one — reached for position rather
+than size. It is fixed in the same function and the same way: `reparent()`
+(`src/editor/reparent.ts`) assigns `dragged.position.col = 1` and
+`dragged.position.row = nextFreeRow(into)`, the exact answer `tree.ts`'s own
+container-removal path already gives a child promoted out of a removed
+container (`renderTreeRow`, around line 261-262). `nextFreeRow` is exported
+from `tree.ts` for that reason already — the **Add component** row needs the
+same answer — so `reparent.ts` imports and calls it rather than
+reimplementing it. `nextFreeRow` is asked over the destination list —
+`layout.components` at the top level, `target.children` inside a
+container — with `dragged` not yet spliced into it, so a component is never
+placed below itself.
+
+**A reparent that does not change the component's parent leaves `col`/`row`
+alone.** `resolveDrop` (`tree.ts`) treats a container row as "move into me"
+unconditionally, even when that container is already the row's own current
+parent — its own comment says a container row is never reinterpreted as a
+reorder — so `reparent()` can run with `target` equal to `dragged`'s existing
+parent. That call is a same-container reorder wearing a reparent's shape,
+not a move across grids, and the position guard above is skipped exactly
+there: reassigning `col`/`row` would visibly move a component on the grid
+that the user only asked to reorder within the container it is already in.
+The `width`/`height` correction carries no equivalent guard, and needs
+none: it re-reads the component's *current* parent's own live placement via
+`innerPlacement`, so when the parent has not changed it recomputes the same
+answer the component should already be showing — a harmless no-op when that
+value was already correct, and a quiet fix on the rare case it had drifted
+stale while sitting still. Position has no such self-correcting reading: an
+old `col`/`row` is not "possibly stale," it is meaningless the moment the
+parent actually changes, which is exactly why it needs the guard the size
+correction does not.
+
+**A Tab set destination still ignores a held child's own `col`/`row` today**
+— `innerPlacement` draws every tab at the tab set's own placement instead,
+the same rule §1 and §4 describe — so assigning a fresh `col`/`row` on a
+move into one is inert the moment it lands. It has to happen anyway, for the
+same reason `84b39b9` fixed the stale-size trap rather than leaving it for
+"whenever it becomes visible again": the value written now is the value
+read back whenever this component is later moved *out* of the tab set, and
+a stale `col=1, row=1` free-floating in memory since some earlier, unrelated
+context is exactly the kind of number that reads as intentional right up
+until it overlaps a sibling on a different grid entirely.
+
 ## Config fields
 
 None. No component's `configFields` change and no layout-level field is
