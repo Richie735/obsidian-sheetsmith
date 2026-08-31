@@ -871,6 +871,19 @@ const DEFAULTS = [
 		size: '1400,1400',
 	},
 	{
+		// A valid drop, completed: the same pair as `canvas-tree-drag-valid`
+		// released rather than left hovering, so `Front` actually lands
+		// inside `Gear`'s own subgrid — `docs/features/grid-canvas.md` §5's
+		// placement rule photographed rather than only asserted by
+		// `reparent.test.ts`. What to look at: `Front` sits at `Gear`'s own
+		// column 1, below `Inventory` rather than overlapping it, even
+		// though `Front`'s own top-level column (3) no longer exists in
+		// `Gear`'s 6-wide grid.
+		name: 'canvas-tree-drag-complete',
+		query: 'surface=editor&theme=light&layout=canvas-demo&treeDrop=front%3Agear',
+		size: '1400,1400',
+	},
+	{
 		// A refused drop, completed: `Front` onto `Inventory`, a Table
 		// rather than a container, which shows the inline message in place
 		// rather than the drag being silently ignored.

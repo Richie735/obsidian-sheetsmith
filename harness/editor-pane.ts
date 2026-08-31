@@ -46,8 +46,10 @@ export interface PaneView {
 	treeHover?: string;
 	/**
 	 * `<fromId>:<toId>` — the same drag, completed. For a refused pair this
-	 * is what leaves the inline message on screen; for a valid one it is an
-	 * ordinary reparent, which the other views already cover.
+	 * is what leaves the inline message on screen; for a valid one it is
+	 * what `shot.mjs`'s `canvas-tree-drag-complete` drives to show the
+	 * component actually landed at its new container's first free row —
+	 * nothing else here exercises a released, valid drop.
 	 */
 	treeDrop?: string;
 }
