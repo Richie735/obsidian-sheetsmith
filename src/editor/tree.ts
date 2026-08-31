@@ -80,8 +80,11 @@ function removalMessage(config: ComponentConfig, held: number): string {
 /**
  * The first row nothing occupies at the bottom of `components`, for a child
  * promoted out of a removed container and for a freshly added component
- * alike — exported since `layout-editor.ts`'s own add row needs the same
- * answer.
+ * alike — exported since more than one caller outside this file needs the
+ * same answer: `layout-editor.ts`'s own add row, and `reparent.ts`'s
+ * `reparent()`, which asks it of whichever list a cross-container move's
+ * destination is, so the moved component lands below whatever is already
+ * there rather than on top of it.
  */
 export function nextFreeRow(components: ComponentConfig[]): number {
 	let next = 1;
