@@ -206,6 +206,9 @@ export class LayoutEditorSection {
 			get selection(): string {
 				return host.selection;
 			},
+			// Fixed for now: the toggle above the canvas that answers this
+			// arrives in the next change. Nothing user-visible yet.
+			sampleValues: true,
 		});
 		// The same mapping one region over, and the same reasons for the arrows.
 		// `errors` is the exception and deliberately not a getter: the panel is
