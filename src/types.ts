@@ -411,6 +411,26 @@ type ScopeEntrySource =
 export type ScopeEntry = {
 	/** What the note stores. Referenced as `<name>.value`. */
 	value?: FieldValue;
+	/**
+	 * How many of this entry's ceiling remain, referenced as `<name>.left`.
+	 * Sits outside `ScopeEntrySource` rather than as a third alternative in
+	 * it: `.left` is not a source for what the name itself is worth, so it
+	 * coexists with `display` or `compute` or neither, exactly as `value`
+	 * already does.
+	 *
+	 * Optional in a stronger sense than `display` and `compute` are: those
+	 * two are how *every* entry says what it is worth, so one of them (or
+	 * neither, falling back to `value`) is always live. `left` has no such
+	 * universal role — most entries never set it, and `.left` is published
+	 * only where this member is present at all (SPEC §5). A row's ceiling is
+	 * the motivating case: arithmetic over a config field no formula on the
+	 * sheet can see, the same reason `compute`'s own doc comment gives for
+	 * existing, so it takes the same lazily-supplied resolver. It returns
+	 * `number | undefined` rather than `compute`'s general `FieldValue`,
+	 * because "how many are left" is definitionally a count and never a
+	 * string or boolean — narrower on purpose, not out of laziness.
+	 */
+	left?: (resolve: FieldResolver) => number | undefined;
 } & ScopeEntrySource;
 
 /**

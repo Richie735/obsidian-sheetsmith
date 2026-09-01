@@ -181,6 +181,76 @@ describe('buildSheetScope: a value only the component can produce', () => {
 	});
 });
 
+describe('buildSheetScope: a second reserved suffix', () => {
+	/**
+	 * A synthetic publisher, not Track: the mechanism is generic (SPEC §5's
+	 * `.left`), and proving it here keeps the proof independent of the one
+	 * production component that currently sets it.
+	 */
+	it('resolves the suffixed name when left() returns a number', () => {
+		const scope = buildSheetScope([
+			{
+				id: 'slots',
+				values: {
+					named: { L1: { value: '2', left: () => 3 } },
+				},
+			},
+		]);
+		expect(scope('slots.L1.left')).toBe(3);
+	});
+
+	it('is absent when left() returns undefined, leaving .value reachable', () => {
+		const scope = buildSheetScope([
+			{
+				id: 'slots',
+				values: {
+					named: { L1: { value: '2', left: () => undefined } },
+				},
+			},
+		]);
+		expect(scope('slots.L1.left')).toBeUndefined();
+		expect(scope('slots.L1.value')).toBe(2);
+	});
+
+	it('leaves .left unregistered where the entry never carries one', () => {
+		// The same guarantee `.value` gives every entry, read from the other
+		// side: an entry that never sets `left` publishes no suffix for it,
+		// rather than a suffix that always answers undefined.
+		expect(buildSheetScope([speed])('speed.left')).toBeUndefined();
+	});
+
+	it('hands left() a resolver bound to the finished sheet', () => {
+		// The same proof the `compute` test above gives: a card registered
+		// after this one is still reachable from inside `left`, because the
+		// resolver closes over the whole sheet rather than what existed at
+		// registration time.
+		const scope = buildSheetScope([
+			{
+				id: 'slots',
+				values: {
+					named: {
+						L1: {
+							value: '2',
+							left: (resolve) => {
+								const result = resolve('columns.0.formula', { Training: 2 });
+								return typeof result === 'number' ? result : undefined;
+							},
+						},
+					},
+				},
+				resolver: (env) => (field, row) =>
+					field === 'columns.0.formula'
+						? evaluate('abilities.DEX + Training', (name) =>
+								Object.hasOwn(row, name) ? row[name] : env.sheet(name),
+							)
+						: null,
+			},
+			abilities,
+		]);
+		expect(scope('slots.L1.left')).toBe(8);
+	});
+});
+
 describe('buildSheetScope: names that depend on names', () => {
 	/** A component whose display is whatever formula it is given. */
 	const computed = (id: string, formula: string): PublishedComponent => ({
