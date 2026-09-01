@@ -159,6 +159,25 @@ export class LayoutEditorSection {
 	 * to push. Null before a layout has been loaded.
 	 */
 	private onDisk: string | null = null;
+	/**
+	 * Whether the canvas is drawn with each component's own sample values
+	 * (`docs/features/preview-sample-values.md` §3).
+	 *
+	 * **Per pane, on for a pane that has just opened, and never written
+	 * anywhere.** It is posture rather than content — no layout key, no
+	 * frontmatter key, no preference — so `persist` is not called for it and the
+	 * settings tab does not offer it: a third row there would be a persisted
+	 * answer to a question that only exists while a pane is open. It lives here
+	 * rather than on `LayoutEditorHost` because nothing outside this class asks
+	 * it, unlike the two the pane owns; a redraw for any other reason keeps it,
+	 * and closing the pane forgets it.
+	 *
+	 * On by default, because an empty canvas is the state that *hides* what a
+	 * preview exists to reveal — a column too narrow for its number, a table that
+	 * pushes its neighbour off the grid, a formula that reads fine at zero — and
+	 * the row above the canvas turns it off in one press.
+	 */
+	private sampleValues = true;
 	/** Undo and redo history, one snapshot per `persist` that changed a byte. */
 	private undoStack = new UndoStack();
 	private redoStack = new UndoStack();
@@ -188,6 +207,10 @@ export class LayoutEditorSection {
 			this.pendingFocus ??= this.focusedToken();
 			host.redraw();
 		};
+		// What the canvas reads `sampleValues` through, declared out here because a
+		// getter cannot be an arrow and `this` inside the object literal below is
+		// the host rather than this section.
+		const samplesOn = (): boolean => this.sampleValues;
 		// Arrow functions throughout, for the reasons `redraw` above states for
 		// itself and `persist` states for the `void`: `this.persist` is async and
 		// `no-misused-promises` refuses a promise-returning function where a void
@@ -206,9 +229,11 @@ export class LayoutEditorSection {
 			get selection(): string {
 				return host.selection;
 			},
-			// Fixed for now: the toggle above the canvas that answers this
-			// arrives in the next change. Nothing user-visible yet.
-			sampleValues: true,
+			// The live answer rather than a copy taken when the canvas was
+			// constructed, which is the same rule `selection` above follows.
+			get sampleValues(): boolean {
+				return samplesOn();
+			},
 		});
 		// The same mapping one region over, and the same reasons for the arrows.
 		// `errors` is the exception and deliberately not a getter: the panel is
@@ -396,6 +421,11 @@ export class LayoutEditorSection {
 			this.host.setSelection(SHEET_DESTINATION);
 		}
 
+		// Above the canvas it governs and under the picker, which is where the
+		// pane's other two `Setting` rows sit — and only once there is a canvas
+		// for it to govern, so the row never stands over the two states that
+		// draw no layout at all.
+		this.renderSampleRow(outline);
 		// The canvas draws the whole tree live, in one pass, whatever is
 		// selected — `docs/features/grid-canvas.md` §4 retires the old
 		// selection-gated schematic here.
@@ -482,6 +512,39 @@ export class LayoutEditorSection {
 				this.fieldErrors.delete(token);
 			}
 		}
+	}
+
+	/**
+	 * The **Sample values** row: whether the canvas is filled or empty
+	 * (`docs/features/preview-sample-values.md` §3).
+	 *
+	 * **A row of the pane's own chrome, not a field in the configuration
+	 * panel**, even though the Layout row's panel is where a layout's own
+	 * settings live: everything in that panel writes the layout file, and this
+	 * writes nothing. A view-state switch among fields that persist is a
+	 * confusion worth one row of chrome to avoid.
+	 *
+	 * Toggling redraws the canvas and nothing else — no `persist`, so no undo
+	 * step, and the tree's selection, the panel's fields and the scroll position
+	 * all survive it. The focus token is what puts an author back on this control
+	 * when a full pane redraw happens for some other reason.
+	 */
+	private renderSampleRow(container: HTMLElement): void {
+		new Setting(container)
+			.setName('Sample values')
+			// The second sentence is the one worth having: the first thing a
+			// cautious author wonders on seeing numbers appear is whose they are.
+			.setDesc(
+				'Draw the canvas with example values instead of an empty character\'s. Nothing is written to any note.',
+			)
+			.addToggle((toggle) => {
+				toggle.setValue(this.sampleValues);
+				toggle.toggleEl.dataset.sheetsmithFocus = 'sample-values';
+				toggle.onChange((value) => {
+					this.sampleValues = value;
+					this.canvas.redraw();
+				});
+			});
 	}
 
 	private renderSelectionRow(container: HTMLElement, files: TFile[]): void {
