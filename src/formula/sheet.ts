@@ -651,6 +651,19 @@ export function buildSheetScope(
 			const worth = (result: Value | null | undefined) =>
 				result === null || result === undefined ? undefined : clean(result);
 
+			// A second reserved suffix beside `.value`, registered here so both
+			// the `<name>` thunk below and this one exist whichever of the
+			// display/compute branches the entry takes, or neither. Gated on
+			// the entry carrying a `left` at all — most never do, and a
+			// component that never sets one costs nothing here, same as it
+			// costs nothing on `ScopeEntry` itself. Not pushed onto `published`:
+			// unlike `.value`, `.left` is not itself a name the `mod.` slot
+			// pass below needs to see, and it never has been asked to be.
+			if (entry.left !== undefined) {
+				const { left } = entry;
+				thunks.set(`${name}.left`, () => worth(left(resolve ?? (() => null))));
+			}
+
 			const { display, compute } = entry;
 			if (compute !== undefined) {
 				// A component with no resolver of its own still computes: what
