@@ -85,6 +85,9 @@ const MEMBER_ORDER = [
 	// Beside `palette` because it is the same job read the other way: one
 	// offers a configuration under a name, the other names a configuration.
 	'configName',
+	// Directly before `read`, because it is the body `read` is handed: the data
+	// path's own first step, in the one context where there is no note.
+	'sample',
 	'read',
 	'scopeValues',
 	'scopeRows',
@@ -545,6 +548,11 @@ describe.each(types)('component "%s"', (type) => {
 		// same question this way.
 		expect(typeof component.scopeValues).toBe('undefined');
 		expect(typeof component.scopeRows).toBe('undefined');
+		// A sample is a *section body*, and a container has no section: the
+		// sheet skips `getSection` and `read` for one, so whatever it returned
+		// would never be read by anything. `showsOneChild`'s own precedent — a
+		// member with no reading is worse than none.
+		expect(typeof component.sample).toBe('undefined');
 		expect(typeof component.scopeModifiers).toBe('undefined');
 		expect(typeof component.applyReset).toBe('undefined');
 		expect(component.hasBuffer).toBeUndefined();

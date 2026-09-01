@@ -7,6 +7,7 @@ import {
 	ModifierOutcome,
 	RenderContext,
 } from '../types';
+import { sampleOf } from '../test/sample';
 
 const config: CardConfig = {
 	id: 'armour-class',
@@ -108,6 +109,83 @@ describe('card.write', () => {
 		expect(card.write({ value: '15' }, null, config)).toBe(
 			'\n```sheet\nAC: 15\n```\n',
 		);
+	});
+});
+
+describe('card.sample', () => {
+	it('fills the author\'s own key, and the note line under it', () => {
+		const body = sampleOf(card, config);
+		const read = card.read(body, config);
+		if (!read.ok || read.data === null) throw new Error('expected data');
+		// The key is the layout's; only the value is this component's (§2).
+		expect(body).toContain('AC: ');
+		expect(Number(read.data.value)).toBeGreaterThan(1);
+		expect(read.data.note).toBeTruthy();
+		// Filler at a glance, so nobody mistakes a preview for their own data.
+		expect(read.data.note).toMatch(/^Note \d+$/);
+	});
+
+	it('gives two cards under different ids two different numbers', () => {
+		/*
+		 * A card sees only its own config, so an unseeded sample makes every plain
+		 * Card in a layout hold the first number of the sequence — and six cards
+		 * all reading 14 is exactly what `floor((value - 10) / 2)` cannot be judged
+		 * against. Keyed to `id` rather than `label`, so renaming a component does
+		 * not repaint the canvas under an author mid-edit.
+		 */
+		const one = sampleOf(card, { ...config, id: 'armour_class' });
+		const two = sampleOf(card, { ...config, id: 'initiative' });
+		expect(one).not.toBe(two);
+		// Renaming is not a repaint: same id, same filler.
+		expect(sampleOf(card, { ...config, id: 'armour_class', label: 'AC' })).toBe(one);
+	});
+
+	it('leaves the note out where the layout hides it', () => {
+		// Filling a line the sheet does not draw would be sampling a card
+		// nobody sees; the card's own note is usually its widest thing, so
+		// where it *is* drawn the sample has to fill it.
+		expect(sampleOf(card, { ...config, hideNote: true })).not.toContain('note:');
+		expect(sampleOf(card, config)).toContain('note:');
+	});
+
+	it('samples a dropdown\'s own choice rather than a number', () => {
+		const options: CardOption[] = [{ value: 'lawful' }, { value: 'neutral' }];
+		const body = sampleOf(card, { ...config, options });
+		expect(body).toContain('AC: lawful');
+		// And it is a value the menu can round-trip: a stored value the list
+		// has no line for is a state no character can be in.
+		const read = card.read(body, { ...config, options });
+		expect(read.ok && read.data?.value).toBe('lawful');
+	});
+
+	it('skips a choice a formula could not be read through', () => {
+		/*
+		 * The harness's own proficiency dropdown: `0, 1, 2` under
+		 * `abilities.DEX + value * 2`. Taking the first option draws the card with
+		 * the multiplication invisible, which is the one thing §2's number rule
+		 * exists to prevent — so the first *readable* option is preferred, while
+		 * the value stays one the menu actually offers.
+		 */
+		const graded: CardOption[] = [
+			{ value: '0', label: 'Untrained' },
+			{ value: '1', label: 'Proficient' },
+			{ value: '2', label: 'Expertise' },
+		];
+		expect(sampleOf(card, { ...config, options: graded })).toContain('AC: 2');
+	});
+
+	it('falls back to the first choice where every option is 0 or 1', () => {
+		// A two-state dropdown has nothing better to offer, and a value the list
+		// does not hold would be worse than an uninformative one.
+		const flag: CardOption[] = [{ value: '0' }, { value: '1' }];
+		expect(sampleOf(card, { ...config, options: flag })).toContain('AC: 0');
+	});
+
+	it('fills nothing for a config this card would refuse', () => {
+		// `read` reports the configuration from the same call either way, and a
+		// body under a key that cannot be stored would be a second fault on one
+		// card.
+		expect(sampleOf(card, { ...config, key: 'A: B' })).toBe('');
 	});
 });
 

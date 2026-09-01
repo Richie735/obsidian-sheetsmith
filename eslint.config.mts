@@ -213,6 +213,20 @@ export default defineConfig(
 								 */
 								'!./effective-value',
 								'!./stored-flag',
+								/*
+								 * **The filler a sample fills a config with**, shared by the
+								 * six components that declare a `sample`
+								 * (`docs/features/preview-sample-values.md` §2). The same
+								 * tier as `column-types.ts` and `stored-flag.ts` directly
+								 * above and below it: in no registry, declaring no
+								 * `ComponentDefinition`, importing nothing from `obsidian`
+								 * and touching no file — it holds a number sequence, a
+								 * spelling and two rules about them, which is a policy, and
+								 * PATTERNS §1's one-step tier extracts a policy rather than
+								 * letting six components each keep their own idea of what a
+								 * placeholder looks like.
+								 */
+								'!./sample-values',
 								'!../components/column-types',
 								'!../components/level-ring',
 								'!../components/card-face',
@@ -221,6 +235,7 @@ export default defineConfig(
 								'!../components/modifier-form',
 								'!../components/effective-value',
 								'!../components/stored-flag',
+								'!../components/sample-values',
 							],
 							message:
 								'A component must not import another component. Move the shared behaviour into a module named for what it does — a sibling painter, or src/interaction/ — and import that from both.',
