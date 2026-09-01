@@ -685,18 +685,47 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 		 * and could not be made into one: how many marks a segment holds is
 		 * layout configuration, not a name any formula on the sheet can see.
 		 */
-		const run = (key: string): ScopeEntry => ({
+		const run = (key: string, left?: ScopeEntry['left']): ScopeEntry => ({
 			value: data?.values[key],
 			compute: () => filled(key),
+			...(left !== undefined ? { left } : {}),
 		});
 
 		if (isRowSet(config)) {
 			// A component holding several values answers to `<id>.<name>`, as
 			// `abilities.DEX` does, and not under its bare id: there is no one
 			// number a set of runs could mean.
+			//
+			// A row set's own ceiling has nowhere to publish today — its
+			// entries already reach `<id>.<key>`, which is one segment short of
+			// a third for the ceiling to sit at (SPEC §13) — so a row-set
+			// entry gets `left` where a plain run does not: a plain run's own
+			// id is already the ceiling's home, at `<id>.count`, so a second
+			// name for the same fact there would be a second spelling of an
+			// equation a formula can already write. The row and its index are
+			// only needed inside the `left` closure itself — `countFor`, the
+			// same helper `render` and `applyReset` already share for a row's
+			// ceiling, resolves `rows.<index>.count` — so `run` still builds
+			// the shared `value`/`compute` shape; only the extra argument
+			// differs.
 			const named: Record<string, ScopeEntry> = {};
-			for (const row of config.rows ?? []) {
-				named[row.key] = run(row.key);
+			for (const [index, row] of (config.rows ?? []).entries()) {
+				named[row.key] = run(row.key, (resolve) => {
+					const count = countFor(config, row, index, resolve, resolve('count', {}));
+					if (count === null) return undefined;
+					// Unclamped, like the entry it sits beside: an overfull row
+					// already publishes a `<id>.<key>` past its own `.count`
+					// (SPEC §7's "a stored value outside the run is rendered,
+					// not corrected"), and flooring `.left` alone would put the
+					// two suffixes at odds about the same row. Publishes
+					// nothing wherever either half fails to resolve — the
+					// row's count formula, or a fill the note has not stored
+					// yet — on SPEC §5's blanket "a name that will not
+					// resolve publishes nothing", one row's failure never
+					// taking the others with it.
+					const held = filled(row.key);
+					return held === undefined ? undefined : count - held;
+				});
 			}
 			return { named };
 		}
