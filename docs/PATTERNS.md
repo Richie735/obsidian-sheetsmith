@@ -319,8 +319,8 @@ Every component follows the same order. A reader who knows one knows them all.
 7. **`export const x: ComponentDefinition<XConfig, XData>`**, members in this
    order [judgement]:
    `type`, `storage`, `showsOneChild`, `formulaFields`, `configFields`, `palette`,
-   `configName`, `read`, `scopeValues`, `scopeRows`, `scopeModifiers`, `write`,
-   `hasBuffer`, `applyReset`, `render`.
+   `configName`, `sample`, `read`, `scopeValues`, `scopeRows`, `scopeModifiers`,
+   `write`, `hasBuffer`, `applyReset`, `render`.
    Contract first, then the data path in the order it runs, then rendering last
    because it is the longest. `showsOneChild` sits beside `storage` because it is
    the same kind of fact: what this component is structurally, before anything
@@ -328,7 +328,9 @@ Every component follows the same order. A reader who knows one knows them all.
    reads in that order — here are the settings, and here is one of them filled in
    for a job; `configName` follows `palette` because it is the same job read the
    other way, one offering a configuration under a name and the other naming a
-   configuration. `scopeRows` sits beside `scopeValues` because it
+   configuration. `sample` sits directly before `read` because it is the
+   body `read` is handed: the data path's own first step, in the one context
+   where there is no note. `scopeRows` sits beside `scopeValues` because it
    is the same job read the other way: one publishes the component's names, the
    other the rows that have none. `scopeModifiers` sits beside both because it is
    the same job read a third way — the changes this component declares against

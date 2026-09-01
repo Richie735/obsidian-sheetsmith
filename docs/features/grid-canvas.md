@@ -615,11 +615,15 @@ implementation and every round of findings.
 
 ## Deliberately not doing
 
-**No preview panel, no sample values.** `SPEC` §7 item 7 is unchanged and
-still blocked on where sample values live outside `harness/samples.ts`. The
-canvas's `data: null` rendering is not that feature: it shows what a fresh
-character looks like, not a chosen set of representative values, and it
-introduces no mechanism for an author to type a sample into a layout file.
+**No preview panel, no sample values — *superseded*.** This bullet said `SPEC`
+§7 item 7 was blocked on where sample values live outside `harness/samples.ts`,
+and `docs/features/preview-sample-values.md` is where that was answered: a
+component declares its own `sample`, as a section body derived from the config
+it was handed, and the canvas hands that body to the component's own `read` in
+place of the empty one. The half of this bullet that still holds is the half
+about the *layout file*: there is still no mechanism for an author to type a
+sample into one, and there is still no second surface — Preview is this same
+canvas with a different data source, not a panel beside it.
 
 **No character-editing surface on the canvas.** Every live component is
 `inert`; nothing typed into a card, dragged on a pool, or opened in a
