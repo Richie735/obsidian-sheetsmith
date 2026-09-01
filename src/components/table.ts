@@ -85,6 +85,13 @@ import {
 	modifierFormState,
 	renderModifierForm,
 } from './modifier-form';
+import {
+	sampleFlag,
+	sampleNumber,
+	samplePart,
+	sampleSeed,
+	sampleText,
+} from './sample-values';
 import { flagReading, flagText, isFlagSet } from './stored-flag';
 import {
 	AnchoredPanel,
@@ -827,6 +834,46 @@ function configError(config: TableConfig): string | null {
 	return `${error} Until this is fixed, the modifiers this table's rows apply are not applied, so the values they change read as though nothing changed them.`;
 }
 
+/**
+ * What one cell holds in a sample, or null for a column that stores nothing a
+ * sample may fill.
+ *
+ * `row` is which row this is, for everything a reader compares down a column;
+ * `at` is which cell it is across the whole table, so two numbers side by side
+ * are never the same number — `sampleNumber`'s own sequence does the rest.
+ *
+ * **A modifier cell is left empty**, which is the one rule here that is about
+ * something other than looking plausible: a name in that cell enrols the row in
+ * one of the *layout's* definitions, and a layout the author is still building
+ * may declare none — so a sample that named one would put a definition problem
+ * on screen that the author did not cause (`docs/features/preview-sample-values.md`
+ * §2). An empty modifier cell is also an ordinary state: on an inventory, most
+ * rows have one.
+ */
+function sampleCell(column: TableColumn, row: number, at: number): string | null {
+	switch (columnType(column)) {
+		case 'number':
+			return String(sampleNumber(at));
+		case 'toggle':
+			return flagText(sampleFlag(row));
+		case 'level':
+			// A level column is a flag with a ladder in it, so it answers both
+			// rules at once: alternate rows carry a level at all, and the level
+			// they carry is partway up rather than at the top.
+			return String(sampleFlag(row) ? samplePart(levelCount(column)) : 0);
+		// A computed column stores nothing, so it is never offered one — but
+		// naming it beside the modifier column says so, rather than letting the
+		// default answer for it.
+		case 'modifier':
+		case 'computed':
+			return null;
+		default:
+			// The heading the reader sees, so a sample says which column it is
+			// filling in the author's own word rather than in the note's key.
+			return sampleText(column.name ?? column.key, row);
+	}
+}
+
 export const table: ComponentDefinition<TableConfig, TableData> = {
 	type: 'table',
 	storage: 'markdown',
@@ -931,6 +978,61 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			},
 		},
 	],
+
+	/*
+	 * The layout's own rows filled in, and — only where the layout lets a
+	 * character add rows — two rows of the character's own under them.
+	 *
+	 * **The added rows are the half worth arguing.** A declared row is one every
+	 * character has, so filling those is not a choice; adding two beside them is,
+	 * and it is what makes an open list look like the thing it becomes. An
+	 * inventory declares no rows at all (both palette entries do exactly that),
+	 * so without them the one component whose whole point is that the character
+	 * fills it would preview as a header row and nothing else — a table that
+	 * cannot show whether its columns are wide enough for anything. Two rather
+	 * than one, so a flag column shows both paints and a total has something to
+	 * add up; and none at all where `openRows` is off, because a row the config
+	 * refuses is a row no character could type (§2).
+	 *
+	 * They are named for the name column's own heading, so an inventory's are
+	 * `Item 1` and `Item 2` — the author's word, not this component's.
+	 *
+	 * A table that cannot be drawn fills nothing: `read` reports the configuration
+	 * error from the same call either way, and a table written under a column key
+	 * this component refuses would be a second thing wrong on it.
+	 */
+	sample(config): string {
+		if (configError(config) !== null) return '';
+		const nameHeader = headers(config)[0] as string;
+		const columns = storedColumns(config);
+		// This table's own place in the sequence, so two tables in one layout do
+		// not fill their number columns identically.
+		const seed = sampleSeed(config.id);
+		const rowAt = (name: string, index: number): Map<string, string> => {
+			const cells = new Map<string, string>([[nameHeader, name]]);
+			columns.forEach((column, at) => {
+				const value = sampleCell(column, index, seed + index * columns.length + at);
+				if (value !== null) cells.set(column.key, value);
+			});
+			return cells;
+		};
+		// The guard above has already refused a row with no name, so every label
+		// here is one `claimRows` can match — written the file's own way, since
+		// a hand-edited layout is what both of them are defending against.
+		const rows = (config.rows ?? []).map((row, index) =>
+			rowAt((row.label ?? '').trim(), index),
+		);
+		if (config.openRows === true) {
+			for (const which of [0, 1]) {
+				rows.push(rowAt(sampleText(nameHeader, which), rows.length));
+			}
+		}
+		// A layout that declares no rows and lets the character add none has
+		// nothing to fill, so the section stays empty and the table draws its
+		// headings exactly as it does today.
+		if (rows.length === 0) return '';
+		return writeTable(null, headers(config), { added: rows });
+	},
 
 	read(body, config): ReadResult<TableData> {
 		const error = configError(config);

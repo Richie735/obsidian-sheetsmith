@@ -4,6 +4,7 @@ import { cancel, hold, press, pressDown, release } from '../test/pointer';
 import { FOCUSABLE } from '../view/cell-focus';
 import { pool, PoolConfig, PoolData } from './pool';
 import { RenderContext } from '../types';
+import { sampleOf } from '../test/sample';
 
 const config: PoolConfig = {
 	id: 'hp',
@@ -146,6 +147,47 @@ describe('pool.scopeValues', () => {
 			pool.scopeValues?.({ temp: '4' }, { ...config, hasTemp: true })?.named?.temp,
 		).toEqual({ value: '4' });
 		expect(pool.scopeValues?.({ temp: '4' }, config)?.named?.temp).toBeUndefined();
+	});
+});
+
+describe('pool.sample', () => {
+	/** The entries a sample body holds, by key. */
+	function entries(body: string): Record<string, string> {
+		const read = pool.read(body, config);
+		if (!read.ok || read.data === null) throw new Error('expected data');
+		return read.data as Record<string, string>;
+	}
+
+	it('sits below a ceiling the layout states, rather than at either end', () => {
+		// A full bar and an empty bar look alike at a glance; a partial one
+		// does not, and the fill is the thing an author is looking at.
+		const { current } = entries(sampleOf(pool, config));
+		expect(Number(current)).toBeGreaterThan(0);
+		expect(Number(current)).toBeLessThan(31);
+	});
+
+	it('stays a plausible number where the ceiling is a formula it cannot resolve', () => {
+		// A component never sees the formula environment, so the filler number
+		// stands in for the ceiling — small enough to fit a card, and never 0.
+		const { current } = entries(sampleOf(pool, { ...config, max: '8 + con * level' }));
+		expect(Number(current)).toBeGreaterThan(1);
+		expect(Number(current)).toBeLessThan(20);
+	});
+
+	it('fills the buffer only where the layout declares one', () => {
+		expect(sampleOf(pool, config)).not.toContain('temp:');
+		const withTemp = entries(sampleOf(pool, { ...config, hasTemp: true }));
+		// Smaller than the pool under it, so the two read as two quantities.
+		expect(Number(withTemp.temp)).toBeGreaterThan(0);
+		expect(Number(withTemp.temp)).toBeLessThan(Number(withTemp.current));
+	});
+
+	it('writes a max only where the character owns it', () => {
+		// The same rule `write` follows: a calculated pool never stores a max,
+		// so a sample that did would be a body no edit could produce.
+		expect(sampleOf(pool, config)).not.toContain('max:');
+		const owned = entries(sampleOf(pool, { ...config, maxSource: 'character' }));
+		expect(Number(owned.max)).toBeGreaterThan(Number(owned.current));
 	});
 });
 

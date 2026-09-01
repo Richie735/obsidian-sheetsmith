@@ -17,6 +17,7 @@ import {
 import { buildSheetScope } from '../formula/sheet';
 import { makeFieldResolver } from '../formula/resolve';
 import { RenderContext } from '../types';
+import { sampleOf } from '../test/sample';
 
 const config: TrackConfig = {
 	id: 'exhaustion',
@@ -565,6 +566,66 @@ describe('track.applyReset', () => {
 
 	it('declares no buffer', () => {
 		expect(track.hasBuffer).toBeUndefined();
+	});
+});
+
+describe('track.sample', () => {
+	/** The marks a sample stores, by run key. */
+	function marks(config: TrackConfig): Record<string, string> {
+		const read = track.read(sampleOf(track, config), config);
+		if (!read.ok || read.data === null) throw new Error('expected data');
+		return read.data.values;
+	}
+
+	it('part-marks a run rather than filling or clearing it', () => {
+		const value = Number(marks(config).value);
+		expect(value).toBeGreaterThan(0);
+		expect(value).toBeLessThan(6);
+	});
+
+	it('counts marks, not segments, where a segment holds several', () => {
+		// An Ironsworn progress track: the note stores marks, so a sample that
+		// stored a segment count would draw a tenth of the run it meant.
+		const value = Number(marks({ ...config, count: 10, marks: 4 }).value);
+		expect(value).toBeGreaterThan(4);
+		expect(value % 4).toBe(0);
+	});
+
+	it('marks each run of a set against its own length', () => {
+		const filled = marks(slots);
+		expect(Object.keys(filled)).toEqual(['L1', 'L2', 'L3']);
+		expect(Number(filled.L1)).toBeGreaterThan(Number(filled.L2));
+		expect(Number(filled.L2)).toBeGreaterThan(0);
+		// L3 falls back to the component's own count of 1 — one segment, still
+		// spelled as a count rather than as `yes`, because the flag spelling is
+		// per card and this card's first run is five segments long.
+		expect(filled.L3).toBe('1');
+	});
+
+	it('shows both states of a checklist of flags, set first', () => {
+		const checklist: TrackConfig = {
+			...config,
+			count: 1,
+			rows: [{ key: 'a' }, { key: 'b' }, { key: 'c' }],
+		};
+		expect(marks(checklist)).toEqual({ a: 'yes', b: 'no', c: 'yes' });
+	});
+
+	it('writes a lone flag as yes, so a sample of one shows the marked state', () => {
+		expect(marks({ ...config, count: 1 })).toEqual({ value: 'yes' });
+	});
+
+	it('marks one segment where the run\'s length is a formula', () => {
+		// The length resolves against the whole sheet and this component never
+		// sees that environment, so the smallest partial state is the honest
+		// filler — a guess could fill the run to its end.
+		expect(marks({ ...config, count: 'level + 1' })).toEqual({ value: '1' });
+	});
+
+	it('fills nothing for a card that cannot be drawn', () => {
+		// `render` reports the configuration instead, and a body under a key
+		// this card refuses would be a second fault on one card.
+		expect(sampleOf(track, { ...config, count: undefined })).toBe('');
 	});
 });
 

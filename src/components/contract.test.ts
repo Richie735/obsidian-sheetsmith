@@ -16,6 +16,8 @@ import {
 	placesChildren,
 	ScopeEntry,
 } from '../types';
+import { buildSheet, ReadComponent } from '../formula/sheet';
+import { Layout } from '../parse/layout';
 
 /*
  * Registry-wide contract checks (SPEC §4.1).
@@ -516,6 +518,247 @@ describe('a component that draws a label asks whether it should', () => {
 		}
 		// And the prose it must not fire on.
 		expect(NATIVE_CHECKBOX.test('A plain 1 makes this a checkbox.')).toBe(false);
+	});
+});
+
+/*
+ * What a component says a sample of itself looks like
+ * (`docs/features/preview-sample-values.md`).
+ *
+ * Registry-wide because every rule here is about the member rather than about
+ * any one component's filler: that it reads, that it writes back byte for byte,
+ * that it holds no link and enrols in no modifier, and that nothing but the
+ * layout editor's canvas ever calls it. What a *particular* sample contains —
+ * a Pool below its max, a Track part-marked, a Table's added rows — is that
+ * component's own test file, on §10's rule.
+ */
+describe('a component that says what a sample of itself looks like', () => {
+	/**
+	 * Every config a registry-wide sweep can hand a component: the bare one the
+	 * editor writes, and each palette entry's prefill on top of it.
+	 *
+	 * The palette entries are what stop this being a check of six empty bodies.
+	 * A Card set with no entries and a Table with no columns correctly sample
+	 * nothing, and their palette configs are the only configuration this file
+	 * can reach without holding a sample config per component type — the one
+	 * thing it exists not to do.
+	 */
+	function configsFor(type: string): ComponentConfig[] {
+		return [
+			bareConfig(type),
+			...paletteEntries(type).map((entry) => ({
+				...bareConfig(type),
+				...entry.config,
+			})),
+		];
+	}
+
+	interface Sampled {
+		type: string;
+		/** Which configuration this is, for an assertion that names them. */
+		where: string;
+		config: ComponentConfig;
+		body: string;
+	}
+
+	/** Every sample the registry can produce, with the config it came from. */
+	function samples(): Sampled[] {
+		const out: Sampled[] = [];
+		for (const type of types) {
+			const component = getComponent(type);
+			if (component?.sample === undefined) continue;
+			const entries = paletteEntries(type);
+			configsFor(type).forEach((config, index) => {
+				out.push({
+					type,
+					where:
+						index === 0 ? `${type} bare` : `${type} ${entries[index - 1]?.name ?? ''}`,
+					config,
+					body: component.sample?.(config) ?? '',
+				});
+			});
+		}
+		return out;
+	}
+
+	/**
+	 * The samples with something in them, which is what most rules below are
+	 * about — the empty ones are named by the case directly below rather than
+	 * silently dropped, so a sample that started returning nothing shows up as a
+	 * failure there instead of quietly leaving every loop here.
+	 */
+	function filled(): Sampled[] {
+		return samples().filter((entry) => entry.body !== '');
+	}
+
+	/**
+	 * Every configuration this sweep reaches, named.
+	 *
+	 * **Named rather than counted**, on the row-source check's own argument one
+	 * file over: a floor like "more than five" permits three of eleven going
+	 * quietly empty, and the whole exposure of a sample is that an empty one is
+	 * indistinguishable from a component that has nothing to say. Naming them
+	 * means a palette entry added or a sample dropped is a line somebody edits,
+	 * which is the decision being asked for.
+	 */
+	const SWEPT = [
+		'card bare',
+		'card Dropdown',
+		'card-set bare',
+		'card-set Currency',
+		'pool bare',
+		'rich-text bare',
+		'table bare',
+		'table Inventory',
+		'table Features',
+		'track bare',
+		'track Checkbox',
+	];
+
+	/**
+	 * The three configurations that name nothing to fill, which is the honest
+	 * answer rather than an invented key: a Card set with no entries, a Table
+	 * with no rows and no open rows, and a Track with no count, levels or rows —
+	 * the last of which is a configuration error the card reports in place.
+	 */
+	const EMPTY = ['card-set bare', 'table bare', 'track bare'];
+
+	it('sweeps every sampled configuration, and fills all but the ones that name nothing', () => {
+		expect(samples().map((entry) => entry.where)).toEqual(SWEPT);
+		expect(
+			samples()
+				.filter((entry) => entry.body === '')
+				.map((entry) => entry.where),
+		).toEqual(EMPTY);
+	});
+
+	it('fixes where a sample is declared, between naming a config and reading one', () => {
+		// The member order is checked per component below; what it cannot say is
+		// *where* this one belongs, since a component that declares it in the
+		// wrong place is only caught if `MEMBER_ORDER` holds the right place.
+		expect(MEMBER_ORDER.indexOf('sample')).toBe(
+			MEMBER_ORDER.indexOf('configName') + 1,
+		);
+		expect(MEMBER_ORDER.indexOf('read')).toBe(MEMBER_ORDER.indexOf('sample') + 1);
+		// And the rule applied to something that breaks it, so an order check
+		// that had stopped comparing anything does not read as a rule nothing
+		// violates — the same shape as the two-things-about-one-name case above.
+		const declared = ['type', 'storage', 'read', 'sample'];
+		const known = declared.filter((name) => MEMBER_ORDER.includes(name));
+		const expected = MEMBER_ORDER.filter((name) => declared.includes(name));
+		expect(known).not.toEqual(expected);
+	});
+
+	it('declares every contract member the order names, and no other', () => {
+		/*
+		 * `MEMBER_ORDER` against the interface itself. The per-component checks
+		 * below hold each component to the list; this holds the *list* to the
+		 * contract, so a member added to `ComponentDefinition` and not to the
+		 * order silently escapes both — it would fall outside the order check and
+		 * outside "declares nothing outside the contract" at once.
+		 *
+		 * The floor first, because an equality between two derived lists is the
+		 * shape most exposed to a vacuous pass: a regex that stopped matching
+		 * would make both sides agree on nothing at all.
+		 */
+		const body = TYPES.slice(TYPES.indexOf('export interface ComponentDefinition<'));
+		const members = [...body.slice(0, body.indexOf('\n}')).matchAll(/^\t(\w+)\??[(:<]/gm)]
+			.map((match) => match[1] as string);
+		expect(members.length).toBeGreaterThan(10);
+		expect([...members].sort()).toEqual([...MEMBER_ORDER].sort());
+	});
+
+	it('reads back every sample it declares, under every config it is offered', () => {
+		// The point of the member: a sample is a *body*, so it goes through the
+		// component's own `read` and a sample that could not be stored in a note
+		// fails here rather than drawing a state no character can be in.
+		const seen = filled();
+		// The floor, exact rather than approximate: the case above names every
+		// configuration this sweep reaches and which of them fill nothing, so
+		// there is no reason for this to accept a smaller number than that.
+		expect(seen.map((entry) => entry.where)).toEqual(
+			SWEPT.filter((where) => !EMPTY.includes(where)),
+		);
+		for (const { type, config, body } of seen) {
+			const result = getComponent(type)?.read(body, config);
+			expect(result?.ok, `${type} cannot read its own sample`).toBe(true);
+			// A body with something in it that reads as nothing stored is a
+			// sample that draws exactly the empty card it was meant to fill.
+			if (result?.ok) expect(result.data, `${type} samples nothing`).not.toBeNull();
+		}
+	});
+
+	it('writes every sample back byte for byte', () => {
+		// Constraint 3 over one more body per component, and a round-trip
+		// fixture the component did not choose its own config for.
+		const seen = filled();
+		expect(seen).toHaveLength(SWEPT.length - EMPTY.length);
+		for (const { type, config, body } of seen) {
+			const component = getComponent(type);
+			const result = component?.read(body, config);
+			if (!result?.ok || result.data === null) continue;
+			expect(
+				component?.write(result.data, body, config),
+				`${type} does not write its own sample back unchanged`,
+			).toBe(body);
+		}
+	});
+
+	it('puts no wikilink in a sample', () => {
+		// There is no vault behind the canvas, so a link would draw unresolved
+		// and read as a fault in the author's layout rather than as filler.
+		const seen = filled();
+		expect(seen).toHaveLength(SWEPT.length - EMPTY.length);
+		for (const { where, body } of seen) {
+			expect(body, `${where} samples a wikilink`).not.toContain('[[');
+		}
+	});
+
+	it('builds a sheet from every sample, and enrols none of them in a modifier', () => {
+		/*
+		 * A modifier cell names one of the *layout's* definitions, and a layout
+		 * the author is still building may declare none — so a sample naming one
+		 * would put a definition problem on screen that the author did not cause.
+		 *
+		 * **What this case proves, exactly.** Every sample survives a real
+		 * `buildSheet` — the path the canvas takes, read then build — and no
+		 * component's `scopeModifiers` yields a push from its own sample. What it
+		 * does *not* prove is the case with a cell to leave empty: reaching that
+		 * needs a config with a modifier column in it, which is one component's
+		 * data shape and the thing this file exists not to hold, so the enrolment
+		 * check with teeth in it is `table.test.ts`'s. This is the standing sweep
+		 * that no *other* component grows a push quietly, and it is worth what it
+		 * is worth rather than more.
+		 *
+		 * It used to assert `modifiers.definitions` was empty as well. That was
+		 * entailed by the fixture — the table is derived from the layout's own
+		 * declared definitions and this layout declares none — so it could not
+		 * fail, whatever any sample did.
+		 */
+		const prepared: ReadComponent[] = [];
+		for (const { type, config, body } of filled()) {
+			const component = getComponent(type);
+			const result = component?.read(body, config);
+			prepared.push({
+				config: { ...config, id: `${type}_${prepared.length}` },
+				component,
+				data: result?.ok === true ? result.data : null,
+				error: null,
+			});
+		}
+		expect(prepared).toHaveLength(SWEPT.length - EMPTY.length);
+		const layout: Layout = {
+			name: 'Samples',
+			components: prepared.map((entry) => entry.config),
+		};
+		// Built and then read from, so a sample that broke the build fails here
+		// rather than in whichever later case happened to touch it first.
+		expect(() => buildSheet(layout, prepared)).not.toThrow();
+		for (const entry of prepared) {
+			const source = entry.component?.scopeModifiers?.(entry.data, entry.config);
+			const pushes = source?.(() => null) ?? [];
+			expect(pushes, `${entry.config.type} enrols its sample`).toEqual([]);
+		}
 	});
 });
 

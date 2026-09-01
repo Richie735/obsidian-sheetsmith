@@ -31,6 +31,7 @@ import {
 } from '../types';
 import { bindEditable, EditableHandle } from '../interaction/editable';
 import { formatDerived } from './card-face';
+import { samplePart, sampleNumber, sampleSeed } from './sample-values';
 
 /** Entry keys in the fenced block. Fixed, so hand-editing reads the same. */
 const CURRENT_KEY = 'current';
@@ -519,6 +520,53 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 			default: false,
 		},
 	],
+
+	/*
+	 * A pool sitting below its ceiling, with a buffer where the layout declares
+	 * one — the "partial is preferred to a full one" rule, on the component the
+	 * rule was written for: a full bar and an empty bar look alike at a glance
+	 * and neither says whether the fill works.
+	 *
+	 * **The ceiling is only sometimes knowable, and the sample says which.** A
+	 * character's max is a number this body writes, so the fill is exact. A
+	 * calculated max is a formula field resolved against the whole sheet, and
+	 * nothing here can evaluate one — a component never sees the environment —
+	 * so a literal is read where the layout wrote one and the filler number
+	 * stands in where it wrote an expression. That keeps the value in the same
+	 * band as every other sample, which is what `sampleNumber`'s own range was
+	 * chosen for: a pool whose max works out smaller still draws a number it can
+	 * hold, and the "above maximum" colour it may land in is a real state a
+	 * reader can be in rather than a fault in the layout.
+	 *
+	 * The buffer is a part of the value rather than of the ceiling: temporary
+	 * points are a quantity above the max whose size no config states, and one
+	 * smaller than the pool under it is what a reader can tell apart from the
+	 * pool at a glance.
+	 */
+	sample(config): string {
+		const characterMax = config.maxSource === 'character';
+		// A ceiling the layout stated outright, or null where it stated an
+		// expression, nothing at all, or a number no bar could be drawn from —
+		// `render`'s own `configuredCeiling` rule, applied to config alone.
+		const raw = String(config.max ?? '').trim();
+		const stated = raw === '' ? Number.NaN : Number(raw);
+		// The stand-in ceiling is keyed to this pool's own id, so two pools whose
+		// maxes are both formulas do not draw the same two numbers.
+		const ceiling =
+			!characterMax && Number.isFinite(stated) && stated > 0
+				? stated
+				: sampleNumber(sampleSeed(config.id));
+		const current = samplePart(ceiling);
+		const updates = new Map<string, string>([[CURRENT_KEY, String(current)]]);
+		if (config.hasTemp === true) {
+			updates.set(TEMP_KEY, String(samplePart(current)));
+		}
+		// Written only where the character owns it, exactly as `write` does: a
+		// calculated pool never stores a max, and a sample that did would be a
+		// body no edit of this card could ever produce.
+		if (characterMax) updates.set(MAX_KEY, String(ceiling));
+		return writeFenced(null, updates);
+	},
 
 	read(body): ReadResult<PoolData> {
 		const parsed = readFenced(body);

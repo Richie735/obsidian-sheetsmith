@@ -43,6 +43,7 @@ import {
 	isFlagSet,
 	isFlagSpelling,
 } from './stored-flag';
+import { sampleFlag, samplePart } from './sample-values';
 import { bindLongPress } from '../ui/popover';
 import { readFenced, writeFenced } from '../parse/fenced';
 import {
@@ -540,6 +541,54 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			config: { count: 1 },
 		},
 	],
+
+	/*
+	 * Every run part-marked, under the layout's own keys and in this card's own
+	 * spelling — which is `spelledMarks`' whole job, so nothing here learns
+	 * whether it is filling a checkbox or a ten-segment clock.
+	 *
+	 * **A flag alternates instead of filling.** A run of one segment has two
+	 * states and no inside, so "partial" has no meaning on it and the rule that
+	 * applies is the other one: a checklist shows both paints, set first, so a
+	 * card of one flag still shows the marked state an empty canvas could not.
+	 *
+	 * **A run whose length is a formula gets one segment.** The length resolves
+	 * against the whole sheet and a component never sees that environment, so
+	 * the honest filler is the smallest part any run has: one segment is
+	 * partial for every count above one, where a guess at the ceiling could
+	 * fill the run to its end and draw the one state this preview exists to
+	 * avoid.
+	 *
+	 * Two runs of the same length fill alike, deliberately. A run's marks are
+	 * read against its own end rather than against its neighbour's — death
+	 * saves are three and three — so varying them by position would be filler
+	 * pretending to be a character.
+	 */
+	sample(config): string {
+		// A card that cannot be drawn is not filled: `render` reports the
+		// configuration instead, and a body under a key this card refuses would
+		// be a second thing wrong on it. Card's own rule, one component over.
+		if (configError(config) !== null) return '';
+		const marks = markSize(config);
+		const flag = isFlagCard(config);
+		const updates = new Map<string, string>();
+		// `row.key` verbatim, as `read`, `write` and `applyReset` all take it: the
+		// guard above has already refused a key the fenced block could not hold —
+		// blank, holding a colon or a line break, or repeated — and a card with no
+		// rows runs under `runsOf`'s own synthesised `value`.
+		runsOf(config).forEach((row, index) => {
+			if (flag) {
+				updates.set(row.key, spelledMarks(config, sampleFlag(index) ? 1 : 0));
+				return;
+			}
+			const count = segmentCount(config, row.count ?? config.count);
+			updates.set(
+				row.key,
+				spelledMarks(config, count === null ? marks : samplePart(count * marks)),
+			);
+		});
+		return updates.size === 0 ? '' : writeFenced(null, updates);
+	},
 
 	read(body, config): ReadResult<TrackData> {
 		const parsed = readFenced(body);

@@ -21,6 +21,7 @@ import {
 } from '../types';
 import { cellParts, parseModifierPart } from '../parse/modifier-cell';
 import { closeAnchoredPanel } from '../ui/anchored-panel';
+import { sampleOf } from '../test/sample';
 
 /*
  * A D&D skill list, which is what fixed rows exist for: the layout owns the
@@ -375,6 +376,107 @@ describe('table.write', () => {
 			config,
 		);
 		expect(out.startsWith('\nWhat these are for.\n')).toBe(true);
+	});
+});
+
+describe('table.sample', () => {
+	/** A sample's rows, as `read` hands them back. */
+	function rows(over: TableConfig): { name: string; cells: Record<string, string> }[] {
+		const body = sampleOf(table, over);
+		const read = table.read(body, over);
+		if (!read.ok || read.data === null) throw new Error('expected data');
+		return Object.values(read.data.rows).map((row) => ({
+			name: row.name ?? '',
+			cells: row.cells ?? {},
+		}));
+	}
+
+	it('fills the rows the layout declares, under the layout\'s own headings', () => {
+		const filled = rows(config);
+		expect(filled.map((row) => row.name)).toEqual(['Acrobatics', 'Perception']);
+		// A number per stored column, and no two side by side alike.
+		expect(Number(filled[0]?.cells.training)).toBeGreaterThan(1);
+		expect(filled[0]?.cells.training).not.toBe(filled[0]?.cells.bonus);
+		// A computed column stores nothing, so nothing is written for it.
+		expect(sampleOf(table, config)).not.toContain('Total');
+	});
+
+	it('adds rows of the character\'s own only where the layout allows them', () => {
+		// A declared-rows table with `openRows` off fills its rows and adds none;
+		// a row the config refuses is a row no character could type.
+		expect(rows(config)).toHaveLength(2);
+		const open = rows({ ...config, openRows: true });
+		expect(open).toHaveLength(4);
+		// Named for the name column's own heading, so the words are the
+		// author's and the index says it is filler.
+		expect(open[2]?.name).toBe('Skill 1');
+		expect(open[3]?.name).toBe('Skill 2');
+	});
+
+	it('fills an open list that declares no rows at all', () => {
+		// Both palette entries are exactly this: without the added rows, the one
+		// component whose point is that the character fills it would preview as
+		// a header row and nothing else.
+		const inventory: TableConfig = {
+			...config,
+			rowHeader: 'Item',
+			rows: undefined,
+			openRows: true,
+			columns: [{ key: 'Qty', type: 'number' }, { key: 'Weight', type: 'number', total: true }],
+		};
+		const filled = rows(inventory);
+		expect(filled.map((row) => row.name)).toEqual(['Item 1', 'Item 2']);
+		expect(Number(filled[0]?.cells.weight)).toBeGreaterThan(0);
+	});
+
+	it('shows both states of a flag column and part of a level column', () => {
+		const marked: TableConfig = {
+			...config,
+			columns: [
+				{ key: 'Prof', type: 'level', levels: ['Untrained', 'Trained', 'Expert'] },
+				{ key: 'Worn', type: 'toggle' },
+			],
+		};
+		const filled = rows(marked);
+		expect(filled.map((row) => row.cells.worn)).toEqual(['yes', 'no']);
+		// Partway up rather than at the top, on the row that carries a level.
+		expect(filled[0]?.cells.prof).toBe('1');
+		expect(filled[1]?.cells.prof).toBe('0');
+	});
+
+	it('enrols no row in a modifier', () => {
+		/*
+		 * The rule the registry-wide sweep cannot reach, because building a
+		 * config with a modifier column in it is this component's data shape: a
+		 * name in that cell enrols the row in one of the *layout's* definitions,
+		 * and a layout the author is still building may declare none — so a
+		 * sample naming one would put a definition problem on screen that the
+		 * author did not cause.
+		 */
+		const enrolling: TableConfig = {
+			...config,
+			columns: [{ key: 'Qty', type: 'number' }, { key: 'Mods', type: 'modifier' }],
+		};
+		const filled = rows(enrolling);
+		expect(filled.every((row) => (row.cells.mods ?? '') === '')).toBe(true);
+		// And the same claim one layer up, where the sheet reads it: the rows
+		// this table pushes to the modifier table are none.
+		const read = table.read(sampleOf(table, enrolling), enrolling);
+		if (!read.ok) throw new Error('expected a readable sample');
+		const source = table.scopeModifiers?.(read.data, enrolling);
+		expect(source?.(() => null) ?? []).toEqual([]);
+	});
+
+	it('fills nothing where there is nothing to fill', () => {
+		// No declared rows and no rows the character may add: the table draws
+		// its headings, exactly as it does with no sample at all.
+		expect(sampleOf(table, { ...config, rows: undefined })).toBe('');
+	});
+
+	it('fills nothing for a table that cannot be drawn', () => {
+		expect(
+			sampleOf(table, { ...config, columns: [{ key: 'Qty' }, { key: 'Qty' }] }),
+		).toBe('');
 	});
 });
 
