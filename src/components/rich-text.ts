@@ -77,6 +77,7 @@ import {
 	showsOwnLabel,
 } from '../types';
 import { adoptRenderedLinks, paintLinkedText } from './linked-text';
+import { sampleText } from './sample-values';
 import { spellcheckWhileFocused } from '../ui/spellcheck';
 import { startsSection } from '../parse/character';
 
@@ -164,6 +165,37 @@ export const richText: ComponentDefinition<RichTextConfig, RichTextData> = {
 			default: false,
 		},
 	],
+
+	/*
+	 * Two short paragraphs of obvious filler.
+	 *
+	 * **Two rather than one**, because the break between them is the only thing
+	 * about this block a canvas can be wrong about and an empty one never showed:
+	 * the box is a fixed height whatever is in it (see the header), so what an
+	 * author is judging here is whether prose fills that box, wraps inside it and
+	 * stops where the placement said — and a single line answers none of that.
+	 *
+	 * **It says out loud that it is filler.** Every other component's sample is
+	 * unmistakable because it is a number or a `Name n`; prose is the one place a
+	 * plausible-looking sample would read as somebody's actual backstory, so this
+	 * one names itself. The block's own label carries the index, so the words a
+	 * reader recognises are still the author's (§2).
+	 *
+	 * No markdown, and no wikilink. A sample draws through `paintParagraphs`
+	 * wherever there is no renderer — the layout editor's canvas hands over none
+	 * (`docs/UI.md` §12) — so anything but prose would draw as its own source, and
+	 * a link would draw unresolved against a canvas with no vault behind it.
+	 */
+	sample(config): string {
+		// The block's own name, or a word for what it holds where the layout has
+		// not given it one — an unnamed block still has to fill something in.
+		const name = config.label.trim() === '' ? 'Text' : config.label.trim();
+		const paragraphs = [
+			`${sampleText(name, 0)}. Sample text, so the block shows how a paragraph fills the box and where it stops.`,
+			`${sampleText(name, 1)}. A second paragraph, so the space between two is visible as well.`,
+		];
+		return writeBodyText(null, paragraphs.join('\n\n'));
+	},
 
 	/*
 	 * Never `{ ok: false }`. Every body is legal text, so this component has no

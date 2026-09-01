@@ -4,6 +4,7 @@ import { richText, RichTextConfig, RichTextData } from './rich-text';
 import { parseCharacter, serialiseCharacter } from '../parse/character';
 import { FOCUSABLE } from '../view/cell-focus';
 import { RenderContext } from '../types';
+import { sampleOf } from '../test/sample';
 
 const config: RichTextConfig = {
 	id: 'backstory',
@@ -166,6 +167,34 @@ describe('richText.write', () => {
 		const cleared = richText.write({ text: '' }, '\nGrew up.\n', config);
 		expect(cleared).toBe('\n\n');
 		expect(richText.read(cleared, config)).toEqual({ ok: true, data: null });
+	});
+});
+
+describe('richText.sample', () => {
+	it('fills the box with two paragraphs of obvious filler', () => {
+		const body = sampleOf(richText, config);
+		const read = richText.read(body, config);
+		if (!read.ok || read.data === null) throw new Error('expected data');
+		// Two, because the break between them is the thing an empty box never
+		// showed and a single line would not answer: whether prose fills the
+		// placement, wraps inside it and stops where it was told to.
+		expect(read.data.text.split(/\n\s*\n/)).toHaveLength(2);
+		// The block's own name carries the index, so the words a reader
+		// recognises are the author's.
+		expect(read.data.text.startsWith('Backstory 1.')).toBe(true);
+	});
+
+	it('holds no markdown, no wikilink and no heading', () => {
+		// The canvas hands over no renderer, so a sample draws through
+		// `paintParagraphs` — anything but prose would draw as its own source,
+		// and a link would draw unresolved against a canvas with no vault.
+		const body = sampleOf(richText, config);
+		expect(body).not.toContain('[[');
+		expect(body).not.toMatch(/^#|[*_`]/m);
+	});
+
+	it('names itself even where the layout has not named the block', () => {
+		expect(sampleOf(richText, { ...config, label: '' })).toContain('Text 1.');
 	});
 });
 

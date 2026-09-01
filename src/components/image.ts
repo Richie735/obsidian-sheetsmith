@@ -54,6 +54,17 @@
  * path diverging from the app's own looks like. The app answers whether the file
  * exists; the browser answers whether it can draw it; this reports what happened.
  *
+ * **It declares no `sample`, and it is the component that made that member
+ * optional** (`docs/features/preview-sample-values.md`). Every sample is a body
+ * the component's own `read` is handed, and the one body this component could
+ * write is an embed naming a file: on the layout editor's canvas there is no
+ * vault to resolve one against, so `RenderContext.resource` is absent and the
+ * frame draws empty whatever the body says. A sample here would be filler
+ * nothing could ever paint — and a member every component must implement and one
+ * component can only implement uselessly is a member with a lie in it. So the
+ * canvas draws this frame identically with sample values on and off, which is
+ * the honest reading: without a vault, this component has nothing to show.
+ *
  * **It is not a Card with a path in it.** A Card's value is text the reader types
  * and a formula may read; this publishes nothing at all, because §5's language
  * has no strings — a published path could be compared to nothing and handed to no
