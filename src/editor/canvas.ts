@@ -65,6 +65,16 @@ export interface CanvasHost {
 	syncPositionFields(config: ComponentConfig): void;
 	select(id: string): void;
 	readonly selection: string;
+	/**
+	 * Whether to fill the canvas with each component's own sample values rather
+	 * than draw what a brand-new character sees
+	 * (`docs/features/preview-sample-values.md`).
+	 *
+	 * Read on every draw rather than cached, on `selection`'s own rule: a copy is
+	 * a second answer to a question the host already answers, and the two would
+	 * disagree the first time one of them was updated without the other.
+	 */
+	readonly sampleValues: boolean;
 }
 
 /**
@@ -173,18 +183,29 @@ export class Canvas {
 	}
 
 	/**
-	 * What a component reads with no character behind it: an empty section,
-	 * exactly as a fresh note's is (`docs/PATTERNS.md` §4). A config error —
-	 * a Table's duplicate column key — is not a data question and surfaces
-	 * from the same call, since a component's own `read` checks its config
-	 * before it ever looks at a body.
+	 * What a component reads with no character behind it: the body it says a
+	 * section of itself would hold, or an empty section — exactly as a fresh
+	 * note's is (`docs/PATTERNS.md` §4) — when the pane is showing what a new
+	 * character sees. A config error — a Table's duplicate column key — is not a
+	 * data question and surfaces from the same call either way, since a
+	 * component's own `read` checks its config before it ever looks at a body.
+	 *
+	 * **This is the whole of the render-path change sample values make**
+	 * (`docs/features/preview-sample-values.md` §5): the body goes through the
+	 * component's own `read`, so what the canvas draws is exactly what a note
+	 * holding that text would draw, and everything downstream — `renderGrid`,
+	 * `buildSheet`, `resolveFormulaFields`, the overlays, `markInert` — is handed
+	 * the same shapes it was handed before. A component with no sample of its own
+	 * (Image) draws identically in both states, which is visible mixed-ness and
+	 * the honest reading of a component that needs a vault.
 	 */
 	private readForCanvas(config: ComponentConfig): ReadComponent {
 		const component = getComponent(config.type);
 		if (!component || isContainer(component)) {
 			return { config, component, data: null, error: null };
 		}
-		const result = component.read('', config);
+		const body = this.host.sampleValues ? (component.sample?.(config) ?? '') : '';
+		const result = component.read(body, config);
 		return {
 			config,
 			component,

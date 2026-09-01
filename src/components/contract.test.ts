@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import {
@@ -759,6 +759,64 @@ describe('a component that says what a sample of itself looks like', () => {
 			const pushes = source?.(() => null) ?? [];
 			expect(pushes, `${entry.config.type} enrols its sample`).toEqual([]);
 		}
+	});
+
+	it('is called from the canvas and nowhere else', () => {
+		/*
+		 * A sample is filler, so a path that reached a character note with one in
+		 * it would be writing invented data into a file somebody owns. The one
+		 * caller is the layout editor's canvas, where there is no note at all.
+		 *
+		 * A source scan because there is no seam to assert this at: `read` takes a
+		 * body from wherever its caller got one, and every other caller gets one
+		 * from the vault.
+		 *
+		 * It is a scan of what *ships*, so `src/test/` is out of it — the walk
+		 * says why. It caught `src/test/sample.ts` the moment that helper was
+		 * extracted, which is the scan working rather than the scan being wrong.
+		 */
+		const CALL = /\.sample\??\.?\(/g;
+		/** Everything the plugin ships, which is the whole of `src/`. */
+		const SRC = join(dirname(fileURLToPath(import.meta.url)), '..');
+		const found: string[] = [];
+		/**
+		 * Files read as well as files matched, because the assertion below is an
+		 * absence over a folder and an absence is what an empty walk reports too
+		 * (`isolation.test.ts`'s own `scan` says this and every caller of it
+		 * asserts the count).
+		 */
+		let files = 0;
+		const walk = (dir: string): void => {
+			for (const entry of readdirSync(dir, { withFileTypes: true })) {
+				const path = join(dir, entry.name);
+				if (entry.isDirectory()) {
+					// `src/test/` is scaffolding: `esbuild` bundles from
+					// `src/main.ts` and nothing under here is reachable from it, so
+					// a helper that hands a sample to a test is not a path a sample
+					// could reach a note through. Skipped by name rather than by
+					// the `.test.` suffix below, which these files do not carry.
+					if (entry.name !== 'test') walk(path);
+					continue;
+				}
+				if (!entry.name.endsWith('.ts') || entry.name.includes('.test.')) continue;
+				files += 1;
+				// Relative to `src/` rather than sliced at the first "src/" in an
+				// absolute path: a clone under `~/src/` would slice at the wrong
+				// one and go red for a reason nothing here names.
+				if (CALL.test(readFileSync(path, 'utf8'))) found.push(relative(SRC, path));
+				// `CALL` is global, so its `lastIndex` survives a `test` that
+				// matched and the next file would start reading part-way in.
+				CALL.lastIndex = 0;
+			}
+		};
+		walk(SRC);
+		// The floor is breadth, not depth: the assertion below is `toEqual` over a
+		// list that an unwalked tree satisfies perfectly, and the realistic
+		// failure is a walk that narrowed rather than one that found nothing —
+		// this file moving one folder down would scan `components/` alone and go
+		// on reporting green over the editor it exists to watch.
+		expect(files).toBeGreaterThan(60);
+		expect(found).toEqual([join('editor', 'canvas.ts')]);
 	});
 });
 
