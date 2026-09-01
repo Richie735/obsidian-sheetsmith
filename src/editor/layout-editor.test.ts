@@ -2173,10 +2173,14 @@ describe('the tree', () => {
 		// layout's row is what makes this one selection rather than two: there is
 		// no second kind of panel and no mode switch, because selecting the
 		// layout is an ordinary selection.
-		expect(labels(harness).slice(0, 5)).toEqual([
+		expect(labels(harness).slice(0, 6)).toEqual([
 			// The picker, then the tree. Named apart on purpose: this one chooses
 			// which layout is open and the next configures the one that is.
 			'Layout file',
+			// The pane's own chrome rather than the tree: it governs the canvas
+			// below it and writes nothing (`docs/features/preview-sample-values.md`
+			// §3), so it sits between the picker and the layout's own row.
+			'Sample values',
 			'Layout',
 			'Defences',
 			'Armour class',
@@ -4122,6 +4126,128 @@ describe('the panel says what it is configuring', () => {
 				.querySelector('.sheetsmith-editor-panel')
 				?.querySelector('.setting-item-heading')?.textContent,
 		).toBe('Saves');
+	});
+});
+
+/*
+ * `docs/features/preview-sample-values.md` §3: the row above the canvas that
+ * fills it or empties it. Driven through the rendered control, like everything
+ * else here, and asserted against the *file* as well as the canvas — the whole
+ * claim of this row is that it changes what is drawn and nothing that is
+ * stored.
+ */
+describe('the sample values row', () => {
+	/** The value in the armour card's own input on the canvas, if it has one. */
+	function drawnValue(): string {
+		const cell = control(harness, 'preview-armour').parentElement;
+		return (
+			cell?.querySelector<HTMLInputElement>('.sheetsmith-card-input')?.value ?? ''
+		);
+	}
+
+	beforeEach(async () => {
+		harness = await open();
+	});
+
+	it('opens on, so a pane that has just opened shows a filled canvas', () => {
+		// An empty canvas is the state that hides what a preview exists to
+		// reveal, and a feature defaulted off is one most authors never see.
+		expect(checkbox(harness, 'Sample values').checked).toBe(true);
+		expect(drawnValue()).not.toBe('');
+	});
+
+	it('empties the canvas when it is turned off, and fills it again', () => {
+		toggle(checkbox(harness, 'Sample values'), false);
+		expect(drawnValue()).toBe('');
+		toggle(checkbox(harness, 'Sample values'), true);
+		expect(drawnValue()).not.toBe('');
+	});
+
+	it('writes nothing and pushes no undo step, however often it is toggled', async () => {
+		/*
+		 * **Measured across a real edit, not from an empty stack.** Asserting that
+		 * `undo` answers false after two toggles says only that the stack is
+		 * empty, which it was before them — it cannot tell a toggle that pushed
+		 * nothing from one that pushed a step something else popped, and it says
+		 * nothing at all about a toggle *consuming* a step. With one edit
+		 * underneath, both directions are visible: one undo has to reach past the
+		 * toggles to the edit, and then there has to be nothing left under it.
+		 */
+		const before = await harness.raw();
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'cfg-armour-key'), 'AC');
+		await settle(harness.pane);
+		const edited = await harness.raw();
+		expect(edited).not.toBe(before);
+
+		const wrote = writes(harness);
+		toggle(checkbox(harness, 'Sample values'), false);
+		toggle(checkbox(harness, 'Sample values'), true);
+		await settle(harness.pane);
+		expect(wrote()).toBe(0);
+		expect(await harness.raw()).toBe(edited);
+
+		// Straight past the toggles to the edit: a toggle that had pushed a step
+		// would be undone here instead, leaving the edit in the file.
+		expect(await undo(harness)).toBe(true);
+		expect(await harness.raw()).toBe(before);
+		// And nothing under it, so neither toggle pushed a step the edit hid.
+		expect(harness.pane.undo()).toBe(false);
+	});
+
+	it('keeps the selection and the open form exactly as they were', async () => {
+		// It redraws the canvas and nothing else, so the panel it sits beside is
+		// not rebuilt at all — the fields keep their values and their focus.
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'cfg-armour-key'), 'AC');
+		await settle(harness.pane);
+
+		toggle(checkbox(harness, 'Sample values'), false);
+
+		expect(panelHeading(harness)).toBe('Armour class');
+		expect(control<HTMLInputElement>(harness, 'cfg-armour-key').value).toBe('AC');
+		expect(
+			treeRow(harness, 'edit-armour').classList.contains(
+				'sheetsmith-preview-editing',
+			),
+		).toBe(true);
+	});
+
+	it('carries a focus token, on the element the app gives focus to', () => {
+		// On the container `addToggle` builds rather than on the input inside it,
+		// which is both where every boolean in the pane carries one and the
+		// element the app actually focuses.
+		expect(has(harness, 'sample-values')).toBe(true);
+		expect(
+			control(harness, 'sample-values').querySelector('input[type="checkbox"]'),
+		).toBe(checkbox(harness, 'Sample values'));
+	});
+
+	it('gets focus back when the pane is redrawn for some other reason', async () => {
+		/*
+		 * The behaviour, not the precondition. The sibling case at "gives a
+		 * checkbox the token the redraw would need" can only assert the token,
+		 * because no boolean on a component redraws the pane any more — this one
+		 * has no such excuse: it sits beside a tree whose every row redraws, so an
+		 * author standing on this control while anything else rebuilds the pane is
+		 * an ordinary Tuesday, and a token that did not survive it would land them
+		 * on the body.
+		 */
+		const row = control(harness, 'sample-values');
+		row.focus();
+		expect(document.activeElement).toBe(row);
+
+		// A selection, which rebuilds both regions — the toggle's own element is
+		// gone by the time this resolves, so what comes back is a fresh one
+		// carrying the same token.
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+
+		expect(panelHeading(harness)).toBe('Armour class');
+		expect(document.activeElement).toBe(control(harness, 'sample-values'));
+		expect(document.activeElement).not.toBe(row);
 	});
 });
 
