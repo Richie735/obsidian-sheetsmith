@@ -39,6 +39,16 @@ export interface PaneView {
 	 */
 	resize?: string;
 	/**
+	 * The **Sample values** toggle, pressed to this state
+	 * (`docs/features/preview-sample-values.md` §3).
+	 *
+	 * A pane opens with it on, so `false` is the only value that does
+	 * anything — and it is what makes the empty canvas photographable at all
+	 * now that the filled one is the default. Driven through the control's own
+	 * `change`, for the reason `setSamples` below measures out.
+	 */
+	samples?: boolean;
+	/**
 	 * `<fromId>:<toId>` — drag `fromId`'s tree row onto `toId`'s and leave
 	 * it hovering, showing the valid-drop highlight if the drop would
 	 * succeed. Never completes the drop.
@@ -88,6 +98,7 @@ export async function renderEditorPane(
 	);
 	if (view.open !== undefined) await select(pane.contentEl, view.open);
 	if (view.choice !== undefined) await chooseAdd(pane.contentEl, view.choice);
+	if (view.samples !== undefined) await setSamples(pane.contentEl, view.samples);
 	// `resize` is deliberately not driven here: it reads real geometry
 	// (`getBoundingClientRect`), and `container` has not been attached to
 	// the visible document by the caller yet at this point — every rect on
@@ -142,6 +153,37 @@ async function select(root: HTMLElement, id: string): Promise<void> {
 		return;
 	}
 	row.click();
+}
+
+/**
+ * Press the **Sample values** toggle to a state.
+ *
+ * The token is on the container `Setting.addToggle` builds, which is where the
+ * pane's other booleans carry theirs, so the input inside it is what takes the
+ * press. Already in the wanted state is a no-op rather than a second press,
+ * which would put the canvas back where it started.
+ *
+ * **Set and dispatched rather than clicked, and `box.click()` was tried and
+ * measured.** It flips `checked` and fires nothing: this runs before
+ * `harness.ts` has appended the pane to the document — the same window
+ * `driveResize` is deferred out of — and Chrome skips a detached input's own
+ * `input` and `change` events. The click therefore left the checkbox unticked,
+ * the row still `is-enabled` and the canvas still filled, which is worse than
+ * not pressing at all, since the control would then disagree with what it
+ * governs. So this dispatches the event the app listens for, exactly as
+ * `chooseAdd` above does for a `<select>`, and the sentence claiming a press
+ * went with the attempt.
+ */
+async function setSamples(root: HTMLElement, on: boolean): Promise<void> {
+	const row = await control(root, 'sample-values');
+	const box = row?.querySelector('input[type="checkbox"]');
+	if (!(box instanceof HTMLInputElement)) {
+		console.warn('No sample values toggle in the pane.');
+		return;
+	}
+	if (box.checked === on) return;
+	box.checked = on;
+	box.dispatchEvent(new Event('change'));
 }
 
 /**

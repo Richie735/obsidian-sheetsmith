@@ -99,8 +99,16 @@ const SHEET_FRAME = '1400,4340';
  * Re-measured again after the calibration fix SHEET_FRAME's comment describes,
  * which grows the pane for the same reason and by about the same proportion:
  * 7372 at 1500 through `open=weapons`, 7766 stacked and 8018 at 380.
+ *
+ * **Re-measured a third time with sample values on**, and the number is 8500 at
+ * 1500 through `open=weapons` — so this was cutting about 1100px off the tree.
+ * Only about 180 of that is the preview: the pane measures 8290 through
+ * `samples=off`, which is the canvas this file was photographing before the
+ * feature existed. The rest went stale earlier and nothing said so, which is
+ * exactly what this comment keeps being rewritten about — the instrument is only
+ * as good as the last time somebody measured it (`docs/UI.md` §11).
  */
-const EDITOR_FRAME = '1500,7400';
+const EDITOR_FRAME = '1500,8600';
 
 /**
  * The presses that open the panel on the sample's *mixed* row, and then its typed
@@ -562,8 +570,10 @@ const DEFAULTS = [
 		query: 'surface=editor&theme=light&open=weapons',
 		// 7100 against a measured 7046 at this width. Stacking is taller than the
 		// split by about 400px, for the reason above, and 5700 was cutting the
-		// panel this view exists to put under the tree.
-		size: '1190,7800',
+		// panel this view exists to put under the tree. Re-measured with sample
+		// values on, on EDITOR_FRAME's own third measurement: 8680 at this width,
+		// so 7800 was cutting the bottom of the tree here too.
+		size: '1190,8800',
 	},
 	{
 		// Forced colors, which the system palette repaints the whole page in and
@@ -890,6 +900,44 @@ const DEFAULTS = [
 		name: 'canvas-tree-drag-refused',
 		query: 'surface=editor&theme=light&layout=canvas-demo&treeDrop=front%3Ainventory',
 		size: '1400,1400',
+	},
+	{
+		/*
+		 * **The canvas filled with each component's own sample values**
+		 * (`docs/features/preview-sample-values.md`), which is what a pane now
+		 * opens on. The whole sample layout rather than the small canvas demo
+		 * above, because the rules a sample follows are checked *across* the
+		 * catalog: no two neighbouring numbers equal, a Track part-marked, a
+		 * Pool below its max with a buffer, a Table showing both states of a flag
+		 * column, and no filled component overflowing the placement it fits when
+		 * empty — which is the failure this feature exists to reveal and the one
+		 * it must not introduce.
+		 *
+		 * The frame is the canvas rather than the pane: 3900 against a canvas
+		 * that ends just under 3800 at this width, so the tree and the panel
+		 * below and beside it are cut. That is deliberate here, the same cut
+		 * `editor-modifiers` makes the other way round — this view's subject is
+		 * what is drawn in the cells, and `editor-light` above is where the whole
+		 * pane is photographed.
+		 */
+		name: 'canvas-samples-light',
+		query: 'surface=editor&theme=light',
+		size: '1500,3900',
+	},
+	{
+		name: 'canvas-samples-dark',
+		query: 'surface=editor&theme=dark',
+		size: '1500,3900',
+	},
+	{
+		// The same layout with the toggle pressed off, which is the comparison
+		// the two above are read against: every card back to what a brand-new
+		// character sees, and byte for byte the canvas that shipped before this
+		// feature. Image and the two containers are the ones to look at — they
+		// declare no sample, so they are identical in all three shots.
+		name: 'canvas-samples-off',
+		query: 'surface=editor&theme=light&samples=off',
+		size: '1500,3900',
 	},
 	{ name: 'settings-light', query: 'surface=settings&theme=light', size: '1000,520' },
 	{ name: 'settings-dark', query: 'surface=settings&theme=dark', size: '1000,520' },
