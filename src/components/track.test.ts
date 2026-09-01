@@ -44,6 +44,33 @@ const slots: TrackConfig = {
 const BODY = '\n```sheet\nvalue: 3\n```\n';
 const SLOT_BODY = '\n```sheet\nL1: 2\nL2: 1\nL3: 0\n```\n';
 
+/**
+ * What a name is worth is asserted through the table that answers it, not
+ * through the declaration: a published segment count is a value the
+ * component computes, so reading `self.value` off the entry would be
+ * asserting the marks it was computed from.
+ *
+ * `base` defaults to the single-run `config`; a row-set test passes `slots`
+ * so the same merge, build and resolver-wiring is not a second copy kept in
+ * step by hand.
+ */
+const scopeFor = (
+	data: TrackData,
+	overrides: Partial<TrackConfig> = {},
+	base: TrackConfig = config,
+) => {
+	const merged = { ...base, ...overrides };
+	const values = track.scopeValues?.(data, merged);
+	if (!values) throw new Error('expected scope values');
+	return buildSheetScope([
+		{
+			id: merged.id,
+			values,
+			resolver: (env) => makeFieldResolver(track, merged, data, env),
+		},
+	]);
+};
+
 const context: RenderContext = {
 	resolved: { count: 6 },
 	resolveField: () => null,
@@ -358,25 +385,6 @@ describe('marksAtPoint', () => {
 });
 
 describe('track.scopeValues', () => {
-	/**
-	 * What a name is worth is asserted through the table that answers it, not
-	 * through the declaration: a published segment count is a value the
-	 * component computes, so reading `self.value` off the entry would be
-	 * asserting the marks it was computed from.
-	 */
-	const scopeFor = (data: TrackData, overrides: Partial<TrackConfig> = {}) => {
-		const merged = { ...config, ...overrides };
-		const values = track.scopeValues?.(data, merged);
-		if (!values) throw new Error('expected scope values');
-		return buildSheetScope([
-			{
-				id: merged.id,
-				values,
-				resolver: (env) => makeFieldResolver(track, merged, data, env),
-			},
-		]);
-	};
-
 	it('publishes the filled segments under the bare id', () => {
 		expect(scopeFor({ values: { value: '3' } })('exhaustion')).toBe(3);
 	});
@@ -446,6 +454,89 @@ describe('track.scopeValues', () => {
 			expect(scope('slots.L1')).toBe(2);
 			expect(scope('slots.L1.value')).toBe(8);
 		});
+	});
+});
+
+describe('track.scopeValues: how many of a row are left', () => {
+	it('is count - filled, for a row with its own count and for one falling back', () => {
+		// SLOT_BODY read through the fixture: L1 (own count 5) two marks in,
+		// L2 (own count 3) one mark in, L3 (no count of its own, falls back
+		// to the component's count 1) untouched.
+		const scope = scopeFor({ values: { L1: '2', L2: '1', L3: '0' } }, {}, slots);
+		expect(scope('slots.L1.left')).toBe(3);
+		expect(scope('slots.L2.left')).toBe(2);
+		// L3 is the one row in the fixture proving the fallback rather than a
+		// row's own count, deliberately (SPEC §13).
+		expect(scope('slots.L3.left')).toBe(1);
+	});
+
+	it('publishes nothing for a row whose own count formula does not resolve, and does not take the other rows with it', () => {
+		const scope = scopeFor(
+			{ values: { L1: '2', L2: '1', L3: '0' } },
+			{
+				rows: [
+					// `unknown_name` is not a name on this sheet, so the row's own
+					// count formula fails to resolve — the same "?" `render` shows
+					// on the card for this row.
+					{ key: 'L1', name: '1st', count: 'unknown_name' },
+					{ key: 'L2', name: '2nd', count: 3 },
+					{ key: 'L3', name: '3rd' },
+				],
+			},
+			slots,
+		);
+		expect(scope('slots.L1.left')).toBeUndefined();
+		expect(scope('slots.L2.left')).toBe(2);
+		expect(scope('slots.L3.left')).toBe(1);
+	});
+
+	it('publishes nothing for a declared row with no stored entry yet', () => {
+		const scope = scopeFor({ values: {} }, {}, slots);
+		expect(scope('slots.L1.left')).toBeUndefined();
+		expect(scope('slots.L2.left')).toBeUndefined();
+		expect(scope('slots.L3.left')).toBeUndefined();
+	});
+
+	it('is unaffected by sense: a harm-graded row computes the same as an otherwise-identical progress-graded one', () => {
+		const harm = scopeFor(
+			{ values: { L1: '2' } },
+			{ rows: [{ key: 'L1', name: '1st', count: 5, sense: 'harm' }] },
+			slots,
+		);
+		const progress = scopeFor(
+			{ values: { L1: '2' } },
+			{ rows: [{ key: 'L1', name: '1st', count: 5, sense: 'progress' }] },
+			slots,
+		);
+		expect(harm('slots.L1.left')).toBe(3);
+		expect(progress('slots.L1.left')).toBe(3);
+	});
+
+	it('a single (non-row-set) track\'s self entry carries no left member', () => {
+		// Asserted directly against the entry rather than only through an
+		// unresolvable name, so the exclusion reads as declared rather than
+		// an incidental gap: a bare run's ceiling is already reachable at
+		// `<id>.count`, so it does not opt in.
+		const published = track.scopeValues?.({ values: { value: '3' } }, config);
+		expect(published?.self).toBeDefined();
+		expect(published?.self?.left).toBeUndefined();
+	});
+
+	it('a flag card carries no left member, on a single run or a row set', () => {
+		// A flag's `1 - filled` is already spelled `!value`, so it does not
+		// opt in either. Both shapes checked directly, the same way.
+		const singleFlag = track.scopeValues?.(
+			{ values: { value: 'yes' } },
+			{ ...config, count: 1 },
+		);
+		expect(singleFlag?.self?.left).toBeUndefined();
+
+		const rowSetFlag = track.scopeValues?.(
+			{ values: { alert: 'yes', lucky: 'no' } },
+			{ ...config, count: 1, rows: [{ key: 'alert' }, { key: 'lucky' }] },
+		);
+		expect(rowSetFlag?.named?.alert?.left).toBeUndefined();
+		expect(rowSetFlag?.named?.lucky?.left).toBeUndefined();
 	});
 });
 
