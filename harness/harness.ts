@@ -447,6 +447,9 @@ async function ensureEditor(): Promise<HTMLElement> {
 		{
 			open: params.get('open') ?? undefined,
 			choice: params.get('choice') ?? undefined,
+			// Only ever off: a pane opens with sample values on, so the state
+			// worth asking for is the empty canvas.
+			samples: params.get('samples') === 'off' ? false : undefined,
 			resize: params.get('resize') ?? undefined,
 			treeHover: params.get('treeHover') ?? undefined,
 			treeDrop: params.get('treeDrop') ?? undefined,
@@ -581,7 +584,9 @@ document
  * `&open=<component id>` selects that component, and `::sheet::` selects the
  * layout itself; `&choice=<type>` or `&choice=<type>:<index>` selects an option
  * of the **Add component** menu — which is the only way to see a palette entry's
- * description, since the menu opens on a bare type and those have none.
+ * description, since the menu opens on a bare type and those have none. And
+ * `&samples=off` presses the pane's **Sample values** toggle off, which is the
+ * only way to photograph the empty canvas now that a pane opens filled.
  *
  * And one for what the layout *folder* holds: `&layout=none` for a vault with no
  * layouts in it, `&layout=broken` for one whose file will not parse. Neither is
