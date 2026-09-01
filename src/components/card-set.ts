@@ -19,6 +19,7 @@ import {
 import { renderCardFace, toDerived } from './card-face';
 import { effectiveReading } from './effective-value';
 import { modifierBreakdown } from './modifier-breakdown';
+import { sampleNumber, sampleSeed } from './sample-values';
 
 export interface CardSetEntry {
 	/** Entry key in the fenced block, and the abbreviation on the card. */
@@ -200,6 +201,35 @@ export const cardSet: ComponentDefinition<CardSetConfig, CardSetData> = {
 			},
 		},
 	],
+
+	/*
+	 * One number per declared entry, under the layout's own keys, each different
+	 * from its neighbour — six abilities all reading 10 make
+	 * `floor((value - 10) / 2)` look broken, which is the one thing an author
+	 * looking at a strip of cards is checking.
+	 *
+	 * A key the fenced block cannot hold is left out rather than written and lost.
+	 * This component has no config guard of its own — an unmapped entry simply
+	 * does not render — so the check the file format needs is made here, where a
+	 * body is about to be written: a colon separates key from value in the block,
+	 * so a key holding one would round-trip as a different entry.
+	 *
+	 * No entries names nothing to fill, so the body is empty and the strip draws
+	 * exactly as it does today.
+	 */
+	sample(config): string {
+		const updates = new Map<string, string>();
+		// From this component's own seed rather than from zero, so two strips in
+		// one layout do not hold the same six numbers. The run is consecutive
+		// either way, which is what keeps neighbouring cards unequal.
+		const seed = sampleSeed(config.id);
+		(config.entries ?? []).forEach((entry, index) => {
+			const key = (entry.key ?? '').trim();
+			if (key === '' || /[:\r\n]/.test(key)) return;
+			updates.set(key, String(sampleNumber(seed + index)));
+		});
+		return updates.size === 0 ? '' : writeFenced(null, updates);
+	},
 
 	read(body): ReadResult<CardSetData> {
 		const parsed = readFenced(body);

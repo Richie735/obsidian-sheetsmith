@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it } from 'vitest';
 import { cardSet, CardSetConfig } from './card-set';
 import { FieldValue, ModifierOutcome, RenderContext } from '../types';
+import { sampleOf } from '../test/sample';
 
 const config: CardSetConfig = {
 	id: 'card-set',
@@ -79,6 +80,36 @@ describe('cardSet.write', () => {
 		expect(cardSet.write({ values: { STR: '8' } }, null, config)).toBe(
 			'\n```sheet\nSTR: 8\n```\n',
 		);
+	});
+});
+
+describe('cardSet.sample', () => {
+	it('fills one number per declared entry, and no two neighbours alike', () => {
+		const body = sampleOf(cardSet, config);
+		const read = cardSet.read(body, config);
+		if (!read.ok || read.data === null) throw new Error('expected data');
+		// The keys are the layout's own, in its own order.
+		expect(Object.keys(read.data.values)).toEqual(['STR', 'DEX', 'WIS']);
+		const numbers = Object.values(read.data.values).map(Number);
+		// Never 0 and never 1: a strip of cards under `floor((value - 10) / 2)`
+		// has to be visibly doing arithmetic, which a run of 10s is not.
+		expect(numbers.every((one) => one > 1 && one < 100)).toBe(true);
+		expect(new Set(numbers).size).toBe(numbers.length);
+	});
+
+	it('fills nothing where the layout names no entry', () => {
+		// The honest answer rather than an invented key: the strip draws
+		// exactly as it does with no sample at all.
+		expect(sampleOf(cardSet, { ...config, entries: [] })).toBe('');
+	});
+
+	it('leaves out a key the fenced block could not hold', () => {
+		const body = sampleOf(cardSet, {
+			...config,
+			entries: [{ key: 'STR' }, { key: 'A: B' }, { key: '' }],
+		});
+		expect(body).toContain('STR: ');
+		expect(body).not.toContain('A: B');
 	});
 });
 

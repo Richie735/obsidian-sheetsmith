@@ -30,6 +30,7 @@ import {
 import { renderCardFace, toDerived } from './card-face';
 import { effectiveReading } from './effective-value';
 import { modifierBreakdown } from './modifier-breakdown';
+import { sampleNumber, sampleSeed, sampleText } from './sample-values';
 
 /**
  * SPEC §3.1: single-value components store their value under `value`, so
@@ -290,6 +291,71 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 	 */
 	configName(config): string | null {
 		return (config.options?.length ?? 0) > 0 ? 'Dropdown' : null;
+	},
+
+	/*
+	 * A number under the author's own key, and a note line under the fixed one.
+	 *
+	 * **A dropdown samples its own first choice** rather than a number, because
+	 * the choices are the author's vocabulary and a value the list does not hold
+	 * is a state no character can be in — the pill would show a stored value the
+	 * menu has no line for, which is a real rendering and the wrong thing to be
+	 * looking at while judging a layout. Already trimmed by `optionList`, which is
+	 * what the note would store anyway.
+	 *
+	 * **The note line is filled unless the layout hides it.** A card's note is
+	 * usually the widest thing on it, so leaving it empty would hide exactly the
+	 * overflow this preview exists to reveal; hiding it is the author saying they
+	 * do not want that line, and filling it anyway would be sampling a card the
+	 * sheet does not draw.
+	 *
+	 * A config this component would refuse fills nothing: `read` reports the
+	 * config error from the same call either way, and a body written under a key
+	 * that cannot be stored would be a second thing wrong on one card.
+	 */
+	sample(config): string {
+		const entry = valueKey(config);
+		if ('error' in entry) return '';
+		const drawable = optionList(config);
+		if ('error' in drawable) return '';
+		/*
+		 * **The first choice §2 can be read through, and the first choice
+		 * otherwise.** Two rules meet on a dropdown and this is where they are
+		 * adjudicated: a sample must hold a value the list offers, because a
+		 * stored value the menu has no line for is a state no character can be in;
+		 * and a sampled number must never be 0 or 1, because a formula reading it
+		 * has to visibly be doing arithmetic. A proficiency dropdown offering
+		 * `0, 1, 2` under `abilities.DEX + value * 2` breaks the second at its
+		 * first option — the multiplication draws as though it were not there.
+		 *
+		 * So an option worth reading is preferred and the first is the fallback,
+		 * which is the right way round: a value the list does not hold is *wrong*,
+		 * and a value of 0 is merely uninformative. A list of words skips nothing,
+		 * since a word is neither 0 nor 1.
+		 */
+		const readable = (option: CardOption): boolean => {
+			const value = Number(option.value.trim());
+			return !(value === 0 || value === 1);
+		};
+		const chosen = drawable.options.find(readable) ?? drawable.options[0];
+		const updates = new Map<string, string>([
+			[
+				entry.key,
+				chosen === undefined
+					? // Keyed to this card's own id, because a card sees only its own
+						// config: unseeded, every plain Card in a layout holds the first
+						// number of the sequence, and six cards all reading 14 is the
+						// failure the sequence exists to prevent.
+						String(sampleNumber(sampleSeed(config.id)))
+					: chosen.value,
+			],
+		]);
+		// The note line stays at the first index, and that is not an oversight:
+		// an index counts position within a run, a card's note is a run of one,
+		// and "Note 7" on a lone line would be a position in nothing. The
+		// distinctness rule is about numbers a formula reads; this is filler text.
+		if (config.hideNote !== true) updates.set(NOTE_KEY, sampleText('Note', 0));
+		return writeFenced(null, updates);
 	},
 
 	read(body, config): ReadResult<CardData> {

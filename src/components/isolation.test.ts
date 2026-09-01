@@ -88,6 +88,11 @@ const ALLOWED = [
 	// because drift between two copies of a policy is the whole risk (§1).
 	"import { effectiveReading } from './effective-value';",
 	"import { effectiveReading } from '../components/effective-value';",
+	// The filler a sample fills a config with: a number sequence, a spelling and
+	// two rules about them, shared so the canvas reads as one system rather than
+	// as six authors' idea of a placeholder (§1's one-step tier).
+	"import { sampleNumber } from './sample-values';",
+	"import { sampleNumber } from '../components/sample-values';",
 	"import { MODIFIED_CLASS } from '../components/modifier-breakdown';",
 	"import { paintLinkedText } from '../components/linked-text';",
 	"import { paintLevelRing } from '../components/level-ring';",

@@ -1334,6 +1334,48 @@ export interface ComponentDefinition<
 	 * there rather than leaving it as a flag with no reading.
 	 */
 	showsOneChild?: boolean;
+	/**
+	 * What a section of this component would hold, for a config it was handed:
+	 * the plausible filler the layout editor's canvas draws in place of an empty
+	 * character's blank (`docs/features/preview-sample-values.md`).
+	 *
+	 * **A body, not data**, and that is the decision this member exists to record.
+	 * The alternative — returning `TData` — is compiler-checked and reaches
+	 * `render` one step sooner, and it skips the one call that makes a sample
+	 * *true*: a body goes through this component's own `read`, so what the preview
+	 * draws is exactly what a note holding that text would draw, and a sample that
+	 * could not be stored in a note fails loudly instead of drawing a state no
+	 * character can be in. It also buys two checks a data-shaped member could not
+	 * have — `read(sample(config))` is `ok`, and `write` of what that read produced
+	 * returns the sample byte for byte, which is Constraint 3 asserted over one
+	 * more body per component.
+	 *
+	 * Declared directly before `read` because it is the body `read` is handed: the
+	 * data path's own first step, in the one context where there is no note.
+	 *
+	 * **Optional under §4.1's rule**, and it passes squarely — the alternative is
+	 * code outside Pool knowing that a Pool's section is a `sheet` fence holding
+	 * `current`, `max` and `temp`; that a Card's is one key the author named; that
+	 * a Table's is a markdown table whose header is the author's own column keys,
+	 * that a `modifier` cell enrols a row in a definition, and that a declared row
+	 * is not a row the sample may add. That is the entirety of seven components'
+	 * data shapes.
+	 *
+	 * **Optional rather than required wherever `storage` is not `none`**, and
+	 * Image is why: it draws an empty frame whenever `RenderContext.resource` is
+	 * absent, and the canvas has no vault to give it one, so an Image sample would
+	 * be a body nothing could ever paint. A member every component must implement
+	 * and one component can only implement uselessly is a member with a lie in it.
+	 * Absent means what it already means everywhere else here — this component has
+	 * nothing to say — and a container declaring one is refused by
+	 * `contract.test.ts`, since a member with no reading is worse than none.
+	 *
+	 * The filler vocabulary is `components/sample-values.ts`, shared so the canvas
+	 * reads as one system rather than as six authors' idea of a placeholder. A
+	 * config that names nothing to fill returns the empty body, which is exactly
+	 * what the canvas drew before this existed.
+	 */
+	sample?(config: TConfig): string;
 	/** Parse this component's section body into data. */
 	read(body: string, config: TConfig): ReadResult<TData>;
 	/**
