@@ -65,6 +65,13 @@ import {
 	TypedEffect,
 } from '../types';
 import { bindEditable } from '../interaction/editable';
+// The two sentences an armed control says, shared with the two delete glyphs
+// (`interaction/arm-to-confirm.ts`). The *gesture* is not shared: this control's
+// armed state is the panel's rather than a closure's, so it survives a rebuild
+// and redraws through it. What is shared is the wording, which is a policy —
+// the mark deliberately does not change when a control arms, so the words are
+// the whole of what says a press is about to be irreversible.
+import { armedName, armedPrompt } from '../interaction/arm-to-confirm';
 import {
 	spellTypedEffect,
 	unspellableName,
@@ -996,7 +1003,7 @@ function renderRemove(
 			: 'Remove';
 	button.setAttribute(
 		'aria-label',
-		state.armed ? `${named}. Select again to confirm.` : named,
+		state.armed ? armedName(named) : named,
 	);
 	button.dataset.sheetsmithPanelField = 'remove';
 	button.addEventListener('focus', () => {
@@ -1023,7 +1030,7 @@ function renderRemove(
 		}
 		state.armed = true;
 		armingBlur = true;
-		options.announce(`${named}? Select again to confirm.`);
+		options.announce(armedPrompt(named));
 		redraw();
 	});
 	// A keyboard has both gestures a finger does not: focus moves off, and Escape.

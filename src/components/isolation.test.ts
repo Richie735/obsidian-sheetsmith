@@ -287,6 +287,19 @@ describe('a refusal sentence is written in one place', () => {
 		'spells its own modifiers that way',
 		'Give it a name to reuse it by',
 		'already has a modifier called',
+		/*
+		 * **The two an armed control says**, and the largest instance this scan was
+		 * blind to: `Select again to confirm.` was in three files and
+		 * `Delete cancelled` in two across four sites, all of them accessible names
+		 * or announcements. The mark on an armed control deliberately does not
+		 * change — the column is as wide as its content, so relabelling in place
+		 * would move the table under the finger already resting on it — so these
+		 * sentences are the *whole* of what says a press is about to be
+		 * irreversible, and a design pass softening one copy leaves the others
+		 * saying the old thing. `interaction/arm-to-confirm.ts` holds both.
+		 */
+		'Select again to confirm.',
+		'Delete cancelled',
 	] as const;
 
 	it.each(CLAUSES)('writes "%s" once in src', (clause) => {
