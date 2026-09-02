@@ -227,6 +227,23 @@ export default defineConfig(
 								 * placeholder looks like.
 								 */
 								'!./sample-values',
+								/*
+								 * **What a typed value stored as text means, before any
+								 * formula runs**, shared by Table and Record set. Added
+								 * deliberately on `effective-value.ts`'s own terms: in no
+								 * registry, declaring no `ComponentDefinition`, importing
+								 * nothing from `obsidian` and touching no file. Three rules
+								 * had a verbatim copy in each component — what a blank
+								 * numeric field is worth, what a typed number is clamped to,
+								 * and what an unresolved computed value reads as — and
+								 * PATTERNS §1's one-step tier extracts a policy on the second
+								 * consumer, because the only thing a guard test over two
+								 * copies could assert is that they still agree. The drift is
+								 * not hypothetical: the first rule decides what
+								 * `sum(spells, Level)` and `sum(inventory, Weight)` are
+								 * adding up.
+								 */
+								'!./typed-value',
 								'!../components/column-types',
 								'!../components/level-ring',
 								'!../components/card-face',
@@ -236,6 +253,7 @@ export default defineConfig(
 								'!../components/effective-value',
 								'!../components/stored-flag',
 								'!../components/sample-values',
+								'!../components/typed-value',
 							],
 							message:
 								'A component must not import another component. Move the shared behaviour into a module named for what it does — a sibling painter, or src/interaction/ — and import that from both.',
