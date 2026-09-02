@@ -4950,6 +4950,30 @@ a.sheetsmith-undo {
 	color: var(--text-muted);
 }
 
+/* **The ceiling a bounded number reads against, in Pool's own vocabulary.**
+   `Uses 1` cannot say whether that is all of them or one of three, and a uses
+   counter on a record the character added is the one thing this component has
+   that a Pool beside the list could never provide — so a field with a declared
+   `max` draws `Uses 1 / 3`.
+
+   Borrowed rather than copied under a `record` name: a `.sheetsmith-record-
+   ceiling` beside `.sheetsmith-pool-ceiling` is the lookalike this section of
+   `docs/UI.md` opens by forbidding, and §9's rule is that the name belongs to
+   the component that is nothing but the thing — a Pool is a value over its
+   ceiling — while everyone else wears it, exactly as the field's name above
+   wears the card's abbreviation.
+
+   **One declaration differs, and it is the one the borrowing has to fix.** The
+   pool's ceiling is `--font-ui-medium` because it qualifies a headline number at
+   the card's value size; a record's qualifies a value at `--font-ui-small`, so
+   the shared size would draw the ceiling *larger* than the number it bounds and
+   reorder the hierarchy (`legibility.md` §4). The colour and the tabular figures
+   are the shared part and stay. */
+.sheetsmith-view .sheetsmith-record-field .sheetsmith-pool-separator,
+.sheetsmith-view .sheetsmith-record-field .sheetsmith-pool-max {
+	font-size: var(--font-ui-small);
+}
+
 .sheetsmith-view .sheetsmith-record-input {
 	width: 3.5em;
 	padding: var(--size-2-1) var(--size-2-2);

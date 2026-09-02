@@ -203,8 +203,9 @@ export interface RecordField {
 	formula?: string;
 	/**
 	 * Bounds for a number field, applied to typing and arrow steps alike; `max`
-	 * is also what a `full` reset restores to, which is what makes a number field
-	 * with a maximum a uses counter. For a level field, `max` is its highest
+	 * is also what a `full` reset restores to and what the field draws its value
+	 * against, which is what makes a number field with a maximum a uses counter
+	 * rather than a bounded number. For a level field, `max` is its highest
 	 * level and `min` is always 0, because "none" is a state every level needs.
 	 */
 	min?: number;
@@ -644,7 +645,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				heading: 'Name',
 			},
 			description:
-				'The typed values every record holds, each an entry in that record\'s block in the note. Text is not offered: words a reader reads belong in the record\'s body, where they may hold links. A number field with a maximum is a uses counter, and a reset trigger restores it to that maximum.',
+				'The typed values every record holds, each an entry in that record\'s block in the note. Text is not offered: words a reader reads belong in the record\'s body, where they may hold links. A number field with a maximum is a uses counter: the field draws that maximum beside its value, and a reset trigger restores it to that maximum.',
 		},
 		{
 			key: 'hideLabel',
@@ -1288,6 +1289,40 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			input.inputMode = 'numeric';
 			input.value = raw;
 			input.setAttribute('aria-label', accessible);
+			/*
+			 * **A declared ceiling is drawn beside the value, in Pool's own
+			 * vocabulary rather than a second spelling of it.**
+			 *
+			 * `Uses 1` cannot tell a reader whether that is all of them or one of
+			 * three, which undercuts the one thing this component has that a Track
+			 * or a Pool beside the list could never do: a uses counter that belongs
+			 * to a record the character added. So a bounded number reads
+			 * `Uses 1 / 3`.
+			 *
+			 * The classes are `.sheetsmith-pool-ceiling`, `-separator` and `-max`,
+			 * borrowed rather than copied under a `record` name — a lookalike beside
+			 * them is the drift `docs/UI.md` §9 opens by forbidding, and §9's own
+			 * rule is that the name belongs to the component that is nothing but the
+			 * thing (a Pool is a value over its ceiling) and everyone else wears it,
+			 * exactly as this field's name already wears the card's abbreviation.
+			 * One declaration is overridden in the stylesheet, the size, because a
+			 * pool's ceiling qualifies a headline number and a record's qualifies a
+			 * 13px one.
+			 *
+			 * **Pool's non-`characterMax` branch**, and no wrapper: `max` here is a
+			 * literal the layout declared and not a value the character holds, so
+			 * there is nothing to type into — a read-only span, no second field, no
+			 * placeholder. No `aria-label` on it either, for Pool's own reason: a
+			 * bare span is `role=generic`, which prohibits naming. What carries the
+			 * ceiling to a screen reader is the announcement below, on Pool's
+			 * spelling of it — "5 of 9", which is how the slash is read aloud.
+			 */
+			if (field.max !== undefined) {
+				const ceiling = element('span', 'sheetsmith-pool-ceiling', cell);
+				element('span', 'sheetsmith-pool-separator', ceiling, '/');
+				element('span', 'sheetsmith-pool-max', ceiling, String(field.max));
+			}
+			const said = field.max === undefined ? '' : ` of ${field.max}`;
 			bindEditable(input, {
 				initial: raw,
 				step: true,
@@ -1295,13 +1330,13 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				max: field.max,
 				announceCommit: (next) => {
 					status.textContent =
-						next === '' ? `${accessible} cleared` : `${accessible} ${next}`;
+						next === '' ? `${accessible} cleared` : `${accessible} ${next}${said}`;
 				},
 				announceRestore: (restored) => {
 					status.textContent =
 						restored === ''
 							? `${accessible} restored to empty`
-							: `${accessible} restored to ${restored}`;
+							: `${accessible} restored to ${restored}${said}`;
 				},
 				onCommit: (next) => {
 					// Bounds hold however the value arrived: a uses counter typed past
@@ -1309,7 +1344,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 					const settled = boundedText(next, field);
 					if (settled !== next) {
 						input.value = settled;
-						status.textContent = `${accessible} held to ${settled}`;
+						status.textContent = `${accessible} held to ${settled}${said}`;
 					}
 					commit(settled);
 				},

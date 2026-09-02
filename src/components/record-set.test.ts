@@ -545,6 +545,68 @@ describe('recordSet rendering', () => {
 		).toBe('true');
 	});
 
+	it('draws a declared ceiling beside a bounded number, and none without one', () => {
+		/*
+		 * `Uses 1` cannot say whether that is all of them or one of three, and a
+		 * counter on a record the character added is the one thing a Track or a Pool
+		 * beside the list could never provide — so the ceiling is part of the
+		 * reading. Pool's own classes, because a lookalike beside them is what
+		 * `docs/UI.md` §9 opens by forbidding, and Pool's *read-only* branch: a
+		 * `max` here is a literal the layout declared, so there is nothing to type
+		 * into.
+		 */
+		const el = render();
+		const first = records(el)[0] as HTMLElement;
+		const ceiling = first.querySelector('.sheetsmith-pool-ceiling') as HTMLElement;
+		expect(ceiling.textContent).toBe('/3');
+		expect(
+			ceiling.querySelector('.sheetsmith-pool-separator')?.textContent,
+		).toBe('/');
+		expect(ceiling.querySelector('.sheetsmith-pool-max')?.textContent).toBe('3');
+		// A read-only span and not a second field, so nothing invites a reader to
+		// edit a number the layout owns.
+		expect(ceiling.querySelector('input')).toBeNull();
+		// Every record's ceiling is the field's, so all three carry it.
+		expect(
+			records(el).map(
+				(record) =>
+					record.querySelector('.sheetsmith-pool-max')?.textContent,
+			),
+		).toEqual(['3', '3', '3']);
+		// And an unbounded number has no ceiling to draw, so it keeps its bare
+		// value. A `min` alone changes nothing.
+		const bare = render({
+			fields: [{ key: 'Uses', type: 'number', min: 0 }],
+		});
+		expect(bare.querySelector('.sheetsmith-pool-ceiling')).toBeNull();
+		expect(
+			bare.querySelector<HTMLInputElement>('.sheetsmith-record-input')?.value,
+		).toBe('1');
+	});
+
+	it('says the ceiling aloud where it draws one, on the pool\'s own spelling', () => {
+		// The slash is read "of", and a bare span is `role=generic` — which
+		// prohibits naming — so the live region is what carries the ceiling to a
+		// reader who cannot see it.
+		const el = render();
+		const number = (records(el)[0] as HTMLElement).querySelector(
+			'.sheetsmith-record-input',
+		) as HTMLInputElement;
+		number.value = '2';
+		number.dispatchEvent(new Event('input'));
+		number.dispatchEvent(new Event('blur'));
+		expect(el.querySelector('.sheetsmith-sr-only')?.textContent).toBe(
+			'Second Wind Uses 2 of 3',
+		);
+		// Past the ceiling is held to it, and the message says what it was held to.
+		number.value = '9';
+		number.dispatchEvent(new Event('input'));
+		number.dispatchEvent(new Event('blur'));
+		expect(el.querySelector('.sheetsmith-sr-only')?.textContent).toBe(
+			'Second Wind Uses held to 3 of 3',
+		);
+	});
+
 	it('names the field on every ring, and reaches the name without a hover', () => {
 		/*
 		 * **Not Table's named-level guard, and the heading strip is why.** A cell's
