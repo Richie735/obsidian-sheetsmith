@@ -24,13 +24,17 @@
  * everything after the fence is the body. That is Rich text's shape one level
  * down, and it is what Constraints 2 and 3 are satisfied by:
  *
- * - **No wikilink inside a fence**, because no field type this component offers
- *   can hold one. A `text` field is refused as a configuration error, and the
- *   refusal is not a cut — SPEC §5's language has no strings, so a text field
- *   could publish nothing, be compared to nothing and be handed to no builtin.
- *   The link-bearing halves of a record, its heading and its prose, are plain
- *   markdown, so backlinks, graph view, hover preview and rename propagation all
- *   work.
+ * - **No wikilink inside a fence, and the *inputs* are where that is actually
+ *   held.** The claim used to be that no field type this component offers can
+ *   hold one — a `text` field is refused as a configuration error, and the
+ *   refusal is not a cut, since SPEC §5's language has no strings — and that is
+ *   true of the *type* and false of the *input*. A `number` field is an
+ *   `<input type="text">` and `boundedText` leaves text that is not a number
+ *   exactly as typed, so a pasted `[[Ring]]` reached the fence; a scan over the
+ *   offered types could not see it. Every free-text route into a fence entry now
+ *   goes through `refuseLink`. The link-bearing halves of a record, its heading
+ *   and its prose, are plain markdown, so backlinks, graph view, hover preview
+ *   and rename propagation all work.
  * - **Parse then serialise is byte-identical per record**, because
  *   `parse/records.ts` keeps every byte in a piece and rejoins them, the fence
  *   keeps its own spelling through `parse/fenced.ts`, and the prose keeps its
@@ -1048,6 +1052,75 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			}
 		};
 
+		/**
+		 * Why a note reference cannot be stored in a record's fields, or null.
+		 *
+		 * **One builder for every route that reaches the fence**, because the
+		 * sentence is the whole of what the reader is told and two copies of it is
+		 * one design pass away from saying two things — which is the drift
+		 * `components/isolation.test.ts` scans for by clause.
+		 *
+		 * **It used to be bound to the modifier field alone, and that was a hole
+		 * rather than a scoping decision.** The claim covering the rest was that no
+		 * field type this component offers can hold a wikilink, which is true of the
+		 * *type* and false of the *input*: a `number` field is an
+		 * `<input type="text">` and `boundedText` leaves text that is not a number
+		 * exactly as typed, so a pasted `[[Ring]]` in a `Uses` field was written
+		 * into the fence. A scan over the offered types could not see it.
+		 *
+		 * **Table has the same free text and does not have this problem**, which is
+		 * why it never came up: a modifier cell there is a markdown table cell, so a
+		 * `[[…]]` in one *is* indexed. A record's fields are a `sheet` fence, and
+		 * Obsidian indexes no link inside one — backlinks, graph view, hover preview
+		 * and rename propagation all break with no warning, which is the whole of
+		 * Constraint 2.
+		 *
+		 * Refused rather than escaped, on Rich text's own rule: escaping puts a
+		 * plugin's syntax into a file the user owns. And refused at the *commit*
+		 * rather than in `read`, so a note that already holds one is rendered and
+		 * carried rather than corrected (SPEC §10) — the message is for the reader
+		 * who is typing one now.
+		 */
+		const refuseLink = (text: string): string | null =>
+			hasLink(text)
+				? `A ${noun.toLowerCase()}'s fields are stored in a code block and Obsidian indexes no link inside one, so "${text}" would stop being a link. Put it in the ${noun.toLowerCase()}'s name or its body instead.`
+				: null;
+
+		/** The whole sentence a refused commit says, or null where the text is fine. */
+		const refusal = (text: string): string | null => {
+			const said = refuseLink(text);
+			return said === null ? null : `Not saved. ${said}`;
+		};
+
+		/**
+		 * Draw or clear one standing refusal under a record, and say it.
+		 *
+		 * **A closure per message rather than a function taking one**, because what
+		 * has to be remembered is *which* element to remove — so a message about a
+		 * record's value is not cleared by a commit on the ceiling beside it, and
+		 * the modifier field's is not cleared by the body's.
+		 *
+		 * Four sites had these same four lines: the value field, the ceiling field,
+		 * the modifier cell and the body. §1 allows two copies only under a test
+		 * driving both and each of these is driven by its own case, so at four this
+		 * is well past where the ladder stops arguing. The host is a parameter
+		 * because it differs — the summary line is one row of fields and has nowhere
+		 * to put a sentence, so a field's message hangs on the record while the
+		 * body's hangs under the body's own row.
+		 */
+		const refusalNotice = (
+			into: HTMLElement,
+		): ((message: string | null) => void) => {
+			let notice: HTMLElement | null = null;
+			return (message) => {
+				notice?.remove();
+				notice = null;
+				if (message === null) return;
+				notice = element('div', 'sheetsmith-error', into, message);
+				status.textContent = message;
+			};
+		};
+
 		/** Which delete control is armed, one register per list. */
 		const armedRecord = armRegister();
 
@@ -1203,12 +1276,25 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				},
 				onCommit: (next) => {
 					if (next.trim() === '') {
-						// **A record needs a name, and this is where that is enforced.**
-						// `### ` with nothing after it is not a heading, so an empty name
-						// would drop the record on the next read and hand its body to the
-						// record above it — a silent deletion, which Constraint 4 refuses.
-						// Put back and said, rather than left blank with a message: the
-						// field is one line, so what is on screen is the whole answer.
+						/*
+						 * **A record needs a name, and this is where that is enforced.**
+						 * `### ` with nothing after it is not a heading, so an empty name
+						 * would drop the record on the next read and hand its body to the
+						 * record above it — a silent deletion, which Constraint 4 refuses.
+						 *
+						 * **This is the repository's one refused commit that discards the
+						 * draft, and it departs from `editable.ts`'s stated policy on
+						 * purpose.** That binding's `refuse` keeps the draft, because a
+						 * refusal that hid what the reader typed would be the silent loss
+						 * it exists to stop — and this field is the case where keeping it
+						 * is worse: the draft is *empty*, so keeping it leaves a blank
+						 * field with a message beside it where the name that is actually
+						 * stored would say more. It is also not a "do not write this" but
+						 * a "put the stored one back and say so", which is why it is here
+						 * rather than in `refuse` at all. Named here because
+						 * `docs/PATTERNS.md` §11 held a row asking exactly that this
+						 * departure be stated somewhere.
+						 */
 						handle.sync(record.name);
 						status.textContent = `A ${noun.toLowerCase()} needs a name, so "${named}" was kept.`;
 						return;
@@ -1323,6 +1409,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				element('span', 'sheetsmith-pool-max', ceiling, String(field.max));
 			}
 			const said = field.max === undefined ? '' : ` of ${field.max}`;
+			const showValueRefusal = refusalNotice(row);
 			bindEditable(input, {
 				initial: raw,
 				step: true,
@@ -1338,6 +1425,8 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 							? `${accessible} restored to empty`
 							: `${accessible} restored to ${restored}${said}`;
 				},
+				refuse: refusal,
+				onRefusal: showValueRefusal,
 				onCommit: (next) => {
 					// Bounds hold however the value arrived: a uses counter typed past
 					// its ceiling is the same mistake as one stepped there.
@@ -1603,49 +1692,19 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			const panelKey = `${config.id}:${at}:${field.key}`;
 
 			/** The standing refusal, drawn under the record and cleared when it lifts. */
-			let notice: HTMLElement | null = null;
-
-			/**
-			 * Why a note reference cannot be stored in this field, or null.
-			 *
-			 * One builder for the two routes that reach the fence, because the
-			 * sentence is the whole of what the reader is told and two copies of it
-			 * is one design pass away from saying two things — which is the drift
-			 * `components/isolation.test.ts` scans for by clause.
-			 */
-			const refuseLink = (text: string): string | null =>
-				hasLink(text)
-					? `A ${noun.toLowerCase()}'s fields are stored in a code block and Obsidian indexes no link inside one, so "${text}" would stop being a link. Put it in the ${noun.toLowerCase()}'s name or its body instead.`
-					: null;
+			const showRefusal = refusalNotice(recordEl);
 
 			/**
 			 * Commit the cell, unless a part of it holds a note reference.
 			 *
-			 * **This is the one place Constraint 2 is not satisfied by the field
-			 * types, and the claim that it was is what this closes.** The offered
-			 * types cannot hold a link — a `text` field is refused — but a
-			 * `modifier` field's part is free text on three routes: the shared
+			 * **A `modifier` field's part is free text on three routes**: the shared
 			 * form's **Amount** and **Only when** inputs, and a promoted
 			 * definition's name, whose only refusals are a semicolon and an
 			 * assignment shape. So `armour_class += [[Ring]]` was an acceptable
-			 * part, and this component's fence is where it landed.
-			 *
-			 * **Table has the same free text and does not have this problem**, which
-			 * is why it never came up: a modifier cell there is a markdown table
-			 * cell, so a `[[…]]` in one *is* indexed. A record's fields are a `sheet`
-			 * fence, and Obsidian indexes no link inside one — backlinks, graph
-			 * view, hover preview and rename propagation all break with no warning,
-			 * which is the whole of Constraint 2.
-			 *
-			 * Refused rather than escaped, on Rich text's own rule: escaping puts a
-			 * plugin's syntax into a file the user owns. And refused at the *commit*
-			 * rather than in `read`, so a note that already holds one is rendered and
-			 * carried rather than corrected (SPEC §10) — the message is for the
-			 * reader who is typing one now.
+			 * part, and this component's fence is where it landed. `refuseLink`
+			 * above holds the sentence and the argument.
 			 */
 			const commitParts = (parts: readonly string[]): void => {
-				notice?.remove();
-				notice = null;
 				/*
 				 * **The part being *written*, which is the part that is not already
 				 * stored.** The form hands back the whole list with one entry changed,
@@ -1665,12 +1724,11 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				const offending = parts.find(
 					(part) => !held.has(part) && refuseLink(part) !== null,
 				);
-				if (offending !== undefined) {
-					const said = `Not saved. ${refuseLink(offending) ?? ''}`;
-					notice = element('div', 'sheetsmith-error', recordEl, said);
-					status.textContent = said;
-					return;
-				}
+				const said = offending === undefined ? null : refusal(offending);
+				// Called on every attempt including the ones that succeed, so the last
+				// message clears without this tracking when to.
+				showRefusal(said);
+				if (said !== null) return;
 				commit(spellParts(parts));
 			};
 
@@ -1835,7 +1893,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			});
 
 			/** The standing refusal, drawn under the body and cleared when it lifts. */
-			let notice: HTMLElement | null = null;
+			const showRefusal = refusalNotice(row);
 
 			bindMultiline(input, {
 				initial: text,
@@ -1866,14 +1924,11 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				 */
 				onRefusal: (message) => {
 					into.classList.toggle('sheetsmith-record-body-refused', message !== null);
-					notice?.remove();
-					notice = null;
-					if (message === null) return;
 					// Under the body rather than inside it: the body is a two-layer
 					// stack in one grid cell, so a third child there would sit on top
-					// of the prose the message is about.
-					notice = element('div', 'sheetsmith-error', row, message);
-					status.textContent = message;
+					// of the prose the message is about — which is why the host is the
+					// shared helper's parameter rather than its own rule.
+					showRefusal(message);
 				},
 				// The label and the outcome, never the prose: reading a record's text
 				// back at its author is not feedback.
