@@ -739,6 +739,44 @@ function applyQuery(): void {
 	 * fixed to the viewport and dismissed only by a real pointerdown, so it
 	 * survives to be captured.
 	 */
+	/**
+	 * `&scroll=<selector>` — scroll that element into view *inside its own
+	 * scrollport*, without moving the page.
+	 *
+	 * `&focus=`'s and `&press=`'s sibling, added for their reason exactly: a
+	 * component whose box is a fixed placement with its content scrolling inside
+	 * shows only what fits, so every state below the cut is in no shot. A Record
+	 * set's list is the first of these — the sample's `traits` holds six records
+	 * in a three-row box, and three ceiling states a design review has to rule on
+	 * are records four to six.
+	 *
+	 * **Rather than reshaping the sample so the states land above the cut**, which
+	 * would be shaping the subject to the photograph — the clipping is the
+	 * component working, and what was missing was a way to point a camera at the
+	 * rest of it.
+	 *
+	 * `scrollTop` on the nearest scrollable ancestor, not `scrollIntoView`: that
+	 * scrolls the page as well, and every sheet shot is a full-height capture
+	 * whose framing assumes the page is at the top.
+	 */
+	const scrolled = params.getAll('scroll');
+	const scrollWanted = () => {
+		for (const selector of scrolled) {
+			const target = document.querySelector<HTMLElement>(selector);
+			if (target === null) continue;
+			for (
+				let box = target.parentElement;
+				box !== null;
+				box = box.parentElement
+			) {
+				if (box.scrollHeight <= box.clientHeight) continue;
+				box.scrollTop =
+					target.offsetTop - box.offsetTop - (box.clientHeight - target.offsetHeight) / 2;
+				break;
+			}
+		}
+	};
+
 	const pressWanted = () => {
 		/*
 		 * **Several, in order**, because the form this now opens has a second
@@ -770,6 +808,8 @@ function applyQuery(): void {
 		draw();
 		focusWanted();
 		pressWanted();
+		// After the presses, so a press that draws something can be scrolled to.
+		scrollWanted();
 		if (resize !== null && editorPane) {
 			await driveResize(editorPane, resize);
 		}
