@@ -3656,6 +3656,24 @@ describe('table renders a modifier cell', () => {
 		expect(button.getAttribute('aria-expanded')).toBe('false');
 	});
 
+	it('closes on a second press of the glyph that opened it', () => {
+		/*
+		 * **What a control carrying `aria-expanded` owes, and what it did not
+		 * pay.** The handle was read once into a `const`, so the panel a *press*
+		 * opened was never the panel the close path had — the second press closed
+		 * nothing and the attribute stayed `"true"`. It only ever worked after an
+		 * unrelated commit had rebuilt the row and re-anchored the panel, which is
+		 * why nothing noticed: every case here opens and then dismisses from
+		 * outside. Found in Record set and fixed in both.
+		 */
+		const { button } = drawn('Plate armour', { modifiers: withOutcome() });
+		button.click();
+		expect(document.querySelector('.sheetsmith-panel')).not.toBeNull();
+		button.click();
+		expect(document.querySelector('.sheetsmith-panel')).toBeNull();
+		expect(button.getAttribute('aria-expanded')).toBe('false');
+	});
+
 	/** RING applying, PLATE suppressed, CLOAK unworn — one context, three states. */
 	const threeStates = () =>
 		modifierContext({
