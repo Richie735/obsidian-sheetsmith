@@ -1,10 +1,11 @@
 /*
  * What a table column holds, and what can be done with one.
  *
- * Shared by the component that renders typed columns and by the editor field
- * that configures them, which is the whole reason the file exists: the two held
- * the same three policies as copies, and a list of strings copied into two files
- * drifts in silence. Each copy had its own failure:
+ * Shared by the components that render typed columns — Table's cells and a
+ * Record set's fields — and by the editor field that configures both, which is
+ * the whole reason the file exists: the readers held the same three policies as
+ * copies, and a list of strings copied into two files drifts in silence. Each
+ * copy had its own failure:
  *
  * - **Which types can be totalled.** Add a sixth type whose cells are numeric,
  *   put it in one copy only, and either the editor offers a total the component
@@ -22,6 +23,24 @@
  * PATTERNS §1 names this case exactly: a policy value climbs the reuse ladder in
  * one step, because a guard test over two copies can only assert they are still
  * equal, which is what one copy says for free.
+ *
+ * **The third policy is the one a second rendering component does not hold, and
+ * saying which is the point of this paragraph.** A Record set refuses a `text`
+ * field, so `DEFAULT_COLUMN_TYPE` is not *its* default — and giving it one of its
+ * own is exactly the drift above, because the editor omits the key when it equals
+ * this constant and a component reads a missing key as this constant. The
+ * resolution keeps one answer to "which type is first" and takes `text` out of
+ * what that component's field *offers* instead: `ConfigFieldSpec.columnOptions`
+ * names the types a field holds, the first of them is written out where it is not
+ * this default, and a type this file knows nothing about cannot reach either
+ * reader (`contract.test.ts`). So the first two policies are shared by three
+ * readers and the third is shared by two, deliberately.
+ *
+ * The *behaviour* built on these — what a stored cell is worth to a formula,
+ * what a typed number is clamped to, what an unresolved computed value reads as
+ * — is `components/typed-value.ts`, not here: §10 records this file as tested
+ * through its consumers precisely because "a file of its own could assert little
+ * past a constant equalling itself", and behaviour here would make that false.
  */
 
 /**
