@@ -7,7 +7,7 @@ disclosure** — the harness can already show a record's summary line, and what 
 cannot show is find-in-page reaching a closed body, a rename propagating through a
 record's name, or Obsidian's own renderer drawing a record's prose.
 
-Seven claims, in the order they are easiest to break:
+Eight claims, in the order they are easiest to break:
 
 1. **The box is the placement and the list scrolls inside it.** "Features" (4×3)
    holds seven records and "Spells" (2×3) holds five. Open every record in
@@ -42,20 +42,43 @@ Seven claims, in the order they are easiest to break:
    `#### `. Do the same with `## Chapter two`. Then reopen the note and confirm
    nothing was written either time.
 7. **The reset reaches a counter the layout never declared.** Press **Long rest**.
-   Every readable record's `Uses` in Features goes to 3 and every `Attuned` to yes,
-   because that binding is `full`; every `Level` in Spells goes to 0 and every
-   `Prepared` to no, because that one is `empty`. **"Hand broken" is left exactly as
-   it is**, because no write into a record whose fence will not read is accepted at
-   all — and "Lucky", which has no fence, *gains* one. Nothing about "Bare list"
-   moves, since it has no fields. Then take `max` off `Uses` in the layout editor
-   and press it again: the trigger has to *name the field* rather than failing
-   quietly — and the `/ 3` beside every `Uses` has to be gone with it, because a
-   field with no ceiling has none to draw.
+   Every readable record's `Uses` in Features goes to **that record's own ceiling**
+   and every `Attuned` to yes, because that binding is `full`; every `Level` in
+   Spells goes to 0 and every `Prepared` to no, because that one is `empty`. So
+   "Second Wind" reads 3, "Sunblade" 2 and "Warded cloak" 3 — and **"Torch of
+   Revealing", which has set no ceiling, does not move at all while its `Attuned`
+   still does**, because a record with no ceiling is a record that is not a
+   counter rather than a failure. "Fey Ancestry", whose ceiling is not a number,
+   is skipped for the same reason. **"Hand broken" is left exactly as it is**,
+   because no write into a record whose fence will not read is accepted at all —
+   and "Lucky", which has no fence, *gains* one. Nothing about "Bare list" moves,
+   since it has no fields. Reopen the note afterwards and check **every ceiling is
+   still in the file**: no reset action may delete one.
+8. **The ceiling is the reader's, and the note keeps their spelling of it.**
+   `Uses` on Features is `maxSource: "record"`, so each record draws a small field
+   after the `/` and "Torch of Revealing" shows `—` where nobody has typed one.
+   Type `4` into it and check the note now reads `Uses: 3 / 4`; clear it again and
+   check the note reads `Uses: 3` with **no trailing slash**. Then go to
+   "Sunblade", whose entry is spelled `2/2` with no spaces, and edit **both
+   halves in turn** — its value, then its ceiling — confirming after each that
+   the note still spells the slash with no spaces around it. The ceiling half is
+   the one worth pressing: it is the only place the reader's own spelling can be
+   silently canonicalised, and the note is the only thing that says whether it
+   was. "Warded cloak" sits at `5 / 3`, above
+   its own ceiling: it is drawn exactly as stored, with no warning treatment and
+   no rewrite. Finally, switch `Uses` back to **The field** in the layout editor:
+   the declared `max: 3` is drawn on every record, every stored ceiling stays in
+   the note untouched, and switching back to **Each record** finds all of them
+   still there.
 
 Two things to look at that are not claims. **"Features" holds every field type
-this component offers** — a bounded number, a toggle, a named level with a mark, a
-computed field and a modifier field — so it is where a summary line is judged for
-whether five things fit on one. And **"Inside a group" and "Inside a tab"** are the
+this component offers** — a number with a per-record ceiling, a toggle, a named
+level with a mark, a computed field and a modifier field — so it is where a
+summary line is judged for whether five things fit on one. Its `Uses` field also
+keeps a declared `max: 3`, which is not an error and is simply unused: it is
+there so switching the source back restores the old reading exactly. "Spells"
+keeps a field-owned `max: 9` on `Level`, so both kinds of ceiling are on one
+sheet. And **"Inside a group" and "Inside a tab"** are the
 same component one level down: a record set inside a Group and inside a Tab set,
 each beside a Card counting it, so containment and the aggregate are both visible
 at once.
@@ -76,7 +99,7 @@ read one level in.
 
 ### Second Wind
 ```sheet
-Uses: 1
+Uses: 1 / 3
 Attuned: no
 Rank: 1
 ```
@@ -94,7 +117,7 @@ it again.
 
 ### [[Sunblade]]
 ```sheet
-Uses: 0
+Uses: 2/2
 Attuned: yes
 Rank: 2
 Modifiers: Blessed Armour
@@ -115,7 +138,7 @@ nothing.
 
 ### Warded cloak
 ```sheet
-Uses: 2
+Uses: 5 / 3
 Attuned: yes
 Rank: 1
 Modifiers: armour_class += 2 as item when Attuned; Ring of Nonexistence
@@ -135,7 +158,7 @@ list keeps working.
 
 ### Fey Ancestry
 ```sheet
-Uses: 3
+Uses: 2 / lots
 Attuned: no
 Rank: 0
 Retired: 4

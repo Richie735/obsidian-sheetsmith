@@ -1470,10 +1470,29 @@ describe('the Record set fixture the recipe names', () => {
 		expect(after.ok).toBe(true);
 		if (!after.ok || after.data === null) return;
 		const records = (after.data as RecordSetData).records;
-		// Every readable record's `Uses` at its ceiling and every toggle set.
-		expect(records[0]?.fields?.Uses).toBe('3');
+		// Every readable record's `Uses` at **that record's own** ceiling, with the
+		// reader's own spelling of the slash kept, and every toggle set.
+		expect(records[0]?.fields?.Uses).toBe('3 / 3');
 		expect(records[0]?.fields?.Attuned).toBe('yes');
-		expect(records[6]?.fields?.Uses).toBe('3');
+		expect(records[1]?.fields?.Uses).toBe('2/2');
+		expect(records[3]?.fields?.Uses).toBe('3 / 3');
+		/*
+		 * **The two records with no ceiling of their own are skipped rather than
+		 * failed, and their toggles still reset.** "Torch of Revealing" stores a
+		 * bare number and "Fey Ancestry" a ceiling that is not one; neither is a
+		 * counter, and failing the whole component would mean one passive trait
+		 * refusing a Long rest for every record beside it. Nothing is written into
+		 * either `Uses` — not even a zero, which is the value the reader never
+		 * asked for in the one action whose job is to put a number back.
+		 */
+		expect(records[2]?.fields?.Uses).toBe('3');
+		expect(records[2]?.fields?.Attuned).toBe('yes');
+		expect(records[5]?.fields?.Uses).toBe('2 / lots');
+		expect(records[5]?.fields?.Attuned).toBe('yes');
+		// "Lucky" has no fence and no ceiling: it gains one holding the toggles
+		// alone, which is the skip being per (record, field) rather than per record.
+		expect(records[6]?.fields?.Uses).toBeUndefined();
+		expect(records[6]?.fields?.Attuned).toBe('yes');
 		// And the hand-broken one is untouched, because no write into it is
 		// accepted at all — it still holds the line that would not read, and it
 		// still reports it rather than silently gaining a fence.
@@ -1481,14 +1500,51 @@ describe('the Record set fixture the recipe names', () => {
 		expect(records[4]?.fields).toEqual({});
 	});
 
+	it('draws the layout\'s own max again when the field is switched back', () => {
+		/*
+		 * The recipe's last step on claim 8: `Uses` keeps `max: 3` beside its
+		 * `maxSource`, which is not a configuration error and is simply unused —
+		 * so switching the source back restores the previous reading exactly and
+		 * every stored ceiling is still in the note.
+		 */
+		const features = built.entryFor('features');
+		const config = features.config as RecordSetConfig;
+		const declared: RecordSetConfig = {
+			...config,
+			fields: (config.fields ?? []).map((field) =>
+				field.key === 'Uses' ? { ...field, maxSource: undefined } : field,
+			),
+		};
+		const section = getSection(built.note, 'Features');
+		// Nothing is rewritten by the switch itself, and an edit to a value beside
+		// a stored ceiling carries that ceiling through untouched.
+		expect(
+			features.component.write(
+				{ records: { 0: { fields: { Uses: '2 / 3' } } } },
+				section?.body ?? null,
+				declared,
+			),
+		).toContain('Uses: 2 / 3');
+		const reread = features.component.read(section?.body ?? '', declared);
+		expect(reread.ok).toBe(true);
+		if (!reread.ok || reread.data === null) return;
+		const records = (reread.data as RecordSetData).records;
+		expect(records[0]?.fields?.Uses).toBe('1 / 3');
+		expect(records[1]?.fields?.Uses).toBe('2/2');
+		expect(records[3]?.fields?.Uses).toBe('5 / 3');
+	});
+
 	it('names the field when a Long rest has no ceiling to restore to', () => {
-		// The recipe's last step: take `max` off `Uses` and press it again.
+		// The recipe's last step: take `max` off `Uses`, and the source with it,
+		// so the ceiling is the field's and the field declares none.
 		const features = built.entryFor('features');
 		const config = features.config as RecordSetConfig;
 		const uncapped: RecordSetConfig = {
 			...config,
 			fields: (config.fields ?? []).map((field) =>
-				field.key === 'Uses' ? { ...field, max: undefined } : field,
+				field.key === 'Uses'
+					? { ...field, max: undefined, maxSource: undefined }
+					: field,
 			),
 		};
 		const result = features.component.applyReset?.(

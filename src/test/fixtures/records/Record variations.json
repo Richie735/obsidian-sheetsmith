@@ -34,7 +34,8 @@
 				{
 					"key": "Uses",
 					"type": "number",
-					"max": 3
+					"max": 3,
+					"maxSource": "record"
 				},
 				{
 					"key": "Attuned",
