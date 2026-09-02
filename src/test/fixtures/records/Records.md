@@ -49,7 +49,8 @@ Seven claims, in the order they are easiest to break:
    all — and "Lucky", which has no fence, *gains* one. Nothing about "Bare list"
    moves, since it has no fields. Then take `max` off `Uses` in the layout editor
    and press it again: the trigger has to *name the field* rather than failing
-   quietly.
+   quietly — and the `/ 3` beside every `Uses` has to be gone with it, because a
+   field with no ceiling has none to draw.
 
 Two things to look at that are not claims. **"Features" holds every field type
 this component offers** — a bounded number, a toggle, a named level with a mark, a
