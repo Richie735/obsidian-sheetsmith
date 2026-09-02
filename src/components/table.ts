@@ -46,10 +46,15 @@ import { MarkdownTable, readTable, writeTable } from '../parse/table';
 import { displayText, hasLink } from '../parse/wikilink';
 import {
 	ColumnType,
-	DEFAULT_COLUMN_TYPE,
 	PUBLISHABLE_TYPES,
 	TOTALLED_TYPES,
 } from './column-types';
+import {
+	boundedText,
+	formatComputed,
+	typedValue,
+	typeOf,
+} from './typed-value';
 import {
 	ComponentConfig,
 	ComponentDefinition,
@@ -92,7 +97,7 @@ import {
 	sampleSeed,
 	sampleText,
 } from './sample-values';
-import { flagReading, flagText, isFlagSet } from './stored-flag';
+import { flagReading, flagText } from './stored-flag';
 import {
 	AnchoredPanel,
 	focusFirstControl,
@@ -324,9 +329,14 @@ function rowLabel(label: string): string {
 	return named === '' ? UNNAMED_ROW : named;
 }
 
-function columnType(column: TableColumn): ColumnType {
-	return column.type ?? DEFAULT_COLUMN_TYPE;
-}
+/**
+ * Shared with Record set through `typed-value.ts`, so the default cannot drift.
+ *
+ * A private copy here is the one drift `column-types.ts`'s header calls the
+ * worst of the three: "two answers to 'which is first' turn every numeric column
+ * in every layout into a text column, silently."
+ */
+const columnType = typeOf;
 
 /** Columns whose values live in the note. Computed ones are never stored. */
 function storedColumns(config: TableConfig): TableColumn[] {
@@ -341,55 +351,6 @@ function headers(config: TableConfig): string[] {
 		(config.rowHeader ?? '').trim() || DEFAULT_ROW_HEADER,
 		...storedColumns(config).map((column) => column.key),
 	];
-}
-
-/**
- * What a stored cell means to a formula.
- *
- * A blank in a column the layout declared numeric is zero, not a missing
- * name. Untrained skills are left blank on every character sheet ever
- * printed, and a sheet that made you type 0 into eighteen rows before it
- * would compute anything would be answering a question nobody asked.
- */
-function cellValue(column: TableColumn, raw: string | undefined): FieldValue {
-	const text = (raw ?? '').trim();
-	switch (columnType(column)) {
-		case 'toggle':
-			return isFlagSet(text);
-		case 'level':
-			return levelOf(column, text);
-		case 'number': {
-			if (text === '') return 0;
-			const numeric = Number(text);
-			return Number.isNaN(numeric) ? text : numeric;
-		}
-		default:
-			return text;
-	}
-}
-
-/**
- * Hold a typed number to the column's bounds. Text that is not a number is
- * left alone: the arrows already treat it as prose, and silently replacing
- * what someone typed with a number they did not is worse than storing it.
- */
-function bound(raw: string, column: TableColumn): string {
-	const text = raw.trim();
-	if (text === '') return text;
-	const value = Number(text);
-	if (!Number.isFinite(value)) return text;
-	let next = value;
-	if (column.min !== undefined) next = Math.max(column.min, next);
-	if (column.max !== undefined) next = Math.min(column.max, next);
-	return next === value ? text : String(next);
-}
-
-/** Format a computed cell: "?" when unresolved, signed when asked for. */
-function formatComputed(value: FieldValue | null, signed: boolean): string {
-	if (value === null) return '?';
-	if (typeof value === 'number' && signed && value >= 0) return `+${value}`;
-	if (typeof value === 'boolean') return value ? '✓' : '—';
-	return String(value);
 }
 
 /** Where each declared row sits in the note, and which rows are the character's. */
@@ -543,7 +504,7 @@ function rowScope(
 	const scope: Record<string, FieldValue> = {};
 	for (const column of config.columns ?? []) {
 		if (columnType(column) === 'computed') continue;
-		scope[column.key] = cellValue(column, cell(column));
+		scope[column.key] = typedValue(column, cell(column));
 	}
 	const row = declared === null ? undefined : config.rows?.[declared];
 	for (const name of Object.keys(row?.values ?? {})) {
@@ -575,7 +536,7 @@ function columnTotal(
 ): ColumnTotal {
 	let sum = 0;
 	for (const view of rows) {
-		const value = cellValue(column, view.cell(column));
+		const value = typedValue(column, view.cell(column));
 		if (typeof value === 'boolean') {
 			sum += value ? 1 : 0;
 		} else if (typeof value === 'number') {
@@ -1131,7 +1092,7 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 					// the card shows, so the bare name and `.value` agree. A
 					// declared row the note has no row for reads as blank, which
 					// in a number column is zero — the number the card shows.
-					named[key] = { value: cellValue(published, cell(published)) };
+					named[key] = { value: typedValue(published, cell(published)) };
 					continue;
 				}
 				// A computed column stores nothing, so there is no `.value` to
@@ -2243,7 +2204,7 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 					const count = graded ? levelCount(column) : 1;
 					let current = graded
 						? levelOf(column, raw)
-						: cellValue(column, raw) === true
+						: typedValue(column, raw) === true
 							? 1
 							: 0;
 					// The view rebuilds on a change, but a write that produces
@@ -2382,7 +2343,7 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 						// Bounds hold however the value arrived: a training
 						// level typed as 5 in a two-level system is the same
 						// mistake as one stepped there.
-						const bounded = type === 'number' ? bound(next, column) : next;
+						const bounded = type === 'number' ? boundedText(next, column) : next;
 						if (bounded !== next) {
 							// A correction lands on blur, at the moment the cell
 							// gives up its hover chrome and goes transparent, so

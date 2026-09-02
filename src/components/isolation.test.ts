@@ -93,6 +93,11 @@ const ALLOWED = [
 	// as six authors' idea of a placeholder (§1's one-step tier).
 	"import { sampleNumber } from './sample-values';",
 	"import { sampleNumber } from '../components/sample-values';",
+	// What a typed value stored as text means before any formula runs: three
+	// policies Table and Record set had a copy of each, and the first of them
+	// decides what an aggregate over either is adding up (§1's one-step tier).
+	"import { typedValue } from './typed-value';",
+	"import { typedValue } from '../components/typed-value';",
 	"import { MODIFIED_CLASS } from '../components/modifier-breakdown';",
 	"import { paintLinkedText } from '../components/linked-text';",
 	"import { paintLevelRing } from '../components/level-ring';",

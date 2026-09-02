@@ -114,6 +114,11 @@ value on the strength of Rich text and Image, because what is shared is *where t
 text starts* — read one way and written the other, an untouched note is
 reformatted on every save of any component on the sheet, and a guard test could
 only assert the two copies still agree to the character;
+`components/typed-value.ts` holds what a typed value stored as text means before any
+formula runs, on the strength of Table and Record set, because the first of its three
+rules decides what `sum(spells, Level)` and `sum(inventory, Weight)` are adding up —
+two copies disagreeing means one component's blank numeric field counts as zero and
+the other's does not, in arithmetic a reader cannot see;
 and `components/linked-text.ts` holds the anchor policy on the strength of Table
 and Rich text, because what is shared is a *set* — `internal-link`,
 `is-unresolved`, both `href` and `data-href`, `title` and never `aria-label`, and
