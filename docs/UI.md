@@ -295,24 +295,100 @@ belongs to the component that is only that, not to whoever renders one.
 | --- | --- | --- |
 | The card | `.sheetsmith-card`, `.sheetsmith-card-single` | Card, Card set, Pool |
 | A heading over a region | `.sheetsmith-group-heading` | Group, Tab set |
-| A component's own name | `.sheetsmith-component-label` | the card face, Pool, Track, Rich text, Image |
+| A component's own name | `.sheetsmith-component-label` | the card face, Pool, Track, Rich text, Image, Record set |
 | A strip of alternatives over a region | `.sheetsmith-tabset-strip` | Tab set's tabs |
-| The level ring | `paintLevelRing`, `.sheetsmith-level-ring` | Table's `level` and `toggle` columns, Track's flag, the editor's level sample |
+| The level ring | `paintLevelRing`, `.sheetsmith-level-ring` | Table's `level` and `toggle` columns, Record set's `level` and `toggle` fields, Track's flag, the editor's level sample |
 | The editing gesture | `editable.ts` | every stored value on a sheet |
-| Secondary text | `.sheetsmith-card-abbreviation` | Card set |
+| The focus a transparent field takes | one selector list in `sheet.css` | Table's cells, Rich text's prose, a record's name, its number fields and its body |
+| Secondary text | `.sheetsmith-card-abbreviation` | Card set, a Record set field's name |
 | Inline error | `.sheetsmith-error` | every component's own failure |
-| Arm, then commit | `.sheetsmith-table-remove-button` | Table's row delete |
+| Arm, then commit | `interaction/arm-to-confirm.ts`; `.sheetsmith-table-remove-button`, `.sheetsmith-record-remove`, `.sheetsmith-panel-remove` | Table's row delete, Record set's record delete, the modifier form's **Remove** (the sentences only) |
 | A total under a table | `tfoot` + `.sheetsmith-table-value` | Table's column totals |
-| A control in the row position | `.sheetsmith-table-add` | Table's add row |
-| Rendered text over its own field | `.sheetsmith-table-linked`, `.sheetsmith-rich-text-box`, `.sheetsmith-image-box`; `ui/spellcheck.ts` | Table's wikilinks, Rich text's prose, Image's reference |
-| Text with its wikilinks as links | `components/linked-text.ts` | Table's cells; Rich text's fallback, **and the anchors the app's own renderer drew** — the module both paints anchors and adopts them, because the press and the hover are the same policy either way |
-| A box sized by its placement | `.sheetsmith-placed`, `.sheetsmith-placed-box` | Rich text, Image |
-| Reveal on hover, only when clipped | `ui/truncation.ts` | The card's label, Table's links |
+| A control in the row position | `.sheetsmith-table-add`, `.sheetsmith-record-add` | Table's add row, Record set's add record — **one treatment**: a rule across the top, a centred label, and the hover surface every control on the sheet uses |
+| Rendered text over its own field | `.sheetsmith-table-linked`, `.sheetsmith-rich-text-box`, `.sheetsmith-image-box`, `.sheetsmith-record-linked`, `.sheetsmith-record-body`; `ui/spellcheck.ts` | Table's wikilinks, Rich text's prose, Image's reference, a record's name and its body |
+| Text with its wikilinks as links | `components/linked-text.ts` | Table's cells; Rich text's and Record set's fallback, **and the anchors the app's own renderer drew** — the module both paints anchors and adopts them, because the press and the hover are the same policy either way |
+| A box sized by its placement | `.sheetsmith-placed`, `.sheetsmith-placed-box` | Rich text, Image, Record set |
+| A boundary on that box | `.sheetsmith-placed-box`'s own border | all three, always rather than only under a coarse pointer: the fill alone measures 1.04:1 against the page |
+| Reveal on hover, only when clipped | `ui/truncation.ts` | The card's label, Table's links, a record's name |
 | A problem list under a textarea field | `.sheetsmith-field-problems`, `-problem`, `-problem-line` | the function library, the reset triggers, the bonus types |
-| A choice from a closed list | a native `<select>`; `.sheetsmith-card-select`, `.sheetsmith-table-select` | Card's options, Table's `level` column set to a select |
-| A form anchored to the control that opened it | `ui/anchored-panel.ts`; `.sheetsmith-panel`, `-body`, `-line`, `-fields`, `-field`, `-why`, `-problem` | Table's `modifier` column |
+| A choice from a closed list | a native `<select>`; `.sheetsmith-card-select`, `.sheetsmith-table-select`, `.sheetsmith-record-select` | Card's options, Table's and Record set's `level` set to a select |
+| A form anchored to the control that opened it | `ui/anchored-panel.ts`; `.sheetsmith-panel`, `-body`, `-line`, `-fields`, `-field`, `-why`, `-problem` | Table's `modifier` column, Record set's `modifier` field |
+| A value read against its ceiling | `.sheetsmith-pool-ceiling`, `-separator`, `-max` | Pool's max, a Record set `number` field with a declared `max` — **one vocabulary**: the value at full contrast, a `/`, and the ceiling muted with tabular figures. A record overrides the size only, since the pool's ceiling qualifies a headline number and a record's a 13px one |
 | A number something has been pushed at | `.sheetsmith-modified`; `components/modifier-breakdown.ts` | Card's and Card set's `derived`, Table's computed cell |
-| A control that is nothing but a glyph | `.sheetsmith-table-modifier-cell`, `-glyph`, `-button` | Table's `modifier` column |
+| A control that is nothing but a glyph | `.sheetsmith-table-modifier-cell`, `-glyph`, `-button`; `.sheetsmith-record-modifier`, `-glyph` | Table's `modifier` column, Record set's `modifier` field |
+| A disclosure that opens a block in place | `.sheetsmith-record-disclosure`, `.sheetsmith-record-body` | Record set's records |
+| A record's summary line | `.sheetsmith-record`, `-summary`, `-name`, `-fields`, `-field` | Record set |
+
+**A field with no chrome of its own takes one focus treatment, declared once**
+[checked: `styles.test.ts`]. An accent border, the page background, and a
+transparent `outline` as the forced-colors escape hatch — four declarations, and
+five fields across three components had them written out identically before the
+list above existed. §11's own measured threshold for a duplicated rule body is
+four declarations and §1 stops arguing at five consumers, so this was past both.
+**A selector list rather than a class**, because nothing in any component has to
+change for it and the classes already name themselves: the list *is* the roster,
+so a sixth field is one line rather than a fifth copy. The card's and the pool's
+focus is deliberately not on it — those paint a `box-shadow` ring around a pill
+that has its own surface, which is a different treatment for a
+differently-shaped control.
+
+**A ceiling is Pool's reading wherever it appears, and a component that grows one
+borrows the classes rather than spelling them again** [judgement]. A Record set's
+`number` field is the second consumer: `Uses 1` cannot say whether that is all of
+them or one of three, so a field with a declared `max` reads `Uses 1 / 3`. It takes
+Pool's *read-only* branch, because a record's `max` is a literal the layout declared
+rather than a number the character holds — a span, no second field, no placeholder —
+and it overrides exactly one declaration, the size, because the shared
+`--font-ui-medium` would draw a 13px value's ceiling larger than the value. **A
+`.sheetsmith-record-ceiling` beside the pool's is what this section opens by
+forbidding**, and the borrowing is this section's own rule rather than an exception
+to it: the name belongs to the component that is nothing but the thing, and a Pool is
+a value over its ceiling, exactly as a card owns the abbreviation a record's field
+name wears. A ceiling is a bare span, which is `role=generic` and so prohibits
+naming, so what carries it to a screen reader is the field's own announcement — "5 of
+9", which is how the slash is read aloud.
+
+**A disclosure opens a block in place, pushing its siblings inside a box that
+does not grow** [judgement]. Record set is the first of these and the rules are
+the box's rather than the control's. The prior art picks the direction: the
+closest analogue's report is that expanded content "overlaps the +Add and Modify
+controls… and/or is buried under the z-order of subsequent repeating items",
+written by somebody who wanted the list to drop down instead. **The push is only
+safe because the component's box is the placement**: SPEC §8 forbids a component
+ceasing to fill its placement and this section's own rule forbids a box sized by
+its content, and neither is reached — the box is `--sheetsmith-rows` ×
+`--sheetsmith-grid-row` tall whatever is open, the list scrolls inside it, and
+opening a record moves the records below it *within the scrollport*. A body
+inside that scrollport may be as tall as it is, which is not a violation of the
+same rule: that rule is about the *component's* box. **The three surfaces this is
+not** are each closed rather than merely unchosen — a modal is unavailable, since
+`ConfirmModal` takes an `App` and `RenderContext` carries no route to one; a
+drawer is refused on this section's opening sentence, and §12 already records
+`ui/anchored-panel.ts` as the largest thing this plugin draws, for which a body
+of prose is the worst possible content; and a second editor pane is what SPEC
+§4.2 rejected on principle for Rich text.
+
+**What answers the press is the chevron, not the row** [judgement]. A record's
+name is a field — it edits on the shared rules and its wikilinks are live — so a
+press on the row cannot mean both "put a caret here" and "open this", which is
+the two-jobs-on-one-control defect the modifier cell was corrected for. So the
+chevron is a glyph-only `<button>` on this section's own rule, with Obsidian's
+button chrome stripped, carrying `aria-expanded` and `aria-controls`, opening on
+a press and on Enter or Space alike, and taking the level ring's size token so it
+measures the same as the marks in the same line under the same finger. **A closed
+body is `hidden="until-found"`**, so find-in-page reaches it and a `beforematch`
+listener agrees it is open — the one thing Tab set had to give up, available here
+because a body contributing no height changes nothing. **Nothing is open on first
+render**: a tab set opens its first tab because a tab set showing nothing is a
+hole, and a record set showing every name and no body is showing its reading.
+
+**The glyph button now has three consumers and no shared class**, which is the
+same position the delete glyph's row records: what they agree on is
+`--sheetsmith-inline-control`, the ring's own measurement, so a chevron, a bolt
+and a trash in one line cannot measure differently under one finger. The rest —
+the resting colour, the hover surface, which state stands down for which — is
+each control's own. This table gains a class when the *treatment* is shared
+rather than only the number.
 
 **A field holding a list of lines reports its problems under itself, and the
 class is named for the field** [judgement]. Three fields in the layout editor
@@ -738,7 +814,7 @@ Obsidian's bare `select` rule sets a height, a background, a shadow and a font
 size, and `styles.test.ts` covers the `-select` naming for it.
 
 The delete glyph is deliberately **not** a shared class. It borrows the level
-ring's measurements through `--sheetsmith-table-control`, because two glyph
+ring's measurements through `--sheetsmith-inline-control`, because two glyph
 buttons in one table row must not measure differently under the same finger, and
 that number is the whole of the agreement: two consumers earn duplication, not a
 module (`PATTERNS.md` §1). This table gains a class when a third appears.
@@ -946,6 +1022,9 @@ that keeps solved rows stops being read.
 | A bad drag is marked by border colour alone, so forced colors shows none of it | `styles/editor.css` | `.sheetsmith-preview-overlap` recolours the border and the text to `--text-error`, and `.sheetsmith-preview-clamped` recolours `border-right-color` — and forced-colors mode repaints every border on the page one system colour, so both marks land on top of the thing they are trying to differ from. Exactly the failure the *selected* block had, found in the same pass and fixed there with a wider outline at a different offset. **Not fixed here because neither state can be looked at.** Both exist only during a pointer drag, `harness/shot.mjs` opens with why there is no browser to drive one, and writing a forced-colors treatment nobody can photograph is the "read rather than seen" bargain the `prefers-contrast` row above already refuses. `clamped` is also not a copy of the block's fix: it marks *one edge* to say which side stopped growing, and an outline has no one-edge form, so what a single-edge mark becomes in a mode with no border colours is a design question rather than a second application of an answer already given. **Waiting on:** the same fixture a hover or a press would need, which is what the `prefers-contrast` row is waiting on too — take them together. |
 | The layout editor pane has no narrow regime, and does not fit below about 470px | `styles/editor.css`, `editor/layout-editor.ts` | The pane's reflow rule stacks its two columns below 1176px and says nothing about anything narrower, so a pane in a sidebar or on a phone overflows horizontally — which in a leaf is a scrollbar dragging the tree and the panel sideways, not only the schematic. Seen in `editor-narrow`: the picker's delete icon is clipped, the schematic runs off the right, and the panel's `height` field is off-screen entirely. **Two independent contributors, each confirmed by hiding the other.** The `.setting-item` rows do not stack, and stacking them the way Obsidian stacks a settings row on mobile removes that half — verified with a throwaway override. The schematic's twelve-column grid overflows on its own with every row hidden. **Why it was never seen:** no editor shot went below 1190, and in a settings tab these same rows sat inside `.vertical-tab-content` where Obsidian's own narrow-settings CSS reaches them; a leaf never receives it, and `harness/calibrate.mjs` carries an at-rule only for the modes a shot can be *taken* in — `forced-colors` and `prefers-reduced-motion` — so the harness has none of Obsidian's width queries either and cannot say what the tab did. Not fixed here because only the first half is contained: the second is a design question the spec never asked — whether a twelve-column schematic at phone width shrinks to ~29px tracks, scrolls inside its own box, or is not drawn — and the stacking threshold has to be derived rather than borrowed, which is the failure §4 records. **Waiting on:** that decision, which is adjacent to the M4 canvas since it is about what a grid is for when it cannot be read. |
 
+| Three same-size circles in one summary line mean focus, on, and off | `styles/sheet.css`, `components/record-set.ts` | A focused delete glyph is an accent circle ⌀29px around a trash mark; the toggle 54px to its left is a grey circle of the same diameter, and a *set* toggle is an accent-filled disc of it. So one row carries three circles at one size whose meanings are focus, state-on and state-off. **Not wrong, and that is why it is a row rather than a fix**: focus and state do separate on fill against outline, which `legibility.md` §2 accepts as a second channel, and the treatment is one treatment applied consistently, which is what §6 asks for. What earns the row is *which* control is involved — the delete is the only irreversible thing this component offers, and a mark a reader has to look twice at is a worse mark there than anywhere else. Measured off the focus shots at 1400px, both themes. **Waiting on:** a decision about whether a destructive control's focus should differ in shape from a state mark's, which is one call for the delete glyph, the modifier glyph and the chevron together and not this component's alone. |
+| A six-field record's field cluster wraps *inside its own grid track* between about 338px and 361px of the list's width, so the second field line starts at the fields' column rather than the name's | `styles/sheet.css`'s `@container (max-width: 320px)`, `components/record-set.ts` | **The 320px container query exists to prevent exactly this, and above its threshold nothing does.** Below 320 the summary is two grid rows and the field line starts in the name's own column — measured `fieldsLeft - nameLeft = 0` at a 280px container. Above it the summary is one row and the fields sit in an `auto` track whose min-content is only its widest cell, so a cluster that will not fit shrinks the track and wraps *within* it: the second line begins at the fields' column, tens of pixels right of the name, which is the reading the query was written to stop — `Level 3` as plausibly the next record's heading as this one's value. Measured on the harness's `traits` list, which carries all five offered field types beside the chevron and the delete: container **338px** (window 620), **346px** (`sheet-narrow`, whose `&width=380` is a container width and not a viewport) and **361px** (window 660) — all three drawn as two field lines with the name track squeezed to 76-88px. **`sheet-narrow` is one of the three, so this is in a default shot today.** **Pre-existing**, and confirmed as such by measuring the pre-change build at all three widths: drawing a bounded `number` field's ceiling moved the crowding point by about 16px — a 14px span at a 2px gap — and narrowed the name track by 8px (88 to 80 at 380px, 84.3 to 76.3 at 620). It made the band easier to hit; it did not make the wrap. **The root cause is the threshold's own derivation**: 320px was chosen for "a name, a labelled number, a ring and a glyph", which is four things, and a record's fields are declared by the layout — six of them plus two glyph controls is a line the number was never measured against. So the threshold is right for the line it was derived from and low for the line an author can build. **Waiting on:** a threshold call of its own — whether the query keys on the field count rather than on one fixed width — taken with the shot at those three container widths in front of whoever takes it. |
+| A stacked cell renders both its layers at once in forced colors | `components/table.ts`, `.sheetsmith-table-linked` | `color: transparent` on the field is not transparent in forced-colors mode: the mode repaints every foreground to the system colour, so the field's own text returns *under* the opaque layer drawn over it, and where the two hold different characters the result is unreadable. Photographed on Record set first, whose names rendered `Ring of Protectionn]]` — **and Table has the identical defect in the identical shot**, on every cell whose text holds a wikilink. Fixed on the record's name by taking Rich text's "hidden rather than left transparent" departure under `@media (forced-colors: active)`: the layer goes, the field's raw `[[Target]]` shows, and what it costs is the anchor — readable and not clickable in that mode, which is the better half of the trade against text nobody can read. **Not fixed on Table here**, deliberately: it is pre-existing in a component the Record set feature is not otherwise touching, and the same fix there gives up a cell's link press in that mode, which is a decision about Table's own gesture rather than a copy of this one. Only a link-bearing cell is affected; a cell with no link gets no stack at all. **Waiting on:** a pass on Table that takes the same departure, or a ruling that a cell should keep its press and lose something else instead. |
 | Entering edit mode on a Rich text block loses the reader's place | `components/rich-text.ts`, `.sheetsmith-rich-text-box` | The two layers are separate scrollports — they hold the same text in two different shapes, so one shared offset would put them out of step — and nothing carries the offset across. Scroll a long backstory to paragraph twelve, click, and the field opens at paragraph one. **The alarming half is fixed and the gap is what is left.** The field used to open at its *last* line: assigning `value` moves the text entry cursor to the end, and focusing scrolls it into view — measured in Chrome at `scrollTop` 2062 of a possible 2062, on a forty-paragraph block. `setSelectionRange(0, 0)` after the assignment makes the landing a chosen position instead of an inherited one, and `rich-text.test.ts` drives it. What remains is that the chosen position is not the reader's. Carrying the offset over is a proportional map on focus and would be a few lines, **but only honest if the caret moves with it**: a reader looking at paragraph twelve whose keystrokes land in paragraph forty is worse off than one who can see where they are, and the caret is currently at the start by the same decision above. That pairing reverses departure 2 in `rich-text.ts` — the caret is deliberately *not* placed from the click, because a point in the rendered view is not a character in the source — so the fix is a design decision rather than a patch, and it was declined when offered. Invisible in the harness by construction: a still cannot show a scroll position before and after a focus. **Waiting on:** evidence that the jump is felt on a backstory long enough to scroll, which is the one length the sample does not have.
 | `mod.self` reaches a player on a computed cell's popover | `components/table.ts`, the computed cell's `title` | The formula line above a breakdown reads `ability + Training * 2 + mod.self`, and `+ mod.self` is in that formula only because modifiers exist — so the token now meets the exact reader the breakdown's own wording was rewritten to spare, on the same popover. **Decided rather than inherited, and the decision is that it stays**: a breakdown line is a sentence this plugin *composes*, so it owes the reader's vocabulary, while a formula line is a **quotation of the author's own text**. Rewriting a quotation is the worse failure — the string on the sheet would stop matching the string in the layout editor, and a reader comparing the two to find out why a number is wrong could no longer match them. It is the rule `.sheetsmith-field-problem code` already follows. The residue is that `ability` and `Training` at least name things visible on the sheet and `mod.self` names nothing a player can see. A fix would be a glossary line on the popover, or a plain-English gloss beside the formula — both add a surface, and neither is worth one until an author asks. |
 | A list entry labels its first line once in a header and its second line on every entry | `styles/editor.css` `.sheetsmith-field-name`, `editor/list-fields.ts` | Above 380px `.sheetsmith-field-name` is `display: none` and the row line takes its names from a single `.sheetsmith-entry-columns` header; the *detail* line under it has no header and labels every field on every entry. So Modifiers shows `Name` once over ten entries while `Changes`, `Operator`, `Amount`, `Bonus type` and `Only when` repeat ten times each. Raised as a Modifiers defect and it is not one: **this is the shared geometry of all four lists**, and Rows and Columns have the identical split. The detail labels cannot move into a header — the line is `flex-wrap: wrap` and its fields move, so a fixed header above them would not align at every width and would break outright once the line wraps — so closing it means dropping the header row and labelling per entry on all four lists, which is a pane-wide change to the labelling model rather than a fix to this feature. |
