@@ -193,10 +193,13 @@ export default defineConfig(
 								 * `ComponentDefinition`, imports nothing from `obsidian`
 								 * and touches no file — it is the markup of the form a
 								 * modifier glyph opens, beside `card-face.ts` and
-								 * `linked-text.ts`. Table is its one consumer today, and
-								 * the reason it is a module rather than a paragraph inside
-								 * `table.ts` is that the file was already 2450 lines and
-								 * the form is a second job in it (PATTERNS §1).
+								 * `linked-text.ts`. Table was its one consumer when it was
+								 * added and Record set's `modifier` field is the second, with
+								 * the form's options unchanged to admit it — so the entry is
+								 * the record of an atomicity argument later vindicated by
+								 * reuse, in that order. What forced the split was neither:
+								 * `table.ts` was already 2450 lines and the form is a
+								 * second job in it (PATTERNS §1).
 								 */
 								'!./modifier-form',
 								/*
