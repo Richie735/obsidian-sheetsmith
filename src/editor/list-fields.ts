@@ -27,6 +27,10 @@ import {
 	COLUMN_TYPES,
 	ColumnType,
 	DEFAULT_COLUMN_TYPE,
+	DEFAULT_MAX_SOURCE,
+	HOLDER_MAX_SOURCE,
+	MAX_SOURCES,
+	MaxSource,
 	PUBLISHABLE_TYPES,
 	TOTALLED_TYPES,
 } from '../components/column-types';
@@ -565,6 +569,7 @@ interface ColumnEntry extends Record<string, unknown> {
 	formula?: string;
 	min?: number;
 	max?: number;
+	maxSource?: string;
 	levels?: string[];
 	input?: string;
 	signed?: boolean;
@@ -1091,13 +1096,29 @@ export function renderColumnsEditor(
 				drawSample();
 			}
 		} else if (effective === 'number') {
+			/**
+			 * Whether this list offers a maximum each holder sets for itself, and
+			 * whether this entry has taken it.
+			 *
+			 * Opt-in, unlike the flags below: a per-holder maximum is a second
+			 * stored number inside one entry, and a component that does not draw a
+			 * field for it, restore to it and clamp against it must not offer the
+			 * choice (`types.ts`, `holderMax`).
+			 */
+			const perHolder = offers?.holderMax === true;
+			const holderOwnsMax = perHolder && column.maxSource === HOLDER_MAX_SOURCE;
 			for (const bound of ['min', 'max'] as const) {
-				const holder = detail.createDiv('sheetsmith-position-field');
-				holder.createSpan({
+				// **Maximum** is the entry's own number, so it is offered only while
+				// the entry owns one. The declared value survives in the layout
+				// untouched, which is what makes switching back restore the reading,
+				// and the picker below says so.
+				if (bound === 'max' && holderOwnsMax) continue;
+				const box = detail.createDiv('sheetsmith-position-field');
+				box.createSpan({
 					cls: 'sheetsmith-position-label',
 					text: bound === 'min' ? 'Minimum' : 'Maximum',
 				});
-				const input = holder.createEl('input', { type: 'number' });
+				const input = box.createEl('input', { type: 'number' });
 				input.value = column[bound] === undefined ? '' : String(column[bound]);
 				input.setAttribute('aria-label', `${column.key} ${bound}`);
 				input.dataset.sheetsmithFocus = `${prefix}-col-${column.key}-${bound}`;
@@ -1118,6 +1139,54 @@ export function renderColumnsEditor(
 					column[bound] = parsed;
 					context.persist();
 				});
+			}
+
+			/*
+			 * **Maximum from**, after the ceiling it governs rather than between the
+			 * two numbers. Drawn between them it read as qualifying **Minimum**,
+			 * which it does not: a floor is the layout's in both modes, and the only
+			 * input it withholds is the one directly above it. Where the holder owns
+			 * the maximum that input is gone and this is simply last.
+			 */
+			if (perHolder) {
+				const source = labelled(detail, 'Maximum from').createEl('select', {
+					attr: { 'aria-label': `${column.key} maximum from` },
+				});
+				/*
+				 * **A `Record` over the shared union rather than a list of pairs**,
+				 * which is §1's own instruction: a third source cannot be added to
+				 * `column-types.ts` without a word here, and that is a guard nobody
+				 * has to remember to run. The *ids* are the vocabulary's and the
+				 * *words* are this field's, which is what makes the boundary claim
+				 * on `ColumnOptionsSpec` true — a Table would read "The column" and
+				 * "Each row" here and persist the same two ids.
+				 */
+				const words: Record<MaxSource, string> = {
+					field: `The ${unit}`,
+					record: `Each ${holder}`,
+				};
+				for (const id of MAX_SOURCES) {
+					source.createEl('option', { value: id, text: words[id] });
+				}
+				source.value = holderOwnsMax ? HOLDER_MAX_SOURCE : DEFAULT_MAX_SOURCE;
+				source.dataset.sheetsmithFocus = `${prefix}-col-${column.key}-maxsource`;
+				source.addEventListener('change', () => {
+					// The effective default is written out as absence, the form's
+					// standing rule — and the component reads a missing key as the
+					// entry's own maximum, so the two agree.
+					if (source.value === DEFAULT_MAX_SOURCE) delete column.maxSource;
+					else column.maxSource = source.value;
+					context.persist();
+					// It decides whether **Maximum** is offered at all, so the redraw
+					// takes a field away under the author's hand: flash the line, and
+					// keep the hand on the control that did it.
+					context.focusAfterRedraw(`${prefix}-col-${column.key}-maxsource`);
+					context.flashAfterRedraw?.(`${prefix}-col-${column.key}-detail`);
+					context.redraw();
+				});
+				// **Maximum** is the entry's own number, so it is offered only while
+				// the entry owns one. The declared value survives in the layout
+				// untouched, which is what makes switching back restore the reading.
 			}
 		} else if (effective === 'text') {
 			checkField(detail, 'Secondary text', column, 'secondary', context);
@@ -1200,6 +1269,28 @@ export function renderColumnsEditor(
 			),
 		);
 	}
+	/*
+	 * **Where a maximum has moved to the holder, say that the declared one is
+	 * kept.** Switching the picker takes the **Maximum** input away with the
+	 * author's own number in it, and a box holding a number that simply vanishes
+	 * invites retyping it — while the number is in fact left in the layout,
+	 * untouched, which is what makes switching back restore the previous reading
+	 * exactly.
+	 *
+	 * A footnote rather than a disabled input, on this form's own rule: a control
+	 * that does nothing is what the hide-heading flag was withdrawn for, and a
+	 * greyed box saying "not used" is one. Once for the list, on the terms the
+	 * total's and the publication's notes already set — and only where a column
+	 * has actually taken it, so nobody reads about a state they are not in.
+	 */
+	if (columns.some((column) => column.maxSource === HOLDER_MAX_SOURCE)) {
+		listEl.createDiv('sheetsmith-entry-footnote', (el) =>
+			el.setText(
+				`Each ${holder} types its own maximum on the sheet, beside the value. A maximum this ${unit} declares is kept in the layout and left unused, so switching back to the ${unit} restores it.`,
+			),
+		);
+	}
+
 	// The same rule as the total's note, and shown on the same terms: a
 	// published column is the only thing that turns a row key into a name, and
 	// the rows list above is where the key is typed. Nothing else on this form

@@ -806,6 +806,12 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				types: ['number', 'toggle', 'level', 'computed', 'modifier'],
 				total: false,
 				publish: false,
+				// A uses counter that belongs to a record the character added is
+				// the one thing this component has that a Pool or a Track beside
+				// the list could never provide, and a homebrew feature's number of
+				// uses is the record's rather than the layout's. Table does not ask
+				// for it, which is what keeps this feature out of Table.
+				holderMax: true,
 				// There is no heading strip over a record's fields, so a control that
 				// hides one is a control that does nothing. The *key* is still read
 				// and still round-trips.
@@ -823,7 +829,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				heading: 'Name',
 			},
 			description:
-				'The typed values every record holds, each an entry in that record\'s block in the note. Text is not offered: words a reader reads belong in the record\'s body, where they may hold links. A number field with a maximum is a uses counter: the field draws that maximum beside its value, and a reset trigger restores it to that maximum.',
+				'The typed values every record holds, each an entry in that record\'s block in the note. Text is not offered: words a reader reads belong in the record\'s body, where they may hold links. A number field with a maximum is a uses counter: the field draws that maximum beside its value, and a reset trigger restores it to that maximum. A number field\'s maximum may belong to the field, so every record shares it, or to each record, so a reader types it on the sheet — and a reset restores each record to whichever one applies.',
 		},
 		{
 			key: 'hideLabel',

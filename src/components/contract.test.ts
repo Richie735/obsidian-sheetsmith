@@ -11,6 +11,7 @@ import {
 } from './index';
 import { COLUMN_TYPES } from './column-types';
 import {
+	ColumnOptionsSpec,
 	ComponentConfig,
 	EDITOR_OWNED_KEYS,
 	isContainer,
@@ -151,6 +152,25 @@ function saysTwoThings(entry: ScopeEntry): boolean {
 	return entry.display !== undefined && entry.compute !== undefined;
 }
 
+/**
+ * Which of a component's `columns` fields offer a per-holder maximum on a list
+ * that cannot hold a number — a control with nothing to attach to.
+ *
+ * **A named predicate rather than an inline loop, so it can be driven over the
+ * shape it forbids.** As a loop it could not fail: one component declares
+ * `holderMax` and that one offers `number`, so the case asserted an empty list
+ * over an empty list, which is §10's vacuous pass exactly. `styles.test.ts`'s
+ * "would catch a field whose focus rule went" is the answer this borrows.
+ */
+function holderMaxWithoutNumber(
+	fields: readonly { key: string; columnOptions?: ColumnOptionsSpec }[],
+): string[] {
+	return fields
+		.filter((field) => field.columnOptions?.holderMax === true)
+		.filter((field) => !(field.columnOptions?.types ?? []).includes('number'))
+		.map((field) => field.key);
+}
+
 describe('component registry', () => {
 	it('has at least one component registered', () => {
 		expect(types.length).toBeGreaterThan(0);
@@ -158,6 +178,42 @@ describe('component registry', () => {
 
 	it('registers each type exactly once', () => {
 		expect(new Set(types).size).toBe(types.length);
+	});
+
+	it('would catch a per-holder maximum offered on a list holding no number', () => {
+		/*
+		 * The per-component case asserts an empty list, so it reads exactly the
+		 * same on a registry where nothing declares `holderMax` at all — which is
+		 * today's registry but one. This drives the predicate over the shape it
+		 * forbids, and over the two shapes it must not report: a list that offers
+		 * the control *and* a number, and one that offers neither.
+		 */
+		expect(
+			holderMaxWithoutNumber([
+				{ key: 'fields', columnOptions: { types: ['toggle'], holderMax: true } },
+			]),
+		).toEqual(['fields']);
+		expect(
+			holderMaxWithoutNumber([
+				{
+					key: 'fields',
+					columnOptions: { types: ['number', 'toggle'], holderMax: true },
+				},
+				{ key: 'columns', columnOptions: { types: ['toggle'] } },
+				{ key: 'plain' },
+			]),
+		).toEqual([]);
+	});
+
+	it('has a component actually exercising the per-holder maximum', () => {
+		// And the predicate is only worth its line while something declares the
+		// member: a check over a flag nothing sets is a check nobody can break.
+		const declaring = types.flatMap((type) =>
+			(getComponent(type)?.configFields ?? []).filter(
+				(field) => field.columnOptions?.holderMax === true,
+			),
+		);
+		expect(declaring.length).toBeGreaterThan(0);
 	});
 
 	it('declares enough config fields for the per-field checks to mean anything', () => {
@@ -1009,6 +1065,16 @@ describe.each(types)('component "%s"', (type) => {
 			}
 			expect(new Set(offered.types).size).toBe(offered.types.length);
 		}
+	});
+
+	it('offers a number wherever a columns field offers a per-holder maximum', () => {
+		// A per-holder maximum bounds one number, so a list that cannot hold a
+		// number is a control with nothing to attach to. Same class of check as
+		// the `types`-against-`COLUMN_TYPES` case above: the member is a flag on
+		// a spec the compiler cannot relate to the list beside it. The registry
+		// case below drives the predicate over the shape it forbids, because
+		// this one reads the same on a registry that declares none.
+		expect(holderMaxWithoutNumber(component?.configFields ?? [])).toEqual([]);
 	});
 
 	it('gives every select field a non-empty options list', () => {

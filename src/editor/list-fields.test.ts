@@ -1152,6 +1152,112 @@ describe('the columns editor over a component that holds fewer types', () => {
 		expect(table.querySelector('input[aria-label="Column heading"]')).not.toBeNull();
 	});
 
+	it('offers a per-holder maximum only where the list asks for one', () => {
+		/*
+		 * Opt-in, unlike the flags above, which are existing controls a component
+		 * may *withdraw*. A per-holder maximum is a second stored number inside one
+		 * entry, and a list whose component does not draw a field for it, restore
+		 * to it and clamp against it must not offer the choice. Table's columns
+		 * list is unchanged, which is what keeps this feature out of Table.
+		 */
+		const table = columnsEditor({ columns: [{ key: 'Qty', type: 'number' }] });
+		expect(
+			Array.from(table.querySelectorAll('.sheetsmith-position-label')).map(
+				(one) => one.textContent,
+			),
+		).toEqual(['Minimum', 'Maximum']);
+		expect(table.querySelector('select[aria-label="Qty maximum from"]')).toBeNull();
+
+		const words = { ...OFFERS, holderMax: true, unit: 'field', holder: 'record' };
+		const el = columnsEditor({ columns: [{ key: 'Uses', type: 'number' }] }, 0, words);
+		const source = el.querySelector<HTMLSelectElement>(
+			'select[aria-label="Uses maximum from"]',
+		);
+		expect(source).not.toBeNull();
+		// The two options are composed from the list's own vocabulary, so no
+		// component's name reaches this module: a Table's would read "The column"
+		// and "Each row" with no change here.
+		expect(
+			Array.from(source?.options ?? []).map((one) => [one.value, one.text]),
+		).toEqual([
+			['field', 'The field'],
+			['record', 'Each record'],
+		]);
+		expect(source?.value).toBe('field');
+		// **After the ceiling it governs, not between the two numbers.** Between
+		// them it reads as qualifying **Minimum**, which it does not: a floor is
+		// the layout's in both modes.
+		expect(
+			Array.from(el.querySelectorAll('.sheetsmith-position-label')).map(
+				(one) => one.textContent,
+			),
+		).toEqual(['Minimum', 'Maximum', 'Maximum from']);
+	});
+
+	it('withholds the maximum while the holder owns it, and writes the default out as absence', () => {
+		const words = { ...OFFERS, holderMax: true, unit: 'field', holder: 'record' };
+		const column: Record<string, unknown> = { key: 'Uses', type: 'number', max: 3 };
+		const el = columnsEditor({ columns: [column] }, 0, words);
+		const source = el.querySelector<HTMLSelectElement>(
+			'select[aria-label="Uses maximum from"]',
+		) as HTMLSelectElement;
+		source.value = 'record';
+		source.dispatchEvent(new Event('change'));
+		expect(column.maxSource).toBe('record');
+		expect(recorded.persists).toBe(1);
+		expect(recorded.redraws).toBe(1);
+		// **The declared number survives untouched**, which is what makes switching
+		// back restore the previous reading exactly.
+		expect(column.max).toBe(3);
+
+		const owned = columnsEditor({ columns: [column] }, 0, words);
+		expect(
+			Array.from(owned.querySelectorAll('.sheetsmith-position-label')).map(
+				(one) => one.textContent,
+			),
+		).toEqual(['Minimum', 'Maximum from']);
+		// Back again, and the key leaves the file rather than being written out as
+		// the value it already effectively has.
+		const back = owned.querySelector<HTMLSelectElement>(
+			'select[aria-label="Uses maximum from"]',
+		) as HTMLSelectElement;
+		expect(back.value).toBe('record');
+		back.value = 'field';
+		back.dispatchEvent(new Event('change'));
+		expect('maxSource' in column).toBe(false);
+		expect(
+			Array.from(
+				columnsEditor({ columns: [column] }, 0, words).querySelectorAll(
+					'.sheetsmith-position-label',
+				),
+			).map((one) => one.textContent),
+		).toEqual(['Minimum', 'Maximum', 'Maximum from']);
+	});
+
+	it('says the declared maximum is kept when the holder takes it over', () => {
+		// The input vanishes with the author's number in it, and the number is in
+		// fact left in the layout untouched — so the form has to say so, or a box
+		// holding a number simply disappearing invites retyping it.
+		const words = { ...OFFERS, holderMax: true, unit: 'field', holder: 'record' };
+		const before = columnsEditor(
+			{ columns: [{ key: 'Uses', type: 'number', max: 3 }] },
+			0,
+			words,
+		);
+		expect(before.textContent).not.toContain('is kept in the layout');
+		const after = columnsEditor(
+			{ columns: [{ key: 'Uses', type: 'number', max: 3, maxSource: 'record' }] },
+			0,
+			words,
+		);
+		expect(after.textContent).toContain(
+			'Each record types its own maximum on the sheet',
+		);
+		expect(after.textContent).toContain(
+			'kept in the layout and left unused, so switching back to the field restores it',
+		);
+	});
+
 	it('withholds the hide-heading flag where no heading is drawn', () => {
 		// A control that does nothing, on a component that draws no heading strip.
 		// The key is still read and still round-trips; what goes is the control.
