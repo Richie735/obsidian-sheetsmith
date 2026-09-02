@@ -66,6 +66,40 @@ export interface EditableOptions {
 	announceCommit?: (next: string) => void;
 	/** Announced when Escape puts the stored value back. */
 	announceRestore?: (restored: string) => void;
+	/**
+	 * Why this draft must not be written, or null where it may be.
+	 *
+	 * `bindMultiline`'s member, on the same argument and with the same shape: a
+	 * refusal has to stop the write, and `onCommit` *is* the write — so a caller
+	 * refusing there has already had `committed` moved on to the draft it
+	 * refused, and the Escape that should put the stored value back restores the
+	 * bad draft instead. `docs/UI.md` §9 names this module as the editing gesture
+	 * for every stored value on a sheet, and a field abandoning a refused draft
+	 * differently from a block of prose is the instrument disagreeing with
+	 * itself.
+	 *
+	 * The one case that needs it here is a note reference typed into a field
+	 * whose component stores it in a fence: Obsidian indexes no link inside one
+	 * (CLAUDE.md 2), so the commit is declined and the draft is kept.
+	 *
+	 * **Keeping the draft is the binding's rule and not a caller's choice**, which
+	 * is a narrowing of what `docs/PATTERNS.md` §11's row asked for before this
+	 * hook existed: it proposed making it optional so the one call site that does
+	 * the opposite could opt out. That call site — a record's blank name — does not
+	 * reach this hook at all, because it is a "put the stored one back and say so"
+	 * inside `onCommit` rather than a refusal to write, so an option here would
+	 * have one consumer and that consumer would be the wrong one (§1). It states
+	 * its own departure instead, at `record-set.ts`'s `drawName`.
+	 */
+	refuse?: (next: string) => string | null;
+	/**
+	 * The standing refusal's message, or null where the draft is acceptable.
+	 *
+	 * Called on every commit attempt including the ones that succeed and the
+	 * ones that change nothing, so the caller can clear a message it is showing
+	 * without tracking when to.
+	 */
+	onRefusal?: (message: string | null) => void;
 	onCommit: (next: string) => void;
 }
 
@@ -165,7 +199,18 @@ export function bindEditable(
 			input.value = next;
 			redraw();
 		}
-		if (next === committed) return;
+		// A draft equal to what is stored is not a write, and it is also not a
+		// refusal: this is the path that clears a message the last attempt put up.
+		if (next === committed) {
+			options.onRefusal?.(null);
+			return;
+		}
+		const refused = options.refuse?.(next) ?? null;
+		options.onRefusal?.(refused);
+		// **The draft is kept, not discarded.** `committed` is left alone so the
+		// next blur tries again and Escape still restores what is stored, which
+		// is the half a refusal inside `onCommit` cannot have.
+		if (refused !== null) return;
 		committed = next;
 		options.announceCommit?.(next);
 		options.onCommit(next);
