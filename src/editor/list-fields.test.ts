@@ -6,7 +6,8 @@ import {
 	renderEntriesEditor,
 	renderRowsEditor,
 } from './list-fields';
-import { EntryColumnSpec } from '../types';
+import { ColumnOptionsSpec, EntryColumnSpec } from '../types';
+import { COLUMN_TYPES } from '../components/column-types';
 
 /*
  * The layout editor's list fields, which had no coverage until the obsidian
@@ -55,6 +56,8 @@ function columnsEditor(
 	record: Record<string, unknown>,
 	/** How many modifiers this layout declares, which the note under the list counts. */
 	modifierCount = 0,
+	/** What the field's own component offers, where it holds fewer than all of it. */
+	offers?: ColumnOptionsSpec,
 ): HTMLElement {
 	const el = host();
 	renderColumnsEditor(
@@ -64,6 +67,7 @@ function columnsEditor(
 		'skills',
 		context,
 		modifierCount,
+		offers,
 	);
 	return el;
 }
@@ -1002,6 +1006,183 @@ describe('entries editor', () => {
 /*
  * The two cells item modifiers add to a column (SPEC §5).
  */
+describe('the columns editor over a component that holds fewer types', () => {
+	/*
+	 * The field is Table's shape and Record set is the second component to take
+	 * it. Without a declaration of what a component offers, the select listed
+	 * every type and the add control stored a column as "no type" — which the
+	 * *shared* default reads back as `text`, which a Record set refuses. So an
+	 * author met a configuration error on the first field they created.
+	 */
+	const OFFERS = {
+		types: ['number', 'toggle', 'level', 'computed', 'modifier'],
+		total: false,
+		publish: false,
+		hideHeading: false,
+	} as const;
+
+	function typeSelect(el: HTMLElement): HTMLSelectElement {
+		const found = el.querySelector<HTMLSelectElement>(
+			"select[aria-label='What the column holds']",
+		);
+		if (!found) throw new Error('no type select');
+		return found;
+	}
+
+	const labels = (el: HTMLElement): string[] =>
+		Array.from(el.querySelectorAll('label')).map(
+			(one) => one.textContent ?? '',
+		);
+
+	it('offers every type where the field declares none, as a table does', () => {
+		const el = columnsEditor({ columns: [{ key: 'Qty', type: 'number' }] });
+		const options = Array.from(typeSelect(el).options).map((one) => one.value);
+		expect(options).toEqual([...COLUMN_TYPES]);
+	});
+
+	it('offers only the types the field declares', () => {
+		const el = columnsEditor(
+			{ columns: [{ key: 'Uses', type: 'number' }] },
+			0,
+			OFFERS,
+		);
+		const options = Array.from(typeSelect(el).options).map((one) => one.value);
+		expect(options).toEqual([...OFFERS.types]);
+		expect(options).not.toContain('text');
+	});
+
+	it('writes the type out on a new column where text is not offered', () => {
+		/*
+		 * **The half that makes the fix a fix.** Left absent, a new column is
+		 * stored as "no type" and every reader takes that to be the shared default,
+		 * which is the one type this component refuses. Giving the component its own
+		 * default instead is what `column-types.ts`'s header refuses: the editor's
+		 * omission and the component's fallback are keyed on the same constant, and
+		 * two answers to "which is first" misreads stored data.
+		 */
+		const record: { columns: { key: string; type?: string }[] } = { columns: [] };
+		const el = columnsEditor(record, 0, OFFERS);
+		button(el, 'Add column').click();
+		expect(record.columns).toEqual([{ key: 'New column', type: 'number' }]);
+
+		// And a Table still stores its default as absence, so no layout moves.
+		const table: { columns: { key: string; type?: string }[] } = { columns: [] };
+		button(columnsEditor(table), 'Add column').click();
+		expect(table.columns).toEqual([{ key: 'New column' }]);
+	});
+
+	it('offers neither a total nor publication where the field refuses them', () => {
+		const shown = labels(
+			columnsEditor({ columns: [{ key: 'Uses', type: 'number' }] }),
+		);
+		expect(shown).toContain('Show a total');
+		expect(shown).toContain('Publish per row');
+		const narrowed = labels(
+			columnsEditor({ columns: [{ key: 'Uses', type: 'number' }] }, 0, OFFERS),
+		);
+		expect(narrowed).not.toContain('Show a total');
+		expect(narrowed).not.toContain('Publish per row');
+		// And the third flag on the same declaration, which goes for its own
+		// reason: the component draws no heading for one to hide. The case below
+		// drives that half on its own.
+		expect(narrowed).not.toContain('Hide heading');
+	});
+
+	it('draws the detail line of the type the select is showing', () => {
+		/*
+		 * The select shows `fallback` for an unset type, so resolving the detail
+		 * line against the *shared* default instead drew **Number** over a text
+		 * column's controls. Reachable from a hand-edited layout, which is what
+		 * an unset type on a list that does not offer text can only come from.
+		 */
+		const el = columnsEditor({ columns: [{ key: 'Uses' }] }, 0, OFFERS);
+		expect(typeSelect(el).value).toBe('number');
+		// A number column's bounds, not a text column's `Secondary text` — the
+		// bounds are position fields rather than labelled checkboxes, so they are
+		// read off their own spans.
+		const spans = Array.from(
+			el.querySelectorAll('.sheetsmith-position-label'),
+		).map((one) => one.textContent);
+		expect(spans).toEqual(['Minimum', 'Maximum']);
+		expect(labels(el)).not.toContain('Secondary text');
+	});
+
+	it('speaks the field\'s own vocabulary rather than a table\'s', () => {
+		/*
+		 * The one panel where an author reads about their Record set described it
+		 * as cells and rows, which is the vocabulary the model question freed the
+		 * word "record" to end (SPEC §2). The field says what its entries are
+		 * called, so nothing here knows which component it is drawing.
+		 */
+		const words = {
+			...OFFERS,
+			unit: 'field',
+			holder: 'record',
+			cell: 'field',
+			heading: 'Name',
+		} as const;
+		const el = columnsEditor({ columns: [] }, 2, words);
+		expect(el.textContent).toContain('No fields yet.');
+		expect(button(el, 'Add field')).toBeDefined();
+
+		const filled = columnsEditor(
+			{ columns: [{ key: 'Modifiers', type: 'modifier' }] },
+			2,
+			words,
+		);
+		expect(filled.textContent).toContain(
+			'A modifier field holds every modifier its record applies',
+		);
+		expect(filled.textContent).not.toContain('its row applies');
+		// The word over the display-name column, and the accessible name under it.
+		expect(
+			Array.from(filled.querySelectorAll('.sheetsmith-entry-columns span')).map(
+				(one) => one.textContent,
+			),
+		).toContain('Name');
+		expect(
+			filled.querySelector('input[aria-label="Field name"]'),
+		).not.toBeNull();
+		// And Table's own words are untouched by the default.
+		const table = columnsEditor(
+			{ columns: [{ key: 'Modifiers', type: 'modifier' }] },
+			2,
+		);
+		expect(table.textContent).toContain('A modifier cell holds every modifier');
+		expect(table.querySelector('input[aria-label="Column heading"]')).not.toBeNull();
+	});
+
+	it('withholds the hide-heading flag where no heading is drawn', () => {
+		// A control that does nothing, on a component that draws no heading strip.
+		// The key is still read and still round-trips; what goes is the control.
+		const shown = Array.from(
+			columnsEditor({ columns: [{ key: 'Qty', type: 'number' }] }).querySelectorAll(
+				'label',
+			),
+		).map((one) => one.textContent);
+		expect(shown).toContain('Hide heading');
+		const withheld = Array.from(
+			columnsEditor(
+				{ columns: [{ key: 'Uses', type: 'number' }] },
+				0,
+				OFFERS,
+			).querySelectorAll('label'),
+		).map((one) => one.textContent);
+		expect(withheld).not.toContain('Hide heading');
+	});
+
+	it('falls back to every type where the declaration names none that exist', () => {
+		// A hand-edited component naming nothing real must not empty the select,
+		// which would leave a column's type unchangeable.
+		const el = columnsEditor({ columns: [{ key: 'Qty' }] }, 0, {
+			types: ['prose'],
+		});
+		expect(Array.from(typeSelect(el).options).map((one) => one.value)).toEqual([
+			...COLUMN_TYPES,
+		]);
+	});
+});
+
 describe('the columns editor and a modifier column', () => {
 	const detail = (el: HTMLElement) =>
 		el.querySelector('.sheetsmith-entry-detail') as HTMLElement;

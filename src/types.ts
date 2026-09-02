@@ -244,6 +244,29 @@ export interface ConfigFieldSpec {
 	/** Choices for 'select' fields. The first is the default and is omitted. */
 	options?: readonly string[];
 	/**
+	 * What a 'columns' list offers, where the component holds fewer than every
+	 * column type or refuses a flag the field would otherwise show.
+	 *
+	 * **Here because a shared list field cannot be right for two components
+	 * without it, and the failure was reachable on the first field an author
+	 * added.** The field is Table's shape: it offers every type in
+	 * `components/column-types.ts`, and it leaves the *shared* default out of the
+	 * file — which is `text`. A Record set refuses a text field outright, since
+	 * SPEC §5's language has no strings and prose belongs in a record's body, so a
+	 * freshly added field arrived stored as "no type", read back as text, and the
+	 * card reported that it cannot hold text. The author met a configuration error
+	 * on the first field they created, beside checkboxes offering two more things
+	 * the component refuses.
+	 *
+	 * **Giving Record set its own default is what this is instead of**, and it is
+	 * the drift `column-types.ts` exists to prevent: the editor omits the key when
+	 * it equals the shared constant and the component reads a missing key as that
+	 * same constant, so two answers to "which type is first" makes one of them
+	 * misread stored data. With `text` simply not offered, a Record set's `type` is
+	 * always written out and the shared constant keeps one meaning.
+	 */
+	columnOptions?: ColumnOptionsSpec;
+	/**
 	 * What an 'entries' or 'track-rows' list calls its two content columns.
 	 * Required on those two kinds, which `contract.test.ts` checks: the member
 	 * is optional here because no other kind has a use for it, and the editor
@@ -258,6 +281,67 @@ export interface ConfigFieldSpec {
 	 * PATTERNS §1's worked example is against.
 	 */
 	entryColumns?: readonly [EntryColumnSpec, EntryColumnSpec];
+}
+
+/**
+ * What a 'columns' list offers a component that holds fewer than all of it.
+ *
+ * `readonly string[]` rather than the column-type union, deliberately:
+ * `types.ts` is the contract every component imports and
+ * `components/column-types.ts` imports it back, so naming the union here would
+ * invert the layering for a list of five words. `contract.test.ts` holds every
+ * entry against `COLUMN_TYPES`, which is the check a type would have bought.
+ */
+export interface ColumnOptionsSpec {
+	/**
+	 * The types this component can hold, in the order they are offered.
+	 *
+	 * **The first is also what a new column is created as**, written out rather
+	 * than left absent — which is what keeps the shared default from having to
+	 * mean two things (see `columnOptions` above).
+	 */
+	types: readonly string[];
+	/** Whether a per-column total is offered. Defaults to true. */
+	total?: boolean;
+	/** Whether publishing one column per row is offered. Defaults to true. */
+	publish?: boolean;
+	/**
+	 * Whether the hide-the-heading flag is offered. Defaults to true.
+	 *
+	 * Off where the component draws no heading for one to hide — which is a
+	 * control that does nothing, and a design review found an author offered one.
+	 * The *key* is still read and still round-trips, because a hand-edited layout
+	 * may carry it; what is withheld is the control.
+	 */
+	hideHeading?: boolean;
+	/**
+	 * What one entry of this list is called, and what holds one — "column" and
+	 * "row" by default, "field" and "record" for a Record set.
+	 *
+	 * **Words rather than a component name**, so the editor still knows nothing
+	 * about which component it is drawing: the field asks the *field* what its
+	 * entries are called. A design review found the one panel where an author
+	 * reads about their Record set describing it as cells and rows, which is the
+	 * vocabulary the model question freed the word "record" to end (§2).
+	 */
+	unit?: string;
+	holder?: string;
+	/**
+	 * What one entry's *value* sits in — "cell" by default, and for a Record set
+	 * the field itself.
+	 *
+	 * A third word rather than a reuse of `unit`, because Table needs both: the
+	 * list's entry is a **column** and the value is in a **cell** (SPEC §2 defines
+	 * "modifier cell" as one of them), so a sentence about what holds a modifier
+	 * and a sentence about which entry is redundant say two different nouns.
+	 */
+	cell?: string;
+	/**
+	 * The word over the display-name column, and its placeholder. Defaults to
+	 * "Heading", which is Table's word for it: a Record set draws no heading
+	 * strip, so what that column sets there is the field's own **name**.
+	 */
+	heading?: string;
 }
 
 /**

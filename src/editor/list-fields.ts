@@ -33,7 +33,7 @@ import {
 import { copyableName } from './copyable-name';
 import { showFieldError } from './field-error';
 import { isName } from '../formula/expression';
-import { EntryColumnSpec } from '../types';
+import { ColumnOptionsSpec, EntryColumnSpec } from '../types';
 
 /** What a list editor needs from the editor around it. */
 export interface ListContext {
@@ -683,9 +683,53 @@ export function renderColumnsEditor(
 	 * being known here (PATTERNS §1).
 	 */
 	modifierCount = 0,
+	/**
+	 * What this field's own component offers, where it holds fewer than every
+	 * column type or refuses a flag this form would otherwise show.
+	 *
+	 * A parameter rather than a member of `ListContext`, on `modifierCount`'s own
+	 * argument: it belongs to one of the four lists this module draws and the
+	 * other three have no use for it.
+	 */
+	offers?: ColumnOptionsSpec,
 ): void {
 	if (!Array.isArray(record[key])) record[key] = [];
 	const columns = record[key] as ColumnEntry[];
+	/**
+	 * The types this list offers, filtered against the vocabulary so a layout
+	 * or a component naming a type that does not exist cannot empty the select.
+	 */
+	const offered = ((): readonly string[] => {
+		const named = (offers?.types ?? []).filter((id) =>
+			COLUMN_TYPES.some((known) => known === id),
+		);
+		return named.length === 0 ? COLUMN_TYPES : named;
+	})();
+	/**
+	 * What a new column is created as, and what an unrecognised stored type
+	 * falls back to on screen.
+	 *
+	 * The *shared* default where this list offers it, so a Table goes on storing
+	 * a text column as no type at all; the first offered type otherwise, written
+	 * out — which is what keeps `DEFAULT_COLUMN_TYPE` meaning one thing rather
+	 * than one thing per component (`types.ts`, `columnOptions`).
+	 */
+	const fallback = offered.some((id) => id === DEFAULT_COLUMN_TYPE)
+		? DEFAULT_COLUMN_TYPE
+		: (offered[0] as string);
+	/**
+	 * What this list's own entries are called, and what holds one.
+	 *
+	 * Table's words by default, so nothing about this module knows which
+	 * component it is drawing — the field says what its entries are called, the
+	 * way it already says which types they may hold.
+	 */
+	const unit = offers?.unit ?? 'column';
+	const holder = offers?.holder ?? 'row';
+	const cell = offers?.cell ?? 'cell';
+	/** The same word leading a sentence, since an accessible name is UI copy. */
+	const Unit = unit.charAt(0).toUpperCase() + unit.slice(1);
+	const heading = offers?.heading ?? 'Heading';
 	// Three tracks, fixed by the column form itself: key, heading, and what
 	// the column holds. The count lives in the stylesheet with them.
 	listEl.addClass('sheetsmith-list');
@@ -700,12 +744,12 @@ export function renderColumnsEditor(
 
 	if (columns.length === 0) {
 		scroller.createDiv('sheetsmith-entry-empty', (el) =>
-			el.setText('No columns yet.'),
+			el.setText(`No ${unit}s yet.`),
 		);
 	} else {
 		const headings = scroller.createDiv('sheetsmith-entry-columns');
 		headings.createSpan({ text: 'Key' });
-		headings.createSpan({ text: 'Heading' });
+		headings.createSpan({ text: heading });
 		headings.createSpan({ text: 'Holds' });
 		addControlSpacers(headings);
 	}
@@ -720,7 +764,7 @@ export function renderColumnsEditor(
 
 		const keyInput = listField(element, 'Key').createEl('input', {
 			type: 'text',
-			attr: { placeholder: 'Key', 'aria-label': 'Column key' },
+			attr: { placeholder: 'Key', 'aria-label': `${Unit} key` },
 		});
 		keyInput.value = column.key ?? '';
 		keyInput.dataset.sheetsmithFocus = `${prefix}-col-${index}-key`;
@@ -752,9 +796,12 @@ export function renderColumnsEditor(
 			context.redraw();
 		});
 
-		const nameInput = listField(element, 'Heading').createEl('input', {
+		const nameInput = listField(element, heading).createEl('input', {
 			type: 'text',
-			attr: { placeholder: 'Heading', 'aria-label': 'Column heading' },
+			attr: {
+				placeholder: heading,
+				'aria-label': `${Unit} ${heading.toLowerCase()}`,
+			},
 		});
 		nameInput.value = column.name ?? '';
 		nameInput.dataset.sheetsmithFocus = `${prefix}-col-${column.key}-name`;
@@ -764,14 +811,17 @@ export function renderColumnsEditor(
 		});
 
 		const type = listField(element, 'Holds').createEl('select', {
-			attr: { 'aria-label': 'What the column holds' },
+			attr: { 'aria-label': `What the ${unit} holds` },
 		});
-		for (const id of COLUMN_TYPES) {
-			type.createEl('option', { value: id, text: COLUMN_TYPE_LABELS[id] });
+		for (const id of offered) {
+			type.createEl('option', {
+				value: id,
+				text: COLUMN_TYPE_LABELS[id as ColumnType],
+			});
 		}
-		type.value = COLUMN_TYPES.some((id) => id === column.type)
+		type.value = offered.some((id) => id === column.type)
 			? (column.type as string)
-			: DEFAULT_COLUMN_TYPE;
+			: fallback;
 		type.dataset.sheetsmithFocus = `${prefix}-col-${column.key}-type`;
 		type.addEventListener('change', () => {
 			// The default is left out of the file, the same rule the select fields
@@ -805,13 +855,22 @@ export function renderColumnsEditor(
 		);
 
 		/**
-		 * What this column holds, with an unset type resolved to the shared
-		 * default rather than to a literal spelling of it. The card asks the
-		 * same question through `columnType`, and the two have to agree about
-		 * what an untyped column is, or the form offers a control on one set
-		 * of columns while the component judges another.
+		 * What this column holds, with an unset type resolved through this
+		 * list's own `fallback` rather than to a literal spelling of the shared
+		 * default. The card asks the same question through `typeOf`, and the two
+		 * have to agree about what an untyped column is, or the form offers a
+		 * control on one set of columns while the component judges another.
+		 *
+		 * **`fallback` and not `DEFAULT_COLUMN_TYPE`**, which is the same
+		 * agreement read through a field that offers fewer types: the select
+		 * shows `fallback` for an unset type, so resolving it to the shared
+		 * default here would draw **Number** in the select and a *text* column's
+		 * detail line under it — the exact disagreement this comment forbids,
+		 * one level in. Not reachable from a fixture, because a list that does
+		 * not offer text writes its type out; reachable from a hand-edited
+		 * layout, which is what these two lines exist for.
 		 */
-		const effective = column.type ?? DEFAULT_COLUMN_TYPE;
+		const effective = column.type ?? fallback;
 
 		// A line of its own under each column, holding the fields that only
 		// make sense for that kind of column and then the ones every column
@@ -1067,7 +1126,7 @@ export function renderColumnsEditor(
 		// Offered beside the type, and only where there is something to add up:
 		// a total is a published name, so it has to come from a column whose
 		// cells are numbers before any formula runs.
-		if (TOTALLED_TYPES.has(effective)) {
+		if (offers?.total !== false && TOTALLED_TYPES.has(effective)) {
 			checkField(detail, 'Show a total', column, 'total', context);
 		}
 
@@ -1084,7 +1143,11 @@ export function renderColumnsEditor(
 		// same moment and says only one column can be published, so the
 		// control does not vanish unexplained; unticking brings it back
 		// everywhere, which is how the publication moves.
-		if (PUBLISHABLE_TYPES.has(effective) && (publisher ?? column) === column) {
+		if (
+			offers?.publish !== false &&
+			PUBLISHABLE_TYPES.has(effective) &&
+			(publisher ?? column) === column
+		) {
 			checkField(detail, 'Publish per row', column, 'publish', context, {
 				token: `${prefix}-col-${column.key}-publish`,
 			});
@@ -1101,12 +1164,15 @@ export function renderColumnsEditor(
 		 * scroller.
 		 */
 
-		// Every column has this one.
-		checkField(detail, 'Hide heading', column, 'hideHeading', context);
+		// Every column has this one — unless the component draws no heading for it
+		// to hide, in which case it is a control that does nothing.
+		if (offers?.hideHeading !== false) {
+			checkField(detail, 'Hide heading', column, 'hideHeading', context);
+		}
 	});
 
 	const footer = listEl.createDiv('sheetsmith-entry-footer');
-	const add = footer.createEl('button', { text: 'Add column' });
+	const add = footer.createEl('button', { text: `Add ${unit}` });
 	// Once for the list rather than under every level column, and only where
 	// there are rings to press: the sample says what the syntax does, and this
 	// says that there is a syntax. A note nobody in this layout can use is
@@ -1172,7 +1238,7 @@ export function renderColumnsEditor(
 		 */
 		listEl.createDiv('sheetsmith-entry-footnote', (el) =>
 			el.setText(
-				`A modifier cell holds every modifier its row applies — each either one this layout names or one typed on the row — separated by a semicolon. This layout names ${modifierCount} of them, in its own settings, which the top row of the tree opens.`,
+				`A modifier ${cell} holds every modifier its ${holder} applies — each either one this layout names or one typed on the ${holder} — separated by a semicolon. This layout names ${modifierCount} of them, in its own settings, which the top row of the tree opens.`,
 			),
 		);
 		/*
@@ -1197,18 +1263,25 @@ export function renderColumnsEditor(
 		for (const column of modifierColumns.slice(1)) {
 			listEl.createDiv('sheetsmith-field-error', (el) =>
 				el.setText(
-					`"${column.key}" is a second modifier column. A modifier cell holds every modifier its row applies, so one modifier column is enough. Move this column's modifiers into the first and remove it.`,
+					`"${column.key}" is a second modifier ${unit}. A modifier ${cell} holds every modifier its ${holder} applies, so one modifier ${unit} is enough. Move this ${unit}'s modifiers into the first and remove it.`,
 				),
 			);
 		}
 	}
 	add.addEventListener('click', () => {
 		const taken = new Set(columns.map((column) => column.key));
-		let next = 'New column';
+		let next = `New ${unit}`;
 		let counter = 2;
-		while (taken.has(next)) next = `New column ${counter++}`;
+		while (taken.has(next)) next = `New ${unit} ${counter++}`;
 		context.focusAfterRedraw(`${prefix}-col-${columns.length}-key`);
-		columns.push({ key: next });
+		// The type is written out unless it *is* the shared default, so a list
+		// that does not offer text never stores a column as "no type" — which
+		// the component would read back as text and refuse.
+		columns.push(
+			fallback === DEFAULT_COLUMN_TYPE
+				? { key: next }
+				: { key: next, type: fallback },
+		);
 		context.persist();
 		context.redraw();
 	});

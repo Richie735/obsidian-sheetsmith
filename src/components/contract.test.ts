@@ -9,6 +9,7 @@ import {
 	undrawableMessage,
 	unknownComponentMessage,
 } from './index';
+import { COLUMN_TYPES } from './column-types';
 import {
 	ComponentConfig,
 	EDITOR_OWNED_KEYS,
@@ -980,6 +981,31 @@ describe.each(types)('component "%s"', (type) => {
 			// Two columns writing one property is one column with two inputs,
 			// and the second would silently win every commit.
 			expect(columns[0].key).not.toBe(columns[1].key);
+		}
+	});
+
+	it('names only real column types in a columns field\'s offered list', () => {
+		/*
+		 * `ColumnOptionsSpec.types` is `readonly string[]` rather than the column
+		 * type union, because `types.ts` is the contract every component imports
+		 * and `column-types.ts` imports it back — so this is the check that a type
+		 * would have bought. A typo there does not fail to compile; it silently
+		 * drops a type from the select and, where it drops the *first* one, changes
+		 * what a new column is created as.
+		 */
+		for (const field of component?.configFields ?? []) {
+			const offered = field.columnOptions;
+			if (offered === undefined) continue;
+			expect(field.kind, `${field.key} offers columns it does not hold`).toBe(
+				'columns',
+			);
+			// A list that filtered down to nothing falls back to every type, which
+			// is exactly the state this member exists to avoid.
+			expect(offered.types.length).toBeGreaterThan(0);
+			for (const id of offered.types) {
+				expect(COLUMN_TYPES, `${field.key} offers "${id}"`).toContain(id);
+			}
+			expect(new Set(offered.types).size).toBe(offered.types.length);
 		}
 	});
 

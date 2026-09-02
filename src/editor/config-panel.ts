@@ -699,6 +699,10 @@ export class ConfigPanel {
 						// one edit away from showing them.
 						parseModifierDefinitions(layout, this.modifierSources(layout))
 							.definitions.length,
+						// What this component's own field offers, where it holds fewer
+						// than every column type or refuses a flag this form would
+						// otherwise show (`types.ts`, `columnOptions`).
+						field.columnOptions,
 					);
 				}
 				continue;
