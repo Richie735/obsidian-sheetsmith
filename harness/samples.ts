@@ -1184,6 +1184,11 @@ export const SAMPLES: Sample[] = [
 	 * one below it, a typed modifier that applies and one that does not, and an
 	 * empty modifier field. The typed effects reach the armour class card above,
 	 * so the ` when ` clause is a number moving rather than a claim.
+	 *
+	 * **And every state a reader-set ceiling has**, since `Uses` is this
+	 * component's `maxSource: 'record'` subject: a ceiling above the value, one
+	 * the value has passed, one written with no spaces around the slash, one at
+	 * its ceiling, and a record with none at all showing the `—` placeholder.
 	 */
 	{
 		config: {
@@ -1208,7 +1213,15 @@ export const SAMPLES: Sample[] = [
 			 * the record's own scope.
 			 */
 			fields: [
-				{ key: 'Uses', type: 'number', max: 3 },
+				/*
+				 * **The ceiling is each record's here and the layout's on `spells`
+				 * below**, which is the comparison a design review needs and which no
+				 * second subject could give as cheaply: a reader-set ceiling and a
+				 * declared one on one sheet at one width. It also holds the field
+				 * count constant, so `docs/UI.md` §12's field-wrap measurement stays
+				 * comparable to the one already recorded.
+				 */
+				{ key: 'Uses', type: 'number', maxSource: 'record' },
 				{ key: 'Attuned', type: 'toggle' },
 				{
 					key: 'Rank',
@@ -1228,7 +1241,7 @@ export const SAMPLES: Sample[] = [
 			'',
 			'### Second Wind',
 			'```sheet',
-			'Uses: 1',
+			'Uses: 1 / 3',
 			'Attuned: no',
 			'Rank: 1',
 			'```',
@@ -1238,7 +1251,7 @@ export const SAMPLES: Sample[] = [
 			'',
 			'### [[Ring of Protection]]',
 			'```sheet',
-			'Uses: 0',
+			'Uses: 0 / 1',
 			'Attuned: yes',
 			'Rank: 2',
 			// Untyped on purpose. `as item` would contest with the Magic items
@@ -1251,22 +1264,31 @@ export const SAMPLES: Sample[] = [
 			'',
 			'### [[Torch of Revealing]]',
 			'```sheet',
+			// **No ceiling at all**, which is the ordinary state rather than an
+			// error: most records on a features list are not counters. It is on the
+			// third record on purpose, because the box shows three at a time and
+			// the `—` placeholder has to be photographed *beside* two records that
+			// have one.
 			'Uses: 3',
 			'Attuned: no',
 			'Rank: 0',
 			'Modifiers: armour_class += 2 as item when Attuned',
 			'```',
-			'A name pointing at a note the vault does not hold, so the link is faint — and a modifier whose condition is false, so the glyph reads as changing nothing.',
+			'A name pointing at a note the vault does not hold, so the link is faint, a modifier whose condition is false, so the glyph reads as changing nothing, and no ceiling of its own, so the slot shows a placeholder waiting to be filled.',
 			'',
 			'### Action Surge',
 			'```sheet',
-			'Uses: 1',
+			// The reader's own spelling of the slash, kept verbatim through every
+			// edit to the value beside it.
+			'Uses: 1/2',
 			'Attuned: no',
 			'```',
 			'',
 			'### Lucky',
 			'```sheet',
-			'Uses: 3',
+			// A value above the ceiling it is read against, drawn as it is stored:
+			// there is no warning treatment, and `5 / 3` is what says it.
+			'Uses: 5 / 3',
 			'Attuned: yes',
 			'Retired: 4',
 			'```',
@@ -1274,9 +1296,9 @@ export const SAMPLES: Sample[] = [
 			'',
 			'### Fey Ancestry',
 			'```sheet',
-			'Uses: 0',
+			'Uses: 3 / 3',
 			'```',
-			'A record with no modifier field filled in, which is the ordinary state on a list like this.',
+			'A record with no modifier field filled in, which is the ordinary state on a list like this, and a counter sitting at its own ceiling.',
 			'',
 		].join('\n'),
 	},
@@ -1712,7 +1734,7 @@ export function brokenSamples(): Sample[] {
 		if (config.id === 'traits' && body !== null) {
 			// A hand-typed line inside one record's fence, which is the state a note
 			// arrives in and the state the per-record problem line exists for.
-			body = body.replace('Uses: 1\nAttuned: no', 'Uses: 1\nnot an entry');
+			body = body.replace('Uses: 1 / 3\nAttuned: no', 'Uses: 1 / 3\nnot an entry');
 		}
 		if (config.id === 'spells') {
 			// The type this component refuses, which is also what a field added in

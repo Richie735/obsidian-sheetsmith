@@ -259,6 +259,93 @@ describe('recordSet round trip', () => {
 		expect(SPELLINGS).toHaveLength(10);
 	});
 
+	/*
+	 * And ten spellings of a `number` entry carrying the ceiling it is read
+	 * against, which is Constraint 3 over the shape this feature added.
+	 *
+	 * **What makes them all pass by construction is the thing worth naming, and
+	 * it is also why they hold nothing about `parse/bounded-entry.ts`**:
+	 * `RecordEntry.fields` holds the note's own bytes, composite or not, so the
+	 * split happens *above* `read` and the identical string goes back in — this
+	 * list never reaches that module at all. It has a test file of its own for
+	 * that reason. What these assert is the component's half: that carrying a
+	 * composite through read and write touches no byte. The spellings an *edit*
+	 * preserves are the two cases below.
+	 */
+	const COMPOSITES: [string, string][] = [
+		['spaced', 'Uses: 2 / 3'],
+		['bare slash', 'Uses: 2/3'],
+		['space before', 'Uses: 2 /3'],
+		['space after', 'Uses: 2/ 3'],
+		['tabs around the slash', 'Uses: 2\t/\t3'],
+		['a blank value half', 'Uses:  / 3'],
+		['a blank ceiling half', 'Uses: 2 /'],
+		['a bare value', 'Uses: 2'],
+		['a ceiling that is not a number', 'Uses: 2 / lots'],
+		['a key the layout no longer declares', 'Retired: 4 / 8'],
+	];
+
+	it.each(COMPOSITES)('writes %s back byte for byte', (_name, entry) => {
+		const body = `\n### A\n\`\`\`sheet\n${entry}\n\`\`\`\nProse.\n`;
+		const owned: RecordSetConfig = {
+			...config,
+			fields: [{ key: 'Uses', type: 'number', maxSource: 'record' }],
+		};
+		// Both modes, because the split is applied to every `number` field's entry
+		// whatever the mode: gating it on `maxSource` would turn every stored
+		// composite into text the day a field was switched back.
+		for (const from of [config, owned]) {
+			expect(recordSet.write(readData(body, from), body, from)).toBe(body);
+		}
+	});
+
+	it('has ten composite spellings, so that list cannot shrink either', () => {
+		expect(COMPOSITES).toHaveLength(10);
+	});
+
+	it('keeps the reader\'s own spelling of the slash when the value is edited', () => {
+		const owned: RecordSetConfig = {
+			...config,
+			fields: [{ key: 'Uses', type: 'number', maxSource: 'record' }],
+		};
+		const odd = [
+			'',
+			'### A',
+			'```sheet',
+			'Uses: 2/3',
+			'```',
+			'Prose about A.',
+			'',
+			'### B',
+			'```sheet',
+			'Uses  :  1 /  4',
+			'```',
+			'Prose about B.',
+			'',
+		].join('\n');
+		/*
+		 * **Driven through the control, because the criterion is about an edit.**
+		 * Handing `write` an already-joined `'1/3'` exercises `writeFenced`'s byte
+		 * preservation and never reaches the join the criterion is about — the
+		 * test would have supplied its own answer.
+		 */
+		const changes: RecordSetData[] = [];
+		const el = render(owned, odd, { onChange: (data) => changes.push(data) });
+		const value = records(el)[0]?.querySelector<HTMLInputElement>(
+			'.sheetsmith-record-input',
+		) as HTMLInputElement;
+		value.value = '1';
+		value.dispatchEvent(new Event('input'));
+		value.dispatchEvent(new Event('blur'));
+		// The join put the reader's own bare slash back rather than the canonical
+		// form, which is the whole claim.
+		expect(changes[0]?.records[0]?.fields).toEqual({ Uses: '1/3' });
+		const written = recordSet.write(changes[0] as RecordSetData, odd, owned);
+		// The reader's spelling of the slash *and* of the colon, and the
+		// neighbour's odd spacing of both, all survive.
+		expect(written).toBe(odd.replace('Uses: 2/3', 'Uses: 1/3'));
+	});
+
 	it('rewrites one record\'s fence line and leaves every other byte alone', () => {
 		const odd = [
 			'',
@@ -699,6 +786,606 @@ describe('recordSet rendering', () => {
 		expect(el.querySelector('.sheetsmith-sr-only')?.textContent).toContain(
 			'needs a name',
 		);
+	});
+});
+
+describe('a ceiling each record sets for itself', () => {
+	/*
+	 * `maxSource: 'record'`, which is Pool's `maxSource: 'character'` one level
+	 * down: the ceiling lives inside the value's own entry, so a homebrew feature
+	 * with three uses reads `2 / 3` on a layout that declares no maximum.
+	 */
+	const owned: RecordSetConfig = {
+		...config,
+		fields: [
+			{ key: 'Uses', type: 'number', maxSource: 'record' },
+			{ key: 'Attuned', type: 'toggle' },
+		],
+	};
+
+	const OWN_BODY = [
+		'',
+		'### Second Wind',
+		'```sheet',
+		'Uses: 2 / 3',
+		'Attuned: no',
+		'```',
+		'Prose.',
+		'',
+		'### Action Surge',
+		'```sheet',
+		'Uses: 1/1',
+		'Attuned: no',
+		'```',
+		'Prose.',
+		'',
+		'### Keen Mind',
+		'```sheet',
+		'Uses:',
+		'Attuned: yes',
+		'```',
+		'Prose.',
+		'',
+	].join('\n');
+
+	/** The ceiling field on one record, where the reader owns it. */
+	const ceilingField = (record: HTMLElement) =>
+		record.querySelector<HTMLInputElement>(
+			'.sheetsmith-pool-ceiling input',
+		) as HTMLInputElement;
+	/** The value field, which is the first record input on the line. */
+	const valueField = (record: HTMLElement) =>
+		record.querySelector<HTMLInputElement>(
+			'.sheetsmith-record-input',
+		) as HTMLInputElement;
+	/** Type into a field and leave it, which is what commits. */
+	const commit = (input: HTMLInputElement, value: string) => {
+		input.value = value;
+		input.dispatchEvent(new Event('input'));
+		input.dispatchEvent(new Event('blur'));
+	};
+
+	it('reads a composite entry as a value and its ceiling', () => {
+		const held = readData(OWN_BODY, owned).records;
+		// **The bytes, unsplit.** `read` is unchanged: an entry's raw trimmed text
+		// goes into `fields[key]` composite or not, which is what makes an
+		// untouched write byte-identical.
+		expect(held[0]?.fields?.Uses).toBe('2 / 3');
+		expect(held[1]?.fields?.Uses).toBe('1/1');
+		expect(held[2]?.fields?.Uses).toBe('');
+	});
+
+	it('draws an editable ceiling on every record, with a placeholder where none is set', () => {
+		const el = render(owned, OWN_BODY);
+		const shown = records(el);
+		expect(shown).toHaveLength(3);
+		for (const record of shown) {
+			const ceiling = record.querySelector(
+				'.sheetsmith-pool-ceiling',
+			) as HTMLElement;
+			// Pool's classes, borrowed rather than copied under a `record` name.
+			expect(
+				ceiling.querySelector('.sheetsmith-pool-separator')?.textContent,
+			).toBe('/');
+			const field = ceilingField(record);
+			// The record's *own* field chrome plus the pool's reading, which is the
+			// one place Pool's classes are deliberately not both taken: two fields
+			// on one summary line must not answer a hover two different ways.
+			expect(field.classList.contains('sheetsmith-record-input')).toBe(true);
+			expect(field.classList.contains('sheetsmith-pool-max')).toBe(true);
+			expect(field.classList.contains('sheetsmith-pool-max-input')).toBe(false);
+			expect(field.placeholder).toBe('—');
+		}
+		expect(shown.map((record) => ceilingField(record).value)).toEqual([
+			'3',
+			'1',
+			'',
+		]);
+		expect(shown.map((record) => valueField(record).value)).toEqual([
+			'2',
+			'1',
+			'',
+		]);
+	});
+
+	it('names the ceiling and names the record as its holder', () => {
+		// A bare span is `role=generic`, which prohibits naming — so the read-only
+		// ceiling reaches a screen reader only through the field's announcement.
+		// An input is nameable, and both channels are kept rather than traded.
+		const el = render(owned, OWN_BODY);
+		const field = ceilingField(records(el)[0] as HTMLElement);
+		expect(field.getAttribute('aria-label')).toBe('Second Wind Uses maximum');
+		expect(field.getAttribute('title')).toBe(
+			'Maximum Uses, held by this feature.',
+		);
+	});
+
+	it('draws exactly what it draws today where maxSource is absent', () => {
+		// A read-only span where the layout declares a `max`, nothing where it
+		// does not, and a `min` alone changes neither.
+		const declared = render({}, BODY);
+		const first = records(declared)[0] as HTMLElement;
+		expect(first.querySelector('.sheetsmith-pool-ceiling input')).toBeNull();
+		expect(
+			first.querySelector('.sheetsmith-pool-max')?.textContent,
+		).toBe('3');
+		const floored = render(
+			{ fields: [{ key: 'Uses', type: 'number', min: 0 }] },
+			BODY,
+		);
+		expect(floored.querySelector('.sheetsmith-pool-ceiling')).toBeNull();
+	});
+
+	it('writes a ceiling typed into a bare entry, and drops the separator when cleared', () => {
+		const changes: RecordSetData[] = [];
+		const el = render(owned, OWN_BODY, {
+			onChange: (data) => changes.push(data),
+		});
+		// A record that had none: the canonical ` / ` is what this component
+		// composes where no separator exists to preserve.
+		commit(ceilingField(records(el)[2] as HTMLElement), '2');
+		expect(changes[0]?.records[2]?.fields).toEqual({ Uses: ' / 2' });
+		// And on a record whose value is already there.
+		const bare = render(
+			owned,
+			'\n### A\n```sheet\nUses: 2\n```\nProse.\n',
+			{ onChange: (data) => changes.push(data) },
+		);
+		commit(ceilingField(records(bare)[0] as HTMLElement), '3');
+		expect(changes[1]?.records[0]?.fields).toEqual({ Uses: '2 / 3' });
+		expect(
+			recordSet.write(
+				changes[1] as RecordSetData,
+				'\n### A\n```sheet\nUses: 2\n```\nProse.\n',
+				owned,
+			),
+		).toBe('\n### A\n```sheet\nUses: 2 / 3\n```\nProse.\n');
+		// **Through a spelling that is not the canonical one**, which is the edit
+		// the round-trip list above cannot reach: `1/1` keeps its bare slash.
+		const spelled = render(owned, OWN_BODY, {
+			onChange: (data) => changes.push(data),
+		});
+		commit(ceilingField(records(spelled)[1] as HTMLElement), '4');
+		expect(changes[2]?.records[1]?.fields).toEqual({ Uses: '1/4' });
+		expect(recordSet.write(changes[2] as RecordSetData, OWN_BODY, owned)).toBe(
+			OWN_BODY.replace('Uses: 1/1', 'Uses: 1/4'),
+		);
+		// Cleared, the entry goes back to a bare number rather than to `2 /`.
+		const set = render(
+			owned,
+			'\n### A\n```sheet\nUses: 2 / 3\n```\nProse.\n',
+			{ onChange: (data) => changes.push(data) },
+		);
+		commit(ceilingField(records(set)[0] as HTMLElement), '');
+		expect(changes[3]?.records[0]?.fields).toEqual({ Uses: '2' });
+		const written = recordSet.write(
+			changes[3] as RecordSetData,
+			'\n### A\n```sheet\nUses: 2 / 3\n```\nProse.\n',
+			owned,
+		);
+		expect(written).toBe('\n### A\n```sheet\nUses: 2\n```\nProse.\n');
+		// And each of those round-trips.
+		expect(recordSet.write(readData(written, owned), written, owned)).toBe(
+			written,
+		);
+	});
+
+	it('composes each commit from what this field last wrote, not from the render', () => {
+		/*
+		 * **Two halves of one entry, edited before the rebuild lands.** A write is
+		 * asynchronous — that is the whole reason `view/cell-focus.ts` exists — so
+		 * both commits can leave one render, and each rebuilds the *whole* entry.
+		 * Composed from the render's own snapshot, the second reverts the first's
+		 * half: `docs/PATTERNS.md` §7's "report a delta, not a snapshot" one level
+		 * down, where the delta is right at `fields[key]` and a snapshot inside it.
+		 */
+		const changes: RecordSetData[] = [];
+		const el = render(owned, OWN_BODY, {
+			onChange: (data) => changes.push(data),
+		});
+		const record = records(el)[0] as HTMLElement;
+		commit(valueField(record), '1');
+		commit(ceilingField(record), '5');
+		expect(changes[0]?.records[0]?.fields).toEqual({ Uses: '1 / 3' });
+		// The value the reader just typed is still there.
+		expect(changes[1]?.records[0]?.fields).toEqual({ Uses: '1 / 5' });
+		// And the other order, since either field may be left first.
+		const other = render(owned, OWN_BODY, {
+			onChange: (data) => changes.push(data),
+		});
+		const second = records(other)[0] as HTMLElement;
+		commit(ceilingField(second), '5');
+		commit(valueField(second), '1');
+		expect(changes[3]?.records[0]?.fields).toEqual({ Uses: '1 / 5' });
+	});
+
+	it('holds a value to the record\'s own ceiling and says what it was held to', () => {
+		const changes: RecordSetData[] = [];
+		const el = render(owned, OWN_BODY, {
+			onChange: (data) => changes.push(data),
+		});
+		const value = valueField(records(el)[0] as HTMLElement);
+		commit(value, '9');
+		expect(value.value).toBe('3');
+		expect(el.querySelector('.sheetsmith-sr-only')?.textContent).toBe(
+			'Second Wind Uses held to 3 of 3',
+		);
+		expect(changes[0]?.records[0]?.fields).toEqual({ Uses: '3 / 3' });
+	});
+
+	it('clamps nothing and says no "of" on a record with no ceiling', () => {
+		const changes: RecordSetData[] = [];
+		const el = render(owned, OWN_BODY, {
+			onChange: (data) => changes.push(data),
+		});
+		const value = valueField(records(el)[2] as HTMLElement);
+		commit(value, '40');
+		expect(value.value).toBe('40');
+		expect(el.querySelector('.sheetsmith-sr-only')?.textContent).toBe(
+			'Keen Mind Uses 40',
+		);
+		expect(changes[0]?.records[2]?.fields).toEqual({ Uses: '40' });
+	});
+
+	it('writes only the ceiling when it is lowered under the value', () => {
+		// Render, do not correct: `5 / 3` is drawn as it is stored, and no warning
+		// treatment is added — the reading is what says it.
+		const changes: RecordSetData[] = [];
+		const body = '\n### A\n```sheet\nUses: 5 / 9\n```\nProse.\n';
+		const el = render(owned, body, { onChange: (data) => changes.push(data) });
+		commit(ceilingField(records(el)[0] as HTMLElement), '3');
+		expect(changes[0]?.records[0]?.fields).toEqual({ Uses: '5 / 3' });
+		const written = recordSet.write(changes[0] as RecordSetData, body, owned);
+		const after = render(owned, written);
+		const record = records(after)[0] as HTMLElement;
+		expect(valueField(record).value).toBe('5');
+		expect(ceilingField(record).value).toBe('3');
+		expect(errors(after)).toEqual([]);
+		expect(
+			record.querySelector('.sheetsmith-modified'),
+		).toBeNull();
+	});
+
+	it('steps the ceiling with the arrows, holds it to the field\'s min, and settles no arithmetic', () => {
+		const changes: RecordSetData[] = [];
+		const bounded: RecordSetConfig = {
+			...config,
+			fields: [{ key: 'Uses', type: 'number', min: 2, maxSource: 'record' }],
+		};
+		const body = '\n### A\n```sheet\nUses: 2 / 3\n```\nProse.\n';
+		const el = render(bounded, body, {
+			onChange: (data) => changes.push(data),
+		});
+		const field = ceilingField(records(el)[0] as HTMLElement);
+		field.dispatchEvent(
+			new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }),
+		);
+		expect(field.value).toBe('4');
+		// A ceiling under the floor describes a range no value can occupy, and the
+		// value beside it obeys that same floor. There is no upper bound to hold
+		// a ceiling to.
+		commit(field, '1');
+		expect(field.value).toBe('2');
+		expect(changes[0]?.records[0]?.fields).toEqual({ Uses: '2 / 2' });
+		// Pool settles `31+7`; a record's value field does not, so the ceiling
+		// beside it must not either — two commit rules on one line is the defect
+		// the whole design argues against.
+		commit(field, '3+1');
+		expect(changes[1]?.records[0]?.fields).toEqual({ Uses: '2 / 3+1' });
+	});
+
+	it('declines a note reference in either field and keeps the draft', () => {
+		/*
+		 * **Driven through both inputs**, because the pre-existing hole was
+		 * invisible to a scan over the offered types: a `number` field is an
+		 * `<input type="text">` and `boundedText` leaves text that is not a number
+		 * exactly as typed, so a pasted `[[Ring]]` was written into the fence.
+		 * Obsidian indexes no link inside one (Constraint 2).
+		 */
+		const body = '\n### A\n```sheet\nUses: 2 / 3\n```\nProse.\n';
+		for (const which of ['value', 'ceiling'] as const) {
+			const changes: RecordSetData[] = [];
+			const el = render(owned, body, {
+				onChange: (data) => changes.push(data),
+			});
+			const record = records(el)[0] as HTMLElement;
+			const field =
+				which === 'value' ? valueField(record) : ceilingField(record);
+			commit(field, '[[Ring]]');
+			expect(changes, which).toEqual([]);
+			// The draft is kept, so what the reader typed is still on screen.
+			expect(field.value, which).toBe('[[Ring]]');
+			const said = errors(el)[0]?.textContent ?? '';
+			expect(said, which).toContain('Not saved.');
+			expect(said, which).toContain('code block');
+			expect(said, which).toContain('[[Ring]]');
+			// And Escape still puts the *stored* value back, which is what a
+			// refusal inside `onCommit` could not have given.
+			field.dispatchEvent(
+				new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+			);
+			expect(field.value, which).toBe(which === 'value' ? '2' : '3');
+			// The note is unchanged either way.
+			expect(recordSet.write({ records: {} }, body, owned)).toBe(body);
+		}
+	});
+
+	it('steps the value against the ceiling on screen, not the one at bind', () => {
+		/*
+		 * **The state the refusal above creates.** A ceiling draft holding a note
+		 * reference is kept by design, so it is what the reader sees — and every
+		 * other channel already follows it: nothing clamps, and the announcement
+		 * carries no "of". A step bound captured at bind would go on holding the
+		 * value to a number the line no longer says.
+		 */
+		const el = render(owned, OWN_BODY, {});
+		const record = records(el)[0] as HTMLElement;
+		const ceiling = ceilingField(record);
+		const value = valueField(record);
+		// Refused, so the draft stands and there is no ceiling any more.
+		commit(ceiling, '[[Ring]]');
+		expect(ceiling.value).toBe('[[Ring]]');
+		value.focus();
+		value.value = '8';
+		value.dispatchEvent(
+			new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }),
+		);
+		expect(value.value).toBe('9');
+		/*
+		 * **And the second path, which is P2's window rather than a refusal.** A
+		 * raised ceiling that has not been left cannot be reached — the value's
+		 * arrows need focus in the value, and moving focus there blurs the ceiling
+		 * and commits it. What *is* reachable is the moment after that: the commit
+		 * is reported synchronously and the write is not, so until the rebuild
+		 * lands the ceiling on screen is the new one and a bound captured at bind
+		 * is the old one. Driven through real focus, so the state is one the app
+		 * can actually produce.
+		 */
+		const changes: RecordSetData[] = [];
+		const other = render(owned, OWN_BODY, {
+			onChange: (data) => changes.push(data),
+		});
+		const second = records(other)[0] as HTMLElement;
+		const raised = ceilingField(second);
+		const beside = valueField(second);
+		raised.focus();
+		raised.value = '20';
+		raised.dispatchEvent(new Event('input'));
+		// Focus moves to the value, which blurs the ceiling and commits it. No
+		// rebuild follows here, exactly as none has followed yet in the app.
+		beside.focus();
+		expect(changes[0]?.records[0]?.fields).toEqual({ Uses: '2 / 20' });
+		beside.value = '8';
+		beside.dispatchEvent(
+			new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }),
+		);
+		expect(beside.value).toBe('9');
+	});
+
+	it('declines a slash in either field, so a ceiling cannot be typed away', () => {
+		/*
+		 * The slash is syntax now. Committed into the value, `1/2` on an entry
+		 * reading `2 / 3` would write `1/2 / 3`, which re-reads as a value of 1
+		 * against a ceiling of `2 / 3` — text, so nothing clamps to it and `full`
+		 * skips the record. Nothing is deleted, so Constraint 4 holds; what goes
+		 * silently is the reading the reader set.
+		 */
+		const body = '\n### A\n```sheet\nUses: 2 / 3\n```\nProse.\n';
+		for (const which of ['value', 'ceiling'] as const) {
+			const changes: RecordSetData[] = [];
+			const el = render(owned, body, {
+				onChange: (data) => changes.push(data),
+			});
+			const record = records(el)[0] as HTMLElement;
+			const field =
+				which === 'value' ? valueField(record) : ceilingField(record);
+			commit(field, '1/2');
+			expect(changes, which).toEqual([]);
+			expect(field.value, which).toBe('1/2');
+			expect(errors(el)[0]?.textContent, which).toContain('A slash separates');
+			// Refused rather than repaired: nothing replaces what was typed.
+			expect(recordSet.write({ records: {} }, body, owned)).toBe(body);
+		}
+		// And a value that is merely not a number is still stored as typed, which
+		// is `boundedText`'s standing rule and not what this refuses.
+		const changes: RecordSetData[] = [];
+		const fine = render(owned, body, { onChange: (data) => changes.push(data) });
+		commit(valueField(records(fine)[0] as HTMLElement), 'frog');
+		expect(changes[0]?.records[0]?.fields).toEqual({ Uses: 'frog / 3' });
+	});
+
+	it('goes on publishing the value to an aggregate in either mode', () => {
+		/*
+		 * **The sharp regression risk of the whole feature.** An aggregate reading
+		 * `'2 / 3'` as text produces a name that is not a number and takes a card
+		 * down with a `?`, which is why the split is applied to every `number`
+		 * field's entry rather than only where the reader owns the ceiling.
+		 */
+		const body = [
+			'',
+			'### A',
+			'```sheet',
+			'Uses: 2 / 3',
+			'```',
+			'Prose.',
+			'',
+			'### B',
+			'```sheet',
+			'Uses: 1 / 1',
+			'```',
+			'Prose.',
+			'',
+		].join('\n');
+		for (const from of [
+			owned,
+			{ ...config, fields: [{ key: 'Uses', type: 'number' }] },
+			{
+				...config,
+				fields: [{ key: 'Uses', type: 'number', maxSource: 'field' as const }],
+			},
+		] as RecordSetConfig[]) {
+			const rows = recordSet.scopeRows?.(readData(body, from), from);
+			expect(rows, JSON.stringify(from.fields)).toBeDefined();
+			const values = rows?.(() => null) ?? [];
+			expect(values.map((one) => one.values['Uses'])).toEqual([2, 1]);
+		}
+	});
+
+	it('reads a value half that is blank as zero, and keeps text as typed', () => {
+		const body = [
+			'',
+			'### A',
+			'```sheet',
+			'Uses:  / 3',
+			'```',
+			'Prose.',
+			'',
+			'### B',
+			'```sheet',
+			'Uses: frog',
+			'```',
+			'Prose.',
+			'',
+			'### C',
+			'```sheet',
+			'Uses: 2 / lots',
+			'```',
+			'Prose.',
+			'',
+		].join('\n');
+		const rows = recordSet.scopeRows?.(readData(body, owned), owned);
+		const values = (rows?.(() => null) ?? []).map((one) => one.values['Uses']);
+		// A blank value half is a blank value, which is zero to a formula; text
+		// that is neither is kept exactly as it is; and a non-numeric ceiling
+		// leaves the value beside it a number.
+		expect(values).toEqual([0, 'frog', 2]);
+		const el = render(owned, body);
+		const shown = records(el);
+		expect(shown.map((record) => valueField(record).value)).toEqual([
+			'',
+			'frog',
+			'2',
+		]);
+		// A ceiling that is not a number is drawn as typed and behaves as none:
+		// nothing clamps to it.
+		expect(ceilingField(shown[2] as HTMLElement).value).toBe('lots');
+		const changes: RecordSetData[] = [];
+		const live = render(owned, body, {
+			onChange: (data) => changes.push(data),
+		});
+		commit(valueField(records(live)[2] as HTMLElement), '40');
+		expect(changes[0]?.records[2]?.fields).toEqual({ Uses: '40 / lots' });
+		/*
+		 * **And the announcement agrees with the clamp**, which is the half that
+		 * shipped wrong: the live region took the ceiling's raw text while the
+		 * clamp parsed it, so a record nothing clamped and `full` skipped still
+		 * said "of lots" to the one reader who cannot see the field.
+		 */
+		expect(live.querySelector('.sheetsmith-sr-only')?.textContent).toBe(
+			'C Uses 40',
+		);
+	});
+
+	it('is not a configuration error beside a declared max, and reports no min above it', () => {
+		// Where the ceiling is the record's, `config.max` is not read at all — so
+		// reporting a relation between two numbers the component ignores would
+		// send an author to fix a number nothing uses.
+		const both: RecordSetConfig = {
+			...config,
+			fields: [
+				{ key: 'Uses', type: 'number', min: 5, max: 3, maxSource: 'record' },
+			],
+		};
+		const el = render(both, OWN_BODY);
+		expect(errors(el)).toEqual([]);
+		// The declared `max` is ignored rather than drawn, and the reader's own
+		// ceiling is what the value is read against.
+		const record = records(el)[0] as HTMLElement;
+		expect(ceilingField(record).value).toBe('3');
+		// And the same field with the ceiling back on the field reports the
+		// relation again, so the narrowing is not a licence.
+		const back = recordSet.read(OWN_BODY, {
+			...config,
+			fields: [{ key: 'Uses', type: 'number', min: 5, max: 3 }],
+		});
+		expect(back.ok).toBe(false);
+		if (back.ok) return;
+		expect(back.error).toContain('minimum of 5');
+		// And the record's own mode reads, which is the other half of the pair.
+		expect(recordSet.read(OWN_BODY, both).ok).toBe(true);
+	});
+
+	it('ignores maxSource on every field that is not a number', () => {
+		const others: RecordSetConfig = {
+			...config,
+			fields: [
+				{ key: 'Attuned', type: 'toggle', maxSource: 'record' },
+				{
+					key: 'Rank',
+					type: 'level',
+					levels: ['None', 'Trained'],
+					maxSource: 'record',
+				},
+				{ key: 'Left', type: 'computed', formula: '1', maxSource: 'record' },
+				{ key: 'Modifiers', type: 'modifier', maxSource: 'record' },
+			],
+		};
+		const body = [
+			'',
+			'### A',
+			'```sheet',
+			'Attuned: yes',
+			'Rank: 1',
+			'```',
+			'Prose.',
+			'',
+		].join('\n');
+		const el = render(others, body);
+		// Nothing is drawn for it — no ceiling anywhere on the line — and no
+		// configuration error is reported, on `secondary` and `hideHeading`'s rule.
+		expect(errors(el)).toEqual([]);
+		expect(el.querySelector('.sheetsmith-pool-ceiling')).toBeNull();
+		// And the key survives the round trip, because a hand-edited layout may
+		// carry it.
+		expect(recordSet.write(readData(body, others), body, others)).toBe(body);
+	});
+
+	it('leaves every stored ceiling alone when the field is switched back', () => {
+		// Pool's read-in-both-modes-used-in-one asymmetry: the layout's `max` is
+		// drawn and clamped against, and the stored number is carried in the bytes
+		// — including when the value beside it is edited.
+		const body = [
+			'',
+			'### A',
+			'```sheet',
+			'Uses: 2 / 5',
+			'```',
+			'Prose.',
+			'',
+		].join('\n');
+		const declared: RecordSetConfig = {
+			...config,
+			fields: [{ key: 'Uses', type: 'number', max: 3 }],
+		};
+		const el = render(declared, body);
+		const record = records(el)[0] as HTMLElement;
+		expect(record.querySelector('.sheetsmith-pool-ceiling input')).toBeNull();
+		expect(
+			record.querySelector('.sheetsmith-pool-max')?.textContent,
+		).toBe('3');
+		// The one honest cost: the note says `2 / 5` while the sheet draws `2 / 3`.
+		const changes: RecordSetData[] = [];
+		const live = render(declared, body, {
+			onChange: (data) => changes.push(data),
+		});
+		commit(valueField(records(live)[0] as HTMLElement), '9');
+		expect(changes[0]?.records[0]?.fields).toEqual({ Uses: '3 / 5' });
+		const written = recordSet.write(changes[0] as RecordSetData, body, declared);
+		expect(written).toContain('Uses: 3 / 5');
+		// And switching back finds the ceiling still there.
+		expect(
+			ceilingField(records(render(owned, written))[0] as HTMLElement).value,
+		).toBe('5');
 	});
 });
 
@@ -1698,6 +2385,39 @@ describe('recordSet.sample', () => {
 			expect(value).toBeGreaterThan(0);
 			expect(value).toBeLessThan(9);
 		}
+	});
+
+	it('gives two sample records different ceilings where the ceiling is theirs', () => {
+		/*
+		 * The direct extension of the partial-of-a-partial rule above: the thing an
+		 * author has just turned on is precisely that the ceiling is the record's,
+		 * and `Uses 2 / 3` beside `Uses 1 / 2` says that where `Uses 2 / 3` beside
+		 * `Uses 1 / 3` would say the opposite.
+		 */
+		const owned: RecordSetConfig = {
+			...config,
+			fields: [{ key: 'Uses', type: 'number', maxSource: 'record' }],
+		};
+		const body = sampleOf(recordSet, owned);
+		const shown = readData(body, owned).records;
+		const ceilings = Object.values(shown).map(
+			(one) => (one.fields?.Uses ?? '').split('/')[1]?.trim(),
+		);
+		expect(ceilings[0]).not.toBe(ceilings[1]);
+		for (const one of Object.values(shown)) {
+			const [value, ceiling] = (one.fields?.Uses ?? '')
+				.split('/')
+				.map((part) => Number(part.trim()));
+			// A partial of the ceiling rather than at it, so an author sees a
+			// counter that has been used.
+			expect(value).toBeGreaterThan(0);
+			expect(value).toBeLessThan(ceiling as number);
+			// The canonical ` / `, forced rather than chosen: the sample has to
+			// round-trip byte-identically through this component's own read and
+			// write, which `contract.test.ts` already asserts.
+			expect(one.fields?.Uses).toMatch(/^\d+ \/ \d+$/);
+		}
+		expect(recordSet.write(readData(body, owned), body, owned)).toBe(body);
 	});
 
 	it('renders as a list of two records with bodies', () => {

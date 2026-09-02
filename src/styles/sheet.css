@@ -4354,6 +4354,63 @@ a.sheetsmith-undo {
 	background-color: var(--background-primary);
 }
 
+/* **A ceiling the reader sets wears the record's field chrome and the pool's
+   reading**, and `.sheetsmith-pool-max-input` is deliberately not borrowed.
+
+   That class is the *pool card's* chrome: chromeless, sized in `ch` against the
+   card's value size, with a hover background and a focus ring of its own. A
+   record's number field already has chrome — the rule directly above — and two
+   fields on one summary line answering a hover two different ways is precisely
+   the defect §9's "reuse rather than a lookalike" rule exists to prevent. Here
+   the lookalike would be the *pool's* treatment sitting beside the record's.
+
+   So the field carries `.sheetsmith-record-input` and `.sheetsmith-pool-max`
+   both, and this puts back the three things the rule above would otherwise
+   give it: the muted colour, which loses to `--text-normal` on specificity; a
+   box two digits wide rather than three; and no horizontal padding.
+
+   **The padding is why the two branches did not read alike, and taking it off
+   is the whole of that fix.** The ruling is that at rest the editable ceiling is
+   drawn identically to the read-only one, so the slash sits between two things
+   that read as one number — and a design review measured `Uses 1 / 3` putting
+   7px between the slash and its digit where `Level 3 /9` beside it puts 2px.
+   That 7px decomposes exactly: 2px of the ceiling's own flex gap, which the span
+   pays too, plus 1px of border and 4px of padding, which only a field pays.
+   Dropping the horizontal padding leaves 3px against the span's 2px — the
+   border, and nothing else.
+
+   **And the box is fixed rather than content-sized, which reverses an earlier
+   call in this rule.** `field-sizing: content` was taken first, on the argument
+   that a digit floating in the middle of a fixed box reads loose. That was true
+   of the 2.5em box it was argued against and is answered better by left-aligning
+   a box two digits wide; what content-sizing costs is what settled it. The field
+   grows when a ceiling reaches two digits, so stepping one from 9 to 10 moved
+   this record's toggles, its computed value and its modifier glyph 8px right
+   while the reader's finger was on the arrow key — the row rearranging under a
+   number being stepped, which `.sheetsmith-pool-current`'s own comment already
+   records as a failure and which `docs/UI.md` §11 asks to be checked. One
+   summary line must not carry one fixed number field and one elastic one.
+   Measured on the harness both ways: 7px and 8px of shift before, 3px and none
+   after. It also drops the `@supports` fallback, which was a third geometry
+   nobody photographed — every engine now draws this one. */
+.sheetsmith-view
+	.sheetsmith-record-field
+	.sheetsmith-record-input.sheetsmith-pool-max {
+	/* Two digits and the borders that box them, so a ceiling stepped past 9
+	   moves nothing beside it. A third digit clips, and a record with a hundred
+	   uses is not a thing this counter is for. */
+	width: calc(2ch + 2px);
+	min-width: calc(2ch + 2px);
+	/* Vertical padding stays, so the hover surface and the focus ring keep the
+	   value field's height; horizontal goes, so the digit begins where the
+	   read-only span's digit begins. */
+	padding: var(--size-2-1) 0;
+	/* Left, not centred: the ceiling belongs to the slash before it, and half a
+	   box of slack in front of a single digit is the gap this rule removes. */
+	text-align: left;
+	color: var(--text-muted);
+}
+
 /* A read-only value one press from what it is made of, which is the same
    treatment a computed cell wears: `cursor: help` and the shared popover, so
    the formula and its failure explanation are reachable without a hover — a

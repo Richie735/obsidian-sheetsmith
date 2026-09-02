@@ -64,7 +64,11 @@
 import { setIcon } from 'obsidian';
 import { bindEditable, bindMultiline } from '../interaction/editable';
 import { armRegister, bindArmToConfirm } from '../interaction/arm-to-confirm';
-import { splitBounded, withValue } from '../parse/bounded-entry';
+import {
+	splitBounded,
+	withCeiling,
+	withValue,
+} from '../parse/bounded-entry';
 import { readFenced, writeFenced } from '../parse/fenced';
 import { bodyText, writeBodyText } from '../parse/markdown-body';
 import { cellParts, spellParts, storedParts } from '../parse/modifier-cell';
@@ -80,10 +84,11 @@ import {
 } from '../parse/records';
 import { startsSection } from '../parse/character';
 import { displayText, hasLink } from '../parse/wikilink';
-import { ColumnType } from './column-types';
+import { ColumnType, HOLDER_MAX_SOURCE, MaxSource } from './column-types';
 import {
 	boundedText,
 	formatComputed,
+	TypedField,
 	typedValue,
 	typeOf,
 } from './typed-value';
@@ -222,6 +227,28 @@ export interface RecordField {
 	min?: number;
 	max?: number;
 	/**
+	 * Where a number field's ceiling comes from: the field, one number every
+	 * record is read against, or each record, a number the reader types on the
+	 * sheet beside the value and the note keeps inside that record's own entry.
+	 *
+	 * Absent means `'field'`, so every layout written before this reads exactly
+	 * as it did. Under `'record'` the field's own `max` is not read at all — it
+	 * survives untouched in the layout, so switching back restores the previous
+	 * reading exactly, which is Pool's own rule for a note carrying a `max`
+	 * entry: read in both modes, used in one.
+	 *
+	 * A string union rather than a boolean, so the formula ceiling this
+	 * deliberately does not do can be added as a third source rather than
+	 * replacing a flag. Ignored on every other field type, on `secondary`'s
+	 * rule: it promises nothing this component would have to deliver, and a
+	 * hand-edited layout may carry it.
+	 *
+	 * The union is `column-types.ts`'s rather than this file's, for that file's
+	 * own reason: the editor spells the same two ids and imports nothing from a
+	 * component, so two copies would drift in silence.
+	 */
+	maxSource?: MaxSource;
+	/**
 	 * Names for a level field's states, from none upwards. Naming them settles
 	 * how many there are. A name may say what its ring shows after a colon; see
 	 * level-ring.ts, which owns that rule.
@@ -321,6 +348,11 @@ function fieldLabel(field: RecordField): string {
 	return (field.name ?? '').trim() || field.key;
 }
 
+/** Whether this field's ceiling belongs to each record rather than to the field. */
+function recordsOwnMax(field: RecordField): boolean {
+	return fieldType(field) === 'number' && field.maxSource === HOLDER_MAX_SOURCE;
+}
+
 /**
  * The half of a stored entry that is the *value*.
  *
@@ -337,6 +369,30 @@ function storedValue(field: RecordField, raw: string | undefined): string {
 	return fieldType(field) === 'number'
 		? splitBounded(raw ?? '').value
 		: (raw ?? '');
+}
+
+/**
+ * What a ceiling's text is worth as a number, or null where it is worth
+ * nothing at all.
+ *
+ * Null covers all three of "nothing there", "a blank half" and "text that is
+ * not a number" — `boundedText`'s own rule keeps exactly what somebody wrote,
+ * and all three behave the same way here: nothing clamps to it, and `full`
+ * skips the field on that record.
+ *
+ * **One spelling, because drift is the whole of the risk** (§1's one-step
+ * rung). The ceiling the note holds and the ceiling being typed are read at
+ * opposite ends of this file, and two copies of this fail in exactly one way:
+ * two channels disagreeing about whether a record has a ceiling at all. That
+ * is not hypothetical — it is the defect the announcement shipped with, saying
+ * "of lots" about a ceiling the clamp and the reset both read correctly as
+ * none.
+ */
+function ceilingOf(text: string): number | null {
+	const trimmed = text.trim();
+	if (trimmed === '') return null;
+	const value = Number(trimmed);
+	return Number.isFinite(value) ? value : null;
 }
 
 /**
@@ -410,7 +466,14 @@ function configError(config: RecordSetConfig): string | null {
 			// a screen reader is given and what a dropdown lists.
 			return `The field "${key}" has a level with a mark but no name.`;
 		}
+		// **Only where the ceiling is the field's.** Where it is the record's,
+		// `config.max` is not read at all, so reporting a relation between two
+		// numbers the component ignores would send an author to fix a number
+		// nothing uses. A `max` declared beside `maxSource: 'record'` is not an
+		// error either: it is simply unused, and it survives untouched, so
+		// switching back restores the previous reading exactly.
 		if (
+			!recordsOwnMax(field) &&
 			field.min !== undefined &&
 			field.max !== undefined &&
 			field.min > field.max
@@ -497,6 +560,27 @@ function sampleField(
 			 * records show it, which is `samplePart`'s own rule rather than this
 			 * one's, and is the honest answer for a once-per-rest counter.
 			 */
+			/*
+			 * **Under `maxSource: 'record'` the ceiling varies per record too**,
+			 * which is the direct extension of the rule above rather than a new
+			 * one: the thing an author has just turned on is precisely that the
+			 * ceiling is the record's, and `Uses 2 / 3` beside `Uses 1 / 2` says
+			 * that where `Uses 2 / 3` beside `Uses 1 / 3` would say the opposite.
+			 * The ceiling is `sampleNumber` of this list's own seed and the value
+			 * a partial of it, so two record sets in one layout do not draw the
+			 * same two pairs. Composed through `withCeiling`, so the canonical
+			 * ` / ` is forced rather than chosen — `contract.test.ts` already
+			 * drives every sample through this component's own read and write.
+			 */
+			if (recordsOwnMax(field)) {
+				const ceiling = sampleNumber(at);
+				const value = boundedText(String(samplePart(ceiling)), {
+					type: 'number',
+					min: field.min,
+					max: ceiling,
+				});
+				return withCeiling(value, String(ceiling));
+			}
 			if (field.max === undefined) {
 				return boundedText(String(sampleNumber(at)), field);
 			}
@@ -1425,10 +1509,12 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				return;
 			}
 
-			// A number. Its name is drawn beside it in the shared secondary clothes,
-			// because there is no heading strip over a record's fields and a number
-			// with no word beside it says nothing.
+			// A number, whose entry may carry its ceiling beside its value. Its name
+			// is drawn beside it in the shared secondary clothes, because there is
+			// no heading strip over a record's fields and a number with no word
+			// beside it says nothing.
 			element('span', 'sheetsmith-card-abbreviation', cell, name);
+			const ownMax = recordsOwnMax(field);
 			const entry = splitBounded(raw);
 			const input = element('input', 'sheetsmith-record-input', cell);
 			input.type = 'text';
@@ -1436,8 +1522,8 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			input.value = entry.value;
 			input.setAttribute('aria-label', accessible);
 			/*
-			 * **A declared ceiling is drawn beside the value, in Pool's own
-			 * vocabulary rather than a second spelling of it.**
+			 * **A ceiling is drawn beside the value, in Pool's own vocabulary
+			 * rather than a second spelling of it.**
 			 *
 			 * `Uses 1` cannot tell a reader whether that is all of them or one of
 			 * three, which undercuts the one thing this component has that a Track
@@ -1455,49 +1541,211 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			 * pool's ceiling qualifies a headline number and a record's qualifies a
 			 * 13px one.
 			 *
-			 * **Pool's non-`characterMax` branch**, and no wrapper: `max` here is a
-			 * literal the layout declared and not a value the character holds, so
-			 * there is nothing to type into — a read-only span, no second field, no
-			 * placeholder. No `aria-label` on it either, for Pool's own reason: a
-			 * bare span is `role=generic`, which prohibits naming. What carries the
-			 * ceiling to a screen reader is the announcement below, on Pool's
-			 * spelling of it — "5 of 9", which is how the slash is read aloud.
+			 * **Which of Pool's two branches is drawn is the layout's `maxSource`.**
+			 * A field-owned `max` is a literal the layout declared, so there is
+			 * nothing to type into — a read-only span, no placeholder, and no
+			 * `aria-label` for Pool's own reason: a bare span is `role=generic`,
+			 * which prohibits naming, and what carries it to a screen reader is the
+			 * announcement below ("5 of 9", which is how the slash is read aloud).
+			 * A record-owned ceiling is a number the character holds, so it is a
+			 * field with the same `—` placeholder Pool uses — which is also the only
+			 * invitation to type — drawn on *every* record whether or not one is
+			 * set, because otherwise there is nothing to type into.
+			 *
+			 * **`.sheetsmith-pool-max-input` is deliberately not borrowed**, and
+			 * that is not a contradiction of "reuse Pool's vocabulary". That class
+			 * is the *pool card's* field chrome, sized in `ch` against the card's
+			 * value size with its own hover and focus. Two fields on one summary
+			 * line answering a hover two different ways is exactly the defect §9's
+			 * "reuse rather than a lookalike" rule exists to prevent, and here the
+			 * lookalike would be the pool's treatment sitting next to the record's.
+			 * So the ceiling wears the record's field chrome and the pool's
+			 * *reading*: `.sheetsmith-record-input` and `.sheetsmith-pool-max`
+			 * together, with one stylesheet rule putting the muted colour back and
+			 * narrowing it, since a ceiling is one or two digits where a value may
+			 * be three.
 			 */
-			if (field.max !== undefined) {
+			/**
+			 * The entry as this field last wrote it, rather than as the render read
+			 * it.
+			 *
+			 * **Both halves rebuild the whole entry, so a snapshot is not enough.**
+			 * `docs/PATTERNS.md` §7 is about reporting a delta rather than a
+			 * snapshot so a commit racing a rebuild cannot write back a stale
+			 * sibling — the delta *is* right here, one field of one record, and the
+			 * staleness moved one level in: a write is asynchronous, so a reader who
+			 * leaves the value and then the ceiling commits both out of one render,
+			 * and a second commit composed from `raw` puts the first half back to
+			 * what the note said before either.
+			 */
+			let held = raw;
+
+			let ceilingInput: HTMLInputElement | null = null;
+			if (ownMax || field.max !== undefined) {
 				const ceiling = element('span', 'sheetsmith-pool-ceiling', cell);
 				element('span', 'sheetsmith-pool-separator', ceiling, '/');
-				element('span', 'sheetsmith-pool-max', ceiling, String(field.max));
+				if (ownMax) {
+					// `maxInput`, which is Pool's own name for the same control — and
+					// deliberately not `held`, which is the mutable entry above and the
+					// state every commit on this line composes from.
+					const maxInput = element(
+						'input',
+						'sheetsmith-record-input sheetsmith-pool-max',
+						ceiling,
+					);
+					maxInput.type = 'text';
+					maxInput.inputMode = 'numeric';
+					maxInput.value = entry.ceiling ?? '';
+					maxInput.placeholder = '—';
+					// **The one thing the field gains that the span could not have.** A
+					// bare span prohibits naming, so the read-only ceiling reaches a
+					// screen reader only through the field's announcement; an input is
+					// nameable, and both channels are kept rather than traded.
+					maxInput.setAttribute('aria-label', `${accessible} maximum`);
+					maxInput.title = `Maximum ${name}, held by this ${noun.toLowerCase()}.`;
+					ceilingInput = maxInput;
+				} else {
+					element('span', 'sheetsmith-pool-max', ceiling, String(field.max));
+				}
 			}
-			const said = field.max === undefined ? '' : ` of ${field.max}`;
+
+			/**
+			 * The ceiling the value is read against as it stands, or null where
+			 * there is none — the *draft* where one is being typed, which is Pool's
+			 * own rule: what the value is announced against and held to is what the
+			 * reader can see.
+			 *
+			 * **This says which text; `ceilingOf` says what it is worth**, and every
+			 * channel on this line goes through both. The announcement used to take
+			 * the raw text where the clamp parsed it, so a record storing
+			 * `Uses: 2 / lots` clamped to nothing and was skipped by `full` —
+			 * correctly, since text that is not a number behaves as no ceiling — and
+			 * *still* announced "Uses 40 of lots". The one channel that was wrong is
+			 * the only one a reader who cannot see the field has.
+			 */
+			const ceilingNow = (): number | null =>
+				ceilingOf(
+					ownMax
+						? (ceilingInput?.value ?? '')
+						: field.max === undefined
+							? ''
+							: String(field.max),
+				);
+			/** "of 3", or nothing at all where this record has no ceiling. */
+			const said = (): string => {
+				const ceiling = ceilingNow();
+				return ceiling === null ? '' : ` of ${ceiling}`;
+			};
+			/** The bounds the value is held to, against that same standing ceiling. */
+			const valueBounds = (): TypedField => {
+				if (!ownMax) return field;
+				const ceiling = ceilingNow();
+				return ceiling === null
+					? { type: 'number', min: field.min }
+					: { type: 'number', min: field.min, max: ceiling };
+			};
+
 			const showValueRefusal = refusalNotice(row);
 			bindEditable(input, {
 				initial: entry.value,
 				step: true,
 				min: field.min,
-				max: field.max,
+				/*
+				 * **Read on every step rather than captured at bind**, because the
+				 * ceiling can move under this field while every other channel here
+				 * already follows it. `clamp` reads these off the options object each
+				 * time it runs, so a getter is all it takes.
+				 *
+				 * **Two states make the difference reachable, and neither is "a
+				 * ceiling raised but not yet left".** That one cannot happen: the
+				 * arrows need focus in *this* field, and moving focus here blurs the
+				 * ceiling, which commits it. What is reachable is (1) a ceiling draft
+				 * holding a note reference, which the refusal above *keeps* by design,
+				 * so it is on screen while `valueBounds` correctly reads it as no
+				 * ceiling; and (2) the moment after any ceiling commit, because the
+				 * commit is reported synchronously and the write is not — until the
+				 * rebuild lands, the ceiling on screen is the new one and a captured
+				 * bound is the old one. That second window is the same one `held`
+				 * above exists for.
+				 */
+				get max() {
+					return ceilingNow() ?? undefined;
+				},
 				announceCommit: (next) => {
 					status.textContent =
-						next === '' ? `${accessible} cleared` : `${accessible} ${next}${said}`;
+						next === ''
+							? `${accessible} cleared`
+							: `${accessible} ${next}${said()}`;
 				},
 				announceRestore: (restored) => {
 					status.textContent =
 						restored === ''
 							? `${accessible} restored to empty`
-							: `${accessible} restored to ${restored}${said}`;
+							: `${accessible} restored to ${restored}${said()}`;
 				},
 				refuse: refuseNumber,
 				onRefusal: showValueRefusal,
 				onCommit: (next) => {
 					// Bounds hold however the value arrived: a uses counter typed past
-					// its ceiling is the same mistake as one stepped there.
-					const settled = boundedText(next, field);
+					// its ceiling is the same mistake as one stepped there, and the
+					// ceiling is the record's own where the layout says so.
+					const settled = boundedText(next, valueBounds());
 					if (settled !== next) {
 						input.value = settled;
-						status.textContent = `${accessible} held to ${settled}${said}`;
+						status.textContent = `${accessible} held to ${settled}${said()}`;
 					}
-					// Written back into the entry, so the ceiling beside it survives with
-					// its own spelling of the slash.
-					commit(withValue(raw, settled));
+					// Written back into the entry as this field last left it, so the
+					// ceiling beside it survives with its own spelling of the slash —
+					// and survives a ceiling edit this render already reported.
+					held = withValue(held, settled);
+					commit(held);
+				},
+			});
+
+			if (ceilingInput === null) return;
+			const ceilingName = `${accessible} maximum`;
+			const showCeilingRefusal = refusalNotice(row);
+			bindEditable(ceilingInput, {
+				initial: entry.ceiling ?? '',
+				step: true,
+				// **Held to the field's `min` and to nothing else.** A ceiling under
+				// the floor describes a range no value can occupy, and the value
+				// beside it is already clamped to that same floor — one line must not
+				// hold a floor the value obeys and the ceiling contradicts. There is
+				// no upper bound on a ceiling to hold it to.
+				min: field.min,
+				// **No arithmetic**, and this is a departure from Pool stated rather
+				// than hidden: a record's *value* field does not settle `31+7`, so
+				// giving the ceiling beside it arithmetic would put two commit rules
+				// on one line. If it is ever wanted it arrives on both halves at once.
+				announceCommit: (next) => {
+					status.textContent =
+						next === ''
+							? `${ceilingName} cleared`
+							: `${ceilingName} ${next}`;
+				},
+				announceRestore: (restored) => {
+					status.textContent =
+						restored === ''
+							? `${ceilingName} restored to empty`
+							: `${ceilingName} restored to ${restored}`;
+				},
+				refuse: refuseNumber,
+				onRefusal: showCeilingRefusal,
+				onCommit: (next) => {
+					const settled = boundedText(next, { type: 'number', min: field.min });
+					if (settled !== next) {
+						ceilingInput.value = settled;
+						status.textContent = `${ceilingName} held to ${settled}`;
+					}
+					// **Only the ceiling.** Lowering one under the value does not
+					// rewrite the value: `5 / 3` is drawn as it is stored, which is the
+					// standing rule to render rather than correct — the alternative is
+					// a write the reader did not ask for on the press of another field.
+					// And clearing it drops the separator with it, so the entry goes
+					// back to a bare number rather than to `2 /`.
+					held = withCeiling(held, settled);
+					commit(held);
 				},
 			});
 		}

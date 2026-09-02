@@ -568,6 +568,26 @@ const DEFAULTS = [
 	},
 	{ name: 'sheet-error', query: 'surface=sheet&theme=dark&state=broken', size: SHEET_FRAME },
 	{
+		/*
+		 * **The three ceiling states below the traits card's cut.**
+		 *
+		 * The list is six records in a three-row box, so at the default width a
+		 * shot holds the first three: a ceiling above its value, one at zero of
+		 * one, and a record with none. Records four to six are the reader's own
+		 * `1/2` spacing, a value *above* its ceiling — the state this feature
+		 * deliberately gives no warning treatment, so a shot is the only way
+		 * anyone can check that decision — and a counter sitting at its ceiling.
+		 *
+		 * Scrolled rather than re-cut: the clipping is the component honouring its
+		 * placement, and shaping the sample so these landed above the fold would
+		 * be shaping the subject to the photograph.
+		 */
+		name: 'sheet-record-ceilings',
+		query:
+			'surface=sheet&theme=light&scroll=.sheetsmith-record-set-list%20.sheetsmith-record%3Alast-of-type',
+		size: SHEET_FRAME,
+	},
+	{
 		// The pane above its reflow threshold: the tree beside the panel, with a
 		// container selected so the second schematic is on screen and the rows of
 		// what it holds sit directly under its own row — which is the docs/UI.md
