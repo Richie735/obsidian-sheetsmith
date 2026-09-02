@@ -598,6 +598,32 @@ const DEFAULTS = [
 		size: EDITOR_FRAME,
 	},
 	{
+		/*
+		 * **This feature's editor surface, which no default view opened.**
+		 * `editor-layout` draws the layout's own form and the other two open
+		 * Tables, so neither **Maximum from** nor the **Maximum** it withholds was
+		 * photographed anywhere — and the picker, its two labels composed from the
+		 * field's own vocabulary, and the footnote saying a declared maximum is
+		 * kept are the whole of what an author meets.
+		 */
+		name: 'editor-record-fields',
+		query: 'surface=editor&theme=light&open=traits',
+		size: EDITOR_FRAME,
+	},
+	{
+		/*
+		 * **The same list with the ceiling still the field's**, which is what every
+		 * layout written before this feature shows and what an author meets before
+		 * touching the picker. It is the branch that carries the **Maximum** input,
+		 * so it is the only view where the detail line's order can be checked —
+		 * *Minimum, Maximum, Maximum from*, with the picker after the number it
+		 * governs rather than between the two.
+		 */
+		name: 'editor-record-max-declared',
+		query: 'surface=editor&theme=light&open=spells',
+		size: EDITOR_FRAME,
+	},
+	{
 		name: 'editor-dark',
 		query: 'surface=editor&theme=dark&open=weapons',
 		size: EDITOR_FRAME,

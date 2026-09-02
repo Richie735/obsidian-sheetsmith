@@ -315,6 +315,30 @@ export interface ColumnOptionsSpec {
 	 */
 	hideHeading?: boolean;
 	/**
+	 * Whether a `number` entry may say that its maximum belongs to each holder
+	 * rather than to the entry. Defaults to false.
+	 *
+	 * **Offered only where a component asks for it**, unlike `total`, `publish`
+	 * and `hideHeading` above, which are existing controls a component may
+	 * *withdraw*. A per-holder maximum is a second stored number inside one
+	 * entry, and the component has to draw a field for it, restore to it and
+	 * clamp against it — so a list whose component does none of that must not
+	 * offer the choice. Record set asks; Table does not, which is what keeps
+	 * this out of Table by construction.
+	 *
+	 * **The control's two *labels* are composed from `unit` and `holder` below,
+	 * and its two *ids* are neither this field's nor a component's.** Saying only
+	 * the first half was how the ids came to be literals in `list-fields.ts` with
+	 * the same union spelled again on the component and nothing relating them.
+	 * They are `components/column-types.ts`'s `MAX_SOURCES`, which both sides
+	 * import, so a Record set reads **The field** / **Each record**, a Table would
+	 * read **The column** / **Each row**, and both persist the same two values.
+	 * `contract.test.ts` holds a field declaring this to offering `number`,
+	 * since a per-holder maximum on a list that cannot hold a number is a
+	 * control with nothing to attach to.
+	 */
+	holderMax?: boolean;
+	/**
 	 * What one entry of this list is called, and what holds one — "column" and
 	 * "row" by default, "field" and "record" for a Record set.
 	 *
