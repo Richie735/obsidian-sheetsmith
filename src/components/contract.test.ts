@@ -614,7 +614,6 @@ describe('a component that says what a sample of itself looks like', () => {
 		'rich-text bare',
 		'table bare',
 		'table Inventory',
-		'table Features',
 		'track bare',
 		'track Checkbox',
 	];

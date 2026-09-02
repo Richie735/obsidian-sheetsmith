@@ -900,17 +900,24 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 		},
 	],
 	/*
-	 * Both entries are this component with `openRows` on and its columns
-	 * filled in, which is what SPEC §13 found when it checked the five blocks
-	 * one at a time: an inventory and a features list wanted no capability the
-	 * table lacks, only a starting point. They are the first two entries on one
-	 * type, and they earn that under §4.2's rule twice over — nobody building an
-	 * inventory looks for a component called Table, which is the same miss that
-	 * made "Skill card" the wrong name for this block in the first place.
+	 * This component with `openRows` on and its columns filled in, which is what
+	 * SPEC §13 found when it checked the five blocks one at a time: an inventory
+	 * wanted no capability the table lacks, only a starting point. It earns its
+	 * place under §4.2's rule — nobody building an inventory looks for a component
+	 * called Table, which is the same miss that made "Skill card" the wrong name
+	 * for this block in the first place.
 	 *
-	 * Neither declares rows. A declared row is one every character using the
-	 * layout has, and gear and features are exactly the lists where the
-	 * character owns every line.
+	 * It declares no rows. A declared row is one every character using the layout
+	 * has, and gear is exactly the list where the character owns every line.
+	 *
+	 * **Features was the second entry here and has moved to Record set.** §13's
+	 * prefill was a Table with a `Notes` text column, and §13 said in the same
+	 * breath that "a features list holding paragraphs is not a table at all, since
+	 * a cell is one line". Once a component exists whose record has a body, two
+	 * entries called Features under two types is a menu line nobody can choose
+	 * between, and this one is the wrong answer to its own job. A layout that
+	 * already holds the Table version is untouched: a layout stores the component
+	 * an entry produced and never the entry itself (SPEC §13).
 	 */
 	palette: [
 		{
@@ -924,19 +931,6 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 				],
 				openRows: true,
 				rowHeader: 'Item',
-			},
-		},
-		{
-			name: 'Features',
-			description:
-				'An open list of features, traits or moves: the character adds every row and names it, with its source in quieter type beside the name and a line of notes after. A Table, so it stores as ordinary markdown and a feature naming its own note keeps a working wikilink. A cell is one line, so a feature whose text runs long belongs in the note it links to.',
-			config: {
-				columns: [
-					{ key: 'Source', secondary: true },
-					{ key: 'Notes' },
-				],
-				openRows: true,
-				rowHeader: 'Feature',
 			},
 		},
 	],

@@ -415,19 +415,28 @@ describe('adding and removing a component', () => {
 		 * one type apart, so this walks every entry a type has rather than
 		 * naming one — the first draft asserted that `table:1` is Features, which
 		 * holds only until an entry is inserted above it and then fails while
-		 * pointing at Features' columns, which is not what broke.
+		 * pointing at another entry's columns, which is not what broke.
 		 *
 		 * Expected from the registry, as the menu-run check above is, so what is
 		 * compared is the component the editor wrote against the entry it was
 		 * asked for.
 		 */
-		const entries = paletteEntries('table');
+		// **Whichever type offers two, asked of the registry rather than named.**
+		// Table had two entries and has one since Features moved to Record set, so
+		// a spelled-out type is a case that goes red for a reason unrelated to what
+		// it tests. What the subject needs is only that some type offers more than
+		// one, which is what the disambiguation is about.
+		const type = listComponentTypes().find(
+			(candidate) => paletteEntries(candidate).length > 1,
+		);
+		expect(type, 'no type offers two palette entries').toBeDefined();
+		const entries = paletteEntries(type ?? '');
 		// A loop over one entry would pass without exercising the disambiguation
 		// at all, which is the whole subject here.
 		expect(entries.length).toBeGreaterThan(1);
 
 		for (const [index, entry] of entries.entries()) {
-			choose(control<HTMLSelectElement>(harness, 'add-choice'), `table:${index}`);
+			choose(control<HTMLSelectElement>(harness, 'add-choice'), `${type ?? ''}:${index}`);
 			pressAdd(harness);
 			await settle(harness.pane);
 
@@ -435,9 +444,9 @@ describe('adding and removing a component', () => {
 			const added = components[
 				components.length - 1
 			] as unknown as Record<string, unknown>;
-			expect(added.type).toBe('table');
-			// The entry's own name, so an author who chose Features has a
-			// component called Features until they rename it.
+			expect(added.type).toBe(type);
+			// The entry's own name, so an author who chose Spellbook has a
+			// component called Spellbook until they rename it.
 			expect(added.label).toBe(entry.name);
 			for (const [key, value] of Object.entries(entry.config)) {
 				expect(added[key], `${entry.name} wrote ${key}`).toEqual(value);
