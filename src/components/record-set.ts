@@ -37,8 +37,14 @@
  *   and rename propagation all work.
  * - **Parse then serialise is byte-identical per record**, because
  *   `parse/records.ts` keeps every byte in a piece and rejoins them, the fence
- *   keeps its own spelling through `parse/fenced.ts`, and the prose keeps its
- *   framing through `parse/markdown-body.ts`.
+ *   keeps its own spelling through `parse/fenced.ts`, the prose keeps its
+ *   framing through `parse/markdown-body.ts`, and a `number` entry keeps its own
+ *   spelling of the slash through `parse/bounded-entry.ts`. `RecordEntry.fields`
+ *   holds the note's own bytes whatever an entry carries — the split into a
+ *   value and its ceiling happens *above* `read`, wherever this component turns
+ *   a stored entry into a value — so `writeFenced`'s "rewrite only the lines
+ *   whose value changed" comparison sees an identical string for anything the
+ *   reader did not touch.
  *
  * **It publishes no names at all.** `<id>.<name>` is a fixed-row mechanism — a
  * name a formula can write has to be knowable when the formula is written — and
@@ -58,6 +64,7 @@
 import { setIcon } from 'obsidian';
 import { bindEditable, bindMultiline } from '../interaction/editable';
 import { armRegister, bindArmToConfirm } from '../interaction/arm-to-confirm';
+import { splitBounded, withValue } from '../parse/bounded-entry';
 import { readFenced, writeFenced } from '../parse/fenced';
 import { bodyText, writeBodyText } from '../parse/markdown-body';
 import { cellParts, spellParts, storedParts } from '../parse/modifier-cell';
@@ -315,6 +322,24 @@ function fieldLabel(field: RecordField): string {
 }
 
 /**
+ * The half of a stored entry that is the *value*.
+ *
+ * **Applied to every `number` field's entry whatever the mode, and that is the
+ * decision rather than an over-reach.** Gating the split on `maxSource` would
+ * mean that switching a field back to the field's own ceiling turned every
+ * composite already in the note into text — and `typedValue` hands text back as
+ * text, so `sum(features, Uses)` would start reading `'2 / 3'` as a name that is
+ * not a number and take a card down with a `?`. The value half is what the
+ * input, the clamp, `typedValue` and `scopeRows` see in both modes; only the
+ * *ceiling* half changes meaning with the mode.
+ */
+function storedValue(field: RecordField, raw: string | undefined): string {
+	return fieldType(field) === 'number'
+		? splitBounded(raw ?? '').value
+		: (raw ?? '');
+}
+
+/**
  * What a record is called, wherever something has to name one.
  *
  * As a reader sees it, never as the file spells it: a heading may hold a
@@ -431,7 +456,10 @@ function recordValues(
 	const stored: Record<string, FieldValue> = {};
 	for (const field of config.fields ?? []) {
 		if (fieldType(field) === 'computed') continue;
-		stored[field.key] = typedValue(field, record.fields[field.key]);
+		// The value half, never the whole entry: a record's `Uses` name is worth
+		// `2` when the entry says `2 / 3`, which is what `sum(features, Uses)`
+		// added up before this feature and what it must go on adding up.
+		stored[field.key] = typedValue(field, storedValue(field, record.fields[field.key]));
 	}
 	const values: Record<string, FieldValue> = { ...stored };
 	(config.fields ?? []).forEach((field, at) => {
@@ -1093,6 +1121,37 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		};
 
 		/**
+		 * Why a number field's commit cannot be stored, or null.
+		 *
+		 * A link, as everywhere else that reaches the fence — **and a slash**,
+		 * which this feature made syntax. `parse/bounded-entry.ts` splits an entry
+		 * at its first slash, so a value half holding one is not a value that
+		 * module can write back: committing `1/2` into a field whose entry is
+		 * `Uses: 2 / 3` produces `Uses: 1/2 / 3`, which re-reads as a value of 1
+		 * against a ceiling of `2 / 3` — text, so nothing clamps to it and `full`
+		 * starts skipping that record. Nothing is deleted, so Constraint 4 holds;
+		 * what goes is the reading the reader set, silently, on an ordinary typo.
+		 *
+		 * **Refused rather than repaired**, on `boundedText`'s own rule one level
+		 * up: `1/2` might mean "one of two" and might be a slip, and replacing what
+		 * somebody wrote with a number they did not is the thing this codebase
+		 * refuses to do. It is also PATTERNS §7 exactly — validate what the file
+		 * format requires, not what looks tidy — and the slash is now what a colon
+		 * already was.
+		 *
+		 * One sentence for both fields and both modes: where the ceiling is the
+		 * record's there is a field after the slash to type it in, and where it is
+		 * the layout's there is nothing to type at all, so neither is told to go
+		 * anywhere in particular.
+		 */
+		const refuseNumber = (text: string): string | null => {
+			const link = refusal(text);
+			if (link !== null) return link;
+			if (!text.includes('/')) return null;
+			return `Not saved. A slash separates a value from the maximum it is read against, so "${text}" would be stored as two numbers rather than one. Type just the number here.`;
+		};
+
+		/**
 		 * Draw or clear one standing refusal under a record, and say it.
 		 *
 		 * **A closure per message rather than a function taking one**, because what
@@ -1370,10 +1429,11 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			// because there is no heading strip over a record's fields and a number
 			// with no word beside it says nothing.
 			element('span', 'sheetsmith-card-abbreviation', cell, name);
+			const entry = splitBounded(raw);
 			const input = element('input', 'sheetsmith-record-input', cell);
 			input.type = 'text';
 			input.inputMode = 'numeric';
-			input.value = raw;
+			input.value = entry.value;
 			input.setAttribute('aria-label', accessible);
 			/*
 			 * **A declared ceiling is drawn beside the value, in Pool's own
@@ -1411,7 +1471,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			const said = field.max === undefined ? '' : ` of ${field.max}`;
 			const showValueRefusal = refusalNotice(row);
 			bindEditable(input, {
-				initial: raw,
+				initial: entry.value,
 				step: true,
 				min: field.min,
 				max: field.max,
@@ -1425,7 +1485,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 							? `${accessible} restored to empty`
 							: `${accessible} restored to ${restored}${said}`;
 				},
-				refuse: refusal,
+				refuse: refuseNumber,
 				onRefusal: showValueRefusal,
 				onCommit: (next) => {
 					// Bounds hold however the value arrived: a uses counter typed past
@@ -1435,7 +1495,9 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 						input.value = settled;
 						status.textContent = `${accessible} held to ${settled}${said}`;
 					}
-					commit(settled);
+					// Written back into the entry, so the ceiling beside it survives with
+					// its own spelling of the slash.
+					commit(withValue(raw, settled));
 				},
 			});
 		}
@@ -1460,7 +1522,12 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			const scope: Record<string, FieldValue> = {};
 			for (const other of fields) {
 				if (fieldType(other) === 'computed') continue;
-				scope[other.key] = typedValue(other, record.fields[other.key]);
+				// The value half, as `recordValues` does: `3 - Uses` reads `2` from an
+				// entry that says `2 / 3`.
+				scope[other.key] = typedValue(
+					other,
+					storedValue(other, record.fields[other.key]),
+				);
 			}
 			const resolved =
 				field.formula === undefined
