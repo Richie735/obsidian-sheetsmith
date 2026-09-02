@@ -1165,6 +1165,216 @@ export const SAMPLES: Sample[] = [
 			'| Ring of Protection | Ring of Protection |',
 		].join('\n'),
 	},
+	/*
+	 * Two record sets, directly under the two modifier tables — which is the
+	 * pairing the model question is worth judging by looking at. A Table and a
+	 * Record set holding the same kind of list have to be visibly different
+	 * things at a glance, or the catalog has grown an entry nobody can choose.
+	 *
+	 * **Traits is the wide one and it is deliberately over-full**: six records
+	 * in a three-row placement, so the box has to hold its height and the list
+	 * has to scroll inside it. That is the load-bearing claim the disclosure
+	 * rests on — SPEC §8 forbids a component ceasing to fill its placement, and
+	 * `docs/UI.md` §9 forbids a box sized by its content — and neither is
+	 * reachable here however much is open.
+	 *
+	 * Its records cover what a reviewer has to be able to see side by side: a
+	 * body far longer than the box, a record with none at all, a name that is a
+	 * resolved wikilink and one that is not, a uses counter at its ceiling and
+	 * one below it, a typed modifier that applies and one that does not, and an
+	 * empty modifier field. The typed effects reach the armour class card above,
+	 * so the ` when ` clause is a number moving rather than a claim.
+	 */
+	{
+		config: {
+			// Not "Features": the Table above already carries that id and that
+			// label, and a label keys a note section. Keeping both on one sheet is
+			// the point — a Table of features beside a Record set of traits is the
+			// model question's own claim, put where a reviewer can look at it.
+			id: 'traits',
+			type: 'record-set',
+			label: 'Traits',
+			position: { col: 1, row: 33, width: 7, height: 3 },
+			recordName: 'Feature',
+			/*
+			 * **All five offered field types on one subject**, because a design
+			 * review found `level` and `computed` drawn on no shot at all: the axis
+			 * had to rule on the ring's touch route from the `toggle`'s behaviour,
+			 * and the `level` field is the one that instantiates a `<select>` beside
+			 * the ring — the arrangement `docs/UI.md` §9 records Table being
+			 * corrected away from — so it is the field most worth photographing.
+			 * `Rank` is a *named* level with a mark of its own, which is the branch
+			 * that earns a tooltip carrying the level's word; `Left` is computed from
+			 * the record's own scope.
+			 */
+			fields: [
+				{ key: 'Uses', type: 'number', max: 3 },
+				{ key: 'Attuned', type: 'toggle' },
+				{
+					key: 'Rank',
+					type: 'level',
+					levels: ['Untrained', 'Trained:', 'Expert:★'],
+				},
+				{ key: 'Left', type: 'computed', formula: '3 - Uses' },
+				// `hideHeading` and `secondary` are the two settings the shared
+				// columns field offers and this component ignores; neither is set
+				// here, because a record's fields draw their own names.
+				{ key: 'Modifiers', type: 'modifier' },
+			],
+		} as ComponentConfig,
+		body: [
+			'',
+			'Anything above the first record is a preamble, and it is kept untouched.',
+			'',
+			'### Second Wind',
+			'```sheet',
+			'Uses: 1',
+			'Attuned: no',
+			'Rank: 1',
+			'```',
+			'Once per short rest, you can use a bonus action to regain hit points equal to 1d10 + your fighter level. This one is deliberately the longest body on the sheet, so it is longer than the box that holds it and has to scroll inside the list rather than growing it. A second paragraph follows, because the space between two of them is part of what an open record has to get right.',
+			'',
+			'Once you use this feature, you must finish a short or long rest before you can use it again.',
+			'',
+			'### [[Ring of Protection]]',
+			'```sheet',
+			'Uses: 0',
+			'Attuned: yes',
+			'Rank: 2',
+			// Untyped on purpose. `as item` would contest with the Magic items
+			// table's own item bonuses and lose to the larger of them, which is a
+			// true state and the wrong one to sample here: what this record is for
+			// is the glyph that says a record *is* changing something.
+			'Modifiers: armour_class += 1 when Attuned',
+			'```',
+			'A resolved wikilink as a name, and a typed effect that is applying: the armour class card above moves by one while Attuned is set.',
+			'',
+			'### [[Torch of Revealing]]',
+			'```sheet',
+			'Uses: 3',
+			'Attuned: no',
+			'Rank: 0',
+			'Modifiers: armour_class += 2 as item when Attuned',
+			'```',
+			'A name pointing at a note the vault does not hold, so the link is faint — and a modifier whose condition is false, so the glyph reads as changing nothing.',
+			'',
+			'### Action Surge',
+			'```sheet',
+			'Uses: 1',
+			'Attuned: no',
+			'```',
+			'',
+			'### Lucky',
+			'```sheet',
+			'Uses: 3',
+			'Attuned: yes',
+			'Retired: 4',
+			'```',
+			'A record carrying an entry under a key the layout no longer declares. It is kept in the note untouched and nothing on the sheet reports it, which is SPEC §10 working.',
+			'',
+			'### Fey Ancestry',
+			'```sheet',
+			'Uses: 0',
+			'```',
+			'A record with no modifier field filled in, which is the ordinary state on a list like this.',
+			'',
+		].join('\n'),
+	},
+	/*
+	 * The narrow one, and the palette entry's own shape: a spell's level and
+	 * whether it is prepared, with the description under it. Five records in a
+	 * three-row box, closed, so a shot holds both dispositions at once — this
+	 * list as a reader first meets it, and Features with two of its records open.
+	 */
+	{
+		config: {
+			// `spellbook` is the empty Group further up, and a label keys a note
+			// section, so both have to differ.
+			id: 'spells',
+			type: 'record-set',
+			label: 'Spells',
+			position: { col: 8, row: 33, width: 5, height: 3 },
+			recordName: 'Spell',
+			fields: [
+				{ key: 'Level', type: 'number', max: 9 },
+				{ key: 'Prepared', type: 'toggle' },
+				/*
+				 * **A level drawn as a `<select>` rather than a ring**, which is the
+				 * one control kind of this component's five that nothing drew — and
+				 * the kind worth a picture, because it is a native menu beside a ring
+				 * in one line and `docs/UI.md` §9 records Table being corrected away
+				 * from a *stacked* select. This one is the alternative rather than the
+				 * overlay: the component returns before it builds the ring, so there
+				 * is exactly one control and nothing is transparent.
+				 */
+				{
+					key: 'School',
+					type: 'level',
+					input: 'select',
+					levels: ['None', 'Evocation', 'Abjuration'],
+				},
+			],
+		} as ComponentConfig,
+		body: [
+			'',
+			'### Fireball',
+			'```sheet',
+			'Level: 3',
+			'Prepared: yes',
+			'School: 1',
+			'```',
+			'A bright streak flashes to a point you choose, then blossoms with a low roar into an explosion of flame.',
+			'',
+			'### Shield',
+			'```sheet',
+			'Level: 1',
+			'Prepared: yes',
+			'School: 2',
+			'```',
+			'An invisible barrier of magical force appears and protects you.',
+			'',
+			'### Mage Armour',
+			'```sheet',
+			'Level: 1',
+			'Prepared: no',
+			'```',
+			'A protective magical force surrounds a willing creature you touch.',
+			'',
+			'### Counterspell',
+			'```sheet',
+			'Level: 3',
+			'Prepared: no',
+			'```',
+			'You attempt to interrupt a creature in the process of casting a spell.',
+			'',
+			'### Prestidigitation',
+			'```sheet',
+			'Level: 0',
+			'Prepared: yes',
+			'```',
+			'A minor magical trick that novice spellcasters use for practice.',
+			'',
+		].join('\n'),
+	},
+	/*
+	 * **The empty state, on the populated view.** Both lists above hold records,
+	 * so look criterion 5 — "a label, and one add control, reading as a list
+	 * waiting rather than as a broken component" — had nothing to look at here:
+	 * `state=empty` empties *every* component, which is a different picture and
+	 * not the one that criterion is about. A new character's spell list is empty
+	 * beside a filled feature list, which is the pairing worth a shot.
+	 */
+	{
+		config: {
+			id: 'rituals',
+			type: 'record-set',
+			label: 'Rituals',
+			position: { col: 1, row: 36, width: 4, height: 1 },
+			recordName: 'Ritual',
+			fields: [{ key: 'Level', type: 'number', max: 9 }],
+		} as ComponentConfig,
+		body: null,
+	},
 	/* Beside the set rather than inside it, so a tab press has something to not
 	   move. */
 	{
@@ -1344,6 +1554,7 @@ export function brokenSamples(): Sample[] {
 			options?: { value: string; label?: string }[];
 			rows?: { label: string; key?: string }[];
 			columns?: { type?: string; total?: boolean }[];
+			fields?: { key: string; type?: string }[];
 		};
 		// Nothing for a container itself: with the collapse gone a group has one
 		// setting left and no combination of settings without a reading, so there
@@ -1482,6 +1693,32 @@ export function brokenSamples(): Sample[] {
 		 * with no heading drawn, the prefix is the only name on screen.
 		 */
 		if (config.id === 'symbol') body = '\n![[https://example.com/portrait.png]]\n';
+		/*
+		 * **A Record set's two failure surfaces, which nothing drew.** A design
+		 * review found `state=broken` rendering all three lists pixel-identical to
+		 * the populated view apart from one glyph — so the per-record problem line,
+		 * this component's most distinctive failure design and its stated departure
+		 * from Table, and all eleven configuration errors were unphotographed. UI
+		 * §11 asks for an error state as well as an empty one.
+		 *
+		 * They are put on *different* subjects on purpose, because they are the two
+		 * halves of the departure and the whole point is that they do not look
+		 * alike: `traits` keeps rendering every record and marks the one whose fence
+		 * will not read, while `spells` refuses outright, which is a configuration
+		 * error and the one case where `read` fails at all. One on each is also what
+		 * keeps this view from showing one message twice, which is the narrowing the
+		 * card errors above already record.
+		 */
+		if (config.id === 'traits' && body !== null) {
+			// A hand-typed line inside one record's fence, which is the state a note
+			// arrives in and the state the per-record problem line exists for.
+			body = body.replace('Uses: 1\nAttuned: no', 'Uses: 1\nnot an entry');
+		}
+		if (config.id === 'spells') {
+			// The type this component refuses, which is also what a field added in
+			// the editor and not yet typed would be.
+			config.fields = [{ key: 'Notes', type: 'text' }];
+		}
 		return { config, body, children: sample.children };
 	});
 }

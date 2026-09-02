@@ -241,6 +241,157 @@ describe('field rules outweigh Obsidian\'s input styling', () => {
 	});
 });
 
+describe('every field the sheet styles has a focus indicator', () => {
+	/*
+	 * **The guard for a failure that was green under every gate, and it is the
+	 * shape §10 asks for.** The focus treatment a transparent field wears — an
+	 * accent border, the page surface, and a transparent `outline` as the
+	 * forced-colors escape hatch — was six identical copies and was merged into
+	 * one selector list. The merge ended its last selector with a comma, so the
+	 * list swallowed the comment and the rule that followed it and the four
+	 * declarations left the file entirely. Four fields then had **no focus
+	 * indicator of any kind** (WCAG 2.4.7, on the most-pressed controls on a
+	 * sheet) and each collapsed to a 1.6em circle on the caret entering it,
+	 * because they had inherited the level ring's box.
+	 *
+	 * Nothing caught it. A type check and a unit test do no cascade; the harness
+	 * shots do not press Tab, and `&focus=` photographs one control; and the
+	 * duplicate-body measurement that motivated the merge is satisfied by
+	 * *deleting* a rule as readily as by merging one — so re-measuring reported
+	 * success. That is §10's case for a guard exactly: a failure invisible in
+	 * review, and one a scan can prove.
+	 *
+	 * What it asserts is the *presence* of a treatment rather than its content:
+	 * every field class the stylesheet styles has a `:focus` rule somewhere
+	 * reaching for `--interactive-accent`. A card and a pool reach it through a
+	 * `box-shadow` and a transparent field through a border, and this is
+	 * deliberately indifferent to which — what it refuses is a field with none.
+	 */
+	const withoutComments = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+
+	/**
+	 * Every field class the stylesheet styles, from `FIELD_CLASS`'s own naming
+	 * minus one spelling — so a field added under that pattern is covered here
+	 * without anyone remembering to come back.
+	 *
+	 * **`-select` is deliberately out.** `FIELD_CLASS` polices three spellings
+	 * because all three lose to Obsidian's element rules, and that is about
+	 * *specificity*. This is about a replacement ring, which only a control that
+	 * took its chrome off owes: a native `<select>` keeps the browser's own focus
+	 * ring, and demanding an accent rule on one would fail a control that is
+	 * correct. The two spellings left are the ones that paint a transparent
+	 * border and therefore have nothing else to show focus with.
+	 */
+	function fieldClasses(): string[] {
+		const found = new Set<string>();
+		for (const match of withoutComments.matchAll(
+			/\.(sheetsmith-[a-z-]*(?:-input|-current))\b/g,
+		)) {
+			found.add(match[1] as string);
+		}
+		return [...found].sort();
+	}
+
+	/**
+	 * Fields whose focus treatment is deliberately not their own, each with the
+	 * reason it is not — enumerated rather than waved through, the way
+	 * `NAMED_FIELD_CLASSES` and `BORROWED` above are, because an exemption
+	 * nobody states is a rule that quietly stops applying.
+	 *
+	 * - `sheetsmith-pool-temp-input` — **the pill wears the ring and the field
+	 *   inside it wears nothing.** `.sheetsmith-pool-temp:focus-within` carries
+	 *   the accent, and the field suppresses its own box-shadow so there are not
+	 *   two rings a few pixels apart. Its own rule says so.
+	 * - `sheetsmith-table-name-input` — a row-name field carries
+	 *   `sheetsmith-table-input` **as well**, so it takes the shared rule through
+	 *   that class. The exemption is about this check counting classes where the
+	 *   browser resolves elements.
+	 */
+	const FOCUS_ELSEWHERE = [
+		'sheetsmith-pool-temp-input',
+		'sheetsmith-table-name-input',
+	];
+
+	/** Whether any rule anywhere focuses this class and reaches for the accent. */
+	function hasAccentFocus(cls: string): boolean {
+		for (const block of withoutComments.split('}')) {
+			const brace = block.indexOf('{');
+			if (brace === -1) continue;
+			const selector = block.slice(0, brace);
+			if (!selector.includes(`.${cls}:focus`)) continue;
+			if (block.slice(brace + 1).includes('--interactive-accent')) return true;
+		}
+		return false;
+	}
+
+	it('finds the fields it is meant to be checking', () => {
+		// The floor, because the assertion below is an absence over a derived
+		// list: a pattern that stopped matching would report green over a
+		// stylesheet with no field rules in it at all.
+		const classes = fieldClasses();
+		expect(classes.length).toBeGreaterThan(8);
+		// And the ones the regression actually took, named — so a rename cannot
+		// quietly drop a field out of the sweep.
+		for (const named of [
+			'sheetsmith-table-input',
+			'sheetsmith-rich-text-input',
+			'sheetsmith-image-input',
+			'sheetsmith-record-name-input',
+			'sheetsmith-record-input',
+			'sheetsmith-record-body-input',
+			'sheetsmith-card-input',
+		]) {
+			expect(classes, `${named} is no longer styled`).toContain(named);
+		}
+	});
+
+	it('gives every one of them a focus rule reaching for the accent', () => {
+		const dark = fieldClasses()
+			.filter((cls) => !FOCUS_ELSEWHERE.includes(cls))
+			.filter((cls) => !hasAccentFocus(cls));
+		expect(dark).toEqual([]);
+	});
+
+	it('holds each exemption to the reason it was given', () => {
+		// An exemption nothing exercises widens the rule for whatever is added
+		// next, which is what this file's own `BORROWED` row says about itself.
+		expect(FOCUS_ELSEWHERE.every((cls) => fieldClasses().includes(cls))).toBe(
+			true,
+		);
+		// The pool's pill carries the accent its field gives up, and the field
+		// says outright that it is giving it up.
+		const pill = withoutComments
+			.split('}')
+			.find(
+				(block) =>
+					block.includes('.sheetsmith-pool-temp:focus-within') &&
+					block.indexOf('{') !== -1,
+			);
+		expect(pill).toContain('--interactive-accent');
+		const field = withoutComments
+			.split('}')
+			.find((block) =>
+				block.includes('.sheetsmith-pool-temp-input:focus'),
+			);
+		expect(field).toContain('box-shadow: none');
+		// And a row's name field really does carry the shared class as well, which
+		// is the whole of why it needs no rule of its own.
+		const source = readFileSync(
+			new URL('./components/table.ts', import.meta.url),
+			'utf8',
+		);
+		expect(source).toContain("'sheetsmith-table-name-input'");
+		expect(source).toContain("'sheetsmith-table-input'");
+	});
+
+	it('would catch a field whose focus rule went', () => {
+		// The check above asserts an empty list, so it reads the same on a
+		// stylesheet with no focus rules at all. This drives the predicate over
+		// the shape the regression had: a field styled, and focused nowhere.
+		expect(hasAccentFocus('sheetsmith-not-a-field-input')).toBe(false);
+	});
+});
+
 describe('a container query sits below what it overrides', () => {
 	/*
 	 * `@container` and `@media` add no specificity, so an equal selector

@@ -1389,10 +1389,37 @@ export interface RenderContext<TData = unknown> {
 	 * Named for what it is rather than as a general slot of view state: one
 	 * consumer earns no generalisation (PATTERNS §1), which is what made the
 	 * collapse's equivalent pair cheap to delete when the collapse went.
+	 *
+	 * **View-held reader posture is a category now**, and `openRecords` below is
+	 * its second member. What the two share is where the state lives and why —
+	 * not in the component, because the sheet re-renders on every committed edit,
+	 * and not in the note, because a reader's posture is not the character's data.
+	 * What they do *not* share is a shape: an index into alternatives and a set of
+	 * open records are two different things, and §1 earns a generalisation only
+	 * where a second consumer wants the *same* thing. So they are a second pair
+	 * rather than one member read two ways.
 	 */
 	activeTab?: number;
 	/** Report the reader opening one of this component's alternatives. */
 	onActivateTab?: (index: number) => void;
+	/**
+	 * Which of this component's records the reader has open, and empty where
+	 * they have opened none.
+	 *
+	 * A set rather than an index, because several records may be open at once —
+	 * one at a time would be cheaper state and it loses to the finding the
+	 * disclosure has to survive, that hiding content diminishes awareness of it
+	 * and scrolling beats deciding which heading to press. With several open the
+	 * flat reading is available on demand; with one open it is unreachable at any
+	 * price.
+	 *
+	 * Positions rather than names, because a record's identity is its position
+	 * among the note's `###` blocks; a component clamps it, since a layout or a
+	 * note that lost a record leaves a reader pointing past the end.
+	 */
+	openRecords?: readonly number[];
+	/** Report the reader opening or closing one of this component's records. */
+	onToggleRecord?: (index: number, open: boolean) => void;
 }
 
 /**

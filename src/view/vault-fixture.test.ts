@@ -39,6 +39,15 @@
  * `SheetView.renderSheet`, and adds the one part that file has no need for: the
  * modifier context. If the three ever disagree, the view is the one that is
  * right.
+ *
+ * **There are two fixtures here now, and `sheetFrom` is what makes a second one
+ * cheap.** The item-modifiers pair is the file's subject and keeps every case
+ * below it; the Record set pair (`src/test/fixtures/records/`) gets one describe
+ * at the foot, asking only what a fixture check can ask — that both files load,
+ * that the note's stated states are the states the parsers produce, and that the
+ * numbers the recipe's press steps promise are the numbers the engine produces.
+ * Everything the recipe asks the owner to *press* needs the app, which is why the
+ * vault exists.
  */
 
 import { readFileSync } from 'node:fs';
@@ -52,6 +61,10 @@ import {
 	rowModifiers,
 } from '../components/modifier-breakdown';
 import { TableConfig, TableData, table } from '../components/table';
+import {
+	RecordSetConfig,
+	RecordSetData,
+} from '../components/record-set';
 import { parseFunctions } from '../formula/functions';
 import { modifierTargetSource } from '../formula/modifier-targets';
 import { makeFieldResolver, resolveFormulaFields } from '../formula/resolve';
@@ -74,6 +87,20 @@ const NOTE_FILE = 'Ilona.md';
 
 const LAYOUT_TEXT = readFileSync(new URL(LAYOUT_FILE, FIXTURE_DIR), 'utf8');
 const NOTE_TEXT = readFileSync(new URL(NOTE_FILE, FIXTURE_DIR), 'utf8');
+
+/** The Record set fixture, on the same terms and in a folder of its own. */
+const RECORDS_DIR = new URL('../test/fixtures/records/', import.meta.url);
+const RECORDS_LAYOUT_FILE = 'Record variations.json';
+const RECORDS_NOTE_FILE = 'Records.md';
+
+const RECORDS_LAYOUT_TEXT = readFileSync(
+	new URL(RECORDS_LAYOUT_FILE, RECORDS_DIR),
+	'utf8',
+);
+const RECORDS_NOTE_TEXT = readFileSync(
+	new URL(RECORDS_NOTE_FILE, RECORDS_DIR),
+	'utf8',
+);
 
 /**
  * What `SheetView.renderSheet` builds, minus the DOM.
@@ -1262,5 +1289,216 @@ describe('a modifier choosing which number it moves', () => {
 	it('round-trips the retyped cell byte for byte', () => {
 		// Constraint 3, on the clause this feature added to the grammar.
 		expect(serialiseCharacter(parseCharacter(onResult))).toBe(onResult);
+	});
+});
+
+describe('the Record set fixture the recipe names', () => {
+	/*
+	 * The second fixture, and the same bargain as the first: what is checkable
+	 * without the app is that both files are well formed and that the states the
+	 * note's own prose tells the reader to look for are the states the parsers
+	 * produce. The presses — find-in-page reaching a closed body, a rename
+	 * propagating through a record's heading, the reset button, the modifier form
+	 * — are why the vault exists.
+	 */
+	const built = sheetFrom(RECORDS_LAYOUT_TEXT, RECORDS_NOTE_TEXT);
+
+	/** One record set's data, as its own `read` gives it up. */
+	function recordsOf(id: string): RecordSetData {
+		const entry = built.entryFor(id);
+		expect(entry.error, `${id} would not read`).toBeNull();
+		const data = entry.data as RecordSetData | null;
+		expect(data, `${id} holds nothing`).not.toBeNull();
+		return data as RecordSetData;
+	}
+
+	it('is accepted by the real layout parser, on the vault\'s own grid', () => {
+		expect(built.layout.name).toBe(RECORDS_LAYOUT_FILE.replace(/\.json$/, ''));
+		// Six columns, like every other layout in the throwaway vault: a fixture
+		// laying out on a different grid looks different for a reason that has
+		// nothing to do with what it tests.
+		expect(built.layout.columns).toBe(6);
+		expect(built.problems).toEqual([]);
+		// Not a vacuous pass. The recipe promises a record set in a wide cell and
+		// a narrow one, one with no fields, one in a Group and one in a Tab set.
+		const types = built.prepared.map((entry) => entry.config.type);
+		expect(types.filter((type) => type === 'record-set')).toHaveLength(5);
+	});
+
+	it('names the layout the note names, so neither can be renamed alone', () => {
+		expect(built.note.layoutName).toBe(
+			RECORDS_LAYOUT_FILE.replace(/\.json$/, ''),
+		);
+	});
+
+	it('round-trips both files byte for byte', () => {
+		// Constraint 3 over the fixture rather than over a case's own string: the
+		// note is hand-written, so its spacing is the spacing a reader typed.
+		expect(serialiseLayout(built.layout)).toBe(RECORDS_LAYOUT_TEXT);
+		expect(serialiseCharacter(built.note)).toBe(RECORDS_NOTE_TEXT);
+		for (const entry of built.prepared) {
+			if (entry.config.type !== 'record-set' || entry.data === null) continue;
+			const section = getSection(built.note, entry.config.label);
+			expect(section, `${entry.config.label} has no section`).toBeDefined();
+			expect(
+				entry.component.write(entry.data, section?.body ?? null, entry.config),
+				`${entry.config.label} does not write itself back unchanged`,
+			).toBe(section?.body);
+		}
+	});
+
+	it('draws every record the note holds, in file order', () => {
+		const features = recordsOf('features');
+		expect(Object.values(features.records).map((one) => one.name)).toEqual([
+			'Second Wind',
+			'[[Sunblade]]',
+			'[[Torch of Revealing]]',
+			'Warded cloak',
+			'Hand broken',
+			'Fey Ancestry',
+			'Lucky',
+		]);
+		// The states the note's prose promises, each on its own record.
+		expect(features.records[0]?.body).toContain('catoblepas');
+		expect(features.records[6]?.body).toBe('');
+		expect(features.records[5]?.fields?.Retired).toBe('4');
+	});
+
+	it('reports the hand-broken record and nothing else', () => {
+		const features = recordsOf('features');
+		const broken = Object.entries(features.records)
+			.filter(([, record]) => record.error !== null)
+			.map(([at]) => at);
+		expect(broken).toEqual(['4']);
+		expect(features.records[4]?.error).toContain('this line is not an entry');
+		// And its bytes survive a write aimed at a neighbour, which is the half
+		// the recipe asks the reader to check by reopening the note.
+		const section = getSection(built.note, 'Features');
+		const written = built
+			.entryFor('features')
+			.component.write(
+				{ records: { 0: { fields: { Uses: '2' } } } },
+				section?.body ?? null,
+				built.entryFor('features').config,
+			);
+		expect(written).toContain('this line is not an entry');
+		expect(written).toContain('Uses: 2');
+	});
+
+	it('reads the preamble as a preamble and keeps it out of every record', () => {
+		const features = recordsOf('features');
+		for (const record of Object.values(features.records)) {
+			expect(record.body).not.toContain('Anything written above the first');
+		}
+		// It is still in the note, which is the other half of §10's rule.
+		expect(getSection(built.note, 'Features')?.body).toContain(
+			'Anything written above the first record is a preamble',
+		);
+	});
+
+	it('holds a list with no fields at all, which is not an error', () => {
+		const bare = recordsOf('bare_list');
+		expect(Object.keys(bare.records)).toHaveLength(2);
+		expect(bare.records[0]?.fields).toEqual({});
+		expect(bare.records[0]?.error).toBeNull();
+	});
+
+	it('produces the numbers the recipe\'s aggregate cards promise', () => {
+		// `10 + count(features, Attuned)`: two records carry `Attuned: yes`.
+		expect(built.derivedFor('attuned_count')).toBe(12);
+		// A record set inside a Group and inside a Tab set publishes nothing and
+		// still counts, because containment is arrangement and never addressing.
+		expect(built.derivedFor('group_card')).toBe(2);
+		expect(built.derivedFor('tab_witness')).toBe(1);
+	});
+
+	it('moves the armour class card by the modifiers its records apply', () => {
+		/*
+		 * Two records enrol and one does not: `[[Sunblade]]` names the layout's
+		 * own definition with `Attuned: yes`, `Warded cloak` types its own effect
+		 * with `Attuned: yes`, and `[[Torch of Revealing]]` names the definition
+		 * with `Attuned: no`. Both are `item`, so the best of the type applies —
+		 * 10 + 2 rather than 10 + 3.
+		 */
+		expect(built.derivedFor('armour_class')).toBe(12);
+		const breakdown = built.modifiers.breakdown('armour_class');
+		// **The record whose condition is false is not a contributor at all**, so
+		// it is absent rather than listed and suppressed: a condition decides
+		// whether a modifier is in the contest, and the stacking rule decides who
+		// wins it. `Torch of Revealing` is the one the reader ticks to see appear.
+		expect(breakdown.lines.map((line) => line.label)).toEqual([
+			'Sunblade',
+			'Warded cloak',
+		]);
+		// The name a reader sees, never the one the file spells — and the
+		// component's own label, which is what a row's label cannot carry.
+		expect(breakdown.lines[0]?.source).toBe('Features');
+		// Both are `item`, so the smaller of the two is listed and says why. That
+		// is the whole reason a breakdown beats a mark.
+		expect(breakdown.lines[0]?.suppressed).not.toBeNull();
+		expect(breakdown.lines[1]?.suppressed).toBeNull();
+	});
+
+	it('restores the counters the recipe\'s Long rest promises', () => {
+		const features = built.entryFor('features');
+		const spells = built.entryFor('spells');
+		const context = { resolve: () => null, explain: () => null };
+		const full = features.component.applyReset?.(
+			features.data,
+			features.config,
+			{ trigger: 'Long rest', action: 'full' },
+			context,
+		);
+		expect(full?.ok).toBe(true);
+		const empty = spells.component.applyReset?.(
+			spells.data,
+			spells.config,
+			{ trigger: 'Long rest', action: 'empty' },
+			context,
+		);
+		expect(empty?.ok).toBe(true);
+		if (full?.ok !== true || empty?.ok !== true) return;
+		const featureSection = getSection(built.note, 'Features');
+		const after = features.component.read(
+			features.component.write(
+				full.data,
+				featureSection?.body ?? null,
+				features.config,
+			),
+			features.config,
+		);
+		expect(after.ok).toBe(true);
+		if (!after.ok || after.data === null) return;
+		const records = (after.data as RecordSetData).records;
+		// Every readable record's `Uses` at its ceiling and every toggle set.
+		expect(records[0]?.fields?.Uses).toBe('3');
+		expect(records[0]?.fields?.Attuned).toBe('yes');
+		expect(records[6]?.fields?.Uses).toBe('3');
+		// And the hand-broken one is untouched, because no write into it is
+		// accepted at all — it still holds the line that would not read, and it
+		// still reports it rather than silently gaining a fence.
+		expect(records[4]?.error).toContain('this line is not an entry');
+		expect(records[4]?.fields).toEqual({});
+	});
+
+	it('names the field when a Long rest has no ceiling to restore to', () => {
+		// The recipe's last step: take `max` off `Uses` and press it again.
+		const features = built.entryFor('features');
+		const config = features.config as RecordSetConfig;
+		const uncapped: RecordSetConfig = {
+			...config,
+			fields: (config.fields ?? []).map((field) =>
+				field.key === 'Uses' ? { ...field, max: undefined } : field,
+			),
+		};
+		const result = features.component.applyReset?.(
+			features.data,
+			uncapped,
+			{ trigger: 'Long rest', action: 'full' },
+			{ resolve: () => null, explain: () => null },
+		);
+		expect(result?.ok).toBe(false);
+		if (result?.ok !== false) return;
+		expect(result.error).toContain('"Uses"');
 	});
 });
