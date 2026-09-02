@@ -120,6 +120,19 @@ export class SheetView extends TextFileView {
 	 */
 	private activeTab = new Map<string, number>();
 	/**
+	 * Which records the reader has open in each list, by component id.
+	 *
+	 * The sibling of `activeTab` above and held here for exactly its reasons: not
+	 * in the component, because the sheet re-renders on every committed edit, and
+	 * not in the note, because it is this reader's posture and not the character's
+	 * data. A `Set` rather than an index, because several records may be open at
+	 * once (`types.ts`, `openRecords`).
+	 *
+	 * Dropped when the leaf moves to another file, so a reopened note starts with
+	 * everything closed rather than inheriting the last note's.
+	 */
+	private openRecords = new Map<string, Set<number>>();
+	/**
 	 * The lifecycle of markdown a component asked the app to draw.
 	 *
 	 * Here rather than in the component that wants it, because
@@ -167,6 +180,7 @@ export class SheetView extends TextFileView {
 		this.data = '';
 		this.renderId++;
 		this.activeTab.clear();
+		this.openRecords.clear();
 		// The outgoing note's embeds go with it: a transclusion loaded for the
 		// file just closed has nothing left to be attached to.
 		this.markdown.end();
@@ -358,6 +372,13 @@ export class SheetView extends TextFileView {
 			resource: (target) => this.resourceUrl(target),
 			activeTab: this.activeTab.get(config.id),
 			onActivateTab: (index: number) => this.activeTab.set(config.id, index),
+			openRecords: [...(this.openRecords.get(config.id) ?? [])],
+			onToggleRecord: (index: number, open: boolean) => {
+				const held = this.openRecords.get(config.id) ?? new Set<number>();
+				if (open) held.add(index);
+				else held.delete(index);
+				this.openRecords.set(config.id, held);
+			},
 		}));
 
 		// SPEC §10: sections the layout does not map are left alone — they stay

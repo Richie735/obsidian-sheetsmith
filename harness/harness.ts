@@ -319,6 +319,19 @@ function resource(target: string): string | null {
 /** Which tab the reader has opened where, exactly as the view holds it. */
 const activeTab = new Map<string, number>();
 
+/**
+ * Which records the reader has opened where, exactly as the view holds them.
+ *
+ * **Seeded, which nothing else in this map's shape is, and the reason is what a
+ * still can and cannot show.** "Nothing is open on first render" is a claim a
+ * unit test holds; "a list of six records with two open reads as one block" is a
+ * look criterion, and `harness/shot.mjs` has no browser to press a chevron with.
+ * So one list opens with two of its records disclosed and the other opens closed,
+ * which puts both dispositions in one shot. A reviewer clicking in the live
+ * harness moves either.
+ */
+const openRecords = new Map<string, Set<number>>([['traits', new Set([1, 2])]]);
+
 function renderSheet(into: HTMLElement): void {
 	const view = document.createElement('div');
 	view.className = 'sheetsmith-view';
@@ -361,6 +374,16 @@ function renderSheet(into: HTMLElement): void {
 				// it does in the app: a re-render is what would otherwise reset it.
 				activeTab: activeTab.get(config.id),
 				onActivateTab: (index: number) => activeTab.set(config.id, index),
+				// The same answer for a record set's disclosure, and held the same
+				// way: a record left open has to survive an edit anywhere on the
+				// sheet, because a commit re-renders everything.
+				openRecords: [...(openRecords.get(config.id) ?? [])],
+				onToggleRecord: (index: number, open: boolean) => {
+					const held = openRecords.get(config.id) ?? new Set<number>();
+					if (open) held.add(index);
+					else held.delete(index);
+					openRecords.set(config.id, held);
+				},
 			};
 		},
 	);

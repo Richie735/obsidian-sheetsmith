@@ -2391,10 +2391,19 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			cell.colSpan = width;
 			const add = element('button', 'sheetsmith-table-add-button', cell);
 			add.type = 'button';
-			// The label is in a span so it can hold the left edge while the table
-			// scrolls sideways, exactly as the name column does: the button spans
-			// the table's full width, and its text would otherwise scroll out and
-			// leave a wide empty band with nothing saying what it is.
+			// The label is in a span so it can hold its place while the table scrolls
+			// sideways: the button spans the table's full width, and its text would
+			// otherwise scroll out and leave a wide empty band with nothing saying
+			// what it is.
+			//
+			// **The CSS beside this used to claim the label sits "left, under the
+			// name column, because that is where the row it adds begins", and that
+			// described an intent the cascade never delivered**: the cell centres its
+			// inline content, so what has always shipped is a centred label under a
+			// rule. Recorded rather than corrected in either direction — a design
+			// review measured the rendered pair, ruled that the centred row is what
+			// reads as pressable, and `docs/UI.md` §9 now names that as the shared
+			// treatment, which is what Record set's add control was brought to.
 			element('span', 'sheetsmith-table-add-label', add, 'Add row');
 			add.addEventListener('click', () => {
 				// The one place PATTERNS §5's optimistic paint cannot apply: a new

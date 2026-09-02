@@ -296,7 +296,7 @@ must go through `paintLevelRing` rather than a lookalike, precisely so one flag 
 measure differently from the other under the same finger."
 
 So a flag is `paintLevelRing` on a `<button aria-pressed>`, taking the ring's 1.6em
-box, its `--sheetsmith-table-control` measurement, its press scale, its focus outline
+box, its `--sheetsmith-inline-control` measurement, its press scale, its focus outline
 and its expanded hit target. **There is no native checkbox anywhere in this feature.**
 
 A named flag is `graded`, so the ring carries the level's mark: `levels: ["Fine",

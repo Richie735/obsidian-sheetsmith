@@ -32,13 +32,20 @@
  * half-built effect changes nothing and is not an error (§6), which is what stops
  * per-field commit blanking a card while the reader is still typing.
  *
- * **It is here for atomicity and not for reuse**, which is the entry
- * `eslint.config.mts`' sibling allowlist and `PATTERNS.md` §2 both now carry. It has
+ * **It arrived here for atomicity and not for reuse**, which is the entry
+ * `eslint.config.mts`' sibling allowlist and `PATTERNS.md` §2 both carry. It had
  * exactly one consumer, where `card-face.ts` and `linked-text.ts` have three each and
  * `modifier-breakdown.ts` five — and §1 is explicit that one consumer earns no
  * generalisation. What forced the split is that `table.ts` was 2450 lines and drawing
  * a six-field form is a second job in a file whose job is a table, which is the Pool
  * engine's precedent exactly.
+ *
+ * **The second consumer has since arrived and cost nothing, which is the claim
+ * above being tested rather than restated.** Record set's `modifier` field opens the
+ * same panel with the same options — not one member of `ModifierFormOptions` moved
+ * to admit it — because everything domain-shaped here arrives as an argument. So the
+ * order is the one §1 prefers: the split was right before the evidence existed, and
+ * the evidence is not what justified it.
  *
  * **It has no test file, and that is argued rather than inherited.** `PATTERNS.md`
  * §11 settled the rule for `editor/`: a module with its own entry point *and* its own

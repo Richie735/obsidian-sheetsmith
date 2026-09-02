@@ -222,7 +222,7 @@ describe('component registry', () => {
 		const holding = types.filter(
 			(type) => getComponent(type)?.scopeRows !== undefined,
 		);
-		expect(holding).toEqual(['table']);
+		expect(holding).toEqual(['record-set', 'table']);
 	});
 
 	it('leaves the modifier source off unless a component declares any', () => {
@@ -240,7 +240,7 @@ describe('component registry', () => {
 		const pushing = types.filter(
 			(type) => getComponent(type)?.scopeModifiers !== undefined,
 		);
-		expect(pushing).toEqual(['table']);
+		expect(pushing).toEqual(['record-set', 'table']);
 	});
 
 	it('holds a push to one part of a cell, and never to a definition name', () => {
@@ -608,6 +608,9 @@ describe('a component that says what a sample of itself looks like', () => {
 		'card-set bare',
 		'card-set Currency',
 		'pool bare',
+		'record-set bare',
+		'record-set Spellbook',
+		'record-set Features',
 		'rich-text bare',
 		'table bare',
 		'table Inventory',

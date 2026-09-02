@@ -74,8 +74,14 @@ mkdirSync(outDir, { recursive: true });
  * **7613** narrow, and 4760 to **4965** at `text=24`. Nothing in the plugin
  * changed. The instrument had been drawing a shorter sheet than Obsidian does
  * since before this feature, and every frame in this file was measured against it.
+ *
+ * **Raised again for the Record sets**, which add a three-row band under the
+ * modifier tables and a one-row empty list under that: 4340 to **4700** here,
+ * 7640 to **8240** narrow, and 5000 to **5500** at `text=24`. Measured through
+ * each view's own query, as this comment asks — the narrow one is the widest
+ * jump, because at one column the lists stack rather than sitting side by side.
  */
-const SHEET_FRAME = '1400,4340';
+const SHEET_FRAME = '1400,4700';
 
 /**
  * The editor pane's frame, tall because the tree is the whole layout.
@@ -160,7 +166,29 @@ const DEFAULTS = [
 		// browser, and this file opens with the reason it does not drive one.
 		name: 'sheet-narrow',
 		query: 'surface=sheet&theme=dark&width=380',
-		size: '520,7640',
+		size: '520,8240',
+	},
+	{
+		/*
+		 * **A 520px container, which is a different question from a 520px
+		 * viewport** — and the one a design review had to generate for itself
+		 * before it could rule on a look criterion that names the number.
+		 *
+		 * `sheet-narrow` is `width=380`, which is *below* the sheet's own 480px
+		 * collapse: at one column every component has the whole pane and a summary
+		 * line has room, so 380 is not the harsher case. At 520 the sheet has **not**
+		 * collapsed, so a list placed five columns wide gets about 190px and its
+		 * line has to break — which is where a Record set's own reflow lives and
+		 * where Table's columns compete for a width they do not have.
+		 *
+		 * A 620px window rather than a 620px container: `&width=` is the harness's
+		 * own container width and the window only has to be wide enough not to
+		 * clip it, which is also why this one clears the 500px floor the row in
+		 * `docs/UI.md` §12 records.
+		 */
+		name: 'sheet-list-narrow',
+		query: 'surface=sheet&theme=light&width=520',
+		size: '620,5700',
 	},
 	{
 		// UI.md §5 puts the card's headline number in `em` rather than pixels
@@ -183,7 +211,7 @@ const DEFAULTS = [
 		// to: see SHEET_FRAME's note above — the earlier figure was taken without
 		// `text=24`, so the view existing to show a larger text size had its frame
 		// measured at the smaller one and cropped the bottom 204px of the sheet.
-		size: '1400,5000',
+		size: '1400,5500',
 	},
 	{
 		// The first view to photograph a focus ring at all. A still cannot press
@@ -444,7 +472,7 @@ const DEFAULTS = [
 		 */
 		name: 'sheet-modifier-form-large-text',
 		query: `surface=sheet&theme=light&text=24&bar=off&${OPEN_MIXED_FORM}`,
-		size: '1400,5000',
+		size: '1400,5500',
 	},
 	{
 		/*
@@ -455,7 +483,7 @@ const DEFAULTS = [
 		 */
 		name: 'sheet-modifier-form-narrow',
 		query: `surface=sheet&theme=dark&width=380&bar=off&${OPEN_MIXED_FORM}`,
-		size: '520,7640',
+		size: '520,8240',
 	},
 	{
 		/*

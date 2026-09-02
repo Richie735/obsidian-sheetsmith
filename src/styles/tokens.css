@@ -20,14 +20,34 @@ body {
 	   0.85-scaled --font-ui-smaller somewhere else would drift the moment
 	   either constant moved. See .sheetsmith-card-abbreviation. */
 	--sheetsmith-card-abbr-space: calc(1.2 * 0.85 * var(--font-ui-smaller));
-	/* A control inside a table cell: the level ring, and the delete glyph beside
-	   it. Published here because a second control now has to line up with the
-	   first, and the size is the whole of the agreement — two glyph buttons in
-	   one row measuring differently under the same finger is the defect. They
-	   are deliberately not one class: two consumers earn duplication, not a
-	   module (PATTERNS §1), and only the number climbs that ladder in one step.
-	   Grows for a coarse pointer, in sheet.css. */
-	--sheetsmith-table-control: 1.6em;
+	/* **How big a small round control is where it sits in a line of them**, so
+	   two of them under one finger cannot measure differently. Six consumers
+	   across two components: the level ring (a Table's `level` and `toggle`
+	   cells, and a Record set's `level` and `toggle` fields), a Table's delete
+	   glyph and its modifier glyph, and a Record set's disclosure chevron, its
+	   modifier glyph and its delete glyph.
+
+	   **Not named for a table**, which it was — `--sheetsmith-table-control`, from
+	   when a cell was the only place one of these sat. A Record set has no cells,
+	   and a token that names one component while sizing another's controls is the
+	   name a reader would believe (PATTERNS §1's worked example, and the same
+	   correction `--sheetsmith-grid-row` took off Rich text's name).
+
+	   The size is the whole of the agreement, and the treatments deliberately are
+	   not shared: `docs/UI.md` §9 records that each of these controls owns its own
+	   resting colour, hover surface and which state stands down for which. Grows
+	   for a coarse pointer, in sheet.css. */
+	--sheetsmith-inline-control: 1.6em;
+	/* **How wide a record's name may grow before its own fields stop following
+	   it.** Published as a knob because it is a judgement about reading rather
+	   than a measurement: pinned to the trailing edge instead, a design review
+	   measured a record's name and its own fields ~509px apart at a 1400px sheet
+	   and ~760px at 1900px, which reads as two columns sharing a box. Capped, the
+	   space that is left is *inside* the name field, where it is something the
+	   reader can click. 13em holds about twenty-six characters at the sheet's own
+	   UI size, which is longer than every record name in the sample and long
+	   enough that the ellipsis is the exception rather than the rule. */
+	--sheetsmith-record-name: 13em;
 	/* How far a table field's text sits inside its own box: its padding plus its
 	   border. Published because a second element now has to line up with it —
 	   the layer that draws a cell's wikilinks is stacked over the field, and the
