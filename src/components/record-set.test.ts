@@ -2172,6 +2172,147 @@ describe('recordSet.applyReset', () => {
 		expect(after.records[1]?.fields?.Attuned).toBe('no');
 	});
 
+	it('restores each record to its own ceiling and skips a record with none', () => {
+		/*
+		 * **A record with no ceiling is skipped, not failed, and the whole reset
+		 * still applies.** A field with no `max` has nothing the button was for on
+		 * any record; a *record* with no ceiling is a record that is not a
+		 * counter — a passive trait whose `Uses` is blank on purpose — and failing
+		 * the component would mean one of those refusing a Long rest for thirty
+		 * spells.
+		 */
+		const owned: RecordSetConfig = {
+			...config,
+			fields: [
+				{ key: 'Uses', type: 'number', maxSource: 'record' },
+				{ key: 'Attuned', type: 'toggle' },
+			],
+		};
+		const body = [
+			'',
+			'### A',
+			'```sheet',
+			'Uses: 1 / 3',
+			'Attuned: no',
+			'```',
+			'Prose.',
+			'',
+			'### B',
+			'```sheet',
+			'Uses: 0/1',
+			'Attuned: no',
+			'```',
+			'Prose.',
+			'',
+			'### C',
+			'```sheet',
+			'Uses: 2',
+			'Attuned: no',
+			'```',
+			'Prose.',
+			'',
+		].join('\n');
+		const result = recordSet.applyReset?.(
+			readData(body, owned),
+			owned,
+			{ trigger: 'Long rest', action: 'full' },
+			context,
+		);
+		// Success for the component, which is the half the skip has to keep.
+		expect(result?.ok).toBe(true);
+		if (!result?.ok) return;
+		const written = recordSet.write(result.data, body, owned);
+		const after = readData(written, owned);
+		expect(Object.values(after.records).map((one) => one.fields?.Uses)).toEqual([
+			'3 / 3',
+			'1/1',
+			// **Left exactly as it was, and never written as 0.** `full` means
+			// restore to the ceiling; where there is none there is nothing to
+			// restore to.
+			'2',
+		]);
+		// And the toggles on the skipped record still reset: the skip is per
+		// (record, field), like the storage.
+		expect(
+			Object.values(after.records).map((one) => one.fields?.Attuned),
+		).toEqual(['yes', 'yes', 'yes']);
+	});
+
+	it('never deletes a ceiling when it empties a counter', () => {
+		const owned: RecordSetConfig = {
+			...config,
+			fields: [{ key: 'Uses', type: 'number', maxSource: 'record' }],
+		};
+		const body = '\n### A\n```sheet\nUses: 2 / 3\n```\nProse.\n';
+		const result = recordSet.applyReset?.(
+			readData(body, owned),
+			owned,
+			{ trigger: 'Long rest', action: 'empty' },
+			context,
+		);
+		if (!result?.ok) throw new Error('expected a reset');
+		expect(recordSet.write(result.data, body, owned)).toBe(
+			'\n### A\n```sheet\nUses: 0 / 3\n```\nProse.\n',
+		);
+	});
+
+	it('holds a formula reset to each record\'s own ceiling', () => {
+		const owned: RecordSetConfig = {
+			...config,
+			fields: [{ key: 'Uses', type: 'number', maxSource: 'record' }],
+		};
+		const body = [
+			'',
+			'### A',
+			'```sheet',
+			'Uses: 0 / 2',
+			'```',
+			'Prose.',
+			'',
+			'### B',
+			'```sheet',
+			'Uses: 0 / 9',
+			'```',
+			'Prose.',
+			'',
+		].join('\n');
+		const result = recordSet.applyReset?.(
+			readData(body, owned),
+			owned,
+			{ trigger: 'Long rest', action: 'formula', to: '3' },
+			{ resolve: () => 3, explain: () => null },
+		);
+		if (!result?.ok) throw new Error('expected a reset');
+		const after = readData(recordSet.write(result.data, body, owned), owned);
+		// `to: '3'` on a record whose ceiling is 2 writes 2.
+		expect(Object.values(after.records).map((one) => one.fields?.Uses)).toEqual([
+			'2 / 2',
+			'3 / 9',
+		]);
+	});
+
+	it('still fails naming a field whose own ceiling is the layout\'s and missing', () => {
+		// Unchanged where the ceiling is the field's, and the narrowing above must
+		// not reach it: the layout stated one ceiling for every record, so a
+		// missing one is a configuration nobody can act on from the sheet.
+		const mixed: RecordSetConfig = {
+			...config,
+			fields: [
+				{ key: 'Uses', type: 'number', maxSource: 'record' },
+				{ key: 'Charges', type: 'number', name: 'Charges left' },
+			],
+		};
+		const result = recordSet.applyReset?.(
+			readData(BODY, mixed),
+			mixed,
+			{ trigger: 'Long rest', action: 'full' },
+			context,
+		);
+		expect(result?.ok).toBe(false);
+		if (result?.ok !== false) return;
+		expect(result.error).toContain('"Charges left"');
+	});
+
 	it('fails naming the field where a number field has no maximum', () => {
 		const uncapped: RecordSetConfig = {
 			...config,

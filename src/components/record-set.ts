@@ -395,6 +395,32 @@ function ceilingOf(text: string): number | null {
 	return Number.isFinite(value) ? value : null;
 }
 
+/** The ceiling this record holds for this field, or null where it holds none. */
+function recordCeiling(
+	field: RecordField,
+	raw: string | undefined,
+): number | null {
+	if (!recordsOwnMax(field)) return null;
+	return ceilingOf(splitBounded(raw ?? '').ceiling ?? '');
+}
+
+/**
+ * The bounds a number field's value is held to on this record: the field's own
+ * floor, and whichever ceiling applies.
+ *
+ * The floor is the layout's in both modes, which is why it is not conditional.
+ * `typed-value.ts` goes on being handed one number — the splitting happens on
+ * this component's side of the call, which is what keeps this feature out of
+ * Table by construction.
+ */
+function fieldBounds(field: RecordField, raw: string | undefined): TypedField {
+	if (!recordsOwnMax(field)) return field;
+	const ceiling = recordCeiling(field, raw);
+	return ceiling === null
+		? { type: 'number', min: field.min }
+		: { type: 'number', min: field.min, max: ceiling };
+}
+
 /**
  * What a record is called, wherever something has to name one.
  *
@@ -616,7 +642,11 @@ function sampleField(
  */
 type ResetWrite =
 	| { error: string }
-	| { number: (field: RecordField) => number | null; flag: boolean };
+	| {
+			/** Null is "nothing to restore to on this record", which writes nothing. */
+			number: (field: RecordField, record: RecordEntry) => number | null;
+			flag: boolean;
+	  };
 
 function resetWrite(
 	config: RecordSetConfig,
@@ -658,18 +688,50 @@ function resetWrite(
 		 */
 		return { number: () => number, flag: number >= 1 };
 	}
-	// `full`. A number field with no ceiling has no full to restore to, and the
-	// failure names the field rather than the component, which is what a reader
-	// standing in front of a button that did nothing needs (SPEC §6).
+	/*
+	 * `full`, and the whole of the work is here.
+	 *
+	 * **A field whose ceiling is the field's fails naming the field where it
+	 * declares none**, unchanged: the layout stated one ceiling for every
+	 * record, so a missing one is a configuration nobody can act on from the
+	 * sheet (SPEC §6).
+	 *
+	 * **A field whose ceiling is the record's is not checked here at all, and a
+	 * record that has set none is skipped rather than failed.** The two
+	 * situations are not the same failure. A field with no `max` has nothing the
+	 * button was for on any record; a *record* with no ceiling is, in the
+	 * ordinary case, a record that is not a counter — a passive trait on a
+	 * features list whose `Uses` is blank on purpose. Failing the component
+	 * would mean one passive trait refusing a Long Rest for thirty spells, which
+	 * is §6's "refusing the whole rest because one component is misconfigured is
+	 * a worse answer" one level in. Nothing is reported and nothing needs to be:
+	 * the record whose counter did not move is the record showing `—` in the
+	 * ceiling slot, in the list the reader is already looking at.
+	 *
+	 * **And it must not write 0.** `full` means restore to the ceiling; where
+	 * there is none there is nothing to restore to, so nothing is written — a
+	 * zero would be a value the reader never asked for in the one action whose
+	 * job is to put a number back, which is the defect `formula` was corrected
+	 * for above.
+	 */
 	const missing = storedFields(config).find(
-		(field) => fieldType(field) === 'number' && field.max === undefined,
+		(field) =>
+			fieldType(field) === 'number' &&
+			!recordsOwnMax(field) &&
+			field.max === undefined,
 	);
 	if (missing !== undefined) {
 		return {
 			error: `the field "${fieldLabel(missing)}" has no maximum to restore to. Give it one, or set this trigger to empty.`,
 		};
 	}
-	return { number: (field) => field.max ?? null, flag: true };
+	return {
+		number: (field, record) =>
+			recordsOwnMax(field)
+				? recordCeiling(field, record.fields[field.key])
+				: (field.max ?? null),
+		flag: true,
+	};
 }
 
 /** One record's stored pieces, with the delta applied and nothing else touched. */
@@ -1005,10 +1067,15 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 	 * record the character added has no layout-declared component to count with.
 	 *
 	 * `empty` needs nothing resolved, so a list whose ceilings are misconfigured
-	 * can still be cleared. `full` fails naming the field where a number field
-	 * declares no `max`, which is a Pool's unresolvable `to` reported the way
+	 * can still be cleared. `full` fails naming the field where a *field-owned*
+	 * ceiling is missing, which is a Pool's unresolvable `to` reported the way
 	 * `ResetResult` already carries it — the trigger applies what it can and names
-	 * what it could not.
+	 * what it could not — and skips a *record* that has set none of its own,
+	 * which `resetWrite` argues.
+	 *
+	 * **The skip is per (record, field), like the storage.** A ceiling bounds one
+	 * number field and not the record, so a `Used` toggle beside a blank `Uses`
+	 * still clears on the rest.
 	 *
 	 * **A `level` field is left alone by every action**, deliberately: SPEC §6
 	 * names `full` and `empty` for a number and a two-state flag, and a graded
@@ -1028,8 +1095,21 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			for (const field of storedFields(config)) {
 				const type = fieldType(field);
 				if (type === 'number') {
-					const value = write.number(field);
-					if (value !== null) fields[field.key] = boundedText(String(value), field);
+					const raw = record.fields[field.key] ?? '';
+					const value = write.number(field, record);
+					// **Written through the join, so the ceiling survives every
+					// action.** An emptied counter is `Uses: 0 / 3` and never
+					// `Uses: 0`: a reset that deleted the reader's own ceiling would
+					// be Constraint 4 broken by the one control whose job is to
+					// restore. And the number is held to whichever ceiling applies,
+					// so a `formula` writing 3 into a record whose ceiling is 2
+					// writes 2.
+					if (value !== null) {
+						fields[field.key] = withValue(
+							raw,
+							boundedText(String(value), fieldBounds(field, raw)),
+						);
+					}
 				} else if (type === 'toggle') {
 					fields[field.key] = flagText(write.flag);
 				}
