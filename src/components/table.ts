@@ -2089,7 +2089,17 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 					 * panel — which lives on `document.body` — is handed to it with the
 					 * reader's own posture intact.
 					 */
-					const held = reanchorAnchoredPanel<ModifierFormState>(
+					/*
+					 * **A `let`, and that is a fix rather than a style.** The panel
+					 * this render is *handed* and the panel this press *opens* are
+					 * the same object to the reader and two different values here:
+					 * read once into a `const`, a second press on a glyph opened in
+					 * this render found a null handle and closed nothing, while the
+					 * control went on reading `aria-expanded="true"`. So the
+					 * disclosure only answered its own attribute after some
+					 * unrelated commit had rebuilt the row.
+					 */
+					let held = reanchorAnchoredPanel<ModifierFormState>(
 						panelKey,
 						button,
 					);
@@ -2114,6 +2124,7 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 								button.setAttribute('aria-expanded', 'false');
 							},
 						);
+						held = panel;
 						button.setAttribute('aria-expanded', 'true');
 						fill(panel);
 						/*
