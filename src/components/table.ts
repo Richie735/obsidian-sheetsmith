@@ -70,6 +70,7 @@ import {
 	showsOwnLabel,
 } from '../types';
 import { bindEditable, UNRESOLVED_DELAY } from '../interaction/editable';
+import { armRegister, bindArmToConfirm } from '../interaction/arm-to-confirm';
 import {
 	levelCount,
 	levelName,
@@ -1475,11 +1476,10 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 		}
 
 		/**
-		 * Which delete control is armed, as the function that disarms it. One
-		 * per card rather than per row, because arming a second control has to
-		 * stand the first one down.
+		 * Which delete control is armed, one register per card rather than per
+		 * row: arming a second control has to stand the first one down.
 		 */
-		let armedRow: (() => void) | null = null;
+		const armedRow = armRegister();
 
 		/**
 		 * The rows the totals count, each reading its own drafts over the note.
@@ -1600,81 +1600,22 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			// Taking the app's icon rather than a copy of it is also what keeps this
 			// following their icon set instead of drifting from it.
 			setIcon(button, REMOVE_ICON);
-			let ready = false;
-			const paint = () => {
-				button.classList.toggle('sheetsmith-table-remove-armed', ready);
-				tr.classList.toggle('sheetsmith-table-row-arming', ready);
-				button.setAttribute(
-					'aria-label',
-					ready ? `Delete ${named}. Select again to confirm.` : `Delete ${named}`,
-				);
-				button.setAttribute('title', ready ? `Delete ${named}?` : `Delete ${named}`);
-			};
-			/** Removes the outside-press listener, while there is one. */
-			let standDown: (() => void) | null = null;
-			const disarm = () => {
-				if (!ready) return;
-				ready = false;
-				if (armedRow === disarm) armedRow = null;
-				standDown?.();
-				standDown = null;
-				paint();
-			};
-			button.addEventListener('click', () => {
-				if (ready) {
-					// The gesture is over, so it stands itself down before the write
-					// rather than leaving a listener alive on a row that is going.
-					// The first press wrote nothing, so this is the first byte the
-					// gesture changes.
-					disarm();
-					context.onChange({ rows: {}, removed: [at] });
-					return;
-				}
-				// Arming one control stands another down: two rows armed at once
-				// is two rows about to go, and only one of them is.
-				armedRow?.();
-				ready = true;
-				armedRow = disarm;
-				/**
-				 * The next press anywhere else is a change of mind.
-				 *
-				 * This is what a finger has instead of moving focus away: there is
-				 * no touch gesture for that at all, and WebKit does not focus a
-				 * button on tap in any case, so `blur` alone would leave a phone
-				 * armed with no way to take it back — the two-step reduced to one
-				 * on exactly the input that has no hover to warn it. Capture, so a
-				 * press something else swallows still counts as the user moving
-				 * on: the same dismissal `popover.ts` makes, for the same reason.
-				 *
-				 * A press *inside* the control is the second press and must reach
-				 * the click. The invisible hit target is part of the button, so a
-				 * press on the padding around the glyph counts as inside it.
-				 */
-				const outside = (event: Event) => {
-					if (button.contains(event.target as Node | null)) return;
-					disarm();
-					status.textContent = 'Delete cancelled';
-				};
-				doc.addEventListener('pointerdown', outside, true);
-				// A rebuild of the card while a control is armed has no way to
-				// disarm it — a component gets no unload — so the listener is
-				// written to survive being orphaned: the next press anywhere lands
-				// outside a detached button, disarms it, and takes the listener
-				// with it.
-				standDown = () =>
-					doc.removeEventListener('pointerdown', outside, true);
-				paint();
-				status.textContent = `Delete ${named}? Select again to confirm.`;
+			// The gesture is `interaction/arm-to-confirm.ts`'s, with the class
+			// names, the live region and the write staying here: a module beside
+			// the components must not know a table exists (PATTERNS §1).
+			bindArmToConfirm({
+				button,
+				row: tr,
+				armedClass: 'sheetsmith-table-remove-armed',
+				rowClass: 'sheetsmith-table-row-arming',
+				named: `Delete ${named}`,
+				announce: (said) => {
+					status.textContent = said;
+				},
+				commit: () => context.onChange({ rows: {}, removed: [at] }),
+				register: armedRow,
+				doc,
 			});
-			// A keyboard has both of the gestures a finger does not: focus moves
-			// off the control, and Escape. Both leave the note exactly as it was.
-			button.addEventListener('blur', disarm);
-			button.addEventListener('keydown', (event) => {
-				if (event.key !== 'Escape' || !ready) return;
-				disarm();
-				status.textContent = 'Delete cancelled';
-			});
-			paint();
 		};
 
 		views.forEach((rowView) => {

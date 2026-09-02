@@ -119,6 +119,16 @@ formula runs, on the strength of Table and Record set, because the first of its 
 rules decides what `sum(spells, Level)` and `sum(inventory, Weight)` are adding up —
 two copies disagreeing means one component's blank numeric field counts as zero and
 the other's does not, in arithmetic a reader cannot see;
+`interaction/arm-to-confirm.ts` holds the arm-then-commit gesture on the strength of
+the same two, and it is the one entry here extracted because the *two-consumer rung
+was not available*: §1 allows duplication at two only under a test driving both
+copies, and each component's suite drove its own copy over its own gesture. Every
+line of it is a rule with a reason and three of those reasons are invisible in
+review — the outside press is in capture so a swallowed press still counts, the
+listener survives being orphaned by a rebuild, and the control stands itself down
+before the write rather than leaving a listener alive on a row that is going. Its two
+*sentences* have a third consumer, the modifier form's **Remove**, whose armed state
+is the panel's and so cannot take the gesture;
 and `components/linked-text.ts` holds the anchor policy on the strength of Table
 and Rich text, because what is shared is a *set* — `internal-link`,
 `is-unresolved`, both `href` and `data-href`, `title` and never `aria-label`, and
@@ -191,7 +201,8 @@ src/
   parse/           note and layout parsing, and the ordered walk over a parsed
                    layout. Imports nothing from obsidian [checked]
   formula/         expression parsing and evaluation. Same rule [checked]
-  interaction/     gesture vocabulary shared by every control
+  interaction/     gesture vocabulary shared by every control, and the words a
+                   gesture says where the words are the only channel it has
   components/      one file per component, plus the painters they share. No
                    component imports a sibling component [checked]
   editor/          the layout editor and its field widgets. Knows nothing
@@ -644,8 +655,8 @@ decided.
   round trip.
 
   **A gesture module is tested through a control that drives it.**
-  `src/interaction/` is the first: `scrub.ts`, `hold-repeat.ts` and `editable.ts`
-  have none of their own and should not grow one. A gesture is only meaningfully
+  `src/interaction/` is the first: `scrub.ts`, `hold-repeat.ts`, `editable.ts` and
+  `arm-to-confirm.ts` have none of their own and should not grow one. A gesture is only meaningfully
   driven through a control, so a file of its own would have to build a fake card
   before it could press anything — and `pool.test.ts`, `track.test.ts` and the
   component tests already are that card. A second one is the duplication §1
