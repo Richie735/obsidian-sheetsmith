@@ -84,6 +84,44 @@ interface PreparedComponent {
 }
 
 /**
+ * What a trigger will touch on one component, for the confirmation.
+ *
+ * The component's label alone over-claims now that a binding can name a column:
+ * a reader pressing **Long rest** was told "It resets: Spell list" and watched
+ * one of three columns change, on a component whose other columns the feature
+ * guarantees are left byte-identical. This is the one surface whose whole job is
+ * to say what a press will touch, so it is the one place the difference has to
+ * appear — the sheet itself draws no mark, because a binding is a fact about the
+ * layout rather than a state of the data.
+ *
+ * **It teaches this file nothing about columns.** `binding.column` is shared
+ * config the view already reads, and the label comes back from the component's
+ * own `resetColumns`, so what is joined here is a string the component named. A
+ * component that names no part of itself is unchanged, which is Pool, Track and
+ * Record set.
+ *
+ * Outside the class because it reads no view state, which is the whole of why it
+ * is here rather than beside its one caller: `SheetView` cannot be constructed
+ * without a workspace, so a method could not be driven at all, and a function
+ * over the two fields it actually reads can be.
+ */
+export function resetSummary(
+	name: string,
+	entry: { config: ComponentConfig; component: ComponentDefinition | undefined },
+): string {
+	const named = (entry.config.reset ?? [])
+		.filter((binding) => binding.trigger === name)
+		.map((binding) => binding.column)
+		.filter((column): column is string => column !== undefined);
+	if (named.length === 0) return entry.config.label;
+	const offered = entry.component?.resetColumns?.(entry.config) ?? [];
+	const shown = named.map(
+		(key) => offered.find((column) => column.key === key)?.label ?? key,
+	);
+	return `${entry.config.label} — ${shown.join(', ')}`;
+}
+
+/**
  * Sheet view. Renders a character note against its layout, and writes
  * component edits back into the note body. All writes go through the parse
  * layer, so untouched sections stay byte-identical.
@@ -511,7 +549,7 @@ export class SheetView extends TextFileView {
 					`Apply ${name}? This can be undone. It resets:`,
 					`Apply ${name}`,
 					() => this.applyTrigger(name, bound, env),
-					bound.map((entry) => entry.config.label),
+					bound.map((entry) => resetSummary(name, entry)),
 				).open();
 			});
 		}
