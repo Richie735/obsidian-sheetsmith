@@ -607,6 +607,13 @@ export const SAMPLES: Sample[] = [
 						{ key: 'Level', type: 'number' },
 						{ key: 'Prepared', type: 'toggle' },
 					],
+					// A trigger reaching one column of a table, which is the only
+					// place in this layout the **Acts on** row is drawn — select
+					// this component in the editor pane to see it. It is also the
+					// only thing **Long rest** reaches, so the button was inert
+					// before it: press it on the sheet and every tick in Prepared
+					// clears while every number in Level stays exactly as it was.
+					reset: [{ trigger: 'Long rest', column: 'Prepared', action: 'empty' }],
 				},
 				{
 					id: 'tab_rest',
