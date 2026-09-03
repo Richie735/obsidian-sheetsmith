@@ -651,6 +651,34 @@ const DEFAULTS = [
 		size: EDITOR_FRAME,
 	},
 	{
+		/*
+		 * **This feature's editor surface, which no default view opened**
+		 * (`docs/features/reset-on-a-table-column.md`): the **Acts on** row, which
+		 * is drawn only for a component whose `resetColumns` answers with
+		 * something and so appears on no Table any other view opens. The sample
+		 * layout binds this table's `Prepared` column to **Long rest**, so what
+		 * is on screen is the ordinary state — the picker offering the two
+		 * columns a trigger can act on, `Level` and `Prepared`, and none of the
+		 * text ones.
+		 *
+		 * The four states that report — no column, a column that is gone, an
+		 * action the column refuses, and a component offering none — are
+		 * unreachable from a sample layout by construction, since each needs a
+		 * binding the editor itself will not write. They are driven in
+		 * `reset-field.test.ts` and read rather than seen.
+		 */
+		name: 'editor-reset-column',
+		query: 'surface=editor&theme=light&open=tab_spells',
+		size: EDITOR_FRAME,
+	},
+	{
+		// Both themes, because the criterion is about both and an error line and
+		// a select are the two things a theme most easily gets wrong.
+		name: 'editor-reset-column-dark',
+		query: 'surface=editor&theme=dark&open=tab_spells',
+		size: EDITOR_FRAME,
+	},
+	{
 		name: 'editor-dark',
 		query: 'surface=editor&theme=dark&open=weapons',
 		size: EDITOR_FRAME,
