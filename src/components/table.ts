@@ -980,6 +980,18 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 	 * It declares no rows. A declared row is one every character using the layout
 	 * has, and gear is exactly the list where the character owns every line.
 	 *
+	 * **Conditions is the entry beside it, and its pair of columns is the whole
+	 * of it.** A toggle alone is a checklist, which Track already does better on a
+	 * card; a modifier column alone has no `when` to read, so every row would
+	 * apply always and turning a condition off would mean deleting it. Together
+	 * the flag is addressable, a definition's `when` names it, and the row goes
+	 * inert without being removed. It declares no rows either, and here that is
+	 * a fact about the kind rather than about one system: no character is
+	 * permanently Blinded, so a condition is a state entered and left and the
+	 * sentence above applies to every one of them. It prefills no binding — the
+	 * type excludes `reset`, and the author binds `Active` to a trigger after
+	 * placing it (SPEC §6).
+	 *
 	 * **Features was the second entry here and has moved to Record set.** §13's
 	 * prefill was a Table with a `Notes` text column, and §13 said in the same
 	 * breath that "a features list holding paragraphs is not a table at all, since
@@ -1001,6 +1013,29 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 				],
 				openRows: true,
 				rowHeader: 'Item',
+			},
+		},
+		{
+			name: 'Conditions',
+			description:
+				'An open list of the states the character is in: raging, blessed, poisoned. Each row carries an Active flag beside the Modifiers it applies while that flag is set, so a modifier conditioned on Active stops counting the moment the row is switched off. A Table storing as ordinary markdown, so a rest can be bound to empty the whole Active column at once.',
+			config: {
+				columns: [
+					{ key: 'Active', type: 'toggle' },
+					// The heading is hidden and the flag's is not, which is
+					// `docs/UI.md` §9's own sentence applied twice: a modifier cell
+					// "draws as one glyph, because a word above it several times its
+					// width sets the column's width against a control that needs none
+					// of it" — measured at 90px over a 37px control, which is more
+					// than the whole overflow on a four-column placement and pushes
+					// the row's delete glyph out of the table. `Active` keeps its
+					// heading because that word is load-bearing off the card: a
+					// definition's `when` names it and so does a reset binding, so an
+					// author has to be able to read it off the table they placed.
+					{ key: 'Modifiers', type: 'modifier', hideHeading: true },
+				],
+				openRows: true,
+				rowHeader: 'Condition',
 			},
 		},
 	],
