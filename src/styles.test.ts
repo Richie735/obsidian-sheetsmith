@@ -1720,8 +1720,23 @@ describe('every class the plugin adds is its own', () => {
 	 * DOM for vitest, so it has to spell Obsidian's class names — `mod-cta`,
 	 * `setting-item`, `modal`. A prefixed stub would be asserting against a
 	 * DOM that does not exist in the app.
+	 *
+	 * `src/class-tokens.test.ts` is exempt for a different reason, and the
+	 * reason is a defect in the reader below rather than anything about that
+	 * file: it adds no class to any DOM at all. Its `classList.add(…)` texts
+	 * are *strings that model source*, which it hands to its own reader — and
+	 * `classesAdded` cannot tell them from calls, because it searches instead
+	 * of walking and reads a `classList.add` written inside a string or a
+	 * comment exactly as it reads one written in code. It also stops at the
+	 * first `)` rather than the matching one, so `add(name.replace(' ', '-'))`
+	 * yields `-` here. **Both are the defect that file's own header is about**,
+	 * and the fix is one reader shared by the two scans rather than a second
+	 * exemption next time; `PATTERNS.md` §11 holds it, with this as the
+	 * instance that turned it from a possibility into a demonstration. Not
+	 * taken in the pass that found it, because narrowing this scan's reader
+	 * changes what an unrelated guard checks.
 	 */
-	const EXEMPT = 'src/test/obsidian-stub.ts';
+	const EXEMPT = ['src/test/obsidian-stub.ts', 'src/class-tokens.test.ts'];
 
 	/**
 	 * Class names the plugin deliberately does not own.
@@ -1766,7 +1781,7 @@ describe('every class the plugin adds is its own', () => {
 		return found;
 	}
 
-	const files = sources().filter((path) => path !== EXEMPT);
+	const files = sources().filter((path) => !EXEMPT.includes(path));
 	const added = files.flatMap((path) =>
 		classesAdded(readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')),
 	);
