@@ -1830,13 +1830,24 @@ export function effectiveSamples(): Sample[] {
 		 * other legitimate arithmetic — a card that stores its armour class and
 		 * takes its modifiers on that — is what this state spells instead.
 		 *
-		 * **Three numbers, deliberately.** 16 is stored; the pill reads **20**, the
-		 * stored number plus the value-phase total; and the number above it reads
-		 * **22**, because only the evaluation that *becomes* the published name
-		 * takes the override (`Plate armour`'s 18) and the result phase (SPEC §5).
-		 * The pill is a second reading of the value, so it takes neither — which is
-		 * the rule `displayOnly` exists for and the one thing about it that cannot
-		 * be checked by looking at a card whose formula has no override on it.
+		 * **Three numbers, deliberately**, and what to read is the *distance*
+		 * between them rather than the digits. The card stores one; the pill reads
+		 * that stored number plus the value-phase total, so it sits above it by
+		 * whatever the sheet's items come to; and the number above the pill sits
+		 * higher again, because only the evaluation that *becomes* the published
+		 * name takes the override (`Plate armour`'s 18) and the result phase
+		 * (SPEC §5). The pill is a second reading of the value, so it takes neither
+		 * — which is the rule `displayOnly` exists for and the one thing about it
+		 * that cannot be checked by looking at a card whose formula has no override
+		 * on it.
+		 *
+		 * **The digits were here and are gone on purpose.** They read 20 and 22,
+		 * measured 21 and 23, and nothing noticed — a definition had arrived and a
+		 * comment cannot be told. A number here is a fact about how many items
+		 * happen to be on this sheet today, and the state does not exist to show
+		 * that; the relationship above is what it exists to show, and it survives
+		 * the next contributor. Asserting them instead would be the right answer if
+		 * anything under `npm test` read this file at all, and nothing does.
 		 */
 		if (sample.config.id === 'armour_class') {
 			reached += 1;
