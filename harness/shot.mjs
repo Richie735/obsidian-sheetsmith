@@ -80,8 +80,16 @@ mkdirSync(outDir, { recursive: true });
  * 7640 to **8240** narrow, and 5000 to **5500** at `text=24`. Measured through
  * each view's own query, as this comment asks — the narrow one is the widest
  * jump, because at one column the lists stack rather than sitting side by side.
+ *
+ * **Raised again for the six-up "Ability checks" group** (`docs/SPEC.md` §4.3),
+ * an outer Group of six inner Groups under the Rituals block: 4700 to **5200**
+ * here, 8700 to **10050** narrow — 8240 to 8700 was a separate fix for a
+ * staleness this addition did not cause — and 5500 to **6050** at `text=24`.
+ * The narrow jump is again the widest, for the reason above squared: six pairs
+ * collapse from two-per-row to one-per-row, and each pair's own Card and Table
+ * stack rather than sitting side by side.
  */
-const SHEET_FRAME = '1400,4700';
+const SHEET_FRAME = '1400,5200';
 
 /**
  * The editor pane's frame, tall because the tree is the whole layout.
@@ -165,15 +173,15 @@ const DEFAULTS = [
 		// at the width this view uses. A test cannot hold it — that needs a real
 		// browser, and this file opens with the reason it does not drive one.
 		//
-		// **Stale a third time, found by measuring rather than by a feature
-		// touching it.** At 8240 this was already cropping the sheet three
-		// sections early — Rituals, and everything after it, were never in any
-		// shot taken from this frame. Nobody had re-measured it since some
-		// earlier growth; raised to 8700 to comfortably clear the sheet as it
-		// stands today.
+		// Found stale and fixed to 8700 in a separate pass just before this one
+		// (it was cropping Rituals and everything below it, for reasons this
+		// change had nothing to do with). Raised again here, to 10050, for the
+		// "Ability checks" six-up (`docs/SPEC.md` §4.3): at one column its six
+		// pairs stack one-per-row rather than two, which is the widest jump of
+		// the three frames this addition touches.
 		name: 'sheet-narrow',
 		query: 'surface=sheet&theme=dark&width=380',
-		size: '520,8700',
+		size: '520,10050',
 	},
 	{
 		/*
@@ -193,9 +201,13 @@ const DEFAULTS = [
 		 * clip it, which is also why this one clears the 500px floor the row in
 		 * `docs/UI.md` §12 records.
 		 */
+		// Raised to 6000 for the "Ability checks" six-up: at 520 the sheet has
+		// not collapsed, so the outer group's six pairs still sit two-per-row —
+		// the same shape as the wide view, only narrower — and the added rows
+		// push the sheet about 700px taller.
 		name: 'sheet-list-narrow',
 		query: 'surface=sheet&theme=light&width=520',
-		size: '620,5700',
+		size: '620,6000',
 	},
 	{
 		// UI.md §5 puts the card's headline number in `em` rather than pixels
@@ -218,7 +230,10 @@ const DEFAULTS = [
 		// to: see SHEET_FRAME's note above — the earlier figure was taken without
 		// `text=24`, so the view existing to show a larger text size had its frame
 		// measured at the smaller one and cropped the bottom 204px of the sheet.
-		size: '1400,5500',
+		//
+		// Raised again with SHEET_FRAME for the "Ability checks" six-up, measured
+		// through `text=24` rather than assumed from the default-size delta.
+		size: '1400,6050',
 	},
 	{
 		// The first view to photograph a focus ring at all. A still cannot press
@@ -479,7 +494,10 @@ const DEFAULTS = [
 		 */
 		name: 'sheet-modifier-form-large-text',
 		query: `surface=sheet&theme=light&text=24&bar=off&${OPEN_MIXED_FORM}`,
-		size: '1400,5500',
+		// Kept equal to `sheet-large-text`'s own frame (see SHEET_FRAME's note):
+		// the panel is anchored off `document.body` and adds nothing to the
+		// document's own height.
+		size: '1400,6050',
 	},
 	{
 		/*
@@ -488,12 +506,11 @@ const DEFAULTS = [
 		 * holds the sub-500px floor; 520 is the narrowest a shot can honestly show,
 		 * and it is still narrower than the panel's own 30em.
 		 */
-		// Kept equal to `sheet-narrow`'s own frame, which was stale for the same
-		// reason (see its comment above): the panel is anchored off
-		// `document.body` and adds nothing to the document's own height.
 		name: 'sheet-modifier-form-narrow',
 		query: `surface=sheet&theme=dark&width=380&bar=off&${OPEN_MIXED_FORM}`,
-		size: '520,8700',
+		// Kept equal to `sheet-narrow`'s own frame, for the same reason as
+		// `sheet-modifier-form-large-text` above.
+		size: '520,10050',
 	},
 	{
 		/*
