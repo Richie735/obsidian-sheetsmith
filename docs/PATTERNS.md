@@ -356,7 +356,7 @@ Every component follows the same order. A reader who knows one knows them all.
    order [judgement]:
    `type`, `storage`, `showsOneChild`, `formulaFields`, `configFields`, `palette`,
    `configName`, `sample`, `read`, `scopeValues`, `scopeRows`, `scopeModifiers`,
-   `write`, `hasBuffer`, `applyReset`, `render`.
+   `write`, `hasBuffer`, `resetColumns`, `applyReset`, `render`.
    Contract first, then the data path in the order it runs, then rendering last
    because it is the longest. `showsOneChild` sits beside `storage` because it is
    the same kind of fact: what this component is structurally, before anything
@@ -372,7 +372,10 @@ Every component follows the same order. A reader who knows one knows them all.
    the same job read a third way — the changes this component declares against
    names that are not its own (`SPEC` §5) — and it goes last of the three because
    the other two are about what this component holds and it is about what it does
-   to somebody else's number.
+   to somebody else's number. `resetColumns` sits beside `hasBuffer` for the reason
+   `hasBuffer` sits where it does: both are declarations the layout editor reads to
+   decide what a reset binding may say, and a declaration comes before the
+   behaviour it conditions.
 
 Checked in `contract.test.ts`, along with the rule that a component declares
 nothing outside the contract. Otherwise a new member falls outside the order and
@@ -572,6 +575,19 @@ A component inventing its own is the failure mode to watch for.
   [checked]. The editor owns those.
 - Declaring `applyReset` obliges `formulaFields` to include `reset.*.to`
   [checked]. Forgetting it leaves the reset button dead with nothing to say so.
+- **Declaring `resetColumns` obliges `applyReset`** [checked]. The editor draws its
+  picker from the first and the trigger writes through the second, so a component
+  declaring only the first offers an author a column to bind and then passes over
+  the binding when the button is pressed — the rule above one step over, and the
+  same dead control with nothing to say so.
+- **Declaring `applyReset` on a component whose parts have names obliges
+  `resetColumns`** [judgement]. Not checked, and the reason is what the tier is for:
+  nothing outside a component can tell whether its parts have names, which is the
+  whole reason the member exists. A component that resets as one value — a Pool, a
+  Track, a Record set — correctly declares neither, so the check would have to
+  distinguish the two cases by knowing the thing it exists to avoid knowing. What
+  goes wrong without it is quiet rather than loud: the binding acts on the whole
+  component where the author meant one part of it.
 
 ---
 
