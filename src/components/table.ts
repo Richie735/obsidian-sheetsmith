@@ -63,6 +63,8 @@ import {
 	ModifierPush,
 	ModifierSource,
 	ReadResult,
+	ResetColumn,
+	ResetResult,
 	RowsSource,
 	RowValues,
 	ScopeEntry,
@@ -837,12 +839,79 @@ function sampleCell(column: TableColumn, row: number, at: number): string | null
 	}
 }
 
+/**
+ * Column types a reset binding may name (SPEC §6).
+ *
+ * The two whose cell is a state a trigger has a reading for. Every other type
+ * is refused and each for its own reason: a `computed` column stores nothing to
+ * write, `text` and `modifier` hold words and neither "full" nor "empty" has a
+ * reading over them, and `level` is the one refused on a judgement rather than a
+ * shape — a rest restoring proficiency has no reading in any system we can name,
+ * and applying `full` to it for uniformity would buy only a case nobody wants.
+ * That is `record-set.ts`'s own call for a `level` field.
+ *
+ * Typed rather than a set of bare strings, which is `column-types.ts`'s own
+ * shape and the guard §1 prefers to a test: a typo here would not fail to
+ * compile, it would quietly stop offering a column type while every binding
+ * already naming one started reporting that the column is not a toggle. The
+ * lookup can be typed where `TOTALLED_TYPES` cannot, because `columnType`
+ * already answers with a `ColumnType` and there is no layout string to ask with.
+ */
+const RESET_TYPES: ReadonlySet<ColumnType> = new Set<ColumnType>([
+	'number',
+	'toggle',
+]);
+
+/**
+ * Which columns a reset binding may name, and why one refuses an action.
+ *
+ * **One list, two readers**, which is the whole reason it is a function rather
+ * than a filter written out twice: the layout editor draws its picker from this
+ * and `applyReset` looks the binding up in it, so the two cannot disagree about
+ * which columns are eligible or about why one refuses an action.
+ *
+ * The refusal is per action rather than per column: a number column with no
+ * `max` has nothing for `full` to restore to and takes `empty` and `formula`
+ * happily. Reported rather than refusing the layout, because a column's `max` is
+ * a static authoring fact the editor can see and name — unlike a Record set's
+ * per-record ceiling, which is data-dependent and so is skipped in silence.
+ */
+function resetColumnsOf(config: TableConfig): ResetColumn[] {
+	return storedColumns(config)
+		// A column with no key is one `baseConfigError` already refuses, so the
+		// card is drawing an error — but the editor does not run `read`, and an
+		// option valued `''` here persists `column: ""`, which `parseBinding`
+		// refuses outright. That turns a component the author can still fix into
+		// a layout file that will not load at all.
+		.filter((column) => (column.key ?? '').trim() !== '')
+		.filter((column) => RESET_TYPES.has(columnType(column)))
+		.map((column) => {
+			const shown = column.name ?? column.key;
+			const uncapped =
+				columnType(column) === 'number' && column.max === undefined;
+			return {
+				key: column.key,
+				...(column.name !== undefined ? { label: column.name } : {}),
+				...(uncapped
+					? {
+							refuses: {
+								full: `the column "${shown}" has no maximum to restore to. Give it one, or set this trigger to empty.`,
+							},
+						}
+					: {}),
+			};
+		});
+}
+
 export const table: ComponentDefinition<TableConfig, TableData> = {
 	type: 'table',
 	storage: 'markdown',
 	// `*` stands for one path segment: every column's formula, and every
 	// named expression on every row. See isDeclared in formula/resolve.ts.
-	formulaFields: ['columns.*.formula', 'rows.*.values.*'],
+	// `reset.*.to` is the same idea for the bindings, which are a list, so each
+	// one's expression lives at its own index and the sheet rewrites the logical
+	// name to that index before the component asks for it.
+	formulaFields: ['columns.*.formula', 'rows.*.values.*', 'reset.*.to'],
 	configFields: [
 		{
 			key: 'rows',
@@ -1325,6 +1394,22 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			(index) => !claimedRows.has(index),
 		);
 
+		/*
+		 * **A delta naming no row and adding none writes nothing**, and the
+		 * branch below is why this guard has to exist rather than being implied.
+		 *
+		 * Seeding is right for an *edit*: the first cell a reader types writes
+		 * the whole declared list, so the note reads as the list rather than
+		 * growing a row at a time. It is wrong for a reset, which is the one
+		 * gesture that can reach a component having nothing to say to it — a
+		 * long rest against a fresh character's note would otherwise append the
+		 * layout's every declared row as a side effect of restoring a value
+		 * (SPEC §6, §10).
+		 */
+		if (table === null && rows.size === 0 && added.length === 0) {
+			return body ?? '';
+		}
+
 		// The section has no table yet, so there is nothing to clobber: seed
 		// every row the layout declares, and the note reads as the whole list
 		// from the first edit rather than growing a row at a time.
@@ -1347,6 +1432,163 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			return writeTable(body, headers(config), { added: [...seeded, ...spare] });
 		}
 		return writeTable(body, headers(config), { rows, added, removed });
+	},
+
+	resetColumns(config): readonly ResetColumn[] {
+		return resetColumnsOf(config);
+	},
+
+	/**
+	 * Apply a trigger to the one column the binding names (SPEC §6).
+	 *
+	 * **The binding names a column and this component holds several**, which is
+	 * the whole of what separates this from Pool's and Track's: `full` and
+	 * `empty` are answers about one column, and every cell in every other column
+	 * comes out byte-identical because none of them is ever in the delta.
+	 *
+	 * `empty` resolves nothing, which is load-bearing rather than incidental: a
+	 * table whose computed column is broken can still be cleared, exactly as
+	 * `track.ts`'s "a card whose count is broken can still be cleared". A
+	 * column's `min` is a literal on the column, so writing the bottom of its
+	 * range keeps that property.
+	 *
+	 * `formula` resolves **once for the component, not once per row** — one
+	 * number written into every cell of the named column, which is Record set's
+	 * own shape and not a per-row ceiling by another name. The flag is derived
+	 * from the number rather than set true, which is that component's own
+	 * correction taken as read: `to: '0'` must not turn every toggle on.
+	 *
+	 * **A declared row the note has never held is left alone.** A reset is not
+	 * the gesture that creates a row: every row in a note arrives from a reader
+	 * typing in it or pressing **Add row**, and a rest that appended eighteen
+	 * declared rows to a fresh character's note would be writing structure as a
+	 * side effect of restoring a value. It also reads correctly — a blank `Uses`
+	 * cell on an untouched feature says "nothing spent", which is what a rest
+	 * would have left anyway.
+	 *
+	 * **A reset never removes a row and never renames one**: `removed` and the
+	 * name cell are not in the delta at all, so Constraint 4 is not reachable
+	 * from this control.
+	 */
+	applyReset(data, config, reset, context): ResetResult<TableData> {
+		const next: TableData = { rows: {} };
+		// A binding about the buffer alone, and a table declares none: nothing
+		// to do and nothing went wrong.
+		if (reset.action === undefined) return { ok: true, data: next };
+
+		/*
+		 * The three ways a binding can name nothing this component can act on,
+		 * reported rather than passed over in silence. `ResetContext`'s own doc
+		 * comment names the failure they share: the user has just pressed a
+		 * button and watched nothing happen. The layout editor reports the same
+		 * three earlier and better placed, which is where they can be fixed.
+		 */
+		if (reset.column === undefined) {
+			return {
+				ok: false,
+				/*
+				 * **Names the change and not the tool**, which every sibling
+				 * reset failure already does — Pool's "it has no max to restore
+				 * to", Record set's "give it one, or set this trigger to empty".
+				 * This message reaches whoever pressed the button through the
+				 * sheet's notice, and on a shared layout that is often not the
+				 * person who can open the editor; naming a surface they cannot
+				 * reach is worse than naming none. It is the one message here a
+				 * *pre-existing, untouched* layout can produce on its own.
+				 */
+				error:
+					'this trigger does not say which column to act on. Give the binding a column, or remove it.',
+			};
+		}
+		const named = resetColumnsOf(config).find(
+			(entry) => entry.key === reset.column,
+		);
+		const column = storedColumns(config).find(
+			(entry) => entry.key === named?.key,
+		);
+		if (named === undefined || column === undefined) {
+			/*
+			 * Two mistakes, and the fix differs: a column that is gone wants the
+			 * trigger pointed somewhere else, and one of a type that stores no
+			 * state wants a different column or a different type. One sentence
+			 * for both sent an author looking at a column's type when there was
+			 * no column (PATTERNS §4).
+			 *
+			 * Asked of `config.columns` rather than `storedColumns`, so a
+			 * `computed` column — which is declared and stores nothing — reads as
+			 * the second and not as missing.
+			 */
+			const declared = (config.columns ?? []).some(
+				(entry) => entry.key === reset.column,
+			);
+			return {
+				ok: false,
+				error: declared
+					? `the column "${reset.column}" holds no state a trigger can restore. Point this trigger at a number or toggle column instead.`
+					: `this table has no column called "${reset.column}". Point the trigger at one it has, or remove the binding.`,
+			};
+		}
+		const refusal = named.refuses?.[reset.action];
+		if (refusal !== undefined) return { ok: false, error: refusal };
+
+		const flag = columnType(column) === 'toggle';
+		let text: string;
+		if (reset.action === 'formula') {
+			const value = context.resolve('reset.to', {});
+			// Two failures, not one, which is Track's and Record set's shape: a
+			// formula that would not resolve at all, and one that resolved to
+			// something that is not a number. The fix differs, so the report
+			// does.
+			if (value === null) {
+				return {
+					ok: false,
+					error: context.explain('reset.to', {}) ?? 'its reset formula is empty.',
+				};
+			}
+			const number = Number(value);
+			if (!Number.isFinite(number)) {
+				return {
+					ok: false,
+					error: `its reset formula produced "${String(value)}", which is not a number.`,
+				};
+			}
+			text = flag ? flagText(number >= 1) : boundedText(String(number), column);
+		} else if (flag) {
+			text = flagText(reset.action === 'full');
+		} else if (reset.action === 'full') {
+			// The refusal above has already reported a column with no ceiling,
+			// so `max` is present by the time this runs.
+			text = String(column.max ?? 0);
+		} else {
+			// **Empty is the bottom of the column's declared range rather than a
+			// flat 0.** A column declaring `min: 1` would otherwise be put below
+			// its own floor, with nothing downstream to catch it — `min` is only
+			// an input attribute today — and it is the same clamp `formula`
+			// applies above, so the two cannot disagree about what the column's
+			// range means.
+			text = String(column.min ?? 0);
+		}
+
+		/*
+		 * **The comparison is on the reading, not the text**, so the note's own
+		 * spelling survives: a cell hand-written as `x` reads as set, so `full`
+		 * leaves the `x` alone and only `empty` rewrites it, and a blank cell in
+		 * a `number` column reads as 0 so `empty` does not fill a column with
+		 * zeros nobody typed. That is PATTERNS §7's rule applied to the one
+		 * gesture that writes a whole column at once — and a column declaring a
+		 * `min` is this rule working rather than an escape from it: a blank cell
+		 * reads as 0, 0 is below the floor, so the cell is written with the
+		 * floor.
+		 */
+		const stored = column.key.toLowerCase();
+		const target = typedValue(column, text);
+		for (const view of rowViews(config, data)) {
+			if (view.at === null) continue;
+			const raw = data?.rows[view.at]?.cells?.[stored] ?? '';
+			if (typedValue(column, raw) === target) continue;
+			next.rows[view.at] = { cells: { [column.key]: text } };
+		}
+		return { ok: true, data: next };
 	},
 
 	render(container, config, data, context): void {

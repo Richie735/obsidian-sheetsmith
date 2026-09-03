@@ -214,6 +214,27 @@ describe('applySectionWrites', () => {
 		expect(result.failed).toEqual([]);
 	});
 
+	it('creates no section for a write that produced nothing', () => {
+		// A component the sheet asked to write with nothing to say — a reset
+		// that found no row to act on — must not leave a heading behind: the
+		// view would see the text change, save, and offer an undo for a rest
+		// that touched nothing, and the empty section is sticky under §10 the
+		// moment the layout renames the component.
+		const result = applySectionWrites(SAMPLE, [
+			{ label: 'Conditions', write: (body) => body ?? '' },
+		]);
+		expect(result.text).toBe(SAMPLE);
+		expect(getSection(parseCharacter(result.text), 'Conditions')).toBeUndefined();
+	});
+
+	it('still empties a section the note already holds', () => {
+		// The other half of the same rule, and the reason it is keyed on the
+		// section being absent rather than on the body being blank: a reader
+		// clearing a value is a write that has to land.
+		const result = applySectionWrites(SAMPLE, [{ label: 'HP', write: () => '' }]);
+		expect(getSection(parseCharacter(result.text), 'HP')?.body).toBe('');
+	});
+
 	it('applies several writes in one pass', () => {
 		const result = applySectionWrites(SAMPLE, [
 			{

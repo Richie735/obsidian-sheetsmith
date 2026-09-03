@@ -4952,3 +4952,463 @@ describe('table and mod.self', () => {
 		expect(cells[1]?.textContent).toBe('+9');
 	});
 });
+
+/*
+ * A trigger reaching one column (SPEC §6).
+ *
+ * The fixture is the spec's own case: a Conditions list whose `Active` column a
+ * long rest clears, a per-row `Uses` counter with a ceiling it refills, and a
+ * `Qty` column bound to nothing that must come out byte-identical. Declared rows
+ * and character-added rows together, because the trigger reaches both and only
+ * a mixed list can show it.
+ */
+describe('table.applyReset', () => {
+	const conditions: TableConfig = {
+		id: 'conditions',
+		type: 'table',
+		label: 'Conditions',
+		position: { col: 1, row: 1, width: 6, height: 2 },
+		rowHeader: 'Condition',
+		openRows: true,
+		rows: [{ label: 'Poisoned' }, { label: 'Frightened' }],
+		columns: [
+			{ key: 'Active', type: 'toggle' },
+			{ key: 'Uses', type: 'number', max: 3 },
+			{ key: 'Qty', type: 'number' },
+			{ key: 'Notes' },
+		],
+	};
+
+	/** Two declared rows and one the character added, with ragged pipes. */
+	const LIST = `
+| Condition | Active | Uses | Qty | Notes |
+|---|---|---|---|---|
+| Poisoned | yes | 0 | 7 | disadvantage |
+|Frightened|x|1|2|cannot approach|
+| Charmed | no |  | 4 | |
+`;
+
+	const reset = (
+		binding: Parameters<NonNullable<typeof table.applyReset>>[2],
+		over: TableConfig = conditions,
+		body: string = LIST,
+		resolve: (field: string) => number | string | null = () => null,
+	) =>
+		table.applyReset?.(stored(body, over), over, binding, {
+			resolve: (field) => resolve(field),
+			explain: () => null,
+		});
+
+	/** The delta carried through `write`, which is what the note becomes. */
+	const written = (
+		binding: Parameters<NonNullable<typeof table.applyReset>>[2],
+		over: TableConfig = conditions,
+		body: string = LIST,
+		resolve: (field: string) => number | string | null = () => null,
+	): string => {
+		const result = reset(binding, over, body, resolve);
+		if (result?.ok !== true) throw new Error(`expected a reset: ${String(result?.ok === false && result.error)}`);
+		return table.write(result.data, body, over);
+	};
+
+	it('offers the number and toggle columns, and no others', () => {
+		// A computed column stores nothing to write, `text` and `modifier` hold
+		// words, and `level` is refused on a judgement rather than a shape.
+		expect(table.resetColumns?.(conditions).map((entry) => entry.key)).toEqual([
+			'Active',
+			'Uses',
+			'Qty',
+		]);
+	});
+
+	it('offers no column the layout gave no key', () => {
+		// The card is already drawing a configuration error for it, and the
+		// editor does not run `read` — so an option valued `''` would persist
+		// `column: ""`, which `parseBinding` refuses, turning a fixable
+		// component into a layout file that will not load.
+		const keyless = {
+			...conditions,
+			columns: [
+				{ key: '', type: 'toggle' },
+				{ key: '  ', type: 'number', max: 3 },
+				{ key: 'Active', type: 'toggle' },
+			],
+		} as TableConfig;
+		expect(table.resetColumns?.(keyless).map((entry) => entry.key)).toEqual([
+			'Active',
+		]);
+	});
+
+	it('says which action a column with no ceiling refuses, and why', () => {
+		const offered = table.resetColumns?.(conditions) ?? [];
+		expect(offered.find((entry) => entry.key === 'Uses')?.refuses).toBeUndefined();
+		// Framed as a `ResetResult` error, which is the contract the shared
+		// string owes: it continues "Conditions — " on the sheet, so it opens
+		// lower case, and the editor is the reader that adapts.
+		expect(offered.find((entry) => entry.key === 'Qty')?.refuses?.full).toBe(
+			'the column "Qty" has no maximum to restore to. Give it one, or set this trigger to empty.',
+		);
+		// And nothing else is refused: emptying a column with no ceiling is
+		// exactly the case that has to keep working.
+		expect(
+			offered.find((entry) => entry.key === 'Qty')?.refuses?.empty,
+		).toBeUndefined();
+	});
+
+	it('clears a toggle column over every row the note holds', () => {
+		const text = written({ trigger: 'Long rest', column: 'Active', action: 'empty' });
+		expect(text).toContain('| Poisoned | no | 0 | 7 | disadvantage |');
+		expect(text).toContain('|Frightened|no|1|2|cannot approach|');
+		expect(text).toContain('| Charmed | no |  | 4 | |');
+	});
+
+	it('sets a toggle column, and leaves a hand-written spelling that already means yes', () => {
+		// The comparison is on the reading, not the text: `x` reads as set, so
+		// `full` has nothing to write into that cell (PATTERNS §7).
+		const text = written({ trigger: 'Long rest', column: 'Active', action: 'full' });
+		expect(text).toContain('|Frightened|x|1|2|cannot approach|');
+		expect(text).toContain('| Poisoned | yes | 0 | 7 | disadvantage |');
+		expect(text).toContain('| Charmed | yes |  | 4 | |');
+	});
+
+	it('leaves every unbound column byte-identical, ragged pipes and all', () => {
+		const text = written({ trigger: 'Long rest', column: 'Active', action: 'empty' });
+		// The Qty column the rest was never pointed at, and the notes beside it.
+		expect(text).toContain('| 7 | disadvantage |');
+		expect(text).toContain('|2|cannot approach|');
+		expect(text).toContain('| 4 | |');
+	});
+
+	it('writes no bytes at all where every cell already reads that way', () => {
+		// A cell already holding the value is not rewritten, so a second press
+		// of the same rest returns the note it was handed.
+		const once = written({ trigger: 'Long rest', column: 'Active', action: 'empty' });
+		expect(
+			written({ trigger: 'Long rest', column: 'Active', action: 'empty' }, conditions, once),
+		).toBe(once);
+	});
+
+	it('empties a number column to nothing where it declares no min', () => {
+		// A blank cell reads as 0 (SPEC §4.2), so emptying does not fill a
+		// column with zeros nobody typed.
+		const text = written({ trigger: 'Long rest', column: 'Qty', action: 'empty' });
+		expect(text).toContain('| Poisoned | yes | 0 | 0 | disadvantage |');
+		// The blank Uses cell on the character's own row is untouched, because
+		// nothing pointed at that column.
+		expect(text).toContain('| Charmed | no |  | 0 | |');
+	});
+
+	it('writes no bytes emptying a column of blanks and zeros with no min', () => {
+		// Criterion 3's second clause. A blank cell reads as 0 and so does `0`,
+		// so a column declaring no floor has nothing for `empty` to change —
+		// the delta is empty and the note comes back byte for byte, blank cell
+		// and ragged pipes included.
+		const SPENT = `
+| Condition | Active | Uses | Qty | Notes |
+|---|---|---|---|---|
+| Poisoned | yes | 0 | 7 | disadvantage |
+|Frightened|x| |2|cannot approach|
+`;
+		const result = reset(
+			{ trigger: 'Long rest', column: 'Uses', action: 'empty' },
+			conditions,
+			SPENT,
+		);
+		expect(result?.ok).toBe(true);
+		if (result?.ok === true) {
+			// Nothing addressed at all, which is what "writes no bytes" means
+			// one layer below the note.
+			expect(result.data.rows).toEqual({});
+			expect(table.write(result.data, SPENT, conditions)).toBe(SPENT);
+		}
+	});
+
+	it('empties a number column to its own min, blank cells included', () => {
+		const floored: TableConfig = {
+			...conditions,
+			columns: [
+				{ key: 'Active', type: 'toggle' },
+				{ key: 'Uses', type: 'number', min: 1, max: 3 },
+				{ key: 'Qty', type: 'number' },
+				{ key: 'Notes' },
+			],
+		};
+		const text = written(
+			{ trigger: 'Long rest', column: 'Uses', action: 'empty' },
+			floored,
+		);
+		expect(text).toContain('| Poisoned | yes | 1 | 7 | disadvantage |');
+		expect(text).toContain('|Frightened|x|1|2|cannot approach|');
+		// The one case where emptying puts text where there was none: a blank
+		// cell reads as 0, and 0 is below the column's own floor.
+		expect(text).toContain('| Charmed | no | 1 | 4 | |');
+	});
+
+	it('restores a number column to the ceiling the column declares', () => {
+		const text = written({ trigger: 'Long rest', column: 'Uses', action: 'full' });
+		expect(text).toContain('| Poisoned | yes | 3 | 7 | disadvantage |');
+		expect(text).toContain('| Charmed | no | 3 | 4 | |');
+	});
+
+	it('writes no cell for a full binding on a column with no ceiling, and names it', () => {
+		const result = reset({ trigger: 'Long rest', column: 'Qty', action: 'full' });
+		expect(result?.ok).toBe(false);
+		if (result?.ok === false) {
+			expect(result.error).toContain('no maximum to restore to');
+			// The same sentence the editor draws: one list, two readers.
+			expect(result.error).toBe(
+				table.resetColumns?.(conditions).find((entry) => entry.key === 'Qty')
+					?.refuses?.full,
+			);
+		}
+		// And the same column still clears.
+		expect(
+			reset({ trigger: 'Long rest', column: 'Qty', action: 'empty' })?.ok,
+		).toBe(true);
+	});
+
+	it('empties without resolving anything', () => {
+		// A table whose formulas are broken can still be cleared, which is
+		// `track.ts`'s rule and the reason `empty` reads nothing.
+		const broken: TableConfig = {
+			...conditions,
+			columns: [
+				...(conditions.columns ?? []),
+				{ key: 'Sum', type: 'computed', formula: 'nonsense * 2' },
+			],
+		};
+		const result = reset(
+			{ trigger: 'Long rest', column: 'Active', action: 'empty' },
+			broken,
+			LIST,
+			() => {
+				throw new Error('a reset that empties must resolve nothing');
+			},
+		);
+		expect(result?.ok).toBe(true);
+	});
+
+	it('writes a resolved formula into a number column, held to its bounds', () => {
+		const text = written(
+			{ trigger: 'Long rest', column: 'Uses', action: 'formula', to: 'x' },
+			conditions,
+			LIST,
+			() => 9,
+		);
+		expect(text).toContain('| Poisoned | yes | 3 | 7 | disadvantage |');
+	});
+
+	it('derives a toggle from the number rather than setting it', () => {
+		// Track's and Record set's rule: `to: '0'` must not turn a column on.
+		expect(
+			written(
+				{ trigger: 'Long rest', column: 'Active', action: 'formula', to: 'x' },
+				conditions,
+				LIST,
+				() => 0,
+			),
+		).toContain('| Poisoned | no | 0 | 7 | disadvantage |');
+		expect(
+			written(
+				{ trigger: 'Long rest', column: 'Active', action: 'formula', to: 'x' },
+				conditions,
+				LIST,
+				() => 1,
+			),
+		).toContain('| Charmed | yes |  | 4 | |');
+	});
+
+	it('reports a reset formula that will not resolve, and one that is not a number', () => {
+		const empty = reset(
+			{ trigger: 'Long rest', column: 'Uses', action: 'formula', to: 'x' },
+			conditions,
+			LIST,
+			() => null,
+		);
+		expect(empty?.ok).toBe(false);
+		if (empty?.ok === false) expect(empty.error).toContain('reset formula is empty');
+		const words = reset(
+			{ trigger: 'Long rest', column: 'Uses', action: 'formula', to: 'x' },
+			conditions,
+			LIST,
+			() => 'rested',
+		);
+		expect(words?.ok).toBe(false);
+		if (words?.ok === false) expect(words.error).toContain('not a number');
+	});
+
+	it('names a binding that says which column nowhere', () => {
+		const result = reset({ trigger: 'Long rest', action: 'empty' });
+		expect(result?.ok).toBe(false);
+		if (result?.ok === false) {
+			expect(result.error).toContain('does not say which column');
+		}
+	});
+
+	it('goes on rendering its rows, editable, whatever the binding says', () => {
+		/*
+		 * Criterion 10's second clause, and the mechanism is that `configError`
+		 * never reads `config.reset` at all — so a bad binding cannot become the
+		 * error card that replaces the component and publishes nothing. Asserted
+		 * rather than left to the design review because it is a correctness
+		 * property: the check that would break it is somebody adding a reset
+		 * rule to `baseConfigError`, which no shot would catch.
+		 */
+		const bound = {
+			...conditions,
+			reset: [{ trigger: 'Long rest', column: 'Notes', action: 'full' as const }],
+		} as TableConfig;
+		const data = stored(LIST, bound);
+		const el = document.createElement('div');
+		table.render(el, bound, data, contextFor(data, bound));
+		expect(el.querySelector('.sheetsmith-error')).toBe(null);
+		// Three rows plus the add control's own, which is what an open list
+		// draws when nothing is wrong with it.
+		expect(el.querySelectorAll('tbody tr')).toHaveLength(4);
+		// And still editable: the cells are fields, not read-only text.
+		expect(
+			el.querySelectorAll('tbody .sheetsmith-table-input').length,
+		).toBeGreaterThan(0);
+	});
+
+	it('tells a column that is gone from one it cannot act on', () => {
+		// Two mistakes with two fixes: one sentence for both sent an author
+		// looking at a column's type when there was no column (PATTERNS §4).
+		const gone = reset({ trigger: 'Long rest', column: 'Fatigue', action: 'empty' });
+		expect(gone?.ok).toBe(false);
+		if (gone?.ok === false) {
+			expect(gone.error).toBe(
+				'this table has no column called "Fatigue". Point the trigger at one it has, or remove the binding.',
+			);
+		}
+		const words = reset({ trigger: 'Long rest', column: 'Notes', action: 'empty' });
+		expect(words?.ok).toBe(false);
+		if (words?.ok === false) {
+			expect(words.error).toBe(
+				'the column "Notes" holds no state a trigger can restore. Point this trigger at a number or toggle column instead.',
+			);
+		}
+	});
+
+	it('reads a computed column as declared rather than as missing', () => {
+		// It is on the table and stores nothing, which is the second message
+		// and not the first — the distinction `storedColumns` would have lost.
+		const summed = {
+			...conditions,
+			columns: [
+				...(conditions.columns ?? []),
+				{ key: 'Sum', type: 'computed', formula: '1' },
+			],
+		} as TableConfig;
+		const result = reset(
+			{ trigger: 'Long rest', column: 'Sum', action: 'empty' },
+			summed,
+		);
+		expect(result?.ok).toBe(false);
+		if (result?.ok === false) {
+			expect(result.error).toContain('holds no state a trigger can restore');
+		}
+	});
+
+	it('is the only writer that leaves such a row alone, and a cell edit is not', () => {
+		/*
+		 * The other half of the rule above, and the one that cost a review an
+		 * afternoon: a reset does not create a declared row the note lacks, and
+		 * **an ordinary edit on that row does** — `write`'s `added` branch, which
+		 * `table.ts` documents and which the spec's Data and file model section
+		 * names as the path a reset deliberately does not take.
+		 *
+		 * Asserted here because the two are one sentence with two halves, and a
+		 * fixture built on "this row must stay absent" is disarmed by the second
+		 * without anything saying so. The distinction is which *gesture* wrote,
+		 * not whether the row may ever appear.
+		 */
+		const SHORT = `
+| Condition | Active | Uses | Qty | Notes |
+|---|---|---|---|---|
+| Poisoned | no | 0 | 7 | |
+`;
+		// The reset: Frightened is declared, absent, and stays absent.
+		expect(
+			written({ trigger: 'Long rest', column: 'Active', action: 'full' }, conditions, SHORT),
+		).not.toContain('Frightened');
+
+		// A cell edit on that same row: appended, with only the cell that was
+		// touched, and every row already in the note left as it was.
+		const edited = table.write(
+			{ rows: {}, added: [{ name: 'Frightened', cells: { Active: 'yes' } }] },
+			SHORT,
+			conditions,
+		);
+		expect(edited).toContain('| Frightened | yes |  |  |  |');
+		expect(edited).toContain('| Poisoned | no | 0 | 7 | |');
+		// And only that row: the other declared rows are still absent.
+		expect(edited).not.toContain('Blinded');
+		expect(edited).not.toContain('Charmed');
+	});
+
+	it('leaves a declared row the note has never held alone', () => {
+		// A reset is not the gesture that creates a row: a rest appending the
+		// layout's declared rows to a fresh character's note would be writing
+		// structure as a side effect of restoring a value.
+		const SHORT = `
+| Condition | Active | Uses | Qty | Notes |
+|---|---|---|---|---|
+| Poisoned | no | 0 | 7 | |
+`;
+		const text = written(
+			{ trigger: 'Long rest', column: 'Active', action: 'full' },
+			conditions,
+			SHORT,
+		);
+		expect(text).toContain('| Poisoned | yes | 0 | 7 | |');
+		expect(text).not.toContain('Frightened');
+	});
+
+	it('leaves a row a closed table does not draw alone', () => {
+		/*
+		 * `applyReset` walks the rows the card draws, which on a table with
+		 * `openRows` off is the declared ones only. SPEC §10 keeps an
+		 * undeclared row in the note unrendered and untouched, and a reset
+		 * writing into it would change a cell nobody can see — so the criterion's
+		 * "character-added rows alike" holds where the layout admits them and
+		 * nowhere else.
+		 */
+		const closed = { ...conditions, openRows: false } as TableConfig;
+		// `full` rather than `empty`, so the undrawn row's cell would visibly
+		// change if it were reached: Charmed holds `no` and the two declared
+		// rows above it move.
+		const text = written(
+			{ trigger: 'Long rest', column: 'Active', action: 'full' },
+			closed,
+		);
+		expect(text).toContain('| Poisoned | yes | 0 | 7 | disadvantage |');
+		// And the open list does reach it, which is what makes this a rule about
+		// the rows the card draws rather than about the rows the note holds.
+		expect(
+			written({ trigger: 'Long rest', column: 'Active', action: 'full' }),
+		).toContain('| Charmed | yes |  | 4 | |');
+		expect(text).toContain('| Charmed | no |  | 4 | |');
+	});
+
+	it('writes nothing at all into a section holding no table yet', () => {
+		// Same rule one step out: the seeding branch in `write` answers an edit,
+		// and a reset that reached no row must not seed a list.
+		const result = table.applyReset?.(
+			null,
+			conditions,
+			{ trigger: 'Long rest', column: 'Active', action: 'empty' },
+			{ resolve: () => null, explain: () => null },
+		);
+		expect(result?.ok).toBe(true);
+		if (result?.ok === true) {
+			expect(table.write(result.data, '', conditions)).toBe('');
+			expect(table.write(result.data, 'Some prose.', conditions)).toBe('Some prose.');
+			// The input that actually reaches it: the section is missing, so
+			// there is no body and no table, and the answer is still nothing.
+			// `applySectionWrites` is what turns that into "create no section"
+			// (`character.test.ts`); this half is the component's.
+			expect(table.write(result.data, null, conditions)).toBe('');
+		}
+	});
+});
