@@ -427,17 +427,90 @@ export const SAMPLES: Sample[] = [
 			origin: '```sheet\norigin: Neverwinter\nnote: guild artisan\n```',
 		},
 	},
-	/* A group the author has not filled in yet: a heading over a quiet empty
-	   region, which is a layout part-way through being built rather than an
-	   error. */
+	/*
+	 * The composite pattern `docs/SPEC.md` §4.3 now names: a Record set of
+	 * spells beside a Track row set publishing how many slots of each level
+	 * remain, and a card elsewhere on the same sheet reading one of those
+	 * counts by name through `.left` (SPEC §5, §13). Self-contained on
+	 * purpose — the `spells` record set further down is a bare demonstration
+	 * of the Spellbook palette entry with nothing beside it, and this group is
+	 * the arrangement, so neither borrows the other's rows.
+	 *
+	 * `slots` and its rows are the exact fixture `track.test.ts` already
+	 * verifies `.left` against (`L1` with its own `count: 5`, `L2` with
+	 * `count: 3`, `L3` falling back to the component's `count: 1`), kept
+	 * identical here rather than invented afresh: the same numbers this
+	 * composite shows are the ones already proven against `scope('slots.L1.left')`
+	 * and its siblings.
+	 */
 	{
 		config: {
 			id: 'spellbook',
 			type: 'group',
 			label: 'Spellbook',
-			position: { col: 9, row: 10, width: 4, height: 1 },
-		},
+			position: { col: 9, row: 10, width: 4, height: 4 },
+			children: [
+				{
+					id: 'known_spells',
+					type: 'record-set',
+					label: 'Known spells',
+					position: { col: 1, row: 1, width: 2, height: 4 },
+					recordName: 'Spell',
+					fields: [
+						{ key: 'Level', type: 'number' },
+						{ key: 'Prepared', type: 'toggle' },
+					],
+				},
+				{
+					id: 'slots',
+					type: 'track',
+					label: 'Spell slots',
+					position: { col: 3, row: 1, width: 2, height: 3 },
+					rows: [
+						{ key: 'L1', name: '1st', count: 5 },
+						{ key: 'L2', name: '2nd', count: 3 },
+						{ key: 'L3', name: '3rd' },
+					],
+					count: 1,
+				},
+				{
+					id: 'l1_slots_left',
+					type: 'card',
+					label: 'Slots left',
+					position: { col: 3, row: 4, width: 2, height: 1 },
+					// The consumer §13 deferred: an ordinary card reading a name
+					// `.left` publishes, exactly as `passive_perception` above reads
+					// `skills.perception` — nothing about this card knows it is
+					// reading a Track's row rather than any other published name.
+					derived: 'slots.L1.left',
+					signed: false,
+					hideValue: true,
+					hideNote: true,
+				},
+			],
+		} as unknown as ComponentConfig,
 		body: null,
+		children: {
+			known_spells: [
+				'',
+				'### Magic Missile',
+				'```sheet',
+				'Level: 1',
+				'Prepared: yes',
+				'```',
+				'Three glowing darts of magical force strike unerringly.',
+				'',
+				'### Fireball',
+				'```sheet',
+				'Level: 3',
+				'Prepared: no',
+				'```',
+				'A bright streak flashes to a point you choose, then blossoms with a low roar into an explosion of flame.',
+				'',
+			].join('\n'),
+			slots: '```sheet\nL1: 2\nL2: 1\nL3: 0\n```',
+			l1_slots_left: null,
+		},
 	},
 	{
 		config: {
@@ -525,7 +598,7 @@ export const SAMPLES: Sample[] = [
 					// container here would be ceremony on the commonest case.
 					id: 'tab_spells',
 					type: 'table',
-					// The empty group below is already "Spellbook".
+					// The Group further down already carries "Spellbook".
 					label: 'Spell list',
 					position: { col: 1, row: 1, width: 8, height: 3 },
 					rowHeader: 'Spell',
@@ -1310,8 +1383,10 @@ export const SAMPLES: Sample[] = [
 	 */
 	{
 		config: {
-			// `spellbook` is the empty Group further up, and a label keys a note
-			// section, so both have to differ.
+			// `spellbook` further up is a different demonstration — the composite
+			// pattern, with its own `known_spells` record set beside a slots
+			// track — and a label keys a note section, so this one's has to
+			// differ from both that record set's label and its own.
 			id: 'spells',
 			type: 'record-set',
 			label: 'Spells',
@@ -1398,7 +1473,10 @@ export const SAMPLES: Sample[] = [
 		body: null,
 	},
 	/* Beside the set rather than inside it, so a tab press has something to not
-	   move. */
+	   move. Row 14 rather than 12: the Spellbook group above grew to hold its
+	   composite pattern and now spans rows 10-13 in this column, so this
+	   moved to the tab set's last row instead — still outside its col1-8
+	   footprint, which is the only thing its position has to be true. */
 	{
 		config: {
 			id: 'tab_witness',
@@ -1407,7 +1485,7 @@ export const SAMPLES: Sample[] = [
 			derived: 'tab_ki',
 			hideValue: true,
 			hideNote: true,
-			position: { col: 9, row: 12, width: 4, height: 1 },
+			position: { col: 9, row: 14, width: 4, height: 1 },
 		} as ComponentConfig,
 		body: null,
 	},
