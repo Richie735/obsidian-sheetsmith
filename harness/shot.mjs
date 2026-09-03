@@ -164,9 +164,16 @@ const DEFAULTS = [
 		// a browser on the harness page: `document.scrollingElement.scrollHeight`
 		// at the width this view uses. A test cannot hold it — that needs a real
 		// browser, and this file opens with the reason it does not drive one.
+		//
+		// **Stale a third time, found by measuring rather than by a feature
+		// touching it.** At 8240 this was already cropping the sheet three
+		// sections early — Rituals, and everything after it, were never in any
+		// shot taken from this frame. Nobody had re-measured it since some
+		// earlier growth; raised to 8700 to comfortably clear the sheet as it
+		// stands today.
 		name: 'sheet-narrow',
 		query: 'surface=sheet&theme=dark&width=380',
-		size: '520,8240',
+		size: '520,8700',
 	},
 	{
 		/*
@@ -481,9 +488,12 @@ const DEFAULTS = [
 		 * holds the sub-500px floor; 520 is the narrowest a shot can honestly show,
 		 * and it is still narrower than the panel's own 30em.
 		 */
+		// Kept equal to `sheet-narrow`'s own frame, which was stale for the same
+		// reason (see its comment above): the panel is anchored off
+		// `document.body` and adds nothing to the document's own height.
 		name: 'sheet-modifier-form-narrow',
 		query: `surface=sheet&theme=dark&width=380&bar=off&${OPEN_MIXED_FORM}`,
-		size: '520,8240',
+		size: '520,8700',
 	},
 	{
 		/*
