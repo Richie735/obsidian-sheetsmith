@@ -9,7 +9,31 @@
  * Adding a component means adding it here too, or the harness will not show it.
  */
 
+import { paletteEntries } from '../src/components';
 import type { ComponentConfig } from '../src/types';
+
+/**
+ * One palette entry's prefill, taken from the registry rather than retyped.
+ *
+ * A sample of an entry has to be the entry. `docs/PATTERNS.md` §1's policy tier
+ * is the argument: a prefill is a *set* of keys, so the only thing a guard could
+ * assert about a second copy is that it still agrees with the first — and the
+ * harness is the review surface, so the copy that drifts is the one somebody is
+ * looking at while deciding the entry is fine.
+ *
+ * It throws rather than falling back, on `effectiveSamples`' own reason further
+ * down: an entry renamed would otherwise spread nothing, and the sample would go
+ * on being photographed as a bare table of that type with nothing saying so.
+ */
+function entryConfig(type: string, name: string): Partial<ComponentConfig> {
+	const entry = paletteEntries(type).find((one) => one.name === name);
+	if (entry === undefined) {
+		throw new Error(
+			`No "${name}" entry on ${type}. It was renamed or removed; fix the name here, or this sample is a bare ${type}.`,
+		);
+	}
+	return entry.config;
+}
 
 export interface Sample {
 	config: ComponentConfig;
@@ -653,11 +677,14 @@ export const SAMPLES: Sample[] = [
 	 * because a flag on a card must not measure differently from the same flag
 	 * in a cell (`docs/UI.md` §9). Compare the two directly.
 	 *
-	 * **"Conditions" is a checklist**, which is what rows gain from the fold.
+	 * **"Afflictions" is a checklist**, which is what rows gain from the fold.
 	 * The rings line up into a column beside their names, and the rows are
 	 * spaced further apart than a set of runs would be — the ring's hit target
 	 * reaches past its own box, so press the top edge of the second ring and
-	 * check which one changes.
+	 * check which one changes. It was labelled "Conditions" until the Table entry
+	 * of that name arrived: two components sharing a label would be two
+	 * `## Conditions` sections in one note, and the entry is the one the word
+	 * belongs to.
 	 *
 	 * **"Bloodied" is a named flag whose ring carries a mark**, and it is `harm`
 	 * where the other two are progress. They are *expected* to look identical:
@@ -677,9 +704,9 @@ export const SAMPLES: Sample[] = [
 	},
 	{
 		config: {
-			id: 'conditions',
+			id: 'afflictions',
 			type: 'track',
-			label: 'Conditions',
+			label: 'Afflictions',
 			position: { col: 4, row: 15, width: 4, height: 1 },
 			count: 1,
 			rows: [
@@ -717,11 +744,13 @@ export const SAMPLES: Sample[] = [
 		} as ComponentConfig,
 		body: null,
 	},
-	/* The two palette prefills whose *rendering* nothing else here reaches, which
-	   is the whole reason they are in the sample rather than only in the vault.
-	   Inventory's is not among them: the `inventory` card above is already that
-	   entry's config with three extras on top, so a third open table would be a
-	   longer sheet showing nothing new. */
+	/* Two of the three palette prefills whose *rendering* nothing else here
+	   reaches, which is the whole reason they are in the sample rather than only
+	   in the vault. The third is Conditions, further down beside the modifier
+	   tables, because what it has to be read against is a glyph rather than a
+	   card. Inventory is the one entry with no sample of its own: the `inventory`
+	   card above is already that entry's config with three extras on top, so a
+	   fourth open table would be a longer sheet showing nothing new. */
 	{
 		config: {
 			id: 'currency',
@@ -1108,6 +1137,76 @@ export const SAMPLES: Sample[] = [
 		// at ten of twelve columns, and this row's two frames are three rows tall
 		// already, so nothing on the sheet moves to make room for it.
 		body: '\n![[Sildar Hallwinter.png]]\n',
+	},
+	/*
+	 * The **Conditions** palette entry, rendered (SPEC §4.2), and the third of the
+	 * three prefills here for that reason — the other two are Currency and
+	 * Features, below the flag row: the *rendering* of an entry is a thing a
+	 * reviewer has to be able to look at, and this one nothing else on the sheet
+	 * reaches.
+	 *
+	 * **Its config is the entry's own**, spread rather than retyped, so a key
+	 * renamed on the entry renames it here. The *body* below cannot be: a note is
+	 * markdown text and has to spell its own column headings, so that half is a
+	 * copy and would need editing by hand — which is the ordinary state of every
+	 * body in this file rather than something this sample introduces.
+	 *
+	 * What only this component shows is a modifier conditioned on a flag in its
+	 * **own row**, both ways at once. The two effects are spelled identically, so
+	 * the only difference between the rows is the `Active` cell: the first draws
+	 * `zap` and the second `zap-off`, one above the other, which is the whole of
+	 * why the entry pairs a toggle with a modifier column. Compare them with the
+	 * `Cloak of Elvenkind` row in Magic items below, whose condition reads a flag
+	 * in the same way — the mechanism is one mechanism, and this is what it looks
+	 * like when the flag is what the list is *about*.
+	 *
+	 * **Typed on the row rather than named, and untyped rather than typed.** A
+	 * named definition would have to be declared in `stub-app.ts`, whose ten
+	 * definitions are each one state worth looking at; and every bonus type at
+	 * `armour_class` there is already carrying a suppression the comments below
+	 * describe. An untyped bonus contests with nothing, so this adds a line to the
+	 * armour class breakdown and changes not one of them.
+	 *
+	 * Both are +2 to armour class in the system the rest of this sheet is written
+	 * in, so the pair is a real one rather than two rows made equal to make a
+	 * point; and neither name is one Magic items below already uses, so a
+	 * breakdown line naming the component is naming two different rows.
+	 *
+	 * The third row is the ordinary case — a condition with nothing hanging off it
+	 * — and it holds `x`, a hand-written spelling of yes that the sheet reads as
+	 * set and never rewrites.
+	 *
+	 * **No trigger is bound to `Active`**, deliberately: the entry prefills no
+	 * binding, and the author makes one after placing it. The **Acts on** row and
+	 * a column reset actually running are already drawn by the Spell list tab
+	 * above.
+	 */
+	{
+		config: {
+			id: 'conditions',
+			type: 'table',
+			label: 'Conditions',
+			// Beside the pictures and directly above the two modifier tables, so the
+			// glyphs can be read against theirs without scrolling. It takes the four
+			// columns that row leaves free, so nothing already on the sheet moves.
+			position: { col: 9, row: 28, width: 4, height: 3 },
+			...entryConfig('table', 'Conditions'),
+			// The one sample here with no `as ComponentConfig`, and the absence is
+			// the point rather than an oversight: every other config writes keys
+			// `ComponentConfig` does not declare — `entries`, `columns`, `derived`
+			// — so the cast is what gets them past the excess-property check. This
+			// one's arrive through a typed spread, so the literal already *is* a
+			// `ComponentConfig` and the cast lints as unnecessary. Putting it back
+			// means loosening `entryConfig`'s return type, which is the checking
+			// the spread was added for.
+		},
+		body: [
+			'| Condition | Active | Modifiers |',
+			'| --- | --- | --- |',
+			'| Shield of Faith | yes | armour_class += 2 when Active |',
+			'| Haste | no | armour_class += 2 when Active |',
+			'| Poisoned | x |  |',
+		].join('\n'),
 	},
 	/*
 	 * Modifier definitions (SPEC §5): one row enrolling in as many changes as it
