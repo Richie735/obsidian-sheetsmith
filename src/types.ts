@@ -85,6 +85,30 @@ export interface ResetBinding {
 	/** Name of the layout-defined trigger this component responds to. */
 	trigger: string;
 	/**
+	 * Which part of the component the trigger acts on, for a component whose
+	 * parts have names: a Table column, and nothing else today.
+	 *
+	 * `buffer` below is the precedent — a key on the shared binding that only a
+	 * component declaring the matching contract member means anything by, gated
+	 * in the editor on that declaration. The difference is that a buffer is one
+	 * unnamed thing and a column is one of several that have names, which is why
+	 * this carries a string where that carries a literal.
+	 *
+	 * **It is half of the binding's identity**, which is the part that is not
+	 * obvious from its position here: two bindings on one trigger naming
+	 * different columns are legal and necessary — a long rest that clears
+	 * Conditions and refills Uses on one table — and two naming the same column,
+	 * or two on a component that names none, are the duplicate `parseReset`
+	 * refuses.
+	 *
+	 * The parser never asks whether the string names a column of anything, which
+	 * is the same split §6 already draws for the trigger name: whether `reset` is
+	 * a binding at all is the file format's business, and whether what it names
+	 * exists is contents, reported in the editor while every sheet goes on
+	 * rendering.
+	 */
+	column?: string;
+	/**
 	 * What resetting means for the component's own value. The states are named
 	 * rather than numbered because the same three cover a Toggle, where full
 	 * and empty are true and false, as readily as a Pool, where they are its
