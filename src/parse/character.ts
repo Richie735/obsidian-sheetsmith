@@ -249,7 +249,25 @@ export function applySectionWrites(
 	for (const { label, write } of writes) {
 		try {
 			const section = getSection(note, label);
-			note = setSectionBody(note, label, write(section ? section.body : null));
+			const body = write(section ? section.body : null);
+			/*
+			 * **A section is created by content, never by an empty write.**
+			 *
+			 * `setSectionBody` appends a heading for a label the note does not
+			 * hold, which is right for a value being stored for the first time
+			 * and wrong for a write that produced nothing: the note gains a
+			 * `## Conditions` with nothing under it, the view sees the text
+			 * change and saves, a rest that touched no cell offers an undo, and
+			 * the heading is sticky under §10 the moment the layout renames the
+			 * component. A component reaching this is one the sheet asked to
+			 * write with nothing to say — a reset that found no row to act on —
+			 * and the honest answer to that is the note it was handed.
+			 *
+			 * Only the missing case is skipped. A section that exists and is
+			 * emptied is a value the reader cleared, which has to be written.
+			 */
+			if (section === undefined && body === '') continue;
+			note = setSectionBody(note, label, body);
 		} catch (error) {
 			failed.push({
 				label,
