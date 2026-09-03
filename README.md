@@ -2,7 +2,7 @@
 
 Design and use character sheets for any tabletop RPG in [Obsidian](https://obsidian.md). Build your own layout from drag-and-drop components, define your own formulas, and keep every character as a plain markdown note.
 
-> **Status: early development.** No release yet. The file model, sheet view, formula engine and five components are in place. The grid canvas editor and the rest of the component catalog are not. See the roadmap below.
+> **Status: early development.** No release yet. The file model, the sheet view and ten components are in place: Card, Card set, Pool, Track, Table, Group, Tab set, Rich text, Image and Record set. So are the formula engine, a per-layout function library, row aggregates, typed modifiers with definitions and provenance, reset triggers, and the layout editor pane with its tree, configuration panel, undo, live grid canvas and sample-value preview. See the roadmap below.
 
 ## What it is
 
@@ -78,10 +78,8 @@ One formula serves the whole skill list. `Training` is a graded column holding u
 | **M1 Render** | Read a hand-written layout and character note, render a read-only sheet | Done |
 | **M2 Edit** | Edit values in sheet view, write back to the body, round-trip safely | Done |
 | **M3 Formulas** | Expression evaluation, layout function library, computed values | Done |
-| **M4 Editor** | Grid canvas, component palette, configuration panel | Interim form editor in settings; grid canvas outstanding |
-| **M5 Finish** | Reset triggers, promoted fields, layout export and import, mobile reflow | Reset triggers done; the rest outstanding |
-
-Five of the eleven components ship: Card, Card set, Pool, Track, and Table. The remaining six are variations on what those solve.
+| **M4 Editor** | Grid canvas, component palette, configuration panel | Shipped, except dragging a new component from a palette onto the canvas; creation goes through the **Add component** row |
+| **M5 Finish** | Reset triggers, promoted fields, layout export and import, mobile reflow, error states | Reset triggers done; promoted fields, layout export and import, error states and mobile reflow outstanding, mobile last |
 
 The file model was proven first with hand-written files, because it is the hardest thing to change once characters exist. The layout editor is the largest interface investment and comes only once the thing it edits is known to work.
 
