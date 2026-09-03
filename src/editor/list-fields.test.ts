@@ -1256,6 +1256,48 @@ describe('entries editor', () => {
 			{ key: 'New entry 2' },
 		]);
 	});
+
+	/*
+	 * A stored value is validated as it renders, not only from `change` —
+	 * `docs/features/field-render-validation.md`. Every case below reads a
+	 * value the record already holds; none of them dispatches a `change`.
+	 */
+	it('marks a blank primary field on first paint, with no change fired', () => {
+		const record = { entries: [{ key: '' }, { key: 'DEX' }] };
+		const el = entriesEditor(record);
+		expect(fieldError(cell(el, 'Key').parentElement as HTMLElement)).toBe(
+			'A key is required.',
+		);
+		expect(recorded.persists).toBe(0);
+		expect(recorded.redraws).toBe(0);
+	});
+
+	it('marks two entries sharing a primary value, both', () => {
+		const record = { entries: [{ key: 'STR' }, { key: 'STR' }] };
+		const el = entriesEditor(record);
+		expect(
+			fieldError(cell(el, 'Key', 0).parentElement as HTMLElement),
+		).toBe('"STR" is already used by another entry.');
+		expect(
+			fieldError(cell(el, 'Key', 1).parentElement as HTMLElement),
+		).toBe('"STR" is already used by another entry.');
+	});
+
+	it('validates every broken entry at once, without persisting or redrawing', () => {
+		const record = { entries: [{ key: '' }, { key: 'STR' }, { key: 'STR' }] };
+		entriesEditor(record);
+		expect(recorded.persists).toBe(0);
+		expect(recorded.redraws).toBe(0);
+	});
+
+	it('clears a refusal once the reverted value renders clean on a later redraw', () => {
+		const record = abilities();
+		const el = entriesEditor(record);
+		commit(cell(el, 'Key', 1), 'STR');
+		expect(context.errors.size).toBe(1);
+		entriesEditor(record);
+		expect(context.errors.size).toBe(0);
+	});
 });
 
 /*
