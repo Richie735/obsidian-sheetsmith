@@ -381,3 +381,277 @@ describe('what the field says about a broken layout', () => {
 		expect(shown.join(' ')).not.toContain('Equinox');
 	});
 });
+
+/*
+ * A binding that names a column (SPEC §6), which is the half of the form the
+ * component conditions.
+ *
+ * Table is the one registered component declaring `resetColumns`, so it is what
+ * the picker is reachable through; Pool and Track stand in for the other side of
+ * the branch, where the row must not appear at all.
+ */
+describe('the column a binding acts on', () => {
+	/** A Conditions list: two columns a trigger can act on and two it cannot. */
+	function table(reset?: ComponentConfig['reset']): ComponentConfig {
+		return {
+			id: 'conditions',
+			type: 'table',
+			label: 'Conditions',
+			position: { col: 1, row: 1, width: 4, height: 2 },
+			rowHeader: 'Condition',
+			columns: [
+				{ key: 'Active', type: 'toggle' },
+				{ key: 'Uses', type: 'number', max: 3 },
+				{ key: 'Qty', type: 'number' },
+				{ key: 'Notes' },
+			],
+			...(reset ? { reset } : {}),
+		} as ComponentConfig;
+	}
+
+	/** The same list with nothing on it a trigger has a reading for. */
+	function wordsOnly(reset?: ComponentConfig['reset']): ComponentConfig {
+		return {
+			...table(reset),
+			columns: [{ key: 'Notes' }],
+		} as ComponentConfig;
+	}
+
+	const picker = (form: HTMLElement) =>
+		control<HTMLSelectElement>(form, 'reset-column-conditions-0');
+
+	const errors = (form: HTMLElement) =>
+		Array.from(form.querySelectorAll('.sheetsmith-error')).map(
+			(el) => el.textContent ?? '',
+		);
+
+	it('is drawn only where the component says a reset may name a part of it', () => {
+		const binding: ResetBinding[] = [{ trigger: 'Long rest', action: 'full' }];
+		expect(
+			has(
+				render(table([{ trigger: 'Long rest', column: 'Active', action: 'full' }])),
+				'reset-column-conditions-0',
+			),
+		).toBe(true);
+		expect(has(render(pool(binding)), 'reset-column-hit_points-0')).toBe(false);
+		expect(has(render(track(binding)), 'reset-column-clock-0')).toBe(false);
+		// Record set is the third component implementing `applyReset` and the
+		// one this rule is least obvious for: it has fields, and it still binds
+		// as a whole because it declares no `resetColumns`.
+		const records: ComponentConfig = {
+			...pool(binding),
+			id: 'features',
+			type: 'record-set',
+			label: 'Features',
+		};
+		expect(has(render(records), 'reset-column-features-0')).toBe(false);
+	});
+
+	it('offers the columns the component offers, by their own labels', () => {
+		// Never by filtering `config.columns` here: which columns are eligible,
+		// and what each is called, are the component's answers.
+		const form = render(
+			table([{ trigger: 'Long rest', column: 'Active', action: 'empty' }]),
+		);
+		expect(Array.from(picker(form).options).map((o) => o.textContent)).toEqual([
+			'Active',
+			'Uses',
+			'Qty',
+		]);
+		expect(picker(form).value).toBe('Active');
+	});
+
+	it('names each picker for the trigger it belongs to', () => {
+		// Obsidian's `Setting` name is a sibling div with nothing wiring it to
+		// the control, so a select in one announces its value and no more. With
+		// **Acts on** repeating per binding, two pickers would read out two
+		// column names with nothing saying which trigger either was for.
+		const form = render(
+			table([
+				{ trigger: 'Long rest', column: 'Active', action: 'empty' },
+				{ trigger: 'Short rest', column: 'Uses', action: 'full' },
+			]),
+		);
+		expect(picker(form).getAttribute('aria-label')).toBe('Long rest acts on');
+		expect(
+			control<HTMLSelectElement>(form, 'reset-column-conditions-1').getAttribute(
+				'aria-label',
+			),
+		).toBe('Short rest acts on');
+	});
+
+	it('shows a sentinel for a binding that names none, and says what it costs', () => {
+		// A hand-written file, and the failure the option exists to prevent:
+		// opening the form must not write the first column into the layout.
+		const config = table([{ trigger: 'Long rest', action: 'empty' }]);
+		const form = render(config);
+		expect(picker(form).value).toBe('::nothing::');
+		expect(Array.from(picker(form).options).map((o) => o.textContent)).toContain(
+			'Nothing yet',
+		);
+		// On the picker, not in a box floating between two rows: the same
+		// treatment every other inline validation in the pane uses.
+		expect(fieldError(form)).toBe(
+			'Choose what this trigger acts on, or it resets nothing.',
+		);
+		expect(picker(form).classList.contains('sheetsmith-input-invalid')).toBe(true);
+		expect(config.reset?.[0]).not.toHaveProperty('column');
+		expect(recorded.persists).toBe(0);
+	});
+
+	it('keeps a column that is gone selectable, and names it', () => {
+		const config = table([
+			{ trigger: 'Long rest', column: 'Fatigue', action: 'empty' },
+		]);
+		const form = render(config);
+		expect(picker(form).value).toBe('Fatigue');
+		expect(Array.from(picker(form).options).map((o) => o.textContent)).toContain(
+			'Fatigue (missing)',
+		);
+		// True at the editor's own level of knowledge: `resetColumns` lists the
+		// columns a trigger may act on and withholds the rest, so the pane
+		// cannot tell a column that is gone from one it is not offered — which
+		// is the contract working, not a gap.
+		expect(fieldError(form)).toBe(
+			'This component does not offer "Fatigue" for a trigger to act on. Choose one of the columns it does, or this trigger resets nothing.',
+		);
+		expect(config.reset?.[0]?.column).toBe('Fatigue');
+		expect(recorded.persists).toBe(0);
+	});
+
+	it('reports the component\'s own reason where the action is refused', () => {
+		// Composed by the component, not here: the editor could not have said
+		// that a number column's ceiling is spelled `max`.
+		const form = render(
+			table([{ trigger: 'Long rest', column: 'Qty', action: 'full' }]),
+		);
+		// Pinned to the character, not merely to the words: the string is
+		// framed as a `ResetResult` error — it continues "Conditions — " on the
+		// sheet — and this reader is the one that has no prefix to open it.
+		expect(fieldError(form)).toBe(
+			'The column "Qty" has no maximum to restore to. Give it one, or set this trigger to empty.',
+		);
+		// And the same column with a different action draws no line at all, and
+		// leaves the control unmarked.
+		const fine = render(table([{ trigger: 'Long rest', column: 'Qty', action: 'empty' }]));
+		expect(fieldError(fine)).toBe(null);
+		expect(picker(fine).classList.contains('sheetsmith-input-invalid')).toBe(false);
+	});
+
+	it('writes an accepted column', () => {
+		const reset: ResetBinding[] = [
+			{ trigger: 'Long rest', column: 'Active', action: 'empty' },
+		];
+		const form = render(table(reset));
+		choose(picker(form), 'Uses');
+		expect(reset[0]?.column).toBe('Uses');
+		expect(recorded.persists).toBe(1);
+	});
+
+	it('refuses a column another binding already holds for that trigger, and snaps back', () => {
+		const reset: ResetBinding[] = [
+			{ trigger: 'Long rest', column: 'Active', action: 'empty' },
+			{ trigger: 'Long rest', column: 'Uses', action: 'full' },
+		];
+		const form = render(table(reset));
+		choose(control<HTMLSelectElement>(form, 'reset-column-conditions-1'), 'Active');
+		expect(fieldError(form)).toBe(
+			'This component already resets that column on that trigger.',
+		);
+		expect(control<HTMLSelectElement>(form, 'reset-column-conditions-1').value).toBe(
+			'Uses',
+		);
+		expect(reset[1]?.column).toBe('Uses');
+		expect(recorded.persists).toBe(0);
+	});
+
+	it('lets one trigger reach two columns', () => {
+		// The pair is what the parser refuses, so rebinding the second binding's
+		// trigger onto the first's is accepted while their columns differ.
+		const reset: ResetBinding[] = [
+			{ trigger: 'Long rest', column: 'Active', action: 'empty' },
+			{ trigger: 'Short rest', column: 'Uses', action: 'full' },
+		];
+		const form = render(table(reset));
+		choose(control<HTMLSelectElement>(form, 'reset-trigger-conditions-1'), 'Long rest');
+		expect(reset[1]?.trigger).toBe('Long rest');
+		expect(recorded.persists).toBe(1);
+	});
+
+	it('offers a trigger again while a column is still unbound for it', () => {
+		// The old rule dropped a trigger the component answered to at all, which
+		// would put the second column out of reach.
+		const config = table([
+			{ trigger: 'Long rest', column: 'Active', action: 'empty' },
+		]);
+		const form = render(config);
+		expect(button(form, 'Add reset').hasAttribute('disabled')).toBe(false);
+		button(form, 'Add reset').click();
+		expect(config.reset).toEqual([
+			{ trigger: 'Long rest', column: 'Active', action: 'empty' },
+			// The first trigger still free, and the first column still free on
+			// it — a starting point that cannot be the pair the parser refuses.
+			{ trigger: 'Long rest', column: 'Uses', action: 'full' },
+		]);
+	});
+
+	it('says so once every column is bound on every trigger', () => {
+		const bound = ['Long rest', 'Short rest'].flatMap((trigger) =>
+			['Active', 'Uses', 'Qty'].map((column) => ({
+				trigger,
+				column,
+				action: 'empty' as const,
+			})),
+		);
+		const form = render(table(bound));
+		expect(button(form, 'Add reset').hasAttribute('disabled')).toBe(true);
+		expect(button(form, 'Add reset').getAttribute('aria-label')).toBe(
+			'This component already resets every column on every trigger.',
+		);
+	});
+
+	it('draws no row and disables adding where the component offers nothing', () => {
+		// Declared the member and answered with nothing: there is nothing for a
+		// trigger to act on yet, which is a state to report rather than a form.
+		const form = render(wordsOnly());
+		expect(has(form, 'reset-column-conditions-0')).toBe(false);
+		expect(button(form, 'Add reset').hasAttribute('disabled')).toBe(true);
+		expect(button(form, 'Add reset').getAttribute('aria-label')).toBe(
+			'There is nothing on this component for a trigger to act on.',
+		);
+	});
+
+	it('reports a binding left on a component that now offers nothing', () => {
+		/*
+		 * The state the picker's own guard used to swallow. A Table whose
+		 * columns were all retyped to text still holds the binding, and that
+		 * binding fails at the press — so the pane saying nothing about it is
+		 * the half of the message the spec calls "earlier and better-placed"
+		 * going missing. There is no picker to draw, so the line names the fix
+		 * that is available: the component, not the binding.
+		 */
+		const config = wordsOnly([
+			{ trigger: 'Long rest', column: 'Active', action: 'empty' },
+		]);
+		const form = render(config);
+		expect(has(form, 'reset-column-conditions-0')).toBe(false);
+		expect(errors(form)).toEqual([
+			'There is nothing on this component for this trigger to act on, so it resets nothing. Add a column it can act on, or remove this binding.',
+		]);
+		// And nothing was written: opening the form is not an edit.
+		expect(config.reset?.[0]?.column).toBe('Active');
+		expect(recorded.persists).toBe(0);
+	});
+
+	it('leaves a component with no columns binding as a whole', () => {
+		// Pool's own form, unchanged: no picker, and the trigger dropdown's own
+		// refusal in its own words.
+		const reset: ResetBinding[] = [
+			{ trigger: 'Long rest', action: 'full' },
+			{ trigger: 'Short rest', action: 'empty' },
+		];
+		const form = render(pool(reset));
+		choose(control<HTMLSelectElement>(form, 'reset-trigger-hit_points-1'), 'Long rest');
+		expect(fieldError(form)).toBe('This component already resets on that trigger.');
+	});
+});
