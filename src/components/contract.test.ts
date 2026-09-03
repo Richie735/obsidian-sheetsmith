@@ -101,6 +101,10 @@ const MEMBER_ORDER = [
 	'scopeModifiers',
 	'write',
 	'hasBuffer',
+	// Beside `hasBuffer` for the same reason it sits here: both are declarations
+	// the layout editor reads to decide what a reset binding may say, and they
+	// come before the behaviour they condition.
+	'resetColumns',
 	'applyReset',
 	'render',
 ];
@@ -915,6 +919,7 @@ describe.each(types)('component "%s"', (type) => {
 		expect(typeof component.sample).toBe('undefined');
 		expect(typeof component.scopeModifiers).toBe('undefined');
 		expect(typeof component.applyReset).toBe('undefined');
+		expect(typeof component.resetColumns).toBe('undefined');
 		expect(component.hasBuffer).toBeUndefined();
 		// Containment is not addressing, so there is no name to compute either.
 		expect(component.formulaFields).toEqual([]);
@@ -982,6 +987,21 @@ describe.each(types)('component "%s"', (type) => {
 
 	it('applies resets as a function, or not at all', () => {
 		expect(['function', 'undefined']).toContain(typeof component?.applyReset);
+	});
+
+	it('names the parts a reset may bind to as a function, or not at all', () => {
+		expect(['function', 'undefined']).toContain(typeof component?.resetColumns);
+	});
+
+	it('applies a reset wherever it says one can name a part of it', () => {
+		// The half of the pair that cannot be inferred: the editor draws the
+		// picker from `resetColumns` and the trigger writes through
+		// `applyReset`, so a component declaring only the first offers an author
+		// a column to bind and then passes over the binding when the button is
+		// pressed — a dead control with nothing to say so, which is exactly what
+		// the `reset.*.to` rule below exists to prevent one step over.
+		if (component?.resetColumns === undefined) return;
+		expect(typeof component.applyReset).toBe('function');
 	});
 
 	it('declares reset.to as a formula field when it resets', () => {
