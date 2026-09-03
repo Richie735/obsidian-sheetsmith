@@ -513,6 +513,8 @@ The layout schema is not designed separately. It is the union of the shared cont
 
 A layout is therefore metadata, a function library, a trigger list, a promoted field list, a bonus-type list, a modifier list, and an ordered list of component configurations. Every time a component is added to the catalog, the schema grows by exactly that component's config block and nothing else.
 
+**A spellbook is an arrangement of existing components, not a schema addition.** A Record set holding the Spellbook palette entry (§4.2), placed beside a Track row set whose rows are the character's slots per level, each publishing `<row>.left` (§5) for how many of that level are unspent — and, reading one of those, an ordinary card elsewhere on the sheet with a `derived` naming the row directly, `slots.L1.left`, exactly as it would name any other published value. Nothing about the pattern is a config key: it is three already-registered components placed together, which is what §13's "the catalog does not grow" already settled for this case. `harness/samples.ts`'s `spellbook` group is the pattern filled in.
+
 ## 5. Formulas
 
 - **Any numeric field configured in a layout accepts a literal or a formula.** A Pool's max, a Track's box count, an ability's derived display, a Table's computed column. There is no separate "computed field" concept to learn.
