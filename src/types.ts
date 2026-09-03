@@ -141,6 +141,39 @@ export interface ResetBinding {
 	buffer?: 'clear';
 }
 
+/**
+ * One part of this component a reset binding may name (SPEC §6).
+ *
+ * What `resetColumns` answers with, so the layout editor can offer a picker
+ * without learning that a Table has columns — `hasBuffer`'s own argument with
+ * the answer having names instead of being a boolean, and the member
+ * `buffer: 'clear'` would have needed if a component could have had two
+ * buffers.
+ */
+export interface ResetColumn {
+	/** What `ResetBinding.column` names. */
+	key: string;
+	/** What the editor shows, where it differs from the key. */
+	label?: string;
+	/**
+	 * Actions this column cannot take, by action, each with the reason.
+	 *
+	 * A map rather than a flag because the failure is per action: a number
+	 * column with no ceiling refuses `full` and takes `empty` and `formula`
+	 * happily. The strings are the component's, so the editor reports a reason
+	 * it did not compose and could not have — and `applyReset` reports the same
+	 * one, because both read this list.
+	 *
+	 * **Framed as a `ResetResult` error and not as a standalone line**, which is
+	 * the contract a shared string owes its two readers: it continues
+	 * `<component label> — `, so it opens lower case and ends in a full stop,
+	 * exactly as every other component's reset failure does. The editor draws it
+	 * with no prefix and is the reader that adapts, because it is the one with
+	 * somewhere to put the difference.
+	 */
+	refuses?: Partial<Record<NonNullable<ResetBinding['action']>, string>>;
+}
+
 /** Properties every component carries, whatever its type (SPEC §4.1). */
 export interface ComponentConfig {
 	/** Stable identity that survives label renames. What formulas reference. */
@@ -1625,6 +1658,26 @@ export interface ComponentDefinition<
 		data: TData | null,
 		config: TConfig,
 	): ModifierSource | undefined;
+	/**
+	 * Which parts of this component a reset binding may name, for a component
+	 * whose parts have names (SPEC §6).
+	 *
+	 * Optional under §4.1's rule, and it passes squarely: the alternative is
+	 * `src/editor/` reading `config.columns`, filtering on
+	 * `type === 'toggle' || type === 'number'`, and knowing that a number
+	 * column's ceiling is spelled `max` — Table's data shape, verbatim, in the
+	 * editor.
+	 *
+	 * **One list, two readers.** `applyReset` looks the binding up in the same
+	 * list the editor drew its picker from, so the two cannot disagree about
+	 * which columns are eligible or about why one refuses an action.
+	 *
+	 * Absent is the common case — a component that is one value, where a binding
+	 * names nothing and acts on the whole of it. Declaring it obliges
+	 * `applyReset`, which `contract.test.ts` holds, and a container may declare
+	 * neither.
+	 */
+	resetColumns?(config: TConfig): readonly ResetColumn[];
 	/**
 	 * Apply a reset trigger to this component's data (SPEC §6).
 	 *
