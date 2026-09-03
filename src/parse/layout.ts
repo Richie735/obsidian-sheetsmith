@@ -180,6 +180,17 @@ function parseBinding(value: unknown, where: string): ResetBinding {
 		throw new LayoutParseError(`${where} must be an object.`);
 	}
 	const trigger = requireString(value, 'trigger', where);
+	// Which part of the component the trigger acts on, where the component has
+	// named parts. A blank one refuses rather than reading as absent: absence is
+	// the binding that deliberately names none, and a blank string would collide
+	// with it in the duplicate check below while looking like a typo in the file.
+	const column = value.column;
+	if (column !== undefined && typeof column !== 'string') {
+		throw new LayoutParseError(`${where} "column" must be a string.`);
+	}
+	if (column !== undefined && column.trim() === '') {
+		throw new LayoutParseError(`${where} "column" cannot be blank.`);
+	}
 	const action = value.action;
 	if (
 		action !== undefined &&
@@ -216,10 +227,32 @@ function parseBinding(value: unknown, where: string): ResetBinding {
 	// expression away.
 	return {
 		trigger,
+		...(column !== undefined ? { column } : {}),
 		...(action !== undefined ? { action } : {}),
 		...(to !== undefined ? { to } : {}),
 		...(buffer !== undefined ? { buffer } : {}),
 	};
+}
+
+/**
+ * What identifies one reset binding: the trigger and the column together.
+ *
+ * Exported for the layout editor, on `mayHoldChildren`'s own reason one file
+ * over — the rule lives here, and the alternative is the editor carrying its own
+ * copy of the comparison and getting it the wrong way round once. The failure
+ * that would follow is the one this guard exists for: an editor that happily
+ * writes a layout the plugin then refuses to load. PATTERNS §1 puts a predicate
+ * on the one-step tier for exactly this, since the only thing a guard test over
+ * two copies could assert is that they still agree.
+ *
+ * Keyed through `JSON.stringify` rather than by joining the two strings, because
+ * a column may hold whatever a table's header holds and any separator that is
+ * legal in a heading is one two different pairs could spell the same way.
+ */
+export function bindingKey(
+	binding: Pick<ResetBinding, 'trigger' | 'column'>,
+): string {
+	return JSON.stringify([binding.trigger, binding.column ?? null]);
 }
 
 function parseReset(value: unknown, where: string): ResetBinding[] | undefined {
@@ -233,17 +266,30 @@ function parseReset(value: unknown, where: string): ResetBinding[] | undefined {
 				: `${where} reset ${index + 1}`,
 		),
 	);
-	// Two bindings on one component for one trigger is an authoring mistake
-	// with no sensible reading: the button would apply both, in file order,
-	// and the second would silently win.
+	/*
+	 * **The duplicate is the trigger-and-column pair, not the trigger.**
+	 *
+	 * Two bindings on one trigger naming *different* columns is legal and
+	 * necessary: a long rest that clears Conditions and refills Uses on one
+	 * table is one trigger reaching two columns. Two naming the *same* column,
+	 * or two on a component that names none, keep the refusal for the reason
+	 * they always had — the button would apply both in file order and the
+	 * second would win unannounced.
+	 *
+	 * What counts as the same pair is `bindingKey`, which the layout editor
+	 * refuses on too.
+	 */
 	const seen = new Set<string>();
 	for (const binding of bindings) {
-		if (seen.has(binding.trigger)) {
+		const key = bindingKey(binding);
+		if (seen.has(key)) {
 			throw new LayoutParseError(
-				`${where} binds to "${binding.trigger}" more than once.`,
+				binding.column === undefined
+					? `${where} binds to "${binding.trigger}" more than once.`
+					: `${where} binds "${binding.column}" to "${binding.trigger}" more than once.`,
 			);
 		}
-		seen.add(binding.trigger);
+		seen.add(key);
 	}
 	return bindings.length > 0 ? bindings : undefined;
 }

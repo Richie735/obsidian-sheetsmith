@@ -243,6 +243,96 @@ describe('parseLayout: reset bindings', () => {
 		).toThrow(LayoutParseError);
 	});
 
+	it('carries the column a binding names, and refuses one that is not a string', () => {
+		// Whether `reset` is a binding at all is the file format's business;
+		// whether "Active" names a column of anything is contents, reported in
+		// the editor while every sheet goes on rendering.
+		expect(
+			resetOf({ trigger: 'Long rest', column: 'Active', action: 'empty' }),
+		).toEqual([{ trigger: 'Long rest', column: 'Active', action: 'empty' }]);
+		expect(() =>
+			parseLayout(withReset({ trigger: 'Long rest', column: 3, action: 'empty' })),
+		).toThrow(LayoutParseError);
+	});
+
+	it('refuses a blank column', () => {
+		// A blank column names nothing, and reading it as absence would collide
+		// with the binding that deliberately names none — in the duplicate check
+		// below, where the two would then be one key.
+		expect(() =>
+			parseLayout(withReset({ trigger: 'Long rest', column: '   ', action: 'empty' })),
+		).toThrow(LayoutParseError);
+	});
+
+	it('accepts one trigger reaching two columns', () => {
+		// The pair is what identifies a binding: a long rest that clears
+		// Conditions and refills Uses on one table is one trigger and two
+		// columns, which is the case the old rule could not express.
+		expect(
+			resetOf([
+				{ trigger: 'Long rest', column: 'Active', action: 'empty' },
+				{ trigger: 'Long rest', column: 'Uses', action: 'full' },
+			]),
+		).toEqual([
+			{ trigger: 'Long rest', column: 'Active', action: 'empty' },
+			{ trigger: 'Long rest', column: 'Uses', action: 'full' },
+		]);
+	});
+
+	it('refuses two bindings on one trigger-and-column pair', () => {
+		expect(() =>
+			parseLayout(
+				withReset([
+					{ trigger: 'Long rest', column: 'Active', action: 'empty' },
+					{ trigger: 'Long rest', column: 'Active', action: 'full' },
+				]),
+			),
+		).toThrow(LayoutParseError);
+	});
+
+	it('names the column in that refusal, and does not where there is none', () => {
+		// The two refusals are about different things and the author has to be
+		// able to tell which: one component bound twice, against one column
+		// bound twice.
+		expect(() =>
+			parseLayout(
+				withReset([
+					{ trigger: 'Long rest', column: 'Active', action: 'empty' },
+					{ trigger: 'Long rest', column: 'Active', action: 'full' },
+				]),
+			),
+		).toThrow(/binds "Active" to "Long rest" more than once/);
+		expect(() =>
+			parseLayout(
+				withReset([
+					{ trigger: 'Long rest', action: 'empty' },
+					{ trigger: 'Long rest', action: 'full' },
+				]),
+			),
+		).toThrow(/binds to "Long rest" more than once/);
+	});
+
+	it('accepts a binding that names a column beside one that names none', () => {
+		// Not a duplicate: the pair differs, so both apply and the parser has
+		// nothing to say about which column either names.
+		expect(
+			resetOf([
+				{ trigger: 'Long rest', action: 'empty' },
+				{ trigger: 'Long rest', column: 'Active', action: 'empty' },
+			]),
+		).toHaveLength(2);
+	});
+
+	it('round-trips a column through serialiseLayout', () => {
+		const layout = parseLayout(
+			withReset([
+				{ trigger: 'Long rest', column: 'Active', action: 'empty' },
+				{ trigger: 'Long rest', column: 'Uses', action: 'full' },
+			]),
+		);
+		expect(parseLayout(serialiseLayout(layout))).toEqual(layout);
+	});
+
 	it('refuses a bad binding anywhere in the list', () => {
 		expect(() =>
 			parseLayout(
