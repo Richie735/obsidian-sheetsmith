@@ -1489,6 +1489,275 @@ export const SAMPLES: Sample[] = [
 		} as ComponentConfig,
 		body: null,
 	},
+	/*
+	 * The full six-up `docs/SPEC.md` §4.3 names beside the spellbook: an outer
+	 * Group of six inner Groups, each an inner Group holding one Card beside one
+	 * Table of declared rows — the exact shape "Proficiencies" above already
+	 * called itself "in miniature" of, and the worked example §2's own Group
+	 * entry gives: "six ability cards each beside their own skills table."
+	 *
+	 * Six abilities rather than two disciplines, so this is the arrangement at
+	 * the count the resolved bullet actually names, and "beside" rather than
+	 * "above" is the thing "Proficiencies" did not show — its own children
+	 * stack a card over a table, this pairs them left and right. Each inner
+	 * group's Card reads its ability's modifier from the `abilities` card set
+	 * two containers up — `abilities.STR` is already what that entry shows, so
+	 * nothing here stores a second copy of a score, the same move
+	 * `l1_slots_left` makes on a bare published name above. Each Table declares
+	 * the checks that ability actually governs in 5e, at whatever count is true
+	 * rather than padded to match: Strength and Constitution have one each, the
+	 * rest two — and none of the six repeats a skill the flat Skills table
+	 * above already names, so the two views never disagree about one cell.
+	 */
+	{
+		config: {
+			id: 'ability_checks',
+			type: 'group',
+			label: 'Ability checks',
+			position: { col: 1, row: 37, width: 12, height: 6 },
+			children: [
+				{
+					id: 'str_group',
+					type: 'group',
+					label: 'Strength',
+					position: { col: 1, row: 1, width: 6, height: 2 },
+					children: [
+						{
+							id: 'str_modifier',
+							type: 'card',
+							label: 'Strength modifier',
+							position: { col: 1, row: 1, width: 2, height: 2 },
+							derived: 'abilities.STR',
+							signed: true,
+							hideValue: true,
+							hideNote: true,
+						},
+						{
+							id: 'str_checks',
+							type: 'table',
+							label: 'Strength checks',
+							position: { col: 3, row: 1, width: 4, height: 2 },
+							rowHeader: 'Check',
+							columns: [
+								{
+									key: 'Training',
+									hideHeading: true,
+									type: 'level',
+									levels: ['Untrained', 'Proficient:P'],
+								},
+							],
+							rows: [{ label: 'Athletics' }],
+						},
+					],
+				},
+				{
+					id: 'dex_group',
+					type: 'group',
+					label: 'Dexterity',
+					position: { col: 7, row: 1, width: 6, height: 2 },
+					children: [
+						{
+							id: 'dex_modifier',
+							type: 'card',
+							label: 'Dexterity modifier',
+							position: { col: 1, row: 1, width: 2, height: 2 },
+							derived: 'abilities.DEX',
+							signed: true,
+							hideValue: true,
+							hideNote: true,
+						},
+						{
+							id: 'dex_checks',
+							type: 'table',
+							label: 'Dexterity checks',
+							position: { col: 3, row: 1, width: 4, height: 2 },
+							rowHeader: 'Check',
+							columns: [
+								{
+									key: 'Training',
+									hideHeading: true,
+									type: 'level',
+									levels: ['Untrained', 'Proficient:P'],
+								},
+							],
+							rows: [{ label: 'Stealth' }, { label: 'Sleight of Hand' }],
+						},
+					],
+				},
+				{
+					id: 'con_group',
+					type: 'group',
+					label: 'Constitution',
+					position: { col: 1, row: 3, width: 6, height: 2 },
+					children: [
+						{
+							id: 'con_modifier',
+							type: 'card',
+							label: 'Constitution modifier',
+							position: { col: 1, row: 1, width: 2, height: 2 },
+							derived: 'abilities.CON',
+							signed: true,
+							hideValue: true,
+							hideNote: true,
+						},
+						{
+							id: 'con_checks',
+							type: 'table',
+							label: 'Constitution checks',
+							position: { col: 3, row: 1, width: 4, height: 2 },
+							rowHeader: 'Check',
+							columns: [
+								{
+									key: 'Training',
+									hideHeading: true,
+									type: 'level',
+									levels: ['Untrained', 'Proficient:P'],
+								},
+							],
+							rows: [{ label: 'Concentration' }],
+						},
+					],
+				},
+				{
+					id: 'int_group',
+					type: 'group',
+					label: 'Intelligence',
+					position: { col: 7, row: 3, width: 6, height: 2 },
+					children: [
+						{
+							id: 'int_modifier',
+							type: 'card',
+							label: 'Intelligence modifier',
+							position: { col: 1, row: 1, width: 2, height: 2 },
+							derived: 'abilities.INT',
+							signed: true,
+							hideValue: true,
+							hideNote: true,
+						},
+						{
+							id: 'int_checks',
+							type: 'table',
+							label: 'Intelligence checks',
+							position: { col: 3, row: 1, width: 4, height: 2 },
+							rowHeader: 'Check',
+							columns: [
+								{
+									key: 'Training',
+									hideHeading: true,
+									type: 'level',
+									levels: ['Untrained', 'Proficient:P'],
+								},
+							],
+							rows: [{ label: 'Arcana' }, { label: 'Investigation' }],
+						},
+					],
+				},
+				{
+					id: 'wis_group',
+					type: 'group',
+					label: 'Wisdom',
+					position: { col: 1, row: 5, width: 6, height: 2 },
+					children: [
+						{
+							id: 'wis_modifier',
+							type: 'card',
+							label: 'Wisdom modifier',
+							position: { col: 1, row: 1, width: 2, height: 2 },
+							derived: 'abilities.WIS',
+							signed: true,
+							hideValue: true,
+							hideNote: true,
+						},
+						{
+							id: 'wis_checks',
+							type: 'table',
+							label: 'Wisdom checks',
+							position: { col: 3, row: 1, width: 4, height: 2 },
+							rowHeader: 'Check',
+							columns: [
+								{
+									key: 'Training',
+									hideHeading: true,
+									type: 'level',
+									levels: ['Untrained', 'Proficient:P'],
+								},
+							],
+							rows: [{ label: 'Insight' }, { label: 'Survival' }],
+						},
+					],
+				},
+				{
+					id: 'cha_group',
+					type: 'group',
+					label: 'Charisma',
+					position: { col: 7, row: 5, width: 6, height: 2 },
+					children: [
+						{
+							id: 'cha_modifier',
+							type: 'card',
+							label: 'Charisma modifier',
+							position: { col: 1, row: 1, width: 2, height: 2 },
+							derived: 'abilities.CHA',
+							signed: true,
+							hideValue: true,
+							hideNote: true,
+						},
+						{
+							id: 'cha_checks',
+							type: 'table',
+							label: 'Charisma checks',
+							position: { col: 3, row: 1, width: 4, height: 2 },
+							rowHeader: 'Check',
+							columns: [
+								{
+									key: 'Training',
+									hideHeading: true,
+									type: 'level',
+									levels: ['Untrained', 'Proficient:P'],
+								},
+							],
+							rows: [{ label: 'Deception' }, { label: 'Intimidation' }],
+						},
+					],
+				},
+			],
+		} as unknown as ComponentConfig,
+		body: null,
+		children: {
+			str_checks: ['| Check | Training |', '| --- | --- |', '| Athletics | 0 |'].join(
+				'\n',
+			),
+			dex_checks: [
+				'| Check | Training |',
+				'| --- | --- |',
+				'| Stealth | 1 |',
+				'| Sleight of Hand | 0 |',
+			].join('\n'),
+			con_checks: [
+				'| Check | Training |',
+				'| --- | --- |',
+				'| Concentration | 1 |',
+			].join('\n'),
+			int_checks: [
+				'| Check | Training |',
+				'| --- | --- |',
+				'| Arcana | 0 |',
+				'| Investigation | 1 |',
+			].join('\n'),
+			wis_checks: [
+				'| Check | Training |',
+				'| --- | --- |',
+				'| Insight | 1 |',
+				'| Survival | 0 |',
+			].join('\n'),
+			cha_checks: [
+				'| Check | Training |',
+				'| --- | --- |',
+				'| Deception | 0 |',
+				'| Intimidation | 1 |',
+			].join('\n'),
+		},
+	},
 ];
 
 /** The same layout with nothing stored: every component's empty state. */
