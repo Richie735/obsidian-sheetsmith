@@ -656,6 +656,23 @@ const DEFAULTS = [
 		size: EDITOR_FRAME,
 	},
 	{
+		/*
+		 * **This feature's own editor surface, which no default view opened**
+		 * (`docs/features/field-render-validation.md`): a stored value a list
+		 * field's rule refuses, marked on first paint with nothing typed and no
+		 * `change` fired. Nothing new to stage for it — `state=broken` already
+		 * rewrites the Skills table's Perception row to publish under
+		 * `passive perception`, a key `isName` refuses, so opening it under that
+		 * state is the whole of what this view needs. Look at the "Publishes as"
+		 * field on the Perception row: the red text has to be there beside a
+		 * value nobody touched, which is `docs/UI.md` §12's row this feature
+		 * closed and the only way to see that it stayed closed.
+		 */
+		name: 'editor-row-error',
+		query: 'surface=editor&theme=light&state=broken&open=skills',
+		size: EDITOR_FRAME,
+	},
+	{
 		// The pane below it, stacked: schematic, tree, then panel. 1190 rather
 		// than a comfortably narrow width on purpose — the threshold is 1176px of
 		// pane and 1190 of window is 1164 of pane, so this and the two above
