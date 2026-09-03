@@ -741,7 +741,11 @@ describe('rows editor', () => {
 		key.value = 'acrobatics';
 		key.dispatchEvent(new Event('change'));
 		expect(record.rows[1]).not.toHaveProperty('key');
-		expect([...context.errors.values()][0]).toContain('"Acrobatics"');
+		// "this one" — not "it", which would read as if the row just named,
+		// Acrobatics, was the one whose key was reverted.
+		expect([...context.errors.values()][0]).toBe(
+			'"acrobatics" is already the key of the row "Acrobatics", so this one was left empty.',
+		);
 	});
 
 	it('puts the stored name back when a rename is rejected', () => {
@@ -756,6 +760,120 @@ describe('rows editor', () => {
 		expect(label.value).toBe('Acrobatics');
 		expect(record.rows[0]?.label).toBe('Acrobatics');
 		expect(context.errors.size).toBe(1);
+		// "this one" — not "it", which would read as if Perception's own name
+		// was the one reverted.
+		expect([...context.errors.values()][0]).toBe(
+			'"Perception" is already used by another row, so this one was left as "Acrobatics".',
+		);
+	});
+
+	/*
+	 * A stored value is validated as it renders, not only from `change` —
+	 * `docs/features/field-render-validation.md`. Every case below reads a
+	 * value the record already holds; none of them dispatches a `change`.
+	 */
+	it('marks a blank row name on first paint, with no change fired', () => {
+		const record = { rows: [{ label: '' }, { label: 'Perception' }] };
+		const el = rowsEditor(record);
+		const label = el.querySelector(
+			'input[aria-label="Row name"]',
+		) as HTMLInputElement;
+		expect(fieldError(label.parentElement as HTMLElement)).toBe(
+			'A row name is required.',
+		);
+		expect(recorded.persists).toBe(0);
+		expect(recorded.redraws).toBe(0);
+	});
+
+	it('marks two rows sharing a label, both', () => {
+		const record = { rows: [{ label: 'Acrobatics' }, { label: 'Acrobatics' }] };
+		const el = rowsEditor(record);
+		const labels = Array.from(
+			el.querySelectorAll<HTMLInputElement>('input[aria-label="Row name"]'),
+		);
+		expect(labels).toHaveLength(2);
+		for (const label of labels) {
+			expect(fieldError(label.parentElement as HTMLElement)).toBe(
+				'"Acrobatics" is already used by another row.',
+			);
+		}
+	});
+
+	it('marks a stored row key that fails isName, with no change fired', () => {
+		const record = {
+			rows: [{ label: 'Perception', key: 'passive perception' }],
+		};
+		const el = rowsEditor(record);
+		const key = el.querySelector(
+			'input[aria-label="Perception publishes as"]',
+		) as HTMLInputElement;
+		expect(fieldError(key.parentElement as HTMLElement)).toContain(
+			'letters, digits and underscores',
+		);
+		expect(recorded.persists).toBe(0);
+		expect(recorded.redraws).toBe(0);
+	});
+
+	it('marks two rows sharing a key, both', () => {
+		const record = {
+			rows: [
+				{ label: 'Acrobatics', key: 'skill' },
+				{ label: 'Perception', key: 'skill' },
+			],
+		};
+		const el = rowsEditor(record);
+		const keys = Array.from(
+			el.querySelectorAll<HTMLInputElement>('input[aria-label$="publishes as"]'),
+		);
+		expect(keys).toHaveLength(2);
+		expect(
+			fieldError(keys[0]?.parentElement as HTMLElement),
+		).toBe('"skill" is already the key of the row "Perception".');
+		expect(
+			fieldError(keys[1]?.parentElement as HTMLElement),
+		).toBe('"skill" is already the key of the row "Acrobatics".');
+	});
+
+	it('marks a row value name that fails isName', () => {
+		const record = {
+			rows: [{ label: 'Acrobatics', values: { 'not a name': 'abilities.DEX' } }],
+		};
+		const el = rowsEditor(record);
+		const header = el.querySelector(
+			`input[aria-label='Row value name "not a name"']`,
+		) as HTMLInputElement;
+		expect(fieldError(header.parentElement as HTMLElement)).toContain(
+			'letters, digits and underscores',
+		);
+	});
+
+	it('validates every broken row at once, without persisting or redrawing', () => {
+		const record = {
+			rows: [
+				{ label: '', key: 'bad key', values: { 'not a name': '' } },
+				{ label: '', key: 'bad key' },
+			],
+		};
+		rowsEditor(record);
+		expect(recorded.persists).toBe(0);
+		expect(recorded.redraws).toBe(0);
+	});
+
+	it('clears a refusal once the reverted value renders clean on a later redraw', () => {
+		// `restoreFieldErrors` replays whatever this map still holds after any
+		// unrelated control rebuilds the pane — so a message that outlived the
+		// text it was about would come back forever. Rendering the same,
+		// now-reverted record again is that rebuild.
+		const record = skills();
+		const el = rowsEditor(record);
+		const label = el.querySelector(
+			'input[aria-label="Row name"]',
+		) as HTMLInputElement;
+		label.value = 'Perception';
+		label.dispatchEvent(new Event('change'));
+		expect(context.errors.size).toBe(1);
+		rowsEditor(record);
+		expect(context.errors.size).toBe(0);
 	});
 });
 
