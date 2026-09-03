@@ -538,28 +538,40 @@ export class SheetView extends TextFileView {
 		const failed: string[] = [];
 
 		for (const { component, config, data } of bound) {
-			const index = (config.reset ?? []).findIndex(
-				(binding) => binding.trigger === name,
-			);
-			const reset = config.reset?.[index];
-			if (!component?.applyReset || !reset) continue;
-
-			// The bindings are a list, so this one's expression lives at
-			// `reset.<index>.to`. The component asks for it by the one name it
-			// has — `reset.to` — and the sheet, which knows which binding is
-			// being applied, rewrites it. Without this a component would have to
-			// know its own position in its own config.
-			const at = (field: string): string =>
-				field === 'reset.to' ? `reset.${index}.to` : field;
+			if (!component?.applyReset) continue;
 			const resolve = makeFieldResolver(component, config, data, env);
 			const explain = makeFieldExplainer(component, config, data, env);
 
-			const result = component.applyReset(data, config, reset, {
-				resolve: (field, scope) => resolve(at(field), scope),
-				explain: (field, scope) => explain(at(field), scope),
-			});
-			if (result.ok) edits.push({ component, config, data: result.data });
-			else failed.push(`${config.label} — ${result.error}`);
+			/*
+			 * **Every binding this trigger matches, not the first.** This was a
+			 * `findIndex`, which was right while one component had at most one
+			 * binding per trigger; a binding may now name a column, so a long
+			 * rest that clears Conditions and refills Uses on one table is two
+			 * bindings the parser accepts and the button has to apply.
+			 *
+			 * Nothing merges component data: two edits carrying one label compose
+			 * through `applySectionWrites`, the second `write` reading the body
+			 * the first produced. So the sheet still knows nothing about any
+			 * component's shape, and §6's "applies what it can and names what it
+			 * could not" holds per column as well as per component.
+			 */
+			for (const [index, reset] of (config.reset ?? []).entries()) {
+				if (reset.trigger !== name) continue;
+				// The bindings are a list, so this one's expression lives at
+				// `reset.<index>.to`. The component asks for it by the one name
+				// it has — `reset.to` — and the sheet, which knows which binding
+				// is being applied, rewrites it. Without this a component would
+				// have to know its own position in its own config.
+				const at = (field: string): string =>
+					field === 'reset.to' ? `reset.${index}.to` : field;
+
+				const result = component.applyReset(data, config, reset, {
+					resolve: (field, scope) => resolve(at(field), scope),
+					explain: (field, scope) => explain(at(field), scope),
+				});
+				if (result.ok) edits.push({ component, config, data: result.data });
+				else failed.push(`${config.label} — ${result.error}`);
+			}
 		}
 
 		if (failed.length > 0) {

@@ -40,9 +40,10 @@ interface FixtureComponent {
 	hasTemp?: boolean;
 	rowHeader?: string;
 	openRows?: boolean;
-	columns?: { key: string; type?: string }[];
+	columns?: { key: string; type?: string; min?: number; max?: number }[];
 	reset?: {
 		trigger: string;
+		column?: string;
 		action?: 'full' | 'empty' | 'formula';
 		to?: string;
 		buffer?: 'clear';
@@ -201,29 +202,32 @@ function applyTrigger(
 	const failed: string[] = [];
 	const writes = [];
 	for (const { config, component, data } of bound) {
-		// Any binding matching this trigger, and its index — which is where its
-		// own `to` expression lives now that the bindings are a list.
-		const index = (config.reset ?? []).findIndex(
-			(binding) => binding.trigger === trigger,
-		);
-		const reset = config.reset?.[index];
-		if (!component.applyReset || !reset) continue;
-		const at = (field: string): string =>
-			field === 'reset.to' ? `reset.${index}.to` : field;
+		if (!component.applyReset) continue;
 		const resolve = makeFieldResolver(component, config, data, env);
 		const explain = makeFieldExplainer(component, config, data, env);
-		const result = component.applyReset(data, config, reset, {
-			resolve: (field, scope) => resolve(at(field), scope),
-			explain: (field, scope) => explain(at(field), scope),
-		});
-		if (!result.ok) {
-			failed.push(`${config.label}: ${result.error}`);
-			continue;
+		// **Every binding matching this trigger, not the first**, each with its
+		// own index — which is where its own `to` expression lives now that the
+		// bindings are a list. A binding may name a column, so one trigger can
+		// reach one component twice; the two writes carry one label and compose
+		// through `applySectionWrites`, the second reading the body the first
+		// produced.
+		for (const [index, reset] of (config.reset ?? []).entries()) {
+			if (reset.trigger !== trigger) continue;
+			const at = (field: string): string =>
+				field === 'reset.to' ? `reset.${index}.to` : field;
+			const result = component.applyReset(data, config, reset, {
+				resolve: (field, scope) => resolve(at(field), scope),
+				explain: (field, scope) => explain(at(field), scope),
+			});
+			if (!result.ok) {
+				failed.push(`${config.label}: ${result.error}`);
+				continue;
+			}
+			writes.push({
+				label: config.label,
+				write: (body: string | null) => component.write(result.data, body, config),
+			});
 		}
-		writes.push({
-			label: config.label,
-			write: (body: string | null) => component.write(result.data, body, config),
-		});
 	}
 
 	return {
@@ -711,5 +715,134 @@ describe('a long rest where a bound section will not read', () => {
 		// section is always reported — on the card, by the render — not as a
 		// reset that went wrong.
 		expect(applyTrigger(BROKEN, BOTH, 'Long rest').failed).toEqual([]);
+	});
+});
+
+/*
+ * One trigger reaching one component twice, which is the case `applyTrigger`'s
+ * `findIndex` could not express and the reason it is a loop.
+ *
+ * The claim is about the *sheet* rather than about Table: two bindings produce
+ * two edits carrying one label, and `applySectionWrites` composes them over the
+ * evolving note — the second `write` reading the body the first produced. So
+ * nothing merges component data, the note changes once, and there is one thing
+ * for the undo to put back.
+ */
+describe('a long rest reaching two columns of one table', () => {
+	const WITH_CONDITIONS = variant((shape) => {
+		shape.components.push({
+			id: 'conditions',
+			type: 'table',
+			label: 'Conditions',
+			position: { col: 1, row: 3, width: 4, height: 2 },
+			rowHeader: 'Condition',
+			openRows: true,
+			columns: [
+				{ key: 'Active', type: 'toggle' },
+				{ key: 'Uses', type: 'number', max: 3 },
+				{ key: 'Qty', type: 'number' },
+			],
+			reset: [
+				{ trigger: 'Long rest', column: 'Active', action: 'empty' },
+				{ trigger: 'Long rest', column: 'Uses', action: 'full' },
+			],
+		});
+	});
+
+	const LISTED = NOTE.replace(
+		'## Backstory',
+		[
+			'## Conditions',
+			'',
+			'| Condition | Active | Uses | Qty |',
+			'|---|---|---|---|',
+			'| Poisoned | yes | 0 | 7 |',
+			'| Frightened | x | 1 | 2 |',
+			'',
+			'## Backstory',
+		].join('\n'),
+	);
+
+	const table = (text: string): string =>
+		getSection(parseCharacter(text), 'Conditions')?.body ?? '';
+
+	/** The binding an old layout carries: a trigger, an action, no column. */
+	const COLUMNLESS = variant((shape) => {
+		shape.components.push({
+			id: 'conditions',
+			type: 'table',
+			label: 'Conditions',
+			position: { col: 1, row: 3, width: 4, height: 2 },
+			rowHeader: 'Condition',
+			openRows: true,
+			columns: [{ key: 'Active', type: 'toggle' }],
+			reset: [{ trigger: 'Long rest', action: 'full' }],
+		});
+	});
+
+	it('parses a layout written before columns existed, unchanged', () => {
+		// `column` is optional and a binding without one is the same bytes it
+		// always was, which is what keeps an existing layout loading.
+		const parsed = parseLayout(COLUMNLESS);
+		expect(
+			parsed.components.find((component) => component.id === 'conditions')?.reset,
+		).toEqual([{ trigger: 'Long rest', action: 'full' }]);
+	});
+
+	it('writes no cell for it, and names it rather than passing over it', () => {
+		/*
+		 * The one behaviour change to an existing layout, and it is louder
+		 * rather than quieter. Table implemented no `applyReset` before this, so
+		 * `renderTriggers`' filter left such a component out of `bound` and a
+		 * press reached nothing at all. Now it is bound, the confirmation lists
+		 * it, and the press reports what the binding does not say.
+		 */
+		const { text, failed, bound } = applyTrigger(LISTED, COLUMNLESS, 'Long rest');
+		expect(bound).toContain('Conditions');
+		expect(failed).toEqual([
+			'Conditions: this trigger does not say which column to act on. Give the binding a column, or remove it.',
+		]);
+		expect(table(text)).toBe(table(LISTED));
+	});
+
+	it('applies both bindings, in one write', () => {
+		const { text, failed } = applyTrigger(LISTED, WITH_CONDITIONS, 'Long rest');
+		expect(failed).toEqual([]);
+		expect(table(text)).toContain('| Poisoned | no | 3 | 7 |');
+		expect(table(text)).toContain('| Frightened | no | 3 | 2 |');
+	});
+
+	it('names the component once in the confirmation', () => {
+		// Two bindings are two edits and one component: the reader is told what
+		// the rest touches, not how many keys the layout used to say so.
+		expect(applyTrigger(LISTED, WITH_CONDITIONS, 'Long rest').bound).toEqual([
+			'HP',
+			'Conditions',
+		]);
+	});
+
+	it('leaves the unbound column exactly as it was', () => {
+		// The column the trigger did not name is never in the delta, so
+		// `writeTable` never reaches its segments.
+		const { text } = applyTrigger(LISTED, WITH_CONDITIONS, 'Long rest');
+		expect(table(text)).toMatch(/\| 7 \|/);
+		expect(table(text)).toMatch(/\| 2 \|/);
+	});
+
+	it('is passed over by a trigger it binds no column to', () => {
+		// Criterion 5: `bound` is what the confirmation lists and what the write
+		// loop walks, and a component binds to a trigger it never named.
+		const { text, bound, failed } = applyTrigger(LISTED, WITH_CONDITIONS, 'Short rest');
+		expect(bound).toEqual(['Ki']);
+		expect(failed).toEqual([]);
+		expect(table(text)).toBe(table(LISTED));
+	});
+
+	it('is one text for the undo to put back', () => {
+		// The whole write is one string swapped for another, which is what the
+		// batch bought: no inverse edits to compute, and nothing that can
+		// half-succeed. Applying it twice changes nothing further.
+		const once = applyTrigger(LISTED, WITH_CONDITIONS, 'Long rest').text;
+		expect(applyTrigger(once, WITH_CONDITIONS, 'Long rest').text).toBe(once);
 	});
 });
