@@ -13,6 +13,7 @@ import {
 } from '../formula/resolve';
 import { evaluate, Scope } from '../formula/expression';
 import { buildSheetEnv, buildSheetScope } from '../formula/sheet';
+import { buildModifierTable } from '../formula/modifiers';
 import {
 	ModifierContext,
 	ModifierDefinitionView,
@@ -5410,5 +5411,120 @@ describe('table.applyReset', () => {
 			// (`character.test.ts`); this half is the component's.
 			expect(table.write(result.data, null, conditions)).toBe('');
 		}
+	});
+});
+
+/*
+ * The **Conditions** palette entry (SPEC §4.2), pinned against the two
+ * mechanisms it exists to make meet.
+ *
+ * Both cases build their table from the entry's own config rather than from a
+ * column list typed out here, which is the whole point of them: what is being
+ * checked is that *this prefill* produces a flag a definition's `when` can read
+ * and a column a trigger may name. A hand-written copy would go on passing the
+ * day the entry changed, and the entry is the thing under test.
+ *
+ * No new code is expected on either path. The case is what says so.
+ */
+describe('the Conditions palette entry', () => {
+	/** One entry's prefill, read off the palette. */
+	function prefill(name: string): Partial<TableConfig> {
+		const entry = table.palette?.find((one) => one.name === name);
+		if (entry === undefined) throw new Error(`no palette entry called ${name}`);
+		return entry.config;
+	}
+
+	/** What the add menu writes: the editor's own keys, and the prefill on top. */
+	const placed: TableConfig = {
+		id: 'conditions',
+		type: 'table',
+		label: 'Conditions',
+		position: { col: 1, row: 1, width: 6, height: 2 },
+		...prefill('Conditions'),
+	};
+
+	/*
+	 * Two rows enrolling in the **same** definition, so the flag is the only
+	 * difference between them: a house rule where two conditions both impose the
+	 * same penalty is the ordinary way one definition reaches two rows, and it is
+	 * what makes the assertion about `Active` rather than about which definition
+	 * the cell named. The third row is the ordinary case a conditions list is
+	 * mostly made of — a flag with nothing hanging off it — and it holds `x`,
+	 * which is a hand-written spelling of yes.
+	 */
+	const NOTE = `
+| Condition | Active | Modifiers |
+| --- | --- | --- |
+| Frightened | yes | Disadvantage |
+| Poisoned | no | Disadvantage |
+| Charmed | x |  |
+`;
+
+	/** One change, conditioned on the flag the entry prefills. */
+	const DISADVANTAGE: ModifierDefinitionView = {
+		name: 'Disadvantage',
+		target: 'attack_bonus',
+		targetLabel: 'Attack bonus',
+		amount: '-2',
+		when: 'Active',
+	};
+
+	it('applies a definition whose condition reads the flag, and only where it is set', () => {
+		const data = stored(NOTE, placed);
+		const source = table.scopeModifiers?.(data, placed);
+		if (source === undefined) throw new Error('expected a modifier source');
+		const pushes = source(makeFieldResolver(table, placed, data, NO_ENV));
+		// Both rows enrol: the cell names the definition either way, and whether it
+		// changes anything is the formula layer's answer rather than the component's.
+		expect(pushes.map((push) => push.row.label)).toEqual([
+			'Frightened',
+			'Poisoned',
+		]);
+		// The flag reaches the definition as an ordinary cell in the row's scope,
+		// which is what makes `when: Active` work with no second stored fact.
+		expect(pushes[0]?.row.values.Active).toBe(true);
+		expect(pushes[1]?.row.values.Active).toBe(false);
+
+		const lookup = buildModifierTable(
+			[{ id: placed.id, pushes: () => pushes }],
+			[DISADVANTAGE],
+		);
+		const result = lookup(DISADVANTAGE.target);
+		// One row's worth and not two: the switched-off row leaves no line at all,
+		// because a breakdown is the number's story.
+		expect('error' in result ? null : result.total).toBe(-2);
+		expect(
+			'error' in result ? [] : result.lines.map((line) => [line.label, line.amount]),
+		).toEqual([['Frightened', -2]]);
+	});
+
+	it('offers the flag as the one column a trigger may name, and clears it without touching a modifier', () => {
+		// `Modifiers` is refused as a reset target: neither "full" nor "empty" has a
+		// reading over words (SPEC §4.2). So the entry produces exactly one binding
+		// an author can make.
+		expect(table.resetColumns?.(placed).map((entry) => entry.key)).toEqual([
+			'Active',
+		]);
+
+		const result = table.applyReset?.(
+			stored(NOTE, placed),
+			placed,
+			{ trigger: 'Long rest', column: 'Active', action: 'empty' },
+			{ resolve: () => null, explain: () => null },
+		);
+		if (result?.ok !== true) throw new Error('expected a reset');
+		const text = table.write(result.data, NOTE, placed);
+		expect(text).toContain('| Frightened | no | Disadvantage |');
+		expect(text).toContain('| Poisoned | no | Disadvantage |');
+		expect(text).toContain('| Charmed | no |  |');
+		// The modifier column byte for byte, which is the half a `toContain` above
+		// could pass without: the cells are compared against the note they came
+		// from rather than against a spelling written out here.
+		const modifiers = (body: string) =>
+			body
+				.split('\n')
+				.filter((line) => line.startsWith('|'))
+				.map((line) => line.split('|')[3]);
+		expect(modifiers(text)).toEqual(modifiers(NOTE));
 	});
 });
