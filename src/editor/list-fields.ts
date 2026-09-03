@@ -226,6 +226,22 @@ export function addControlSpacers(header: HTMLElement): void {
 	}
 }
 
+/**
+ * A rule's bare reason, turned into the render-time message: `null` passes
+ * straight through, since a field that validates clean is indistinguishable
+ * from one never touched, and a reason otherwise gets the sentence-ending
+ * period its `change`-time revert clause supplies for itself.
+ *
+ * One spelling for the four render-time call sites in this file — a row's
+ * label, a row's key, a column's key and an entry's primary field — on
+ * `docs/PATTERNS.md` §1's reuse ladder: past two consumers of an identical
+ * policy, drift is the whole risk a guard test would be checking for, which
+ * is what one name says for free.
+ */
+function reasonMessage(reason: string | null): string | null {
+	return reason === null ? null : `${reason}.`;
+}
+
 interface RowEntry {
 	label: string;
 	key?: string;
@@ -257,6 +273,19 @@ export function renderRowsEditor(
 	/** Bound once: every inline error here outlives a rebuild of the pane. */
 	const fieldError = (input: HTMLInputElement, message: string | null) =>
 		showFieldError(input, message, context.errors);
+
+	/*
+	 * The reason alone, split from the "so it was left as" clause that
+	 * follows it in the `change` listener below: a stored value that fails
+	 * this at render was never typed and nothing was reverted, so the render
+	 * call states only what is wrong (`docs/features/field-render-validation.md`).
+	 * A duplicate name can't reach a stored value — `names` below is built by
+	 * `!names.includes(name)`, so the array is already deduplicated by
+	 * construction — which is why this rule alone, and not a duplicate check,
+	 * is what a render finds wrong with it.
+	 */
+	const ROW_VALUE_NAME_REASON =
+		'A row value needs a name a formula can read — letters, digits and underscores, not starting with a digit';
 
 	// Union rather than the first row's keys: a name added to one row has to
 	// show up as a column on all of them, empty, ready to be filled in.
@@ -297,6 +326,10 @@ export function renderRowsEditor(
 			});
 			input.value = name;
 			input.dataset.sheetsmithFocus = `${prefix}-value-${name}`;
+			// Validated as it renders, against whatever the file already
+			// holds — the same rule the `change` listener runs, not a second
+			// copy of it.
+			fieldError(input, isName(name) ? null : `${ROW_VALUE_NAME_REASON}.`);
 			input.addEventListener('change', () => {
 				const next = input.value.trim();
 				// Rejection puts the stored name back. Leaving the typed text
@@ -306,7 +339,7 @@ export function renderRowsEditor(
 					input.value = name;
 					fieldError(
 						input,
-						`A row value needs a name a formula can read — letters, digits and underscores, not starting with a digit — so it was left as "${name}".`,
+						`${ROW_VALUE_NAME_REASON} — so it was left as "${name}".`,
 					);
 					return;
 				}
@@ -382,6 +415,21 @@ export function renderRowsEditor(
 		addControlSpacers(columns);
 	}
 
+	/*
+	 * The row label rule's reason alone, taking the candidate rather than
+	 * reading the input, so the same check runs against typed text in the
+	 * `change` listener below and against the row's own stored label at
+	 * render. No trailing period: both callers compose their own ending, one
+	 * a bare sentence and the other a revert clause.
+	 */
+	const rowLabelReason = (value: string, index: number): string | null => {
+		if (value === '') return 'A row name is required';
+		if (rows.some((other, i) => i !== index && other.label === value)) {
+			return `"${value}" is already used by another row`;
+		}
+		return null;
+	};
+
 	rows.forEach((row, index) => {
 		const element = scroller.createDiv('sheetsmith-entry-row');
 
@@ -391,22 +439,19 @@ export function renderRowsEditor(
 		});
 		label.value = row.label ?? '';
 		label.dataset.sheetsmithFocus = `${prefix}-row-${index}-label`;
+		// Validated as it renders, against whatever the layout already holds.
+		fieldError(label, reasonMessage(rowLabelReason(row.label, index)));
 		label.addEventListener('change', () => {
 			const next = label.value.trim();
-			if (next === '') {
+			const reason = rowLabelReason(next, index);
+			if (reason !== null) {
 				label.value = row.label;
-				fieldError(
-					label,
-					`A row name is required, so it was left as "${row.label}".`,
-				);
-				return;
-			}
-			if (rows.some((other, i) => i !== index && other.label === next)) {
-				label.value = row.label;
-				fieldError(
-					label,
-					`"${next}" is already used by another row, so this one was left as "${row.label}".`,
-				);
+				// "it" for a blank name, "this one" for a duplicate: the
+				// duplicate reason has already named another row immediately
+				// before the revert clause, and "it" there would read as if
+				// that other row's name was the one reverted.
+				const subject = next === '' ? 'it' : 'this one';
+				fieldError(label, `${reason}, so ${subject} was left as "${row.label}".`);
 				return;
 			}
 			fieldError(label, null);
@@ -432,6 +477,24 @@ export function renderRowsEditor(
 		});
 		key.value = row.key ?? '';
 		key.dataset.sheetsmithFocus = `${prefix}-row-${index}-key`;
+		/*
+		 * The row key rule's reason alone. Empty is the ordinary state — a row
+		 * with no key publishes nothing — so it is valid rather than an
+		 * error, both here and in the `change` listener below.
+		 */
+		const rowKeyReason = (value: string): string | null => {
+			if (value === '') return null;
+			if (!isName(value)) {
+				return 'A row key is a name a formula reads — letters, digits and underscores, not starting with a digit';
+			}
+			const taken = rows.find((other, i) => i !== index && other.key === value);
+			if (taken !== undefined) {
+				return `"${value}" is already the key of the row "${taken.label}"`;
+			}
+			return null;
+		};
+		// Validated as it renders, against whatever the layout already holds.
+		fieldError(key, reasonMessage(rowKeyReason(row.key ?? '')));
 		key.addEventListener('change', () => {
 			const next = key.value.trim();
 			// Empty is the ordinary state: a row with no key publishes nothing.
@@ -446,24 +509,17 @@ export function renderRowsEditor(
 			// about the layout the moment focus moves on. Most rows have no key
 			// at all, so what it went back to has to be sayable either way.
 			const kept = row.key === undefined ? 'left empty' : `left as "${row.key}"`;
-			const restore = () => {
+			const reason = rowKeyReason(next);
+			if (reason !== null) {
 				key.value = row.key ?? '';
-			};
-			if (!isName(next)) {
-				restore();
-				fieldError(
-					key,
-					`A row key is a name a formula reads — letters, digits and underscores, not starting with a digit — so it was ${kept}.`,
-				);
-				return;
-			}
-			const taken = rows.find((other, i) => i !== index && other.key === next);
-			if (taken !== undefined) {
-				restore();
-				fieldError(
-					key,
-					`"${next}" is already the key of the row "${taken.label}", so this one was ${kept}.`,
-				);
+				// "it" for a key that is not a name, "this one" for a
+				// duplicate: the duplicate reason has already named another
+				// row immediately before the revert clause, and "it" there
+				// would read as if that other row's key was the one reverted
+				// (the row value name field above makes the same distinction,
+				// and the entries editor's primary field makes it too).
+				const subject = isName(next) ? 'this one' : 'it';
+				fieldError(key, `${reason}, so ${subject} was ${kept}.`);
 				return;
 			}
 			fieldError(key, null);
