@@ -254,6 +254,33 @@
 	letter-spacing: 0.05em;
 }
 
+/* A binding is one thing, and Obsidian 1.13 draws every settings row as its own
+   card with `--size-4-2` under it — so a trigger, the column it acts on and the
+   expression it resets to came out as three equal-weight cards with nothing but
+   their order saying which belonged to which. On two bindings the first one's
+   last row sat directly above `Trigger 2` and read as that binding's.
+
+   The gap is closed *within* a binding rather than a hairline being drawn
+   between them: the rows already differ by name and control, and what was
+   missing was the grouping, not a separator. The last row of a binding keeps its
+   own margin, which is then the only gap in the list and falls exactly where the
+   boundary is.
+
+   `:has()` rather than a class on the head row, because whether a binding has
+   continuation rows at all depends on the component and the action — a Pool with
+   no buffer on a `full` reset has none — and asking "is a detail row next"
+   answers that without the JS having to work it out before it draws anything. */
+.setting-item:has(+ .sheetsmith-reset-binding-detail) {
+	margin-bottom: 0;
+	border-bottom-left-radius: 0;
+	border-bottom-right-radius: 0;
+}
+
+.sheetsmith-reset-binding-detail {
+	border-top-left-radius: 0;
+	border-top-right-radius: 0;
+}
+
 /* A heading labels what follows it; no hairline in between. */
 .sheetsmith-form-group + .setting-item {
 	border-top: none;
@@ -850,8 +877,24 @@
 	max-width: 8em;
 }
 
+/* An invalid field is marked with an **outline**, not a border colour.
+
+   `border-color` alone was inert on half the controls it was written for:
+   Obsidian's own `select` rule sets `border: 0`, so every dropdown in this pane
+   carried the class and painted nothing — measured, not read, by sampling the
+   pixels around a marked picker and finding no red on the control at all. And
+   `docs/UI.md` §6 asks for an outline for the second reason, which is the one
+   that decided it: forced-colors mode repaints borders in a single system
+   colour, so a border-coloured mark lands on top of the thing it is trying to
+   differ from, while an outline survives.
+
+   One treatment rather than two: a text input does have a border, so keeping
+   both would double-mark half the fields and leave the pane saying "invalid" two
+   different ways. `outline-offset` is negative so the mark draws inside the
+   control's own box, following its radius and moving nothing beside it. */
 .sheetsmith-input-invalid {
-	border-color: var(--background-modifier-error) !important;
+	outline: 2px solid var(--background-modifier-error) !important;
+	outline-offset: -1px;
 }
 
 .setting-item-control:has(.sheetsmith-field-error) {
@@ -863,6 +906,24 @@
 	text-align: right;
 	color: var(--text-error);
 	font-size: var(--font-smallest);
+}
+
+/* The reset column picker's own message, held at the pane's fixed size.
+
+   `--font-smallest` is `0.8em` in Obsidian's own CSS where `--font-ui-small` is
+   13px, so a message in the first grows with the vault's **Text** setting and one
+   in the second does not. At `text=24` this row's refusal came out larger than
+   the **Acts on** label above it and larger than the select it is about, which is
+   `legibility.md` §4's inverted hierarchy — and it is a size this row used to
+   have and lost, because it was drawn in a boxed `.sheetsmith-error` before the
+   message moved onto the control.
+
+   Scoped to this one message rather than to the class. That the pane's two error
+   treatments disagree about whether a message scales is pane-wide and older than
+   this row; picking a side for all of them is a decision about every field in the
+   editor, and this only restores what this row already had. */
+.sheetsmith-field-error[data-sheetsmith-for^='reset-column-'] {
+	font-size: var(--font-ui-small);
 }
 
 /* A message about the form rather than about one control: the "no formula reads
