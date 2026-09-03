@@ -815,6 +815,23 @@ export function renderColumnsEditor(
 		addControlSpacers(headings);
 	}
 
+	/*
+	 * The column key rule's reason alone, checked case-insensitively against
+	 * every other column: run against typed text below, and against the
+	 * column's own stored key at render.
+	 */
+	const columnKeyReason = (value: string, index: number): string | null => {
+		if (value === '') return 'A key is required';
+		if (
+			columns.some(
+				(other, i) => i !== index && other.key?.toLowerCase() === value.toLowerCase(),
+			)
+		) {
+			return `"${value}" is already used by another column`;
+		}
+		return null;
+	};
+
 	columns.forEach((column, index) => {
 		// A column is two lines — its row, and the options belonging to it —
 		// and with every line equally spaced nothing said which pairs went
@@ -829,26 +846,19 @@ export function renderColumnsEditor(
 		});
 		keyInput.value = column.key ?? '';
 		keyInput.dataset.sheetsmithFocus = `${prefix}-col-${index}-key`;
+		// Validated as it renders, against whatever the layout already holds.
+		fieldError(keyInput, reasonMessage(columnKeyReason(column.key ?? '', index)));
 		keyInput.addEventListener('change', () => {
 			const next = keyInput.value.trim();
-			if (next === '') {
+			const reason = columnKeyReason(next, index);
+			if (reason !== null) {
 				keyInput.value = column.key;
-				fieldError(
-					keyInput,
-					`A key is required, so it was left as "${column.key}".`,
-				);
-				return;
-			}
-			if (
-				columns.some(
-					(other, i) => i !== index && other.key?.toLowerCase() === next.toLowerCase(),
-				)
-			) {
-				keyInput.value = column.key;
-				fieldError(
-					keyInput,
-					`"${next}" is already used by another column, so this one was left as "${column.key}".`,
-				);
+				// "it" for an empty key, "this one" for a duplicate: the
+				// duplicate reason has already named another column
+				// immediately before the revert clause, and "it" there would
+				// read as if that other column's key was the one reverted.
+				const subject = next === '' ? 'it' : 'this one';
+				fieldError(keyInput, `${reason}, so ${subject} was left as "${column.key}".`);
 				return;
 			}
 			fieldError(keyInput, null);
@@ -975,34 +985,38 @@ export function renderColumnsEditor(
 			});
 			names.value = (column.levels ?? []).join(', ');
 			names.dataset.sheetsmithFocus = `${prefix}-col-${column.key}-levels`;
+			/*
+			 * Self-contained: reused verbatim, called here and at render with
+			 * no split, because neither message mentions a previous value.
+			 * Empty is valid — a level column with no names yet is ordinary.
+			 */
+			const levelNamesReason = (levels: string[] | undefined): string | null => {
+				if (levels === undefined) return null;
+				if (levels.length < 2) {
+					return 'At least two names, starting with the one for none.';
+				}
+				if (levels.some((entry) => parseLevel(entry).name === '')) {
+					// A mark stands for the level's name; it does not replace it.
+					return 'A level needs a name before its colon.';
+				}
+				return null;
+			};
+			// Validated as it renders, against whatever the layout already holds.
+			fieldError(names, levelNamesReason(column.levels));
 			names.addEventListener('change', () => {
 				const parsed = names.value
 					.split(',')
 					.map((name) => name.trim())
 					.filter((name) => name !== '');
-				if (parsed.length === 0) {
-					fieldError(names, null);
-					delete column.levels;
-					context.persist();
-					context.redraw();
-					return;
-				}
-				if (parsed.length < 2) {
-					fieldError(
-						names,
-						'At least two names, starting with the one for none.',
-					);
-					return;
-				}
-				if (parsed.some((entry) => parseLevel(entry).name === '')) {
-					// A mark stands for the level's name; it does not replace
-					// it. Caught here as well as at render, because this is
-					// where the author is looking at what they typed.
-					fieldError(names, 'A level needs a name before its colon.');
+				const candidate = parsed.length === 0 ? undefined : parsed;
+				const reason = levelNamesReason(candidate);
+				if (reason !== null) {
+					fieldError(names, reason);
 					return;
 				}
 				fieldError(names, null);
-				column.levels = parsed;
+				if (candidate === undefined) delete column.levels;
+				else column.levels = candidate;
 				context.persist();
 				context.redraw();
 			});
@@ -1014,6 +1028,21 @@ export function renderColumnsEditor(
 				input.value = column.max === undefined ? '' : String(column.max);
 				input.setAttribute('aria-label', `${column.key} highest level`);
 				input.dataset.sheetsmithFocus = `${prefix}-col-${column.key}-max`;
+				/*
+				 * Self-contained: reused verbatim, called here and at render
+				 * with no split. Bounded above because the sample draws a
+				 * ring per level: a mis-typed 1000000 must be a message, not
+				 * a hang.
+				 */
+				const levelsMaxReason = (value: number | undefined): string | null => {
+					if (value === undefined) return null;
+					if (!Number.isInteger(value) || value < 1 || value > MAX_LEVELS) {
+						return `Whole number, 1 to ${MAX_LEVELS}.`;
+					}
+					return null;
+				};
+				// Validated as it renders, against whatever the layout already holds.
+				fieldError(input, levelsMaxReason(column.max));
 				input.addEventListener('change', () => {
 					const raw = input.value.trim();
 					if (raw === '') {
@@ -1026,11 +1055,9 @@ export function renderColumnsEditor(
 						return;
 					}
 					const parsed = Number(raw);
-					if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_LEVELS) {
-						// Bounded above because the sample draws a ring per
-						// level: a mis-typed 1000000 must be a message, not a
-						// hang.
-						fieldError(input, `Whole number, 1 to ${MAX_LEVELS}.`);
+					const reason = levelsMaxReason(parsed);
+					if (reason !== null) {
+						fieldError(input, reason);
 						return;
 					}
 					fieldError(input, null);
@@ -1163,6 +1190,17 @@ export function renderColumnsEditor(
 			 */
 			const perHolder = offers?.holderMax === true;
 			const holderOwnsMax = perHolder && column.maxSource === HOLDER_MAX_SOURCE;
+			/*
+			 * Self-contained: reused verbatim, called here and at render with
+			 * no split. Empty is valid — a bound with nothing typed is the
+			 * ordinary, unset state — so only a value that is there and is
+			 * not a real number earns the message.
+			 */
+			const numberBoundReason = (value: unknown): string | null => {
+				if (value === undefined) return null;
+				const parsed = typeof value === 'number' ? value : Number(value);
+				return Number.isFinite(parsed) ? null : 'This field needs a number.';
+			};
 			for (const bound of ['min', 'max'] as const) {
 				// **Maximum** is the entry's own number, so it is offered only while
 				// the entry owns one. The declared value survives in the layout
@@ -1178,6 +1216,8 @@ export function renderColumnsEditor(
 				input.value = column[bound] === undefined ? '' : String(column[bound]);
 				input.setAttribute('aria-label', `${column.key} ${bound}`);
 				input.dataset.sheetsmithFocus = `${prefix}-col-${column.key}-${bound}`;
+				// Validated as it renders, against whatever the layout already holds.
+				fieldError(input, numberBoundReason(column[bound]));
 				input.addEventListener('change', () => {
 					const raw = input.value.trim();
 					if (raw === '') {
@@ -1187,8 +1227,9 @@ export function renderColumnsEditor(
 						return;
 					}
 					const parsed = Number(raw);
-					if (Number.isNaN(parsed)) {
-						fieldError(input, 'This field needs a number.');
+					const reason = numberBoundReason(parsed);
+					if (reason !== null) {
+						fieldError(input, reason);
 						return;
 					}
 					fieldError(input, null);

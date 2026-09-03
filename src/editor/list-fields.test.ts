@@ -8,6 +8,7 @@ import {
 } from './list-fields';
 import { ColumnOptionsSpec, EntryColumnSpec } from '../types';
 import { COLUMN_TYPES } from '../components/column-types';
+import { MAX_LEVELS } from '../components/level-ring';
 
 /*
  * The layout editor's list fields, which had no coverage until the obsidian
@@ -206,6 +207,21 @@ describe('columns editor', () => {
 		(key as HTMLInputElement).value = 'Bonus';
 		key?.dispatchEvent(new Event('change'));
 		expect(record.columns[1]?.key).toBe('Bonus');
+	});
+
+	it('refuses a key another column already uses, naming it', () => {
+		const record = { columns: [{ key: 'Training' }, { key: 'New column' }] };
+		const el = columnsEditor(record);
+		const key = el.querySelectorAll<HTMLInputElement>(
+			'input[aria-label="Column key"]',
+		)[1] as HTMLInputElement;
+		commit(key, 'Training');
+		expect(record.columns[1]?.key).toBe('New column');
+		// "this one" — not "it", which would read as if the column just
+		// named, Training, was the one whose key was reverted.
+		expect([...context.errors.values()][0]).toBe(
+			'"Training" is already used by another column, so this one was left as "New column".',
+		);
 	});
 
 	it('renders every column, whatever its type', () => {
@@ -614,6 +630,127 @@ describe('columns editor', () => {
 		remove.click();
 		expect(recorded.confirms).toEqual([]);
 		expect(record.columns.map((c) => c.key)).toEqual(['Training']);
+	});
+
+	/*
+	 * A stored value is validated as it renders, not only from `change` —
+	 * `docs/features/field-render-validation.md`. Every case below reads a
+	 * value the record already holds; none of them dispatches a `change`.
+	 */
+	it('marks an empty column key on first paint, with no change fired', () => {
+		const el = columnsEditor({ columns: [{ key: '' }] });
+		const key = el.querySelector(
+			'input[aria-label="Column key"]',
+		) as HTMLInputElement;
+		expect(fieldError(key.parentElement as HTMLElement)).toBe(
+			'A key is required.',
+		);
+		expect(recorded.persists).toBe(0);
+		expect(recorded.redraws).toBe(0);
+	});
+
+	it('marks two columns sharing a key case-insensitively, both', () => {
+		const el = columnsEditor({ columns: [{ key: 'Bonus' }, { key: 'bonus' }] });
+		const keys = Array.from(
+			el.querySelectorAll<HTMLInputElement>('input[aria-label="Column key"]'),
+		);
+		expect(keys).toHaveLength(2);
+		for (const key of keys) {
+			expect(fieldError(key.parentElement as HTMLElement)).toContain(
+				'already used by another column',
+			);
+		}
+	});
+
+	it('marks a level column whose stored names are too few to be a scale', () => {
+		const el = columnsEditor({
+			columns: [{ key: 'Training', type: 'level', levels: ['Untrained'] }],
+		});
+		const names = el.querySelector(
+			'input[aria-label="Training level names"]',
+		) as HTMLInputElement;
+		expect(fieldError(names.parentElement as HTMLElement)).toBe(
+			'At least two names, starting with the one for none.',
+		);
+	});
+
+	it('marks a stored level with no name before its colon', () => {
+		const el = columnsEditor({
+			columns: [
+				{ key: 'Training', type: 'level', levels: ['Untrained', ':'] },
+			],
+		});
+		const names = el.querySelector(
+			'input[aria-label="Training level names"]',
+		) as HTMLInputElement;
+		expect(fieldError(names.parentElement as HTMLElement)).toBe(
+			'A level needs a name before its colon.',
+		);
+	});
+
+	it('marks a level column\'s stored highest-level count out of range', () => {
+		const el = columnsEditor({
+			columns: [{ key: 'Training', type: 'level', max: 1000000 }],
+		});
+		const max = el.querySelector(
+			'input[aria-label="Training highest level"]',
+		) as HTMLInputElement;
+		expect(fieldError(max.parentElement as HTMLElement)).toBe(
+			`Whole number, 1 to ${MAX_LEVELS}.`,
+		);
+	});
+
+	it('marks a number column\'s stored min or max that is not a real number', () => {
+		const el = columnsEditor({
+			columns: [
+				{
+					key: 'Weight',
+					type: 'number',
+					min: Number.NaN,
+					max: Number.POSITIVE_INFINITY,
+				},
+			],
+		});
+		const min = el.querySelector(
+			'input[aria-label="Weight min"]',
+		) as HTMLInputElement;
+		const max = el.querySelector(
+			'input[aria-label="Weight max"]',
+		) as HTMLInputElement;
+		expect(fieldError(min.parentElement as HTMLElement)).toBe(
+			'This field needs a number.',
+		);
+		expect(fieldError(max.parentElement as HTMLElement)).toBe(
+			'This field needs a number.',
+		);
+	});
+
+	it('validates every broken column at once, without persisting or redrawing', () => {
+		const record = {
+			columns: [
+				{ key: '' },
+				{ key: 'Weight', type: 'number', min: Number.NaN },
+			],
+		};
+		columnsEditor(record);
+		expect(recorded.persists).toBe(0);
+		expect(recorded.redraws).toBe(0);
+	});
+
+	it('clears a refusal once the reverted value renders clean on a later redraw', () => {
+		// `restoreFieldErrors` replays whatever this map still holds after any
+		// unrelated control rebuilds the pane — so a message that outlived the
+		// text it was about would come back forever. Rendering the same,
+		// now-reverted record again is that rebuild.
+		const record = { columns: [{ key: 'Bonus' }, { key: 'Total' }] };
+		const el = columnsEditor(record);
+		const keys = el.querySelectorAll<HTMLInputElement>(
+			'input[aria-label="Column key"]',
+		);
+		commit(keys[1] as HTMLInputElement, 'Bonus');
+		expect(context.errors.size).toBe(1);
+		columnsEditor(record);
+		expect(context.errors.size).toBe(0);
 	});
 });
 
