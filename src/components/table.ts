@@ -106,6 +106,7 @@ import {
 	reanchorAnchoredPanel,
 	showAnchoredPanel,
 } from '../ui/anchored-panel';
+import { element } from '../ui/element';
 import { bindLongPress, showPopover } from '../ui/popover';
 import { revealWhenTruncated } from '../ui/truncation';
 import { spellcheckWhileFocused } from '../ui/spellcheck';
@@ -1351,30 +1352,6 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 	render(container, config, data, context): void {
 		const doc = container.ownerDocument;
 		container.replaceChildren();
-		const element = <K extends keyof HTMLElementTagNameMap>(
-			tag: K,
-			/** One class, or several separated by spaces. */
-			className: string,
-			parent: HTMLElement,
-			text?: string,
-		): HTMLElementTagNameMap[K] => {
-			const el = doc.createElement(tag);
-			/*
-			 * **Split, because `classList.add` throws on a space** — and the trap is
-			 * invisible until the harness draws it. A `DOMException` here aborts the
-			 * whole render mid-row, so a call site passing two classes drew one cell
-			 * and then stopped; `src/test/obsidian-stub.ts` accepts the space, so the
-			 * suite stayed green while the sheet lost every row below the first. That
-			 * is `docs/UI.md` §11's kinder instrument, and the cheapest fix is to
-			 * make the helper mean what its callers already read it as.
-			 */
-			for (const one of className.split(' ')) {
-				if (one !== '') el.classList.add(one);
-			}
-			if (text !== undefined) el.textContent = text;
-			parent.appendChild(el);
-			return el;
-		};
 
 		const error = configError(config);
 		if (error !== null) {

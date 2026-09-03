@@ -88,6 +88,7 @@ import {
 	modifierOutcomeText,
 	modifierPartName,
 } from './modifier-breakdown';
+import { element } from '../ui/element';
 
 /** The one option that is not a definition: the row spells its own effect. */
 const TYPED_OPTION = 'sheetsmith-typed';
@@ -202,20 +203,6 @@ export interface ModifierFormOptions {
 	onResize: () => void;
 }
 
-/** Make an element with a class, a parent and optionally its text. */
-function make<K extends keyof HTMLElementTagNameMap>(
-	tag: K,
-	cls: string,
-	parent: HTMLElement,
-	text?: string,
-): HTMLElementTagNameMap[K] {
-	const el = parent.ownerDocument.createElement(tag);
-	el.className = cls;
-	if (text !== undefined) el.textContent = text;
-	parent.appendChild(el);
-	return el;
-}
-
 /** One `<option>`, with its value and its words. */
 function option(
 	select: HTMLSelectElement,
@@ -241,14 +228,14 @@ function field(
 	text: string,
 	wide = false,
 ): HTMLLabelElement {
-	const row = make(
+	const row = element(
 		'label',
 		wide
 			? 'sheetsmith-panel-field sheetsmith-panel-field-wide'
 			: 'sheetsmith-panel-field',
 		parent,
 	);
-	make('span', 'sheetsmith-panel-field-label', row, text);
+	element('span', 'sheetsmith-panel-field-label', row, text);
 	return row;
 }
 
@@ -312,7 +299,7 @@ export function renderModifierForm(
 		options.onCommit(next);
 	};
 
-	make(
+	element(
 		'div',
 		'sheetsmith-panel-heading',
 		body,
@@ -329,11 +316,11 @@ export function renderModifierForm(
 		'On this row · select to edit',
 	);
 
-	const list = make('div', 'sheetsmith-panel-list', body);
+	const list = element('div', 'sheetsmith-panel-list', body);
 	if (parts.length === 0) {
 		// The one place the sheet says the absence in words, and it says it because
 		// a reader asked.
-		make(
+		element(
 			'p',
 			'sheetsmith-panel-empty',
 			list,
@@ -363,8 +350,8 @@ export function renderModifierForm(
 		 */
 		const repeat = takes > 1 && parts.indexOf(stored) < at;
 		const open = state.open === at;
-		const entry = make('div', 'sheetsmith-panel-entry', list);
-		const line = make('button', 'sheetsmith-panel-line', entry);
+		const entry = element('div', 'sheetsmith-panel-entry', list);
+		const line = element('button', 'sheetsmith-panel-line', entry);
 		line.type = 'button';
 		line.setAttribute('aria-expanded', String(open));
 		/*
@@ -387,23 +374,23 @@ export function renderModifierForm(
 			.filter((one): one is string => one !== null && one !== '')
 			.join(', ');
 		line.setAttribute('aria-label', spoken);
-		const glyph = make('span', 'sheetsmith-panel-glyph', line);
+		const glyph = element('span', 'sheetsmith-panel-glyph', line);
 		glyph.setAttribute('aria-hidden', 'true');
 		// The same mark the row's own glyph draws, which is what leaves the icon
 		// slot in this list meaning *state*.
 		options.icon(glyph, outcome?.applies === true ? 'zap' : 'zap-off');
-		const words = make('span', 'sheetsmith-panel-line-words', line);
-		make('span', 'sheetsmith-panel-said', words, said);
+		const words = element('span', 'sheetsmith-panel-line-words', line);
+		element('span', 'sheetsmith-panel-said', words, said);
 		if (why !== null) {
 			// A quiet line under the line it is about, in the editor's own
 			// `.sheetsmith-field-problems` shape.
-			make('span', 'sheetsmith-panel-why', words, why);
+			element('span', 'sheetsmith-panel-why', words, why);
 		}
 		if (repeat) {
 			// Every line not doing what a reader expects already carries one of
 			// these, and this is such a line: it is a second drawing of one
 			// enrolment, and **Remove** on either takes both.
-			make(
+			element(
 				'span',
 				'sheetsmith-panel-why',
 				words,
@@ -432,15 +419,15 @@ export function renderModifierForm(
 	});
 
 	if (state.open === 'new') {
-		const entry = make('div', 'sheetsmith-panel-entry', list);
+		const entry = element('div', 'sheetsmith-panel-entry', list);
 		renderFields(entry, state, options, null, 'new', write, redraw);
 	} else {
-		const add = make('button', 'sheetsmith-panel-add', body);
+		const add = element('button', 'sheetsmith-panel-add', body);
 		add.type = 'button';
-		const plus = make('span', 'sheetsmith-panel-glyph', add);
+		const plus = element('span', 'sheetsmith-panel-glyph', add);
 		plus.setAttribute('aria-hidden', 'true');
 		options.icon(plus, 'plus');
-		make('span', 'sheetsmith-panel-add-words', add, 'Add a modifier');
+		element('span', 'sheetsmith-panel-add-words', add, 'Add a modifier');
 		add.addEventListener('click', () => {
 			state.open = 'new';
 			state.draft = blankEffect();
@@ -476,7 +463,7 @@ function renderFields(
 	write: (at: number | 'new', text: string | null) => void,
 	redraw: () => void,
 ): void {
-	const fields = make('div', 'sheetsmith-panel-fields', entry);
+	const fields = element('div', 'sheetsmith-panel-fields', entry);
 	/*
 	 * **The part's five slots come from `outcome` and are never parsed here**, which
 	 * is the whole of "there is exactly one parse of a cell part in the codebase,
@@ -533,7 +520,7 @@ function renderFields(
 		 * `Setting` API carries this class; taking it here is matching the app rather
 		 * than matching a sibling.
 		 */
-		const el = make(
+		const el = element(
 			'select',
 			'dropdown sheetsmith-panel-select',
 			field(fields, text, wide),
@@ -542,7 +529,7 @@ function renderFields(
 		return el;
 	};
 	const text = (label: string, key: string): HTMLInputElement => {
-		const el = make('input', 'sheetsmith-panel-input', field(fields, label));
+		const el = element('input', 'sheetsmith-panel-input', field(fields, label));
 		el.type = 'text';
 		token(el, key);
 		return el;
@@ -665,9 +652,9 @@ function renderFields(
 	});
 
 	if (state.pending !== null) {
-		const box = make('div', 'sheetsmith-panel-pending', fields);
+		const box = element('div', 'sheetsmith-panel-pending', fields);
 		const detaching = state.pending === TYPED_OPTION;
-		make(
+		element(
 			'p',
 			'sheetsmith-panel-why',
 			box,
@@ -675,7 +662,7 @@ function renderFields(
 				? "This copies the modifier's fields onto this row, so editing the layout will no longer change it."
 				: "This replaces what this row says with the layout's own modifier.",
 		);
-		const confirm = make('button', 'sheetsmith-panel-confirm', box);
+		const confirm = element('button', 'sheetsmith-panel-confirm', box);
 		confirm.type = 'button';
 		confirm.textContent = detaching ? 'Copy onto this row' : 'Use this modifier';
 		token(confirm, 'confirm');
@@ -696,7 +683,7 @@ function renderFields(
 			}
 			write(at, chosen);
 		});
-		const cancel = make('button', 'sheetsmith-panel-cancel', box, 'Keep it as it is');
+		const cancel = element('button', 'sheetsmith-panel-cancel', box, 'Keep it as it is');
 		cancel.type = 'button';
 		token(cancel, 'cancel');
 		cancel.addEventListener('click', () => {
@@ -839,7 +826,7 @@ function renderFields(
 		// One line saying where they are edited, because one edit there moves every
 		// character on the layout at once and a sheet that could make that edit
 		// would be a far larger change than this feature (SPEC §7).
-		make(
+		element(
 			'p',
 			'sheetsmith-panel-why',
 			fields,
@@ -896,10 +883,10 @@ function renderPromote(
 	write: (at: number | 'new', text: string | null) => void,
 	redraw: () => void,
 ): void {
-	const box = make('div', 'sheetsmith-panel-promote', fields);
-	make('div', 'sheetsmith-panel-heading', box, 'Reuse this elsewhere');
-	const row = make('div', 'sheetsmith-panel-promote-row', box);
-	const name = make('input', 'sheetsmith-panel-input', row);
+	const box = element('div', 'sheetsmith-panel-promote', fields);
+	element('div', 'sheetsmith-panel-heading', box, 'Reuse this elsewhere');
+	const row = element('div', 'sheetsmith-panel-promote-row', box);
+	const name = element('input', 'sheetsmith-panel-input', row);
 	name.type = 'text';
 	name.value = state.promoteName;
 	name.setAttribute('aria-label', 'Name this modifier');
@@ -914,7 +901,7 @@ function renderPromote(
 	name.addEventListener('input', () => {
 		state.promoteName = name.value;
 	});
-	const save = make('button', 'sheetsmith-panel-save', row, 'Save to the layout');
+	const save = element('button', 'sheetsmith-panel-save', row, 'Save to the layout');
 	save.type = 'button';
 	save.dataset.sheetsmithPanelField = 'promote';
 	save.addEventListener('focus', () => {
@@ -962,7 +949,7 @@ function renderPromote(
 		});
 	});
 	if (state.promoteProblem !== null) {
-		make('p', 'sheetsmith-panel-problem', box, state.promoteProblem);
+		element('p', 'sheetsmith-panel-problem', box, state.promoteProblem);
 	}
 }
 
@@ -1000,7 +987,7 @@ function renderRemove(
 		? `Remove this modifier from all ${takes} lines that name it`
 		: 'Remove this modifier';
 
-	const button = make('button', 'sheetsmith-panel-remove', fields);
+	const button = element('button', 'sheetsmith-panel-remove', fields);
 	button.type = 'button';
 	button.classList.toggle('sheetsmith-panel-remove-armed', state.armed);
 	button.textContent = state.armed

@@ -140,6 +140,7 @@ import {
 	reanchorAnchoredPanel,
 	showAnchoredPanel,
 } from '../ui/anchored-panel';
+import { element } from '../ui/element';
 import { bindLongPress, showPopover } from '../ui/popover';
 import { spellcheckWhileFocused } from '../ui/spellcheck';
 import { revealWhenTruncated } from '../ui/truncation';
@@ -1128,23 +1129,6 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 	render(container, config, data, context): void {
 		const doc = container.ownerDocument;
 		container.replaceChildren();
-		const element = <K extends keyof HTMLElementTagNameMap>(
-			tag: K,
-			className: string,
-			parent: HTMLElement,
-			text?: string,
-		): HTMLElementTagNameMap[K] => {
-			const el = doc.createElement(tag);
-			// Split, because `classList.add` throws on a space in a real browser and
-			// happy-dom accepts it — a `DOMException` here would abort the render
-			// mid-list and no test would see it (docs/UI.md §12).
-			for (const one of className.split(' ')) {
-				if (one !== '') el.classList.add(one);
-			}
-			if (text !== undefined) el.textContent = text;
-			parent.appendChild(el);
-			return el;
-		};
 
 		const error = configError(config);
 		if (error !== null) {
