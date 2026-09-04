@@ -1,5 +1,10 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
+// The stub installs `instanceOf` on Element, which the app installs and this
+// module uses: constructors are per-window, so `instanceof` is unreliable across
+// a popout. Imported for that side effect alone, exactly as
+// `view/cell-focus.test.ts` imports it.
+import '../test/obsidian-stub';
 import { revealWhenTruncated } from './truncation';
 
 /*
@@ -39,6 +44,48 @@ describe('revealWhenTruncated', () => {
 		el.textContent = 'A brighter lantern';
 		el.dispatchEvent(new Event('pointerenter'));
 		expect(el.getAttribute('title')).toBe('A brighter lantern');
+	});
+
+	it('reveals a field\'s value, which has no textContent to read', () => {
+		/*
+		 * **The fourth consumer's branch, and the reason it is not the first
+		 * three's spelling.** An `<input>` has no `textContent` at all, so
+		 * `textContent ?? ''` would have set the tooltip to the empty string on a
+		 * clipped field — a reveal that decided there was nothing to reveal, which
+		 * is worse than never binding. A Passport's name is the field in question:
+		 * a headline that is also the note's rename.
+		 */
+		const field = document.createElement('input');
+		field.value = 'Thora Ironhelm of Mirabar';
+		Object.defineProperty(field, 'scrollWidth', { value: 300, configurable: true });
+		Object.defineProperty(field, 'clientWidth', { value: 100, configurable: true });
+		revealWhenTruncated(field);
+		field.dispatchEvent(new Event('pointerenter'));
+		expect(field.getAttribute('title')).toBe('Thora Ironhelm of Mirabar');
+	});
+
+	it('says nothing where a field\'s value already fits', () => {
+		const field = document.createElement('input');
+		field.value = 'Thora';
+		Object.defineProperty(field, 'scrollWidth', { value: 100, configurable: true });
+		Object.defineProperty(field, 'clientWidth', { value: 100, configurable: true });
+		revealWhenTruncated(field);
+		field.dispatchEvent(new Event('pointerenter'));
+		expect(field.hasAttribute('title')).toBe(false);
+	});
+
+	it('reads the value the field holds now, not the one it was bound with', () => {
+		// The same reason the `textContent` case above has: a rename typed into the
+		// field is the same element with new text, and a caller that had handed
+		// over the old string would reveal the old string.
+		const field = document.createElement('input');
+		field.value = 'Thora';
+		Object.defineProperty(field, 'scrollWidth', { value: 300, configurable: true });
+		Object.defineProperty(field, 'clientWidth', { value: 100, configurable: true });
+		revealWhenTruncated(field);
+		field.value = 'Thora Ironhelm of Mirabar';
+		field.dispatchEvent(new Event('pointerenter'));
+		expect(field.getAttribute('title')).toBe('Thora Ironhelm of Mirabar');
 	});
 
 	it('decides again on every hover, since the width follows the pane', () => {
