@@ -84,6 +84,7 @@ import {
 } from '../parse/records';
 import { startsSection } from '../parse/character';
 import { displayText, hasLink } from '../parse/wikilink';
+import { fencedLinkRefusal } from './fenced-link';
 import { ColumnType, HOLDER_MAX_SOURCE, MaxSource } from './column-types';
 import {
 	boundedText,
@@ -1242,6 +1243,13 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		 * one design pass away from saying two things — which is the drift
 		 * `components/isolation.test.ts` scans for by clause.
 		 *
+		 * **And the builder is `components/fenced-link.ts` now rather than this
+		 * closure**, because Passport is the second fenced component with a
+		 * free-text field and the sentence above was about to be written twice —
+		 * which is the paragraph directly above happening across two files instead
+		 * of within one. The two words that differ are arguments: a record has a
+		 * name and a body to move a link into and a passport has neither.
+		 *
 		 * **It used to be bound to the modifier field alone, and that was a hole
 		 * rather than a scoping decision.** The claim covering the rest was that no
 		 * field type this component offers can hold a wikilink, which is true of the
@@ -1264,9 +1272,10 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		 * who is typing one now.
 		 */
 		const refuseLink = (text: string): string | null =>
-			hasLink(text)
-				? `A ${noun.toLowerCase()}'s fields are stored in a code block and Obsidian indexes no link inside one, so "${text}" would stop being a link. Put it in the ${noun.toLowerCase()}'s name or its body instead.`
-				: null;
+			fencedLinkRefusal(text, {
+				subject: `A ${noun.toLowerCase()}'s fields`,
+				instead: `Put it in the ${noun.toLowerCase()}'s name or its body instead.`,
+			});
 
 		/** The whole sentence a refused commit says, or null where the text is fine. */
 		const refusal = (text: string): string | null => {

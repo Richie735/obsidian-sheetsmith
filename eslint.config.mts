@@ -265,6 +265,19 @@ export default defineConfig(
 								 */
 								'!./embed-rule',
 								/*
+								 * **The one sentence a fenced component says about a
+								 * wikilink**, shared by Record set and Passport. Added on
+								 * `embed-rule.ts`'s own terms and for the same tier: a
+								 * *sentence* is a policy, so it extracts on the second
+								 * consumer rather than the third, and `record-set.ts`'s own
+								 * comment already states the rule — two copies of it is one
+								 * design pass away from saying two things, which is what
+								 * `isolation.test.ts` scans for by clause. The two words that
+								 * differ arrive as arguments, so the module knows neither
+								 * that a record nor that a passport exists.
+								 */
+								'!./fenced-link',
+								/*
 								 * **A picture in a box, the field that changes it, and every
 								 * reason there is no picture**, shared by Image and Passport.
 								 * The painter beside `embed-rule.ts` and the reason that one
@@ -287,6 +300,7 @@ export default defineConfig(
 								'!../components/sample-values',
 								'!../components/typed-value',
 								'!../components/embed-rule',
+								'!../components/fenced-link',
 								'!../components/picture-frame',
 							],
 							message:
