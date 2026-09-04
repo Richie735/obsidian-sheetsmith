@@ -30,9 +30,12 @@ orchestrator misbehaves.
 Steps 3 and 4 sit before 5 on purpose. Structural drift is expensive to fix
 once polish is built on top of it; appearance is cheap to fix late. Discovering
 that the wrong thing was built is dearer than either, which is why the spec axis
-sits beside the patterns one rather than after the polish. And the design review
-reads the structurally settled tree, so its findings are not invalidated by a
-patterns fix landing after it looked.
+sits beside the patterns one rather than after the polish. Under `/ship` the
+design reviewer starts looking as soon as the first green screenshots exist, in
+parallel with step 4, and re-checks only the views a structural fix moved;
+structural fixes rarely move pixels, and serializing the waves added the whole
+review runtime to every feature. Run by hand, sequential is simpler and the
+table's order stands.
 
 The reviews report separately and nothing merges or reranks them. Code can follow
 every pattern and implement the wrong feature, or implement the right feature and
@@ -84,21 +87,23 @@ of the two: a surface built without a spec gets rebuilt.
 
 - **Full.** Gated on an open `SPEC` §13 question, or a surface nobody has built
   before. Every step, opening with the model question before any design exists.
-  Stops: the model question, spec approval, the findings stop, land approval.
+  Stops: the model question, spec approval, the land stop.
 - **Standard.** A surface whose mechanism the repository already has. Spec it
   briefly, or skip the spec where named precedent files carry the design. Build,
   both review waves, the design wave only where there are pixels. Stops: spec
-  approval where a spec was written, the findings stop, land approval.
+  approval where a spec was written, the land stop.
 - **Short.** A decision, a chore, or debt with no user-facing surface. Build,
-  structural wave, land. One stop: land approval, with the findings summary
-  folded in.
+  structural wave, land. One stop: the land stop.
 - **Bug.** `/diagnose` first, no spec. Rejoins at the structural wave, lands like
-  anything else. Stops: the findings stop where the fix touched pixels, land
-  approval.
+  anything else. One stop: the land stop.
 
-Whatever the route, the findings stop fires whenever the work touched pixels,
-even when `/design-review` came back clean. The look at the PNGs belongs to the
-owner, and a clean report is exactly when it would be skipped silently.
+The land stop is one stop, once all waves are remediated: the findings ledger
+with dispositions and disputes, the gate results, and, whenever the work touched
+pixels, the harness PNGs, even when `/design-review` came back clean. The look
+at the PNGs belongs to the owner, and a clean report is exactly when it would be
+skipped silently. It replaced the separate findings and land-approval stops:
+between the two, nothing happened but a gate run, and each cost an owner round
+trip.
 
 ## Commits
 
