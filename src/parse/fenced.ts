@@ -66,6 +66,55 @@ export function readFenced(body: string): FencedResult {
 	return { ok: true, values };
 }
 
+/**
+ * Which lines of a body the `sheet` fence occupies, or null where there is none.
+ *
+ * For the component whose section holds a fence **and** something else: it has to
+ * find its other value without ever reading a line inside the fence, and it has
+ * to know where the fence starts so a line it adds goes above it. Both are
+ * questions about where the fence is rather than about what it holds, which is
+ * why neither `readFenced` nor `writeFenced` can answer them.
+ *
+ * **Here rather than in the component, on `docs/PATTERNS.md` §1's one-step
+ * tier.** What is shared is the *spelling* of a fence — that it opens with
+ * ```` ```sheet ````, closes with a bare ```` ``` ````, and that a `sheet` fence
+ * appears at most once — and a second copy of that is a policy nothing keeps in
+ * step: rename the fence word here and a component matching its own regex would
+ * go on treating the opening line as ordinary text, then find an embed *inside*
+ * the fence and break Constraint 2 in the direction nothing is watching.
+ *
+ * Indices into `splitLines(body)`, both inclusive. An unclosed fence — which
+ * `readFenced` refuses, so no component sees one through a successful read —
+ * reports the rest of the body as inside it, because a caller reading past it
+ * would be reading fence contents as prose. A second `sheet` fence is likewise
+ * `readFenced`'s to refuse; this reports the first.
+ *
+ * **Not under §10's third exception, and the cases beside it are why.** That
+ * exception covers a primitive whose only claim exists relative to a caller —
+ * `bodyText` alone is `trim` — and two of the claims above are not that: *which*
+ * lines a fence occupies, and that an unclosed one swallows the rest rather than
+ * letting a caller read its contents as prose. Neither is observable in a
+ * caller's round trip, which is satisfied by a fence found in the wrong place as
+ * readily as by one found in the right one. So `fenced.test.ts` drives those two
+ * directly and `passport.test.ts` holds the rest, which is the round trip.
+ */
+export function fenceLines(
+	body: string,
+): { open: number; close: number } | null {
+	const lines = splitLines(body);
+	let open = -1;
+	for (let at = 0; at < lines.length; at++) {
+		const text = lineText(lines[at] as string);
+		if (open === -1) {
+			if (FENCE_OPEN.test(text)) open = at;
+			continue;
+		}
+		if (FENCE_CLOSE.test(text)) return { open, close: at };
+	}
+	// Unclosed: everything from the opening line on is inside it.
+	return open === -1 ? null : { open, close: lines.length - 1 };
+}
+
 /** Canonical body for a section that does not exist yet. */
 function freshBody(updates: ReadonlyMap<string, string | null>): string {
 	let block = '\n```sheet\n';

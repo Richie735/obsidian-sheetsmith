@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { readFenced, writeFenced } from './fenced';
+import { fenceLines, readFenced, writeFenced } from './fenced';
 
 const BODY = '\n```sheet\nSTR: 8\nDEX: 16\nWIS: 12\n```\n';
 
@@ -113,5 +113,37 @@ describe('writeFenced', () => {
 		expect(writeFenced(body, new Map([['DEX', '18']]))).toBe(
 			body.replace('DEX: 16', 'DEX: 18'),
 		);
+	});
+});
+
+describe('fenceLines', () => {
+	/*
+	 * For the component whose section holds a fence and something else. §10's
+	 * third exception has the round trip holding this — `passport.test.ts` is
+	 * where a fence and an embed come back byte for byte — and these are the two
+	 * things that round trip cannot show: which lines a fence occupies, and that
+	 * an unclosed one swallows the rest rather than letting a caller read fence
+	 * contents as prose.
+	 */
+	it('names the lines the fence occupies', () => {
+		expect(fenceLines(BODY)).toEqual({ open: 1, close: 5 });
+	});
+
+	it('reports no fence where there is none', () => {
+		expect(fenceLines('\nJust prose.\n')).toBeNull();
+		expect(fenceLines('')).toBeNull();
+	});
+
+	it('finds a fence with prose on either side of it', () => {
+		expect(fenceLines('\nBefore.\n\n```sheet\nvalue: 14\n```\n\nAfter.\n')).toEqual(
+			{ open: 3, close: 5 },
+		);
+	});
+
+	it('takes an unclosed fence as reaching the end of the body', () => {
+		// `readFenced` refuses one, so no component meets this through a
+		// successful read — but a caller scanning for its *other* value must not
+		// read a fence's contents as prose on the way past.
+		expect(fenceLines('\n```sheet\nvalue: 1\n')).toEqual({ open: 1, close: 2 });
 	});
 });
