@@ -293,31 +293,37 @@ belongs to the component that is only that, not to whoever renders one.
 
 | Thing | Where | Used by |
 | --- | --- | --- |
-| The card | `.sheetsmith-card`, `.sheetsmith-card-single` | Card, Card set, Pool |
+| The card | `.sheetsmith-card`, `.sheetsmith-card-single` | Card, Card set, Pool, Passport's face |
 | A heading over a region | `.sheetsmith-group-heading` | Group, Tab set |
-| A component's own name | `.sheetsmith-component-label` | the card face, Pool, Track, Rich text, Image, Record set |
+| A component's own name | `.sheetsmith-component-label` | the card face, Pool, Track, Rich text, Image, Record set, Passport — **six consumers**, which is what took it from a comment in each file to a name in this table |
 | A strip of alternatives over a region | `.sheetsmith-tabset-strip` | Tab set's tabs |
 | The level ring | `paintLevelRing`, `.sheetsmith-level-ring` | Table's `level` and `toggle` columns, Record set's `level` and `toggle` fields, Track's flag, the editor's level sample |
 | The editing gesture | `editable.ts` | every stored value on a sheet |
-| The focus a transparent field takes | one selector list in `sheet.css` | Table's cells, Rich text's prose, a record's name, its number fields and its body |
-| Secondary text | `.sheetsmith-card-abbreviation` | Card set, a Record set field's name |
+| The focus a transparent field takes | one selector list in `sheet.css` | Table's cells, Rich text's prose, Image's reference, a record's name, its number fields and its body, a Passport's name |
+| The hover a transparent field takes | a second selector list beside it | Table's cells, a record's name and its number fields, a Passport's name — **a deliberately different roster from the focus list above**, and each absence is the roster's own definition rather than an exception: Image's field is `pointer-events: none` until its frame hands the press over, Rich text's display layer owns the press so its field never sees a hover, a record's body is a textarea with chrome of its own, and a Passport's *values* left the list when they became tags, because a control with a surface at rest has nothing to reveal. Order is not load-bearing in either list: `:hover` and `:focus` are pseudo-classes, so every selector is (0,3,0) against its base rule's (0,2,0) |
+| Secondary text | `.sheetsmith-card-abbreviation` | Card set, a Record set field's name. **Not a Passport's placeholders**, and the near miss is worth the row: they borrowed this rank once and a design review measured a half-filled line carrying two type sizes on one baseline, with the smallest and faintest string on the face holding the *headline* slot. A placeholder takes the field's own size and only `--text-faint` from here, which is what a Card's empty em dash already does |
 | Inline error | `.sheetsmith-error` | every component's own failure |
 | Arm, then commit | `interaction/arm-to-confirm.ts`; `.sheetsmith-table-remove-button`, `.sheetsmith-record-remove`, `.sheetsmith-panel-remove` | Table's row delete, Record set's record delete, the modifier form's **Remove** (the sentences only) |
 | A total under a table | `tfoot` + `.sheetsmith-table-value` | Table's column totals |
 | A control in the row position | `.sheetsmith-table-add`, `.sheetsmith-record-add` | Table's add row, Record set's add record — **one treatment**: a rule across the top, a centred label, and the hover surface every control on the sheet uses |
 | Rendered text over its own field | `.sheetsmith-table-linked`, `.sheetsmith-rich-text-box`, `.sheetsmith-image-box`, `.sheetsmith-record-linked`, `.sheetsmith-record-body`; `ui/spellcheck.ts` | Table's wikilinks, Rich text's prose, Image's reference, a record's name and its body |
 | Text with its wikilinks as links | `components/linked-text.ts` | Table's cells; Rich text's and Record set's fallback, **and the anchors the app's own renderer drew** — the module both paints anchors and adopts them, because the press and the hover are the same policy either way |
-| A box sized by its placement | `.sheetsmith-placed`, `.sheetsmith-placed-box` | Rich text, Image, Record set |
-| A boundary on that box | `.sheetsmith-placed-box`'s own border | all three, always rather than only under a coarse pointer: the fill alone measures 1.04:1 against the page |
-| Reveal on hover, only when clipped | `ui/truncation.ts` | The card's label, Table's links, a record's name |
+| A box sized by its placement | `.sheetsmith-placed`, `.sheetsmith-placed-box` | Rich text, Image, Record set, Passport — the component's own block, and its picture, which takes the *box* alone inside a card rather than the pair |
+| A boundary on that box | `.sheetsmith-placed-box`'s own border | all four, always rather than only under a coarse pointer: the fill alone measures 1.04:1 against the page. Inside a Passport's card the same fill measures 1.035:1 the other way — Obsidian's subtle surfaces are calibrated against the page and a card is already tinted — and it reads as belonging to the card, which the even 8px inset is what does |
+| Reveal on hover, only when clipped | `ui/truncation.ts` | The card's label, Table's links, a record's name, a Passport's name. **"Its own text" is `value` on an `<input>` and `textContent` everywhere else**, which the fourth consumer forced: a field has no `textContent`, so the first three's spelling would have set the tooltip to the empty string on a clipped field — a reveal that decided there was nothing to reveal. A copy in the caller is forbidden and unguardable, since `scrollWidth` and `clientWidth` are both 0 under happy-dom |
 | A problem list under a textarea field | `.sheetsmith-field-problems`, `-problem`, `-problem-line` | the function library, the reset triggers, the bonus types |
 | A choice from a closed list | a native `<select>`; `.sheetsmith-card-select`, `.sheetsmith-table-select`, `.sheetsmith-record-select` | Card's options, Table's and Record set's `level` set to a select |
+| The one sentence a fenced value says about a wikilink | `components/fenced-link.ts` | Record set's fields, a Passport's name and values. **A row for a *sentence*, on `arm-to-confirm.ts`'s precedent** — that row already carries "(the sentences only)" for the same reason: Obsidian indexes no link inside a code fence, so a component whose values live in one refuses a link at the commit, and the sentence is the whole of what the reader is told. Two copies of it is one design pass away from saying two things, which is what `components/isolation.test.ts` scans for by clause. The two words that differ arrive as arguments, so the module knows that neither a record nor a passport exists: a record has a name and a body to move a link into, and a passport has neither |
 | A form anchored to the control that opened it | `ui/anchored-panel.ts`; `.sheetsmith-panel`, `-body`, `-line`, `-fields`, `-field`, `-why`, `-problem` | Table's `modifier` column, Record set's `modifier` field |
 | A value read against its ceiling | `.sheetsmith-pool-ceiling`, `-separator`, `-max` | Pool's max, a Record set `number` field whose ceiling the layout declares or the record holds — **one vocabulary**: the value at full contrast, a `/`, and the ceiling muted with tabular figures. A record overrides the size only, since the pool's ceiling qualifies a headline number and a record's a 13px one; where the ceiling is the record's it is a *field* rather than a span, wearing the record's own chrome and this reading |
 | A number something has been pushed at | `.sheetsmith-modified`; `components/modifier-breakdown.ts` | Card's and Card set's `derived`, Table's computed cell |
 | A control that is nothing but a glyph | `.sheetsmith-table-modifier-cell`, `-glyph`, `-button`; `.sheetsmith-record-modifier`, `-glyph` | Table's `modifier` column, Record set's `modifier` field |
 | A disclosure that opens a block in place | `.sheetsmith-record-disclosure`, `.sheetsmith-record-body` | Record set's records |
 | A record's summary line | `.sheetsmith-record`, `-summary`, `-name`, `-fields`, `-field` | Record set |
+| A picture in a box, and every reason there is none | `components/picture-frame.ts`; `.sheetsmith-image-frame`, `.sheetsmith-image-picture`, `.sheetsmith-image-input` | Image, Passport. **The classes are spelled `sheetsmith-image-*` and are passed *into* the painter**, `linked-text.ts`'s own arrangement, because a module beside the components must not know that an image exists — so this row is the only record that the two agree on them, and without it the agreement lives in a comment, which is how `.sheetsmith-component-label` bred to six copies. The painter draws the frame, the field stacked over it, the press that hands the field over with its text selected, and all four failure states; what a caller keeps is the box and the chrome around it, which is the one thing the two do not share |
+| A tag | Obsidian's `--tag-background`, `--tag-border-color`, `--tag-padding-x`/`-y`, `--tag-weight`, `--tag-decoration` and the `-hover` variants | a Passport's identity values. **Three members of the host's set are deliberately not taken**, each for a measured reason: `--tag-size` is `em`-relative and resolves against a card rather than the sheet's field rank, so it would draw 14px where a cell draws 13px; `--tag-color` measures 3.56:1 on the tag surface over a card against §3's 4.5:1, *and* accent text on a sheet already means **link**, since every anchor `linked-text.ts` paints takes the bare `a` colour; and `--tag-radius` is a full pill, which appeared once in this stylesheet against twenty uses of `--radius-s` — a shape existing nowhere else is the second quiet style §5 forbids. So the corner is `--radius-s`, which is what every *field* takes where `--radius-m` is what every *container* takes. What is borrowed is the tag's surface; the type, the colour and the corner are the plugin's |
+| A headline that is also a field | `.sheetsmith-passport-name-input` | a Passport's name. Chromeless at rest so it reads as the headline, revealed by the shared hover and focus lists above, with the empty state as a `::placeholder` at the same size and `--text-faint`. **It carries `-input` in its name deliberately**: that puts it inside `styles.test.ts`'s own `FIELD_CLASS` pattern, so the view scope and the accent focus are both checked without anyone remembering a list — and the scope is not decoration. While the rank sat on a bare class at (0,1,0) it lost its `font-size` to Obsidian's `input[type='text']` at (0,1,1) and a 28px headline drew at **13px**, on the one control whose entire job is to be the largest thing on the card. No gate reported it; a shot did |
+| A leaf that is its own reflow context | `container-type` and `container-name` on the component's own block | a Passport. **New vocabulary, and one condition where §4 gives an inner grid two.** §4's two exist because neither derives from the other — once the sheet is one column a two-column container is *wider* than it was — and a leaf's own width separates them, because what decides whether a picture fits beside a name is exactly how much room the face has, and the face has less of it in both cases. Keyed on the sheet alone, a one-column passport on a 1400px sheet never reflowed and drew its picture across the whole card with the name squeezed to nothing. The `container-type` goes on the **block** rather than the face, since a query cannot restyle the element that is itself the container, and it is **named** for `.sheetsmith-view`'s reason one level down: the card inside already establishes an unnamed container, so an unnamed query here would resolve against whichever container happened to be nearest each selector's subject |
 
 **A field with no chrome of its own takes one focus treatment, declared once**
 [checked: `styles.test.ts`]. An accent border, the page background, and a
@@ -955,6 +961,23 @@ Run `npm run harness`. Check each of these, because none is visible in code.
   `&focus=<css selector>` focuses one, so this is photographable rather than
   taken on trust — the sheet styles `:focus` and not `:focus-visible`, so a
   programmatic focus paints what a tab press paints
+- **hover, which needs a browser being driven rather than pointed at a file.**
+  `:hover` matches on the real pointer position and nothing in the page can move
+  it, so a `hover:` view in `harness/shot.mjs` opens the headless Chrome it
+  already launches over the DevTools Protocol and dispatches a real `mouseMoved`.
+  It adds no dependency — `fetch` and Node's own `WebSocket`, the technique
+  `harness/inspect.mjs` already uses against the installed app — and a real move
+  rather than `CSS.forcePseudoState`, because half of what a hover does here is a
+  `pointerenter` handler. Until it existed no hover treatment on a sheet had ever
+  been photographed
+- **a refusal at the commit**, which is a class of surface no fixture can hold:
+  `editable.ts` reports one on *blur*, so the sentence exists only after somebody
+  types and looks away. `&type=<selector>|<text>` sets a field and leaves it, and
+  it is `&focus=`'s and `&press=`'s third sibling for their reason exactly — a
+  wikilink typed into a fence, a `## ` in a prose block, a record left nameless
+  and a picture reference that is not an embed are all argued in code and were
+  drawn nowhere. A stored body cannot stand in for any of them, because a note
+  that already holds the offending value is rendered and carried under SPEC §10
 - an error state and an empty state, not only the populated one
 - a larger text size (`Text → 24`, or `sheet-large-text.png`): does truncation
   grow, does the hierarchy reorder, does anything collide. §5 rests the card on
