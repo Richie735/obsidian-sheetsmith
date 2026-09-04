@@ -105,6 +105,12 @@ const ALLOWED = [
 	// scan below already exists to catch.
 	"import { embedRefusal } from './embed-rule';",
 	"import { embedRefusal } from '../components/embed-rule';",
+	// The one sentence a fenced component says about a wikilink, shared by
+	// Record set and Passport. A sentence is a policy, so §1's one-step tier
+	// extracts it on the second consumer — and this is the class the clause scan
+	// below exists for, so leaving it duplicated would have been the finding.
+	"import { fencedLinkRefusal } from './fenced-link';",
+	"import { fencedLinkRefusal } from '../components/fenced-link';",
 	// A picture in a box, the field that changes it, and every reason there is
 	// none. `embed-rule.ts` shared the predicate; this shares its application,
 	// which is the half §1 says drifts (`roundSum`).
@@ -332,6 +338,25 @@ describe('a refusal sentence is written in one place', () => {
 		 */
 		'No file in this vault is called',
 		'is not a picture.',
+		/*
+		 * **What a `sheet` fence does to a wikilink**, which two components now
+		 * refuse at the commit. `record-set.ts`'s own comment says the sentence "is
+		 * the whole of what the reader is told and two copies of it is one design
+		 * pass away from saying two things — which is the drift
+		 * `components/isolation.test.ts` scans for by clause", and this is that
+		 * clause. Only the shared half is scanned: each component supplies its own
+		 * advice for where the link should go instead, because a record has a name
+		 * and a body to move one into and a passport has neither.
+		 *
+		 * **The clause is longer than it looks like it needs to be, and that is the
+		 * narrowness this scan owes.** "Obsidian indexes no link inside one" alone
+		 * appears in three *comments* — Record set's, Passport's and
+		 * `editable.ts`'s `refuse` — each arguing the constraint in its own words,
+		 * which is what §9 asks them to do. A scan that reported those would be a
+		 * guard whose false positives are the paragraphs explaining the guard. What
+		 * is unique to the copy the reader meets is the whole verb phrase.
+		 */
+		'are stored in a code block and Obsidian indexes no link inside one',
 	] as const;
 
 	it.each(CLAUSES)('writes "%s" once in src', (clause) => {
