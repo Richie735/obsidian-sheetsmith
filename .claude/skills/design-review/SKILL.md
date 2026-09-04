@@ -39,6 +39,11 @@ Then **read the PNGs**. They are the review. `harness/shots/` holds both themes,
 both screens, the narrow reflow, the larger text size, and the empty and error
 states.
 
+When the invoking prompt names freshly taken PNG paths, read those and skip the
+build-and-shot commands above: they were shot for this review moments ago, and
+re-rendering the full set re-proves what already exists. Re-shot only a view the
+prompt does not cover, scoped with `shot.mjs`'s parameters.
+
 - `harness:calibrate` extracts the real theme palette and settings chrome from
   the installed Obsidian, so what you are looking at is the app's own frame
   rather than an approximation. Skip it and the shots still render, from the
