@@ -29,10 +29,27 @@
  * Re-measured on every hover rather than once, for the same reason: a cell's
  * width follows the table, the table follows the container, and what fit when the
  * sheet was drawn does not fit after a split is dragged narrower.
+ *
+ * **"Its own text" is `value` on an `<input>` and `textContent` everywhere
+ * else**, which is the fourth consumer's arrival rather than a generalisation
+ * ahead of one. A field has no `textContent` at all, so the first three consumers'
+ * spelling would have set the tooltip to the empty string on a clipped field —
+ * which is worse than not binding, because it looks like a reveal that decided
+ * there was nothing to reveal. The alternative is a copy of this in the caller,
+ * which this module's own header forbids: `scrollWidth` and `clientWidth` are
+ * both 0 under happy-dom, so no test could drive two copies over the same cases
+ * and §1's two-consumer rung is unavailable here by construction.
  */
 export function revealWhenTruncated(el: HTMLElement): void {
 	el.addEventListener('pointerenter', () => {
-		if (el.scrollWidth > el.clientWidth) el.title = el.textContent ?? '';
+		// `instanceOf` and not `instanceof`, which is a cross-window bug rather
+		// than a style rule: constructors are per-window, and Obsidian opens
+		// pop-out windows with their own — so a field in one would fail
+		// `instanceof HTMLInputElement`, fall through to `textContent`, read the
+		// empty string and set the tooltip to nothing. That is exactly the failure
+		// this branch exists to prevent, arriving one window over.
+		const text = el.instanceOf(HTMLInputElement) ? el.value : el.textContent;
+		if (el.scrollWidth > el.clientWidth) el.title = text ?? '';
 		else el.removeAttribute('title');
 	});
 }
