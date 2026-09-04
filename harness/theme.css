@@ -96,6 +96,25 @@ body.theme-light {
 	--text-muted: #5c5c5c;
 	--text-faint: #999999;
 	--text-accent: #705dcf;
+	/* The tag palette, at the app's own defaults. Here for the reason the link
+	   variables below are: `styles.css` paints a Passport's identity values through
+	   these, so a harness that has never run `harness:calibrate` would draw them as
+	   bare fields and a reviewer would sign off on a surface the plugin does not
+	   have. The colour pair is `--text-accent`, the surfaces are accent mixed
+	   towards transparent, and the metrics are the app's literals. */
+	--tag-color: var(--text-accent);
+	--tag-color-hover: var(--text-accent);
+	--tag-background: color-mix(in oklch, var(--interactive-accent) 10%, transparent);
+	--tag-background-hover: color-mix(in oklch, var(--interactive-accent) 20%, transparent);
+	--tag-border-color: color-mix(in oklch, var(--interactive-accent) 15%, transparent);
+	--tag-border-color-hover: color-mix(in oklch, var(--interactive-accent) 15%, transparent);
+	--tag-decoration: none;
+	--tag-decoration-hover: none;
+	--tag-padding-x: 0.65em;
+	--tag-padding-y: 0.25em;
+	--tag-radius: 2em;
+	--tag-corner-shape: round;
+	--tag-weight: inherit;
 	/* Link variables, at the app's own defaults. The unresolved ones are the
 	   reason they are here: styles.css paints an unresolved link through them,
 	   and a harness missing them would render one in the cell's own text colour —
