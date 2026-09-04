@@ -147,7 +147,7 @@ export default defineConfig(
 				{
 					patterns: [
 						{
-							/*
+								/*
 							 * What a component may take from the app, as an
 							 * allowlist rather than a convention.
 							 *
@@ -247,6 +247,35 @@ export default defineConfig(
 								 * adding up.
 								 */
 								'!./typed-value',
+								/*
+								 * **What a component may accept as a picture, and why a
+								 * body cannot be one**, shared by Image and Passport.
+								 * Added deliberately, on `effective-value.ts`'s terms
+								 * rather than `modifier-form.ts`'s: in no registry,
+								 * declaring no `ComponentDefinition`, importing nothing
+								 * from `obsidian` and touching no file. It is here for
+								 * *reuse* at two consumers rather than three, because
+								 * what is shared is a policy — a predicate and the two
+								 * sentences it refuses with — and PATTERNS §1's one-step
+								 * tier extracts one on the second consumer. The drift is
+								 * a *sentence*: a design pass softening the remote
+								 * refusal in one copy leaves the other sending the reader
+								 * somewhere else, which is the failure
+								 * `isolation.test.ts` already scans refusal clauses for.
+								 */
+								'!./embed-rule',
+								/*
+								 * **A picture in a box, the field that changes it, and every
+								 * reason there is no picture**, shared by Image and Passport.
+								 * The painter beside `embed-rule.ts` and the reason that one
+								 * was not enough: extracting the predicate and leaving its
+								 * application duplicated is §1's `roundSum` mistake, and 33
+								 * byte-identical lines is what it looked like here. The
+								 * two-consumer rung was also unavailable — `image.test.ts`
+								 * drives five gesture cases the second copy had no equivalent
+								 * for, which is `arm-to-confirm.ts`'s entry verbatim.
+								 */
+								'!./picture-frame',
 								'!../components/column-types',
 								'!../components/level-ring',
 								'!../components/card-face',
@@ -257,6 +286,8 @@ export default defineConfig(
 								'!../components/stored-flag',
 								'!../components/sample-values',
 								'!../components/typed-value',
+								'!../components/embed-rule',
+								'!../components/picture-frame',
 							],
 							message:
 								'A component must not import another component. Move the shared behaviour into a module named for what it does — a sibling painter, or src/interaction/ — and import that from both.',

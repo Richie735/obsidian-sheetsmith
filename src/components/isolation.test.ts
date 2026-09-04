@@ -98,6 +98,18 @@ const ALLOWED = [
 	// decides what an aggregate over either is adding up (§1's one-step tier).
 	"import { typedValue } from './typed-value';",
 	"import { typedValue } from '../components/typed-value';",
+	// What a component may accept as a picture, and why a body cannot be one:
+	// one predicate and two refusal sentences, shared by Image and Passport.
+	// A policy, so §1's one-step tier extracts it on the second consumer — and
+	// the thing that would drift is a *sentence*, which is what the refusal-clause
+	// scan below already exists to catch.
+	"import { embedRefusal } from './embed-rule';",
+	"import { embedRefusal } from '../components/embed-rule';",
+	// A picture in a box, the field that changes it, and every reason there is
+	// none. `embed-rule.ts` shared the predicate; this shares its application,
+	// which is the half §1 says drifts (`roundSum`).
+	"import { renderPictureFrame } from './picture-frame';",
+	"import { renderPictureFrame } from '../components/picture-frame';",
 	"import { MODIFIED_CLASS } from '../components/modifier-breakdown';",
 	"import { paintLinkedText } from '../components/linked-text';",
 	"import { paintLevelRing } from '../components/level-ring';",
@@ -300,6 +312,26 @@ describe('a refusal sentence is written in one place', () => {
 		 */
 		'Select again to confirm.',
 		'Delete cancelled',
+		/*
+		 * **The two a refused picture says.** `embed-rule.ts` exists because two
+		 * components ask the same question, and its header's claim is that "a
+		 * refusal message stays one string in one place" — which a header cannot
+		 * make true. The failure is the one this scan was written for: a design pass
+		 * softens the remote refusal where Image draws it, and a Passport goes on
+		 * sending the reader to a different component in the older words.
+		 */
+		'is a web address, and a picture has to be a file in this vault',
+		'A picture is an embed',
+		/*
+		 * **The two a resolved reference says**, and they were the pair this scan
+		 * could not see: `embed-rule.ts` shared the predicate and left its
+		 * application in both components, so these two were written twice while the
+		 * two clauses above — one string in one module — could not diverge at all.
+		 * The roster had been extended for the safe pair and not for the exposed
+		 * one. `picture-frame.ts` holds both now, and this is what says so.
+		 */
+		'No file in this vault is called',
+		'is not a picture.',
 	] as const;
 
 	it.each(CLAUSES)('writes "%s" once in src', (clause) => {
