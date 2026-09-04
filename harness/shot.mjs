@@ -13,8 +13,8 @@
  * which is gitignored.
  */
 
-import { execFileSync } from 'node:child_process';
-import { mkdirSync, existsSync } from 'node:fs';
+import { execFileSync, spawn } from 'node:child_process';
+import { mkdirSync, existsSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
 const CHROME = [
@@ -88,8 +88,44 @@ mkdirSync(outDir, { recursive: true });
  * The narrow jump is again the widest, for the reason above squared: six pairs
  * collapse from two-per-row to one-per-row, and each pair's own Card and Table
  * stack rather than sitting side by side.
+ *
+ * **Raised again for the two Passports and the proficiency card that reads one**
+ * (`docs/features/passport.md`): measured 5371 here against the 5200 this was set
+ * to, 10725 narrow against 10050, 6332 at `text=24` against 6050 and 6020 at
+ * `&width=520` against 6000 — **all four over the frame**, so every one of those
+ * views was cropping. 5200 to **5600** here, 10050 to **11000** narrow, 6050 to
+ * **6600** at `text=24` and 6000 to **6300** at 520, each measured through its own
+ * query as this comment asks. The narrow jump is the widest for the usual reason
+ * one step further: a stacked passport is a name, a landscape picture and a wrapped
+ * line of fields where a placed one is a square beside three words.
+ *
+ * **Raised once more for the one- and two-column Passports** the design wave
+ * asked for (`docs/UI.md` §11 wants 1, 2 and 3 columns and no sample had the
+ * first two): 5531 here against 5600, 11216 narrow against 11000 — over again —
+ * 6568 at `text=24` against 6600 and 6180 at 520 against 6300. Two of the four
+ * had under 70px left, which is not headroom. 5600 to **5800**, 11000 to
+ * **11500**, 6600 to **6800**, 6300 to **6400**.
+ *
+ * **And once more for the six-field wrap sample** the owner's tag reading asked
+ * for: 11554 narrow against 11500 and 6399 at 520 against 6400 — one over and one
+ * with a single pixel left. 11500 to **11800**, 6400 to **6600**. The other two
+ * were unchanged at 5531 and 6568, because the sample sits beside the narrow pair
+ * on a row that already existed.
+ *
+ * **Measure with the harness *built*, which is the trap this pass fell into
+ * first.** `harness:shot` renders `index.html` and does not build it, so a first
+ * round of these numbers was taken against the previous bundle and every one of
+ * them came out about 250px short — a shot of the sheet before this feature,
+ * looking exactly like a finished measurement. `node harness/build.mjs` first.
+ *
+ * **What these numbers do not fix is `EDITOR_FRAME` and its siblings**, which
+ * measure 12105 at 1500 against the 8600 they are set to. That staleness is not
+ * this addition's — three more tree rows is a few hundred pixels, not 3500 — and
+ * raising it here would be repairing somebody else's instrument inside a diff
+ * about a component. Measured and recorded rather than fixed, which is what this
+ * comment keeps asking for.
  */
-const SHEET_FRAME = '1400,5200';
+const SHEET_FRAME = '1400,5800';
 
 /**
  * The editor pane's frame, tall because the tree is the whole layout.
@@ -181,7 +217,7 @@ const DEFAULTS = [
 		// the three frames this addition touches.
 		name: 'sheet-narrow',
 		query: 'surface=sheet&theme=dark&width=380',
-		size: '520,10050',
+		size: '520,11800',
 	},
 	{
 		/*
@@ -204,10 +240,12 @@ const DEFAULTS = [
 		// Raised to 6000 for the "Ability checks" six-up: at 520 the sheet has
 		// not collapsed, so the outer group's six pairs still sit two-per-row —
 		// the same shape as the wide view, only narrower — and the added rows
-		// push the sheet about 700px taller.
+		// push the sheet about 700px taller. Raised again to 6300 for the two
+		// Passports: measured 6020 against the 6000 it was set to, which is 20px
+		// over and therefore cropping.
 		name: 'sheet-list-narrow',
 		query: 'surface=sheet&theme=light&width=520',
-		size: '620,6000',
+		size: '620,6600',
 	},
 	{
 		// UI.md §5 puts the card's headline number in `em` rather than pixels
@@ -233,7 +271,7 @@ const DEFAULTS = [
 		//
 		// Raised again with SHEET_FRAME for the "Ability checks" six-up, measured
 		// through `text=24` rather than assumed from the default-size delta.
-		size: '1400,6050',
+		size: '1400,6800',
 	},
 	{
 		// The first view to photograph a focus ring at all. A still cannot press
@@ -497,7 +535,7 @@ const DEFAULTS = [
 		// Kept equal to `sheet-large-text`'s own frame (see SHEET_FRAME's note):
 		// the panel is anchored off `document.body` and adds nothing to the
 		// document's own height.
-		size: '1400,6050',
+		size: '1400,6800',
 	},
 	{
 		/*
@@ -510,7 +548,7 @@ const DEFAULTS = [
 		query: `surface=sheet&theme=dark&width=380&bar=off&${OPEN_MIXED_FORM}`,
 		// Kept equal to `sheet-narrow`'s own frame, for the same reason as
 		// `sheet-modifier-form-large-text` above.
-		size: '520,10050',
+		size: '520,11800',
 	},
 	{
 		/*
@@ -1099,6 +1137,105 @@ const DEFAULTS = [
 		size: '1400,900',
 		flags: ['--force-prefers-reduced-motion'],
 	},
+	{
+		/*
+		 * **Focus on a Passport's identity field**, which `docs/UI.md` §11 asks for
+		 * on every interactive element and which no shot had: `sheet-focus` focuses
+		 * a card's `<select>`, so the only focus treatment ever photographed was
+		 * the one a native menu draws. A passport adds a field per identity value,
+		 * and its treatment is the shared transparent-field list — an accent border
+		 * over the page background — which is exactly the kind of rule that goes
+		 * missing without anyone noticing (that list lost four declarations once
+		 * and every gate stayed green).
+		 */
+		name: 'sheet-passport-focus',
+		query: 'surface=sheet&theme=light&focus=.sheetsmith-passport-input',
+		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * **And on the picture's reference field**, which is the other control the
+		 * face adds. It is Image's own field and Image's own focus rule, and
+		 * neither had been photographed either: this one is worth its own frame
+		 * because the field is *inert and transparent at rest* and takes both the
+		 * press and its colour back on focus, so a still of it focused is the only
+		 * way to see that the reference is legible over whatever is behind it.
+		 */
+		name: 'sheet-passport-picture-focus',
+		query:
+			'surface=sheet&theme=light&focus=.sheetsmith-passport%20.sheetsmith-image-input',
+		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * **The first hover shot this instrument has ever taken**, and the frame a
+		 * design question turns on: a passport draws a 22px bold read-only name
+		 * over 13px editable values, and neither has chrome at rest. Whether that
+		 * reads correctly depends on what hover reveals — the field takes a border
+		 * and the page background, and the name takes nothing — so the state that
+		 * answers it is the pointer resting on a field with the name beside it.
+		 *
+		 * Hovered rather than queried, because `:hover` matches on the real pointer
+		 * position and nothing in the page can move it. `shootHovered` below is the
+		 * whole of what that costs.
+		 */
+		name: 'sheet-passport-hover',
+		query: 'surface=sheet&theme=light',
+		size: SHEET_FRAME,
+		hover: '.sheetsmith-passport-input',
+	},
+	{
+		/*
+		 * **Focus on the name**, the largest control on a sheet and, until the
+		 * owner's reversal made it a stored value, not a control at all. It is
+		 * chromeless at rest so it reads as a headline, which makes the focused
+		 * frame the one that says it is a field.
+		 *
+		 * It also photographs the thing a shot caught and no gate did: the class
+		 * carrying the headline rank was unscoped and lost its `font-size` to
+		 * Obsidian's own `input[type='text']` — 13px where 28px was meant, on the
+		 * one control whose entire job is to be the largest thing on the card.
+		 */
+		name: 'sheet-passport-name-focus',
+		query: 'surface=sheet&theme=light&focus=.sheetsmith-passport-name-input',
+		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * The name hovered, which is the other half of the same question: a
+		 * chromeless headline that is in fact a field has to say so before the
+		 * press, and hover is where it does — the shared transparent-field
+		 * treatment, the same one a table cell and a record's name take.
+		 */
+		name: 'sheet-passport-name-hover',
+		query: 'surface=sheet&theme=light',
+		size: SHEET_FRAME,
+		hover: '.sheetsmith-passport-name-input',
+	},
+	{
+		/*
+		 * **A wikilink refused at the commit**, which is a whole class of refusal no
+		 * fixture can hold: `editable.ts` reports one on *blur*, so the sentence
+		 * exists only after somebody types and looks away. Nothing in a stored body
+		 * could stand in for it, because a note that already holds a link is
+		 * rendered and carried rather than corrected (SPEC §10) — the message is for
+		 * the reader typing one now.
+		 *
+		 * `&type=` is what makes it reachable, and this is its live consumer. It was
+		 * added for a rename collision that the owner's reversal removed; the
+		 * capability survives because Constraint 2's refusal is the same shape and
+		 * reaches four other components' commits besides.
+		 *
+		 * On the *name*, which is where the reversal put it: it is an entry in the
+		 * same fence as the values now, so it takes the same sentence. The frame
+		 * shows the whole shape of the decision — the reader's own text kept in the
+		 * field, the sentence under it, and the picture and every value still live.
+		 */
+		name: 'sheet-passport-link-refused',
+		query:
+			'surface=sheet&theme=light&type=.sheetsmith-passport-name-input%7C%5B%5BThora%5D%5D',
+		size: SHEET_FRAME,
+	},
 ];
 
 const args = process.argv.slice(2);
@@ -1115,8 +1252,118 @@ const views =
 				},
 			];
 
+/**
+ * Capture a view with the pointer resting on one element, over the DevTools
+ * Protocol.
+ *
+ * **A second capture path, and it is here because `:hover` cannot be reached any
+ * other way.** Every other state a still cannot get to is a query on the harness
+ * page — `&focus=`, `&press=`, `&scroll=` — because each of them is something
+ * JavaScript can do. Hover is not: `:hover` matches on the real pointer position
+ * and nothing in the page can move it. So a hover shot needs a browser being
+ * *driven* rather than a browser being pointed at a file, and until this existed
+ * no hover treatment on the sheet had ever been photographed — a table cell's
+ * field revealing its border, a record's name, a delete glyph stepping from faint
+ * to muted, all of them reviewed by hand or on trust.
+ *
+ * **It adds no dependency**, which is the constraint this file opens with.
+ * `harness/inspect.mjs` already speaks CDP to the *installed Obsidian* with
+ * nothing but `fetch` and Node's built-in `WebSocket`, and this is that technique
+ * pointed at the headless Chrome this file already launches.
+ *
+ * A real `mouseMoved` rather than `CSS.forcePseudoState`, deliberately: forcing
+ * the pseudo-state paints the CSS and fires none of the listeners, and half of
+ * what a hover does on this sheet is a `pointerenter` handler — `ui/truncation.ts`
+ * decides whether to reveal a clipped string on exactly that event. Moving the
+ * pointer exercises both.
+ *
+ * The clip is the whole window, so the file matches what `--screenshot` produces
+ * for every other view and a reviewer can diff the two.
+ */
+async function shootHovered(view, out) {
+	const [width, height] = view.size.split(',').map(Number);
+	// A high port rather than 9222, which a developer's own Chrome may hold.
+	const port = 9500 + Math.floor(Math.random() * 400);
+	const child = spawn(
+		CHROME,
+		[
+			'--headless=new',
+			'--disable-gpu',
+			'--hide-scrollbars',
+			`--remote-debugging-port=${port}`,
+			...(view.flags ?? []),
+			`--window-size=${view.size}`,
+			`${page}?${view.query}`,
+		],
+		{ stdio: ['ignore', 'ignore', 'ignore'] },
+	);
+	const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+	/** The same budget `--virtual-time-budget` gives every other view, plus slack. */
+	await wait(4000);
+	const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+	const target = targets.find((one) => one.type === 'page');
+	const socket = new WebSocket(target.webSocketDebuggerUrl);
+	await new Promise((resolve) => {
+		socket.onopen = resolve;
+	});
+	let id = 0;
+	const pending = new Map();
+	socket.onmessage = (event) => {
+		const message = JSON.parse(event.data);
+		pending.get(message.id)?.(message.result);
+	};
+	const send = (method, params) =>
+		new Promise((resolve) => {
+			id += 1;
+			pending.set(id, resolve);
+			socket.send(JSON.stringify({ id, method, params }));
+		});
+
+	const box = await send('Runtime.evaluate', {
+		expression: `(() => {
+			const el = document.querySelector(${JSON.stringify(view.hover)});
+			if (el === null) return null;
+			el.scrollIntoView({ block: 'nearest' });
+			const b = el.getBoundingClientRect();
+			return JSON.stringify({ x: b.x + b.width / 2, y: b.y + b.height / 2 });
+		})()`,
+		returnByValue: true,
+	});
+	if (box.result.value === null || box.result.value === undefined) {
+		throw new Error(
+			`nothing matches "${view.hover}" in ${view.name}: the selector is stale, ` +
+				'and a hover shot of nothing looks exactly like a hover shot.',
+		);
+	}
+	const at = JSON.parse(box.result.value);
+	await send('Input.dispatchMouseEvent', {
+		type: 'mouseMoved',
+		x: at.x,
+		y: at.y,
+		button: 'none',
+		buttons: 0,
+	});
+	// A `title` is the host's own tooltip and never appears in a screenshot, so
+	// nothing here waits for one; what this pause is for is the transition a
+	// hovered surface runs (160ms on a card, per `sheet.css`).
+	await wait(400);
+	const shot = await send('Page.captureScreenshot', {
+		format: 'png',
+		captureBeyondViewport: true,
+		clip: { x: 0, y: 0, width, height, scale: 1 },
+	});
+	writeFileSync(out, Buffer.from(shot.data, 'base64'));
+	socket.close();
+	child.kill();
+}
+
 for (const view of views) {
 	const out = `${outDir}/${view.name}.png`;
+	if (view.hover !== undefined) {
+		await shootHovered(view, out);
+		console.log(`${view.name.padEnd(16)} ${out}`);
+		continue;
+	}
 	execFileSync(
 		CHROME,
 		[

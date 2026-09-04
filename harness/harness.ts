@@ -370,6 +370,9 @@ function renderSheet(into: HTMLElement): void {
 				// stays absent on purpose (see `samples.ts`), so a reviewer sees the
 				// fallback for prose and a real picture for an image.
 				resource,
+				// The note's own name, which the app takes from the file and this
+				// has none of — so it is supplied for one sample and left absent for
+				// the other, because both readings are worth a shot (see above).
 				// The view's own answer, so a tab survives an edit here exactly as
 				// it does in the app: a re-render is what would otherwise reset it.
 				activeTab: activeTab.get(config.id),
@@ -793,6 +796,43 @@ function applyQuery(): void {
 	};
 
 	/**
+	 * `&type=<selector>|<text>` — put `text` in that field and leave it, so a
+	 * still can capture what a *commit* reveals.
+	 *
+	 * `&focus=`'s and `&press=`'s third sibling, added for their reason exactly.
+	 * A refusal at the commit is a whole class of surface no shot could reach:
+	 * `editable.ts` reports one on blur, so the sentence a reader gets for a
+	 * wikilink typed into a fence, a `## ` in a prose block, a record left
+	 * nameless, a picture reference that is not an embed, or a note renamed onto
+	 * one that already exists is drawn only after somebody types and looks away.
+	 * Every one of those was argued in code and photographed nowhere.
+	 *
+	 * **The rename's collision is the case that forced it.** It is the one refusal
+	 * on the sheet whose sentence a component cannot produce at all — the host
+	 * answers it, asynchronously — so there is no state a fixture could be written
+	 * into that would draw it. The only way to see it is to commit.
+	 *
+	 * `input` then `blur`, which is the gesture rather than an imitation of it:
+	 * the value is set, the draft's own listeners run, and blur is what
+	 * `editable.ts` commits on. Split on the *first* `|` only, so a refusal
+	 * message containing one is still typeable.
+	 */
+	const typed = params.getAll('type');
+	const typeWanted = () => {
+		for (const request of typed) {
+			const at = request.indexOf('|');
+			const selector = at === -1 ? request : request.slice(0, at);
+			const text = at === -1 ? '' : request.slice(at + 1);
+			const field = document.querySelector<HTMLInputElement>(selector);
+			if (field === null) continue;
+			field.focus();
+			field.value = text;
+			field.dispatchEvent(new Event('input', { bubbles: true }));
+			field.blur();
+		}
+	};
+
+	/**
 	 * `&resize=<id>:<dx>,<dy>` — drag that component's own resize corner by
 	 * `(dx, dy)` pixels and leave the gesture mid-flight, pointer still
 	 * captured, so the shot shows a real reflow rather than a static end
@@ -808,6 +848,9 @@ function applyQuery(): void {
 		draw();
 		focusWanted();
 		pressWanted();
+		// After the presses, and before the scroll: a commit can draw a message,
+		// and a message is a thing worth scrolling to.
+		typeWanted();
 		// After the presses, so a press that draws something can be scrolled to.
 		scrollWanted();
 		if (resize !== null && editorPane) {
