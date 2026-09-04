@@ -1864,6 +1864,216 @@ export const SAMPLES: Sample[] = [
 			].join('\n'),
 		},
 	},
+	/*
+	 * Passport, twice, and at the foot of the sheet rather than the top.
+	 *
+	 * **Position is the one thing these two are not about.** A header belongs
+	 * above everything, and putting it there would renumber every row in this
+	 * file and every comment that names one — for no gain, since what a reviewer
+	 * judges here is the *face*: the name against the picture, the dotted line
+	 * against the name, and what both do when the sheet collapses. Row 43 is the
+	 * first free row under the six-up group above, so nothing already placed
+	 * moves.
+	 *
+	 * 1. **A header**, the acceptance criterion's own configuration: a picture,
+	 *    three fields and a hidden label, two rows tall. It is the one shot that
+	 *    says whether the face reads as a passport rather than as a card with a
+	 *    photo in it — and whether "Thora · Half-elf · Bard · 5" reads as a
+	 *    sentence about a person rather than as four fields in a row.
+	 *
+	 *    Its `level` is what the proficiency card below reads, so the published
+	 *    name is a number moving on the sheet rather than a claim in a test.
+	 *
+	 * 2. **A passport with no picture and its label showing**, which is the other
+	 *    branch of both settings and the shape a system whose sheets carry no
+	 *    portrait gets. Beside the first rather than in a state of its own,
+	 *    because the two are a *pair*: the whole question `hidePicture` asks is
+	 *    whether the text alone still reads as a face, and that is only answerable
+	 *    against one that has a picture.
+	 *
+	 * **The name is an ordinary entry in each fence**, which is the owner's
+	 * reversal: it was `RenderContext.noteName`, the note's own filename, and a
+	 * note called `Thora.md` holding a character called *Thora Ironhelm of
+	 * Mirabar* is the case that ended that. So it needs no plumbing here at all —
+	 * it is a value like `class`, and the header's is long on purpose so the
+	 * headline's ellipsis is photographed somewhere. `sheet-large-text` is the
+	 * shot where it clips, measured rather than assumed.
+	 */
+	{
+		config: {
+			id: 'header',
+			type: 'passport',
+			label: 'Passport',
+			hideLabel: true,
+			position: { col: 1, row: 43, width: 6, height: 2 },
+			fields: [
+				{ key: 'species', name: 'Species' },
+				{ key: 'class', name: 'Class' },
+				{ key: 'level', name: 'Level' },
+			],
+		} as ComponentConfig,
+		// The embed first and the fence second, which is the order a reader who
+		// pasted a portrait into the section would produce.
+		body: [
+			'',
+			'![[Sildar Hallwinter.png]]',
+			'',
+			'```sheet',
+			'name: Thora Ironhelm of Mirabar',
+			'species: Half-elf',
+			'class: Bard',
+			'level: 5',
+			'```',
+			'',
+		].join('\n'),
+	},
+	{
+		config: {
+			id: 'playbook',
+			type: 'passport',
+			label: 'Playbook',
+			hidePicture: true,
+			position: { col: 7, row: 43, width: 6, height: 2 },
+			fields: [
+				{ key: 'playbook', name: 'Playbook' },
+				{ key: 'heritage', name: 'Heritage' },
+				{ key: 'background', name: 'Background' },
+				{ key: 'vice', name: 'Vice' },
+			],
+		} as ComponentConfig,
+		// A Blades sheet on the same component with nothing changed but the field
+		// list, and one field left empty so the placeholder rank is on screen
+		// beside three populated values.
+		body: [
+			'',
+			'```sheet',
+			'name: Silver',
+			'playbook: Whisper',
+			'heritage: Akoros',
+			'background: Academic',
+			'vice: ',
+			'```',
+			'',
+		].join('\n'),
+	},
+	/*
+	 * **Six fields, which is the wrap case and the only one that finds a defect.**
+	 *
+	 * The vault fixture found it and no harness view had it: with the values drawn
+	 * as a sentence, six of them wrapped after a middle dot and stranded it at the
+	 * end of a row. The dots are gone now — the owner's reading of the values as
+	 * tags took them — so what this view is for is the *replacement* claim, that a
+	 * wrapped row of chips reads as a row of chips rather than as a paragraph that
+	 * has broken.
+	 *
+	 * The 5e header the vault fixture actually uses, field for field, so the
+	 * harness and the fixture are looking at one thing. Six columns and two rows,
+	 * on its own row so nothing reflows around it.
+	 */
+	{
+		config: {
+			id: 'six_fields',
+			type: 'passport',
+			label: 'Six fields',
+			hideLabel: true,
+			position: { col: 4, row: 46, width: 6, height: 2 },
+			fields: [
+				{ key: 'class', name: 'Class' },
+				{ key: 'subclass', name: 'Subclass' },
+				{ key: 'species', name: 'Species' },
+				{ key: 'background', name: 'Background' },
+				{ key: 'alignment', name: 'Alignment' },
+				{ key: 'level', name: 'Level' },
+			],
+		} as ComponentConfig,
+		body: [
+			'',
+			'![[Sildar Hallwinter.png]]',
+			'',
+			'```sheet',
+			'name: Thora Ironhelm of Mirabar',
+			'class: Bard',
+			'subclass: College of Lore',
+			'species: Half-elf',
+			'background: Entertainer',
+			'alignment: Chaotic good',
+			'level: 5',
+			'```',
+			'',
+		].join('\n'),
+	},
+	/*
+	 * **The narrowest placements, which §11 asks for and which no sample had.**
+	 * One column is about 100px and two about 210px at 1400, and a face holding a
+	 * square frame beside a headline and a dotted line is the shape most likely to
+	 * break there — so it is placed rather than reasoned about.
+	 *
+	 * The one-column face carries a picture and one field, because that is the
+	 * hardest thing to ask of it: at 100px the square frame takes most of the
+	 * width and whatever is left has to hold a name. The two-column face turns the
+	 * picture off and takes two fields, which is the other end of the same
+	 * question — how narrow the *text* can get before the line stops reading as a
+	 * sentence. Both hide their labels, since at these widths a label would be the
+	 * widest thing on the card.
+	 *
+	 * On their own row rather than beside the two above: those are six columns
+	 * each and fill the row, and a shot has to be able to show these two without
+	 * anything reflowing around them.
+	 */
+	{
+		config: {
+			id: 'narrow_one',
+			type: 'passport',
+			label: 'One column',
+			hideLabel: true,
+			position: { col: 1, row: 46, width: 1, height: 2 },
+			fields: [{ key: 'class', name: 'Class' }],
+		} as ComponentConfig,
+		body: [
+			'',
+			'![[Sildar Hallwinter.png]]',
+			'',
+			'```sheet',
+			'name: Thora',
+			'class: Bard',
+			'```',
+			'',
+		].join('\n'),
+	},
+	{
+		config: {
+			id: 'narrow_two',
+			type: 'passport',
+			label: 'Two columns',
+			hideLabel: true,
+			hidePicture: true,
+			position: { col: 2, row: 46, width: 2, height: 2 },
+			fields: [
+				{ key: 'species', name: 'Species' },
+				{ key: 'level', name: 'Level' },
+			],
+		} as ComponentConfig,
+		body: '\n```sheet\nname: Thora\nspecies: Half-elf\nlevel: 5\n```\n',
+	},
+	/*
+	 * What the passport publishes, read by something else on the sheet: a
+	 * proficiency bonus off the level in the header above. It is the only place a
+	 * reviewer can see that a passport field is a *number* to the formula
+	 * language rather than a word — 5 gives +3, and a level typed into the face
+	 * moves this card on commit.
+	 */
+	{
+		config: {
+			id: 'passport_prof',
+			type: 'card',
+			label: 'Proficiency',
+			derived: 'ceil(header.level / 4) + 1',
+			hideValue: true,
+			hideNote: true,
+			position: { col: 1, row: 45, width: 2, height: 1 },
+		} as ComponentConfig,
+		body: null,
+	},
 ];
 
 /** The same layout with nothing stored: every component's empty state. */
@@ -2179,6 +2389,35 @@ export function brokenSamples(): Sample[] {
 		 * with no heading drawn, the prefix is the only name on screen.
 		 */
 		if (config.id === 'symbol') body = '\n![[https://example.com/portrait.png]]\n';
+		/*
+		 * A passport's own error state, which is the one thing neither Image nor a
+		 * fenced card can show: **two halves, two rules, and never both at once**.
+		 * The picture is refused in the frame — Image's rule, since the picture is
+		 * Image's kind of data — while the name and every field stay live, which is
+		 * the arrangement the spec's Error state section describes and nothing else
+		 * on this view draws.
+		 *
+		 * **`![](…)` rather than a bare path, and the difference is a decision this
+		 * component makes that Image does not.** Image's whole body is its value, so
+		 * a bare `Sildar Hallwinter.png` there is a value it holds and refuses. Here
+		 * the picture is one *line* beside a fence, found by looking like an embed —
+		 * so a bare path is prose, which SPEC §10 says is preserved and never drawn,
+		 * and staging one here photographs an empty frame rather than a refusal.
+		 * Markdown's own local image form is embed-like, holds the same fix, and is
+		 * what this frame therefore has to say something about.
+		 *
+		 * The read-failure half is deliberately not staged: it is `.sheetsmith-error`
+		 * in the cell with nothing else drawn, which is Card's rule and already
+		 * photographed on `inspiration` above. Staging it here would replace the
+		 * face with the same message a second time and take the refusal-in-the-frame
+		 * shot away with it.
+		 */
+		if (config.id === 'header' && body !== null) {
+			body = body.replace(
+				'![[Sildar Hallwinter.png]]',
+				'![](Sildar Hallwinter.png)',
+			);
+		}
 		/*
 		 * **A Record set's two failure surfaces, which nothing drew.** A design
 		 * review found `state=broken` rendering all three lists pixel-identical to
