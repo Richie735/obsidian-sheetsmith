@@ -358,6 +358,9 @@ describe('the canvas filled with sample values', () => {
 					: {}),
 				...(type === 'track' ? { count: 6 } : {}),
 				...(type === 'card-set' ? { entries: [{ key: 'STR' }] } : {}),
+				// A passport with no fields is a name and a picture, and neither is
+				// a value a note holds — so there is nothing for a sample to fill.
+				...(type === 'passport' ? { fields: [{ key: 'class', name: 'Class' }] } : {}),
 			}),
 		);
 		const drawn = (samples: boolean): Map<string, string> => {

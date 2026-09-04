@@ -1248,13 +1248,6 @@
 	transition: none;
 }
 
-/* The field is invisible until it is asked for: a sheet of eighteen skills
-   would otherwise be thirty-six boxes before it is anything else. */
-.sheetsmith-view .sheetsmith-table-input:hover {
-	border-color: var(--background-modifier-border);
-	background-color: var(--background-primary);
-}
-
 /* ---------------------------------------------------------------------------
    The focus treatment a transparent field wears, shared by every component
    whose field paints no chrome of its own (§9 of docs/UI.md).
@@ -1296,11 +1289,60 @@
 .sheetsmith-view .sheetsmith-image-input:focus,
 .sheetsmith-view .sheetsmith-record-name-input:focus,
 .sheetsmith-view .sheetsmith-record-input:focus,
-.sheetsmith-view .sheetsmith-record-body-input:focus {
+.sheetsmith-view .sheetsmith-record-body-input:focus,
+.sheetsmith-view .sheetsmith-passport-input:focus,
+.sheetsmith-view .sheetsmith-passport-name-input:focus {
 	border-color: var(--interactive-accent);
 	background-color: var(--background-primary);
 	outline: 2px solid transparent;
 	outline-offset: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   And the same roster's *hover*, one selector list for the same reason.
+
+   **A field with no chrome of its own is invisible until it is asked for**, and
+   hover is what asks: the border appears and the page background comes up under
+   it, rather than a tint of the field's own. A sheet of eighteen skills would
+   otherwise be thirty-six boxes before it is anything else; a list of forty
+   spells, forty boxes; and a passport reads as a *sentence*, so four visible
+   boxes in a line of words would make it read as a form — which is the thing
+   that component exists not to be.
+
+   **Four copies before this, byte-identical**, while the focus treatment for
+   very nearly the same set of fields was already one list directly above. Its own
+   row in `docs/UI.md` §9 says why that is the shape: the list *is* the roster, so
+   a fifth field is one line here rather than a fifth copy somewhere else — and a
+   comment naming the agreement is not something the next component can reuse.
+
+   **A different roster from the focus list, deliberately.** Rich text's field and
+   Image's are not on it and cannot be: Image's is `pointer-events: none` until
+   the frame hands the press over, and Rich text's display layer owns the press so
+   the field never sees a hover. Record set's body is a textarea with chrome of
+   its own. So the two lists are the same *kind* of agreement over two different
+   sets, which is what keeps each one honest.
+
+   **A Passport's value field was on this list and left it; its *name* field
+   joined.** Both moves are the roster's own definition rather than exceptions to
+   it: this treatment is what a field with *no chrome at rest* does when asked
+   for. The values are drawn as Obsidian's tags now, so they have a surface at
+   rest and nothing to reveal, and their hover is the tag's own `-hover` pair. The
+   name is the opposite case — a 28px headline with no chrome at all, which is
+   exactly the control this treatment exists for, and hover is what says a
+   read-only-looking headline is in fact the note's rename. Both stay on the
+   **focus** list above, because focus is a different question and the answer
+   there is the accent border every chromeless field takes.
+
+   Order is not load-bearing here and that is worth stating, since this file's own
+   guards are mostly about cascade: `:hover` is a pseudo-class, so every selector
+   below is (0,3,0) against its base rule's (0,2,0) and wins wherever it sits.
+   --------------------------------------------------------------------------- */
+.sheetsmith-view .sheetsmith-table-input:hover,
+.sheetsmith-view .sheetsmith-record-name-input:hover,
+.sheetsmith-view .sheetsmith-record-input:hover,
+.sheetsmith-view .sheetsmith-passport-name-input:hover {
+	border-color: var(--background-modifier-border);
+	background-color: var(--background-primary);
 }
 
 /* A level column is one control, not a row of boxes: a graded proficiency
@@ -3861,6 +3903,415 @@ a.sheetsmith-undo {
 	text-align: center;
 }
 
+/* **The face's own reflow context, named.**
+
+   The block rather than the face, because a container query cannot restyle the
+   element that *is* the container and what has to change is the face's own
+   `flex-direction`. Named rather than anonymous for `.sheetsmith-view`'s reason
+   one level down: the card inside already sets `container-type`, so an unnamed
+   query written here would resolve against whichever container happened to be
+   nearest the selector's subject — the block for the face, the face for the
+   picture — and two selectors in one block would silently be asking two
+   different questions. */
+.sheetsmith-passport {
+	container-type: inline-size;
+	container-name: sheetsmith-passport;
+}
+
+/* ---------------------------------------------------------------------------
+   Passport — who the character is, as one face.
+
+   **It borrows and adds almost nothing**, which is §9 of docs/UI.md applied
+   rather than asserted. The surface, the border, the radius, the padding and the
+   press feedback are `.sheetsmith-card`'s; the height floor and the picture's
+   surface are `.sheetsmith-placed` and `.sheetsmith-placed-box`'s; the frame, the
+   picture and the reference field are Image's own classes, so `object-fit`, the
+   transparent field and its focus treatment are all one copy; the label is the
+   shared component rank; and the empty name slot wears
+   `.sheetsmith-card-abbreviation`, the secondary rank, by name.
+
+   What is left, and the whole of what this component adds, is the arrangement:
+   two regions side by side, a headline that is not a control, and **a line of
+   fields separated by dots**, which is the one new thing on the sheet.
+   --------------------------------------------------------------------------- */
+
+/* The card, read the other way round: a card stacks a name over a number and a
+   passport puts a picture beside a face. `align-items: stretch` rather than the
+   card's `center` so the picture can take the face's full height; `text-align`
+   back to the start because a name and a line of values are read as a sentence
+   rather than as a tile.
+
+   `flex: 1 1 auto` and `min-height: 0` are the placed box's own role one level
+   out: this is the flex child of `.sheetsmith-placed` that takes whatever the
+   label left, and `min-height: 0` is what lets it shrink below its content rather
+   than growing the flex line — the one route by which the content could still
+   decide the height. */
+.sheetsmith-passport-face {
+	flex: 1 1 auto;
+	min-height: 0;
+	flex-direction: row;
+	align-items: stretch;
+	justify-content: flex-start;
+	gap: var(--size-4-2);
+	text-align: start;
+}
+
+/* A square as tall as the face, on the start side. `aspect-ratio` with an auto
+   width is what makes it square *from* the height rather than from a number: the
+   face's height is the placement, so a two-row passport gets a two-row portrait
+   and nothing here restates the grid.
+
+   It overrides exactly one of the shared box's declarations — `flex`, which is
+   written for a box that takes the remaining *height* in a column and would take
+   the remaining width here. Everything else about the surface is the shared
+   box's. */
+.sheetsmith-passport-picture {
+	flex: 0 0 auto;
+	align-self: stretch;
+	aspect-ratio: 1 / 1;
+	width: auto;
+	height: auto;
+	/* **The cap, and it is the fix for a real break.** A square sized from the
+	   face's own height is wider than the face itself wherever the placement is
+	   narrower than it is tall — so a design review found a one-column, two-row
+	   passport drawing the picture at the full width of the card with the name and
+	   the field squeezed to nothing. Neither was on screen at all. Capped, the
+	   text always has more than half the face, and the frame becomes a portrait
+	   rectangle rather than a square at those widths, which `object-fit: contain`
+	   handles by construction. Below the threshold further down it stops sharing
+	   the line at all. */
+	max-width: 45%;
+}
+
+/* The rest of the face. `min-width: 0` because a flex item's automatic minimum
+   is its content, and without it a long name would push the picture off the card
+   instead of ellipsising. */
+.sheetsmith-passport-text {
+	flex: 1 1 auto;
+	min-width: 0;
+	display: flex;
+	flex-direction: column;
+	justify-content: center;
+	gap: var(--size-2-1);
+}
+
+/* **The name, at the card's own headline size, and it is a field like every other
+   value on the sheet.**
+
+   One class rather than a rank plus a field class, because there is one element:
+   the name is an entry in the fence now, so there is no read-only branch for a
+   rank to be shared with. `-input` in the name is deliberate — it puts the class
+   inside `styles.test.ts`'s own `FIELD_CLASS` pattern, so the view scope *and* the
+   accent focus rule are both checked without anyone adding it to a list.
+
+   **The view scope is load-bearing and was measured.** Obsidian styles
+   `input[type='text']` at (0,1,1) with a `font-size` on it, so while the rank sat
+   on a bare class at (0,1,0) the headline drew at **13px** in the field and 28px
+   in the read-only reading beside it — a rank silently becoming a cell's size, on
+   the one control whose entire job is to be the largest thing on the card. Found
+   by looking at a shot, and it is why the class is named the way it is now.
+
+   Relative rather than a pixel size, so the face scales with the vault's
+   text-size setting exactly as a card's number does. Chromeless at rest so it
+   reads as the headline rather than as a form control; the shared hover and focus
+   treatments further up this file are what reveal it. `height: auto` against
+   Obsidian's `--input-height: 30px`, or a 28px headline would sit in a 30px box
+   and clip its own descenders. */
+.sheetsmith-view .sheetsmith-passport-name-input {
+	width: 100%;
+	max-width: 100%;
+	height: auto;
+	padding: 0;
+	border: 1px solid transparent;
+	border-radius: var(--radius-s);
+	background-color: transparent;
+	box-shadow: none;
+	overflow: hidden;
+	white-space: nowrap;
+	text-overflow: ellipsis;
+	font-size: var(--sheetsmith-card-value-size);
+	font-family: inherit;
+	font-weight: var(--font-bold);
+	/* Tracking and leading are size-specific, and these are the card's own
+	   headline values: at this size letters read too far apart. */
+	line-height: 1.05;
+	letter-spacing: -0.02em;
+	color: var(--text-normal);
+}
+
+/* **The empty state is the placeholder, which is where `-name-empty` went.** That
+   was a class on a `<div>`, because the name came from outside the note and "no
+   name" was a fact about the *host* rather than about the note. It is a value
+   now, so an empty one is PATTERNS §4's editable empty card and a placeholder is
+   exactly the mechanism for it — the same shape the chips' own placeholders take.
+
+   The headline size comes from the rule above and only the colour changes here,
+   which is UI §9's model for this: a Card's empty value is an em dash at the
+   card's own size, faint. A design review measured the alternative, a rank down,
+   putting the smallest and faintest string on the face into the headline slot
+   while the values under it became the headline. */
+.sheetsmith-view .sheetsmith-passport-name-input::placeholder {
+	color: var(--text-faint);
+	opacity: 1;
+}
+
+/* The one new thing: the identity values as a line rather than a form.
+
+   Wrapping is allowed and expected — a two-row placement gives the line room to
+   become two — and `align-items: baseline` is what keeps a dot on the same line
+   as the values it separates. The two gaps differ on purpose: the row gap is the
+   space between wrapped lines and the column gap is what the dots sit in. */
+.sheetsmith-passport-fields {
+	display: flex;
+	flex-wrap: wrap;
+	/* Chips are boxes rather than words, so they line up by their edges. Baseline
+	   alignment is for text on one line and it left a wrapped row of pills sitting
+	   on the row above's baseline. */
+	align-items: center;
+	min-width: 0;
+	/* An even gap in both directions, where a sentence wanted a tight row gap and
+	   a looser column one: a wrapped row of chips reads as a grid of them, and the
+	   two axes carrying different numbers is what makes it read as a paragraph
+	   that has broken instead. */
+	gap: var(--size-2-2);
+	/* The hit target the pill gave back by being 22px rather than Obsidian's 30px
+	   input height. `legibility.md` §5's pointer minimum is 20pt and its coarse
+	   minimum 28pt, and the press is routed from the line rather than from the
+	   box — so the line's own height is the target and this is what it is made
+	   of. */
+	padding-block: var(--size-2-1);
+	/* **The line is the hit target and this is what makes it one** (`passport.ts`'s
+	   `drawFields`). The fields are content-sized, so a level's box is about as
+	   wide as one digit and could not be hit on its own — the press is routed to
+	   the nearest field instead, and every pixel of the line has to belong to one.
+	   The cursor is what says so before the press, which is `.sheetsmith-card`'s
+	   own promise on a card that has something to edit. */
+	cursor: text;
+}
+
+/* A value in a sentence, so the field paints no chrome of its own: the resting
+   border is transparent and focus colours it, which is the shared treatment
+   further up this file.
+
+   The view scope is §2's rule and not hypothetical: Obsidian styles
+   `input[type='text']` at a specificity a bare class loses to, so every
+   declaration below that takes chrome off would be dropped and a passport would
+   read as a row of form controls.
+
+   `width: auto` with the `size` attribute set by the component, rather than
+   `field-sizing: content`: a box that grew as its value was typed would move
+   every field after it under the reader's hand, which is the movement §9
+   measured and refused for a record's ceiling. */
+/* **Each value is a tag, in Obsidian's own tag clothes** (`docs/UI.md` §1: the
+   plugin has no colours of its own, and this is the host's whole vocabulary for
+   exactly this object — `--tag-background`, `--tag-color`, `--tag-border-color`,
+   `--tag-padding-x`/`-y`, `--tag-weight` and `--tag-decoration`, with the
+   `-hover` variants below).
+
+   **Three members are deliberately not taken and each says so at its own
+   declaration**: `--tag-size`, because `em` inside a card resolves against the
+   card rather than the sheet's field rank; `--tag-color` and `--tag-color-hover`,
+   on a measured contrast failure and on accent text already meaning *link* here;
+   and `--tag-radius` with `--tag-corner-shape`, because a full pill is a shape
+   this sheet has nowhere else. What is borrowed is the tag's *surface*; what is
+   the plugin's own is its type, its colour and its corner.
+
+   **This supersedes the no-padding argument that was here, and it is a trade
+   rather than a correction.** That comment cited §9's ruling — where a control
+   borrows a reading, the padding is what gives it away first — and it was right
+   about the reading it was serving: the line was a *sentence*, so the values had
+   to share the name's left edge and padding was what pushed the first one off it.
+   The owner's reading is a row of **tags**, and a tag is padded by definition. So
+   the sentence reading is given up on purpose and the 9px of left-edge offset the
+   design wave measured is given up with it. Read the old argument as superseded,
+   not as wrong.
+
+   **Two members of the vocabulary are deliberately not taken.**
+   `--tag-size` is `0.875em`, and `em` inside a card resolves against the card's
+   16px rather than against the sheet's field rank — so taking it would draw these
+   values at 14px where a table's cell and a record's field draw at 13px, which is
+   the rank the design wave settled these on. The size is not what makes a chip a
+   chip; the padded rounded surface is. And `--tag-border-width` is `0px`, which
+   would leave the shared focus rule below painting a border that has no width —
+   so the border stays 1px and takes the tag's *colour*, which also keeps the box
+   the same size focused and unfocused (§11: focus must not reflow the line).
+
+   The view scope is §2's rule and not hypothetical: Obsidian styles
+   `input[type='text']` at a specificity a bare class loses to, so every
+   declaration below would be dropped and a passport would read as a row of form
+   controls. */
+.sheetsmith-view .sheetsmith-passport-input {
+	width: auto;
+	max-width: 100%;
+	/* `height: auto` against Obsidian's own `--input-height: 30px`, so the pill is
+	   the height of its own text and its padding rather than of a form field. A
+	   30px pill around a 13px value reads as a button; the tag's own padding is
+	   what should decide this box. The line's `padding-block` puts the hit target
+	   back, since the pill is now about 22px tall. */
+	height: auto;
+	padding: var(--tag-padding-y) var(--tag-padding-x);
+	border: 1px solid var(--tag-border-color);
+	/* **The plugin's own corner, not the host's tag corner**, which is the third
+	   member of the vocabulary taken from elsewhere and the owner's call. Measured:
+	   `--tag-radius` is `2em` and appeared *once* in this stylesheet — here —
+	   against twenty uses of `--radius-s` and six of `--radius-m`, so a full pill
+	   was a shape that existed nowhere else on a sheet, which is the second quiet
+	   style §9 forbids.
+
+	   `--radius-s` rather than `--radius-m`, and the split in this file is clean
+	   enough to read off: 4px is what every *field* takes — a card's input, a table
+	   cell, a record's field and a record's own row — and 8px is what a *container*
+	   takes, the card itself, the placed box and the table's scroll wrapper. A chip
+	   is a field. `--tag-corner-shape` goes with the radius, being the same
+	   borrowed-shape decision. */
+	border-radius: var(--radius-s);
+	background-color: var(--tag-background);
+	box-shadow: none;
+	/* **`--text-normal` rather than `--tag-color`, and it is the one member of the
+	   vocabulary swapped rather than withheld.** Two independent reasons, and the
+	   first is measured: the tag colour on the tag surface over a card comes out at
+	   **3.56:1** in light and 4.9:1 in dark, against `legibility.md` §3's 4.5:1 for
+	   13px text. The level ring's top level is recorded there as the host's pair
+	   the plugin cannot improve on; this is not that case, because a different
+	   *host* variable fixes it and `docs/UI.md` §1 asks for a theme variable rather
+	   than for a particular one.
+
+	   And the second reason stands on its own: **accent-coloured text on a sheet
+	   already means "link"**. `components/linked-text.ts` paints every anchor a
+	   cell or a prose block holds, and those take the bare `a` colour — so §9's own
+	   lookalike rule bites here in a way it does not inside a note, where a tag is
+	   not sitting among live links and is not itself an input. A reader should not
+	   have to press an identity value to find out it is not a link.
+
+	   What still makes it a tag is everything else: the surface, the border, the
+	   pill radius, the padding and the hover are the host's own. */
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+	font-family: inherit;
+	font-weight: var(--tag-weight);
+	text-decoration: var(--tag-decoration);
+	/* Centred inside the pill. An `<input>`'s `size` is counted in `0` advances,
+	   which is wider than the lowercase letters actually in it, so a box sized to
+	   hold "Half-elf" has a few pixels spare; centred, that slack splits and sits
+	   inside the pill's own padding where nothing reads it as a gap. The card's
+	   own value field is centred too. */
+	text-align: center;
+	/* A level steps under the arrow keys, and digits that re-advance as they
+	   change move every field after them (§5 of docs/UI.md). */
+	font-variant-numeric: tabular-nums;
+}
+
+/* The tag's own hover, which is why this field left the shared hover roster
+   further up: there is nothing to *reveal* on a control that has a surface at
+   rest, so what hover does here is deepen the one it has. */
+.sheetsmith-view .sheetsmith-passport-input:hover {
+	border-color: var(--tag-border-color-hover);
+	background-color: var(--tag-background-hover);
+	text-decoration: var(--tag-decoration-hover);
+}
+
+/* The layout's word for the field, shown only while the field is empty — **at the
+   field's own size, with only the colour taken from the quiet treatment**.
+
+   **This used to respell the abbreviation rank, and that was wrong twice over.**
+   A design review measured a half-filled line carrying two type sizes on one
+   baseline: `Academic` at 13px beside `Vice` at 10.2px, tracked, which is the
+   labelled-box reading this component exists to escape. And 10.2px is the
+   smallest type on a sheet and the first thing a smaller vault text setting
+   pushes under `legibility.md` §4's 10px floor — on the one string that names the
+   field at all.
+
+   The sheet's own precedent says the same thing and is easier to check: a Card's
+   empty value is an em dash at the *card's* full size, faint, and §9 cites that
+   dash as the model. Rich text's placeholder, Image's and a record's body all
+   take exactly these two declarations and nothing else. This is the fourth, and
+   the size and the tracking are what leave. */
+.sheetsmith-view .sheetsmith-passport-input::placeholder {
+	color: var(--text-faint);
+	opacity: 1;
+}
+
+/* **Faint is a legibility floor for these two, whatever rank they belong to.**
+
+   The placeholder no longer borrows the abbreviation rank, so the original reason
+   for this block — that the rank escalates and a respelling of it would not —
+   is gone. It is kept on the narrower ground that survives: `--text-faint` is
+   2.97:1 against a card's fill, under `legibility.md` §3's bar, and these two
+   strings are the ones that can least afford it. The placeholder is the *only*
+   thing naming a field the layout declared, and an empty chip is the one on the
+   line with nothing else to read.
+
+   **It is the only escalating placeholder on the sheet**, and that is stated
+   rather than hidden: Rich text's, Image's and a record's body all stay faint
+   under this query. Whether they should is a gap this feature did not open, and
+   making them symmetrical by *removing* this one would be the wrong direction to
+   resolve it in.
+
+   The name's own placeholder is the third, and for the same reason one rank up:
+   at the headline size `--text-faint` is still under §3's bar for text below
+   24px, and this is the string that says the largest slot on the face is waiting
+   for a value. */
+@media (prefers-contrast: more) {
+.sheetsmith-view .sheetsmith-passport-input::placeholder,
+.sheetsmith-view .sheetsmith-passport-name-input::placeholder {
+		color: var(--text-muted);
+	}
+
+}
+
+/* Under the sheet's collapse the face stacks: picture above, text below, and the
+   name still the first thing in the text. A one-row passport in a narrow pane is
+   therefore taller than one row, which is the rule every stacked card follows.
+
+   The picture stops being a square, because a full-width square in a one-column
+   sheet is most of the pane: it takes a landscape frame and `object-fit: contain`
+   keeps whatever is in it whole.
+
+   Below the rules it overrides — `@container` adds no specificity, so an equal
+   selector placed above would simply lose. */
+/* ---------------------------------------------------------------------------
+   Narrow, the face stacks: picture above, text below, and the name still the
+   first thing in the text. A one-row passport in a narrow pane is therefore
+   taller than one row, which is the rule every stacked card follows.
+
+   The picture stops being a square, because a full-width square in a narrow card
+   is most of the card: it takes a landscape frame and `object-fit: contain` keeps
+   whatever is in it whole.
+
+   **One condition on the component's own width, not two**, and that is a
+   departure from UI §4 worth stating. §4 gives an inner grid *two* conditions —
+   its own column count and whether the sheet has given up being a grid — because
+   neither can be derived from the other: once the sheet is one column a
+   two-column container is wider than it was, so no threshold on its own width
+   separates the cases. **A leaf's own width does separate them**, because what
+   decides whether a picture can sit beside a name is exactly how much room the
+   face has, and the face has less of it in both situations: about 348px in the
+   one-column reflow at 380px, and about 100px at one grid column on a 1400px
+   sheet. So the second question has the same answer as the first here, and asking
+   it twice would be two thresholds to keep in step for no gain.
+
+   400px is measured rather than derived, and against both cases: the face is
+   about 679px at six columns and reads as a pair, about 430px at four, about
+   320px at three and about 100px at one, and the one-column sheet reflow puts it
+   at about 348px — which the spec asks to stack, and which this therefore has to
+   cover.
+
+   Below the rules it overrides, since `@container` adds no specificity.
+   --------------------------------------------------------------------------- */
+@container sheetsmith-passport (max-width: 400px) {
+.sheetsmith-passport-face {
+		flex-direction: column;
+	}
+
+.sheetsmith-passport-picture {
+		align-self: auto;
+		max-width: none;
+		aspect-ratio: 3 / 2;
+		width: 100%;
+	}
+
+}
+
 
 /* ---------------------------------------------------------------------------
    Record set — a list of records, each opening to show its own prose.
@@ -4159,13 +4610,6 @@ a.sheetsmith-undo {
 	text-overflow: ellipsis;
 }
 
-/* The field is invisible until it is asked for: a list of forty spells would
-   otherwise be forty boxes before it is anything else. */
-.sheetsmith-view .sheetsmith-record-name-input:hover {
-	border-color: var(--background-modifier-border);
-	background-color: var(--background-primary);
-}
-
 .sheetsmith-view .sheetsmith-record-linked > * {
 	grid-area: 1 / 1;
 	min-width: 0;
@@ -4347,11 +4791,6 @@ a.sheetsmith-undo {
 	/* A number that reflows while it is being stepped reads as movement the
 	   reader did not ask for (§5 of docs/UI.md). */
 	font-variant-numeric: tabular-nums;
-}
-
-.sheetsmith-view .sheetsmith-record-input:hover {
-	border-color: var(--background-modifier-border);
-	background-color: var(--background-primary);
 }
 
 /* **A ceiling the reader sets wears the record's field chrome and the pool's

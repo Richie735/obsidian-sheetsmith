@@ -60,6 +60,17 @@ const FIELD_CLASS = /\.sheetsmith-[a-z-]*(?:-input|-current|-select)\b/;
  * `-select` — the gap this file's own header already names as something to
  * widen for on purpose rather than a licence to let slide.
  *
+ * **A Passport's headline was briefly the second entry and is not one now**, and
+ * the round trip is worth a sentence because it is what the list is *for*. That
+ * class carried a rank and landed on a `<div>` in one branch and an `<input>` in
+ * another; unscoped at (0,1,0) it lost its `font-size` to Obsidian's
+ * `input[type='text']` at (0,1,1), so a 28px headline drew at 13px in the field
+ * — found by looking at a shot, listed here so the scope was checked, and then
+ * *renamed* to `-name-input` when the read-only branch went, which puts it inside
+ * `FIELD_CLASS`'s own pattern. An entry that stops being needed because the thing
+ * it guarded got a name the pattern already covers is the better outcome, so it
+ * left rather than lingering.
+ *
  * `sheetsmith-canvas-overlay` is a real `<button>` on the sheet's own grid
  * (`docs/features/grid-canvas.md` §2). Unscoped it was (0,1,0) and lost
  * `background-color` and `box-shadow` to Obsidian's own

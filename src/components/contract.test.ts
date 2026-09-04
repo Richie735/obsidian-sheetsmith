@@ -231,19 +231,51 @@ describe('component registry', () => {
 		expect(fields.length).toBeGreaterThan(25);
 	});
 
-	it('sees published entries from most of the components that publish any', () => {
+	/**
+	 * The components whose published entries do not depend on configuration, so
+	 * this sweep can reach them from the bare config the editor writes.
+	 *
+	 * Everything else that publishes correctly publishes *nothing* here, because
+	 * what it publishes is one entry per key the *layout* named — a Card set's
+	 * entries, a Passport's fields, a Table's published columns — and each of
+	 * those is covered in its own file against a component that is actually
+	 * configured. Naming the reachable half rather than the unreachable one is
+	 * deliberate: the assertion below is an equality against this list, so the
+	 * list has to be what the sweep produces.
+	 *
+	 * **Named rather than counted, and that is a correction.** This was
+	 * `> publishing.length / 2`, which is a fraction rather than a rule: it
+	 * permitted a third of the roster going quietly empty. Passport arriving as a
+	 * third component publishing per declared key is what pushed the fraction over
+	 * its own line and made the reason visible. A list means a component that
+	 * stopped publishing is a line somebody edits.
+	 *
+	 * **And Passport has since moved onto this list**, which is the list doing its
+	 * job: its name became a stored entry under a key it defaults itself, so it
+	 * publishes one name from the bare config the editor writes where before it
+	 * published nothing until a field was declared.
+	 */
+	const PUBLISHES_UNCONFIGURED = ['card', 'passport', 'pool', 'track'];
+
+	it('sees published entries from every component that can publish unconfigured', () => {
 		// The check below runs inside a per-component loop over what that
 		// component publishes, and a component publishing nothing passes it by
-		// iterating nothing. Two of them do exactly that under a bare config
-		// and are covered in their own files, so this holds the rest: if the
-		// sweep stopped reaching any component at all, or reached only one,
-		// every per-component pass below would be worth nothing and nothing
-		// else would say so.
+		// iterating nothing. So this holds the sweep itself: exactly the
+		// components whose entries do not depend on configuration are reached,
+		// and if the sweep stopped reaching one every per-component pass below
+		// would be worth nothing and nothing else would say so.
 		const publishing = types.filter(
 			(type) => getComponent(type)?.scopeValues !== undefined,
 		);
+		// The floor, and it is not about `reached` being empty — the equality below
+		// compares against a non-empty literal, so an empty `reached` fails on its
+		// own. What it guards is the *registry*: this case is only worth anything
+		// while there are publishing components outside the roster, since a roster
+		// equal to every publisher would make the equality a tautology and say
+		// nothing about which components the sweep can reach.
+		expect(publishing.length).toBeGreaterThan(PUBLISHES_UNCONFIGURED.length);
 		const reached = publishing.filter((type) => publishedEntries(type).length > 0);
-		expect(reached.length).toBeGreaterThan(publishing.length / 2);
+		expect(reached.sort()).toEqual([...PUBLISHES_UNCONFIGURED].sort());
 	});
 
 	it('catches an entry that says two things about one name', () => {
@@ -667,6 +699,8 @@ describe('a component that says what a sample of itself looks like', () => {
 		'card Dropdown',
 		'card-set bare',
 		'card-set Currency',
+		'passport bare',
+		'passport Header',
 		'pool bare',
 		'record-set bare',
 		'record-set Spellbook',
@@ -681,9 +715,14 @@ describe('a component that says what a sample of itself looks like', () => {
 
 	/**
 	 * The three configurations that name nothing to fill, which is the honest
-	 * answer rather than an invented key: a Card set with no entries, a Table
-	 * with no rows and no open rows, and a Track with no count, levels or rows —
-	 * the last of which is a configuration error the card reports in place.
+	 * answer rather than an invented key: a Card set with no entries, a Table with
+	 * no rows and no open rows, and a Track with no count, levels or rows, the
+	 * last of which is a configuration error the card reports in place.
+	 *
+	 * **A Passport was the fourth and is not any more**, which is the owner's
+	 * reversal showing up here: its name used to be the note's *filename*, so a
+	 * passport with no declared fields held nothing a note could store. The name is
+	 * an entry in its fence now, so every configuration of it fills at least that.
 	 */
 	const EMPTY = ['card-set bare', 'table bare', 'track bare'];
 
