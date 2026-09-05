@@ -1630,28 +1630,31 @@ describe('a container that is itself a tab', () => {
 	it('draws the declared rows, so the preview shows the box not the content', async () => {
 		// The premise of a tab set is that its box is its placement — and the
 		// canvas is the same real `openSubgrid` the sheet itself opens, so an
-		// author sees the same fixed box on both. Three rows here rather than
-		// four, because the stale fixture's tab set is what governs —
-		// `innerPlacement` again, the same function the columns come from.
+		// author sees the same box on both. The box arrives as a min-height
+		// floor rather than a row template, so the rows themselves stay
+		// content-sized like the sheet's own (see `openSubgrid`). Three rows
+		// here rather than four, because the stale fixture's tab set is what
+		// governs — `innerPlacement` again, the same function the columns come
+		// from.
 		const harness = await open(staleTab());
 		const combatGrid = harness.container.querySelector<HTMLElement>(
 			'[data-sheetsmith-grid="combat"]',
 		);
-		expect(combatGrid?.style.gridTemplateRows).toBe(
-			'repeat(3, minmax(0, 1fr))',
+		expect(combatGrid?.style.minHeight).toBe(
+			'calc(3 * var(--sheetsmith-grid-row))',
 		);
 	});
 
 	it('leaves the sheet\'s own schematic to grow, as the sheet does', async () => {
-		// Not an omission: `.sheetsmith-grid` sets no `grid-template-rows` at the
-		// top level, so the sheet grows down as components are added. A fixed row
-		// count here would preview a box the sheet does not have — the opposite of
-		// the bug above, and the reason `rows` is optional rather than always set.
+		// Not an omission: the top-level grid carries no declared height, so the
+		// sheet grows down as components are added. A floor here would preview a
+		// box the sheet does not have — the opposite of the bug above, and the
+		// reason `rows` is optional rather than always set.
 		const harness = await open(staleTab());
 		const sheet = harness.container.querySelector(
 			'.sheetsmith-editor-canvas .sheetsmith-grid',
 		) as HTMLElement;
-		expect(sheet.style.gridTemplateRows).toBe('');
+		expect(sheet.style.minHeight).toBe('');
 	});
 
 	it('agrees with the sheet, which is the divergence that mattered', async () => {

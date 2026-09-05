@@ -126,20 +126,29 @@ export function childIsPlaced(parent: ComponentConfig | null): boolean {
  * component placed outside the container, in both directions. There is no
  * `columns` config to disagree with it (SPEC §8).
  *
- * The rows are what this grew, and the omission was a real defect rather than an
- * unfinished edge: with implicit rows a container's declared `height` did
- * nothing at all, so a group four rows high whose children needed six simply
- * became six, and a child two rows high inside a container was not the height of
- * the identical component two rows high outside it. It also made a fixed-size
- * container impossible, which is what a Tab set has to be — its tabs are
- * alternatives on one grid, and they can only be interchangeable without moving
- * the sheet if that grid is the size the layout declared rather than the size
- * whichever tab is showing happens to need.
+ * The rows are content-sized, exactly as the sheet's own are, with the declared
+ * `height` as a floor. This is the second correction on the same edge, and it
+ * withdrew `repeat(rows, minmax(0, 1fr))`, so both readings are recorded. The
+ * first correction was right that implicit rows alone were a defect — a
+ * container's declared `height` did nothing, so a fixed-size container was
+ * impossible. But equal shares were the wrong repair, and the reason is CSS
+ * intrinsic sizing: equal `fr` tracks size the whole grid to `rows ×` its
+ * tallest row's demand, so one pool-height card in one row of an eleven-row tab
+ * made every row that tall, the tab set's cell carried that to the sheet rows it
+ * spans, and the whole sheet gained air nothing had asked for. Measured on the
+ * DnD 5e Standard fixture: ~1500px of outer rows over ~660px of neighbouring
+ * content. Equal shares also never delivered the sameness they claimed: a sheet
+ * row is as tall as its content, so forcing inner rows equal made a child two
+ * rows high inside a container a *different* height from the identical component
+ * outside it — the very defect the first correction was aimed at.
  *
- * `minmax(0, 1fr)` rather than `auto`: equal rows are the point, since that is
- * what makes an inner row a sheet row rather than whatever its own contents
- * came to. The `0` floor is what lets a row hold something that would rather be
- * wider than its share without pushing the track out.
+ * What each guarantee rests on now. A child's size agrees inside and out
+ * because both grids size rows the same way, by content. A container's declared
+ * `height` still does something: the floor below keeps the box when children
+ * underfill it. And a Tab set still cannot move the sheet on a switch, because
+ * that guarantee never lived in the row template — every panel stays laid out
+ * in one stage cell, so the set is as tall as its tallest tab whichever one is
+ * showing (SPEC §4.2).
  *
  * Two elements rather than one, because a container query cannot ask about the
  * element declaring it: the wrapper carries `container-type` and the grid inside
@@ -170,11 +179,15 @@ export function openSubgrid(
 	const grid = doc.createElement('div');
 	grid.classList.add('sheetsmith-grid');
 	grid.style.setProperty('--sheetsmith-columns', String(columns));
-	// Inline rather than a custom property the stylesheet reads, because the
-	// narrow reflow drops this grid for a flex column and a `grid-template-rows`
-	// left on the element would be inert there rather than wrong — one
-	// declaration that stops applying beats a rule that has to be unset.
-	grid.style.gridTemplateRows = `repeat(${rows}, minmax(0, 1fr))`;
+	// The declared height as a floor, not a template: rows stay implicit and
+	// content-sized like the sheet's own (see the header). The arithmetic is
+	// `.sheetsmith-placed`'s own — rows times the grid-row unit, gaps left
+	// uncounted — because two spellings of "a placement's height in pixels"
+	// would drift apart with nothing watching. Inline for the same reason the
+	// old template was: the narrow reflow drops this grid for a flex column,
+	// and there the floor keeps meaning what it says while a row template
+	// would have gone inert.
+	grid.style.minHeight = `calc(${rows} * var(--sheetsmith-grid-row))`;
 	scope.appendChild(grid);
 	into.appendChild(scope);
 	return grid;

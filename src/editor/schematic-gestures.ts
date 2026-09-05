@@ -108,9 +108,9 @@ export interface Schematic {
 	 * Rows to draw, for a container whose height is declared.
 	 *
 	 * Absent for the sheet's own schematic, which is correct rather than
-	 * unfinished: `.sheetsmith-grid` sets no `grid-template-rows` at the top
-	 * level either, so the sheet grows down as components are added and the
-	 * preview should too.
+	 * unfinished: the top-level grid carries no declared height — a container's
+	 * arrives as a min-height floor — so the sheet grows down as components are
+	 * added and the preview should too.
 	 */
 	rows?: number;
 }
@@ -188,11 +188,12 @@ export interface SchematicHost {
  * grid. `rowStarts` is the grid's own resolved per-track offsets, read off
  * `getComputedStyle(...).gridTemplateRows` rather than assumed; `pitch` is
  * what stands in wherever that cannot be resolved into pixels — a browser
- * that has not run layout, or a grid with no explicit row tracks at all,
- * which is the sheet's own top-level grid: its row count is never fixed
- * (`SPEC` §8 again — it grows as components are added). Columns keep a single
- * pitch, since a component always fills its placement's full width and the
- * tracks there are `1fr`-uniform.
+ * that has not run layout, or one reporting explicit tracks only, and every
+ * schematic's rows are implicit now: a container's declared height arrives
+ * as a min-height floor rather than a row template, and the sheet's own row
+ * count was never fixed (`SPEC` §8 again — it grows as components are
+ * added). Columns keep a single pitch, since a component always fills its
+ * placement's full width and the tracks there are `1fr`-uniform.
  */
 interface PreviewMetrics {
 	/** Left edge of the first column. */
@@ -224,8 +225,8 @@ interface PreviewMetrics {
  * null where it cannot be read that way.
  *
  * `none` and the empty string are the two spellings of "no explicit tracks" —
- * the sheet's own schematic sets neither, growing on `grid-auto-rows` instead
- * — and a token that will not parse as a plain pixel length (a bare
+ * every schematic grows on implicit rows now, the sheet's and a container's
+ * alike — and a token that will not parse as a plain pixel length (a bare
  * `repeat(...)` a browser has not expanded, or a `fr` unit nothing has
  * resolved) means the same thing: there is nothing here to read pixels off
  * yet, and the uniform pitch is the honest answer rather than a wrong one

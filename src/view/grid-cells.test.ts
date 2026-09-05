@@ -717,6 +717,12 @@ describe('a container that shows one child at a time', () => {
 		expect(
 			inner[0]?.style.getPropertyValue('--sheetsmith-columns'),
 		).toBe('4');
-		expect(inner[0]?.style.gridTemplateRows).toBe('repeat(3, minmax(0, 1fr))');
+		// The height arrives as a floor rather than a row template: rows are
+		// content-sized like the sheet's own, and the declared box is what a
+		// container keeps when its children underfill it (see `openSubgrid`).
+		expect(inner[0]?.style.gridTemplateRows).toBe('');
+		expect(inner[0]?.style.minHeight).toBe(
+			'calc(3 * var(--sheetsmith-grid-row))',
+		);
 	});
 });
