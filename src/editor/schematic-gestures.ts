@@ -483,8 +483,10 @@ export class SchematicGestures {
 			position.row = row;
 			position.width = width;
 			position.height = height;
-			target.style.gridColumn = `${col} / span ${width}`;
-			target.style.gridRow = `${row} / span ${height}`;
+			target.setCssStyles({
+				gridColumn: `${col} / span ${width}`,
+				gridRow: `${row} / span ${height}`,
+			});
 			this.host.markOverlaps(schematic);
 			return true;
 		};

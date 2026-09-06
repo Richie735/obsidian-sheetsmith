@@ -103,6 +103,17 @@ export function installDomHelpers(): void {
 			this.classList.toggle(name, on);
 		}
 	};
+	// A plain write through `el.style`, which is all the app's own is. Here
+	// because a module that calls it has to keep working in the test run and in
+	// the harness, neither of which has Obsidian to install it. When a plugin
+	// module should reach for it is `docs/PATTERNS.md` §5's question, not this
+	// file's: `setCssProps` is deliberately absent, because nothing calls it.
+	proto.setCssStyles = function (
+		this: HTMLElement,
+		styles: Partial<CSSStyleDeclaration>,
+	): void {
+		Object.assign(this.style, styles);
+	};
 	proto.setText = function (this: HTMLElement, text: string): void {
 		this.textContent = text;
 	};
@@ -680,6 +691,7 @@ export class Vault {
 	async modify(file: TFile, content: string): Promise<void> {
 		this.files.set(file.path, { file, content });
 	}
+
 
 	async delete(file: TAbstractFile): Promise<void> {
 		this.files.delete(file.path);

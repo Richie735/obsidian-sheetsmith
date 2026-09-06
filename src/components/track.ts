@@ -1324,7 +1324,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			/** How far the run gives past either end, and springing back. */
 			const overscroll = (beyond: number): void => {
 				if (reduced || beyond === 0) {
-					el.style.removeProperty('transform');
+					el.setCssStyles({ transform: '' });
 					return;
 				}
 				// Saturating, so the give increases in resistance and stops at
@@ -1333,7 +1333,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 					Math.sign(beyond) *
 					OVERSCROLL_MAX *
 					(1 - 1 / (1 + Math.abs(beyond) / OVERSCROLL_RESIST));
-				el.style.setProperty('transform', `translateX(${px}px)`);
+				el.setCssStyles({ transform: `translateX(${px}px)` });
 			};
 
 			const boxes = (): SegmentBox[] =>

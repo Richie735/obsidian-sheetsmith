@@ -16,7 +16,11 @@
  * cell and what to do when a section will not read.
  *
  * No `obsidian` import: the harness has no app, so Obsidian's `createDiv` does
- * not exist there.
+ * not exist there. `setCssStyles` is not a counter-example, because it is a
+ * prototype method rather than a module member: the app installs it, and both
+ * the harness and the test run install it from `src/test/obsidian-stub.ts`.
+ * Geometry is the whole of what it carries here, which is the one thing a class
+ * cannot say.
  */
 
 import { componentsInside, WalkEntry } from '../parse/layout-walk';
@@ -46,8 +50,10 @@ export function placeCell(
 ): HTMLElement {
 	const cell = into.ownerDocument.createElement('div');
 	cell.classList.add('sheetsmith-cell');
-	cell.style.gridColumn = `${position.col} / span ${position.width}`;
-	cell.style.gridRow = `${position.row} / span ${position.height}`;
+	cell.setCssStyles({
+		gridColumn: `${position.col} / span ${position.width}`,
+		gridRow: `${position.row} / span ${position.height}`,
+	});
 	into.appendChild(cell);
 	return cell;
 }
@@ -187,7 +193,7 @@ export function openSubgrid(
 	// old template was: the narrow reflow drops this grid for a flex column,
 	// and there the floor keeps meaning what it says while a row template
 	// would have gone inert.
-	grid.style.minHeight = `calc(${rows} * var(--sheetsmith-grid-row))`;
+	grid.setCssStyles({ minHeight: `calc(${rows} * var(--sheetsmith-grid-row))` });
 	scope.appendChild(grid);
 	into.appendChild(scope);
 	return grid;

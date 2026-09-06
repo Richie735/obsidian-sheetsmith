@@ -455,6 +455,33 @@ render(container, config, data, context): void {
 - Build with `doc.createElement` and `classList.add`. Every class is prefixed
   `sheetsmith-` [judgement]. Note `obsidianmd/prefer-create-el` is deliberately
   off in `src/components/` so components stay testable under happy-dom.
+- **A style belongs in the stylesheet; an element's own `style` carries only what
+  a class cannot** [judgement]. Two things qualify and nothing else does:
+  **runtime geometry, through `setCssStyles()`**, and **a `--sheetsmith-*` value
+  the stylesheet then reads, through `style.setProperty`**. Never a bare
+  `.style.x =`. Obsidian's review guidelines ask for classes and name
+  `setCssStyles`/`setCssProps` as the sanctioned exception.
+
+  **Each route owns its own clear, and the two differ because they have to.** A
+  custom property is cleared with `style.removeProperty`, which is the only route
+  there: `setCssStyles` takes a `Partial<CSSStyleDeclaration>`, a `--sheetsmith-*`
+  name is not a key of that type (TS2353), and it would not survive the helper's
+  runtime `Object.assign` either, landing as a plain JS property with the
+  declaration left empty. A standard property is cleared the way it was set, with
+  an empty string. So `pool.ts` and `level-ring.ts` clearing a custom property
+  through `removeProperty` and `track.ts` clearing `transform` through
+  `setCssStyles({ transform: '' })` are not two spellings of one thing to be
+  reconciled: there is one clearing spelling per axis and nothing to drift on.
+
+  **Why `setProperty` rather than `setCssProps`** for the custom-property half:
+  that is how the eighteen `--sheetsmith-*` writes already here are spelled, and
+  one name beats a second name meaning the same thing. It is also why the stub
+  installs `setCssStyles` and not `setCssProps`.
+
+  **No guard test, deliberately.** A scan for the forbidden spelling matches
+  nothing today, every site that had it having been converted, and a check that
+  can only pass vacuously is what §10 forbids. This one is held in review, which
+  is what [judgement] means.
 - **Config guard first.** Render the error, return, build nothing.
 
 ### The paint closure

@@ -44,14 +44,16 @@ export function placeAnchored(el: HTMLElement, anchor: HTMLElement): void {
 	const size = el.getBoundingClientRect();
 	const width = view?.innerWidth ?? size.width;
 	const above = box.top - size.height - ANCHOR_OFFSET;
-	el.style.top = `${above >= 0 ? above : box.bottom + ANCHOR_OFFSET}px`;
-	el.style.left = `${Math.max(
-		ANCHOR_OFFSET,
-		Math.min(
-			width - size.width - ANCHOR_OFFSET,
-			box.left + box.width / 2 - size.width / 2,
-		),
-	)}px`;
+	el.setCssStyles({
+		top: `${above >= 0 ? above : box.bottom + ANCHOR_OFFSET}px`,
+		left: `${Math.max(
+			ANCHOR_OFFSET,
+			Math.min(
+				width - size.width - ANCHOR_OFFSET,
+				box.left + box.width / 2 - size.width / 2,
+			),
+		)}px`,
+	});
 }
 
 let openEl: HTMLElement | null = null;
