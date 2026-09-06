@@ -1,6 +1,6 @@
 # Sheetsmith
 
-Design and use character sheets for any tabletop RPG in [Obsidian](https://obsidian.md). Build your own layout from drag-and-drop components, define your own formulas, and keep every character as a plain markdown note.
+Design and use character sheets for any tabletop RPG in [Obsidian](https://obsidian.md). Build a layout on a grid, define your own formulas, and keep every character as a plain markdown note.
 
 > **Status: 0.1.0 is the first release.** It installs through [BRAT](https://github.com/TfTHacker/obsidian42-brat) while the plugin is not yet in the Obsidian community plugin list; see [Install](#install). The file model, the sheet view and ten components are in place: Card, Card set, Pool, Track, Table, Group, Tab set, Rich text, Image and Record set. So are the formula engine, a per-layout function library, row aggregates, typed modifiers with definitions and provenance, reset triggers, and the layout editor pane with its tree, configuration panel, undo, live grid canvas and sample-value preview. See the roadmap below.
 
