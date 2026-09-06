@@ -70,7 +70,10 @@ npm run build
     - Optional: `author`, `authorUrl`, `fundingUrl` (string or map)
 - Never change `id` after release. Treat it as stable API.
 - Keep `minAppVersion` accurate when using newer APIs.
-- Canonical requirements are coded here: https://github.com/obsidianmd/obsidian-releases/blob/master/.github/workflows/validate-plugin-entry.yml
+- Canonical requirements are documented here: https://docs.obsidian.md/Plugins/Releasing/Submit+your+plugin
+  They used to be coded as a validation workflow in the `obsidian-releases`
+  repository. That file is gone, along with the pull request flow it checked, so
+  do not go looking for it.
 
 ## Testing
 
@@ -102,9 +105,25 @@ npm run build
 ## Versioning & releases
 
 - Bump `version` in `manifest.json` (SemVer) and update `versions.json` to map plugin version → minimum app version.
+  Edit `package.json`'s `version` and run `npm run version` to carry it across
+  to both. Not `npm version`, whose lifecycle commits and tags, and only
+  `/land-it` commits here. The script leaves `minAppVersion` alone on purpose:
+  it is a claim about which API members the code uses, so it moves when
+  somebody has checked, never as a side effect of a release.
 - Create a GitHub release whose tag exactly matches `manifest.json`'s `version`. Do not use a leading `v`.
 - Attach `manifest.json`, `main.js`, and `styles.css` (if present) to the release as individual assets.
-- After the initial release, follow the process to add/update your plugin in the community catalog as required.
+- Submit only the initial version, and submit it through the community directory
+  rather than by pull request: sign in at https://community.obsidian.md with an
+  Obsidian account, link the GitHub account that owns the repository, and add the
+  plugin there. The directory reads `manifest.json` from the HEAD of the default
+  branch, so commit the bump before submitting.
+- A submission is reviewed automatically and the directory lists whatever needs
+  correcting. Answer that feedback by pushing the fix and publishing a new GitHub
+  release with a bumped version; the plugin is not installable from inside
+  Obsidian until the review reports no errors.
+- Once it is published, an update needs no directory action. Obsidian offers users
+  the GitHub release whose tag matches the `version` in the manifest, so a release
+  is the whole of shipping an update.
 
 ## Security, privacy, and compliance
 
