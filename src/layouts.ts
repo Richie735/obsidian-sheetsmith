@@ -28,11 +28,21 @@ export function listLayouts(app: App, folder: string): TFile[] {
 		.sort((a, b) => a.basename.localeCompare(b.basename));
 }
 
-/** Create an empty layout file, creating the folder when needed. */
+/**
+ * Create a layout file, creating the folder when needed.
+ *
+ * `layout` is what lands in it, and it defaults to the empty layout the editor's
+ * **New layout** has always written. The parameter exists so a starter
+ * (`src/starters/`) is written by the one function that already owns folder
+ * creation and the duplicate refusal, rather than by a second copy of both — and
+ * it goes through `serialiseLayout` here for `appendModifierDefinition`'s own
+ * reason one file down: one writer, one spelling.
+ */
 export async function createLayout(
 	app: App,
 	folder: string,
 	name: string,
+	layout: Layout = { name, columns: 6, components: [] },
 ): Promise<TFile> {
 	const dir = normalizePath(folder);
 	if (!app.vault.getFolderByPath(dir)) {
@@ -42,10 +52,7 @@ export async function createLayout(
 	if (app.vault.getFileByPath(path)) {
 		throw new Error(`A layout named "${name}" already exists.`);
 	}
-	return app.vault.create(
-		path,
-		serialiseLayout({ name, columns: 6, components: [] }),
-	);
+	return app.vault.create(path, serialiseLayout(layout));
 }
 
 /**

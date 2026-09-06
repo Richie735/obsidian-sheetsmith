@@ -1,5 +1,6 @@
 import { MarkdownView, Notice } from 'obsidian';
 import type SheetsmithPlugin from './main';
+import { chooseStarterLayout } from './starters/picker';
 import { LAYOUT_KEY } from './types';
 import { LayoutEditorView, openLayoutEditor } from './view/layout-editor-view';
 import { SheetView, VIEW_TYPE_SHEET } from './view/sheet-view';
@@ -25,6 +26,16 @@ export function registerCommands(plugin: SheetsmithPlugin): void {
 		id: 'open-layout-editor',
 		name: 'Open layout editor',
 		callback: () => void openLayoutEditor(plugin),
+	});
+
+	// A plain `callback`, not a `checkCallback`: cold start is exactly the
+	// moment no pane, file or state exists to condition on, so there is nothing
+	// to check and the command is always offered
+	// (`docs/features/starter-layouts.md`).
+	plugin.addCommand({
+		id: 'add-starter-layout',
+		name: 'Add a starter layout',
+		callback: () => chooseStarterLayout(plugin),
 	});
 
 	plugin.addCommand({

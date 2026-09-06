@@ -1049,6 +1049,49 @@ export class Modal {
 	}
 }
 
+/**
+ * Obsidian's suggest modal, enough of it to drive a list and a choice.
+ *
+ * Added because a real surface reaches it: the starter picker
+ * (`src/starters/picker.ts`) is one, and a modal nothing can construct is a
+ * modal nothing can test.
+ *
+ * **Deliberately no list machinery**, which is the member-list rule at the top
+ * of `plugin.ts` applied here: an `updateSuggestions` drawing each item into a
+ * `.suggestion-item` was written first and then removed, because nothing drives
+ * it. A test asks the modal for its suggestions and renders one itself — both
+ * are the app's own public surface, and both are typed by the real `obsidian`
+ * declarations rather than by this file, so a case driving them cannot pass
+ * against a shape the app does not have.
+ *
+ * **And no `resultContainerEl` either, which is the same rule catching this file
+ * a second time.** It survived the first cut — declared, built, classed and
+ * appended, with the list loop that was its only reader gone — so the class held
+ * the rule in its comment and a violation of it three lines below. What is left
+ * is the two members a real subclass here actually reaches.
+ */
+export abstract class SuggestModal<T> extends Modal {
+	inputEl: HTMLInputElement;
+
+	constructor(app: App) {
+		super(app);
+		this.inputEl = document.createElement('input');
+		this.inputEl.type = 'text';
+		this.modalEl.append(this.inputEl);
+	}
+
+	setPlaceholder(placeholder: string): void {
+		this.inputEl.placeholder = placeholder;
+	}
+
+	abstract getSuggestions(query: string): T[] | Promise<T[]>;
+	abstract renderSuggestion(value: T, el: HTMLElement): void;
+	abstract onChooseSuggestion(
+		item: T,
+		event: MouseEvent | KeyboardEvent,
+	): void;
+}
+
 export class PluginSettingTab {
 	containerEl: HTMLElement;
 	constructor(
