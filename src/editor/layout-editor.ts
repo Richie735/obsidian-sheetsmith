@@ -853,6 +853,15 @@ export class LayoutEditorSection {
 			this.redoStack.clear();
 		}
 		this.onDisk = serialised;
+		// `modify`, not `process`, and the only one left in `src/`. A `process`
+		// callback is handed the file's current contents so that the new ones can
+		// be derived from them, and there is nothing to derive here: `serialised`
+		// is a whole-file snapshot of what this pane holds in memory. The callback
+		// would ignore its argument, which makes the call a lock wearing a
+		// read-modify-write's clothes, and it would still overwrite another
+		// writer exactly as this does. Worse, it would read as if `this.onDisk`
+		// had been reconciled with the file when it cannot be. `layouts.ts` is
+		// the site that genuinely derives, and it converted.
 		await this.plugin.app.vault.modify(this.file, serialised);
 		this.host.refreshSheets();
 	}

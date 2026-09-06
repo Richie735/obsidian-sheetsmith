@@ -25,7 +25,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { getComponent } from '../components';
 import { buildSheet } from '../formula/sheet';
 import { makeFieldResolver } from '../formula/resolve';
-import { appendModifierDefinition } from '../layouts';
+import { appendModifierDefinition, nameAlreadyDeclared } from '../layouts';
 import { getSection, parseCharacter } from '../parse/character';
 import { Layout, parseLayout, serialiseLayout } from '../parse/layout';
 import { walkComponents } from '../parse/layout-walk';
@@ -472,5 +472,95 @@ describe('a promotion that is refused', () => {
 		);
 		expect('error' in result).toBe(true);
 		expect(await app.vault.read(file!)).toBe('{ not json');
+	});
+
+	it('still refuses where the vault swallows the callback\'s throw', async () => {
+		/*
+		 * **The refusal must not rest on undocumented app behaviour.**
+		 * `appendModifierDefinition` declines a duplicate name by throwing out of
+		 * the callback it hands `Vault.process`, and `obsidian.d.ts` documents
+		 * nothing about what `process` does with that. Our stub propagates it,
+		 * which is the behaviour we assumed when we wrote the stub, so every
+		 * other test in this block proves the assumption against itself.
+		 *
+		 * This one drives the other branch: a `process` that catches, writes
+		 * nothing, and resolves. If the flag beside the throw were missing, the
+		 * function would answer `{ ok: true }` for a definition it never
+		 * appended, and the caller in `sheet-view.ts` would rewrite the cell into
+		 * a reference to it, which is the stray this whole file's ordering exists
+		 * to prevent.
+		 *
+		 * Overriding one method on the stub instance rather than changing the
+		 * stub, on `layout-editor.test.ts`' precedent: the app's real answer is
+		 * unknown, so the double must not commit to one.
+		 */
+		const file = app.vault.getFileByPath(LAYOUT_PATH)!;
+		const before = await app.vault.read(file);
+		app.vault.process = async (target, fn) => {
+			try {
+				return fn(await app.vault.read(target));
+			} catch {
+				return before;
+			}
+		};
+		const result = await appendModifierDefinition(
+			vault(),
+			LAYOUT_FOLDER,
+			LAYOUT_NAME,
+			'Ring of Protection',
+			EFFECT,
+		);
+		expect(result).toEqual({ error: nameAlreadyDeclared('Ring of Protection') });
+		expect(await app.vault.read(file)).toBe(before);
+	});
+
+	it('reports the last attempt where the vault retries the callback', async () => {
+		/*
+		 * **The mirror of the test above, and of the same undocumented shape.**
+		 * `process` is typed as "atomically read, modify, and save" with nothing
+		 * said about how many times it may call the callback, so a retry after a
+		 * concurrent write is permitted. Here the first attempt sees a layout that
+		 * already declares the name and refuses; the second sees one that does not
+		 * and appends.
+		 *
+		 * The flag has to report the second, not the first. Reporting the first
+		 * would answer `{ error }` for a definition that did land, leaving it in
+		 * the layout with no cell pointing at it: an orphan, which is the stray of
+		 * the previous test read backwards.
+		 */
+		const file = app.vault.getFileByPath(LAYOUT_PATH)!;
+		const withoutTheName: Layout = { ...LAYOUT, modifiers: [] };
+		let attempts = 0;
+		app.vault.process = async (target, fn) => {
+			// Attempt one sees the file as it stands, which declares the name, and
+			// declines. Attempt two sees one that does not, as a retry against a
+			// file somebody else rewrote in between, and appends. Only the second
+			// is written, which is what a conflict retry means.
+			attempts += 1;
+			let written: string;
+			try {
+				written = fn(await app.vault.read(target));
+			} catch {
+				attempts += 1;
+				written = fn(serialiseLayout(withoutTheName));
+			}
+			await app.vault.modify(target, written);
+			return written;
+		};
+		const result = await appendModifierDefinition(
+			vault(),
+			LAYOUT_FOLDER,
+			LAYOUT_NAME,
+			'Ring of Protection',
+			EFFECT,
+		);
+		expect(attempts).toBe(2);
+		expect(result).toEqual({ ok: true });
+		// And the definition really is in the file, which is what makes reporting
+		// the first attempt an orphan rather than merely a wrong message.
+		const after = parseLayout(await app.vault.read(file));
+		expect((after.modifiers ?? []).map((one) => one.name)).toContain(
+			'Ring of Protection',
+		);
 	});
 });

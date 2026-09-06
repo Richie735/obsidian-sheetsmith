@@ -692,6 +692,21 @@ export class Vault {
 		this.files.set(file.path, { file, content });
 	}
 
+	/**
+	 * Read, transform and write under one lock, which is what the app offers for
+	 * modifying a file in the background.
+	 *
+	 * The atomicity is the app's and cannot be stubbed, so what this has to be
+	 * faithful about is the two things a caller can observe: the callback is
+	 * handed the file's current contents, and a callback that throws writes
+	 * nothing. `layouts.ts` refuses a duplicate name by throwing, and a stub that
+	 * wrote anyway would pass a test the app fails.
+	 */
+	async process(file: TFile, fn: (data: string) => string): Promise<string> {
+		const content = fn(await this.read(file));
+		await this.modify(file, content);
+		return content;
+	}
 
 	async delete(file: TAbstractFile): Promise<void> {
 		this.files.delete(file.path);

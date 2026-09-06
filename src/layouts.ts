@@ -124,23 +124,67 @@ export async function appendModifierDefinition(
 	if (file === null) {
 		return { error: `Layout "${layoutName}" was not found in "${folder}".` };
 	}
+	// The refusal, set before the throw that carries it out, and read again
+	// after the write either way. `obsidian.d.ts` says nothing about what
+	// `process` does with a callback that throws, and the whole refusal cannot
+	// rest on an answer we assumed and then wrote into our own stub: an app that
+	// swallowed it would hand this function an `{ ok: true }` for a definition
+	// it never appended, and `sheet-view.ts` would rewrite the cell into a
+	// reference to it, which is the stray the paragraph above says this must
+	// never manufacture. So the flag is the contract and the throw is the
+	// optimisation, and the flag is correct under either behaviour.
+	let refusal: string | null = null;
 	try {
-		const layout = parseLayout(await app.vault.read(file));
-		const held = layout.modifiers ?? [];
-		if (held.some((one) => (one.name ?? '').trim() === chosen)) {
-			return { error: nameAlreadyDeclared(chosen) };
-		}
-		const next: Layout = {
-			...layout,
-			// Appended at the end, in declaration order, exactly as one added in the
-			// layout editor is. The list is no longer only author-written.
-			modifiers: [...held, { name: chosen, ...definition }],
-		};
-		await app.vault.modify(file, serialiseLayout(next));
-		return { ok: true };
+		// `process` rather than `read` then `modify`, because the bytes written
+		// here are derived from the bytes read: the two-step spelling leaves a
+		// window in which a write landing between them is overwritten by a layout
+		// parsed before it existed. That closes one direction of the promise the
+		// paragraph above makes and not both. The other direction is still open:
+		// `layout-editor.ts` writes a whole-file snapshot of what its pane holds
+		// in memory, taking no lock and reading nothing, and nothing in `src/`
+		// listens for a vault `modify`. So a promotion landing while a pane is
+		// open on that layout is dropped by that pane's next save, and no
+		// spelling of this call site can prevent it.
+		//
+		// The refusal throws, which is the only way a synchronous callback can
+		// decline to write. It is caught by this function's own `catch` and
+		// turned back into the value this function returns, so the refusal is a
+		// value everywhere it is visible; what it buys over the flag alone is
+		// that a name already declared leaves the file untouched rather than
+		// rewritten with its own bytes.
+		await app.vault.process(file, (current) => {
+			// Cleared first, so the flag reports what *this* invocation decided.
+			// `process` is documented as "atomically read, modify, and save" and
+			// says nothing about how many times it may call this, so a retry after
+			// a concurrent write is a shape the typings permit. Without this line a
+			// refusal from a superseded attempt would outlive it: the append would
+			// land and the function would still answer `{ error }`, `sheet-view.ts`
+			// would leave the cell alone, and the definition would be orphaned in
+			// the layout. That is the mirror of the stray the flag exists to
+			// prevent, and one statement buys both directions.
+			refusal = null;
+			const layout = parseLayout(current);
+			const held = layout.modifiers ?? [];
+			if (held.some((one) => (one.name ?? '').trim() === chosen)) {
+				refusal = nameAlreadyDeclared(chosen);
+				throw new Error(refusal);
+			}
+			const next: Layout = {
+				...layout,
+				// Appended at the end, in declaration order, exactly as one added in
+				// the layout editor is. The list is no longer only author-written.
+				modifiers: [...held, { name: chosen, ...definition }],
+			};
+			return serialiseLayout(next);
+		});
 	} catch (error) {
-		// The vault's own reason, or the parser's: the layout file is gone,
-		// read-only, or no longer parses. Either way the cell is untouched.
+		// The refusal above, the vault's own reason, or the parser's: the layout
+		// file is gone, read-only, or no longer parses. Either way the cell is
+		// untouched.
 		return { error: error instanceof Error ? error.message : String(error) };
 	}
+	// Past the `catch`, so this is the path an app that swallowed the throw
+	// takes. Nothing was appended either way.
+	if (refusal !== null) return { error: refusal };
+	return { ok: true };
 }
