@@ -215,8 +215,10 @@ src/
                    The sources are real layout files, inlined into main.js at
                    build time; the catalog beside them imports nothing from
                    obsidian, and only the picker does
-  test/            scaffolding only: the stub, the fixtures, and the gestures a
-                   test presses a control with. Never test cases
+  test/            scaffolding only: the stub, the fixtures, the gestures a
+                   test presses a control with, and the assertions two of them
+                   share. No test case *about another module* (one exception,
+                   below)
     fixtures/      fixture files, as files: a layout and a character
                    note a test reads off disk and a reader copies into a
                    vault, under the filenames the vault needs
@@ -330,7 +332,25 @@ app a test runs against; `pointer.ts` is the gestures a test presses a control
 with, which went there rather than beside a component because no component owns
 a gesture every component is driven by; `workspace.ts` opens a view in a leaf
 the way the app does, which is what lets a workspace pane be rendered by a test
-and by the harness through one function rather than two.
+and by the harness through one function rather than two; `spoken-order.ts` is
+one assertion Pool and Image both make, which went there on §1's one-step tier
+because it is a policy and two copies could only be tested for still agreeing.
+
+**One test file lives here, and it is the only one that may.**
+`obsidian-stub.test.ts` drives the double option by option. The rule above is
+"never a test case", and what that rule protects is this folder not becoming a
+home for *other* modules' tests — shared infrastructure staying infrastructure.
+A test of the stub itself is the one thing that cannot pull another module's
+tests in here, and §10 wants a module's test beside it, so the two rules point
+the same way for this file and no other.
+
+It earns the exception rather than merely fitting through it. A stub option that
+is declared and not honoured fails silently in the one direction that matters:
+the app honours the key, the double ignores it, and the tests and the harness
+both go green on markup Obsidian would have built differently. That is §10's own
+standard for when a guard earns its place, and there is nowhere else to put it —
+the module is here by §2, and a test for it anywhere else would be the mirror
+`tests/` tree this section rejects.
 
 ## 3. Component file shape
 

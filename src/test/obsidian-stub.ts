@@ -13,44 +13,98 @@
  * behave as it does in the app.
  */
 
+/**
+ * `DomElementInfo`, member for member.
+ *
+ * **Kept level with the real interface rather than with what this repository
+ * happens to pass**, because the failure of a narrow options type is silent in
+ * the one direction that matters: a key the app honours and the double ignores
+ * works in Obsidian, does nothing under test, and does nothing in the harness.
+ * `placeholder` is the case that proves it: seventeen `.placeholder =`
+ * assignments across `src/`, thirteen of them in `src/components/`, any of
+ * which a later edit could move into an options object.
+ *
+ * `attr` values are widened to what the real interface allows, and `text` takes
+ * a `DocumentFragment`, which is how a description built by `createFragment`
+ * reaches an element.
+ */
 interface ElementOptions {
 	cls?: string | string[];
-	text?: string;
-	type?: string;
-	value?: string;
-	attr?: Record<string, string>;
-	href?: string;
+	text?: string | DocumentFragment;
+	attr?: Record<string, string | number | boolean | null>;
 	title?: string;
+	parent?: Node;
+	value?: string;
+	type?: string;
+	prepend?: boolean;
+	placeholder?: string;
+	href?: string;
 }
 
 function applyOptions(el: HTMLElement, options?: ElementOptions): void {
 	if (!options) return;
 	if (options.cls) {
+		// ASCII whitespace exactly, never `\s`, on `ui/element.ts`'s argument and
+		// not a fresh one: `\s` also matches a non-breaking space, which is a
+		// legal class character a browser keeps, so splitting on it would cut a
+		// name the DOM would have honoured. `DOMTokenList` refuses this set and
+		// this set only. An array is not split, which is why an element of one
+		// holding a space is the trap `class-tokens.test.ts` reads for.
 		const classes = Array.isArray(options.cls)
 			? options.cls
-			: options.cls.split(/\s+/);
+			: options.cls.split(/[ \t\n\f\r]+/);
 		for (const name of classes) if (name !== '') el.classList.add(name);
 	}
-	if (options.text !== undefined) el.textContent = options.text;
+	if (options.text !== undefined) {
+		// A fragment is assigned rather than appended, which is the same thing on
+		// the fresh element every helper hands this and the honest spelling of
+		// "the textContent to be assigned".
+		if (typeof options.text === 'string') el.textContent = options.text;
+		else el.replaceChildren(options.text);
+	}
 	if (options.type !== undefined) el.setAttribute('type', options.type);
+	// The property, not the attribute: on an input the `value` attribute is the
+	// *default* value, and the code under test reads the live one.
 	if (options.value !== undefined) (el as HTMLInputElement).value = options.value;
+	if (options.placeholder !== undefined) {
+		(el as HTMLInputElement | HTMLTextAreaElement).placeholder =
+			options.placeholder;
+	}
 	if (options.href !== undefined) el.setAttribute('href', options.href);
 	if (options.title !== undefined) el.setAttribute('title', options.title);
 	for (const [name, value] of Object.entries(options.attr ?? {})) {
-		el.setAttribute(name, value);
+		// `null` means "not set" rather than the string "null". Every element
+		// reaching here is fresh, so there is nothing to remove.
+		if (value === null) continue;
+		el.setAttribute(name, String(value));
 	}
 }
 
-/** Build an element the way Obsidian's helpers do. */
+/**
+ * Build an element the way Obsidian's helpers do.
+ *
+ * `parent` in the options wins over the receiver, which is what "the parent
+ * element to be assigned to" means, and `prepend` puts the element first
+ * instead of last. Both matter to a caller that cannot append in the order it
+ * creates.
+ *
+ * The parent is a `Node`, because Obsidian installs these on `Node` and a
+ * `DocumentFragment` is one: `createFragment`'s callback builds through exactly
+ * this path.
+ */
 function make(
-	parent: HTMLElement,
+	parent: Node,
 	tag: string,
-	options?: ElementOptions,
+	options?: ElementOptions | string,
 	callback?: (el: HTMLElement) => void,
 ): HTMLElement {
-	const el = parent.ownerDocument.createElement(tag);
-	applyOptions(el, options);
-	parent.appendChild(el);
+	const info = typeof options === 'string' ? { cls: options } : options;
+	const doc = parent.ownerDocument ?? (parent as Document);
+	const el = doc.createElement(tag);
+	applyOptions(el, info);
+	const into = info?.parent ?? parent;
+	if (info?.prepend) into.insertBefore(el, into.firstChild);
+	else into.appendChild(el);
 	callback?.(el);
 	return el;
 }
@@ -59,10 +113,13 @@ function make(
 export function installDomHelpers(): void {
 	const proto = HTMLElement.prototype as unknown as Record<string, unknown>;
 
+	// All three take `DomElementInfo | string`, a bare string being the class.
+	// `createEl` took only the object before, which is the narrowing this file's
+	// header warns about: `createEl('span', 'sheetsmith-x')` compiles in the app.
 	proto.createEl = function (
 		this: HTMLElement,
 		tag: string,
-		options?: ElementOptions,
+		options?: ElementOptions | string,
 		callback?: (el: HTMLElement) => void,
 	): HTMLElement {
 		return make(this, tag, options, callback);
@@ -70,18 +127,18 @@ export function installDomHelpers(): void {
 
 	proto.createDiv = function (
 		this: HTMLElement,
-		cls?: string | ElementOptions,
+		options?: ElementOptions | string,
 		callback?: (el: HTMLElement) => void,
 	): HTMLElement {
-		return make(this, 'div', typeof cls === 'string' ? { cls } : cls, callback);
+		return make(this, 'div', options, callback);
 	};
 
 	proto.createSpan = function (
 		this: HTMLElement,
-		cls?: string | ElementOptions,
+		options?: ElementOptions | string,
 		callback?: (el: HTMLElement) => void,
 	): HTMLElement {
-		return make(this, 'span', typeof cls === 'string' ? { cls } : cls, callback);
+		return make(this, 'span', options, callback);
 	};
 
 	proto.appendText = function (this: HTMLElement, text: string): void {
@@ -1189,8 +1246,12 @@ export function installGlobals(): void {
 	};
 	// A DocumentFragment is not an HTMLElement, so the prototype helpers above
 	// miss it — and `createFragment` hands its callback exactly that. The
-	// settings tab builds its description this way, so without these two the
-	// tab throws on render rather than degrading.
+	// settings tab builds its description this way, so without these the tab
+	// throws on render rather than degrading. Obsidian installs the helpers on
+	// `Node`, which covers both; this file installs them twice instead, and the
+	// two now share `make` so the options they honour cannot drift apart. That
+	// sharing also removes the last read of the global `document` here: `make`
+	// takes the parent's own, which is `PATTERNS.md` §5's rule.
 	const fragProto = DocumentFragment.prototype as unknown as Record<
 		string,
 		unknown
@@ -1198,28 +1259,27 @@ export function installGlobals(): void {
 	fragProto.createEl = function (
 		this: DocumentFragment,
 		tag: string,
-		options?: ElementOptions,
+		options?: ElementOptions | string,
 		callback?: (el: HTMLElement) => void,
 	): HTMLElement {
-		const el = document.createElement(tag);
-		applyOptions(el, options);
-		this.appendChild(el);
-		callback?.(el);
-		return el;
+		return make(this, tag, options, callback);
+	};
+	fragProto.createDiv = function (
+		this: DocumentFragment,
+		options?: ElementOptions | string,
+		callback?: (el: HTMLElement) => void,
+	): HTMLElement {
+		return make(this, 'div', options, callback);
 	};
 	fragProto.createSpan = function (
 		this: DocumentFragment,
-		cls?: string | ElementOptions,
+		options?: ElementOptions | string,
 		callback?: (el: HTMLElement) => void,
 	): HTMLElement {
-		return (this as unknown as { createEl: (t: string, o?: ElementOptions, c?: (el: HTMLElement) => void) => HTMLElement }).createEl(
-			'span',
-			typeof cls === 'string' ? { cls } : cls,
-			callback,
-		);
+		return make(this, 'span', options, callback);
 	};
 	fragProto.appendText = function (this: DocumentFragment, text: string): void {
-		this.appendChild(document.createTextNode(text));
+		this.appendChild(this.ownerDocument.createTextNode(text));
 	};
 
 	if (!('win' in HTMLElement.prototype)) {
