@@ -6665,9 +6665,29 @@ a.sheetsmith-undo {
    One treatment rather than two: a text input does have a border, so keeping
    both would double-mark half the fields and leave the pane saying "invalid" two
    different ways. `outline-offset` is negative so the mark draws inside the
-   control's own box, following its radius and moving nothing beside it. */
-.sheetsmith-input-invalid {
-	outline: 2px solid var(--background-modifier-error) !important;
+   control's own box, following its radius and moving nothing beside it.
+
+   **The selector is scoped and then doubled, which replaces an `!important`.**
+   Obsidian's review asks for no `!important`, and this was the only one in the
+   stylesheet. Both halves of the selector earn their place, measured in Chrome
+   against the app's real CSS rather than reasoned about:
+
+   - bare `.sheetsmith-input-invalid` is (0,1,0) and loses twice. Obsidian sets
+     `outline: none` on `input[type='text']` at (0,1,1), so a marked text field
+     painted no outline at all, focused or not; and `.dropdown:focus-visible`
+     sets `outline: none` at (0,2,0), so a marked dropdown lost its mark the
+     moment it took focus. That second one is the worst case, because focus is
+     exactly when an author is looking at the field they just broke.
+   - the pane scope alone, or the doubled class alone, is (0,2,0): enough for the
+     text input, but only a *tie* with `.dropdown:focus-visible`, won on the
+     plugin stylesheet loading after the app's. A rule that holds by source order
+     is a rule that stops holding without anything being edited.
+   - scope plus doubling is (0,3,0) and wins outright against both.
+
+   Measured `2px solid rgb(233, 49, 71)` on a text input, a `.dropdown` and a
+   textarea, each focused and blurred, with the app's stylesheet loaded. */
+.sheetsmith-layout-editor-pane .sheetsmith-input-invalid.sheetsmith-input-invalid {
+	outline: 2px solid var(--background-modifier-error);
 	outline-offset: -1px;
 }
 

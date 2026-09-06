@@ -44,8 +44,15 @@ function selectors(): string[] {
 /**
  * Classes naming a form control the sheet renders. A rule for one of these
  * has to outweigh Obsidian's element rule, which means carrying the view
- * scope. `.sheetsmith-input-invalid` is deliberately not here: it lives in
- * the settings tab, not the sheet, and only sets a border colour.
+ * scope. `.sheetsmith-input-invalid` is deliberately not here: it lives in the
+ * layout editor pane, not the sheet, so the scope it carries is that pane's
+ * rather than `.sheetsmith-view`'s. It is under exactly the same pressure this
+ * list exists for, and `styles/editor.css` records what it measured — it now
+ * carries the pane scope *and* a doubled class, because a tie with
+ * `.dropdown:focus-visible` was all that stood between a marked dropdown and no
+ * mark at all. (This note used to say the settings tab and a border colour.
+ * Both had been wrong since the editor moved into a pane and the mark became an
+ * outline.)
  *
  * `-select` is the third spelling, and it is here for the reason the first two
  * are: Obsidian's bare `select` rule sets a height, a background, a shadow and
@@ -2236,5 +2243,38 @@ describe('a textarea field over a list of lines looks like its siblings', () => 
 			(name) => !found.includes(`.${name}${suffix}`),
 		);
 		expect(missing).toEqual([]);
+	});
+});
+
+describe('the stylesheet wins on specificity, never on !important', () => {
+	/*
+	 * Obsidian's review asks for no `!important`, and the stylesheet had exactly
+	 * one: `.sheetsmith-input-invalid`'s outline, which was carrying a real
+	 * cascade fight. Removing it needed the selector scoped *and* doubled, and
+	 * `styles/editor.css` records the four specificity numbers that decided it.
+	 *
+	 * Three lines rather than a comment, because the count is now zero and zero
+	 * is the only number a check like this can hold without arguing: the next one
+	 * has to be a decision, and this is what makes it one. A rule that genuinely
+	 * needs it can change this test and say why, which is what the [checked] tier
+	 * means in `PATTERNS.md`.
+	 *
+	 * Declarations only. The prose in `editor.css` explains what it replaced and
+	 * would otherwise report itself, which is the same skip every source scan in
+	 * this repository needs.
+	 */
+	const withoutComments = CSS.replace(/\/\*[\s\S]*?\*\//g, ' ');
+
+	it('has no !important declaration', () => {
+		const offenders = [...withoutComments.matchAll(/[^;{}]*!\s*important/g)].map(
+			(one) => one[0].trim(),
+		);
+		expect(offenders).toEqual([]);
+	});
+
+	it('would notice one', () => {
+		// §10: the assertion above passes on a stylesheet this failed to read.
+		expect(CSS.length).toBeGreaterThan(10000);
+		expect(withoutComments).toContain('.sheetsmith-input-invalid');
 	});
 });
