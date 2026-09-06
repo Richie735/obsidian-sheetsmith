@@ -15,12 +15,14 @@
  * them stays with each caller, because each has its own answer to what goes in a
  * cell and what to do when a section will not read.
  *
- * No `obsidian` import: the harness has no app, so Obsidian's `createDiv` does
- * not exist there. `setCssStyles` is not a counter-example, because it is a
- * prototype method rather than a module member: the app installs it, and both
- * the harness and the test run install it from `src/test/obsidian-stub.ts`.
- * Geometry is the whole of what it carries here, which is the one thing a class
- * cannot say.
+ * No `obsidian` import, and the reason is not the one this paragraph used to
+ * give. It said the harness has no app so Obsidian's element helpers do not
+ * exist there, and that has been false since `src/test/obsidian-stub.ts` began
+ * installing them: the harness and the test run both get `createDiv` and
+ * `setCssStyles` from it, and this file now uses both. What is still true is
+ * narrower and is the whole rule — these are *prototype* methods, not module
+ * members, so using them costs no import and the file stays loadable where
+ * `obsidian` cannot be resolved at all.
  */
 
 import { componentsInside, WalkEntry } from '../parse/layout-walk';
@@ -48,13 +50,11 @@ export function placeCell(
 	into: HTMLElement,
 	position: GridPosition,
 ): HTMLElement {
-	const cell = into.ownerDocument.createElement('div');
-	cell.classList.add('sheetsmith-cell');
+	const cell = into.createDiv('sheetsmith-cell');
 	cell.setCssStyles({
 		gridColumn: `${position.col} / span ${position.width}`,
 		gridRow: `${position.row} / span ${position.height}`,
 	});
-	into.appendChild(cell);
 	return cell;
 }
 
@@ -68,9 +68,7 @@ export function placeCell(
  * lose the caret on every commit.
  */
 export function fillCell(into: HTMLElement): HTMLElement {
-	const cell = into.ownerDocument.createElement('div');
-	cell.classList.add('sheetsmith-cell');
-	into.appendChild(cell);
+	const cell = into.createDiv('sheetsmith-cell');
 	return cell;
 }
 
@@ -167,10 +165,8 @@ export function openSubgrid(
 	into: HTMLElement,
 	position: GridPosition,
 ): HTMLElement {
-	const doc = into.ownerDocument;
 	const { width: columns, height: rows } = position;
-	const scope = doc.createElement('div');
-	scope.classList.add('sheetsmith-subgrid');
+	const scope = into.createDiv('sheetsmith-subgrid');
 	// The column count as a class as well as a custom property, because the
 	// stylesheet needs it inside a container query and a query cannot read a
 	// custom property. What it decides is when this grid is too narrow to be a
@@ -182,8 +178,7 @@ export function openSubgrid(
 	// at any pane width, and the arrangement SPEC §13 names as the reason for
 	// containers at all unreachable below a 1489px pane.
 	scope.classList.add(`sheetsmith-cols-${tabulated(columns)}`);
-	const grid = doc.createElement('div');
-	grid.classList.add('sheetsmith-grid');
+	const grid = scope.createDiv('sheetsmith-grid');
 	grid.style.setProperty('--sheetsmith-columns', String(columns));
 	// The declared height as a floor, not a template: rows stay implicit and
 	// content-sized like the sheet's own (see the header). The arithmetic is
@@ -194,8 +189,6 @@ export function openSubgrid(
 	// and there the floor keeps meaning what it says while a row template
 	// would have gone inert.
 	grid.setCssStyles({ minHeight: `calc(${rows} * var(--sheetsmith-grid-row))` });
-	scope.appendChild(grid);
-	into.appendChild(scope);
 	return grid;
 }
 
@@ -246,10 +239,8 @@ export interface DrawableComponent extends GridComponent {
  */
 function failCell(cell: HTMLElement, text: string): void {
 	cell.classList.add('sheetsmith-cell-error');
-	const error = cell.ownerDocument.createElement('div');
-	error.classList.add('sheetsmith-error');
+	const error = cell.createDiv('sheetsmith-error');
 	error.textContent = text;
-	cell.appendChild(error);
 }
 
 /**

@@ -209,10 +209,7 @@ function option(
 	value: string,
 	text: string,
 ): void {
-	const el = select.ownerDocument.createElement('option');
-	el.value = value;
-	el.textContent = text;
-	select.appendChild(el);
+	select.createEl('option', { value, text });
 }
 
 /**

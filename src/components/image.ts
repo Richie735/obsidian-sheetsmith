@@ -167,7 +167,7 @@ export const image: ComponentDefinition<ImageConfig, ImageData> = {
 		const doc = container.ownerDocument;
 		container.replaceChildren();
 
-		const block = doc.createElement('div');
+		const block = container.createDiv();
 		// The shared box: a component whose size is its placement and not its
 		// content (docs/UI.md §9). Its own class beside it carries only what it does
 		// differently, which is what goes *inside* the box.
@@ -181,23 +181,31 @@ export const image: ComponentDefinition<ImageConfig, ImageData> = {
 			'--sheetsmith-rows',
 			String(config.position.height),
 		);
-		container.appendChild(block);
 
 		// Drawn first, and before any failure, so the name is on screen whichever
 		// path raised it. This is what keeps the component out of UI §12's
 		// "error card renders without its component name" row.
 		const labelled = showsOwnLabel(config, context);
 		if (labelled) {
-			const label = doc.createElement('div');
-			label.classList.add('sheetsmith-component-label', 'sheetsmith-image-label');
+			const label = block.createDiv({ cls: ['sheetsmith-component-label', 'sheetsmith-image-label'] });
 			label.textContent = config.label;
-			block.appendChild(label);
 		}
 
-		const box = doc.createElement('div');
-		box.classList.add('sheetsmith-placed-box', 'sheetsmith-image-box');
-		block.appendChild(box);
+		const box = block.createDiv({ cls: ['sheetsmith-placed-box', 'sheetsmith-image-box'] });
 
+		// `createElement`, not a helper, and the position is the whole reason
+		// (`PATTERNS.md` §5). This is appended as the last statement of `render`,
+		// *after* `renderPictureFrame` has filled the box, so it is the box's last
+		// child. It has to exist before that call because the call is handed it.
+		//
+		// **The sweep that moved this component onto the helpers got this wrong
+		// and shipped it**, which is why the note is this long: `box.createDiv`
+		// here makes the live region the box's *first* child, so a screen reader
+		// meets "Portrait saved" or a refusal before the field it is about. The
+		// scan that classified the sweep looked for siblings reaching `box` by
+		// name and cannot see through a function call, and neither the tests nor
+		// the byte-identical harness shots can see an invisible element move.
+		// `pool.test.ts` now asserts this order for Image as well as Pool.
 		const status = doc.createElement('div');
 		status.classList.add('sheetsmith-sr-only');
 		status.setAttribute('aria-live', 'polite');

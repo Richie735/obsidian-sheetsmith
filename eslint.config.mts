@@ -81,38 +81,56 @@ export default defineConfig(
 		},
 	},
 	{
-		// Everything that paints a surface builds DOM with the standard API
-		// rather than Obsidian's createEl helpers, so it stays testable under
-		// happy-dom in vitest. The two are equivalent at runtime.
+		// `prefer-create-el` used to be off for `components/`, `ui/`,
+		// `interaction/` and `view/grid-cells.ts`, on the ground that those paint
+		// surfaces outside the app and Obsidian's element helpers do not exist
+		// there. **That reason was false from the moment
+		// `src/test/obsidian-stub.ts` began installing them**, and it stayed in
+		// this file long after: the stub puts `createEl`, `createDiv` and
+		// `createSpan` on the prototypes exactly as the app does, vitest loads it
+		// as a setup file, and the harness bundles it through the `obsidian`
+		// alias. Ninety-four sites moved onto the helpers with all 73 harness
+		// shots byte-identical, which is what that claim had been costing.
 		//
-		// Scoped by the reason rather than by one folder: popover.ts carried
-		// this exemption while it lived in components/ and lost it by moving
-		// to ui/, though nothing about why it needs it changed.
+		// Nine sites keep `createElement`, and they are the shapes the helper
+		// cannot express rather than the ones nobody got to. `createEl` attaches
+		// on creation, so anything attached *later* than it is created is out of
+		// reach: a visually hidden live region appended after every visible
+		// sibling, a row filled with its step buttons before it is placed, a field
+		// whose parent is built several hundred lines further down. Two more are
+		// out of reach for their own reasons — one is placed after a sibling
+		// rather than into a parent, and two builders return a control for the
+		// caller to place, so they have a document and no parent. Each carries the
+		// argument in a comment at the site.
 		//
-		// This says nothing about whether a component may import from `obsidian`
-		// at all — one does, for `setIcon` — and that is a separate rule with its
-		// own allowlist further down, and its reasons in PATTERNS §2.
+		// **Four files rather than four directories**, which is the narrowest
+		// scope available: `eslint-comments/no-restricted-disable` forbids
+		// disabling an `obsidianmd` rule at its own line, so this cannot be a
+		// per-site directive however much it would prefer to be. That is the same
+		// constraint, and the same resolution, as the `src/settings.ts` block
+		// below.
+		//
+		// What survives from the old block is the note it ended with: none of this
+		// says whether a component may import from `obsidian` at all — one does,
+		// for `setIcon` — which is a separate rule with its own allowlist further
+		// down and its reasons in PATTERNS §2.
 		files: [
-			'src/components/**/*.ts',
-			'src/ui/**/*.ts',
-			'src/interaction/**/*.ts',
-			// The grid's DOM shape, shared with the harness so the two cannot
-			// nest differently — and the harness has no app, so Obsidian's
-			// element helpers do not exist there. One file rather than
-			// `src/view/**`: the sheet view itself has an app and should keep
-			// using them.
-			'src/view/grid-cells.ts',
+			'src/components/pool.ts',
+			'src/components/passport.ts',
+			'src/components/card-face.ts',
+			'src/components/image.ts',
+			'src/interaction/hold-repeat.ts',
 		],
 		rules: {
 			'obsidianmd/prefer-create-el': 'off',
 		},
 	},
 	{
-		// The harness renders components outside Obsidian, so the helpers this
-		// rule points at do not exist there: `createDiv` is installed on the
-		// element prototype by the app, and the harness has no app. It is also
-		// never bundled into main.js, so the Obsidian-facing rules are asking
-		// about constraints it does not live under.
+		// The harness keeps the exemption, on the second of the two reasons it
+		// used to give rather than the first. It has the helpers now, through the
+		// same stub the test run uses; what is still true is that it is never
+		// bundled into main.js, so the Obsidian-facing rules are asking it about
+		// constraints it does not live under.
 		files: ['harness/**/*.ts'],
 		rules: {
 			'obsidianmd/prefer-create-el': 'off',

@@ -841,28 +841,23 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 		const view = doc.defaultView;
 		container.replaceChildren();
 
-		const card = doc.createElement('div');
-		card.classList.add('sheetsmith-track');
-		container.appendChild(card);
+		const card = container.createDiv('sheetsmith-track');
 
 		const problem = configError(config);
 		if (problem !== null) {
 			// A misconfigured component reports on itself; SPEC §10 keeps the
 			// rest of the sheet rendering and editable.
-			const error = doc.createElement('div');
-			error.classList.add('sheetsmith-error');
+			const error = card.createDiv('sheetsmith-error');
 			error.textContent = problem;
-			card.appendChild(error);
 			return;
 		}
 
 		if (showsOwnLabel(config, context)) {
-			const label = doc.createElement('div');
+			const label = card.createDiv();
 			// The shared rank (docs/UI.md §9); this component's own class carries only
 			// the narrow-card tracking, which needs a container to ask about.
 			label.classList.add('sheetsmith-component-label', 'sheetsmith-track-label');
 			label.textContent = config.label;
-			card.appendChild(label);
 		}
 
 		const marks = markSize(config);
@@ -874,8 +869,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 		const reduced =
 			view?.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
 
-		const list = doc.createElement('div');
-		list.classList.add('sheetsmith-track-rows');
+		const list = card.createDiv('sheetsmith-track-rows');
 		if (rowSet) {
 			list.classList.add('sheetsmith-track-set');
 			// The set is one control made of several, and a reader arriving on
@@ -890,7 +884,6 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 		// wins the press. Same arithmetic as the editor's level sample, for the
 		// same reason.
 		if (flag) list.classList.add('sheetsmith-track-flags');
-		card.appendChild(list);
 
 		/** One run on the card: its own value, its own geometry, its own gesture. */
 		interface Run {
@@ -969,19 +962,15 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			// already set: the component states what the set means and a row
 			// says where it differs.
 			const harm = row.sense === undefined ? cardHarm : row.sense === 'harm';
-			const line = doc.createElement('div');
-			line.classList.add('sheetsmith-track-row');
-			list.appendChild(line);
+			const line = list.createDiv('sheetsmith-track-row');
 
 			if (rowSet) {
 				// Immediately left of its run, in the clothes the step name
 				// wears. Proximity is what says a name belongs to the run
 				// beside it rather than the one above it, and the column is
 				// what lets the runs be read down as a shape.
-				const name = doc.createElement('span');
-				name.classList.add('sheetsmith-track-row-name');
+				const name = line.createSpan('sheetsmith-track-row-name');
 				name.textContent = row.name ?? row.key;
-				line.appendChild(name);
 			}
 
 			if (flag) {
@@ -1006,7 +995,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 				 * putting an outcome on screen before applying it does not
 				 * engage, and there is no run of presses to debounce.
 				 */
-				const el = doc.createElement('button');
+				const el = line.createEl('button');
 				el.type = 'button';
 				el.classList.add('sheetsmith-level-ring', 'sheetsmith-track-flag');
 				// Nothing in the stylesheet reads it yet, and the class is here
@@ -1017,7 +1006,6 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 				if (harm) el.classList.add('sheetsmith-track-harm');
 				// One tab stop for the card, whatever it is a run of.
 				el.tabIndex = runs.length === 0 ? 0 : -1;
-				line.appendChild(el);
 
 				const held = storedMarks(data, row.key);
 				const run: Run = {
@@ -1135,8 +1123,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 				 * in-between state to wait through and the delay would only make
 				 * the answer late.
 				 */
-				const unresolved = doc.createElement('div');
-				unresolved.classList.add('sheetsmith-track-unresolved');
+				const unresolved = line.createDiv('sheetsmith-track-unresolved');
 				unresolved.textContent = '?';
 				unresolved.setAttribute(
 					'title',
@@ -1145,13 +1132,11 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 						{},
 					) ?? 'The number of segments did not resolve.',
 				);
-				line.appendChild(unresolved);
 				return;
 			}
 
 			const total = count * marks;
-			const el = doc.createElement('div');
-			el.classList.add('sheetsmith-track-run');
+			const el = line.createDiv('sheetsmith-track-run');
 			if (harm) el.classList.add('sheetsmith-track-harm');
 			if (marks > 1) {
 				// A segment holding several marks is several targets, so it is
@@ -1169,12 +1154,10 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			// levels must not be nine stops on the way past it. The rest are
 			// reachable, by the axis they are laid out on.
 			el.tabIndex = runs.length === 0 ? 0 : -1;
-			line.appendChild(el);
 
 			const segments: HTMLElement[] = [];
 			for (let at = 0; at < count; at++) {
-				const segment = doc.createElement('span');
-				segment.classList.add('sheetsmith-track-segment');
+				const segment = el.createSpan('sheetsmith-track-segment');
 				// How far along the run this segment is. A harm run mixes its
 				// fill from it, so the escalation is read as a shape before a
 				// single name is; a progress run takes the accent whole. The
@@ -1188,12 +1171,8 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 					);
 				}
 
-				const solid = doc.createElement('span');
-				solid.classList.add('sheetsmith-track-segment-fill');
-				segment.appendChild(solid);
-				const ghost = doc.createElement('span');
-				ghost.classList.add('sheetsmith-track-segment-ghost');
-				segment.appendChild(ghost);
+				segment.createSpan('sheetsmith-track-segment-fill');
+				segment.createSpan('sheetsmith-track-segment-ghost');
 
 				/*
 				 * A divider per boundary *between* marks, so a segment holding
@@ -1210,13 +1189,11 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 				 * number a test can assert.
 				 */
 				for (let division = 1; division < marks; division++) {
-					const divider = doc.createElement('span');
-					divider.classList.add('sheetsmith-track-mark');
+					const divider = segment.createSpan('sheetsmith-track-mark');
 					divider.style.setProperty(
 						'--sheetsmith-track-at',
 						String(division / marks),
 					);
-					segment.appendChild(divider);
 				}
 
 				// Last, and positioned, so it paints over the fills rather
@@ -1227,22 +1204,15 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 				if (named) {
 					const glyph = parseLevel(config.levels?.[at + 1] ?? '').glyph;
 					if (glyph !== null && glyph !== '') {
-						const letter = doc.createElement('span');
-						letter.classList.add('sheetsmith-track-segment-glyph');
+						const letter = segment.createSpan('sheetsmith-track-segment-glyph');
 						letter.textContent = levelGlyph({ levels: config.levels }, at + 1);
-						segment.appendChild(letter);
 					}
 				}
 
-				el.appendChild(segment);
 				segments.push(segment);
 			}
 
-			const step = named ? doc.createElement('div') : null;
-			if (step !== null) {
-				step.classList.add('sheetsmith-track-step');
-				line.appendChild(step);
-			}
+			const step = named ? line.createDiv('sheetsmith-track-step') : null;
 
 			const run: Run = {
 				key: row.key,

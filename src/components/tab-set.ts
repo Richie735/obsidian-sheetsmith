@@ -126,23 +126,20 @@ export const tabSet: ComponentDefinition<TabSetConfig, TabSetData> = {
 		const doc = container.ownerDocument;
 		container.replaceChildren();
 
-		const root = doc.createElement('div');
-		root.classList.add('sheetsmith-tabset');
-		container.appendChild(root);
+		const root = container.createDiv('sheetsmith-tabset');
 
 		// A tab set can never itself be a tab — its own tabs would be the third
 		// container and the parser refuses that — so the second half of this is
 		// unreachable today. Asked anyway, because a check with an exception list
 		// is how the next container ends up on the exception list.
 		if (showsOwnLabel(config, context)) {
-			const heading = doc.createElement('div');
+			const heading = root.createDiv();
 			// The group's own heading class: two containers with a heading of the
 			// same rank must not measure differently, which is UI §9 read one
 			// level up. A tab set's own name sits above the strip exactly as a
 			// group's sits above its region.
 			heading.classList.add('sheetsmith-group-heading');
 			heading.textContent = config.label;
-			root.appendChild(heading);
 		}
 
 		// The names come from the children's own labels rather than from a `tabs`
@@ -158,25 +155,22 @@ export const tabSet: ComponentDefinition<TabSetConfig, TabSetData> = {
 			return;
 		}
 
-		const strip = doc.createElement('div');
-		strip.classList.add('sheetsmith-tabset-strip');
+		const strip = root.createDiv('sheetsmith-tabset-strip');
 		strip.setAttribute('role', 'tablist');
-		root.appendChild(strip);
 
-		const stage = doc.createElement('div');
+		const stage = root.createDiv();
 		// One grid cell holding every panel, and it answers no container query:
 		// overlapping elements on a grid that reflowed would stack vertically, and
 		// the set would become as tall as every tab put together with one visible.
 		// A container tab's own subgrid sits inside its panel and reflows
 		// normally, which is what should happen.
 		stage.classList.add('sheetsmith-tabset-stage');
-		root.appendChild(stage);
 
 		const tabs: HTMLButtonElement[] = [];
 		const panels: HTMLElement[] = [];
 
 		regions.forEach((draw, index) => {
-			const tab = doc.createElement('button');
+			const tab = strip.createEl('button');
 			tab.type = 'button';
 			tab.classList.add('sheetsmith-tabset-tab');
 			tab.setAttribute('role', 'tab');
@@ -186,16 +180,13 @@ export const tabSet: ComponentDefinition<TabSetConfig, TabSetData> = {
 			// otherwise share it.
 			tab.id = `sheetsmith-tab-${config.id}-${index}`;
 			tab.textContent = names[index] ?? `Tab ${index + 1}`;
-			strip.appendChild(tab);
 			tabs.push(tab);
 
-			const panel = doc.createElement('div');
-			panel.classList.add('sheetsmith-tabset-panel');
+			const panel = stage.createDiv('sheetsmith-tabset-panel');
 			panel.setAttribute('role', 'tabpanel');
 			panel.setAttribute('aria-labelledby', tab.id);
 			tab.setAttribute('aria-controls', `sheetsmith-panel-${config.id}-${index}`);
 			panel.id = `sheetsmith-panel-${config.id}-${index}`;
-			stage.appendChild(panel);
 			panels.push(panel);
 			// Every panel drawn, including the hidden ones: hiding changes what
 			// the reader sees, never what the sheet computes.

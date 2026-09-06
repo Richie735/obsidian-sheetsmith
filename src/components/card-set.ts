@@ -266,7 +266,6 @@ export const cardSet: ComponentDefinition<CardSetConfig, CardSetData> = {
 	},
 
 	render(container, config, data, context): void {
-		const doc = container.ownerDocument;
 		container.replaceChildren();
 
 		// Legacy layouts carried sizing inside align ('stretch' meant fill,
@@ -287,8 +286,7 @@ export const cardSet: ComponentDefinition<CardSetConfig, CardSetData> = {
 		// The set's name is authored data; the sheet drops it only where the
 		// layout said to, or where a container above has already shown it.
 		if (showsOwnLabel(config, context)) {
-			const label = doc.createElement('div');
-			label.classList.add('sheetsmith-card-set-label');
+			const label = container.createDiv('sheetsmith-card-set-label');
 			// A heading belongs over the thing it heads. Left unset it follows
 			// the cards, so centred cards do not sit under a name pinned to the
 			// far left; setting it explicitly overrides that. Only a non-default
@@ -303,11 +301,9 @@ export const cardSet: ComponentDefinition<CardSetConfig, CardSetData> = {
 				label.classList.add(`sheetsmith-card-set-label-${labelAlign}`);
 			}
 			label.textContent = config.label;
-			container.appendChild(label);
 		}
 
-		const strip = doc.createElement('div');
-		strip.classList.add('sheetsmith-card-set');
+		const strip = container.createDiv('sheetsmith-card-set');
 		// Aligned modes size cards so one card spans one grid unit, keeping
 		// rows in step with the sheet grid whatever the pane width is.
 		strip.style.setProperty(
@@ -320,7 +316,6 @@ export const cardSet: ComponentDefinition<CardSetConfig, CardSetData> = {
 		if (sizing === 'fixed') {
 			strip.classList.add(`sheetsmith-card-set-align-${alignment}`);
 		}
-		container.appendChild(strip);
 
 		const values = data?.values ?? {};
 		const signed = config.signed !== false;
@@ -381,8 +376,7 @@ export const cardSet: ComponentDefinition<CardSetConfig, CardSetData> = {
 		for (const entry of config.entries ?? []) {
 			/** What the note says for this entry, which is what its breakdown is about. */
 			const stored = derivedFor(entry.key)(values[entry.key] ?? '');
-			const card = doc.createElement('div');
-			strip.appendChild(card);
+			const card = strip.createDiv();
 			renderCardFace(card, {
 				title: entry.name ?? entry.key,
 				abbreviation:

@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it, vi } from 'vitest';
 import { image, ImageConfig, ImageData } from './image';
+import { expectSpokenChildrenLast } from '../test/spoken-order';
 import { parseCharacter, serialiseCharacter } from '../parse/character';
 import { FOCUSABLE } from '../view/cell-focus';
 import { RenderContext } from '../types';
@@ -323,6 +324,20 @@ describe('image.render — it is a placed box', () => {
 		expect(input.getAttribute('spellcheck')).toBe('false');
 		input.dispatchEvent(new Event('focus'));
 		expect(input.getAttribute('spellcheck')).toBe('true');
+	});
+
+	it('keeps its announcement after the picture and the field', () => {
+		// `src/test/spoken-order.ts` holds the rule and the reason. This
+		// component is the one that broke it: the helper sweep made the live
+		// region the box's first child, so a reader met "Portrait saved" before
+		// the field it is about, and the shots stayed byte-identical throughout.
+		//
+		// One here rather than Pool's two, and it is the box's child rather than
+		// the block's, because `renderPictureFrame` is handed the box and fills
+		// it — which is also why the region has to exist before that call and so
+		// cannot come from `box.createDiv`.
+		const el = render();
+		expectSpokenChildrenLast(el.querySelector('.sheetsmith-image-box'), 1);
 	});
 });
 

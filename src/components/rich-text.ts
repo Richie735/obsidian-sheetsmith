@@ -135,7 +135,6 @@ function paintParagraphs(
 	text: string,
 	context: RenderContext<RichTextData>,
 ): void {
-	const doc = into.ownerDocument;
 	// Cleared, because this is no longer only ever called into a fresh element: a
 	// renderer that rejects may have put something in first, and appending under it
 	// would give the reader half a rendered block with the whole source repeated
@@ -144,8 +143,7 @@ function paintParagraphs(
 	into.classList.add('sheetsmith-rich-text-plain');
 	for (const paragraph of text.split(PARAGRAPH_BREAK)) {
 		if (paragraph.trim() === '') continue;
-		const p = doc.createElement('p');
-		into.appendChild(p);
+		const p = into.createEl('p');
 		paintLinkedText(p, paragraph, { link: context.link });
 	}
 }
@@ -224,7 +222,7 @@ export const richText: ComponentDefinition<RichTextConfig, RichTextData> = {
 		const doc = container.ownerDocument;
 		container.replaceChildren();
 
-		const block = doc.createElement('div');
+		const block = container.createDiv();
 		// The shared box: a component whose size is its placement and not its
 		// content (docs/UI.md §9). Its own class beside it carries only what it does
 		// differently, which is what goes *inside* the box.
@@ -239,13 +237,10 @@ export const richText: ComponentDefinition<RichTextConfig, RichTextData> = {
 			'--sheetsmith-rows',
 			String(config.position.height),
 		);
-		container.appendChild(block);
 
 		if (showsOwnLabel(config, context)) {
-			const label = doc.createElement('div');
-			label.classList.add('sheetsmith-component-label', 'sheetsmith-rich-text-label');
+			const label = block.createDiv({ cls: ['sheetsmith-component-label', 'sheetsmith-rich-text-label'] });
 			label.textContent = config.label;
-			block.appendChild(label);
 		}
 
 		/*
@@ -291,12 +286,9 @@ export const richText: ComponentDefinition<RichTextConfig, RichTextData> = {
 		 *    That trade reverses departure 2, so it is a decision rather than a
 		 *    fix, and it has not been taken.
 		 */
-		const box = doc.createElement('div');
-		box.classList.add('sheetsmith-placed-box', 'sheetsmith-rich-text-box');
-		block.appendChild(box);
+		const box = block.createDiv({ cls: ['sheetsmith-placed-box', 'sheetsmith-rich-text-box'] });
 
-		const field = doc.createElement('textarea');
-		field.classList.add('sheetsmith-rich-text-input');
+		const field = box.createEl('textarea', 'sheetsmith-rich-text-input');
 		field.value = data?.text ?? '';
 		// **The start, chosen, rather than the end, inherited.** Assigning `value`
 		// moves the text entry cursor to the end of the control (HTML's own rule for
@@ -315,11 +307,8 @@ export const richText: ComponentDefinition<RichTextConfig, RichTextData> = {
 		// Its text is transparent unfocused and the rendered prose is drawn over
 		// it, so its squiggles would be too.
 		spellcheckWhileFocused(field);
-		box.appendChild(field);
 
-		const rendered = doc.createElement('div');
-		rendered.classList.add('sheetsmith-rich-text-rendered');
-		box.appendChild(rendered);
+		const rendered = box.createDiv('sheetsmith-rich-text-rendered');
 
 		// **The links the app draws, given this plugin's behaviour.** Bound to the
 		// layer once, before anything is painted into it: the fallback painter wires
@@ -407,10 +396,8 @@ export const richText: ComponentDefinition<RichTextConfig, RichTextData> = {
 
 		// Announces once per commit. Attached after the controls, as the card's
 		// is, and in the document before its text changes.
-		const status = doc.createElement('div');
-		status.classList.add('sheetsmith-sr-only');
+		const status = block.createDiv('sheetsmith-sr-only');
 		status.setAttribute('aria-live', 'polite');
-		block.appendChild(status);
 
 		/**
 		 * The refusal, and the only one this component has.
@@ -468,10 +455,7 @@ export const richText: ComponentDefinition<RichTextConfig, RichTextData> = {
 				notice?.remove();
 				notice = null;
 				if (message === null) return;
-				notice = doc.createElement('div');
-				notice.classList.add('sheetsmith-error');
-				notice.textContent = message;
-				block.appendChild(notice);
+				notice = block.createDiv({ cls: 'sheetsmith-error', text: message });
 				// Said as well as drawn: the reader who cannot see the box is the one
 				// the old "saved" announcement misled worst.
 				status.textContent = message;

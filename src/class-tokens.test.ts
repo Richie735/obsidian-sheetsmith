@@ -142,7 +142,11 @@ function readLiteral(
  * Depth is counted over brackets and literals are skipped whole, so a nested
  * call and a comma inside a string both land where they belong.
  */
-function argumentsOf(text: string, open: number): string[] | null {
+function argumentsOf(
+	text: string,
+	open: number,
+	close: ')' | ']' = ')',
+): string[] | null {
 	const found: string[] = [];
 	let start = open + 1;
 	let depth = 1;
@@ -155,10 +159,9 @@ function argumentsOf(text: string, open: number): string[] | null {
 		}
 		const ch = text[i] as string;
 		if (ch === '(' || ch === '[' || ch === '{') depth += 1;
-		else if (ch === ']' || ch === '}') depth -= 1;
-		else if (ch === ')') {
+		else if (ch === ')' || ch === ']' || ch === '}') {
 			depth -= 1;
-			if (depth === 0) {
+			if (depth === 0 && ch === close) {
 				found.push(text.slice(start, i));
 				return found;
 			}
@@ -188,6 +191,26 @@ function literalArgument(argument: string): string[] | null {
 
 /** The call this file is about, matched only where it is actually a call. */
 const CALL = 'classList.add(';
+
+/**
+ * The second route to the same `classList.add`, and the reason only *this* half
+ * of it is read.
+ *
+ * `createDiv('x')`, `createEl('input', 'x')` and `cls: 'x'` all hand a string to
+ * a helper that splits it on whitespace before adding, because `DomElementInfo`
+ * documents `cls` as "a space-separated string or an array of strings". A space
+ * in that string is therefore two classes and not a refused token, so reporting
+ * one would be a false positive.
+ *
+ * **An array element is the exception, and it is a live trap rather than a
+ * theoretical one.** Nothing splits an element: it goes to `classList.add`
+ * exactly as written, so `cls: ['a b']` throws where `cls: 'a b'` is fine. The
+ * two spellings sit next to each other in the same options object and only one
+ * of them is safe, which is precisely the asymmetry a reader will not hold in
+ * their head. Six `cls: [...]` sites exist as this is written, all of them
+ * created by the sweep that moved class names off `classList.add`.
+ */
+const CLS = 'cls:';
 
 /**
  * Every fixed class name handed to `classList.add`, with the line it sits on.
@@ -228,6 +251,30 @@ function tokensAdded(source: string): { name: string; line: number }[] {
 				}
 			}
 			i = open + 1;
+			continue;
+		}
+		if (source.startsWith(CLS, i)) {
+			// Only the array form, per `CLS` above. Anything else after `cls:` is
+			// either split before it is added or not decidable from the source.
+			//
+			// `REFUSED` is the skip set, not a hand-written pair: it is already the
+			// DOM's own ASCII whitespace a screen up, and a literal ` ` and `\n`
+			// here omitted the tab this repository indents with — so a `cls:` whose
+			// array wrapped onto the next line was never read at all. No such site
+			// exists yet, which is exactly why it was worth fixing before one does.
+			let at = i + CLS.length;
+			while (at < source.length && REFUSED.test(source[at] as string)) {
+				at += 1;
+			}
+			if (source[at] === '[') {
+				const line = source.slice(0, at).split('\n').length;
+				for (const element of argumentsOf(source, at, ']') ?? []) {
+					for (const name of literalArgument(element) ?? []) {
+						if (name !== '') found.push({ name, line });
+					}
+				}
+			}
+			i += CLS.length;
 			continue;
 		}
 		i += 1;
@@ -347,5 +394,41 @@ describe('the reader reports only what it can prove', () => {
 
 	it('declines an unterminated call rather than guessing where it ends', () => {
 		expect(refused("el.classList.add('a b'")).toEqual([]);
+	});
+
+	it('reports a refused token in a `cls` array, which nothing splits', () => {
+		// The trap the helpers introduce. An element of the array reaches
+		// `classList.add` exactly as written.
+		expect(refused("block.createDiv({ cls: ['sheetsmith-a b'] });")).toEqual([
+			'sheetsmith-a b',
+		]);
+		// And the offender is found among elements that are fine.
+		expect(
+			refused(
+				"const el = p.createEl('input', {\n\tcls: ['sheetsmith-a', 'two words'],\n});",
+			),
+		).toEqual(['two words']);
+		// The array on its own line, tab-indented, which is how this repository
+		// wraps one. The skip set used to be a literal space and newline, so this
+		// shape was read as no array at all.
+		expect(
+			refused("p.createDiv({\n\t\t\tcls:\n\t\t\t\t['sheetsmith-a b'],\n\t\t});"),
+		).toEqual(['sheetsmith-a b']);
+	});
+
+	it('reports nothing for a `cls` string, which the helper splits', () => {
+		// The other half of the asymmetry, and the reason this reader takes the
+		// array form only: every one of these means two classes, not one refused
+		// token, so reporting them would fail the build on correct code.
+		for (const safe of [
+			"p.createDiv({ cls: 'sheetsmith-a sheetsmith-b' });",
+			"p.createDiv('sheetsmith-a sheetsmith-b');",
+			"p.createEl('input', 'sheetsmith-a sheetsmith-b');",
+			'p.createDiv({ cls: names });',
+			'p.createDiv({ cls: [...names] });',
+			"p.createDiv({ cls: [wide ? 'sheetsmith-wide' : 'sheetsmith-narrow'] });",
+		]) {
+			expect(refused(safe), safe).toEqual([]);
+		}
 	});
 });

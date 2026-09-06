@@ -59,6 +59,18 @@ export function stepButton(
 	 */
 	commitSoon: () => void,
 ): HTMLButtonElement {
+	// `createElement`, and this one is a **design choice rather than something
+	// the helper cannot do** (`PATTERNS.md` §5). A parent could be added to the
+	// signature — both call sites have `controls` in hand — and the honest
+	// argument against is not that the module refuses the caller's vocabulary,
+	// since it already takes `className`, which is more of the caller's surface
+	// than an element is.
+	//
+	// It is that returning a control and placing one are different jobs. The
+	// caller composes its row from several of these plus an amount control, and
+	// a builder that attached itself would decide the order of that row from
+	// inside a module that knows nothing about it. Reversible, and cheap to
+	// reverse; it is not a limit being reported.
 	const button = doc.createElement('button');
 	button.type = 'button';
 	button.classList.add(className);

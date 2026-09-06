@@ -174,15 +174,11 @@ export function showAnchoredPanel<S>(
 	const view = doc.defaultView;
 	closeAnchoredPanel();
 
-	const el = doc.createElement('div');
-	el.className = 'sheetsmith-panel';
+	const el = doc.body.createDiv('sheetsmith-panel');
 	el.id = `sheetsmith-panel-${++counter}`;
 	el.setAttribute('role', 'dialog');
 	el.setAttribute('aria-label', label);
-	const body = doc.createElement('div');
-	body.className = 'sheetsmith-panel-body';
-	el.appendChild(body);
-	doc.body.appendChild(el);
+	const body = el.createDiv('sheetsmith-panel-body');
 
 	const place = () => placeAnchored(el, anchor);
 	place();

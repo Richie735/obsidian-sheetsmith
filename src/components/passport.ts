@@ -378,10 +378,7 @@ function drawPicture(
 	status: HTMLElement,
 	labelled: boolean,
 ): void {
-	const doc = face.ownerDocument;
-	const box = doc.createElement('div');
-	box.classList.add('sheetsmith-placed-box', 'sheetsmith-passport-picture');
-	face.appendChild(box);
+	const box = face.createDiv({ cls: ['sheetsmith-placed-box', 'sheetsmith-passport-picture'] });
 
 	renderPictureFrame(box, {
 		// Image's own classes, deliberately: `object-fit`, the transparent field
@@ -462,7 +459,7 @@ function drawName(
 	status: HTMLElement,
 ): void {
 	const doc = text.ownerDocument;
-	const field = doc.createElement('input');
+	const field = text.createEl('input');
 	field.type = 'text';
 	field.classList.add('sheetsmith-passport-name-input');
 	field.value = stored;
@@ -477,7 +474,6 @@ function drawName(
 	// field holding "Thora" would name the wrong thing (docs/UI.md §6).
 	field.setAttribute('aria-label', 'Name');
 	revealWhenTruncated(field);
-	text.appendChild(field);
 
 	/**
 	 * Draw or clear the standing refusal under the name, and say it.
@@ -493,6 +489,8 @@ function drawName(
 		notice?.remove();
 		notice = null;
 		if (message === null) return;
+		// `createElement`, not a helper: this goes *after a sibling* rather than
+		// into a parent, and no helper option expresses that (`PATTERNS.md` §5).
 		notice = doc.createElement('div');
 		notice.classList.add('sheetsmith-error');
 		notice.textContent = message;
@@ -545,9 +543,7 @@ function drawFields(
 	const fields = storableFields(config);
 	if (fields.length === 0) return;
 
-	const line = doc.createElement('div');
-	line.classList.add('sheetsmith-passport-fields');
-	text.appendChild(line);
+	const line = text.createDiv('sheetsmith-passport-fields');
 
 	/** Every field on the face, so Enter can reach the next one. */
 	const inputs: HTMLInputElement[] = [];
@@ -643,17 +639,14 @@ function drawFields(
 		notice?.remove();
 		notice = null;
 		if (message === null) return;
-		notice = doc.createElement('div');
-		notice.classList.add('sheetsmith-error');
-		notice.textContent = message;
-		text.appendChild(notice);
+		notice = text.createDiv({ cls: 'sheetsmith-error', text: message });
 		status.textContent = message;
 	};
 
 	fields.forEach((field, index) => {
 		const name = fieldName(field);
 		const stored = data?.values?.[field.key] ?? '';
-		const input = doc.createElement('input');
+		const input = line.createEl('input');
 		input.type = 'text';
 		input.classList.add('sheetsmith-passport-input');
 		input.value = stored;
@@ -673,7 +666,6 @@ function drawFields(
 		 * rebuild a commit produces.
 		 */
 		input.size = Math.max(MIN_FIELD_WIDTH, (stored === '' ? name : stored).length);
-		line.appendChild(input);
 		inputs.push(input);
 
 		bindEditable(input, {
@@ -916,7 +908,7 @@ export const passport: ComponentDefinition<PassportConfig, PassportData> = {
 		 * taking the face down with it. Everything else that can be wrong here is in
 		 * the *note*, and `read` and the frame below report it.
 		 */
-		const block = doc.createElement('div');
+		const block = container.createDiv();
 		/*
 		 * The shared box: a component whose size is its placement and not its
 		 * content (docs/UI.md §9). The whole of the box is that class's — the
@@ -934,13 +926,12 @@ export const passport: ComponentDefinition<PassportConfig, PassportData> = {
 		 */
 		block.classList.add('sheetsmith-placed', 'sheetsmith-passport');
 		block.style.setProperty('--sheetsmith-rows', String(config.position.height));
-		container.appendChild(block);
 
 		// Drawn first and before any failure, so the component's name is on screen
 		// whichever half raised one (docs/UI.md §12's error-card row).
 		const labelled = showsOwnLabel(config, context);
 		if (labelled) {
-			const label = doc.createElement('div');
+			const label = block.createDiv();
 			// The rank is `.sheetsmith-component-label`'s, shared by six components
 			// now (docs/UI.md §9). `-passport-label` is the hook `sheetsmith-passport`
 			// above was until it grew a rule — **no rule today**, and the name a
@@ -951,7 +942,6 @@ export const passport: ComponentDefinition<PassportConfig, PassportData> = {
 				'sheetsmith-passport-label',
 			);
 			label.textContent = config.label;
-			block.appendChild(label);
 		}
 
 		/*
@@ -960,10 +950,11 @@ export const passport: ComponentDefinition<PassportConfig, PassportData> = {
 		 * adds no chrome of its own. Its own class carries the one thing a card does
 		 * not already say — that the picture and the text sit side by side.
 		 */
-		const face = doc.createElement('div');
-		face.classList.add('sheetsmith-card', 'sheetsmith-passport-face');
-		block.appendChild(face);
+		const face = block.createDiv({ cls: ['sheetsmith-card', 'sheetsmith-passport-face'] });
 
+		// `createElement`, not a helper: attached after the picture rather than at
+		// creation (`PATTERNS.md` §5). Invisible, so its position is reading order
+		// and the harness cannot see it move.
 		const status = doc.createElement('div');
 		status.classList.add('sheetsmith-sr-only');
 		status.setAttribute('aria-live', 'polite');
@@ -972,9 +963,7 @@ export const passport: ComponentDefinition<PassportConfig, PassportData> = {
 			drawPicture(face, config, data, context, status, labelled);
 		}
 
-		const text = doc.createElement('div');
-		text.classList.add('sheetsmith-passport-text');
-		face.appendChild(text);
+		const text = face.createDiv('sheetsmith-passport-text');
 
 		drawName(
 			text,

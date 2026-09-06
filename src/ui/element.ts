@@ -65,11 +65,17 @@ export function element<K extends keyof HTMLElementTagNameMap>(
 	parent: HTMLElement,
 	text?: string,
 ): HTMLElementTagNameMap[K] {
-	const el = parent.ownerDocument.createElement(tag);
+	// `createEl` creates and appends in one call, but the class is still split
+	// here rather than passed as `cls`. That is not tidiness left undone: the
+	// header's whole argument is that the separator is ASCII whitespace and
+	// deliberately not `\s`, and handing the string to `cls` would move that
+	// decision inside a helper whose splitting rule this repository does not
+	// control. Keeping the loop also keeps every name this module adds under
+	// `class-tokens.test.ts`, which reads `classList.add` and not `cls`.
+	const el = parent.createEl(tag);
 	for (const one of className.split(SEPARATOR)) {
 		if (one !== '') el.classList.add(one);
 	}
 	if (text !== undefined) el.textContent = text;
-	parent.appendChild(el);
 	return el;
 }

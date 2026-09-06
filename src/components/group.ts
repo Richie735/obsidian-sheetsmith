@@ -123,27 +123,20 @@ export const group: ComponentDefinition<GroupConfig, GroupData> = {
 	// group inside a component that holds a value is the registry's
 	// (`undrawableMessage`) — neither is this component's to report.
 	render(container, config, _data, context): void {
-		const doc = container.ownerDocument;
 		container.replaceChildren();
 
-		const region = doc.createElement('div');
-		region.classList.add('sheetsmith-group');
-		container.appendChild(region);
+		const region = container.createDiv('sheetsmith-group');
 
 		// The strip of a container that shows one child at a time is drawn from
 		// this label, so drawing it again here would name the region twice. The
 		// context says so rather than the layout, because there is no reading under
 		// which both are wanted (SPEC §4.2).
 		if (showsOwnLabel(config, context)) {
-			const heading = doc.createElement('div');
-			heading.classList.add('sheetsmith-group-heading');
+			const heading = region.createDiv('sheetsmith-group-heading');
 			heading.textContent = config.label;
-			region.appendChild(heading);
 		}
 
-		const body = doc.createElement('div');
-		body.classList.add('sheetsmith-group-body');
-		region.appendChild(body);
+		const body = region.createDiv('sheetsmith-group-body');
 		fill(body, context);
 	},
 };

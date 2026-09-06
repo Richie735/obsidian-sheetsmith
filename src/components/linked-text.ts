@@ -207,8 +207,7 @@ export function paintLinkedText(
 			continue;
 		}
 		const { target, display } = segment;
-		const anchor = doc.createElement('a');
-		anchor.classList.add('internal-link');
+		const anchor = into.createEl('a', 'internal-link');
 		// An inventory of things that have no notes yet is the ordinary case, and
 		// painting them as live links would be a lie the theme already has a
 		// colour for. Absent a context every link paints as resolved.
@@ -242,6 +241,5 @@ export function paintLinkedText(
 			offerPreview(event, target, anchor, link);
 		});
 		if (clipping !== undefined && display === target) clipping.reveal(anchor);
-		into.appendChild(anchor);
 	}
 }

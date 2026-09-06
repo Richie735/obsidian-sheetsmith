@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { cancel, hold, press, pressDown, release } from '../test/pointer';
 import { FOCUSABLE } from '../view/cell-focus';
+import { expectSpokenChildrenLast } from '../test/spoken-order';
 import { pool, PoolConfig, PoolData } from './pool';
 import { RenderContext } from '../types';
 import { sampleOf } from '../test/sample';
@@ -2138,6 +2139,20 @@ describe('pool controls sit together under the reading', () => {
 			'sheetsmith-pool-controls',
 			'sheetsmith-pool-track',
 		]);
+	});
+
+	it('keeps the spoken-only children after every visible one', () => {
+		// The half the case above filters out, and the half nothing else can see:
+		// it drops `sheetsmith-sr-only` on the way past, so the position of the
+		// live region and the keyboard hint is asserted by neither it nor the
+		// harness. `src/test/spoken-order.ts` holds the reason and the rule.
+		//
+		// Two here: the announcement region and the hint that describes the hold
+		// and drag gestures. Both are built at the top of the render and appended
+		// at the very bottom, which is why this component keeps `createElement`
+		// (`PATTERNS.md` §5).
+		const el = render({ hasTemp: true }, { current: '22', temp: '4' });
+		expectSpokenChildrenLast(el.querySelector('.sheetsmith-pool'), 2);
 	});
 });
 

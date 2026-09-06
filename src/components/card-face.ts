@@ -239,19 +239,16 @@ function renderDropdown(
 		quietEmpty: boolean;
 	},
 ): HTMLSelectElement {
-	const doc = slot.ownerDocument;
-	const select = doc.createElement('select');
-	select.classList.add('sheetsmith-card-select');
+	const select = slot.createEl('select', 'sheetsmith-card-select');
 	// The card's own label. A control whose visible content is a value rather
 	// than a name has to take its name from somewhere, and the label is on
 	// screen where a reader can see it agree (docs/UI.md §6).
 	select.setAttribute('aria-label', title);
 
 	const line = (value: string, text: string) => {
-		const option = doc.createElement('option');
+		const option = select.createEl('option');
 		option.value = value;
 		option.textContent = text;
-		select.appendChild(option);
 		return option;
 	};
 
@@ -294,7 +291,6 @@ function renderDropdown(
 		on.onCommit(select.value);
 	});
 
-	slot.appendChild(select);
 	return select;
 }
 
@@ -313,7 +309,7 @@ export function renderCardFace(
 	);
 
 	if (options.hideTitle !== true) {
-		const label = doc.createElement('div');
+		const label = container.createDiv();
 		// The shared rank (docs/UI.md §9); the card's own class carries only the
 		// narrow-card widening, which needs a container to ask about.
 		label.classList.add('sheetsmith-component-label', 'sheetsmith-card-label');
@@ -324,14 +320,11 @@ export function renderCardFace(
 		// wide cards would pop one on every pass. The shared helper decides on
 		// hover, when the text has been laid out and truncation is a fact.
 		revealWhenTruncated(label);
-		container.appendChild(label);
 	}
 
 	if (options.reserveAbbreviation !== false || options.abbreviation) {
-		const abbreviation = doc.createElement('div');
-		abbreviation.classList.add('sheetsmith-card-abbreviation');
+		const abbreviation = container.createDiv('sheetsmith-card-abbreviation');
 		abbreviation.textContent = options.abbreviation ?? '';
-		container.appendChild(abbreviation);
 	}
 
 	/**
@@ -344,13 +337,11 @@ export function renderCardFace(
 	/** The breakdown, where this number has one, for the press routing below. */
 	const breakdown = options.derived?.modifiers ?? null;
 	if (options.derived) {
-		derivedEl = doc.createElement('div');
-		derivedEl.classList.add('sheetsmith-card-derived');
+		derivedEl = container.createDiv('sheetsmith-card-derived');
 		// A per-keystroke live region is noise; announcements happen once
 		// per commit, via the status element below.
 		if (!options.value) derivedEl.setAttribute('aria-label', options.title);
 		setDerived(derivedEl, options.derived);
-		container.appendChild(derivedEl);
 		if (breakdown !== null) {
 			/*
 			 * A dotted underline and `cursor: help`, opening the shared popover
@@ -379,11 +370,9 @@ export function renderCardFace(
 			 * tab stop per modified card, which is a change to the card's
 			 * keyboard model and not to this.
 			 */
-			const twin = doc.createElement('div');
-			twin.classList.add('sheetsmith-sr-only');
+			const twin = container.createDiv('sheetsmith-sr-only');
 			twin.id = `sheetsmith-breakdown-${++breakdowns}`;
 			twin.textContent = breakdown;
-			container.appendChild(twin);
 			describedBy = twin.id;
 		}
 	}
@@ -392,6 +381,14 @@ export function renderCardFace(
 	// live region has to be in the document before its text changes; updated
 	// synchronously before the view reacts, so the message queues while the
 	// node is still attached.
+	// `createElement`, because this is attached at the end of the card rather
+	// than at creation (`PATTERNS.md` §5), and it is invisible, so its position
+	// is reading order. The comment above says why it must be attached before
+	// anything writes to it; this says why it is not attached *here*.
+	//
+	// Reachable by moving the declaration down to its `appendChild`, and not
+	// worth it: the controls built in between are handed it, so it would sit
+	// three hundred lines from its readers.
 	const status =
 		options.value || options.note ? doc.createElement('div') : null;
 	if (status) {
@@ -411,9 +408,7 @@ export function renderCardFace(
 	 * treatment and its position rather than agreeing about them twice.
 	 */
 	const valueSlot = () => {
-		const el = doc.createElement('div');
-		el.classList.add('sheetsmith-card-value');
-		container.appendChild(el);
+		const el = container.createDiv('sheetsmith-card-value');
 		return el;
 	};
 
@@ -449,7 +444,7 @@ export function renderCardFace(
 		const compute = options.derived?.compute;
 		const value = valueSlot();
 
-		const input = doc.createElement('input');
+		const input = value.createEl('input');
 		input.type = 'text';
 		// A derived formula implies the value is used numerically.
 		if (options.derived) input.inputMode = 'numeric';
@@ -534,7 +529,6 @@ export function renderCardFace(
 			'aria-label',
 			bothNumbers === null ? options.title : `${options.title}, ${bothNumbers}`,
 		);
-		value.appendChild(input);
 		controls.push(input);
 
 		const view = doc.defaultView;
@@ -624,17 +618,14 @@ export function renderCardFace(
 	}
 
 	if (options.note) {
-		const note = doc.createElement('div');
-		note.classList.add('sheetsmith-card-note');
-		container.appendChild(note);
+		const note = container.createDiv('sheetsmith-card-note');
 
-		const input = doc.createElement('input');
+		const input = note.createEl('input');
 		input.type = 'text';
 		input.classList.add('sheetsmith-card-note-input');
 		input.value = options.note.current;
 		if (options.note.placeholder) input.placeholder = options.note.placeholder;
 		input.setAttribute('aria-label', `${options.title} note`);
-		note.appendChild(input);
 		controls.push(input);
 		noteInput = input;
 

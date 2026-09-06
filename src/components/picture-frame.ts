@@ -138,11 +138,10 @@ export function renderPictureFrame(
 	 * field stacked over it — which matters for the one failure that arrives
 	 * *after* render, when the `<img>` reports it cannot draw the file.
 	 */
-	const frame = doc.createElement('div');
+	const frame = box.createDiv();
 	frame.classList.add(options.classes.frame);
-	box.appendChild(frame);
 
-	const field = doc.createElement('input');
+	const field = box.createEl('input');
 	field.type = 'text';
 	field.classList.add(options.classes.field);
 	field.value = options.source;
@@ -153,14 +152,11 @@ export function renderPictureFrame(
 	// field's text is transparent unfocused, so the marks would land on the
 	// portrait rather than on anything the reader is reading.
 	spellcheckWhileFocused(field);
-	box.appendChild(field);
 
 	const showError = (message: string): void => {
-		const error = doc.createElement('div');
-		error.classList.add('sheetsmith-error');
+		const error = frame.createDiv('sheetsmith-error');
 		error.textContent =
 			options.prefix === null ? message : `${options.prefix}: ${message}`;
-		frame.appendChild(error);
 	};
 
 	/**
@@ -191,7 +187,7 @@ export function renderPictureFrame(
 			showError(`No file in this vault is called "${target}".`);
 			return;
 		}
-		const picture = doc.createElement('img');
+		const picture = frame.createEl('img');
 		// A class the stylesheet owns rather than a bare `<img>`. Content drawn
 		// into a themed surface inherits the reader's theme and snippets, and Meta
 		// Bind 671 is a picture cropped because a rule in the reporter's own theme
@@ -211,7 +207,6 @@ export function renderPictureFrame(
 			frame.replaceChildren();
 			showError(`"${target}" is not a picture.`);
 		});
-		frame.appendChild(picture);
 	};
 
 	paint(null);

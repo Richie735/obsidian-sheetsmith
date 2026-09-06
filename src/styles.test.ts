@@ -1747,7 +1747,15 @@ describe('every class the plugin adds is its own', () => {
 	 * taken in the pass that found it, because narrowing this scan's reader
 	 * changes what an unrelated guard checks.
 	 */
-	const EXEMPT = ['src/test/obsidian-stub.ts', 'src/class-tokens.test.ts'];
+	const EXEMPT = [
+		'src/test/obsidian-stub.ts',
+		'src/class-tokens.test.ts',
+		// The double's own test, exempt for the first of those reasons rather than
+		// the second: it builds elements to prove the helpers honour their
+		// options, so its class names are fixtures — `alpha`, `first`, `x` — and
+		// no plugin DOM ever carries one.
+		'src/test/obsidian-stub.test.ts',
+	];
 
 	/**
 	 * Class names the plugin deliberately does not own.
@@ -1759,7 +1767,44 @@ describe('every class the plugin adds is its own', () => {
 	 * rather than waved through, the way `isolation.test.ts` enumerates the import
 	 * spellings it allows.
 	 */
-	const BORROWED = ['internal-link', 'is-unresolved'];
+	const BORROWED = [
+		'internal-link',
+		'is-unresolved',
+		/*
+		 * **These six were not added by the sweep; they were made visible by it.**
+		 * Every one predates it, in `editor/` and `starters/`, which were never
+		 * under the `prefer-create-el` exemption and so were already spelling a
+		 * class as `cls:` in an options object. The reader below only read
+		 * `classList.add`, so it had never seen any of them — the ownership rule
+		 * has been silently unenforced across two folders for as long as they have
+		 * been written that way, which is the argument for widening it rather than
+		 * a cost of having done so.
+		 *
+		 * All six are the same deliberate borrowing as a wikilink's: Obsidian's own
+		 * chrome, taken so a control looks like the app's and follows the user's
+		 * theme. `setting-item-description` is the description under a setting;
+		 * `clickable-icon` and `mod-cta` are its icon button and its primary
+		 * button; `dropdown` is its select; the two `suggestion-*` are the rows of
+		 * a suggester modal.
+		 */
+		'setting-item-description',
+		'clickable-icon',
+		'mod-cta',
+		'dropdown',
+		'suggestion-title',
+		'suggestion-note',
+		/*
+		 * Two more the widening turned up, by the routes added after it: a
+		 * confirm dialog's destructive button takes Obsidian's `mod-warning`
+		 * through `addClass` (`ui/confirm-modal.ts`), and a tab strip marks the
+		 * open tab with Obsidian's `is-active` through `classList.toggle`
+		 * (`components/tab-set.ts`). Both are the same deliberate borrowing as
+		 * the rest: the app's own state classes, so the control looks like the
+		 * app's and follows the reader's theme.
+		 */
+		'mod-warning',
+		'is-active',
+	];
 
 	/** Every `.ts` file under src/, as a repo-relative path. */
 	function sources(dir = 'src'): string[] {
@@ -1775,19 +1820,110 @@ describe('every class the plugin adds is its own', () => {
 	}
 
 	/**
-	 * Class names passed to `classList.add`, from quoted strings and from the
+	 * Class names the plugin puts on an element, from quoted strings and from the
 	 * fixed head of a template literal — `sheetsmith-card-set-align-${x}`
 	 * is checked on its prefix, which is the part that has to be owned.
+	 *
+	 * **Every route this repository has for putting a class on an element**, and
+	 * the list is the enumeration rather than a sample:
+	 *
+	 * - `classList.add(...)`
+	 * - `createDiv('x')` and `createSpan('x')`, where a bare string is the class
+	 * - the second argument of `createEl('tag', 'x')`
+	 * - `cls:` in an options object, as a string or an array
+	 * - the second argument of `element('div', 'x', parent)`, this repository's
+	 *   own helper
+	 * - `addClass(...)` and `removeClass(...)`
+	 * - `classList.toggle('x', …)` and `toggleClass('x', …)`
+	 *
+	 * This guard is about *ownership* — every class is either
+	 * `sheetsmith-`-prefixed or a name deliberately borrowed — so a route it
+	 * cannot see is a hole in the rule rather than a spelling it tolerates.
+	 *
+	 * **It read only the first of those until recently, and the last four were
+	 * missed twice.** The helper sweep would have taken eighty-odd sites out of
+	 * its reach in one commit, which is what prompted the widening; the widening
+	 * then stopped at the four routes the sweep had touched and claimed to be
+	 * complete, while `element()` alone carried 110 call sites — our own helper,
+	 * and invisible to this scan and to `class-tokens.test.ts` alike. Six
+	 * borrowed names had been unchecked for as long as they had been written.
+	 *
+	 * What it still cannot see is stated rather than implied: a class held in a
+	 * variable, computed, or built by concatenation. Those are not decidable
+	 * from the source, which is the same line `class-tokens.test.ts` draws.
+	 *
+	 * Unlike that file, both the string and the array form of `cls` count here:
+	 * a space-separated string is two owned names rather than one refused token.
 	 */
-	function classesAdded(source: string): string[] {
+	function classesAdded(text: string): string[] {
 		const found: string[] = [];
-		for (const call of source.matchAll(/classList\.add\(([^)]*)\)/g)) {
-			for (const literal of (call[1] ?? '').matchAll(
-				/'([^']*)'|"([^"]*)"|`([^`$]*)/g,
-			)) {
-				const name = literal[1] ?? literal[2] ?? literal[3] ?? '';
-				if (name !== '') found.push(name);
+		// Comments stripped first, and only comments. The reader below searches
+		// rather than walks, so before this it read a `cls:` written in prose
+		// exactly as it read one written in code — and at this repository's
+		// comment density the widened patterns matched this very file's header,
+		// failing the build on a paragraph. Stripping is the narrow half of the
+		// fix `PATTERNS.md` §11 holds in full: that row wants one reader shared
+		// with `class-tokens.test.ts`, which also settles the strings-that-model-
+		// source case this cannot, and it names its own prerequisites. This
+		// changes nothing about which *code* the guard reads.
+		const source = text
+			.replace(/\/\*[\s\S]*?\*\//g, ' ')
+			.replace(/(^|[^:'"`\\])\/\/[^\n]*/g, '$1');
+		const literals = (text: string): void => {
+			for (const literal of text.matchAll(/'([^']*)'|"([^"]*)"|`([^`$]*)/g)) {
+				for (const name of (
+					literal[1] ??
+					literal[2] ??
+					literal[3] ??
+					''
+				).split(/\s+/)) {
+					if (name !== '') found.push(name);
+				}
 			}
+		};
+		for (const call of source.matchAll(/classList\.add\(([^)]*)\)/g)) {
+			literals(call[1] ?? '');
+		}
+		// `createDiv('x')` and `createSpan('x')`, where a bare string is the class.
+		for (const call of source.matchAll(
+			/create(?:Div|Span)\(\s*('[^']*'|"[^"]*"|`[^`$]*`)/g,
+		)) {
+			literals(call[1] ?? '');
+		}
+		// `createEl('tag', 'x')`, where it is the second argument.
+		for (const call of source.matchAll(
+			/createEl\(\s*(?:'[^']*'|"[^"]*")\s*,\s*('[^']*'|"[^"]*"|`[^`$]*`)/g,
+		)) {
+			literals(call[1] ?? '');
+		}
+		// `cls: 'x'`, `cls: ['x', 'y']`.
+		for (const call of source.matchAll(
+			/\bcls:\s*(\[[^\]]*\]|'[^']*'|"[^"]*"|`[^`$]*`)/g,
+		)) {
+			literals(call[1] ?? '');
+		}
+		// `element('div', 'x', parent)`, this repository's own helper, where the
+		// class is the second argument exactly as it is for `createEl`.
+		for (const call of source.matchAll(
+			/\belement\(\s*(?:'[^']*'|"[^"]*")\s*,\s*('[^']*'|"[^"]*"|`[^`$]*`)/g,
+		)) {
+			literals(call[1] ?? '');
+		}
+		// `addClass('x', 'y')` and `removeClass`, Obsidian's own prototype pair.
+		for (const call of source.matchAll(/\b(?:add|remove)Class\(([^)]*)\)/g)) {
+			literals(call[1] ?? '');
+		}
+		// `classList.toggle('x', cond)` and `toggleClass('x', cond)` — the class
+		// is the first argument, and for `toggleClass` it may be an array.
+		for (const call of source.matchAll(
+			/\bclassList\.toggle\(\s*('[^']*'|"[^"]*"|`[^`$]*`)/g,
+		)) {
+			literals(call[1] ?? '');
+		}
+		for (const call of source.matchAll(
+			/\btoggleClass\(\s*(\[[^\]]*\]|'[^']*'|"[^"]*"|`[^`$]*`)/g,
+		)) {
+			literals(call[1] ?? '');
 		}
 		return found;
 	}

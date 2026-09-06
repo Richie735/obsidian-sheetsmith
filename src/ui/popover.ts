@@ -81,12 +81,9 @@ export function showPopover(anchor: HTMLElement, text: string): void {
 	const view = doc.defaultView;
 	closePopover();
 
-	const el = doc.createElement('div');
-	el.className = 'sheetsmith-popover';
+	const el = doc.body.createDiv({ cls: 'sheetsmith-popover', text });
 	el.id = `sheetsmith-popover-${++counter}`;
 	el.setAttribute('role', 'tooltip');
-	el.textContent = text;
-	doc.body.appendChild(el);
 
 	// Named by what it explains, for as long as it is explaining it.
 	anchor.setAttribute('aria-describedby', el.id);

@@ -202,10 +202,15 @@ function amountControl(options: AmountControlOptions): HTMLElement {
 	const { doc, name, standing, apply, onPending, onOpenChange } = options;
 	const view = doc.defaultView;
 
+	// `createElement`, and like `hold-repeat.ts`'s button this is a **design
+	// choice rather than a limit of the helper** (`PATTERNS.md` §5). This
+	// function returns a control for its caller to place, so it has a document
+	// and no parent; adding one to `AmountControlOptions` would work and would
+	// change what the function is, from building a control to placing one.
 	const wrap = doc.createElement('div');
 	wrap.classList.add('sheetsmith-pool-adjust');
 
-	const trigger = doc.createElement('button');
+	const trigger = wrap.createEl('button');
 	trigger.type = 'button';
 	trigger.classList.add('sheetsmith-pool-adjust-trigger');
 	// A glyph, and a text glyph rather than an icon, because the two buttons it
@@ -222,11 +227,8 @@ function amountControl(options: AmountControlOptions): HTMLElement {
 	// an element nobody can reach. What says the mode changed is focus arriving
 	// in a field whose own name states the direction — see showDirection.
 	trigger.title = `Spend or restore an amount of ${name}. The card does the arithmetic.`;
-	wrap.appendChild(trigger);
 
-	const panel = doc.createElement('div');
-	panel.classList.add('sheetsmith-pool-adjust-panel');
-	wrap.appendChild(panel);
+	const panel = wrap.createDiv('sheetsmith-pool-adjust-panel');
 
 	/**
 	 * Spending by default, because a table spends far more often than it
@@ -235,12 +237,11 @@ function amountControl(options: AmountControlOptions): HTMLElement {
 	 */
 	let direction: 1 | -1 = -1;
 
-	const toggle = doc.createElement('button');
+	const toggle = panel.createEl('button');
 	toggle.type = 'button';
 	toggle.classList.add('sheetsmith-pool-adjust-direction');
-	panel.appendChild(toggle);
 
-	const amount = doc.createElement('input');
+	const amount = panel.createEl('input');
 	amount.type = 'text';
 	// Bare digits are enough, which is the point of the direction being a
 	// control: `numeric` on iOS is a keypad with no minus key on it.
@@ -251,7 +252,6 @@ function amountControl(options: AmountControlOptions): HTMLElement {
 	amount.setAttribute('enterkeyhint', 'done');
 	amount.classList.add('sheetsmith-pool-adjust-amount');
 	amount.placeholder = '0';
-	panel.appendChild(amount);
 
 	/**
 	 * Two states, but not a pressed pair, so the name carries the direction.
@@ -679,38 +679,51 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 		// object. It also takes the same width cap, so a pool spanning three
 		// columns does not become an expanse of clickable card around a
 		// two-digit number while the cards beside it stay tile-sized.
-		const card = doc.createElement('div');
-		card.classList.add('sheetsmith-pool');
-		container.appendChild(card);
+		const card = container.createDiv('sheetsmith-pool');
 
 		// A pool has no `hideLabel` of its own, so this drew unconditionally until
 		// a container that names its children arrived. The accessible name below is
 		// untouched either way.
 		if (showsOwnLabel(config, context)) {
-			const label = doc.createElement('div');
+			const label = card.createDiv();
 			// The shared rank (docs/UI.md §9); this component's own class carries only
 			// the narrow-card tracking, which needs a container to ask about.
 			label.classList.add('sheetsmith-component-label', 'sheetsmith-pool-label');
 			label.textContent = config.label;
-			card.appendChild(label);
 		}
 
 		// Announces once per commit, whether the change came from the keyboard,
 		// a step button, or a scrub. Attached before anything writes to it,
 		// because a live region has to be in the document before its text
 		// changes.
+		// `createElement`, because this is appended last, after six siblings, and
+		// `createEl` attaches on creation (`PATTERNS.md` §5). It is invisible, so
+		// its position is reading order and nothing else: a reader browsing the
+		// card would meet the announcement before the number it is about, and the
+		// harness cannot photograph the difference. `pool.test.ts` asserts it.
+		//
+		// **Reachable, at a price, and the price is the reason.** Declaring it
+		// beside the `card.appendChild` seven hundred lines down would let a
+		// helper build it, but every closure between here and there writes to it,
+		// so the declaration would sit far from all of its readers to satisfy a
+		// lint rule. That is a worse file, not a better one.
 		const status = doc.createElement('div');
 		status.classList.add('sheetsmith-sr-only');
 		status.setAttribute('aria-live', 'polite');
 
-		const row = doc.createElement('div');
-		row.classList.add('sheetsmith-pool-row');
-		card.appendChild(row);
+		const row = card.createDiv('sheetsmith-pool-row');
+		// The value and its ceiling are one reading, and the value holds the
+		// card's centre line on its own; see the stylesheet.
+		//
+		// Declared here rather than beside the ceiling it also holds, so that the
+		// field below can be built on it. `row` takes this and nothing else, and
+		// `reading` takes the field and then the ceiling, so the order is what it
+		// was when this line sat three hundred lines down.
+		const reading = row.createDiv('sheetsmith-pool-reading');
 
-		const input = doc.createElement('input');
+		const input = reading.createEl('input', 'sheetsmith-pool-current');
 		input.type = 'text';
 		input.inputMode = 'numeric';
-		input.classList.add('sheetsmith-pool-current');
 		input.value = data?.current ?? '';
 		// SPEC §4.2: an empty value shows "—" everywhere.
 		input.placeholder = '—';
@@ -719,6 +732,9 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 		// pointer; the description below covers assistive tech and, unlike a
 		// title, reaches touch — which is where hold and drag matter most.
 		input.title = `${config.label}. ${POOL_TITLE}`;
+		// Attached last too, and reachable only on the same terms as `status`
+		// above: a declaration moved seven hundred lines from everything that
+		// reads it.
 		const hint = doc.createElement('div');
 		hint.classList.add('sheetsmith-sr-only');
 		hint.id = `sheetsmith-pool-hint-${config.id}`;
@@ -1072,22 +1088,12 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 			context.onChange(delta);
 		};
 
-		// The value and its ceiling are one reading, and the value holds the
-		// card's centre line on its own; see the stylesheet.
-		const reading = doc.createElement('div');
-		reading.classList.add('sheetsmith-pool-reading');
-		reading.appendChild(input);
-		row.appendChild(reading);
 
 		if (maxText !== null) {
-			const ceiling = doc.createElement('span');
-			ceiling.classList.add('sheetsmith-pool-ceiling');
-			reading.appendChild(ceiling);
+			const ceiling = reading.createSpan('sheetsmith-pool-ceiling');
 
-			const separator = doc.createElement('span');
-			separator.classList.add('sheetsmith-pool-separator');
+			const separator = ceiling.createSpan('sheetsmith-pool-separator');
 			separator.textContent = '/';
-			ceiling.appendChild(separator);
 
 			if (characterMax) {
 				/*
@@ -1106,7 +1112,7 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 				 * it, and giving it matching weight would make the card ask
 				 * which of two numbers it is about.
 				 */
-				const field = doc.createElement('input');
+				const field = ceiling.createEl('input');
 				field.type = 'text';
 				field.inputMode = 'numeric';
 				field.classList.add('sheetsmith-pool-max', 'sheetsmith-pool-max-input');
@@ -1118,10 +1124,8 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 				field.setAttribute('aria-label', `${config.label} maximum`);
 				field.title = `Maximum ${config.label}, held by this character.`;
 				maxInput = field;
-				ceiling.appendChild(field);
 			} else {
-				const max = doc.createElement('span');
-				max.classList.add('sheetsmith-pool-max');
+				const max = ceiling.createSpan('sheetsmith-pool-max');
 				max.textContent = maxText;
 				if (resolvedMax === null) {
 					max.classList.add('sheetsmith-pool-max-unresolved');
@@ -1133,7 +1137,6 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 				// No aria-label here: a bare span is role=generic, which prohibits
 				// naming, so most assistive tech drops it. The visible text and the
 				// live region already carry the ceiling.
-				ceiling.appendChild(max);
 			}
 		}
 
@@ -1233,19 +1236,14 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 		);
 
 		if (config.hasTemp === true) {
-			const temp = doc.createElement('div');
-			temp.classList.add('sheetsmith-pool-temp');
-			card.appendChild(temp);
+			const temp = card.createDiv('sheetsmith-pool-temp');
 
-			const tempLabel = doc.createElement('span');
-			tempLabel.classList.add('sheetsmith-pool-temp-label');
+			const tempLabel = temp.createSpan('sheetsmith-pool-temp-label');
 			tempLabel.textContent = 'Temp';
-			temp.appendChild(tempLabel);
 
-			tempInput = doc.createElement('input');
+			tempInput = temp.createEl('input', 'sheetsmith-pool-temp-input');
 			tempInput.type = 'text';
 			tempInput.inputMode = 'numeric';
-			tempInput.classList.add('sheetsmith-pool-temp-input');
 			tempInput.value = data?.temp ?? '';
 			tempInput.placeholder = '—';
 			tempInput.setAttribute('aria-label', `${config.label} temporary`);
@@ -1258,7 +1256,6 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 			// interaction. Steppers here also put a second minus on the card
 			// meaning something different from the first, two more tab stops,
 			// and two 16px targets four pixels from the field they sit beside.
-			temp.appendChild(field);
 
 			field.addEventListener('blur', commitDraft);
 
@@ -1305,6 +1302,10 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 		 * wide field-shaped pill, because it asks for a number first and a
 		 * field-shaped control advertises that typing is next.
 		 */
+		// `createElement`, not a helper, per `PATTERNS.md` §5: this is filled with
+		// its step buttons here and attached to the card much later, after the
+		// preview line. Creating it on the card would put it *before* the preview
+		// instead of after, which is a visible change.
 		const controls = doc.createElement('div');
 		controls.classList.add('sheetsmith-pool-controls');
 		controls.appendChild(
@@ -1322,8 +1323,7 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 		// The written outcome. Reserved whether or not anything is pending; see
 		// the stylesheet. `aria-hidden` because the same sentence is spoken
 		// below, where it is composed for speech rather than for the eye.
-		const previewLine = doc.createElement('div');
-		previewLine.classList.add('sheetsmith-pool-preview');
+		const previewLine = card.createDiv('sheetsmith-pool-preview');
 		previewLine.setAttribute('aria-hidden', 'true');
 
 		/**
@@ -1398,7 +1398,6 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 				commitSoon,
 			),
 		);
-		card.appendChild(previewLine);
 		card.appendChild(controls);
 
 		// The proportional read (SPEC §4.2). A pool is the one component whose
@@ -1414,19 +1413,13 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 		// stylesheet then bleeds it past the padding onto the border, because an
 		// inset line at the bottom would read as a mis-sized rule instead.
 		if (ceilingOf() !== null && config.hideFill !== true) {
-			const track = doc.createElement('div');
-			track.classList.add('sheetsmith-pool-track');
+			const track = card.createDiv('sheetsmith-pool-track');
 			// The numbers above already say this; the bar is the shape of them.
 			track.setAttribute('aria-hidden', 'true');
 			// Under the fill, and wider than it whenever an amount is pending:
 			// the region in play, in the language the bar already speaks.
-			track.appendChild(doc.createElement('div')).classList.add(
-				'sheetsmith-pool-track-ghost',
-			);
-			track.appendChild(doc.createElement('div')).classList.add(
-				'sheetsmith-pool-track-fill',
-			);
-			card.appendChild(track);
+			track.createDiv('sheetsmith-pool-track-ghost');
+			track.createDiv('sheetsmith-pool-track-fill');
 		}
 
 		card.appendChild(hint);

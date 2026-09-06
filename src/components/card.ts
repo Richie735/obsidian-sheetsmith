@@ -407,23 +407,18 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 	},
 
 	render(container, config, data, context): void {
-		const doc = container.ownerDocument;
 		container.replaceChildren();
 
 		const drawable = drawableCard(config);
 		if ('error' in drawable) {
 			// A misconfigured component reports on itself; SPEC §10 keeps the
 			// rest of the sheet rendering and editable.
-			const error = doc.createElement('div');
-			error.classList.add('sheetsmith-error');
+			const error = container.createDiv('sheetsmith-error');
 			error.textContent = drawable.error;
-			container.appendChild(error);
 			return;
 		}
 
-		const face = doc.createElement('div');
-		face.classList.add('sheetsmith-card-single');
-		container.appendChild(face);
+		const face = container.createDiv('sheetsmith-card-single');
 
 		const signed = config.signed !== false;
 		// Hiding the value only makes sense when a derived remains to show;
