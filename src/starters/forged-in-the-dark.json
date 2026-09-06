@@ -1,0 +1,521 @@
+{
+	"name": "Starter Forged in the Dark",
+	"columns": 6,
+	"components": [
+		{
+			"id": "playbook",
+			"type": "card",
+			"label": "Playbook",
+			"options": [
+				{
+					"value": "Cutter"
+				},
+				{
+					"value": "Hound"
+				},
+				{
+					"value": "Leech"
+				},
+				{
+					"value": "Lurk"
+				},
+				{
+					"value": "Slide"
+				},
+				{
+					"value": "Spider"
+				},
+				{
+					"value": "Whisper"
+				}
+			],
+			"hideNote": true,
+			"position": {
+				"col": 1,
+				"row": 1,
+				"width": 2,
+				"height": 1
+			}
+		},
+		{
+			"id": "heritage",
+			"type": "card",
+			"label": "Heritage",
+			"options": [
+				{
+					"value": "Akoros"
+				},
+				{
+					"value": "The Dagger Isles"
+				},
+				{
+					"value": "Iruvia"
+				},
+				{
+					"value": "Severos"
+				},
+				{
+					"value": "Skovlan"
+				},
+				{
+					"value": "Tycheros"
+				}
+			],
+			"notePlaceholder": "detail",
+			"position": {
+				"col": 3,
+				"row": 1,
+				"width": 2,
+				"height": 1
+			}
+		},
+		{
+			"id": "background",
+			"type": "card",
+			"label": "Background",
+			"options": [
+				{
+					"value": "Academic"
+				},
+				{
+					"value": "Labor"
+				},
+				{
+					"value": "Law"
+				},
+				{
+					"value": "Trade"
+				},
+				{
+					"value": "Military"
+				},
+				{
+					"value": "Noble"
+				},
+				{
+					"value": "Underworld"
+				}
+			],
+			"notePlaceholder": "detail",
+			"position": {
+				"col": 5,
+				"row": 1,
+				"width": 2,
+				"height": 1
+			}
+		},
+		{
+			"id": "vice",
+			"type": "card",
+			"label": "Vice",
+			"options": [
+				{
+					"value": "Faith"
+				},
+				{
+					"value": "Gambling"
+				},
+				{
+					"value": "Luxury"
+				},
+				{
+					"value": "Obligation"
+				},
+				{
+					"value": "Pleasure"
+				},
+				{
+					"value": "Stupor"
+				},
+				{
+					"value": "Weird"
+				}
+			],
+			"notePlaceholder": "purveyor",
+			"position": {
+				"col": 1,
+				"row": 2,
+				"width": 3,
+				"height": 1
+			}
+		},
+		{
+			"id": "coin",
+			"type": "track",
+			"label": "Coin",
+			"count": 4,
+			"sense": "progress",
+			"position": {
+				"col": 4,
+				"row": 2,
+				"width": 1,
+				"height": 1
+			}
+		},
+		{
+			"id": "stash",
+			"type": "pool",
+			"label": "Stash",
+			"max": 40,
+			"position": {
+				"col": 5,
+				"row": 2,
+				"width": 2,
+				"height": 1
+			}
+		},
+		{
+			"id": "stress",
+			"type": "track",
+			"label": "Stress",
+			"count": 9,
+			"sense": "harm",
+			"position": {
+				"col": 1,
+				"row": 3,
+				"width": 2,
+				"height": 1
+			}
+		},
+		{
+			"id": "trauma",
+			"type": "track",
+			"label": "Trauma",
+			"count": 4,
+			"sense": "harm",
+			"position": {
+				"col": 3,
+				"row": 3,
+				"width": 1,
+				"height": 1
+			}
+		},
+		{
+			"id": "healing",
+			"type": "track",
+			"label": "Healing",
+			"count": 4,
+			"sense": "progress",
+			"position": {
+				"col": 4,
+				"row": 3,
+				"width": 1,
+				"height": 1
+			}
+		},
+		{
+			"id": "armour",
+			"type": "track",
+			"label": "Armour",
+			"count": 1,
+			"rows": [
+				{
+					"key": "armour",
+					"name": "Armour"
+				},
+				{
+					"key": "heavy",
+					"name": "Heavy"
+				},
+				{
+					"key": "special",
+					"name": "Special"
+				}
+			],
+			"reset": [
+				{
+					"trigger": "Downtime",
+					"action": "empty"
+				}
+			],
+			"position": {
+				"col": 5,
+				"row": 3,
+				"width": 2,
+				"height": 1
+			}
+		},
+		{
+			"id": "insight_rating",
+			"type": "card",
+			"label": "Insight",
+			"derived": "count(insight, Rating > 0)",
+			"signed": false,
+			"hideValue": true,
+			"hideNote": true,
+			"position": {
+				"col": 1,
+				"row": 4,
+				"width": 2,
+				"height": 1
+			}
+		},
+		{
+			"id": "prowess_rating",
+			"type": "card",
+			"label": "Prowess",
+			"derived": "count(prowess, Rating > 0)",
+			"signed": false,
+			"hideValue": true,
+			"hideNote": true,
+			"position": {
+				"col": 3,
+				"row": 4,
+				"width": 2,
+				"height": 1
+			}
+		},
+		{
+			"id": "resolve_rating",
+			"type": "card",
+			"label": "Resolve",
+			"derived": "count(resolve, Rating > 0)",
+			"signed": false,
+			"hideValue": true,
+			"hideNote": true,
+			"position": {
+				"col": 5,
+				"row": 4,
+				"width": 2,
+				"height": 1
+			}
+		},
+		{
+			"id": "insight",
+			"type": "table",
+			"label": "Insight actions",
+			"rowHeader": "Action",
+			"namePosition": 1,
+			"hideLabel": true,
+			"rows": [
+				{
+					"label": "Hunt"
+				},
+				{
+					"label": "Study"
+				},
+				{
+					"label": "Survey"
+				},
+				{
+					"label": "Tinker"
+				}
+			],
+			"columns": [
+				{
+					"key": "Rating",
+					"type": "level",
+					"max": 4,
+					"hideHeading": true
+				}
+			],
+			"position": {
+				"col": 1,
+				"row": 5,
+				"width": 2,
+				"height": 2
+			}
+		},
+		{
+			"id": "prowess",
+			"type": "table",
+			"label": "Prowess actions",
+			"rowHeader": "Action",
+			"namePosition": 1,
+			"hideLabel": true,
+			"rows": [
+				{
+					"label": "Finesse"
+				},
+				{
+					"label": "Prowl"
+				},
+				{
+					"label": "Skirmish"
+				},
+				{
+					"label": "Wreck"
+				}
+			],
+			"columns": [
+				{
+					"key": "Rating",
+					"type": "level",
+					"max": 4,
+					"hideHeading": true
+				}
+			],
+			"position": {
+				"col": 3,
+				"row": 5,
+				"width": 2,
+				"height": 2
+			}
+		},
+		{
+			"id": "resolve",
+			"type": "table",
+			"label": "Resolve actions",
+			"rowHeader": "Action",
+			"namePosition": 1,
+			"hideLabel": true,
+			"rows": [
+				{
+					"label": "Attune"
+				},
+				{
+					"label": "Command"
+				},
+				{
+					"label": "Consort"
+				},
+				{
+					"label": "Sway"
+				}
+			],
+			"columns": [
+				{
+					"key": "Rating",
+					"type": "level",
+					"max": 4,
+					"hideHeading": true
+				}
+			],
+			"position": {
+				"col": 5,
+				"row": 5,
+				"width": 2,
+				"height": 2
+			}
+		},
+		{
+			"id": "harm",
+			"type": "table",
+			"label": "Harm",
+			"rowHeader": "Level",
+			"rows": [
+				{
+					"label": "Severe (3)"
+				},
+				{
+					"label": "Moderate (2)"
+				},
+				{
+					"label": "Lesser (1)"
+				}
+			],
+			"columns": [
+				{
+					"key": "First"
+				},
+				{
+					"key": "Second"
+				}
+			],
+			"position": {
+				"col": 1,
+				"row": 7,
+				"width": 3,
+				"height": 2
+			}
+		},
+		{
+			"id": "xp",
+			"type": "track",
+			"label": "XP",
+			"sense": "progress",
+			"rows": [
+				{
+					"key": "playbook",
+					"name": "Playbook",
+					"count": 8
+				},
+				{
+					"key": "insight",
+					"name": "Insight",
+					"count": 6
+				},
+				{
+					"key": "prowess",
+					"name": "Prowess",
+					"count": 6
+				},
+				{
+					"key": "resolve",
+					"name": "Resolve",
+					"count": 6
+				}
+			],
+			"position": {
+				"col": 4,
+				"row": 7,
+				"width": 3,
+				"height": 2
+			}
+		},
+		{
+			"id": "abilities",
+			"type": "record-set",
+			"label": "Special abilities",
+			"recordName": "Ability",
+			"position": {
+				"col": 1,
+				"row": 9,
+				"width": 3,
+				"height": 2
+			}
+		},
+		{
+			"id": "items",
+			"type": "table",
+			"label": "Items",
+			"rowHeader": "Item",
+			"openRows": true,
+			"columns": [
+				{
+					"key": "Load",
+					"type": "number",
+					"min": 0,
+					"total": true
+				}
+			],
+			"position": {
+				"col": 4,
+				"row": 9,
+				"width": 2,
+				"height": 2
+			}
+		},
+		{
+			"id": "load",
+			"type": "card",
+			"label": "Load left",
+			"options": [
+				{
+					"value": "3",
+					"label": "Light"
+				},
+				{
+					"value": "5",
+					"label": "Normal"
+				},
+				{
+					"value": "6",
+					"label": "Heavy"
+				}
+			],
+			"derived": "value - items.Load",
+			"signed": false,
+			"hideNote": true,
+			"position": {
+				"col": 6,
+				"row": 9,
+				"width": 1,
+				"height": 1
+			}
+		}
+	],
+	"triggers": [
+		"Downtime"
+	]
+}

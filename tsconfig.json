@@ -27,6 +27,12 @@
 		"noFallthroughCasesInSwitch": true,
 		"noUncheckedIndexedAccess": true,
 		"moduleResolution": "bundler",
+		// The bundled starter layouts (`src/starters/`) are real layout files
+		// imported as modules, so esbuild's built-in json loader inlines them
+		// into main.js. This is the whole build change: mapping `.json` to
+		// esbuild's `text` loader instead would be a global config change that
+		// tsc and vitest would then disagree with esbuild about.
+		"resolveJsonModule": true,
 		"isolatedModules": true,
 		"skipLibCheck": true,
 		"forceConsistentCasingInFileNames": true,

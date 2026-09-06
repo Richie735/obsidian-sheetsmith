@@ -867,6 +867,12 @@ describe('the sheet has one modifier assembly', () => {
 		// check has to read a card either side of the write, which means building a
 		// sheet, which makes it a host.
 		'../view/promote-flow.test.ts',
+		// The seventh. The bundled starters are checked by building a sheet from
+		// each of them, so the roster's own rule reaches it — and two of the three
+		// carry modifier definitions whose whole point is that a typed bonus lands
+		// on one card, which is exactly the arithmetic a second assembly would get
+		// quietly wrong.
+		'../starters/index.test.ts',
 	] as const;
 
 	/** The steps `buildSheet` owns, which a host naming any of them has copied. */
