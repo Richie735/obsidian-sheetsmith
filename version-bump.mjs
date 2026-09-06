@@ -15,6 +15,38 @@ import { readFileSync, writeFileSync } from 'fs';
 
 const targetVersion = process.env.npm_package_version;
 
+/*
+ * The version comes from npm's environment, so running this file directly is
+ * the one way to use it wrong — and it used to fail silently and destructively.
+ * With `npm_package_version` unset, `manifest.version = undefined` makes
+ * `JSON.stringify` **drop the key entirely**, so the manifest lost the field
+ * Obsidian identifies the release by; and the guard below it did not catch the
+ * case either, because `undefined in versions` is false, so `versions.json`
+ * gained a key literally named `undefined`. Exit code 0, no output, both
+ * release-critical files corrupted.
+ *
+ * Checked rather than defaulted: there is no safe value to assume here. A
+ * wrong version in `manifest.json` is a release nobody can install, so
+ * stopping is the only correct answer.
+ */
+const SEMVER = /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$/;
+if (targetVersion === undefined || targetVersion === '') {
+	console.error(
+		'version-bump: no version to apply.\n' +
+			'This reads npm_package_version, which npm sets and a bare `node` run does not.\n' +
+			'Edit "version" in package.json, then run: npm run version',
+	);
+	process.exit(1);
+}
+if (!SEMVER.test(targetVersion)) {
+	console.error(
+		`version-bump: "${targetVersion}" is not a version Obsidian accepts.\n` +
+			'It must be exactly x.y.z, digits only, with no leading "v" and no suffix.\n' +
+			'Fix "version" in package.json, then run: npm run version',
+	);
+	process.exit(1);
+}
+
 /**
  * Tab-indented, with the trailing newline `.editorconfig` requires.
  * `JSON.stringify` ends at the closing brace, and without this every bump left

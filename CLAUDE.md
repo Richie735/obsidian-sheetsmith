@@ -100,6 +100,7 @@ npm run harness            # build the harness, then open harness/index.html
 npm run harness:watch
 npm run harness:calibrate  # extract Obsidian's real theme + settings chrome
 npm run harness:shot       # render every view to harness/shots/*.png
+                           # renders, never builds: run `npm run harness` first
 ```
 
 The harness renders the plugin's three screens outside Obsidian against the real
