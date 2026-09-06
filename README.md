@@ -2,7 +2,7 @@
 
 Design and use character sheets for any tabletop RPG in [Obsidian](https://obsidian.md). Build your own layout from drag-and-drop components, define your own formulas, and keep every character as a plain markdown note.
 
-> **Status: early development.** No release yet. The file model, the sheet view and ten components are in place: Card, Card set, Pool, Track, Table, Group, Tab set, Rich text, Image and Record set. So are the formula engine, a per-layout function library, row aggregates, typed modifiers with definitions and provenance, reset triggers, and the layout editor pane with its tree, configuration panel, undo, live grid canvas and sample-value preview. See the roadmap below.
+> **Status: 0.1.0 is the first release.** It installs through [BRAT](https://github.com/TfTHacker/obsidian42-brat) while the plugin is not yet in the Obsidian community plugin list; see [Install](#install). The file model, the sheet view and ten components are in place: Card, Card set, Pool, Track, Table, Group, Tab set, Rich text, Image and Record set. So are the formula engine, a per-layout function library, row aggregates, typed modifiers with definitions and provenance, reset triggers, and the layout editor pane with its tree, configuration panel, undo, live grid canvas and sample-value preview. See the roadmap below.
 
 ## What it is
 
@@ -88,6 +88,18 @@ See [docs/SPEC.md](docs/SPEC.md) for the full specification: component catalog, 
 ## Not in scope
 
 Dice rolling, bundled rules content, level-up automation, layout inheritance, and importing from D&D Beyond. Recorded in the spec so they do not creep back in.
+
+## Install
+
+Sheetsmith is not in the Obsidian community plugin list yet, so it installs through [BRAT](https://github.com/TfTHacker/obsidian42-brat), the Beta Reviewers Auto-update Tool. It needs Obsidian 1.9.0 or newer.
+
+1. In **Settings → Community plugins**, install and enable **BRAT**.
+2. In BRAT's settings, choose to add a beta plugin and enter `Richie735/obsidian-sheetsmith`.
+3. Back in **Community plugins**, enable **Sheetsmith**.
+4. Open the command palette and run **Sheetsmith: Add a starter layout**. It writes one of the bundled layouts into your layout folder; nothing renders yet.
+5. To see it as a sheet, create a note whose `sheet-layout` property names the layout, as in [How it works](#how-it-works) above, or run **Sheetsmith: Open layout editor** to see the layout filled with sample values.
+
+Do this in a new vault made for the purpose, not in one you care about. The plugin rewrites note bodies, and the parser has little mileage outside the author's own vaults.
 
 ## Development
 
