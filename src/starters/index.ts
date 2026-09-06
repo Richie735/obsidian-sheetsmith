@@ -22,6 +22,7 @@
  * data; `picker.ts` beside it owns the surface and the write.
  */
 
+import fifth from './5e.json';
 import forged from './forged-in-the-dark.json';
 
 export interface Starter {
@@ -48,22 +49,22 @@ export interface Starter {
 }
 
 /**
- * The starters in offer order, which is increasing size and density: the
- * compact one first.
+ * The starters in offer order, which is increasing size and density: a
+ * one-screen sheet, then a twelve-column sheet with a library and tab sets.
  *
  * The order is the whole of what a reader gets to help them choose, so it runs
  * so that a reader who plays none of them can stop at the first row that is
  * more than they want; a reader who plays one finds it by name whatever the
  * order.
  *
- * **The count is not the line.** Each entry is a complete sheet for a real,
- * widely played system — this one 21 components on six columns with no
- * function library at all. Real systems rather than demonstrations because a
- * reader who plays one can hold the starter against the sheet they already
- * own, and that check is the whole value; a demonstration in invented
- * vocabulary can show how a formula works and never that a sheet is right. Two
- * such demonstrations shipped here first and were replaced for exactly that
- * reason.
+ * **The count is not the line.** Each is a complete sheet for a real, widely
+ * played system, offered in increasing size and density — 21 components on six
+ * columns with no library, then 54 on twelve with a library and two tab sets.
+ * Real systems rather than demonstrations because a reader who plays one can
+ * hold the starter against the sheet they already own, and that check is the
+ * whole value; a demonstration in invented vocabulary can show how a formula
+ * works and never that a sheet is right. Two such demonstrations shipped here
+ * first and were replaced for exactly that reason.
  *
  * The bar for an entry is the spec's, not a count: a real system chosen by
  * play-share, an open rules license, a trademark-free generic name, and a
@@ -77,5 +78,11 @@ export const STARTERS: readonly Starter[] = [
 		description:
 			'A Forged in the Dark scoundrel on one screen: playbook, stress, trauma, action ratings and load.',
 		source: forged,
+	},
+	{
+		name: 'Starter 5e',
+		description:
+			'A complete 5e sheet: abilities, skills, spell slots, equipment, conditions and rests.',
+		source: fifth,
 	},
 ];

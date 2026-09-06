@@ -1,0 +1,1302 @@
+{
+	"name": "Starter 5e",
+	"columns": 12,
+	"functions": [
+		"# The arithmetic 5e runs on, and the one line to change per character.",
+		"mod(score) = floor((score - 10) / 2)",
+		"# The level lives on the passport now, so this is the one name that moved.",
+		"level = passport.level",
+		"prof = ceil(level / 4) + 1",
+		"half(x) = x / 2",
+		"# The spellcasting ability. A bard, paladin, sorcerer or warlock reads CHA;",
+		"# a cleric or druid WIS; an artificer or wizard INT. Change this one line.",
+		"casting = abilities.CHA",
+		"save_dc = 8 + prof + casting",
+		"attack_mod = prof + casting"
+	],
+	"triggers": [
+		"Short rest",
+		"Long rest"
+	],
+	"modifierTypes": [
+		"Armour",
+		"Item",
+		"Spell",
+		"Class feature"
+	],
+	"modifiers": [
+		{
+			"name": "Shield of Faith",
+			"target": "armour_class",
+			"amount": "2",
+			"bonusType": "Spell",
+			"when": "Active"
+		},
+		{
+			"name": "Studded leather",
+			"target": "armour_class",
+			"amount": "2",
+			"bonusType": "Armour",
+			"when": "Worn"
+		},
+		{
+			"name": "Ring of Protection",
+			"target": "armour_class",
+			"amount": "1",
+			"bonusType": "Item",
+			"when": "Attuned"
+		},
+		{
+			"name": "Alert",
+			"target": "initiative",
+			"amount": "prof",
+			"bonusType": "Class feature"
+		},
+		{
+			"name": "Bark Skin",
+			"target": "armour_class",
+			"operator": "override",
+			"amount": "16",
+			"when": "Active"
+		}
+	],
+	"components": [
+		{
+			"id": "passport",
+			"type": "passport",
+			"label": "Passport",
+			"hideLabel": true,
+			"fields": [
+				{
+					"key": "class",
+					"name": "Class"
+				},
+				{
+					"key": "subclass",
+					"name": "Subclass"
+				},
+				{
+					"key": "species",
+					"name": "Species"
+				},
+				{
+					"key": "background",
+					"name": "Background"
+				},
+				{
+					"key": "alignment",
+					"name": "Alignment"
+				},
+				{
+					"key": "level",
+					"name": "Level"
+				}
+			],
+			"position": {
+				"col": 1,
+				"row": 1,
+				"width": 6,
+				"height": 2
+			}
+		},
+		{
+			"id": "hp",
+			"type": "pool",
+			"label": "Hit points",
+			"maxSource": "character",
+			"hasTemp": true,
+			"reset": [
+				{
+					"trigger": "Long rest",
+					"action": "full",
+					"buffer": "clear"
+				}
+			],
+			"position": {
+				"col": 7,
+				"row": 1,
+				"width": 6,
+				"height": 1
+			}
+		},
+		{
+			"id": "speed",
+			"type": "card",
+			"label": "Speed",
+			"key": "speed",
+			"signed": false,
+			"notePlaceholder": "ft.",
+			"position": {
+				"col": 7,
+				"row": 2,
+				"width": 2,
+				"height": 1
+			}
+		},
+		{
+			"id": "proficiency",
+			"type": "card",
+			"label": "Proficiency",
+			"derived": "prof",
+			"hideValue": true,
+			"hideNote": true,
+			"position": {
+				"col": 9,
+				"row": 2,
+				"width": 2,
+				"height": 1
+			}
+		},
+		{
+			"id": "inspiration",
+			"type": "track",
+			"label": "Inspiration",
+			"count": 1,
+			"sense": "progress",
+			"position": {
+				"col": 11,
+				"row": 2,
+				"width": 2,
+				"height": 1
+			}
+		},
+		{
+			"id": "abilities",
+			"type": "card-set",
+			"label": "Abilities",
+			"hideLabel": true,
+			"labelAlign": "center",
+			"entries": [
+				{
+					"key": "STR",
+					"name": "Strength"
+				},
+				{
+					"key": "DEX",
+					"name": "Dexterity"
+				},
+				{
+					"key": "CON",
+					"name": "Constitution"
+				},
+				{
+					"key": "INT",
+					"name": "Intelligence"
+				},
+				{
+					"key": "WIS",
+					"name": "Wisdom"
+				},
+				{
+					"key": "CHA",
+					"name": "Charisma"
+				}
+			],
+			"derived": "mod(value)",
+			"position": {
+				"col": 1,
+				"row": 3,
+				"width": 12,
+				"height": 1
+			}
+		},
+		{
+			"id": "saves",
+			"type": "table",
+			"label": "Saving throws",
+			"rowHeader": "Save",
+			"namePosition": 1,
+			"rows": [
+				{
+					"label": "Strength",
+					"values": {
+						"ability": "abilities.STR"
+					}
+				},
+				{
+					"label": "Dexterity",
+					"values": {
+						"ability": "abilities.DEX"
+					}
+				},
+				{
+					"label": "Constitution",
+					"values": {
+						"ability": "abilities.CON"
+					}
+				},
+				{
+					"label": "Intelligence",
+					"values": {
+						"ability": "abilities.INT"
+					}
+				},
+				{
+					"label": "Wisdom",
+					"values": {
+						"ability": "abilities.WIS"
+					}
+				},
+				{
+					"label": "Charisma",
+					"values": {
+						"ability": "abilities.CHA"
+					}
+				}
+			],
+			"columns": [
+				{
+					"key": "Prof",
+					"type": "level",
+					"levels": [
+						"Untrained",
+						"Proficient:"
+					],
+					"hideHeading": true
+				},
+				{
+					"key": "Total",
+					"type": "computed",
+					"formula": "ability + Prof * prof",
+					"signed": true
+				}
+			],
+			"position": {
+				"col": 1,
+				"row": 4,
+				"width": 3,
+				"height": 3
+			}
+		},
+		{
+			"id": "senses",
+			"type": "table",
+			"label": "Senses",
+			"rowHeader": "Sense",
+			"rows": [
+				{
+					"label": "Passive perception",
+					"values": {
+						"skill": "skills.perception"
+					}
+				},
+				{
+					"label": "Passive investigation",
+					"values": {
+						"skill": "skills.investigation"
+					}
+				},
+				{
+					"label": "Passive insight",
+					"values": {
+						"skill": "skills.insight"
+					}
+				}
+			],
+			"namePosition": 1,
+			"columns": [
+				{
+					"key": "Passive",
+					"type": "computed",
+					"formula": "10 + skill"
+				}
+			],
+			"position": {
+				"col": 1,
+				"row": 7,
+				"width": 3,
+				"height": 2
+			}
+		},
+		{
+			"id": "hit_dice",
+			"type": "pool",
+			"label": "Hit dice",
+			"max": "level",
+			"hideFill": true,
+			"reset": [
+				{
+					"trigger": "Long rest",
+					"action": "formula",
+					"to": "min(level, hit_dice.value + max(1, floor(half(level))))"
+				}
+			],
+			"position": {
+				"col": 1,
+				"row": 9,
+				"width": 3,
+				"height": 1
+			}
+		},
+		{
+			"id": "training",
+			"type": "rich-text",
+			"label": "Proficiencies and languages",
+			"position": {
+				"col": 1,
+				"row": 10,
+				"width": 3,
+				"height": 4
+			}
+		},
+		{
+			"id": "skills",
+			"type": "table",
+			"label": "Skills",
+			"rowHeader": "Skill",
+			"namePosition": 2,
+			"rows": [
+				{
+					"label": "Acrobatics",
+					"values": {
+						"ability": "abilities.DEX"
+					}
+				},
+				{
+					"label": "Animal handling",
+					"values": {
+						"ability": "abilities.WIS"
+					}
+				},
+				{
+					"label": "Arcana",
+					"values": {
+						"ability": "abilities.INT"
+					}
+				},
+				{
+					"label": "Athletics",
+					"values": {
+						"ability": "abilities.STR"
+					}
+				},
+				{
+					"label": "Deception",
+					"values": {
+						"ability": "abilities.CHA"
+					}
+				},
+				{
+					"label": "History",
+					"values": {
+						"ability": "abilities.INT"
+					}
+				},
+				{
+					"label": "Insight",
+					"values": {
+						"ability": "abilities.WIS"
+					},
+					"key": "insight"
+				},
+				{
+					"label": "Intimidation",
+					"values": {
+						"ability": "abilities.CHA"
+					}
+				},
+				{
+					"label": "Investigation",
+					"values": {
+						"ability": "abilities.INT"
+					},
+					"key": "investigation"
+				},
+				{
+					"label": "Medicine",
+					"values": {
+						"ability": "abilities.WIS"
+					}
+				},
+				{
+					"label": "Nature",
+					"values": {
+						"ability": "abilities.INT"
+					}
+				},
+				{
+					"label": "Perception",
+					"values": {
+						"ability": "abilities.WIS"
+					},
+					"key": "perception"
+				},
+				{
+					"label": "Performance",
+					"values": {
+						"ability": "abilities.CHA"
+					}
+				},
+				{
+					"label": "Persuasion",
+					"values": {
+						"ability": "abilities.CHA"
+					},
+					"key": "persuasion"
+				},
+				{
+					"label": "Religion",
+					"values": {
+						"ability": "abilities.INT"
+					}
+				},
+				{
+					"label": "Sleight of hand",
+					"values": {
+						"ability": "abilities.DEX"
+					}
+				},
+				{
+					"label": "Stealth",
+					"values": {
+						"ability": "abilities.DEX"
+					}
+				},
+				{
+					"label": "Survival",
+					"values": {
+						"ability": "abilities.WIS"
+					}
+				}
+			],
+			"columns": [
+				{
+					"key": "Training",
+					"type": "level",
+					"levels": [
+						"Untrained",
+						"Proficient:",
+						"Expertise"
+					],
+					"hideHeading": true
+				},
+				{
+					"key": "Ability",
+					"secondary": true,
+					"hideHeading": true
+				},
+				{
+					"key": "Total",
+					"type": "computed",
+					"formula": "ability + Training * prof",
+					"signed": true,
+					"publish": true
+				}
+			],
+			"position": {
+				"col": 4,
+				"row": 4,
+				"width": 4,
+				"height": 8
+			}
+		},
+		{
+			"id": "death_saves",
+			"type": "track",
+			"label": "Death saves",
+			"rows": [
+				{
+					"key": "Successes",
+					"count": 3,
+					"sense": "progress"
+				},
+				{
+					"key": "Failures",
+					"count": 3,
+					"sense": "harm"
+				}
+			],
+			"reset": [
+				{
+					"trigger": "Short rest",
+					"action": "empty"
+				},
+				{
+					"trigger": "Long rest",
+					"action": "empty"
+				}
+			],
+			"position": {
+				"col": 4,
+				"row": 12,
+				"width": 4,
+				"height": 1
+			}
+		},
+		{
+			"id": "exhaustion",
+			"type": "track",
+			"label": "Exhaustion",
+			"levels": [
+				"Rested",
+				"Exhaustion 1",
+				"Exhaustion 2",
+				"Exhaustion 3",
+				"Exhaustion 4",
+				"Exhaustion 5",
+				"Exhaustion 6:☠"
+			],
+			"sense": "harm",
+			"reset": [
+				{
+					"trigger": "Long rest",
+					"action": "formula",
+					"to": "max(0, exhaustion - 1)"
+				}
+			],
+			"position": {
+				"col": 4,
+				"row": 13,
+				"width": 4,
+				"height": 1
+			}
+		},
+		{
+			"id": "pages",
+			"type": "tab-set",
+			"label": "Pages",
+			"hideLabel": true,
+			"position": {
+				"col": 8,
+				"row": 4,
+				"width": 5,
+				"height": 10
+			},
+			"children": [
+				{
+					"id": "tab_combat",
+					"type": "group",
+					"label": "Combat",
+					"position": {
+						"col": 1,
+						"row": 1,
+						"width": 5,
+						"height": 10
+					},
+					"children": [
+						{
+							"id": "initiative",
+							"type": "card",
+							"label": "Initiative",
+							"derived": "abilities.DEX + mod.self",
+							"hideValue": true,
+							"notePlaceholder": "advantage?",
+							"position": {
+								"col": 1,
+								"row": 1,
+								"width": 2,
+								"height": 1
+							}
+						},
+						{
+							"id": "armour_class",
+							"type": "card",
+							"label": "Armour class",
+							"derived": "10 + abilities.DEX + mod.self",
+							"signed": false,
+							"hideValue": true,
+							"notePlaceholder": "armour worn",
+							"position": {
+								"col": 3,
+								"row": 1,
+								"width": 3,
+								"height": 1
+							}
+						},
+						{
+							"id": "defences",
+							"type": "rich-text",
+							"label": "Defences",
+							"position": {
+								"col": 1,
+								"row": 2,
+								"width": 5,
+								"height": 2
+							}
+						},
+						{
+							"id": "conditions",
+							"type": "table",
+							"label": "Conditions",
+							"rowHeader": "Condition",
+							"openRows": true,
+							"columns": [
+								{
+									"key": "Active",
+									"type": "toggle"
+								},
+								{
+									"key": "Modifiers",
+									"type": "modifier"
+								}
+							],
+							"reset": [
+								{
+									"trigger": "Long rest",
+									"column": "Active",
+									"action": "empty"
+								}
+							],
+							"position": {
+								"col": 1,
+								"row": 4,
+								"width": 5,
+								"height": 2
+							}
+						},
+						{
+							"id": "attacks",
+							"type": "table",
+							"label": "Attacks",
+							"rowHeader": "Attack",
+							"openRows": true,
+							"columns": [
+								{
+									"key": "Bonus",
+									"type": "number"
+								},
+								{
+									"key": "Damage"
+								},
+								{
+									"key": "Range"
+								},
+								{
+									"key": "Notes",
+									"secondary": true
+								}
+							],
+							"position": {
+								"col": 1,
+								"row": 6,
+								"width": 5,
+								"height": 3
+							}
+						}
+					]
+				},
+				{
+					"id": "tab_actions",
+					"type": "group",
+					"label": "Actions",
+					"position": {
+						"col": 1,
+						"row": 1,
+						"width": 5,
+						"height": 10
+					},
+					"children": [
+						{
+							"id": "other_actions",
+							"type": "table",
+							"label": "Other actions",
+							"rowHeader": "Action",
+							"openRows": true,
+							"columns": [
+								{
+									"key": "Timing",
+									"type": "level",
+									"levels": [
+										"—",
+										"Action:A",
+										"Bonus action:B",
+										"Reaction:R"
+									],
+									"input": "select"
+								},
+								{
+									"key": "Notes",
+									"secondary": true
+								}
+							],
+							"position": {
+								"col": 1,
+								"row": 1,
+								"width": 5,
+								"height": 8
+							}
+						}
+					]
+				},
+				{
+					"id": "tab_spells",
+					"type": "group",
+					"label": "Spells",
+					"position": {
+						"col": 1,
+						"row": 1,
+						"width": 5,
+						"height": 10
+					},
+					"children": [
+						{
+							"id": "spell_dc",
+							"type": "card",
+							"label": "Spell save DC",
+							"derived": "save_dc",
+							"signed": false,
+							"hideValue": true,
+							"hideNote": true,
+							"position": {
+								"col": 1,
+								"row": 1,
+								"width": 2,
+								"height": 1
+							}
+						},
+						{
+							"id": "spell_attack",
+							"type": "card",
+							"label": "Spell attack",
+							"derived": "attack_mod",
+							"hideValue": true,
+							"hideNote": true,
+							"position": {
+								"col": 3,
+								"row": 1,
+								"width": 3,
+								"height": 1
+							}
+						},
+						{
+							"id": "prepared",
+							"type": "card",
+							"label": "Prepared",
+							"derived": "count(spellbook, Prepared)",
+							"signed": false,
+							"hideValue": true,
+							"notePlaceholder": "of your limit",
+							"position": {
+								"col": 1,
+								"row": 2,
+								"width": 5,
+								"height": 1
+							}
+						},
+						{
+							"id": "slots",
+							"type": "track",
+							"label": "Spell slots",
+							"rows": [
+								{
+									"key": "L1",
+									"name": "1st",
+									"count": "if(level >= 3, 4, if(level >= 2, 3, 2))"
+								},
+								{
+									"key": "L2",
+									"name": "2nd",
+									"count": "if(level >= 4, 3, if(level >= 3, 2, 0))"
+								},
+								{
+									"key": "L3",
+									"name": "3rd",
+									"count": "if(level >= 6, 3, if(level >= 5, 2, 0))"
+								},
+								{
+									"key": "L4",
+									"name": "4th",
+									"count": "if(level >= 9, 3, if(level >= 8, 2, if(level >= 7, 1, 0)))"
+								},
+								{
+									"key": "L5",
+									"name": "5th",
+									"count": "if(level >= 18, 3, if(level >= 10, 2, if(level >= 9, 1, 0)))"
+								},
+								{
+									"key": "L6",
+									"name": "6th",
+									"count": "if(level >= 19, 2, if(level >= 11, 1, 0))"
+								},
+								{
+									"key": "L7",
+									"name": "7th",
+									"count": "if(level >= 20, 2, if(level >= 13, 1, 0))"
+								},
+								{
+									"key": "L8",
+									"name": "8th",
+									"count": "if(level >= 15, 1, 0)"
+								},
+								{
+									"key": "L9",
+									"name": "9th",
+									"count": "if(level >= 17, 1, 0)"
+								}
+							],
+							"reset": [
+								{
+									"trigger": "Long rest",
+									"action": "empty"
+								}
+							],
+							"position": {
+								"col": 1,
+								"row": 3,
+								"width": 5,
+								"height": 2
+							}
+						},
+						{
+							"id": "spellbook",
+							"type": "record-set",
+							"label": "Spellbook",
+							"recordName": "Spell",
+							"fields": [
+								{
+									"key": "Level",
+									"type": "number",
+									"max": 9
+								},
+								{
+									"key": "Prepared",
+									"type": "toggle"
+								},
+								{
+									"key": "Concentration",
+									"type": "toggle"
+								}
+							],
+							"position": {
+								"col": 1,
+								"row": 5,
+								"width": 5,
+								"height": 3
+							}
+						},
+						{
+							"id": "spell_notes",
+							"type": "rich-text",
+							"label": "Spell notes",
+							"position": {
+								"col": 1,
+								"row": 8,
+								"width": 5,
+								"height": 1
+							}
+						}
+					]
+				},
+				{
+					"id": "tab_inventory",
+					"type": "group",
+					"label": "Equipment",
+					"position": {
+						"col": 1,
+						"row": 1,
+						"width": 5,
+						"height": 10
+					},
+					"children": [
+						{
+							"id": "coin",
+							"type": "card-set",
+							"label": "Coin",
+							"entries": [
+								{
+									"key": "CP",
+									"name": "Copper"
+								},
+								{
+									"key": "SP",
+									"name": "Silver"
+								},
+								{
+									"key": "EP",
+									"name": "Electrum"
+								},
+								{
+									"key": "GP",
+									"name": "Gold"
+								},
+								{
+									"key": "PP",
+									"name": "Platinum"
+								}
+							],
+							"signed": false,
+							"position": {
+								"col": 1,
+								"row": 1,
+								"width": 5,
+								"height": 1
+							}
+						},
+						{
+							"id": "carried",
+							"type": "card",
+							"label": "Weight carried",
+							"derived": "inventory.Weight",
+							"signed": false,
+							"hideValue": true,
+							"notePlaceholder": "lb.",
+							"position": {
+								"col": 1,
+								"row": 2,
+								"width": 2,
+								"height": 1
+							}
+						},
+						{
+							"id": "capacity",
+							"type": "card",
+							"label": "Carrying capacity",
+							"derived": "abilities.STR.value * 15",
+							"signed": false,
+							"hideValue": true,
+							"notePlaceholder": "lb.",
+							"position": {
+								"col": 3,
+								"row": 2,
+								"width": 3,
+								"height": 1
+							}
+						},
+						{
+							"id": "attuned",
+							"type": "card",
+							"label": "Attuned",
+							"derived": "inventory.Attuned",
+							"signed": false,
+							"hideValue": true,
+							"notePlaceholder": "three at most",
+							"position": {
+								"col": 1,
+								"row": 3,
+								"width": 5,
+								"height": 1
+							}
+						},
+						{
+							"id": "inventory",
+							"type": "table",
+							"label": "Items",
+							"rowHeader": "Item",
+							"openRows": true,
+							"rows": [
+								{
+									"label": "Adventurer's pack"
+								},
+								{
+									"label": "Rations"
+								},
+								{
+									"label": "Rope, hempen (50 ft.)"
+								}
+							],
+							"columns": [
+								{
+									"key": "Qty",
+									"type": "number",
+									"min": 0
+								},
+								{
+									"key": "Weight",
+									"type": "number",
+									"total": true
+								},
+								{
+									"key": "Worn",
+									"type": "toggle"
+								},
+								{
+									"key": "Attuned",
+									"type": "toggle",
+									"total": true
+								},
+								{
+									"key": "Modifiers",
+									"type": "modifier"
+								},
+								{
+									"key": "Notes",
+									"secondary": true
+								}
+							],
+							"position": {
+								"col": 1,
+								"row": 4,
+								"width": 5,
+								"height": 5
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "details",
+			"type": "tab-set",
+			"label": "Details",
+			"position": {
+				"col": 1,
+				"row": 14,
+				"width": 12,
+				"height": 6
+			},
+			"children": [
+				{
+					"id": "tab_features",
+					"type": "group",
+					"label": "Features and traits",
+					"position": {
+						"col": 1,
+						"row": 1,
+						"width": 12,
+						"height": 6
+					},
+					"children": [
+						{
+							"id": "features",
+							"type": "record-set",
+							"label": "Features",
+							"recordName": "Feature",
+							"fields": [
+								{
+									"key": "Uses",
+									"type": "number",
+									"maxSource": "record"
+								},
+								{
+									"key": "Recharges",
+									"type": "level",
+									"levels": [
+										"At will",
+										"Short rest:S",
+										"Long rest:L"
+									]
+								},
+								{
+									"key": "Modifiers",
+									"type": "modifier"
+								}
+							],
+							"reset": [
+								{
+									"trigger": "Long rest",
+									"action": "full"
+								}
+							],
+							"position": {
+								"col": 1,
+								"row": 1,
+								"width": 8,
+								"height": 6
+							}
+						},
+						{
+							"id": "class_resource",
+							"type": "pool",
+							"label": "Class resource",
+							"maxSource": "character",
+							"reset": [
+								{
+									"trigger": "Short rest",
+									"action": "full"
+								},
+								{
+									"trigger": "Long rest",
+									"action": "full"
+								}
+							],
+							"position": {
+								"col": 9,
+								"row": 1,
+								"width": 4,
+								"height": 2
+							}
+						},
+						{
+							"id": "species_traits",
+							"type": "rich-text",
+							"label": "Species traits",
+							"position": {
+								"col": 9,
+								"row": 3,
+								"width": 4,
+								"height": 2
+							}
+						},
+						{
+							"id": "languages",
+							"type": "rich-text",
+							"label": "Languages",
+							"position": {
+								"col": 9,
+								"row": 5,
+								"width": 4,
+								"height": 2
+							}
+						}
+					]
+				},
+				{
+					"id": "tab_description",
+					"type": "group",
+					"label": "Description",
+					"position": {
+						"col": 1,
+						"row": 1,
+						"width": 12,
+						"height": 6
+					},
+					"children": [
+						{
+							"id": "appearance",
+							"type": "rich-text",
+							"label": "Appearance",
+							"position": {
+								"col": 1,
+								"row": 1,
+								"width": 4,
+								"height": 3
+							}
+						},
+						{
+							"id": "personality",
+							"type": "rich-text",
+							"label": "Personality traits",
+							"position": {
+								"col": 5,
+								"row": 1,
+								"width": 4,
+								"height": 3
+							}
+						},
+						{
+							"id": "ideals",
+							"type": "rich-text",
+							"label": "Ideals, bonds and flaws",
+							"position": {
+								"col": 9,
+								"row": 1,
+								"width": 4,
+								"height": 3
+							}
+						},
+						{
+							"id": "backstory",
+							"type": "rich-text",
+							"label": "Backstory",
+							"position": {
+								"col": 1,
+								"row": 4,
+								"width": 6,
+								"height": 3
+							}
+						},
+						{
+							"id": "allies",
+							"type": "rich-text",
+							"label": "Allies",
+							"position": {
+								"col": 7,
+								"row": 4,
+								"width": 6,
+								"height": 3
+							}
+						}
+					]
+				},
+				{
+					"id": "tab_notes",
+					"type": "group",
+					"label": "Notes",
+					"position": {
+						"col": 1,
+						"row": 1,
+						"width": 12,
+						"height": 6
+					},
+					"children": [
+						{
+							"id": "notes",
+							"type": "rich-text",
+							"label": "Session notes",
+							"position": {
+								"col": 1,
+								"row": 1,
+								"width": 6,
+								"height": 6
+							}
+						},
+						{
+							"id": "organisations",
+							"type": "rich-text",
+							"label": "Organisations",
+							"position": {
+								"col": 7,
+								"row": 1,
+								"width": 6,
+								"height": 3
+							}
+						},
+						{
+							"id": "enemies",
+							"type": "rich-text",
+							"label": "Enemies",
+							"position": {
+								"col": 7,
+								"row": 4,
+								"width": 6,
+								"height": 3
+							}
+						}
+					]
+				},
+				{
+					"id": "tab_extras",
+					"type": "group",
+					"label": "Extras",
+					"position": {
+						"col": 1,
+						"row": 1,
+						"width": 12,
+						"height": 6
+					},
+					"children": [
+						{
+							"id": "companions",
+							"type": "record-set",
+							"label": "Companions",
+							"recordName": "Companion",
+							"fields": [
+								{
+									"key": "HP",
+									"type": "number",
+									"maxSource": "record"
+								},
+								{
+									"key": "AC",
+									"type": "number"
+								},
+								{
+									"key": "Active",
+									"type": "toggle"
+								}
+							],
+							"position": {
+								"col": 1,
+								"row": 1,
+								"width": 8,
+								"height": 6
+							}
+						},
+						{
+							"id": "extras_notes",
+							"type": "rich-text",
+							"label": "Treasure",
+							"position": {
+								"col": 9,
+								"row": 1,
+								"width": 4,
+								"height": 6
+							}
+						}
+					]
+				}
+			],
+			"hideLabel": true
+		}
+	]
+}
