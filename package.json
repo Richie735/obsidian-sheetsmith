@@ -1,6 +1,6 @@
 {
 	"name": "obsidian-sheetsmith",
-	"version": "0.1.0",
+	"version": "0.1.1",
 	"description": "Design and use character sheets for any tabletop RPG in Obsidian.",
 	"main": "main.js",
 	"type": "module",
