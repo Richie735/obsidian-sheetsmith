@@ -42,6 +42,7 @@ import { walkComponents } from '../parse/layout-walk';
 import { parseModifierDefinitions } from '../parse/modifier-definitions';
 import { parseModifierTypes } from '../parse/modifier-types';
 import { parseTriggers } from '../parse/triggers';
+import type { ComponentConfig } from '../types';
 import { isContainer } from '../types';
 import { STARTERS } from './index';
 
@@ -209,7 +210,7 @@ const bandsOf = (layout: Layout) => {
  * tab set below — so the claims about that architecture are asked once, over
  * both, rather than copied into each sheet's own describe and left to drift.
  */
-const TWELVE_COLUMN = (['Starter 5e'] as const).map(
+const TWELVE_COLUMN = (['Starter 5e', 'Starter PF2e'] as const).map(
 	(name) =>
 		[
 			name,
@@ -323,7 +324,7 @@ describe('the bundled sources are layout files', () => {
 		];
 		// The floor (§10): a scan over nothing passes every assertion below it.
 		expect(haystacks).toHaveLength(SOURCE_FILES.length + STARTERS.length);
-		expect(haystacks.join('').length).toBeGreaterThan(25000);
+		expect(haystacks.join('').length).toBeGreaterThan(40000);
 		for (const haystack of haystacks) {
 			for (const mark of marks) {
 				expect(haystack.toLowerCase(), mark).not.toContain(mark);
@@ -332,13 +333,14 @@ describe('the bundled sources are layout files', () => {
 	});
 
 	it('offers them in increasing size and density', () => {
-		// Twenty-one components on six columns with no library, then 54 on twelve
-		// with a library and two tab sets — so a reader who plays none of them can
-		// stop at the first row that is more than they want. Play-share would put
-		// 5e first and was deliberately not taken.
+		// Twenty-one components on six columns, then 54 on twelve with a library and
+		// two tab sets, then the same architecture over a deeper arithmetic — so a
+		// reader who plays none of them can stop at the first row that is more than
+		// they want. Play-share would put 5e first and was deliberately not taken.
 		expect(STARTERS.map((starter) => starter.name)).toEqual([
 			'Starter Forged in the Dark',
 			'Starter 5e',
+			'Starter PF2e',
 		]);
 	});
 
@@ -623,6 +625,561 @@ describe('the Forged in the Dark sheet is a whole game on one screen', () => {
 		expect(built.derivedFor('load')).toBe(1);
 	});
 });
+
+/**
+ * A fifth-level fighter with the values every number on the sheet derives from:
+ * the passport's level, the six attribute modifiers, the worn armor and its rank,
+ * and trained or expert ranks on the checks a fighter has. **A level cell stores
+ * its numeric index** (`level-ring.ts`'s `levelOf` is `Number(raw)`), so a rank
+ * is written `1`–`4`, never its glyph — and the note's name column comes first
+ * whatever `namePosition` draws, as `Ravel.md` shows.
+ */
+const PF2E_NOTE = `---
+sheet-layout: Starter PF2e
+---
+
+## Passport
+\`\`\`sheet
+name: Amiri
+ancestry: Human
+heritage: Skilled
+background: Warrior
+class: Fighter
+deity: Gorum
+level: 5
+\`\`\`
+
+## Attributes
+\`\`\`sheet
+STR: 4
+DEX: 2
+CON: 3
+INT: 2
+WIS: 1
+CHA: -1
+\`\`\`
+
+## Hit points
+\`\`\`sheet
+current: 60
+max: 71
+temp: 0
+\`\`\`
+
+## Speed
+\`\`\`sheet
+value: 25
+\`\`\`
+
+## Hero points
+\`\`\`sheet
+value: 1
+\`\`\`
+
+## Armor
+\`\`\`sheet
+bonus: 2
+cap: 3
+\`\`\`
+
+## Armor rank
+\`\`\`sheet
+value: 1
+\`\`\`
+
+## Saves and Perception
+
+| Check | Rank | Total |
+| --- | --- | --- |
+| Perception | 2 |  |
+| Fortitude | 2 |  |
+| Reflex | 2 |  |
+| Will | 1 |  |
+
+## Proficiencies
+
+| Proficiency | Rank | Bonus |
+| --- | --- | --- |
+| Class DC | 2 |  |
+| Spellcasting | 1 |  |
+
+## Skills
+
+| Skill | Rank | Total |
+| --- | --- | --- |
+| Athletics | 1 |  |
+| Intimidation | 2 |  |
+| Stealth | 1 |  |
+
+## Lore
+
+| Lore | Rank | Total |
+| --- | --- | --- |
+| Warfare | 1 |  |
+| Sailing | 0 |  |
+
+## Focus points
+\`\`\`sheet
+current: 1
+max: 1
+\`\`\`
+
+## Spell slots
+\`\`\`sheet
+R1: 1
+R2: 0
+R3: 0
+R4: 0
+R5: 0
+R6: 0
+R7: 0
+R8: 0
+R9: 0
+R10: 0
+\`\`\`
+
+## Coin
+\`\`\`sheet
+CP: 0
+SP: 4
+GP: 12
+PP: 0
+\`\`\`
+
+## Inventory
+
+| Item | Qty | Bulk | Worn | Invested | Modifiers | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| Breastplate | 1 | 2 | yes | no | Armor potency rune |  |
+| Backpack | 1 | 0.1 | yes | no |  |  |
+`;
+
+/** The same fighter with a conditions row per case, which is where the typed
+ * stacking shows. */
+const pf2eWith = (conditions: string): string =>
+	`${PF2E_NOTE}
+## Conditions
+
+| Condition | Value | Active | Modifiers |
+| --- | --- | --- | --- |
+${conditions}
+`;
+
+/*
+ * The built one: no *layout* to pin against, but not therefore nothing — the
+ * system's own rosters are the reference, so completeness is asserted by the
+ * names on them and the arithmetic by the numbers a player would check.
+ *
+ * Amiri at level 5: expert is level + 4 = 9, trained is level + 2 = 7. So
+ * Perception is 1 + 9 = +10, Fortitude 3 + 9 = +12, Reflex 2 + 9 = +11, Will
+ * 1 + 7 = +8; Athletics 4 + 7 = +11, Intimidation −1 + 9 = +8, Stealth 2 + 7 =
+ * +9, and an untrained Arcana is its attribute alone, +2. Class DC is
+ * 10 + 4 + 9 = 23. AC is 10 + min(2, 3) + 7 + 2 = 21 before any condition, and
+ * the rune on the worn breastplate makes it 22.
+ */
+describe('the PF2e sheet is a complete system sheet built to specification', () => {
+	const source = JSON.stringify(
+		STARTERS.find((one) => one.name === 'Starter PF2e')?.source,
+	);
+	const layout = parseLayout(source);
+	const walked = walkComponents(layout.components).map(({ config }) => config);
+	const byId = (id: string) => {
+		const found = walked.find((config) => config.id === id);
+		if (!found) throw new Error(`No component "${id}" on the PF2e sheet.`);
+		return found as { rows?: unknown[]; entries?: unknown[]; fields?: unknown[]; children?: unknown[] };
+	};
+
+	/** A table's declared row labels, in order — the roster it ships. */
+	const rosterOf = (id: string) =>
+		((byId(id).rows ?? []) as { label: string }[]).map((row) => row.label);
+
+	it('carries the system’s own rosters, not merely the right number of rows', () => {
+		/*
+		 * **Names rather than counts, for the same reason the six definitions are
+		 * pinned by name.** For a sheet built to a real system, *which* sixteen
+		 * skills is the content: swap Arcana for Alchemy and every count still
+		 * agrees while the sheet stops being one a player can hold against their
+		 * own. This starter has no layout to diff against, which is what made
+		 * counting look like the only option — but the system's roster is a
+		 * reference, and it is the one this sheet is answerable to.
+		 */
+		expect(rosterOf('skills')).toEqual([
+			'Acrobatics', 'Arcana', 'Athletics', 'Crafting', 'Deception',
+			'Diplomacy', 'Intimidation', 'Medicine', 'Nature', 'Occultism',
+			'Performance', 'Religion', 'Society', 'Stealth', 'Survival', 'Thievery',
+		]);
+		// **Fully declared, with no open rows**, and the Lore skills a character
+		// names live in a table of their own beneath it. An open row on Skills
+		// carries no `values.attribute`, so its Total would read "?" forever —
+		// the first thing a player of the system would hit.
+		expect((byId('skills') as { openRows?: boolean }).openRows).toBeUndefined();
+		expect((byId('lore') as { openRows?: boolean }).openRows).toBe(true);
+		expect(byId('lore').rows).toBeUndefined();
+		expect(rosterOf('saves')).toEqual([
+			'Perception',
+			'Fortitude',
+			'Reflex',
+			'Will',
+		]);
+		// The proficiency roster on the same terms: it is as much the system's
+		// list as the skills are, and swapping a row here is as invisible to a
+		// count as swapping a skill.
+		expect(rosterOf('proficiencies')).toEqual([
+			'Class DC', 'Unarmored', 'Light armor', 'Medium armor', 'Heavy armor',
+			'Simple weapons', 'Martial weapons', 'Advanced weapons', 'Unarmed',
+			'Spellcasting',
+		]);
+		expect(byId('attributes').entries).toHaveLength(6);
+		expect(byId('slots').rows).toHaveLength(10);
+		expect(layout.modifiers).toHaveLength(6);
+		expect(layout.modifierTypes).toEqual(['Item', 'Status', 'Circumstance']);
+		expect(layout.triggers).toEqual(['Daily preparations', 'New session']);
+		// The named panels, present by id — the spec's panel list, so a later
+		// edit that drops one fails here rather than as a "simplification".
+		for (const id of [
+			'passport', 'hp', 'speed', 'class_dc', 'hero_points', 'attributes',
+			'saves', 'proficiencies', 'armor', 'armor_rank', 'languages', 'skills',
+			'lore', 'senses', 'pages', 'initiative', 'ac', 'conditions', 'strikes',
+			'combat_notes', 'actions', 'action_notes', 'spell_attack', 'spell_dc',
+			'focus', 'slots', 'spellbook', 'coin', 'bulk_carried', 'encumbered',
+			'max_bulk', 'invested', 'inventory', 'equipment_notes', 'details',
+			'feats', 'appearance', 'personality', 'backstory', 'notes',
+		]) {
+			expect(walked.some((config) => config.id === id), id).toBe(true);
+		}
+	});
+
+	it('pins the six definitions by name, on the 5e list’s own guard', () => {
+		expect((layout.modifiers ?? []).map((one) => one.name)).toEqual([
+			'Off-Guard',
+			'Raise a Shield',
+			'Frightened',
+			'Fatigued',
+			'Armor potency rune',
+			'Clumsy',
+		]);
+		// Every one targets the armor class card, which is the one place the
+		// stacking rule is shown; Frightened's real scope is wider, and the
+		// library's comment says so.
+		expect(new Set((layout.modifiers ?? []).map((one) => one.target))).toEqual(
+			new Set(['ac']),
+		);
+	});
+
+	it('binds every reset to a declared trigger, including the literal one', () => {
+		const built = sheetFrom(source, PF2E_NOTE);
+		expect(parseTriggers(built.layout).problems).toEqual([]);
+		const declared = new Set(layout.triggers ?? []);
+		const bound = walked.flatMap((config) =>
+			(config.reset ?? []).map((binding) => ({ id: config.id, ...binding })),
+		);
+		expect(bound).toHaveLength(3);
+		expect(bound.filter((one) => !declared.has(one.trigger))).toEqual([]);
+		// Hero points reset to 1 by a `formula` action whose expression is a bare
+		// literal — the owner's ruling, and the one binding shape this sheet has
+		// that the 5e sheet does not. `reset-flow.test.ts` drives the same shape.
+		const hero = bound.find((one) => one.id === 'hero_points');
+		expect(hero).toEqual({
+			id: 'hero_points',
+			trigger: 'New session',
+			action: 'formula',
+			to: '1',
+		});
+	});
+
+	it('stacks its middle into three columns of unequal width ending together', () => {
+		const stacks = bandsOf(layout);
+		expect(stacks).toHaveLength(3);
+		expect(new Set(stacks.map((band) => band.width)).size).toBe(3);
+		expect(new Set(stacks.map((band) => band.last)).size).toBe(1);
+	});
+
+	/** §9's roster of components that fill the grid rows they are given. */
+	const STRETCHERS = ['rich-text', 'record-set', 'image', 'passport'];
+
+	/** The component standing lowest among a container's children. */
+	const footOf = (children: readonly ComponentConfig[]) =>
+		children.reduce((low, child) =>
+			child.position.row + child.position.height >
+			low.position.row + low.position.height
+				? child
+				: low,
+		);
+
+	it('ends every band in a stretcher, or in a tab set whose every tab ends in one', () => {
+		/*
+		 * `docs/UI.md` §12's rule, built to rather than measured after: a band
+		 * stays balanced under growth only where its last component stretches to
+		 * fill the row it is given. The 5e replica cannot honour this (its middle
+		 * band ends in a track, its reference's own choice); the built sheet can.
+		 *
+		 * **"Or the tab set" is only half a rule, and the half that was missing is
+		 * asserted here rather than described.** A tab set is pinned at its
+		 * declared floor, but what reaches the bottom of that box is whichever
+		 * *panel* is tallest — every panel stays laid out (`tab-set.ts`'s own
+		 * note) — so a tab set whose tabs all end short leaves the void at the
+		 * band's foot instead of closing it. Measured cold at 1300px before this
+		 * was fixed: the two Rich-text bands reached 1332 of 1333 while the tab
+		 * set's content reached **1042**, a 291px void, with the four panels
+		 * ending at 1042, 527, 968 and 985. Three of the four ended in a table;
+		 * each now ends in a Rich text and the band closes to 1362 of 1363.
+		 *
+		 * **Recursed rather than special-cased**, because accepting `tab-set` as a
+		 * foot unconditionally is exactly the hole this closes: delete a stretcher
+		 * from inside any tab and the void comes back with every case green.
+		 */
+		for (const band of bandsOf(layout)) {
+			expect([...STRETCHERS, 'tab-set'], band.foot).toContain(band.foot);
+			if (band.foot !== 'tab-set') continue;
+			const tabSet = layout.components.find(
+				(config) =>
+					config.type === 'tab-set' &&
+					config.position.row + config.position.height - 1 === band.last,
+			);
+			const tabs = tabSet?.children ?? [];
+			expect(tabs.length).toBeGreaterThan(1);
+			for (const tab of tabs) {
+				const foot = footOf(tab.children ?? []);
+				expect(STRETCHERS, `${tab.label} ends in ${foot.type}`).toContain(
+					foot.type,
+				);
+			}
+		}
+	});
+
+	it('clears its cold sheet from the attribute strip, not from level', () => {
+		/*
+		 * **The keystone, measured — and it is not the one the 5e sheet has.**
+		 * The obvious reading is that `level` turns this sheet on, since every
+		 * trained rank adds it. That is backwards, and the reason is in the
+		 * library: `prof(rank) = if(rank > 0, level + 2 * rank, 0)`, and `if` is
+		 * lazy — on a cold sheet every rank is untrained, so the true branch is
+		 * never evaluated and `level` is never read. Typing level into the
+		 * passport clears **nothing**; it is also why the Proficiencies column
+		 * reads `+0` cold rather than "?".
+		 *
+		 * The **attribute strip** is the keystone: six numbers clear six of the
+		 * seven cards that draw "?", which is a better story than 5e's
+		 * strip-plus-level and is this starter's own.
+		 *
+		 * The seventh is **Armor class**, and it wants the character's armour
+		 * before it wants anything else: the Armor card set's `cap` and `bonus`,
+		 * then the Armor rank card — and only *then* `passport.level`, because a
+		 * rank the reader has chosen is finally greater than zero and `prof`
+		 * reads level for the first time. So level is not this sheet's keystone
+		 * but its last stone, wanted by one card.
+		 */
+		/** The components drawing an unresolved derived, in grid order. */
+		const marks = (note: string) => {
+			const built = sheetFrom(source, note);
+			return built.prepared
+				.filter(
+					(entry) =>
+						built
+							.draw(entry.config.id)
+							.querySelector('.sheetsmith-card-derived-unresolved') !== null,
+				)
+				.map((entry) => entry.config.id);
+		};
+		const FRONT = '---\nsheet-layout: Starter PF2e\n---\n';
+		const ATTRIBUTES =
+			'\n## Attributes\n```sheet\nSTR: 4\nDEX: 2\nCON: 3\nINT: 2\nWIS: 1\nCHA: -1\n```\n';
+		const LEVEL = '\n## Passport\n```sheet\nlevel: 5\n```\n';
+		const ARMOUR =
+			'\n## Armor\n```sheet\nbonus: 2\ncap: 3\n```\n\n## Armor rank\n```sheet\nvalue: 1\n```\n';
+
+		const cold = marks(FRONT);
+		expect(cold).toEqual([
+			'class_dc',
+			'initiative',
+			'ac',
+			'spell_attack',
+			'spell_dc',
+			'encumbered',
+			'max_bulk',
+		]);
+		// Level alone: the lazy `if` never reaches it, so nothing moves.
+		expect(marks(FRONT + LEVEL)).toEqual(cold);
+		// The strip alone: six of the seven, and Armor class is what is left.
+		expect(marks(FRONT + ATTRIBUTES)).toEqual(['ac']);
+		// Armour without level still will not do it, because a chosen rank is
+		// the first thing on this sheet that makes `prof` read level at all.
+		expect(marks(FRONT + ATTRIBUTES + ARMOUR)).toEqual(['ac']);
+		expect(marks(FRONT + ATTRIBUTES + ARMOUR + LEVEL)).toEqual([]);
+	});
+
+	it('lets both tab sets keep their heading, so a narrow pane announces them', () => {
+		/*
+		 * At 420px the whole sheet is one column, and an unlabelled tab set's row
+		 * of tabs follows the previous component with nothing saying a new region
+		 * has started — `docs/UI.md` §12's `hideLabel` row, whose sharpest case is
+		 * exactly this one. **The 5e sheet keeps the flag** and is right to: it is
+		 * a replica of the owner's own layout and its structure is not ours to
+		 * edit. This sheet inherited the flag from that replica rather than
+		 * choosing it, so it is dropped here and nowhere else.
+		 */
+		for (const id of ['pages', 'details']) {
+			const tabSet = walked.find((config) => config.id === id);
+			expect(
+				(tabSet as { hideLabel?: boolean }).hideLabel,
+				id,
+			).toBeUndefined();
+		}
+		// The strip and the passport keep theirs: both sit under a heading the
+		// arrangement already gives them, which is what the flag is for.
+		expect(
+			(byId('attributes') as { hideLabel?: boolean }).hideLabel,
+		).toBe(true);
+	});
+
+	it('declares six usable definitions and three declared types', () => {
+		const built = sheetFrom(source, PF2E_NOTE);
+		expect(built.problems).toEqual([]);
+		expect(built.definitions.problems).toEqual([]);
+		expect(built.definitions.definitions).toHaveLength(6);
+		expect(parseModifierTypes(built.layout).problems).toEqual([]);
+	});
+
+	// No "with level as the keystone" here: that clause was inherited from the 5e
+	// describe, where it is true, and the cold-start case above measures that on
+	// *this* sheet level clears nothing and is the last stone rather than the
+	// first. This case is about the published names and says nothing about level.
+	it('resolves every name it publishes', () => {
+		const built = sheetFrom(source, PF2E_NOTE);
+		const names = publishedTargets(
+			built.prepared.map((entry) =>
+				modifierTargetSource(entry.config, entry.component),
+			),
+		).map((target) => target.name);
+		expect(names.length).toBeGreaterThan(20);
+		expect(names.filter((name) => built.sheet(name) === undefined)).toEqual([]);
+	});
+
+	it('computes what a player would check against their own sheet', () => {
+		const built = sheetFrom(source, PF2E_NOTE);
+		// The ladder itself, through the proficiencies table: expert Class DC at
+		// level 5 is +9, trained Spellcasting +7.
+		expect(built.sheet('proficiencies.class_dc')).toBe(9);
+		expect(built.sheet('proficiencies.spellcasting')).toBe(7);
+		// Perception publishes for Initiative to read.
+		expect(built.sheet('saves.perception')).toBe(10);
+		expect(built.derivedFor('initiative')).toBe(10);
+		// A trained skill, an expert one with a negative attribute, and an
+		// untrained one that is its attribute alone.
+		expect(built.sheet('skills.stealth')).toBe(9);
+		expect(built.derivedFor('class_dc')).toBe(23);
+		expect(built.derivedFor('spell_attack')).toBe(11);
+		expect(built.derivedFor('spell_dc')).toBe(21);
+		// AC: 10, Dex 2 under a cap of 3, trained armor at level 5 is +7, item
+		// bonus +2, and the rune on the worn breastplate is +1 Item on top: 22.
+		expect(built.derivedFor('ac')).toBe(22);
+		// Bulk: 2 + 0.1, read exactly rather than as 2.1000000000000001.
+		expect(built.sheet('inventory.Bulk')).toBe(2.1);
+		expect(built.derivedFor('encumbered')).toBe(9);
+		expect(built.derivedFor('max_bulk')).toBe(14);
+		// Slots at level 5: three first-rank, three second, two third, none above.
+		expect(built.sheet('slots.R1.left')).toBe(2);
+	});
+
+	it('computes a Lore row the character named, which is why Lore is its own table', () => {
+		/*
+		 * **The engine fact the split is built on, asked rather than assumed.** A
+		 * declared Skills row carries `values.attribute`, and an *open* row carries
+		 * no values at all — so the Lore table's column formula names
+		 * `attributes.INT` directly, reading a sheet-wide published name from
+		 * inside a row scope. If that did not resolve, every Lore a character adds
+		 * would read "?" and the split would have bought nothing.
+		 *
+		 * Read off the drawn cells, because a Lore total is not published: nothing
+		 * elsewhere reads one row's Lore, so there is no name to ask `sheet` for
+		 * and the rendered column is where the number actually is.
+		 */
+		const built = sheetFrom(source, PF2E_NOTE);
+		// `td`, because the column heading carries the same type class.
+		const cells = Array.from(
+			built
+				.draw('lore')
+				.querySelectorAll<HTMLElement>('td.sheetsmith-table-computed'),
+		);
+		expect(cells).toHaveLength(2);
+		expect(cells.map((cell) => cell.textContent)).toEqual(['+9', '+2']);
+		// And neither is the unresolved face: "+2" for an untrained Lore is the
+		// attribute alone, which is also `prof`'s lazy `if` never reading `level`.
+		expect(
+			built.draw('lore').querySelectorAll('.sheetsmith-table-unresolved'),
+		).toHaveLength(0);
+	});
+
+	it('applies the best bonus and the worst penalty of one type together', () => {
+		// Off-Guard −2 and Raise a Shield +2, both Circumstance, both active: the
+		// two apply together and cancel, so AC moves by **0** from its 22.
+		const both = sheetFrom(
+			source,
+			pf2eWith('| Off-guard | | yes | Off-Guard |\n| Shield raised | | yes | Raise a Shield |'),
+		);
+		expect(both.derivedFor('ac')).toBe(22);
+	});
+
+	it('does not stack two penalties of one type', () => {
+		/*
+		 * Frightened −1 and Fatigued −1, both Status, both active: only the worst
+		 * applies, so AC moves by **−1**, not −2 — the plausible misreading is
+		 * "penalties stack", and this is the number that sends nobody to correct
+		 * a correct test. The rune's +1 Item is a different type and stays.
+		 */
+		const both = sheetFrom(
+			source,
+			pf2eWith('| Frightened | 1 | yes | Frightened |\n| Fatigued | | yes | Fatigued |'),
+		);
+		expect(both.derivedFor('ac')).toBe(21);
+		// A third status penalty changes nothing, which is what makes the
+		// suppression a rule rather than a coincidence of two.
+		const three = sheetFrom(
+			source,
+			pf2eWith('| Frightened | 1 | yes | Frightened |\n| Fatigued | | yes | Fatigued |\n| Clumsy | 1 | yes | Clumsy |'),
+		);
+		expect(three.derivedFor('ac')).toBe(21);
+	});
+
+	it('reads a valued condition’s own Value, and still takes only the worst', () => {
+		/*
+		 * **The case that makes the Value column load-bearing.** Frightened's
+		 * amount is `-Value`, not a literal, so it is evaluated in the enrolling
+		 * row's scope — the same scope `when: Active` reads. At Frightened **1**
+		 * the case above cannot tell that apart from a literal −1, which is
+		 * exactly the state this sheet was in before: a Value column beside a
+		 * definition that never read it, and a fixture using the one value where
+		 * the literal happens to be right.
+		 *
+		 * At Frightened **2** with Fatigued also active the two separate: the
+		 * Status penalties are −2 and −1, only the worst applies, and AC moves by
+		 * −2 rather than −3 (stacking) or −1 (a literal). 22 − 2 = 20. PF2e's own
+		 * rule is Frightened N = −N to everything, which is why the column exists.
+		 */
+		const valued = sheetFrom(
+			source,
+			pf2eWith('| Frightened | 2 | yes | Frightened |\n| Fatigued | | yes | Fatigued |'),
+		);
+		expect(valued.derivedFor('ac')).toBe(20);
+		// And the value moves the number, which no literal amount could do.
+		const worse = sheetFrom(source, pf2eWith('| Frightened | 3 | yes | Frightened |'));
+		expect(worse.derivedFor('ac')).toBe(19);
+	});
+
+	it('applies nothing from a condition that is switched off', () => {
+		const off = sheetFrom(source, pf2eWith('| Frightened | 2 | no | Frightened |'));
+		expect(off.derivedFor('ac')).toBe(22);
+	});
+});
+
+/**
+ * The 5e sheet with the values its arithmetic reads.
+ *
+ * Deliberately the smallest note that makes the library resolve: the passport's
+ * level, which `level = passport.level` aliases and `prof` reads, and the six
+ * ability scores every skill, save and spell number is computed from. Everything
+ * else on the sheet is declared by the layout.
+ */
 const FIFTH_NOTE = `---
 sheet-layout: Starter 5e
 ---

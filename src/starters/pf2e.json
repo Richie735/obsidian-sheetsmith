@@ -1,0 +1,1204 @@
+{
+	"name": "Starter PF2e",
+	"columns": 12,
+	"functions": [
+		"# Proficiency is the whole of the arithmetic: untrained adds nothing, and",
+		"# every trained rank adds level plus two per rank.",
+		"level = passport.level",
+		"prof(rank) = if(rank > 0, level + 2 * rank, 0)",
+		"# The class's key attribute. Change this one line per character.",
+		"key = attributes.STR",
+		"# Spell slots follow the full-caster table: a rank opens at level 2R - 1 with",
+		"# two slots and grows to three at level 2R, and rank 10 has one from level 19.",
+		"# A bounded caster changes the slot rows, one line each.",
+		"# The conditions all target armor class, so the stacking rule shows on one",
+		"# number. A valued condition reads its own Value column, so Frightened 2 is",
+		"# -2. Frightened really reaches every check and DC; a definition has one",
+		"# target, so a fuller Frightened is one more definition per target."
+	],
+	"triggers": [
+		"Daily preparations",
+		"New session"
+	],
+	"modifierTypes": [
+		"Item",
+		"Status",
+		"Circumstance"
+	],
+	"modifiers": [
+		{
+			"name": "Off-Guard",
+			"target": "ac",
+			"amount": "-2",
+			"bonusType": "Circumstance",
+			"when": "Active"
+		},
+		{
+			"name": "Raise a Shield",
+			"target": "ac",
+			"amount": "2",
+			"bonusType": "Circumstance",
+			"when": "Active"
+		},
+		{
+			"name": "Frightened",
+			"target": "ac",
+			"amount": "-Value",
+			"bonusType": "Status",
+			"when": "Active"
+		},
+		{
+			"name": "Fatigued",
+			"target": "ac",
+			"amount": "-1",
+			"bonusType": "Status",
+			"when": "Active"
+		},
+		{
+			"name": "Armor potency rune",
+			"target": "ac",
+			"amount": "1",
+			"bonusType": "Item",
+			"when": "Worn"
+		},
+		{
+			"name": "Clumsy",
+			"target": "ac",
+			"amount": "-Value",
+			"bonusType": "Status",
+			"when": "Active"
+		}
+	],
+	"components": [
+		{
+			"id": "passport",
+			"type": "passport",
+			"label": "Passport",
+			"hideLabel": true,
+			"fields": [
+				{
+					"key": "ancestry",
+					"name": "Ancestry"
+				},
+				{
+					"key": "heritage",
+					"name": "Heritage"
+				},
+				{
+					"key": "background",
+					"name": "Background"
+				},
+				{
+					"key": "class",
+					"name": "Class"
+				},
+				{
+					"key": "deity",
+					"name": "Deity"
+				},
+				{
+					"key": "level",
+					"name": "Level"
+				}
+			],
+			"position": {
+				"col": 1,
+				"row": 1,
+				"width": 6,
+				"height": 2
+			}
+		},
+		{
+			"id": "hp",
+			"type": "pool",
+			"label": "Hit points",
+			"maxSource": "character",
+			"hasTemp": true,
+			"position": {
+				"col": 7,
+				"row": 1,
+				"width": 6,
+				"height": 1
+			}
+		},
+		{
+			"id": "speed",
+			"type": "card",
+			"label": "Speed",
+			"signed": false,
+			"notePlaceholder": "feet",
+			"position": {
+				"col": 7,
+				"row": 2,
+				"width": 2,
+				"height": 1
+			}
+		},
+		{
+			"id": "class_dc",
+			"type": "card",
+			"label": "Class DC",
+			"derived": "10 + key + proficiencies.class_dc",
+			"signed": false,
+			"hideValue": true,
+			"hideNote": true,
+			"position": {
+				"col": 9,
+				"row": 2,
+				"width": 2,
+				"height": 1
+			}
+		},
+		{
+			"id": "hero_points",
+			"type": "track",
+			"label": "Hero points",
+			"count": 3,
+			"sense": "progress",
+			"reset": [
+				{
+					"trigger": "New session",
+					"action": "formula",
+					"to": "1"
+				}
+			],
+			"position": {
+				"col": 11,
+				"row": 2,
+				"width": 2,
+				"height": 1
+			}
+		},
+		{
+			"id": "attributes",
+			"type": "card-set",
+			"label": "Attributes",
+			"hideLabel": true,
+			"labelAlign": "center",
+			"entries": [
+				{
+					"key": "STR",
+					"name": "Strength"
+				},
+				{
+					"key": "DEX",
+					"name": "Dexterity"
+				},
+				{
+					"key": "CON",
+					"name": "Constitution"
+				},
+				{
+					"key": "INT",
+					"name": "Intelligence"
+				},
+				{
+					"key": "WIS",
+					"name": "Wisdom"
+				},
+				{
+					"key": "CHA",
+					"name": "Charisma"
+				}
+			],
+			"position": {
+				"col": 1,
+				"row": 3,
+				"width": 12,
+				"height": 1
+			}
+		},
+		{
+			"id": "saves",
+			"type": "table",
+			"label": "Saves and Perception",
+			"rowHeader": "Check",
+			"namePosition": 1,
+			"rows": [
+				{
+					"label": "Perception",
+					"values": {
+						"attribute": "attributes.WIS"
+					},
+					"key": "perception"
+				},
+				{
+					"label": "Fortitude",
+					"values": {
+						"attribute": "attributes.CON"
+					}
+				},
+				{
+					"label": "Reflex",
+					"values": {
+						"attribute": "attributes.DEX"
+					}
+				},
+				{
+					"label": "Will",
+					"values": {
+						"attribute": "attributes.WIS"
+					}
+				}
+			],
+			"columns": [
+				{
+					"key": "Rank",
+					"type": "level",
+					"levels": [
+						"Untrained",
+						"Trained:T",
+						"Expert:E",
+						"Master:M",
+						"Legendary:L"
+					],
+					"hideHeading": true
+				},
+				{
+					"key": "Total",
+					"type": "computed",
+					"formula": "attribute + prof(Rank)",
+					"signed": true,
+					"publish": true
+				}
+			],
+			"position": {
+				"col": 1,
+				"row": 4,
+				"width": 3,
+				"height": 3
+			}
+		},
+		{
+			"id": "proficiencies",
+			"type": "table",
+			"label": "Proficiencies",
+			"rowHeader": "Proficiency",
+			"namePosition": 1,
+			"rows": [
+				{
+					"label": "Class DC",
+					"key": "class_dc"
+				},
+				{
+					"label": "Unarmored"
+				},
+				{
+					"label": "Light armor"
+				},
+				{
+					"label": "Medium armor"
+				},
+				{
+					"label": "Heavy armor"
+				},
+				{
+					"label": "Simple weapons"
+				},
+				{
+					"label": "Martial weapons"
+				},
+				{
+					"label": "Advanced weapons"
+				},
+				{
+					"label": "Unarmed"
+				},
+				{
+					"label": "Spellcasting",
+					"key": "spellcasting"
+				}
+			],
+			"columns": [
+				{
+					"key": "Rank",
+					"type": "level",
+					"levels": [
+						"Untrained",
+						"Trained:T",
+						"Expert:E",
+						"Master:M",
+						"Legendary:L"
+					],
+					"hideHeading": true
+				},
+				{
+					"key": "Bonus",
+					"type": "computed",
+					"formula": "prof(Rank)",
+					"signed": true,
+					"publish": true
+				}
+			],
+			"position": {
+				"col": 1,
+				"row": 7,
+				"width": 3,
+				"height": 5
+			}
+		},
+		{
+			"id": "armor",
+			"type": "card-set",
+			"label": "Armor",
+			"entries": [
+				{
+					"key": "bonus",
+					"name": "Item bonus"
+				},
+				{
+					"key": "cap",
+					"name": "Dex cap"
+				}
+			],
+			"signed": false,
+			"position": {
+				"col": 1,
+				"row": 12,
+				"width": 3,
+				"height": 1
+			}
+		},
+		{
+			"id": "armor_rank",
+			"type": "card",
+			"label": "Armor rank",
+			"options": [
+				{
+					"value": "0",
+					"label": "Untrained"
+				},
+				{
+					"value": "1",
+					"label": "Trained"
+				},
+				{
+					"value": "2",
+					"label": "Expert"
+				},
+				{
+					"value": "3",
+					"label": "Master"
+				},
+				{
+					"value": "4",
+					"label": "Legendary"
+				}
+			],
+			"hideNote": true,
+			"position": {
+				"col": 1,
+				"row": 13,
+				"width": 3,
+				"height": 1
+			}
+		},
+		{
+			"id": "languages",
+			"type": "rich-text",
+			"label": "Languages",
+			"position": {
+				"col": 1,
+				"row": 14,
+				"width": 3,
+				"height": 2
+			}
+		},
+		{
+			"id": "skills",
+			"type": "table",
+			"label": "Skills",
+			"rowHeader": "Skill",
+			"namePosition": 1,
+			"rows": [
+				{
+					"label": "Acrobatics",
+					"values": {
+						"attribute": "attributes.DEX"
+					}
+				},
+				{
+					"label": "Arcana",
+					"values": {
+						"attribute": "attributes.INT"
+					}
+				},
+				{
+					"label": "Athletics",
+					"values": {
+						"attribute": "attributes.STR"
+					}
+				},
+				{
+					"label": "Crafting",
+					"values": {
+						"attribute": "attributes.INT"
+					}
+				},
+				{
+					"label": "Deception",
+					"values": {
+						"attribute": "attributes.CHA"
+					}
+				},
+				{
+					"label": "Diplomacy",
+					"values": {
+						"attribute": "attributes.CHA"
+					}
+				},
+				{
+					"label": "Intimidation",
+					"values": {
+						"attribute": "attributes.CHA"
+					}
+				},
+				{
+					"label": "Medicine",
+					"values": {
+						"attribute": "attributes.WIS"
+					}
+				},
+				{
+					"label": "Nature",
+					"values": {
+						"attribute": "attributes.WIS"
+					}
+				},
+				{
+					"label": "Occultism",
+					"values": {
+						"attribute": "attributes.INT"
+					}
+				},
+				{
+					"label": "Performance",
+					"values": {
+						"attribute": "attributes.CHA"
+					}
+				},
+				{
+					"label": "Religion",
+					"values": {
+						"attribute": "attributes.WIS"
+					}
+				},
+				{
+					"label": "Society",
+					"values": {
+						"attribute": "attributes.INT"
+					}
+				},
+				{
+					"label": "Stealth",
+					"values": {
+						"attribute": "attributes.DEX"
+					},
+					"key": "stealth"
+				},
+				{
+					"label": "Survival",
+					"values": {
+						"attribute": "attributes.WIS"
+					}
+				},
+				{
+					"label": "Thievery",
+					"values": {
+						"attribute": "attributes.DEX"
+					}
+				}
+			],
+			"columns": [
+				{
+					"key": "Rank",
+					"type": "level",
+					"levels": [
+						"Untrained",
+						"Trained:T",
+						"Expert:E",
+						"Master:M",
+						"Legendary:L"
+					],
+					"hideHeading": true
+				},
+				{
+					"key": "Total",
+					"type": "computed",
+					"formula": "attribute + prof(Rank)",
+					"signed": true,
+					"publish": true
+				}
+			],
+			"position": {
+				"col": 4,
+				"row": 4,
+				"width": 4,
+				"height": 7
+			}
+		},
+		{
+			"id": "lore",
+			"type": "table",
+			"label": "Lore",
+			"rowHeader": "Lore",
+			"namePosition": 1,
+			"openRows": true,
+			"columns": [
+				{
+					"key": "Rank",
+					"type": "level",
+					"levels": [
+						"Untrained",
+						"Trained:T",
+						"Expert:E",
+						"Master:M",
+						"Legendary:L"
+					],
+					"hideHeading": true
+				},
+				{
+					"key": "Total",
+					"type": "computed",
+					"formula": "attributes.INT + prof(Rank)",
+					"signed": true
+				}
+			],
+			"position": {
+				"col": 4,
+				"row": 11,
+				"width": 4,
+				"height": 3
+			}
+		},
+		{
+			"id": "senses",
+			"type": "rich-text",
+			"label": "Senses",
+			"position": {
+				"col": 4,
+				"row": 14,
+				"width": 4,
+				"height": 2
+			}
+		},
+		{
+			"id": "pages",
+			"type": "tab-set",
+			"label": "Pages",
+			"position": {
+				"col": 8,
+				"row": 4,
+				"width": 5,
+				"height": 12
+			},
+			"children": [
+				{
+					"id": "tab_combat",
+					"type": "group",
+					"label": "Combat",
+					"position": {
+						"col": 1,
+						"row": 1,
+						"width": 5,
+						"height": 12
+					},
+					"children": [
+						{
+							"id": "initiative",
+							"type": "card",
+							"label": "Initiative",
+							"derived": "saves.perception",
+							"hideValue": true,
+							"hideNote": true,
+							"position": {
+								"col": 1,
+								"row": 1,
+								"width": 2,
+								"height": 1
+							}
+						},
+						{
+							"id": "ac",
+							"type": "card",
+							"label": "Armor class",
+							"derived": "10 + min(attributes.DEX, armor.cap) + prof(armor_rank) + armor.bonus + mod.self",
+							"signed": false,
+							"hideValue": true,
+							"notePlaceholder": "what you are wearing",
+							"position": {
+								"col": 3,
+								"row": 1,
+								"width": 3,
+								"height": 1
+							}
+						},
+						{
+							"id": "conditions",
+							"type": "table",
+							"label": "Conditions",
+							"rowHeader": "Condition",
+							"openRows": true,
+							"columns": [
+								{
+									"key": "Value",
+									"type": "number",
+									"min": 0
+								},
+								{
+									"key": "Active",
+									"type": "toggle"
+								},
+								{
+									"key": "Modifiers",
+									"type": "modifier"
+								}
+							],
+							"position": {
+								"col": 1,
+								"row": 2,
+								"width": 5,
+								"height": 3
+							}
+						},
+						{
+							"id": "strikes",
+							"type": "table",
+							"label": "Strikes",
+							"rowHeader": "Strike",
+							"openRows": true,
+							"columns": [
+								{
+									"key": "Attack",
+									"type": "number"
+								},
+								{
+									"key": "Damage"
+								},
+								{
+									"key": "Traits"
+								},
+								{
+									"key": "Notes",
+									"secondary": true
+								}
+							],
+							"position": {
+								"col": 1,
+								"row": 5,
+								"width": 5,
+								"height": 4
+							}
+						},
+						{
+							"id": "combat_notes",
+							"type": "rich-text",
+							"label": "Combat notes",
+							"position": {
+								"col": 1,
+								"row": 9,
+								"width": 5,
+								"height": 4
+							}
+						}
+					]
+				},
+				{
+					"id": "tab_actions",
+					"type": "group",
+					"label": "Actions",
+					"position": {
+						"col": 1,
+						"row": 1,
+						"width": 5,
+						"height": 12
+					},
+					"children": [
+						{
+							"id": "actions",
+							"type": "table",
+							"label": "Actions and activities",
+							"rowHeader": "Action",
+							"openRows": true,
+							"columns": [
+								{
+									"key": "Cost",
+									"type": "level",
+									"levels": [
+										"—",
+										"Free:F",
+										"One:1",
+										"Two:2",
+										"Three:3",
+										"Reaction:R"
+									],
+									"input": "select"
+								},
+								{
+									"key": "Notes",
+									"secondary": true
+								}
+							],
+							"position": {
+								"col": 1,
+								"row": 1,
+								"width": 5,
+								"height": 10
+							}
+						},
+						{
+							"id": "action_notes",
+							"type": "rich-text",
+							"label": "Exploration and downtime",
+							"position": {
+								"col": 1,
+								"row": 11,
+								"width": 5,
+								"height": 2
+							}
+						}
+					]
+				},
+				{
+					"id": "tab_spells",
+					"type": "group",
+					"label": "Spells",
+					"position": {
+						"col": 1,
+						"row": 1,
+						"width": 5,
+						"height": 12
+					},
+					"children": [
+						{
+							"id": "spell_attack",
+							"type": "card",
+							"label": "Spell attack",
+							"derived": "key + proficiencies.spellcasting",
+							"hideValue": true,
+							"hideNote": true,
+							"position": {
+								"col": 1,
+								"row": 1,
+								"width": 2,
+								"height": 1
+							}
+						},
+						{
+							"id": "spell_dc",
+							"type": "card",
+							"label": "Spell DC",
+							"derived": "10 + key + proficiencies.spellcasting",
+							"signed": false,
+							"hideValue": true,
+							"hideNote": true,
+							"position": {
+								"col": 3,
+								"row": 1,
+								"width": 3,
+								"height": 1
+							}
+						},
+						{
+							"id": "focus",
+							"type": "pool",
+							"label": "Focus points",
+							"maxSource": "character",
+							"reset": [
+								{
+									"trigger": "Daily preparations",
+									"action": "full"
+								}
+							],
+							"position": {
+								"col": 1,
+								"row": 2,
+								"width": 5,
+								"height": 1
+							}
+						},
+						{
+							"id": "slots",
+							"type": "track",
+							"label": "Spell slots",
+							"rows": [
+								{
+									"key": "R1",
+									"name": "1st",
+									"count": "if(level >= 2, 3, 2)"
+								},
+								{
+									"key": "R2",
+									"name": "2nd",
+									"count": "if(level >= 4, 3, if(level >= 3, 2, 0))"
+								},
+								{
+									"key": "R3",
+									"name": "3rd",
+									"count": "if(level >= 6, 3, if(level >= 5, 2, 0))"
+								},
+								{
+									"key": "R4",
+									"name": "4th",
+									"count": "if(level >= 8, 3, if(level >= 7, 2, 0))"
+								},
+								{
+									"key": "R5",
+									"name": "5th",
+									"count": "if(level >= 10, 3, if(level >= 9, 2, 0))"
+								},
+								{
+									"key": "R6",
+									"name": "6th",
+									"count": "if(level >= 12, 3, if(level >= 11, 2, 0))"
+								},
+								{
+									"key": "R7",
+									"name": "7th",
+									"count": "if(level >= 14, 3, if(level >= 13, 2, 0))"
+								},
+								{
+									"key": "R8",
+									"name": "8th",
+									"count": "if(level >= 16, 3, if(level >= 15, 2, 0))"
+								},
+								{
+									"key": "R9",
+									"name": "9th",
+									"count": "if(level >= 18, 3, if(level >= 17, 2, 0))"
+								},
+								{
+									"key": "R10",
+									"name": "10th",
+									"count": "if(level >= 19, 1, 0)"
+								}
+							],
+							"reset": [
+								{
+									"trigger": "Daily preparations",
+									"action": "empty"
+								}
+							],
+							"position": {
+								"col": 1,
+								"row": 3,
+								"width": 5,
+								"height": 3
+							}
+						},
+						{
+							"id": "spellbook",
+							"type": "record-set",
+							"label": "Known spells",
+							"recordName": "Spell",
+							"fields": [
+								{
+									"key": "Rank",
+									"type": "number",
+									"max": 10
+								},
+								{
+									"key": "Prepared",
+									"type": "toggle"
+								}
+							],
+							"position": {
+								"col": 1,
+								"row": 6,
+								"width": 5,
+								"height": 5
+							}
+						}
+					]
+				},
+				{
+					"id": "tab_equipment",
+					"type": "group",
+					"label": "Equipment",
+					"position": {
+						"col": 1,
+						"row": 1,
+						"width": 5,
+						"height": 12
+					},
+					"children": [
+						{
+							"id": "coin",
+							"type": "card-set",
+							"label": "Coin",
+							"entries": [
+								{
+									"key": "CP",
+									"name": "Copper"
+								},
+								{
+									"key": "SP",
+									"name": "Silver"
+								},
+								{
+									"key": "GP",
+									"name": "Gold"
+								},
+								{
+									"key": "PP",
+									"name": "Platinum"
+								}
+							],
+							"signed": false,
+							"position": {
+								"col": 1,
+								"row": 1,
+								"width": 5,
+								"height": 1
+							}
+						},
+						{
+							"id": "bulk_carried",
+							"type": "card",
+							"label": "Bulk carried",
+							"derived": "inventory.Bulk",
+							"signed": false,
+							"hideValue": true,
+							"hideNote": true,
+							"position": {
+								"col": 1,
+								"row": 2,
+								"width": 2,
+								"height": 1
+							}
+						},
+						{
+							"id": "encumbered",
+							"type": "card",
+							"label": "Encumbered at",
+							"derived": "5 + attributes.STR",
+							"signed": false,
+							"hideValue": true,
+							"hideNote": true,
+							"position": {
+								"col": 3,
+								"row": 2,
+								"width": 3,
+								"height": 1
+							}
+						},
+						{
+							"id": "max_bulk",
+							"type": "card",
+							"label": "Maximum bulk",
+							"derived": "10 + attributes.STR",
+							"signed": false,
+							"hideValue": true,
+							"hideNote": true,
+							"position": {
+								"col": 1,
+								"row": 3,
+								"width": 2,
+								"height": 1
+							}
+						},
+						{
+							"id": "invested",
+							"type": "card",
+							"label": "Invested",
+							"derived": "inventory.Invested",
+							"signed": false,
+							"hideValue": true,
+							"notePlaceholder": "of ten",
+							"position": {
+								"col": 3,
+								"row": 3,
+								"width": 3,
+								"height": 1
+							}
+						},
+						{
+							"id": "inventory",
+							"type": "table",
+							"label": "Inventory",
+							"rowHeader": "Item",
+							"openRows": true,
+							"columns": [
+								{
+									"key": "Qty",
+									"type": "number",
+									"min": 0
+								},
+								{
+									"key": "Bulk",
+									"type": "number",
+									"total": true
+								},
+								{
+									"key": "Worn",
+									"type": "toggle"
+								},
+								{
+									"key": "Invested",
+									"type": "toggle",
+									"total": true
+								},
+								{
+									"key": "Modifiers",
+									"type": "modifier"
+								},
+								{
+									"key": "Notes",
+									"secondary": true
+								}
+							],
+							"position": {
+								"col": 1,
+								"row": 4,
+								"width": 5,
+								"height": 7
+							}
+						},
+						{
+							"id": "equipment_notes",
+							"type": "rich-text",
+							"label": "Equipment notes",
+							"position": {
+								"col": 1,
+								"row": 11,
+								"width": 5,
+								"height": 2
+							}
+						}
+					]
+				}
+			]
+		},
+		{
+			"id": "details",
+			"type": "tab-set",
+			"label": "Details",
+			"position": {
+				"col": 1,
+				"row": 16,
+				"width": 12,
+				"height": 6
+			},
+			"children": [
+				{
+					"id": "tab_feats",
+					"type": "group",
+					"label": "Feats and features",
+					"position": {
+						"col": 1,
+						"row": 1,
+						"width": 12,
+						"height": 6
+					},
+					"children": [
+						{
+							"id": "feats",
+							"type": "record-set",
+							"label": "Feats",
+							"recordName": "Feat",
+							"fields": [
+								{
+									"key": "Level",
+									"type": "number",
+									"max": 20
+								},
+								{
+									"key": "Type",
+									"type": "level",
+									"levels": [
+										"—",
+										"Ancestry:A",
+										"Class:C",
+										"Skill:S",
+										"General:G"
+									],
+									"input": "select"
+								},
+								{
+									"key": "Modifiers",
+									"type": "modifier"
+								}
+							],
+							"position": {
+								"col": 1,
+								"row": 1,
+								"width": 12,
+								"height": 6
+							}
+						}
+					]
+				},
+				{
+					"id": "tab_description",
+					"type": "group",
+					"label": "Description",
+					"position": {
+						"col": 1,
+						"row": 1,
+						"width": 12,
+						"height": 6
+					},
+					"children": [
+						{
+							"id": "appearance",
+							"type": "rich-text",
+							"label": "Appearance",
+							"position": {
+								"col": 1,
+								"row": 1,
+								"width": 6,
+								"height": 3
+							}
+						},
+						{
+							"id": "personality",
+							"type": "rich-text",
+							"label": "Personality",
+							"position": {
+								"col": 7,
+								"row": 1,
+								"width": 6,
+								"height": 3
+							}
+						},
+						{
+							"id": "backstory",
+							"type": "rich-text",
+							"label": "Backstory",
+							"position": {
+								"col": 1,
+								"row": 4,
+								"width": 12,
+								"height": 3
+							}
+						}
+					]
+				},
+				{
+					"id": "tab_notes",
+					"type": "group",
+					"label": "Notes",
+					"position": {
+						"col": 1,
+						"row": 1,
+						"width": 12,
+						"height": 6
+					},
+					"children": [
+						{
+							"id": "notes",
+							"type": "rich-text",
+							"label": "Session notes",
+							"position": {
+								"col": 1,
+								"row": 1,
+								"width": 12,
+								"height": 6
+							}
+						}
+					]
+				}
+			]
+		}
+	]
+}
