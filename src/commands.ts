@@ -65,10 +65,16 @@ export function registerCommands(plugin: SheetsmithPlugin): void {
 	// whether a Sheetsmith layout editor pane is the active view — not
 	// whether its stack happens to be non-empty — which is what keeps the
 	// command listed and rebindable even before there is anything to undo.
+	// **No default hotkey, and the ids carry no plugin prefix.** Both were
+	// deliberate once and both are now Obsidian's guidance instead: the app
+	// namespaces a command id by plugin already, so a prefix here shows up
+	// duplicated in the palette, and a shipped default hotkey collides with
+	// whatever the user or another plugin already bound. An author binds these
+	// in **Settings → Hotkeys**; `docs/features/editor-undo.md` records what
+	// that costs and why it was accepted anyway.
 	plugin.addCommand({
-		id: 'sheetsmith-layout-editor-undo',
+		id: 'layout-editor-undo',
 		name: 'Undo layout edit',
-		hotkeys: [{ modifiers: ['Mod'], key: 'z' }],
 		checkCallback: (checking) => {
 			const view = plugin.app.workspace.getActiveViewOfType(LayoutEditorView);
 			if (!view) return false;
@@ -81,9 +87,8 @@ export function registerCommands(plugin: SheetsmithPlugin): void {
 	});
 
 	plugin.addCommand({
-		id: 'sheetsmith-layout-editor-redo',
+		id: 'layout-editor-redo',
 		name: 'Redo layout edit',
-		hotkeys: [{ modifiers: ['Mod', 'Shift'], key: 'z' }],
 		checkCallback: (checking) => {
 			const view = plugin.app.workspace.getActiveViewOfType(LayoutEditorView);
 			if (!view) return false;

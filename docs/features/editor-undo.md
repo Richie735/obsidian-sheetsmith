@@ -128,12 +128,11 @@ longer holds.
 
 ### Discoverability
 
-Two Obsidian commands, `sheetsmith-layout-editor-undo` and
-`sheetsmith-layout-editor-redo`, both ids stable from the moment they ship
-(`AGENTS.md`), scoped active only while a Sheetsmith layout editor pane is the
-open view — `checkCallback`, not a raw `keydown` listener, so the command
-palette lists them and a user can rebind the hotkey the way they would any
-other command. No new chrome in the pane itself: no undo button, no toolbar.
+Two Obsidian commands, `layout-editor-undo` and `layout-editor-redo`, scoped
+active only while a Sheetsmith layout editor pane is the open view —
+`checkCallback`, not a raw `keydown` listener, so the command palette lists them
+and a user can bind a hotkey the way they would for any other command. No new
+chrome in the pane itself: no undo button, no toolbar.
 The pane has no toolbar convention today and inventing one for two commands
 that already have a discoverable, rebindable, standard entry point would be
 new vocabulary for a problem commands already solve.
@@ -208,10 +207,11 @@ does not apply).
       undo command after each restores the layout file's prior bytes exactly.
 - [x] Redo restores the state undone, and is available only until the next
       author-triggered mutation, which clears it.
-- [x] `sheetsmith-layout-editor-undo` and `sheetsmith-layout-editor-redo` are
-      registered commands with default hotkeys Mod+Z and Mod+Shift+Z, active
-      only while a Sheetsmith layout editor pane is the open view, and appear
-      in the command palette.
+- [x] `layout-editor-undo` and `layout-editor-redo` are registered commands,
+      active only while a Sheetsmith layout editor pane is the open view, and
+      appear in the command palette. *Amended after 0.1.0: the ids lost their
+      `sheetsmith-` prefix and both default hotkeys were dropped. See
+      "Amended after 0.1.0" below.*
 - [x] The stack is cleared when the pane's open layout changes, and two panes
       open on two different layouts do not share one.
 - [x] The stack is capped at 100 entries; a test drives the bound by pushing
@@ -287,3 +287,43 @@ control differing from `addControls`'s** (naming a shared accessible name for
 list-remove controls). That decision is still open and this feature does not
 answer it — it only makes the data-safety half of the gap moot, since both
 controls are undoable either way once this ships.
+
+## Amended after 0.1.0
+
+Both command ids changed and both default hotkeys were removed, in the pass
+that cleared Obsidian's automated plugin review before 0.1.1.
+
+**The ids lost their prefix.** `sheetsmith-layout-editor-undo` and
+`sheetsmith-layout-editor-redo` became `layout-editor-undo` and
+`layout-editor-redo`. Obsidian namespaces a command id by plugin already, so
+the prefix was duplicated and showed as such in the palette.
+
+**This is a deliberate exception to `AGENTS.md`'s rule that a command id is
+stable from the moment it ships**, and the price is real rather than notional:
+anyone who bound a hotkey to either id in 0.1.0 loses that binding silently
+and has to bind it again. What makes it acceptable is arithmetic, not
+principle. The release was one day old and installable only through BRAT, so
+the population that can have such a binding is very small; the same change made
+later would cost more every week it waited. The design section above now names
+the new ids, and these are the ids that are stable from here.
+
+**Both default hotkeys were removed.** Mod+Z and Mod+Shift+Z are gone. An
+author binds them by hand in **Settings → Hotkeys**, by searching for the
+command name.
+
+The argument this section replaces is worth keeping, because it was a good one
+and it lost on jurisdiction rather than on merit: undo and redo are the one
+pair of commands where shipping *no* default is the surprise, since every
+editing surface a user has ever met answers Mod+Z. That is still true, and the
+cost of the change is that the pane's undo now does nothing at all until the
+author has been to a settings screen to turn it on — for a feature whose whole
+value is being reachable in the instant after a mistake.
+
+Obsidian's guidance is that a plugin ships no default hotkey, because a default
+collides with whatever the user or another plugin already bound, and the plugin
+that shipped it wins by accident. Mod+Z is close to the worst case for that:
+it is the single most likely combination to be already spoken for. Weighing a
+convention this plugin would like to honour against a conflict every other
+plugin has to live with, the conflict is the stronger argument, and it is also
+the one whose venue is not ours. Recorded here so the decision is reversible
+by someone reading the reasoning rather than rediscovering it.
