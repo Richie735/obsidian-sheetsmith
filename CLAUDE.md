@@ -55,6 +55,18 @@ Build **component by component, not layer by layer.** Take one component all the
 
 Resist building the layout editor and the formula engine early. Both assume a working renderer and a proven file format, and both are the interesting parts, which is exactly why they are the trap.
 
+## Where to commit
+
+**Never on `main`.** Main holds released versions and gains commits only through
+one merge per release. Work happens on a `feat/`, `fix/` or `chore/` branch
+opened off the single open `release/<version>` branch, and a version branch
+accumulates several features before it ships. `/ship` opens the work branch,
+`/land-it` merges it back, and `/release` closes the cycle when the owner says
+so. A landed feature is never a release on its own.
+
+The model, including which prefix a route takes, is `docs/WORKFLOW.md`
+§ Branches.
+
 ## When to commit
 
 **Not while the work is in progress.** The working tree is what gets reviewed,
@@ -78,11 +90,13 @@ change cheap to undo right up until the moment it is not.
 Verification is continuous and committing is not: run `npm test`, `npm run lint`
 and `npm run build` as often as they are useful.
 
-- `/land-it` is the only thing that commits, and only when invoked.
+- `/land-it` is the only thing that commits, and only when invoked. It also
+  merges the work branch into the version branch.
 - Subjects are Conventional Commits: `type: Subject`, standard types only, with
   the subject itself in the log's existing voice. `/land-it` carries the mapping
   and the traps.
-- Never push. That is always the user's call.
+- Never push. `/release` is the one skill that does, and only when the user runs
+  it.
 - Do not add `Co-Authored-By` trailers to commit messages.
 
 ## Commands

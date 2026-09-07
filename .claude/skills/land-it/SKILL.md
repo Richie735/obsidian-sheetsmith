@@ -1,6 +1,6 @@
 ---
 name: land-it
-description: "Use when a feature is finished and ready to commit: verifies, splits the work into the spec's commits, and updates docs/SPEC.md. Does not push."
+description: "Use when a feature is finished and ready to commit: verifies, splits the work into the spec's commits, updates docs/SPEC.md, and merges the work branch into the open version branch. Does not push and does not release."
 argument-hint: "[feature name, or path to its docs/features file]"
 allowed-tools: Read, Glob, Grep, Bash, Edit
 ---
@@ -12,6 +12,21 @@ each finding is addressed. The work sits in one uncommitted tree through the
 whole review loop, and this skill turns the settled result into commits when the
 user says it is done. If the tree still has open findings against it, say so and
 stop rather than committing a half-reviewed change.
+
+## 0. Check the branch
+
+```bash
+git branch --show-current
+```
+
+The work must be on its own `feat/`, `fix/` or `chore/` branch, opened off the
+open `release/*` branch by `/ship`. **On `main` or on a version branch, stop.**
+Committing here is what the branch model exists to prevent, and moving the work
+yourself would commit it under a decision nobody made. Say what is on the tree
+and let the owner place it.
+
+`docs/WORKFLOW.md` § Branches is the model. This skill owns the closing half of
+it: the commits, and the merge that ends the run.
 
 ## 1. Verify before anything else
 
@@ -99,12 +114,37 @@ Body paragraphs are welcome where a decision needs its argument recorded.
 
 Stage deliberately, file by file. Do not `git add -A` and hope.
 
-## 5. Report
+## 5. Merge into the version branch
 
-List the commits made, what remains uncommitted, and anything in `docs/SPEC.md` or
-`docs/features/` you changed.
+```bash
+git switch release/<version>
+git merge --no-ff <branch> -m "Merge <branch> into release/<version>"
+git branch -d <branch>
+```
 
-**Do not push.** Pushing is the user's call.
+`--no-ff` even for a single commit: the merge is what keeps a feature one
+identifiable group in the cycle's log. The merge subject is not a Conventional
+Commit, because the types describe changes and a merge is not one.
+
+`git branch -d`, never `-D`. The safe form refuses a branch that did not merge,
+which is the check worth having at exactly this moment.
+
+If the merge conflicts, stop with the branch intact and report it. The version
+branch moved under this run, which means another feature landed while this one
+was in review, and reconciling two features is not a step to improvise at the
+end of one.
+
+**Do not release.** A landed feature is not a version. The cycle closes with
+`/release` when the owner says it does, and this skill never invokes it.
+
+## 6. Report
+
+List the commits made, the merge, what remains uncommitted, and anything in
+`docs/SPEC.md` or `docs/features/` you changed. Name the version branch the work
+is now part of.
+
+**Do not push.** `/release` is the only thing here that pushes, and only when the
+owner runs it.
 
 ## Not this skill's job
 
