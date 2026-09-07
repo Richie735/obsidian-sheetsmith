@@ -19,13 +19,18 @@ orchestrator misbehaves.
 
 | # | Step | Session | What runs |
 | --- | --- | --- | --- |
+| 0 | Open the work branch off the version branch | build | `/ship`, from the route |
 | 1 | Settle the model question, then design | design | `/feature-spec` |
 | 2 | Build | build | ordinary work against the spec |
 | 3 | Check the patterns, and check the spec | review | `/patterns-review` and `/spec-review`, in parallel on the same diff |
 | 4 | Judge those findings, fix the real ones | build | `/findings`, tree stays uncommitted |
 | 5 | Look at it | review | `npm run harness:shot` fresh, then `/design-review` |
 | 6 | Judge those findings, fix the real ones | build | `/findings` |
-| 7 | Land it | build | `/land-it` |
+| 7 | Land it, then merge the branch into the version branch | build | `/land-it` |
+
+Releasing is not step 8. A release is several features and its own decision;
+`/release` closes the version branch when the owner says the cycle is done, and
+nothing in this table may invoke it. The branch model is § Branches.
 
 Steps 3 and 4 sit before 5 on purpose. Structural drift is expensive to fix
 once polish is built on top of it; appearance is cheap to fix late. Discovering
@@ -105,11 +110,51 @@ skipped silently. It replaced the separate findings and land-approval stops:
 between the two, nothing happened but a gate run, and each cost an owner round
 trip.
 
+## Branches
+
+**Nothing is built on `main`.** Main holds released versions only, and every
+commit on it arrives through one merge per release.
+
+Three levels, and each one has a single owner:
+
+| Branch | Holds | Opened by | Closed by |
+| --- | --- | --- | --- |
+| `main` | Released versions | never | never |
+| `release/<version>` | One release cycle, several features | `/release`, when it closes the previous cycle | `/release` |
+| `feat/<slug>`, `fix/<slug>`, `chore/<slug>` | One `/ship` run | `/ship`, at the start | `/land-it`, at the end |
+
+**One release is many features.** The version branch accumulates until the owner
+says a cycle is done. A feature landing is not a release, and nothing in the
+feature loop may start one. Whether the release skill runs is a decision, not a
+consequence.
+
+**The prefix comes from the route**, so it is derived rather than chosen: the
+full and standard routes take `feat/`, the bug route takes `fix/`, the short
+route takes `chore/`. The slug is the feature's, matching
+`docs/features/<slug>.md` where there is one.
+
+**A work branch merges with `--no-ff`,** so a feature stays one identifiable
+group of commits in the version branch even when it lands as a single commit.
+The version branch merges into main the same way, and that merge commit is what
+a release looks like in the log. Merge subjects are not Conventional Commits:
+the types describe changes, and a merge is not one.
+
+There is exactly one open version branch at a time. `/ship` reads it rather than
+choosing it, and `/release` maintains the invariant by opening the next one as
+its last act.
+
+**Everything stays local until the release.** `/release` is the only thing here
+that pushes, and it pushes main and the tag. A feature branch is never pushed,
+so `lint.yml` first sees the work when the release lands on main, after the
+gates have already run locally at every land. That is the accepted cost of a
+one-machine repository with no reviewer to open a pull request for.
+
 ## Commits
 
-One uncommitted tree through steps 2 to 6. `/land-it` is the only thing that
-commits, at the end, once. One tracked issue usually spans several commits;
-never force it into one.
+One uncommitted tree through steps 2 to 6, on the run's own work branch.
+`/land-it` is the only thing that commits, at the end, once, and it merges the
+branch into the version branch when it is done. One tracked issue usually spans
+several commits; never force it into one.
 
 Subjects are Conventional Commits, standard type names only, with the subject
 itself in the log's voice: `feat: Let a track hold a set of runs`.
@@ -129,6 +174,8 @@ is `feat:` when it improves something and `fix:` when it was wrong.
 | How does a sheet look and behave? | `docs/UI.md` |
 | What may move, and how? | `docs/UI.md` §8, then `design-review/reference/motion.md` |
 | Where does this file go? | `docs/PATTERNS.md` §2 |
+| Which branch does this work go on? | § Branches above |
+| How does a version ship? | `/release`, then `AGENTS.md` § Versioning & releases |
 | What must never be broken? | `CLAUDE.md` § Hard constraints |
 | Obsidian platform rules | `AGENTS.md` |
 | Known gaps, deliberately unfixed | `docs/PATTERNS.md` §11, `docs/UI.md` §12 |

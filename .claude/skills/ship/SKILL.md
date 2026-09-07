@@ -15,6 +15,42 @@ read that section first, state which steps this route runs, and record every
 skip on one line with its reason. A skip recorded is a decision; a skip omitted
 is how the workflow rots.
 
+## The branch, before anything else
+
+`docs/WORKFLOW.md` § Branches is the model; this is the part this session owns.
+
+First, find the open version branch:
+
+```bash
+git branch --list 'release/*'
+git status --porcelain
+```
+
+- **No version branch, or more than one.** Stop and ask. The invariant is one
+  open cycle at a time, `/release` maintains it, and guessing which of two is
+  open ships a feature into a version nobody meant.
+- **The tree is dirty on `main`.** Stop and say so. Work already started in the
+  wrong place is the owner's to move, not this session's: `git switch -c` would
+  carry it silently and a stash would hide it.
+
+Then open the work branch off the version branch, before the dev agent exists:
+
+```bash
+git switch release/<version>
+git switch -c <prefix>/<slug>
+```
+
+The prefix is the route's: `feat/` on full and standard, `fix/` on bug,
+`chore/` on short. The slug is the feature's, the same one
+`docs/features/<slug>.md` will carry.
+
+State the branch on one line and carry it in the dev agent's opening prompt. The
+dev works there and nowhere else; `/land-it` is what merges it back, and this
+session never merges anything itself.
+
+**If the branch already exists**, this is a resumed run. Switch to it, do not
+re-create it, and derive the phase per § Resume.
+
 ## One feature, one run
 
 This session ends at the land stop. Nothing that arrives after it re-enters
@@ -207,10 +243,10 @@ the 30 to 40 minutes before the owner sees that a question fired.
 ## Resume
 
 If this session dies mid-feature, re-invoke with the same route and feature. Do
-not keep a state file; derive the phase from what the repository records:
-`docs/features/<slug>.md` and its `Status:` line say whether the spec exists and
-was agreed, `git status` says whether the build started, the ledger is gone but
-the reviews are cheap to re-run. Spawn a fresh dev primed with the spec and the
+not keep a state file; derive the phase from what the repository records: the
+work branch says the run started, `docs/features/<slug>.md` and its `Status:`
+line say whether the spec exists and was agreed, `git status` says whether the
+build started, the ledger is gone but the reviews are cheap to re-run. Spawn a fresh dev primed with the spec and the
 current diff, and continue from the first phase whose artifact is missing.
 
 ## Planning stays outside
