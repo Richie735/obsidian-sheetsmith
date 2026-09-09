@@ -935,10 +935,34 @@ whatever is selected and the copy grows downward into space nothing is placed in
 a line of description height shows as a gap under every row whose copy happens to
 be empty, and it has to be as deep as the longest copy to be worth anything;
 clamping to one line with the rest in a `title` hides text that is often the only
-explanation a field gets (`PATTERNS.md` §8). One consumer today, so this is a class
-rather than a row in the table above — the second settings row with growing copy
-reuses it rather than inventing a second answer, which is this section's opening
-sentence applied to the editor rather than to a card.
+explanation a field gets (`PATTERNS.md` §8). It was one consumer and a class
+rather than a row in the table above, on the rule that the second settings row
+with growing copy reuses it rather than inventing a second answer — which is
+this section's opening sentence applied to the editor rather than to a card.
+
+**The second consumer has arrived and did exactly that**, which is what keeps
+this a class: **New layout**'s **Start from** row, whose description says what
+each source does and is empty for none of them
+(`docs/features/starting-a-new-layout.md`). It is the same defect one surface
+over — a settings row is one centred flex line wherever it is drawn, and copy in
+the info column widens it until the control column wraps.
+
+**What the treatment buys in a modal is narrower than what it buys on the pane,
+and the difference is what follows the row.** On the pane the copy grows into
+space nothing is placed in, so nothing at all moves. In the modal three rows
+follow — the chosen source's input, **Name**, and the buttons — so a **Start
+from** switch still moves them: a line of copy pushes them down, and revealing a
+source row pushes them further. What is fixed is the *first line*, which is where
+the reader's pointer actually is: the dropdown being operated does not move under
+it while the sources are cycled, where in the info column the dropdown itself
+would have shifted. Worth having, and not the same claim — a rule that reads as
+"nothing moves" would be trusted about a surface where things do. Two things the
+second consumer settles that one could not: both classes are
+bare and unscoped, so they paint **in a modal**, which is the scoping test
+`.sheetsmith-input-invalid` failed; and the id the description is associated by is
+generated per instance there rather than being a module literal, because a modal
+can be opened, closed and opened again where a pane's row is replaced whole by a
+redraw.
 
 ---
 
