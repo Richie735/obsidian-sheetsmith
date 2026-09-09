@@ -683,9 +683,20 @@ export class TAbstractFile {
 	get name(): string {
 		return this.path.split('/').pop() ?? this.path;
 	}
+	/**
+	 * The folder holding this file, which for a top-level file is the root.
+	 *
+	 * **The root arm is the app's, and it is here so the double cannot
+	 * contradict itself.** Obsidian's `getDirectParent` answers `fileMap['/']`
+	 * where the path has no slash in it, and `Vault.getFolderByPath('/')` now
+	 * answers the root with those files as its children — so a `null` here would
+	 * mean the double told a caller that `Aramil.md` is a child of the root and
+	 * told `Aramil.md` it has no parent. Two answers, both assertable, which is
+	 * worse in a test double than the under-model it replaced.
+	 */
 	get parent(): TFolder | null {
 		const parent = parentPath(this.path);
-		return parent === '' ? null : this.vault.getFolderByPath(parent);
+		return this.vault.getFolderByPath(parent === '' ? '/' : parent);
 	}
 }
 
@@ -721,8 +732,36 @@ export class Vault {
 	 */
 	private root = new TFolder('/', this);
 
+	/**
+	 * The root is in the folder map, because in the app it is a map entry.
+	 *
+	 * Obsidian 1.13.7 builds the vault with
+	 * `n.root = new YD(n, ""), n.onChange('folder-created', '/'), n.root = n.fileMap['/']`
+	 * — the root it hands out *is* `fileMap['/']` — and `getFolderByPath` is
+	 * `fileMap.hasOwnProperty(e)` and nothing else. So `getFolderByPath('/')`
+	 * answers the root there, and answered null here until this line existed.
+	 *
+	 * **A reader can type the value that reaches it.** `characters.ts` checks
+	 * the configured character folder with `getFolderByPath` before creating
+	 * it, and `normalizePath('/')` is `/`, so a field holding `/` asked this
+	 * double whether the vault root exists, was told no, and would have asked
+	 * for it to be created — where the app says yes and writes at the root.
+	 */
+	constructor() {
+		this.folders.set('/', this.root);
+	}
+
+	/**
+	 * The root, by the same route as every other folder.
+	 *
+	 * Through `getFolderByPath` rather than straight off the field, because that
+	 * is where children are rebuilt: handed out raw, `getRoot().children` was
+	 * `[]` until something happened to ask for `/` by path, which made the answer
+	 * depend on call order. `FileManager.getNewFileParent` returns this, so the
+	 * order-dependence sat on the one path a new note takes.
+	 */
 	getRoot(): TFolder {
-		return this.root;
+		return this.getFolderByPath('/') ?? this.root;
 	}
 
 	/**
@@ -748,15 +787,93 @@ export class Vault {
 		// Compared as paths, never through `file.parent` — that getter asks the
 		// vault for a folder, and a folder asking each file for its parent to
 		// decide its own children recurses until the stack goes.
+		// The root owns the paths `parentPath` calls parentless, which is the
+		// app's own rule: `getDirectParent` answers `fileMap['/']` for a path
+		// with no slash in it. Every other folder owns its own path.
+		const owner = path === '/' ? '' : path;
 		folder.children = [...this.files.values()]
-			.filter(({ file }) => parentPath(file.path) === path)
+			.filter(({ file }) => parentPath(file.path) === owner)
 			.map(({ file }) => file);
 		return folder;
 	}
 
+	/**
+	 * Create a folder, and refuse a path that anything already holds.
+	 *
+	 * **Normalised and refused in the app's own order**, the same pair `create`
+	 * below makes, and here for the same reason: a caller guards the path itself
+	 * and says in its comment that nothing is clobbered even so. `layouts.ts`
+	 * and `characters.ts` both check `getFolderByPath` before creating, and a
+	 * double that created unconditionally would let a regression that dropped
+	 * either check go green — and would make the one state `characters.ts`
+	 * reports as an error unreachable, since a file sitting at the configured
+	 * folder's path is exactly what the app refuses.
+	 *
+	 * Obsidian 1.13.7's `app.js`, deminified:
+	 *
+	 * ```js
+	 * Vault.prototype.createFolder = async function (path) {
+	 *   const at = normalizePath(path);
+	 *   this.checkPath(at);
+	 *   if (await this.adapter.exists(at)) throw new Error('Folder already exists.');
+	 *   await this.adapter.mkdir(at);
+	 *   const f = this.getAbstractFileByPath(at);
+	 *   return f instanceof TFolder ? f : null;
+	 * }
+	 * ```
+	 *
+	 * `adapter.exists` is a filesystem check rather than a folder lookup, so a
+	 * **file** at that path refuses too — and the message is the same one either
+	 * way, which is the app's wording rather than a tidier one this double might
+	 * have invented. Files and folders are two maps here where the app has one
+	 * `fileMap`, so both are asked.
+	 *
+	 * **And `mkdir` is recursive, so a missing ancestor is created with it.**
+	 * The desktop adapter, from the same bundle:
+	 *
+	 * ```js
+	 * FileSystemAdapter.prototype.mkdir = function (path) {
+	 *   return this.queue(async () => {
+	 *     await this.fsPromises.mkdir(this.getFullPath(path), { recursive: true });
+	 *     await this.reconcileInternalFile(path);
+	 *   });
+	 * }
+	 * ```
+	 *
+	 * `createFolder('Characters/New')` therefore leaves a vault holding both
+	 * `Characters` and `Characters/New`, which is what a plugin sees next when
+	 * it asks `getFolderByPath` about either — and `characters.ts` asks about
+	 * the deeper one on the second character it writes. A double that set one
+	 * map entry made that test pass for the wrong reason.
+	 *
+	 * What is deliberately **not** modelled is an ancestor path a *file* holds:
+	 * the real `mkdir -p` fails there with `ENOTDIR`, and this writes the deeper
+	 * folder instead. **The state is reachable and not foreign** — both folder
+	 * preferences are free text, so `Characters/New` typed over a vault whose
+	 * `Characters` is an extension-less *file* is exactly it, and the character
+	 * suite's own fixture creates a file at that very path for the
+	 * folder-refused case. What is true is narrower than "nothing writes a
+	 * folder under a note": nothing *asserts* on this state, and the ancestor is
+	 * left alone rather than shadowed, so the double never reports a folder
+	 * where it holds a file. A test that needs the app's answer here has to
+	 * model `ENOTDIR` first.
+	 */
 	async createFolder(path: string): Promise<TFolder> {
-		const folder = new TFolder(path, this);
-		this.folders.set(path, folder);
+		const at = normalizePath(path);
+		if (this.folders.has(at) || this.files.has(at)) {
+			throw new Error('Folder already exists.');
+		}
+		for (
+			let parent = parentPath(at);
+			parent !== '';
+			parent = parentPath(parent)
+		) {
+			if (!this.folders.has(parent) && !this.files.has(parent)) {
+				this.folders.set(parent, new TFolder(parent, this));
+			}
+		}
+		const folder = new TFolder(at, this);
+		this.folders.set(at, folder);
 		return folder;
 	}
 

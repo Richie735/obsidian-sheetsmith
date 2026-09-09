@@ -9,16 +9,24 @@
  * second caller and so lives in `layout-picker.ts`, while the write and the
  * gesture belong to this caller alone.
  *
- * **No "character folder" setting, and that asymmetry with the layout folder is
- * principled.** A layout is looked up *by name inside* a folder, so the folder
- * is part of the lookup and the plugin cannot work without knowing it. A
- * character note is looked up by nothing: the note names the layout, the layout
- * never names the note, and the plugin finds a character because the reader
- * opened it. So a character note can be moved anywhere at any time and nothing
- * breaks, which is exactly why the plugin has no business holding an opinion
- * about where it starts. Obsidian already asks that question once, globally, in
- * **Settings → Files and links → Default location for new notes**, and
- * `getNewFileParent` is the API that answers it.
+ * **The character folder is an override, and it ships empty**
+ * (`docs/features/character-folder.md`). Obsidian already asks where a new note
+ * goes, once, globally, in **Settings → Files and links → Default location for
+ * new notes**, and `getNewFileParent` is the API that answers it — so out of the
+ * box this module holds no opinion and every note-creating gesture in the app
+ * still agrees with every other. A vault that wants characters landing in one
+ * place types a folder into the settings tab and gets that folder instead, for
+ * every character the plugin creates.
+ *
+ * **The two folder settings fall back to different kinds of thing, and that
+ * asymmetry with the layout folder is what decides the empty default.** A layout
+ * is looked up *by name inside* a folder, so the folder is part of the lookup
+ * and the plugin cannot work without knowing it — which is why an emptied layout
+ * folder falls back to a folder name of the plugin's own. A character note is
+ * looked up by nothing: the note names the layout, the layout never names the
+ * note, and the plugin finds a character because the reader opened it. So a
+ * character note can be moved anywhere at any time and nothing breaks, and this
+ * setting has nothing to fall back *to* except the app's own answer.
  */
 
 import { App, normalizePath, Notice } from 'obsidian';
@@ -93,10 +101,28 @@ function availablePath(app: App, folder: string): string {
 /**
  * Write a new character note naming `layoutName`, and say where it went.
  *
+ * `folder` is the configured character folder and sits second, mirroring
+ * `createLayout(app, folder, name)`: the setting is read at the plugin boundary
+ * in `openNewCharacter`, so this stays a function of an app and a folder that a
+ * test can drive without a plugin. **Empty means the app answers**, which is how
+ * the plugin ships.
+ *
+ * **A trimmed folder is a precondition rather than something proved here.** The
+ * settings tab trims what is typed and `loadSettings` trims what was persisted,
+ * so nothing in the plugin reaches this with a padded value and there is no
+ * third copy of that rule inside this function — but `loadSettings` runs only
+ * from `onload` and no test drives it (`docs/PATTERNS.md` §11), so that is a
+ * contract this function relies on, not a guarantee it can point at. An
+ * untrimmed folder is out of contract: it would create a folder whose name has
+ * the spaces in it, because `normalizePath` does not trim and the app treats a
+ * trailing space as part of a folder name.
+ *
  * `sourcePath` is the file the gesture was run from, passed through to
  * `getNewFileParent` so that **Same folder as current file** means what it
  * says. The empty string is the vault root, which is what the app itself
- * passes when there is no current file.
+ * passes when there is no current file. A configured folder makes it moot:
+ * `getNewFileParent` is not asked at all, because the whole point of the
+ * setting is that the answer does not depend on where the gesture was run.
  *
  * **The layout is never read here.** This writes a name, not a shape, so
  * creating a character against a layout whose JSON is broken still produces a
@@ -110,17 +136,60 @@ function availablePath(app: App, folder: string): string {
  */
 export async function createCharacter(
 	app: App,
+	folder: string,
 	layoutName: string,
 	sourcePath: string,
 ): Promise<CreateResult> {
 	try {
-		const parent = app.fileManager.getNewFileParent(sourcePath);
-		const path = availablePath(app, parent.path);
+		/*
+		 * **Normalised exactly once, and the emptiness check comes first.**
+		 * `normalizePath('')` is `/`, the vault root, so normalising before
+		 * asking whether a folder was configured at all would silently turn
+		 * "follow the app's setting" into "write at the root" and take **Same
+		 * folder as current file** away from every reader who never touched the
+		 * preference.
+		 *
+		 * One spelling then reaches all three halves — the existence check, the
+		 * dedupe loop and the write — which is `availablePath`'s own invariant
+		 * with a third half added to it. `getFolderByPath` is a raw map lookup
+		 * like `getFileByPath`, so an unnormalised spelling would miss a folder
+		 * that is there and try to create it again.
+		 */
+		const configured = folder === '' ? null : normalizePath(folder);
+		if (configured !== null && !app.vault.getFolderByPath(configured)) {
+			/*
+			 * `createLayout`'s branch, one module over, on the same evidence: a
+			 * reader who typed a folder into a field reading "New characters are
+			 * written here" has said where they want characters, and the plugin
+			 * already creates its own layout folder on no more than that. The
+			 * alternative — refuse, and send them to the file explorer — buys
+			 * only the typo case, and what a typo costs here is an empty folder.
+			 */
+			await app.vault.createFolder(configured);
+		}
+		// `??` short-circuits, so a configured folder never asks the app: the
+		// setting's whole promise is a folder that does not depend on the note
+		// the gesture was run from.
+		const dir = configured ?? app.fileManager.getNewFileParent(sourcePath).path;
+		const path = availablePath(app, dir);
 		await app.vault.create(path, newCharacterNote(layoutName));
 		return { ok: true, path };
 	} catch (error) {
-		// The vault's own reason: read-only, a path refused, a folder gone.
-		// Nothing was written either way.
+		/*
+		 * The vault's own reason: read-only, a path refused, a folder gone, or a
+		 * configured folder the vault will not create because a file is sitting
+		 * at that path.
+		 *
+		 * **No note is written on any of those, which is what makes one arm
+		 * enough — but the folder above can already have landed.** There are two
+		 * writes in this `try` and they are ordered, so a `create` that fails
+		 * after a `createFolder` that succeeded leaves an empty folder behind
+		 * while this returns `{ error }`. That is the same empty folder the
+		 * branch above prices as the cost of a typo, so it is not worth a
+		 * rollback — deleting a folder to tidy up a failed write is a second
+		 * destructive call on a path the reader named, on the one code path
+		 * where the vault has just proved it refuses writes.
+		 */
 		return { error: error instanceof Error ? error.message : String(error) };
 	}
 }
@@ -147,8 +216,12 @@ export async function openNewCharacter(
 	plugin: SheetsmithPlugin,
 	layoutName: string,
 ): Promise<void> {
+	// The configured folder is read here, beside
+	// `chooseLayoutForNewCharacter`'s read of `layoutFolder`: the settings live
+	// at the plugin boundary and `createCharacter` takes a folder.
 	const result = await createCharacter(
 		plugin.app,
+		plugin.settings.characterFolder,
 		layoutName,
 		plugin.app.workspace.getActiveFile()?.path ?? '',
 	);
