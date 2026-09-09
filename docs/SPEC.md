@@ -138,7 +138,31 @@ Rules:
 
 Stored in a configurable vault folder, `Sheetsmith layouts` by default. Contains the component list with grid positions and sizes, per-component configuration, the function library, reset trigger definitions, and the promoted field list. Contains no per-character data.
 
-Layouts export and import as single files, so a layout can be shared or published.
+**Import takes a single layout's JSON and export hands one over**
+(`docs/features/layout-import-export.md`), so a layout can be shared or
+published. The unit that travels is one self-contained layout in both
+directions, and the two gestures live on the layout editor pane's **Layout
+file** row: a **Copy layout JSON** button puts the open layout's own bytes on the
+clipboard, and an **Import a layout…** option in the same row's dropdown opens a
+paste box, validates the JSON through `parseLayout`, and writes it into the
+configured layout folder under the name inside it — or under one typed beside the
+paste, where the folder already holds that name. Nothing is overwritten in either
+direction: a taken name is refused in `createLayout`'s own words, and the
+ordering that makes that structural rather than careful — parse the source, and
+only then create the file — is `installLayoutSource`, which the starter install
+above shares.
+
+**Export does not write a file, because it cannot.** `Vault` reaches nothing
+outside the vault, the public API has no file-save dialog, and `isDesktopOnly` is
+`false`, so the Electron routes that would give one are closed by the manifest.
+The clipboard is the one route out of a vault that exists on desktop and on
+mobile alike. It is also the reason export copies the file's *bytes* rather than
+re-serialising them: a layout carrying a key this version's parser does not know
+would have it silently dropped by a parse-then-serialise round trip, which is the
+one thing a share must not do, and a layout that will not parse at all is
+exportable on purpose so it can be handed to somebody who can fix it. The
+"validates rather than copies bytes" rule below is about the *install* path,
+which is the direction that writes.
 
 **Three starter layouts ship with the plugin** (`docs/features/starter-layouts.md`), because a fresh install has an empty layout folder and nothing to pick. **They travel inside `main.js` rather than as files in the plugin folder**: the release artifacts are `main.js`, `manifest.json` and `styles.css`, and every install channel delivers exactly those, so a fourth file would need the release workflow to produce it, every channel to carry it, and the plugin to read its own folder through the adapter at runtime. Each source is a real `.json` layout file in the tree, inlined by esbuild's json loader, and **the install path validates rather than copies bytes**: `parseLayout` then `serialiseLayout` through `createLayout`, so a starter gone stale against the schema is refused loudly instead of landing broken, and one writer owns the spelling. An installed starter is an ordinary layout the user owns from the moment it lands; a later plugin update ships new bundled sources and rewrites nothing in any vault.
 
@@ -665,7 +689,15 @@ A workspace pane of its own hosts the editor: create layouts, add and remove com
 
 The full editor:
 
-- **Manage layouts**: create, duplicate, rename, delete, import, export. **Add a starter layout** is a command rather than a pane control (§3.2): cold start is exactly the moment no pane, file or state exists to condition on, so it is offered unconditionally from the palette, lists the three bundled layouts in a suggester, and writes the chosen one into the configured layout folder — creating the folder when missing and refusing a name the folder already holds, since the existing file may be the user's edited copy of an earlier install.
+- **Manage layouts**: create, duplicate, rename, delete, import, export. **Import and export are shipped** (§3.2,
+  `docs/features/layout-import-export.md`); duplicate and rename are not. **Which control gets which is one rule**: the
+  **Layout file** row's dropdown answers *which layout is open* — so `New layout…` and `Import a layout…` are options in
+  it, both ending with a different layout open — and the row's buttons *act on the layout that is already open*, so
+  export is a button beside the trash. **Neither half is a palette command**: import belongs to the pane because the pane is what owns the layout folder, and
+  the gesture sits beside the other five operations on that row rather than in a second place; export acts on state only the pane has, and a palette entry would have
+  to ask *which layout* with a second suggester to answer a question the pane has already answered. **Cold-start import is an open gap rather than a solved case**: where the
+  folder holds no layouts the pane draws only *"No layouts yet."* and **Create layout**, so a first layout arrives by **Add a starter layout**, by that button, or by hand.
+  **Add a starter layout** is a command rather than a pane control (§3.2): cold start is exactly the moment no pane, file or state exists to condition on, so it is offered unconditionally from the palette, lists the three bundled layouts in a suggester, and writes the chosen one into the configured layout folder — creating the folder when missing and refusing a name the folder already holds, since the existing file may be the user's edited copy of an earlier install. **That argument does not transfer to import**, which is a reader holding a layout somebody sent them rather than a reader with nothing at all.
 - **Create a character** is the second command on that same argument, and the other half of a cold start: **Add a starter layout** puts a layout in the vault and this one turns a layout into a note. It lists the layouts in the configured folder by name, writes a note carrying nothing but `sheet-layout`, and opens it as a sheet — so a fresh install is two commands and no hand-written property. Where the folder holds no layout it names **Add a starter layout** rather than opening an empty suggester. The note's location is Obsidian's own **Settings → Files and links → Default location for new notes** unless the plugin's **Character folder** preference names one, which it does not by default: a character note is looked up by nothing, so where it starts is not a fact the plugin uses, which is why the plugin's own field is an override that ships empty rather than a folder name of its own (`docs/features/layout-picker.md`, `docs/features/character-folder.md`). A named folder is created if it is missing, and applies to every character the plugin creates whatever note the gesture was run from.
 - **Grid canvas**: *shipped.* The layout's real components, live, on its own grid; see above. Dragging a new component in from a palette onto the canvas is not: the **Add component** row and its destination dropdown are still how one is created.
 - **Configuration panel**: select a component, configure it in a side panel. *Shipped with the pane.*
@@ -740,7 +772,7 @@ Explicitly out of scope for v1, recorded so they do not creep back in:
 | **M2 Edit** | Edit values in sheet view, write back to the body, round-trip safely |
 | **M3 Formulas** | Expression evaluation, layout function library, computed values |
 | **M4 Editor** | Grid canvas, component palette, configuration panel. Shipped: the workspace pane, its tree (with drag-and-drop reparenting), its configuration panel, undo, and the live grid canvas. Not shipped: dragging a new component in from a palette onto the canvas — creation still goes through the **Add component** row |
-| **M5 Finish** | Reset triggers, promoted fields, layout export and import, mobile reflow, error states |
+| **M5 Finish** | Reset triggers, promoted fields, layout export and import, mobile reflow, error states. Shipped: layout import and export, as a clipboard copy out and a validated paste in (§3.2) |
 
 The order is deliberate. The file model is the hardest thing to change once characters exist, so it gets proven first. The layout editor is the largest interface investment and comes only once the thing it edits is known to work.
 
