@@ -424,12 +424,12 @@ green — one with its file unmodified and one with the two additive assertions
 criterion 16 names — three are things to read in the diff, one is a harness
 shot, and one is the toolchain.
 
-- [ ] A test asserts pasted JSON writes `<folder>/<name inside it>.json`, that
+- [x] A test asserts pasted JSON writes `<folder>/<name inside it>.json`, that
       the folder is created when it was missing, and that the file's bytes are
       `serialiseLayout`'s.
-- [ ] A test asserts the success notice is `Added "X" to <folder>.` — the one
+- [x] A test asserts the success notice is `Added "X" to <folder>.` — the one
       sentence, from the one writer, in the same words `installStarter` gives.
-- [ ] A test asserts text that is not JSON writes **no file at all** and reports
+- [x] A test asserts text that is not JSON writes **no file at all** and reports
       the parser's own sentence. **The layout folder** holds exactly the files it
       held before, asserted as a count and not only as an absent path.
       *Amended after the build from "the vault": the count runs through
@@ -440,7 +440,7 @@ shot, and one is the toolchain.
       where it is claimed; two limits — direct children only, and `[]` where the
       folder's own path is held by a file — are `docs/BACKLOG.md` rows and are
       documented at the helper.*
-- [ ] A test asserts JSON with no `name` writes nothing and reports
+- [x] A test asserts JSON with no `name` writes nothing and reports
       `The layout needs a non-empty "name" string.` — **whether or not a name
       was typed**, which a second case pins. *Amended after the build from "and
       no name typed", which two of this document's three passages on the field
@@ -450,11 +450,11 @@ shot, and one is the toolchain.
       layout with no `name` is malformed, and inventing one on the author's
       behalf is the plugin editing content it does not own. The **Name** field's
       own copy says "change it here", not "supply it".*
-- [ ] A test asserts a name the folder already holds writes nothing, reports
+- [x] A test asserts a name the folder already holds writes nothing, reports
       `A layout named "X" already exists.`, **and leaves the existing file's
       bytes unchanged** — the criterion Custom System Builder issue 516 is the
       evidence for.
-- [ ] A test asserts a destination write that fails — **a file sitting where the
+- [x] A test asserts a destination write that fails — **a file sitting where the
       layout folder must go** — reports the vault's own reason, creates no
       layout, and leaves that file's bytes unchanged. *Amended after the build
       from "a `name` carrying `/` whose folder does not exist": Obsidian's
@@ -464,24 +464,24 @@ shot, and one is the toolchain.
       the thing (`docs/UI.md` §11). Changing the double's `create` semantics
       touches 3289 tests and is a `docs/BACKLOG.md` row instead. The named arm
       is one of the three this feature's own failure table already lists.*
-- [ ] A test asserts a typed **Name** overrides the name inside the JSON, that
+- [x] A test asserts a typed **Name** overrides the name inside the JSON, that
       the file lands under the typed name, and that the `name` key inside the
       written file is the typed name too — filename and `name` still agree.
-- [ ] A test asserts the modal stays open on a refusal with the pasted text and
+- [x] A test asserts the modal stays open on a refusal with the pasted text and
       the typed name still in their boxes, and closes on success.
-- [ ] A test asserts **Import** is disabled while the paste box is blank or
+- [x] A test asserts **Import** is disabled while the paste box is blank or
       whitespace.
-- [ ] A test asserts a successful import leaves the pane open on the imported
+- [x] A test asserts a successful import leaves the pane open on the imported
       layout.
-- [ ] A test asserts export puts the file's **own bytes** on the clipboard,
+- [x] A test asserts export puts the file's **own bytes** on the clipboard,
       driven by a file whose formatting `serialiseLayout` would spell
       differently — the case that can go red if export ever starts reformatting.
-- [ ] A test asserts the export notice names the layout, and that a rejected
+- [x] A test asserts the export notice names the layout, and that a rejected
       clipboard write reports `Could not copy to the clipboard.` and nothing
       else happens.
-- [ ] A test asserts export reports the vault's own reason when the file cannot
+- [x] A test asserts export reports the vault's own reason when the file cannot
       be read.
-- [ ] A test asserts that pressing export with no layout selected puts nothing
+- [x] A test asserts that pressing export with no layout selected puts nothing
       on the clipboard and shows no notice — the guard, not a disabled state.
       **The state is a control a redraw left behind**: delete the open layout
       through its own trash, then press the copy icon the replaced DOM left
@@ -490,12 +490,12 @@ shot, and one is the toolchain.
       `renderVacant` and no row. The guard and the case are unchanged; only the
       state they were said to answer was wrong, and the stale-control race is
       the one that is real.*
-- [ ] **By reading the diff:** no `.clickable-icon` added by this feature calls
+- [x] **By reading the diff:** no `.clickable-icon` added by this feature calls
       `setDisabled`, so `docs/BACKLOG.md`'s invisible-disabled row keeps the
       population of four it is waiting on a decision about. The one control that
       does disable is **Import**, a text button in a modal, on `NameModal`'s
       shipped precedent.
-- [ ] `src/starters/picker.test.ts` passes with **two additive assertions and
+- [x] `src/starters/picker.test.ts` passes with **two additive assertions and
       nothing else changed** — a `name: 'Starter Forged in the Dark'` key added
       to the two `toEqual` calls at its lines 57 and 141, and no other edit to
       the file. *Amended after the build from "passes **unmodified**": the
@@ -508,20 +508,27 @@ shot, and one is the toolchain.
       whole of what the criterion was for**: the sentence is the same, the file
       written is the same, every refusal arm is unchanged, and not one assertion
       was weakened, removed or retargeted.
-- [ ] **By reading the diff:** `src/editor/copyable-name.ts` is unmodified and
+- [x] **By reading the diff:** `src/editor/copyable-name.ts` is unmodified and
       no `src/ui/clipboard.ts` exists — the proof the second refactor was cut
       rather than quietly kept.
-- [ ] `harness/stub-icons.test.ts` is green, meaning `copy` has a real Lucide
+- [x] `harness/stub-icons.test.ts` is green, meaning `copy` has a real Lucide
       path in `src/test/obsidian-stub.ts` rather than falling back to painting
       the word.
-- [ ] **By reading the diff:** nothing changes under `src/styles/` and
+- [x] **By reading the diff:** nothing changes under `src/styles/` and
       `styles.css` is untouched. Every new string is sentence case.
-- [ ] **In the harness** (`npm run harness`, then `npm run harness:shot`):
-      `editor.png` and `editor-dark.png` show the **Layout file** row carrying
-      the copy button beside the trash, both drawn as Obsidian clickable icons
-      at the same size, and the dropdown listing `Import a layout…` under
-      `New layout…`.
-- [ ] `npm test`, `npm run lint` at `--max-warnings 0`, and `npm run build` are
+- [x] **In the harness** (`npm run harness`, then `npm run harness:shot`):
+      `editor-light.png` and `editor-dark.png` show the **Layout file** row
+      carrying the copy button beside the trash, both drawn as Obsidian
+      clickable icons at the same size, in both themes, and the row not
+      wrapping at full width. *Amended after the build: the shots are named
+      `editor-light.png` and `editor-dark.png`; there is no `editor.png`.*
+      **The dropdown half of this criterion is not checkable in a still** and
+      is asserted in the cases instead: a native `<select>` renders only its
+      selected option, so `Import a layout…` under `New layout…` cannot appear
+      in a PNG, and `layout-editor.test.ts` holds the option list as
+      `['Test sheet', 'New layout…', 'Import a layout…']`. Ticked on the icon
+      half looked at, plus that case.
+- [x] `npm test`, `npm run lint` at `--max-warnings 0`, and `npm run build` are
       green.
 
 ## Commit boundaries
