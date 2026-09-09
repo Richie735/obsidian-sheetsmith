@@ -105,22 +105,23 @@ Dismissed once the spec is approved.
 
 **The dev.** One agent, spawned once, alive for the whole feature. On routes
 with a spec, spawn it the moment the spec goes to the owner for approval, not
-after the answer: its opening prompt says to read `docs/PATTERNS.md` and
-`docs/UI.md` and then hold, so the expensive prime runs inside the approval wait
-instead of adding to the build. The approved spec path follows as a message. On
-the bug route the opening prompt carries the bug report instead and the dev runs
-`/diagnose`. Either way the opening prompt carries the standing rules: the tree
-stays uncommitted, tests and lint run from `package.json` scripts, nothing lands
-without them green. The dev reads the big docs once and keeps them; every later
-exchange is a follow-up message, never a respawn. At the end the dev runs
-`/land-it`. If the spec comes back rejected, the held dev costs nothing: the
-docs it read serve whatever the respec produces.
+after the answer: its opening prompt says to read `docs/PATTERNS.md`,
+`docs/UI.md` and `docs/BACKLOG.md` — the known debt behind both — and then hold,
+so the expensive prime runs inside the approval wait instead of adding to the
+build. The approved spec path follows as a message. On the bug route the opening
+prompt carries the bug report instead and the dev runs `/diagnose`. Either way
+the opening prompt carries the standing rules: the tree stays uncommitted, tests
+and lint run from `package.json` scripts, nothing lands without them green. The
+dev reads the big docs once and keeps them; every later exchange is a follow-up
+message, never a respawn. At the end the dev runs `/land-it`. If the spec comes
+back rejected, the held dev costs nothing: the docs it read serve whatever the
+respec produces.
 
 The dev has died mid-feature to network errors and to machine sleep. A
 replacement is primed on the spec path and `git diff`, not on the full reading
 list: `PATTERNS.md` and `UI.md` are what made the first prime expensive, and the
-tree already embodies them. Say in the replacement's prompt what the dead one
-had done.
+tree already embodies them. `docs/BACKLOG.md` is cheap and is the known debt, so
+read it. Say in the replacement's prompt what the dead one had done.
 
 After building, the dev reports back three things, not a narrative: what changed
 by file, what it decided that the spec did not dictate, and what it deliberately

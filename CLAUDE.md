@@ -144,4 +144,4 @@ gitignored: it is Obsidian's CSS, and this repository is public.
   to. It stays committed, unlike `main.js`, because the release workflow and the
   harness both read it directly. A test fails if the two disagree.
 - Update `docs/SPEC.md` when a design decision changes, and move settled items out of §13 Open questions.
-- Follow `docs/PATTERNS.md`. Where the code does not yet match it, the gap is recorded in its §11 backlog rather than copied into new code.
+- Follow `docs/PATTERNS.md`. Where the code does not yet match it, the gap is recorded in `docs/BACKLOG.md` § Patterns rather than copied into new code.

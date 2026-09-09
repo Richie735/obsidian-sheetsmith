@@ -8,6 +8,8 @@ allowed-tools: Read, Glob, Grep, Bash
 Review appearance and usability. **Feature:** $ARGUMENTS
 
 Read `docs/UI.md` and the feature's `docs/features/<slug>.md` before starting.
+Read `docs/BACKLOG.md` § UI as well: anything already recorded there is known
+debt, not a finding, and new work that adds to a row is a finding naming it.
 
 Two reference files in this skill's folder carry the standards `UI.md` states as
 rules but does not put numbers on. Read the one the change touches, before

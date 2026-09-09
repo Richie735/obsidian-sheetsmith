@@ -62,8 +62,9 @@ Quote the spec line each one comes from:
 ## What is not a finding
 
 - **Anything in the spec's "Deliberately not doing" section.** That is a recorded
-  scope cut. Reporting it wastes the review, exactly as reporting a `PATTERNS.md`
-  §11 row does. Work that *extends* a recorded cut is a finding; say which line.
+  scope cut. Reporting it wastes the review, exactly as reporting a
+  `docs/BACKLOG.md` row does. Work that *extends* a recorded cut is a finding;
+  say which line.
 - **A §13 question the spec explicitly left open.** The spec settles a model
   question or scopes around it. Scoping around it was a decision.
 - **Anything the other two axes own.** Structure and naming belong to

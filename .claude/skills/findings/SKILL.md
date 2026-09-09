@@ -45,8 +45,8 @@ Four, and each demands something different:
   a fix.
 - **Later.** Real, but not now. Requires a **home**, because a gap that is not
   being fixed goes in a backlog table with its reasoning, never in a comment and
-  never nowhere: `PATTERNS.md` §11 for a conformance gap, `UI.md` §12 for an
-  appearance one, `SPEC.md` §13 for an open question. Writing the row is part of
+  never nowhere: `docs/BACKLOG.md` § Patterns for a conformance gap, its § UI for
+  an appearance one, `SPEC.md` §13 for an open question. Writing the row is part of
   the verdict, not a promise to write it.
 - **Reject.** Not a real finding. Requires the **reason**, and these are the
   common ones: already recorded as known debt, a scope cut the spec recorded under
