@@ -575,6 +575,15 @@ export class LayoutEditorSection {
 			})
 			.addExtraButton((button) =>
 				button
+					// Before the trash rather than after it, so the one
+					// irreversible control on the row stays last: a press that
+					// lands one control off its mark then hits the harmless one.
+					.setIcon('copy')
+					.setTooltip('Copy layout JSON')
+					.onClick(() => void this.copyLayoutJson(container, files)),
+			)
+			.addExtraButton((button) =>
+				button
 					.setIcon('trash')
 					.setTooltip('Delete layout')
 					.onClick(() => {
@@ -590,6 +599,78 @@ export class LayoutEditorSection {
 						).open();
 					}),
 			);
+	}
+
+	/**
+	 * Put the open layout's own bytes on the clipboard
+	 * (`docs/features/layout-import-export.md`).
+	 *
+	 * **The file's bytes, not a re-serialisation of them.** A layout carrying a
+	 * key this version's parser does not know would have it silently dropped by
+	 * a parse-then-serialise round trip, which is the one thing a share must not
+	 * do — and a layout that will not parse at all is exportable on purpose,
+	 * since handing the broken file to somebody who can read it is a reasonable
+	 * thing to want. Nothing is written anywhere, so there is no writer here for
+	 * the one-writer-one-spelling rule to be about.
+	 *
+	 * **It guards rather than disabling.** With no layout selected — a vault
+	 * whose folder holds none — this returns silently, which is `deleteLayout`'s
+	 * existing spelling one control to the right. Disabling it would look
+	 * identical to a live control (`setDisabled` reaches no paint for a
+	 * `.clickable-icon`) and would make this the fifth member of a
+	 * `docs/BACKLOG.md` row waiting on one decision about four.
+	 *
+	 * The clipboard comes off the container's own window rather than the global
+	 * one, which is `docs/PATTERNS.md` §5: a pane may be rendered into a popout.
+	 */
+	private async copyLayoutJson(
+		container: HTMLElement,
+		files: TFile[],
+	): Promise<void> {
+		const file = files.find(
+			(candidate) => candidate.basename === this.host.layoutName,
+		);
+		if (!file) return;
+		let text: string;
+		try {
+			text = await this.plugin.app.vault.read(file);
+		} catch (error) {
+			// The vault's own reason: the file was trashed or renamed under a
+			// pane that has not redrawn yet.
+			new Notice(error instanceof Error ? error.message : String(error));
+			return;
+		}
+		try {
+			await container.win.navigator.clipboard.writeText(text);
+		} catch {
+			/*
+			 * Deliberately the same words `src/editor/copyable-name.ts` gives,
+			 * and deliberately not the same code. The argument is here rather
+			 * than cited, because that file's header does not make it: it argues
+			 * only why the module exists at all, and says nothing about the
+			 * clipboard write or about this sentence.
+			 *
+			 * `copyableName` exports a builder for a `<code>` control with the
+			 * copy bound inside it, so a settings-row button cannot reach the
+			 * write without splitting the function in two — which is a change to
+			 * a shipped control for the benefit of one caller.
+			 *
+			 * And only half of what such a module would hold is actually common:
+			 * this failure sentence is shared, while the success sentences are
+			 * not — a chip says `Copied "x"` about a name, and this says
+			 * `Copied "x" to the clipboard.` about a file. So the shared thing is
+			 * one short sentence rather than the gesture, which `docs/PATTERNS.md`
+			 * §1's one-step tier would extract on a second consumer if the
+			 * *whole* policy were shared. **A third caller is where that gets
+			 * revisited**, and it is the honest cost of two copies until then.
+			 */
+			new Notice('Could not copy to the clipboard.');
+			return;
+		}
+		// The layout is named because the row can only show one at a time and a
+		// bare "Copied." leaves a reader wondering which; "to the clipboard" is
+		// the half that says where, in the failure sentence's own words.
+		new Notice(`Copied "${file.basename}" to the clipboard.`);
 	}
 
 	private async deleteLayout(file: TFile): Promise<void> {

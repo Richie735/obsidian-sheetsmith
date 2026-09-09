@@ -263,6 +263,15 @@ const ICONS: Readonly<Record<string, readonly IconShape[]>> = {
 		['path', { d: 'm19 12-7 7-7-7' }],
 	],
 	'grip-vertical': gripDots(),
+	// The layout editor's **Copy layout JSON** control, beside the trash on the
+	// same row (`docs/features/layout-import-export.md`). Two overlapping sheets,
+	// which is the one glyph a reader already reads as "copy" — and it has to be
+	// drawn rather than named, because the harness is where a row of clickable
+	// icons is checked for measuring the same.
+	copy: [
+		['rect', { width: '14', height: '14', x: '8', y: '8', rx: '2', ry: '2' }],
+		['path', { d: 'M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2' }],
+	],
 	// An empty modifier cell, which is the entry point for adding one: `plus`
 	// rather than a fainter `zap`, because "none" against "applying" would then be
 	// a difference of fill strength alone (`docs/UI.md` §6).

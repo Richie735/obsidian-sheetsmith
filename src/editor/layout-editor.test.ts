@@ -1,11 +1,11 @@
 // @vitest-environment happy-dom
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SHEET_DESTINATION } from './layout-editor';
 import { LayoutEditorView } from '../view/layout-editor-view';
 import { Layout, parseLayout, serialiseLayout } from '../parse/layout';
 import { walkComponents } from '../parse/layout-walk';
 import { renderGrid } from '../view/grid-cells';
-import { App } from '../test/obsidian-stub';
+import { App, Notice } from '../test/obsidian-stub';
 import { fakePlugin, LAYOUT_FOLDER } from '../test/plugin';
 import { cancel, pressDown, release } from '../test/pointer';
 import { openView } from '../test/workspace';
@@ -4655,5 +4655,196 @@ describe('undo and redo', () => {
 			expect(await redo(harness)).toBe(true);
 			expect(panelHeading(harness)).toBe('Layout');
 		});
+	});
+});
+/*
+ * The **Layout file** row's two new gestures
+ * (`docs/features/layout-import-export.md`).
+ *
+ * Both live here rather than beside their own modules because both are the
+ * *pane's* half: the row's controls, the dropdown's options, and what the pane
+ * has open once an import lands. The import modal's own arms — every refusal,
+ * the name override, the file it writes — are `layout-import.test.ts`'s, which
+ * needs no pane at all.
+ */
+describe('copying the open layout out', () => {
+	/** What the fake clipboard was handed, in order. */
+	let copied: string[];
+	/** Whether the next write is refused, which is a real browser state. */
+	let refuse: boolean;
+
+	/**
+	 * A clipboard the test owns.
+	 *
+	 * happy-dom declares `navigator.clipboard` as a getter on the prototype, so
+	 * an own property on `navigator` shadows it and `delete` puts the original
+	 * back. The pane reads it off the container's own window
+	 * (`docs/PATTERNS.md` §5), which under happy-dom is this one.
+	 */
+	beforeEach(() => {
+		copied = [];
+		refuse = false;
+		Object.defineProperty(navigator, 'clipboard', {
+			configurable: true,
+			value: {
+				writeText: async (text: string): Promise<void> => {
+					if (refuse) throw new Error('The user said no.');
+					copied.push(text);
+				},
+			},
+		});
+		Notice.messages = [];
+		for (const el of Array.from(
+			document.body.querySelectorAll('.modal-container'),
+		)) {
+			el.remove();
+		}
+	});
+
+	afterEach(() => {
+		delete (navigator as unknown as { clipboard?: unknown }).clipboard;
+	});
+
+	/** The row's copy control, which the tooltip names. */
+	function copyButton(from: Harness): HTMLButtonElement {
+		const el = from.container.querySelector('[aria-label="Copy layout JSON"]');
+		if (!el) throw new Error('no copy control on the layout row');
+		return el as HTMLButtonElement;
+	}
+
+	/**
+	 * Every clickable icon on the **Layout file** row, in order.
+	 *
+	 * Scoped to that row rather than to the pane, because the pane draws three
+	 * `.setting-item-control`s and the claim is about this one — and returned
+	 * whole rather than sliced, so a third icon appended after the trash is what
+	 * goes red. A slice cannot see the thing "the trash stays last" is for.
+	 */
+	function rowIcons(from: Harness): (string | undefined)[] {
+		for (const item of Array.from(
+			from.container.querySelectorAll('.setting-item'),
+		)) {
+			if (item.querySelector('.setting-item-name')?.textContent !== 'Layout file') {
+				continue;
+			}
+			return Array.from(
+				item.querySelectorAll('.setting-item-control .clickable-icon'),
+			).map((el) => (el as HTMLElement).dataset.icon);
+		}
+		throw new Error('no Layout file row');
+	}
+
+	it('is a clickable icon beside the trash, and the trash stays last', async () => {
+		harness = await open();
+		// The one irreversible control on the row stays at the end of it, so the
+		// whole list is compared: a third icon appended after the trash fails
+		// here, which is the only failure this case exists for.
+		expect(rowIcons(harness)).toEqual(['copy', 'trash']);
+	});
+
+	it('puts the file’s own bytes on the clipboard, not a re-serialisation', async () => {
+		/*
+		 * The file is written compact where `serialiseLayout` writes tabs and a
+		 * trailing newline, so the two spellings cannot be confused. This is the
+		 * case that goes red if export ever starts reformatting: a layout
+		 * carrying a key this parser does not know would have it silently
+		 * dropped by a parse-then-serialise round trip, which is the one thing a
+		 * share must not do.
+		 */
+		const app = new App();
+		await app.vault.createFolder(LAYOUT_FOLDER);
+		const bytes = JSON.stringify({
+			name: 'Hand written',
+			columns: 12,
+			components: [],
+			unknownToThisParser: 'kept',
+		});
+		await app.vault.create(`${LAYOUT_FOLDER}/Hand written.json`, bytes);
+		const pane = await openView(
+			app,
+			document.body,
+			LayoutEditorView,
+			fakePlugin(app),
+		);
+		const el = pane.contentEl.querySelector('[aria-label="Copy layout JSON"]');
+		(el as HTMLButtonElement).click();
+		await tick();
+
+		expect(copied).toEqual([bytes]);
+		expect(copied[0]).not.toBe(serialiseLayout(parseLayout(bytes)));
+	});
+
+	it('names the layout in the notice', async () => {
+		harness = await open();
+		copyButton(harness).click();
+		await tick();
+
+		// The row shows one layout at a time, so a bare "Copied." leaves a
+		// reader wondering which; "to the clipboard" says where.
+		expect(Notice.messages).toEqual([
+			'Copied "Test sheet" to the clipboard.',
+		]);
+	});
+
+	it('says so when the clipboard refuses, and nothing else happens', async () => {
+		harness = await open();
+		const before = await harness.raw();
+		refuse = true;
+
+		copyButton(harness).click();
+		await tick();
+
+		// Deliberately the same words `src/editor/copyable-name.ts` gives. Why
+		// the code is not shared is argued at the site, not cited there.
+		expect(Notice.messages).toEqual(['Could not copy to the clipboard.']);
+		expect(copied).toEqual([]);
+		// Nothing is written in this direction at all: the clipboard is not the
+		// vault, and a refused copy leaves the file exactly as it was.
+		expect(await harness.raw()).toBe(before);
+	});
+
+	it('reports the vault’s own reason when the file cannot be read', async () => {
+		harness = await open();
+		harness.app.vault.read = async () => {
+			throw new Error('The file is gone.');
+		};
+
+		copyButton(harness).click();
+		await tick();
+
+		expect(Notice.messages).toEqual(['The file is gone.']);
+		expect(copied).toEqual([]);
+	});
+
+	it('guards rather than disabling, and says nothing when it guards', async () => {
+		/*
+		 * The state the guard is for, reached the way a reader reaches it: the
+		 * control is left behind by a redraw that took the layout with it. It is
+		 * `deleteLayout`'s existing spelling one control to the right, and
+		 * deliberately **not** `setDisabled` — that reaches no paint on a
+		 * `.clickable-icon`, so a disabled copy icon would look identical to a
+		 * live one and this feature would become the fifth member of a
+		 * `docs/BACKLOG.md` row waiting on one decision about four.
+		 */
+		harness = await open();
+		const stale = copyButton(harness);
+		expect(stale.hasAttribute('disabled')).toBe(false);
+
+		const trash = harness.container.querySelector(
+			'[aria-label="Delete layout"]',
+		) as HTMLButtonElement;
+		trash.click();
+		confirmAction();
+		await tick();
+		// The pane has nothing open now, which is the premise.
+		expect(
+			harness.container.querySelector('[data-sheetsmith-focus="layout-picker"]'),
+		).toBeNull();
+
+		stale.click();
+		await tick();
+
+		expect(copied).toEqual([]);
+		expect(Notice.messages).toEqual([]);
 	});
 });
