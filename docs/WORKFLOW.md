@@ -178,7 +178,7 @@ is `feat:` when it improves something and `fix:` when it was wrong.
 | How does a version ship? | `/release`, then `AGENTS.md` § Versioning & releases |
 | What must never be broken? | `CLAUDE.md` § Hard constraints |
 | Obsidian platform rules | `AGENTS.md` |
-| Known gaps, deliberately unfixed | `docs/PATTERNS.md` §11, `docs/UI.md` §12 |
+| Known gaps, deliberately unfixed | `docs/BACKLOG.md` |
 
 ## When to read Obsidian's docs
 

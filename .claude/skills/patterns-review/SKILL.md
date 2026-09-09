@@ -16,8 +16,8 @@ appearance is cheap to fix late. This is the pass that has to come first.
 
 1. Read `docs/PATTERNS.md` in full. It is the standard; do not substitute
    general clean-code instincts for it.
-2. Read `docs/PATTERNS.md` §11, the conformance backlog. **Anything already
-   recorded there is known debt, not a finding.** Reporting it wastes the
+2. Read `docs/BACKLOG.md` § Patterns, the conformance backlog. **Anything
+   already recorded there is known debt, not a finding.** Reporting it wastes the
    review. New code that *adds* to a known gap is a finding; say which row.
 3. `git diff` the scope. Review what changed, not the whole codebase.
 
@@ -76,7 +76,7 @@ Rank most-severe first. For each:
 Then, in one line each:
 
 - Anything that should become a **checked** rule because you just found it by
-  hand. That is the signal `PATTERNS.md` §11 wants.
+  hand. That is the signal `docs/BACKLOG.md` § Patterns wants.
 - Anything that suggests `PATTERNS.md` itself is wrong. The doc is young; if the
   code has a better answer, say so rather than filing a finding against it.
 

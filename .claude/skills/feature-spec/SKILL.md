@@ -88,6 +88,10 @@ Board card: <text of the card this implements>
 
 <Two or three sentences. What a user gets.>
 
+## Smallest version
+
+<The least that satisfies the card, and what it gives up. Five lines at most.>
+
 ## Design
 
 <The interface. Interactions. What it reuses. Empty and error states.>

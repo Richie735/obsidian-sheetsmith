@@ -34,8 +34,8 @@ a guess, and it will be reviewed as if it were a fix.
 
 Two smells worth naming here. A bug that only reproduces through the app usually
 means the logic is not where Constraint 5 wants it. A bug nothing can assert on
-usually means there is no seam to assert at, which is a `PATTERNS.md` §11 finding
-rather than a dead end.
+usually means there is no seam to assert at, which is a `docs/BACKLOG.md`
+§ Patterns finding rather than a dead end.
 
 ## 2. Minimise
 
@@ -78,7 +78,8 @@ Then verify: `npm test`, `npm run lint`, `npm run build`.
 Say, briefly: what the red loop was, what the mechanism turned out to be, what
 changed, and where the regression test lives. If the bug was reachable because a
 `[judgement]` rule was carrying weight a check should carry, say which rule. That
-is the signal `PATTERNS.md` §11 wants, and it is worth more than the fix.
+is the signal `docs/BACKLOG.md` § Patterns wants, and it is worth more than the
+fix.
 
 **Leave the work uncommitted.** The tree stays open through the reviews, and
 `/land-it` is the only thing that commits. Never commit here, and never push.
