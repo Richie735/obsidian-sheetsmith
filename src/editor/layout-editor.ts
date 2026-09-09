@@ -15,6 +15,7 @@ import { ConfigPanel } from './config-panel';
 import { showFieldError } from './field-error';
 import { focusToken } from './focus-token';
 import { ConfirmModal } from '../ui/confirm-modal';
+import { promptImportLayout } from './layout-import';
 import { createLayout, listLayouts } from '../layouts';
 import { ListContext } from './list-fields';
 import type SheetsmithPlugin from '../main';
@@ -27,6 +28,9 @@ import { childIsPlaced } from '../view/grid-cells';
 
 /** Dropdown sentinel; layout file names can never collide with it. */
 const CREATE_LAYOUT_OPTION = '::create-layout::';
+
+/** The same, for the option that opens the import modal. */
+const IMPORT_LAYOUT_OPTION = '::import-layout::';
 
 /** Ties the add menu to the description under it, for a screen reader. */
 const ADD_DESCRIPTION_ID = 'sheetsmith-add-description';
@@ -559,6 +563,12 @@ export class LayoutEditorSection {
 					dropdown.addOption(file.basename, file.basename);
 				}
 				dropdown.addOption(CREATE_LAYOUT_OPTION, 'New layout…');
+				// Under **New layout…** because it answers the same question the
+				// rest of this dropdown answers — which layout is open — and ends
+				// with a different one open, exactly as that option does. The row's
+				// buttons act on the layout that is *already* open, which is why
+				// export is one of those and this is not.
+				dropdown.addOption(IMPORT_LAYOUT_OPTION, 'Import a layout…');
 				dropdown.setValue(this.host.layoutName ?? '');
 				dropdown.selectEl.dataset.sheetsmithFocus = 'layout-picker';
 				dropdown.onChange((value) => {
@@ -568,11 +578,22 @@ export class LayoutEditorSection {
 						this.promptCreateLayout();
 						return;
 					}
-					this.releaseLayout();
-					this.host.setLayoutName(value);
-					this.redraw();
+					if (value === IMPORT_LAYOUT_OPTION) {
+						this.promptImport();
+						return;
+					}
+					this.openLayout(value);
 				});
 			})
+			.addExtraButton((button) =>
+				button
+					// Before the trash rather than after it, so the one
+					// irreversible control on the row stays last: a press that
+					// lands one control off its mark then hits the harmless one.
+					.setIcon('copy')
+					.setTooltip('Copy layout JSON')
+					.onClick(() => void this.copyLayoutJson(container, files)),
+			)
 			.addExtraButton((button) =>
 				button
 					.setIcon('trash')
@@ -592,6 +613,78 @@ export class LayoutEditorSection {
 			);
 	}
 
+	/**
+	 * Put the open layout's own bytes on the clipboard
+	 * (`docs/features/layout-import-export.md`).
+	 *
+	 * **The file's bytes, not a re-serialisation of them.** A layout carrying a
+	 * key this version's parser does not know would have it silently dropped by
+	 * a parse-then-serialise round trip, which is the one thing a share must not
+	 * do — and a layout that will not parse at all is exportable on purpose,
+	 * since handing the broken file to somebody who can read it is a reasonable
+	 * thing to want. Nothing is written anywhere, so there is no writer here for
+	 * the one-writer-one-spelling rule to be about.
+	 *
+	 * **It guards rather than disabling.** With no layout selected — a vault
+	 * whose folder holds none — this returns silently, which is `deleteLayout`'s
+	 * existing spelling one control to the right. Disabling it would look
+	 * identical to a live control (`setDisabled` reaches no paint for a
+	 * `.clickable-icon`) and would make this the fifth member of a
+	 * `docs/BACKLOG.md` row waiting on one decision about four.
+	 *
+	 * The clipboard comes off the container's own window rather than the global
+	 * one, which is `docs/PATTERNS.md` §5: a pane may be rendered into a popout.
+	 */
+	private async copyLayoutJson(
+		container: HTMLElement,
+		files: TFile[],
+	): Promise<void> {
+		const file = files.find(
+			(candidate) => candidate.basename === this.host.layoutName,
+		);
+		if (!file) return;
+		let text: string;
+		try {
+			text = await this.plugin.app.vault.read(file);
+		} catch (error) {
+			// The vault's own reason: the file was trashed or renamed under a
+			// pane that has not redrawn yet.
+			new Notice(error instanceof Error ? error.message : String(error));
+			return;
+		}
+		try {
+			await container.win.navigator.clipboard.writeText(text);
+		} catch {
+			/*
+			 * Deliberately the same words `src/editor/copyable-name.ts` gives,
+			 * and deliberately not the same code. The argument is here rather
+			 * than cited, because that file's header does not make it: it argues
+			 * only why the module exists at all, and says nothing about the
+			 * clipboard write or about this sentence.
+			 *
+			 * `copyableName` exports a builder for a `<code>` control with the
+			 * copy bound inside it, so a settings-row button cannot reach the
+			 * write without splitting the function in two — which is a change to
+			 * a shipped control for the benefit of one caller.
+			 *
+			 * And only half of what such a module would hold is actually common:
+			 * this failure sentence is shared, while the success sentences are
+			 * not — a chip says `Copied "x"` about a name, and this says
+			 * `Copied "x" to the clipboard.` about a file. So the shared thing is
+			 * one short sentence rather than the gesture, which `docs/PATTERNS.md`
+			 * §1's one-step tier would extract on a second consumer if the
+			 * *whole* policy were shared. **A third caller is where that gets
+			 * revisited**, and it is the honest cost of two copies until then.
+			 */
+			new Notice('Could not copy to the clipboard.');
+			return;
+		}
+		// The layout is named because the row can only show one at a time and a
+		// bare "Copied." leaves a reader wondering which; "to the clipboard" is
+		// the half that says where, in the failure sentence's own words.
+		new Notice(`Copied "${file.basename}" to the clipboard.`);
+	}
+
 	private async deleteLayout(file: TFile): Promise<void> {
 		await this.plugin.app.fileManager.trashFile(file);
 		this.releaseLayout();
@@ -607,6 +700,46 @@ export class LayoutEditorSection {
 		).open();
 	}
 
+	/**
+	 * Open the import modal, and open whatever it writes.
+	 *
+	 * The cancel arm is `promptCreateLayout`'s: a redraw is what snaps the
+	 * dropdown back off the sentinel the user chose.
+	 */
+	private promptImport(): void {
+		promptImportLayout(
+			this.plugin.app,
+			this.plugin.settings.layoutFolder,
+			(name) => this.openLayout(name),
+			() => this.redraw(),
+		);
+	}
+
+	/**
+	 * Open a layout in this pane, by name.
+	 *
+	 * Three calls in one order, shared rather than spelled three times:
+	 * `docs/PATTERNS.md` §1's one-step tier is why this is a name rather than a
+	 * copy, since the only thing a guard test over the copies could assert is
+	 * that they still call the three in the same order — while what they were
+	 * free to drift about is whether a pane keeps open a layout it no longer
+	 * has.
+	 *
+	 * It arrived as `openLanded` over two callers, both of which had *just
+	 * written* a file, and the third caller is why the name moved: the dropdown
+	 * opens a layout that has been there all along, and a reader meeting
+	 * `openLanded(value)` there would look for the write. §1 asks that a shared
+	 * thing be named for the behaviour, and the behaviour is opening one.
+	 *
+	 * `deleteLayout` deliberately does not call it: it names *no* layout, and a
+	 * helper taking `string | null` would be one name over two different jobs.
+	 */
+	private openLayout(name: string): void {
+		this.releaseLayout();
+		this.host.setLayoutName(name);
+		this.redraw();
+	}
+
 	private async createLayoutNamed(name: string): Promise<void> {
 		try {
 			await createLayout(
@@ -619,9 +752,7 @@ export class LayoutEditorSection {
 			this.redraw();
 			return;
 		}
-		this.releaseLayout();
-		this.host.setLayoutName(name);
-		this.redraw();
+		this.openLayout(name);
 	}
 
 	/**
