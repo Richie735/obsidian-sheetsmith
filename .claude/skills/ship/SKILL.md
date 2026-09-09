@@ -224,10 +224,15 @@ the 30 to 40 minutes before the owner sees that a question fired.
    the live arguments, wait. The settled answer goes to the spec agent. The
    `Resolved:` entry in `docs/SPEC.md` is still written by `/land-it`, because
    nothing is resolved until it is built.
-2. **Spec approval.** Present the spec with an adversarial read, not a courier's
-   note: does it match the scope with nothing added or dropped, does it honour
-   the settled model answer, does it contradict anything settled in `SPEC.md`.
-   Concerns go alongside the approval request.
+2. **Spec approval.** Present the spec as a **choice between the design and its
+   smallest version**, both from the spec's own words, so the cheaper answer is
+   on the table at the one moment it is still free. With it goes an adversarial
+   read, not a courier's note: does it match the scope with nothing added or
+   dropped, does it honour the settled model answer, does it contradict anything
+   settled in `SPEC.md`. Concerns go alongside the approval request. Choosing the
+   smallest version is not a cut to absorb silently: the dropped parts move to
+   the spec's "Deliberately not doing", so a reviewer does not report them as
+   gaps, and the spec agent revises before the dev is primed.
 3. **The land stop.** Once, after all waves are remediated and the gates are
    green. One presentation carries everything: the full ledger with
    dispositions, deferred items in plain language, disputed items with both
