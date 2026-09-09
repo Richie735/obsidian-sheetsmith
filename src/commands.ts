@@ -1,9 +1,10 @@
 import { MarkdownView, Notice } from 'obsidian';
 import type SheetsmithPlugin from './main';
+import { chooseLayoutForNewCharacter } from './characters';
 import { chooseStarterLayout } from './starters/picker';
 import { LAYOUT_KEY } from './types';
 import { LayoutEditorView, openLayoutEditor } from './view/layout-editor-view';
-import { SheetView, VIEW_TYPE_SHEET } from './view/sheet-view';
+import { SheetView, sheetViewState } from './view/sheet-view';
 
 /**
  * How long the undo/redo confirmation stays on screen.
@@ -38,6 +39,18 @@ export function registerCommands(plugin: SheetsmithPlugin): void {
 		callback: () => chooseStarterLayout(plugin),
 	});
 
+	// A plain `callback` for **Add a starter layout**'s reason (SPEC §7), and
+	// sharper here: a `checkCallback` that hid this command while the layout
+	// folder is empty would hide it from exactly the reader who most needs to
+	// find it, who would then have no way to discover the plugin can do this at
+	// all. The empty folder is answered with a sentence naming the fix instead
+	// (`docs/features/layout-picker.md`).
+	plugin.addCommand({
+		id: 'create-character',
+		name: 'Create a character',
+		callback: () => chooseLayoutForNewCharacter(plugin),
+	});
+
 	plugin.addCommand({
 		id: 'open-as-sheet',
 		name: 'Open as sheet',
@@ -50,10 +63,7 @@ export function registerCommands(plugin: SheetsmithPlugin): void {
 			if (!frontmatter || frontmatter[LAYOUT_KEY] === undefined) return false;
 			if (!checking) {
 				plugin.markdownOverrides.delete(file.path);
-				void view.leaf.setViewState({
-					type: VIEW_TYPE_SHEET,
-					state: { file: file.path },
-				});
+				void view.leaf.setViewState(sheetViewState(file.path));
 			}
 			return true;
 		},

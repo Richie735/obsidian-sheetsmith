@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
 import './obsidian-stub';
+import { App, normalizePath } from './obsidian-stub';
 
 /*
  * The element helpers the double installs, driven option by option.
@@ -184,5 +185,103 @@ describe('the element helpers', () => {
 		expect(el.getAttribute('data-n')).toBe('2');
 		expect(fragment.createDiv('d').className).toBe('d');
 		expect(fragment.createSpan('s').className).toBe('s');
+	});
+});
+
+/*
+ * One behaviour of the vault double, driven for this file's own reason: two
+ * callers lean on it as a backstop and neither can demonstrate it.
+ *
+ * `Vault.create` rejects a taken path in the app rather than overwriting it,
+ * and `layouts.ts` and `characters.ts` both say so in their comments while
+ * guarding the path themselves. A double that wrote anyway would let a
+ * regression that dropped either guard overwrite a reader's character note and
+ * stay green — the silent direction this file exists for, and Constraint 4.
+ */
+describe('the vault double', () => {
+	it('refuses a path that is taken, and keeps what is there', async () => {
+		const app = new App();
+		const file = await app.vault.create('Notes/Aramil.md', 'mine');
+		await expect(app.vault.create('Notes/Aramil.md', 'theirs')).rejects.toThrow(
+			/already exists/,
+		);
+		expect(await app.vault.read(file)).toBe('mine');
+	});
+
+	it('still overwrites through `modify`, which is what that call is for', async () => {
+		const app = new App();
+		const file = await app.vault.create('Notes/Aramil.md', 'mine');
+		await app.vault.modify(file, 'edited');
+		expect(await app.vault.read(file)).toBe('edited');
+	});
+});
+
+/*
+ * What a path is, pinned against the app's own answer.
+ *
+ * **This is the second defect this double let through green, and the worse of
+ * the two.** `Vault.create` writing unconditionally was the first; this one is
+ * that the double's `normalizePath` dropped only a *trailing* slash and its
+ * new-file parent claimed the vault root's path was `''`. A plugin reasoned
+ * from that comment, joined `'' + '/' + name`, and shipped a command that wrote
+ * a note and then opened a path resolving to nothing — with every test green,
+ * because the double agreed with the mistake.
+ *
+ * So these cases quote the app rather than describing it. Obsidian 1.13.7's
+ * `app.js`, deminified:
+ *
+ * ```js
+ * function normalizePath(e) { return replaceControlChars(slashes(e)).normalize('NFC') }
+ * function slashes(e) {
+ *   return '' === (e = e.replace(/([\\/])+/g, '/').replace(/(^\/+|\/+$)/g, '')) && (e = '/'), e
+ * }
+ * Vault.prototype.create = function (path, data) { const at = normalizePath(path); … }
+ * Vault.prototype.getFileByPath = function (path) { … this.fileMap.hasOwnProperty(path) … }
+ * ```
+ *
+ * `obsidian.d.ts` says the same thing about the root in prose, on
+ * `getAllFolders`: "Should the root folder (`/`) be returned".
+ */
+describe('what the double thinks a path is', () => {
+	it('strips a leading slash as well as a trailing one', () => {
+		expect(normalizePath('/Untitled character.md')).toBe(
+			'Untitled character.md',
+		);
+		expect(normalizePath('Characters/')).toBe('Characters');
+		expect(normalizePath('/Characters/Party/')).toBe('Characters/Party');
+	});
+
+	it('collapses a run of either separator', () => {
+		expect(normalizePath('//Untitled character.md')).toBe(
+			'Untitled character.md',
+		);
+		expect(normalizePath('Characters//Party///x.md')).toBe(
+			'Characters/Party/x.md',
+		);
+		expect(normalizePath('Characters\\Party')).toBe('Characters/Party');
+	});
+
+	it('answers `/` for what is left of nothing, which is the vault root', () => {
+		// The fact the bug rested on. `getNewFileParent` returns `getRoot()` for
+		// the *default* new-note location, so this is the common case.
+		expect(normalizePath('')).toBe('/');
+		expect(normalizePath('/')).toBe('/');
+		expect(new App().vault.getRoot().path).toBe('/');
+	});
+
+	it('normalises inside `create` but not inside `getFileByPath`', async () => {
+		/*
+		 * The asymmetry itself, which is what a caller has to be built around:
+		 * the write derives its own path and the lookup does not. Any caller
+		 * that spells the two differently is told a taken name is free.
+		 */
+		const app = new App();
+		await app.vault.create('/Notes//Aramil.md', 'mine');
+		expect(app.vault.getFileByPath('Notes/Aramil.md')).not.toBeNull();
+		expect(app.vault.getFileByPath('/Notes//Aramil.md')).toBeNull();
+		// And the refusal is on the normalised path, in the app's own words.
+		await expect(app.vault.create('Notes/Aramil.md', 'theirs')).rejects.toThrow(
+			'File already exists.',
+		);
 	});
 });

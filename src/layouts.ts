@@ -29,6 +29,47 @@ export function listLayouts(app: App, folder: string): TFile[] {
 }
 
 /**
+ * Whether the folder holds any layout at all.
+ *
+ * A name rather than `listLayouts(...).length` at each site, on
+ * `docs/PATTERNS.md` §1's one-step tier: a predicate is the same case as a
+ * number, and the two sites spelled it *complementarily* — `=== 0` where one
+ * wanted the empty branch and `> 0` where the other wanted the full one, which
+ * is `placesChildren`'s own shape. The only thing a guard test over the two
+ * copies could assert is that they still negate each other, which is what one
+ * name says for free — and what the copies were free to drift about is whether
+ * a reader is offered a picker that cannot succeed.
+ *
+ * It sits here rather than beside either caller because both of them ask it
+ * about *this* folder, which is what this module is: one place that knows how
+ * the layout folder is read.
+ */
+export function hasLayouts(app: App, folder: string): boolean {
+	return listLayouts(app, folder).length > 0;
+}
+
+/**
+ * What a reader with no layouts at all is told, in one place.
+ *
+ * Beside the predicate above, because the two are one policy — when there is
+ * nothing to pick, say this — and `docs/PATTERNS.md` §1's "share the
+ * application, not just the fact" is the rule the split version broke: the
+ * sentence had a name while the condition deciding whether to say it stayed
+ * written out at both sites. `nameAlreadyDeclared` below is the precedent for
+ * the sentence being here at all: a user-facing refusal about the layout folder
+ * belongs to the module that owns the folder.
+ *
+ * The folder is named because it is configurable — a reader who moved it needs
+ * to know which folder was looked in — and the fix is named because it is one
+ * command away. Deliberately not `SuggestModal`'s `emptyStateText`: that string
+ * answers "nothing matches what you typed", which is a fact about the query,
+ * where this is a fact about the vault and true whatever is typed.
+ */
+export function noLayoutsMessage(folder: string): string {
+	return `No layouts in "${folder}" yet. Run "Add a starter layout" from the command palette to get one.`;
+}
+
+/**
  * Create a layout file, creating the folder when needed.
  *
  * `layout` is what lands in it, and it defaults to the empty layout the editor's

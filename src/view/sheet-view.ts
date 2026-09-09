@@ -4,6 +4,7 @@ import {
 	Keymap,
 	Notice,
 	TextFileView,
+	type ViewState,
 	WorkspaceLeaf,
 } from 'obsidian';
 import { getComponent } from '../components';
@@ -13,7 +14,12 @@ import {
 	dropDetachedAnchoredPanel,
 } from '../ui/anchored-panel';
 import { ConfirmModal } from '../ui/confirm-modal';
-import { appendModifierDefinition, loadLayout } from '../layouts';
+import {
+	appendModifierDefinition,
+	hasLayouts,
+	loadLayout,
+} from '../layouts';
+import { pickLayout } from '../layout-picker';
 import type SheetsmithPlugin from '../main';
 import {
 	applySectionWrites,
@@ -21,6 +27,8 @@ import {
 	CharacterParseError,
 	getSection,
 	parseCharacter,
+	serialiseCharacter,
+	withLayoutName,
 } from '../parse/character';
 import {
 	FormulaEnv,
@@ -44,8 +52,29 @@ import {
 import { captureFocus, restoreFocus } from './cell-focus';
 import { renderGrid } from './grid-cells';
 import { MarkdownPasses } from './markdown-pass';
+import { renderMissingLayout } from './missing-layout';
 
 export const VIEW_TYPE_SHEET = 'sheetsmith-sheet';
+
+/**
+ * What a leaf is asked for in order to show `path` as a sheet.
+ *
+ * Three callers now — auto-open, **Open as sheet**, and a character just
+ * created — which is `docs/PATTERNS.md` §1's third-consumer rung. What makes it
+ * worth a name rather than three object literals is that **the compiler cannot
+ * check the half that matters**: `ViewState.state` is a
+ * `Record<string, unknown>`, so `{ path }` or `{ filePath }` in place of
+ * `{ file }` type-checks perfectly and opens a sheet view with no file in it.
+ * One spelling, in the module that owns the view type it names.
+ *
+ * The **Open as Markdown** command builds the same shape with `type:
+ * 'markdown'` and is deliberately not folded in: that is the app's own view
+ * type rather than this plugin's, it has one call site, and a helper taking the
+ * type as an argument would no longer be able to say "sheet" in its name.
+ */
+export function sheetViewState(path: string): ViewState {
+	return { type: VIEW_TYPE_SHEET, state: { file: path } };
+}
 
 /**
  * How long the undo stays offered after a trigger. Long enough to notice a
@@ -290,9 +319,20 @@ export class SheetView extends TextFileView {
 			return;
 		}
 		if (!layout) {
-			this.renderMessage(
-				`Layout "${note.layoutName}" was not found in "${this.plugin.settings.layoutFolder}".`,
-			);
+			// SPEC §8's last bullet: a clear message, and the offer to pick
+			// another beside it. **Not on the `loadError` branch above**, where
+			// the layout is present and its JSON will not parse — that is a
+			// layout the reader *has*, and its fix is to repair it, so offering
+			// "pick another" there would invite them to abandon it and silently
+			// repoint the character at a sheet its author did not build.
+			const folder = this.plugin.settings.layoutFolder;
+			renderMissingLayout(this.contentEl, {
+				message: `Layout "${note.layoutName}" was not found in "${folder}".`,
+				folder,
+				hasLayouts: hasLayouts(this.app, folder),
+				onPick: () =>
+					pickLayout(this.plugin, (name) => this.repointLayout(name)),
+			});
 			return;
 		}
 
@@ -654,7 +694,33 @@ export class SheetView extends TextFileView {
 			);
 			return;
 		}
-		this.data = previous;
+		this.commit(previous);
+	}
+
+	/**
+	 * Take `text` as the note's new contents: save it, and redraw from it.
+	 *
+	 * The three lines every write on this sheet ends with, and a name for them
+	 * on `docs/PATTERNS.md` §1's third-consumer rung — an undo, a batch of
+	 * component edits, and a layout repointed. Three copies rather than a drift
+	 * between them: the guard below is `applyEdits`' own, and it is **inert on
+	 * the undo path**, which is why `restoreDocument` never carried one and had
+	 * no bug for want of it. An undo is only offered where the reset moved the
+	 * text (`offerUndo` is reached from that check), so the text it restores is
+	 * never the text on screen.
+	 *
+	 * **Identical text is not a write.** Obsidian's own save of unchanged bytes
+	 * produces no `modify`, so the rebuild that a changed file would have
+	 * brought never arrives — which is why the callers cannot simply lean on the
+	 * round trip and why the redraw is here rather than left to the vault.
+	 *
+	 * The redraw is what recomputes every derived display from the fresh data,
+	 * and `renderSheet` captures and restores focus, so tabbing into the next
+	 * input survives it.
+	 */
+	private commit(text: string): void {
+		if (text === this.data) return;
+		this.data = text;
 		this.requestSave();
 		void this.renderSheet();
 	}
@@ -703,19 +769,45 @@ export class SheetView extends TextFileView {
 					failed.map((failure) => `${failure.label} — ${failure.error}`),
 				);
 			}
-			if (text !== this.data) {
-				this.data = text;
-				this.requestSave();
-				// Derived displays recompute from the fresh data; renderSheet
-				// captures and restores focus, so tabbing into the next input
-				// survives the rebuild.
-				void this.renderSheet();
-			}
+			this.commit(text);
 		} catch (error) {
 			// The note itself would not parse, so there is no partial result to
 			// keep — nothing was written.
 			new Notice(
 				`Sheetsmith could not save this change: ${error instanceof Error ? error.message : String(error)}`,
+			);
+		}
+	}
+
+	/**
+	 * Point this note at a different layout, through the view's own save path.
+	 *
+	 * Through `commit` above, which is the tail every value edit on the sheet
+	 * already ends with — the same writer and the same spelling, so there is no
+	 * second path into a file this view owns and is the editor of.
+	 * `withLayoutName` changes the one frontmatter line and nothing else in the
+	 * file, so every other property, the preamble and every section come
+	 * through byte for byte.
+	 *
+	 * **No section is added, removed or migrated.** SPEC §10 does the rest:
+	 * sections the new layout does not map do not render and are not reported,
+	 * so repointing a note is losslessly reversible by repointing it back
+	 * (Constraint 4).
+	 *
+	 * The parse cannot fail on the layout the reader just picked — this state is
+	 * reached only after one succeeded — but the picker is a modal, so the file
+	 * may have been edited into something unparseable while it was open. That is
+	 * `saveSectionWrites`' own case and takes its answer: nothing is written and
+	 * the reason is announced.
+	 */
+	private repointLayout(name: string): void {
+		try {
+			this.commit(
+				serialiseCharacter(withLayoutName(parseCharacter(this.data), name)),
+			);
+		} catch (error) {
+			new Notice(
+				`Sheetsmith could not change this note's layout: ${error instanceof Error ? error.message : String(error)}`,
 			);
 		}
 	}
