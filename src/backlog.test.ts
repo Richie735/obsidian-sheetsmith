@@ -103,17 +103,41 @@ const CEILING = 600;
  * The rows of the pipe table under one `## ` heading, header and separator
  * dropped. Returns `null` where the heading is absent, so "the table is there
  * at all" is a failure this file can name rather than an empty list.
+ *
+ * **`detached` is a pipe row the renderer will not draw**, and it is here
+ * because this reader passed a document three rows of which rendered as prose.
+ * A markdown pipe table ends at the first line that is not a row, so a blank
+ * line between the header and a later `|`-line silently demotes everything
+ * after it — while the old reader skipped any non-pipe line and kept counting,
+ * which is a `[checked]` rule going green on a document it exists to fail. The
+ * rows are not returned as rows, because they are not rows; they are returned
+ * as the finding.
  */
-function table(heading: string, source: string = BACKLOG): { header: string[]; rows: Row[] } | null {
+function table(
+	heading: string,
+	source: string = BACKLOG,
+): { header: string[]; rows: Row[]; detached: string[] } | null {
 	const lines = source.split('\n');
 	const start = lines.indexOf(`## ${heading}`);
 	if (start === -1) return null;
 
 	const found: Row[] = [];
+	const detached: string[] = [];
 	let header: string[] | null = null;
+	// Whether a non-pipe line has closed the table. Only once the header exists:
+	// the blank line between a `## ` heading and its table is ordinary, and the
+	// blank line after the last row is how every section here ends.
+	let closed = false;
 	for (const line of lines.slice(start + 1)) {
 		if (line.startsWith('## ')) break;
-		if (!line.startsWith('|')) continue;
+		if (!line.startsWith('|')) {
+			if (header !== null) closed = true;
+			continue;
+		}
+		if (closed) {
+			detached.push(line);
+			continue;
+		}
 		const cells = line
 			.replace(/^\|/, '')
 			.replace(/\|$/, '')
@@ -127,7 +151,7 @@ function table(heading: string, source: string = BACKLOG): { header: string[]; r
 		if (cells.every((cell) => /^-+$/.test(cell))) continue;
 		found.push({ line, cells });
 	}
-	return header === null ? null : { header, rows: found };
+	return header === null ? null : { header, rows: found, detached };
 }
 
 const SECTIONS: { heading: string; floor: number }[] = [
@@ -204,6 +228,13 @@ describe('the backlog holds rows a reader can act on', () => {
 				expect(over).toEqual([]);
 			});
 
+			it('holds no row the renderer would drop', () => {
+				// A row added before the next `## ` but after a blank line reads
+				// as prose, not as a row — and the four cases around this one
+				// would have gone on checking it as if it were.
+				expect(table(heading)?.detached).toEqual([]);
+			});
+
 			it('holds no struck-through row, a solved row having left', () => {
 				const struck: string[] = [];
 				for (const { line, cells } of table(heading)?.rows ?? []) {
@@ -250,6 +281,30 @@ describe('the reader reports only what it can prove', () => {
 		'| --- | --- | --- | --- |',
 		'| Another real row | a | b | c |',
 	].join('\n');
+
+	/** The same document with a row added the way this file's own were. */
+	const DETACHED = DOC.replace(
+		'| A real row | a | b | c |',
+		'| A real row | a | b | c |\n\n| A row nothing will draw | a | b | c |',
+	);
+
+	it('reports a pipe row a blank line has cut off from its header', () => {
+		// The floor for the case above: without this, `detached` being empty on
+		// a correct document proves nothing about a broken one, and the broken
+		// one is what shipped.
+		const found = table('Patterns', DETACHED);
+		expect(found?.detached).toEqual(['| A row nothing will draw | a | b | c |']);
+		// And it is not also counted as a row, which is what the old reader did.
+		expect(found?.rows.map((row) => row.cells[0])).toEqual(['A real row']);
+	});
+
+	it('does not call the blank line before a table, or after one, a break', () => {
+		// Every section here is a heading, a blank line, the table, a blank line
+		// and the next heading. A reader calling either of those a detachment
+		// would fail the build on a correct document.
+		expect(table('Patterns', DOC)?.detached).toEqual([]);
+		expect(table('UI', DOC)?.detached).toEqual([]);
+	});
 
 	it('reads the rows under the heading it was given', () => {
 		expect(table('Patterns', DOC)?.rows.map((row) => row.cells[0])).toEqual(['A real row']);
