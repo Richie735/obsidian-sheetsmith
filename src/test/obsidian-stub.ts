@@ -709,7 +709,32 @@ export class TFolder extends TAbstractFile {
 export class Vault {
 	private files = new Map<string, { file: TFile; content: string }>();
 	private folders = new Map<string, TFolder>();
+	/**
+	 * The vault root, whose path is `/`.
+	 *
+	 * `normalizePath` above is where that comes from — the app's own function
+	 * answers `/` for the empty path — and `FileManager.getNewFileParent`
+	 * returns this whenever **Default location for new notes** is not a named
+	 * folder, which includes its default. A double whose root claimed `''`
+	 * let a plugin join `'' + '/' + name` into a path the app never produces
+	 * and call it green.
+	 */
+	private root = new TFolder('/', this);
 
+	getRoot(): TFolder {
+		return this.root;
+	}
+
+	/**
+	 * The file at exactly this path, or null.
+	 *
+	 * **No normalisation, which is the app's behaviour and load bearing.**
+	 * Obsidian's is `fileMap.hasOwnProperty(path)` and nothing else, so
+	 * `getFileByPath('/x.md')` misses a vault holding `x.md` — while
+	 * `create('/x.md')` normalises and writes `x.md`. A caller that builds
+	 * paths one way and looks them up the other gets "free" from every check
+	 * and "File already exists." from the write.
+	 */
 	getFileByPath(path: string): TFile | null {
 		return this.files.get(path)?.file ?? null;
 	}
@@ -735,9 +760,31 @@ export class Vault {
 		return folder;
 	}
 
+	/**
+	 * Write a new file, and refuse a path that is taken.
+	 *
+	 * The refusal is the app's — `Vault.create` rejects rather than
+	 * overwriting — and it is here because two callers *rely* on it as their
+	 * last line of defence and neither could show it while this method wrote
+	 * unconditionally: `layouts.ts` refuses a duplicate layout name before
+	 * creating, and `characters.ts` dedupes `Untitled character` before
+	 * creating. Both say in their comments that nothing is overwritten even so.
+	 * With a permissive double, a regression dropping either guard would
+	 * silently overwrite a reader's file here and go green, where the app would
+	 * have rejected — and the file it would overwrite is a character note,
+	 * which is Constraint 4.
+	 */
 	async create(path: string, content: string): Promise<TFile> {
-		const file = new TFile(path, this);
-		this.files.set(path, { file, content });
+		// Normalised first and refused second, in the app's own order:
+		// `create` is `normalizePath` then `adapter.exists` then the write, so
+		// the path that is checked and the path that is written are the same
+		// one, and neither is the string the caller passed.
+		const at = normalizePath(path);
+		if (this.files.has(at)) {
+			throw new Error('File already exists.');
+		}
+		const file = new TFile(at, this);
+		this.files.set(at, { file, content });
 		return file;
 	}
 
@@ -1189,9 +1236,35 @@ export class PluginSettingTab {
 	hide(): void {}
 }
 
-/** Obsidian's path tidy: collapse duplicate slashes, drop a trailing one. */
+/**
+ * Obsidian's path tidy, transcribed from the app's own implementation.
+ *
+ * Obsidian 1.13.7's `app.js`, deminified:
+ *
+ * ```js
+ * function normalizePath(e) { return replaceControlChars(slashes(e)).normalize('NFC') }
+ * function slashes(e) {
+ *   return '' === (e = e.replace(/([\\/])+/g, '/').replace(/(^\/+|\/+$)/g, '')) && (e = '/'), e
+ * }
+ * ```
+ *
+ * **Three facts this stub got wrong, and the third is the one that shipped a
+ * bug.** Runs of *either* slash collapse to one `/`, so a Windows-style
+ * separator normalises too. Leading slashes are stripped as well as trailing
+ * ones — this double only dropped a trailing one. And **what is left of an empty
+ * path is `/`, which is the vault root's own path**: `getRoot().path` is `/`,
+ * not `''`, exactly as `obsidian.d.ts` says of `getAllFolders(includeRoot)`
+ * ("the root folder (`/`)").
+ *
+ * The control-character replacement is deliberately not modelled: it is a
+ * character class this repository cannot read reliably out of a minified
+ * bundle, and nothing here depends on it. The `.trim()` this function used to
+ * do is gone, because the app does not do it — a folder name with a trailing
+ * space is a folder name.
+ */
 export function normalizePath(path: string): string {
-	return path.replace(/\/+/g, '/').replace(/\/$/, '').trim();
+	const trimmed = path.replace(/([\\/])+/g, '/').replace(/(^\/+|\/+$)/g, '');
+	return (trimmed === '' ? '/' : trimmed).normalize('NFC');
 }
 
 /**
