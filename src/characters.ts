@@ -2,8 +2,12 @@
  * Creating a character note (`docs/features/layout-picker.md`).
  *
  * Beside `layouts.ts`, which owns the other file kind this plugin writes: one
- * module per kind, and this one holds what "create a character" means — the
- * note's path and its bytes.
+ * module per kind, and this one holds the whole of what "create a character"
+ * means — the note's path and bytes, and the gesture that gets a layout name
+ * for it and puts the sheet on screen. `starters/picker.ts` holds the same pair
+ * for its own command; the difference here is that the modal is shared with a
+ * second caller and so lives in `layout-picker.ts`, while the write and the
+ * gesture belong to this caller alone.
  *
  * **No "character folder" setting, and that asymmetry with the layout folder is
  * principled.** A layout is looked up *by name inside* a folder, so the folder
@@ -17,8 +21,12 @@
  * `getNewFileParent` is the API that answers it.
  */
 
-import { App, normalizePath } from 'obsidian';
+import { App, normalizePath, Notice } from 'obsidian';
+import { hasLayouts, noLayoutsMessage } from './layouts';
+import { LayoutModal, pickLayout } from './layout-picker';
+import type SheetsmithPlugin from './main';
 import { newCharacterNote } from './parse/character';
+import { sheetViewState } from './view/sheet-view';
 
 /**
  * The placeholder name a new character note is given.
@@ -115,4 +123,86 @@ export async function createCharacter(
 		// Nothing was written either way.
 		return { error: error instanceof Error ? error.message : String(error) };
 	}
+}
+
+/**
+ * Create a character on `layoutName` and open it as a sheet.
+ *
+ * **Sheet view always, whatever `openInSheetView` says.** That preference
+ * governs what happens when a note the reader already has is *opened*; this
+ * gesture's whole promise is a sheet on screen, and **Open as Markdown** is one
+ * press away for anyone who wants the other thing. The second reason decides it
+ * on its own: `view/auto-open.ts` reads `metadataCache`, which indexes a
+ * freshly created file asynchronously, so leaning on auto-open here would be a
+ * race. `setViewState` needs no cache.
+ *
+ * The active leaf (`getLeaf(false)`), matching Obsidian's own **Create new
+ * note**, so the app's back arrow returns to what was there.
+ *
+ * **No success notice.** The sheet appearing is the feedback, and the note's
+ * placeholder name is visible in the tab and the note header, which is where
+ * the rename gesture lives.
+ */
+export async function openNewCharacter(
+	plugin: SheetsmithPlugin,
+	layoutName: string,
+): Promise<void> {
+	const result = await createCharacter(
+		plugin.app,
+		layoutName,
+		plugin.app.workspace.getActiveFile()?.path ?? '',
+	);
+	// `'error' in` rather than `'ok' in`, which is §4's documented spelling for
+	// a two-armed result: the failure arm is the one a caller must not forget.
+	if ('error' in result) {
+		new Notice(result.error);
+		return;
+	}
+	/*
+	 * **The open is a failure a reader can meet too**, so it is answered rather
+	 * than allowed to escape (§4). It is awaited inside a gesture the app calls
+	 * without awaiting — `onChooseSuggestion` is synchronous, so the caller can
+	 * only `void` this — and a rejection there is an unhandled promise: the note
+	 * is on disk, no sheet is on screen, and nothing on screen says either. The
+	 * sentence names the note, because the note existing is the part the reader
+	 * cannot see and the part they can act on.
+	 */
+	try {
+		await plugin.app.workspace
+			.getLeaf(false)
+			.setViewState(sheetViewState(result.path));
+	} catch (error) {
+		new Notice(
+			`Sheetsmith created "${result.path}" but could not open it as a sheet: ${error instanceof Error ? error.message : String(error)}`,
+		);
+	}
+}
+
+/**
+ * The **Create a character** gesture: pick a layout, write the note, open it.
+ *
+ * **The picker never opens over an empty folder.** Cold start is a reader who
+ * has not run **Add a starter layout** yet, so their layout folder is empty or
+ * absent, and a suggester over zero rows is a control that cannot succeed under
+ * any input. They get `noLayoutsMessage` instead, which names the folder and the
+ * command that fills it.
+ *
+ * Exported as the gesture the command names, which is `chooseStarterLayout`'s
+ * precedent — and what makes the empty branch's sentence assertable, since a
+ * command callback is reachable only through a registered command.
+ *
+ * Returns the picker it opened, or null where it opened none. Nothing in the
+ * plugin reads that; a case does, because the app calls `onChooseSuggestion`
+ * and the callback below is the whole of the wiring between a chosen row and a
+ * note on screen (`pickLayout`'s own header carries the argument).
+ */
+export function chooseLayoutForNewCharacter(
+	plugin: SheetsmithPlugin,
+): LayoutModal | null {
+	const folder = plugin.settings.layoutFolder;
+	if (!hasLayouts(plugin.app, folder)) {
+		new Notice(noLayoutsMessage(folder));
+		return null;
+	}
+	return pickLayout(plugin, (name) => void openNewCharacter(plugin, name));
 }

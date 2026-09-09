@@ -4,6 +4,7 @@ import {
 	Keymap,
 	Notice,
 	TextFileView,
+	type ViewState,
 	WorkspaceLeaf,
 } from 'obsidian';
 import { getComponent } from '../components';
@@ -46,6 +47,26 @@ import { renderGrid } from './grid-cells';
 import { MarkdownPasses } from './markdown-pass';
 
 export const VIEW_TYPE_SHEET = 'sheetsmith-sheet';
+
+/**
+ * What a leaf is asked for in order to show `path` as a sheet.
+ *
+ * Three callers now — auto-open, **Open as sheet**, and a character just
+ * created — which is `docs/PATTERNS.md` §1's third-consumer rung. What makes it
+ * worth a name rather than three object literals is that **the compiler cannot
+ * check the half that matters**: `ViewState.state` is a
+ * `Record<string, unknown>`, so `{ path }` or `{ filePath }` in place of
+ * `{ file }` type-checks perfectly and opens a sheet view with no file in it.
+ * One spelling, in the module that owns the view type it names.
+ *
+ * The **Open as Markdown** command builds the same shape with `type:
+ * 'markdown'` and is deliberately not folded in: that is the app's own view
+ * type rather than this plugin's, it has one call site, and a helper taking the
+ * type as an argument would no longer be able to say "sheet" in its name.
+ */
+export function sheetViewState(path: string): ViewState {
+	return { type: VIEW_TYPE_SHEET, state: { file: path } };
+}
 
 /**
  * How long the undo stays offered after a trigger. Long enough to notice a

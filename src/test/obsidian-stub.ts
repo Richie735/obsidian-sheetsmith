@@ -1112,6 +1112,25 @@ export class WorkspaceLeaf {
 		return view;
 	}
 
+	/**
+	 * What the app was asked to show here, recorded rather than acted on.
+	 *
+	 * The real call swaps the view in this leaf, which means constructing a view
+	 * of an arbitrary registered type — the plugin's own sheet view among them —
+	 * and nothing here holds that registry. What a caller can be held to is the
+	 * request: the view type, and the file it named. So this pushes and
+	 * `viewStates` is what a test reads, which is the same bargain
+	 * `FileManager.getNewFileParent` above makes.
+	 */
+	viewStates: { type: string; state?: Record<string, unknown> }[] = [];
+
+	async setViewState(
+		viewState: { type: string; state?: Record<string, unknown> },
+		_eState?: unknown,
+	): Promise<void> {
+		this.viewStates.push(viewState);
+	}
+
 	/** Close whatever is showing, unloading it as the app does. */
 	async detach(): Promise<void> {
 		const view = this.view;

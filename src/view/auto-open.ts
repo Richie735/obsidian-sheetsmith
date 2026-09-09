@@ -1,7 +1,7 @@
 import { MarkdownView, WorkspaceLeaf } from 'obsidian';
 import type SheetsmithPlugin from '../main';
 import { LAYOUT_KEY } from '../types';
-import { VIEW_TYPE_SHEET } from './sheet-view';
+import { sheetViewState } from './sheet-view';
 
 /**
  * Open notes carrying the layout key in sheet view (SPEC §8), in the
@@ -18,10 +18,7 @@ export function registerAutoOpen(plugin: SheetsmithPlugin): void {
 		const frontmatter =
 			plugin.app.metadataCache.getFileCache(file)?.frontmatter;
 		if (!frontmatter || frontmatter[LAYOUT_KEY] === undefined) return;
-		void leaf.setViewState({
-			type: VIEW_TYPE_SHEET,
-			state: { file: file.path },
-		});
+		void leaf.setViewState(sheetViewState(file.path));
 	};
 
 	// Registered after layout restore so an existing workspace is not
