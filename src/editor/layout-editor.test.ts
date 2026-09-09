@@ -6,6 +6,7 @@ import { Layout, parseLayout, serialiseLayout } from '../parse/layout';
 import { walkComponents } from '../parse/layout-walk';
 import { renderGrid } from '../view/grid-cells';
 import { expectDescribedRow } from '../test/described-row';
+import { openModal, pressModalButton } from '../test/modal';
 import { App, Notice } from '../test/obsidian-stub';
 import { fakePlugin, LAYOUT_FOLDER } from '../test/plugin';
 import { cancel, pressDown, release } from '../test/pointer';
@@ -4068,24 +4069,61 @@ describe('a control that redraws the pane', () => {
 });
 
 describe('a vault with no layouts in it', () => {
+	/** The pane in the one state with no tree and no panel to draw. */
+	async function vacantPane(): Promise<LayoutEditorView> {
+		const app = new App();
+		return openView(app, document.body, LayoutEditorView, fakePlugin(app));
+	}
+
 	it('offers one sentence and a way to create one, and nothing else', async () => {
 		// The first thing a new user sees, and the state the settings tab drew as
 		// a row: one line in the top-left corner of an empty rectangle. Centred
 		// here, with no tree and no panel — asserted as the absence of both,
 		// because a grid drawn around a single sentence is what this replaced.
-		const app = new App();
-		const pane = await openView(
-			app,
-			document.body,
-			LayoutEditorView,
-			fakePlugin(app),
-		);
+		const pane = await vacantPane();
 
 		const vacant = pane.contentEl.querySelector('.sheetsmith-editor-vacant');
 		expect(vacant?.textContent).toContain('No layouts yet.');
-		expect(vacant?.querySelector('button')?.textContent).toBe('Create layout');
+		// The row's own words. One gesture, so one name for it, and the CTA is
+		// kept here because here it is the only thing on screen — where on the
+		// row it is one control among four and takes no accent.
+		const cta = vacant?.querySelector('button');
+		expect(cta?.textContent).toBe('New layout');
+		expect(cta?.classList.contains('mod-cta')).toBe(true);
 		expect(pane.contentEl.querySelector('.sheetsmith-editor-panel')).toBeNull();
 		expect(pane.contentEl.querySelector('.setting-item')).toBeNull();
+	});
+
+	it('offers the same modal, with a blank grid and a paste and no third source', async () => {
+		/*
+		 * **The cold-start gap this closes.** A reader with no layouts is the
+		 * most likely person to be holding one somebody sent them, and until now
+		 * they had to make a layout they did not want, or run a starter command,
+		 * before the control that accepts theirs existed at all
+		 * (`docs/features/starting-a-new-layout.md`).
+		 *
+		 * **An existing layout is absent here by construction rather than by
+		 * agreement**: `hasLayouts` is false *because* this branch was reached.
+		 */
+		const pane = await vacantPane();
+		const cta = pane.contentEl.querySelector(
+			'.sheetsmith-editor-vacant button',
+		) as HTMLButtonElement;
+		cta.click();
+		await tick();
+
+		const modal = openModal();
+		expect(modal.querySelector('.modal-title')?.textContent).toBe(
+			'New layout',
+		);
+		const source = modal.querySelector('select') as HTMLSelectElement;
+		expect(
+			Array.from(source.options).map((option) => option.textContent),
+		).toEqual(['A blank grid', 'Pasted JSON']);
+
+		// Closed rather than left standing: a modal in `document.body` outlives
+		// this case, and the next one to look for one would find this.
+		pressModalButton('Cancel');
 	});
 });
 
@@ -4655,14 +4693,18 @@ describe('undo and redo', () => {
 });
 
 /*
- * The **Layout file** row's two new gestures
- * (`docs/features/layout-import-export.md`).
+ * The **Layout file** row's controls beyond the dropdown
+ * (`docs/features/layout-import-export.md`,
+ * `docs/features/starting-a-new-layout.md`).
  *
  * Both live here rather than beside their own modules because both are the
  * *pane's* half: the row's controls, the dropdown's options, and what the pane
- * has open once an import lands. The import modal's own arms — every refusal,
- * the name override, the file it writes — are `layout-import.test.ts`'s, which
- * needs no pane at all.
+ * has open once a layout lands. The modal's own arms — every refusal, the
+ * source switch, the prefilled name, the file it writes — are
+ * `new-layout.test.ts`'s, which needs no pane at all.
+ *
+ * The row was two gestures when this was written and is three now: export, and
+ * one **New layout** button that absorbed the dropdown's two verbs.
  */
 describe('copying the open layout out', () => {
 	/** What the fake clipboard was handed, in order. */
@@ -4846,7 +4888,7 @@ describe('copying the open layout out', () => {
 	});
 });
 
-describe('importing a layout into the pane', () => {
+describe('starting a new layout from the pane', () => {
 	beforeEach(() => {
 		Notice.messages = [];
 		for (const el of Array.from(
@@ -4856,57 +4898,105 @@ describe('importing a layout into the pane', () => {
 		}
 	});
 
-	/**
-	 * The dropdown value behind the option a reader sees.
-	 *
-	 * By its label rather than by the sentinel, which is private to
-	 * `layout-editor.ts`: a literal here would be a second copy of a constant
-	 * the module deliberately does not export, and the label is what a reader
-	 * actually chooses.
-	 */
-	function optionValue(from: Harness, label: string): string {
-		const picker = control<HTMLSelectElement>(from, 'layout-picker');
-		for (const option of Array.from(picker.options)) {
-			if (option.textContent === label) return option.value;
+	/** The row's **New layout** button. */
+	function newLayoutButton(from: Harness): HTMLButtonElement {
+		const row = control(from, 'layout-picker').closest('.setting-item');
+		for (const el of Array.from(row?.querySelectorAll('button') ?? [])) {
+			if (el.textContent === 'New layout') return el;
 		}
-		throw new Error(`no option labelled "${label}"`);
+		throw new Error('no New layout button on the row');
 	}
 
-	it('offers the option under New layout…, which is what the dropdown answers', async () => {
+	it('holds layout names in the dropdown and nothing else', async () => {
+		/*
+		 * **Nouns only.** Both verbs used to live in here, and the row rule that
+		 * put them there — the dropdown answers *which layout is open*, the
+		 * row's buttons *act on* the one that is — does not reach create at all:
+		 * it acts on the folder, which is a third kind of thing
+		 * (`docs/features/starting-a-new-layout.md`). Asserted as the whole
+		 * option list rather than as two absences, because what is being claimed
+		 * is that the dropdown is a list of files.
+		 */
 		harness = await open();
 		const picker = control<HTMLSelectElement>(harness, 'layout-picker');
 		expect(
 			Array.from(picker.options).map((option) => option.textContent),
-		).toEqual(['Test sheet', 'New layout…', 'Import a layout…']);
+		).toEqual(['Test sheet']);
 	});
 
-	it('opens the modal when the option is chosen', async () => {
+	it('carries the gesture as a button, before the two icon buttons', async () => {
 		harness = await open();
-		choose(
-			control<HTMLSelectElement>(harness, 'layout-picker'),
-			optionValue(harness, 'Import a layout…'),
+		const row = control(harness, 'layout-picker').closest('.setting-item');
+		const controls = Array.from(
+			row?.querySelectorAll('.setting-item-control > *') ?? [],
 		);
+
+		// A dropdown, then a plain button, then the two `.clickable-icon`s: the
+		// **Add component** row's own shape, and the trash stays last so a press
+		// that lands one control off its mark hits the harmless one.
+		expect(controls.map((el) => el.tagName)).toEqual([
+			'SELECT',
+			'BUTTON',
+			'BUTTON',
+			'BUTTON',
+		]);
+		expect(controls[1]?.textContent).toBe('New layout');
+		// Not a CTA: creating a layout is not this pane's primary action.
+		expect(controls[1]?.classList.contains('mod-cta')).toBe(false);
+		expect(controls[2]?.getAttribute('aria-label')).toBe('Copy layout JSON');
+		expect(controls[3]?.getAttribute('aria-label')).toBe('Delete layout');
+	});
+
+	it('opens the modal when the button is pressed', async () => {
+		harness = await open();
+		newLayoutButton(harness).click();
 		await tick();
 
 		const modal = document.body.querySelector('.modal-container');
 		expect(modal?.querySelector('.modal-title')?.textContent).toBe(
-			'Import a layout',
+			'New layout',
+		);
+	});
+
+	it('leaves the pane exactly as it was when the modal is cancelled', async () => {
+		/*
+		 * The mechanism this placement deleted: a sentinel option left the
+		 * `<select>` showing the wrong value, so both modals took an `onCancel`
+		 * that redrew the pane purely to snap it back. A button press changes no
+		 * `<select>` value, so there is nothing to snap and nothing to redraw —
+		 * asserted as the picker still showing the open layout *and* the tree
+		 * being the same element it was, which a redraw would have replaced.
+		 */
+		harness = await open();
+		const tree = harness.container.querySelector('.sheetsmith-editor-tree');
+		newLayoutButton(harness).click();
+		await tick();
+		pressModalButton('Cancel');
+		await tick();
+
+		expect(control<HTMLSelectElement>(harness, 'layout-picker').value).toBe(
+			'Test sheet',
+		);
+		expect(harness.container.querySelector('.sheetsmith-editor-tree')).toBe(
+			tree,
 		);
 	});
 
 	it('leaves the pane open on the layout that landed', async () => {
 		harness = await open();
-		choose(
-			control<HTMLSelectElement>(harness, 'layout-picker'),
-			optionValue(harness, 'Import a layout…'),
-		);
+		newLayoutButton(harness).click();
 		await tick();
 
-		const modal = document.body.querySelector(
-			'.modal-container',
-		) as HTMLElement;
-		// By tag inside the modal, which holds exactly one: the modal sets no
-		// focus tokens, on the argument at its own `onOpen`.
+		const modal = openModal();
+		// The paste arm, because it is the one that lands under a name the pane
+		// did not choose: only the write knows whether the box or the source
+		// decided it, which is why the pane is handed the name rather than
+		// re-deriving one.
+		const source = modal.querySelector('select') as HTMLSelectElement;
+		source.value = 'paste';
+		source.dispatchEvent(new Event('change'));
+		// By tag inside the modal: the modal sets no focus tokens, on the
+		// argument at its own `onOpen`.
 		const paste = modal.querySelector('textarea') as HTMLTextAreaElement;
 		paste.value = serialiseLayout({
 			name: 'Shared sheet',
@@ -4914,14 +5004,12 @@ describe('importing a layout into the pane', () => {
 			components: [],
 		});
 		paste.dispatchEvent(new Event('input'));
-		for (const el of Array.from(modal.querySelectorAll('button'))) {
-			if (el.textContent === 'Import') el.click();
-		}
+		pressModalButton('Create');
 		await tick();
 		await tick();
 
-		// The pane opened what it just wrote, which is `createLayoutNamed`'s own
-		// tail rather than a second spelling of it.
+		// The pane opened what it just wrote, through `openLayout` rather than a
+		// second spelling of its three calls.
 		expect(
 			control<HTMLSelectElement>(harness, 'layout-picker').value,
 		).toBe('Shared sheet');
