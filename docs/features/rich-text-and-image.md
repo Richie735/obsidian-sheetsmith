@@ -1249,5 +1249,6 @@ follow while building.
   belongs to its editor, not to a `<textarea>` on a sheet; the reader pastes the embed
   text, which is what the app puts on the clipboard for a file anyway.
 - **UI §12's error-card row**, the layout picker split, render-time validation, and the
-  `isolation.test.ts` flake. All four have their own backlog rows, and question 7 is
-  explicit about not adding an instance to the first.
+  `isolation.test.ts` flake. All four had their own backlog rows; the flake's has since
+  left `docs/BACKLOG.md`, fixed on a branch of its own. Question 7 is explicit about not
+  adding an instance to the first.

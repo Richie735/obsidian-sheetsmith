@@ -167,12 +167,16 @@ describe('the backlog holds rows a reader can act on', () => {
 	});
 
 	it('states in its header that the trigger rule is checked, and by what', () => {
-		// The header alone, because `[checked]` also appears in a *row* — the
-		// `isolation.test.ts` flake, which is about a checked rule rather than
-		// this one. Searching the file passes on that row with the whole header
-		// paragraph deleted, which is the vacuous pass this file exists to
-		// forbid. Naming this file is the other half: a claim that something is
-		// checked owes the instrument.
+		// The header alone, and the scope protects the *first* assertion only. A
+		// row can supply `[checked]` — one did, until the `isolation.test.ts` flake
+		// was fixed and its row left — where no row has ever named this file, so a
+		// whole-file search would still fail on the second. Worth stating what it
+		// therefore does not buy: both strings appear twice in the header, so
+		// deleting any single paragraph of it passes under header scope too, and it
+		// goes red only when the two paragraphs carrying them both go. Stated
+		// without the counts on purpose: a header gains paragraphs. Naming this
+		// file is the other half: a claim that something is checked owes the
+		// instrument.
 		const header = BACKLOG.split('\n## ')[0] ?? '';
 		expect(header).toContain('[checked]');
 		expect(header).toContain('src/backlog.test.ts');
