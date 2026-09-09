@@ -7,7 +7,11 @@
  * of `layouts.ts` is driven by the consumers that were written with it —
  * `createLayout` through `starters/picker.test.ts`, `appendModifierDefinition`
  * through `view/promote-flow.test.ts`, `loadLayout`'s two answers through the
- * cut they decide in `view/pick-layout-flow.test.ts`. What is here is what has
+ * cut they decide in `view/pick-layout-flow.test.ts`, and
+ * `installLayoutSource` through **both** of its own — `starters/picker.test.ts`
+ * for the starter that delegates to it and `editor/layout-import.test.ts` for
+ * the pasted layout, which is the pair the ordering it holds exists for
+ * (`docs/features/layout-import-export.md`). What is here is what has
  * no consumer of its own to be observable through: a predicate and a sentence,
  * which `docs/PATTERNS.md` §1's one-step tier put in one place precisely
  * because two copies could only ever be tested for still agreeing.

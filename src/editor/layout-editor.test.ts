@@ -4657,6 +4657,7 @@ describe('undo and redo', () => {
 		});
 	});
 });
+
 /*
  * The **Layout file** row's two new gestures
  * (`docs/features/layout-import-export.md`).
@@ -4846,5 +4847,91 @@ describe('copying the open layout out', () => {
 
 		expect(copied).toEqual([]);
 		expect(Notice.messages).toEqual([]);
+	});
+});
+
+describe('importing a layout into the pane', () => {
+	beforeEach(() => {
+		Notice.messages = [];
+		for (const el of Array.from(
+			document.body.querySelectorAll('.modal-container'),
+		)) {
+			el.remove();
+		}
+	});
+
+	/**
+	 * The dropdown value behind the option a reader sees.
+	 *
+	 * By its label rather than by the sentinel, which is private to
+	 * `layout-editor.ts`: a literal here would be a second copy of a constant
+	 * the module deliberately does not export, and the label is what a reader
+	 * actually chooses.
+	 */
+	function optionValue(from: Harness, label: string): string {
+		const picker = control<HTMLSelectElement>(from, 'layout-picker');
+		for (const option of Array.from(picker.options)) {
+			if (option.textContent === label) return option.value;
+		}
+		throw new Error(`no option labelled "${label}"`);
+	}
+
+	it('offers the option under New layout…, which is what the dropdown answers', async () => {
+		harness = await open();
+		const picker = control<HTMLSelectElement>(harness, 'layout-picker');
+		expect(
+			Array.from(picker.options).map((option) => option.textContent),
+		).toEqual(['Test sheet', 'New layout…', 'Import a layout…']);
+	});
+
+	it('opens the modal when the option is chosen', async () => {
+		harness = await open();
+		choose(
+			control<HTMLSelectElement>(harness, 'layout-picker'),
+			optionValue(harness, 'Import a layout…'),
+		);
+		await tick();
+
+		const modal = document.body.querySelector('.modal-container');
+		expect(modal?.querySelector('.modal-title')?.textContent).toBe(
+			'Import a layout',
+		);
+	});
+
+	it('leaves the pane open on the layout that landed', async () => {
+		harness = await open();
+		choose(
+			control<HTMLSelectElement>(harness, 'layout-picker'),
+			optionValue(harness, 'Import a layout…'),
+		);
+		await tick();
+
+		const modal = document.body.querySelector(
+			'.modal-container',
+		) as HTMLElement;
+		// By tag inside the modal, which holds exactly one: the modal sets no
+		// focus tokens, on the argument at its own `onOpen`.
+		const paste = modal.querySelector('textarea') as HTMLTextAreaElement;
+		paste.value = serialiseLayout({
+			name: 'Shared sheet',
+			columns: 12,
+			components: [],
+		});
+		paste.dispatchEvent(new Event('input'));
+		for (const el of Array.from(modal.querySelectorAll('button'))) {
+			if (el.textContent === 'Import') el.click();
+		}
+		await tick();
+		await tick();
+
+		// The pane opened what it just wrote, which is `createLayoutNamed`'s own
+		// tail rather than a second spelling of it.
+		expect(
+			control<HTMLSelectElement>(harness, 'layout-picker').value,
+		).toBe('Shared sheet');
+		expect(await harness.stored()).toMatchObject({ name: 'Test sheet' });
+		expect(Notice.messages).toEqual([
+			`Added "Shared sheet" to ${LAYOUT_FOLDER}.`,
+		]);
 	});
 });

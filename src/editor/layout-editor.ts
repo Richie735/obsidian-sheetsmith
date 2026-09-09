@@ -15,6 +15,7 @@ import { ConfigPanel } from './config-panel';
 import { showFieldError } from './field-error';
 import { focusToken } from './focus-token';
 import { ConfirmModal } from '../ui/confirm-modal';
+import { promptImportLayout } from './layout-import';
 import { createLayout, listLayouts } from '../layouts';
 import { ListContext } from './list-fields';
 import type SheetsmithPlugin from '../main';
@@ -27,6 +28,9 @@ import { childIsPlaced } from '../view/grid-cells';
 
 /** Dropdown sentinel; layout file names can never collide with it. */
 const CREATE_LAYOUT_OPTION = '::create-layout::';
+
+/** The same, for the option that opens the import modal. */
+const IMPORT_LAYOUT_OPTION = '::import-layout::';
 
 /** Ties the add menu to the description under it, for a screen reader. */
 const ADD_DESCRIPTION_ID = 'sheetsmith-add-description';
@@ -559,6 +563,12 @@ export class LayoutEditorSection {
 					dropdown.addOption(file.basename, file.basename);
 				}
 				dropdown.addOption(CREATE_LAYOUT_OPTION, 'New layout…');
+				// Under **New layout…** because it answers the same question the
+				// rest of this dropdown answers — which layout is open — and ends
+				// with a different one open, exactly as that option does. The row's
+				// buttons act on the layout that is *already* open, which is why
+				// export is one of those and this is not.
+				dropdown.addOption(IMPORT_LAYOUT_OPTION, 'Import a layout…');
 				dropdown.setValue(this.host.layoutName ?? '');
 				dropdown.selectEl.dataset.sheetsmithFocus = 'layout-picker';
 				dropdown.onChange((value) => {
@@ -568,9 +578,11 @@ export class LayoutEditorSection {
 						this.promptCreateLayout();
 						return;
 					}
-					this.releaseLayout();
-					this.host.setLayoutName(value);
-					this.redraw();
+					if (value === IMPORT_LAYOUT_OPTION) {
+						this.promptImport();
+						return;
+					}
+					this.openLayout(value);
 				});
 			})
 			.addExtraButton((button) =>
@@ -688,6 +700,46 @@ export class LayoutEditorSection {
 		).open();
 	}
 
+	/**
+	 * Open the import modal, and open whatever it writes.
+	 *
+	 * The cancel arm is `promptCreateLayout`'s: a redraw is what snaps the
+	 * dropdown back off the sentinel the user chose.
+	 */
+	private promptImport(): void {
+		promptImportLayout(
+			this.plugin.app,
+			this.plugin.settings.layoutFolder,
+			(name) => this.openLayout(name),
+			() => this.redraw(),
+		);
+	}
+
+	/**
+	 * Open a layout in this pane, by name.
+	 *
+	 * Three calls in one order, shared rather than spelled three times:
+	 * `docs/PATTERNS.md` §1's one-step tier is why this is a name rather than a
+	 * copy, since the only thing a guard test over the copies could assert is
+	 * that they still call the three in the same order — while what they were
+	 * free to drift about is whether a pane keeps open a layout it no longer
+	 * has.
+	 *
+	 * It arrived as `openLanded` over two callers, both of which had *just
+	 * written* a file, and the third caller is why the name moved: the dropdown
+	 * opens a layout that has been there all along, and a reader meeting
+	 * `openLanded(value)` there would look for the write. §1 asks that a shared
+	 * thing be named for the behaviour, and the behaviour is opening one.
+	 *
+	 * `deleteLayout` deliberately does not call it: it names *no* layout, and a
+	 * helper taking `string | null` would be one name over two different jobs.
+	 */
+	private openLayout(name: string): void {
+		this.releaseLayout();
+		this.host.setLayoutName(name);
+		this.redraw();
+	}
+
 	private async createLayoutNamed(name: string): Promise<void> {
 		try {
 			await createLayout(
@@ -700,9 +752,7 @@ export class LayoutEditorSection {
 			this.redraw();
 			return;
 		}
-		this.releaseLayout();
-		this.host.setLayoutName(name);
-		this.redraw();
+		this.openLayout(name);
 	}
 
 	/**
