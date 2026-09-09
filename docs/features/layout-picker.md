@@ -34,6 +34,24 @@ rather than in Design.
 
 ### 1. Where the note is written, and what it is named
 
+**Amended:** the setting this section argues against now exists, by owner
+decision — `docs/features/character-folder.md`. Nothing below is rewritten,
+because the argument is not wrong and is where the new setting's *default* comes
+from: **Character folder** ships **empty**, and empty means exactly the
+`getNewFileParent` behaviour this section specifies, "Same folder as current
+file" included. So an untouched install still does what is described here, and
+what changed is that a vault which wants characters landing in one place can now
+say so. The first half of the argument — Obsidian asks this question once,
+globally, so a second answer has to be kept in sync — is what the empty default
+keeps. The second half, the asymmetry with the layout folder, is intact and
+untouched, and is what makes the two fields' empty values fall back to different
+kinds of thing: a folder name for the layout folder, an app setting for this one.
+Read the paragraph below **naming a third preference** as the record of a
+position that was held and then amended, not as a description of the shipped tab;
+the same goes for the count in *Deliberately not doing*'s **A settings-tab entry
+point**, whose subject — no entry point for this gesture on the settings tab — is
+unchanged, while SPEC §7 now says three preferences rather than two.
+
 **Where: `app.fileManager.getNewFileParent(activeFilePath ?? '')`. No new
 setting.**
 

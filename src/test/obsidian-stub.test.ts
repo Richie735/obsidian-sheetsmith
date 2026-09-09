@@ -208,6 +208,103 @@ describe('the vault double', () => {
 		expect(await app.vault.read(file)).toBe('mine');
 	});
 
+	it('refuses a folder where anything already sits, in the app’s own words', async () => {
+		/*
+		 * `createFolder` used to write unconditionally, which is `create`'s own
+		 * defect one method over — and it made a state the plugin *reports* as
+		 * an error unreachable from any test. The app checks `adapter.exists`
+		 * rather than looking for a folder, so a **file** at that path refuses
+		 * too, with the same message; `characters.ts` leans on exactly that when
+		 * a reader types a configured folder whose path a note already holds.
+		 */
+		const app = new App();
+		await app.vault.createFolder('Characters');
+		await expect(app.vault.createFolder('Characters')).rejects.toThrow(
+			'Folder already exists.',
+		);
+
+		await app.vault.create('Party', 'a note, not a folder');
+		await expect(app.vault.createFolder('Party')).rejects.toThrow(
+			'Folder already exists.',
+		);
+		expect(await app.vault.read(app.vault.getFileByPath('Party')!)).toBe(
+			'a note, not a folder',
+		);
+	});
+
+	it('creates every missing ancestor, because `mkdir` is recursive', async () => {
+		// `fsPromises.mkdir(path, { recursive: true })`, quoted in the docblock:
+		// the app leaves both folders behind, and a plugin asking about either
+		// gets one. `characters.ts` asks about the deeper one when it writes a
+		// second character into a folder it created itself.
+		const app = new App();
+		await app.vault.createFolder('Characters/New');
+		expect(app.vault.getFolderByPath('Characters')).not.toBeNull();
+		expect(app.vault.getFolderByPath('Characters/New')).not.toBeNull();
+	});
+
+	it('holds the root in the folder map, as `fileMap` does', async () => {
+		/*
+		 * `n.root = n.fileMap['/']` in the app's own constructor, so
+		 * `getFolderByPath('/')` answers the root rather than null — a value a
+		 * reader reaches by typing `/` into a folder preference, since
+		 * `normalizePath('/')` is `/`. The root's children are the paths with no
+		 * slash in them, which is `getDirectParent`'s own rule.
+		 */
+		const app = new App();
+		expect(app.vault.getFolderByPath('/')).toBe(app.vault.getRoot());
+		await app.vault.create('Aramil.md', 'mine');
+		await app.vault.create('Party/Sable.md', 'hers');
+		expect(
+			app.vault.getFolderByPath('/')?.children.map((f) => f.path),
+		).toEqual(['Aramil.md']);
+		// And the root already exists, so the app refuses to create it.
+		await expect(app.vault.createFolder('/')).rejects.toThrow(
+			'Folder already exists.',
+		);
+	});
+
+	it('gives one answer about who holds a top-level file', async () => {
+		/*
+		 * The two routes to the same fact, which is what a double owes above all
+		 * else: `getRoot().children` and `file.parent` used to disagree the
+		 * moment the root became reachable by path — the root claiming the file
+		 * and the file claiming no parent. `getDirectParent` in the app answers
+		 * `fileMap['/']` for a path with no slash in it, so both say the root.
+		 *
+		 * `getRoot()` is asked *first* here, deliberately: it goes through the
+		 * same lookup every other folder does, so its children no longer depend
+		 * on something else having asked for `/` by path beforehand.
+		 */
+		const app = new App();
+		const file = await app.vault.create('Aramil.md', 'mine');
+		expect(app.vault.getRoot().children.map((f) => f.path)).toEqual([
+			'Aramil.md',
+		]);
+		expect(file.parent).toBe(app.vault.getRoot());
+
+		// A file in a folder is unaffected: its parent is that folder. The
+		// folder is made first because the app's `create` does not make one —
+		// writing into a folder that is not there fails at the adapter.
+		await app.vault.createFolder('Party');
+		const inner = await app.vault.create('Party/Sable.md', 'hers');
+		expect(inner.parent?.path).toBe('Party');
+	});
+
+	it('normalises inside `createFolder`, as `create` does', async () => {
+		// The same asymmetry the section below is about, on the folder half:
+		// the create derives its own path and `getFolderByPath` does not, so a
+		// caller spelling the two differently is told a folder that is there is
+		// absent and tries to create it again.
+		const app = new App();
+		await app.vault.createFolder('/Sheets//Characters/');
+		expect(app.vault.getFolderByPath('Sheets/Characters')).not.toBeNull();
+		expect(app.vault.getFolderByPath('/Sheets//Characters/')).toBeNull();
+		await expect(
+			app.vault.createFolder('Sheets/Characters'),
+		).rejects.toThrow('Folder already exists.');
+	});
+
 	it('still overwrites through `modify`, which is what that call is for', async () => {
 		const app = new App();
 		const file = await app.vault.create('Notes/Aramil.md', 'mine');

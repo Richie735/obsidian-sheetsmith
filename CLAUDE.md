@@ -32,7 +32,7 @@ The registry contract in `src/components/contract.test.ts` runs the §4.1 checks
 ## Architecture
 
 - **Character note.** One frontmatter key (`sheet-layout`), all values in the body, one `##` section per component. Scalar components store fenced YAML; link-bearing components store markdown tables or prose. See `SPEC` §3.
-- **Layout file.** A separate vault file holding structure, formulas, function library, and reset triggers. No per-character data. Shared by many characters. Edited in a workspace pane of its own (`SPEC` §7); the settings tab keeps two preferences and a button that opens it.
+- **Layout file.** A separate vault file holding structure, formulas, function library, and reset triggers. No per-character data. Shared by many characters. Edited in a workspace pane of its own (`SPEC` §7); the settings tab keeps three preferences and a button that opens it.
 - **Sections key on the component's `label`**, which is also its heading. The `id` is stable identity for formula references, so renaming a label breaks no formulas but does require migrating existing notes.
 
 ## Component contract

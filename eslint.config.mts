@@ -366,7 +366,7 @@ export default defineConfig(
 	{
 		// Obsidian 1.13's declarative settings API describes a tab's settings
 		// as data so the app can index them for search. This tab no longer has
-		// the excuse it used to — it is two preferences and a button since the
+		// the excuse it used to — it is three preferences and a button since the
 		// layout editor moved into a pane, which is the shape the API is for —
 		// and two things still block it, both about being able to tell whether
 		// the adoption worked:
@@ -374,8 +374,9 @@ export default defineConfig(
 		// - whether a `control` write also persists is undocumented, and nothing
 		//   here could catch it either way, because the obsidian stub renders
 		//   `Setting` rows and not definitions;
-		// - the folder preference substitutes the default on empty where
-		//   `validate` only rejects.
+		// - neither folder preference is a plain bind: the layout folder
+		//   substitutes the default on empty where `validate` only rejects, and
+		//   the character folder trims.
 		//
 		// Named rather than restated: the argument and the **Waiting on** line
 		// live at the top of `src/settings.ts`, and this comment is deliberately
@@ -386,6 +387,60 @@ export default defineConfig(
 		files: ['src/settings.ts'],
 		rules: {
 			'obsidianmd/settings-tab/prefer-setting-definitions': 'off',
+		},
+	},
+	{
+		/*
+		 * A UI string carrying **arrow notation** is exempt from sentence case,
+		 * and nothing else in this file is.
+		 *
+		 * `AGENTS.md` asks for sentence case *and* for arrow notation quoting the
+		 * app's own labels — "Use arrow notation for navigation: **Settings →
+		 * Community plugins**" — and the two collide, because the labels in such
+		 * a path are the app's and the app capitalises the first word of each.
+		 * The character folder's description is the first string here to hit it:
+		 * the rule reads the whole thing as one sentence and asks for
+		 * "settings → files and links → default location for new notes", which
+		 * is a path a reader cannot find in Obsidian's own preferences.
+		 *
+		 * **An option rather than an `off`, and the difference is what makes this
+		 * narrow.** `ignoreRegex` skips a string matching the pattern and leaves
+		 * every other string in the file checked — measured, not assumed: with
+		 * this on, a Title Cased description with no arrow in it is still
+		 * reported. So what is exempted is a *class of copy the style guide
+		 * mandates*, not a file.
+		 *
+		 * Per file rather than repo-wide because this is the only file where
+		 * arrow notation reaches a string **this rule reads**, which is
+		 * `prefer-create-el`'s own scoping argument above: the narrowest scope
+		 * available. A second consumer widens it.
+		 *
+		 * That is deliberately not the same claim as "the only file with an arrow
+		 * in UI copy", which is false and would send the next reader's grep to
+		 * the wrong conclusion. `components/pool.ts` puts `→` in on-screen text
+		 * too, in the pending-change readout.
+		 *
+		 * **What keeps it out of reach is the site, not the quoting.** The rule
+		 * reads UI copy only where it recognises the call: the argument of
+		 * `setName`, `setDesc`, `setPlaceholder`, `setTooltip`, `setText`,
+		 * `setTitle`, `setButtonText`, `addRibbonIcon`, `addOption`; `text` and
+		 * `title` inside `createEl` options; `aria-label`, `aria-description`,
+		 * `title` and `placeholder` through `setAttribute`; and `name` in
+		 * `addCommand`. Pool's arrow reaches `onPending({ text })` — an ordinary
+		 * call's object property, which is none of those — so it would go unread
+		 * spelled as a plain literal too. (It is *also* a template literal
+		 * carrying expressions, which the rule skips; one with no expressions it
+		 * reads fine, so "it cannot read a template literal" would be the wrong
+		 * reason.) The trigger for widening this scope is the sentence above:
+		 * an arrow reaching one of those sites in a second file.
+		 *
+		 * Here rather than inline for the block above's reason:
+		 * `eslint-comments/no-restricted-disable` forbids touching an
+		 * `obsidianmd` rule at its own line.
+		 */
+		files: ['src/settings.ts'],
+		rules: {
+			'obsidianmd/ui/sentence-case': ['warn', { ignoreRegex: ['→'] }],
 		},
 	},
 	{
