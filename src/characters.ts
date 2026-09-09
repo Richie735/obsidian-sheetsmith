@@ -51,11 +51,12 @@ const BASE_NAME = 'Untitled character';
 /**
  * Where the note went, or why it did not.
  *
- * Failure is a value (`docs/PATTERNS.md` §4) and `installStarter`'s
- * `InstallResult` is the shape: a read-only vault and a refused path are both
- * things a reader can meet, and the caller has to be able to tell either from a
- * write that landed. The path rather than the `TFile`, because what the caller
- * does next is name the file in a view state.
+ * Failure is a value (`docs/PATTERNS.md` §4) and `layouts.ts`'s `InstallResult`
+ * is the shape — shared there by the starter install and the layout import: a
+ * read-only vault and a refused path are both things a reader can meet, and the
+ * caller has to be able to tell either from a write that landed. The path
+ * rather than the `TFile`, because what the caller does next is name the file
+ * in a view state.
  */
 export type CreateResult = { ok: true; path: string } | { error: string };
 

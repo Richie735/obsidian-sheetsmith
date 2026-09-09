@@ -97,6 +97,91 @@ export async function createLayout(
 }
 
 /**
+ * What an install did, in the words the notice shows.
+ *
+ * Failure is a value (`docs/PATTERNS.md` §4): a name the folder already holds
+ * and a source that will not parse are both things a user can meet, and the
+ * caller has to be able to tell them from a write that landed. The two are
+ * deliberately one shape, because the surface that announces either is one
+ * notice.
+ *
+ * **`name` is the name the file actually landed under**, which is the one fact
+ * only the writer holds: it is either the source's own or the caller's override,
+ * and which of the two it is depends on the blank-means-absent rule below. A
+ * caller that re-derived it would be holding a second copy of that rule, and the
+ * only thing a guard test over the two could assert is that they still agree
+ * (`docs/PATTERNS.md` §1's one-step tier) — while what they could silently
+ * disagree about is which file a notice names and which one a pane then opens.
+ */
+export type InstallResult =
+	| { ok: true; message: string; name: string }
+	| { error: string };
+
+/**
+ * Validate a layout's own source text and write it into the layout folder.
+ *
+ * **The one thing this function is, is the ordering**, and that is why it has a
+ * name at all: `parseLayout` runs first and `createLayout` only after it, so a
+ * source that will not parse never reaches the vault. Two consumers write into
+ * this folder from outside it — a bundled starter (`src/starters/picker.ts`) and
+ * a pasted layout (`src/editor/layout-import.ts`) — and two copies of that order
+ * is exactly what `docs/PATTERNS.md` §1 forbids at two consumers without a
+ * guard, where the only thing a guard could assert is that both copies still
+ * call the two functions in the same order. That is what one name says for free.
+ *
+ * It is not a convenience either. A refused import leaving the vault byte for
+ * byte as it was is this plugin's whole answer to the defect the closest prior
+ * art has open on this gesture (`docs/features/layout-import-export.md`), and
+ * the order is what makes it structural rather than careful.
+ *
+ * **The bytes are not copied.** The source goes through `parseLayout` — the
+ * identical gate every vault layout passes — and what reaches the vault is what
+ * `serialiseLayout` says, through `createLayout`: one writer, one spelling.
+ *
+ * **Nothing is overwritten and nothing is suffixed.** The existing file may be
+ * the user's own edited copy, and both silent answers destroy it (Constraint 4),
+ * so a taken name is refused in `createLayout`'s own words.
+ *
+ * `rename` replaces the name inside the source, so the filename and the `name`
+ * key still agree — the invariant `loadLayout` and `listLayouts` both rely on.
+ * **Blank means absent**, which is `docs/features/character-folder.md`'s
+ * empty-means-the-default shape and is the rule here rather than at the field,
+ * so a caller offering an optional name does not also have to own what an
+ * untouched box means — which is why the result carries the name it settled on
+ * rather than leaving the caller to work it out again.
+ *
+ * One sentence comes along with the ordering rather than being a reason for it:
+ * `Added "X" to <folder>.` A later caller wanting different words should feel
+ * free to take a parameter or split the sentence out — the *order* is what may
+ * not be duplicated, and the wording is negotiable.
+ */
+export async function installLayoutSource(
+	app: App,
+	folder: string,
+	source: string,
+	rename?: string,
+): Promise<InstallResult> {
+	try {
+		const parsed = parseLayout(source);
+		const chosen = rename?.trim() ?? '';
+		const layout: Layout = chosen === '' ? parsed : { ...parsed, name: chosen };
+		await createLayout(app, folder, layout.name, layout);
+		// The folder as well as the name, because the folder is configurable and
+		// a user who changed it needs to know where the file went.
+		return {
+			ok: true,
+			message: `Added "${layout.name}" to ${folder}.`,
+			name: layout.name,
+		};
+	} catch (error) {
+		// The vault's own reason, or the parser's. Either way nothing was
+		// written: `parseLayout` runs before anything is created, and
+		// `createLayout` refuses before it creates.
+		return { error: error instanceof Error ? error.message : String(error) };
+	}
+}
+
+/**
  * Why a promotion under a name the layout already declares is refused.
  *
  * **Exported because the harness fakes this write and has to refuse it in the same

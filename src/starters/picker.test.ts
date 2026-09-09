@@ -57,6 +57,7 @@ describe('installing a starter', () => {
 		expect(result).toEqual({
 			ok: true,
 			message: `Added "Starter Forged in the Dark" to ${LAYOUT_FOLDER}.`,
+			name: 'Starter Forged in the Dark',
 		});
 		expect(app.vault.getFolderByPath(LAYOUT_FOLDER)).not.toBeNull();
 		expect(app.vault.getFileByPath(pathOf(forged.name))).not.toBeNull();
@@ -140,6 +141,7 @@ describe('installing a starter', () => {
 		expect(result).toEqual({
 			ok: true,
 			message: 'Added "Starter Forged in the Dark" to Elsewhere/Sheets.',
+			name: 'Starter Forged in the Dark',
 		});
 		expect(
 			app.vault.getFileByPath('Elsewhere/Sheets/Starter Forged in the Dark.json'),

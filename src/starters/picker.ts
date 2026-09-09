@@ -13,53 +13,36 @@
 
 import { App, Notice, SuggestModal } from 'obsidian';
 import type SheetsmithPlugin from '../main';
-import { createLayout } from '../layouts';
-import { parseLayout } from '../parse/layout';
+import { InstallResult, installLayoutSource } from '../layouts';
 import { Starter, STARTERS } from './index';
-
-/**
- * What an install did, in the words the notice shows.
- *
- * Failure is a value (`docs/PATTERNS.md` §4): a name the folder already holds
- * and a source that will not parse are both things a user can meet, and the
- * caller has to be able to tell them from a write that landed. The two are
- * deliberately one shape, because the surface that announces either is one
- * notice.
- */
-export type InstallResult = { ok: true; message: string } | { error: string };
 
 /**
  * Validate a starter and write it into the layout folder.
  *
- * **The bytes are not copied.** The source goes through `parseLayout` — the
- * identical gate every vault layout passes, so a starter gone stale against the
- * schema is refused loudly rather than landing broken — and what reaches the
- * vault is what `serialiseLayout` says, through `createLayout`. The tree's own
- * files are pinned canonical by `index.test.ts`, so in practice the bytes
- * *are* the file a reviewer read; that is discipline rather than a promise the
- * layout format makes (`parse/layout.ts` — Constraint 3 is about character
- * notes).
+ * **The validated write itself is `installLayoutSource` in `src/layouts.ts`**,
+ * beside the folder it writes to, because the ordering it holds — parse the
+ * source, and only then create the file — is the guarantee that a refusal
+ * leaves the vault untouched, and a pasted layout needs the identical
+ * guarantee (`docs/features/layout-import-export.md`). What is left here is
+ * what makes a *starter* a source: its bundled object, stringified.
  *
- * **Nothing is overwritten and nothing is suffixed.** The existing file may be
- * the user's edited copy of an earlier install, and both silent answers destroy
- * it (Constraint 4), so a taken name is refused in `createLayout`'s own words.
+ * **The bytes are not copied**, which is worth keeping beside the catalog:
+ * a starter gone stale against the schema is refused loudly rather than
+ * landing broken, and what reaches the vault is what `serialiseLayout` says.
+ * The tree's own files are pinned canonical by `index.test.ts`, so in practice
+ * the bytes *are* the file a reviewer read; that is discipline rather than a
+ * promise the layout format makes (`parse/layout.ts` — Constraint 3 is about
+ * character notes).
+ *
+ * No name override is passed: a starter's name is the catalog's, and a taken
+ * one is refused rather than renamed on the user's behalf.
  */
 export async function installStarter(
 	app: App,
 	folder: string,
 	starter: Starter,
 ): Promise<InstallResult> {
-	try {
-		const layout = parseLayout(JSON.stringify(starter.source));
-		await createLayout(app, folder, layout.name, layout);
-		// The folder as well as the name, because the folder is configurable and
-		// a user who changed it needs to know where the file went.
-		return { ok: true, message: `Added "${layout.name}" to ${folder}.` };
-	} catch (error) {
-		// The vault's own reason, or the parser's. Either way nothing was
-		// written: `createLayout` refuses before it creates.
-		return { error: error instanceof Error ? error.message : String(error) };
-	}
+	return installLayoutSource(app, folder, JSON.stringify(starter.source));
 }
 
 /**
