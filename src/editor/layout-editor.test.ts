@@ -5,6 +5,7 @@ import { LayoutEditorView } from '../view/layout-editor-view';
 import { Layout, parseLayout, serialiseLayout } from '../parse/layout';
 import { walkComponents } from '../parse/layout-walk';
 import { renderGrid } from '../view/grid-cells';
+import { expectDescribedRow } from '../test/described-row';
 import { App, Notice } from '../test/obsidian-stub';
 import { fakePlugin, LAYOUT_FOLDER } from '../test/plugin';
 import { cancel, pressDown, release } from '../test/pointer';
@@ -510,16 +511,11 @@ describe('adding and removing a component', () => {
 		 * line rather than the first.
 		 */
 		const menu = control(harness, 'add-choice');
-		const row = menu.closest('.setting-item');
-		expect(row?.classList.contains('sheetsmith-add-row')).toBe(true);
-		const description = row?.lastElementChild;
-		expect(description?.classList.contains('setting-item-description')).toBe(true);
-		// And the menu is described by it (docs/UI.md §6). Painted alone, the only
-		// explanation an entry gets reaches nobody using a screen reader: they
-		// hear "Inventory" and stop there. Asserted beside the position because
-		// the id is what the association hangs on, so the two break together.
-		expect(menu.getAttribute('aria-describedby')).toBe(description?.id);
-		expect(description?.id).toBeTruthy();
+		// The whole treatment through the one assertion both consumers of
+		// `editor/described-row.ts` make, rather than a transcription of it:
+		// the classes, the description's position, and the association the only
+		// explanation an entry gets depends on to reach a screen reader.
+		expectDescribedRow(menu.closest('.setting-item'), menu);
 	});
 
 	it('names an entry against the whole sheet, as a type is named', async () => {

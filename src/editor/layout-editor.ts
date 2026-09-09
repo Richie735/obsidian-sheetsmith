@@ -8,6 +8,7 @@ import {
 	TFile,
 } from 'obsidian';
 import { acceptsChildren } from './accepts-children';
+import { describedRow } from './described-row';
 import { listComponentTypes, paletteEntries } from '../components';
 import { Canvas } from './canvas';
 import { componentDisplayName } from './component-name';
@@ -781,49 +782,26 @@ export class LayoutEditorSection {
 
 		const row = new Setting(container).setName('Add component');
 		/*
-		 * The description goes *below* the row rather than under the name, and
-		 * that is a layout decision rather than a styling one (docs/UI.md §12).
-		 * In the info column it is copy that grows from nothing to several lines
-		 * depending on which option is highlighted, and a settings row is a
-		 * centred flex line: the info column widened, the control column wrapped,
-		 * and the destination dropdown and **Add** dropped about 35px while the
-		 * menu kept the first line. So the button an author presses next moved
-		 * while they were still choosing what to press it for.
+		 * The entry's own description, below the menu it was chosen from
+		 * (`docs/UI.md` §9, `editor/described-row.ts`, which holds why it sits
+		 * there and what the treatment is). A dropdown line is one or two words,
+		 * and SPEC §13's warning about the palette is that a menu nobody can
+		 * read is worse than the type list it replaced — so what a prefill is
+		 * *for* has to be on screen, not only in the code. A bare type has none
+		 * and the line is empty, which is the truth: a type's name is all this
+		 * editor has ever offered for one.
 		 *
-		 * Moved rather than reserved. Reserving a line of height shows an empty
-		 * one for every bare type and only fits the shortest description anyway,
-		 * where an entry's runs to several at a real settings width. Out here
-		 * the first line — name, menu, destination, **Add** — is a fixed height
-		 * whatever is selected, and the description grows downward into space
-		 * nothing has been placed in. `descEl` keeps its own class and Obsidian's
-		 * own treatment; only where it sits changes.
+		 * **A module literal is safe for the id here**, and it is the reason the
+		 * shared module takes one rather than generating it: this row is drawn
+		 * once per render and `redraw` replaces the container's children, so
+		 * only one element ever carries it.
 		 */
-		row.settingEl.addClass('sheetsmith-add-row', 'sheetsmith-wrapping-row');
-		row.settingEl.appendChild(row.descEl);
-		/*
-		 * And named, so the menu is described by it (docs/UI.md §6). The
-		 * description is the only explanation an entry gets, and choosing an
-		 * option repaints it — painted alone, a screen reader hears "Inventory"
-		 * and nothing else. A literal id is safe here because the row is drawn
-		 * once per render and `redraw` replaces the container's children.
-		 *
-		 * The empty description a bare type leaves is `display: none`, which
-		 * assistive tech skips, so the association costs a type nothing.
-		 */
-		row.descEl.id = ADD_DESCRIPTION_ID;
-		/*
-		 * The entry's own description, below the menu it was chosen from. A
-		 * dropdown line is one or two words, and SPEC §13's warning about the
-		 * palette is that a menu nobody can read is worse than the type list it
-		 * replaced — so what a prefill is *for* has to be on screen, not only in
-		 * the code. A bare type has none and the line is empty, which is the
-		 * truth: a type's name is all this editor has ever offered for one.
-		 */
-		const describe = (value: string): void => {
-			row.setDesc(
+		const described = describedRow(
+			row,
+			ADD_DESCRIPTION_ID,
+			(value) =>
 				choices.find((choice) => choice.value === value)?.description ?? '',
-			);
-		};
+		);
 		row.addDropdown((dropdown) => {
 			for (const choice of choices) {
 				// An entry sits one level under the type it prefills. It is what
@@ -837,13 +815,13 @@ export class LayoutEditorSection {
 			}
 			dropdown.setValue(chosen);
 			dropdown.selectEl.dataset.sheetsmithFocus = 'add-choice';
-			dropdown.selectEl.setAttribute('aria-describedby', ADD_DESCRIPTION_ID);
+			described.describes(dropdown.selectEl);
 			dropdown.onChange((value) => {
 				chosen = value;
-				describe(value);
+				described.describe(value);
 			});
 		});
-		describe(chosen);
+		described.describe(chosen);
 
 		// Only where there is somewhere else to put one. A dropdown offering the
 		// sheet and nothing else says a layout has containers when it has none.
