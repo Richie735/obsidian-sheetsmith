@@ -141,16 +141,23 @@ Stored in a configurable vault folder, `Sheetsmith layouts` by default. Contains
 **Import takes a single layout's JSON and export hands one over**
 (`docs/features/layout-import-export.md`), so a layout can be shared or
 published. The unit that travels is one self-contained layout in both
-directions, and the two gestures live on the layout editor pane's **Layout
-file** row: a **Copy layout JSON** button puts the open layout's own bytes on the
-clipboard, and an **Import a layout…** option in the same row's dropdown opens a
-paste box, validates the JSON through `parseLayout`, and writes it into the
-configured layout folder under the name inside it — or under one typed beside the
-paste, where the folder already holds that name. Nothing is overwritten in either
-direction: a taken name is refused in `createLayout`'s own words, and the
-ordering that makes that structural rather than careful — parse the source, and
-only then create the file — is `installLayoutSource`, which the starter install
-above shares.
+directions, and both gestures live on the layout editor pane's **Layout file**
+row: a **Copy layout JSON** button puts the open layout's own bytes on the
+clipboard, and a paste comes in through **New layout** as one of the three
+sources that row's button offers (`docs/features/starting-a-new-layout.md`) —
+validated through `parseLayout` and written into the configured layout folder
+under the name inside it, or under one typed beside the paste.
+
+**A pasted layout is a source for a file that does not exist yet, and that is
+the whole of what "import" means here.** In the tool this project's data-safety
+criterion comes from, import targets an existing document and overwrites it,
+which is why the closest prior art has a defect open where importing into a
+template destroyed it. Here there is no gesture that targets an existing layout
+at all: a taken name is refused in `createLayout`'s own words, nothing is
+suffixed behind the user's back, and the ordering that makes that structural
+rather than careful — parse the source, and only then create the file — is
+`installLayoutSource`, which the starter install above shares and which every
+one of the three sources reaches.
 
 **Export does not write a file, because it cannot.** `Vault` reaches nothing
 outside the vault, the public API has no file-save dialog, and `isDesktopOnly` is
@@ -689,15 +696,14 @@ A workspace pane of its own hosts the editor: create layouts, add and remove com
 
 The full editor:
 
-- **Manage layouts**: create, duplicate, rename, delete, import, export. **Import and export are shipped** (§3.2,
-  `docs/features/layout-import-export.md`); duplicate and rename are not. **Which control gets which is one rule**: the
-  **Layout file** row's dropdown answers *which layout is open* — so `New layout…` and `Import a layout…` are options in
-  it, both ending with a different layout open — and the row's buttons *act on the layout that is already open*, so
-  export is a button beside the trash. **Neither half is a palette command**: import belongs to the pane because the pane is what owns the layout folder, and
-  the gesture sits beside the other five operations on that row rather than in a second place; export acts on state only the pane has, and a palette entry would have
-  to ask *which layout* with a second suggester to answer a question the pane has already answered. **Cold-start import is an open gap rather than a solved case**: where the
-  folder holds no layouts the pane draws only *"No layouts yet."* and **Create layout**, so a first layout arrives by **Add a starter layout**, by that button, or by hand.
-  **Add a starter layout** is a command rather than a pane control (§3.2): cold start is exactly the moment no pane, file or state exists to condition on, so it is offered unconditionally from the palette, lists the three bundled layouts in a suggester, and writes the chosen one into the configured layout folder — creating the folder when missing and refusing a name the folder already holds, since the existing file may be the user's edited copy of an earlier install. **That argument does not transfer to import**, which is a reader holding a layout somebody sent them rather than a reader with nothing at all.
+- **Manage layouts**: create, duplicate, rename, delete, import, export. **Create, duplicate, import and export are shipped** (§3.2,
+  `docs/features/layout-import-export.md`, `docs/features/starting-a-new-layout.md`); rename is not, because it has to migrate every character note's `sheet-layout`, which §10 declines.
+  **Create, duplicate and import are one gesture rather than three controls**: a labelled **New layout** button on the **Layout file** row opens a modal whose **Start from** row names what the layout starts from — a blank grid, an existing layout in the folder, or pasted JSON — because duplicate is not a file operation beside create, it is create *with a source*, and so is import. A blank grid is the default, so the floor is **New layout**, type a name, **Create**.
+  **Which control gets which is one rule, and it is three-way.** The dropdown answers *which layout is open* and holds nouns only; the row's buttons *act on the layout that is already open*, so export is a button beside the trash; and **create acts on the folder**, which is neither. It was a dropdown option once, filed there by a side effect — "it ends with a different layout open" — and delete is the tell that the two-way partition was already leaking, since delete ends that way too and is correctly a button.
+  **None of it is a palette command**: the pane owns the layout folder, and a palette entry would have to ask *which folder* and *which source layout* with suggesters answering questions the pane has already answered.
+  **Cold-start import is a solved case, and the answer is the same gesture.** Where the folder holds no layouts the pane draws *"No layouts yet."* and one **New layout** button, whose **Start from** row offers a blank grid and pasted JSON — an existing layout is omitted, because there is none — so a reader who has been sent a layout and has none can get it in without first making one they do not want. No **Layout file** row is drawn there, because a dropdown over zero layouts cannot succeed under any input.
+  **Duplicating makes near-identical layouts easy to produce and nothing keeps them in step**, which is a stated cost rather than a defect: a copy reads the source's *file* and reconstructs nothing, and layouts stay independent, "duplicated and diverged rather than inherited" — so the answer to "I changed one and the other six did not move" is that they are separate files, and this is what made them easy to make (§11's **layout inheritance** non-goal).
+  **Add a starter layout** is a command rather than a pane control (§3.2): cold start is exactly the moment no pane, file or state exists to condition on, so it is offered unconditionally from the palette, lists the three bundled layouts in a suggester, and writes the chosen one into the configured layout folder — creating the folder when missing and refusing a name the folder already holds, since the existing file may be the user's edited copy of an earlier install. **That argument never transferred to import**, which is a reader holding a layout somebody sent them rather than a reader with nothing at all — and the case where they are both at once is what the vacant state's own **New layout** button now answers, so a starter is one way in rather than the only one.
 - **Create a character** is the second command on that same argument, and the other half of a cold start: **Add a starter layout** puts a layout in the vault and this one turns a layout into a note. It lists the layouts in the configured folder by name, writes a note carrying nothing but `sheet-layout`, and opens it as a sheet — so a fresh install is two commands and no hand-written property. Where the folder holds no layout it names **Add a starter layout** rather than opening an empty suggester. The note's location is Obsidian's own **Settings → Files and links → Default location for new notes** unless the plugin's **Character folder** preference names one, which it does not by default: a character note is looked up by nothing, so where it starts is not a fact the plugin uses, which is why the plugin's own field is an override that ships empty rather than a folder name of its own (`docs/features/layout-picker.md`, `docs/features/character-folder.md`). A named folder is created if it is missing, and applies to every character the plugin creates whatever note the gesture was run from.
 - **Grid canvas**: *shipped.* The layout's real components, live, on its own grid; see above. Dragging a new component in from a palette onto the canvas is not: the **Add component** row and its destination dropdown are still how one is created.
 - **Configuration panel**: select a component, configure it in a side panel. *Shipped with the pane.*
@@ -772,7 +778,7 @@ Explicitly out of scope for v1, recorded so they do not creep back in:
 | **M2 Edit** | Edit values in sheet view, write back to the body, round-trip safely |
 | **M3 Formulas** | Expression evaluation, layout function library, computed values |
 | **M4 Editor** | Grid canvas, component palette, configuration panel. Shipped: the workspace pane, its tree (with drag-and-drop reparenting), its configuration panel, undo, and the live grid canvas. Not shipped: dragging a new component in from a palette onto the canvas — creation still goes through the **Add component** row |
-| **M5 Finish** | Reset triggers, promoted fields, layout export and import, mobile reflow, error states. Shipped: layout import and export, as a clipboard copy out and a validated paste in (§3.2) |
+| **M5 Finish** | Reset triggers, promoted fields, layout export and import, mobile reflow, error states. Shipped: layout export as a clipboard copy out, and creating a layout as one gesture with three sources — a blank grid, a copy of one in the folder, or a validated paste (§3.2, §7) |
 
 The order is deliberate. The file model is the hardest thing to change once characters exist, so it gets proven first. The layout editor is the largest interface investment and comes only once the thing it edits is known to work.
 

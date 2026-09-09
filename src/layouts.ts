@@ -19,6 +19,39 @@ export async function loadLayout(
 	return parseLayout(await app.vault.read(file));
 }
 
+/**
+ * Why a layout the folder does not hold cannot be acted on.
+ *
+ * One sentence over the two callers in this file — a promotion appending to a
+ * layout, and a copy reading one — because both state the same fact about the
+ * same folder, and
+ * `docs/PATTERNS.md` §1's one-step tier is that the only thing a guard test
+ * over two copies of a sentence could assert is that they still read the same.
+ * It names the folder for `noLayoutsMessage`'s reason: the folder is
+ * configurable, and a reader who moved it needs to know which one was looked in.
+ *
+ * **It names both halves of the lookup and nothing else, deliberately.** The
+ * recovery is a control beside it at every surface that shows it, never a clause
+ * inside it: `view/missing-layout.ts` says so in its own words for the third
+ * audience — the message is "kept verbatim… and the offer goes beside it, not
+ * instead of it" — the copy arm leaves the modal open with the dropdown that
+ * named the stale layout still on screen, and a promotion draws the refusal
+ * beside the cell. §4's own example is this shape: `max: 'con' is not defined on
+ * this sheet` names both operands and leaves the fix to the surface.
+ *
+ * **A third spelling of this sentence stands inline in `view/sheet-view.ts`**,
+ * feeding that missing-layout surface, and it should be this function's — one
+ * line there plus an export here, byte-identical output, no test touched. Not
+ * taken in this feature, which has no business in the sheet view; recorded here
+ * rather than nowhere, and the row belongs in `docs/BACKLOG.md` § Patterns.
+ * Until it moves, this stays unexported: `nameAlreadyDeclared` beside it is out
+ * because the harness fakes a write and has to refuse it in the same words, and
+ * an export with no importer is an invitation rather than a rule.
+ */
+function layoutNotFound(name: string, folder: string): string {
+	return `Layout "${name}" was not found in "${folder}".`;
+}
+
 /** All layout files in the folder, sorted by name. */
 export function listLayouts(app: App, folder: string): TFile[] {
 	const parent = app.vault.getFolderByPath(normalizePath(folder));
@@ -26,6 +59,42 @@ export function listLayouts(app: App, folder: string): TFile[] {
 	return parent.children
 		.filter((child): child is TFile => child instanceof TFile && child.extension === 'json')
 		.sort((a, b) => a.basename.localeCompare(b.basename));
+}
+
+/**
+ * The name to offer for a copy of `source`: the first one the folder does not
+ * already hold.
+ *
+ * Here rather than in the modal for `hasLayouts`'s own stated reason — this is
+ * the module that knows how the layout folder is read — and on
+ * `noLayoutsMessage`'s and `nameAlreadyDeclared`'s precedent, that a
+ * user-facing name policy about that folder belongs beside the folder.
+ *
+ * **A proposal, never an application.** The pane puts this in a box the reader
+ * can edit before pressing anything, so the suffix is a suggestion; the writer
+ * still refuses a taken name in `createLayout`'s own words, and the two do not
+ * reach into each other.
+ *
+ * `copy` rather than Obsidian's own trailing ` 1`: a layout name is a sheet's
+ * name an author reads back later, and "Cutter 1" reads as a variant of Cutter
+ * rather than a copy of it, where "copy" is legible as a placeholder and so is
+ * the more useful prompt to rename. The ladder starts at 2 because the
+ * unsuffixed one is the first.
+ */
+export function suggestCopyName(
+	app: App,
+	folder: string,
+	source: string,
+): string {
+	const taken = new Set(
+		listLayouts(app, folder).map((file) => file.basename),
+	);
+	const first = `${source} copy`;
+	if (!taken.has(first)) return first;
+	// Terminates because `taken` is finite: some `n` is free.
+	let n = 2;
+	while (taken.has(`${first} ${n}`)) n += 1;
+	return `${first} ${n}`;
 }
 
 /**
@@ -118,16 +187,66 @@ export type InstallResult =
 	| { error: string };
 
 /**
+ * A thrown thing as a sentence, which is the one shape a refusal is reported in
+ * here.
+ *
+ * Four sites in this file turn a `catch` into an `{ error }`, and every one of
+ * them wants the vault's own reason or the parser's rather than a sentence of
+ * ours (`docs/PATTERNS.md` §4). One name because that is all a guard test over
+ * the copies could ever assert — that they still say the same thing.
+ *
+ * **Private, with twelve anonymous copies of the same ternary outside this
+ * file, and that is a known gap rather than an oversight.** They stand in
+ * `characters.ts`, `parse/character.ts`, `parse/layout.ts`,
+ * `formula/functions.ts`, `view/sheet-view.ts` and `editor/layout-editor.ts` —
+ * four in that last one, and this module's arrival removed a thirteenth from it.
+ * A shared module would be the §1-consistent answer and would have to live
+ * outside `parse/` and `formula/` reach, importing nothing from `obsidian`
+ * (Constraint 5), which is easy; what it costs is a pass over six files that
+ * this feature has no business editing. So the extraction stops at the file that
+ * needed it, and the ledger is here rather than nowhere: the row belongs in
+ * `docs/BACKLOG.md` § Patterns, waiting on a pass that does only that.
+ */
+function reason(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * A write that landed, in one voice for every arm that lands one.
+ *
+ * Split out of `installLayoutSource` on that function's own header's sanction —
+ * "the *order* is what may not be duplicated, and the wording is negotiable" —
+ * because the blank arm goes through `createLayout`, which composes no message,
+ * and one gesture with three sources that announces two of them and stays quiet
+ * on the third invites a reader to infer the quiet one did something different.
+ *
+ * The folder as well as the name, because the folder is configurable and a user
+ * who changed it needs to know where the file went.
+ *
+ * **The whole arm rather than just the sentence**, which is `docs/PATTERNS.md`
+ * §1's "share the application, not just the fact" and the mistake this function
+ * was one revision away from being: the sentence had a name while the three
+ * fields around it stayed written out at both writers, so the next field added
+ * to the `ok` arm would have been added by one of the two and missed by the
+ * other. `roundSum`'s own history is the worked example — a policy shared and
+ * its application duplicated.
+ */
+function landed(name: string, folder: string): InstallResult {
+	return { ok: true, message: `Added "${name}" to ${folder}.`, name };
+}
+
+/**
  * Validate a layout's own source text and write it into the layout folder.
  *
  * **The one thing this function is, is the ordering**, and that is why it has a
  * name at all: `parseLayout` runs first and `createLayout` only after it, so a
- * source that will not parse never reaches the vault. Two consumers write into
- * this folder from outside it — a bundled starter (`src/starters/picker.ts`) and
- * a pasted layout (`src/editor/layout-import.ts`) — and two copies of that order
- * is exactly what `docs/PATTERNS.md` §1 forbids at two consumers without a
- * guard, where the only thing a guard could assert is that both copies still
- * call the two functions in the same order. That is what one name says for free.
+ * source that will not parse never reaches the vault. Three sources of text
+ * reach this folder — a bundled starter (`src/starters/picker.ts`), a pasted
+ * layout and a copy of one already in the folder, the last two through
+ * `startLayout` below — and copies of that order are exactly what
+ * `docs/PATTERNS.md` §1 forbids, where the only thing a guard could assert is
+ * that they still call the two functions in the same order. That is what one
+ * name says for free.
  *
  * It is not a convenience either. A refused import leaving the vault byte for
  * byte as it was is this plugin's whole answer to the defect the closest prior
@@ -166,19 +285,122 @@ export async function installLayoutSource(
 		const chosen = rename?.trim() ?? '';
 		const layout: Layout = chosen === '' ? parsed : { ...parsed, name: chosen };
 		await createLayout(app, folder, layout.name, layout);
-		// The folder as well as the name, because the folder is configurable and
-		// a user who changed it needs to know where the file went.
-		return {
-			ok: true,
-			message: `Added "${layout.name}" to ${folder}.`,
-			name: layout.name,
-		};
+		return landed(layout.name, folder);
 	} catch (error) {
 		// The vault's own reason, or the parser's. Either way nothing was
 		// written: `parseLayout` runs before anything is created, and
 		// `createLayout` refuses before it creates.
-		return { error: error instanceof Error ? error.message : String(error) };
+		return { error: reason(error) };
 	}
+}
+
+/** What a new layout starts from. */
+export type LayoutSource =
+	| { blank: true }
+	| { copyOf: string }
+	| { text: string };
+
+/**
+ * Whether this source needs a name given to it.
+ *
+ * **One predicate rather than one per side of the seam** (`docs/PATTERNS.md`
+ * §1's one-step tier): a pasted layout carries a name of its own, which is
+ * `installLayoutSource`'s blank-means-absent rule, and the other two sources
+ * have no other source of one. The writer refuses a blank name on those two and
+ * the surface disables its button on exactly the same split — and the two were
+ * deriving it independently, one on `'text' in source` and one on a control's
+ * own `'paste'`. The only thing a guard test over those could assert is that
+ * they still agree, which is what one name says for free; what they were free to
+ * drift about is whether a reader meets a dead button on an arm that would have
+ * worked, or a live one on an arm that cannot.
+ */
+export function nameRequiredFor(source: LayoutSource): boolean {
+	return !('text' in source);
+}
+
+/**
+ * Start a new layout from one of the three sources, and say what happened.
+ *
+ * **What this is, is one result shape over three arms.** `createLayout` throws
+ * and `installLayoutSource` returns a value, and `docs/PATTERNS.md` §4 is
+ * explicit that a failure a user can cause is a value the caller can act on —
+ * so the branch, the try/catch and the blank-name refusal live in the module
+ * that owns the folder, and the surface has one `'error' in result` to read.
+ * Three arms is §1's "three consumers, extract" rung outright, and what they
+ * share is a *set* and a *policy*: the refusal set, and the ordering that
+ * parses before it writes. Spelling that at the call site would be `roundSum`'s
+ * own mistake — a fact shared while its application stayed written out at both
+ * sites (`docs/PATTERNS.md` §1). **Share the application, not just the fact.**
+ *
+ * **The copy arm reads the source file here rather than in the surface**, which
+ * is the whole reason it is an arm at all. `getFileByPath` answers `null` for a
+ * source another pane deleted rather than throwing, so a modal handed
+ * `{ text }` would have to invent both that branch and a user-facing sentence
+ * for it — a second failure shape in the one surface this function exists to
+ * spare, with a sentence owned by nobody. It also makes "a copy reads the
+ * source's *file*, and reconstructs nothing from editor state" a guarantee of
+ * this module: no surface can be refactored into reading the pane's in-memory
+ * layout instead, because no surface reads anything.
+ *
+ * **A blank name is refused on the two arms where blank cannot mean anything
+ * else, and legal on the one where it can.** For a paste, blank means "use the
+ * name inside the JSON", which is `installLayoutSource`'s rule and stated in
+ * its header — so the paste arm goes straight there with the box untrimmed. For
+ * the other two there is no other source of a name, and `createLayout` handed a
+ * blank one would write `<folder>/.json`. That is a hole nothing else closes,
+ * and it is why this refusal is a writer-side guarantee rather than a second
+ * copy of the surface's disabled button: the two happen to agree about which
+ * arms they cover, which is what makes the disabled control honest rather than
+ * what makes this necessary.
+ */
+export async function startLayout(
+	app: App,
+	folder: string,
+	name: string,
+	source: LayoutSource,
+): Promise<InstallResult> {
+	const chosen = name.trim();
+	// The fix rather than the fault (`docs/PATTERNS.md` §4). Unreachable from
+	// the pane's own modal, where the button and the Enter handler both refuse
+	// it first; reachable by any other caller, and by a test with no modal.
+	if (nameRequiredFor(source) && chosen === '') {
+		// Not "or paste one that carries a name": this fires on the copy arm
+		// too, where that is no fix at all. The sentence has to serve both arms
+		// it can reach.
+		return { error: 'A new layout needs a name. Type one first.' };
+	}
+
+	// The box goes across untrimmed on this arm: what a blank one means is
+	// `installLayoutSource`'s rule, and a `.trim()` here would be a second copy
+	// of it (`docs/PATTERNS.md` §1).
+	if ('text' in source) {
+		return installLayoutSource(app, folder, source.text, name);
+	}
+
+	if ('copyOf' in source) {
+		const path = normalizePath(`${folder}/${source.copyOf}.json`);
+		const file = app.vault.getFileByPath(path);
+		if (file === null) return { error: layoutNotFound(source.copyOf, folder) };
+		let text: string;
+		try {
+			text = await app.vault.read(file);
+		} catch (error) {
+			return { error: reason(error) };
+		}
+		// The source's text, through the same gate every layout in the folder
+		// passed: `parseLayout` first, so a source that will not parse never
+		// reaches the vault, and the bytes are `serialiseLayout`'s.
+		return installLayoutSource(app, folder, text, chosen);
+	}
+
+	try {
+		// The empty layout `createLayout` already defaults to, so what a blank
+		// start is stays one definition rather than two.
+		await createLayout(app, folder, chosen);
+	} catch (error) {
+		return { error: reason(error) };
+	}
+	return landed(chosen, folder);
 }
 
 /**
@@ -248,7 +470,7 @@ export async function appendModifierDefinition(
 	const path = normalizePath(`${folder}/${layoutName}.json`);
 	const file = app.vault.getFileByPath(path);
 	if (file === null) {
-		return { error: `Layout "${layoutName}" was not found in "${folder}".` };
+		return { error: layoutNotFound(layoutName, folder) };
 	}
 	// The refusal, set before the throw that carries it out, and read again
 	// after the write either way. `obsidian.d.ts` says nothing about what
@@ -307,7 +529,7 @@ export async function appendModifierDefinition(
 		// The refusal above, the vault's own reason, or the parser's: the layout
 		// file is gone, read-only, or no longer parses. Either way the cell is
 		// untouched.
-		return { error: error instanceof Error ? error.message : String(error) };
+		return { error: reason(error) };
 	}
 	// Past the `catch`, so this is the path an app that swallowed the throw
 	// takes. Nothing was appended either way.

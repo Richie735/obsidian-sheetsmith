@@ -189,6 +189,44 @@ describe('the element helpers', () => {
 });
 
 /*
+ * The visibility pair, driven because what it must *not* do is the reason it
+ * exists.
+ *
+ * A plugin hiding a `.setting-item` cannot use `hidden`: `app.css` declares
+ * `display: flex` on that class at author level, which beats the UA sheet's
+ * `[hidden]` rule. So the double has to write an inline `display`, the one
+ * thing that wins over a class — and `show` has to *remove* the property
+ * rather than set `block`, or a row would come back as the wrong kind of box.
+ */
+describe('the visibility helpers', () => {
+	it('hides with an inline display, which is what beats a class', () => {
+		const el = root();
+		el.hide();
+		expect(el.style.display).toBe('none');
+		// Not the attribute, which is what a plugin must not rely on here.
+		expect(el.hasAttribute('hidden')).toBe(false);
+	});
+
+	it('shows by removing the property rather than by setting a value', () => {
+		const el = root();
+		el.hide();
+		el.show();
+		expect(el.style.display).toBe('');
+		// `?? ''` because the attribute is dropped altogether once it is empty:
+		// what matters is that no `display` survives, however that is spelled.
+		expect(el.getAttribute('style') ?? '').not.toContain('display');
+	});
+
+	it('toggles both ways through one call', () => {
+		const el = root();
+		el.toggleVisibility(false);
+		expect(el.style.display).toBe('none');
+		el.toggleVisibility(true);
+		expect(el.style.display).toBe('');
+	});
+});
+
+/*
  * One behaviour of the vault double, driven for this file's own reason: two
  * callers lean on it as a backstop and neither can demonstrate it.
  *

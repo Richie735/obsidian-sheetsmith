@@ -171,6 +171,43 @@ export function installDomHelpers(): void {
 	): void {
 		Object.assign(this.style, styles);
 	};
+	/*
+	 * Obsidian's own visibility pair, and the inline `display` is the whole
+	 * point of it rather than an implementation detail.
+	 *
+	 * `app.css` declares `.setting-item { display: flex }` at author level,
+	 * which beats the UA sheet's `[hidden] { display: none }` — and no
+	 * `[hidden]` rule exists in `app.css`, `styles.css` or `src/styles/` to put
+	 * it back. So `settingEl.hidden = true` leaves a setting row on screen in
+	 * the app, while a case asserting the attribute passes: green in the suite
+	 * and wrong in the app, which is this file's own reason for existing. An
+	 * inline `display` wins over the class, which is why a plugin hiding a row
+	 * reaches for these (`docs/features/starting-a-new-layout.md`).
+	 *
+	 * `show` *removes* the property rather than setting a value, so a row goes
+	 * back to whatever display its class gives it rather than to `block`.
+	 * `isShown` is deliberately absent: the app's answers about every ancestor
+	 * too, and a self-only version would be exactly the declared-and-not-
+	 * honoured member this file's header is about.
+	 */
+	// Through the helper above rather than through `el.style` directly, which
+	// `obsidianmd/no-static-styles-assignment` refuses in either spelling: it is
+	// the same write, and `''` is how a standard property is cleared
+	// (`docs/PATTERNS.md` §5), so `show` puts a row back to whatever display its
+	// class gives it rather than to `block`.
+	proto.show = function (this: HTMLElement): void {
+		this.setCssStyles({ display: '' });
+	};
+	proto.hide = function (this: HTMLElement): void {
+		this.setCssStyles({ display: 'none' });
+	};
+	proto.toggleVisibility = function (
+		this: HTMLElement,
+		visible: boolean,
+	): void {
+		if (visible) this.show();
+		else this.hide();
+	};
 	proto.setText = function (this: HTMLElement, text: string): void {
 		this.textContent = text;
 	};
