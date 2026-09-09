@@ -863,6 +863,11 @@ decided.
   that (§1) — the editor's labels are a `Record<ColumnType, string>`, so a new
   column type does not compile until it has a word, which is a check nobody has
   to remember to run.
+- **A module in `editor/` with its own entry point *and* its own reportable
+  output earns a test file** [judgement]. That is the boundary of the exception
+  above: the five modules reached only by pressing something the editor drew —
+  `accepts-children.ts`, `component-name.ts`, `copyable-name.ts`,
+  `field-commit.ts`, `form-group.ts` — have neither, and stay under it.
 - **Duplication between components requires a test that drives both** (§1).
 
 ---

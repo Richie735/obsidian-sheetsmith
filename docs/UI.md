@@ -206,6 +206,12 @@ sheet.
   chose, since "Stowed" says more than "not pressed".
 - **Announce what is not visible.** A commit or an Escape-restore that changes
   nothing on screen is announced.
+- **Only a named level earns a `title`, and a tooltip repeating what is already
+  legible is noise** fired at every pass [judgement]. A two-state mark carries
+  its state in `aria-pressed` and its name in `aria-label`, so a tooltip has
+  nothing left to say, while a *named* level has a word the glyph cannot draw.
+  Written down because the third component to draw a ring set `title`
+  unconditionally.
 - **A mark whose state is only a fill strength has one channel.** Filled against
   empty is a shape difference and carries itself; two marked levels differing
   only by how far the mix went do not. `paintLevelRing` is the model, and its
