@@ -818,6 +818,34 @@ export class Vault {
 }
 
 export class FileManager {
+	/**
+	 * Where the app would put a new note, and every source path it was asked
+	 * about.
+	 *
+	 * A recorder rather than an option: the real `getNewFileParent` answers
+	 * **Settings → Files and links → Default location for new notes**, which is a
+	 * preference nothing here models, so what a caller can be held to is the two
+	 * observable halves — the folder it wrote into, and the source path it passed
+	 * so "Same folder as current file" can mean what it says. Set
+	 * `newFileParent` to move the answer; the default is the vault root, whose
+	 * path in Obsidian is `/`.
+	 */
+	newFileParent: TFolder;
+	/** Source paths asked about, in order. */
+	newFileParentSources: string[] = [];
+
+	constructor(vault: Vault) {
+		// The vault's own root, whose path is `/`. The app falls back to
+		// `vault.getRoot()` for every **Default location for new notes** that is
+		// not a named folder, which includes the default.
+		this.newFileParent = vault.getRoot();
+	}
+
+	getNewFileParent(sourcePath: string, _newFilePath?: string): TFolder {
+		this.newFileParentSources.push(sourcePath);
+		return this.newFileParent;
+	}
+
 	async trashFile(file: TAbstractFile): Promise<void> {
 		await file.vault.delete(file);
 	}
@@ -1119,6 +1147,20 @@ export class Workspace {
 		return leaf;
 	}
 
+	/**
+	 * The file the reader is looking at, or null.
+	 *
+	 * Settable, because the app answers it from whichever leaf is active and
+	 * nothing here models that (`getLeaf` above says why). One caller needs it:
+	 * creating a character passes the active file's path to
+	 * `getNewFileParent`, so "Same folder as current file" has a current file.
+	 */
+	activeFile: TFile | null = null;
+
+	getActiveFile(): TFile | null {
+		return this.activeFile;
+	}
+
 	getLeavesOfType(type: string): WorkspaceLeaf[] {
 		return this.leaves.filter((leaf) => leaf.view?.getViewType() === type);
 	}
@@ -1143,7 +1185,9 @@ export class Workspace {
 export class App {
 	vault = new Vault();
 	workspace = new Workspace(this);
-	fileManager = new FileManager();
+	// After `vault`, which it needs in order to hand out a folder in it. Field
+	// initialisers run in declaration order, so the order here is load bearing.
+	fileManager = new FileManager(this.vault);
 }
 
 export class Modal {

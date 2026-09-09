@@ -1,12 +1,15 @@
 import { describe, expect, it } from 'vitest';
 import {
 	applySectionWrites,
+	CharacterNote,
 	CharacterParseError,
 	getSection,
+	newCharacterNote,
 	parseCharacter,
 	serialiseCharacter,
 	setSectionBody,
 	startsSection,
+	withLayoutName,
 } from './character';
 import { readFenced, writeFenced } from './fenced';
 
@@ -363,5 +366,137 @@ describe('startsSection', () => {
 
 	it('takes a tab as the delimiter too, exactly as the parser does', () => {
 		expect(startsSection('##\tChapter')).toBe('##\tChapter');
+	});
+});
+
+/*
+ * Writing the one line the plugin has never written before
+ * (`docs/features/layout-picker.md`).
+ *
+ * Two readers have to agree about it — `extractLayoutName` here, and Obsidian's
+ * own YAML through `metadataCache`, which is what `view/auto-open.ts` and the
+ * **Open as sheet** command read — so every case below reads the value back
+ * through this module, and the quoting rule is what keeps the other reader from
+ * seeing something else.
+ */
+describe('newCharacterNote', () => {
+	it('is frontmatter and nothing else', () => {
+		expect(newCharacterNote('Starter 5e')).toBe(
+			'---\nsheet-layout: Starter 5e\n---\n',
+		);
+	});
+
+	it('round-trips byte for byte, with no sections', () => {
+		const created = newCharacterNote('Starter 5e');
+		const note = parseCharacter(created);
+		expect(serialiseCharacter(note)).toBe(created);
+		expect(note.layoutName).toBe('Starter 5e');
+		expect(note.sections).toEqual([]);
+		expect(note.preamble).toBe('');
+	});
+
+	it('writes a plain name plain', () => {
+		// The common case is byte-identical to what a hand-writer would have
+		// typed, which is what keeps SPEC §3.1's own example the truth.
+		for (const name of ['Starter 5e', 'Starter PF2e', '5e Standard']) {
+			expect(newCharacterNote(name)).toBe(
+				`---\nsheet-layout: ${name}\n---\n`,
+			);
+			expect(parseCharacter(newCharacterNote(name)).layoutName).toBe(name);
+		}
+	});
+
+	it('quotes a name a plain scalar would read differently', () => {
+		// A `:` starts a mapping, a `#` starts a comment, a leading indicator
+		// starts something else again, and a trailing space is trimmed by both
+		// readers. Every one comes back the name that was chosen.
+		for (const name of [
+			'Blades: the sequel',
+			'Sheet #2',
+			'- dashes',
+			'"quoted"',
+			'trailing space ',
+			'@mention',
+			'*star',
+		]) {
+			const created = newCharacterNote(name);
+			expect(created, name).toBe(`---\nsheet-layout: "${name}"\n---\n`);
+			expect(parseCharacter(created).layoutName, name).toBe(name);
+			expect(serialiseCharacter(parseCharacter(created))).toBe(created);
+		}
+	});
+});
+
+describe('withLayoutName', () => {
+	it('changes the layout line and no other byte of the note', () => {
+		const note = parseCharacter(SAMPLE);
+		const moved = serialiseCharacter(withLayoutName(note, 'Starter 5e'));
+		expect(moved).toBe(SAMPLE.replace('DnD 5e Caster', 'Starter 5e'));
+		expect(parseCharacter(moved).layoutName).toBe('Starter 5e');
+	});
+
+	it('leaves every other frontmatter property, comment and quote alone', () => {
+		// The reason this exists rather than `processFrontMatter`, which
+		// re-emits the whole block through Obsidian's YAML serialiser.
+		const source = [
+			'---',
+			'tags:',
+			'  - party',
+			'# who this is',
+			"player: 'Ana'",
+			'sheet-layout: Old',
+			'level: 3',
+			'---',
+			'',
+			'## Abilities',
+			'```sheet',
+			'STR: 8',
+			'```',
+			'',
+		].join('\n');
+		expect(serialiseCharacter(withLayoutName(parseCharacter(source), 'New'))).toBe(
+			source.replace('sheet-layout: Old', 'sheet-layout: New'),
+		);
+	});
+
+	it('keeps the line’s own ending, so a CRLF note stays CRLF', () => {
+		const source = '---\r\nsheet-layout: Old\r\n---\r\n\r\n## Abilities\r\n';
+		expect(serialiseCharacter(withLayoutName(parseCharacter(source), 'New'))).toBe(
+			source.replace('Old', 'New'),
+		);
+	});
+
+	it('preserves the key’s own spacing by rewriting the whole line', () => {
+		// A hand-written `sheet-layout:Old` is read by both readers and is
+		// rewritten in this plugin's own spelling, which is the one place the
+		// line is not carried through untouched — and the value is what a
+		// reader asked to change.
+		const source = '---\nsheet-layout:Old\n---\n';
+		expect(serialiseCharacter(withLayoutName(parseCharacter(source), 'New'))).toBe(
+			'---\nsheet-layout: New\n---\n',
+		);
+	});
+
+	it('quotes on the way in here too', () => {
+		const source = '---\nsheet-layout: Old\n---\n';
+		const note = withLayoutName(parseCharacter(source), 'Blades: the sequel');
+		expect(serialiseCharacter(note)).toBe(
+			'---\nsheet-layout: "Blades: the sequel"\n---\n',
+		);
+		expect(parseCharacter(serialiseCharacter(note)).layoutName).toBe(
+			'Blades: the sequel',
+		);
+	});
+
+	it('refuses a note carrying no such line rather than desyncing its halves', () => {
+		// Unreachable through `parseCharacter`, which refuses first — but a
+		// `CharacterNote` is a plain object a caller can build.
+		const built: CharacterNote = {
+			layoutName: 'Old',
+			frontmatter: '---\ntags: party\n---\n',
+			preamble: '',
+			sections: [],
+		};
+		expect(() => withLayoutName(built, 'New')).toThrow(CharacterParseError);
 	});
 });

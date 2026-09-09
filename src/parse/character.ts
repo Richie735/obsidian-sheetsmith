@@ -7,6 +7,7 @@
  * opaque here; interpreting one is the owning component's business.
  */
 
+import { LAYOUT_KEY } from '../types';
 import { lineText, splitLines } from './lines';
 
 export class CharacterParseError extends Error {
@@ -35,8 +36,33 @@ export interface CharacterNote {
 	sections: CharacterSection[];
 }
 
-const LAYOUT_KEY_LINE = /^sheet-layout[ \t]*:[ \t]*(.*?)[ \t]*$/m;
+/*
+ * The `sheet-layout` line, read and written by the two functions at the bottom
+ * of this file.
+ *
+ * Built from `LAYOUT_KEY` rather than spelling the key again: the writer below
+ * has to emit exactly what this reads, and two literals three hundred lines
+ * apart is the drift §1 of `docs/PATTERNS.md` extracts a name for. The key holds
+ * no regex metacharacter — a `-` is literal outside a character class — so no
+ * escaping is needed and none is hidden here.
+ */
+const LAYOUT_KEY_LINE = new RegExp(
+	`^${LAYOUT_KEY}[ \\t]*:[ \\t]*(.*?)[ \\t]*$`,
+	'm',
+);
 const HEADING = /^##[ \t]+\S/;
+
+/**
+ * What a note with no layout line is refused with, read and written.
+ *
+ * One sentence rather than two copies of it, on `nameAlreadyDeclared`'s
+ * precedent and `docs/PATTERNS.md` §1's one-step tier: a *sentence* is a
+ * policy, so it takes a name on its second site rather than its third. The two
+ * sites are a hundred lines apart and reach the reader by different routes —
+ * one is a note being opened, the other a note being repointed — and a design
+ * pass softening one of them would leave the other saying something else.
+ */
+const NO_LAYOUT_KEY = 'Note has no sheet-layout property in its frontmatter.';
 
 /**
  * The first line of `body` that would start a new section, or null where none
@@ -86,9 +112,7 @@ function splitFrontmatter(
 function extractLayoutName(frontmatter: string): string {
 	const match = LAYOUT_KEY_LINE.exec(frontmatter);
 	if (!match) {
-		throw new CharacterParseError(
-			'Note has no sheet-layout property in its frontmatter.',
-		);
+		throw new CharacterParseError(NO_LAYOUT_KEY);
 	}
 	let value = (match[1] ?? '').trim();
 	if (
@@ -101,6 +125,95 @@ function extractLayoutName(frontmatter: string): string {
 		throw new CharacterParseError('The sheet-layout property names no layout.');
 	}
 	return value;
+}
+
+/**
+ * Whether `name` can be the layout value with no quotes around it.
+ *
+ * The reader directly above is one of *two* that have to agree about this line:
+ * `extractLayoutName` takes the rest of the line, trims it, and strips one
+ * surrounding pair of quotes, while `view/auto-open.ts` and the **Open as
+ * sheet** command read the same key through Obsidian's own YAML in
+ * `metadataCache`. A value the two read differently is a note that opens as a
+ * sheet and then cannot find its layout, so the predicate is deliberately
+ * narrow: plain only where plain means the same thing to both.
+ *
+ * Plain needs a letter or a digit first, which rules out every YAML indicator
+ * (`- ? : , [ ] { } # & * ! | > ' " % @` and a backtick) in one condition rather
+ * than a list, and no `:` or `#` anywhere, which are the two characters that
+ * turn the rest of a plain scalar into a mapping or a comment. It also needs no
+ * trailing space: a plain value is trimmed by both readers, so a name ending in
+ * one would come back a different name, where a quoted one comes back whole.
+ */
+function isPlainLayoutValue(name: string): boolean {
+	return /^[\p{L}\p{N}][^:#]*$/u.test(name) && !/[ \t]$/.test(name);
+}
+
+/**
+ * The `sheet-layout` line's text, with no line ending.
+ *
+ * Double quotes need no escaping, and that is not luck: `"` and `\` are both in
+ * Obsidian's forbidden set for file names, and a layout's name *is* its
+ * filename's basename — `createLayout` writes `<name>.json` — so no name that
+ * can exist in the layout folder holds either character. Recorded because the
+ * next reader will otherwise add escaping, and escaping would *break* the round
+ * trip: `extractLayoutName` strips quotes and does not unescape.
+ */
+function layoutKeyLine(name: string): string {
+	return `${LAYOUT_KEY}: ${isPlainLayoutValue(name) ? name : `"${name}"`}`;
+}
+
+/**
+ * The whole content of a new character note: frontmatter naming the layout, and
+ * nothing else.
+ *
+ * No sections and no trailing blank line, which is the smallest file that is a
+ * valid character note (`docs/features/layout-picker.md`). SPEC §10 is what
+ * makes it enough — a component whose section is absent reads an empty body and
+ * draws a fully editable card, and the first edit writes the section — so
+ * pre-writing one heading per component would buy nothing at render time and
+ * would manufacture the stale sections §10 promises never to delete, the moment
+ * the layout's author renames a label.
+ */
+export function newCharacterNote(layoutName: string): string {
+	return `---\n${layoutKeyLine(layoutName)}\n---\n`;
+}
+
+/**
+ * The same note, pointed at a different layout.
+ *
+ * One line of the frontmatter changes and every other byte of the file — the
+ * other properties, their comments and their spelling, the preamble, every
+ * section — is carried through untouched. That is why this exists rather than
+ * `app.fileManager.processFrontMatter`, which re-emits the whole block through
+ * Obsidian's YAML serialiser: repointing one key is not licence to reformat the
+ * properties around it (Constraint 3's own reason, one key over).
+ *
+ * The line's own ending is kept, so a note written with CRLF stays CRLF.
+ *
+ * Throws where the note carries no such line. Unreachable through
+ * `parseCharacter`, which refuses a note without the key before it can return
+ * one — but a `CharacterNote` is a plain object a caller can also build, and
+ * rewriting nothing while reporting a new `layoutName` would hand that caller a
+ * note whose two halves disagree.
+ */
+export function withLayoutName(
+	note: CharacterNote,
+	layoutName: string,
+): CharacterNote {
+	let replaced = false;
+	const frontmatter = splitLines(note.frontmatter)
+		.map((line) => {
+			const text = lineText(line);
+			if (replaced || !LAYOUT_KEY_LINE.test(text)) return line;
+			replaced = true;
+			return layoutKeyLine(layoutName) + line.slice(text.length);
+		})
+		.join('');
+	if (!replaced) {
+		throw new CharacterParseError(NO_LAYOUT_KEY);
+	}
+	return { ...note, frontmatter, layoutName };
 }
 
 export function parseCharacter(source: string): CharacterNote {
