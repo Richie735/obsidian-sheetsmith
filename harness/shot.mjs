@@ -1006,6 +1006,15 @@ const DEFAULTS = [
 		size: '1000,700',
 	},
 	{
+		// Both themes, because `docs/UI.md` §11's first bullet asks for both and
+		// this state is one sentence and one control: there is nothing else on
+		// the pane for a theme to get right, and the one control is the only
+		// `mod-cta` this plugin draws.
+		name: 'editor-vacant-dark',
+		query: 'surface=editor&theme=dark&layout=none',
+		size: '1000,700',
+	},
+	{
 		// A layout file that will not parse. The order is the load-bearing part:
 		// the picker first, because it is how an author leaves a layout they
 		// cannot edit, then the message where the tree would be — and no panel, so
