@@ -491,6 +491,16 @@ without editing the file is exactly the right outcome here, and the edit follows
 once the chore branch lands. **No criterion below asserts anything about either
 file.**
 
+*Applied since, and the note above is discharged:* the row is gone from
+`docs/BACKLOG.md` § Patterns, and the passages in
+`docs/features/layout-import-export.md` that still described cold-start import
+as unreachable are corrected. **Everything above this paragraph is the record of
+the argument at design time**, which is the last moment the row existed — so the
+row's "waits on", its two-armed Fix, and the reason the edit was deferred all
+read as of then, and are left as they were written rather than retold in the
+past tense. `src/backlog.test.ts` needed no edit: its floors are counts a table
+may not fall *below*, not the table's own size, and no criterion was added.
+
 ### What a duplicate copies, and what it does not
 
 **It reads the source's file off disk, and reconstructs nothing from editor

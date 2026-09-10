@@ -42,7 +42,11 @@ of the vault that exists on desktop and on mobile. An `Import a layout…` optio
 in the same row's dropdown, beside `New layout…`, opens a modal with a paste box
 and an optional name; **Import** validates the JSON through the same gate every
 layout in the vault passes, writes it into the configured layout folder under
-the name inside it, and opens it in the pane.
+the name inside it, and opens it in the pane. *Corrected since: the dropdown
+option is gone. Import is now a source on the **New layout** modal's **Start
+from** row — **Pasted JSON** — and the paste box, the optional name and the
+gate described here all moved there intact
+(`docs/features/starting-a-new-layout.md`); the copy button is unchanged.*
 
 Nothing is overwritten in either direction. A name the layout folder already
 holds is refused in `createLayout`'s own words, and export writes nothing at
@@ -51,8 +55,10 @@ all.
 ## Smallest version
 
 The copy button, and the `Import a layout…` option opening a modal with one
-paste box and an **Import** button. It gives up the optional **Name** field (so
-a taken name is a dead end until the user deletes the existing layout), the
+paste box and an **Import** button. *Corrected since: that option shipped and
+has been replaced by the **Pasted JSON** source; this records the floor as it
+was drawn.* It gives up the optional **Name** field (so a taken name is a dead
+end until the user deletes the existing layout), the
 modal staying open on a refusal (so a rejected 23KB paste is pasted again), and
 the harness shot. `installLayoutSource` is **not** cut: parse-before-write is
 the guarantee that a refusal leaves the vault untouched, and two copies of that
@@ -132,6 +138,11 @@ decides both placements: the dropdown's entries all answer *which layout is
 open* — including `New layout…`, which ends with a different one open — and the
 extra buttons all *act on the layout that is open*. So `Import a layout…` is a
 second dropdown option, and export is a second extra button beside the trash.
+*Corrected since: the rule survived and this application of it did not.* Create
+acts on the **folder**, which is a third kind of thing neither arm of the
+partition covers, so it left the dropdown for a **New layout** button and took
+import with it as a source. Export is still the extra button beside the trash,
+and the comment at the dropdown in `layout-editor.ts` carries the argument.
 
 **Add a starter layout**'s argument does not transfer, and it is not inherited
 here. That command is a command because cold start is the one moment no pane,
@@ -145,20 +156,41 @@ to ask *which layout* with a second suggester to answer a question the pane has
 already answered. A palette entry for either half is recorded in *Deliberately
 not doing* so a reviewer does not report its absence as a gap.
 
-**Corrected after the build: cold-start import is *not* reachable from the
-pane.** An earlier draft of this section argued that it was — that the **Layout
-file** row "renders with zero layouts in the folder", so the dropdown would offer
-`Import a layout…` to an empty vault — and that is false. `render` returns early
-to `renderVacant` when the folder holds no layouts, which draws *"No layouts
-yet."* and a **Create layout** button and nothing else: no row, no dropdown, no
-option. So a first layout arrives by the **Add a starter layout** command, by
-**Create layout**, or by hand, and only then is import reachable. That is an
-open gap rather than a solved case, recorded in `docs/BACKLOG.md` and left where
-it is: the honest fix is a **Manage layouts** surface designed against all six
-of SPEC §7's operations at once (*Deliberately not doing*), not an extra control
-bolted into the vacant state. **The placement cut above does not rest on it** —
-the two legs that carry it are the pane owning the folder and export acting on
-pane-only state, and neither mentions an empty vault.
+**Corrected after the build, and corrected again since: cold-start import *is*
+reachable from the pane, though not through the control this section went
+looking for.** Both errors stay on the record, because the second reads as the
+first's obvious fix if the first is quietly deleted.
+
+The first: an earlier draft of this section argued that the **Layout file** row
+"renders with zero layouts in the folder", so the dropdown would offer
+`Import a layout…` to an empty vault — and that is false, then and now. `render`
+returns early to `renderVacant` where the folder holds no layouts, and no row is
+drawn there: no dropdown, no option. **That half is unchanged and is not a
+defect** — a dropdown over zero layouts cannot succeed under any input, which is
+why `SPEC` §7 and `docs/features/starting-a-new-layout.md` both rule the absent
+row correct, and it is the standing fact the corrections below and at *The
+export button* cite this section for. What was true only then is the way out of
+the vacant state: its one button read **Create layout**, so a first layout
+arrived by it, by the **Add a starter layout** command, or by hand, and only
+then was import reachable.
+
+The second: this section then called that an open gap rather than a solved
+case, recorded in `docs/BACKLOG.md`; the fix this section argued for was a
+**Manage layouts** surface designed against all six of SPEC §7's operations at
+once — never the row's own proposal, which was two-armed and named neither.
+That is not what shipped. `docs/features/starting-a-new-layout.md`, under *The
+vacant state, and the cold-start gap it closes*, ruled the case owed — a reader
+with no layouts is the *most* likely person to be holding a layout somebody
+sent them — and owed **through create rather than through a second control**.
+So `renderVacant` now draws its *"No layouts yet."* above a **New layout**
+button that opens the same modal the row's button does, whose **Start from**
+row offers **A blank grid** and **Pasted JSON** in exactly this state;
+`promptImport`, `promptCreateLayout` and `createLayoutNamed` have left
+`layout-editor.ts` altogether, and the `docs/BACKLOG.md` row is retired.
+
+**The placement cut above rests on neither correction** — the two legs that
+carry it are the pane owning the folder and export acting on pane-only state,
+and neither mentions an empty vault.
 
 ### The import modal
 
@@ -525,9 +557,14 @@ shot, and one is the toolchain.
       **The dropdown half of this criterion is not checkable in a still** and
       is asserted in the cases instead: a native `<select>` renders only its
       selected option, so `Import a layout…` under `New layout…` cannot appear
-      in a PNG, and `layout-editor.test.ts` holds the option list as
+      in a PNG, and `layout-editor.test.ts` held the option list as
       `['Test sheet', 'New layout…', 'Import a layout…']`. Ticked on the icon
-      half looked at, plus that case.
+      half looked at, plus that case. *Corrected since: that assertion is gone
+      with the option. The list it drove is now the modal's **Start from**
+      sources, held at `layout-editor.test.ts` and `new-layout.test.ts` as
+      `['A blank grid', 'Pasted JSON']` in the vacant state. The tick stands on
+      what was checked when it was written; the citation is updated so a reader
+      can still find a live case.*
 - [x] `npm test`, `npm run lint` at `--max-warnings 0`, and `npm run build` are
       green.
 
@@ -559,17 +596,24 @@ through implementation and every round of findings.
   than as part of this feature. `SPEC` §7 promises six operations on that row —
   create, duplicate, rename, delete, import, export — and three of the six still
   do not exist, so the row's presentation is to be redesigned against all six at
-  once rather than bolted onto two more. **It is also the answer to the
-  cold-start gap** recorded under *Where each half is offered*: a surface built
-  for all six has to decide what it offers a folder holding nothing, which is
-  exactly the question `renderVacant` currently answers with **Create layout**
-  alone. So the two are one piece of work, and neither is this one.
+  once rather than bolted onto two more. **It was also offered here as the
+  answer to the cold-start gap, and that leg is gone**: the gap closed through
+  create instead (*Where each half is offered* carries the correction), so the
+  vacant state no longer waits on this surface and the two are not one piece of
+  work. *Corrected since: the count above is one, not three.* `docs/SPEC.md` §7
+  now reads "**Create, duplicate, import and export are shipped** … rename is
+  not", and delete shipped with the pane, so what is left of the deferral is
+  **rename** — the one operation §7 promises and does not have — plus the
+  presentation question, which is what defers it.
 - **Duplicate and rename**, the other two operations §7's **Manage layouts**
   bullet promises and which also do not exist. Their own work. Note that
   renaming an existing layout is genuinely harder than it looks — every
   character note's `sheet-layout` names the file — which is why the **Name**
   field on import is not a down payment on it: it names a layout that does not
-  exist yet and so migrates nothing.
+  exist yet and so migrates nothing. *Corrected since: duplicate exists, as the
+  **An existing layout** source on the **New layout** modal's **Start from**
+  row (`docs/features/starting-a-new-layout.md`). Rename is the one left, and
+  the note just above is still why.*
 - **Component rename migration**, §10's rename promise. Its own backlog item.
 - **A layout library, gallery or index.** Refused when the starters shipped, and
   §11 bans bundled rules content. This ships the mechanism sharing needs and no
