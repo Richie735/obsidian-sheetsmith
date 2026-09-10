@@ -36,6 +36,7 @@ import {
 } from '../components/column-types';
 import { copyableName } from './copyable-name';
 import { showFieldError } from './field-error';
+import { reasonMessage } from './field-reason';
 import { formulaProblem } from './field-formula';
 import { isName } from '../formula/expression';
 import { ColumnOptionsSpec, EntryColumnSpec } from '../types';
@@ -225,22 +226,6 @@ export function addControlSpacers(header: HTMLElement): void {
 	for (let i = 0; i < controls; i++) {
 		header.createSpan({ cls: 'sheetsmith-list-control-space' });
 	}
-}
-
-/**
- * A rule's bare reason, turned into the render-time message: `null` passes
- * straight through, since a field that validates clean is indistinguishable
- * from one never touched, and a reason otherwise gets the sentence-ending
- * period its `change`-time revert clause supplies for itself.
- *
- * One spelling for the four render-time call sites in this file — a row's
- * label, a row's key, a column's key and an entry's primary field — on
- * `docs/PATTERNS.md` §1's reuse ladder: past two consumers of an identical
- * policy, drift is the whole risk a guard test would be checking for, which
- * is what one name says for free.
- */
-function reasonMessage(reason: string | null): string | null {
-	return reason === null ? null : `${reason}.`;
 }
 
 interface RowEntry {
