@@ -203,6 +203,18 @@ named in the backlog row's "Where" (`editor/list-fields.ts`,
 shape that fixing them here would be answering a row that was not raised.
 Recorded as the same family of gap rather than silently left unlisted.
 
+*Corrected since: that pass has run
+(`docs/features/reset-and-modifier-render-validation.md`), and it found the
+"identical gap" reading was only two thirds true. The modifier **Name** rules
+were this shape exactly and got this treatment. **Resets to** needed a new parse
+check beside its required one, since nothing anywhere reported an unparseable
+reset expression. And the three remaining `reset-field.ts` refusals are not this
+gap at all: each guards a state `parse/layout.ts` refuses and the editor's own
+handlers cannot reach, so there is nothing stored for a render to judge — what
+the missing errors map costs there is argued in `docs/BACKLOG.md`'s narrower row,
+and for two of the three it costs nothing, because `restoreFieldErrors` replays
+into an `HTMLInputElement` only.*
+
 **`function-library-field.ts` does not share this gap and needs no change.**
 `renderFunctionLibrary` calls `showProblems(layout.functions ?? [])`
 unconditionally at the end of its own render, before any `change` fires —
@@ -300,6 +312,7 @@ no character note is read or written by any of this.
 - **Not touching `modifier-definitions-field.ts` or `reset-field.ts`.** Same
   gap, same shape, not named in the backlog row's "Where." Recorded rather
   than silently carried forward unlisted.
+  *Corrected since: done, in the pass named above.*
 - **Not touching `function-library-field.ts`.** It already validates its
   stored value unconditionally at render; there is nothing to fix.
 - **Not changing `showFieldError`'s signature or `field-error.ts`'s policy

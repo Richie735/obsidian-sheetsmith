@@ -6719,7 +6719,7 @@ a.sheetsmith-undo {
 	font-size: var(--font-smallest);
 }
 
-/* The reset column picker's own message, held at the pane's fixed size.
+/* A reset binding's own messages, held at the pane's fixed size.
 
    `--font-smallest` is `0.8em` in Obsidian's own CSS where `--font-ui-small` is
    13px, so a message in the first grows with the vault's **Text** setting and one
@@ -6729,11 +6729,21 @@ a.sheetsmith-undo {
    have and lost, because it was drawn in a boxed `.sheetsmith-error` before the
    message moved onto the control.
 
-   Scoped to this one message rather than to the class. That the pane's two error
-   treatments disagree about whether a message scales is pane-wide and older than
-   this row; picking a side for all of them is a decision about every field in the
-   editor, and this only restores what this row already had. */
-.sheetsmith-field-error[data-sheetsmith-for^='reset-column-'] {
+   Scoped to this binding's own messages rather than to the class. That the
+   pane's two error treatments disagree about whether a message scales is
+   pane-wide and older than this row; picking a side for all of them is a
+   decision about every field in the editor, and this only restores what this
+   row already had.
+
+   **Both messages of the block, not just the picker's.** **Resets to** is the
+   next row down and reports from the same render
+   (`docs/features/reset-and-modifier-render-validation.md`), so a binding
+   holding both faults drew them 40px apart at two sizes — 13px under the
+   picker and 19.2px under the expression at `text=24`. One form disagreeing
+   with itself is narrower than the pane-wide call above and is not the same
+   question. */
+.sheetsmith-field-error[data-sheetsmith-for^='reset-column-'],
+.sheetsmith-field-error[data-sheetsmith-for^='reset-to-'] {
 	font-size: var(--font-ui-small);
 }
 

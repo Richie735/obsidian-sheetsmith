@@ -4,12 +4,13 @@ import { getComponent, listComponentTypes } from './components';
 /*
  * Every expression a component declares is typed into a field the editor checks.
  *
- * The four inputs `docs/features/formula-field-errors.md` covers are found by
+ * The inputs `docs/features/formula-field-errors.md` and
+ * `docs/features/reset-and-modifier-render-validation.md` cover are found by
  * *the field the editor drew* — the panel keys on `kind: 'formula'`, and each
  * list editor already knows which of its cells is an expression — rather than by
  * matching a `formulaFields` path, which would be a path matcher built to reach
- * four controls the editors name for free. The cost of that decision is a
- * coverage gap nothing else fails on: a component declaring a *fifth* list path
+ * controls the editors name for free. The cost of that decision is a
+ * coverage gap nothing else fails on: a component declaring a *sixth* list path
  * gets no check, and `contract.test.ts` stays green because the path is
  * perfectly well formed. This is the guard that turns that into a failure.
  *
@@ -29,30 +30,41 @@ import { getComponent, listComponentTypes } from './components';
  * not having caught up with one, and the fix is an edit to the editor.
  */
 describe('every expression a component declares is a field the editor checks', () => {
-	/** The list paths whose cell the three list editors check as they draw it. */
+	/**
+	 * The list paths whose cell an editor checks as it draws it: the three list
+	 * editors, and `reset-field.ts` for the fourth.
+	 *
+	 * **`reset.*.to` was exempted here and no longer is.** It was
+	 * `formula-field-errors.md`'s stated cut, skipped by a filter and a
+	 * `continue` that said so — and once
+	 * `docs/features/reset-and-modifier-render-validation.md` made
+	 * `reset-field.ts` check it at render and on commit, that exemption was a
+	 * hole in this guard exactly where the new code is: deleting the
+	 * render-time call would have left this green. A cut written into a check
+	 * has to be retired by the pass that closes it, which is the whole reason
+	 * the exemption was spelled out rather than implied.
+	 */
 	const COVERED = [
 		'columns.*.formula',
 		'fields.*.formula',
 		'rows.*.values.*',
 		'rows.*.count',
+		'reset.*.to',
 	];
 
-	/** Every dotted path the registry declares, minus the reset that is cut. */
+	/** Every dotted path the registry declares. */
 	function declaredListPaths(): string[] {
 		return listComponentTypes()
 			.flatMap((type) => getComponent(type)?.formulaFields ?? [])
-			.filter((path) => path.includes('.') && path.split('.')[0] !== 'reset');
+			.filter((path) => path.includes('.'));
 	}
 
-	it('covers every dotted formula field, or is rooted at the reset that is cut', () => {
+	it('covers every dotted formula field', () => {
 		for (const type of listComponentTypes()) {
 			const component = getComponent(type);
 			for (const path of component?.formulaFields ?? []) {
 				// A flat key is a panel field, which the panel checks by kind.
 				if (!path.includes('.')) continue;
-				// `reset.*.to` is the feature's stated cut: it joins the pass over
-				// `reset-field.ts`, so it is unchecked on purpose.
-				if (path.split('.')[0] === 'reset') continue;
 				expect(COVERED, `${type} declares ${path}`).toContain(path);
 			}
 		}
@@ -62,8 +74,15 @@ describe('every expression a component declares is a field the editor checks', (
 		// The loop above passes vacuously over a registry whose paths are all
 		// flat, which is what `docs/PATTERNS.md` §10 forbids of a scan. Counted
 		// as a *set*: two components declaring one shared path is one path
-		// covered, and counting declarations would let three of the four go
+		// covered, and counting declarations would let four of the five go
 		// unasked about while the floor still passed.
+		//
+		// **The floor is exactly tight — five declared against five covered,
+		// no slack — and that is the guard working rather than a fragility.**
+		// It goes red the moment `COVERED` names a path no component declares,
+		// which is the other way this list can be wrong: a check claiming to
+		// cover something nothing has ever asked about. So a red here is read
+		// as "an entry was added that no component declares", not as flake.
 		expect(new Set(declaredListPaths()).size).toBeGreaterThanOrEqual(
 			COVERED.length,
 		);

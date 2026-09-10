@@ -247,6 +247,84 @@ describe('what a reset does to the component', () => {
 		expect([...context.errors.keys()]).toEqual(['reset-to-hit_points-0']);
 	});
 
+	it('says so as it renders, before anything is typed', () => {
+		/*
+		 * Not a hand-edited file — `parseBinding` refuses one — but a state this
+		 * pane creates: choosing **Set to a formula** on a binding with no
+		 * expression writes the action, and `persist` then declines to write the
+		 * layout at all. The field is where the reader is looking.
+		 */
+		const form = render(pool([{ trigger: 'Long rest', action: 'formula' }]));
+		expect(fieldError(form)).toBe('A formula reset needs an expression.');
+		expect(context.errors.get('reset-to-hit_points-0')).toBe(
+			'A formula reset needs an expression.',
+		);
+		// A render judges; it does not write.
+		expect(recorded).toEqual({ persists: 0, redraws: 0 });
+	});
+
+	it('prints the parser\'s own sentence for an expression that will not parse', () => {
+		// The one state nothing anywhere reported until now: parseBinding takes
+		// any non-blank string, so the author's first news of it was the press.
+		const form = render(
+			pool([
+				{ trigger: 'Long rest', action: 'formula', to: 'mod(abilities.CON) *' },
+			]),
+		);
+		expect(fieldError(form)).toBe('Expected a value in formula.');
+	});
+
+	it('clears its own message once the expression parses', () => {
+		/*
+		 * Driven as a correction rather than as one clean render, because a
+		 * clean render asserts nothing: no message and no map entry are equally
+		 * true of a field nobody checks, so the case would pass with the
+		 * render-time call deleted, which is the whole feature
+		 * (`docs/PATTERNS.md` §10). What only a running check can produce is the
+		 * *transition* — marked from the file, then clean from the file, on one
+		 * context.
+		 */
+		const reset: ResetBinding[] = [
+			{ trigger: 'Long rest', action: 'formula', to: 'mod(abilities.CON) *' },
+		];
+		const config = pool(reset);
+		expect(fieldError(render(config))).toBe('Expected a value in formula.');
+		expect(context.errors.size).toBe(1);
+
+		// The hand edit the pane cannot see happening: the file is corrected and
+		// the pane is drawn again over the same errors map.
+		reset[0] = { ...reset[0], to: 'mod(abilities.CON) * level' } as ResetBinding;
+		config.reset = reset;
+		expect(fieldError(render(config))).toBe(null);
+		expect(context.errors.size).toBe(0);
+	});
+
+	it('leaves the message on screen once the action asks for an expression', () => {
+		// The redraw the action dropdown causes is what would otherwise wash the
+		// message away: this is the state the pane holds and cannot save.
+		const config = pool([{ trigger: 'Long rest', action: 'full' }]);
+		const form = render(config);
+		choose(control<HTMLSelectElement>(form, 'reset-action-hit_points-0'), 'formula');
+		expect(recorded.redraws).toBe(1);
+		expect(fieldError(render(config))).toBe(
+			'A formula reset needs an expression.',
+		);
+	});
+
+	it('stores an expression that will not parse, and marks it', () => {
+		// An expression is invalid for most of the time it is being written, so
+		// the commit is not refused: `config-panel.ts`'s ruling one module over.
+		const reset: ResetBinding[] = [{ trigger: 'Long rest', action: 'formula' }];
+		const form = render(pool(reset));
+		commit(
+			control<HTMLInputElement>(form, 'reset-to-hit_points-0'),
+			'mod(abilities.CON) *',
+		);
+		expect(reset[0]?.to).toBe('mod(abilities.CON) *');
+		expect(recorded.persists).toBe(1);
+		expect(fieldError(form)).toBe('Expected a value in formula.');
+	});
+
 	it('stores a trimmed expression, and clears the error with it', () => {
 		const reset: ResetBinding[] = [{ trigger: 'Long rest', action: 'formula' }];
 		const form = render(pool(reset));
