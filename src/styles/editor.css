@@ -846,8 +846,25 @@
 }
 
 /* Inside a field the message belongs under its own input, reading left to
-   right like everything else in the column rather than pinned to the right. */
-.sheetsmith-field > .sheetsmith-field-error {
+   right like everything else in the column rather than pinned to the right.
+
+   `.sheetsmith-detail-field` is on the same rule rather than in a fifth block
+   of its own, because it is the same construction: both are
+   `display: flex; flex-direction: column`, so a message in either stacks under
+   a left-aligned control and has nothing to be pinned to the right of, and
+   `flex-basis: 100%` would size it along the column's axis. One construction
+   cannot have two answers.
+
+   **One shipped message rides it, not three.** A level column's **Level names**
+   is `labelled(detail, …)` and so a child of the detail field, and it was
+   right-aligned there until this selector existed. **Levels**, **Minimum** and
+   **Maximum** are each a `.sheetsmith-position-field` *inside* the detail line,
+   which has its own rule below — centred, `max-width: 8em` — so the `>` here
+   deliberately does not reach them and they are unmoved. Written down because
+   the feature that added this selector first claimed all four
+   (`docs/features/formula-field-errors.md`, question 5). */
+.sheetsmith-field > .sheetsmith-field-error,
+.sheetsmith-detail-field > .sheetsmith-field-error {
 	flex-basis: auto;
 	padding-left: 0;
 	text-align: left;
