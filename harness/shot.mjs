@@ -717,6 +717,71 @@ const DEFAULTS = [
 		size: EDITOR_FRAME,
 	},
 	{
+		/*
+		 * **A reset expression that will not parse, said on the field rather than
+		 * at the press** (`docs/features/reset-and-modifier-render-validation.md`).
+		 * `state=broken` gives the Spell list a second binding on **Long rest**,
+		 * acting on `Level` with a half-typed `mod(abilities.CON) *`, so the
+		 * parser's own sentence is under **Resets to** on first paint with
+		 * nothing typed and no commit fired. The binding above it is the ordinary
+		 * one `editor-reset-column` photographs, so the pair is what to read: the
+		 * marked field has to be legible as belonging to `Trigger 2` and not to
+		 * the row above it, which is what `.sheetsmith-reset-binding-detail`
+		 * closes the gap for.
+		 *
+		 * One theme, unlike the pair above. What is new here is a
+		 * `.sheetsmith-field-error` under a `Setting`'s text input, which is the
+		 * construction `editor-formula-error` and `editor-formula-error-dark`
+		 * already photograph in both — the dark half would be a second picture of
+		 * a message this feature did not write.
+		 */
+		name: 'editor-reset-formula-error',
+		query: 'surface=editor&theme=light&state=broken&open=tab_spells',
+		size: EDITOR_FRAME,
+	},
+	{
+		/*
+		 * **The pane at the vault's `Text` setting, which no editor view had.**
+		 * Two shots existed at `text=24` and both were `surface=sheet`, so §5's
+		 * "relative units follow the vault's text size" had never been checked
+		 * on the surface where most of a sheet is actually configured — and it
+		 * is not one message. `editor.css` declares `--font-smallest`, which is
+		 * `0.8em` and follows the setting, in six places against eight tokens
+		 * fixed in px: at Text 24 the six grow 1.5× while their neighbours hold,
+		 * so eight muted *secondary* labels render 48% larger than the 104
+		 * primary ones around them (`reference/legibility.md` §4, inverted
+		 * hierarchy). That is a pane-wide pass and a `docs/BACKLOG.md` § UI row,
+		 * not this feature; this view is what that row points at.
+		 *
+		 * It doubles as the verification shot for the one instance this feature
+		 * did fix: **Resets to** and **Acts on** now share `--font-ui-small`, so
+		 * the two messages of a binding measure the same here. At the default
+		 * setting that fix is 12.8px against 13px and no shot can show it, which
+		 * is why the view is at this one.
+		 *
+		 * `state=broken&open=tab_spells` is `editor-reset-formula-error`'s own
+		 * query, so the pair differ by the setting alone.
+		 *
+		 * **What it does not reach**, so nobody goes looking:
+		 * `.sheetsmith-field-name` is `display: none` above the 380px container
+		 * query, so it needs the narrow regime `docs/BACKLOG.md` already records
+		 * as unshot, and `.sheetsmith-preview-legend` is absent from this view.
+		 */
+		name: 'editor-reset-formula-error-large-text',
+		query:
+			'surface=editor&theme=light&state=broken&open=tab_spells&text=24',
+		/*
+		 * The smallest editor frame in the set, and measured rather than taken
+		 * from `EDITOR_FRAME`: at Text 24 every affected instance lands between
+		 * y=757 and y=1335 — the field error at 757, the footnote at 1034–1107,
+		 * the Columns header at 1247, the position labels at 1312 — each beside
+		 * a `.setting-item-name` holding at 13px. The pane grows 10–15% at this
+		 * setting and all of that growth is below this fold, which is a crop on
+		 * purpose, as `editor-threshold`'s is.
+		 */
+		size: '1500,1800',
+	},
+	{
 		name: 'editor-dark',
 		query: 'surface=editor&theme=dark&open=weapons',
 		size: EDITOR_FRAME,

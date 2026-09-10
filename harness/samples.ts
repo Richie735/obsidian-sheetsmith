@@ -2373,6 +2373,46 @@ export function brokenSamples(): Sample[] {
 					: column,
 			);
 		}
+		/*
+		 * A reset expression that will not parse, on the one component in this
+		 * layout whose **Acts on** row is drawn — the Spell list, inside the tab
+		 * set, which `editor-reset-column` already opens
+		 * (`docs/features/reset-and-modifier-render-validation.md`).
+		 *
+		 * A *second* binding rather than a rewrite of the first, so the shot holds
+		 * both halves of the row at once: an ordinary binding above, and one
+		 * carrying the parser's sentence under **Resets to**. `Level` is a number
+		 * column with no maximum, so `resetColumns` refuses only `full` on it and
+		 * a formula binding is one the editor itself would write.
+		 *
+		 * Half-typed, and it is the field's own example cut short —
+		 * `mod(abilities.CON) *` against the description's
+		 * `mod(abilities.CON) * level` — because that is what a formula looks like
+		 * for most of the time it is being written, and the message sits directly
+		 * under the example it is a truncation of.
+		 *
+		 * Reached through the tab set, because `tab_spells` is a child: this
+		 * function maps the top-level samples, so a branch keyed on the child's own
+		 * id would never fire.
+		 */
+		if (config.id === 'pages' && config.children !== undefined) {
+			config.children = config.children.map((child) =>
+				child.id === 'tab_spells'
+					? {
+							...child,
+							reset: [
+								...(child.reset ?? []),
+								{
+									trigger: 'Long rest',
+									column: 'Level',
+									action: 'formula' as const,
+									to: 'mod(abilities.CON) *',
+								},
+							],
+						}
+					: child,
+			);
+		}
 		// A row key that is not a name, on the card that publishes one. Refused
 		// rather than rewritten, because nothing could tell the author what
 		// their row had become — so the card has to say so.
