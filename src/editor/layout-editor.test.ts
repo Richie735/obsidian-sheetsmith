@@ -656,6 +656,139 @@ describe('editing a component', () => {
 	});
 });
 
+/*
+ * A formula field says what the parser makes of what it holds
+ * (`docs/features/formula-field-errors.md`).
+ *
+ * Both moments are asserted here because they answer different failures: the
+ * render half is what a hand-edited layout file needs, and the commit half is
+ * what a blur needs on a panel that persists without redrawing.
+ */
+describe('a formula field that will not parse', () => {
+	/** A card holding an expression a hand edit could have left behind. */
+	function broken(): Layout {
+		return {
+			name: 'Test sheet',
+			columns: 12,
+			components: [
+				{
+					id: 'armour',
+					type: 'card',
+					label: 'Armour class',
+					position: { col: 1, row: 1, width: 2, height: 1 },
+					derived: 'floor((value - 10) / 2',
+					effective: 'value + mod.self',
+				},
+				{
+					id: 'hit_points',
+					type: 'pool',
+					label: 'Hit points',
+					position: { col: 3, row: 1, width: 4, height: 1 },
+					reset: [{ trigger: 'Long rest', action: 'formula', to: 'max /' }],
+				},
+			] as unknown as Layout['components'],
+			triggers: ['Long rest'],
+		};
+	}
+
+	/** The message drawn under one field, or the empty string where there is none. */
+	function problem(input: HTMLElement): string {
+		return (
+			input.parentElement?.querySelector('.sheetsmith-field-error')
+				?.textContent ?? ''
+		);
+	}
+
+	it('says so on the first paint of a stored expression', async () => {
+		harness = await open(broken());
+		const rewrites = writes(harness);
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+
+		const input = control<HTMLInputElement>(harness, 'cfg-armour-derived');
+		expect(input.classList.contains('sheetsmith-input-invalid')).toBe(true);
+		expect(problem(input)).toBe('Expected ")" in formula.');
+		// Drawing a form is not an edit: the message came from the model, not
+		// from a commit this test provoked.
+		expect(rewrites()).toBe(0);
+	});
+
+	it('says nothing about the field beside it, which parses', async () => {
+		harness = await open(broken());
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+
+		const input = control<HTMLInputElement>(harness, 'cfg-armour-effective');
+		expect(input.classList.contains('sheetsmith-input-invalid')).toBe(false);
+		expect(problem(input)).toBe('');
+	});
+
+	it('stores what was typed and says what is wrong with it', async () => {
+		harness = await open();
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+
+		const input = control<HTMLInputElement>(harness, 'cfg-armour-derived');
+		type(input, '10 + value +');
+		await settle(harness.pane);
+
+		expect(problem(input)).toBe('Expected a value in formula.');
+		expect(input.value).toBe('10 + value +');
+		// The record, not only the DOM: a field that refuses what its own
+		// checker refuses is one an author cannot type into, so the commit is
+		// unchanged and the text is in the file.
+		expect((await harness.stored()).components[0]).toMatchObject({
+			derived: '10 + value +',
+		});
+	});
+
+	it('clears the message when the expression is corrected', async () => {
+		harness = await open(broken());
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+
+		const input = control<HTMLInputElement>(harness, 'cfg-armour-derived');
+		type(input, 'floor((value - 10) / 2)');
+		await settle(harness.pane);
+
+		expect(input.classList.contains('sheetsmith-input-invalid')).toBe(false);
+		expect(problem(input)).toBe('');
+		expect((await harness.stored()).components[0]).toMatchObject({
+			derived: 'floor((value - 10) / 2)',
+		});
+	});
+
+	it('clears the message when the field is emptied', async () => {
+		// Blank is a state the component reads rather than a hole: a Card with
+		// no derived formula publishes its stored value.
+		harness = await open(broken());
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+
+		const input = control<HTMLInputElement>(harness, 'cfg-armour-derived');
+		type(input, '   ');
+		await settle(harness.pane);
+
+		expect(problem(input)).toBe('');
+		expect((await harness.stored()).components[0]).not.toHaveProperty('derived');
+	});
+
+	it('leaves a reset binding alone, which is this feature\'s largest cut', async () => {
+		// `reset.*.to` is reserved for the pass over `reset-field.ts` and
+		// `modifier-definitions-field.ts`, so a broken reset expression still
+		// says nothing here. Asserted rather than left to prose, because the
+		// shared function is one import away from being called there.
+		harness = await open(broken());
+		control(harness, 'edit-hit_points').click();
+		await settle(harness.pane);
+
+		const input = control<HTMLInputElement>(harness, 'reset-to-hit_points-0');
+		expect(input.value).toBe('max /');
+		expect(input.classList.contains('sheetsmith-input-invalid')).toBe(false);
+		expect(problem(input)).toBe('');
+	});
+});
+
 describe('a field shown only under a condition', () => {
 	beforeEach(async () => {
 		harness = await open();

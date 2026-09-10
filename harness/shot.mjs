@@ -739,6 +739,55 @@ const DEFAULTS = [
 		size: EDITOR_FRAME,
 	},
 	{
+		/*
+		 * **A formula field saying what the parser makes of it**
+		 * (`docs/features/formula-field-errors.md`), on the panel's own
+		 * `kind: 'formula'` branch: `state=broken` gives the **Weight worn**
+		 * card a truncated `sum(inventory, Weight, Worn`, so the message is
+		 * there on first paint with nothing typed and no `change` fired.
+		 *
+		 * Both themes, because `--text-error` is a host variable and the light
+		 * theme is the half `docs/BACKLOG.md` measures at 4.20:1 — the one shot
+		 * where a reviewer can see what that ratio looks like under a red
+		 * outline.
+		 *
+		 * The canvas above it draws this card's own `?`, and the card beside it
+		 * — `encumbrance`, whose formula parses and cannot resolve — draws the
+		 * *same* `?`. That is the whole argument for the field: on a card the
+		 * two failures are one mark, and only the author's own field can tell
+		 * them apart. The unmarked half is `editor-formula-unresolved` below,
+		 * and it has to be a view of its own because a panel draws one
+		 * component's form at a time.
+		 */
+		name: 'editor-formula-error',
+		query: 'surface=editor&theme=light&state=broken&open=worn_weight',
+		size: EDITOR_FRAME,
+	},
+	{
+		name: 'editor-formula-error-dark',
+		query: 'surface=editor&theme=dark&state=broken&open=worn_weight',
+		size: EDITOR_FRAME,
+	},
+	{
+		/*
+		 * **Question 2 as a picture, and the view to look at first**
+		 * (`docs/features/formula-field-errors.md`): `encumbrance` reads
+		 * `sum(inventroy, Qty * Weight)` in this state — a misspelled table, so
+		 * it parses perfectly and can never resolve. Its **Derived** field is
+		 * therefore **unmarked**, beside a canvas drawing `?` for that very card.
+		 *
+		 * What it is evidence for: this feature checks an expression's text and
+		 * nothing about its names. A marker that fired here would fire on four of
+		 * the six formulas a real system asks for — a modifier over a score
+		 * nothing has published yet, a pool fraction over a max of zero, a stat
+		 * off an unchosen frame, a sum over an empty inventory — and a marker
+		 * that fires on things that are not wrong is one that gets switched off.
+		 */
+		name: 'editor-formula-unresolved',
+		query: 'surface=editor&theme=light&state=broken&open=encumbrance',
+		size: EDITOR_FRAME,
+	},
+	{
 		// The pane below it, stacked: schematic, tree, then panel. 1190 rather
 		// than a comfortably narrow width on purpose — the threshold is 1176px of
 		// pane and 1190 of window is 1164 of pane, so this and the two above

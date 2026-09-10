@@ -2249,7 +2249,7 @@ export function brokenSamples(): Sample[] {
 			openRows?: boolean;
 			options?: { value: string; label?: string }[];
 			rows?: { label: string; key?: string }[];
-			columns?: { type?: string; total?: boolean }[];
+			columns?: { key?: string; type?: string; total?: boolean; formula?: string }[];
 			fields?: { key: string; type?: string }[];
 		};
 		// Nothing for a container itself: with the collapse gone a group has one
@@ -2282,6 +2282,22 @@ export function brokenSamples(): Sample[] {
 		// the component holds no rows rather than that it does not exist.
 		if (config.id === 'encumbrance') {
 			config.derived = 'sum(inventroy, Qty * Weight)';
+		} else if (config.id === 'worn_weight') {
+			/*
+			 * An expression that will not *parse*, which is the state the pane
+			 * now reports in the field itself
+			 * (`docs/features/formula-field-errors.md`). A truncated call, which
+			 * is what a formula looks like for most of the time it is being
+			 * written — and the card is the surface it is *not* photographed on:
+			 * the sheet draws the same "?" it draws for `encumbrance` beside it,
+			 * because an expression that cannot be parsed and one that cannot be
+			 * resolved are one thing to a card and two things to an author.
+			 *
+			 * On a keyless derived-only card, so the accounting above is
+			 * untouched: this one already showed "?" in this state, and it shows
+			 * the same "?" for a new reason.
+			 */
+			config.derived = 'sum(inventory, Weight, Worn';
 		} else if (sample.config.type === 'card' && config.key !== undefined) {
 			// A key holding a colon is refused by every fenced component,
 			// because a colon is what separates key from value in the block.
@@ -2326,6 +2342,34 @@ export function brokenSamples(): Sample[] {
 			config.columns = (config.columns ?? []).map((column) =>
 				column.type === undefined || column.type === 'text'
 					? { ...column, total: true }
+					: column,
+			);
+		}
+		/*
+		 * A column formula that will not parse, on the one table the editor views
+		 * already open (`state=broken&open=skills`). The message is the longest
+		 * of the parser's four, on the narrowest anchor this feature writes — a
+		 * `Formula` cell in a column's detail line — which is what makes the
+		 * crowded-row question reviewable at all: a message adds a line to a list
+		 * row, and a columns list is capped at `20em` of scroll.
+		 *
+		 * A note-to-self rather than a truncation, because it is the breakage an
+		 * author actually leaves behind: the **Function library** describes a
+		 * leading `#` as a note to yourself, and a formula field has no such rule,
+		 * which is a thing worth learning from the message.
+		 *
+		 * **It leads the expression rather than trailing it, and that is the
+		 * correction a design review forced.** Trailing (`… mod.self #tbd`) the
+		 * `#` sat past the end of a 226px cell and the shot showed a message
+		 * naming a character that was not on screen — the field clips and reveals
+		 * nothing, which is a `docs/BACKLOG.md` § UI row of its own. Leading, the
+		 * character the sentence names is the first glyph in the field, so what
+		 * the picture shows is the pairing this feature is actually about.
+		 */
+		if (config.id === 'skills' && config.columns !== undefined) {
+			config.columns = config.columns.map((column) =>
+				column.type === 'computed'
+					? { ...column, formula: '#tbd ability + Training * 2 + mod.self' }
 					: column,
 			);
 		}

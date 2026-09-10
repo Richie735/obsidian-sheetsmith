@@ -1722,3 +1722,163 @@ describe('the columns editor and a modifier column', () => {
 		expect(footnotes(el).join('\n')).not.toContain('modifier');
 	});
 });
+
+/*
+ * A formula cell inside a list says what the parser makes of it
+ * (`docs/features/formula-field-errors.md`).
+ *
+ * One block over three editors, because it is one rule reaching four controls:
+ * the expression is stored either way, and the message is the parser's own
+ * sentence at render and on commit alike.
+ */
+describe('a formula cell that will not parse', () => {
+	/** The message under one field, which is where `showFieldError` puts it. */
+	function under(input: HTMLInputElement): string | null {
+		return fieldError(input.parentElement as HTMLElement);
+	}
+
+	/** A record set's own words for the shared columns field. */
+	const AS_FIELDS = {
+		types: ['number', 'toggle', 'level', 'computed', 'modifier'],
+		total: false,
+		publish: false,
+		hideHeading: false,
+		unit: 'field',
+		holder: 'record',
+		cell: 'field',
+		heading: 'Name',
+	} as const;
+
+	function formulaCell(el: HTMLElement, key: string): HTMLInputElement {
+		const found = el.querySelector<HTMLInputElement>(
+			`input[aria-label="${key} formula"]`,
+		);
+		if (!found) throw new Error(`no formula cell for "${key}"`);
+		return found;
+	}
+
+	it('marks a computed column on first paint, with no change fired', () => {
+		const el = columnsEditor({
+			columns: [{ key: 'Total', type: 'computed', formula: 'ability + ' }],
+		});
+		const cell = formulaCell(el, 'Total');
+		expect(under(cell)).toBe('Expected a value in formula.');
+		expect(cell.classList.contains('sheetsmith-input-invalid')).toBe(true);
+		// Nothing about drawing a form is an edit.
+		expect(recorded.persists).toBe(0);
+		expect(recorded.redraws).toBe(0);
+	});
+
+	it('says nothing about a column whose formula parses, or has none', () => {
+		const el = columnsEditor({
+			columns: [
+				{ key: 'Total', type: 'computed', formula: 'ability + 2' },
+				{ key: 'Bare', type: 'computed' },
+			],
+		});
+		expect(under(formulaCell(el, 'Total'))).toBeNull();
+		expect(under(formulaCell(el, 'Bare'))).toBeNull();
+	});
+
+	it('marks both of two broken columns', () => {
+		const el = columnsEditor({
+			columns: [
+				{ key: 'Total', type: 'computed', formula: 'ability +' },
+				{ key: 'Bonus', type: 'computed', formula: 'floor((prof' },
+			],
+		});
+		expect(under(formulaCell(el, 'Total'))).toBe('Expected a value in formula.');
+		expect(under(formulaCell(el, 'Bonus'))).toBe('Expected ")" in formula.');
+	});
+
+	it('stores a broken expression and says what is wrong with it', () => {
+		const record = {
+			columns: [{ key: 'Total', type: 'computed', formula: 'ability + 2' }],
+		};
+		const el = columnsEditor(record);
+		const cell = formulaCell(el, 'Total');
+		commit(cell, 'ability + #');
+		expect(under(cell)).toBe('Unexpected character "#" in formula.');
+		// Stored, not refused: a formula is invalid for most of the time it is
+		// being written.
+		expect(record.columns[0]?.formula).toBe('ability + #');
+		expect(recorded.persists).toBe(1);
+	});
+
+	it('clears the message when the expression is corrected', () => {
+		const record = {
+			columns: [{ key: 'Total', type: 'computed', formula: 'ability +' }],
+		};
+		const el = columnsEditor(record);
+		const cell = formulaCell(el, 'Total');
+		expect(under(cell)).not.toBeNull();
+		commit(cell, 'ability + 2');
+		expect(under(cell)).toBeNull();
+		expect(cell.classList.contains('sheetsmith-input-invalid')).toBe(false);
+	});
+
+	it('marks a record set field, which is the same control under other words', () => {
+		const el = columnsEditor(
+			{ columns: [{ key: 'Save', type: 'computed', formula: 'level *' }] },
+			0,
+			AS_FIELDS,
+		);
+		expect(under(formulaCell(el, 'Save'))).toBe('Expected a value in formula.');
+	});
+
+	it('marks a row value expression under its own cell', () => {
+		const el = rowsEditor({
+			rows: [
+				{ label: 'Acrobatics', values: { ability: 'abilities.DEX' } },
+				{ label: 'Arcana', values: { ability: 'abilities.INT +' } },
+			],
+		});
+		const cells = Array.from(
+			el.querySelectorAll<HTMLInputElement>('input[placeholder="Expression"]'),
+		);
+		expect(cells).toHaveLength(2);
+		expect(under(cells[0] as HTMLInputElement)).toBeNull();
+		expect(under(cells[1] as HTMLInputElement)).toBe(
+			'Expected a value in formula.',
+		);
+		expect(recorded.persists).toBe(0);
+		expect(recorded.redraws).toBe(0);
+	});
+
+	it('marks a track row whose segment count will not parse', () => {
+		const el = entriesEditor(
+			{
+				entries: [
+					{ key: 'first', count: 'level /' },
+					{ key: 'second', count: 3 },
+					{ key: 'third' },
+				],
+			},
+			{ withCount: true },
+		);
+		const cells = Array.from(
+			el.querySelectorAll<HTMLInputElement>('input[placeholder="Segments"]'),
+		);
+		expect(cells).toHaveLength(3);
+		expect(under(cells[0] as HTMLInputElement)).toBe(
+			'Expected a value in formula.',
+		);
+		// A bare number is arithmetic already, and an empty cell falls back to
+		// the component's own count.
+		expect(under(cells[1] as HTMLInputElement)).toBeNull();
+		expect(under(cells[2] as HTMLInputElement)).toBeNull();
+		expect(recorded.persists).toBe(0);
+		expect(recorded.redraws).toBe(0);
+	});
+
+	it('remembers a message so it survives a rebuild of the pane', () => {
+		// `field-error.ts`'s policy: the DOM says the reader can see it now, and
+		// the map is what `restoreFieldErrors` can replay.
+		columnsEditor({
+			columns: [{ key: 'Total', type: 'computed', formula: 'ability +' }],
+		});
+		expect([...context.errors.values()]).toContain(
+			'Expected a value in formula.',
+		);
+	});
+});
