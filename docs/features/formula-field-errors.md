@@ -477,7 +477,10 @@ loading at all, would say nothing at render while a stored bad expression spoke
 up. So `reset.*.to` joins that pass rather than this one, with its required check
 and its parse check arriving together. The residue, stated rather than left to be
 found: an unparseable reset expression still says nothing in the editor and fails
-at the press.
+at the press. *Corrected since: that residue is gone. The pass landed as
+`docs/features/reset-and-modifier-render-validation.md` and `resetToProblem` in
+`reset-field.ts` now answers both halves at render and on commit — the required
+check and the parse check, arriving together exactly as this paragraph asks.*
 
 ### What a reader takes from it at a glance
 
@@ -552,6 +555,11 @@ model did not already have.
       tests already track.
 - [x] No **Resets to** field gains a message at render, asserted, so the cut in
       the section above is visible in a test rather than only in prose.
+      *Corrected since: the cut has been taken up, so the assertion this
+      criterion points at no longer exists. `layout-editor.test.ts`'s case is
+      inverted and renamed — the pane now marks that field with the parser's
+      sentence — and `src/formula-field-coverage.test.ts`'s matching exemption
+      for `reset.*.to` is retired with it.*
 - [x] `harness/samples.ts`'s `brokenSamples()` gains two breakages — an
       unparseable `derived` on a keyless derived-only card, and an unparseable
       `formula` on the Skills table's computed column — and the broken sheet
@@ -657,6 +665,9 @@ Commits 1 and 2 are the smallest version, whole.
   Named out of scope by the card.
 - **Not touching `reset-field.ts` or `modifier-definitions-field.ts`.** Its
   backlog row stays, with `reset.*.to`'s parse check added to what that pass owes.
+  *Corrected since: that pass has run, and the row it was waiting on is gone —
+  what replaced it is narrower and about the pane's replay rather than these two
+  fields.*
 - **Not adding the `isName`-when-`total` rule to a column key field.** Its own
   backlog row stays.
 - **Not reopening whether a derived sheet owes better than `?`.** `SPEC` §13's
