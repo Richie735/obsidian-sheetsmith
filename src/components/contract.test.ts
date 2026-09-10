@@ -437,10 +437,11 @@ describe('component registry', () => {
 	it('names every shared config key, so the rules that forbid them are not vacuous', () => {
 		/*
 		 * Both rules below use `EDITOR_OWNED_KEYS` as the *forbidden* set, so an
-		 * emptied list passes them by forbidding nothing — and the palette's half
-		 * is the compiler's, where `Omit<TConfig, never>` would quietly let an
-		 * entry prefill an id. That became worth checking when the list moved into
-		 * shipping code to be the one copy the type derives from.
+		 * emptied list passes them by forbidding nothing — and both now reach the
+		 * compiler as well, where `Omit<TConfig, never>` would quietly let an
+		 * entry prefill an id and `Exclude<…, never>` would let a field declare
+		 * one. That became worth checking when the list moved into shipping code
+		 * to be the one copy the two types derive from.
 		 *
 		 * Anchored to the config the editor actually writes rather than to a
 		 * second spelling of the six: every key of a bare component is a key the
@@ -1281,11 +1282,29 @@ describe.each(types)('component "%s"', (type) => {
 	});
 
 	it('declares no duplicate config field keys', () => {
+		// Not the compiler's at all: a key is checked against the config it
+		// names, and an array may still name one of them twice.
 		const keys = (component?.configFields ?? []).map((f) => f.key);
 		expect(new Set(keys).size).toBe(keys.length);
 	});
 
 	it('does not redeclare a config key the layout editor owns', () => {
+		/*
+		 * Half of this is the compiler's now, and the half it is not is why the
+		 * sweep stays. `ConfigFieldOf<TConfig>` instantiates `ConfigFieldSpec`'s
+		 * `TKey` over `DeclarableKey<TConfig>`, which `Exclude`s these six — but
+		 * `DeclarableKey` widens to `string` on its erased branch, so the type
+		 * asks nothing at all of a component annotated `ComponentDefinition`
+		 * with no arguments, which is exactly the type `register` accepts in
+		 * `components/index.ts`. Measured: that annotation, and a hand-passed
+		 * third argument of `ConfigFieldSpec`, both compile with `key: 'label'`.
+		 *
+		 * So the compile-time half is conditional on a file-shape convention —
+		 * PATTERNS §3.7's `ComponentDefinition<XConfig, XData>`, prose with no
+		 * check behind it — and this is not: it runs off the live registry,
+		 * however a component was annotated. Same reading as the palette's twin
+		 * below, which is held by `Omit<TConfig, EditorOwnedKey>` and kept.
+		 */
 		for (const field of component?.configFields ?? []) {
 			expect(EDITOR_OWNED_KEYS).not.toContain(field.key);
 		}

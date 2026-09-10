@@ -247,10 +247,76 @@ export type ResolvedValues = Readonly<
 	Record<string, string | number | boolean | null | undefined>
 >;
 
-/** A config field the layout editor renders for a component. */
-export interface ConfigFieldSpec {
+/**
+ * A config key a component may declare a field for: one of its own config
+ * properties, and never one the layout editor owns.
+ *
+ * **`ComponentConfig` is the erased case here, not the narrow one, and the
+ * conditional is what says so.** `src/editor/` reads `configFields` back off
+ * the registry, where the component's own config type is gone and `TConfig` is
+ * `ComponentConfig` — so a plain `keyof TConfig` would hand those readers
+ * `'id' | 'type' | 'label' | 'position' | 'reset' | 'children'`, which is close
+ * to exactly the set a field may never name: not merely too narrow but
+ * inverted. A reader that has lost the type has to be told nothing rather than
+ * told the opposite, so the erased case widens back to `string` and only a
+ * component's own declaration is checked against anything.
+ */
+type DeclarableKey<TConfig extends ComponentConfig> =
+	ComponentConfig extends TConfig
+		? string
+		: Exclude<Extract<keyof TConfig, string>, EditorOwnedKey>;
+
+/**
+ * The properties one entry of the list under `TConfig[K]` has, for a field of
+ * a list kind.
+ *
+ * **`string` is the fallback, and it is a hole rather than a neutral default.**
+ * A key naming no list has no element type for a column to write on, which is
+ * the honest case; a key naming a list of *strings*, as a Track's `levels` is,
+ * hits the same branch and takes the whole of `string` back, so an
+ * `entryColumns` declared against one would be checked against nothing. No
+ * component points a two-column field at either, so a test for it would pass
+ * vacuously (PATTERNS §10) and the rule is written here instead.
+ */
+type EntryKeyOf<TConfig extends ComponentConfig, K> = K extends keyof TConfig
+	? NonNullable<TConfig[K]> extends readonly (infer TEntry)[]
+		? TEntry extends object
+			? Extract<keyof TEntry, string>
+			: string
+		: string
+	: string;
+
+/**
+ * One `configFields` entry of a component whose config type is `TConfig`: the
+ * field spec with both of its key types filled in from the key it names.
+ *
+ * A union over the declarable keys rather than one instantiation, because the
+ * two halves have to agree *within one entry* — `entryColumns` names properties
+ * of the list `key` points at, and nothing else in the object can say which
+ * list that is. `key` is a literal at every declaration site, so it
+ * discriminates the union and a typo matches no member.
+ */
+type ConfigFieldOf<TConfig extends ComponentConfig> = {
+	[K in DeclarableKey<TConfig>]: ConfigFieldSpec<K, EntryKeyOf<TConfig, K>>;
+}[DeclarableKey<TConfig>];
+
+/**
+ * A config field the layout editor renders for a component.
+ *
+ * **Parameterised over the two key sets rather than over the component's own
+ * config**, so that both parameters are plainly covariant: `keyof TConfig` is
+ * contravariant in `TConfig`, and a field type carrying it could not be read
+ * back off the registry at all — the argument is at `ComponentDefinition`'s
+ * `TField`, which is where it bites. `ConfigFieldOf` above is where a config
+ * type becomes these two, and bare this is exactly the type the editor read
+ * before either existed.
+ */
+export interface ConfigFieldSpec<
+	TKey extends string = string,
+	TEntryKey extends string = string,
+> {
 	/** Key in the component's config object. */
-	key: string;
+	key: TKey;
 	/** Field label shown in the editor. */
 	label: string;
 	/**
@@ -337,7 +403,7 @@ export interface ConfigFieldSpec {
 	 * editor either: a shared field holding one caller's words is the thing
 	 * PATTERNS §1's worked example is against.
 	 */
-	entryColumns?: readonly [EntryColumnSpec, EntryColumnSpec];
+	entryColumns?: readonly [EntryColumnSpec<TEntryKey>, EntryColumnSpec<TEntryKey>];
 }
 
 /**
@@ -433,8 +499,8 @@ export interface ColumnOptionsSpec {
  * and its accessible name, so a screen reader hears what the eye reads
  * (`docs/UI.md` §6).
  */
-export interface EntryColumnSpec {
-	key: string;
+export interface EntryColumnSpec<TEntryKey extends string = string> {
+	key: TEntryKey;
 	heading: string;
 	/**
 	 * This column holds prose rather than an abbreviation, so it takes the
@@ -455,12 +521,17 @@ export interface EntryColumnSpec {
  * Shared config the layout editor owns. A component declares none of it, in
  * `configFields` or in a palette entry.
  *
- * Two rules need this list and they are checked at different times — a
- * `configFields` entry is data, so the registry contract asks at runtime, while a
- * palette entry's config *is* the shape, so the compiler asks. PATTERNS §1's
- * policy tier is why there is one copy rather than two: a set is where drift is
- * the entire risk, and a guard test over two spellings of six strings could only
- * assert they still agree.
+ * Two rules need this list and they are checked at different times. A palette
+ * entry's config *is* the shape, so it is `Omit`ted there and only the compiler
+ * asks. A `configFields` entry's key is `Exclude`d by `DeclarableKey` *and* the
+ * registry contract still asks at runtime, because that exclusion is only as
+ * strong as a component's annotation: `DeclarableKey` widens to `string` for a
+ * definition typed without its own config, which is the very type the registry
+ * holds. So the asymmetry is no longer runtime against compile time — it is one
+ * rule the compiler can finish and one it cannot. PATTERNS §1's policy tier is why
+ * there is one copy rather than two: a set is where drift is the entire risk,
+ * and a guard test over two spellings of six strings could only assert they
+ * still agree.
  *
  * **The const is the copy and the type is derived from it**, not the other way
  * round, because the failure is one-directional. A seventh key added to a
@@ -1513,10 +1584,25 @@ export interface RenderContext<TData = unknown> {
  * table cannot publish a value it has no way to read, and `applyReset`
  * because a reset button cannot write "restore to full" into a shape it does
  * not know. Most candidates will not pass it.
+ *
+ * **`TField` is a third parameter defaulted from `TConfig`, rather than
+ * `ConfigFieldOf<TConfig>` written at the property, and that is not a style
+ * choice.** `ConfigFieldOf` reaches `keyof TConfig`, which is contravariant in
+ * `TConfig`; TypeScript compares two references to one generic type by the
+ * variance it measured and does not fall back to structure, so written at the
+ * property it makes a `ComponentDefinition<CardConfig, CardData>` unassignable
+ * to the bare `ComponentDefinition` the registry and a dozen other call sites
+ * hold — reported as `'string' is not assignable to '"card"'`, which names
+ * neither the field nor the reason. A parameter is measured on its own, in a
+ * `readonly TField[]` and so covariantly. The cost is that it is public: pass
+ * `ConfigFieldSpec` as the third argument and the key checking is off again,
+ * which is one of the two reasons `contract.test.ts` keeps sweeping the
+ * registry for an editor-owned key rather than leaving it to the type.
  */
 export interface ComponentDefinition<
 	TConfig extends ComponentConfig = ComponentConfig,
 	TData = unknown,
+	TField extends ConfigFieldSpec = ConfigFieldOf<TConfig>,
 > {
 	type: string;
 	storage: StorageKind;
@@ -1726,7 +1812,7 @@ export interface ComponentDefinition<
 	 * The component-specific config fields the layout editor shows. Shared
 	 * fields (label, position) are handled by the editor itself.
 	 */
-	configFields: readonly ConfigFieldSpec[];
+	configFields: readonly TField[];
 	/**
 	 * Ways the layout editor may offer this component with its configuration
 	 * already filled in (SPEC §4.2, §13).
