@@ -37,7 +37,7 @@ import {
 import { Layout } from './layout';
 import { unspellableName } from './modifier-cell';
 import { ModifierDefinitionView, operatorOf, phaseOf } from '../types';
-import { parseExpression } from '../formula/expression';
+import { expressionProblem } from '../formula/expression';
 
 /** Something wrong with one modifier definition, or with the list. */
 export interface ModifierDefinitionProblem {
@@ -74,14 +74,15 @@ function text(raw: RawDefinition, key: string): string {
 	return typeof value === 'string' ? value.trim() : '';
 }
 
-/** Whether an expression parses, without evaluating it. */
+/**
+ * Whether an expression parses, without evaluating it.
+ *
+ * The reason is discarded here and that is deliberate: a definition's report
+ * names the definition, and one line can carry three problems at once, so what
+ * this surface needs is the predicate rather than the sentence.
+ */
 function parses(source: string): boolean {
-	try {
-		parseExpression(source);
-		return true;
-	} catch {
-		return false;
-	}
+	return expressionProblem(source) === null;
 }
 
 /**
