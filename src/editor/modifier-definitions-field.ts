@@ -71,6 +71,7 @@ import {
 } from '../types';
 import { parseModifierDefinitions } from '../parse/modifier-definitions';
 import { parseModifierTypes } from '../parse/modifier-types';
+import { reasonMessage } from './field-reason';
 import { showFieldError } from './field-error';
 
 /** A definition as the editor handles one: every member free to be absent. */
@@ -171,6 +172,82 @@ export function renderModifierDefinitions(
 		showFieldError(input, message, context.list.errors);
 
 	/*
+	 * Which of the two things is wrong with a name, or `null`. **The fault and
+	 * the words are separated deliberately**: one rule decides, and each of the
+	 * two moments a name is judged says it in its own vocabulary, below.
+	 *
+	 * **`others` is what the name has to be unique against, and the two callers
+	 * hand in different sets on purpose.** A commit checks every *other*
+	 * definition, because typing a name an earlier or a later one already holds
+	 * is refused either way. A render checks only the definitions *before* this
+	 * one, so a repeat marks the later definition alone:
+	 * `parseModifierDefinitions` keeps the first appearance and drops the
+	 * second — "The second is ignored", as the block under this list says — so
+	 * marking the first as well would put a red field on the definition that
+	 * works and disagree with the report six rows below it. That is the one
+	 * place this departs from the precedent, which marks both sides of a
+	 * duplicate because there no side is the original.
+	 *
+	 * Both sides trimmed, as the `change` listener already trimmed them, and
+	 * for its reason: the parser dedupes on trimmed names, so a field that
+	 * accepted what the parser then rejected would be the instrument
+	 * disagreeing with itself.
+	 */
+	type NameFault = 'blank' | 'repeat';
+	const nameFault = (
+		value: string,
+		others: readonly DefinitionEntry[],
+	): NameFault | null => {
+		if (value === '') return 'blank';
+		if (others.some((other) => String(other.name ?? '').trim() === value)) {
+			return 'repeat';
+		}
+		return null;
+	};
+
+	/*
+	 * What a *stored* name's fault is called, and it is the parser's own
+	 * words rather than this field's.
+	 *
+	 * **Because at render the two surfaces are on screen together.** The block
+	 * under this list re-derives both faults from the model on every paint, so
+	 * a field saying "A name is required." above a report saying "A modifier
+	 * needs a name." is two answers to one question in one picture, which
+	 * `docs/UI.md` §9 refuses — and which this feature's own spec cites §9 by
+	 * name to refuse elsewhere, declining a parse check on **Amount** because
+	 * the block already reports it. The anchor is what the field adds; a second
+	 * wording is not.
+	 *
+	 * **The first clause only, for the repeat.** The parser's sentence
+	 * continues "The second is ignored, since two definitions with one name
+	 * could not be told apart" — a paragraph's worth of explanation that has
+	 * room under the list and none under a field. A truncation says the same
+	 * thing; a paraphrase would not.
+	 *
+	 * A second spelling of the parser's text is a real drift risk and the guard
+	 * is a case rather than a comment: `modifier-definitions-field.test.ts`
+	 * asserts each of these is contained in what the rendered report says about
+	 * the same layout, so rewording either surface alone fails.
+	 */
+	const storedReason = (fault: NameFault, name: string): string =>
+		fault === 'blank'
+			? 'A modifier needs a name'
+			: `"${name}" is declared more than once`;
+
+	/*
+	 * What a *typed* name's fault is called, which is a different sentence for
+	 * a different moment and not a second answer to the same question: a
+	 * refusal happens between renders, when the block below is still describing
+	 * the stored name and says nothing about what was just typed. It is about
+	 * the edit — hence the revert clause the caller adds — where the pair above
+	 * is about the file.
+	 */
+	const typedReason = (fault: NameFault, name: string): string =>
+		fault === 'blank'
+			? 'A name is required'
+			: `"${name}" is already used by another modifier`;
+
+	/*
 	 * **`.sheetsmith-entry-list` was missing here, and it is not only a border.**
 	 *
 	 * Every other list-shaped field in this pane sits in that container — the
@@ -213,6 +290,35 @@ export function renderModifierDefinitions(
 		});
 		nameInput.value = named;
 		nameInput.dataset.sheetsmithFocus = `modifier-${index}-name`;
+		/*
+		 * Judged as it renders, against the name the layout already holds: both
+		 * of these faults are ones `parseLayout` accepts and
+		 * `parseModifierDefinitions` merely reports, so a hand-edited layout —
+		 * or one a sheet saved a modifier into — arrives with a clean-looking
+		 * field beside a definition that does nothing.
+		 *
+		 * The report under the list says the same two things and keeps saying
+		 * them; what this adds is the anchor. The blank case is the sharp one:
+		 * that report carries no locator for it, because there is no name to
+		 * locate it by, so on ten definitions it says only that one of them has
+		 * no name.
+		 *
+		 * The reason is finished into a sentence by `field-reason.ts`, which is
+		 * where that one line moved when this became its second caller
+		 * (`docs/PATTERNS.md` §1's one-step tier). Not imported from
+		 * `list-fields.ts`, which is where it used to live: this module's
+		 * imports from that file are already a recorded coupling
+		 * (`docs/BACKLOG.md` § Patterns), and a rule with nothing list-shaped
+		 * about it does not belong there in the first place.
+		 */
+		const stored = named.trim();
+		const storedFault = nameFault(stored, definitions.slice(0, index));
+		fieldError(
+			nameInput,
+			reasonMessage(
+				storedFault === null ? null : storedReason(storedFault, stored),
+			),
+		);
 		nameInput.addEventListener('change', () => {
 			const next = nameInput.value.trim();
 			/*
@@ -221,33 +327,21 @@ export function renderModifierDefinitions(
 			 * whose value was refused makes the field lie about what the file holds
 			 * the moment focus moves on.
 			 */
-			if (next === '') {
+			const fault = nameFault(
+				next,
+				definitions.filter((_, i) => i !== index),
+			);
+			if (fault !== null) {
 				nameInput.value = named;
+				const reason = typedReason(fault, next);
 				fieldError(
 					nameInput,
-					named === ''
-						? 'A name is required.'
-						: `A name is required, so it was left as "${named}".`,
-				);
-				return;
-			}
-			/*
-			 * Both sides trimmed, because the parser dedupes on trimmed names and a
-			 * field that accepts what the parser then rejects is the instrument
-			 * disagreeing with itself. On a hand-edited layout holding `"Ring "`,
-			 * comparing against the untrimmed value let `"Ring"` through here and
-			 * then reported it under the list as declared twice — with no error on
-			 * the field that had just accepted it.
-			 */
-			if (
-				definitions.some(
-					(other, i) => i !== index && String(other.name ?? '').trim() === next,
-				)
-			) {
-				nameInput.value = named;
-				fieldError(
-					nameInput,
-					`"${next}" is already used by another modifier, so this one was left as "${named}".`,
+					// Nothing to have been left as: a blank name refused on a
+					// definition that had none. Every other refusal names what
+					// the field went back to, the duplicate included.
+					next === '' && named === ''
+						? `${reason}.`
+						: `${reason}, so ${next === '' ? 'it' : 'this one'} was left as "${named}".`,
 				);
 				return;
 			}

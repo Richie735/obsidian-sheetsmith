@@ -127,6 +127,14 @@ function control<T extends HTMLElement = HTMLElement>(
 	return found as T;
 }
 
+/** The inline message under one field, addressed by its own focus token. */
+function fieldError(el: HTMLElement, token: string): string | null {
+	return (
+		el.querySelector(`.sheetsmith-field-error[data-sheetsmith-for="${token}"]`)
+			?.textContent ?? null
+	);
+}
+
 const RING: ModifierDefinition = {
 	name: 'Ring of Protection',
 	target: 'armour_class',
@@ -261,6 +269,11 @@ describe('what the list writes to the layout', () => {
 		name.dispatchEvent(new Event('change'));
 		expect(name.value).toBe('Ring of Protection');
 		expect(from.modifiers?.[0]?.name).toBe('Ring of Protection');
+		// The revert clause is what a typed refusal says and a stored one does
+		// not: this one describes an edit that happened.
+		expect(fieldError(el, 'modifier-0-name')).toBe(
+			'A name is required, so it was left as "Ring of Protection".',
+		);
 	});
 
 	it('refuses a duplicate on the trimmed name, which is what the parser dedupes on', () => {
@@ -277,6 +290,24 @@ describe('what the list writes to the layout', () => {
 		name.dispatchEvent(new Event('change'));
 		expect(name.value).toBe('Belt');
 		expect(from.modifiers?.[1]?.name).toBe('Belt');
+		expect(fieldError(el, 'modifier-1-name')).toBe(
+			'"Ring" is already used by another modifier, so this one was left as "Belt".',
+		);
+	});
+
+	it('refuses a name a later definition holds, not only an earlier one', () => {
+		// The commit checks every other definition, where a render checks only
+		// the ones before it: typing a name the list already holds is refused
+		// whichever side of this row it is on.
+		const from = layout([
+			{ ...RING, name: 'Ring' },
+			{ ...RING, name: 'Belt' },
+		]);
+		const el = render(from);
+		const name = control<HTMLInputElement>(el, 'modifier-0-name');
+		name.value = 'Belt';
+		name.dispatchEvent(new Event('change'));
+		expect(from.modifiers?.[0]?.name).toBe('Ring');
 	});
 
 	it('asks before removing a definition that has been written', () => {
@@ -303,6 +334,78 @@ describe('what the list writes to the layout', () => {
 		control(el, 'modifier-New modifier-remove').click();
 		expect(recorded.confirms).toEqual([]);
 		expect(from.modifiers).toEqual([]);
+	});
+});
+
+describe('a stored name the list already refuses', () => {
+	it('marks a blank one as it renders, with no revert clause', () => {
+		/*
+		 * `parseLayout` takes `modifiers` as an array of objects and no more, so
+		 * a definition with no name loads and draws a clean-looking field. The
+		 * report under the list says one of them has no name and cannot say
+		 * which, because there is no name to locate it by.
+		 */
+		const el = render(layout([{ ...RING, name: '   ' }]));
+		expect(fieldError(el, 'modifier-0-name')).toBe('A modifier needs a name.');
+		expect(recorded.persists).toBe(0);
+		expect(recorded.redraws).toBe(0);
+	});
+
+	it('marks the later of two definitions sharing a name, and not the first', () => {
+		// `parseModifierDefinitions` keeps the first appearance and drops the
+		// second, and says so under the list. Marking the first would put a red
+		// field on the definition that works.
+		const el = render(
+			layout([
+				{ ...RING, name: 'Ring' },
+				{ ...RING, name: 'Ring ' },
+			]),
+		);
+		expect(fieldError(el, 'modifier-0-name')).toBe(null);
+		expect(fieldError(el, 'modifier-1-name')).toBe(
+			'"Ring" is declared more than once.',
+		);
+	});
+
+	it('says what the report says, in the report\'s own words', () => {
+		/*
+		 * Both are on screen from the same paint, so two wordings for one fault
+		 * would be two answers to one question (`docs/UI.md` §9). Asserted
+		 * against the *rendered* report rather than against a literal, so
+		 * rewording either surface alone fails here: the field's sentence is
+		 * the parser's, truncated where the parser's continues.
+		 */
+		const el = render(
+			layout([
+				{ ...RING, name: 'Ring' },
+				{ ...RING, name: 'Ring' },
+				{ ...RING, name: '' },
+			]),
+		);
+		for (const token of ['modifier-1-name', 'modifier-2-name']) {
+			const message = fieldError(el, token);
+			expect(message).not.toBe(null);
+			expect(
+				problems(el).some((problem) => problem.includes(message ?? '')),
+			).toBe(true);
+		}
+	});
+
+	it('says nothing about a name the parser is happy with', () => {
+		const el = render(layout([{ ...RING }]));
+		expect(fieldError(el, 'modifier-0-name')).toBe(null);
+		expect(list.errors.size).toBe(0);
+	});
+
+	it('clears a remembered message once the name is corrected', () => {
+		// The check is unconditional on every render, which is what makes a
+		// corrected fault clear itself rather than outliving its own text.
+		const from = layout([{ ...RING, name: '' }]);
+		render(from);
+		expect(list.errors.get('modifier-0-name')).toBe('A modifier needs a name.');
+		from.modifiers = [{ ...RING, name: 'Ring' }];
+		render(from);
+		expect(list.errors.size).toBe(0);
 	});
 });
 
