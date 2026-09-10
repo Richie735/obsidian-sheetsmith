@@ -773,19 +773,24 @@ describe('a formula field that will not parse', () => {
 		expect((await harness.stored()).components[0]).not.toHaveProperty('derived');
 	});
 
-	it('leaves a reset binding alone, which is this feature\'s largest cut', async () => {
-		// `reset.*.to` is reserved for the pass over `reset-field.ts` and
-		// `modifier-definitions-field.ts`, so a broken reset expression still
-		// says nothing here. Asserted rather than left to prose, because the
-		// shared function is one import away from being called there.
+	it('reaches a reset binding too, which was this feature\'s largest cut', async () => {
+		/*
+		 * `reset.*.to` was reserved for the pass over `reset-field.ts` and
+		 * `modifier-definitions-field.ts` so that its required rule and its
+		 * parse rule would arrive together
+		 * (`docs/features/reset-and-modifier-render-validation.md`). This case
+		 * asserted the cut and now asserts that it was taken: the pane is what
+		 * proves the two fields say the same thing about the same expression,
+		 * since each module's own file drives only its own.
+		 */
 		harness = await open(broken());
 		control(harness, 'edit-hit_points').click();
 		await settle(harness.pane);
 
 		const input = control<HTMLInputElement>(harness, 'reset-to-hit_points-0');
 		expect(input.value).toBe('max /');
-		expect(input.classList.contains('sheetsmith-input-invalid')).toBe(false);
-		expect(problem(input)).toBe('');
+		expect(input.classList.contains('sheetsmith-input-invalid')).toBe(true);
+		expect(problem(input)).toBe('Expected a value in formula.');
 	});
 });
 

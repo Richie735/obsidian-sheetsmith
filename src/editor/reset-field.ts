@@ -19,6 +19,7 @@ import { Setting } from 'obsidian';
 import { getComponent } from '../components';
 import { onCommit } from './field-commit';
 import { showFieldError } from './field-error';
+import { formulaProblem } from './field-formula';
 import { groupHeading } from './form-group';
 import { bindingKey, Layout } from '../parse/layout';
 import { parseTriggers } from '../parse/triggers';
@@ -84,6 +85,32 @@ function asOwnLine(reason: string): string {
 
 /** Held as a constant because it is an expression, not prose to be cased. */
 const RESET_FORMULA_EXAMPLE = 'mod(abilities.CON) * level';
+
+/**
+ * What is wrong with a formula reset's expression, or `null` where there is
+ * nothing to say.
+ *
+ * One function for both moments the field is judged — as the pane draws it and
+ * as a commit lands — so a stored expression is marked exactly as a typed one
+ * is (`docs/features/field-render-validation.md`). Neither moment reverts, so
+ * unlike the rows and columns lists there is no revert clause to split off:
+ * the same sentence serves both.
+ *
+ * **The blank rule runs first and cannot be `formulaProblem`'s**, which is why
+ * the two are composed rather than the parser's helper called alone. Blank in
+ * an ordinary formula field means the key is absent, which every component
+ * reading one has an answer for; blank here means `parseBinding` refuses the
+ * binding and the layout will not load at all. The two rules are opposite about
+ * the same input, so this one answers first and hands everything else to the
+ * parser through `formulaProblem` — never `eval` (Constraint 1).
+ */
+function resetToProblem(to: string | undefined): string | null {
+	const trimmed = (to ?? '').trim();
+	// The layout would not load: parseReset requires an expression for this
+	// action.
+	if (trimmed === '') return 'A formula reset needs an expression.';
+	return formulaProblem(trimmed);
+}
 
 /** Held as a constant because the examples are the names of games. */
 const BUFFER_CLEAR_DESC =
@@ -471,18 +498,32 @@ export function renderResetField(
 				.addText((text) => {
 					text.setValue(reset.to ?? '');
 					text.inputEl.dataset.sheetsmithFocus = `reset-to-${config.id}-${index}`;
+					/*
+					 * Judged as it renders, against whatever the binding already
+					 * holds — the **Acts on** picker's rule above, on the field
+					 * beside it.
+					 *
+					 * The blank state is not a hand-edited file, which
+					 * `parseBinding` refuses: it is one this pane *creates*, by
+					 * choosing **Set to a formula** on a binding with no
+					 * expression yet. `persist` then re-parses, catches the
+					 * refusal and declines to write, so between that notice and
+					 * the correction the field is the only thing on screen the
+					 * reader is looking at.
+					 */
+					fieldError(text.inputEl, resetToProblem(reset.to));
 					onCommit(text, (raw) => {
 						const trimmed = raw.trim();
-						if (trimmed === '') {
-							// The layout would not load: parseReset requires an
-							// expression for this action.
-							fieldError(
-								text.inputEl,
-								'A formula reset needs an expression.',
-							);
-							return;
-						}
-						fieldError(text.inputEl, null);
+						const problem = resetToProblem(trimmed);
+						fieldError(text.inputEl, problem);
+						// Blank is refused rather than stored, because the
+						// layout would stop loading. An expression that will
+						// not *parse* is stored and marked, which is the
+						// formula fields' own ruling one module over: an
+						// expression is invalid for most of the time it is
+						// being written, and a field refusing what its own
+						// checker refuses is a field nobody can type into.
+						if (trimmed === '') return;
 						reset.to = trimmed;
 						context.persist();
 					});
