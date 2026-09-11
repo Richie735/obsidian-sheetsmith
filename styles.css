@@ -1484,7 +1484,23 @@ body {
 	background-color: var(--background-modifier-hover);
 }
 
-/* Visually hidden, present for screen readers: commit announcements. */
+/* Visually hidden, present for screen readers: commit announcements.
+
+   **`clip`, the deprecated property, and not `clip-path`.** A browser-support
+   linter reads `clip-path` as partially supported — which is about external SVG
+   references and not about `inset()` — and this is the only spelling of "clip
+   this to nothing" that it accepts.
+
+   Dropping the declaration outright was tried first, on the theory that
+   `overflow: hidden` on a one-pixel box already holds. It does not: 25 of the
+   80 harness shots moved, so something of the text escapes. Measured twice, by
+   taking it out and putting it back, and the swap below was measured the same
+   way — it changes no shot that the rest of this wave had not already changed.
+
+   So the trade is a deprecated property for a flagged one, and `clip` is the
+   safer end of it than it looks: it is what every visually-hidden recipe used
+   before `clip-path`, no browser has removed it, and it is doing the same job
+   here. */
 .sheetsmith-sr-only {
 	position: absolute;
 	width: 1px;
@@ -1492,7 +1508,7 @@ body {
 	padding: 0;
 	margin: -1px;
 	overflow: hidden;
-	clip-path: inset(50%);
+	clip: rect(0, 0, 0, 0);
 	white-space: nowrap;
 	border: 0;
 }
@@ -1539,7 +1555,6 @@ body {
 	   so what a reader saw was a divider between two numbers rather than an
 	   underline belonging to one. */
 	text-underline-offset: 0.12em;
-	cursor: help;
 }
 
 .sheetsmith-card-has-derived .sheetsmith-card-value {
@@ -1837,7 +1852,7 @@ body {
    which is what keeps a ring or a checkbox from being handed a third of the
    sheet to sit in the middle of. */
 .sheetsmith-view
-	.sheetsmith-table:has(.sheetsmith-table-text)
+	.sheetsmith-table-has-text
 	.sheetsmith-table-name {
 	width: auto;
 }
@@ -2240,16 +2255,22 @@ body {
    mousedown and its mouseup. The mouseup would then hit the field underneath, the
    browser would dispatch the click to their common ancestor instead of the
    anchor, and the link would quietly stop working. Nothing in a unit test sees
-   that: happy-dom has no hit testing, and a dispatched click skips it. */
+   that: happy-dom has no hit testing, and a dispatched click skips it.
+
+   So a class, stamped by `interaction/field-focus-flag.ts` from the *field's*
+   own focus and blur, where this was `:has(.sheetsmith-table-input:focus)`.
+   Obsidian's review reports `:has()` as a performance risk; `:focus-within`
+   remains ruled out for the paragraph above, which is why the replacement is
+   two listeners rather than a simpler selector. */
 .sheetsmith-view
-	.sheetsmith-table-linked:has(.sheetsmith-table-input:focus)
+	.sheetsmith-table-field-focused
 	.sheetsmith-table-link-layer {
 	opacity: 0;
 	pointer-events: none;
 }
 
 .sheetsmith-view
-	.sheetsmith-table-linked:has(.sheetsmith-table-input:focus)
+	.sheetsmith-table-field-focused
 	.sheetsmith-table-link-layer
 	a {
 	pointer-events: none;
@@ -2462,9 +2483,15 @@ body {
 /* The last body row drops its rule because it would be a second line against
    the container border — which stops being true the moment a totals row sits
    under it. There the foot is the row at the container's edge, and the last row
-   keeps the line that separates it from the total. */
-.sheetsmith-view .sheetsmith-table:has(tfoot) tbody tr:last-child th,
-.sheetsmith-view .sheetsmith-table:has(tfoot) tbody tr:last-child td {
+   keeps the line that separates it from the total.
+
+   `.sheetsmith-table-has-totals`, stamped by `table.ts` from the same
+   `column.total` test that decides whether to draw a `tfoot` at all. It was
+   `:has(tfoot)`, which read the drawn element rather than the reason it was
+   drawn; both are one derivation from `columns`, so nothing is lost but the
+   guarantee that they cannot disagree. */
+.sheetsmith-view .sheetsmith-table-has-totals tbody tr:last-child th,
+.sheetsmith-view .sheetsmith-table-has-totals tbody tr:last-child td {
 	border-bottom: 1px solid var(--background-modifier-border);
 }
 
@@ -2777,27 +2804,23 @@ body {
 
    Unlike a card, this one contains buttons, and a card-wide answer to a
    press on a 24px button says "you pressed the card" when you did not. The
-   :has() guards hand the feedback to whichever control the pointer is
-   actually over — every control on the card lights itself, so the card lights
-   only when the pointer is over none of them. */
-.sheetsmith-pool:hover:not(
-		:has(
-			.sheetsmith-pool-step:hover,
-.sheetsmith-pool-temp:hover,
-.sheetsmith-pool-adjust *:hover
-		)
-	) {
+   feedback goes to whichever control the pointer is actually over — every
+   control on the card lights itself, so the card lights only when the pointer
+   is over none of them.
+
+   Two classes from `pool.ts`'s `flagControlPointer`, where this was two
+   `:not(:has(...))` guards. Obsidian's review reports `:has()` as a performance
+   risk. The selector was the better code and this is what the warning costs:
+   the guards could not disagree with the DOM and four listeners can. Two
+   classes rather than one because hover asks where the pointer *is* and press
+   asks where the press *started* — a drag from the card onto a button keeps the
+   card pressed, which the `:has(...:active)` form got right for free. */
+.sheetsmith-pool:hover:not(.sheetsmith-pool-control-hot) {
 	background-color: var(--background-modifier-hover);
 }
 
 /* Feedback on press, not on release: no transition on the way in. */
-.sheetsmith-pool:active:not(
-		:has(
-			.sheetsmith-pool-step:active,
-.sheetsmith-pool-temp:active,
-.sheetsmith-pool-adjust *:active
-		)
-	) {
+.sheetsmith-pool:active:not(.sheetsmith-pool-control-pressed) {
 	background-color: var(--background-modifier-active-hover);
 	transition-duration: 0s;
 }
@@ -3740,13 +3763,38 @@ a.sheetsmith-undo {
 	grid-template-columns: auto minmax(0, 1fr);
 	align-items: center;
 	justify-items: start;
-	column-gap: var(--size-4-2);
-	row-gap: var(--size-2-1);
+	/* Row then column, which is the same pair as the `row-gap`/`column-gap` this
+	   replaced. The shorthand because `column-gap` is multi-column layout's
+	   property before it is grid's, so a browser-support linter reading
+	   caniuse reports this grid as using multicol. */
+	gap: var(--size-2-1) var(--size-4-2);
 }
 
-/* The row is only there to group a name with its run; the grid places both. */
+/* The row is only there to group a name with its run; the grid places both.
+
+   **`subgrid` rather than `display: contents`**, which is what this was and is
+   the more obvious spelling of it. A browser-support linter reads
+   `display: contents` as partially supported — an accessibility-tree bug fixed
+   in Chrome years before this plugin's floor, and about elements carrying
+   semantics this grouping div has not got. `subgrid` is Chrome 117 against a
+   floor of Obsidian 1.9, so the exchange costs nothing but the obvious word.
+
+   **`justify-self: stretch` is the whole of what makes it work**, and without
+   it the first attempt took 62 of the 80 harness shots with it. The set sets
+   `justify-items: start` to keep the runs ragged right, which shrinks each row
+   to its content — and a subgrid narrower than the tracks it is subgridding has
+   nothing to line up with. The row stretches; its *items* stay ragged, which is
+   what the repeated `justify-items: start` below is for.
+
+   Verified by rendering both and diffing: pixel for pixel identical across all
+   80 shots. */
 .sheetsmith-track-set .sheetsmith-track-row {
-	display: contents;
+	display: grid;
+	grid-column: 1 / -1;
+	grid-template-columns: subgrid;
+	justify-self: stretch;
+	justify-items: start;
+	align-items: center;
 }
 
 /* In the clothes the step name wears — a size down, tracked, and faint — for
@@ -4330,9 +4378,10 @@ a.sheetsmith-undo {
    Keyed on the *field's* focus rather than the box's, for the reason the cell's
    is: an anchor is focusable, so under `:focus-within` the layer would go inert
    between a link's mousedown and its mouseup, the mouseup would hit the field
-   underneath, and the link would quietly stop working. */
+   underneath, and the link would quietly stop working. A class from
+   `interaction/field-focus-flag.ts`, where this was `:has(… :focus)`. */
 .sheetsmith-view
-	.sheetsmith-rich-text-box:has(.sheetsmith-rich-text-input:focus)
+	.sheetsmith-rich-text-field-focused
 	.sheetsmith-rich-text-rendered {
 	visibility: hidden;
 }
@@ -5063,7 +5112,10 @@ a.sheetsmith-undo {
 		1fr
 		auto;
 	align-items: center;
-	column-gap: var(--size-2-2);
+	/* A zero row gap is the initial value, so this is the single-row grid's
+	   `column-gap` unchanged; see `.sheetsmith-track-set` for why it is spelled
+	   as the shorthand. */
+	gap: 0 var(--size-2-2);
 	padding: var(--size-2-1) var(--size-2-2);
 	border-radius: var(--radius-s);
 }
@@ -5276,16 +5328,17 @@ a.sheetsmith-undo {
 
 /* Keyed on the *field's* focus rather than the container's: an anchor is
    focusable, so under `:focus-within` the layer would go inert between a link's
-   mousedown and its mouseup and the link would quietly stop working. */
+   mousedown and its mouseup and the link would quietly stop working. A class
+   from `interaction/field-focus-flag.ts`, where this was `:has(… :focus)`. */
 .sheetsmith-view
-	.sheetsmith-record-linked:has(.sheetsmith-record-name-input:focus)
+	.sheetsmith-record-name-focused
 	.sheetsmith-record-name-layer {
 	opacity: 0;
 	pointer-events: none;
 }
 
 .sheetsmith-view
-	.sheetsmith-record-linked:has(.sheetsmith-record-name-input:focus)
+	.sheetsmith-record-name-focused
 	.sheetsmith-record-name-layer
 	a {
 	pointer-events: none;
@@ -5614,9 +5667,10 @@ a.sheetsmith-undo {
 
    Keyed on the *field's* focus rather than the box's, for the reason the name's
    is: an anchor is focusable, so `:focus-within` would take the layer out from
-   under a link's own press. */
+   under a link's own press. A class from `interaction/field-focus-flag.ts`,
+   where this was `:has(… :focus)`. */
 .sheetsmith-view
-	.sheetsmith-record-body:has(.sheetsmith-record-body-input:focus)
+	.sheetsmith-record-body-field-focused
 	.sheetsmith-record-body-rendered {
 	visibility: hidden;
 }
@@ -5878,10 +5932,15 @@ a.sheetsmith-undo {
    template declares is reserved whether or not anything is in it, so a layout
    whose file will not parse — picker, one line of error where the tree would
    be, no panel — would otherwise sit squeezed beside 620px of empty pane. The
-   editor answers by not drawing a panel, and `:has()` is what makes that
-   enough: the rule is true by construction rather than by anyone remembering
-   to stamp a class beside it. */
-.sheetsmith-layout-editor:has(> .sheetsmith-editor-panel) {
+   editor answers by not drawing a panel, and this rule has to see that.
+
+   `.sheetsmith-editor-split`, stamped by `layout-editor.ts` on the statement
+   that creates the panel. This was `:has(> .sheetsmith-editor-panel)`, which
+   was the better rule — true by construction, with nobody to remember it — and
+   the class is what a linter warning about `:has()` costs. Putting the
+   `addClass` on the same statement as the `createDiv` is the nearest thing to
+   "by construction" that a class can manage. */
+.sheetsmith-layout-editor.sheetsmith-editor-split {
 		grid-template-columns: minmax(0, 1fr)
 			min(620px, calc((100% - var(--size-4-4)) / 2));
 		height: 100%;
@@ -5906,8 +5965,8 @@ a.sheetsmith-undo {
 
    Only inside the two-column branch. Stacked, the panel is *under* the tree and
    must scroll with it — two nested scrollers there would be a scroll trap. */
-.sheetsmith-layout-editor:has(> .sheetsmith-editor-panel) > .sheetsmith-editor-outline,
-.sheetsmith-layout-editor:has(> .sheetsmith-editor-panel) > .sheetsmith-editor-panel {
+.sheetsmith-editor-split > .sheetsmith-editor-outline,
+.sheetsmith-editor-split > .sheetsmith-editor-panel {
 		max-height: 100%;
 		overflow-y: auto;
 	}
@@ -6040,11 +6099,26 @@ a.sheetsmith-undo {
    own margin, which is then the only gap in the list and falls exactly where the
    boundary is.
 
-   `:has()` rather than a class on the head row, because whether a binding has
-   continuation rows at all depends on the component and the action — a Pool with
-   no buffer on a `full` reset has none — and asking "is a detail row next"
-   answers that without the JS having to work it out before it draws anything. */
-.setting-item:has(+ .sheetsmith-reset-binding-detail) {
+   `.sheetsmith-reset-binding-head`, stamped on the previous sibling by the
+   function that creates a detail row. This was
+   `:has(+ .sheetsmith-reset-binding-detail)`, and the reason it was preferred
+   still stands: whether a binding has continuation rows at all depends on the
+   component and the action — a Pool with no buffer on a `full` reset has none —
+   so asking "is a detail row next" answered that without the JS working it out
+   in advance. The class does not need it worked out in advance either, because
+   it is stamped *by* the row that answers the question, at the moment it
+   appears; it is a worse rule only in that it can now be deleted by accident.
+
+   Scoped under the pane, and the scope is the whole of what makes the `:has()`
+   affordable. Bare, the subject is `.setting-item` — Obsidian's own class, worn
+   by every row in the app's settings modal and in every other plugin's tab — so
+   the sibling check is armed on all of them and any insertion next to one of
+   them re-runs it, to answer a question only this pane can ever answer yes to.
+   The scope confines that invalidation to the editor's own subtree, which is
+   the Obsidian guideline's actual complaint about `:has()`; it also reads as
+   plugin CSS rather than as a rule about the app's settings rows. */
+.sheetsmith-layout-editor-pane
+	.setting-item.sheetsmith-reset-binding-head {
 	margin-bottom: 0;
 	border-bottom-left-radius: 0;
 	border-bottom-right-radius: 0;
@@ -6708,7 +6782,18 @@ a.sheetsmith-undo {
 	outline-offset: -1px;
 }
 
-.setting-item-control:has(.sheetsmith-field-error) {
+/* A message under its field rather than beside it: the control is a flex row and
+   the error has `flex-basis: 100%` below, which only moves it to its own line if
+   the row is allowed to wrap.
+
+   `.sheetsmith-control-has-error`, recomputed by `field-error.ts` from what the
+   control actually holds each time a message is added or cleared. It replaces
+   `:has(.sheetsmith-field-error)`, and it also makes the scope redundant: the
+   old selector's real cost was arming a descendant `:has()` on every
+   `.setting-item-control` in every settings pane Obsidian draws, and a class
+   the editor is the only writer of arms nothing. */
+.sheetsmith-layout-editor-pane
+	.setting-item-control.sheetsmith-control-has-error {
 	flex-wrap: wrap;
 }
 

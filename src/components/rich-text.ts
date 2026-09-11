@@ -78,6 +78,7 @@ import {
 } from '../types';
 import { adoptRenderedLinks, paintLinkedText } from './linked-text';
 import { sampleText } from './sample-values';
+import { flagWhileFocused } from '../interaction/field-focus-flag';
 import { spellcheckWhileFocused } from '../ui/spellcheck';
 import { startsSection } from '../parse/character';
 
@@ -307,6 +308,9 @@ export const richText: ComponentDefinition<RichTextConfig, RichTextData> = {
 		// Its text is transparent unfocused and the rendered prose is drawn over
 		// it, so its squiggles would be too.
 		spellcheckWhileFocused(field);
+		// And the rendered prose hides while the field is focused. A class rather
+		// than `:has(.sheetsmith-rich-text-input:focus)`.
+		flagWhileFocused(box, field, 'sheetsmith-rich-text-field-focused');
 
 		const rendered = box.createDiv('sheetsmith-rich-text-rendered');
 

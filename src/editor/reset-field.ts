@@ -66,6 +66,19 @@ const ACTS_ON_DESC =
 function detailRow(form: HTMLElement): Setting {
 	const row = new Setting(form);
 	row.settingEl.addClass('sheetsmith-reset-binding-detail');
+	// And the row this one hangs under loses its bottom margin and its bottom
+	// corners, so the pair reads as one block. That was
+	// `.setting-item:has(+ .sheetsmith-reset-binding-detail)`, which asked the
+	// question in the one place the answer is knowable without asking anyone to
+	// remember; this asks it here instead, on the statement that creates the
+	// sibling the selector was looking for. A chain of detail rows marks each of
+	// its predecessors in turn, which is what the `+` did.
+	//
+	// Stamped unconditionally: the stylesheet still requires `.setting-item`, so
+	// a heading or a divider that happens to precede a binding is untouched.
+	row.settingEl.previousElementSibling?.addClass(
+		'sheetsmith-reset-binding-head',
+	);
 	return row;
 }
 

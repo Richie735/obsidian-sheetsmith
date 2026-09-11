@@ -408,6 +408,12 @@ export class LayoutEditorSection {
 		// Past every giving-up path, so this is where the second column earns its
 		// track.
 		const panel = grid.createDiv('sheetsmith-editor-panel');
+		// What the two-column rule keys on. It used to read
+		// `:has(> .sheetsmith-editor-panel)`, which was true by construction and
+		// needed nobody to remember this line; the class is the same fact stamped
+		// by hand, and it is stamped *here* — the one statement that creates a
+		// panel — so the two cannot disagree without this line being deleted.
+		grid.addClass('sheetsmith-editor-split');
 		this.regions = { outline, panel };
 
 		// A selection naming nothing falls back to the layout's own settings,

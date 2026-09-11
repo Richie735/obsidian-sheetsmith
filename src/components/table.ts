@@ -111,6 +111,7 @@ import {
 import { element } from '../ui/element';
 import { bindLongPress, showPopover } from '../ui/popover';
 import { revealWhenTruncated } from '../ui/truncation';
+import { flagWhileFocused } from '../interaction/field-focus-flag';
 import { spellcheckWhileFocused } from '../ui/spellcheck';
 
 export interface TableColumn {
@@ -1649,6 +1650,17 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 		// sideways because one component grew a column.
 		const wrapper = element('div', 'sheetsmith-table-wrapper', container);
 		const grid = element('table', 'sheetsmith-table', wrapper);
+		// Two facts the stylesheet needs about the whole table, stamped here
+		// because both were `:has()` selectors and Obsidian's review asks for
+		// fewer of those. `columns` is what the cells below are built from, so
+		// the flag and the cells cannot disagree: the alternative `:has()` read
+		// the cells themselves, which is one derivation rather than two.
+		if (columns.some((column) => columnType(column) === 'text')) {
+			grid.addClass('sheetsmith-table-has-text');
+		}
+		if (columns.some((column) => column.total === true)) {
+			grid.addClass('sheetsmith-table-has-totals');
+		}
 
 		// Where the name column sits among the others. A skill list wants its
 		// proficiency mark before the skill, the way it sits on paper, and that
@@ -1794,6 +1806,10 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			// This branch is the stacked one: unfocused, the input's text is
 			// transparent under the link layer, and its spelling marks would not be.
 			spellcheckWhileFocused(input);
+			// And the layer above it goes inert while the field is focused. A class
+			// rather than `:has(.sheetsmith-table-input:focus)`; the module says why
+			// `:focus-within` is not the answer here.
+			flagWhileFocused(stack, input, 'sheetsmith-table-field-focused');
 			const layer = element('div', 'sheetsmith-table-link-layer', stack);
 			paintLinkedText(layer, raw, { link: context.link, clipping: CELL_CLIPPING });
 			// A name column is as narrow as the table lets it be, so a link is the
