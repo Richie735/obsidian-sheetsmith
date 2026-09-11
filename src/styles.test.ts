@@ -1844,6 +1844,18 @@ describe('every class the plugin adds is its own', () => {
 		 */
 		'mod-warning',
 		'is-active',
+		/*
+		 * The two the formula suggester adds to a popup item, and they are the
+		 * clearest case this list holds of a borrowed name that is *behaviour*
+		 * rather than paint. `app.css` styles `.suggestion-note` in exactly one
+		 * place — `.suggestion-item.mod-complex .suggestion-note` — so the
+		 * secondary rank that makes a name-and-its-owner readable at all exists
+		 * only under `mod-complex`, and the column the two children sit in is
+		 * `.suggestion-content` under the same class. Without them the item draws
+		 * two identical lines, which is what shipped for one wave.
+		 */
+		'mod-complex',
+		'suggestion-content',
 	];
 
 	/** Every `.ts` file under src/, as a repo-relative path. */

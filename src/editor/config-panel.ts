@@ -212,6 +212,17 @@ export interface ConfigPanelHost {
 	 * only the outer render can act on.
 	 */
 	listContext(): ListContext;
+	/**
+	 * Bind the formula-name suggester to a formula input, for as long as this
+	 * render's DOM lives.
+	 *
+	 * A command rather than an `App`, on the rule the rest of this interface
+	 * follows: the inner half asks for what it cannot do, and what it cannot do
+	 * here is reach an app *and* be closed by the render loop that will tear its
+	 * input down. `owner` names the component whose own row vocabulary the field
+	 * reads first, which is a computed column's **Formula** and nothing else.
+	 */
+	suggestNames(input: HTMLInputElement, owner?: string): void;
 }
 
 /**
@@ -624,6 +635,7 @@ export class ConfigPanel {
 				persist: () => this.host.persist(),
 				redraw: () => this.host.redraw(),
 				errors: this.host.errors,
+				suggestNames: (input, owner) => this.host.suggestNames(input, owner),
 			});
 		}
 
@@ -818,6 +830,10 @@ export class ConfigPanel {
 
 			setting.addText((text) => {
 				if (field.kind === 'number') text.inputEl.type = 'number';
+				// A formula field completes the name under the caret from what
+				// the layout publishes. Only a formula field: a number or a text
+				// key holds no name a sheet could resolve.
+				if (field.kind === 'formula') this.host.suggestNames(text.inputEl);
 				const current = record[field.key];
 				const shown =
 					typeof current === 'string' || typeof current === 'number'

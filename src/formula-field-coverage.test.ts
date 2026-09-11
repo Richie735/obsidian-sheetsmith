@@ -24,6 +24,14 @@ import { getComponent, listComponentTypes } from './components';
  * Kept beside it, inlining that five-line wrapper into its two callers — an
  * ordinary simplification — would silently take a registry-wide guard with it.
  *
+ * **The list below is now two features' coverage, not one.** Every field it
+ * names is also a field the name suggester binds
+ * (`docs/features/formula-name-suggestions.md` §1), because both are answered by
+ * the same fact: the editor knows which of its cells holds an expression. So a
+ * component declaring a sixth list path fails here for two reasons at once —
+ * that expression is neither checked as it is typed nor completed as it is
+ * typed — and the fix is one edit to the editor either way.
+ *
  * **Not `contract.test.ts`** either, though §10 sends a registry-wide rule
  * there: the list below is the *editor's* coverage, not the component contract.
  * A component may declare any well-formed path; what fails here is this feature
