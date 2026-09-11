@@ -779,7 +779,7 @@ Explicitly out of scope for v1, recorded so they do not creep back in:
 | **M2 Edit** | Edit values in sheet view, write back to the body, round-trip safely |
 | **M3 Formulas** | Expression evaluation, layout function library, computed values |
 | **M4 Editor** | Grid canvas, component palette, configuration panel. Shipped: the workspace pane, its tree (with drag-and-drop reparenting), its configuration panel, undo, and the live grid canvas. Not shipped: dragging a new component in from a palette onto the canvas — creation still goes through the **Add component** row |
-| **M5 Finish** | Reset triggers, promoted fields, layout export and import, mobile reflow, error states. Shipped: layout export as a clipboard copy out, and creating a layout as one gesture with three sources — a blank grid, a copy of one in the folder, or a validated paste (§3.2, §7) |
+| **M5 Finish** | Reset triggers, promoted fields, layout export and import, mobile reflow, error states. Shipped: reset triggers; layout export as a clipboard copy out, and creating a layout as one gesture with three sources — a blank grid, a copy of one in the folder, or a validated paste (§3.2, §7); and error states, except that an error card is not named and an inline field error is neither announced nor marked in forced colors |
 
 The order is deliberate. The file model is the hardest thing to change once characters exist, so it gets proven first. The layout editor is the largest interface investment and comes only once the thing it edits is known to work.
 

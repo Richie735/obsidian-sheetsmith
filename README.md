@@ -2,7 +2,7 @@
 
 Design and use character sheets for any tabletop RPG in [Obsidian](https://obsidian.md). Build a layout on a grid, define your own formulas, and keep every character as a plain markdown note.
 
-> **Status: 0.1.0 is the first release.** It installs through [BRAT](https://github.com/TfTHacker/obsidian42-brat) while the plugin is not yet in the Obsidian community plugin list; see [Install](#install). The file model, the sheet view and ten components are in place: Card, Card set, Pool, Track, Table, Group, Tab set, Rich text, Image and Record set. So are the formula engine, a per-layout function library, row aggregates, typed modifiers with definitions and provenance, reset triggers, and the layout editor pane with its tree, configuration panel, undo, live grid canvas and sample-value preview. See the roadmap below.
+> **Status: in the Obsidian community plugin list.** See [Install](#install). This page describes the code in this repository, which can run ahead of the version the list serves. The file model, the sheet view and eleven components are in place: Card, Card set, Pool, Track, Table, Group, Tab set, Rich text, Image, Record set and Passport. So are the formula engine, a per-layout function library, row aggregates, typed modifiers with definitions and provenance, and reset triggers. The layout editor pane has its tree, configuration panel, undo, live grid canvas, sample-value preview, layout import and export, and three ways to start a new layout. A misconfigured field reports itself inline, both there and on the sheet; a broken formula does the same in the pane, and leaves the value it fed reading "?" with the reason on hover. The **Create a character** command offers the vault's layouts by name, as does a note whose layout is missing, so no character needs its frontmatter typed by hand. The character folder is configurable, and on Obsidian 1.13 and later the settings tab's preferences turn up in settings search. Still to come: mirroring values into frontmatter so Bases and Dataview can query them, and a phone layout — the editor pane does not fit a narrow screen.
 
 ## What it is
 
@@ -71,33 +71,14 @@ ability + Training * prof + Bonus
 
 One formula serves the whole skill list. `Training` is a graded column holding untrained, proficient or expertise, and each row says which ability it means, so the layout describes the system instead of repeating it eighteen times.
 
-## Roadmap
-
-| Milestone | Delivers | Status |
-|---|---|---|
-| **M1 Render** | Read a hand-written layout and character note, render a read-only sheet | Done |
-| **M2 Edit** | Edit values in sheet view, write back to the body, round-trip safely | Done |
-| **M3 Formulas** | Expression evaluation, layout function library, computed values | Done |
-| **M4 Editor** | Grid canvas, component palette, configuration panel | Shipped, except dragging a new component from a palette onto the canvas; creation goes through the **Add component** row |
-| **M5 Finish** | Reset triggers, promoted fields, layout export and import, mobile reflow, error states | Reset triggers done; promoted fields, layout export and import, error states and mobile reflow outstanding, mobile last |
-
-The file model was proven first with hand-written files, because it is the hardest thing to change once characters exist. The layout editor is the largest interface investment and comes only once the thing it edits is known to work.
-
-See [docs/SPEC.md](docs/SPEC.md) for the full specification: component catalog, formula model, layout schema, and data safety rules.
-
-## Not in scope
-
-Dice rolling, bundled rules content, level-up automation, layout inheritance, and importing from D&D Beyond. Recorded in the spec so they do not creep back in.
-
 ## Install
 
-Sheetsmith is not in the Obsidian community plugin list yet, so it installs through [BRAT](https://github.com/TfTHacker/obsidian42-brat), the Beta Reviewers Auto-update Tool. It needs Obsidian 1.9.0 or newer.
+Sheetsmith is in the [Obsidian community plugin list](https://community.obsidian.md/plugins/sheetsmith), so it installs from inside Obsidian. It needs Obsidian 1.9.0 or newer.
 
-1. In **Settings → Community plugins**, install and enable **BRAT**.
-2. In BRAT's settings, choose to add a beta plugin and enter `Richie735/obsidian-sheetsmith`.
-3. Back in **Community plugins**, enable **Sheetsmith**.
-4. Open the command palette and run **Sheetsmith: Add a starter layout**. It writes one of the bundled layouts into your layout folder; nothing renders yet.
-5. To see it as a sheet, create a note whose `sheet-layout` property names the layout, as in [How it works](#how-it-works) above, or run **Sheetsmith: Open layout editor** to see the layout filled with sample values.
+1. In **Settings → Community plugins**, select **Browse**, search for **Sheetsmith**, and install it.
+2. Select **Enable**.
+3. Open the command palette and run **Sheetsmith: Add a starter layout**. It writes one of the bundled layouts into your layout folder; nothing renders yet.
+4. To see it as a sheet, create a note whose `sheet-layout` property names the layout, as in [How it works](#how-it-works) above, or run **Sheetsmith: Open layout editor** to see the layout filled with sample values.
 
 Do this in a new vault made for the purpose, not in one you care about. The plugin rewrites note bodies, and the parser has little mileage outside the author's own vaults.
 

@@ -1,6 +1,6 @@
 # Layout import and export
 
-Status: built
+Status: shipped
 Board card: 📦 Layout import and export — SPEC §3.2 promises a layout can be
 shared or published as a single file and §7's **Manage layouts** bullet lists
 import and export among the six operations the pane offers. Neither exists. A
