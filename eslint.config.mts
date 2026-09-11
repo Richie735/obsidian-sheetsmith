@@ -465,6 +465,13 @@ export default defineConfig(
 			// global scope.
 			'obsidianmd/prefer-file-manager-trash-file': 'off',
 			'obsidianmd/no-global-this': 'off',
+			// The same circularity a third time. `require-display` asks every
+			// `PluginSettingTab` subclass below a 1.13 floor to implement
+			// `display()`, and the subclasses here are fixtures: a case builds a
+			// throwaway tab to hand the stub's renderer a definition. The rule is
+			// right about the shipped tab, and has no opinion worth having about a
+			// class that exists for one assertion.
+			'obsidianmd/settings-tab/require-display': 'off',
 		},
 	},
 );

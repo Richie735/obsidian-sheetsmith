@@ -1449,8 +1449,192 @@ export abstract class SuggestModal<T> extends Modal {
 	): void;
 }
 
+/**
+ * The subset of a setting definition this double honours.
+ *
+ * Obsidian 1.13's `SettingDefinitionItem` is a union of four row shapes with
+ * three container kinds above it, and modelling all of that would be
+ * reimplementing the app's settings renderer rather than doubling it. What is
+ * here is what this plugin declares: a row with a name, a description, and its
+ * own `render` callback. **Not `control`** — every row on the tab renders itself,
+ * because a `control` is read and written by the 1.13 renderer and would leave
+ * the row blank on the versions the tab's `display()` fallback exists for.
+ *
+ * Everything else is **refused loudly** by `assertModelled` rather than
+ * dropped, on the rule §2 of `docs/PATTERNS.md` states for this file: a member
+ * the app honours and the double ignores goes green under test and green in the
+ * harness while Obsidian builds something else.
+ */
+export interface SettingDefinition {
+	/** Required, as `SettingDefinitionBase.name` is: a nameless row is unsearchable. */
+	name: string;
+	desc?: string | DocumentFragment;
+	/**
+	 * Extra search terms. Read by the settings search and by nothing that
+	 * renders, so it is accepted and ignored here rather than refused — that is
+	 * what the app does with it at render time too.
+	 */
+	aliases?: string[];
+	/** Controls search visibility only, so likewise accepted and unread. */
+	searchable?: boolean | (() => boolean);
+	render?: (setting: Setting, group: SettingGroup) => void | (() => void);
+}
+
+/**
+ * Refuse a definition member this double would silently drop.
+ *
+ * Each branch names something the app draws or stores and this file does not,
+ * so a row that grows one fails at the assertion instead of rendering as a row
+ * that happens to look right.
+ */
+function assertModelled(def: SettingDefinition): void {
+	const raw = def as unknown as Record<string, unknown>;
+	if (typeof raw.type === 'string') {
+		// `group`, `list` and `page` each bring their own chrome — a heading, a
+		// search box, an empty state, a navigable sub-page — and none of it is
+		// here.
+		throw new Error(
+			`obsidian-stub: setting definition type "${raw.type}" is not modelled`,
+		);
+	}
+	if (raw.action !== undefined) {
+		throw new Error(
+			'obsidian-stub: an `action` definition is not modelled — it makes the whole row clickable through Setting.setAction',
+		);
+	}
+	if (raw.visible !== undefined || raw.disabled !== undefined) {
+		throw new Error(
+			'obsidian-stub: `visible` and `disabled` are not modelled — the app re-evaluates both on every render and through refreshDomState',
+		);
+	}
+	if (raw.control !== undefined) {
+		// Refused rather than modelled, because nothing declares one: a `control`
+		// is bound by the framework through `getControlValue`/`setControlValue`,
+		// and a double that half-implements that binding would be the one thing
+		// this file exists to prevent.
+		throw new Error(
+			'obsidian-stub: a `control` definition is not modelled — every row on this tab renders itself',
+		);
+	}
+}
+
+/**
+ * The group a rendered row sits in, and **the wrapper is the whole point**.
+ *
+ * Obsidian's definition renderer never puts a row straight into the tab.
+ * `e6` collects every consecutive definition that is not itself a group or a
+ * list — `O2(e)` is `"type" in e && ("group" === e.type || "list" === e.type)`,
+ * which all four of this plugin's rows fail — into one synthetic
+ * `{ type: 'group', items: [...] }`, and renders it through this class. Its
+ * constructor, from 1.13.7's `app.js`:
+ *
+ * ```js
+ * function e(e) {
+ *   var t = this.groupEl = e.createDiv("setting-group"),
+ *       n = this.headerEl = createDiv("setting-item setting-item-heading");
+ *   this.headerInnerEl = n.createDiv("setting-item-name");
+ *   this.controlEl = n.createDiv("setting-item-control");
+ *   this.searchContainerEl = t.createDiv({
+ *     cls: "setting-group-search", attr: { tabIndex: -1 }
+ *   });
+ *   this.listEl = t.createDiv("setting-items")
+ * }
+ * ```
+ *
+ * So the shape is `containerEl > .setting-group > .setting-items >
+ * .setting-item`, and **`app.css` hangs real rules on both wrappers**:
+ * `.setting-group .setting-items` supplies one shared card — background, border
+ * and radius — while `.setting-group .setting-item:not(.setting-item-heading)`
+ * takes each row's own card, border, radius and `margin-bottom` away and
+ * replaces the gaps with `::before` hairlines, at `--setting-items-padding-*`
+ * rather than `--size-4-4`. `.setting-group` itself caps the width at
+ * `--setting-group-max-width` and centres it.
+ *
+ * **This was missed once and it cost the review its instrument.** The double
+ * appended rows straight into `containerEl`, which is what the *old* imperative
+ * `display()` produced, so the settings shots came out byte-identical across the
+ * declarative move and the acceptance criterion that watched them measured
+ * nothing. Four separately-carded rows are not what Obsidian 1.13 draws.
+ *
+ * `headerEl` is deliberately absent from the DOM: the app builds it detached and
+ * only `prepend`s it when `setHeading` is called with text, which nothing here
+ * does.
+ */
+export class SettingGroup {
+	groupEl: HTMLElement;
+	listEl: HTMLElement;
+
+	constructor(containerEl: HTMLElement) {
+		this.groupEl = containerEl.createDiv('setting-group');
+		// Created empty and left empty. `.setting-group-search:empty` is
+		// `display: none`, and the sibling rules that square off the list's top
+		// corners are gated on `:not(:empty)`, so an empty one has to be *there*
+		// for the list to keep its own radius.
+		this.groupEl.createDiv({
+			cls: 'setting-group-search',
+			attr: { tabIndex: -1 },
+		});
+		this.listEl = this.groupEl.createDiv('setting-items');
+	}
+}
+
+/**
+ * Obsidian 1.13's settings tab, with both of the paths it renders by.
+ *
+ * Deminified from 1.13.7's `app.js`, where the base class is `l6` and
+ * `PluginSettingTab` is `p4`:
+ *
+ * ```js
+ * getSettingDefinitions() { return [] }
+ * update() {
+ *   this.settingItems = this.getSettingDefinitions();
+ *   H2(this.settingItems, this.name);        // duplicate page-name check
+ *   this.setting.refreshSearch();
+ *   this.setting.refreshCurrentPage(this);   // <- the paint
+ * }
+ * renderTab() { this.settingItems.length > 0 ? W2(this) : this.display() }
+ * display() { W2(this) }                     // W2 paints this.settingItems
+ * getControlValue(key) { const s = this.plugin.settings; if (s) return s[key] }
+ * setControlValue(key, v) {
+ *   const s = this.plugin.settings;
+ *   if (s) return s[key] = v, this.plugin.saveData(s)
+ * }
+ * getControlBinding(key) {
+ *   return {
+ *     value: this.getControlValue(key),
+ *     onChange: async v => {
+ *       await this.setControlValue(key, v);
+ *       this.refreshDomState()
+ *     }
+ *   }
+ * }
+ * ```
+ *
+ * **One deliberate deviation, and it is in `update()`.** In the app the paint
+ * goes through `this.setting.refreshCurrentPage(this)` — the settings modal,
+ * which owns the page a tab is drawn into. There is no modal here, so `update()`
+ * renders into `containerEl` itself. What this double models is the
+ * definition-to-DOM mapping; the modal's scheduling of it is the app's and out
+ * of reach. `display()` stays what the app's is, painting whatever `update()`
+ * last stored, which is why a caller renders by calling `update()`.
+ *
+ * **A second, narrower one: this rebuilds where the app diffs.** `e6` empties the
+ * container only on the first render and afterwards reconciles row by row. The
+ * skip that preserves a half-typed value is `"control" in t.def &&
+ * !!t.def.control && a.contains(l) && a !== l` — **gated on the row being a
+ * `control` row**, which none of this plugin's are. A `render` row holding the
+ * active element is torn down and rebuilt like any other, and the app then
+ * re-focuses its control container with `Fm(a, { preventScroll: true })`, so
+ * what survives there is the focus and not the value. This double rebuilds
+ * unconditionally and re-focuses nothing, so nothing may read focus across an
+ * `update()` and expect the app's answer.
+ */
 export class PluginSettingTab {
 	containerEl: HTMLElement;
+	/** Populated by `update()` and painted by both render paths, as in the app. */
+	settingItems: SettingDefinition[] = [];
+	private cleanups: (() => void)[] = [];
+
 	constructor(
 		public app: App,
 		public plugin: unknown,
@@ -1458,8 +1642,64 @@ export class PluginSettingTab {
 		this.containerEl = document.createElement('div');
 		this.containerEl.classList.add('vertical-tab-content');
 	}
-	display(): void {}
+
+	getSettingDefinitions(): SettingDefinition[] {
+		return [];
+	}
+
+	update(): void {
+		this.settingItems = this.getSettingDefinitions();
+		this.paint();
+	}
+
+	display(): void {
+		this.paint();
+	}
+
 	hide(): void {}
+
+	/*
+	 * **`getControlValue`, `setControlValue`, `getControlBinding` and
+	 * `refreshDomState` are deliberately absent**, and the deminified source
+	 * above is left in place so the next reader can see what they would do.
+	 * All four exist to serve a `control` definition, `assertModelled` refuses
+	 * one, and no row on this plugin's tab declares one. A binding half-built
+	 * here — a write that lands in the object but never asks for a save, say —
+	 * is precisely the silent divergence this file exists to prevent, so the
+	 * four arrive together with the first row that needs them or not at all.
+	 */
+
+	private paint(): void {
+		for (const cleanup of this.cleanups) cleanup();
+		this.cleanups = [];
+		this.containerEl.replaceChildren();
+		// One synthetic group for the whole run, which is what `e6` builds for a
+		// list of definitions none of which is itself a group or a list.
+		const group = new SettingGroup(this.containerEl);
+
+		for (const def of this.settingItems) {
+			assertModelled(def);
+			// Name and description before the control, as the app sets them, so a
+			// `render` callback that writes over either wins the way it does there.
+			const setting = new Setting(group.listEl);
+			setting.setName(def.name);
+			// `sg(e)` in the app: `typeof e === 'string' ? e : e.cloneNode(true)`.
+			// The clone is load-bearing rather than defensive — `renderTab()` paints
+			// the *stored* definitions on every tab activation while `update()` runs
+			// once, so a fragment appended rather than cloned would empty the row's
+			// description the second time it is drawn.
+			setting.setDesc(
+				typeof def.desc === 'string'
+					? def.desc
+					: ((def.desc?.cloneNode(true) as DocumentFragment | undefined) ?? ''),
+			);
+
+			if (def.render) {
+				const cleanup = def.render(setting, group);
+				if (cleanup) this.cleanups.push(cleanup);
+			}
+		}
+	}
 }
 
 /**
