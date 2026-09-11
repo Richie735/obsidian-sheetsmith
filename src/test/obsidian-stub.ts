@@ -93,18 +93,28 @@ function applyOptions(el: HTMLElement, options?: ElementOptions): void {
  * this path.
  */
 function make(
-	parent: Node,
+	/**
+	 * Null for the *global* `createEl`, which creates an element and attaches it
+	 * to nothing. Obsidian's own `Node.prototype.createEl` is that global with
+	 * `parent` filled in — `enhance.js` reads
+	 * `Node.prototype.createEl = function (t, e, n) { (e ||= {}).parent = this;
+	 * return createEl(t, e, n) }` — so the detached form is the primitive here
+	 * and the attaching one is the special case, not the other way round.
+	 */
+	parent: Node | null,
 	tag: string,
 	options?: ElementOptions | string,
 	callback?: (el: HTMLElement) => void,
 ): HTMLElement {
 	const info = typeof options === 'string' ? { cls: options } : options;
-	const doc = parent.ownerDocument ?? (parent as Document);
+	const doc = parent?.ownerDocument ?? (parent as Document | null) ?? document;
 	const el = doc.createElement(tag);
 	applyOptions(el, info);
 	const into = info?.parent ?? parent;
-	if (info?.prepend) into.insertBefore(el, into.firstChild);
-	else into.appendChild(el);
+	if (into) {
+		if (info?.prepend) into.insertBefore(el, into.firstChild);
+		else into.appendChild(el);
+	}
 	callback?.(el);
 	return el;
 }
@@ -241,6 +251,25 @@ export const Platform = { isMobile: false };
  */
 export function getLinkpath(linktext: string): string {
 	return linktext.split('#')[0] ?? linktext;
+}
+
+/**
+ * Whether the running app is at least this version.
+ *
+ * True, always, and the constant is the honest answer rather than a shortcut:
+ * this stub implements one Obsidian, the newest one, and every member on it is
+ * a member that app has. A stub that answered `false` for some version would be
+ * claiming to be an older app while still offering the whole of the newer
+ * surface, which is a worse lie than the simple one.
+ *
+ * It exists so a caller can *say* which floor it is assuming.
+ * `harness/settings-panel.ts` renders the settings tab through `update()`, an
+ * Obsidian 1.13 member, against a `minAppVersion` of 1.9.0 that the plugin's
+ * own `display()` fallback is there to serve — and a guard is how that reads as
+ * a decision in the code rather than as an oversight a linter caught.
+ */
+export function requireApiVersion(_version: string): boolean {
+	return true;
 }
 
 /** Which modifiers mean "somewhere else" is the app's rule; this is its shape. */
@@ -1773,9 +1802,43 @@ export function debounce<A extends unknown[]>(
 	return wrapped;
 }
 
-/** Obsidian puts `createFragment` and `el.win` in global scope. */
+/**
+ * Obsidian puts `createFragment`, the three element creators and `el.win` in
+ * global scope.
+ */
 export function installGlobals(): void {
 	const scope = globalThis as unknown as Record<string, unknown>;
+	/*
+	 * The detached creators, and they are the reason nine sites in `src/` and
+	 * nine in `harness/` used to hold `document.createElement` with an argument
+	 * written at each one.
+	 *
+	 * The argument was that `createEl` attaches on creation and so cannot
+	 * express an element attached later than it is created. That is true of the
+	 * *prototype* helper and false of the API: `obsidian.d.ts` declares
+	 * `createEl`, `createDiv` and `createSpan` as globals beside the `Node`
+	 * methods, and those return an element with no parent. Read out of the app's
+	 * own `enhance.js`, the global is the implementation and the method is a
+	 * two-line wrapper that sets `parent` to the receiver.
+	 *
+	 * So this is not the stub growing a convenience. It is the stub catching up
+	 * with three API members it had never installed, which is why the claim
+	 * looked true for as long as it did — nothing in the test run or the harness
+	 * could call them.
+	 */
+	scope.createEl = (
+		tag: string,
+		options?: ElementOptions | string,
+		callback?: (el: HTMLElement) => void,
+	): HTMLElement => make(null, tag, options, callback);
+	scope.createDiv = (
+		options?: ElementOptions | string,
+		callback?: (el: HTMLElement) => void,
+	): HTMLElement => make(null, 'div', options, callback);
+	scope.createSpan = (
+		options?: ElementOptions | string,
+		callback?: (el: HTMLElement) => void,
+	): HTMLElement => make(null, 'span', options, callback);
 	scope.createFragment = (
 		build?: (fragment: DocumentFragment) => unknown,
 	): DocumentFragment => {
