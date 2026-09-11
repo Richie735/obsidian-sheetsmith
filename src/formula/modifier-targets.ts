@@ -32,6 +32,7 @@ import {
 	ComponentConfig,
 	ComponentDefinition,
 	ModifierTarget,
+	ScopeEntry,
 	ScopeValues,
 } from '../types';
 import { referencesName } from './expression';
@@ -98,7 +99,7 @@ export function acceptingTargets(
 
 	const targets: ModifierTarget[] = [];
 	for (const component of components) {
-		const label = component.label ?? component.id;
+		const label = componentLabel(component);
 		const relative = (component.formulas ?? []).some((formula) =>
 			referencesName(formula, SELF_SLOT),
 		);
@@ -140,15 +141,66 @@ export function acceptingTargets(
 export function publishedTargets(
 	components: readonly ModifierTargetSource[],
 ): readonly ModifierTarget[] {
-	const targets: ModifierTarget[] = [];
-	for (const component of components) {
-		const label = component.label ?? component.id;
-		if (component.values.self) targets.push({ name: component.id, label });
-		for (const key of Object.keys(component.values.named ?? {})) {
-			targets.push({ name: `${component.id}.${key}`, label: `${label} · ${key}` });
-		}
+	return components
+		.flatMap((component) => publishedEntries(component))
+		.map(({ name, label }) => ({ name, label }));
+}
+
+/**
+ * The label a reader knows a component by, which is the id where it has none.
+ *
+ * Exported because three surfaces now say it — the target picker, the
+ * suggester's own top level, and the inventory in the configuration panel — and
+ * `publishedTargets` above already claimed there was one derivation while
+ * spelling it inline. A `label ?? id` copied into a fourth place is `PATTERNS.md`
+ * §1's one-step tier exactly: the only thing a test could check is that the
+ * copies still agree.
+ */
+export function componentLabel(component: ModifierTargetSource): string {
+	return component.label ?? component.id;
+}
+
+/** One published name, with the entry behind it. */
+export interface PublishedEntry {
+	/** The name a formula writes: `armour_class`, or `abilities.STR`. */
+	name: string;
+	/** The label a picker shows: `Abilities`, or `Abilities · STR`. */
+	label: string;
+	/** The key under `named`, or absent for the component's own bare name. */
+	key?: string;
+	/** What the name is worth, which is what says whether it publishes `.left`. */
+	entry: ScopeEntry;
+}
+
+/**
+ * Every name one component publishes, in declaration order.
+ *
+ * **The single walk over `ScopeValues`**, and this module is where it belongs for
+ * the reason its own header gives: two independent assemblies of "what does this
+ * layout publish" once disagreed and the divergence reached the sheet. What
+ * `publishedTargets` above did inline is now here, because three readers wanted
+ * three different slices of the same walk — the picker wants a name and a label,
+ * the panel's inventory wants the entry as well so it can tell whether `.left` is
+ * published, and the suggester wants the key on its own to offer after a dot.
+ * Three copies of a *shape* is what §1's one-step tier refuses.
+ */
+export function publishedEntries(
+	component: ModifierTargetSource,
+): readonly PublishedEntry[] {
+	const label = componentLabel(component);
+	const found: PublishedEntry[] = [];
+	if (component.values.self) {
+		found.push({ name: component.id, label, entry: component.values.self });
 	}
-	return targets;
+	for (const [key, entry] of Object.entries(component.values.named ?? {})) {
+		found.push({
+			name: `${component.id}.${key}`,
+			label: `${label} · ${key}`,
+			key,
+			entry,
+		});
+	}
+	return found;
 }
 /**
  * What one component contributes to the accepting set.
