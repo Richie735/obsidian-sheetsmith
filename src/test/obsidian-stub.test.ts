@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import './obsidian-stub';
 import {
+	AbstractInputSuggest,
 	App,
 	PluginSettingTab,
 	Setting,
@@ -633,5 +634,205 @@ describe('the setting definition renderer', () => {
 			const { tab } = tabFor([def]);
 			expect(() => tab.update(), member).toThrow(member);
 		}
+	});
+});
+
+/*
+ * `AbstractInputSuggest`, driven member by member.
+ *
+ * The reason is this file's own header, one class over: the formula suggester
+ * and the harness views that photograph it are both written against this
+ * double, so a member declared here and not honoured is a green test and a
+ * screenshot of markup Obsidian would have built differently.
+ */
+describe('the input suggester', () => {
+	/** A suggester over a fixed list, which is all a double needs driving. */
+	class Names extends AbstractInputSuggest<string> {
+		constructor(
+			app: App,
+			input: HTMLInputElement,
+			private readonly names: string[],
+		) {
+			super(app, input);
+		}
+
+		protected getSuggestions(query: string): string[] {
+			return this.names.filter((name) => name.startsWith(query));
+		}
+
+		renderSuggestion(value: string, el: HTMLElement): void {
+			el.createEl('code', { text: value });
+		}
+	}
+
+	function bound(names = ['abilities', 'armour_class']) {
+		const input = document.createElement('input');
+		input.type = 'text';
+		document.body.appendChild(input);
+		// Focused, because the app gates every query on
+		// `textInputEl.isActiveElement()`: a case driving an unfocused element
+		// would drive a path Obsidian refuses outright.
+		input.focus();
+		const suggest = new Names(new App(), input, names);
+		return { input, suggest };
+	}
+
+	/** The list as it stands on `document.body`, item by item. */
+	function items(): string[] {
+		return Array.from(
+			document.body.querySelectorAll('.suggestion-container .suggestion-item'),
+		).map((el) => el.textContent ?? '');
+	}
+
+	function selected(): string | null {
+		return document.body.querySelector('.suggestion-item.is-selected')?.textContent ?? null;
+	}
+
+	/** Type into the field the way a keyboard does. Synchronous, as the app is. */
+	function type(input: HTMLInputElement, text: string): void {
+		input.value = text;
+		input.dispatchEvent(new Event('input'));
+	}
+
+	beforeEach(() => {
+		document.body.replaceChildren();
+	});
+
+	it('draws the app\'s own markup into document.body', async () => {
+		const { input } = bound();
+		type(input, 'a');
+		expect(items()).toEqual(['abilities', 'armour_class']);
+		expect(selected()).toBe('abilities');
+	});
+
+	it('opens on focus as well as on input, which is why the binding disarms', () => {
+		const { input } = bound();
+		input.blur();
+		input.value = 'a';
+		input.focus();
+		expect(items()).toHaveLength(2);
+	});
+
+	it('asks nothing at all while the field is not focused', () => {
+		// The app's own gate. Without it a caller could drive the whole popup at
+		// an element Obsidian would have ignored.
+		const { input } = bound();
+		input.blur();
+		input.value = 'a';
+		input.dispatchEvent(new Event('input'));
+		expect(items()).toEqual([]);
+	});
+
+	it('draws a plain array without waiting for a microtask', () => {
+		// `onInputChange` branches on `Array.isArray` and calls `showSuggestions`
+		// straight through, so a synchronous subclass opens synchronously.
+		const { input } = bound();
+		input.value = 'a';
+		input.dispatchEvent(new Event('input'));
+		expect(items()).toHaveLength(2);
+	});
+
+	it('prevents a press on an item from blurring the field, and not one beside it', async () => {
+		const { input } = bound();
+		type(input, 'a');
+		const item = document.body.querySelector('.suggestion-item') as HTMLElement;
+		const onItem = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+		item.dispatchEvent(onItem);
+		expect(onItem.defaultPrevented).toBe(true);
+		const container = document.body.querySelector('.suggestion-container') as HTMLElement;
+		const onPadding = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+		container.dispatchEvent(onPadding);
+		// The padding is deliberately not guarded: a press there blurs the input
+		// and commits what is typed, which is the cost the feature accepts.
+		expect(onPadding.defaultPrevented).toBe(false);
+	});
+
+	it('closes on blur', async () => {
+		const { input } = bound();
+		type(input, 'a');
+		input.dispatchEvent(new Event('blur'));
+		expect(items()).toEqual([]);
+	});
+
+	it('closes where there is nothing to offer', async () => {
+		const { input } = bound();
+		type(input, 'a');
+		type(input, 'zz');
+		expect(items()).toEqual([]);
+	});
+
+	it('honours limit', async () => {
+		const { input, suggest } = bound();
+		suggest.limit = 1;
+		type(input, 'a');
+		expect(items()).toEqual(['abilities']);
+	});
+
+	it('reads and writes the field through getValue and setValue', async () => {
+		const { input, suggest } = bound();
+		type(input, 'ab');
+		expect(suggest.getValue()).toBe('ab');
+		suggest.setValue('armour_class');
+		expect(input.value).toBe('armour_class');
+	});
+
+	it('moves the selection on the arrows while open', async () => {
+		const { input } = bound();
+		type(input, 'a');
+		input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
+		expect(selected()).toBe('armour_class');
+		input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp' }));
+		expect(selected()).toBe('abilities');
+	});
+
+	it('accepts the selected item on Enter and reports it to onSelect', async () => {
+		const { input, suggest } = bound();
+		const chosen: string[] = [];
+		suggest.onSelect((value) => chosen.push(value));
+		type(input, 'a');
+		input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+		expect(chosen).toEqual(['abilities']);
+	});
+
+	it('accepts on a press of an item', async () => {
+		const { input, suggest } = bound();
+		const chosen: string[] = [];
+		suggest.onSelect((value) => chosen.push(value));
+		type(input, 'a');
+		const first = document.body.querySelector('.suggestion-item');
+		(first as HTMLElement).click();
+		expect(chosen).toEqual(['abilities']);
+	});
+
+	it('closes on Escape and takes nothing', async () => {
+		const { input, suggest } = bound();
+		const chosen: string[] = [];
+		suggest.onSelect((value) => chosen.push(value));
+		type(input, 'a');
+		input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+		expect(items()).toEqual([]);
+		expect(chosen).toEqual([]);
+	});
+
+	it('leaves every key alone once it is closed', async () => {
+		// The property the accept-then-commit gesture rests on: the second Enter
+		// has to reach the input, which is what fires `change`.
+		const { input, suggest } = bound();
+		const chosen: string[] = [];
+		suggest.onSelect((value) => chosen.push(value));
+		type(input, 'a');
+		input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+		const enter = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true });
+		input.dispatchEvent(enter);
+		expect(enter.defaultPrevented).toBe(false);
+		expect(chosen).toEqual([]);
+	});
+
+	it('closes twice without complaint', async () => {
+		const { input, suggest } = bound();
+		type(input, 'a');
+		suggest.close();
+		expect(() => suggest.close()).not.toThrow();
+		expect(items()).toEqual([]);
 	});
 });

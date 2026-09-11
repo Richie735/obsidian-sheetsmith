@@ -205,6 +205,15 @@ export function installDomHelpers(): void {
 	// the same write, and `''` is how a standard property is cleared
 	// (`docs/PATTERNS.md` §5), so `show` puts a row back to whatever display its
 	// class gives it rather than to `block`.
+	/*
+	 * Self-only and therefore honestly modellable, which is what separates it
+	 * from `isShown` above: the app's answer is `document.activeElement === this`
+	 * and nothing about an ancestor. `AbstractInputSuggest` gates every query on
+	 * it, so a double without it lets a test drive a path the app refuses.
+	 */
+	proto.isActiveElement = function (this: HTMLElement): boolean {
+		return this.ownerDocument.activeElement === this;
+	};
 	proto.show = function (this: HTMLElement): void {
 		this.setCssStyles({ display: '' });
 	};
@@ -1476,6 +1485,239 @@ export abstract class SuggestModal<T> extends Modal {
 		item: T,
 		event: MouseEvent | KeyboardEvent,
 	): void;
+}
+
+/**
+ * Obsidian's base for a type-ahead popover, enough of it to be a base.
+ *
+ * Declared beside `AbstractInputSuggest` rather than folded into it because the
+ * app splits them there: `open`, `close`, `renderSuggestion` and
+ * `selectSuggestion` are `PopoverSuggest`'s, and a module reaching one of those
+ * through a variable typed as the base compiles against the real declarations
+ * and has to compile against these.
+ *
+ * **`scope` is deliberately absent.** The real class carries a `Scope` whose
+ * pushed keymap consumes Enter, Escape, the arrows, Home, End and PageUp/Down
+ * while the popup is open; this double answers those on the element's own
+ * `keydown` instead, because a `Scope` with nothing to push it onto would be
+ * modelling Obsidian's keymap stack rather than doubling one class.
+ */
+export abstract class PopoverSuggest<T> {
+	constructor(public app: App) {}
+
+	open(): void {}
+	close(): void {}
+
+	abstract renderSuggestion(value: T, el: HTMLElement): void;
+	abstract selectSuggestion(value: T, evt: MouseEvent | KeyboardEvent): void;
+}
+
+/**
+ * Obsidian's input type-ahead, enough of it to drive a list, a keyboard and a
+ * choice.
+ *
+ * Added because a real surface reaches it: the layout editor's formula fields
+ * bind one (`docs/features/formula-name-suggestions.md`), and a popup nothing
+ * can construct is a popup nothing can test or photograph.
+ *
+ * **What is modelled** is the whole of what that feature's design rests on: the
+ * three listeners the app binds on the element, that `blur` closes, the
+ * `.suggestion-container > .suggestion > .suggestion-item` markup appended to
+ * `document.body` with `is-selected` on the highlighted item, `limit`, and the
+ * keys the popup consumes *only while it is open* — which is the property the
+ * accept-then-commit gesture rests on, since the second Enter has to reach the
+ * input and fire `change`.
+ *
+ * **What is not modelled, named rather than left to be assumed** (`PATTERNS.md`
+ * §2): the popup's placement, its flip when the input sits low in the window,
+ * its height clamp and its reposition on scroll; the `Scope` the real class
+ * pushes, and therefore Home, End and PageUp/PageDown; the mobile regime, which
+ * defers `onInputFocus` through a `requestAnimationFrame` until the keyboard
+ * settles and closes on the back gesture; the `autoDestroy` timer the app arms
+ * on every open; the `isShown()` gate in `showSuggestions`, for the reason
+ * `installDomHelpers` gives for leaving `isShown` out entirely; and
+ * `suggestEl`/`isOpen`, which the app does not declare and so nothing here may
+ * offer a test a way to read.
+ *
+ * **`getSuggestions` is awaited only where it returns a promise**, which is what
+ * the app does: `onInputChange` branches on `Array.isArray` and calls
+ * `showSuggestions` straight through for a plain array. This said the opposite
+ * for one wave — "awaited unconditionally" — and the cost was not a bug but a
+ * lie a test could not see through: every case and the harness both awaited a
+ * microtask the app never takes.
+ *
+ * **Every query is gated on `textInputEl.isActiveElement()`**, as the app's is.
+ * Without it a case could drive the whole popup at an element that was never
+ * focused, which the app would refuse outright — the double being kinder than
+ * the app, the one direction this file's header forbids.
+ *
+ * **A `mousedown` on a `.suggestion-item` is prevented and one on the container
+ * is not**, which is the app's own delegation and not an approximation of it.
+ * That distinction is load bearing rather than incidental: it is why pressing an
+ * item accepts without blurring the field, and why a press on the popup's own
+ * padding blurs and commits — a cost `docs/features/formula-name-suggestions.md`
+ * §4 accepts by name, and one nothing could have observed here before.
+ */
+export abstract class AbstractInputSuggest<T> extends PopoverSuggest<T> {
+	/** Elements rendered at once. 0 disables the cap, as the app's does. */
+	limit = 100;
+
+	private readonly textInputEl: HTMLInputElement | HTMLDivElement;
+	private containerEl: HTMLElement | null = null;
+	private shown: T[] = [];
+	private selected = 0;
+	private selectCallback:
+		| ((value: T, evt: MouseEvent | KeyboardEvent) => unknown)
+		| null = null;
+
+	constructor(app: App, textInputEl: HTMLInputElement | HTMLDivElement) {
+		super(app);
+		this.textInputEl = textInputEl;
+		textInputEl.addEventListener('input', () => this.refresh());
+		textInputEl.addEventListener('focus', () => this.refresh());
+		textInputEl.addEventListener('blur', () => this.close());
+		textInputEl.addEventListener('keydown', (event) =>
+			this.handleKey(event as KeyboardEvent),
+		);
+	}
+
+	/**
+	 * The app's own delegated handler: a press on an *item* keeps the field
+	 * focused, a press on the container's padding does not.
+	 *
+	 * Bound on the container each time one is built rather than once in the
+	 * constructor, because this double builds the container at `open()` where
+	 * the app builds it with the instance.
+	 */
+	private preventItemBlur(container: HTMLElement): void {
+		container.addEventListener('mousedown', (event) => {
+			const target = event.target;
+			if (target instanceof HTMLElement && target.closest('.suggestion-item')) {
+				event.preventDefault();
+			}
+		});
+	}
+
+	getValue(): string {
+		return this.textInputEl instanceof HTMLInputElement
+			? this.textInputEl.value
+			: (this.textInputEl.textContent ?? '');
+	}
+
+	setValue(value: string): void {
+		if (this.textInputEl instanceof HTMLInputElement) {
+			this.textInputEl.value = value;
+		} else {
+			this.textInputEl.textContent = value;
+		}
+	}
+
+	protected abstract getSuggestions(query: string): T[] | Promise<T[]>;
+
+	selectSuggestion(value: T, evt: MouseEvent | KeyboardEvent): void {
+		this.selectCallback?.(value, evt);
+	}
+
+	onSelect(
+		callback: (value: T, evt: MouseEvent | KeyboardEvent) => unknown,
+	): this {
+		this.selectCallback = callback;
+		return this;
+	}
+
+	open(): void {
+		if (this.containerEl !== null) return;
+		const container = document.createElement('div');
+		container.classList.add('suggestion-container');
+		const list = document.createElement('div');
+		list.classList.add('suggestion');
+		container.appendChild(list);
+		this.preventItemBlur(container);
+		document.body.appendChild(container);
+		this.containerEl = container;
+	}
+
+	close(): void {
+		this.containerEl?.remove();
+		this.containerEl = null;
+		this.shown = [];
+		this.selected = 0;
+	}
+
+	/**
+	 * Ask for suggestions and draw them, or close where there are none.
+	 *
+	 * The two gates are the app's, in the app's order: nothing is asked at all
+	 * unless the element is focused, and a plain array is drawn straight through
+	 * while a promise is awaited.
+	 */
+	private refresh(): void {
+		if (!this.textInputEl.isActiveElement()) return;
+		const answer = this.getSuggestions(this.getValue());
+		if (Array.isArray(answer)) {
+			this.show(answer);
+			return;
+		}
+		void answer.then((values) => {
+			this.show(values);
+		});
+	}
+
+	private show(values: T[]): void {
+		const capped = this.limit > 0 ? values.slice(0, this.limit) : values;
+		if (capped.length === 0) {
+			this.close();
+			return;
+		}
+		this.shown = capped;
+		this.selected = 0;
+		this.open();
+		this.paint();
+	}
+
+	private paint(): void {
+		const list = this.containerEl?.querySelector('.suggestion');
+		if (!(list instanceof HTMLElement)) return;
+		list.replaceChildren();
+		this.shown.forEach((value, index) => {
+			const item = document.createElement('div');
+			item.classList.add('suggestion-item');
+			if (index === this.selected) item.classList.add('is-selected');
+			this.renderSuggestion(value, item);
+			item.addEventListener('click', (event) =>
+				this.selectSuggestion(value, event),
+			);
+			list.appendChild(item);
+		});
+	}
+
+	/**
+	 * The keys the popup owns, and only while it is open.
+	 *
+	 * The guard is the whole point: closed, every one of these reaches the input,
+	 * which is what makes Enter a commit rather than a second accept.
+	 */
+	private handleKey(event: KeyboardEvent): void {
+		if (this.containerEl === null || this.shown.length === 0) return;
+		if (event.key === 'Escape') {
+			event.preventDefault();
+			this.close();
+			return;
+		}
+		if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+			event.preventDefault();
+			const step = event.key === 'ArrowDown' ? 1 : -1;
+			const count = this.shown.length;
+			this.selected = (this.selected + step + count) % count;
+			this.paint();
+			return;
+		}
+		if (event.key === 'Enter') {
+			event.preventDefault();
+			const value = this.shown[this.selected];
+			if (value !== undefined) this.selectSuggestion(value, event);
+		}
+	}
 }
 
 /**
