@@ -1362,7 +1362,7 @@ export function renderColumnsEditor(
 	if (columns.some((column) => column.total === true)) {
 		listEl.createDiv('sheetsmith-entry-footnote', (el) =>
 			el.setText(
-				'A total is published as "<component id>.<column key>", so a formula elsewhere on the sheet can read it. That makes a totalled column\'s key a name: letters, digits and underscores, where a column without a total may be headed anything.',
+				'A total is a name formulas read, so a totalled column\'s key is letters, digits and underscores, where a column without a total may be headed anything.',
 			),
 		);
 	}
@@ -1395,7 +1395,7 @@ export function renderColumnsEditor(
 	if (columns.some((column) => column.publish === true)) {
 		listEl.createDiv('sheetsmith-entry-footnote', (el) =>
 			el.setText(
-				'A published column gives every row below a name of its own, "<component id>.<row key>", so a formula elsewhere on the sheet can read that row. Give each row a key in the rows list above. Only one column can be published.',
+				'A published column gives every row below a name of its own, so a formula elsewhere on the sheet can read that row. Give each row a key in the rows list above. Only one column can be published.',
 			),
 		);
 	}

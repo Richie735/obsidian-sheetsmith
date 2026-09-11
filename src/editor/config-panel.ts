@@ -88,10 +88,11 @@ import {
 	modifierTargetSource,
 	ModifierTargetSource,
 } from '../formula/modifier-targets';
+import { vocabularySource } from '../formula/vocabulary';
 import { parseModifierDefinitions } from '../parse/modifier-definitions';
 import { WalkEntry, walkComponents } from '../parse/layout-walk';
-import { copyableName } from './copyable-name';
 import { onCommit } from './field-commit';
+import { renderPublishedNames } from './published-names';
 import { showFieldError } from './field-error';
 import { formulaProblem } from './field-formula';
 import { groupHeading, panelTitle } from './form-group';
@@ -496,11 +497,11 @@ export class ConfigPanel {
 		form.createDiv(
 			{ cls: ['setting-item-description', 'sheetsmith-component-reference'] },
 			(el) => {
-				el.appendText('Formulas reference this component as ');
-				// The id is the one thing about a component that cannot be
-				// discovered anywhere else, and it is what gets retyped into
-				// every formula that reads this component. Make it one click.
-				copyableName(el, config.id);
+				// Every name this component publishes, each one copyable, rather
+				// than the bare id this line used to offer — which was the right
+				// string for a Card and the wrong one for everything else
+				// (`published-names.ts`).
+				renderPublishedNames(el, vocabularySource(config, definition));
 			},
 		);
 

@@ -5157,3 +5157,93 @@ describe('starting a new layout from the pane', () => {
 		]);
 	});
 });
+
+describe('the panel says what a component publishes', () => {
+	it('lists every name as a chip rather than the bare id', async () => {
+		const harness = await open({
+			name: 'Test sheet',
+			columns: 12,
+			components: [
+				{
+					id: 'abilities',
+					type: 'card-set',
+					label: 'Abilities',
+					entries: [
+						{ key: 'STR', name: 'Strength' },
+						{ key: 'DEX', name: 'Dexterity' },
+					],
+					position: { col: 1, row: 1, width: 4, height: 1 },
+				} as unknown as ComponentConfig,
+			],
+			functions: [],
+			triggers: [],
+		});
+		control(harness, 'edit-abilities').click();
+		await tick();
+		const chips = Array.from(
+			harness.container.querySelectorAll('.sheetsmith-published-name code'),
+		).map((code) => code.textContent);
+		expect(chips).toEqual([
+			'abilities.STR',
+			'.value',
+			'mod.',
+			'abilities.DEX',
+			'.value',
+			'mod.',
+		]);
+	});
+
+	it('teaches no name as a placeholder pattern anywhere in the pane', async () => {
+		/*
+		 * The copy budget this feature relieves (`SPEC` §13): the panel used to
+		 * spell the grammar as `"<component id>.<column key>"` under the list
+		 * where a key is typed, leaving the reader to substitute two placeholders
+		 * to get a string they could have copied. The inventory shows the real
+		 * names, so the pattern goes.
+		 */
+		const harness = await open({
+			name: 'Test sheet',
+			columns: 12,
+			components: [
+				{
+					id: 'inventory',
+					type: 'table',
+					label: 'Inventory',
+					rows: [{ label: 'Sword', key: 'sword' }],
+					columns: [
+						{ key: 'Weight', type: 'number', total: true },
+						{ key: 'Worn', type: 'toggle', publish: true },
+					],
+					position: { col: 1, row: 1, width: 6, height: 2 },
+				} as unknown as ComponentConfig,
+			],
+			functions: [],
+			triggers: [],
+		});
+		control(harness, 'edit-inventory').click();
+		await tick();
+		const text = harness.container.textContent ?? '';
+		expect(text).not.toContain('"<component id>.');
+		// The pattern in *either* spelling now, since the two clauses the guard
+		// above cannot see were the last places it appeared as UI copy.
+		expect(text).not.toContain('<component id>');
+		expect(text).toContain(
+			'A total is a name formulas read, so a totalled column\'s key is letters, digits and underscores, where a column without a total may be headed anything.',
+		);
+		expect(text).toContain(
+			'A published column gives every row below a name of its own, so a formula elsewhere on the sheet can read that row.',
+		);
+		/*
+		 * The third and fourth trims, and the two the `not.toContain` guard above
+		 * cannot catch: each removed a `sum(<component id>, <expression>)` clause,
+		 * which carries neither the leading quote nor the trailing dot that guard
+		 * matches on. Only reading the sentences proves they went.
+		 */
+		expect(text).toContain(
+			"A column's total sums what the note stores; a formula elsewhere can sum any expression over the rows instead.",
+		);
+		expect(text).toContain(
+			'total a column, or aggregate over the rows instead.',
+		);
+	});
+});

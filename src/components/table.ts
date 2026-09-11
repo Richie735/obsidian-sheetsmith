@@ -937,14 +937,14 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			kind: 'columns',
 			label: 'Columns',
 			description:
-				'Text, number, and toggle columns hold character data. A computed column is read-only and reads the row\'s other cells by column key, its row values by name, and anything else on the sheet by component id. One column may be published per row, which is what lets a formula read a single row\'s value rather than a column\'s total. A column\'s total sums what the note stores; a formula elsewhere can sum an expression over the rows instead, with sum(<component id>, <expression>).',
+				'Text, number, and toggle columns hold character data. A computed column is read-only and reads the row\'s other cells by column key, its row values by name, and anything else on the sheet by component id. One column may be published per row, which is what lets a formula read a single row\'s value rather than a column\'s total. A column\'s total sums what the note stores; a formula elsewhere can sum any expression over the rows instead.',
 		},
 		{
 			key: 'openRows',
 			kind: 'boolean',
 			label: 'Characters may add rows',
 			description:
-				'Adds a row control under the table. Rows a character adds are theirs to rename and delete, and no formula can name a row a character added — total a column, or aggregate over the rows with sum(<component id>, <expression>). Rows declared above stay read-only and cannot be deleted from a character.',
+				'Adds a row control under the table. Rows a character adds are theirs to rename and delete, and no formula can name a row a character added — total a column, or aggregate over the rows instead. Rows declared above stay read-only and cannot be deleted from a character.',
 			default: false,
 		},
 		{
