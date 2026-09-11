@@ -10,6 +10,17 @@
  * of them has a default and the other defers to the app.
  *
  * The tab itself is the real `SheetsmithSettingTab`, not a copy.
+ *
+ * **Rendered through `update()`, which is Obsidian 1.13's path**, so what the
+ * shots show is the grouped card the app draws: one shared card with hairline
+ * dividers, capped at `--setting-group-max-width` and centred, rather than four
+ * separately-carded rows. Both halves of that had to be true at once — the
+ * double builds the `.setting-group` wrapper and `calibrate.mjs` collects the
+ * rules anchored on it — and while only one of them was, this surface
+ * photographed the *older* imperative look while claiming to show the current
+ * one. The tab's own `display()` fallback still draws the four cards, for the
+ * versions below 1.13 it exists for, and nothing here renders that path;
+ * `settings.test.ts` does.
  */
 
 import { App } from '../src/test/obsidian-stub';
@@ -37,5 +48,5 @@ export async function renderSettings(
 	);
 	container.replaceChildren();
 	container.appendChild(tab.containerEl);
-	tab.display();
+	tab.update();
 }

@@ -135,10 +135,14 @@ export default defineConfig(
 		rules: {
 			'obsidianmd/prefer-create-el': 'off',
 			'obsidianmd/no-nodejs-modules': 'off',
-			// The harness renders the settings tab by calling `display()`, which
-			// is what the plugin's own tab implements. Until that migrates to
-			// the declarative API, calling it is the only way to render it.
-			'@typescript-eslint/no-deprecated': 'off',
+			// The harness renders the settings tab the way Obsidian 1.13 does,
+			// through `update()`, because that is the path a reader on a current
+			// app gets and so the one worth looking at. `no-unsupported-api`
+			// reads that against `minAppVersion`, which is 1.9.0 and correct for
+			// the shipped code — the plugin's own `display()` fallback is what
+			// serves that floor. The harness is not shipped code, so the rule is
+			// asking it about a constraint it does not live under.
+			'obsidianmd/no-unsupported-api': 'off',
 		},
 	},
 	{
@@ -353,94 +357,20 @@ export default defineConfig(
 		},
 	},
 	{
-		// The one test that renders the settings tab, and so the layout editor,
-		// the way the harness does. `display()` is what the plugin's own tab
-		// implements, so calling it is the only way to render it until that
-		// migrates to the declarative API — the same argument the harness block
-		// above makes, and the rule is off for `settings.ts` itself further down.
+		// The one test that renders the settings tab, and it renders it twice on
+		// purpose: through `update()`, which is Obsidian 1.13's path, and through
+		// `display()`, which is the only path below it and dead code above.
+		//
+		// So both rules fire for the same reason and neither is about shipped
+		// code. `no-unsupported-api` reads `update()` against `minAppVersion`
+		// 1.9.0, which is the floor the fallback exists to serve;
+		// `no-deprecated` reads the deliberate call to that fallback. A test that
+		// covered only the path its own floor allows would leave the other
+		// untested, which is the failure this file exists to prevent.
 		files: ['src/settings.test.ts'],
 		rules: {
+			'obsidianmd/no-unsupported-api': 'off',
 			'@typescript-eslint/no-deprecated': 'off',
-		},
-	},
-	{
-		// Obsidian 1.13's declarative settings API describes a tab's settings
-		// as data so the app can index them for search. This tab no longer has
-		// the excuse it used to — it is three preferences and a button since the
-		// layout editor moved into a pane, which is the shape the API is for —
-		// and two things still block it, both about being able to tell whether
-		// the adoption worked:
-		//
-		// - whether a `control` write also persists is undocumented, and nothing
-		//   here could catch it either way, because the obsidian stub renders
-		//   `Setting` rows and not definitions;
-		// - neither folder preference is a plain bind: the layout folder
-		//   substitutes the default on empty where `validate` only rejects, and
-		//   the character folder trims.
-		//
-		// Named rather than restated: the argument and the **Waiting on** line
-		// live at the top of `src/settings.ts`, and this comment is deliberately
-		// the summary. This block held the stale half of that pair once already.
-		//
-		// Off here rather than inline: `eslint-comments/no-restricted-disable`
-		// in the recommended config forbids disabling this rule at its site.
-		files: ['src/settings.ts'],
-		rules: {
-			'obsidianmd/settings-tab/prefer-setting-definitions': 'off',
-		},
-	},
-	{
-		/*
-		 * A UI string carrying **arrow notation** is exempt from sentence case,
-		 * and nothing else in this file is.
-		 *
-		 * `AGENTS.md` asks for sentence case *and* for arrow notation quoting the
-		 * app's own labels — "Use arrow notation for navigation: **Settings →
-		 * Community plugins**" — and the two collide, because the labels in such
-		 * a path are the app's and the app capitalises the first word of each.
-		 * The character folder's description is the first string here to hit it:
-		 * the rule reads the whole thing as one sentence and asks for
-		 * "settings → files and links → default location for new notes", which
-		 * is a path a reader cannot find in Obsidian's own preferences.
-		 *
-		 * **An option rather than an `off`, and the difference is what makes this
-		 * narrow.** `ignoreRegex` skips a string matching the pattern and leaves
-		 * every other string in the file checked — measured, not assumed: with
-		 * this on, a Title Cased description with no arrow in it is still
-		 * reported. So what is exempted is a *class of copy the style guide
-		 * mandates*, not a file.
-		 *
-		 * Per file rather than repo-wide because this is the only file where
-		 * arrow notation reaches a string **this rule reads**, which is
-		 * `prefer-create-el`'s own scoping argument above: the narrowest scope
-		 * available. A second consumer widens it.
-		 *
-		 * That is deliberately not the same claim as "the only file with an arrow
-		 * in UI copy", which is false and would send the next reader's grep to
-		 * the wrong conclusion. `components/pool.ts` puts `→` in on-screen text
-		 * too, in the pending-change readout.
-		 *
-		 * **What keeps it out of reach is the site, not the quoting.** The rule
-		 * reads UI copy only where it recognises the call: the argument of
-		 * `setName`, `setDesc`, `setPlaceholder`, `setTooltip`, `setText`,
-		 * `setTitle`, `setButtonText`, `addRibbonIcon`, `addOption`; `text` and
-		 * `title` inside `createEl` options; `aria-label`, `aria-description`,
-		 * `title` and `placeholder` through `setAttribute`; and `name` in
-		 * `addCommand`. Pool's arrow reaches `onPending({ text })` — an ordinary
-		 * call's object property, which is none of those — so it would go unread
-		 * spelled as a plain literal too. (It is *also* a template literal
-		 * carrying expressions, which the rule skips; one with no expressions it
-		 * reads fine, so "it cannot read a template literal" would be the wrong
-		 * reason.) The trigger for widening this scope is the sentence above:
-		 * an arrow reaching one of those sites in a second file.
-		 *
-		 * Here rather than inline for the block above's reason:
-		 * `eslint-comments/no-restricted-disable` forbids touching an
-		 * `obsidianmd` rule at its own line.
-		 */
-		files: ['src/settings.ts'],
-		rules: {
-			'obsidianmd/ui/sentence-case': ['warn', { ignoreRegex: ['→'] }],
 		},
 	},
 	{
@@ -469,8 +399,8 @@ export default defineConfig(
 			// `PluginSettingTab` subclass below a 1.13 floor to implement
 			// `display()`, and the subclasses here are fixtures: a case builds a
 			// throwaway tab to hand the stub's renderer a definition. The rule is
-			// right about the shipped tab, and has no opinion worth having about a
-			// class that exists for one assertion.
+			// right about the shipped tab, which does implement it, and has no
+			// opinion worth having about a class that exists for one assertion.
 			'obsidianmd/settings-tab/require-display': 'off',
 		},
 	},
