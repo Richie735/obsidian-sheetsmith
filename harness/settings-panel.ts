@@ -21,9 +21,18 @@
  * one. The tab's own `display()` fallback still draws the four cards, for the
  * versions below 1.13 it exists for, and nothing here renders that path;
  * `settings.test.ts` does.
+ *
+ * **The `requireApiVersion` guard below is that paragraph written as code.**
+ * `update()` arrived in 1.13 and `manifest.json` declares a floor of 1.9.0, so
+ * an unguarded call is a plugin reaching four minor versions past what it
+ * claims to support — which is what `obsidianmd/no-unsupported-api` reports,
+ * and it is right to, whatever the prose above says. The guard is the
+ * difference between a decision and an oversight, and it costs one `if`. The
+ * stub answers `true`, because the stub implements one Obsidian and it is the
+ * newest one.
  */
 
-import { App } from '../src/test/obsidian-stub';
+import { App, requireApiVersion } from '../src/test/obsidian-stub';
 import { SheetsmithSettingTab } from '../src/settings';
 import { Layout } from '../src/parse/layout';
 import { fakePlugin } from '../src/test/plugin';
@@ -48,5 +57,5 @@ export async function renderSettings(
 	);
 	container.replaceChildren();
 	container.appendChild(tab.containerEl);
-	tab.update();
+	if (requireApiVersion('1.13.0')) tab.update();
 }
