@@ -1,7 +1,13 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
 import './obsidian-stub';
-import { App, normalizePath } from './obsidian-stub';
+import {
+	App,
+	PluginSettingTab,
+	Setting,
+	SettingDefinition,
+	normalizePath,
+} from './obsidian-stub';
 
 /*
  * The element helpers the double installs, driven option by option.
@@ -418,5 +424,214 @@ describe('what the double thinks a path is', () => {
 		await expect(app.vault.create('Notes/Aramil.md', 'theirs')).rejects.toThrow(
 			'File already exists.',
 		);
+	});
+});
+
+/*
+ * The definition renderer, which is the newest thing here and the one with the
+ * most room to diverge quietly: it turns data into the same rows `new Setting()`
+ * used to build by hand, so a mapping that drops a member renders a row that
+ * still looks right.
+ *
+ * What it must get right is the seam rather than the markup. The markup is
+ * `Setting`'s and already driven above; the seam is which member reaches which
+ * call, and which members are refused instead of quietly dropped.
+ */
+
+/** A tab returning the definitions a case hands it. */
+function tabFor(definitions: SettingDefinition[]): { tab: PluginSettingTab } {
+	class Tab extends PluginSettingTab {
+		getSettingDefinitions(): SettingDefinition[] {
+			return definitions;
+		}
+	}
+	const tab = new Tab(new App(), {});
+	document.body.replaceChildren(tab.containerEl);
+	return { tab };
+}
+
+describe('the setting definition renderer', () => {
+	it('nests a row the way the app nests one, wrappers and all', () => {
+		/*
+		 * **The check that was missing, and its absence cost the review its
+		 * instrument.** Obsidian never puts a row straight into the tab: `e6`
+		 * gathers the definitions into one synthetic group and `SettingGroup`
+		 * builds `.setting-group > .setting-items` around them. `app.css` then
+		 * restyles on exactly that nesting — one shared card on `.setting-items`,
+		 * each row's own card taken away, hairlines instead of gaps.
+		 *
+		 * The double used to append `.setting-item` into `containerEl`, which is
+		 * what the *old* imperative `display()` produced. So the settings shots
+		 * came out byte-identical across a change that alters the tab's whole
+		 * appearance, and the criterion watching them proved nothing. A shape
+		 * assertion is what makes that failure loud.
+		 */
+		const { tab } = tabFor([{ name: 'Layout folder' }]);
+		tab.update();
+		const group = tab.containerEl.children[0];
+		expect(group?.className).toBe('setting-group');
+		expect(Array.from(group?.children ?? []).map((el) => el.className)).toEqual([
+			'setting-group-search',
+			'setting-items',
+		]);
+		// Empty, and present: `:empty` hides it, and the rules that square off the
+		// list's top corners are gated on it *not* being empty.
+		expect(group?.querySelector('.setting-group-search')?.childElementCount).toBe(
+			0,
+		);
+		const rows = group?.querySelector('.setting-items')?.children ?? [];
+		expect(Array.from(rows).map((el) => el.className)).toEqual(['setting-item']);
+		// And no heading: the app builds one detached and prepends it only when
+		// `setHeading` is called with text, which nothing here does.
+		expect(tab.containerEl.querySelector('.setting-item-heading')).toBeNull();
+	});
+
+	it('paints nothing until `update()` has stored the definitions', () => {
+		// `display()` is the app's second path and paints `settingItems`, which
+		// only `update()` fills. A caller that renders by `display()` alone gets
+		// an empty tab, which is why both call sites use `update()`.
+		const { tab } = tabFor([{ name: 'Layout folder' }]);
+		tab.display();
+		expect(tab.containerEl.querySelectorAll('.setting-item')).toHaveLength(0);
+		tab.update();
+		expect(tab.containerEl.querySelectorAll('.setting-item')).toHaveLength(1);
+	});
+
+	it('sends a name and a description to the row the app sends them to', () => {
+		const { tab } = tabFor([
+			{ name: 'Character folder', desc: 'New characters are written here.' },
+		]);
+		tab.update();
+		expect(
+			tab.containerEl.querySelector('.setting-item-name')?.textContent,
+		).toBe('Character folder');
+		expect(
+			tab.containerEl.querySelector('.setting-item-description')?.textContent,
+		).toBe('New characters are written here.');
+	});
+
+	it('takes a description built as a fragment, markup and all', () => {
+		// How the sheet-view toggle's description reaches the row: a fragment
+		// carrying a `<code>`, which is also what the settings search reads the
+		// `textContent` of.
+		// The key is named rather than spelled inline for the reason `settings.ts`
+		// names it: `obsidianmd/ui/sentence-case` reads `text` inside `createEl`
+		// options, and a frontmatter key is not a sentence to be capitalised.
+		const key = 'sheet-layout';
+		const desc = createFragment((fragment) => {
+			fragment.appendText('Notes with a ');
+			fragment.createEl('code', { text: key });
+			fragment.appendText(' property open as a sheet.');
+		});
+		const { tab } = tabFor([{ name: 'Open sheets in sheet view', desc }]);
+		tab.update();
+		const descEl = tab.containerEl.querySelector('.setting-item-description');
+		expect(descEl?.querySelector('code')?.textContent).toBe('sheet-layout');
+		expect(descEl?.textContent).toBe(
+			'Notes with a sheet-layout property open as a sheet.',
+		);
+	});
+
+	it('keeps a fragment description across a repaint, because the app clones it', () => {
+		/*
+		 * `sg(e)` in the app is `typeof e === 'string' ? e : e.cloneNode(true)`,
+		 * and the clone is load-bearing: `renderTab()` paints the *stored*
+		 * definitions on every tab activation while `update()` runs once, so a
+		 * fragment appended rather than cloned moves into the first row drawn and
+		 * leaves the second draw empty. Nothing else here would notice, because
+		 * `settings.ts`'s `rows()` happens to rebuild its fragment per call — and
+		 * nothing says that is load-bearing, which is exactly the problem.
+		 */
+		const key = 'sheet-layout';
+		const desc = createFragment((fragment) => {
+			fragment.createEl('code', { text: key });
+		});
+		// One definitions array, painted twice, as a tab reopened twice is.
+		const { tab } = tabFor([{ name: 'Open sheets in sheet view', desc }]);
+		tab.update();
+		tab.update();
+		expect(
+			tab.containerEl.querySelector('.setting-item-description code')
+				?.textContent,
+		).toBe(key);
+	});
+
+	it('hands a `render` definition the row, so a caller keeps its own element', () => {
+		// The member the two folder rows are built on: what `render` gets is the
+		// real `Setting`, so the input, its `aria-label` and its listeners are the
+		// caller's exactly as they were before the definitions.
+		let seen: Setting | null = null;
+		const { tab } = tabFor([
+			{
+				name: 'Layout folder',
+				render: (setting) => {
+					seen = setting;
+					setting.addText((text) => {
+						text.inputEl.setAttribute('aria-label', 'Layout folder');
+					});
+				},
+			},
+		]);
+		tab.update();
+		expect(seen).not.toBeNull();
+		const input = tab.containerEl.querySelector('input[type="text"]');
+		expect(input?.getAttribute('aria-label')).toBe('Layout folder');
+	});
+
+	it('runs a `render` cleanup before the row is painted again', () => {
+		// **Before**, asserted rather than assumed: counting cleanups would pass
+		// just as well if they ran after the repaint, and a cleanup that runs
+		// after its replacement is built is one that tears the new row down.
+		const order: string[] = [];
+		const { tab } = tabFor([
+			{
+				name: 'Layout editor',
+				render: () => {
+					order.push('render');
+					return () => order.push('cleanup');
+				},
+			},
+		]);
+		tab.update();
+		expect(order).toEqual(['render']);
+		tab.update();
+		expect(order).toEqual(['render', 'cleanup', 'render']);
+	});
+
+	it('refuses a member it would otherwise drop, one refusal per member', () => {
+		/*
+		 * The point of the file, applied to this renderer. Each of these is
+		 * something Obsidian draws or stores and the double does not, so the
+		 * failure has to be loud: a row that silently loses its `disabled` still
+		 * renders, still looks right, and still passes.
+		 *
+		 * `validate` is *not* on this list, and the reason is worth writing down
+		 * because an earlier draft of the spec asked for it: it is a member of
+		 * `SettingControlBase`, so it can only ever arrive inside a `control`,
+		 * and refusing `control` refuses it with no branch of its own.
+		 *
+		 * Asserted **by name** — `toThrow(member)` rather than
+		 * `toThrow('obsidian-stub')` — because the looser matcher passes for a
+		 * single generic refusal, which is the failure that would make this list
+		 * decorative.
+		 */
+		const refused: [string, SettingDefinition & Record<string, unknown>][] = [
+			['type', { name: 'Fonts', type: 'group', items: [] }],
+			['action', { name: 'Open', action: () => undefined }],
+			['visible', { name: 'Hidden', visible: false }],
+			// Honoured by the app even though the typings put it only on
+			// `SettingDefinitionAction`: `X2` reads `def.disabled ??
+			// def.control?.disabled` for every row and calls `setDisabled`.
+			['disabled', { name: 'Off', disabled: true }],
+			[
+				'control',
+				{ name: 'Open sheets', control: { type: 'toggle', key: 'open' } },
+			],
+		];
+
+		for (const [member, def] of refused) {
+			const { tab } = tabFor([def]);
+			expect(() => tab.update(), member).toThrow(member);
+		}
 	});
 });

@@ -115,6 +115,29 @@ function attribute(element, name, value) {
 /** Rules whose *whole* body is wanted: Obsidian's real settings chrome. */
 const CHROME = [
 	/^\.setting-item/,
+	/*
+	 * **The wrappers Obsidian's declarative renderer puts around a row**, and
+	 * `/^\.setting-item/` above does not reach them: every rule that matters here
+	 * is spelled `.setting-group .setting-item…`, so it is anchored on the group
+	 * and fell outside that pattern.
+	 *
+	 * Leaving them out is what let a settings tab converted to
+	 * `getSettingDefinitions()` photograph byte-identically to the imperative one
+	 * it replaced. The app renders definitions into
+	 * `.setting-group > .setting-items`, and `.setting-group .setting-items`
+	 * supplies one shared card while `.setting-group .setting-item` takes each
+	 * row's own card, border, radius and `margin-bottom` away and puts `::before`
+	 * hairlines between them instead. Four cards became one, in the app, and the
+	 * harness went on drawing four — which is this file's own worst failure, an
+	 * instrument claiming a fidelity it does not have.
+	 *
+	 * Unanchored past the prefix on purpose. The group's own search chrome, its
+	 * `mod-list`/`mod-hotkeys` variants and the filter pills all come along; none
+	 * of them matches anything this plugin draws, because nothing here sets those
+	 * classes, and the alternative is an allowlist that has to be widened every
+	 * time a reviewer wonders why a shot disagrees with the app.
+	 */
+	/^\.setting-group/,
 	/^\.setting-editor/,
 	/^\.clickable-icon/,
 	/^\.vertical-tab-content/,

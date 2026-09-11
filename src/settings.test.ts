@@ -23,8 +23,12 @@ import { App } from './test/obsidian-stub';
  * are kept in one file for that reason: they are one decision read twice, and
  * `docs/features/character-folder.md` is where it is argued.
  *
- * That pair is also one of the two things still keeping this tab off Obsidian's
- * declarative settings API, and the argument is at the top of `settings.ts`.
+ * That pair is why both folder rows are `render` definitions rather than
+ * `control`s now that the tab is on Obsidian's declarative settings API: a
+ * `control` is read and written by the framework, and neither of these two is a
+ * plain bind. The argument is at the top of `settings.ts`, and
+ * `docs/features/declarative-settings.md` § The floor is why the tab renders by
+ * two paths — which is also why `open()` takes one.
  *
  * The scroll-and-focus tests this file used to hold moved with the editor. Both
  * were about surviving the rebuild the editor asks for, and neither is this
@@ -40,7 +44,16 @@ interface Harness {
 	saves: () => number;
 }
 
-function open(): Harness {
+/**
+ * Render the tab.
+ *
+ * `'definitions'` is the 1.13 path and the default, because it is what a reader
+ * on a current Obsidian gets: `update()` stores `getSettingDefinitions()` and
+ * the framework paints it. `'fallback'` is the tab's own `display()`, which is
+ * the only path below 1.13 and dead code above it — so the cases that name it
+ * are the only thing standing between that method and shipping broken.
+ */
+function open(path: 'definitions' | 'fallback' = 'definitions'): Harness {
 	const app = new App();
 	let saves = 0;
 	const settings: SheetsmithSettings = { ...DEFAULT_SETTINGS };
@@ -57,8 +70,17 @@ function open(): Harness {
 		plugin,
 	);
 	document.body.replaceChildren(tab.containerEl);
-	tab.display();
+	if (path === 'definitions') tab.update();
+	else tab.display();
 	return { root: tab.containerEl, settings, saves: () => saves };
+}
+
+/** The tab's definitions, unrendered — what Obsidian indexes for search. */
+function definitions(): ReturnType<SheetsmithSettingTab['getSettingDefinitions']> {
+	const settings: SheetsmithSettings = { ...DEFAULT_SETTINGS };
+	const plugin = { app: new App(), settings } as unknown as SheetsmithPlugin;
+	const tab = new SheetsmithSettingTab(plugin.app, plugin);
+	return tab.getSettingDefinitions();
 }
 
 /** The named setting rows, in order. */
@@ -85,6 +107,16 @@ function descOf(root: HTMLElement, name: string): string {
 		return item.querySelector('.setting-item-description')?.textContent ?? '';
 	}
 	throw new Error(`no row named "${name}"`);
+}
+
+/** The button in the row with this name. */
+function buttonIn(root: HTMLElement, name: string): HTMLButtonElement {
+	for (const item of Array.from(root.querySelectorAll('.setting-item'))) {
+		if (item.querySelector('.setting-item-name')?.textContent !== name) continue;
+		const button = item.querySelector('button');
+		if (button) return button;
+	}
+	throw new Error(`no button in a row named "${name}"`);
 }
 
 /** The checkbox in the row with this name. */
@@ -115,6 +147,105 @@ describe('what the tab offers', () => {
 			'Open sheets in sheet view',
 			'Layout editor',
 		]);
+	});
+
+	it('draws the same four rows through the pre-1.13 fallback', () => {
+		/*
+		 * `display()` is what Obsidian below 1.13 calls, and `manifest.json`'s
+		 * floor is 1.9.0 — accurate for every other line in the plugin, so it
+		 * stays there and the tab carries both paths. On a current Obsidian this
+		 * method is never reached, which is exactly why it needs a case: a
+		 * fallback nothing exercises is a fallback nobody knows is broken, and
+		 * the reader it breaks for is the one who has not updated.
+		 *
+		 * The rows are asserted rather than the controls because both paths walk
+		 * the same `rows()` array and hand each row the same prepared `Setting`.
+		 * What could differ is this loop, and what it would lose is a whole row.
+		 */
+		const harness = open('fallback');
+		expect(rows(harness.root)).toEqual([
+			'Layout folder',
+			'Character folder',
+			'Open sheets in sheet view',
+			'Layout editor',
+		]);
+		// And every control is really there, so "four rows" is not four headings.
+		// All four, because one missing `render` call is what this loop could lose
+		// and a row keeps its name either way.
+		expect(textIn(harness.root, 'Layout folder').value).toBe(
+			DEFAULT_SETTINGS.layoutFolder,
+		);
+		expect(textIn(harness.root, 'Character folder').placeholder).toBe(
+			'Same as new notes',
+		);
+		expect(checkbox(harness.root, 'Open sheets in sheet view').checked).toBe(
+			DEFAULT_SETTINGS.openInSheetView,
+		);
+		expect(buttonIn(harness.root, 'Layout editor').textContent).toBe(
+			'Open layout editor',
+		);
+	});
+
+	it('keeps every row name in sentence case, which the linter can no longer read', () => {
+		/*
+		 * **The check this feature took away, put back narrower.**
+		 * `obsidianmd/ui/sentence-case` reads the *argument* of `setName`/`setDesc`
+		 * and a `name:` property in a definition object is not one, so all four
+		 * rows left the rule's reach the moment the tab became declarative — a
+		 * fifth row typed "Open Layout Editor" would have shipped green.
+		 * `PATTERNS.md` §8 lists sentence case as [warned], and its tier contract
+		 * is that departing from a warned rule means changing the check first.
+		 *
+		 * **Names only, deliberately.** A description here carries a quoted app
+		 * label path — `Settings → Files and links → Default location for new
+		 * notes` — whose capitals are Obsidian's own, and proper nouns besides.
+		 * That collision is what the deleted `ignoreRegex: ['→']` exemption
+		 * existed for, and reproducing the real rule's judgement badly is worse
+		 * than leaving descriptions to review. A row name is short, carries no
+		 * arrow, and is where Title Case actually creeps in.
+		 *
+		 * A future name with a genuine proper noun in it turns this red. That is
+		 * the loud direction and the answer is to widen it on purpose, not to
+		 * have never noticed.
+		 */
+		const rows = definitions();
+		// Its own floor, not the sibling case's: a loop over an empty array is a
+		// pass, and the `toHaveLength(4)` that would have caught it lives in the
+		// next case down.
+		expect(rows).toHaveLength(4);
+		for (const def of rows) {
+			const { name } = def as { name: string };
+			expect(name.slice(0, 1), name).toBe(name.slice(0, 1).toUpperCase());
+			expect(name.slice(1), name).toBe(name.slice(1).toLowerCase());
+		}
+	});
+
+	it('describes every row to the app, which is what puts it in settings search', () => {
+		/*
+		 * **The one assertion that is about the definitions rather than the DOM**,
+		 * and the reason it is worth its own case: everything else in this file
+		 * renders and reads markup, so it would pass just as well if the rows were
+		 * still drawn by hand. What Obsidian 1.13 indexes for search is the
+		 * *definition* — `name`, `desc`, and `aliases` — and it never looks at the
+		 * control, so a row that renders correctly and declares nothing is exactly
+		 * the failure this feature existed to fix and the one nothing else here
+		 * would notice.
+		 *
+		 * A `desc` is asserted as well as a `name` because it is half the index. A
+		 * reader searching **Settings** for "missing layout" or "new notes" is
+		 * matching description text, not a row title.
+		 */
+		const tab = definitions();
+		expect(tab).toHaveLength(4);
+		for (const def of tab) {
+			const row = def as { name?: string; desc?: string | DocumentFragment };
+			expect(row.name, JSON.stringify(row.name)).toBeTruthy();
+			// A fragment counts, and is how the sheet-view row's description is
+			// built; search reads its `textContent` the same way.
+			const desc =
+				typeof row.desc === 'string' ? row.desc : (row.desc?.textContent ?? '');
+			expect(desc, row.name).not.toBe('');
+		}
 	});
 });
 
