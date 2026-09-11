@@ -574,15 +574,25 @@ plugin-owned surface buys over the app's menu: the menu closed on select, so
 managing several modifiers was one opening each and a swap was two.
 
 **A modified number is marked by a shape, and the mark is one press from what
-it is made of** [judgement]. A dotted underline and `cursor: help`, opening the
+it is made of** [judgement]. An underline and `cursor: help`, opening the
 shared popover — no new gesture (§6, §9), and on touch an ordinary tap, on
 `table.ts`'s own argument that a read-only number has no other use for one. The
 channel is deliberate: §1 gives the plugin no colours of its own, so the closest
 prior art's answer — Sandbox System Builder colours a modified attribute green —
 is exactly what may not be drawn here, and `text-decoration` is also the one mark
-that survives forced-colors mode. The decoration steps from `--text-faint` to
-`--text-muted` under `prefers-contrast: more`, which §12 records as read rather
-than seen.
+that survives forced-colors mode.
+
+**It was a 2px dotted underline in `--text-muted`, and it is now a plain one in
+the number's own colour.** Not a design decision: `text-decoration-style`,
+`-color` and `-thickness` are what Obsidian's plugin review reports as partially
+supported, and the bare line value is the only spelling of the property it
+accepts. Three things went with them — the dotted shape that distinguished the
+mark from a link's underline, the muted colour that a contrast measurement had
+chosen over `--text-faint` at 6.19:1, and the thickness that kept three 2px dots
+in a cell from being mostly antialiasing. `border-bottom` keeps all three and
+was tried; it draws on the element box rather than on the text, so a
+right-aligned number in a wide cell got a rule across the whole cell. The
+stylesheet carries the measurement at the rule.
 
 **The breakdown is one popover with several lines, and it needs no markup.**
 `showPopover` sets `textContent` and `.sheetsmith-popover` already carries

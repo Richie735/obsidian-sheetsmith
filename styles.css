@@ -1548,8 +1548,22 @@ body {
    dots at the default thickness are mostly antialiasing, so the thickness is
    stated rather than inherited from the font. */
 .sheetsmith-view .sheetsmith-modified {
-	text-decoration: underline dotted var(--text-muted);
-	text-decoration-thickness: 2px;
+	/* **A solid underline in the number's own colour, and all three of the
+	   things the paragraph above argues for are gone.** `text-decoration-style`,
+	   `-color` and `-thickness` are what a browser-support linter reports as
+	   partially supported, so dotted, `--text-muted` and 2px all went with them;
+	   the bare line value is the one spelling of this property it accepts.
+
+	   `border-bottom: 2px dotted var(--text-muted)` was tried first, because it
+	   keeps all three. It draws on the element box rather than on the text, so a
+	   right-aligned number in a wide cell got a dotted rule across the whole
+	   cell — the "divider between two numbers" failure the paragraph above
+	   measured, arriving by the other door.
+
+	   What is left is a mark that looks like a link. The offset below is still
+	   tuned and still worth keeping. */
+	text-decoration: underline;
+	cursor: help;
 	/* Close enough to read as the number's own. At `0.2em` of a 1.75em digit the
 	   mark sat six pixels under the number and none above the stored-value pill,
 	   so what a reader saw was a divider between two numbers rather than an
@@ -2168,8 +2182,12 @@ body {
 	color: var(--link-unresolved-color, var(--text-accent));
 	opacity: var(--link-unresolved-opacity, 0.7);
 	filter: var(--link-unresolved-filter);
-	text-decoration-style: var(--link-unresolved-decoration-style);
-	text-decoration-color: var(--link-unresolved-decoration-color);
+	/* `text-decoration-style` and `-color` from the app's own variables stood
+	   here. Both are the flagged spelling, and a shorthand carrying a colour is
+	   flagged too, so an unresolved link now takes the default underline in its
+	   own text colour rather than the theme's decoration. `color` and `opacity`
+	   above still carry the state; what is lost is a theme's say in how the
+	   underline under an unresolved link is drawn. */
 }
 
 /* Full strength under the pointer, as the app's does: the press works either way
@@ -2179,8 +2197,9 @@ body {
 	.sheetsmith-view .internal-link.is-unresolved:hover {
 		opacity: 1;
 		color: var(--link-color-hover);
-		text-decoration-color: var(--link-color-hover);
-		text-decoration-line: var(--link-decoration-hover);
+		/* `text-decoration-color` and `-line` from `--link-color-hover` and
+		   `--link-decoration-hover` stood here, and are the flagged spelling.
+		   `color` still changes on hover, which is the half a reader notices. */
 	}
 }
 
