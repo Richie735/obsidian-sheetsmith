@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { evaluate, FormulaError, isName, Scope } from './expression';
+import {
+	evaluate,
+	expressionProblem,
+	FormulaError,
+	isName,
+	Scope,
+} from './expression';
 import { parseFunctions } from './functions';
 import { buildRowTable } from './rows';
 import { RowValues } from '../types';
@@ -118,6 +124,33 @@ describe('evaluate', () => {
 		expect(() => evaluate('constructor.constructor("return 1")()', empty)).toThrow(
 			FormulaError,
 		);
+	});
+});
+
+describe('expressionProblem', () => {
+	it('says nothing about an expression that parses', () => {
+		expect(expressionProblem('floor((value - 10) / 2)')).toBeNull();
+		expect(expressionProblem('1')).toBeNull();
+	});
+
+	it('hands back the parser\'s own sentence, unedited', () => {
+		expect(expressionProblem('floor((value - 10) / 2')).toBe(
+			'Expected ")" in formula.',
+		);
+		expect(expressionProblem('value + #')).toBe(
+			'Unexpected character "#" in formula.',
+		);
+		expect(expressionProblem('1 2')).toBe('Unexpected trailing input in formula.');
+		expect(expressionProblem('1 +')).toBe('Expected a value in formula.');
+	});
+
+	// Question 2 of `docs/features/formula-field-errors.md`, as a test: this
+	// misspells a table nothing publishes and is still nothing to report here.
+	// A name resolves against a character's data, and parsing is what is
+	// decidable while the layout is being written.
+	it('says nothing about a name no layout publishes', () => {
+		expect(expressionProblem('sum(inventroy, Qty * Weight)')).toBeNull();
+		expect(expressionProblem('nope + 1')).toBeNull();
 	});
 });
 

@@ -93,18 +93,28 @@ function applyOptions(el: HTMLElement, options?: ElementOptions): void {
  * this path.
  */
 function make(
-	parent: Node,
+	/**
+	 * Null for the *global* `createEl`, which creates an element and attaches it
+	 * to nothing. Obsidian's own `Node.prototype.createEl` is that global with
+	 * `parent` filled in — `enhance.js` reads
+	 * `Node.prototype.createEl = function (t, e, n) { (e ||= {}).parent = this;
+	 * return createEl(t, e, n) }` — so the detached form is the primitive here
+	 * and the attaching one is the special case, not the other way round.
+	 */
+	parent: Node | null,
 	tag: string,
 	options?: ElementOptions | string,
 	callback?: (el: HTMLElement) => void,
 ): HTMLElement {
 	const info = typeof options === 'string' ? { cls: options } : options;
-	const doc = parent.ownerDocument ?? (parent as Document);
+	const doc = parent?.ownerDocument ?? (parent as Document | null) ?? document;
 	const el = doc.createElement(tag);
 	applyOptions(el, info);
 	const into = info?.parent ?? parent;
-	if (info?.prepend) into.insertBefore(el, into.firstChild);
-	else into.appendChild(el);
+	if (into) {
+		if (info?.prepend) into.insertBefore(el, into.firstChild);
+		else into.appendChild(el);
+	}
 	callback?.(el);
 	return el;
 }
@@ -171,6 +181,43 @@ export function installDomHelpers(): void {
 	): void {
 		Object.assign(this.style, styles);
 	};
+	/*
+	 * Obsidian's own visibility pair, and the inline `display` is the whole
+	 * point of it rather than an implementation detail.
+	 *
+	 * `app.css` declares `.setting-item { display: flex }` at author level,
+	 * which beats the UA sheet's `[hidden] { display: none }` — and no
+	 * `[hidden]` rule exists in `app.css`, `styles.css` or `src/styles/` to put
+	 * it back. So `settingEl.hidden = true` leaves a setting row on screen in
+	 * the app, while a case asserting the attribute passes: green in the suite
+	 * and wrong in the app, which is this file's own reason for existing. An
+	 * inline `display` wins over the class, which is why a plugin hiding a row
+	 * reaches for these (`docs/features/starting-a-new-layout.md`).
+	 *
+	 * `show` *removes* the property rather than setting a value, so a row goes
+	 * back to whatever display its class gives it rather than to `block`.
+	 * `isShown` is deliberately absent: the app's answers about every ancestor
+	 * too, and a self-only version would be exactly the declared-and-not-
+	 * honoured member this file's header is about.
+	 */
+	// Through the helper above rather than through `el.style` directly, which
+	// `obsidianmd/no-static-styles-assignment` refuses in either spelling: it is
+	// the same write, and `''` is how a standard property is cleared
+	// (`docs/PATTERNS.md` §5), so `show` puts a row back to whatever display its
+	// class gives it rather than to `block`.
+	proto.show = function (this: HTMLElement): void {
+		this.setCssStyles({ display: '' });
+	};
+	proto.hide = function (this: HTMLElement): void {
+		this.setCssStyles({ display: 'none' });
+	};
+	proto.toggleVisibility = function (
+		this: HTMLElement,
+		visible: boolean,
+	): void {
+		if (visible) this.show();
+		else this.hide();
+	};
 	proto.setText = function (this: HTMLElement, text: string): void {
 		this.textContent = text;
 	};
@@ -204,6 +251,25 @@ export const Platform = { isMobile: false };
  */
 export function getLinkpath(linktext: string): string {
 	return linktext.split('#')[0] ?? linktext;
+}
+
+/**
+ * Whether the running app is at least this version.
+ *
+ * True, always, and the constant is the honest answer rather than a shortcut:
+ * this stub implements one Obsidian, the newest one, and every member on it is
+ * a member that app has. A stub that answered `false` for some version would be
+ * claiming to be an older app while still offering the whole of the newer
+ * surface, which is a worse lie than the simple one.
+ *
+ * It exists so a caller can *say* which floor it is assuming.
+ * `harness/settings-panel.ts` renders the settings tab through `update()`, an
+ * Obsidian 1.13 member, against a `minAppVersion` of 1.9.0 that the plugin's
+ * own `display()` fallback is there to serve — and a guard is how that reads as
+ * a decision in the code rather than as an oversight a linter caught.
+ */
+export function requireApiVersion(_version: string): boolean {
+	return true;
 }
 
 /** Which modifiers mean "somewhere else" is the app's rule; this is its shape. */
@@ -263,6 +329,15 @@ const ICONS: Readonly<Record<string, readonly IconShape[]>> = {
 		['path', { d: 'm19 12-7 7-7-7' }],
 	],
 	'grip-vertical': gripDots(),
+	// The layout editor's **Copy layout JSON** control, beside the trash on the
+	// same row (`docs/features/layout-import-export.md`). Two overlapping sheets,
+	// which is the one glyph a reader already reads as "copy" — and it has to be
+	// drawn rather than named, because the harness is where a row of clickable
+	// icons is checked for measuring the same.
+	copy: [
+		['rect', { width: '14', height: '14', x: '8', y: '8', rx: '2', ry: '2' }],
+		['path', { d: 'M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2' }],
+	],
 	// An empty modifier cell, which is the entry point for adding one: `plus`
 	// rather than a fainter `zap`, because "none" against "applying" would then be
 	// a difference of fill strength alone (`docs/UI.md` §6).
@@ -683,9 +758,20 @@ export class TAbstractFile {
 	get name(): string {
 		return this.path.split('/').pop() ?? this.path;
 	}
+	/**
+	 * The folder holding this file, which for a top-level file is the root.
+	 *
+	 * **The root arm is the app's, and it is here so the double cannot
+	 * contradict itself.** Obsidian's `getDirectParent` answers `fileMap['/']`
+	 * where the path has no slash in it, and `Vault.getFolderByPath('/')` now
+	 * answers the root with those files as its children — so a `null` here would
+	 * mean the double told a caller that `Aramil.md` is a child of the root and
+	 * told `Aramil.md` it has no parent. Two answers, both assertable, which is
+	 * worse in a test double than the under-model it replaced.
+	 */
 	get parent(): TFolder | null {
 		const parent = parentPath(this.path);
-		return parent === '' ? null : this.vault.getFolderByPath(parent);
+		return this.vault.getFolderByPath(parent === '' ? '/' : parent);
 	}
 }
 
@@ -709,7 +795,60 @@ export class TFolder extends TAbstractFile {
 export class Vault {
 	private files = new Map<string, { file: TFile; content: string }>();
 	private folders = new Map<string, TFolder>();
+	/**
+	 * The vault root, whose path is `/`.
+	 *
+	 * `normalizePath` above is where that comes from — the app's own function
+	 * answers `/` for the empty path — and `FileManager.getNewFileParent`
+	 * returns this whenever **Default location for new notes** is not a named
+	 * folder, which includes its default. A double whose root claimed `''`
+	 * let a plugin join `'' + '/' + name` into a path the app never produces
+	 * and call it green.
+	 */
+	private root = new TFolder('/', this);
 
+	/**
+	 * The root is in the folder map, because in the app it is a map entry.
+	 *
+	 * Obsidian 1.13.7 builds the vault with
+	 * `n.root = new YD(n, ""), n.onChange('folder-created', '/'), n.root = n.fileMap['/']`
+	 * — the root it hands out *is* `fileMap['/']` — and `getFolderByPath` is
+	 * `fileMap.hasOwnProperty(e)` and nothing else. So `getFolderByPath('/')`
+	 * answers the root there, and answered null here until this line existed.
+	 *
+	 * **A reader can type the value that reaches it.** `characters.ts` checks
+	 * the configured character folder with `getFolderByPath` before creating
+	 * it, and `normalizePath('/')` is `/`, so a field holding `/` asked this
+	 * double whether the vault root exists, was told no, and would have asked
+	 * for it to be created — where the app says yes and writes at the root.
+	 */
+	constructor() {
+		this.folders.set('/', this.root);
+	}
+
+	/**
+	 * The root, by the same route as every other folder.
+	 *
+	 * Through `getFolderByPath` rather than straight off the field, because that
+	 * is where children are rebuilt: handed out raw, `getRoot().children` was
+	 * `[]` until something happened to ask for `/` by path, which made the answer
+	 * depend on call order. `FileManager.getNewFileParent` returns this, so the
+	 * order-dependence sat on the one path a new note takes.
+	 */
+	getRoot(): TFolder {
+		return this.getFolderByPath('/') ?? this.root;
+	}
+
+	/**
+	 * The file at exactly this path, or null.
+	 *
+	 * **No normalisation, which is the app's behaviour and load bearing.**
+	 * Obsidian's is `fileMap.hasOwnProperty(path)` and nothing else, so
+	 * `getFileByPath('/x.md')` misses a vault holding `x.md` — while
+	 * `create('/x.md')` normalises and writes `x.md`. A caller that builds
+	 * paths one way and looks them up the other gets "free" from every check
+	 * and "File already exists." from the write.
+	 */
 	getFileByPath(path: string): TFile | null {
 		return this.files.get(path)?.file ?? null;
 	}
@@ -723,21 +862,121 @@ export class Vault {
 		// Compared as paths, never through `file.parent` — that getter asks the
 		// vault for a folder, and a folder asking each file for its parent to
 		// decide its own children recurses until the stack goes.
+		// The root owns the paths `parentPath` calls parentless, which is the
+		// app's own rule: `getDirectParent` answers `fileMap['/']` for a path
+		// with no slash in it. Every other folder owns its own path.
+		const owner = path === '/' ? '' : path;
 		folder.children = [...this.files.values()]
-			.filter(({ file }) => parentPath(file.path) === path)
+			.filter(({ file }) => parentPath(file.path) === owner)
 			.map(({ file }) => file);
 		return folder;
 	}
 
+	/**
+	 * Create a folder, and refuse a path that anything already holds.
+	 *
+	 * **Normalised and refused in the app's own order**, the same pair `create`
+	 * below makes, and here for the same reason: a caller guards the path itself
+	 * and says in its comment that nothing is clobbered even so. `layouts.ts`
+	 * and `characters.ts` both check `getFolderByPath` before creating, and a
+	 * double that created unconditionally would let a regression that dropped
+	 * either check go green — and would make the one state `characters.ts`
+	 * reports as an error unreachable, since a file sitting at the configured
+	 * folder's path is exactly what the app refuses.
+	 *
+	 * Obsidian 1.13.7's `app.js`, deminified:
+	 *
+	 * ```js
+	 * Vault.prototype.createFolder = async function (path) {
+	 *   const at = normalizePath(path);
+	 *   this.checkPath(at);
+	 *   if (await this.adapter.exists(at)) throw new Error('Folder already exists.');
+	 *   await this.adapter.mkdir(at);
+	 *   const f = this.getAbstractFileByPath(at);
+	 *   return f instanceof TFolder ? f : null;
+	 * }
+	 * ```
+	 *
+	 * `adapter.exists` is a filesystem check rather than a folder lookup, so a
+	 * **file** at that path refuses too — and the message is the same one either
+	 * way, which is the app's wording rather than a tidier one this double might
+	 * have invented. Files and folders are two maps here where the app has one
+	 * `fileMap`, so both are asked.
+	 *
+	 * **And `mkdir` is recursive, so a missing ancestor is created with it.**
+	 * The desktop adapter, from the same bundle:
+	 *
+	 * ```js
+	 * FileSystemAdapter.prototype.mkdir = function (path) {
+	 *   return this.queue(async () => {
+	 *     await this.fsPromises.mkdir(this.getFullPath(path), { recursive: true });
+	 *     await this.reconcileInternalFile(path);
+	 *   });
+	 * }
+	 * ```
+	 *
+	 * `createFolder('Characters/New')` therefore leaves a vault holding both
+	 * `Characters` and `Characters/New`, which is what a plugin sees next when
+	 * it asks `getFolderByPath` about either — and `characters.ts` asks about
+	 * the deeper one on the second character it writes. A double that set one
+	 * map entry made that test pass for the wrong reason.
+	 *
+	 * What is deliberately **not** modelled is an ancestor path a *file* holds:
+	 * the real `mkdir -p` fails there with `ENOTDIR`, and this writes the deeper
+	 * folder instead. **The state is reachable and not foreign** — both folder
+	 * preferences are free text, so `Characters/New` typed over a vault whose
+	 * `Characters` is an extension-less *file* is exactly it, and the character
+	 * suite's own fixture creates a file at that very path for the
+	 * folder-refused case. What is true is narrower than "nothing writes a
+	 * folder under a note": nothing *asserts* on this state, and the ancestor is
+	 * left alone rather than shadowed, so the double never reports a folder
+	 * where it holds a file. A test that needs the app's answer here has to
+	 * model `ENOTDIR` first.
+	 */
 	async createFolder(path: string): Promise<TFolder> {
-		const folder = new TFolder(path, this);
-		this.folders.set(path, folder);
+		const at = normalizePath(path);
+		if (this.folders.has(at) || this.files.has(at)) {
+			throw new Error('Folder already exists.');
+		}
+		for (
+			let parent = parentPath(at);
+			parent !== '';
+			parent = parentPath(parent)
+		) {
+			if (!this.folders.has(parent) && !this.files.has(parent)) {
+				this.folders.set(parent, new TFolder(parent, this));
+			}
+		}
+		const folder = new TFolder(at, this);
+		this.folders.set(at, folder);
 		return folder;
 	}
 
+	/**
+	 * Write a new file, and refuse a path that is taken.
+	 *
+	 * The refusal is the app's — `Vault.create` rejects rather than
+	 * overwriting — and it is here because two callers *rely* on it as their
+	 * last line of defence and neither could show it while this method wrote
+	 * unconditionally: `layouts.ts` refuses a duplicate layout name before
+	 * creating, and `characters.ts` dedupes `Untitled character` before
+	 * creating. Both say in their comments that nothing is overwritten even so.
+	 * With a permissive double, a regression dropping either guard would
+	 * silently overwrite a reader's file here and go green, where the app would
+	 * have rejected — and the file it would overwrite is a character note,
+	 * which is Constraint 4.
+	 */
 	async create(path: string, content: string): Promise<TFile> {
-		const file = new TFile(path, this);
-		this.files.set(path, { file, content });
+		// Normalised first and refused second, in the app's own order:
+		// `create` is `normalizePath` then `adapter.exists` then the write, so
+		// the path that is checked and the path that is written are the same
+		// one, and neither is the string the caller passed.
+		const at = normalizePath(path);
+		if (this.files.has(at)) {
+			throw new Error('File already exists.');
+		}
+		const file = new TFile(at, this);
+		this.files.set(at, { file, content });
 		return file;
 	}
 
@@ -771,6 +1010,34 @@ export class Vault {
 }
 
 export class FileManager {
+	/**
+	 * Where the app would put a new note, and every source path it was asked
+	 * about.
+	 *
+	 * A recorder rather than an option: the real `getNewFileParent` answers
+	 * **Settings → Files and links → Default location for new notes**, which is a
+	 * preference nothing here models, so what a caller can be held to is the two
+	 * observable halves — the folder it wrote into, and the source path it passed
+	 * so "Same folder as current file" can mean what it says. Set
+	 * `newFileParent` to move the answer; the default is the vault root, whose
+	 * path in Obsidian is `/`.
+	 */
+	newFileParent: TFolder;
+	/** Source paths asked about, in order. */
+	newFileParentSources: string[] = [];
+
+	constructor(vault: Vault) {
+		// The vault's own root, whose path is `/`. The app falls back to
+		// `vault.getRoot()` for every **Default location for new notes** that is
+		// not a named folder, which includes the default.
+		this.newFileParent = vault.getRoot();
+	}
+
+	getNewFileParent(sourcePath: string, _newFilePath?: string): TFolder {
+		this.newFileParentSources.push(sourcePath);
+		return this.newFileParent;
+	}
+
 	async trashFile(file: TAbstractFile): Promise<void> {
 		await file.vault.delete(file);
 	}
@@ -1037,6 +1304,25 @@ export class WorkspaceLeaf {
 		return view;
 	}
 
+	/**
+	 * What the app was asked to show here, recorded rather than acted on.
+	 *
+	 * The real call swaps the view in this leaf, which means constructing a view
+	 * of an arbitrary registered type — the plugin's own sheet view among them —
+	 * and nothing here holds that registry. What a caller can be held to is the
+	 * request: the view type, and the file it named. So this pushes and
+	 * `viewStates` is what a test reads, which is the same bargain
+	 * `FileManager.getNewFileParent` above makes.
+	 */
+	viewStates: { type: string; state?: Record<string, unknown> }[] = [];
+
+	async setViewState(
+		viewState: { type: string; state?: Record<string, unknown> },
+		_eState?: unknown,
+	): Promise<void> {
+		this.viewStates.push(viewState);
+	}
+
 	/** Close whatever is showing, unloading it as the app does. */
 	async detach(): Promise<void> {
 		const view = this.view;
@@ -1072,6 +1358,20 @@ export class Workspace {
 		return leaf;
 	}
 
+	/**
+	 * The file the reader is looking at, or null.
+	 *
+	 * Settable, because the app answers it from whichever leaf is active and
+	 * nothing here models that (`getLeaf` above says why). One caller needs it:
+	 * creating a character passes the active file's path to
+	 * `getNewFileParent`, so "Same folder as current file" has a current file.
+	 */
+	activeFile: TFile | null = null;
+
+	getActiveFile(): TFile | null {
+		return this.activeFile;
+	}
+
 	getLeavesOfType(type: string): WorkspaceLeaf[] {
 		return this.leaves.filter((leaf) => leaf.view?.getViewType() === type);
 	}
@@ -1096,7 +1396,9 @@ export class Workspace {
 export class App {
 	vault = new Vault();
 	workspace = new Workspace(this);
-	fileManager = new FileManager();
+	// After `vault`, which it needs in order to hand out a folder in it. Field
+	// initialisers run in declaration order, so the order here is load bearing.
+	fileManager = new FileManager(this.vault);
 }
 
 export class Modal {
@@ -1176,8 +1478,192 @@ export abstract class SuggestModal<T> extends Modal {
 	): void;
 }
 
+/**
+ * The subset of a setting definition this double honours.
+ *
+ * Obsidian 1.13's `SettingDefinitionItem` is a union of four row shapes with
+ * three container kinds above it, and modelling all of that would be
+ * reimplementing the app's settings renderer rather than doubling it. What is
+ * here is what this plugin declares: a row with a name, a description, and its
+ * own `render` callback. **Not `control`** — every row on the tab renders itself,
+ * because a `control` is read and written by the 1.13 renderer and would leave
+ * the row blank on the versions the tab's `display()` fallback exists for.
+ *
+ * Everything else is **refused loudly** by `assertModelled` rather than
+ * dropped, on the rule §2 of `docs/PATTERNS.md` states for this file: a member
+ * the app honours and the double ignores goes green under test and green in the
+ * harness while Obsidian builds something else.
+ */
+export interface SettingDefinition {
+	/** Required, as `SettingDefinitionBase.name` is: a nameless row is unsearchable. */
+	name: string;
+	desc?: string | DocumentFragment;
+	/**
+	 * Extra search terms. Read by the settings search and by nothing that
+	 * renders, so it is accepted and ignored here rather than refused — that is
+	 * what the app does with it at render time too.
+	 */
+	aliases?: string[];
+	/** Controls search visibility only, so likewise accepted and unread. */
+	searchable?: boolean | (() => boolean);
+	render?: (setting: Setting, group: SettingGroup) => void | (() => void);
+}
+
+/**
+ * Refuse a definition member this double would silently drop.
+ *
+ * Each branch names something the app draws or stores and this file does not,
+ * so a row that grows one fails at the assertion instead of rendering as a row
+ * that happens to look right.
+ */
+function assertModelled(def: SettingDefinition): void {
+	const raw = def as unknown as Record<string, unknown>;
+	if (typeof raw.type === 'string') {
+		// `group`, `list` and `page` each bring their own chrome — a heading, a
+		// search box, an empty state, a navigable sub-page — and none of it is
+		// here.
+		throw new Error(
+			`obsidian-stub: setting definition type "${raw.type}" is not modelled`,
+		);
+	}
+	if (raw.action !== undefined) {
+		throw new Error(
+			'obsidian-stub: an `action` definition is not modelled — it makes the whole row clickable through Setting.setAction',
+		);
+	}
+	if (raw.visible !== undefined || raw.disabled !== undefined) {
+		throw new Error(
+			'obsidian-stub: `visible` and `disabled` are not modelled — the app re-evaluates both on every render and through refreshDomState',
+		);
+	}
+	if (raw.control !== undefined) {
+		// Refused rather than modelled, because nothing declares one: a `control`
+		// is bound by the framework through `getControlValue`/`setControlValue`,
+		// and a double that half-implements that binding would be the one thing
+		// this file exists to prevent.
+		throw new Error(
+			'obsidian-stub: a `control` definition is not modelled — every row on this tab renders itself',
+		);
+	}
+}
+
+/**
+ * The group a rendered row sits in, and **the wrapper is the whole point**.
+ *
+ * Obsidian's definition renderer never puts a row straight into the tab.
+ * `e6` collects every consecutive definition that is not itself a group or a
+ * list — `O2(e)` is `"type" in e && ("group" === e.type || "list" === e.type)`,
+ * which all four of this plugin's rows fail — into one synthetic
+ * `{ type: 'group', items: [...] }`, and renders it through this class. Its
+ * constructor, from 1.13.7's `app.js`:
+ *
+ * ```js
+ * function e(e) {
+ *   var t = this.groupEl = e.createDiv("setting-group"),
+ *       n = this.headerEl = createDiv("setting-item setting-item-heading");
+ *   this.headerInnerEl = n.createDiv("setting-item-name");
+ *   this.controlEl = n.createDiv("setting-item-control");
+ *   this.searchContainerEl = t.createDiv({
+ *     cls: "setting-group-search", attr: { tabIndex: -1 }
+ *   });
+ *   this.listEl = t.createDiv("setting-items")
+ * }
+ * ```
+ *
+ * So the shape is `containerEl > .setting-group > .setting-items >
+ * .setting-item`, and **`app.css` hangs real rules on both wrappers**:
+ * `.setting-group .setting-items` supplies one shared card — background, border
+ * and radius — while `.setting-group .setting-item:not(.setting-item-heading)`
+ * takes each row's own card, border, radius and `margin-bottom` away and
+ * replaces the gaps with `::before` hairlines, at `--setting-items-padding-*`
+ * rather than `--size-4-4`. `.setting-group` itself caps the width at
+ * `--setting-group-max-width` and centres it.
+ *
+ * **This was missed once and it cost the review its instrument.** The double
+ * appended rows straight into `containerEl`, which is what the *old* imperative
+ * `display()` produced, so the settings shots came out byte-identical across the
+ * declarative move and the acceptance criterion that watched them measured
+ * nothing. Four separately-carded rows are not what Obsidian 1.13 draws.
+ *
+ * `headerEl` is deliberately absent from the DOM: the app builds it detached and
+ * only `prepend`s it when `setHeading` is called with text, which nothing here
+ * does.
+ */
+export class SettingGroup {
+	groupEl: HTMLElement;
+	listEl: HTMLElement;
+
+	constructor(containerEl: HTMLElement) {
+		this.groupEl = containerEl.createDiv('setting-group');
+		// Created empty and left empty. `.setting-group-search:empty` is
+		// `display: none`, and the sibling rules that square off the list's top
+		// corners are gated on `:not(:empty)`, so an empty one has to be *there*
+		// for the list to keep its own radius.
+		this.groupEl.createDiv({
+			cls: 'setting-group-search',
+			attr: { tabIndex: -1 },
+		});
+		this.listEl = this.groupEl.createDiv('setting-items');
+	}
+}
+
+/**
+ * Obsidian 1.13's settings tab, with both of the paths it renders by.
+ *
+ * Deminified from 1.13.7's `app.js`, where the base class is `l6` and
+ * `PluginSettingTab` is `p4`:
+ *
+ * ```js
+ * getSettingDefinitions() { return [] }
+ * update() {
+ *   this.settingItems = this.getSettingDefinitions();
+ *   H2(this.settingItems, this.name);        // duplicate page-name check
+ *   this.setting.refreshSearch();
+ *   this.setting.refreshCurrentPage(this);   // <- the paint
+ * }
+ * renderTab() { this.settingItems.length > 0 ? W2(this) : this.display() }
+ * display() { W2(this) }                     // W2 paints this.settingItems
+ * getControlValue(key) { const s = this.plugin.settings; if (s) return s[key] }
+ * setControlValue(key, v) {
+ *   const s = this.plugin.settings;
+ *   if (s) return s[key] = v, this.plugin.saveData(s)
+ * }
+ * getControlBinding(key) {
+ *   return {
+ *     value: this.getControlValue(key),
+ *     onChange: async v => {
+ *       await this.setControlValue(key, v);
+ *       this.refreshDomState()
+ *     }
+ *   }
+ * }
+ * ```
+ *
+ * **One deliberate deviation, and it is in `update()`.** In the app the paint
+ * goes through `this.setting.refreshCurrentPage(this)` — the settings modal,
+ * which owns the page a tab is drawn into. There is no modal here, so `update()`
+ * renders into `containerEl` itself. What this double models is the
+ * definition-to-DOM mapping; the modal's scheduling of it is the app's and out
+ * of reach. `display()` stays what the app's is, painting whatever `update()`
+ * last stored, which is why a caller renders by calling `update()`.
+ *
+ * **A second, narrower one: this rebuilds where the app diffs.** `e6` empties the
+ * container only on the first render and afterwards reconciles row by row. The
+ * skip that preserves a half-typed value is `"control" in t.def &&
+ * !!t.def.control && a.contains(l) && a !== l` — **gated on the row being a
+ * `control` row**, which none of this plugin's are. A `render` row holding the
+ * active element is torn down and rebuilt like any other, and the app then
+ * re-focuses its control container with `Fm(a, { preventScroll: true })`, so
+ * what survives there is the focus and not the value. This double rebuilds
+ * unconditionally and re-focuses nothing, so nothing may read focus across an
+ * `update()` and expect the app's answer.
+ */
 export class PluginSettingTab {
 	containerEl: HTMLElement;
+	/** Populated by `update()` and painted by both render paths, as in the app. */
+	settingItems: SettingDefinition[] = [];
+	private cleanups: (() => void)[] = [];
+
 	constructor(
 		public app: App,
 		public plugin: unknown,
@@ -1185,13 +1671,95 @@ export class PluginSettingTab {
 		this.containerEl = document.createElement('div');
 		this.containerEl.classList.add('vertical-tab-content');
 	}
-	display(): void {}
+
+	getSettingDefinitions(): SettingDefinition[] {
+		return [];
+	}
+
+	update(): void {
+		this.settingItems = this.getSettingDefinitions();
+		this.paint();
+	}
+
+	display(): void {
+		this.paint();
+	}
+
 	hide(): void {}
+
+	/*
+	 * **`getControlValue`, `setControlValue`, `getControlBinding` and
+	 * `refreshDomState` are deliberately absent**, and the deminified source
+	 * above is left in place so the next reader can see what they would do.
+	 * All four exist to serve a `control` definition, `assertModelled` refuses
+	 * one, and no row on this plugin's tab declares one. A binding half-built
+	 * here — a write that lands in the object but never asks for a save, say —
+	 * is precisely the silent divergence this file exists to prevent, so the
+	 * four arrive together with the first row that needs them or not at all.
+	 */
+
+	private paint(): void {
+		for (const cleanup of this.cleanups) cleanup();
+		this.cleanups = [];
+		this.containerEl.replaceChildren();
+		// One synthetic group for the whole run, which is what `e6` builds for a
+		// list of definitions none of which is itself a group or a list.
+		const group = new SettingGroup(this.containerEl);
+
+		for (const def of this.settingItems) {
+			assertModelled(def);
+			// Name and description before the control, as the app sets them, so a
+			// `render` callback that writes over either wins the way it does there.
+			const setting = new Setting(group.listEl);
+			setting.setName(def.name);
+			// `sg(e)` in the app: `typeof e === 'string' ? e : e.cloneNode(true)`.
+			// The clone is load-bearing rather than defensive — `renderTab()` paints
+			// the *stored* definitions on every tab activation while `update()` runs
+			// once, so a fragment appended rather than cloned would empty the row's
+			// description the second time it is drawn.
+			setting.setDesc(
+				typeof def.desc === 'string'
+					? def.desc
+					: ((def.desc?.cloneNode(true) as DocumentFragment | undefined) ?? ''),
+			);
+
+			if (def.render) {
+				const cleanup = def.render(setting, group);
+				if (cleanup) this.cleanups.push(cleanup);
+			}
+		}
+	}
 }
 
-/** Obsidian's path tidy: collapse duplicate slashes, drop a trailing one. */
+/**
+ * Obsidian's path tidy, transcribed from the app's own implementation.
+ *
+ * Obsidian 1.13.7's `app.js`, deminified:
+ *
+ * ```js
+ * function normalizePath(e) { return replaceControlChars(slashes(e)).normalize('NFC') }
+ * function slashes(e) {
+ *   return '' === (e = e.replace(/([\\/])+/g, '/').replace(/(^\/+|\/+$)/g, '')) && (e = '/'), e
+ * }
+ * ```
+ *
+ * **Three facts this stub got wrong, and the third is the one that shipped a
+ * bug.** Runs of *either* slash collapse to one `/`, so a Windows-style
+ * separator normalises too. Leading slashes are stripped as well as trailing
+ * ones — this double only dropped a trailing one. And **what is left of an empty
+ * path is `/`, which is the vault root's own path**: `getRoot().path` is `/`,
+ * not `''`, exactly as `obsidian.d.ts` says of `getAllFolders(includeRoot)`
+ * ("the root folder (`/`)").
+ *
+ * The control-character replacement is deliberately not modelled: it is a
+ * character class this repository cannot read reliably out of a minified
+ * bundle, and nothing here depends on it. The `.trim()` this function used to
+ * do is gone, because the app does not do it — a folder name with a trailing
+ * space is a folder name.
+ */
 export function normalizePath(path: string): string {
-	return path.replace(/\/+/g, '/').replace(/\/$/, '').trim();
+	const trimmed = path.replace(/([\\/])+/g, '/').replace(/(^\/+|\/+$)/g, '');
+	return (trimmed === '' ? '/' : trimmed).normalize('NFC');
 }
 
 /**
@@ -1234,9 +1802,43 @@ export function debounce<A extends unknown[]>(
 	return wrapped;
 }
 
-/** Obsidian puts `createFragment` and `el.win` in global scope. */
+/**
+ * Obsidian puts `createFragment`, the three element creators and `el.win` in
+ * global scope.
+ */
 export function installGlobals(): void {
 	const scope = globalThis as unknown as Record<string, unknown>;
+	/*
+	 * The detached creators, and they are the reason nine sites in `src/` and
+	 * nine in `harness/` used to hold `document.createElement` with an argument
+	 * written at each one.
+	 *
+	 * The argument was that `createEl` attaches on creation and so cannot
+	 * express an element attached later than it is created. That is true of the
+	 * *prototype* helper and false of the API: `obsidian.d.ts` declares
+	 * `createEl`, `createDiv` and `createSpan` as globals beside the `Node`
+	 * methods, and those return an element with no parent. Read out of the app's
+	 * own `enhance.js`, the global is the implementation and the method is a
+	 * two-line wrapper that sets `parent` to the receiver.
+	 *
+	 * So this is not the stub growing a convenience. It is the stub catching up
+	 * with three API members it had never installed, which is why the claim
+	 * looked true for as long as it did — nothing in the test run or the harness
+	 * could call them.
+	 */
+	scope.createEl = (
+		tag: string,
+		options?: ElementOptions | string,
+		callback?: (el: HTMLElement) => void,
+	): HTMLElement => make(null, tag, options, callback);
+	scope.createDiv = (
+		options?: ElementOptions | string,
+		callback?: (el: HTMLElement) => void,
+	): HTMLElement => make(null, 'div', options, callback);
+	scope.createSpan = (
+		options?: ElementOptions | string,
+		callback?: (el: HTMLElement) => void,
+	): HTMLElement => make(null, 'span', options, callback);
 	scope.createFragment = (
 		build?: (fragment: DocumentFragment) => unknown,
 	): DocumentFragment => {

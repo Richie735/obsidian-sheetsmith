@@ -104,6 +104,10 @@ npm run build
 
 ## Versioning & releases
 
+In this repository the whole of the below is run by `/release`, once per cycle,
+against the open `release/<version>` branch. What follows is what it has to
+honour and why, not a checklist to work through by hand.
+
 - Bump `version` in `manifest.json` (SemVer) and update `versions.json` to map plugin version → minimum app version.
   Edit `package.json`'s `version` and run `npm run version` to carry it across
   to both. Not `npm version`, whose lifecycle commits and tags, and only

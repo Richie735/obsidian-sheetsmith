@@ -2,15 +2,28 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 
 /*
- * The sites that still build DOM by hand, enumerated so a tenth cannot arrive
- * unnoticed.
+ * The sites that build DOM by hand, enumerated so one cannot arrive unnoticed.
  *
- * `obsidianmd/prefer-create-el` is on for `components/`, `ui/`, `interaction/`
- * and `view/grid-cells.ts`, and off for four whole files, because
- * `eslint-comments/no-restricted-disable` forbids turning an `obsidianmd` rule
- * off at its own line (`eslint.config.mts`). A file-wide exemption is a hole the
- * width of the file: a new `createElement` anywhere in `pool.ts` is unreported,
- * and `pool.ts` is 1400 lines.
+ * **There are none, and that is a recent thing.** This file used to list nine,
+ * each with an argument at the site, under an exemption per file in
+ * `eslint.config.mts` — `eslint-comments/no-restricted-disable` forbids turning
+ * an `obsidianmd` rule off at its own line, so a file was the narrowest scope
+ * available and a file-wide exemption is a hole the width of the file.
+ *
+ * What retired all nine was not a sweep but a missing API member.
+ * `obsidian.d.ts` declares `createEl`, `createDiv` and `createSpan` as *globals*
+ * beside the `Node` methods, and the global form returns an element with no
+ * parent — the app's own `enhance.js` implements the method as the global with
+ * `parent` set to the receiver. So "`createEl` attaches on creation, and that is
+ * the whole of what it cannot do" was a claim about the prototype helper being
+ * read as a claim about the API. Every one of the nine wanted exactly the
+ * detached form: appended after a later call, placed after a sibling, or
+ * returned unplaced. `src/test/obsidian-stub.ts` had never installed the
+ * globals, which is why nothing under vitest or the harness could have noticed.
+ *
+ * The check stays, and is now stronger than the list it replaced: the allowed
+ * population is empty, so any `createElement` in these folders is reported
+ * rather than any tenth one.
  *
  * **The hole is not theoretical, and neither is what falls through it.** The
  * sweep that moved 94 sites onto the helpers turned Image's live region from the
@@ -29,10 +42,11 @@ import { describe, expect, it } from 'vitest';
  * side.
  *
  * **What a new entry here owes.** Not a line number, which goes stale on any
- * edit above it, but a count per file and a comment at the site saying which
- * kind of exemption it is (`PATTERNS.md` §5): out of the helper's reach, or
- * reachable at a price, or a design choice. A tenth site is a decision, and this
- * check is what makes it one instead of a habit.
+ * edit above it, but a count per file and a comment at the site saying why the
+ * global `createEl` will not do. That bar is much higher than the old one: the
+ * three kinds `PATTERNS.md` §5 used to enumerate — out of the helper's reach,
+ * reachable at a price, a design choice — were all answered by the detached
+ * form, so an entry here now has to be something none of them were.
  */
 
 const SRC = new URL('./', import.meta.url);
@@ -42,24 +56,10 @@ const SCANNED = ['components/', 'ui/', 'interaction/', 'view/'];
 
 /**
  * How many hand-built elements each file is allowed, and nothing else may have
- * any. Every one of these carries its argument in a comment at the site.
+ * any. Empty: every site that had one now takes the detached global `createEl`
+ * instead, and a new entry owes the argument the header describes.
  */
-const ALLOWED: Record<string, number> = {
-	// Two spoken-only children appended after every visible one, a controls row
-	// filled before it is placed, and a builder that returns a control.
-	'components/pool.ts': 4,
-	// A live region appended after the picture, and a notice placed after a
-	// sibling rather than into a parent.
-	'components/passport.ts': 2,
-	// A live region appended at the end of the card.
-	'components/card-face.ts': 1,
-	// A live region handed to the function that fills its parent, so it must
-	// exist before that call and be appended after it. This is the one that was
-	// got wrong; see the header.
-	'components/image.ts': 1,
-	// A builder that returns a button for its caller to place.
-	'interaction/hold-repeat.ts': 1,
-};
+const ALLOWED: Record<string, number> = {};
 
 /** Every non-test `.ts` under the scanned folders, by path relative to `src/`. */
 function sources(dir = SRC, prefix = ''): string[] {
@@ -128,11 +128,18 @@ const counted = new Map(
 
 describe('every hand-built element is one somebody decided on', () => {
 	it('finds the files it is scanning', () => {
-		// Vacuity guard (§10): both assertions below pass on an empty scan.
+		// Vacuity guard (§10): the assertion below passes on an empty scan, and
+		// now passes on a *correct* scan too, since the allowed population is
+		// empty. So the whole of this check's weight is here and in the scanner
+		// test below — that the walk reaches the folders, and that `handBuilt`
+		// can tell a call from the prose around it.
+		//
+		// The old fourth line asserted the scan found more than five hand-built
+		// sites, which was the honest guard while nine existed and would now be
+		// asserting the bug it exists to prevent.
 		expect(sources().length).toBeGreaterThan(20);
 		expect(sources()).toContain('components/pool.ts');
 		expect(sources()).toContain('view/grid-cells.ts');
-		expect([...counted.values()].reduce((a, b) => a + b, 0)).toBeGreaterThan(5);
 	});
 
 	it('reads a call and not a mention of one', () => {

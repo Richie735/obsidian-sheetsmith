@@ -174,9 +174,9 @@ comes earlier in the DOM. Tab order and every screen reader follow the DOM. So:
   The narrow shot is one column, which is where a mismatch is most visible and
   least excusable.
 - Does a heading actually contain the region it names, or only sit above it?
-  UI.md §12 already records the case where an unlabelled group's cards read as
-  the previous sibling's once the sheet stacks; that is this question with the
-  heading missing entirely.
+  `docs/BACKLOG.md` § UI already records the case where an unlabelled group's
+  cards read as the previous sibling's once the sheet stacks; that is this
+  question with the heading missing entirely.
 - Is a column's meaning in a `<th>`, or only in the position of the cell? The
   HIG's tables guidance wants descriptive column headings, nouns or short noun
   phrases, no ending punctuation.

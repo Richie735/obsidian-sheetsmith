@@ -381,20 +381,15 @@ export function renderCardFace(
 	// live region has to be in the document before its text changes; updated
 	// synchronously before the view reacts, so the message queues while the
 	// node is still attached.
-	// `createElement`, because this is attached at the end of the card rather
-	// than at creation (`PATTERNS.md` §5), and it is invisible, so its position
-	// is reading order. The comment above says why it must be attached before
-	// anything writes to it; this says why it is not attached *here*.
-	//
-	// Reachable by moving the declaration down to its `appendChild`, and not
-	// worth it: the controls built in between are handed it, so it would sit
-	// three hundred lines from its readers.
+	// The *global* `createDiv`, which attaches to nothing: this is appended at
+	// the end of the card rather than at creation (`PATTERNS.md` §5), and it is
+	// invisible, so its position is reading order. The comment above says why it
+	// must exist before anything writes to it; the global form is how it can,
+	// without the declaration moving three hundred lines to meet its parent.
 	const status =
-		options.value || options.note ? doc.createElement('div') : null;
-	if (status) {
-		status.classList.add('sheetsmith-sr-only');
-		status.setAttribute('aria-live', 'polite');
-	}
+		options.value || options.note
+			? createDiv({ cls: 'sheetsmith-sr-only', attr: { 'aria-live': 'polite' } })
+			: null;
 
 	// Every control the card holds, in top-to-bottom order: the click routing
 	// below aims at the nearest one, and a menu is as much a target as a field.

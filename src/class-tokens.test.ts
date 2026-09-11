@@ -290,8 +290,14 @@ describe('a class name a browser would refuse never reaches classList.add', () =
 	}));
 
 	it('finds the calls it is meant to be checking', () => {
+		// A floor well under the count rather than just under it. It was 100
+		// against a population of 107, which is a vacuity guard that doubles as a
+		// tripwire on any sweep that moves calls off `classList.add` — and one
+		// did: the nine `createElement` sites took their `classList.add` with
+		// them into a `cls:` option, and this failed at 98 for a reason that had
+		// nothing to do with what it checks.
 		const total = found.reduce((sum, file) => sum + file.tokens.length, 0);
-		expect(total).toBeGreaterThan(100);
+		expect(total).toBeGreaterThan(50);
 	});
 
 	it('reads every file that builds DOM, src and harness alike', () => {

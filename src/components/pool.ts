@@ -198,17 +198,77 @@ interface AmountControlOptions {
 	onOpenChange: (open: boolean) => void;
 }
 
+/** The three controls that answer a press themselves rather than as the card. */
+const POOL_CONTROLS =
+	'.sheetsmith-pool-step, .sheetsmith-pool-temp, .sheetsmith-pool-adjust';
+
+/**
+ * Flag the card while the pointer is over one of its own controls, and while a
+ * press that started on one is still held.
+ *
+ * **The card's generous target has to be visible or the card reads as dead
+ * except for the number** — and a card-wide answer to a press on a 24px button
+ * says "you pressed the card" when you did not. So every control lights itself
+ * and the card lights only when the pointer is over none of them.
+ *
+ * That was two `:not(:has(…:hover))` guards in the stylesheet, which said it in
+ * one declarative place and could not fall out of step with the DOM. Obsidian's
+ * review reports `:has()` as a performance risk, so it is these listeners
+ * instead, and the exchange is honest to record: the selector was better code.
+ *
+ * **Two flags rather than one, because hover and press are not the same
+ * question.** A press that begins on the card background and drags onto a
+ * button leaves the card `:active` and the button not — so the press flag
+ * follows where the press *started*, and the hover flag follows where the
+ * pointer *is*. One flag for both would have dropped the card's press feedback
+ * mid-drag, which is the edge the old `:has(…:active)` got right for free.
+ *
+ * `pointerover` and `pointerout` rather than `pointerenter`/`pointerleave`:
+ * these bubble, so one pair on the card sees every control inside it, and the
+ * `closest` test is what turns a target into an answer.
+ */
+function flagControlPointer(card: HTMLElement): void {
+	const over = (event: PointerEvent): void => {
+		const target = event.target;
+		card.toggleClass(
+			'sheetsmith-pool-control-hot',
+			target instanceof Element && target.closest(POOL_CONTROLS) !== null,
+		);
+	};
+	card.addEventListener('pointerover', over);
+	card.addEventListener('pointermove', over);
+	// The pointer leaving the card entirely, which `pointerover` never reports.
+	card.addEventListener('pointerleave', () => {
+		card.removeClass('sheetsmith-pool-control-hot');
+	});
+
+	card.addEventListener('pointerdown', (event) => {
+		const target = event.target;
+		if (target instanceof Element && target.closest(POOL_CONTROLS) !== null) {
+			card.addClass('sheetsmith-pool-control-pressed');
+		}
+	});
+	// On the window, not the card: a press released outside the card still ends,
+	// and `:active` would have ended with it. `card.win` rather than the global
+	// one, per `PATTERNS.md` §5 — a sheet may be rendered into a popout.
+	const release = (): void => {
+		card.removeClass('sheetsmith-pool-control-pressed');
+	};
+	card.win.addEventListener('pointerup', release);
+	card.win.addEventListener('pointercancel', release);
+}
+
 function amountControl(options: AmountControlOptions): HTMLElement {
 	const { doc, name, standing, apply, onPending, onOpenChange } = options;
 	const view = doc.defaultView;
 
-	// `createElement`, and like `hold-repeat.ts`'s button this is a **design
-	// choice rather than a limit of the helper** (`PATTERNS.md` §5). This
-	// function returns a control for its caller to place, so it has a document
-	// and no parent; adding one to `AmountControlOptions` would work and would
-	// change what the function is, from building a control to placing one.
-	const wrap = doc.createElement('div');
-	wrap.classList.add('sheetsmith-pool-adjust');
+	// The *global* `createDiv`, which attaches to nothing — and like
+	// `hold-repeat.ts`'s button this stays parentless by **design rather than by
+	// a limit of the helper** (`PATTERNS.md` §5). This function returns a control
+	// for its caller to place; adding a parent to `AmountControlOptions` would
+	// work and would change what the function is, from building a control to
+	// placing one.
+	const wrap = createDiv('sheetsmith-pool-adjust');
 
 	const trigger = wrap.createEl('button');
 	trigger.type = 'button';
@@ -680,6 +740,7 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 		// columns does not become an expanse of clickable card around a
 		// two-digit number while the cards beside it stay tile-sized.
 		const card = container.createDiv('sheetsmith-pool');
+		flagControlPointer(card);
 
 		// A pool has no `hideLabel` of its own, so this drew unconditionally until
 		// a container that names its children arrived. The accessible name below is
@@ -696,20 +757,20 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 		// a step button, or a scrub. Attached before anything writes to it,
 		// because a live region has to be in the document before its text
 		// changes.
-		// `createElement`, because this is appended last, after six siblings, and
-		// `createEl` attaches on creation (`PATTERNS.md` §5). It is invisible, so
+		// The *global* `createDiv`, which attaches to nothing. The prototype
+		// helper attaches on creation (`PATTERNS.md` §5) and this is invisible, so
 		// its position is reading order and nothing else: a reader browsing the
 		// card would meet the announcement before the number it is about, and the
 		// harness cannot photograph the difference. `pool.test.ts` asserts it.
 		//
-		// **Reachable, at a price, and the price is the reason.** Declaring it
-		// beside the `card.appendChild` seven hundred lines down would let a
-		// helper build it, but every closure between here and there writes to it,
-		// so the declaration would sit far from all of its readers to satisfy a
-		// lint rule. That is a worse file, not a better one.
-		const status = doc.createElement('div');
-		status.classList.add('sheetsmith-sr-only');
-		status.setAttribute('aria-live', 'polite');
+		// This used to say the price of a helper here was moving the declaration
+		// seven hundred lines down to the `card.appendChild`, away from every
+		// closure that writes to it. There is no price: the global form creates
+		// the element without a parent and the `appendChild` stays where it is.
+		const status = createDiv({
+			cls: 'sheetsmith-sr-only',
+			attr: { 'aria-live': 'polite' },
+		});
 
 		const row = card.createDiv('sheetsmith-pool-row');
 		// The value and its ceiling are one reading, and the value holds the
@@ -732,13 +793,10 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 		// pointer; the description below covers assistive tech and, unlike a
 		// title, reaches touch — which is where hold and drag matter most.
 		input.title = `${config.label}. ${POOL_TITLE}`;
-		// Attached last too, and reachable only on the same terms as `status`
-		// above: a declaration moved seven hundred lines from everything that
-		// reads it.
-		const hint = doc.createElement('div');
-		hint.classList.add('sheetsmith-sr-only');
+		// Appended last too, and parentless at creation on the same terms as
+		// `status` above.
+		const hint = createDiv({ cls: 'sheetsmith-sr-only', text: POOL_HINT });
 		hint.id = `sheetsmith-pool-hint-${config.id}`;
-		hint.textContent = POOL_HINT;
 		input.setAttribute('aria-describedby', hint.id);
 
 		/**
@@ -1302,12 +1360,11 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 		 * wide field-shaped pill, because it asks for a number first and a
 		 * field-shaped control advertises that typing is next.
 		 */
-		// `createElement`, not a helper, per `PATTERNS.md` §5: this is filled with
-		// its step buttons here and attached to the card much later, after the
-		// preview line. Creating it on the card would put it *before* the preview
-		// instead of after, which is a visible change.
-		const controls = doc.createElement('div');
-		controls.classList.add('sheetsmith-pool-controls');
+		// The *global* `createDiv`, which attaches to nothing, per `PATTERNS.md`
+		// §5: this is filled with its step buttons here and appended to the card
+		// much later, after the preview line. `card.createDiv` would put it
+		// *before* the preview instead of after, which is a visible change.
+		const controls = createDiv('sheetsmith-pool-controls');
 		controls.appendChild(
 			stepButton(
 				doc,

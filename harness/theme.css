@@ -479,11 +479,11 @@ input[type='checkbox']:checked::after {
 	background-color: var(--background-modifier-hover);
 }
 
-:is(.vertical-tab-content, .harness-editor) button.mod-cta {
-	background-color: var(--interactive-accent);
-	border-color: var(--interactive-accent);
-	color: var(--text-on-accent);
-}
+/* The call-to-action button is **not** here. It cannot be: this whole block is
+   `@layer harness-fallback`, and the calibrated sheet's own
+   `button:not(.clickable-icon)` is unlayered, so it wins on the cascade's layer
+   step whatever the specificity. The rule lives below the layer instead, and the
+   comment there is the argument. */
 
 /* An icon button carries an SVG and nothing else, so it is sized by the icon
    and squared off rather than taking the text button's padding.
@@ -584,6 +584,49 @@ body {
 
 }
 
+/*
+ * The one rule here that approximates Obsidian and is **deliberately unlayered**.
+ *
+ * `button.mod-cta` is the app's call-to-action, and `calibrate.mjs` refuses it by
+ * name: its bare-element entries are anchored `/^button(?![.#\w-])/` precisely so
+ * the app's `button.mod-cta` cannot come along and outrank a plugin class that
+ * should beat it. That decision stands. The consequence is that nothing
+ * calibrated paints a CTA, so this fallback is the only thing that can — and
+ * inside `@layer harness-fallback` it painted nothing at all, because the
+ * calibrated `button:not(.clickable-icon) { background-color:
+ * var(--interactive-normal) }` is unlayered and an unlayered rule beats a layered
+ * one at any specificity.
+ *
+ * **So the tab's only call to action photographed as a tertiary button**, white on
+ * white in the light theme, and a design review read the row whose entire job is
+ * to be the CTA against something Obsidian never draws. That is this file's own
+ * worst failure — an instrument claiming a fidelity it does not have — and it was
+ * invisible because the rule was right there in the file, looking applied.
+ *
+ * Unlayered *and* scoped, at (0,2,1), which beats the calibrated bare button at
+ * (0,1,1). The app's own rule is (0,1,1), so this is one step stronger than the
+ * real thing; the scope is what makes that safe, since it reaches only the
+ * settings tab and the harness editor, and the plugin styles no `.mod-cta`
+ * anywhere. A bare `button.mod-cta` would tie with the calibrated rule and lose
+ * on source order, because `index.html` loads the generated sheet *after* this one
+ * so the real chrome wins.
+ *
+ * `--text-color` as well as `color`, mirroring the app: its CTA rule sets only
+ * `--text-color: var(--text-on-accent)` and lets the bare button rule consume it.
+ * Setting both means this composes with the calibrated sheet the way the app does
+ * and still paints a legible label with no calibration at all.
+ */
+:is(.vertical-tab-content, .harness-editor) button.mod-cta {
+	--text-color: var(--text-on-accent);
+	background-color: var(--interactive-accent);
+	border-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+:is(.vertical-tab-content, .harness-editor) button.mod-cta:hover {
+	background-color: var(--interactive-accent-hover);
+}
+
 /* Harness chrome. Deliberately unstyled by Obsidian variables so it cannot be
    mistaken for part of the sheet. */
 .harness-bar {
@@ -646,8 +689,12 @@ body {
  */
 a {
 	color: var(--link-color, var(--text-accent));
-	text-decoration-line: var(--link-decoration, underline);
-	text-decoration-thickness: var(--link-decoration-thickness, auto);
+	/* The shorthand, which a browser-support linter accepts where
+	   `text-decoration-line` is flagged; they mean the same thing for a value
+	   that is only a line. `text-decoration-thickness` had no such escape and is
+	   gone, so a theme's link thickness no longer reaches the harness — the one
+	   place this file's fidelity to the app is now slightly short. */
+	text-decoration: var(--link-decoration, underline);
 	cursor: var(--cursor-link, pointer);
 }
 

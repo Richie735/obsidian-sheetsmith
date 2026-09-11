@@ -333,14 +333,10 @@ const activeTab = new Map<string, number>();
 const openRecords = new Map<string, Set<number>>([['traits', new Set([1, 2])]]);
 
 function renderSheet(into: HTMLElement): void {
-	const view = document.createElement('div');
-	view.className = 'sheetsmith-view';
-	into.appendChild(view);
+	const view = into.createDiv('sheetsmith-view');
 
-	const grid = document.createElement('div');
-	grid.className = 'sheetsmith-grid';
+	const grid = view.createDiv('sheetsmith-grid');
 	grid.style.setProperty('--sheetsmith-columns', String(layout.columns ?? 12));
-	view.appendChild(grid);
 
 	const { env, modifiers } = sheetEnv(live);
 
@@ -401,24 +397,24 @@ function renderSheet(into: HTMLElement): void {
 	dropDetachedAnchoredPanel();
 
 	// Always present, so a link gesture has somewhere to write without a rebuild.
-	linkLog = document.createElement('p');
-	linkLog.className = 'harness-note';
-	linkLog.textContent = 'Press or hover a link in a cell.';
-	into.appendChild(linkLog);
+	linkLog = into.createEl('p', {
+		cls: 'harness-note',
+		text: 'Press or hover a link in a cell.',
+	});
 	into.appendChild(noteBodies());
 }
 
 /** What each section would be saved as, so a write bug is visible. */
 function noteBodies(): HTMLElement {
-	const wrap = document.createElement('details');
-	wrap.className = 'harness-bodies';
-	const summary = document.createElement('summary');
-	summary.textContent = 'Note bodies as they would be written';
-	wrap.appendChild(summary);
+	// The *global* `createEl`, which attaches to nothing: this is returned for
+	// its caller to place. Its children take the element's own method, so they
+	// attach in the order they are built.
+	const wrap = createEl('details', { cls: 'harness-bodies' });
+	wrap.createEl('summary', { text: 'Note bodies as they would be written' });
 	for (const entry of live) {
-		const pre = document.createElement('pre');
-		pre.textContent = `## ${entry.config.label}\n${entry.body ?? '(nothing stored)'}`;
-		wrap.appendChild(pre);
+		wrap.createEl('pre', {
+			text: `## ${entry.config.label}\n${entry.body ?? '(nothing stored)'}`,
+		});
 	}
 	return wrap;
 }
@@ -443,8 +439,8 @@ let settingsPane: HTMLElement | null = null;
 
 async function ensureEditor(): Promise<HTMLElement> {
 	if (editorPane && editorState === state) return editorPane;
-	const pane = document.createElement('div');
-	pane.className = 'harness-editor';
+	// Parentless: the pane is kept across redraws and placed by `draw` below.
+	const pane = createDiv('harness-editor');
 	editorPane = pane;
 	editorState = state;
 	// Which of the pane's own controls this view wants driven: a tree row
@@ -486,8 +482,8 @@ async function ensureEditor(): Promise<HTMLElement> {
 
 async function ensureSettings(): Promise<HTMLElement> {
 	if (settingsPane) return settingsPane;
-	const pane = document.createElement('div');
-	pane.className = 'harness-settings';
+	// Parentless, as the editor pane above is, and placed by `draw` below.
+	const pane = createDiv('harness-settings');
 	settingsPane = pane;
 	await renderSettings(pane, harnessLayout());
 	return pane;
@@ -504,9 +500,7 @@ function draw(): void {
 	stage.replaceChildren();
 
 	const column = (build: (into: HTMLElement) => void): void => {
-		const pane = document.createElement('div');
-		pane.className = 'harness-pane';
-		stage.appendChild(pane);
+		const pane = stage.createDiv('harness-pane');
 		build(pane);
 	};
 

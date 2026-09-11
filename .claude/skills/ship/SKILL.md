@@ -15,6 +15,42 @@ read that section first, state which steps this route runs, and record every
 skip on one line with its reason. A skip recorded is a decision; a skip omitted
 is how the workflow rots.
 
+## The branch, before anything else
+
+`docs/WORKFLOW.md` § Branches is the model; this is the part this session owns.
+
+First, find the open version branch:
+
+```bash
+git branch --list 'release/*'
+git status --porcelain
+```
+
+- **No version branch, or more than one.** Stop and ask. The invariant is one
+  open cycle at a time, `/release` maintains it, and guessing which of two is
+  open ships a feature into a version nobody meant.
+- **The tree is dirty on `main`.** Stop and say so. Work already started in the
+  wrong place is the owner's to move, not this session's: `git switch -c` would
+  carry it silently and a stash would hide it.
+
+Then open the work branch off the version branch, before the dev agent exists:
+
+```bash
+git switch release/<version>
+git switch -c <prefix>/<slug>
+```
+
+The prefix is the route's: `feat/` on full and standard, `fix/` on bug,
+`chore/` on short. The slug is the feature's, the same one
+`docs/features/<slug>.md` will carry.
+
+State the branch on one line and carry it in the dev agent's opening prompt. The
+dev works there and nowhere else; `/land-it` is what merges it back, and this
+session never merges anything itself.
+
+**If the branch already exists**, this is a resumed run. Switch to it, do not
+re-create it, and derive the phase per § Resume.
+
 ## One feature, one run
 
 This session ends at the land stop. Nothing that arrives after it re-enters
@@ -69,22 +105,23 @@ Dismissed once the spec is approved.
 
 **The dev.** One agent, spawned once, alive for the whole feature. On routes
 with a spec, spawn it the moment the spec goes to the owner for approval, not
-after the answer: its opening prompt says to read `docs/PATTERNS.md` and
-`docs/UI.md` and then hold, so the expensive prime runs inside the approval wait
-instead of adding to the build. The approved spec path follows as a message. On
-the bug route the opening prompt carries the bug report instead and the dev runs
-`/diagnose`. Either way the opening prompt carries the standing rules: the tree
-stays uncommitted, tests and lint run from `package.json` scripts, nothing lands
-without them green. The dev reads the big docs once and keeps them; every later
-exchange is a follow-up message, never a respawn. At the end the dev runs
-`/land-it`. If the spec comes back rejected, the held dev costs nothing: the
-docs it read serve whatever the respec produces.
+after the answer: its opening prompt says to read `docs/PATTERNS.md`,
+`docs/UI.md` and `docs/BACKLOG.md` — the known debt behind both — and then hold,
+so the expensive prime runs inside the approval wait instead of adding to the
+build. The approved spec path follows as a message. On the bug route the opening
+prompt carries the bug report instead and the dev runs `/diagnose`. Either way
+the opening prompt carries the standing rules: the tree stays uncommitted, tests
+and lint run from `package.json` scripts, nothing lands without them green. The
+dev reads the big docs once and keeps them; every later exchange is a follow-up
+message, never a respawn. At the end the dev runs `/land-it`. If the spec comes
+back rejected, the held dev costs nothing: the docs it read serve whatever the
+respec produces.
 
 The dev has died mid-feature to network errors and to machine sleep. A
 replacement is primed on the spec path and `git diff`, not on the full reading
 list: `PATTERNS.md` and `UI.md` are what made the first prime expensive, and the
-tree already embodies them. Say in the replacement's prompt what the dead one
-had done.
+tree already embodies them. `docs/BACKLOG.md` is cheap and is the known debt, so
+read it. Say in the replacement's prompt what the dead one had done.
 
 After building, the dev reports back three things, not a narrative: what changed
 by file, what it decided that the spec did not dictate, and what it deliberately
@@ -187,10 +224,15 @@ the 30 to 40 minutes before the owner sees that a question fired.
    the live arguments, wait. The settled answer goes to the spec agent. The
    `Resolved:` entry in `docs/SPEC.md` is still written by `/land-it`, because
    nothing is resolved until it is built.
-2. **Spec approval.** Present the spec with an adversarial read, not a courier's
-   note: does it match the scope with nothing added or dropped, does it honour
-   the settled model answer, does it contradict anything settled in `SPEC.md`.
-   Concerns go alongside the approval request.
+2. **Spec approval.** Present the spec as a **choice between the design and its
+   smallest version**, both from the spec's own words, so the cheaper answer is
+   on the table at the one moment it is still free. With it goes an adversarial
+   read, not a courier's note: does it match the scope with nothing added or
+   dropped, does it honour the settled model answer, does it contradict anything
+   settled in `SPEC.md`. Concerns go alongside the approval request. Choosing the
+   smallest version is not a cut to absorb silently: the dropped parts move to
+   the spec's "Deliberately not doing", so a reviewer does not report them as
+   gaps, and the spec agent revises before the dev is primed.
 3. **The land stop.** Once, after all waves are remediated and the gates are
    green. One presentation carries everything: the full ledger with
    dispositions, deferred items in plain language, disputed items with both
@@ -207,10 +249,10 @@ the 30 to 40 minutes before the owner sees that a question fired.
 ## Resume
 
 If this session dies mid-feature, re-invoke with the same route and feature. Do
-not keep a state file; derive the phase from what the repository records:
-`docs/features/<slug>.md` and its `Status:` line say whether the spec exists and
-was agreed, `git status` says whether the build started, the ledger is gone but
-the reviews are cheap to re-run. Spawn a fresh dev primed with the spec and the
+not keep a state file; derive the phase from what the repository records: the
+work branch says the run started, `docs/features/<slug>.md` and its `Status:`
+line say whether the spec exists and was agreed, `git status` says whether the
+build started, the ledger is gone but the reviews are cheap to re-run. Spawn a fresh dev primed with the spec and the
 current diff, and continue from the first phase whose artifact is missing.
 
 ## Planning stays outside

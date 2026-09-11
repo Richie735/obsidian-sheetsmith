@@ -1,6 +1,13 @@
 // @vitest-environment happy-dom
 import { describe, expect, it } from 'vitest';
 import './obsidian-stub';
+import {
+	App,
+	PluginSettingTab,
+	Setting,
+	SettingDefinition,
+	normalizePath,
+} from './obsidian-stub';
 
 /*
  * The element helpers the double installs, driven option by option.
@@ -184,5 +191,447 @@ describe('the element helpers', () => {
 		expect(el.getAttribute('data-n')).toBe('2');
 		expect(fragment.createDiv('d').className).toBe('d');
 		expect(fragment.createSpan('s').className).toBe('s');
+	});
+});
+
+/*
+ * The visibility pair, driven because what it must *not* do is the reason it
+ * exists.
+ *
+ * A plugin hiding a `.setting-item` cannot use `hidden`: `app.css` declares
+ * `display: flex` on that class at author level, which beats the UA sheet's
+ * `[hidden]` rule. So the double has to write an inline `display`, the one
+ * thing that wins over a class — and `show` has to *remove* the property
+ * rather than set `block`, or a row would come back as the wrong kind of box.
+ */
+describe('the visibility helpers', () => {
+	it('hides with an inline display, which is what beats a class', () => {
+		const el = root();
+		el.hide();
+		expect(el.style.display).toBe('none');
+		// Not the attribute, which is what a plugin must not rely on here.
+		expect(el.hasAttribute('hidden')).toBe(false);
+	});
+
+	it('shows by removing the property rather than by setting a value', () => {
+		const el = root();
+		el.hide();
+		el.show();
+		expect(el.style.display).toBe('');
+		// `?? ''` because the attribute is dropped altogether once it is empty:
+		// what matters is that no `display` survives, however that is spelled.
+		expect(el.getAttribute('style') ?? '').not.toContain('display');
+	});
+
+	it('toggles both ways through one call', () => {
+		const el = root();
+		el.toggleVisibility(false);
+		expect(el.style.display).toBe('none');
+		el.toggleVisibility(true);
+		expect(el.style.display).toBe('');
+	});
+});
+
+/*
+ * One behaviour of the vault double, driven for this file's own reason: two
+ * callers lean on it as a backstop and neither can demonstrate it.
+ *
+ * `Vault.create` rejects a taken path in the app rather than overwriting it,
+ * and `layouts.ts` and `characters.ts` both say so in their comments while
+ * guarding the path themselves. A double that wrote anyway would let a
+ * regression that dropped either guard overwrite a reader's character note and
+ * stay green — the silent direction this file exists for, and Constraint 4.
+ */
+describe('the vault double', () => {
+	it('refuses a path that is taken, and keeps what is there', async () => {
+		const app = new App();
+		const file = await app.vault.create('Notes/Aramil.md', 'mine');
+		await expect(app.vault.create('Notes/Aramil.md', 'theirs')).rejects.toThrow(
+			/already exists/,
+		);
+		expect(await app.vault.read(file)).toBe('mine');
+	});
+
+	it('refuses a folder where anything already sits, in the app’s own words', async () => {
+		/*
+		 * `createFolder` used to write unconditionally, which is `create`'s own
+		 * defect one method over — and it made a state the plugin *reports* as
+		 * an error unreachable from any test. The app checks `adapter.exists`
+		 * rather than looking for a folder, so a **file** at that path refuses
+		 * too, with the same message; `characters.ts` leans on exactly that when
+		 * a reader types a configured folder whose path a note already holds.
+		 */
+		const app = new App();
+		await app.vault.createFolder('Characters');
+		await expect(app.vault.createFolder('Characters')).rejects.toThrow(
+			'Folder already exists.',
+		);
+
+		await app.vault.create('Party', 'a note, not a folder');
+		await expect(app.vault.createFolder('Party')).rejects.toThrow(
+			'Folder already exists.',
+		);
+		expect(await app.vault.read(app.vault.getFileByPath('Party')!)).toBe(
+			'a note, not a folder',
+		);
+	});
+
+	it('creates every missing ancestor, because `mkdir` is recursive', async () => {
+		// `fsPromises.mkdir(path, { recursive: true })`, quoted in the docblock:
+		// the app leaves both folders behind, and a plugin asking about either
+		// gets one. `characters.ts` asks about the deeper one when it writes a
+		// second character into a folder it created itself.
+		const app = new App();
+		await app.vault.createFolder('Characters/New');
+		expect(app.vault.getFolderByPath('Characters')).not.toBeNull();
+		expect(app.vault.getFolderByPath('Characters/New')).not.toBeNull();
+	});
+
+	it('holds the root in the folder map, as `fileMap` does', async () => {
+		/*
+		 * `n.root = n.fileMap['/']` in the app's own constructor, so
+		 * `getFolderByPath('/')` answers the root rather than null — a value a
+		 * reader reaches by typing `/` into a folder preference, since
+		 * `normalizePath('/')` is `/`. The root's children are the paths with no
+		 * slash in them, which is `getDirectParent`'s own rule.
+		 */
+		const app = new App();
+		expect(app.vault.getFolderByPath('/')).toBe(app.vault.getRoot());
+		await app.vault.create('Aramil.md', 'mine');
+		await app.vault.create('Party/Sable.md', 'hers');
+		expect(
+			app.vault.getFolderByPath('/')?.children.map((f) => f.path),
+		).toEqual(['Aramil.md']);
+		// And the root already exists, so the app refuses to create it.
+		await expect(app.vault.createFolder('/')).rejects.toThrow(
+			'Folder already exists.',
+		);
+	});
+
+	it('gives one answer about who holds a top-level file', async () => {
+		/*
+		 * The two routes to the same fact, which is what a double owes above all
+		 * else: `getRoot().children` and `file.parent` used to disagree the
+		 * moment the root became reachable by path — the root claiming the file
+		 * and the file claiming no parent. `getDirectParent` in the app answers
+		 * `fileMap['/']` for a path with no slash in it, so both say the root.
+		 *
+		 * `getRoot()` is asked *first* here, deliberately: it goes through the
+		 * same lookup every other folder does, so its children no longer depend
+		 * on something else having asked for `/` by path beforehand.
+		 */
+		const app = new App();
+		const file = await app.vault.create('Aramil.md', 'mine');
+		expect(app.vault.getRoot().children.map((f) => f.path)).toEqual([
+			'Aramil.md',
+		]);
+		expect(file.parent).toBe(app.vault.getRoot());
+
+		// A file in a folder is unaffected: its parent is that folder. The
+		// folder is made first because the app's `create` does not make one —
+		// writing into a folder that is not there fails at the adapter.
+		await app.vault.createFolder('Party');
+		const inner = await app.vault.create('Party/Sable.md', 'hers');
+		expect(inner.parent?.path).toBe('Party');
+	});
+
+	it('normalises inside `createFolder`, as `create` does', async () => {
+		// The same asymmetry the section below is about, on the folder half:
+		// the create derives its own path and `getFolderByPath` does not, so a
+		// caller spelling the two differently is told a folder that is there is
+		// absent and tries to create it again.
+		const app = new App();
+		await app.vault.createFolder('/Sheets//Characters/');
+		expect(app.vault.getFolderByPath('Sheets/Characters')).not.toBeNull();
+		expect(app.vault.getFolderByPath('/Sheets//Characters/')).toBeNull();
+		await expect(
+			app.vault.createFolder('Sheets/Characters'),
+		).rejects.toThrow('Folder already exists.');
+	});
+
+	it('still overwrites through `modify`, which is what that call is for', async () => {
+		const app = new App();
+		const file = await app.vault.create('Notes/Aramil.md', 'mine');
+		await app.vault.modify(file, 'edited');
+		expect(await app.vault.read(file)).toBe('edited');
+	});
+});
+
+/*
+ * What a path is, pinned against the app's own answer.
+ *
+ * **This is the second defect this double let through green, and the worse of
+ * the two.** `Vault.create` writing unconditionally was the first; this one is
+ * that the double's `normalizePath` dropped only a *trailing* slash and its
+ * new-file parent claimed the vault root's path was `''`. A plugin reasoned
+ * from that comment, joined `'' + '/' + name`, and shipped a command that wrote
+ * a note and then opened a path resolving to nothing — with every test green,
+ * because the double agreed with the mistake.
+ *
+ * So these cases quote the app rather than describing it. Obsidian 1.13.7's
+ * `app.js`, deminified:
+ *
+ * ```js
+ * function normalizePath(e) { return replaceControlChars(slashes(e)).normalize('NFC') }
+ * function slashes(e) {
+ *   return '' === (e = e.replace(/([\\/])+/g, '/').replace(/(^\/+|\/+$)/g, '')) && (e = '/'), e
+ * }
+ * Vault.prototype.create = function (path, data) { const at = normalizePath(path); … }
+ * Vault.prototype.getFileByPath = function (path) { … this.fileMap.hasOwnProperty(path) … }
+ * ```
+ *
+ * `obsidian.d.ts` says the same thing about the root in prose, on
+ * `getAllFolders`: "Should the root folder (`/`) be returned".
+ */
+describe('what the double thinks a path is', () => {
+	it('strips a leading slash as well as a trailing one', () => {
+		expect(normalizePath('/Untitled character.md')).toBe(
+			'Untitled character.md',
+		);
+		expect(normalizePath('Characters/')).toBe('Characters');
+		expect(normalizePath('/Characters/Party/')).toBe('Characters/Party');
+	});
+
+	it('collapses a run of either separator', () => {
+		expect(normalizePath('//Untitled character.md')).toBe(
+			'Untitled character.md',
+		);
+		expect(normalizePath('Characters//Party///x.md')).toBe(
+			'Characters/Party/x.md',
+		);
+		expect(normalizePath('Characters\\Party')).toBe('Characters/Party');
+	});
+
+	it('answers `/` for what is left of nothing, which is the vault root', () => {
+		// The fact the bug rested on. `getNewFileParent` returns `getRoot()` for
+		// the *default* new-note location, so this is the common case.
+		expect(normalizePath('')).toBe('/');
+		expect(normalizePath('/')).toBe('/');
+		expect(new App().vault.getRoot().path).toBe('/');
+	});
+
+	it('normalises inside `create` but not inside `getFileByPath`', async () => {
+		/*
+		 * The asymmetry itself, which is what a caller has to be built around:
+		 * the write derives its own path and the lookup does not. Any caller
+		 * that spells the two differently is told a taken name is free.
+		 */
+		const app = new App();
+		await app.vault.create('/Notes//Aramil.md', 'mine');
+		expect(app.vault.getFileByPath('Notes/Aramil.md')).not.toBeNull();
+		expect(app.vault.getFileByPath('/Notes//Aramil.md')).toBeNull();
+		// And the refusal is on the normalised path, in the app's own words.
+		await expect(app.vault.create('Notes/Aramil.md', 'theirs')).rejects.toThrow(
+			'File already exists.',
+		);
+	});
+});
+
+/*
+ * The definition renderer, which is the newest thing here and the one with the
+ * most room to diverge quietly: it turns data into the same rows `new Setting()`
+ * used to build by hand, so a mapping that drops a member renders a row that
+ * still looks right.
+ *
+ * What it must get right is the seam rather than the markup. The markup is
+ * `Setting`'s and already driven above; the seam is which member reaches which
+ * call, and which members are refused instead of quietly dropped.
+ */
+
+/** A tab returning the definitions a case hands it. */
+function tabFor(definitions: SettingDefinition[]): { tab: PluginSettingTab } {
+	class Tab extends PluginSettingTab {
+		getSettingDefinitions(): SettingDefinition[] {
+			return definitions;
+		}
+	}
+	const tab = new Tab(new App(), {});
+	document.body.replaceChildren(tab.containerEl);
+	return { tab };
+}
+
+describe('the setting definition renderer', () => {
+	it('nests a row the way the app nests one, wrappers and all', () => {
+		/*
+		 * **The check that was missing, and its absence cost the review its
+		 * instrument.** Obsidian never puts a row straight into the tab: `e6`
+		 * gathers the definitions into one synthetic group and `SettingGroup`
+		 * builds `.setting-group > .setting-items` around them. `app.css` then
+		 * restyles on exactly that nesting — one shared card on `.setting-items`,
+		 * each row's own card taken away, hairlines instead of gaps.
+		 *
+		 * The double used to append `.setting-item` into `containerEl`, which is
+		 * what the *old* imperative `display()` produced. So the settings shots
+		 * came out byte-identical across a change that alters the tab's whole
+		 * appearance, and the criterion watching them proved nothing. A shape
+		 * assertion is what makes that failure loud.
+		 */
+		const { tab } = tabFor([{ name: 'Layout folder' }]);
+		tab.update();
+		const group = tab.containerEl.children[0];
+		expect(group?.className).toBe('setting-group');
+		expect(Array.from(group?.children ?? []).map((el) => el.className)).toEqual([
+			'setting-group-search',
+			'setting-items',
+		]);
+		// Empty, and present: `:empty` hides it, and the rules that square off the
+		// list's top corners are gated on it *not* being empty.
+		expect(group?.querySelector('.setting-group-search')?.childElementCount).toBe(
+			0,
+		);
+		const rows = group?.querySelector('.setting-items')?.children ?? [];
+		expect(Array.from(rows).map((el) => el.className)).toEqual(['setting-item']);
+		// And no heading: the app builds one detached and prepends it only when
+		// `setHeading` is called with text, which nothing here does.
+		expect(tab.containerEl.querySelector('.setting-item-heading')).toBeNull();
+	});
+
+	it('paints nothing until `update()` has stored the definitions', () => {
+		// `display()` is the app's second path and paints `settingItems`, which
+		// only `update()` fills. A caller that renders by `display()` alone gets
+		// an empty tab, which is why both call sites use `update()`.
+		const { tab } = tabFor([{ name: 'Layout folder' }]);
+		tab.display();
+		expect(tab.containerEl.querySelectorAll('.setting-item')).toHaveLength(0);
+		tab.update();
+		expect(tab.containerEl.querySelectorAll('.setting-item')).toHaveLength(1);
+	});
+
+	it('sends a name and a description to the row the app sends them to', () => {
+		const { tab } = tabFor([
+			{ name: 'Character folder', desc: 'New characters are written here.' },
+		]);
+		tab.update();
+		expect(
+			tab.containerEl.querySelector('.setting-item-name')?.textContent,
+		).toBe('Character folder');
+		expect(
+			tab.containerEl.querySelector('.setting-item-description')?.textContent,
+		).toBe('New characters are written here.');
+	});
+
+	it('takes a description built as a fragment, markup and all', () => {
+		// How the sheet-view toggle's description reaches the row: a fragment
+		// carrying a `<code>`, which is also what the settings search reads the
+		// `textContent` of.
+		// The key is named rather than spelled inline for the reason `settings.ts`
+		// names it: `obsidianmd/ui/sentence-case` reads `text` inside `createEl`
+		// options, and a frontmatter key is not a sentence to be capitalised.
+		const key = 'sheet-layout';
+		const desc = createFragment((fragment) => {
+			fragment.appendText('Notes with a ');
+			fragment.createEl('code', { text: key });
+			fragment.appendText(' property open as a sheet.');
+		});
+		const { tab } = tabFor([{ name: 'Open sheets in sheet view', desc }]);
+		tab.update();
+		const descEl = tab.containerEl.querySelector('.setting-item-description');
+		expect(descEl?.querySelector('code')?.textContent).toBe('sheet-layout');
+		expect(descEl?.textContent).toBe(
+			'Notes with a sheet-layout property open as a sheet.',
+		);
+	});
+
+	it('keeps a fragment description across a repaint, because the app clones it', () => {
+		/*
+		 * `sg(e)` in the app is `typeof e === 'string' ? e : e.cloneNode(true)`,
+		 * and the clone is load-bearing: `renderTab()` paints the *stored*
+		 * definitions on every tab activation while `update()` runs once, so a
+		 * fragment appended rather than cloned moves into the first row drawn and
+		 * leaves the second draw empty. Nothing else here would notice, because
+		 * `settings.ts`'s `rows()` happens to rebuild its fragment per call — and
+		 * nothing says that is load-bearing, which is exactly the problem.
+		 */
+		const key = 'sheet-layout';
+		const desc = createFragment((fragment) => {
+			fragment.createEl('code', { text: key });
+		});
+		// One definitions array, painted twice, as a tab reopened twice is.
+		const { tab } = tabFor([{ name: 'Open sheets in sheet view', desc }]);
+		tab.update();
+		tab.update();
+		expect(
+			tab.containerEl.querySelector('.setting-item-description code')
+				?.textContent,
+		).toBe(key);
+	});
+
+	it('hands a `render` definition the row, so a caller keeps its own element', () => {
+		// The member the two folder rows are built on: what `render` gets is the
+		// real `Setting`, so the input, its `aria-label` and its listeners are the
+		// caller's exactly as they were before the definitions.
+		let seen: Setting | null = null;
+		const { tab } = tabFor([
+			{
+				name: 'Layout folder',
+				render: (setting) => {
+					seen = setting;
+					setting.addText((text) => {
+						text.inputEl.setAttribute('aria-label', 'Layout folder');
+					});
+				},
+			},
+		]);
+		tab.update();
+		expect(seen).not.toBeNull();
+		const input = tab.containerEl.querySelector('input[type="text"]');
+		expect(input?.getAttribute('aria-label')).toBe('Layout folder');
+	});
+
+	it('runs a `render` cleanup before the row is painted again', () => {
+		// **Before**, asserted rather than assumed: counting cleanups would pass
+		// just as well if they ran after the repaint, and a cleanup that runs
+		// after its replacement is built is one that tears the new row down.
+		const order: string[] = [];
+		const { tab } = tabFor([
+			{
+				name: 'Layout editor',
+				render: () => {
+					order.push('render');
+					return () => order.push('cleanup');
+				},
+			},
+		]);
+		tab.update();
+		expect(order).toEqual(['render']);
+		tab.update();
+		expect(order).toEqual(['render', 'cleanup', 'render']);
+	});
+
+	it('refuses a member it would otherwise drop, one refusal per member', () => {
+		/*
+		 * The point of the file, applied to this renderer. Each of these is
+		 * something Obsidian draws or stores and the double does not, so the
+		 * failure has to be loud: a row that silently loses its `disabled` still
+		 * renders, still looks right, and still passes.
+		 *
+		 * `validate` is *not* on this list, and the reason is worth writing down
+		 * because an earlier draft of the spec asked for it: it is a member of
+		 * `SettingControlBase`, so it can only ever arrive inside a `control`,
+		 * and refusing `control` refuses it with no branch of its own.
+		 *
+		 * Asserted **by name** — `toThrow(member)` rather than
+		 * `toThrow('obsidian-stub')` — because the looser matcher passes for a
+		 * single generic refusal, which is the failure that would make this list
+		 * decorative.
+		 */
+		const refused: [string, SettingDefinition & Record<string, unknown>][] = [
+			['type', { name: 'Fonts', type: 'group', items: [] }],
+			['action', { name: 'Open', action: () => undefined }],
+			['visible', { name: 'Hidden', visible: false }],
+			// Honoured by the app even though the typings put it only on
+			// `SettingDefinitionAction`: `X2` reads `def.disabled ??
+			// def.control?.disabled` for every row and calls `setDisabled`.
+			['disabled', { name: 'Off', disabled: true }],
+			[
+				'control',
+				{ name: 'Open sheets', control: { type: 'toggle', key: 'open' } },
+			],
+		];
+
+		for (const [member, def] of refused) {
+			const { tab } = tabFor([def]);
+			expect(() => tab.update(), member).toThrow(member);
+		}
 	});
 });

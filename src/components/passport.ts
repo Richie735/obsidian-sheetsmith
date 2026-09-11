@@ -458,7 +458,6 @@ function drawName(
 	onCommit: (next: string) => void,
 	status: HTMLElement,
 ): void {
-	const doc = text.ownerDocument;
 	const field = text.createEl('input');
 	field.type = 'text';
 	field.classList.add('sheetsmith-passport-name-input');
@@ -489,11 +488,10 @@ function drawName(
 		notice?.remove();
 		notice = null;
 		if (message === null) return;
-		// `createElement`, not a helper: this goes *after a sibling* rather than
-		// into a parent, and no helper option expresses that (`PATTERNS.md` §5).
-		notice = doc.createElement('div');
-		notice.classList.add('sheetsmith-error');
-		notice.textContent = message;
+		// The *global* `createDiv`, which attaches to nothing: this goes *after a
+		// sibling* rather than into a parent, so `field.after` below is the
+		// attachment and no `parent` option could express it (`PATTERNS.md` §5).
+		notice = createDiv({ cls: 'sheetsmith-error', text: message });
 		field.after(notice);
 		status.textContent = message;
 	};
@@ -898,7 +896,6 @@ export const passport: ComponentDefinition<PassportConfig, PassportData> = {
 	},
 
 	render(container, config, data, context): void {
-		const doc = container.ownerDocument;
 		container.replaceChildren();
 
 		/*
@@ -952,12 +949,13 @@ export const passport: ComponentDefinition<PassportConfig, PassportData> = {
 		 */
 		const face = block.createDiv({ cls: ['sheetsmith-card', 'sheetsmith-passport-face'] });
 
-		// `createElement`, not a helper: attached after the picture rather than at
-		// creation (`PATTERNS.md` §5). Invisible, so its position is reading order
-		// and the harness cannot see it move.
-		const status = doc.createElement('div');
-		status.classList.add('sheetsmith-sr-only');
-		status.setAttribute('aria-live', 'polite');
+		// The *global* `createDiv`, which attaches to nothing: appended after the
+		// picture rather than at creation (`PATTERNS.md` §5). Invisible, so its
+		// position is reading order and the harness cannot see it move.
+		const status = createDiv({
+			cls: 'sheetsmith-sr-only',
+			attr: { 'aria-live': 'polite' },
+		});
 
 		if (config.hidePicture !== true) {
 			drawPicture(face, config, data, context, status, labelled);

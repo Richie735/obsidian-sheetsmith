@@ -81,64 +81,27 @@ export default defineConfig(
 		},
 	},
 	{
-		// `prefer-create-el` used to be off for `components/`, `ui/`,
-		// `interaction/` and `view/grid-cells.ts`, on the ground that those paint
-		// surfaces outside the app and Obsidian's element helpers do not exist
-		// there. **That reason was false from the moment
-		// `src/test/obsidian-stub.ts` began installing them**, and it stayed in
-		// this file long after: the stub puts `createEl`, `createDiv` and
-		// `createSpan` on the prototypes exactly as the app does, vitest loads it
-		// as a setup file, and the harness bundles it through the `obsidian`
-		// alias. Ninety-four sites moved onto the helpers with all 73 harness
-		// shots byte-identical, which is what that claim had been costing.
+		// **The harness is down to one exemption, and it is the one that is about
+		// the harness rather than about the code in it.**
 		//
-		// Nine sites keep `createElement`, and they are the shapes the helper
-		// cannot express rather than the ones nobody got to. `createEl` attaches
-		// on creation, so anything attached *later* than it is created is out of
-		// reach: a visually hidden live region appended after every visible
-		// sibling, a row filled with its step buttons before it is placed, a field
-		// whose parent is built several hundred lines further down. Two more are
-		// out of reach for their own reasons — one is placed after a sibling
-		// rather than into a parent, and two builders return a control for the
-		// caller to place, so they have a document and no parent. Each carries the
-		// argument in a comment at the site.
+		// `prefer-create-el` is gone because the nine sites it was covering moved
+		// onto the *global* `createEl` and `createDiv`, which return an element
+		// with no parent — see `src/create-element-sites.test.ts`'s header for
+		// why that was available all along and looked as though it was not.
 		//
-		// **Four files rather than four directories**, which is the narrowest
-		// scope available: `eslint-comments/no-restricted-disable` forbids
-		// disabling an `obsidianmd` rule at its own line, so this cannot be a
-		// per-site directive however much it would prefer to be. That is the same
-		// constraint, and the same resolution, as the `src/settings.ts` block
-		// below.
+		// `no-unsupported-api` is gone because `settings-panel.ts` now says what
+		// it is doing: `requireApiVersion('1.13.0')` around the `update()` call,
+		// which is the guard the rule looks for. The old exemption argued the
+		// rule was asking a not-shipped file about a constraint it did not live
+		// under. True, and it was still the wrong answer — the file was reaching
+		// past the declared floor silently, and a reader had to find a comment in
+		// this config to learn that it was deliberate.
 		//
-		// What survives from the old block is the note it ended with: none of this
-		// says whether a component may import from `obsidian` at all — one does,
-		// for `setIcon` — which is a separate rule with its own allowlist further
-		// down and its reasons in PATTERNS §2.
-		files: [
-			'src/components/pool.ts',
-			'src/components/passport.ts',
-			'src/components/card-face.ts',
-			'src/components/image.ts',
-			'src/interaction/hold-repeat.ts',
-		],
-		rules: {
-			'obsidianmd/prefer-create-el': 'off',
-		},
-	},
-	{
-		// The harness keeps the exemption, on the second of the two reasons it
-		// used to give rather than the first. It has the helpers now, through the
-		// same stub the test run uses; what is still true is that it is never
-		// bundled into main.js, so the Obsidian-facing rules are asking it about
-		// constraints it does not live under.
+		// What is left is `no-nodejs-modules`, which is genuinely about the
+		// harness being a Node-run instrument and never bundled into main.js.
 		files: ['harness/**/*.ts'],
 		rules: {
-			'obsidianmd/prefer-create-el': 'off',
 			'obsidianmd/no-nodejs-modules': 'off',
-			// The harness renders the settings tab by calling `display()`, which
-			// is what the plugin's own tab implements. Until that migrates to
-			// the declarative API, calling it is the only way to render it.
-			'@typescript-eslint/no-deprecated': 'off',
 		},
 	},
 	{
@@ -353,39 +316,20 @@ export default defineConfig(
 		},
 	},
 	{
-		// The one test that renders the settings tab, and so the layout editor,
-		// the way the harness does. `display()` is what the plugin's own tab
-		// implements, so calling it is the only way to render it until that
-		// migrates to the declarative API — the same argument the harness block
-		// above makes, and the rule is off for `settings.ts` itself further down.
+		// The one test that renders the settings tab, and it renders it twice on
+		// purpose: through `update()`, which is Obsidian 1.13's path, and through
+		// `display()`, which is the only path below it and dead code above.
+		//
+		// So both rules fire for the same reason and neither is about shipped
+		// code. `no-unsupported-api` reads `update()` against `minAppVersion`
+		// 1.9.0, which is the floor the fallback exists to serve;
+		// `no-deprecated` reads the deliberate call to that fallback. A test that
+		// covered only the path its own floor allows would leave the other
+		// untested, which is the failure this file exists to prevent.
 		files: ['src/settings.test.ts'],
 		rules: {
+			'obsidianmd/no-unsupported-api': 'off',
 			'@typescript-eslint/no-deprecated': 'off',
-		},
-	},
-	{
-		// Obsidian 1.13's declarative settings API describes a tab's settings
-		// as data so the app can index them for search. This tab no longer has
-		// the excuse it used to — it is two preferences and a button since the
-		// layout editor moved into a pane, which is the shape the API is for —
-		// and two things still block it, both about being able to tell whether
-		// the adoption worked:
-		//
-		// - whether a `control` write also persists is undocumented, and nothing
-		//   here could catch it either way, because the obsidian stub renders
-		//   `Setting` rows and not definitions;
-		// - the folder preference substitutes the default on empty where
-		//   `validate` only rejects.
-		//
-		// Named rather than restated: the argument and the **Waiting on** line
-		// live at the top of `src/settings.ts`, and this comment is deliberately
-		// the summary. This block held the stale half of that pair once already.
-		//
-		// Off here rather than inline: `eslint-comments/no-restricted-disable`
-		// in the recommended config forbids disabling this rule at its site.
-		files: ['src/settings.ts'],
-		rules: {
-			'obsidianmd/settings-tab/prefer-setting-definitions': 'off',
 		},
 	},
 	{
@@ -410,6 +354,13 @@ export default defineConfig(
 			// global scope.
 			'obsidianmd/prefer-file-manager-trash-file': 'off',
 			'obsidianmd/no-global-this': 'off',
+			// The same circularity a third time. `require-display` asks every
+			// `PluginSettingTab` subclass below a 1.13 floor to implement
+			// `display()`, and the subclasses here are fixtures: a case builds a
+			// throwaway tab to hand the stub's renderer a definition. The rule is
+			// right about the shipped tab, which does implement it, and has no
+			// opinion worth having about a class that exists for one assertion.
+			'obsidianmd/settings-tab/require-display': 'off',
 		},
 	},
 );

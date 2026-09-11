@@ -63,6 +63,7 @@ export function showFieldError(
 	}
 	if (message === null) {
 		existing?.remove();
+		markControl(control);
 		return;
 	}
 	if (existing) {
@@ -73,4 +74,27 @@ export function showFieldError(
 		el.dataset.sheetsmithFor = key;
 		el.setText(message);
 	});
+	markControl(control);
+}
+
+/**
+ * Flag a control that is currently showing at least one inline error, so the
+ * stylesheet can let it wrap the message onto its own line.
+ *
+ * A class rather than the `:has(.sheetsmith-field-error)` this replaces. The
+ * selector was the better code — true by construction, with no second place to
+ * forget — and this is the worse code that a linter warning about `:has()`
+ * costs. It is kept honest by being derived rather than tracked: the flag is
+ * recomputed from what the control actually contains, every time, so it cannot
+ * drift from the DOM the way a counter or a boolean would.
+ *
+ * Several inputs can share one control and each keeps its own message, which is
+ * why this asks whether *any* remain rather than assuming the one just removed
+ * was the last.
+ */
+function markControl(control: HTMLElement): void {
+	control.toggleClass(
+		'sheetsmith-control-has-error',
+		control.querySelector('.sheetsmith-field-error') !== null,
+	);
 }

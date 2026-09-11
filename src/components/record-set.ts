@@ -143,6 +143,7 @@ import {
 } from '../ui/anchored-panel';
 import { element } from '../ui/element';
 import { bindLongPress, showPopover } from '../ui/popover';
+import { flagWhileFocused } from '../interaction/field-focus-flag';
 import { spellcheckWhileFocused } from '../ui/spellcheck';
 import { revealWhenTruncated } from '../ui/truncation';
 
@@ -1541,6 +1542,9 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			// This branch is the stacked one: unfocused, the field's text is
 			// transparent under the link layer, and its spelling marks would not be.
 			spellcheckWhileFocused(input);
+			// And the name layer goes inert while the field is focused. A class
+			// rather than `:has(.sheetsmith-record-name-input:focus)`.
+			flagWhileFocused(stack, input, 'sheetsmith-record-name-focused');
 			const layer = element('div', 'sheetsmith-record-name-layer', stack);
 			paintLinkedText(layer, raw, {
 				link: context.link,
@@ -2256,6 +2260,11 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			// Its text is transparent unfocused and the prose is drawn over it, so
 			// its squiggles would be too.
 			spellcheckWhileFocused(input);
+			// And the rendered prose hides while the field is focused. A class rather
+			// than `:has(.sheetsmith-record-body-input:focus)`. Flagged on `into`,
+			// which is what holds the rendered layer below, so the pair cannot be
+			// separated by a wrapper appearing between them.
+			flagWhileFocused(into, input, 'sheetsmith-record-body-field-focused');
 
 			const rendered = element('div', 'sheetsmith-record-body-rendered', into);
 			// The links the app draws, given this plugin's behaviour. Bound to the

@@ -36,6 +36,8 @@ import {
 } from '../components/column-types';
 import { copyableName } from './copyable-name';
 import { showFieldError } from './field-error';
+import { reasonMessage } from './field-reason';
+import { formulaProblem } from './field-formula';
 import { isName } from '../formula/expression';
 import { ColumnOptionsSpec, EntryColumnSpec } from '../types';
 
@@ -224,22 +226,6 @@ export function addControlSpacers(header: HTMLElement): void {
 	for (let i = 0; i < controls; i++) {
 		header.createSpan({ cls: 'sheetsmith-list-control-space' });
 	}
-}
-
-/**
- * A rule's bare reason, turned into the render-time message: `null` passes
- * straight through, since a field that validates clean is indistinguishable
- * from one never touched, and a reason otherwise gets the sentence-ending
- * period its `change`-time revert clause supplies for itself.
- *
- * One spelling for the four render-time call sites in this file — a row's
- * label, a row's key, a column's key and an entry's primary field — on
- * `docs/PATTERNS.md` §1's reuse ladder: past two consumers of an identical
- * policy, drift is the whole risk a guard test would be checking for, which
- * is what one name says for free.
- */
-function reasonMessage(reason: string | null): string | null {
-	return reason === null ? null : `${reason}.`;
 }
 
 interface RowEntry {
@@ -554,10 +540,16 @@ export function renderRowsEditor(
 			});
 			input.value = row.values?.[name] ?? '';
 			input.dataset.sheetsmithFocus = `${prefix}-row-${index}-${name}`;
+			// Checked as it renders and again on the commit, on the same terms
+			// as every other expression in the pane: an empty cell is the
+			// ordinary state, and a broken one is stored and reported rather
+			// than refused.
+			fieldError(input, formulaProblem(row.values?.[name]));
 			input.addEventListener('change', () => {
 				const values = row.values ?? {};
 				values[name] = input.value.trim();
 				row.values = values;
+				fieldError(input, formulaProblem(values[name]));
 				context.persist();
 			});
 		}
@@ -962,8 +954,16 @@ export function renderColumnsEditor(
 			});
 			formula.value = column.formula ?? '';
 			formula.dataset.sheetsmithFocus = `${prefix}-col-${column.key}-formula`;
+			// Checked as it renders, against whatever the layout already holds,
+			// like the two fields below it — so a hand-edited layout says what is
+			// wrong with an expression rather than looking clean beside a card
+			// drawing "?". Nothing is refused: the text is stored either way.
+			fieldError(formula, formulaProblem(column.formula));
 			formula.addEventListener('change', () => {
 				setOptional(column, 'formula', formula.value);
+				// The stored value rather than the input's, so the commit and the
+				// next render are provably asking about one string.
+				fieldError(formula, formulaProblem(column.formula));
 				context.persist();
 			});
 
@@ -1736,6 +1736,10 @@ export function renderEntriesEditor(
 			countInput.value =
 				entry.count === undefined ? '' : String(entry.count);
 			countInput.dataset.sheetsmithFocus = `attr-${prefix}-${nameOf(entry)}-count`;
+			// Checked as it renders and on the commit. A bare number stored as
+			// a number has no text to be wrong about, which is the one thing
+			// `formulaProblem` knows that the parser does not.
+			fieldError(countInput, formulaProblem(entry.count));
 			countInput.addEventListener('change', () => {
 				const next = countInput.value.trim();
 				if (next === '') {
@@ -1746,6 +1750,7 @@ export function renderEntriesEditor(
 					const parsed = Number(next);
 					entry.count = Number.isFinite(parsed) ? parsed : next;
 				}
+				fieldError(countInput, formulaProblem(entry.count));
 				context.persist();
 			});
 

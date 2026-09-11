@@ -32,7 +32,7 @@ The registry contract in `src/components/contract.test.ts` runs the §4.1 checks
 ## Architecture
 
 - **Character note.** One frontmatter key (`sheet-layout`), all values in the body, one `##` section per component. Scalar components store fenced YAML; link-bearing components store markdown tables or prose. See `SPEC` §3.
-- **Layout file.** A separate vault file holding structure, formulas, function library, and reset triggers. No per-character data. Shared by many characters. Edited in a workspace pane of its own (`SPEC` §7); the settings tab keeps two preferences and a button that opens it.
+- **Layout file.** A separate vault file holding structure, formulas, function library, and reset triggers. No per-character data. Shared by many characters. Edited in a workspace pane of its own (`SPEC` §7); the settings tab keeps three preferences and a button that opens it.
 - **Sections key on the component's `label`**, which is also its heading. The `id` is stable identity for formula references, so renaming a label breaks no formulas but does require migrating existing notes.
 
 ## Component contract
@@ -54,6 +54,18 @@ eslint now enforces.
 Build **component by component, not layer by layer.** Take one component all the way through read, write, render, and tests before starting the next. Order so far: Card set, then Card (dropped when Card set first covered the card, rebuilt on top of it), Table, Pool, Track, Group, Tab set, Rich text, Image, Record set. The remaining five are variations. The layout schema assembles itself from component configs rather than being designed up front. See `SPEC` §12.
 
 Resist building the layout editor and the formula engine early. Both assume a working renderer and a proven file format, and both are the interesting parts, which is exactly why they are the trap.
+
+## Where to commit
+
+**Never on `main`.** Main holds released versions and gains commits only through
+one merge per release. Work happens on a `feat/`, `fix/` or `chore/` branch
+opened off the single open `release/<version>` branch, and a version branch
+accumulates several features before it ships. `/ship` opens the work branch,
+`/land-it` merges it back, and `/release` closes the cycle when the owner says
+so. A landed feature is never a release on its own.
+
+The model, including which prefix a route takes, is `docs/WORKFLOW.md`
+§ Branches.
 
 ## When to commit
 
@@ -78,11 +90,13 @@ change cheap to undo right up until the moment it is not.
 Verification is continuous and committing is not: run `npm test`, `npm run lint`
 and `npm run build` as often as they are useful.
 
-- `/land-it` is the only thing that commits, and only when invoked.
+- `/land-it` is the only thing that commits, and only when invoked. It also
+  merges the work branch into the version branch.
 - Subjects are Conventional Commits: `type: Subject`, standard types only, with
   the subject itself in the log's existing voice. `/land-it` carries the mapping
   and the traps.
-- Never push. That is always the user's call.
+- Never push. `/release` is the one skill that does, and only when the user runs
+  it.
 - Do not add `Co-Authored-By` trailers to commit messages.
 
 ## Commands
@@ -130,4 +144,4 @@ gitignored: it is Obsidian's CSS, and this repository is public.
   to. It stays committed, unlike `main.js`, because the release workflow and the
   harness both read it directly. A test fails if the two disagree.
 - Update `docs/SPEC.md` when a design decision changes, and move settled items out of §13 Open questions.
-- Follow `docs/PATTERNS.md`. Where the code does not yet match it, the gap is recorded in its §11 backlog rather than copied into new code.
+- Follow `docs/PATTERNS.md`. Where the code does not yet match it, the gap is recorded in `docs/BACKLOG.md` § Patterns rather than copied into new code.

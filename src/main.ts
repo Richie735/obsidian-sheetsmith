@@ -61,10 +61,23 @@ export default class SheetsmithPlugin extends Plugin {
 			DEFAULT_SETTINGS,
 			(await this.loadData()) as Partial<SheetsmithSettings>,
 		);
-		// Guard against untrimmed or emptied values already persisted.
+		/*
+		 * Guard against untrimmed or emptied values already persisted: whatever
+		 * the settings tab does to a typed value the loader has to do to a
+		 * stored one, or the effective folder depends on whether the tab
+		 * happened to be opened this session.
+		 *
+		 * **The two guards differ because the two empty values mean opposite
+		 * things.** An empty layout folder would relocate every lookup to the
+		 * vault root, so it falls back to the default folder name. An empty
+		 * character folder is the shipped value and means the app's own
+		 * **Default location for new notes** answers, so it is trimmed and kept
+		 * — a fallback here would invent a folder the reader never asked for.
+		 */
 		const folder = this.settings.layoutFolder.trim();
 		this.settings.layoutFolder =
 			folder === '' ? DEFAULT_SETTINGS.layoutFolder : folder;
+		this.settings.characterFolder = this.settings.characterFolder.trim();
 	}
 
 	async saveSettings() {

@@ -717,6 +717,71 @@ const DEFAULTS = [
 		size: EDITOR_FRAME,
 	},
 	{
+		/*
+		 * **A reset expression that will not parse, said on the field rather than
+		 * at the press** (`docs/features/reset-and-modifier-render-validation.md`).
+		 * `state=broken` gives the Spell list a second binding on **Long rest**,
+		 * acting on `Level` with a half-typed `mod(abilities.CON) *`, so the
+		 * parser's own sentence is under **Resets to** on first paint with
+		 * nothing typed and no commit fired. The binding above it is the ordinary
+		 * one `editor-reset-column` photographs, so the pair is what to read: the
+		 * marked field has to be legible as belonging to `Trigger 2` and not to
+		 * the row above it, which is what `.sheetsmith-reset-binding-detail`
+		 * closes the gap for.
+		 *
+		 * One theme, unlike the pair above. What is new here is a
+		 * `.sheetsmith-field-error` under a `Setting`'s text input, which is the
+		 * construction `editor-formula-error` and `editor-formula-error-dark`
+		 * already photograph in both — the dark half would be a second picture of
+		 * a message this feature did not write.
+		 */
+		name: 'editor-reset-formula-error',
+		query: 'surface=editor&theme=light&state=broken&open=tab_spells',
+		size: EDITOR_FRAME,
+	},
+	{
+		/*
+		 * **The pane at the vault's `Text` setting, which no editor view had.**
+		 * Two shots existed at `text=24` and both were `surface=sheet`, so §5's
+		 * "relative units follow the vault's text size" had never been checked
+		 * on the surface where most of a sheet is actually configured — and it
+		 * is not one message. `editor.css` declares `--font-smallest`, which is
+		 * `0.8em` and follows the setting, in six places against eight tokens
+		 * fixed in px: at Text 24 the six grow 1.5× while their neighbours hold,
+		 * so eight muted *secondary* labels render 48% larger than the 104
+		 * primary ones around them (`reference/legibility.md` §4, inverted
+		 * hierarchy). That is a pane-wide pass and a `docs/BACKLOG.md` § UI row,
+		 * not this feature; this view is what that row points at.
+		 *
+		 * It doubles as the verification shot for the one instance this feature
+		 * did fix: **Resets to** and **Acts on** now share `--font-ui-small`, so
+		 * the two messages of a binding measure the same here. At the default
+		 * setting that fix is 12.8px against 13px and no shot can show it, which
+		 * is why the view is at this one.
+		 *
+		 * `state=broken&open=tab_spells` is `editor-reset-formula-error`'s own
+		 * query, so the pair differ by the setting alone.
+		 *
+		 * **What it does not reach**, so nobody goes looking:
+		 * `.sheetsmith-field-name` is `display: none` above the 380px container
+		 * query, so it needs the narrow regime `docs/BACKLOG.md` already records
+		 * as unshot, and `.sheetsmith-preview-legend` is absent from this view.
+		 */
+		name: 'editor-reset-formula-error-large-text',
+		query:
+			'surface=editor&theme=light&state=broken&open=tab_spells&text=24',
+		/*
+		 * The smallest editor frame in the set, and measured rather than taken
+		 * from `EDITOR_FRAME`: at Text 24 every affected instance lands between
+		 * y=757 and y=1335 — the field error at 757, the footnote at 1034–1107,
+		 * the Columns header at 1247, the position labels at 1312 — each beside
+		 * a `.setting-item-name` holding at 13px. The pane grows 10–15% at this
+		 * setting and all of that growth is below this fold, which is a crop on
+		 * purpose, as `editor-threshold`'s is.
+		 */
+		size: '1500,1800',
+	},
+	{
 		name: 'editor-dark',
 		query: 'surface=editor&theme=dark&open=weapons',
 		size: EDITOR_FRAME,
@@ -736,6 +801,55 @@ const DEFAULTS = [
 		 */
 		name: 'editor-row-error',
 		query: 'surface=editor&theme=light&state=broken&open=skills',
+		size: EDITOR_FRAME,
+	},
+	{
+		/*
+		 * **A formula field saying what the parser makes of it**
+		 * (`docs/features/formula-field-errors.md`), on the panel's own
+		 * `kind: 'formula'` branch: `state=broken` gives the **Weight worn**
+		 * card a truncated `sum(inventory, Weight, Worn`, so the message is
+		 * there on first paint with nothing typed and no `change` fired.
+		 *
+		 * Both themes, because `--text-error` is a host variable and the light
+		 * theme is the half `docs/BACKLOG.md` measures at 4.20:1 — the one shot
+		 * where a reviewer can see what that ratio looks like under a red
+		 * outline.
+		 *
+		 * The canvas above it draws this card's own `?`, and the card beside it
+		 * — `encumbrance`, whose formula parses and cannot resolve — draws the
+		 * *same* `?`. That is the whole argument for the field: on a card the
+		 * two failures are one mark, and only the author's own field can tell
+		 * them apart. The unmarked half is `editor-formula-unresolved` below,
+		 * and it has to be a view of its own because a panel draws one
+		 * component's form at a time.
+		 */
+		name: 'editor-formula-error',
+		query: 'surface=editor&theme=light&state=broken&open=worn_weight',
+		size: EDITOR_FRAME,
+	},
+	{
+		name: 'editor-formula-error-dark',
+		query: 'surface=editor&theme=dark&state=broken&open=worn_weight',
+		size: EDITOR_FRAME,
+	},
+	{
+		/*
+		 * **Question 2 as a picture, and the view to look at first**
+		 * (`docs/features/formula-field-errors.md`): `encumbrance` reads
+		 * `sum(inventroy, Qty * Weight)` in this state — a misspelled table, so
+		 * it parses perfectly and can never resolve. Its **Derived** field is
+		 * therefore **unmarked**, beside a canvas drawing `?` for that very card.
+		 *
+		 * What it is evidence for: this feature checks an expression's text and
+		 * nothing about its names. A marker that fired here would fire on four of
+		 * the six formulas a real system asks for — a modifier over a score
+		 * nothing has published yet, a pool fraction over a max of zero, a stat
+		 * off an unchosen frame, a sum over an empty inventory — and a marker
+		 * that fires on things that are not wrong is one that gets switched off.
+		 */
+		name: 'editor-formula-unresolved',
+		query: 'surface=editor&theme=light&state=broken&open=encumbrance',
 		size: EDITOR_FRAME,
 	},
 	{
@@ -1006,6 +1120,15 @@ const DEFAULTS = [
 		size: '1000,700',
 	},
 	{
+		// Both themes, because `docs/UI.md` §11's first bullet asks for both and
+		// this state is one sentence and one control: there is nothing else on
+		// the pane for a theme to get right, and the one control is the only
+		// `mod-cta` this plugin draws.
+		name: 'editor-vacant-dark',
+		query: 'surface=editor&theme=dark&layout=none',
+		size: '1000,700',
+	},
+	{
 		// A layout file that will not parse. The order is the load-bearing part:
 		// the picker first, because it is how an author leaves a layout they
 		// cannot edit, then the message where the tree would be — and no panel, so
@@ -1125,6 +1248,33 @@ const DEFAULTS = [
 	},
 	{ name: 'settings-light', query: 'surface=settings&theme=light', size: '1000,520' },
 	{ name: 'settings-dark', query: 'surface=settings&theme=dark', size: '1000,520' },
+	/*
+	 * The narrow regime, and until now the tab had none — which made `UI.md`
+	 * §11's claim that the set covers "the narrow reflow on each" of the three
+	 * screens false for this one.
+	 *
+	 * The two shots above run at the Full frame, where Obsidian's
+	 * `--setting-group-max-width` caps the group at 700px and the description
+	 * column is 464px. Nothing wraps awkwardly there, which is exactly why it
+	 * proves nothing: **every wrapping question on this tab lives below the cap**,
+	 * where the column is 286px and both folder descriptions run to four lines.
+	 * That is where the `BACKLOG` § UI row about a quoted app path ending a line
+	 * on its arrow is visible, and where its measurement has to be taken.
+	 *
+	 * `1000,620` rather than the 520 above: the card's bottom sits at 556px at
+	 * this width, and the harness bar rewraps to a second row at some widths
+	 * (its own § UI row), which a 560px frame would let eat the last row.
+	 */
+	{
+		name: 'settings-620-light',
+		query: 'surface=settings&theme=light&width=620',
+		size: '1000,620',
+	},
+	{
+		name: 'settings-620-dark',
+		query: 'surface=settings&theme=dark&width=620',
+		size: '1000,620',
+	},
 	{
 		// The stylesheet carries five `prefers-reduced-motion` blocks and the
 		// gesture code two more branches, and none of it was ever rendered —

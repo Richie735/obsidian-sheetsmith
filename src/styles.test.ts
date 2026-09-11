@@ -1093,6 +1093,16 @@ describe('a link over a field survives its own press', () => {
 	 *
 	 * Invisible in every other check: happy-dom has no hit testing and a
 	 * dispatched click skips it, so the unit tests pass either way.
+	 *
+	 * **The mechanism moved and the rule did not.** This was
+	 * `:has(.sheetsmith-table-input:focus)` in the stylesheet, and Obsidian's
+	 * review reports `:has()` as a performance risk, so it is now a class that
+	 * `interaction/field-focus-flag.ts` stamps from the field's own focus. The
+	 * container's focus is still the thing that must not drive it — and there is
+	 * now a *second* way to write that mistake, which is why this check grew a
+	 * half: `focusin`/`focusout` bubble, so keying the flag on those would flag
+	 * the container when the anchor takes focus, which is `:focus-within` again
+	 * with extra steps.
 	 */
 	it('hides the layer on the field\'s focus, never the container\'s', () => {
 		// Comments stripped first: the rule's own comment names the selector it
@@ -1108,7 +1118,30 @@ describe('a link over a field survives its own press', () => {
 				block.slice(0, block.indexOf('{')).includes('.sheetsmith-table-linked'),
 		);
 		expect(byContainer).toEqual([]);
-		expect(withoutComments).toContain(':has(.sheetsmith-table-input:focus)');
+		// The class the flag module stamps, which is what the layer rules key on
+		// now.
+		expect(withoutComments).toContain('.sheetsmith-table-field-focused');
+	});
+
+	/*
+	 * The other half of the same rule, one layer down: the flag is only keyed on
+	 * the *field* if the listeners do not bubble.
+	 */
+	it('stamps the flag from listeners that do not bubble', () => {
+		// Both comment kinds stripped, block and line: the module argues about
+		// `focusin`/`focusout` in prose at the site, so a check that read its
+		// comments would find the very names it forbids.
+		const module = readFileSync(
+			new URL('./interaction/field-focus-flag.ts', import.meta.url),
+			'utf8',
+		)
+			.replace(/\/\*[\s\S]*?\*\//g, '')
+			.replace(/^\s*\/\/.*$/gm, '');
+		expect(module).toContain("addEventListener('focus'");
+		expect(module).toContain("addEventListener('blur'");
+		// The bubbling pair is the `:focus-within` mistake wearing another name.
+		expect(module).not.toContain('focusin');
+		expect(module).not.toContain('focusout');
 	});
 
 	it('would catch the selector it forbids', () => {

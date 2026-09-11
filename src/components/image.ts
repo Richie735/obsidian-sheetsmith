@@ -164,7 +164,6 @@ export const image: ComponentDefinition<ImageConfig, ImageData> = {
 	 * `read` reports it.
 	 */
 	render(container, config, data, context): void {
-		const doc = container.ownerDocument;
 		container.replaceChildren();
 
 		const block = container.createDiv();
@@ -193,10 +192,11 @@ export const image: ComponentDefinition<ImageConfig, ImageData> = {
 
 		const box = block.createDiv({ cls: ['sheetsmith-placed-box', 'sheetsmith-image-box'] });
 
-		// `createElement`, not a helper, and the position is the whole reason
-		// (`PATTERNS.md` §5). This is appended as the last statement of `render`,
-		// *after* `renderPictureFrame` has filled the box, so it is the box's last
-		// child. It has to exist before that call because the call is handed it.
+		// The *global* `createDiv`, which attaches to nothing, and the position is
+		// the whole reason (`PATTERNS.md` §5). This is appended as the last
+		// statement of `render`, *after* `renderPictureFrame` has filled the box,
+		// so it is the box's last child. It has to exist before that call because
+		// the call is handed it.
 		//
 		// **The sweep that moved this component onto the helpers got this wrong
 		// and shipped it**, which is why the note is this long: `box.createDiv`
@@ -206,9 +206,10 @@ export const image: ComponentDefinition<ImageConfig, ImageData> = {
 		// name and cannot see through a function call, and neither the tests nor
 		// the byte-identical harness shots can see an invisible element move.
 		// `pool.test.ts` now asserts this order for Image as well as Pool.
-		const status = doc.createElement('div');
-		status.classList.add('sheetsmith-sr-only');
-		status.setAttribute('aria-live', 'polite');
+		const status = createDiv({
+			cls: 'sheetsmith-sr-only',
+			attr: { 'aria-live': 'polite' },
+		});
 
 		/*
 		 * The picture, the field, the press and every failure are

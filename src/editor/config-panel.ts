@@ -93,6 +93,7 @@ import { WalkEntry, walkComponents } from '../parse/layout-walk';
 import { copyableName } from './copyable-name';
 import { onCommit } from './field-commit';
 import { showFieldError } from './field-error';
+import { formulaProblem } from './field-formula';
 import { groupHeading, panelTitle } from './form-group';
 import {
 	commitFunctionLibrary,
@@ -817,12 +818,29 @@ export class ConfigPanel {
 			setting.addText((text) => {
 				if (field.kind === 'number') text.inputEl.type = 'number';
 				const current = record[field.key];
-				text.setValue(
+				const shown =
 					typeof current === 'string' || typeof current === 'number'
 						? String(current)
-						: '',
-				);
+						: '';
+				text.setValue(shown);
 				text.inputEl.dataset.sheetsmithFocus = `cfg-${config.id}-${field.key}`;
+				// A formula field is checked as it is drawn, not only on the
+				// keystroke that committed it: a layout file is hand-edited and
+				// shared, so a stored expression that will not parse would
+				// otherwise look perfectly normal here beside a card rendered
+				// entirely as an error. `renderFunctionLibrary` is the shape —
+				// derive the verdict from the model on every render rather than
+				// remember one — and `null` is passed as readily as a message,
+				// because a field that validates clean and one nobody has
+				// touched are the same state.
+				//
+				// Only a formula field. The kinds beside it *revert* on a bad
+				// commit, so their message belongs to a value that is no longer
+				// in the input and clearing it here would drop the complaint
+				// that `restoreFieldErrors` exists to replay.
+				if (field.kind === 'formula') {
+					this.fieldError(text.inputEl, formulaProblem(shown));
+				}
 				onCommit(text, (raw) => {
 					const trimmed = raw.trim();
 					if (trimmed === '') {
@@ -840,7 +858,15 @@ export class ConfigPanel {
 						this.fieldError(text.inputEl, null);
 						record[field.key] = parsed;
 					} else {
-						this.fieldError(text.inputEl, null);
+						// Stored either way, formula or not. An expression is
+						// invalid for most of the time it is being written, so a
+						// field that refused what its own checker refuses is a
+						// field an author cannot type into — the ruling the
+						// function library already carries (SPEC §5).
+						this.fieldError(
+							text.inputEl,
+							field.kind === 'formula' ? formulaProblem(trimmed) : null,
+						);
 						record[field.key] = trimmed;
 					}
 					this.host.persist();

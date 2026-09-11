@@ -239,3 +239,59 @@ describe('&bounded has an opinion about every link in the chain', () => {
 		expect(unclaimed).toEqual([]);
 	});
 });
+
+/*
+ * The call-to-action rule sits **outside** `@layer harness-fallback`, and that
+ * position is the whole of whether it works.
+ *
+ * It shipped inside the layer once and painted nothing. `calibrate.mjs` refuses
+ * `button.mod-cta` by name — its bare-element entries are anchored
+ * `/^button(?![.#\w-])/` so the app's rule cannot outrank a plugin class that
+ * should beat it — so nothing calibrated paints a CTA and this fallback is the
+ * only thing that can. But `obsidian.generated.css` is unlayered, and an
+ * unlayered declaration beats a layered one at any specificity, so the
+ * calibrated `button:not(.clickable-icon) { background-color:
+ * var(--interactive-normal) }` won every time. The tab's only call to action
+ * photographed white on white, and a design review read it that way.
+ *
+ * Nothing caught that, and nothing would catch it coming back: the rule was
+ * right there in the file, looking applied. A shot shows it — `settings-light`
+ * and `editor-vacant` both carry an accent button now — but a shot is read by a
+ * person, and this is a one-character edit away from silently reverting.
+ */
+describe('the call-to-action fallback can actually win', () => {
+	/** Where `@layer harness-fallback {` closes, by brace depth. */
+	function layerEnd(): number {
+		const open = CSS.indexOf('@layer harness-fallback {');
+		expect(open, '@layer harness-fallback { is missing').toBeGreaterThan(-1);
+		let depth = 0;
+		for (let i = CSS.indexOf('{', open); i < CSS.length; i++) {
+			if (CSS.startsWith('/*', i)) {
+				i = CSS.indexOf('*/', i) + 1;
+				continue;
+			}
+			if (CSS[i] === '{') depth++;
+			else if (CSS[i] === '}' && --depth === 0) return i;
+		}
+		throw new Error('@layer harness-fallback never closes');
+	}
+
+	it('keeps the mod-cta rule below the fallback layer', () => {
+		const rule = CSS.indexOf('button.mod-cta {');
+		expect(rule, 'no mod-cta rule in theme.css').toBeGreaterThan(-1);
+		expect(rule).toBeGreaterThan(layerEnd());
+	});
+
+	it('outweighs the bare-button rule the calibrated sheet brings', () => {
+		// (0,2,1) against the calibrated (0,1,1). Unlayered alone is not enough:
+		// a bare `button.mod-cta` would tie and lose on source order, because
+		// index.html loads the generated sheet after this one.
+		const cta = selectors().filter((selector) =>
+			selector.includes('button.mod-cta'),
+		);
+		expect(cta.length).toBeGreaterThan(0);
+		for (const selector of cta) {
+			expect(selector, selector).toContain(TAB_SCOPE);
+		}
+	});
+});

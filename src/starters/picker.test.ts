@@ -57,6 +57,7 @@ describe('installing a starter', () => {
 		expect(result).toEqual({
 			ok: true,
 			message: `Added "Starter Forged in the Dark" to ${LAYOUT_FOLDER}.`,
+			name: 'Starter Forged in the Dark',
 		});
 		expect(app.vault.getFolderByPath(LAYOUT_FOLDER)).not.toBeNull();
 		expect(app.vault.getFileByPath(pathOf(forged.name))).not.toBeNull();
@@ -140,6 +141,7 @@ describe('installing a starter', () => {
 		expect(result).toEqual({
 			ok: true,
 			message: 'Added "Starter Forged in the Dark" to Elsewhere/Sheets.',
+			name: 'Starter Forged in the Dark',
 		});
 		expect(
 			app.vault.getFileByPath('Elsewhere/Sheets/Starter Forged in the Dark.json'),
@@ -193,6 +195,19 @@ describe('the suggester', () => {
 		expect(modal().getSuggestions('ranks')).toHaveLength(1);
 		expect(modal().getSuggestions('5e')).toHaveLength(1);
 		expect(modal().getSuggestions('zzz')).toEqual([]);
+	});
+
+	it('reads a padded, mixed-case query the same way', () => {
+		// **`src/layout-picker.ts` holds the same normalisation**, and PATTERNS
+		// §1 permits two copies of one policy only under a test driving both
+		// over the same cases. This is that case on this copy: the layout
+		// picker's suite drives `'  5E  '`, and until this existed the trim and
+		// the case fold here were spelled and never asked about — so one copy
+		// could have become case-sensitive with nothing reporting it.
+		expect(modal().getSuggestions('  STRESS  ').map((one) => one.name)).toEqual([
+			'Starter Forged in the Dark',
+		]);
+		expect(modal().getSuggestions('   ')).toHaveLength(STARTERS.length);
 	});
 
 	it('installs the chosen starter and says where it went', async () => {

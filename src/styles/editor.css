@@ -104,10 +104,15 @@
    template declares is reserved whether or not anything is in it, so a layout
    whose file will not parse — picker, one line of error where the tree would
    be, no panel — would otherwise sit squeezed beside 620px of empty pane. The
-   editor answers by not drawing a panel, and `:has()` is what makes that
-   enough: the rule is true by construction rather than by anyone remembering
-   to stamp a class beside it. */
-.sheetsmith-layout-editor:has(> .sheetsmith-editor-panel) {
+   editor answers by not drawing a panel, and this rule has to see that.
+
+   `.sheetsmith-editor-split`, stamped by `layout-editor.ts` on the statement
+   that creates the panel. This was `:has(> .sheetsmith-editor-panel)`, which
+   was the better rule — true by construction, with nobody to remember it — and
+   the class is what a linter warning about `:has()` costs. Putting the
+   `addClass` on the same statement as the `createDiv` is the nearest thing to
+   "by construction" that a class can manage. */
+.sheetsmith-layout-editor.sheetsmith-editor-split {
 		grid-template-columns: minmax(0, 1fr)
 			min(620px, calc((100% - var(--size-4-4)) / 2));
 		height: 100%;
@@ -132,8 +137,8 @@
 
    Only inside the two-column branch. Stacked, the panel is *under* the tree and
    must scroll with it — two nested scrollers there would be a scroll trap. */
-.sheetsmith-layout-editor:has(> .sheetsmith-editor-panel) > .sheetsmith-editor-outline,
-.sheetsmith-layout-editor:has(> .sheetsmith-editor-panel) > .sheetsmith-editor-panel {
+.sheetsmith-editor-split > .sheetsmith-editor-outline,
+.sheetsmith-editor-split > .sheetsmith-editor-panel {
 		max-height: 100%;
 		overflow-y: auto;
 	}
@@ -266,11 +271,26 @@
    own margin, which is then the only gap in the list and falls exactly where the
    boundary is.
 
-   `:has()` rather than a class on the head row, because whether a binding has
-   continuation rows at all depends on the component and the action — a Pool with
-   no buffer on a `full` reset has none — and asking "is a detail row next"
-   answers that without the JS having to work it out before it draws anything. */
-.setting-item:has(+ .sheetsmith-reset-binding-detail) {
+   `.sheetsmith-reset-binding-head`, stamped on the previous sibling by the
+   function that creates a detail row. This was
+   `:has(+ .sheetsmith-reset-binding-detail)`, and the reason it was preferred
+   still stands: whether a binding has continuation rows at all depends on the
+   component and the action — a Pool with no buffer on a `full` reset has none —
+   so asking "is a detail row next" answered that without the JS working it out
+   in advance. The class does not need it worked out in advance either, because
+   it is stamped *by* the row that answers the question, at the moment it
+   appears; it is a worse rule only in that it can now be deleted by accident.
+
+   Scoped under the pane, and the scope is the whole of what makes the `:has()`
+   affordable. Bare, the subject is `.setting-item` — Obsidian's own class, worn
+   by every row in the app's settings modal and in every other plugin's tab — so
+   the sibling check is armed on all of them and any insertion next to one of
+   them re-runs it, to answer a question only this pane can ever answer yes to.
+   The scope confines that invalidation to the editor's own subtree, which is
+   the Obsidian guideline's actual complaint about `:has()`; it also reads as
+   plugin CSS rather than as a rule about the app's settings rows. */
+.sheetsmith-layout-editor-pane
+	.setting-item.sheetsmith-reset-binding-head {
 	margin-bottom: 0;
 	border-bottom-left-radius: 0;
 	border-bottom-right-radius: 0;
@@ -846,8 +866,25 @@
 }
 
 /* Inside a field the message belongs under its own input, reading left to
-   right like everything else in the column rather than pinned to the right. */
-.sheetsmith-field > .sheetsmith-field-error {
+   right like everything else in the column rather than pinned to the right.
+
+   `.sheetsmith-detail-field` is on the same rule rather than in a fifth block
+   of its own, because it is the same construction: both are
+   `display: flex; flex-direction: column`, so a message in either stacks under
+   a left-aligned control and has nothing to be pinned to the right of, and
+   `flex-basis: 100%` would size it along the column's axis. One construction
+   cannot have two answers.
+
+   **One shipped message rides it, not three.** A level column's **Level names**
+   is `labelled(detail, …)` and so a child of the detail field, and it was
+   right-aligned there until this selector existed. **Levels**, **Minimum** and
+   **Maximum** are each a `.sheetsmith-position-field` *inside* the detail line,
+   which has its own rule below — centred, `max-width: 8em` — so the `>` here
+   deliberately does not reach them and they are unmoved. Written down because
+   the feature that added this selector first claimed all four
+   (`docs/features/formula-field-errors.md`, question 5). */
+.sheetsmith-field > .sheetsmith-field-error,
+.sheetsmith-detail-field > .sheetsmith-field-error {
 	flex-basis: auto;
 	padding-left: 0;
 	text-align: left;
@@ -917,7 +954,18 @@
 	outline-offset: -1px;
 }
 
-.setting-item-control:has(.sheetsmith-field-error) {
+/* A message under its field rather than beside it: the control is a flex row and
+   the error has `flex-basis: 100%` below, which only moves it to its own line if
+   the row is allowed to wrap.
+
+   `.sheetsmith-control-has-error`, recomputed by `field-error.ts` from what the
+   control actually holds each time a message is added or cleared. It replaces
+   `:has(.sheetsmith-field-error)`, and it also makes the scope redundant: the
+   old selector's real cost was arming a descendant `:has()` on every
+   `.setting-item-control` in every settings pane Obsidian draws, and a class
+   the editor is the only writer of arms nothing. */
+.sheetsmith-layout-editor-pane
+	.setting-item-control.sheetsmith-control-has-error {
 	flex-wrap: wrap;
 }
 
@@ -928,7 +976,7 @@
 	font-size: var(--font-smallest);
 }
 
-/* The reset column picker's own message, held at the pane's fixed size.
+/* A reset binding's own messages, held at the pane's fixed size.
 
    `--font-smallest` is `0.8em` in Obsidian's own CSS where `--font-ui-small` is
    13px, so a message in the first grows with the vault's **Text** setting and one
@@ -938,11 +986,21 @@
    have and lost, because it was drawn in a boxed `.sheetsmith-error` before the
    message moved onto the control.
 
-   Scoped to this one message rather than to the class. That the pane's two error
-   treatments disagree about whether a message scales is pane-wide and older than
-   this row; picking a side for all of them is a decision about every field in the
-   editor, and this only restores what this row already had. */
-.sheetsmith-field-error[data-sheetsmith-for^='reset-column-'] {
+   Scoped to this binding's own messages rather than to the class. That the
+   pane's two error treatments disagree about whether a message scales is
+   pane-wide and older than this row; picking a side for all of them is a
+   decision about every field in the editor, and this only restores what this
+   row already had.
+
+   **Both messages of the block, not just the picker's.** **Resets to** is the
+   next row down and reports from the same render
+   (`docs/features/reset-and-modifier-render-validation.md`), so a binding
+   holding both faults drew them 40px apart at two sizes — 13px under the
+   picker and 19.2px under the expression at `text=24`. One form disagreeing
+   with itself is narrower than the pane-wide call above and is not the same
+   question. */
+.sheetsmith-field-error[data-sheetsmith-for^='reset-column-'],
+.sheetsmith-field-error[data-sheetsmith-for^='reset-to-'] {
 	font-size: var(--font-ui-small);
 }
 

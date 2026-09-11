@@ -1,13 +1,12 @@
 import {
-	App,
 	ButtonComponent,
 	debounce,
-	Modal,
 	Notice,
 	Setting,
 	TFile,
 } from 'obsidian';
 import { acceptsChildren } from './accepts-children';
+import { describedRow } from './described-row';
 import { listComponentTypes, paletteEntries } from '../components';
 import { Canvas } from './canvas';
 import { componentDisplayName } from './component-name';
@@ -15,7 +14,8 @@ import { ConfigPanel } from './config-panel';
 import { showFieldError } from './field-error';
 import { focusToken } from './focus-token';
 import { ConfirmModal } from '../ui/confirm-modal';
-import { createLayout, listLayouts } from '../layouts';
+import { NEW_LAYOUT_LABEL, promptNewLayout } from './new-layout';
+import { listLayouts } from '../layouts';
 import { ListContext } from './list-fields';
 import type SheetsmithPlugin from '../main';
 import { Layout, parseLayout, serialiseLayout } from '../parse/layout';
@@ -24,9 +24,6 @@ import { nextFreeRow, renderTree, SHEET_DESTINATION } from './tree';
 import { ComponentConfig } from '../types';
 import { UndoStack } from './undo-stack';
 import { childIsPlaced } from '../view/grid-cells';
-
-/** Dropdown sentinel; layout file names can never collide with it. */
-const CREATE_LAYOUT_OPTION = '::create-layout::';
 
 /** Ties the add menu to the description under it, for a screen reader. */
 const ADD_DESCRIPTION_ID = 'sheetsmith-add-description';
@@ -411,6 +408,12 @@ export class LayoutEditorSection {
 		// Past every giving-up path, so this is where the second column earns its
 		// track.
 		const panel = grid.createDiv('sheetsmith-editor-panel');
+		// What the two-column rule keys on. It used to read
+		// `:has(> .sheetsmith-editor-panel)`, which was true by construction and
+		// needed nobody to remember this line; the class is the same fact stamped
+		// by hand, and it is stamped *here* — the one statement that creates a
+		// panel — so the two cannot disagree without this line being deleted.
+		grid.addClass('sheetsmith-editor-split');
 		this.regions = { outline, panel };
 
 		// A selection naming nothing falls back to the layout's own settings,
@@ -475,9 +478,13 @@ export class LayoutEditorSection {
 				text: 'No layouts yet.',
 			});
 			new ButtonComponent(vacant)
-				.setButtonText('Create layout')
+				// The same gesture and the same words as the row's button, which
+				// is what makes the modal's **Start from** row the one place
+				// cold-start import is reachable from. A CTA here, unlike on the
+				// row, because here it is the only thing on screen.
+				.setButtonText(NEW_LAYOUT_LABEL)
 				.setCta()
-				.onClick(() => this.promptCreateLayout());
+				.onClick(() => this.promptForNewLayout());
 		});
 	}
 
@@ -558,21 +565,39 @@ export class LayoutEditorSection {
 				for (const file of files) {
 					dropdown.addOption(file.basename, file.basename);
 				}
-				dropdown.addOption(CREATE_LAYOUT_OPTION, 'New layout…');
+				// **Nouns only.** Creating a layout used to be two options in
+				// here — `New layout…` and `Import a layout…` — and the row rule
+				// that put them there is genuine but does not reach them: the
+				// dropdown answers *which layout is open* and the row's buttons
+				// *act on* the one that is, and create does neither. It acts on
+				// the **folder**, which is a third kind of thing, and it was
+				// filed here by a side effect ("it ends with a different layout
+				// open") rather than by what it is. Delete is the tell that the
+				// partition was already leaking: it ends with a different layout
+				// open too, and it is correctly a button
+				// (`docs/features/starting-a-new-layout.md`).
 				dropdown.setValue(this.host.layoutName ?? '');
 				dropdown.selectEl.dataset.sheetsmithFocus = 'layout-picker';
-				dropdown.onChange((value) => {
-					if (value === CREATE_LAYOUT_OPTION) {
-						// The modal redraws on close either way, which also
-						// snaps the dropdown back if the user cancels.
-						this.promptCreateLayout();
-						return;
-					}
-					this.releaseLayout();
-					this.host.setLayoutName(value);
-					this.redraw();
-				});
+				dropdown.onChange((value) => this.openLayout(value));
 			})
+			.addButton((button) =>
+				button
+					// Not a CTA: creating a layout is not this pane's primary
+					// action. A plain button on a row of dropdowns is the **Add
+					// component** row's own precedent, and it goes before the
+					// two icon buttons so the irreversible one stays last.
+					.setButtonText(NEW_LAYOUT_LABEL)
+					.onClick(() => this.promptForNewLayout()),
+			)
+			.addExtraButton((button) =>
+				button
+					// Before the trash rather than after it, so the one
+					// irreversible control on the row stays last: a press that
+					// lands one control off its mark then hits the harmless one.
+					.setIcon('copy')
+					.setTooltip('Copy layout JSON')
+					.onClick(() => void this.copyLayoutJson(container, files)),
+			)
 			.addExtraButton((button) =>
 				button
 					.setIcon('trash')
@@ -592,6 +617,78 @@ export class LayoutEditorSection {
 			);
 	}
 
+	/**
+	 * Put the open layout's own bytes on the clipboard
+	 * (`docs/features/layout-import-export.md`).
+	 *
+	 * **The file's bytes, not a re-serialisation of them.** A layout carrying a
+	 * key this version's parser does not know would have it silently dropped by
+	 * a parse-then-serialise round trip, which is the one thing a share must not
+	 * do — and a layout that will not parse at all is exportable on purpose,
+	 * since handing the broken file to somebody who can read it is a reasonable
+	 * thing to want. Nothing is written anywhere, so there is no writer here for
+	 * the one-writer-one-spelling rule to be about.
+	 *
+	 * **It guards rather than disabling.** With no layout selected — a vault
+	 * whose folder holds none — this returns silently, which is `deleteLayout`'s
+	 * existing spelling one control to the right. Disabling it would look
+	 * identical to a live control (`setDisabled` reaches no paint for a
+	 * `.clickable-icon`) and would make this the fifth member of a
+	 * `docs/BACKLOG.md` row waiting on one decision about four.
+	 *
+	 * The clipboard comes off the container's own window rather than the global
+	 * one, which is `docs/PATTERNS.md` §5: a pane may be rendered into a popout.
+	 */
+	private async copyLayoutJson(
+		container: HTMLElement,
+		files: TFile[],
+	): Promise<void> {
+		const file = files.find(
+			(candidate) => candidate.basename === this.host.layoutName,
+		);
+		if (!file) return;
+		let text: string;
+		try {
+			text = await this.plugin.app.vault.read(file);
+		} catch (error) {
+			// The vault's own reason: the file was trashed or renamed under a
+			// pane that has not redrawn yet.
+			new Notice(error instanceof Error ? error.message : String(error));
+			return;
+		}
+		try {
+			await container.win.navigator.clipboard.writeText(text);
+		} catch {
+			/*
+			 * Deliberately the same words `src/editor/copyable-name.ts` gives,
+			 * and deliberately not the same code. The argument is here rather
+			 * than cited, because that file's header does not make it: it argues
+			 * only why the module exists at all, and says nothing about the
+			 * clipboard write or about this sentence.
+			 *
+			 * `copyableName` exports a builder for a `<code>` control with the
+			 * copy bound inside it, so a settings-row button cannot reach the
+			 * write without splitting the function in two — which is a change to
+			 * a shipped control for the benefit of one caller.
+			 *
+			 * And only half of what such a module would hold is actually common:
+			 * this failure sentence is shared, while the success sentences are
+			 * not — a chip says `Copied "x"` about a name, and this says
+			 * `Copied "x" to the clipboard.` about a file. So the shared thing is
+			 * one short sentence rather than the gesture, which `docs/PATTERNS.md`
+			 * §1's one-step tier would extract on a second consumer if the
+			 * *whole* policy were shared. **A third caller is where that gets
+			 * revisited**, and it is the honest cost of two copies until then.
+			 */
+			new Notice('Could not copy to the clipboard.');
+			return;
+		}
+		// The layout is named because the row can only show one at a time and a
+		// bare "Copied." leaves a reader wondering which; "to the clipboard" is
+		// the half that says where, in the failure sentence's own words.
+		new Notice(`Copied "${file.basename}" to the clipboard.`);
+	}
+
 	private async deleteLayout(file: TFile): Promise<void> {
 		await this.plugin.app.fileManager.trashFile(file);
 		this.releaseLayout();
@@ -599,26 +696,51 @@ export class LayoutEditorSection {
 		this.redraw();
 	}
 
-	private promptCreateLayout(): void {
-		new NameModal(
+	/**
+	 * Ask what a new layout starts from, and open whatever lands.
+	 *
+	 * **No cancel arm**, which is the whole of what moving this off the dropdown
+	 * bought: a sentinel option left the `<select>` showing the wrong value, so
+	 * both prompts used to take an `onCancel` that redrew the pane purely to
+	 * snap it back. A button press changes no `<select>` value, so cancelling
+	 * now leaves the pane exactly as it was.
+	 *
+	 * The pane hands over the layout it has open, which is what **Layout to
+	 * copy** prefills to, and a basename rather than the layout it holds in
+	 * memory: `startLayout` reads the source's file, so a copy cannot differ
+	 * from what is on disk (`docs/features/starting-a-new-layout.md`).
+	 */
+	// Named apart from the module function it calls: a method and an import
+	// spelled the same read as recursion at a glance.
+	private promptForNewLayout(): void {
+		promptNewLayout(
 			this.plugin.app,
-			(name) => void this.createLayoutNamed(name),
-			() => this.redraw(),
-		).open();
+			this.plugin.settings.layoutFolder,
+			this.host.layoutName,
+			(name) => this.openLayout(name),
+		);
 	}
 
-	private async createLayoutNamed(name: string): Promise<void> {
-		try {
-			await createLayout(
-				this.plugin.app,
-				this.plugin.settings.layoutFolder,
-				name,
-			);
-		} catch (error) {
-			new Notice(error instanceof Error ? error.message : String(error));
-			this.redraw();
-			return;
-		}
+	/**
+	 * Open a layout in this pane, by name.
+	 *
+	 * Three calls in one order, shared rather than spelled three times:
+	 * `docs/PATTERNS.md` §1's one-step tier is why this is a name rather than a
+	 * copy, since the only thing a guard test over the copies could assert is
+	 * that they still call the three in the same order — while what they were
+	 * free to drift about is whether a pane keeps open a layout it no longer
+	 * has.
+	 *
+	 * It arrived as `openLanded` over two callers, both of which had *just
+	 * written* a file, and the third caller is why the name moved: the dropdown
+	 * opens a layout that has been there all along, and a reader meeting
+	 * `openLanded(value)` there would look for the write. §1 asks that a shared
+	 * thing be named for the behaviour, and the behaviour is opening one.
+	 *
+	 * `deleteLayout` deliberately does not call it: it names *no* layout, and a
+	 * helper taking `string | null` would be one name over two different jobs.
+	 */
+	private openLayout(name: string): void {
 		this.releaseLayout();
 		this.host.setLayoutName(name);
 		this.redraw();
@@ -650,49 +772,26 @@ export class LayoutEditorSection {
 
 		const row = new Setting(container).setName('Add component');
 		/*
-		 * The description goes *below* the row rather than under the name, and
-		 * that is a layout decision rather than a styling one (docs/UI.md §12).
-		 * In the info column it is copy that grows from nothing to several lines
-		 * depending on which option is highlighted, and a settings row is a
-		 * centred flex line: the info column widened, the control column wrapped,
-		 * and the destination dropdown and **Add** dropped about 35px while the
-		 * menu kept the first line. So the button an author presses next moved
-		 * while they were still choosing what to press it for.
+		 * The entry's own description, below the menu it was chosen from
+		 * (`docs/UI.md` §9, `editor/described-row.ts`, which holds why it sits
+		 * there and what the treatment is). A dropdown line is one or two words,
+		 * and SPEC §13's warning about the palette is that a menu nobody can
+		 * read is worse than the type list it replaced — so what a prefill is
+		 * *for* has to be on screen, not only in the code. A bare type has none
+		 * and the line is empty, which is the truth: a type's name is all this
+		 * editor has ever offered for one.
 		 *
-		 * Moved rather than reserved. Reserving a line of height shows an empty
-		 * one for every bare type and only fits the shortest description anyway,
-		 * where an entry's runs to several at a real settings width. Out here
-		 * the first line — name, menu, destination, **Add** — is a fixed height
-		 * whatever is selected, and the description grows downward into space
-		 * nothing has been placed in. `descEl` keeps its own class and Obsidian's
-		 * own treatment; only where it sits changes.
+		 * **A module literal is safe for the id here**, and it is the reason the
+		 * shared module takes one rather than generating it: this row is drawn
+		 * once per render and `redraw` replaces the container's children, so
+		 * only one element ever carries it.
 		 */
-		row.settingEl.addClass('sheetsmith-add-row', 'sheetsmith-wrapping-row');
-		row.settingEl.appendChild(row.descEl);
-		/*
-		 * And named, so the menu is described by it (docs/UI.md §6). The
-		 * description is the only explanation an entry gets, and choosing an
-		 * option repaints it — painted alone, a screen reader hears "Inventory"
-		 * and nothing else. A literal id is safe here because the row is drawn
-		 * once per render and `redraw` replaces the container's children.
-		 *
-		 * The empty description a bare type leaves is `display: none`, which
-		 * assistive tech skips, so the association costs a type nothing.
-		 */
-		row.descEl.id = ADD_DESCRIPTION_ID;
-		/*
-		 * The entry's own description, below the menu it was chosen from. A
-		 * dropdown line is one or two words, and SPEC §13's warning about the
-		 * palette is that a menu nobody can read is worse than the type list it
-		 * replaced — so what a prefill is *for* has to be on screen, not only in
-		 * the code. A bare type has none and the line is empty, which is the
-		 * truth: a type's name is all this editor has ever offered for one.
-		 */
-		const describe = (value: string): void => {
-			row.setDesc(
+		const described = describedRow(
+			row,
+			ADD_DESCRIPTION_ID,
+			(value) =>
 				choices.find((choice) => choice.value === value)?.description ?? '',
-			);
-		};
+		);
 		row.addDropdown((dropdown) => {
 			for (const choice of choices) {
 				// An entry sits one level under the type it prefills. It is what
@@ -706,13 +805,13 @@ export class LayoutEditorSection {
 			}
 			dropdown.setValue(chosen);
 			dropdown.selectEl.dataset.sheetsmithFocus = 'add-choice';
-			dropdown.selectEl.setAttribute('aria-describedby', ADD_DESCRIPTION_ID);
+			described.describes(dropdown.selectEl);
 			dropdown.onChange((value) => {
 				chosen = value;
-				describe(value);
+				described.describe(value);
 			});
 		});
-		describe(chosen);
+		described.describe(chosen);
 
 		// Only where there is somewhere else to put one. A dropdown offering the
 		// sheet and nothing else says a layout has containers when it has none.
@@ -910,66 +1009,6 @@ export class LayoutEditorSection {
 		return true;
 	}
 }
-
-class NameModal extends Modal {
-	private onSubmit: (name: string) => void;
-	private onCancel: () => void;
-	private submitted = false;
-
-	constructor(
-		app: App,
-		onSubmit: (name: string) => void,
-		onCancel: () => void,
-	) {
-		super(app);
-		this.onSubmit = onSubmit;
-		this.onCancel = onCancel;
-	}
-
-	onOpen(): void {
-		this.titleEl.setText('New layout');
-		let name = '';
-		// Held so the button can say, by being disabled, that there is nothing
-		// to create yet. A live button that silently does nothing on click is
-		// indistinguishable from one that is broken.
-		let create: ButtonComponent | null = null;
-		const submit = () => {
-			const trimmed = name.trim();
-			if (trimmed === '') return;
-			this.submitted = true;
-			this.close();
-			this.onSubmit(trimmed);
-		};
-		new Setting(this.contentEl).setName('Name').addText((text) => {
-			text.setPlaceholder('Layout name').onChange((value) => {
-				name = value;
-				create?.setDisabled(value.trim() === '');
-			});
-			text.inputEl.addEventListener('keydown', (event) => {
-				if (event.key === 'Enter') {
-					event.preventDefault();
-					submit();
-				}
-			});
-			text.inputEl.focus();
-		});
-		new Setting(this.contentEl)
-			.addButton((button) =>
-				button.setButtonText('Cancel').onClick(() => this.close()),
-			)
-			.addButton((button) => {
-				create = button;
-				button.setButtonText('Create').setCta().onClick(submit);
-				button.setDisabled(true);
-			});
-	}
-
-	onClose(): void {
-		this.contentEl.empty();
-		if (!this.submitted) this.onCancel();
-	}
-}
-
 
 /**
  * Leading space for a dropdown option that sits under another, by how many

@@ -2,7 +2,7 @@ import { ESLint } from 'eslint';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { describe, expect, it } from 'vitest';
+import { beforeAll, describe, expect, it } from 'vitest';
 
 /** `src/`, for the one check here that is a scan rather than an eslint case. */
 const SRC = fileURLToPath(new URL('..', import.meta.url));
@@ -38,6 +38,24 @@ const REPO = fileURLToPath(new URL('../../', import.meta.url));
 const AS_COMPONENT = fileURLToPath(new URL('./pool.ts', import.meta.url));
 
 /**
+ * One instance for the whole file, rather than one per call.
+ *
+ * What it saves is the flat config, resolved once per file instead of once per
+ * lint: a warm case drops from 25ms to 16ms. Stated per case on purpose — the
+ * rosters below grow, and a total derived from how many cases there are today
+ * is a number that goes stale without anybody touching this line. Worth
+ * having, and not what the flake was.
+ *
+ * What it does **not** save is the type-aware program, which is worth recording
+ * because it is the obvious reading of the same line.
+ * `parserOptions.projectService` looks per-instance and is not: typescript-eslint
+ * holds the service in its own module state, so the per-call instances shared
+ * one already. Measured, the cold first lint costs the same either way — which
+ * is why the hook below exists as well.
+ */
+const eslint = new ESLint({ cwd: REPO });
+
+/**
  * Lint a snippet as though it were a component.
  *
  * The path has to be a file the TypeScript project already knows, because the
@@ -46,7 +64,6 @@ const AS_COMPONENT = fileURLToPath(new URL('./pool.ts', import.meta.url));
  * the folder, not to the file.
  */
 async function lintAsComponent(source: string): Promise<string[]> {
-	const eslint = new ESLint({ cwd: REPO });
 	const [result] = await eslint.lintText(`${source}\n`, {
 		filePath: AS_COMPONENT,
 	});
@@ -141,20 +158,39 @@ const FROM_OBSIDIAN = {
 	],
 };
 
+/*
+ * Build the type-aware program before any case is timed.
+ *
+ * The first lint in the process parses tsconfig and every file it references,
+ * and that cost is the whole of why this file used to go red about one
+ * full-suite run in three. Measured: 1.3s with the file running alone, ~2.5s
+ * inside a full suite on an idle machine, and 5.6-6.3s with the machine loaded
+ * — past vitest's 5s default, which is the failure. Every later call reuses the
+ * warm program and returns in about 16ms.
+ *
+ * It used to land on whichever case happened to lint first, and the file was
+ * green only because that one case carried a 20s timeout of its own — a green
+ * that renaming, reordering or `.only`-ing a case takes away, since every other
+ * case here runs on the default. So the guard that makes §1's no-sibling-import
+ * rule [checked] was one edit away from going red for a reason with nothing to
+ * do with what it asserts. A hook charges the cost once, where it is paid, and
+ * leaves every case warm: under the load that reds the 5s default, the slowest
+ * case measures 144ms.
+ *
+ * The cost of a hook is that it runs for any case in the file, so a run
+ * filtered to the source scans below pays for a program they do not use. That
+ * is ~1.3s once, against a case timing out on a machine that was merely busy.
+ */
+beforeAll(async () => {
+	// Any snippet warms it, and this one names no import at all, so the only
+	// thing it can go red on is the program failing to build.
+	await lintAsComponent('export const warm = 1;');
+}, 60_000);
+
 describe('a component cannot import a sibling', () => {
-	// The typescript-eslint project service builds its program on the first
-	// lint in the process — parsing tsconfig and every file it references — and
-	// that one-time cost lands wherever the first `lintAsComponent` call in the
-	// file happens to be. On a loaded CI runner it can outrun the 5s default;
-	// every later call reuses the warm program and finishes in well under a
-	// second, which is why only this describe block needs the longer timeout.
-	it.each(FORBIDDEN)(
-		'refuses %s',
-		async (source) => {
-			expect(await lintAsComponent(source)).not.toEqual([]);
-		},
-		20_000,
-	);
+	it.each(FORBIDDEN)('refuses %s', async (source) => {
+		expect(await lintAsComponent(source)).not.toEqual([]);
+	});
 });
 
 describe('a component can still import what it is meant to', () => {

@@ -732,6 +732,59 @@ export function parseExpression(source: string): Expression {
 }
 
 /**
+ * What is wrong with an expression's text, or `null` where it parses.
+ *
+ * The parser's own verdict, and today the one place in the plugin that catches
+ * around `parseExpression` to ask the question. `docs/PATTERNS.md` §1's policy
+ * tier is why it is a function rather than a `try`/`catch` at each caller: what
+ * counts as an unparseable expression is a predicate, and the `try`/`catch` is
+ * its application, so sharing the predicate while leaving the application
+ * written out at every site is the `roundSum` mistake — a copy that can still
+ * drift and nothing watching it.
+ *
+ * **"Today" rather than a rule, deliberately: nothing enforces it, and §10 is
+ * why nothing should.** A guard test there earns its place *"when a failure is
+ * invisible in review"*, and a fourth `try { parseExpression(x) } catch` is not:
+ * one grep over `src/` for `parseExpression` names every call site, which is how
+ * this claim was checked twice. The weaker objection — that such a scan would
+ * pass on an empty match set, the ground the same refusal is recorded on for
+ * `editor/field-lines.ts` — is answerable in principle, since
+ * `class-tokens.test.ts` runs a repo-wide absence scan and earns its floor from
+ * synthetic cases driving the detector. So this rests on visibility, not on
+ * vacuity: the day a second spelling appears in a diff nobody greps, the scan is
+ * worth writing.
+ *
+ * Parse only. A name that resolves to nothing is not a problem here: it is a
+ * claim about data a layout does not hold yet, and `sum(inventory, Weight)`
+ * over an empty table is correct and unevaluatable at once
+ * (`docs/features/formula-field-errors.md`, question 2).
+ *
+ * **The message is the `FormulaError`'s own, unedited, and that is a deliberate
+ * departure from §4's "error text names the fix, not the fault"** `[judgement]`.
+ * Three reasons, and the whole argument is in
+ * `docs/features/formula-field-errors.md`, question 4: §4's rule is about a
+ * component explaining a value it could not resolve, where `explain` exists to
+ * name the fix, and a parse error is neither; three of the parser's four
+ * sentences do name the fix or the cause; and a hand-written fix-shaped sentence
+ * in the editor beside this one on a card is one failure reported two ways with
+ * nothing keeping them in step.
+ *
+ * **The named cost is one message.** `Unexpected trailing input in formula.`
+ * names neither a fix nor a cause, and it is the one whose fault can sit
+ * furthest from the report. Improving it means editing the parser's own throw,
+ * which changes what a sheet's cards say too, so it is recorded rather than
+ * done.
+ */
+export function expressionProblem(source: string): string | null {
+	try {
+		parseExpression(source);
+		return null;
+	} catch (error) {
+		return error instanceof Error ? error.message : String(error);
+	}
+}
+
+/**
  * Evaluate a parsed expression against a scope, and optionally a library of
  * layout-defined functions. Throws FormulaError on any problem.
  */
