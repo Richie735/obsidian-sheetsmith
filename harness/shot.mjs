@@ -1248,6 +1248,33 @@ const DEFAULTS = [
 	},
 	{ name: 'settings-light', query: 'surface=settings&theme=light', size: '1000,520' },
 	{ name: 'settings-dark', query: 'surface=settings&theme=dark', size: '1000,520' },
+	/*
+	 * The narrow regime, and until now the tab had none — which made `UI.md`
+	 * §11's claim that the set covers "the narrow reflow on each" of the three
+	 * screens false for this one.
+	 *
+	 * The two shots above run at the Full frame, where Obsidian's
+	 * `--setting-group-max-width` caps the group at 700px and the description
+	 * column is 464px. Nothing wraps awkwardly there, which is exactly why it
+	 * proves nothing: **every wrapping question on this tab lives below the cap**,
+	 * where the column is 286px and both folder descriptions run to four lines.
+	 * That is where the `BACKLOG` § UI row about a quoted app path ending a line
+	 * on its arrow is visible, and where its measurement has to be taken.
+	 *
+	 * `1000,620` rather than the 520 above: the card's bottom sits at 556px at
+	 * this width, and the harness bar rewraps to a second row at some widths
+	 * (its own § UI row), which a 560px frame would let eat the last row.
+	 */
+	{
+		name: 'settings-620-light',
+		query: 'surface=settings&theme=light&width=620',
+		size: '1000,620',
+	},
+	{
+		name: 'settings-620-dark',
+		query: 'surface=settings&theme=dark&width=620',
+		size: '1000,620',
+	},
 	{
 		// The stylesheet carries five `prefers-reduced-motion` blocks and the
 		// gesture code two more branches, and none of it was ever rendered —
