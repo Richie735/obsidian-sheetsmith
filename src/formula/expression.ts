@@ -95,6 +95,49 @@ const BUILTINS: ReadonlyMap<string, Builtin> = new Map<string, Builtin>([
 ]);
 
 /**
+ * How many arguments each aggregate takes, and what to say when it was given
+ * some other number.
+ *
+ * `sum(<table>, <expression>, [<condition>])` and `count(<table>,
+ * [<condition>])`. Written out per aggregate rather than derived from a shape,
+ * because the message is the whole value of the entry: "takes 2 or 3
+ * arguments" names the fault, and PATTERNS §4 wants the fix.
+ */
+interface Aggregate {
+	/** Arguments before the optional condition, the component reference included. */
+	least: number;
+	wrongCount: string;
+}
+
+const AGGREGATES: ReadonlyMap<string, Aggregate> = new Map<string, Aggregate>([
+	[
+		'sum',
+		{
+			least: 2,
+			wrongCount:
+				'sum() takes a table, what to add up, and optionally a condition.',
+		},
+	],
+	[
+		'count',
+		{ least: 1, wrongCount: 'count() takes a table, and optionally a condition.' },
+	],
+]);
+
+/**
+ * The calls that walk a component's rows, in declaration order.
+ *
+ * Derived from the table above rather than listed beside it, which is
+ * `RESERVED_NAMES`' own rule one entry over and for the same reason: two lists
+ * that must agree eventually will not, and the failure is silent. Measured
+ * direction of drift for *this* set — a third aggregate would parse and evaluate
+ * perfectly while `formula/completion.ts` never recognised its argument
+ * positions and the configuration panel's inventory never offered it, so an
+ * author would get a working call the editor behaved as though did not exist.
+ */
+export const AGGREGATE_NAMES: readonly string[] = [...AGGREGATES.keys()];
+
+/**
  * Names a layout function may not take, since a formula reading `floor` must
  * mean the one thing everywhere (SPEC §5).
  *
@@ -110,9 +153,10 @@ export const RESERVED_NAMES: readonly string[] = [
 	'if',
 	// Lazy in every argument but the first, which is not a value at all: the
 	// aggregates evaluate their arguments once per row, in the row's own scope.
-	// evalNode handles them for the same reason it handles `if`.
-	'sum',
-	'count',
+	// evalNode handles them for the same reason it handles `if`. Spread rather
+	// than written out, so this list and the aggregate table cannot disagree
+	// about which calls exist — the same derivation `BUILTINS` gets above.
+	...AGGREGATE_NAMES,
 	// Literals the parser reads before it looks any name up.
 	'true',
 	'false',
@@ -447,36 +491,6 @@ function callDefined(
 		rt.active.delete(name);
 	}
 }
-
-/**
- * How many arguments each aggregate takes, and what to say when it was given
- * some other number.
- *
- * `sum(<table>, <expression>, [<condition>])` and `count(<table>,
- * [<condition>])`. Written out per aggregate rather than derived from a shape,
- * because the message is the whole value of the entry: "takes 2 or 3
- * arguments" names the fault, and PATTERNS §4 wants the fix.
- */
-interface Aggregate {
-	/** Arguments before the optional condition, the component reference included. */
-	least: number;
-	wrongCount: string;
-}
-
-const AGGREGATES: ReadonlyMap<string, Aggregate> = new Map<string, Aggregate>([
-	[
-		'sum',
-		{
-			least: 2,
-			wrongCount:
-				'sum() takes a table, what to add up, and optionally a condition.',
-		},
-	],
-	[
-		'count',
-		{ least: 1, wrongCount: 'count() takes a table, and optionally a condition.' },
-	],
-]);
 
 /**
  * Restate a row's failure as the row a reader sees, plus what went wrong.
