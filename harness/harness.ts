@@ -40,7 +40,7 @@ import {
 import { nameAlreadyDeclared } from '../src/layouts';
 import { dropDetachedAnchoredPanel } from '../src/ui/anchored-panel';
 import { renderGrid } from '../src/view/grid-cells';
-import { driveResize, renderEditorPane } from './editor-pane';
+import { driveResize, driveSuggest, renderEditorPane } from './editor-pane';
 import {
 	brokenSamples,
 	effectiveSamples,
@@ -473,6 +473,7 @@ async function ensureEditor(): Promise<HTMLElement> {
 			// worth asking for is the empty canvas.
 			samples: params.get('samples') === 'off' ? false : undefined,
 			resize: params.get('resize') ?? undefined,
+			suggest: params.get('suggest') ?? undefined,
 			treeHover: params.get('treeHover') ?? undefined,
 			treeDrop: params.get('treeDrop') ?? undefined,
 		},
@@ -837,6 +838,13 @@ function applyQuery(): void {
 	 * because a synthetic `click`/`change` dispatches correctly either way.
 	 */
 	const resize = params.get('resize');
+	/**
+	 * `&suggest=<focus token>:<text>` — type into a formula field and leave its
+	 * name suggester open over it. Driven here rather than inside `ensureEditor`
+	 * for `resize`'s reason one line up: the popup is placed against the field's
+	 * real box, and every rect on an unattached element reads zero.
+	 */
+	const suggest = params.get('suggest');
 
 	void ensureSurface().then(async () => {
 		draw();
@@ -849,6 +857,9 @@ function applyQuery(): void {
 		scrollWanted();
 		if (resize !== null && editorPane) {
 			await driveResize(editorPane, resize);
+		}
+		if (suggest !== null && editorPane) {
+			await driveSuggest(editorPane, suggest);
 		}
 	});
 }

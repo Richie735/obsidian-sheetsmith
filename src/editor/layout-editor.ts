@@ -7,11 +7,12 @@ import {
 } from 'obsidian';
 import { acceptsChildren } from './accepts-children';
 import { describedRow } from './described-row';
-import { listComponentTypes, paletteEntries } from '../components';
+import { getComponent, listComponentTypes, paletteEntries } from '../components';
 import { Canvas } from './canvas';
 import { componentDisplayName } from './component-name';
 import { ConfigPanel } from './config-panel';
 import { showFieldError } from './field-error';
+import { attachFormulaSuggest, FormulaSuggest } from './formula-suggest';
 import { focusToken } from './focus-token';
 import { ConfirmModal } from '../ui/confirm-modal';
 import { NEW_LAYOUT_LABEL, promptNewLayout } from './new-layout';
@@ -20,6 +21,8 @@ import { ListContext } from './list-fields';
 import type SheetsmithPlugin from '../main';
 import { Layout, parseLayout, serialiseLayout } from '../parse/layout';
 import { WalkEntry, walkComponents } from '../parse/layout-walk';
+import { parseFunctions } from '../formula/functions';
+import { Vocabulary, vocabularySource } from '../formula/vocabulary';
 import { nextFreeRow, renderTree, SHEET_DESTINATION } from './tree';
 import { ComponentConfig } from '../types';
 import { UndoStack } from './undo-stack';
@@ -141,6 +144,18 @@ export class LayoutEditorSection {
 	 * field, not with the render that happened to draw it.
 	 */
 	private fieldErrors = new Map<string, string>();
+	/**
+	 * The name suggesters bound by the current render, so the next one can close
+	 * them before it empties the container.
+	 *
+	 * Held here rather than in the panel for `fieldErrors`' own reason one line
+	 * up: what outlives a render belongs to the thing that owns the render loop.
+	 * The failure it prevents is narrow and real — an input removed while its
+	 * popup is open fires no `blur`, because a removed focused element does not,
+	 * so **Undo layout edit** pressed with a list up would leave that list
+	 * stranded at the notice layer over a pane that no longer holds the field.
+	 */
+	private suggests: FormulaSuggest[] = [];
 	/** Generation counter; a render that awaits and comes back stale bails. */
 	private renderId = 0;
 	/** The panel drawing whatever is selected, and the fields it holds. */
@@ -248,7 +263,45 @@ export class LayoutEditorSection {
 			setGridColumns: () => undefined,
 			errors: this.fieldErrors,
 			listContext: () => this.listContext(),
+			suggestNames: (input, owner) => this.suggestNames(input, owner),
 		});
+	}
+
+	/**
+	 * Bind the formula-name suggester to one input, and remember it.
+	 *
+	 * A command on the host rather than an `App` handed down, so neither the
+	 * panel nor the two field modules learns that a suggester exists or needs an
+	 * app to build one — the same shape `confirm` already takes for a modal.
+	 */
+	private suggestNames(input: HTMLInputElement, owner?: string): void {
+		this.suggests.push(
+			attachFormulaSuggest(
+				this.plugin.app,
+				input,
+				() => this.vocabulary(),
+				owner,
+			),
+		);
+	}
+
+	/**
+	 * What the layout publishes, read fresh on every query a popup answers.
+	 *
+	 * A thunk rather than a value, so the list reflects the layout as it now
+	 * stands — a column key renamed in the list above is offered by the field
+	 * below it without the pane having to rebuild — and so nothing assembles the
+	 * name tree on a keystroke that no popup is open for.
+	 */
+	private vocabulary(): Vocabulary {
+		const layout = this.layout;
+		if (layout === null) return { components: [], functions: new Map() };
+		return {
+			components: walkComponents(layout.components).map((entry) =>
+				vocabularySource(entry.config, getComponent(entry.config.type)),
+			),
+			functions: parseFunctions(layout.functions).library,
+		};
 	}
 
 	/** The focus token of whatever is focused inside the pane, if anything. */
@@ -321,6 +374,9 @@ export class LayoutEditorSection {
 	 * not avoid (`docs/UI.md` §12).
 	 */
 	async render(container: HTMLElement): Promise<void> {
+		// Before anything is drawn or torn down: a popup outlives the input it
+		// hangs off, and the pane rebuilds every input it has.
+		this.closeSuggests();
 		this.rootEl = container;
 		// The query container the two-column rule reads, and it has to be an
 		// ancestor of the grid rather than the grid itself: an element cannot
@@ -500,6 +556,21 @@ export class LayoutEditorSection {
 				(entry) => entry.config.id === this.host.selection,
 			) ?? null
 		);
+	}
+
+	/**
+	 * Close every name-suggestion popup the last render bound, and forget them.
+	 *
+	 * **`close()` rather than waiting for a `blur`**, which is the whole reason
+	 * this exists: a focused element that is *removed* fires no `blur`, so a
+	 * redraw driven from the keyboard — **Undo layout edit** with a list up —
+	 * would leave the popup at the notice layer over a pane that no longer holds
+	 * the field it describes. The platform's class offers no teardown, and
+	 * `close()` is a declared public member of `PopoverSuggest` and idempotent.
+	 */
+	private closeSuggests(): void {
+		for (const suggest of this.suggests) suggest.close();
+		this.suggests = [];
 	}
 
 	/**
@@ -918,6 +989,7 @@ export class LayoutEditorSection {
 				new ConfirmModal(this.plugin.app, message, cta, onConfirm).open(),
 			errors: this.fieldErrors,
 			drag: this.drag,
+			suggestNames: (input, owner) => this.suggestNames(input, owner),
 		};
 	}
 

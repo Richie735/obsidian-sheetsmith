@@ -664,6 +664,78 @@ const DEFAULTS = [
 	},
 	{
 		/*
+		 * **The name suggester, which exists only while somebody is typing**
+		 * (`docs/features/formula-name-suggestions.md` §7). It is disarmed on
+		 * focus by design, so no stored layout and no press can reach it — the
+		 * `&suggest=` query is the third sibling of `&focus=` and `&press=`, and
+		 * without it this popup is drawn in no PNG at all.
+		 *
+		 * The top level: a name in code type with the component's label beside it,
+		 * against the pane it is drawn over.
+		 *
+		 * **`%2B` and not `+`.** `harness.ts` reads the query through
+		 * `URLSearchParams`, which decodes a `+` as a space — so these two views
+		 * rendered `10   abil` for a wave, and the one thing they exist to show
+		 * about §2's central claim, that the splice replaces the fragment and not
+		 * the value, had no operator left of the caret to survive.
+		 */
+		name: 'editor-suggest-light',
+		query:
+			'surface=editor&theme=light&open=armour_class&suggest=cfg-armour_class-derived:10 %2B abil',
+		size: EDITOR_FRAME,
+	},
+	{
+		// The same, in the other theme: the popup is Obsidian's own chrome and
+		// the plugin writes no rule for it, so what is being checked is that the
+		// code type and the muted note are legible on the app's own surface.
+		name: 'editor-suggest-dark',
+		query:
+			'surface=editor&theme=dark&open=armour_class&suggest=cfg-armour_class-derived:10 %2B abil',
+		size: EDITOR_FRAME,
+	},
+	{
+		// The second level, which is the half a flat list could not have: the dot
+		// opens the component's own members rather than listing every name the
+		// layout publishes at once.
+		name: 'editor-suggest-members',
+		query:
+			'surface=editor&theme=light&open=armour_class&suggest=cfg-armour_class-derived:10 %2B abilities.',
+		size: EDITOR_FRAME,
+	},
+	{
+		// Inside an aggregate's second argument, where the named table's own
+		// columns come before anything on the sheet. Nothing else photographs the
+		// argument-aware half of the vocabulary.
+		name: 'editor-suggest-aggregate',
+		query:
+			'surface=editor&theme=light&open=encumbrance&suggest=cfg-encumbrance-derived:sum(inventory, We',
+		size: EDITOR_FRAME,
+	},
+	{
+		// The inventory that replaced the panel's single copyable id: six groups
+		// of chips, each a name and the forms built on it.
+		name: 'editor-inventory',
+		query: 'surface=editor&theme=light&open=abilities',
+		size: EDITOR_FRAME,
+	},
+	{
+		/*
+		 * A table's inventory, which is the *other* shape: a published row's own
+		 * name beside the two aggregate calls, where a card set has names and no
+		 * rows.
+		 *
+		 * **Not the eighteen-group case the design accepted the sizing on**, and
+		 * the correction is measured: this sample's Skills table carries four rows
+		 * of which one has a key, so it draws three groups, and `abilities` at six
+		 * is the largest anything here stages. Eighteen exists only in the vault's
+		 * 5e layout. `docs/BACKLOG.md` § UI holds the row.
+		 */
+		name: 'editor-inventory-table',
+		query: 'surface=editor&theme=light&open=skills',
+		size: EDITOR_FRAME,
+	},
+	{
+		/*
 		 * **This feature's editor surface, which no default view opened.**
 		 * `editor-layout` draws the layout's own form and the other two open
 		 * Tables, so neither **Maximum from** nor the **Maximum** it withholds was

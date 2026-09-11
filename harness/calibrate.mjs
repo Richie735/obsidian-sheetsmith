@@ -88,7 +88,24 @@ function readFromAsar(asarPath, name) {
  * exists in the instrument. It masks the real thing just as well, since 18px of
  * phantom slack hides genuine overflow at the same sites.
  */
-const RESET = /^\*$/;
+const RESET = /^(\*|:focus)$/;
+
+/*
+ * **`:focus { outline: none }` is the second reset, and it is a reset in exactly
+ * the sense above: it changes what every control on every surface *means*.**
+ * Obsidian turns the browser's default focus ring off globally and puts a ring
+ * back only on its own control kinds, so any element this plugin makes focusable
+ * that is not one of those — a `<code role="button">`, a bare `<div>` with a
+ * `tabindex` — has no focus mark at all in the app while the harness drew the
+ * browser's.
+ *
+ * That is the same direction of error as the missing `box-sizing`, and it is the
+ * worse one to have: an instrument kinder than the thing it measures passes a
+ * review on a real defect rather than inviting a fix for a phantom one. The
+ * published-name inventory is how it was found — dozens of focusable chips whose
+ * ring existed only here — and every future review of a non-native control would
+ * have inherited it.
+ */
 
 /**
  * A bare element carrying one attribute selector, in either of CSS's spellings.
@@ -195,6 +212,19 @@ const CHROME = [
 	attribute('input', 'type', 'text'),
 	/^button(?![.#\w-])/,
 	/^\.svg-icon/,
+	/*
+	 * The type-ahead popup the layout editor's formula fields open
+	 * (`docs/features/formula-name-suggestions.md` §7). The plugin writes no rule
+	 * for it at all — it takes the app's `.suggestion-*` chrome whole — so without
+	 * this entry every shot of it is an unstyled column of divs, and the review is
+	 * of the wrong thing.
+	 *
+	 * Unanchored past the prefix, on `/^\.setting-group/`'s own argument: the
+	 * container, the list, an item, its `is-selected` state, `.suggestion-note`
+	 * and the flair classes all come along, and none of them matches anything this
+	 * plugin draws except inside that popup.
+	 */
+	/^\.suggestion/,
 	// The workspace pane the layout editor is a view in. A settings tab and a
 	// leaf are two different frames, and the editor now sits in the second: the
 	// leaf's own box, its header, and the scrolling content area a view builds

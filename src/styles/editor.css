@@ -823,14 +823,53 @@
 	color: var(--text-muted);
 }
 
-/* The component id is the one thing a user cannot discover anywhere else and
-   has to retype into every formula. Say it is takeable. */
+/* A name a user cannot discover anywhere else and has to retype into every
+   formula that reads it. Say it is takeable — **at rest**, not on hover.
+
+   It was a cursor and a hover background and nothing else, which was survivable
+   while the pane drew one of these at the top of a form. The published-name
+   inventory draws eighteen on a six-entry Card set and fifty-six on an
+   eighteen-row table, and at that count a run of bare monospace words with no
+   surface is not a row of controls, it is a sentence. `docs/UI.md` §7 forbids a
+   hover-only affordance, and for a keyboard user this one was hover-only at all
+   times. So the surface is the resting state and the hover steps up from it,
+   which is the pair the rest of the pane already uses. */
 .sheetsmith-copyable {
 	cursor: pointer;
+	/* The fallback, not the rule that usually applies: inside a
+	   `.setting-item-description` Obsidian's own `.setting-item-description code`
+	   sets `0 3px 2px` at (0,1,1) and wins, which is where most of these are
+	   drawn. What this covers is a chip somewhere else — a published row's name
+	   in the rows editor — where nothing else gives the surface any padding at
+	   all. One pixel apart, so it is not worth a specificity war; said here so
+	   the next reader does not read a losing declaration as a bug. */
+	padding: 0 var(--size-2-2);
+	border-radius: var(--radius-s);
+	background-color: var(--background-modifier-hover);
 }
 
 .sheetsmith-copyable:hover {
-	background-color: var(--background-modifier-hover);
+	background-color: var(--background-modifier-active-hover);
+}
+
+/* **A `<code role="button" tabindex="0">` gets no ring from anywhere.**
+   `app.css` sets a global `:focus { outline: none }` and puts a ring back only
+   on its own control kinds, none of which a bare `code` matches — so every one
+   of these was a tab stop with nothing saying where focus was, dozens of them
+   ahead of the form's first field. The canvas overlay is the pane's own
+   precedent for declaring the mark by hand for exactly this reason, and this
+   borrows its treatment.
+
+   `outline` rather than a `box-shadow`, because forced-colors mode discards a
+   shadow and keeps an outline (`docs/UI.md` §6), and an offset so the ring sits
+   outside the chip's own surface rather than on it. Not photographable before
+   `calibrate.mjs` learned to extract the app's global `:focus` rule: until then
+   the harness drew the browser's default ring here and the shot said the
+   control was fine. */
+.sheetsmith-copyable:focus-visible,
+.sheetsmith-copyable:focus {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 1px;
 }
 
 /* A list heading that carries a control: the name takes the track, the
@@ -1069,6 +1108,74 @@
 
 .sheetsmith-component-reference {
 	padding-bottom: var(--size-4-1);
+}
+
+/* Every name a component publishes, as a paragraph of chips
+   (`docs/features/formula-name-suggestions.md` §5). A flex wrap rather than a
+   list: the number of names is the layout's, from one to eighteen, and a list
+   of eighteen single-word rows is eighteen lines of mostly empty panel. */
+.sheetsmith-published-names {
+	display: flex;
+	flex-wrap: wrap;
+	/* Row gap tight and column gap wide, which is the whole of what separates
+	   one name from the next. Measured: at an even 8px both ways, six groups of
+	   three chips read as one run of text — `abilities.STR .value mod.
+	   abilities.DEX …` — because the space between two groups was the same
+	   space as the space inside one. Obsidian gives a `code` in a description a
+	   radius and a padding and no background, so the gap is the only channel
+	   there is. */
+	gap: var(--size-2-1) var(--size-4-4);
+	margin-top: var(--size-2-2);
+}
+
+/* One name and the forms built on it, kept together: `abilities.STR` and its
+   `.value` are one thing read left to right, and a wrap between them would
+   leave a bare `.value` opening a line. */
+.sheetsmith-published-name {
+	display: inline-flex;
+	align-items: center;
+	/* Wide enough for a focus ring to clear its neighbour. At `--size-2-1` the
+	   2px gap was exactly the ring's own reach — 1px of offset plus 2px of
+	   outline — so a focused chip's mark touched the chip beside it. 4px against
+	   the 16px between groups is still a 4x ratio, and the surfaces carry the
+	   grouping now in any case. */
+	gap: var(--size-2-2);
+	white-space: nowrap;
+	/* The name is the string an author came here to copy, so it takes the
+	   normal rank out of the muted description it sits in; the forms below stay
+	   at the description's own colour. That is the second channel the gap alone
+	   was doing without — `docs/UI.md` §5's one quiet style reused rather than a
+	   new fainter one invented. */
+	color: var(--text-normal);
+}
+
+/* **The name is raised; the forms are left where the app puts them.** This block
+   sits in a `.setting-item-description`, which is `--font-ui-smaller` (12px), and
+   Obsidian shrinks every `code` inside one to `--font-smaller` — `0.875em`, so
+   10.5px. That is the rank every chip starts at.
+
+   This rule used to set the *forms* to `--font-ui-smaller`, which is a literal
+   12px: the declaration written to size them down was cancelling the app's
+   shrink and sizing them **up**, so the name measured 10.5px against its own
+   qualifiers at 12px — backwards by 14%, and the primary content of a new block
+   half a pixel above `legibility.md`'s 10px floor. Invisible at the default
+   because colour carried the hierarchy, and unmissable in forced colors, where
+   every foreground is one colour and size is the only channel left.
+
+   So the name takes 12px explicitly and the forms inherit the app's 10.5px.
+   Deliberately **not** `--font-smaller` on the form: 0.875 x 10.5 is 9.2px,
+   under the floor.
+
+   Two classes deep (0,2,0) on both, which is what it takes: Obsidian's
+   `.setting-item-description code` is (0,1,1) and `.sheetsmith-copyable` beside
+   these is (0,1,0), so a single class loses to the app outright
+   (`docs/UI.md` §2). */
+.sheetsmith-published-name .sheetsmith-published-key {
+	font-size: var(--font-ui-smaller);
+}
+
+.sheetsmith-published-name .sheetsmith-published-form {
+	color: var(--text-muted);
 }
 
 /* The canvas: the layout's real components, rendered live

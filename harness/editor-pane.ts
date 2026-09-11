@@ -49,6 +49,22 @@ export interface PaneView {
 	 */
 	samples?: boolean;
 	/**
+	 * `<focus token>:<text>` — put `text` into the field that token addresses,
+	 * caret at the end, and let its name suggester open over it
+	 * (`docs/features/formula-name-suggestions.md` §7).
+	 *
+	 * A still cannot type, and this popup exists only while somebody is typing:
+	 * it is disarmed on focus by design, so no stored layout and no press can
+	 * reach it. Dispatched rather than keyed, which is the route `setSamples`
+	 * already measures out — this pane is detached while it is being built, and
+	 * a detached input fires none of its own events.
+	 *
+	 * Driven by `harness.ts` after the pane is on screen rather than here, for
+	 * `resize`'s reason: the popup has to be *placed*, and placement reads real
+	 * geometry.
+	 */
+	suggest?: string;
+	/**
 	 * `<fromId>:<toId>` — drag `fromId`'s tree row onto `toId`'s and leave
 	 * it hovering, showing the valid-drop highlight if the drop would
 	 * succeed. Never completes the drop.
@@ -122,6 +138,50 @@ export async function renderEditorPane(
  */
 export async function driveResize(pane: HTMLElement, spec: string): Promise<void> {
 	await resizeInPlace(pane, spec);
+}
+
+/**
+ * Drive `view.suggest` against an already-attached pane, in
+ * `"<focus token>:<text>"` form.
+ *
+ * **The placement is the harness's own stand-in and is named as one.** Obsidian
+ * positions `.suggestion-container` from JavaScript at open time — it flips when
+ * the input sits low in the window, clamps its height and follows a scroll —
+ * and `src/test/obsidian-stub.ts` deliberately models none of that, because a
+ * double reimplementing the app's placement is a double that can be wrong about
+ * it silently. So the CSS is Obsidian's, borrowed by `harness:calibrate`, and
+ * the two numbers are put here: directly under the field, at its left edge and
+ * its width. What the shots therefore cannot show is the flip and the clamp,
+ * which is a backlog row (`docs/BACKLOG.md` § UI) waiting on the same driven
+ * browser a hover state needs.
+ */
+export async function driveSuggest(pane: HTMLElement, spec: string): Promise<void> {
+	const at = spec.indexOf(':');
+	const token = at === -1 ? spec : spec.slice(0, at);
+	const text = at === -1 ? '' : spec.slice(at + 1);
+	const field = await control(pane, token);
+	if (!(field instanceof HTMLInputElement)) {
+		console.warn(`No field "${token}" in the pane to suggest over.`);
+		return;
+	}
+	field.focus();
+	field.value = text;
+	field.setSelectionRange(text.length, text.length);
+	field.dispatchEvent(new Event('input'));
+	// No wait: the app branches on `Array.isArray` and draws a plain array
+	// straight through, and this suggester returns one.
+	const popup = document.body.querySelector('.suggestion-container');
+	if (!(popup instanceof HTMLElement)) {
+		console.warn(`Nothing to suggest for "${text}".`);
+		return;
+	}
+	const box = field.getBoundingClientRect();
+	popup.setCssStyles({
+		position: 'absolute',
+		top: `${box.bottom + window.scrollY}px`,
+		left: `${box.left + window.scrollX}px`,
+		width: `${box.width}px`,
+	});
 }
 
 /**

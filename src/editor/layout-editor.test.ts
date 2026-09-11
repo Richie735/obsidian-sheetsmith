@@ -5157,3 +5157,271 @@ describe('starting a new layout from the pane', () => {
 		]);
 	});
 });
+
+/*
+ * Formula name suggestions (`docs/features/formula-name-suggestions.md`).
+ *
+ * The wiring half: which inputs are bound, what each one offers, and that a
+ * rebuild of the pane takes any open list down with it. What a candidate list
+ * holds is `formula/vocabulary.test.ts`, and how one input behaves is
+ * `formula-suggest.test.ts`; here the claim is that every field the design names
+ * is actually one of them.
+ */
+describe('formula fields suggest the names the layout publishes', () => {
+	/** A layout holding one of every field the design's §1 table names. */
+	function suggestFixture(): Layout {
+		return {
+			name: 'Suggest sheet',
+			columns: 12,
+			components: [
+				{
+					id: 'armour_class',
+					type: 'card',
+					label: 'Armour class',
+					derived: '10',
+					effective: 'value',
+					position: { col: 1, row: 1, width: 2, height: 1 },
+				} as unknown as ComponentConfig,
+				{
+					id: 'abilities',
+					type: 'card-set',
+					label: 'Abilities',
+					derived: 'mod(value)',
+					effective: 'value',
+					entries: [{ key: 'STR', name: 'Strength' }],
+					position: { col: 3, row: 1, width: 4, height: 1 },
+				} as unknown as ComponentConfig,
+				{
+					id: 'hit_points',
+					type: 'pool',
+					label: 'Hit points',
+					max: 'level',
+					reset: [{ trigger: 'Long rest', action: 'formula', to: 'level' }],
+					position: { col: 7, row: 1, width: 3, height: 1 },
+				} as unknown as ComponentConfig,
+				{
+					id: 'slots',
+					type: 'track',
+					label: 'Spell slots',
+					rows: [{ key: 'L1', name: '1st', count: '2' }],
+					position: { col: 10, row: 1, width: 3, height: 1 },
+				} as unknown as ComponentConfig,
+				{
+					id: 'inventory',
+					type: 'table',
+					label: 'Inventory',
+					rows: [{ label: 'Sword', values: { ability: 'abilities.STR' } }],
+					columns: [
+						{ key: 'Weight', type: 'number', total: true },
+						{ key: 'Total', type: 'computed', formula: 'Weight' },
+					],
+					position: { col: 1, row: 2, width: 6, height: 2 },
+				} as unknown as ComponentConfig,
+				{
+					id: 'traits',
+					type: 'record-set',
+					label: 'Traits',
+					fields: [
+						{ key: 'uses', type: 'number' },
+						{ key: 'left', type: 'computed', formula: 'uses' },
+					],
+					position: { col: 7, row: 2, width: 6, height: 2 },
+				} as unknown as ComponentConfig,
+			],
+			functions: ['mod(score) = floor((score - 10) / 2)'],
+			triggers: ['Long rest'],
+		};
+	}
+
+	/** Open a component's form and let the panel draw. */
+	async function form(harness: Harness, id: string): Promise<void> {
+		control(harness, `edit-${id}`).click();
+		await tick();
+	}
+
+	/**
+	 * Type into a field, without committing.
+	 *
+	 * Focused first, because the app gates every query on
+	 * `textInputEl.isActiveElement()`: an unfocused field is a path Obsidian
+	 * refuses outright, so a case driving one would prove nothing about the pane.
+	 */
+	function typing(input: HTMLInputElement, text: string): void {
+		input.focus();
+		input.value = text;
+		input.setSelectionRange(text.length, text.length);
+		input.dispatchEvent(new Event('input'));
+	}
+
+	function popupNames(): string[] {
+		return Array.from(
+			document.body.querySelectorAll('.suggestion-container .suggestion-item code'),
+		).map((code) => code.textContent ?? '');
+	}
+
+	it('binds every formula field the design names', async () => {
+		const harness = await open(suggestFixture());
+		// Component id, then the token of each of its formula fields.
+		const bound: [string, string[]][] = [
+			['armour_class', ['cfg-armour_class-derived', 'cfg-armour_class-effective']],
+			['abilities', ['cfg-abilities-derived', 'cfg-abilities-effective']],
+			// The pool's own maximum, and the expression its reset restores.
+			['hit_points', ['cfg-hit_points-max', 'reset-to-hit_points-0']],
+			// The track's own **Segments** field on the panel, and a row's own
+			// count in the entry list — two of the six §1 names, and the only
+			// component that draws one of each.
+			['slots', ['cfg-slots-count', 'attr-slots-L1-count']],
+			// A computed column's formula, and a row value cell beside it.
+			['inventory', ['inventory-col-Total-formula', 'inventory-row-0-ability']],
+			// A record field is a `columns`-kind list, so it is the same cell.
+			['traits', ['traits-col-left-formula']],
+		];
+		for (const [id, tokens] of bound) {
+			await form(harness, id);
+			for (const token of tokens) {
+				expect(
+					control(harness, token).getAttribute('aria-autocomplete'),
+					token,
+				).toBe('list');
+			}
+		}
+	});
+
+	it('leaves a field that holds no expression unbound', async () => {
+		const harness = await open(suggestFixture());
+		await form(harness, 'armour_class');
+		// The label is a name in the note, not a name in the language.
+		expect(
+			control(harness, 'label-armour_class').getAttribute('aria-autocomplete'),
+		).toBeNull();
+	});
+
+	it('offers a table its own column keys on a computed cell', async () => {
+		const harness = await open(suggestFixture());
+		await form(harness, 'inventory');
+		typing(control<HTMLInputElement>(harness, 'inventory-col-Total-formula'), 'W');
+		expect(popupNames()[0]).toBe('Weight');
+	});
+
+	it('withholds the computed column whose value the cell is', async () => {
+		// A self-reference: `table.ts`'s `rowScope` resolves a computed column
+		// against the stored layer alone, so completing `Total` here would write
+		// a formula that cannot resolve.
+		const harness = await open(suggestFixture());
+		await form(harness, 'inventory');
+		typing(control<HTMLInputElement>(harness, 'inventory-col-Total-formula'), 'T');
+		expect(popupNames()).not.toContain('Total');
+	});
+
+	it('offers no other component column keys on a field of the sheet', async () => {
+		const harness = await open(suggestFixture());
+		await form(harness, 'hit_points');
+		typing(control<HTMLInputElement>(harness, 'cfg-hit_points-max'), 'W');
+		expect(popupNames()).not.toContain('Weight');
+		// Not a vacuous pass: a popup that never opened contains nothing at all,
+		// which is the same assertion for the wrong reason.
+		typing(control<HTMLInputElement>(harness, 'cfg-hit_points-max'), 'abil');
+		expect(popupNames()).toEqual(['abilities']);
+	});
+
+	it('takes an open list down with the render that replaces its field', async () => {
+		// An input removed while its popup is open fires no `blur`, so a redraw
+		// driven from the keyboard would otherwise orphan the list.
+		const harness = await open(suggestFixture());
+		await form(harness, 'armour_class');
+		typing(control<HTMLInputElement>(harness, 'cfg-armour_class-derived'), 'abil');
+		expect(popupNames()).toEqual(['abilities']);
+		await harness.redraw();
+		expect(document.body.querySelector('.suggestion-container')).toBeNull();
+	});
+});
+
+describe('the panel says what a component publishes', () => {
+	it('lists every name as a chip rather than the bare id', async () => {
+		const harness = await open({
+			name: 'Test sheet',
+			columns: 12,
+			components: [
+				{
+					id: 'abilities',
+					type: 'card-set',
+					label: 'Abilities',
+					entries: [
+						{ key: 'STR', name: 'Strength' },
+						{ key: 'DEX', name: 'Dexterity' },
+					],
+					position: { col: 1, row: 1, width: 4, height: 1 },
+				} as unknown as ComponentConfig,
+			],
+			functions: [],
+			triggers: [],
+		});
+		control(harness, 'edit-abilities').click();
+		await tick();
+		const chips = Array.from(
+			harness.container.querySelectorAll('.sheetsmith-published-name code'),
+		).map((code) => code.textContent);
+		expect(chips).toEqual([
+			'abilities.STR',
+			'.value',
+			'mod.',
+			'abilities.DEX',
+			'.value',
+			'mod.',
+		]);
+	});
+
+	it('teaches no name as a placeholder pattern anywhere in the pane', async () => {
+		/*
+		 * The copy budget this feature relieves (`SPEC` §13): the panel used to
+		 * spell the grammar as `"<component id>.<column key>"` under the list
+		 * where a key is typed, leaving the reader to substitute two placeholders
+		 * to get a string they could have copied. The inventory shows the real
+		 * names, so the pattern goes.
+		 */
+		const harness = await open({
+			name: 'Test sheet',
+			columns: 12,
+			components: [
+				{
+					id: 'inventory',
+					type: 'table',
+					label: 'Inventory',
+					rows: [{ label: 'Sword', key: 'sword' }],
+					columns: [
+						{ key: 'Weight', type: 'number', total: true },
+						{ key: 'Worn', type: 'toggle', publish: true },
+					],
+					position: { col: 1, row: 1, width: 6, height: 2 },
+				} as unknown as ComponentConfig,
+			],
+			functions: [],
+			triggers: [],
+		});
+		control(harness, 'edit-inventory').click();
+		await tick();
+		const text = harness.container.textContent ?? '';
+		expect(text).not.toContain('"<component id>.');
+		// The pattern in *either* spelling now, since the two clauses the guard
+		// above cannot see were the last places it appeared as UI copy.
+		expect(text).not.toContain('<component id>');
+		expect(text).toContain(
+			'A total is a name formulas read, so a totalled column\'s key is letters, digits and underscores, where a column without a total may be headed anything.',
+		);
+		expect(text).toContain(
+			'A published column gives every row below a name of its own, so a formula elsewhere on the sheet can read that row.',
+		);
+		/*
+		 * The third and fourth trims, and the two the `not.toContain` guard above
+		 * cannot catch: each removed a `sum(<component id>, <expression>)` clause,
+		 * which carries neither the leading quote nor the trailing dot that guard
+		 * matches on. Only reading the sentences proves they went.
+		 */
+		expect(text).toContain(
+			"A column's total sums what the note stores; a formula elsewhere can sum any expression over the rows instead.",
+		);
+		expect(text).toContain(
+			'total a column, or aggregate over the rows instead.',
+		);
+	});
+});

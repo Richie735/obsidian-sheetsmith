@@ -62,6 +62,16 @@ export interface ListContext {
 	errors: Map<string, string>;
 	/** Index of the entry being dragged, shared so one list reads its own. */
 	drag: { index: number | null };
+	/**
+	 * Bind the formula-name suggester to a formula cell, for as long as this
+	 * render's DOM lives (`docs/features/formula-name-suggestions.md`).
+	 *
+	 * Optional, because a list editor is drawn by tests and by the harness with
+	 * a context assembled for whatever the case is about, and a field that
+	 * suggests nothing is a field that behaves exactly as it did. `owner` names
+	 * the component whose own rows the expression is evaluated against.
+	 */
+	suggestNames?: (input: HTMLInputElement, owner?: string) => void;
 }
 
 export function moveItem<T>(
@@ -540,6 +550,10 @@ export function renderRowsEditor(
 			});
 			input.value = row.values?.[name] ?? '';
 			input.dataset.sheetsmithFocus = `${prefix}-row-${index}-${name}`;
+			// A row value is evaluated against the sheet, not against the row it
+			// is written into — it is what *makes* the row's names — so it takes
+			// the sheet vocabulary and no owner.
+			context.suggestNames?.(input);
 			// Checked as it renders and again on the commit, on the same terms
 			// as every other expression in the pane: an empty cell is the
 			// ordinary state, and a broken one is stored and reported rather
@@ -749,6 +763,12 @@ export function renderColumnsEditor(
 	if (!Array.isArray(record[key])) record[key] = [];
 	const columns = record[key] as ColumnEntry[];
 	/**
+	 * Whose rows a computed cell here is evaluated against, taken from the config
+	 * rather than from the focus prefix that happens to hold the same string
+	 * today — `renderRowsEditor`'s own reading of the same fact.
+	 */
+	const ownerId = typeof record.id === 'string' ? record.id : '';
+	/**
 	 * The types this list offers, filtered against the vocabulary so a layout
 	 * or a component naming a type that does not exist cannot empty the select.
 	 */
@@ -954,6 +974,9 @@ export function renderColumnsEditor(
 			});
 			formula.value = column.formula ?? '';
 			formula.dataset.sheetsmithFocus = `${prefix}-col-${column.key}-formula`;
+			// Evaluated once per row, so this component's own keys come before
+			// anything on the sheet.
+			context.suggestNames?.(formula, ownerId);
 			// Checked as it renders, against whatever the layout already holds,
 			// like the two fields below it — so a hand-edited layout says what is
 			// wrong with an expression rather than looking clean beside a card
@@ -1362,7 +1385,7 @@ export function renderColumnsEditor(
 	if (columns.some((column) => column.total === true)) {
 		listEl.createDiv('sheetsmith-entry-footnote', (el) =>
 			el.setText(
-				'A total is published as "<component id>.<column key>", so a formula elsewhere on the sheet can read it. That makes a totalled column\'s key a name: letters, digits and underscores, where a column without a total may be headed anything.',
+				'A total is a name formulas read, so a totalled column\'s key is letters, digits and underscores, where a column without a total may be headed anything.',
 			),
 		);
 	}
@@ -1395,7 +1418,7 @@ export function renderColumnsEditor(
 	if (columns.some((column) => column.publish === true)) {
 		listEl.createDiv('sheetsmith-entry-footnote', (el) =>
 			el.setText(
-				'A published column gives every row below a name of its own, "<component id>.<row key>", so a formula elsewhere on the sheet can read that row. Give each row a key in the rows list above. Only one column can be published.',
+				'A published column gives every row below a name of its own, so a formula elsewhere on the sheet can read that row. Give each row a key in the rows list above. Only one column can be published.',
 			),
 		);
 	}
@@ -1736,6 +1759,7 @@ export function renderEntriesEditor(
 			countInput.value =
 				entry.count === undefined ? '' : String(entry.count);
 			countInput.dataset.sheetsmithFocus = `attr-${prefix}-${nameOf(entry)}-count`;
+			context.suggestNames?.(countInput);
 			// Checked as it renders and on the commit. A bare number stored as
 			// a number has no text to be wrong about, which is the one thing
 			// `formulaProblem` knows that the parser does not.
