@@ -202,13 +202,13 @@ function amountControl(options: AmountControlOptions): HTMLElement {
 	const { doc, name, standing, apply, onPending, onOpenChange } = options;
 	const view = doc.defaultView;
 
-	// `createElement`, and like `hold-repeat.ts`'s button this is a **design
-	// choice rather than a limit of the helper** (`PATTERNS.md` §5). This
-	// function returns a control for its caller to place, so it has a document
-	// and no parent; adding one to `AmountControlOptions` would work and would
-	// change what the function is, from building a control to placing one.
-	const wrap = doc.createElement('div');
-	wrap.classList.add('sheetsmith-pool-adjust');
+	// The *global* `createDiv`, which attaches to nothing — and like
+	// `hold-repeat.ts`'s button this stays parentless by **design rather than by
+	// a limit of the helper** (`PATTERNS.md` §5). This function returns a control
+	// for its caller to place; adding a parent to `AmountControlOptions` would
+	// work and would change what the function is, from building a control to
+	// placing one.
+	const wrap = createDiv('sheetsmith-pool-adjust');
 
 	const trigger = wrap.createEl('button');
 	trigger.type = 'button';
@@ -696,20 +696,20 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 		// a step button, or a scrub. Attached before anything writes to it,
 		// because a live region has to be in the document before its text
 		// changes.
-		// `createElement`, because this is appended last, after six siblings, and
-		// `createEl` attaches on creation (`PATTERNS.md` §5). It is invisible, so
+		// The *global* `createDiv`, which attaches to nothing. The prototype
+		// helper attaches on creation (`PATTERNS.md` §5) and this is invisible, so
 		// its position is reading order and nothing else: a reader browsing the
 		// card would meet the announcement before the number it is about, and the
 		// harness cannot photograph the difference. `pool.test.ts` asserts it.
 		//
-		// **Reachable, at a price, and the price is the reason.** Declaring it
-		// beside the `card.appendChild` seven hundred lines down would let a
-		// helper build it, but every closure between here and there writes to it,
-		// so the declaration would sit far from all of its readers to satisfy a
-		// lint rule. That is a worse file, not a better one.
-		const status = doc.createElement('div');
-		status.classList.add('sheetsmith-sr-only');
-		status.setAttribute('aria-live', 'polite');
+		// This used to say the price of a helper here was moving the declaration
+		// seven hundred lines down to the `card.appendChild`, away from every
+		// closure that writes to it. There is no price: the global form creates
+		// the element without a parent and the `appendChild` stays where it is.
+		const status = createDiv({
+			cls: 'sheetsmith-sr-only',
+			attr: { 'aria-live': 'polite' },
+		});
 
 		const row = card.createDiv('sheetsmith-pool-row');
 		// The value and its ceiling are one reading, and the value holds the
@@ -732,13 +732,10 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 		// pointer; the description below covers assistive tech and, unlike a
 		// title, reaches touch — which is where hold and drag matter most.
 		input.title = `${config.label}. ${POOL_TITLE}`;
-		// Attached last too, and reachable only on the same terms as `status`
-		// above: a declaration moved seven hundred lines from everything that
-		// reads it.
-		const hint = doc.createElement('div');
-		hint.classList.add('sheetsmith-sr-only');
+		// Appended last too, and parentless at creation on the same terms as
+		// `status` above.
+		const hint = createDiv({ cls: 'sheetsmith-sr-only', text: POOL_HINT });
 		hint.id = `sheetsmith-pool-hint-${config.id}`;
-		hint.textContent = POOL_HINT;
 		input.setAttribute('aria-describedby', hint.id);
 
 		/**
@@ -1302,12 +1299,11 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 		 * wide field-shaped pill, because it asks for a number first and a
 		 * field-shaped control advertises that typing is next.
 		 */
-		// `createElement`, not a helper, per `PATTERNS.md` §5: this is filled with
-		// its step buttons here and attached to the card much later, after the
-		// preview line. Creating it on the card would put it *before* the preview
-		// instead of after, which is a visible change.
-		const controls = doc.createElement('div');
-		controls.classList.add('sheetsmith-pool-controls');
+		// The *global* `createDiv`, which attaches to nothing, per `PATTERNS.md`
+		// §5: this is filled with its step buttons here and appended to the card
+		// much later, after the preview line. `card.createDiv` would put it
+		// *before* the preview instead of after, which is a visible change.
+		const controls = createDiv('sheetsmith-pool-controls');
 		controls.appendChild(
 			stepButton(
 				doc,

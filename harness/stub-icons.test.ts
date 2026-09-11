@@ -88,7 +88,7 @@ describe('the stub can draw every icon the plugin asks for', () => {
 
 	it('draws each one as an svg rather than as its own name', () => {
 		const painted = requested().map((icon) => {
-			const el = document.createElement('div');
+			const el = createDiv();
 			setIcon(el, icon);
 			return { icon, drew: el.querySelector('svg') !== null };
 		});

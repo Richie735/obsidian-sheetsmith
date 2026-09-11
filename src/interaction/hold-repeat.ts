@@ -59,8 +59,8 @@ export function stepButton(
 	 */
 	commitSoon: () => void,
 ): HTMLButtonElement {
-	// `createElement`, and this one is a **design choice rather than something
-	// the helper cannot do** (`PATTERNS.md` §5). A parent could be added to the
+	// Parentless, and this one is a **design choice rather than something the
+	// helper cannot do** (`PATTERNS.md` §5). A parent could be added to the
 	// signature — both call sites have `controls` in hand — and the honest
 	// argument against is not that the module refuses the caller's vocabulary,
 	// since it already takes `className`, which is more of the caller's surface
@@ -71,10 +71,15 @@ export function stepButton(
 	// a builder that attached itself would decide the order of that row from
 	// inside a module that knows nothing about it. Reversible, and cheap to
 	// reverse; it is not a limit being reported.
-	const button = doc.createElement('button');
+	//
+	// So the *global* `createEl`, which is the API member for exactly this: an
+	// element with no parent. The prototype helper is that function with
+	// `parent` filled in, which is the thing this deliberately has not got.
+	const button = createEl('button', {
+		cls: className,
+		text: direction === 1 ? '+' : '−',
+	});
 	button.type = 'button';
-	button.classList.add(className);
-	button.textContent = direction === 1 ? '+' : '−';
 	const verb = direction === 1 ? 'Increase' : 'Decrease';
 	button.setAttribute('aria-label', `${verb} ${name}`);
 	// Shift for ten was implemented and announced nowhere, which makes it an

@@ -494,32 +494,35 @@ still wants it.
   example of the failure this file is most prone to: an exemption whose
   justification expires silently, because nothing re-reads a comment in a config.
 
-  **`createEl` attaches on creation, and that is the whole of what it cannot
-  do.** Where an element is attached later than it is created, the helper cannot
-  express it and the site keeps `createElement` with the argument written at it.
-  Nine do, and they are not all the same kind of nine — **a site says which kind
-  it is**, because "the helper cannot express this" and "we would rather it did
-  not" read alike in a comment and retire on completely different evidence:
+  **Where an element is attached later than it is created, use the global
+  `createEl`, `createDiv` or `createSpan`** — the ones `obsidian.d.ts` declares
+  beside the `Node` methods. They return an element with no parent, and the
+  prototype helper is that same function with `parent` set to the receiver:
+  the app's own `enhance.js` reads `Node.prototype.createEl = function (t, e, n)
+  { (e ||= {}).parent = this; return createEl(t, e, n) }`. So the detached form
+  is the primitive and attaching on creation is the special case.
 
-  - **Genuinely out of reach.** A notice placed *after a sibling* rather than
-    into a parent; a controls row filled with its buttons before it is placed; a
-    live region handed to the function that fills its parent, so it must exist
-    before that call and be appended after it. Nothing about the file can change
-    that.
-  - **Reachable, at a price paid elsewhere.** Three live regions could be built
-    by a helper if their declaration moved several hundred lines, away from every
-    closure that writes to them. The comment says so, rather than claiming a
-    limit. One site in this class *was* taken: a field whose parent was created
-    three hundred lines below now hoists that one line instead, because the
-    parent takes exactly one child and the order is provably unchanged.
-  - **A design choice.** Two builders return a control for their caller to place.
-    A parent could be added to either signature; what argues against it is that
-    building a control and placing one are different jobs, not that the API
-    refuses. Reversible, and cheap to reverse.
+  **This bullet used to say the opposite, twice over.** Before the sweep it said
+  build with `doc.createElement`; after the sweep it said "`createEl` attaches
+  on creation, and that is the whole of what it cannot do", and listed nine
+  sites under three kinds of exemption — out of the helper's reach, reachable at
+  a price, a design choice. All three kinds were one mistake: a property of the
+  *prototype method* stated as a property of the API. Every one of the nine
+  wanted exactly what the global form gives, and all nine are gone.
 
-  They are exempted per file in `eslint.config.mts`, which is the narrowest scope
-  available because `eslint-comments/no-restricted-disable` forbids disabling an
-  `obsidianmd` rule at its own line.
+  It survived two rewrites of this bullet because nothing here could have caught
+  it. `src/test/obsidian-stub.ts` had never installed the three globals, so no
+  test and no harness render could call them, and the claim was true of
+  everything any instrument in this repository could see. That is the failure
+  the sweep note above is kept as an example of, one level deeper: not an
+  exemption whose justification expired, but one whose justification was never
+  checked against the API it was about. It took an external linter to ask.
+
+  There are now **no hand-built elements** in `components/`, `ui/`,
+  `interaction/` or `view/`, no per-file exemption in `eslint.config.mts`, and
+  `src/create-element-sites.test.ts` holds that population at empty rather than
+  at nine. A site that needs `createElement` again owes an argument none of the
+  three retired kinds covers.
 
   **A hidden element's position is reading order**, so the harness cannot check
   it: a shot is byte-identical whether an `sr-only` region sits first or last.
