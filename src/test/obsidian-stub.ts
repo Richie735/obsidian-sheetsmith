@@ -1016,6 +1016,18 @@ export class Vault {
 	async delete(file: TAbstractFile): Promise<void> {
 		this.files.delete(file.path);
 	}
+
+	/**
+	 * Every file the vault holds, in no particular order — the app's own
+	 * contract, since it walks an internal map rather than a sorted list.
+	 *
+	 * Added for `view/file-suggest.ts`: a type-ahead over vault files has
+	 * nothing to offer without this, and a suggester nothing can list from is a
+	 * suggester nothing can test.
+	 */
+	getFiles(): TFile[] {
+		return [...this.files.values()].map(({ file }) => file);
+	}
 }
 
 export class FileManager {
@@ -1035,7 +1047,7 @@ export class FileManager {
 	/** Source paths asked about, in order. */
 	newFileParentSources: string[] = [];
 
-	constructor(vault: Vault) {
+	constructor(private readonly vault: Vault) {
 		// The vault's own root, whose path is `/`. The app falls back to
 		// `vault.getRoot()` for every **Default location for new notes** that is
 		// not a named folder, which includes the default.
@@ -1049,6 +1061,47 @@ export class FileManager {
 
 	async trashFile(file: TAbstractFile): Promise<void> {
 		await file.vault.delete(file);
+	}
+
+	/**
+	 * The reference the app's own paste and drag-and-drop write for `file`,
+	 * enough of it for `view/file-suggest.ts`'s one use: turning a picked file
+	 * into the embed a reader would have typed by hand.
+	 *
+	 * **What is modelled**: a markdown file links and every other extension
+	 * embeds — checked by extension *count* rather than an image allowlist, on
+	 * purpose: `image.test.ts`'s repository-wide guard refuses a second format
+	 * this close to the first, since a plugin holding its own idea of which
+	 * formats count is how webp stopped rendering inside one while working one
+	 * line outside it, and a single `'md'` check names no such list. A note's
+	 * own extension is dropped from the target the way every wikilink already
+	 * omits it, and the shortest path is used only where no other file in the
+	 * vault would answer to the same one — the two-file case a reader actually
+	 * hits, checked against every file rather than assumed unique.
+	 *
+	 * **What is not**: `subpath` and `alias`, and the app's own **Use
+	 * \[\[Wikilinks\]]** / **New link format** settings — nothing here reaches
+	 * for a relative-path format, so `sourcePath` is accepted and threaded
+	 * through the call the caller makes (`view/file-suggest.ts` passes the
+	 * character note's own path, not the vault root) but goes unused by this
+	 * double's own arithmetic, which only ever answers in shortest-path-or-full
+	 * form. Every consumer here wants a reference to whatever was picked and
+	 * nothing else.
+	 */
+	generateMarkdownLink(file: TFile, _sourcePath: string): string {
+		const markdown = file.extension.toLowerCase() === 'md';
+		const named = markdown ? file.basename : file.name;
+		const collides = this.vault
+			.getFiles()
+			.some(
+				(candidate) =>
+					candidate !== file &&
+					(candidate.extension.toLowerCase() === 'md'
+						? candidate.basename
+						: candidate.name) === named,
+			);
+		const target = collides ? file.path.replace(/\.md$/, '') : named;
+		return `${markdown ? '' : '!'}[[${target}]]`;
 	}
 }
 

@@ -356,6 +356,58 @@ describe('the vault double', () => {
 		await app.vault.modify(file, 'edited');
 		expect(await app.vault.read(file)).toBe('edited');
 	});
+
+	it('lists every file `getFiles` was given, in no particular order', async () => {
+		const app = new App();
+		await app.vault.create('Aramil.md', '');
+		await app.vault.createFolder('Portraits');
+		await app.vault.create('Portraits/Thora.png', '');
+		expect(app.vault.getFiles().map((f) => f.path).sort()).toEqual([
+			'Aramil.md',
+			'Portraits/Thora.png',
+		]);
+	});
+});
+
+describe('generateMarkdownLink', () => {
+	it('embeds anything that is not a markdown note', async () => {
+		const app = new App();
+		const file = await app.vault.create('Thora.png', '');
+		expect(app.fileManager.generateMarkdownLink(file, '')).toBe(
+			'![[Thora.png]]',
+		);
+	});
+
+	it('links a markdown note, with no extension and no bang', async () => {
+		const app = new App();
+		const file = await app.vault.create('Notes.md', '');
+		expect(app.fileManager.generateMarkdownLink(file, '')).toBe('[[Notes]]');
+	});
+
+	it('falls back to the full path where the target name collides', async () => {
+		const app = new App();
+		await app.vault.createFolder('Old');
+		await app.vault.create('Old/Thora.png', '');
+		const file = await app.vault.create('Thora.png', '');
+		expect(app.fileManager.generateMarkdownLink(file, '')).toBe(
+			'![[Thora.png]]',
+		);
+		const nested = app.vault.getFileByPath('Old/Thora.png');
+		expect(nested).not.toBeNull();
+		expect(app.fileManager.generateMarkdownLink(nested!, '')).toBe(
+			'![[Old/Thora.png]]',
+		);
+	});
+
+	it('does not collide with itself', async () => {
+		// The one file sharing its own name is itself, so a vault holding
+		// exactly one picture must not fall back to its full path.
+		const app = new App();
+		const file = await app.vault.create('Thora.png', '');
+		expect(app.fileManager.generateMarkdownLink(file, '')).toBe(
+			'![[Thora.png]]',
+		);
+	});
 });
 
 /*

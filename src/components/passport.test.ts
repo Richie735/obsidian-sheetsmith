@@ -1184,6 +1184,22 @@ describe('passport.render — the picture', () => {
 		expect(pictureField(el)?.value).toBe(SOURCE);
 	});
 
+	it('hands the picture field to a suggester the host supplies, as Image does', () => {
+		const calls: HTMLInputElement[] = [];
+		const el = render(
+			{},
+			readData(BODY),
+			{
+				suggestFile: (input, commit) => {
+					calls.push(input);
+					commit('![[Someone Else.png]]');
+				},
+			},
+		);
+		expect(calls).toEqual([pictureField(el)]);
+		expect(pictureField(el)?.value).toBe('![[Someone Else.png]]');
+	});
+
 	it('draws Image\'s refusal in the frame, with the field still holding the value', () => {
 		// The acceptance criterion: a body whose only embed-like line is
 		// `![](https://x/y.png)` passes `read`, and `render` is where it is

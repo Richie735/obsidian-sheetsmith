@@ -1509,6 +1509,30 @@ export interface RenderContext<TData = unknown> {
 	 */
 	resource?: (target: string) => string | null;
 	/**
+	 * Attach a vault file suggester to a picture's reference field.
+	 *
+	 * Optional on `resource`'s own terms: absent, the field this reaches is the
+	 * plain text box it has always been. A component may import nothing from
+	 * `obsidian` beyond `setIcon` (`isolation.test.ts`'s `FROM_OBSIDIAN`), and
+	 * Obsidian's own `AbstractInputSuggest` is squarely past that line, so this
+	 * is the seam SPEC §13's `editMarkdown` entry named in advance — a fourth
+	 * member on `link`'s terms, wired the moment a case narrow enough to answer
+	 * without a real editing surface turned up
+	 * (`docs/features/picture-fit-and-suggest.md`).
+	 *
+	 * Called once, immediately after the field exists, with the field's own
+	 * commit — the second argument, on `interaction/editable.ts`'s
+	 * `EditableHandle.set` — so that picking a suggestion writes and announces
+	 * the choice exactly as typing it and pressing Enter would, through the
+	 * one path every other edit on this field already takes. This module owns
+	 * nothing beyond the element and that callback: the caller tracks whatever
+	 * it attaches and closes it before the next render, on
+	 * `editor/layout-editor.ts`'s own precedent for `FormulaSuggest` — an input
+	 * removed mid-focus fires no `blur`, so nothing else would close a popup
+	 * left open across a rebuild.
+	 */
+	suggestFile?: (input: HTMLInputElement, commit: (next: string) => void) => void;
+	/**
 	 * Draw this component's `children` into an element of its own choosing
 	 * (SPEC §4.2).
 	 *

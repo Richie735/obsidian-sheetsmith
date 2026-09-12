@@ -593,6 +593,26 @@ describe('image.render — every failure is on screen (the prior art)', () => {
 		expect(field(el).value).toBe(SOURCE);
 	});
 
+	it('hands the field to a suggester the host supplies, on resource\'s own terms', () => {
+		// Absent by default (every other case here draws with no such member),
+		// and where present it is called once with this field and a commit that
+		// writes and reports exactly as typing and blurring would
+		// (`docs/features/picture-fit-and-suggest.md`).
+		const calls: HTMLInputElement[] = [];
+		const el = render(
+			{},
+			{ source: SOURCE },
+			{
+				suggestFile: (input, commit) => {
+					calls.push(input);
+					commit('![[Someone Else.png]]');
+				},
+			},
+		);
+		expect(calls).toEqual([field(el)]);
+		expect(field(el).value).toBe('![[Someone Else.png]]');
+	});
+
 	it('draws an empty frame with a placeholder where nothing is stored', () => {
 		const el = render({}, null);
 		expect(picture(el)).toBeNull();

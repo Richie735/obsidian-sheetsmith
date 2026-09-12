@@ -402,6 +402,9 @@ function drawPicture(
 		status,
 		fit: config.fit,
 		...(context.resource === undefined ? {} : { resource: context.resource }),
+		...(context.suggestFile === undefined
+			? {}
+			: { suggestFile: context.suggestFile }),
 		/*
 		 * **The one refusal this component makes that Image does not, and it is
 		 * about the file model rather than about pictures.** Image's whole body is

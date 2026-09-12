@@ -50,6 +50,7 @@ import {
 	TypedEffect,
 } from '../types';
 import { captureFocus, restoreFocus } from './cell-focus';
+import { attachFileSuggest, FileSuggest } from './file-suggest';
 import { renderGrid } from './grid-cells';
 import { MarkdownPasses } from './markdown-pass';
 import { renderMissingLayout } from './missing-layout';
@@ -209,6 +210,17 @@ export class SheetView extends TextFileView {
 	 * whatever the last render left loaded.
 	 */
 	private markdown: MarkdownPasses;
+	/**
+	 * Every vault file suggester attached during the render in progress.
+	 *
+	 * `editor/layout-editor.ts`'s own precedent for `FormulaSuggest`, one render
+	 * loop over: an input removed mid-focus fires no `blur`, so nothing else
+	 * would close a popup left open across a rebuild, and this view rebuilds far
+	 * more often than that editor pane does — on every committed edit to any
+	 * component on the sheet, not only on a layout change
+	 * (`docs/features/picture-fit-and-suggest.md`).
+	 */
+	private fileSuggests: FileSuggest[] = [];
 
 	constructor(leaf: WorkspaceLeaf, plugin: SheetsmithPlugin) {
 		super(leaf);
@@ -280,6 +292,11 @@ export class SheetView extends TextFileView {
 		const run = ++this.renderId;
 		const root = this.contentEl;
 		root.addClass('sheetsmith-view');
+		// Closed before anything else, so every exit below — an error message,
+		// a missing layout, or the grid itself — starts from none standing,
+		// whichever one the render before this took.
+		for (const suggest of this.fileSuggests) suggest.close();
+		this.fileSuggests = [];
 
 		let note: CharacterNote;
 		try {
@@ -448,6 +465,11 @@ export class SheetView extends TextFileView {
 			modifiers,
 			renderMarkdown,
 			resource: (target) => this.resourceUrl(target),
+			suggestFile: (input, commit) => {
+				this.fileSuggests.push(
+					attachFileSuggest(this.app, input, commit, this.file?.path ?? ''),
+				);
+			},
 			activeTab: this.activeTab.get(config.id),
 			onActivateTab: (index: number) => this.activeTab.set(config.id, index),
 			openRecords: [...(this.openRecords.get(config.id) ?? [])],

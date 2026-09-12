@@ -257,6 +257,9 @@ export const image: ComponentDefinition<ImageConfig, ImageData> = {
 			...(context.resource === undefined
 				? {}
 				: { resource: context.resource }),
+			...(context.suggestFile === undefined
+				? {}
+				: { suggestFile: context.suggestFile }),
 			onCommit: (next) => context.onChange({ source: next }),
 		});
 

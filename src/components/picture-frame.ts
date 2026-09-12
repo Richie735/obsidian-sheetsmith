@@ -101,6 +101,13 @@ export interface PictureFrameOptions {
 	 */
 	resource?: (target: string) => string | null;
 	/**
+	 * Attach a vault file suggester to the field, on `resource`'s own terms.
+	 * `RenderContext.suggestFile`'s own header carries the argument; this is a
+	 * plain pass-through, called once with the field and its own commit,
+	 * immediately after `bindEditable` produces one.
+	 */
+	suggestFile?: (input: HTMLInputElement, commit: (next: string) => void) => void;
+	/**
 	 * Why a draft must not be written, or null where it may be. Absent where any
 	 * text the reader types is text the component can hold.
 	 *
@@ -281,7 +288,7 @@ export function renderPictureFrame(
 		field.select();
 	});
 
-	bindEditable(field, {
+	const handle = bindEditable(field, {
 		initial: options.source,
 		announceCommit: (next) => {
 			options.status.textContent =
@@ -312,4 +319,10 @@ export function renderPictureFrame(
 					},
 				}),
 	});
+	// Absent wherever the caller has no app to ask — every unit test and the
+	// harness alike — in which case this is the plain field it has always
+	// been. `handle.set` is `EditableHandle`'s own commit, so a picked
+	// suggestion is written and announced exactly as typing it and pressing
+	// Enter would be.
+	options.suggestFile?.(field, (next) => handle.set(next));
 }
