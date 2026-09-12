@@ -358,6 +358,15 @@ describe('the canvas filled with sample values', () => {
 					: {}),
 				...(type === 'track' ? { count: 6 } : {}),
 				...(type === 'card-set' ? { entries: [{ key: 'STR' }] } : {}),
+				// A roster with no stats or rows has nothing a sample could fill
+				// either, on the same argument a bare Table's does not.
+				...(type === 'roster'
+					? {
+							stats: [{ key: 'STR' }],
+							rows: [{ label: 'Row', stat: 'STR' }],
+							columns: [{ key: 'Score', type: 'number' }],
+						}
+					: {}),
 				// A passport with no fields is a name and a picture, and neither is
 				// a value a note holds — so there is nothing for a sample to fill.
 				...(type === 'passport' ? { fields: [{ key: 'class', name: 'Class' }] } : {}),

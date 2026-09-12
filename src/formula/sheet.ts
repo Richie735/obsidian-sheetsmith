@@ -218,6 +218,10 @@ export function buildSheetEnv(
 		sheet: (name) => names(name),
 		rows: (id, caller) => rows(id, caller),
 		modifiers: (name) => slots(name),
+		// One guard for the whole sheet build, on `FormulaEnv.selfGuard`'s own
+		// comment: the ring it catches crosses several separate `resolveField`
+		// calls, so it must not be reset per evaluation.
+		selfGuard: new Set(),
 	};
 	const names = buildSheetScope(components, env);
 	const rows = buildRowTable(
@@ -680,9 +684,11 @@ export function buildSheetScope(
 			// `mod.self` inside a `display` means the slot of the name this
 			// formula's result becomes — and publication and render resolve the
 			// same expression against the same scope, which is the existing rule
-			// that a name and the cell it came from must not disagree.
+			// that a name and the cell it came from must not disagree. `rows`
+			// goes with it undisturbed: a `self` inside this same formula reads
+			// this entry's own band and nobody else's (SPEC §5).
 			thunks.set(name, () =>
-				worth(resolve(display.field, display.scope, name)),
+				worth(resolve(display.field, display.scope, name, false, display.rows)),
 			);
 		};
 

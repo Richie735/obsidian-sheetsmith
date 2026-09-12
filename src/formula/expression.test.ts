@@ -365,3 +365,84 @@ describe('what an aggregate says when it cannot be read', () => {
 		);
 	});
 });
+
+/*
+ * `self` (SPEC §5): a reserved word beside a component id, for a formula that
+ * belongs to a component grouping rows under names — a Roster's stat. The
+ * production wiring (`FieldResolver`'s own `self` argument, threaded through
+ * `formula/resolve.ts`) is Roster's to drive; this is the engine's own half,
+ * against `Runtime.self` and `Runtime.selfGuard` built by hand.
+ */
+describe('self', () => {
+	const rating: RowValues[] = [
+		{ label: 'Insight', values: { Rating: 2 } },
+		{ label: 'Prowess', values: { Rating: 0 } },
+		{ label: 'Resolve', values: { Rating: 1 } },
+	];
+
+	it('aggregates over the rows self is bound to', () => {
+		expect(
+			evaluate('count(self, Rating > 0)', empty, {
+				self: { id: 'attributes', build: () => rating },
+				selfGuard: new Set(),
+			}),
+		).toBe(2);
+		expect(
+			evaluate('sum(self, Rating)', empty, {
+				self: { id: 'attributes', build: () => rating },
+				selfGuard: new Set(),
+			}),
+		).toBe(3);
+	});
+
+	it('fails naming itself where nothing bound self', () => {
+		expect(() => evaluate('count(self)', empty)).toThrow(
+			/"self" names the rows of the component whose own formula this is/,
+		);
+	});
+
+	it('refuses a self walk that reaches back into itself, without recursing', () => {
+		// A stand-in for the real ring: a row's own computed column re-entering
+		// `self` while its band is still being built. `build` reaches back into
+		// evaluating `self` for the same id while the guard is up, so the inner
+		// attempt is refused rather than recursing forever — and the outer walk,
+		// which does not itself read the refused result, completes normally.
+		const guard = new Set<string>();
+		let reentered: unknown;
+		const build = (): RowValues[] => {
+			try {
+				evaluate('count(self, Rating > 0)', empty, {
+					self: { id: 'attributes', build },
+					selfGuard: guard,
+				});
+			} catch (error) {
+				reentered = error;
+			}
+			return rating;
+		};
+		expect(
+			evaluate('count(self, Rating > 0)', empty, {
+				self: { id: 'attributes', build },
+				selfGuard: guard,
+			}),
+		).toBe(2);
+		expect(reentered).toBeInstanceOf(FormulaError);
+		expect((reentered as Error).message).toBe(
+			'"attributes" is already being read, so "self" cannot resolve here. A formula on its own rows reaches back to itself — break that loop.',
+		);
+		// The guard stands down once the outer walk unwinds, so a later,
+		// unrelated read of the same component's rows is unaffected.
+		expect(guard.size).toBe(0);
+	});
+
+	it('does not share its guard with an unrelated component reading its own rows', () => {
+		const guard = new Set<string>();
+		guard.add('other');
+		expect(
+			evaluate('count(self, Rating > 0)', empty, {
+				self: { id: 'attributes', build: () => rating },
+				selfGuard: guard,
+			}),
+		).toBe(2);
+	});
+});

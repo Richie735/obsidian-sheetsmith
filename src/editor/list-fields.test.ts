@@ -1015,6 +1015,83 @@ describe('rows editor', () => {
 });
 
 /*
+ * A `'rows'` field declaring `rowFlag` — a Roster's `dividerAfter`, but the
+ * mechanism itself knows nothing about Roster: it asks the field which
+ * property to read and what to call it, exactly as `statsField` does for a
+ * row's stat. Driven directly, on the entry list's own precedent above.
+ */
+describe('a rows field declaring rowFlag', () => {
+	const FLAG = { key: 'dividerAfter', label: 'Divider after' };
+
+	function flaggedRows(record: Record<string, unknown>): HTMLElement {
+		const el = host();
+		renderRowsEditor(el, record, 'rows', 'skills', context, undefined, FLAG);
+		return el;
+	}
+
+	it('draws one checkbox per row, through the shared checkbox factory', () => {
+		const record = {
+			rows: [{ label: 'Saving throw' }, { label: 'Concentration' }],
+		};
+		const el = flaggedRows(record);
+		const boxes = el.querySelectorAll('.sheetsmith-entry-check input[type="checkbox"]');
+		expect(boxes).toHaveLength(2);
+	});
+
+	it('reads the row\'s own flag as checked, unset as unchecked', () => {
+		const record = {
+			rows: [
+				{ label: 'Saving throw', dividerAfter: true },
+				{ label: 'Concentration' },
+			],
+		};
+		const el = flaggedRows(record);
+		const boxes = Array.from(
+			el.querySelectorAll<HTMLInputElement>(
+				'.sheetsmith-entry-check input[type="checkbox"]',
+			),
+		);
+		expect(boxes.map((box) => box.checked)).toEqual([true, false]);
+	});
+
+	it('sets the flag on check and clears the key entirely on uncheck', () => {
+		const record = {
+			rows: [{ label: 'Saving throw' }],
+		};
+		const el = flaggedRows(record);
+		const box = el.querySelector<HTMLInputElement>(
+			'.sheetsmith-entry-check input[type="checkbox"]',
+		);
+		box?.click();
+		expect(record.rows[0]).toMatchObject({ dividerAfter: true });
+		box?.click();
+		// Absent rather than `false`: a value matching the flag's own default
+		// writes nothing to a hand-edited, shared layout file (PATTERNS §8).
+		expect(record.rows[0]).not.toHaveProperty('dividerAfter');
+	});
+
+	it('reserves the header a track, with no heading text of its own', () => {
+		// `checkField` already names the flag beside every box it draws, so a
+		// heading above the column would repeat it — but the track still has
+		// to exist or the header drifts out of line with the row beneath it.
+		const plain = rowsEditor({ rows: [{ label: 'Saving throw' }] }).querySelector(
+			'.sheetsmith-entry-columns',
+		);
+		const flagged = flaggedRows({ rows: [{ label: 'Saving throw' }] }).querySelector(
+			'.sheetsmith-entry-columns',
+		);
+		expect(flagged?.textContent).not.toContain('Divider after');
+		expect(flagged?.children).toHaveLength((plain?.children.length ?? 0) + 1);
+	});
+
+	it('draws no checkbox at all where the field declares no rowFlag', () => {
+		const record = { rows: [{ label: 'Saving throw' }] };
+		const el = rowsEditor(record);
+		expect(el.querySelector('.sheetsmith-entry-check')).toBeNull();
+	});
+});
+
+/*
  * The entry list, driven directly.
  *
  * Its two siblings above have been reachable from here since this file existed;

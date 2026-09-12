@@ -694,7 +694,15 @@ export class ConfigPanel {
 						);
 					}
 				} else if (field.kind === 'rows') {
-					renderRowsEditor(listEl, record, field.key, config.id, this.host.listContext());
+					renderRowsEditor(
+						listEl,
+						record,
+						field.key,
+						config.id,
+						this.host.listContext(),
+						field.statsField,
+						field.rowFlag,
+					);
 				} else {
 					renderColumnsEditor(
 						listEl,

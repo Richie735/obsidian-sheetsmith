@@ -10,6 +10,7 @@
  * into the FunctionLibrary this module evaluates against.
  */
 
+import { RowValues } from '../types';
 import { NO_ROWS, RowLookup } from './rows';
 
 export type Value = number | boolean | string;
@@ -202,6 +203,24 @@ export interface FunctionEnv {
 	 */
 	rows?: RowLookup;
 	/**
+	 * This expression's own rows, for `sum(self, …)` and `count(self, …)`
+	 * (SPEC §5), where `id` is the component the guard below is keyed on and
+	 * `build` returns them. Absent everywhere the expression is not one of a
+	 * component's own rows — most fields, on every component but a Roster.
+	 */
+	self?: { id: string; build: () => readonly RowValues[] };
+	/**
+	 * The guard against a `self` walk re-entering itself, shared for the life
+	 * of one sheet build (`resolve.ts`'s `FormulaEnv.selfGuard`) rather than
+	 * per evaluation: the ring this catches crosses several separate
+	 * evaluations — a row's computed column reads `stat`, which resolves the
+	 * stat's own `derived`, which aggregates `self` back over that same
+	 * column — so a guard reset per `evaluate()` call would never see it.
+	 * Defaults to a fresh, empty one, which guards nothing and is the correct
+	 * answer for a `self` that is never read.
+	 */
+	selfGuard?: Set<string>;
+	/**
 	 * Never set, and here only so the compiler refuses a `FormulaEnv` passed
 	 * where this is wanted.
 	 *
@@ -223,6 +242,8 @@ interface Runtime {
 	base: Scope;
 	rows: RowLookup;
 	active: Set<string>;
+	self?: { id: string; build: () => readonly RowValues[] };
+	selfGuard: Set<string>;
 }
 
 export class FormulaError extends Error {
@@ -524,6 +545,59 @@ export function inRowMessage(label: string, said: string): string {
 }
 
 /**
+ * The reserved word beside a component id, in an aggregate's first argument
+ * (SPEC §5): `self` is a Roster's own rows, never a lookup by id.
+ *
+ * Exported so `parse/layout.ts` can hold a component to the same rule
+ * `MODIFIER_NAMESPACE` already does for `mod`: `sum(self, …)` inside that
+ * component's own formula would otherwise mean two things depending on which
+ * component happened to be reading it, exactly the collision the modifier
+ * namespace is reserved against. One constant rather than the string spelled
+ * twice, since a reader of either file has to trust the other still means it.
+ */
+export const SELF_KEYWORD = 'self';
+
+/**
+ * `self`'s rows for this evaluation, or why there are none (SPEC §5).
+ *
+ * A reserved word beside a component id, read from the same argument position
+ * `evalAggregate` already parses as identifier text — never resolved through
+ * `rt.rows`, because `self` names no id on the sheet: `parse/layout.ts`
+ * refuses it as a component id for exactly that reason, on `mod`'s own
+ * precedent.
+ *
+ * **The guard is keyed on the component's own id and shared for the life of
+ * one sheet build**, not reset per evaluation: the ring this catches — a
+ * row's computed column reading `stat`, which resolves the stat's own
+ * `derived`, which aggregates `self` back over that same column — crosses
+ * several separate `resolveField` calls, each with its own fresh `Runtime`.
+ * `rt.selfGuard` is threaded through from `FormulaEnv` for exactly that
+ * reason: it is the one thing here that must not be per-call.
+ */
+function readSelf(
+	rt: Runtime,
+	caller: string,
+): { rows: readonly RowValues[] } | { error: string } {
+	if (rt.self === undefined) {
+		return {
+			error: `"self" names the rows of the component whose own formula this is, and this formula is not one of a component's rows or its own reading — so ${caller}(self, …) names nothing here.`,
+		};
+	}
+	const { id, build } = rt.self;
+	if (rt.selfGuard.has(id)) {
+		return {
+			error: `"${id}" is already being read, so "self" cannot resolve here. A formula on its own rows reaches back to itself — break that loop.`,
+		};
+	}
+	rt.selfGuard.add(id);
+	try {
+		return { rows: build() };
+	} finally {
+		rt.selfGuard.delete(id);
+	}
+}
+
+/**
  * sum() and count() over the rows a component holds (SPEC §5).
  *
  * Handled here rather than in the BUILTINS table for the reason `if` is: every
@@ -564,7 +638,8 @@ function evalAggregate(
 				: 'count() names a table first: count(inventory).',
 		);
 	}
-	const found = rt.rows(table.name, name);
+	const found =
+		table.name === SELF_KEYWORD ? readSelf(rt, name) : rt.rows(table.name, name);
 	if ('error' in found) throw new FormulaError(found.error);
 
 	// count() has no expression to add up: each row it keeps is worth one.
@@ -814,6 +889,11 @@ export function evaluateExpression(
 		// Per evaluation, not per library: the guard is about one call chain,
 		// and a library outlives every expression that uses it.
 		active: new Set(),
+		self: env?.self,
+		// A fresh, empty guard where nothing carried one through: it guards
+		// nothing, which is the truth for every expression that never reads
+		// `self` at all.
+		selfGuard: env?.selfGuard ?? new Set(),
 	});
 	// Nothing downstream may ever render "NaN" or "Infinity" on a card.
 	if (typeof result === 'number' && !Number.isFinite(result)) {

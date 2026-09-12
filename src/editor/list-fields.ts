@@ -238,10 +238,61 @@ export function addControlSpacers(header: HTMLElement): void {
 	}
 }
 
-interface RowEntry {
+interface RowEntry extends Record<string, unknown> {
 	label: string;
 	key?: string;
 	values?: Record<string, string>;
+	/** For a field naming a `statsField`: which sibling entry this row hangs off. */
+	stat?: string;
+}
+
+/** One `'entries'` choice, as a `statsField` list holds it. */
+interface StatChoice {
+	key: string;
+	name?: string;
+}
+
+/**
+ * A "Stat" column over a sibling `'entries'` list's choices, for a `'rows'`
+ * field declaring `statsField`.
+ *
+ * A native `<select>`, on Card's own reasoning for a closed list: it costs no
+ * gesture module and takes the platform's own picker on a phone. A choice the
+ * sibling list no longer declares is rendered rather than corrected
+ * (Constraint 4) — appended as its own stray option, last, so the layout's
+ * own order stays legible and the anomaly is not the first thing the eye
+ * meets, exactly as a Card's stray dropdown value is.
+ */
+function renderStatCell(
+	element: HTMLElement,
+	row: RowEntry,
+	choices: readonly StatChoice[],
+	prefix: string,
+	context: ListContext,
+): void {
+	const field = listField(element, 'Stat');
+	const select = field.createEl('select', {
+		attr: { 'aria-label': `${row.label || 'Row'} stat` },
+	});
+	select.dataset.sheetsmithFocus = `${prefix}-stat`;
+	const stray =
+		row.stat !== undefined && row.stat !== '' &&
+		!choices.some((choice) => choice.key === row.stat);
+	for (const choice of choices) {
+		const option = select.createEl('option', {
+			text: choice.name ?? choice.key,
+		});
+		option.value = choice.key;
+	}
+	if (stray) {
+		select.createEl('option', { text: row.stat as string }).value =
+			row.stat as string;
+	}
+	select.value = row.stat ?? '';
+	select.addEventListener('change', () => {
+		row.stat = select.value;
+		context.persist();
+	});
 }
 
 /**
@@ -252,6 +303,10 @@ interface RowEntry {
  * key, so there is one place a name can be wrong instead of two. An empty
  * expression is kept rather than deleted: the name has to survive being
  * cleared in one row while it is still typed into the next.
+ *
+ * `statsField` names a sibling `'entries'` field whose choices a row's own
+ * "Stat" cell offers — a Roster's `rows` over its own `stats` — and is absent
+ * everywhere a `'rows'` field names nothing beyond its own rows.
  */
 export function renderRowsEditor(
 	listEl: HTMLElement,
@@ -259,9 +314,15 @@ export function renderRowsEditor(
 	key: string,
 	prefix: string,
 	context: ListContext,
+	statsField?: string,
+	rowFlag?: { key: string; label: string },
 ): void {
 	if (!Array.isArray(record[key])) record[key] = [];
 	const rows = record[key] as RowEntry[];
+	const statChoices: readonly StatChoice[] =
+		statsField !== undefined && Array.isArray(record[statsField])
+			? (record[statsField] as StatChoice[])
+			: [];
 	// What a published row answers to, taken from the config rather than from
 	// the focus prefix that happens to hold the same string today.
 	const componentId = typeof record.id === 'string' ? record.id : '';
@@ -294,8 +355,12 @@ export function renderRowsEditor(
 
 	// One track per input, so the grid keeps its columns in step however
 	// many row values the layout defines. Two of them are fixed: the row's
-	// name and the key it publishes under.
-	listEl.style.setProperty('--sheetsmith-list-fields', String(names.length + 2));
+	// name and the key it publishes under. A third joins them where a sibling
+	// list offers each row a stat to hang off.
+	listEl.style.setProperty(
+		'--sheetsmith-list-fields',
+		String(names.length + 2 + (statsField === undefined ? 0 : 1)),
+	);
 
 	// A long list must not bury the sections under it: eighteen skills put
 	// eight hundred pixels between this field and the next one, and the add
@@ -311,7 +376,13 @@ export function renderRowsEditor(
 	} else {
 		const columns = scroller.createDiv('sheetsmith-entry-columns');
 		columns.createSpan({ text: 'Row name' });
+		if (statsField !== undefined) columns.createSpan({ text: 'Stat' });
 		columns.createSpan({ text: 'Publishes as' });
+		// No heading text of its own: `checkField` draws the flag's name beside
+		// every box it makes, so a heading above the column would repeat it.
+		// The track still has to exist, so the header's columns stay in step
+		// with the row beneath it (`addControlSpacers`'s own reasoning).
+		if (rowFlag !== undefined) columns.createSpan();
 		for (const name of names) {
 			const heading = columns.createDiv('sheetsmith-list-heading');
 			// The heading is an input, because renaming a value name is the
@@ -459,6 +530,16 @@ export function renderRowsEditor(
 			context.redraw();
 		});
 
+		if (statsField !== undefined) {
+			renderStatCell(
+				element,
+				row,
+				statChoices,
+				`${prefix}-row-${index}`,
+				context,
+			);
+		}
+
 		// One word set across the heading, the placeholder and the announced
 		// name, as the row name field beside it already has: a control whose
 		// accessible name says a word that is nowhere on screen leaves voice
@@ -538,6 +619,13 @@ export function renderRowsEditor(
 		// beside a card rendering the refusal.
 		if (row.key !== undefined && isName(row.key)) {
 			copyableName(publishes, `${componentId}.${row.key}`);
+		}
+
+		// `checkField` is the sole checkbox factory (PATTERNS §1, `styles.test.ts`'s
+		// own guard for it) — a Roster's `dividerAfter` wears the same forced-colors
+		// mark as any other flag rather than a lookalike this list draws itself.
+		if (rowFlag !== undefined) {
+			checkField(element, rowFlag.label, row, rowFlag.key, context);
 		}
 
 		for (const name of names) {

@@ -404,6 +404,29 @@ export interface ConfigFieldSpec<
 	 * PATTERNS §1's worked example is against.
 	 */
 	entryColumns?: readonly [EntryColumnSpec<TEntryKey>, EntryColumnSpec<TEntryKey>];
+	/**
+	 * For a `'rows'` field only: the sibling config key whose `'entries'` list
+	 * offers each row's choice of what it hangs off — a Roster's `rows`
+	 * naming `stats`.
+	 *
+	 * The editor draws a select over that list's `key`/`name` pairs rather
+	 * than a typed field, on Record set's own precedent for offering a closed
+	 * list: the field asks the *field* which sibling holds its choices, so
+	 * the editor still learns nothing about what a Roster is. Absent is the
+	 * ordinary case — a row naming nothing beyond itself, which is every
+	 * `'rows'` field before this one.
+	 */
+	statsField?: string;
+	/**
+	 * For a `'rows'` field only: a per-row boolean the editor offers as a
+	 * checkbox, under `key` and named by `label` — a Roster's `dividerAfter`.
+	 *
+	 * The field asks the *field* what to call it and where to store it, so
+	 * the editor still learns nothing about what a Roster is or what the
+	 * flag means. Absent is the ordinary case — every `'rows'` field before
+	 * this one had no per-row flag at all.
+	 */
+	rowFlag?: { key: string; label: string };
 }
 
 /**
@@ -621,6 +644,19 @@ type ScopeEntrySource =
 			display?: {
 				field: string;
 				scope: Readonly<Record<string, FieldValue>>;
+				/**
+				 * This entry's own rows, resolvable as `self` in an aggregate's
+				 * first argument inside `field`'s formula (SPEC §5), for a
+				 * component that groups rows under names — a Roster's stat,
+				 * reading `count(self, Rating > 0)` over its own band rather
+				 * than the whole component's.
+				 *
+				 * Beside `scope` rather than folded into it: `scope` answers to
+				 * `Record<string, FieldValue>`, and a row set is not a
+				 * `FieldValue`. Absent everywhere a `display` entry is not one
+				 * of a component's own rows.
+				 */
+				rows?: RowsSource;
 			};
 			compute?: never;
 	  }
@@ -717,6 +753,19 @@ export type FieldResolver = (
 	 * nothing and means what it always meant.
 	 */
 	displayOnly?: boolean,
+	/**
+	 * This evaluation's own rows, resolvable as `self` in an aggregate's first
+	 * argument (SPEC §5), for a component that groups rows under names. A
+	 * Roster's stat passes its own band here so `count(self, Rating > 0)`
+	 * walks that band and not the whole roster's.
+	 *
+	 * Lazy on `RowsSource`'s own terms — a row may hold a computed column that
+	 * reads the rest of the sheet — and re-entry is refused rather than
+	 * recursed: a stat's `derived` reading `self` over a column that reads
+	 * that same stat back is a ring, caught the same way a table walking its
+	 * own rows is (`formula/rows.ts`).
+	 */
+	self?: RowsSource,
 ) => FieldValue | null;
 
 /**
