@@ -134,8 +134,18 @@ mkdirSync(outDir, { recursive: true });
  * components on the sheet and all three siblings went stale together, not
  * only the default. Each measured through its own query, harness built first.
  * 5800 to **6400**, 11800 to **13200**, 6600 to **7300**, 6800 to **8000**.
+ *
+ * **Raised again for the fit rows** (`docs/features/picture-fit-and-suggest.md`):
+ * a Cover and a Stretch Image beside a Passport in cover, one full-width row at
+ * the default, plus a Passport in stretch on its own row under that — four
+ * placements over two rows at the default, six separate one-column rows
+ * narrow. Measured twice as the second row was added; final numbers: 6667 here
+ * against the 6400 this was set to, 14195 at 380 against 13200, 7636 at 520
+ * against 7300, 8437 at `text=24` against 8000 — all four over, each measured
+ * through its own query with the harness built first. 6400 to **6700**, 13200
+ * to **14300**, 7300 to **7700**, 8000 to **8500**.
  */
-const SHEET_FRAME = '1400,6400';
+const SHEET_FRAME = '1400,6700';
 
 /**
  * The editor pane's frame, tall because the tree is the whole layout.
@@ -231,9 +241,14 @@ const DEFAULTS = [
 		// again the widest of the three — a wide roster's band head wraps its
 		// name, value and reading onto their own lines at one column, on top
 		// of every row underneath it stacking the same way Table's already do.
+		//
+		// Raised again with SHEET_FRAME for the fit rows: measured 14195 against
+		// 13200 — the widest jump of the three again, since four placements that
+		// sit in two rows at the default each become a full-width row of their own
+		// at one column.
 		name: 'sheet-narrow',
 		query: 'surface=sheet&theme=dark&width=380',
-		size: '520,13200',
+		size: '520,14300',
 	},
 	{
 		/*
@@ -262,9 +277,13 @@ const DEFAULTS = [
 		//
 		// Raised again with SHEET_FRAME for the Roster fixture: measured 7182
 		// against 6600.
+		//
+		// Raised again with SHEET_FRAME for the fit rows: measured 7636 against
+		// 7300 — at 520 the sheet has not collapsed, so the four new placements
+		// still sit in two rows and the jump is the smallest of the three.
 		name: 'sheet-list-narrow',
 		query: 'surface=sheet&theme=light&width=520',
-		size: '620,7300',
+		size: '620,7700',
 	},
 	{
 		// UI.md §5 puts the card's headline number in `em` rather than pixels
@@ -293,7 +312,10 @@ const DEFAULTS = [
 		//
 		// Raised again with SHEET_FRAME for the Roster fixture: measured 7884
 		// against 6800.
-		size: '1400,8000',
+		//
+		// Raised again with SHEET_FRAME for the fit rows: measured 8437 against
+		// 8000, through `text=24` as this comment asks.
+		size: '1400,8500',
 	},
 	{
 		// The first view to photograph a focus ring at all. A still cannot press

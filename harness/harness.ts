@@ -258,7 +258,21 @@ function portrait(width: number, height: number, label: string): string {
 		// file will not necessarily produce, on the single property this component is
 		// built around. An instrument that can only draw the flattering case is
 		// worse than one that omits the case.
-		`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
+		//
+		// **`preserveAspectRatio="none"`, found by `fit: 'stretch'`'s own shot.**
+		// Chrome maps an `<img>`'s `object-fit: fill` onto its *reported* size
+		// correctly — `getBoundingClientRect` on the element was the full box either
+		// way — but an SVG resource still applies its own viewport mapping inside
+		// that box, and the default `xMidYMid meet` re-imposes the aspect ratio
+		// `fill` was asked to break: the picture painted centred and undistorted
+		// with the frame's own background showing on two sides, indistinguishable
+		// from `contain` in every shot despite `getComputedStyle` correctly
+		// reporting `fill`. A raster file has no such second opinion to override,
+		// so this is a property of the fixture rather than of the component; unset,
+		// it left `stretch` unphotographable and would have read as a defect in
+		// `sheetsmith-fit-stretch` to the next reviewer who did not go looking
+		// past the computed style.
+		`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">`,
 		`<rect width="${width}" height="${height}" fill="#8a7fbe"/>`,
 		// A circle, because a circle drawn as an ellipse is what a distorted
 		// picture looks like and nothing else in the shape would say so.

@@ -2209,6 +2209,77 @@ export const SAMPLES: Sample[] = [
 			'| Consort | 0 |',
 		].join('\n'),
 	},
+	/*
+	 * Fit (`docs/features/picture-fit-and-suggest.md`), on the same file and the
+	 * same box shape as **Portrait in a wide box** above so the only variable is
+	 * the setting: `Sildar Hallwinter.png` is 300×420, tall, in a 4×3 box that is
+	 * wider than it is — the exact case `contain` pillarboxes. `cover` crops it to
+	 * fill instead, centred, and `stretch` fills it exactly, which the picture's
+	 * own disc draws as an ellipse. Both on Image and on Passport, since the two
+	 * share one painter and a review of one is not a review of the other's chrome
+	 * — `contain` on Passport is already on screen above (**Passport**, row 43),
+	 * so this is the two settings that block adds rather than all three again.
+	 */
+	{
+		config: {
+			id: 'portrait_cover',
+			type: 'image',
+			label: 'Cover',
+			position: { col: 1, row: 56, width: 4, height: 3 },
+			fit: 'cover',
+		} as ComponentConfig,
+		body: '\n![[Sildar Hallwinter.png]]\n',
+	},
+	{
+		config: {
+			id: 'portrait_stretch',
+			type: 'image',
+			label: 'Stretch',
+			position: { col: 5, row: 56, width: 4, height: 3 },
+			fit: 'stretch',
+		} as ComponentConfig,
+		body: '\n![[Sildar Hallwinter.png]]\n',
+	},
+	{
+		config: {
+			id: 'passport_cover',
+			type: 'passport',
+			label: 'Passport, cover',
+			position: { col: 9, row: 56, width: 4, height: 3 },
+			fit: 'cover',
+			fields: [{ key: 'class', name: 'Class' }],
+		} as ComponentConfig,
+		body: [
+			'',
+			'![[Sildar Hallwinter.png]]',
+			'',
+			'```sheet',
+			'name: Thora Ironhelm of Mirabar',
+			'class: Bard',
+			'```',
+			'',
+		].join('\n'),
+	},
+	{
+		config: {
+			id: 'passport_stretch',
+			type: 'passport',
+			label: 'Passport, stretch',
+			position: { col: 1, row: 59, width: 4, height: 3 },
+			fit: 'stretch',
+			fields: [{ key: 'class', name: 'Class' }],
+		} as ComponentConfig,
+		body: [
+			'',
+			'![[Sildar Hallwinter.png]]',
+			'',
+			'```sheet',
+			'name: Thora Ironhelm of Mirabar',
+			'class: Bard',
+			'```',
+			'',
+		].join('\n'),
+	},
 ];
 
 /** The same layout with nothing stored: every component's empty state. */
