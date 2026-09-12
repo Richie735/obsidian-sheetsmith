@@ -204,6 +204,8 @@ export interface PassportConfig extends ComponentConfig {
 	fields?: PassportField[];
 	hidePicture?: boolean;
 	hideLabel?: boolean;
+	/** How the picture fills its frame. Defaults to 'contain'. */
+	fit?: 'contain' | 'cover' | 'stretch';
 }
 
 /**
@@ -398,6 +400,7 @@ function drawPicture(
 		alt: '',
 		prefix: labelled ? null : config.label,
 		status,
+		fit: config.fit,
 		...(context.resource === undefined ? {} : { resource: context.resource }),
 		/*
 		 * **The one refusal this component makes that Image does not, and it is
@@ -743,6 +746,15 @@ export const passport: ComponentDefinition<PassportConfig, PassportData> = {
 			description:
 				'Leaves the component\'s name off the sheet. A header usually does, since the face names itself.',
 			default: false,
+		},
+		{
+			key: 'fit',
+			group: 'Appearance',
+			kind: 'select',
+			label: 'Fit',
+			description:
+				'How the picture fills its frame. Fitted draws the whole picture with nothing cropped, which may leave empty space above or below it. Cropped fills the frame and cuts off whatever does not fit, centred. Stretched fills the frame exactly, distorting the picture where its shape does not match.',
+			options: ['contain', 'cover', 'stretch'],
 		},
 	],
 	/*

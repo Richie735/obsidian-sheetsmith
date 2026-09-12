@@ -1122,6 +1122,27 @@ describe('passport.render — the picture', () => {
 		expect(picture(render())?.getAttribute('src')).toBe('app://vault/Thora.png');
 	});
 
+	it('draws the default fit with no second class at all', () => {
+		for (const config of [{}, { fit: 'contain' as const }]) {
+			expect(picture(render(config))?.className.split(' ')).not.toContain(
+				'sheetsmith-fit-cover',
+			);
+		}
+	});
+
+	it('carries the chosen fit as a second class on the picture, exactly as Image\'s does', () => {
+		expect(
+			picture(render({ fit: 'cover' }))?.classList.contains(
+				'sheetsmith-fit-cover',
+			),
+		).toBe(true);
+		expect(
+			picture(render({ fit: 'stretch' }))?.classList.contains(
+				'sheetsmith-fit-stretch',
+			),
+		).toBe(true);
+	});
+
 	it('asks for the target rather than the source line', () => {
 		const asked: string[] = [];
 		render({}, { source: '![[Thora.png|200x300]]' }, {

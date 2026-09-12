@@ -112,6 +112,20 @@ export interface PictureFrameOptions {
 	 * leave the reader's own text in the note as prose with the field empty.
 	 */
 	refuse?: (next: string) => string | null;
+	/**
+	 * How the picture fills its frame. Absent or `'contain'` draws exactly as
+	 * this component always has — scaled to fit inside the box, centred, never
+	 * cropped and never distorted (`docs/features/picture-fit-and-suggest.md`).
+	 * `'cover'` crops to fill the box, centred; `'stretch'` fills it exactly,
+	 * distorting the aspect ratio where the two disagree.
+	 *
+	 * A modifier class rather than an inline style, on the same reasoning as
+	 * every other rank on this sheet: the value the caller passes in decides
+	 * *which* class, and the stylesheet — not this module — decides what each
+	 * one draws, so the two non-default values cost one class each rather than
+	 * a property this file would otherwise be stating an opinion about.
+	 */
+	fit?: 'contain' | 'cover' | 'stretch';
 	onCommit: (next: string) => void;
 }
 
@@ -195,6 +209,10 @@ export function renderPictureFrame(
 		// caller's own `object-fit` rides on, so the fit is stated rather than
 		// hoped for.
 		picture.classList.add(options.classes.picture);
+		// The default draws with no second class at all — "a value matching its
+		// default is left out" (PATTERNS §8) read one level down into the DOM.
+		if (options.fit === 'cover') picture.classList.add('sheetsmith-fit-cover');
+		else if (options.fit === 'stretch') picture.classList.add('sheetsmith-fit-stretch');
 		// Exactly what the app returned, with nothing prepended and no extension
 		// inspected on the way (SPEC §4.2).
 		picture.src = url;

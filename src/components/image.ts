@@ -92,6 +92,8 @@ import { renderPictureFrame } from './picture-frame';
 export interface ImageConfig extends ComponentConfig {
 	type: 'image';
 	hideLabel?: boolean;
+	/** How the picture fills its frame. Defaults to 'contain'. */
+	fit?: 'contain' | 'cover' | 'stretch';
 }
 
 /**
@@ -121,6 +123,15 @@ export const image: ComponentDefinition<ImageConfig, ImageData> = {
 			description:
 				'Draws the picture with no caption over it, which is usually right for a portrait. The picture still announces itself by the label to assistive tech, and the note keeps its heading either way.',
 			default: false,
+		},
+		{
+			key: 'fit',
+			group: 'Appearance',
+			kind: 'select',
+			label: 'Fit',
+			description:
+				'How the picture fills its frame. Fitted draws the whole picture with nothing cropped, which may leave empty space on two sides. Cropped fills the frame and cuts off whatever does not fit, centred. Stretched fills the frame exactly, distorting the picture where its shape does not match.',
+			options: ['contain', 'cover', 'stretch'],
 		},
 	],
 
@@ -242,6 +253,7 @@ export const image: ComponentDefinition<ImageConfig, ImageData> = {
 			// same branch that decided whether to draw the heading at all.
 			prefix: labelled ? null : config.label,
 			status,
+			fit: config.fit,
 			...(context.resource === undefined
 				? {}
 				: { resource: context.resource }),

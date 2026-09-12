@@ -4549,6 +4549,19 @@ a.sheetsmith-undo {
 	border-radius: var(--radius-s);
 }
 
+/* The two opt-in fits (`docs/features/picture-fit-and-suggest.md`), each one
+   declaration overriding the `object-fit` above. Neither changes the frame's own
+   centring: `cover`'s crop and `stretch`'s fill both use `object-position`'s
+   default, which nothing here has ever set. A layout that never asks for either
+   keeps the base rule above untouched and draws exactly as it does today. */
+.sheetsmith-fit-cover {
+	object-fit: cover;
+}
+
+.sheetsmith-fit-stretch {
+	object-fit: fill;
+}
+
 /* One line across the middle of the box, not the whole of it: the picture is what
    the reader is looking at, and the reference is what they are editing. Invisible
    but present and tabbable when unfocused, which is what keeps the view's focus
