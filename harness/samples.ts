@@ -1306,6 +1306,7 @@ export const SAMPLES: Sample[] = [
 			'| Cloak of Elvenkind | Cloak of Elvenkind; Cloak of Displacement | yes | two named, one applying |',
 			'| Warded bracers | Bracers of Defence +1; Bracers of Defence +1 | yes | one name, twice: two lines, one enrolment |',
 			'| Lucky charm | abilities.STR += 1 as luck | yes | a bonus type the layout does not declare |',
+			'| Girdle of Giant Strength | stat_roster.STR += 2 as item | yes | pushes at a roster\'s stat, not a card\'s |',
 			'| Unfinished ward | armour_class += | yes | typed, with no amount yet |',
 			'| Eyes of the Eagle | Eyes of the Eagle |  | a table cell, not a card |',
 			'| Ring of Nonexistence | Ring of Nonexistence |  | no such modifier |',
@@ -2073,6 +2074,140 @@ export const SAMPLES: Sample[] = [
 			position: { col: 1, row: 45, width: 2, height: 1 },
 		} as ComponentConfig,
 		body: null,
+	},
+	/*
+	 * Roster, in both directions, on the same six abilities `skills` above
+	 * already reads — the comparison settled answer 2 asks for: a card beside
+	 * a table (row 1), the six-up (`ability_checks`, row 37), and now one
+	 * grouped table holding all six at once. `skills.perception` moving to
+	 * `stat_roster.perception` on the day a layout converts is the measured
+	 * cost of the flat arrangement, so this reuses `skills`' own rows and
+	 * arithmetic rather than inventing new ones — `ability + Training * 2`
+	 * there is `stat + Training * 2` here, with no `values: { ability: … }`
+	 * on a single row.
+	 *
+	 * **Appended here rather than placed beside `ability_checks`.** The two
+	 * are still in one shot — the harness draws the whole growing page rather
+	 * than a fixed viewport (`docs/UI.md` §11) — and inserting earlier would
+	 * renumber every row below it along with the comments that cite one.
+	 *
+	 * Six stats and four published rows (Athletics, Stealth, Perception,
+	 * Persuasion) is the exact count `docs/BACKLOG.md`'s inventory-sizing row
+	 * asks for: ten chips in the panel's published-name inventory, each with
+	 * its `.value` and `mod.` forms, plus this component's own two aggregate
+	 * calls. Constitution carries no row at all, which is the empty-band
+	 * state (Design's own "a layout with stats and no rows draws its bands
+	 * with nothing under them") arriving for free rather than staged.
+	 */
+	{
+		config: {
+			id: 'stat_roster',
+			type: 'roster',
+			label: 'Abilities, as a roster',
+			position: { col: 1, row: 49, width: 8, height: 7 },
+			stats: [
+				{ key: 'STR', name: 'Strength' },
+				{ key: 'DEX', name: 'Dexterity' },
+				{ key: 'CON', name: 'Constitution' },
+				{ key: 'INT', name: 'Intelligence' },
+				{ key: 'WIS', name: 'Wisdom' },
+				{ key: 'CHA', name: 'Charisma' },
+			],
+			derived: 'floor((value - 10) / 2)',
+			effective: 'value + mod.self',
+			signed: true,
+			rowHeader: 'Skill',
+			namePosition: 1,
+			columns: [
+				{
+					key: 'Training',
+					hideHeading: true,
+					type: 'level',
+					levels: ['Untrained', 'Proficient:P', 'Expertise:E'],
+				},
+				{
+					key: 'Total',
+					type: 'computed',
+					formula: 'stat + Training * 2',
+					signed: true,
+					publish: true,
+				},
+			],
+			rows: [
+				{ label: 'Athletics', stat: 'STR', key: 'athletics' },
+				{ label: 'Acrobatics', stat: 'DEX' },
+				{ label: 'Stealth', stat: 'DEX', key: 'stealth' },
+				{ label: 'Investigation', stat: 'INT' },
+				{ label: 'Perception', stat: 'WIS', key: 'perception' },
+				{ label: 'Insight', stat: 'WIS' },
+				{ label: 'Persuasion', stat: 'CHA', key: 'persuasion' },
+			],
+		} as ComponentConfig,
+		body: [
+			'```sheet',
+			'STR: 15',
+			'DEX: 14',
+			'CON: 13',
+			'INT: 12',
+			'WIS: 10',
+			'CHA: 8',
+			'```',
+			'',
+			'| Skill | Training | Total |',
+			'| --- | --- | --- |',
+			'| Athletics | 1 | |',
+			'| Acrobatics | 0 | |',
+			'| Stealth | 2 | |',
+			'| Investigation | 0 | |',
+			'| Perception | 1 | |',
+			'| Insight | 0 | |',
+			'| Persuasion | 1 | |',
+		].join('\n'),
+	},
+	/*
+	 * The other direction, narrow beside the first so both pictures are in
+	 * one shot without scrolling sideways: a Blades playbook's attributes,
+	 * each read as the count of its own actions with a dot in them —
+	 * `count(self, Rating > 0)`, aggregating one band and never the whole
+	 * roster. `hideValue` because an attribute is not typed in directly; the
+	 * reading is all there is, which is the other branch of that setting from
+	 * `passive_perception` above.
+	 */
+	{
+		config: {
+			id: 'attributes_roster',
+			type: 'roster',
+			label: 'Attributes',
+			position: { col: 9, row: 49, width: 4, height: 7 },
+			stats: [{ key: 'insight' }, { key: 'prowess' }, { key: 'resolve' }],
+			hideValue: true,
+			derived: 'count(self, Rating > 0)',
+			rowHeader: 'Action',
+			columns: [{ key: 'Rating', type: 'level', max: 4 }],
+			rows: [
+				{ label: 'Hunt', stat: 'insight' },
+				{ label: 'Study', stat: 'insight' },
+				{ label: 'Survey', stat: 'insight' },
+				{ label: 'Skirmish', stat: 'prowess' },
+				{ label: 'Wreck', stat: 'prowess' },
+				{ label: 'Sway', stat: 'resolve' },
+				{ label: 'Consort', stat: 'resolve' },
+			],
+		} as ComponentConfig,
+		// No fence at all: hideValue never writes one, and a roster's two
+		// halves are found rather than positioned, so a section holding only
+		// a table is the honest state rather than an empty one standing in.
+		body: [
+			'| Action | Rating |',
+			'| --- | --- |',
+			'| Hunt | 2 |',
+			'| Study | 0 |',
+			'| Survey | 1 |',
+			'| Skirmish | 3 |',
+			'| Wreck | 0 |',
+			'| Sway | 1 |',
+			'| Consort | 0 |',
+		].join('\n'),
 	},
 ];
 
