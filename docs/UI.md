@@ -301,6 +301,7 @@ belongs to the component that is only that, not to whoever renders one.
 | --- | --- | --- |
 | The card | `.sheetsmith-card`, `.sheetsmith-card-single` | Card, Card set, Pool, Passport's face |
 | A heading over a region | `.sheetsmith-group-heading` | Group, Tab set |
+| A stat's name, value and reading as one line of a table | `.sheetsmith-roster-band-inner`, `.sheetsmith-roster-band-value` | Roster's band head. **Reuses rather than restyles**: the name takes `.sheetsmith-group-heading`, the score `.sheetsmith-card-input`, the reading `.sheetsmith-card-derived`. What is new: the band-inner wrapper, a `<div>` inside the table's own `<td>` rather than `display: flex` on the `<td>` itself, which the engine boxes in an anonymous table-cell and loses the `colSpan`-driven width; and the value/reading centring sub-group `.sheetsmith-roster-band-value`, needed only because a band head's own width is not a card's |
 | A component's own name | `.sheetsmith-component-label` | the card face, Pool, Track, Rich text, Image, Record set, Passport — **six consumers**, which is what took it from a comment in each file to a name in this table |
 | A strip of alternatives over a region | `.sheetsmith-tabset-strip` | Tab set's tabs |
 | The level ring | `paintLevelRing`, `.sheetsmith-level-ring` | Table's `level` and `toggle` columns, Record set's `level` and `toggle` fields, Track's flag, the editor's level sample |

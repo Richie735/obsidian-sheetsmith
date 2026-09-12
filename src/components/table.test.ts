@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { table, TableConfig, TableData } from './table';
+import { roster, RosterConfig } from './roster';
 import { closePopover, LONG_PRESS } from '../ui/popover';
 import { UNRESOLVED_DELAY } from '../interaction/editable';
 import { hold, pressDown, prevented, release } from '../test/pointer';
@@ -2783,6 +2784,95 @@ describe('a column total and sum() over the same rows agree', () => {
 		expect(() => evaluate('sum(inventory, Worn)', env.sheet, callsFrom(env))).toThrow(
 			'Row "Dagger": sum() adds numbers up and this is yes or no. Count the rows it holds for instead, with count(inventory, <condition>).',
 		);
+	});
+});
+
+/*
+ * The two-consumer guard `docs/features/stat-with-dependants.md` names as
+ * already true (PATTERNS §1's ladder): Roster's row-view assembly is a
+ * second, duplicated copy of this file's `rowScope`/`storedCells`/`rowViews`
+ * rather than a shared module, on the argument that the two differ in the one
+ * way that matters — a Table row's `values` against a Roster row's
+ * `stat`/`stat.value` — and a shared module would be a policy shared and its
+ * two applications duplicated regardless (§1's `roundSum` mistake, one level
+ * up). What is *not* duplicated, and so is worth asserting agrees, is the
+ * layering itself: a row's names are its stored cells, typed, with its
+ * computed columns resolved over the top of them and nothing else. Two
+ * equivalent configs — one column stored, one computed reading it — driven
+ * through each component's own `scopeRows`, over the same note.
+ */
+describe('a row\'s own layering agrees between Table and Roster', () => {
+	const BODY = [
+		'| Name | Score | Doubled |',
+		'| --- | --- | --- |',
+		'| Alpha | 3 |  |',
+		'| Beta | 5 |  |',
+	].join('\n');
+
+	const tableConfig: TableConfig = {
+		id: 'plain_table',
+		type: 'table',
+		label: 'Plain table',
+		position: { col: 1, row: 1, width: 4, height: 2 },
+		// Declared, not open: Roster's rows are always declared, so this is
+		// the comparable shape on Table's side.
+		rows: [{ label: 'Alpha' }, { label: 'Beta' }],
+		columns: [
+			{ key: 'Score', type: 'number' },
+			{ key: 'Doubled', type: 'computed', formula: 'Score * 2' },
+		],
+	};
+
+	const rosterConfig: RosterConfig = {
+		id: 'plain_roster',
+		type: 'roster',
+		label: 'Plain roster',
+		position: { col: 1, row: 1, width: 4, height: 2 },
+		stats: [{ key: 'only' }],
+		rows: [
+			{ label: 'Alpha', stat: 'only' },
+			{ label: 'Beta', stat: 'only' },
+		],
+		columns: [
+			{ key: 'Score', type: 'number' },
+			{ key: 'Doubled', type: 'computed', formula: 'Score * 2' },
+		],
+	};
+
+	/** This row's `Doubled`, however that component read its own note. */
+	function doubled(values: readonly { values: Record<string, unknown> }[]): (number | null)[] {
+		return values.map((row) =>
+			typeof row.values.Doubled === 'number' ? row.values.Doubled : null,
+		);
+	}
+
+	function tableRows(body: string) {
+		const result = table.read(body, tableConfig);
+		if (!result.ok || result.data === null) throw new Error('expected data');
+		const source = table.scopeRows?.(result.data, tableConfig);
+		return source?.(makeFieldResolver(table, tableConfig, result.data, NO_ENV)) ?? [];
+	}
+
+	function rosterRows(body: string) {
+		const result = roster.read(body, rosterConfig);
+		if (!result.ok || result.data === null) throw new Error('expected data');
+		const source = roster.scopeRows?.(result.data, rosterConfig);
+		return source?.(makeFieldResolver(roster, rosterConfig, result.data, NO_ENV)) ?? [];
+	}
+
+	it('both build a computed column from the same stored cell, over the same note', () => {
+		expect(doubled(tableRows(BODY))).toEqual([6, 10]);
+		expect(doubled(rosterRows(BODY))).toEqual([6, 10]);
+	});
+
+	it('both leave an unresolvable computed column absent rather than zero', () => {
+		const broken = [
+			'| Name | Score | Doubled |',
+			'| --- | --- | --- |',
+			'| Alpha | not a number |  |',
+		].join('\n');
+		expect(tableRows(broken)[0]?.values.Doubled).toBeUndefined();
+		expect(rosterRows(broken)[0]?.values.Doubled).toBeUndefined();
 	});
 });
 

@@ -314,7 +314,7 @@ describe('component registry', () => {
 		const holding = types.filter(
 			(type) => getComponent(type)?.scopeRows !== undefined,
 		);
-		expect(holding).toEqual(['record-set', 'table']);
+		expect(holding).toEqual(['record-set', 'roster', 'table']);
 	});
 
 	it('leaves the modifier source off unless a component declares any', () => {
@@ -707,6 +707,7 @@ describe('a component that says what a sample of itself looks like', () => {
 		'record-set Spellbook',
 		'record-set Features',
 		'rich-text bare',
+		'roster bare',
 		'table bare',
 		'table Inventory',
 		'table Conditions',
@@ -724,8 +725,13 @@ describe('a component that says what a sample of itself looks like', () => {
 	 * reversal showing up here: its name used to be the note's *filename*, so a
 	 * passport with no declared fields held nothing a note could store. The name is
 	 * an entry in its fence now, so every configuration of it fills at least that.
+	 *
+	 * **A Roster with no stats is the fourth.** Like Card set's bare config, it
+	 * has nothing to fill — a stat or a row, neither declared — and drawing a
+	 * layout part-way through being built is Group's own reading rather than
+	 * an error (SPEC §10).
 	 */
-	const EMPTY = ['card-set bare', 'table bare', 'track bare'];
+	const EMPTY = ['card-set bare', 'roster bare', 'table bare', 'track bare'];
 
 	it('sweeps every sampled configuration, and fills all but the ones that name nothing', () => {
 		expect(samples().map((entry) => entry.where)).toEqual(SWEPT);

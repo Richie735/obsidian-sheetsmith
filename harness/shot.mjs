@@ -124,8 +124,18 @@ mkdirSync(outDir, { recursive: true });
  * raising it here would be repairing somebody else's instrument inside a diff
  * about a component. Measured and recorded rather than fixed, which is what this
  * comment keeps asking for.
+ *
+ * **Raised again for the Roster fixture** (two rosters, one six-band wide and
+ * one three-band narrow, beside the six-up "Ability checks" group): measured
+ * 6342 here against the 5800 this was set to, 13077 narrow against 11800, 7182
+ * at 520 against 6600 and 7884 at `text=24` against 6800 — **all four over the
+ * frame**, on the exact trap this comment's own opening paragraph names, and
+ * the exact one a Roster addition was always going to fall into: two new
+ * components on the sheet and all three siblings went stale together, not
+ * only the default. Each measured through its own query, harness built first.
+ * 5800 to **6400**, 11800 to **13200**, 6600 to **7300**, 6800 to **8000**.
  */
-const SHEET_FRAME = '1400,5800';
+const SHEET_FRAME = '1400,6400';
 
 /**
  * The editor pane's frame, tall because the tree is the whole layout.
@@ -215,9 +225,15 @@ const DEFAULTS = [
 		// "Ability checks" six-up (`docs/SPEC.md` §4.3): at one column its six
 		// pairs stack one-per-row rather than two, which is the widest jump of
 		// the three frames this addition touches.
+		//
+		// Raised again with SHEET_FRAME for the Roster fixture: measured 13077
+		// against 11800. Roster's own narrow reflow is the reason this jump is
+		// again the widest of the three — a wide roster's band head wraps its
+		// name, value and reading onto their own lines at one column, on top
+		// of every row underneath it stacking the same way Table's already do.
 		name: 'sheet-narrow',
 		query: 'surface=sheet&theme=dark&width=380',
-		size: '520,11800',
+		size: '520,13200',
 	},
 	{
 		/*
@@ -243,9 +259,12 @@ const DEFAULTS = [
 		// push the sheet about 700px taller. Raised again to 6300 for the two
 		// Passports: measured 6020 against the 6000 it was set to, which is 20px
 		// over and therefore cropping.
+		//
+		// Raised again with SHEET_FRAME for the Roster fixture: measured 7182
+		// against 6600.
 		name: 'sheet-list-narrow',
 		query: 'surface=sheet&theme=light&width=520',
-		size: '620,6600',
+		size: '620,7300',
 	},
 	{
 		// UI.md §5 puts the card's headline number in `em` rather than pixels
@@ -271,7 +290,10 @@ const DEFAULTS = [
 		//
 		// Raised again with SHEET_FRAME for the "Ability checks" six-up, measured
 		// through `text=24` rather than assumed from the default-size delta.
-		size: '1400,6800',
+		//
+		// Raised again with SHEET_FRAME for the Roster fixture: measured 7884
+		// against 6800.
+		size: '1400,8000',
 	},
 	{
 		// The first view to photograph a focus ring at all. A still cannot press
@@ -732,6 +754,19 @@ const DEFAULTS = [
 		 */
 		name: 'editor-inventory-table',
 		query: 'surface=editor&theme=light&open=skills',
+		size: EDITOR_FRAME,
+	},
+	{
+		/*
+		 * A roster's own inventory: six stats and four published rows put ten
+		 * chips in the panel — each with its `.value` and `mod.` forms — plus
+		 * the two aggregate calls (`self` inside the roster's own formulas,
+		 * and `count()`/`sum()` from elsewhere). `docs/BACKLOG.md`'s
+		 * inventory-sizing row names this exact count as the criterion, and
+		 * it is closed only if this view is the one selecting the roster.
+		 */
+		name: 'editor-inventory-roster',
+		query: 'surface=editor&theme=light&open=stat_roster',
 		size: EDITOR_FRAME,
 	},
 	{

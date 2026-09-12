@@ -1617,7 +1617,8 @@
    unresolved treatment. Mixed prose and links keep the layer's ellipsis, where
    what is being cut off may be either. */
 .sheetsmith-view .sheetsmith-table-link-only > a,
-.sheetsmith-view .sheetsmith-record-link-only > a {
+.sheetsmith-view .sheetsmith-record-link-only > a,
+.sheetsmith-view .sheetsmith-roster-link-only > a {
 	display: block;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -5204,4 +5205,83 @@ a.sheetsmith-undo {
 		margin-top: var(--size-4-2);
 	}
 
+}
+
+/* ---------------------------------------------------------------------------
+   Roster — a set of stats and the rows that hang off them, as one grouped
+   table. The table chrome, the row cells, the level ring and the modifier
+   mark are `.sheetsmith-table`'s own, borrowed rather than restyled
+   (docs/UI.md §9); what follows is the one thing Table has no shape for: the
+   band head, a `<tr>` spanning every column.
+
+   **A single hairline, not two.** The stat's name carries
+   `.sheetsmith-group-heading`, which already draws the rank's own rule under
+   the name text alone — right for a heading over a region, wrong here, where
+   the rule has to close the whole head, name and value and reading together.
+   `.sheetsmith-tabset > .sheetsmith-group-heading` is the precedent: it zeroes
+   the heading's own rule and lets its container draw the one that counts.
+
+   **The flex box is a `<div>` inside the `<td>`, never the `<td>` itself.**
+   `display: flex` directly on a table cell is a known trap: the engine boxes
+   the cell in an anonymous table-cell for layout purposes, so the flex box's
+   own width becomes shrink-to-fit content rather than the `colSpan`-driven
+   full row width — measured at ~124px of a ~930px table, worst on an empty
+   band where this hairline is the only separator there is. The `<td>` itself
+   carries only `colSpan`; `.sheetsmith-roster-band-inner` is where the flex
+   layout and the hairline actually live, at the full width the cell already
+   has. */
+.sheetsmith-roster-band-inner {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	column-gap: var(--size-4-2);
+	row-gap: var(--size-2-1);
+	padding: var(--size-2-2) var(--size-4-1);
+	border-bottom: 1px solid
+		var(--sheetsmith-group-rule, var(--background-modifier-border));
+}
+
+/* **The second copy of the hairline, and it is the `<td>`'s own.** The band
+   head shares its element with every other cell in this table
+   (`sheetsmith-table`, borrowed rather than restyled), so it inherits
+   `.sheetsmith-table td`'s generic `border-bottom` on top of the one the div
+   above draws — two lines with a sliver of gap between them, on a populated
+   band and an empty one alike, since the generic rule does not care whether
+   the row under it exists. Three classes beats the generic rule's two classes
+   and an element, so this wins on specificity; it sits below it in the
+   cascade anyway, on this file's own rule that an override belongs under the
+   rule it overrides. */
+.sheetsmith-view .sheetsmith-table .sheetsmith-roster-band-head {
+	border-bottom: none;
+}
+
+.sheetsmith-roster-band-inner .sheetsmith-group-heading {
+	flex: 1 1 auto;
+	min-width: 0;
+	margin-bottom: 0;
+	padding: 0;
+	border-bottom: none;
+}
+
+/* The score and its reading, stacked and centred on each other rather than
+   left in the band-inner row's own flow.
+
+   `.sheetsmith-card-input`'s `text-align: center` only visibly centres
+   where it is `width: 100%` of something with real slack to give — true
+   inside an ordinary Card, whose own width comes from the card set's
+   column, and false here: the row above shrink-wraps the score to its own
+   content so the name and the reading have room, and centred text with no
+   slack around it just looks left-set. The fix is the same shape Card
+   itself already is, one level narrower — a column, not the row's flex
+   context, so the shorter of the two (almost always the score) centres
+   under the wider. */
+.sheetsmith-roster-band-value {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	flex: 0 0 auto;
+}
+
+.sheetsmith-view .sheetsmith-roster-band-value .sheetsmith-card-input {
+	width: auto;
 }
