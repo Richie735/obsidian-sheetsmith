@@ -1652,11 +1652,22 @@ export function renderEntriesEditor(
 	withCount: boolean,
 	columnSpec: readonly [EntryColumnSpec, EntryColumnSpec],
 	context: ListContext,
+	/**
+	 * A per-entry boolean this field offers as a checkbox — a Passport field's
+	 * `list` — drawn exactly as `renderRowsEditor`'s own `rowFlag` is: a
+	 * reserved header track with no heading text of its own, since the
+	 * checkbox's own label already says what it does.
+	 */
+	entryFlag?: { key: string; label: string },
 ): void {
 	// A third content column changes both grids — the header's and the
 	// row's — and neither can be inferred from the markup, so the list
 	// says so once and the stylesheet reads it.
 	listEl.toggleClass('sheetsmith-entry-counted', withCount);
+	// A per-entry checkbox is a content column too, on the counted column's own
+	// argument: without a reserved track the header's labels would drift off
+	// the row's inputs by however wide the checkbox is.
+	listEl.toggleClass('sheetsmith-entry-flagged', entryFlag !== undefined);
 	const [primary, secondary] = columnSpec;
 	// The geometry follows the vocabulary: a list whose first column holds
 	// the word rather than an abbreviation says so once and the stylesheet
@@ -1714,6 +1725,15 @@ export function renderEntriesEditor(
 		if (withCount) {
 			columns.createSpan({ text: 'Segments' });
 			columns.createSpan({ text: 'Sense' });
+		}
+		if (entryFlag !== undefined) {
+			// No heading text of its own: `checkField` draws the flag's own
+			// name beside every box it makes, so a heading above the column
+			// would repeat it. The track still has to exist, so the header's
+			// columns stay in step with the row beneath it.
+			columns.createSpan();
+		}
+		if (withCount || entryFlag !== undefined) {
 			/*
 			 * The header has to carry the row's control tracks too, or its
 			 * last label does not line up with the last input.
@@ -1891,6 +1911,13 @@ export function renderEntriesEditor(
 				}
 				context.persist();
 			});
+		}
+
+		// `checkField` is the sole checkbox factory (PATTERNS §1, `styles.test.ts`'s
+		// own guard for it) — `renderRowsEditor`'s own reading of `rowFlag`, one
+		// list kind over.
+		if (entryFlag !== undefined) {
+			checkField(row, entryFlag.label, entry, entryFlag.key, context);
 		}
 
 		if (Platform.isMobile) {

@@ -33,28 +33,29 @@
  * something the layout does not declare is a stray, rendered and carried (§4.2).
  *
  * Pure, so Constraint 5 holds. It imports the operator and the typed effect from
- * `../types` and nothing else.
+ * `../types`, and the separator, the split and the join from `./list-value`
+ * (below, `MODIFIER_SEPARATOR`, `storedParts` and `spellParts`) — nothing else.
  */
 
 import { ModifierOperator, ModifierPhase, TypedEffect } from '../types';
+import { joinParts, LIST_SEPARATOR, listParts } from './list-value';
 
 /**
  * What separates two parts in one modifier cell (SPEC §4.2).
  *
- * **A semicolon and not the character a reader would guess.** A comma is what a
- * list looks like and is the one separator this domain cannot have: item names
- * carry commas as a matter of course — *Bracers of Armor, Greater* — so the
- * constraint on a name would bite constantly and the report would read as the
- * plugin refusing ordinary names. ` + ` fails worse, since `+1` and `+2` are
- * suffixed to half the items in every system surveyed; `|` would put a backslash
- * in every multi-part cell of a file people hand-edit, because `parse/table.ts`
- * escapes it; and a newline cannot be one at all, since a table row is one line.
+ * **A re-export, not a second declaration.** `parse/list-value.ts` holds the
+ * character and the reason it is a semicolon rather than the comma, the plus or
+ * the pipe a reader would guess — a Passport list field (`docs/features/
+ * passport-field-lists.md`) shares exactly this one fact and nothing else this
+ * file owns, so `docs/PATTERNS.md` §1's one-step tier put the bound in a module
+ * of its own rather than have this file's own importers and test suite reach
+ * into a second domain for it.
  *
- * **It is not in the expression grammar at all**, so reserving it costs an amount
- * nothing: the tokenizer has no statement separator and no string literal to hide
- * one in, so there is no legal expression a `;` can appear inside.
+ * **It is not in the expression grammar at all**, so reserving it costs nothing:
+ * the tokenizer has no statement separator and no string literal to hide one in,
+ * so there is no legal expression a `;` can appear inside.
  */
-export const MODIFIER_SEPARATOR = ';';
+export const MODIFIER_SEPARATOR = LIST_SEPARATOR;
 
 /** How a cell spells "adds to", which is the operator a part defaults to. */
 export const ADDS_TO = '+=';
@@ -158,9 +159,10 @@ export type ModifierPart =
  * The parts a cell holds, in its own order: split, trimmed, empties dropped, and
  * **nothing collapsed**.
  *
- * **This is the write list, and `cellParts` below is the read list.** The two are
- * separate functions because §6 says the repeat collapse "is a read and never a
- * write", and a single list cannot be both: a commit rewrites one part and
+ * **A re-export of `list-value.ts`'s `listParts`, and this file's own naming for
+ * it.** This is the write list, and `cellParts` below is the read list: the two
+ * are separate functions because §6 says the repeat collapse "is a read and never
+ * a write", and a single list cannot be both — a commit rewrites one part and
  * re-joins the others *as their own stored text*, so a list with a repeat already
  * dropped out of it deletes a part the reader never touched on an unrelated edit.
  * The numbers never move when that happens — a repeat was one enrolment either way
@@ -169,14 +171,7 @@ export type ModifierPart =
  * So: this addresses a cell's *parts*, and every index into it is an index into
  * the note. `cellParts` addresses a row's *enrolments*.
  */
-export function storedParts(cell: string): readonly string[] {
-	const parts: string[] = [];
-	for (const raw of cell.split(MODIFIER_SEPARATOR)) {
-		const part = raw.trim();
-		if (part !== '') parts.push(part);
-	}
-	return parts;
-}
+export const storedParts = listParts;
 
 /**
  * The enrolments a cell makes: `storedParts`, with the first of a repeated
@@ -257,6 +252,11 @@ export function withoutPart(
 /**
  * How a cell is written once one of its parts has changed.
  *
+ * **A re-export of `list-value.ts`'s `joinParts`**, on the same argument as
+ * `storedParts` above: a passport list field's per-part commit joins its own
+ * parts back into one stored string the same way this does, so the join lives
+ * once rather than twice (`docs/features/passport-field-lists.md`).
+ *
  * Canonical, and in the cell's own order: a new part is appended rather than
  * sorted into place, because the order a reader put them in is theirs and
  * reordering stored text is a correction §10 forbids as surely as deleting it.
@@ -268,9 +268,7 @@ export function withoutPart(
  * edit, which §10 forbids. This function is only the join; the rule lives at the
  * call site, where the stored texts are.
  */
-export function spellParts(parts: readonly string[]): string {
-	return parts.join(`${MODIFIER_SEPARATOR} `);
-}
+export const spellParts = joinParts;
 
 /**
  * Where a clause keyword sits in an amount, scanning from the right and ignoring

@@ -2280,6 +2280,42 @@ export const SAMPLES: Sample[] = [
 			'',
 		].join('\n'),
 	},
+	/*
+	 * A list field (`docs/features/passport-field-lists.md`): one declared
+	 * field holding several values, drawn as one chip per part rather than a
+	 * forked layout or a second field for a multiclass character. Beside the
+	 * fit row above rather than beside the header at row 43, on that block's
+	 * own reasoning: inserting earlier renumbers every row below it and every
+	 * comment that cites one.
+	 *
+	 * Two parts is the board card's own case — "Fighter 1" and "Bladesinger
+	 * Wizard 4" — and `species` stays an ordinary scalar field beside it so a
+	 * reviewer sees both kinds on one face at once, which is what shows a chip
+	 * is not just a differently-drawn tag.
+	 */
+	{
+		config: {
+			id: 'multiclass',
+			type: 'passport',
+			label: 'Multiclass',
+			position: { col: 5, row: 59, width: 6, height: 2 },
+			fields: [
+				{ key: 'class', name: 'Class', list: true },
+				{ key: 'species', name: 'Species' },
+			],
+		} as ComponentConfig,
+		body: [
+			'',
+			'![[Sildar Hallwinter.png]]',
+			'',
+			'```sheet',
+			'name: Thora Ironhelm of Mirabar',
+			'class: Fighter 1; Bladesinger Wizard 4',
+			'species: Half-elf',
+			'```',
+			'',
+		].join('\n'),
+	},
 ];
 
 /** The same layout with nothing stored: every component's empty state. */

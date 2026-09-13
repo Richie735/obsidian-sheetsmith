@@ -1109,6 +1109,23 @@ describe.each(types)('component "%s"', (type) => {
 		}
 	});
 
+	it('offers a per-entry checkbox only on an entries field', () => {
+		/*
+		 * The same shape as the `columnOptions`-must-be-`'columns'` check above:
+		 * a config-shape rule the registry can hold every component to, so a
+		 * future field cannot declare a checkbox its own list editor has no
+		 * column for. `renderEntriesEditor` draws `entryFlag` on an 'entries'
+		 * field only; a 'rows' field's equivalent is `rowFlag`, which this test
+		 * has no opinion about.
+		 */
+		for (const field of component?.configFields ?? []) {
+			if (field.entryFlag === undefined) continue;
+			expect(field.kind, `${field.key} offers a checkbox its list has no column for`).toBe(
+				'entries',
+			);
+		}
+	});
+
 	it('names only real column types in a columns field\'s offered list', () => {
 		/*
 		 * `ColumnOptionsSpec.types` is `readonly string[]` rather than the column

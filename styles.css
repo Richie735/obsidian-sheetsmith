@@ -4793,7 +4793,17 @@ a.sheetsmith-undo {
 	/* An even gap in both directions, where a sentence wanted a tight row gap and
 	   a looser column one: a wrapped row of chips reads as a grid of them, and the
 	   two axes carrying different numbers is what makes it read as a paragraph
-	   that has broken instead. */
+	   that has broken instead.
+
+	   **One value for the whole line, deliberately** (`docs/features/
+	   passport-field-lists.md`, "Spacing is uniform"). A first pass gave a list
+	   field's own parts a tighter gap than the space between two fields, so a
+	   reader could tell where one field ended by the width of the gap alone —
+	   and the owner rejected differentiated spacing outright once it was on
+	   screen. What that costs — nothing here tells a reader that two parts
+	   belong to one field and a third does not — is recorded rather than
+	   solved: a container or a border is a follow-up decided with the owner,
+	   not guessed at in this diff. */
 	gap: var(--size-2-2);
 	/* The hit target the pill gave back by being 22px rather than Obsidian's 30px
 	   input height. `legibility.md` §5's pointer minimum is 20pt and its coarse
@@ -4861,15 +4871,14 @@ a.sheetsmith-undo {
    `input[type='text']` at a specificity a bare class loses to, so every
    declaration below would be dropped and a passport would read as a row of form
    controls. */
+/* **The tag surface, on the one control every part of the sheet reuses.**
+   A scalar field's single value, a list field's own part, and its add
+   control's transient new-value input are all `.sheetsmith-passport-input` —
+   the same element, reused once per part rather than once per field
+   (`docs/features/passport-field-lists.md`, "Each part is its own control,
+   always live") — so there is one declaration of the surface rather than one
+   per shape it is drawn in. */
 .sheetsmith-view .sheetsmith-passport-input {
-	width: auto;
-	max-width: 100%;
-	/* `height: auto` against Obsidian's own `--input-height: 30px`, so the pill is
-	   the height of its own text and its padding rather than of a form field. A
-	   30px pill around a 13px value reads as a button; the tag's own padding is
-	   what should decide this box. The line's `padding-block` puts the hit target
-	   back, since the pill is now about 22px tall. */
-	height: auto;
 	padding: var(--tag-padding-y) var(--tag-padding-x);
 	border: 1px solid var(--tag-border-color);
 	/* **The plugin's own corner, not the host's tag corner**, which is the third
@@ -4887,7 +4896,6 @@ a.sheetsmith-undo {
 	   borrowed-shape decision. */
 	border-radius: var(--radius-s);
 	background-color: var(--tag-background);
-	box-shadow: none;
 	/* **`--text-normal` rather than `--tag-color`, and it is the one member of the
 	   vocabulary swapped rather than withheld.** Two independent reasons, and the
 	   first is measured: the tag colour on the tag surface over a card comes out at
@@ -4911,6 +4919,15 @@ a.sheetsmith-undo {
 	font-family: inherit;
 	font-weight: var(--tag-weight);
 	text-decoration: var(--tag-decoration);
+	width: auto;
+	max-width: 100%;
+	/* `height: auto` against Obsidian's own `--input-height: 30px`, so the pill is
+	   the height of its own text and its padding rather than of a form field. A
+	   30px pill around a 13px value reads as a button; the tag's own padding is
+	   what should decide this box. The line's `padding-block` puts the hit target
+	   back, since the pill is now about 22px tall. */
+	height: auto;
+	box-shadow: none;
 	/* Centred inside the pill. An `<input>`'s `size` is counted in `0` advances,
 	   which is wider than the lowercase letters actually in it, so a box sized to
 	   hold "Half-elf" has a few pixels spare; centred, that slack splits and sits
@@ -4929,6 +4946,168 @@ a.sheetsmith-undo {
 	border-color: var(--tag-border-color-hover);
 	background-color: var(--tag-background-hover);
 	text-decoration: var(--tag-decoration-hover);
+}
+
+/* **A list field's own row: every stored part plus the add control**
+   (`docs/features/passport-field-lists.md`, second pass — per-part editing
+   rather than one field revealing its whole raw text). One flex item of the
+   fields line above, so the uniform gap there falls between this whole row
+   and the next declared field exactly as it falls between any two scalar
+   fields.
+
+   **No tint, no border, no radius, no padding of its own** — a group tint
+   was tried here between the last two passes (a `--background-primary`
+   fill, then a `--background-modifier-border` boundary added on top of it
+   after a design review measured the fill alone as imperceptible and
+   invisible under forced colors), and the owner withdrew it outright at the
+   land stop: see `docs/features/passport-field-lists.md`, "Grouping: tried,
+   and withdrawn." The bare flex row and its one uniform gap is what's left,
+   and that gap is the same token "Spacing is uniform" already names for the
+   fields line itself, so a part of one field and the next declared field
+   read at the same rhythm with nothing painted around either. */
+.sheetsmith-view .sheetsmith-passport-list {
+	display: inline-flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--size-2-2);
+}
+
+/* One stored part: its own input and its own delete, close enough together
+   to read as one control rather than two adjacent ones. */
+.sheetsmith-view .sheetsmith-passport-part {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-2-1);
+}
+
+/* **The delete control and the add control: one glyph-only reset, on both.**
+   `docs/UI.md` §7, "never a hover-only affordance… a phone has no hover" —
+   the same reset Table's and Record set's own row delete already apply,
+   sized by the same token so a fourth and fifth glyph-only control on the
+   sheet measure like the three they join under the same finger. Combined
+   into one selector list rather than two copies (`docs/PATTERNS.md` §1: a
+   shared *set* duplicated by selector is the case a guard test could only
+   prove still agree), since the two controls are the same glyph-button shape
+   and differ only in whether one of them ever arms. No shared class reaches
+   across files for this reset: each of Table's, Record set's and this pair's
+   own callers keeps its own name for it (`interaction/arm-to-confirm.ts`'s
+   own "the class names stay with the caller"), and `docs/UI.md` §9's
+   arm-to-confirm row already lists several different class names in one row
+   for exactly that reason — this is two of those names sharing one rule
+   body within the one file that declares both.
+
+   This rule's own `display: inline-flex` is the shape both controls draw
+   in when shown; it is deliberately placed *before* the delete control's own
+   hidden-at-rest rule below, since the two share one selector's worth of
+   specificity and CSS breaks that tie by source order — the later rule (the
+   one below) is the one that must win at rest. */
+.sheetsmith-view .sheetsmith-passport-part-remove,
+.sheetsmith-view .sheetsmith-passport-add {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: var(--sheetsmith-inline-control, 1.6em);
+	height: var(--sheetsmith-inline-control, 1.6em);
+	padding: 0;
+	margin: 0;
+	border: none;
+	border-radius: 50%;
+	background-color: transparent;
+	box-shadow: none;
+	color: var(--text-faint);
+	cursor: pointer;
+	transition:
+		background-color 160ms ease,
+		color 160ms ease;
+}
+
+.sheetsmith-view .sheetsmith-passport-part-remove .svg-icon,
+.sheetsmith-view .sheetsmith-passport-add .svg-icon {
+	width: var(--icon-s);
+	height: var(--icon-s);
+}
+
+/* **The delete control shows only while its own part has focus** — not on
+   hover, and the owner confirmed that distinction directly (`docs/features/
+   passport-field-lists.md`, "Showing the delete control: focus, not hover,
+   not always"). `:focus-within` on the whole part, not `:focus` on the input
+   alone, so the button is already visible by the time a further Tab press
+   would reach it, and so focus moving from the input to this same part's own
+   delete button — still inside the part — keeps it visible throughout rather
+   than hiding and reappearing between the two.
+
+   **`display: none` at rest, not `visibility: hidden`** — the document's own
+   "Third reversal" superseding what shipped before: `visibility: hidden`
+   reserved this button's box in `.sheetsmith-passport-part`'s own `gap`,
+   which made a list field's resting width wider than a non-list field's one
+   chip by exactly that reserved space, for no reason a reader could see. A
+   `display: none` child is not a flex item at all, so nothing is reserved,
+   and the row's rest-state width is exactly its input's — the owner's
+   explicitly chosen trade is a part's own width growing the instant it gains
+   focus and shrinking back the instant focus leaves, accepted rather than
+   solved. Both properties already remove the button from the accessibility
+   tree and the tab order while they apply — the swap changes only whether
+   its box reserves space, not when it becomes focusable — and `:focus-within`
+   going true is synchronous with the focus change that triggers it, so the
+   button already has a real `display` and tab position before any further
+   Tab press is possible; a descendant with focus always satisfies its own
+   ancestor's `:focus-within`, so the button holding focus is never the one
+   this rule hides. This rule's selector has the same specificity as the
+   shared reset above and comes after it in source order, on purpose: that is
+   what makes `display: none` win at rest. The reveal rule below outranks
+   both on specificity (an extra class plus `:focus-within`), so it wins
+   whenever a part has focus regardless of source order. */
+.sheetsmith-view .sheetsmith-passport-part-remove {
+	display: none;
+}
+
+.sheetsmith-view .sheetsmith-passport-part:focus-within .sheetsmith-passport-part-remove {
+	display: inline-flex;
+}
+
+/* The add control has no armed state, so its own hover and focus-visible
+   need no `:not()` guard; the delete control's do, since an armed control's
+   own rule below must not be outranked by the ordinary hover it is not
+   having right now. */
+.sheetsmith-view .sheetsmith-passport-part-remove:hover:not(.sheetsmith-passport-part-remove-armed),
+.sheetsmith-view .sheetsmith-passport-part-remove:focus-visible:not(.sheetsmith-passport-part-remove-armed),
+.sheetsmith-view .sheetsmith-passport-add:hover,
+.sheetsmith-view .sheetsmith-passport-add:focus-visible {
+	color: var(--text-normal);
+	background-color: var(--background-modifier-hover);
+}
+
+.sheetsmith-view .sheetsmith-passport-part-remove:focus-visible,
+.sheetsmith-view .sheetsmith-passport-add:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
+}
+
+/* Armed: the next press removes the part, so the control says so before
+   anything is applied — `interaction/arm-to-confirm.ts`'s own rule, a fourth
+   consumer of it. The glyph deliberately does not become a word; the naming
+   is in the tooltip, the accessible name and the announcement. Only the
+   delete control ever reaches this: the add control has no armed state.
+
+   **A tint, not a fill, on Table's own precedent and for the reason Table's
+   comment gives**: `--background-modifier-error` and `--text-error` are the
+   same red in Obsidian's real theme, so a flat fill behind a same-coloured
+   icon paints the glyph out of the button entirely — a design review found
+   this rendered invisible in both themes. `color-mix` most of the way back
+   to the page is what keeps the icon legible against its own background. */
+.sheetsmith-view .sheetsmith-passport-part-remove-armed {
+	background-color: color-mix(
+		in srgb,
+		var(--text-error) 25%,
+		var(--background-primary)
+	);
+	color: var(--text-error);
+}
+
+/* The part itself tints too, on the same terms a Table row or a Record set
+   record does while its own delete is armed. */
+.sheetsmith-view .sheetsmith-passport-part-arming .sheetsmith-passport-input {
+	border-color: var(--text-error);
 }
 
 /* The layout's word for the field, shown only while the field is empty — **at the
@@ -4959,8 +5138,9 @@ a.sheetsmith-undo {
    is gone. It is kept on the narrower ground that survives: `--text-faint` is
    2.97:1 against a card's fill, under `legibility.md` §3's bar, and these two
    strings are the ones that can least afford it. The placeholder is the *only*
-   thing naming a field the layout declared, and an empty chip is the one on the
-   line with nothing else to read.
+   thing naming a field the layout declared — a list field's own add control
+   carries the same invitation in its accessible name instead, which this query
+   has no text of to raise.
 
    **It is the only escalating placeholder on the sheet**, and that is stated
    rather than hidden: Rich text's, Image's and a record's body all stay faint
@@ -6417,7 +6597,18 @@ a.sheetsmith-undo {
    squeezed them to nothing and pushed the row out of shape. Two fixed
    two-column grids cannot be told apart from the markup, so the list carries
    the fact and this reads it. */
-.sheetsmith-entry-counted {
+/* **The control-track geometry, on both lists that need a third column.**
+   `.sheetsmith-entry-counted` (a track's rows: a length and a sense) and
+   `.sheetsmith-entry-flagged` (a Passport field's `list`, one checkbox column)
+   share every declaration below except `grid-template-columns` itself — the
+   token, the header-spacer compensation, and both ends of the promise that a
+   control track measures the same in the header as in the row. Written as one
+   selector list rather than two copies (`docs/PATTERNS.md` §1: a shared *set*
+   duplicated by selector is the case a guard test could only prove still
+   agree), so a change to the icon token or the compensation math cannot land
+   on one list's buttons and miss the other's. */
+.sheetsmith-entry-counted,
+.sheetsmith-entry-flagged {
 	/* One icon button: the icon and the click padding around it. The header's
 	   spacers take the same width, so a control track measures the same on
 	   both and the field tracks land on the same edges. The same token the
@@ -6436,10 +6627,20 @@ a.sheetsmith-undo {
 	grid-template-columns: var(--sheetsmith-entry-first, 7em) minmax(0, 1fr) 7em 7em repeat(3, min-content);
 }
 
+/* The flagged list's own third column: one track rather than two, since a
+   flag is one column where a count and a sense are two. */
+.sheetsmith-entry-flagged .sheetsmith-entry-columns,
+.sheetsmith-entry-flagged .sheetsmith-entry-row {
+	grid-template-columns: var(--sheetsmith-entry-first, 7em) minmax(0, 1fr) min-content repeat(3, min-content);
+}
+
 /* A track is sized by its item's margin box, so the optical pull on the last
    button has to be mirrored here or the last track measures eight pixels
    narrower in the rows than in the header — and every field track shifts. */
 .sheetsmith-entry-counted
+	.sheetsmith-entry-columns
+	> .sheetsmith-list-control-space:last-child,
+.sheetsmith-entry-flagged
 	.sheetsmith-entry-columns
 	> .sheetsmith-list-control-space:last-child {
 	margin-right: calc(-1 * var(--size-2-2));
@@ -6455,7 +6656,8 @@ a.sheetsmith-undo {
    third column started earlier than the header's and the last label sat right
    of its input. Pinning both ends of the promise is what makes `min-content`
    resolve to one answer. */
-.sheetsmith-entry-counted .sheetsmith-entry-row > button.clickable-icon {
+.sheetsmith-entry-counted .sheetsmith-entry-row > button.clickable-icon,
+.sheetsmith-entry-flagged .sheetsmith-entry-row > button.clickable-icon {
 	box-sizing: border-box;
 	width: var(--sheetsmith-list-control);
 }
@@ -6466,6 +6668,9 @@ a.sheetsmith-undo {
    wherever the page is not border-box. Said here at a weight that wins,
    rather than relying on a global nobody in this file sets. */
 .sheetsmith-entry-counted
+	.sheetsmith-entry-columns
+	> .sheetsmith-list-control-space,
+.sheetsmith-entry-flagged
 	.sheetsmith-entry-columns
 	> .sheetsmith-list-control-space {
 	box-sizing: border-box;
@@ -7574,7 +7779,8 @@ a.sheetsmith-undo {
    the header can no longer give it. */
 @container (max-width: 380px) {
 .sheetsmith-entry-columns,
-.sheetsmith-entry-counted .sheetsmith-entry-columns {
+.sheetsmith-entry-counted .sheetsmith-entry-columns,
+.sheetsmith-entry-flagged .sheetsmith-entry-columns {
 		display: none;
 	}
 
@@ -7585,7 +7791,8 @@ a.sheetsmith-undo {
 	}
 
 .sheetsmith-list .sheetsmith-entry-row,
-.sheetsmith-entry-counted .sheetsmith-entry-row {
+.sheetsmith-entry-counted .sheetsmith-entry-row,
+.sheetsmith-entry-flagged .sheetsmith-entry-row {
 		grid-template-columns: 1fr;
 	}
 
