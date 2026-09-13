@@ -99,6 +99,7 @@ function entriesEditor(
 		key?: string;
 		withCount?: boolean;
 		columns?: readonly [EntryColumnSpec, EntryColumnSpec];
+		entryFlag?: { key: string; label: string };
 	} = {},
 ): HTMLElement {
 	const el = host();
@@ -110,6 +111,7 @@ function entriesEditor(
 		options.withCount ?? false,
 		options.columns ?? KEY_AND_NAME,
 		context,
+		options.entryFlag,
 	);
 	return el;
 }
@@ -1374,6 +1376,90 @@ describe('entries editor', () => {
 		expect(context.errors.size).toBe(1);
 		entriesEditor(record);
 		expect(context.errors.size).toBe(0);
+	});
+});
+
+/*
+ * An 'entries' field declaring `entryFlag` — a Passport field's `list`
+ * (`docs/features/passport-field-lists.md`) — drawn exactly as `renderRowsEditor`
+ * already draws `rowFlag` above: the mechanism asks the field which property to
+ * read and what to call it, and knows nothing about Passport.
+ */
+describe('an entries field declaring entryFlag', () => {
+	const FLAG = { key: 'list', label: 'Several values' };
+	const twoEntries = () => ({
+		entries: [{ key: 'STR', name: 'Strength' }, { key: 'DEX' }],
+	});
+
+	it('draws one checkbox per entry, through the shared checkbox factory', () => {
+		const record = twoEntries();
+		const el = entriesEditor(record, { entryFlag: FLAG });
+		const boxes = el.querySelectorAll(
+			'.sheetsmith-entry-check input[type="checkbox"]',
+		);
+		expect(boxes).toHaveLength(2);
+	});
+
+	it('reads the entry\'s own flag as checked, unset as unchecked', () => {
+		const record = {
+			entries: [
+				{ key: 'class', name: 'Class', list: true },
+				{ key: 'species', name: 'Species' },
+			],
+		};
+		const el = entriesEditor(record, { entryFlag: FLAG });
+		const boxes = Array.from(
+			el.querySelectorAll<HTMLInputElement>(
+				'.sheetsmith-entry-check input[type="checkbox"]',
+			),
+		);
+		expect(boxes.map((box) => box.checked)).toEqual([true, false]);
+	});
+
+	it('sets the flag on check and clears the key entirely on uncheck', () => {
+		const record = { entries: [{ key: 'class', name: 'Class' }] };
+		const el = entriesEditor(record, { entryFlag: FLAG });
+		const box = el.querySelector<HTMLInputElement>(
+			'.sheetsmith-entry-check input[type="checkbox"]',
+		);
+		box?.click();
+		expect(record.entries[0]).toMatchObject({ list: true });
+		box?.click();
+		// Absent rather than `false`: a value matching the flag's own default
+		// writes nothing to a hand-edited, shared layout file (PATTERNS §8).
+		expect(record.entries[0]).not.toHaveProperty('list');
+	});
+
+	it('reserves the header a track, with no heading text of its own', () => {
+		// One more than the counted list's own header gets for the same reason
+		// (`docs/UI.md` §9's alignment argument): the flag's own track, plus the
+		// two control-button spacers a flagged header now carries so its last
+		// label does not drift off the row's buttons — spacers the *unflagged*
+		// two-column header omits, since nothing after its `1fr` track needs
+		// aligning there.
+		const plain = entriesEditor(twoEntries()).querySelector(
+			'.sheetsmith-entry-columns',
+		);
+		const flagged = entriesEditor(twoEntries(), {
+			entryFlag: FLAG,
+		}).querySelector('.sheetsmith-entry-columns');
+		expect(flagged?.textContent).not.toContain('Several values');
+		expect(flagged?.children).toHaveLength((plain?.children.length ?? 0) + 3);
+		expect(
+			flagged?.querySelectorAll('.sheetsmith-list-control-space'),
+		).toHaveLength(2);
+	});
+
+	it('draws no checkbox at all where the field declares no entryFlag', () => {
+		const el = entriesEditor(twoEntries());
+		expect(el.querySelector('.sheetsmith-entry-check')).toBeNull();
+	});
+
+	it('says in a class that the list carries a flag, for the stylesheet', () => {
+		const plain = entriesEditor(twoEntries());
+		expect(plain.classList.contains('sheetsmith-entry-flagged')).toBe(false);
+		const flagged = entriesEditor(twoEntries(), { entryFlag: FLAG });
+		expect(flagged.classList.contains('sheetsmith-entry-flagged')).toBe(true);
 	});
 });
 

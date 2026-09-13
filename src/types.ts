@@ -427,6 +427,16 @@ export interface ConfigFieldSpec<
 	 * this one had no per-row flag at all.
 	 */
 	rowFlag?: { key: string; label: string };
+	/**
+	 * For an 'entries' field only: a per-entry boolean the editor offers as a
+	 * checkbox, under `key` and named by `label` — a Passport field's `list`.
+	 *
+	 * `rowFlag`'s own precedent, read for the other list kind: the field asks
+	 * the *field* what to call it and where to store it, so the editor still
+	 * learns nothing about what a Passport is. Absent is the ordinary case —
+	 * every `'entries'` field before this one had no per-entry flag at all.
+	 */
+	entryFlag?: { key: string; label: string };
 }
 
 /**

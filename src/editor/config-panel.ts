@@ -691,6 +691,10 @@ export class ConfigPanel {
 							field.kind === 'track-rows',
 							field.entryColumns,
 							this.host.listContext(),
+							// What this field's own list offers, where it declares a
+							// per-entry checkbox (`types.ts`, `entryFlag`) — a
+							// Passport field's `list`.
+							field.entryFlag,
 						);
 					}
 				} else if (field.kind === 'rows') {

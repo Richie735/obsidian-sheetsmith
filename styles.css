@@ -6417,7 +6417,18 @@ a.sheetsmith-undo {
    squeezed them to nothing and pushed the row out of shape. Two fixed
    two-column grids cannot be told apart from the markup, so the list carries
    the fact and this reads it. */
-.sheetsmith-entry-counted {
+/* **The control-track geometry, on both lists that need a third column.**
+   `.sheetsmith-entry-counted` (a track's rows: a length and a sense) and
+   `.sheetsmith-entry-flagged` (a Passport field's `list`, one checkbox column)
+   share every declaration below except `grid-template-columns` itself — the
+   token, the header-spacer compensation, and both ends of the promise that a
+   control track measures the same in the header as in the row. Written as one
+   selector list rather than two copies (`docs/PATTERNS.md` §1: a shared *set*
+   duplicated by selector is the case a guard test could only prove still
+   agree), so a change to the icon token or the compensation math cannot land
+   on one list's buttons and miss the other's. */
+.sheetsmith-entry-counted,
+.sheetsmith-entry-flagged {
 	/* One icon button: the icon and the click padding around it. The header's
 	   spacers take the same width, so a control track measures the same on
 	   both and the field tracks land on the same edges. The same token the
@@ -6436,10 +6447,20 @@ a.sheetsmith-undo {
 	grid-template-columns: var(--sheetsmith-entry-first, 7em) minmax(0, 1fr) 7em 7em repeat(3, min-content);
 }
 
+/* The flagged list's own third column: one track rather than two, since a
+   flag is one column where a count and a sense are two. */
+.sheetsmith-entry-flagged .sheetsmith-entry-columns,
+.sheetsmith-entry-flagged .sheetsmith-entry-row {
+	grid-template-columns: var(--sheetsmith-entry-first, 7em) minmax(0, 1fr) min-content repeat(3, min-content);
+}
+
 /* A track is sized by its item's margin box, so the optical pull on the last
    button has to be mirrored here or the last track measures eight pixels
    narrower in the rows than in the header — and every field track shifts. */
 .sheetsmith-entry-counted
+	.sheetsmith-entry-columns
+	> .sheetsmith-list-control-space:last-child,
+.sheetsmith-entry-flagged
 	.sheetsmith-entry-columns
 	> .sheetsmith-list-control-space:last-child {
 	margin-right: calc(-1 * var(--size-2-2));
@@ -6455,7 +6476,8 @@ a.sheetsmith-undo {
    third column started earlier than the header's and the last label sat right
    of its input. Pinning both ends of the promise is what makes `min-content`
    resolve to one answer. */
-.sheetsmith-entry-counted .sheetsmith-entry-row > button.clickable-icon {
+.sheetsmith-entry-counted .sheetsmith-entry-row > button.clickable-icon,
+.sheetsmith-entry-flagged .sheetsmith-entry-row > button.clickable-icon {
 	box-sizing: border-box;
 	width: var(--sheetsmith-list-control);
 }
@@ -6466,6 +6488,9 @@ a.sheetsmith-undo {
    wherever the page is not border-box. Said here at a weight that wins,
    rather than relying on a global nobody in this file sets. */
 .sheetsmith-entry-counted
+	.sheetsmith-entry-columns
+	> .sheetsmith-list-control-space,
+.sheetsmith-entry-flagged
 	.sheetsmith-entry-columns
 	> .sheetsmith-list-control-space {
 	box-sizing: border-box;
@@ -7574,7 +7599,8 @@ a.sheetsmith-undo {
    the header can no longer give it. */
 @container (max-width: 380px) {
 .sheetsmith-entry-columns,
-.sheetsmith-entry-counted .sheetsmith-entry-columns {
+.sheetsmith-entry-counted .sheetsmith-entry-columns,
+.sheetsmith-entry-flagged .sheetsmith-entry-columns {
 		display: none;
 	}
 
@@ -7585,7 +7611,8 @@ a.sheetsmith-undo {
 	}
 
 .sheetsmith-list .sheetsmith-entry-row,
-.sheetsmith-entry-counted .sheetsmith-entry-row {
+.sheetsmith-entry-counted .sheetsmith-entry-row,
+.sheetsmith-entry-flagged .sheetsmith-entry-row {
 		grid-template-columns: 1fr;
 	}
 
