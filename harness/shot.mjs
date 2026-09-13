@@ -246,9 +246,17 @@ const DEFAULTS = [
 		// 13200 — the widest jump of the three again, since four placements that
 		// sit in two rows at the default each become a full-width row of their own
 		// at one column.
+		//
+		// Raised again for the multiclass list field (`docs/features/
+		// passport-field-lists.md`): measured 14529 against 14300, 229 over. At
+		// the default and at `text=24` the new Passport sits beside a *taller*
+		// one already in its row band and adds nothing to either frame, which is
+		// the one reflow that is not true of: at one column it becomes a
+		// full-width row of its own, the same shape every addition to this frame
+		// has taken. 14300 to **14700**.
 		name: 'sheet-narrow',
 		query: 'surface=sheet&theme=dark&width=380',
-		size: '520,14300',
+		size: '520,14700',
 	},
 	{
 		/*
@@ -281,9 +289,16 @@ const DEFAULTS = [
 		// Raised again with SHEET_FRAME for the fit rows: measured 7636 against
 		// 7300 — at 520 the sheet has not collapsed, so the four new placements
 		// still sit in two rows and the jump is the smallest of the three.
+		//
+		// Raised again for the multiclass list field: measured 7725 against
+		// 7700, 25 over. Unlike the other two frames this one does move: at
+		// 520 the new Passport's own face is already under its 400px stacking
+		// threshold, so it stacks picture-over-text in the row it shares with
+		// the fit row's own stacked Passport, and the row grows to hold both.
+		// 7700 to **7850**.
 		name: 'sheet-list-narrow',
 		query: 'surface=sheet&theme=light&width=520',
-		size: '620,7700',
+		size: '620,7850',
 	},
 	{
 		// UI.md §5 puts the card's headline number in `em` rather than pixels
@@ -1490,6 +1505,51 @@ const DEFAULTS = [
 		query: 'surface=sheet&theme=light',
 		size: SHEET_FRAME,
 		hover: '.sheetsmith-passport-name-input',
+	},
+	{
+		/*
+		 * **A list field's own part focused**, the state the owner's
+		 * refinement made focus-triggered rather than always-visible turns on
+		 * (`docs/features/passport-field-lists.md`, "Showing the delete
+		 * control: focus, not hover, not always"). The resting state alone
+		 * cannot show a delete control that only exists while a reader's
+		 * attention is on that one part, and no other shot exercises
+		 * `:focus-within` on `.sheetsmith-passport-part` — so this is the one
+		 * place a design review can see it appear at all, and check that the
+		 * sibling part's own delete stays hidden beside it.
+		 */
+		name: 'sheet-passport-list-part-focus',
+		query:
+			'surface=sheet&theme=light&focus=.sheetsmith-passport-list%20.sheetsmith-passport-input',
+		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * **The same part's delete armed**, against the bare card background
+		 * `.sheetsmith-passport-list` sits on now — the group tint this shot
+		 * was first added to check against was itself withdrawn at a later
+		 * land stop (`docs/features/passport-field-lists.md`, "Grouping:
+		 * tried, and withdrawn"), so what this checks today is narrower but
+		 * still real: the armed part's own reddened border and red-mixed
+		 * delete-button fill stay legible directly against the card, and the
+		 * sibling part's own delete control stays hidden beside it. `&focus=`
+		 * first, since the button does not exist to press at all until its
+		 * part has focus.
+		 */
+		name: 'sheet-passport-list-part-armed',
+		query:
+			'surface=sheet&theme=light&focus=.sheetsmith-passport-list%20.sheetsmith-passport-input&press=.sheetsmith-passport-part-remove',
+		size: SHEET_FRAME,
+	},
+	{
+		// The same armed state, in the theme its own contrast has to hold in
+		// as well — the armed fill is derived from `--background-primary`
+		// against `--background-secondary`'s card, and both are a different
+		// colour in each theme.
+		name: 'sheet-passport-list-part-armed-dark',
+		query:
+			'surface=sheet&theme=dark&focus=.sheetsmith-passport-list%20.sheetsmith-passport-input&press=.sheetsmith-passport-part-remove',
+		size: SHEET_FRAME,
 	},
 	{
 		/*
