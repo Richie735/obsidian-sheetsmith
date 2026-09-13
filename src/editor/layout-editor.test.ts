@@ -3991,14 +3991,48 @@ describe('nudging a block', () => {
 			dragTo(cell, 20, 1);
 			release(cell);
 		});
+		// The panel's own numeral, a fourth way to move the same block and the
+		// one gesture that types a number rather than counting a delta from it —
+		// which is exactly why it went unguarded once: nothing here shares an
+		// argument list with `nudge` or `beginDrag` for a test to catch drifting.
+		const byField = await pushed((fresh) => {
+			control(fresh, 'edit-left').click();
+			type(control<HTMLInputElement>(fresh, 'pos-left-col'), '50');
+		});
 
 		// Real numbers, not merely equal ones. A 2-wide block pushed right ends
 		// flush at column 12, so its `col` stops at 11; grown from column 1 the
 		// same edge is a width of 12.
 		expect(byArrows.col).toBe(11);
 		expect(byDrag.col).toBe(byArrows.col);
+		expect(byField.col).toBe(byArrows.col);
 		expect(byShiftArrows.width).toBe(12);
 		expect(byCorner.width).toBe(byShiftArrows.width);
+	});
+
+	it('says why a typed position came back lower than what was typed', async () => {
+		// A drag or an arrow key stops at the edge and the stopping is itself
+		// the feedback; a typed number has none, so the field says why it did
+		// not keep what was typed.
+		const message = (input: HTMLElement): string =>
+			input.parentElement?.querySelector('.sheetsmith-field-error')
+				?.textContent ?? '';
+
+		harness = await open(schematic());
+		control(harness, 'edit-left').click();
+		const input = control<HTMLInputElement>(harness, 'pos-left-col');
+
+		type(input, '50');
+		expect(input.value).toBe('11');
+		expect(message(input)).toBe(
+			'Held to 12 columns. Raise "Grid columns" in the layout\'s own settings to place this further out.',
+		);
+
+		// Back inside the grid, the message clears — this is a boundary, not a
+		// standing error on the field.
+		type(input, '3');
+		expect(input.value).toBe('3');
+		expect(message(input)).toBe('');
 	});
 
 	it('keeps the block focused across its own redraw, so a run of keys lands', async () => {

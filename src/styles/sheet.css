@@ -20,6 +20,14 @@
 .sheetsmith-grid {
 	display: grid;
 	grid-template-columns: repeat(var(--sheetsmith-columns, 12), 1fr);
+	/* SPEC §7: a cell already past the last column — a hand-authored file, or
+	   a `columns` reduced under it — is left where it is rather than snapped
+	   back. Left at the default `auto` it would size to its own content
+	   instead, which for a Track or a Pool is a handful of pixels: the cell
+	   collapses onto its neighbour rather than sitting the width every
+	   explicit column already has. Matching them is what "left where it is"
+	   has to mean once the cell is actually on screen. */
+	grid-auto-columns: 1fr;
 	gap: var(--size-4-2);
 	/* Fills the pane by default; centred if a snippet caps it. */
 	max-width: var(--sheetsmith-sheet-max-width, none);
