@@ -129,7 +129,8 @@ import {
 	isContainer,
 	placesChildren,
 } from '../types';
-import { childIsPlaced } from '../view/grid-cells';
+import { childIsPlaced, innerPlacement } from '../view/grid-cells';
+import { clamp, lastColumn } from './preview-grid';
 
 /**
  * How a position field is addressed, wherever it is addressed from.
@@ -600,6 +601,19 @@ export class ConfigPanel {
 					.setDesc('Grid units.')
 					.setClass('sheetsmith-position-setting')
 			: null;
+		// The same bound the schematic's drag and arrow-key gestures hold `col`
+		// and `width` to, so a typed number cannot say what those two paths
+		// already refuse: a component nested one level deep answers to its
+		// container's own box, everything else to the layout's declared width.
+		const columns =
+			parent === null
+				? (layout.columns ?? DEFAULT_COLUMNS)
+				: innerPlacement(
+						parent,
+						walkComponents(layout.components).find(
+							(entry) => entry.config === parent,
+						)?.parent ?? null,
+					).width;
 		for (const key of placed ? GRID_POSITION_KEYS : []) {
 			const holder = position!.controlEl.createDiv('sheetsmith-position-field');
 			holder.createSpan({
@@ -617,8 +631,41 @@ export class ConfigPanel {
 					this.fieldError(input, 'Whole number, 1 or more.');
 					return;
 				}
-				this.fieldError(input, null);
-				config.position[key] = parsed;
+				// Held to the grid, exactly as a drag or an arrow key would be —
+				// not rejected, since a value past the edge is not a mistake the
+				// way a fraction or a zero is, and not left to place the cell
+				// where no explicit track exists to size it. Unlike a drag, a
+				// typed number gives no felt sense of hitting an edge, so the
+				// field says why it came back lower than what was typed rather
+				// than reverting silently.
+				const bounded =
+					key === 'col'
+						? clamp(
+								parsed,
+								1,
+								lastColumn(columns, config.position.width, config.position.col),
+							)
+						: key === 'width'
+							? clamp(
+									parsed,
+									1,
+									lastColumn(
+										columns,
+										config.position.col,
+										config.position.width,
+									),
+								)
+							: parsed;
+				this.fieldError(
+					input,
+					bounded === parsed
+						? null
+						: parent === null
+							? `Held to ${columns} columns. Raise "Grid columns" in the layout's own settings to place this further out.`
+							: `Held to ${columns} columns, this container's own width.`,
+				);
+				config.position[key] = bounded;
+				input.value = String(bounded);
 				this.host.redrawSchematics();
 				this.host.persist();
 			});
