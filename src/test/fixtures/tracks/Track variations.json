@@ -1,0 +1,114 @@
+{
+	"name": "Track variations",
+	"columns": 6,
+	"triggers": [
+		"Long rest"
+	],
+	"components": [
+		{
+			"id": "exhaustion",
+			"type": "track",
+			"label": "Exhaustion",
+			"count": 6,
+			"sense": "harm",
+			"reset": [
+				{
+					"trigger": "Long rest",
+					"action": "empty"
+				}
+			],
+			"position": {
+				"col": 1,
+				"row": 1,
+				"width": 3,
+				"height": 1
+			}
+		},
+		{
+			"id": "corruption",
+			"type": "track",
+			"label": "Corruption",
+			"levels": [
+				"Clear",
+				"Touched",
+				"Marked",
+				"Tainted",
+				"Lost:☠"
+			],
+			"sense": "harm",
+			"position": {
+				"col": 4,
+				"row": 1,
+				"width": 3,
+				"height": 1
+			}
+		},
+		{
+			"id": "hit_dice",
+			"type": "track",
+			"label": "Hit dice",
+			"rows": [
+				{
+					"key": "d6",
+					"name": "d6",
+					"maxSource": "character"
+				},
+				{
+					"key": "d8",
+					"name": "d8",
+					"maxSource": "character"
+				},
+				{
+					"key": "d10",
+					"name": "d10",
+					"maxSource": "character"
+				},
+				{
+					"key": "d12",
+					"name": "d12",
+					"maxSource": "character"
+				}
+			],
+			"reset": [
+				{
+					"trigger": "Long rest",
+					"action": "full"
+				}
+			],
+			"position": {
+				"col": 1,
+				"row": 2,
+				"width": 4,
+				"height": 2
+			}
+		},
+		{
+			"id": "conditions",
+			"type": "track",
+			"label": "Conditions",
+			"count": 1,
+			"rows": [
+				{
+					"key": "blessed",
+					"name": "Blessed"
+				},
+				{
+					"key": "cursed",
+					"name": "Cursed"
+				}
+			],
+			"reset": [
+				{
+					"trigger": "Long rest",
+					"action": "empty"
+				}
+			],
+			"position": {
+				"col": 5,
+				"row": 2,
+				"width": 2,
+				"height": 2
+			}
+		}
+	]
+}

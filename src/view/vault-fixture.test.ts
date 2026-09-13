@@ -65,6 +65,7 @@ import {
 	RecordSetConfig,
 	RecordSetData,
 } from '../components/record-set';
+import { TrackConfig, TrackData } from '../components/track';
 import { parseFunctions } from '../formula/functions';
 import { modifierTargetSource } from '../formula/modifier-targets';
 import { makeFieldResolver, resolveFormulaFields } from '../formula/resolve';
@@ -99,6 +100,20 @@ const RECORDS_LAYOUT_TEXT = readFileSync(
 );
 const RECORDS_NOTE_TEXT = readFileSync(
 	new URL(RECORDS_NOTE_FILE, RECORDS_DIR),
+	'utf8',
+);
+
+/** The Track fixture, on the same terms and in a folder of its own. */
+const TRACKS_DIR = new URL('../test/fixtures/tracks/', import.meta.url);
+const TRACKS_LAYOUT_FILE = 'Track variations.json';
+const TRACKS_NOTE_FILE = 'Tracks.md';
+
+const TRACKS_LAYOUT_TEXT = readFileSync(
+	new URL(TRACKS_LAYOUT_FILE, TRACKS_DIR),
+	'utf8',
+);
+const TRACKS_NOTE_TEXT = readFileSync(
+	new URL(TRACKS_NOTE_FILE, TRACKS_DIR),
 	'utf8',
 );
 
@@ -1556,5 +1571,95 @@ describe('the Record set fixture the recipe names', () => {
 		expect(result?.ok).toBe(false);
 		if (result?.ok !== false) return;
 		expect(result.error).toContain('"Uses"');
+	});
+});
+
+describe('the Track fixture the recipe names', () => {
+	/*
+	 * The third fixture, on the same bargain as the other two: what is
+	 * checkable without the app is that both files are well formed and that
+	 * the states the note's own prose promises are the states the parsers
+	 * produce. The press — typing a length, pressing a die spent, the Long
+	 * rest button — is why the vault exists.
+	 */
+	const built = sheetFrom(TRACKS_LAYOUT_TEXT, TRACKS_NOTE_TEXT);
+
+	function trackDataOf(id: string): TrackData {
+		const entry = built.entryFor(id);
+		expect(entry.error, `${id} would not read`).toBeNull();
+		const data = entry.data as TrackData | null;
+		expect(data, `${id} holds nothing`).not.toBeNull();
+		return data as TrackData;
+	}
+
+	it('is accepted by the real layout parser, on the vault\'s own grid', () => {
+		expect(built.layout.name).toBe(TRACKS_LAYOUT_FILE.replace(/\.json$/, ''));
+		expect(built.layout.columns).toBe(6);
+		expect(built.problems).toEqual([]);
+		expect(built.layout.components).toHaveLength(4);
+		for (const config of built.layout.components) {
+			expect(getComponent(config.type), config.type).toBeDefined();
+		}
+	});
+
+	it('round-trips both files byte for byte', () => {
+		expect(serialiseLayout(built.layout)).toBe(TRACKS_LAYOUT_TEXT);
+		expect(serialiseCharacter(built.note)).toBe(TRACKS_NOTE_TEXT);
+		for (const entry of built.prepared) {
+			if (entry.config.type !== 'track' || entry.data === null) continue;
+			const section = getSection(built.note, entry.config.label);
+			expect(section, `${entry.config.label} has no section`).toBeDefined();
+			expect(
+				entry.component.write(entry.data, section?.body ?? null, entry.config),
+				`${entry.config.label} does not write itself back unchanged`,
+			).toBe(section?.body);
+		}
+	});
+
+	it('reads the fighter/wizard hit dice the note\'s own prose describes', () => {
+		const hitDice = trackDataOf('hit_dice');
+		// One d10, four d6 (one already spent), and two die types this
+		// character has not added at all — the exact motivating case, on one
+		// layout neither forks.
+		expect(hitDice.values).toEqual({
+			d6: '1 / 4',
+			d10: '0 / 1',
+		});
+	});
+
+	it('publishes each die type\'s own remainder from its own stored length', () => {
+		const hitDiceConfig = built.entryFor('hit_dice').config as TrackConfig;
+		expect(hitDiceConfig.rows?.every((row) => row.maxSource === 'character')).toBe(
+			true,
+		);
+		const scope = built.env.sheet;
+		expect(scope('hit_dice.d6.left')).toBe(3);
+		expect(scope('hit_dice.d10.left')).toBe(1);
+		// d8 and d12 have no stored length yet, so there is nothing to
+		// publish a remainder from — the ordinary state of a die type this
+		// character does not have, not an error.
+		expect(scope('hit_dice.d8.left')).toBeUndefined();
+		expect(scope('hit_dice.d12.left')).toBeUndefined();
+	});
+
+	it('restores every die type with a length, and skips the two with none', () => {
+		const hitDice = built.entryFor('hit_dice');
+		const result = hitDice.component.applyReset?.(
+			hitDice.data,
+			hitDice.config,
+			{ trigger: 'Long rest', action: 'full' },
+			{ resolve: () => null, explain: () => null },
+		);
+		expect(result?.ok).toBe(true);
+		if (result?.ok !== true) return;
+		const values = (result.data as TrackData).values;
+		// Restored to their own stored length, the ceiling carried through
+		// untouched.
+		expect(values.d6).toBe('4 / 4');
+		expect(values.d10).toBe('1 / 1');
+		// Skipped, not failed, and nothing written for either — not even a
+		// zero, which is a value the reader never asked for.
+		expect(values.d8).toBeUndefined();
+		expect(values.d12).toBeUndefined();
 	});
 });

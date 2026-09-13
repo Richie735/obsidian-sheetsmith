@@ -501,10 +501,15 @@
    needed, because the second label starts at the `1fr` track's left edge and
    a track's start does not move with its width. A third column sits after
    that track, so it does move: the row spends width on its buttons, its `1fr`
-   comes out narrower, and every column past it slides. */
+   comes out narrower, and every column past it slides.
+
+   Four fixed tracks rather than two: where a row's length comes from, the
+   formula itself (offered only while that source is `calculated`), and its
+   sense — `docs/features/track-row-length.md`'s own column, ahead of
+   `Segments` so a reader picks the source before meeting the field it gates. */
 .sheetsmith-entry-counted .sheetsmith-entry-columns,
 .sheetsmith-entry-counted .sheetsmith-entry-row {
-	grid-template-columns: var(--sheetsmith-entry-first, 7em) minmax(0, 1fr) 7em 7em repeat(3, min-content);
+	grid-template-columns: var(--sheetsmith-entry-first, 7em) minmax(0, 1fr) 7em 7em 7em repeat(3, min-content);
 }
 
 /* The flagged list's own third column: one track rather than two, since a
@@ -795,7 +800,14 @@
    keeps the box, and its width, and takes the control out of the tab order and the
    accessibility tree. See `editor/modifier-definitions-field.ts`, which measures
    what the spacer cost. */
-.sheetsmith-list-modifiers .sheetsmith-detail-field-reserved {
+/* A track's Segments input, while its length is the character's own
+   (`docs/features/track-row-length.md`), shares the same answer: the column
+   is one of the row's own fixed grid tracks and has to stay, or the Sense
+   select after it slides one column left the moment the field disappears —
+   `display: none` removes a grid child from placement entirely, where a
+   plain two-column list never had a third track for anything to slide into. */
+.sheetsmith-list-modifiers .sheetsmith-detail-field-reserved,
+.sheetsmith-entry-row .sheetsmith-detail-field-reserved {
 	visibility: hidden;
 }
 

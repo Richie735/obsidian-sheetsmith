@@ -35,7 +35,10 @@
  * already states.
  */
 
+import { setIcon } from 'obsidian';
+import { armRegister, bindArmToConfirm } from '../interaction/arm-to-confirm';
 import { GESTURE_COMMIT } from '../interaction/commit-window';
+import { bindEditable } from '../interaction/editable';
 import { levelGlyph, levelName, paintLevelRing, parseLevel } from './level-ring';
 import {
 	flagReading,
@@ -43,9 +46,11 @@ import {
 	isFlagSet,
 	isFlagSpelling,
 } from './stored-flag';
-import { sampleFlag, samplePart } from './sample-values';
+import { fencedLinkRefusal } from './fenced-link';
+import { sampleFlag, samplePart, sampleNumber, sampleSeed } from './sample-values';
 import { bindLongPress } from '../ui/popover';
 import { readFenced, writeFenced } from '../parse/fenced';
+import { splitBounded, withCeiling, withValue } from '../parse/bounded-entry';
 import {
 	ComponentConfig,
 	ComponentDefinition,
@@ -78,6 +83,20 @@ export interface TrackRow {
 	 * that painted both alike would say the wrong thing about one of them.
 	 */
 	sense?: 'progress' | 'harm';
+	/**
+	 * Where this row's length comes from: the layout's formula (`count` above,
+	 * or the component's own), or the character's own number, typed on the
+	 * sheet.
+	 *
+	 * Pool's own two words, ported one level in rather than Record set's
+	 * `'field' | 'record'`: a row's length is already a formula field
+	 * (`rows.*.count`), so `'calculated'` is exactly true here the way it is on
+	 * Pool, and `'character'` is exactly one number per character the way
+	 * Pool's is — a row is a small Pool with segments instead of a bar. Absent
+	 * means `'calculated'`, so every layout written before this reads exactly
+	 * as it did.
+	 */
+	maxSource?: 'calculated' | 'character';
 }
 
 export interface TrackConfig extends ComponentConfig {
@@ -114,8 +133,13 @@ export interface TrackData {
 	 * clobber a sibling run with a stale snapshot — the rule Card set's
 	 * values already follow, and the reason a row set is safe under two
 	 * commits racing one rebuild.
+	 *
+	 * `null` is a delta-only instruction to remove that entry entirely — a
+	 * character-owned row the reader has just removed — and `read` never
+	 * produces one: a section that read cannot contain an instruction to
+	 * delete itself. See `docs/features/track-row-length.md`.
 	 */
-	values: Record<string, string>;
+	values: Record<string, string | null>;
 }
 
 /**
@@ -126,6 +150,17 @@ export interface TrackData {
  * long to draw is still a run, and the number in the note is untouched.
  */
 export const MAX_SEGMENTS = 100;
+
+/** Obsidian's own delete glyph, matching Table's and Record set's. */
+const REMOVE_ICON = 'trash';
+
+/**
+ * A row just added by this card, so the next render can land focus in its
+ * length field — Record set's own `awaitingAdd` mechanism, one module-level
+ * flag rather than per-render state, since the press that sets it and the
+ * render that reads it are two different calls into this file.
+ */
+let awaitingAdd: { id: string; key: string } | null = null;
 
 /**
  * The furthest a run travels past either end of itself, in pixels, and how
@@ -353,9 +388,18 @@ function readsAsMarks(text: string): boolean {
  * holds none" are different answers to a formula and the same answer to a fill.
  * That conflation is also why `read` cannot call this: those two are exactly what
  * it has to tell apart, so it shares the predicate above instead.
+ *
+ * Split through `splitBounded` before any of that, so a row whose length is
+ * the character's own — stored as `2 / 4`, the marks and the length in one
+ * entry — reads its marks from the half before the slash. A plain entry has
+ * no slash in it, so the split is a no-op there: this runs for every row
+ * whatever its `maxSource`, on the rule `docs/features/track-row-length.md`
+ * states for the same reason `per-record-ceiling.md` states it for Record
+ * set — gating it on the mode would mean a row switched back to a formula
+ * left a stale composite for this function to reject as malformed.
  */
-function marksFrom(raw: string | undefined): number | null {
-	const text = (raw ?? '').trim();
+function marksFrom(raw: string | null | undefined): number | null {
+	const text = splitBounded(raw ?? '').value.trim();
 	if (text === '') return null;
 	if (!readsAsMarks(text)) return null;
 	return Number.isFinite(Number(text)) ? Number(text) : isFlagSet(text) ? 1 : 0;
@@ -410,7 +454,13 @@ export function isFlagCard(config: TrackConfig): boolean {
 	// and `levels` are already refused together, so this is the single run.
 	if (config.levels !== undefined) return config.levels.length === 2;
 	return runsOf(config).every(
-		(row) => literalCount(row.count ?? config.count) === 1,
+		// A character-owned row's length is not settled by the layout at all,
+		// so it can never be the literal 1 that makes a run a flag — whatever
+		// `row.count` happens to say, which `maxSource` makes irrelevant the
+		// moment it reads `'character'`.
+		(row) =>
+			row.maxSource !== 'character' &&
+			literalCount(row.count ?? config.count) === 1,
 	);
 }
 
@@ -443,8 +493,26 @@ function spelledMarks(config: TrackConfig, value: number): string {
 }
 
 /**
+ * A character-owned row's length, read from the ceiling half of its own
+ * stored entry through the same rules a resolved formula's count is: floored,
+ * clamped to `MAX_SEGMENTS`, null where it is absent or resolves to less than
+ * one segment. Absent is the ordinary state of a die type this character does
+ * not have, and `render` draws it as such rather than as "?".
+ */
+function characterLength(
+	config: TrackConfig,
+	stored: string | null | undefined,
+): number | null {
+	const ceiling = splitBounded(stored ?? '').ceiling;
+	if (ceiling === null) return null;
+	return segmentCount(config, ceiling.trim());
+}
+
+/**
  * One run's length, resolved. A row's own `count` is a formula field at its
- * own path, so the resolver is asked for that path rather than the shared one.
+ * own path, so the resolver is asked for that path rather than the shared
+ * one — except where the character owns the length, which resolves nothing
+ * at all and reads the row's own stored entry instead.
  */
 function countFor(
 	config: TrackConfig,
@@ -452,14 +520,38 @@ function countFor(
 	index: number,
 	resolve: FieldResolver,
 	shared: string | number | boolean | null | undefined,
+	stored: string | null | undefined,
 ): number | null {
 	if (!isRowSet(config)) return segmentCount(config, shared);
+	if (row.maxSource === 'character') return characterLength(config, stored);
 	if (row.count !== undefined) {
 		return segmentCount(config, resolve(`rows.${index}.count`, {}));
 	}
 	// A row without its own falls back to the component's, which is the point
 	// of the component still carrying one.
 	return config.count === undefined ? null : segmentCount(config, shared);
+}
+
+/**
+ * Why a character-owned row's length field commit cannot be stored, or null.
+ *
+ * A note reference, as everywhere else that reaches a fence — Passport's own
+ * words, ported one component over, since a Track row has no name and no body
+ * to redirect a link into either. **And a slash**, which this feature made
+ * syntax: `parse/bounded-entry.ts` splits an entry at its first one, so a
+ * length holding a slash is not a length that module can write back —
+ * Record set's `refuseNumber` states the identical reason for its own
+ * ceiling field.
+ */
+function refuseRowLength(text: string): string | null {
+	const link = fencedLinkRefusal(text, {
+		subject: "A row's marks and length",
+		instead:
+			'Type the plain number here, and put the link in a Rich text block or a table cell, which store markdown.',
+	});
+	if (link !== null) return link;
+	if (!text.includes('/')) return null;
+	return `Not saved. A slash separates the marks from the length they are read against, so "${text}" would be stored as two numbers rather than one. Type just the number here.`;
 }
 
 export const track: ComponentDefinition<TrackConfig, TrackData> = {
@@ -508,7 +600,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 				{ key: 'name', heading: 'Name' },
 			],
 			description:
-				'One run per entry, sharing a heading, a reset binding and a write. Spell slots are five first-level, three second and one third. Each key names the entry in the character note; a row with no length of its own falls back to the segment count above. Rows and named levels do not combine.',
+				'One run per entry, sharing a heading, a reset binding and a write. Spell slots are five first-level, three second and one third. Each key names the entry in the character note; a row with no length of its own falls back to the segment count above. A row\'s length may be the layout\'s formula or the character\'s own number, typed on the sheet — the character\'s for a die type, a slot level, or anything else whose count differs per character rather than being computed. Rows and named levels do not combine.',
 		},
 		{
 			key: 'levels',
@@ -572,13 +664,34 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 		const marks = markSize(config);
 		const flag = isFlagCard(config);
 		const updates = new Map<string, string>();
+		const rows = runsOf(config);
+		// Left un-added, so an author's first preview already shows the
+		// **Add** control rather than a row set that looks permanently full
+		// (`docs/features/track-row-length.md`).
+		const lastCharacterOwned = [...rows]
+			.reverse()
+			.find((row) => row.maxSource === 'character')?.key;
 		// `row.key` verbatim, as `read`, `write` and `applyReset` all take it: the
 		// guard above has already refused a key the fenced block could not hold —
 		// blank, holding a colon or a line break, or repeated — and a card with no
 		// rows runs under `runsOf`'s own synthesised `value`.
-		runsOf(config).forEach((row, index) => {
+		rows.forEach((row, index) => {
 			if (flag) {
 				updates.set(row.key, spelledMarks(config, sampleFlag(index) ? 1 : 0));
+				return;
+			}
+			if (row.maxSource === 'character') {
+				if (row.key === lastCharacterOwned) return;
+				// Its own length as well as its own fill, seeded off the row's
+				// own key so two character-owned rows on one card draw
+				// different lengths rather than the same number twice — what
+				// an author needs to see to believe the length varies per row.
+				const ceiling = sampleNumber(sampleSeed(config.id + row.key));
+				const filled = samplePart(ceiling * marks);
+				updates.set(
+					row.key,
+					withCeiling(spelledMarks(config, filled), String(ceiling)),
+				);
 				return;
 			}
 			const count = segmentCount(config, row.count ?? config.count);
@@ -599,7 +712,13 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 		for (const row of runsOf(config)) {
 			const raw = parsed.values.get(row.key);
 			if (raw === undefined) continue;
-			const text = raw.trim();
+			// Only the value half is validated as marks. The ceiling half, where
+			// one is there at all, is a character-owned row's own length and is
+			// not this method's business — `docs/features/track-row-length.md`'s
+			// rule that a ceiling which is not a number behaves as no ceiling
+			// rather than as a malformed entry, `bounded-entry.ts`'s own answer
+			// one component over.
+			const text = splitBounded(raw).value.trim();
 			// A number the run cannot represent is still a number and is left
 			// exactly as it is (§7). Something that is not one at all is a
 			// malformed section, reported on this component alone.
@@ -686,7 +805,8 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 		 * layout configuration, not a name any formula on the sheet can see.
 		 */
 		const run = (key: string, left?: ScopeEntry['left']): ScopeEntry => ({
-			value: data?.values[key],
+			// `read` never stores null; only a write delta ever does.
+			value: data?.values[key] ?? undefined,
 			compute: () => filled(key),
 			...(left !== undefined ? { left } : {}),
 		});
@@ -711,7 +831,14 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			const named: Record<string, ScopeEntry> = {};
 			for (const [index, row] of (config.rows ?? []).entries()) {
 				named[row.key] = run(row.key, (resolve) => {
-					const count = countFor(config, row, index, resolve, resolve('count', {}));
+					const count = countFor(
+						config,
+						row,
+						index,
+						resolve,
+						resolve('count', {}),
+						data?.values[row.key],
+					);
 					if (count === null) return undefined;
 					// Unclamped, like the entry it sits beside: an overfull row
 					// already publishes a `<id>.<key>` past its own `.count`
@@ -742,7 +869,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 	},
 
 	write(data, body): string {
-		const updates = new Map<string, string>();
+		const updates = new Map<string, string | null>();
 		for (const [key, value] of Object.entries(data.values)) {
 			updates.set(key, value);
 		}
@@ -761,8 +888,20 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 
 		if (reset.action === 'empty') {
 			// Nothing to resolve: empty is zero whatever a run's length is, so
-			// a track whose count is broken can still be cleared.
-			for (const row of rows) values[row.key] = spelledMarks(config, 0);
+			// a track whose count is broken can still be cleared. Through the
+			// join, so a character-owned row's own length survives — an
+			// emptied counter is `0 / 4` and never `0` (Constraint 4).
+			//
+			// A character-owned row with no entry at all is left absent rather
+			// than materialised: writing to it would *add* a row the character
+			// never asked for, which is not what a reset is for — Record set's
+			// own reset never adds or removes a record either.
+			for (const row of rows) {
+				if (row.maxSource === 'character' && data?.values[row.key] === undefined) {
+					continue;
+				}
+				values[row.key] = withValue(data?.values[row.key] ?? '', spelledMarks(config, 0));
+			}
 			return { ok: true, data: { values } };
 		}
 
@@ -784,14 +923,25 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			 * has to be pressed three times to reverse.
 			 */
 			for (const [index, row] of rows.entries()) {
+				const stored = data?.values[row.key];
 				const count = countFor(
 					config,
 					row,
 					index,
 					(field, scope) => context.resolve(field, scope),
 					context.resolve('count', {}),
+					stored,
 				);
 				if (count === null) {
+					// A character-owned row with no length typed yet — added
+					// with a blank length, or not added at all — is, in the
+					// ordinary case, a die type this character does not have —
+					// Record set's per-record argument one level up. Skipping it
+					// rather than failing is what keeps a Long Rest from
+					// refusing every other row on the card over one blank one;
+					// the entry, if any, is left exactly as it was, and a row
+					// with no entry at all stays absent rather than gaining one.
+					if (row.maxSource === 'character') continue;
 					const where = isRowSet(config) ? ` for "${row.name ?? row.key}"` : '';
 					return {
 						ok: false,
@@ -802,7 +952,9 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 							) ?? `it has no segments to fill${where}.`,
 					};
 				}
-				values[row.key] = spelledMarks(config, count * marks);
+				// The join, so a character-owned row's own length rides through
+				// the write rather than being replaced by a bare mark count.
+				values[row.key] = withValue(stored ?? '', spelledMarks(config, count * marks));
 			}
 			return { ok: true, data: { values } };
 		}
@@ -827,7 +979,16 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			// mark, so half a segment of an Ironsworn track lands on a mark
 			// boundary rather than storing a fraction the note cannot mean.
 			const next = spelledMarks(config, Math.floor(segments * marks));
-			for (const row of rows) values[row.key] = next;
+			// Through the join per row, same as the other two actions: a
+			// character-owned row's own length survives a formula reset too.
+			// A row with no entry at all stays absent, on the same argument
+			// `empty` above makes: a reset must not add a row nobody added.
+			for (const row of rows) {
+				if (row.maxSource === 'character' && data?.values[row.key] === undefined) {
+					continue;
+				}
+				values[row.key] = withValue(data?.values[row.key] ?? '', next);
+			}
 			return { ok: true, data: { values } };
 		}
 
@@ -869,6 +1030,15 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 		const reduced =
 			view?.matchMedia?.('(prefers-reduced-motion: reduce)').matches === true;
 
+		// A row's length field is the one part of this card that is a plain
+		// typed value rather than a slider whose own `aria-valuetext` already
+		// speaks for it, so it is the one part that needs a live region at
+		// all — Pool's own reason for carrying one.
+		const status = card.createDiv({
+			cls: 'sheetsmith-sr-only',
+			attr: { 'aria-live': 'polite' },
+		});
+
 		const list = card.createDiv('sheetsmith-track-rows');
 		if (rowSet) {
 			list.classList.add('sheetsmith-track-set');
@@ -884,6 +1054,15 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 		// wins the press. Same arithmetic as the editor's level sample, for the
 		// same reason.
 		if (flag) list.classList.add('sheetsmith-track-flags');
+		// A third subgrid column for the length field, added only where some
+		// row actually needs one — an ordinary spell-slot card must not gain
+		// a blank column nobody is using. Every row in this set then reserves
+		// that column whether or not it is the one with a field in it, or a
+		// mixed set's runs would misalign into whichever track its own row
+		// happens to fill (`docs/features/track-row-length.md`).
+		const lengthsInSet =
+			rowSet && rows.some((r) => r.maxSource === 'character');
+		if (lengthsInSet) list.classList.add('sheetsmith-track-lengths');
 
 		/** One run on the card: its own value, its own geometry, its own gesture. */
 		interface Run {
@@ -921,7 +1100,12 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			if (!card.isConnected) return;
 			const values: Record<string, string> = {};
 			for (const run of runs) {
-				const next = spelledMarks(config, run.value);
+				// Through the join: `run.sent` holds the row's whole raw entry,
+				// composite or not, so a press on a character-owned row's
+				// segments rewrites its marks and carries its own length
+				// through untouched. A no-op for every other row, which has no
+				// separator for the join to find.
+				const next = withValue(run.sent, spelledMarks(config, run.value));
 				if (next === run.sent) continue;
 				values[run.key] = next;
 				run.sent = next;
@@ -957,7 +1141,50 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			runs[next]?.el.focus();
 		};
 
+		/**
+		 * Rows the character has not added yet — no entry at all, `stored ===
+		 * undefined` — collected while walking `rows` so the add line below
+		 * can be built once, in declared order, after every added row has
+		 * drawn. Only a character-owned row can land here; a calculated row
+		 * always draws.
+		 */
+		const notAdded: TrackRow[] = [];
+
+		/** Arming one row's remove button stands a sibling's down. */
+		const armedRow = armRegister();
+
+		/**
+		 * The row whose length field focus should land in, because this
+		 * card's own **Add** button for it was just pressed — Record set's
+		 * `awaitingAdd` mechanism, read once per render. Cleared here, on the
+		 * render that reflects the add, rather than left for a later one to
+		 * find stale.
+		 */
+		const landingKey =
+			awaitingAdd?.id === config.id &&
+			data?.values[awaitingAdd.key] !== undefined
+				? awaitingAdd.key
+				: null;
+		if (landingKey !== null) awaitingAdd = null;
+
 		rows.forEach((row, index) => {
+			const rowLabel = rowSet ? (row.name ?? row.key) : config.label;
+			const characterOwned = row.maxSource === 'character';
+			// Read once per render, the same rule a resolved count already
+			// follows: a row's length is layout-adjacent state, not something
+			// that changes mid-render.
+			const stored = data?.values[row.key];
+
+			if (characterOwned && stored === undefined) {
+				// Not added: no entry at all, the ordinary state of a die type
+				// this character does not have. Nothing is drawn for the row
+				// itself — no name, no field, no run, no "—" — and it
+				// contributes one **Add** button to the shared add line
+				// instead (`docs/features/track-row-length.md`).
+				notAdded.push(row);
+				return;
+			}
+
 			// A row's own sense wins over the card's, on the pattern `count`
 			// already set: the component states what the set means and a row
 			// says where it differs.
@@ -972,6 +1199,123 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 				const name = line.createSpan('sheetsmith-track-row-name');
 				name.textContent = row.name ?? row.key;
 			}
+
+			/**
+			 * The length field, where this row's own length is the
+			 * character's — drawn immediately after the name and before the
+			 * run, whether or not the run itself has anything to draw yet.
+			 *
+			 * Pool's ceiling reading (`.sheetsmith-pool-max`) at rest, since
+			 * there is no value beside it to separate from the way Pool's
+			 * numeral separates from its own ceiling — a run's segments are
+			 * already the reading of the value, the way Pool's numeral is the
+			 * reading of its own. `docs/features/track-row-length.md`'s own
+			 * argument for not also taking `.sheetsmith-pool-ceiling` and
+			 * `-separator`.
+			 */
+			let lengthField: HTMLInputElement | null = null;
+			// The column exists on every row once any row in the set needs
+			// it, so a row that does not still reserves an empty cell rather
+			// than leaving the subgrid to auto-place its run one column too
+			// early.
+			if (lengthsInSet) {
+				const wrap = line.createSpan('sheetsmith-track-row-length');
+				// A row keeping its calculated length has nothing to draw in
+				// the reserved column: the empty `wrap` above is the whole
+				// of it.
+				if (characterOwned) {
+					const field = wrap.createEl('input');
+					field.type = 'text';
+					field.inputMode = 'numeric';
+					// The reading and the chrome removal are both Pool's: no
+					// value sits beside this one to separate from (a run's
+					// segments are already that reading), but the field
+					// itself is the same "the surface above is the object"
+					// answer Pool's own character-owned max already gives.
+					field.classList.add(
+						'sheetsmith-pool-max',
+						'sheetsmith-pool-max-input',
+						'sheetsmith-track-row-length-input',
+					);
+					field.value = splitBounded(stored ?? '').ceiling ?? '';
+					// The same "—" Pool's own ceiling shows where none is set,
+					// and here it is also the only invitation to type: a row
+					// nobody has given a length yet has no run, no bar, and
+					// nothing else to press.
+					field.placeholder = '—';
+					field.setAttribute('aria-label', `${rowLabel} length`);
+					field.title = `Length of ${rowLabel}, held by this character.`;
+					lengthField = field;
+					if (row.key === landingKey) field.focus();
+				}
+			}
+
+			/**
+			 * Wire the length field's editing gesture, against whatever holds
+			 * this row's current raw entry — a plain local where there is no
+			 * run to ask about it yet (nothing typed, no segments), and
+			 * `run.sent` once one exists, so a length edit joins with marks a
+			 * segment press already committed rather than with what the
+			 * render started from.
+			 */
+			const wireLength = (
+				field: HTMLInputElement,
+				getRaw: () => string,
+				setRaw: (next: string) => void,
+			): void => {
+				bindEditable(field, {
+					initial: field.value,
+					step: true,
+					arithmetic: true,
+					refuse: refuseRowLength,
+					onRefusal: (message) => {
+						status.textContent = message ?? '';
+					},
+					announceCommit: (next) => {
+						status.textContent =
+							next === ''
+								? `${rowLabel} length cleared`
+								: `${rowLabel} length ${next}`;
+					},
+					announceRestore: (restored) => {
+						status.textContent =
+							restored === ''
+								? `${rowLabel} length restored to empty`
+								: `${rowLabel} length restored to ${restored}`;
+					},
+					onCommit: (next) => {
+						const updated = withCeiling(getRaw(), next);
+						setRaw(updated);
+						context.onChange({ values: { [row.key]: updated } });
+					},
+				});
+			};
+
+			/**
+			 * The remove button, drawn last so it lands in the row's own
+			 * final subgrid column. Only ever called for a character-owned
+			 * row: a calculated row's presence is the layout's to decide for
+			 * every character alike, never the reader's to remove.
+			 */
+			const drawRemove = (): void => {
+				const button = line.createEl('button');
+				button.type = 'button';
+				button.classList.add('sheetsmith-track-remove-button');
+				setIcon(button, REMOVE_ICON);
+				bindArmToConfirm({
+					button,
+					row: line,
+					armedClass: 'sheetsmith-track-remove-armed',
+					rowClass: 'sheetsmith-track-row-arming',
+					named: `Delete ${rowLabel}`,
+					announce: (said) => {
+						status.textContent = said;
+					},
+					commit: () => context.onChange({ values: { [row.key]: null } }),
+					register: armedRow,
+					doc,
+				});
+			};
 
 			if (flag) {
 				/*
@@ -1107,9 +1451,32 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 				index,
 				context.resolveField,
 				context.resolved['count'],
+				stored,
 			);
 
 			if (count === null) {
+				if (characterOwned) {
+					// The ordinary state of a die type this character does not
+					// have, not an error: no run, no "?", just the length
+					// field's own invitation to type. `docs/features/
+					// track-row-length.md`'s graceful-empty state.
+					if (lengthField !== null) {
+						let raw = stored ?? '';
+						wireLength(
+							lengthField,
+							() => raw,
+							(next) => {
+								raw = next;
+							},
+						);
+					}
+					// An empty reserved span for the run's own column: this
+					// row has drawn nothing in it, and the remove button must
+					// not auto-place into the column a run would have taken.
+					line.createSpan();
+					drawRemove();
+					return;
+				}
 				/*
 				 * Present and unresolved, which is exactly what "?" is for. On
 				 * that row alone: one failure must not take the card down, which
@@ -1288,6 +1655,18 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			};
 
 			runs.push(run);
+
+			if (characterOwned && lengthField !== null) {
+				wireLength(
+					lengthField,
+					() => run.sent,
+					(next) => {
+						run.sent = next;
+					},
+				);
+			}
+
+			if (characterOwned) drawRemove();
 
 			/* --- Pointer: a press answers on the way down --- */
 
@@ -1565,5 +1944,35 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 
 			run.paint();
 		});
+
+		/**
+		 * One small text button per not-yet-added character-owned row,
+		 * Record set's own **Add** wording (`Add ${noun}`) applied to a
+		 * row's own name rather than a record's noun — several *specific*
+		 * things to add rather than Table's one anonymous "Add row"
+		 * (`docs/features/track-row-length.md`).
+		 */
+		if (notAdded.length > 0) {
+			const addLine = card.createDiv('sheetsmith-track-add');
+			for (const row of notAdded) {
+				const rowLabel = rowSet ? (row.name ?? row.key) : config.label;
+				const button = addLine.createEl('button');
+				button.type = 'button';
+				button.classList.add('sheetsmith-track-add-button');
+				button.createSpan(
+					'sheetsmith-track-add-label',
+					(span) => (span.textContent = `Add ${rowLabel}`),
+				);
+				button.addEventListener('click', () => {
+					status.textContent = `${rowLabel} added`;
+					// Blurred before the change is reported, so the view's
+					// generic by-index focus restore has nothing stale to
+					// land on — Record set's own reason for its own Add.
+					button.blur();
+					awaitingAdd = { id: config.id, key: row.key };
+					context.onChange({ values: { [row.key]: '' } });
+				});
+			}
+		}
 	},
 };
