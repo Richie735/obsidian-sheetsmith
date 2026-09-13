@@ -1051,6 +1051,48 @@ describe('the armed delete keeps its warning under the pointer', () => {
 	});
 });
 
+describe('a hidden-at-rest control outranks its own shared reset by order, not by specificity', () => {
+	const CSS_TEXT = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+
+	/*
+	 * The same failure shape as "the armed delete keeps its warning under the
+	 * pointer" above, on a different pair of rules: `.sheetsmith-passport-part-
+	 * remove`'s own `display: none` (hidden at rest, `docs/features/passport-
+	 * field-lists.md`, "Third reversal") and the shared glyph-button reset it
+	 * shares with `.sheetsmith-passport-add` both resolve to one class's worth
+	 * of specificity, so whichever is declared *later* is the one that wins.
+	 * Nothing here can rescue a reorder the way `:not()` rescues the armed
+	 * state above — the two rules paint the same property on the same element
+	 * with the same specificity on purpose, so the only thing holding "hidden
+	 * wins at rest" true is that it is textually the later of the two.
+	 *
+	 * Invisible in review by construction: no unit test in this project reads
+	 * a computed `display`, and every harness shot of this control is either
+	 * the resting state (where a reorder would look identical to a passing
+	 * screenshot, since a headless shot cannot show the *absence* of a control
+	 * reserving space it should not) or the focused/armed state, which the
+	 * higher-specificity `:focus-within` reveal rule wins regardless of order
+	 * — so a reorder that silently stopped the control from ever hiding would
+	 * pass every existing shot and every existing test. This is the guard for
+	 * that: a static order check, on the compiled stylesheet, that needs no
+	 * browser to run.
+	 */
+	function ruleIndex(selector: string): number {
+		const needle = `${selector} {`;
+		const at = CSS_TEXT.indexOf(needle);
+		expect(at, `expected to find the rule ${JSON.stringify(selector)}`).toBeGreaterThan(-1);
+		return at;
+	}
+
+	it('declares the hidden-at-rest rule after the shared reset it ties with', () => {
+		const sharedReset = ruleIndex(
+			'.sheetsmith-view .sheetsmith-passport-part-remove,\n.sheetsmith-view .sheetsmith-passport-add',
+		);
+		const hiddenAtRest = ruleIndex('.sheetsmith-view .sheetsmith-passport-part-remove');
+		expect(hiddenAtRest).toBeGreaterThan(sharedReset);
+	});
+});
+
 describe('a borrowed class is styled by us, not hoped for', () => {
 	const CSS_TEXT = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 

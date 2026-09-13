@@ -37,17 +37,25 @@
  * three copies of them is three chances for a design pass to soften one and leave
  * the other two. `components/isolation.test.ts` scans for both clauses.
  *
- * The verb is not a parameter. Both consumers of the gesture delete something,
- * and §1 does not generalise ahead of the evidence; a second verb parameterises
- * `STOOD_DOWN` and nothing else here.
+ * **The gesture itself has since gained a third consumer**, where the
+ * paragraph above only ever counted a third of the *wording*: a Passport
+ * list field's own part delete (`components/passport.ts`, `docs/features/
+ * passport-field-lists.md`) calls `bindArmToConfirm` exactly as Table's and
+ * Record set's row deletes do, at a deliberately lower stake — a part is a
+ * short phrase, cheaply retyped, reused anyway for one mental model rather
+ * than a lighter gesture invented for the cheaper case.
+ *
+ * The verb is not a parameter. All three consumers of the gesture delete
+ * something, and §1 does not generalise ahead of the evidence; a second verb
+ * parameterises `STOOD_DOWN` and nothing else here.
  */
 
 /**
  * What an armed control is called, for a reader who cannot see the tint.
  *
- * Takes the whole name rather than a subject and a verb, because the three
- * callers name themselves differently — "Delete Chalk", "Remove all 2" — and the
- * shared half is the clause after it.
+ * Takes the whole name rather than a subject and a verb, because its four
+ * callers name themselves differently — "Delete Chalk", "Remove all 2",
+ * "Delete Fighter 1" — and the shared half is the clause after it.
  */
 export function armedName(named: string): string {
 	return `${named}. Select again to confirm.`;
@@ -122,13 +130,46 @@ export function bindArmToConfirm(options: ArmToConfirmOptions): void {
 	/** Removes the outside-press listener, while there is one. */
 	let standDown: (() => void) | null = null;
 
+	/**
+	 * Clear the armed state, silently. The shared step under both a
+	 * successful confirm — which is about to announce something else
+	 * entirely, once `options.commit()` runs — and a cancellation, which
+	 * announces through `cancel` below. Kept apart from the announcement so
+	 * the confirm path can reach this without saying "cancelled" about the
+	 * delete it just applied.
+	 */
 	const disarm = (): void => {
 		if (!ready) return;
 		ready = false;
-		if (register.armed === disarm) register.armed = null;
+		if (register.armed === cancel) register.armed = null;
 		standDown?.();
 		standDown = null;
 		paint();
+	};
+
+	/**
+	 * Disarm and say so — every path that means "changed my mind" rather
+	 * than "confirmed": an outside press, Escape, focus moving off the
+	 * control, or a sibling control arming and standing this one down.
+	 *
+	 * **This is what `register.armed` holds, and what the button's own
+	 * `blur` calls, on purpose rather than the bare `disarm` above.** Per
+	 * the UI Events spec, `blur` on an element fires *before* `focusout`
+	 * bubbles from it — so a caller standing a control down from a
+	 * `focusout` listener elsewhere in the tree (a Passport list field's own
+	 * row, reused for the touch case where the button itself never took
+	 * focus at all) runs *after* the button's own `blur` already cleared the
+	 * register, and would silently find nothing left to announce. Putting
+	 * the announcement here, where every path that clears the register from
+	 * outside converges, is what makes it fire regardless of which one got
+	 * there first — a caller pairing `disarm()` with its own `announce` call
+	 * is the exact drift that left this silent for a real focus transfer
+	 * once already.
+	 */
+	const cancel = (): void => {
+		if (!ready) return;
+		disarm();
+		announce(STOOD_DOWN);
 	};
 
 	button.addEventListener('click', () => {
@@ -140,10 +181,12 @@ export function bindArmToConfirm(options: ArmToConfirmOptions): void {
 			options.commit();
 			return;
 		}
-		// Arming one control stands another down.
+		// Arming one control stands another down, and says so: the other
+		// control's own tint and control both vanish, and the reader is told
+		// what happened to it just as if they had pressed it away themselves.
 		register.armed?.();
 		ready = true;
-		register.armed = disarm;
+		register.armed = cancel;
 		/*
 		 * The next press anywhere else is a change of mind.
 		 *
@@ -160,8 +203,7 @@ export function bindArmToConfirm(options: ArmToConfirmOptions): void {
 		 */
 		const outside = (event: Event): void => {
 			if (button.contains(event.target as Node | null)) return;
-			disarm();
-			announce(STOOD_DOWN);
+			cancel();
 		};
 		doc.addEventListener('pointerdown', outside, true);
 		// A rebuild while a control is armed has no way to disarm it — a component
@@ -174,11 +216,10 @@ export function bindArmToConfirm(options: ArmToConfirmOptions): void {
 	});
 	// A keyboard has both of the gestures a finger does not: focus moves off the
 	// control, and Escape. Both leave the note exactly as it was.
-	button.addEventListener('blur', disarm);
+	button.addEventListener('blur', cancel);
 	button.addEventListener('keydown', (event) => {
 		if (event.key !== 'Escape' || !ready) return;
-		disarm();
-		announce(STOOD_DOWN);
+		cancel();
 	});
 	paint();
 }
