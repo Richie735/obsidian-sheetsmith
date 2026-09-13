@@ -36,7 +36,11 @@
  */
 
 import { setIcon } from 'obsidian';
-import { armRegister, bindArmToConfirm } from '../interaction/arm-to-confirm';
+import {
+	armedName,
+	armedPrompt,
+	STOOD_DOWN,
+} from '../interaction/arm-to-confirm';
 import { GESTURE_COMMIT } from '../interaction/commit-window';
 import { bindEditable } from '../interaction/editable';
 import { levelGlyph, levelName, paintLevelRing, parseLevel } from './level-ring';
@@ -49,6 +53,12 @@ import {
 import { fencedLinkRefusal } from './fenced-link';
 import { sampleFlag, samplePart, sampleNumber, sampleSeed } from './sample-values';
 import { bindLongPress } from '../ui/popover';
+import {
+	closeAnchoredPanel,
+	focusFirstControl,
+	openAnchoredPanelKey,
+	showAnchoredPanel,
+} from '../ui/anchored-panel';
 import { readFenced, writeFenced } from '../parse/fenced';
 import { splitBounded, withCeiling, withValue } from '../parse/bounded-entry';
 import {
@@ -153,6 +163,9 @@ export const MAX_SEGMENTS = 100;
 
 /** Obsidian's own delete glyph, matching Table's and Record set's. */
 const REMOVE_ICON = 'trash';
+
+/** Obsidian's own add glyph, matching the modifier form's own **Add**. */
+const ADD_ICON = 'plus';
 
 /**
  * A row just added by this card, so the next render can land focus in its
@@ -1150,8 +1163,12 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 		 */
 		const notAdded: TrackRow[] = [];
 
-		/** Arming one row's remove button stands a sibling's down. */
-		const armedRow = armRegister();
+		/**
+		 * Added character-owned rows, with the line each one drew — collected
+		 * the same way `notAdded` is, so the single **Remove** picker built
+		 * after the loop can list them and tint whichever one it arms.
+		 */
+		const addedRows: { row: TrackRow; line: HTMLElement }[] = [];
 
 		/**
 		 * The row whose length field focus should land in, because this
@@ -1288,32 +1305,6 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 						setRaw(updated);
 						context.onChange({ values: { [row.key]: updated } });
 					},
-				});
-			};
-
-			/**
-			 * The remove button, drawn last so it lands in the row's own
-			 * final subgrid column. Only ever called for a character-owned
-			 * row: a calculated row's presence is the layout's to decide for
-			 * every character alike, never the reader's to remove.
-			 */
-			const drawRemove = (): void => {
-				const button = line.createEl('button');
-				button.type = 'button';
-				button.classList.add('sheetsmith-track-remove-button');
-				setIcon(button, REMOVE_ICON);
-				bindArmToConfirm({
-					button,
-					row: line,
-					armedClass: 'sheetsmith-track-remove-armed',
-					rowClass: 'sheetsmith-track-row-arming',
-					named: `Delete ${rowLabel}`,
-					announce: (said) => {
-						status.textContent = said;
-					},
-					commit: () => context.onChange({ values: { [row.key]: null } }),
-					register: armedRow,
-					doc,
 				});
 			};
 
@@ -1471,10 +1462,9 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 						);
 					}
 					// An empty reserved span for the run's own column: this
-					// row has drawn nothing in it, and the remove button must
-					// not auto-place into the column a run would have taken.
+					// row has drawn nothing in it.
 					line.createSpan();
-					drawRemove();
+					addedRows.push({ row, line });
 					return;
 				}
 				/*
@@ -1666,7 +1656,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 				);
 			}
 
-			if (characterOwned) drawRemove();
+			if (characterOwned) addedRows.push({ row, line });
 
 			/* --- Pointer: a press answers on the way down --- */
 
@@ -1945,32 +1935,172 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			run.paint();
 		});
 
+		/** A row's own name, or the card's where it draws no name of its own. */
+		const rowName = (row: TrackRow): string =>
+			rowSet ? (row.name ?? row.key) : config.label;
+
 		/**
-		 * One small text button per not-yet-added character-owned row,
-		 * Record set's own **Add** wording (`Add ${noun}`) applied to a
-		 * row's own name rather than a record's noun — several *specific*
-		 * things to add rather than Table's one anonymous "Add row"
-		 * (`docs/features/track-row-length.md`).
+		 * One **Add** and one **Remove**, each behind a picker naming the
+		 * specific rows it offers, rather than one button per candidate —
+		 * a hit-dice set with four die types no longer sits under four named
+		 * buttons and a bin icon apiece. The picker itself is `ui/anchored-
+		 * panel.ts`'s surface, not Obsidian's `Menu`: a component may take
+		 * only `setIcon` from `obsidian` (`docs/PATTERNS.md` §2), and the
+		 * panel already carries placement, dismissal, and focus management
+		 * for exactly this shape of list (`docs/UI.md`'s "what it holds is a
+		 * list and one disclosure").
 		 */
-		if (notAdded.length > 0) {
-			const addLine = card.createDiv('sheetsmith-track-add');
-			for (const row of notAdded) {
-				const rowLabel = rowSet ? (row.name ?? row.key) : config.label;
-				const button = addLine.createEl('button');
-				button.type = 'button';
-				button.classList.add('sheetsmith-track-add-button');
-				button.createSpan(
-					'sheetsmith-track-add-label',
-					(span) => (span.textContent = `Add ${rowLabel}`),
-				);
-				button.addEventListener('click', () => {
-					status.textContent = `${rowLabel} added`;
-					// Blurred before the change is reported, so the view's
-					// generic by-index focus restore has nothing stale to
-					// land on — Record set's own reason for its own Add.
-					button.blur();
-					awaitingAdd = { id: config.id, key: row.key };
-					context.onChange({ values: { [row.key]: '' } });
+		if (notAdded.length > 0 || addedRows.length > 0) {
+			const actions = card.createDiv('sheetsmith-track-actions');
+
+			if (notAdded.length > 0) {
+				const addButton = actions.createEl('button');
+				addButton.type = 'button';
+				addButton.classList.add('sheetsmith-track-action-button');
+				setIcon(addButton, ADD_ICON);
+				const label = `Add to ${config.label}`;
+				addButton.setAttribute('aria-label', label);
+				addButton.title = label;
+				addButton.setAttribute('aria-haspopup', 'dialog');
+				addButton.setAttribute('aria-expanded', 'false');
+				addButton.addEventListener('click', () => {
+					if (openAnchoredPanelKey() === `${config.id}:track-add`) {
+						// A second press on the same glyph closes it, which is
+						// what a control carrying `aria-expanded` owes.
+						closeAnchoredPanel();
+						return;
+					}
+					const panel = showAnchoredPanel(
+						addButton,
+						label,
+						`${config.id}:track-add`,
+						null,
+						() => addButton.setAttribute('aria-expanded', 'false'),
+					);
+					addButton.setAttribute('aria-expanded', 'true');
+					for (const row of notAdded) {
+						const rowLabel = rowName(row);
+						const line = panel.body.createEl('button');
+						line.type = 'button';
+						line.classList.add('sheetsmith-panel-line');
+						const glyph = line.createSpan('sheetsmith-panel-glyph');
+						glyph.setAttribute('aria-hidden', 'true');
+						setIcon(glyph, ADD_ICON);
+						const words = line.createSpan('sheetsmith-panel-line-words');
+						words.createSpan({ cls: 'sheetsmith-panel-said', text: rowLabel });
+						line.addEventListener('click', () => {
+							status.textContent = `${rowLabel} added`;
+							awaitingAdd = { id: config.id, key: row.key };
+							panel.close();
+							context.onChange({ values: { [row.key]: '' } });
+						});
+					}
+					focusFirstControl(panel);
+				});
+			}
+
+			if (addedRows.length > 0) {
+				const removeButton = actions.createEl('button');
+				removeButton.type = 'button';
+				removeButton.classList.add('sheetsmith-track-action-button');
+				setIcon(removeButton, REMOVE_ICON);
+				const label = `Remove from ${config.label}`;
+				removeButton.setAttribute('aria-label', label);
+				removeButton.title = label;
+				removeButton.setAttribute('aria-haspopup', 'dialog');
+				removeButton.setAttribute('aria-expanded', 'false');
+				removeButton.addEventListener('click', () => {
+					if (openAnchoredPanelKey() === `${config.id}:track-remove`) {
+						closeAnchoredPanel();
+						return;
+					}
+					// Which row this opening has armed, if any — a fresh
+					// picker starts with nothing armed, on the same terms a
+					// fresh press of a per-row bin icon once did.
+					let armedKey: string | null = null;
+					let armedLine: HTMLElement | null = null;
+					const standDown = (): void => {
+						armedLine?.classList.remove('sheetsmith-track-row-arming');
+						armedLine = null;
+						armedKey = null;
+					};
+					const panel = showAnchoredPanel(
+						removeButton,
+						label,
+						`${config.id}:track-remove`,
+						null,
+						() => {
+							removeButton.setAttribute('aria-expanded', 'false');
+							// Dismissed without a second press on the armed
+							// line is a change of mind, exactly as it was
+							// when the arming control sat on the row itself.
+							if (armedKey !== null) status.textContent = STOOD_DOWN;
+							standDown();
+						},
+					);
+					removeButton.setAttribute('aria-expanded', 'true');
+					const items: {
+						key: string;
+						label: string;
+						button: HTMLButtonElement;
+						said: HTMLElement;
+					}[] = [];
+					const paint = (): void => {
+						for (const item of items) {
+							const armed = item.key === armedKey;
+							item.button.classList.toggle(
+								'sheetsmith-track-remove-armed',
+								armed,
+							);
+							item.said.textContent = armed
+								? armedName(item.label)
+								: item.label;
+							item.button.setAttribute(
+								'aria-label',
+								armed ? armedName(item.label) : item.label,
+							);
+						}
+					};
+					for (const { row, line } of addedRows) {
+						const rowLabel = rowName(row);
+						const button = panel.body.createEl('button');
+						button.type = 'button';
+						button.classList.add('sheetsmith-panel-line');
+						const glyph = button.createSpan('sheetsmith-panel-glyph');
+						glyph.setAttribute('aria-hidden', 'true');
+						setIcon(glyph, REMOVE_ICON);
+						const words = button.createSpan('sheetsmith-panel-line-words');
+						const said = words.createSpan({
+							cls: 'sheetsmith-panel-said',
+							text: rowLabel,
+						});
+						button.addEventListener('click', () => {
+							if (armedKey === row.key) {
+								// The second press: the gesture is over, so it
+								// stands itself down before the write rather
+								// than leaving the panel's own listeners alive
+								// on a row that is going.
+								standDown();
+								panel.close();
+								context.onChange({ values: { [row.key]: null } });
+								return;
+							}
+							// Arming one line stands another down, exactly as
+							// arming a sibling row's own bin icon once did.
+							standDown();
+							armedKey = row.key;
+							armedLine = line;
+							line.classList.add('sheetsmith-track-row-arming');
+							status.textContent = armedPrompt(rowLabel);
+							paint();
+						});
+						items.push({ key: row.key, label: rowLabel, button, said });
+					}
+					// Sets every line's `aria-label` before anything is armed,
+					// rather than leaving it to whichever line's own click
+					// happens to run `paint()` first.
+					paint();
+					focusFirstControl(panel);
 				});
 			}
 		}

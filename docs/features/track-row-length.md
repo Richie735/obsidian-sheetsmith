@@ -26,6 +26,24 @@ segmented run for Record set's numeric `Uses 1 / 4` reading — a real loss of
 the one thing a die-tracker is for. This pass keeps Track's own visual and
 gives it the add/remove mechanism instead.
 
+**Third pass.** The second pass drew one small named **Add `<name>`** button
+per not-yet-added row and one glyph-only remove button on every added row's
+own line. Shown a hit-dice card with all four die types in play, the owner
+asked for the opposite trade: one **Add** and one **Remove** for the whole
+row set, each behind a picker naming the specific rows it offers, rather
+than a named button per candidate and a bin icon per line. Nothing here
+reopens the Model question or the file model — a row's identity, what it
+publishes, and what it stores are all untouched; what changes is only how
+the reader reaches the add and the remove gestures, in **Design**'s "What
+the reader sees", "Adding a row" and "Removing a row" below. The two-step
+safety net on remove survives, moved from the row's own bin icon to the
+picker: picking an added row from **Remove** arms it in place, and picking
+it again is the confirm — `interaction/arm-to-confirm.ts` is no longer a
+consumer here at all, since there is no longer a control that presses twice
+on itself, but the two sentences it coined (`armedName`, `armedPrompt`,
+`STOOD_DOWN`) are reused directly so an armed line in the picker reads in
+the same words Table's and Record set's own armed rows always have.
+
 ## Model question
 
 **Not gated on any §13 open question.** The nearest bullet is "whether a
@@ -160,99 +178,118 @@ would want anyway. See **Deliberately not doing**.
 
 ```
 Hit dice
-  d10   [ 1 ]  ▨          🗑
-  d6    [ 4 ]  ▨▨▨▢       🗑
-  + Add d8    + Add d12
+  d10   [ 1 ]  ▨
+  d6    [ 4 ]  ▨▨▨▢
+              + 🗑
 ```
 
-d10 and d6 have been added: each draws its name, its own length field, its
-run, and a remove glyph. d8 and d12 have not — they draw nothing of their
-own at all, no name, no field, no run, no "—" — and contribute one small
-button each to a single line under the added rows, `Add d8` and `Add d12`,
-Record set's own add-button wording (`Add ${noun}`) applied to a row's own
-name instead of a record's noun. **This is the one real behaviour change
-from the first pass**, which drew every declared row always, with a quiet
-`—` standing in for "nothing typed yet." That placeholder is gone: a row
-with no entry at all draws nothing, and reaching it again is what **Add**
-is for.
+d10 and d6 have been added: each draws its name, its own length field, and
+its run. d8 and d12 have not — they draw nothing of their own at all, no
+name, no field, no run, no "—". Neither state draws a control of its own any
+more (**third pass**): the row underneath the drawn rows carries one plain
+**Add** button and one plain **Remove** button for the whole set, each an
+icon with no label of its own — `Add to Hit dice` and `Remove from Hit dice`
+are the accessible name and the `title`, built from the card's own label
+rather than from any one row's, since neither button is about a single row
+until the reader opens it. **Add** is absent once every row is added;
+**Remove** is absent while none is. A card with nothing left to add and
+nothing yet to remove — a levels-only set with every level always present —
+draws neither and no row underneath the rows at all.
 
-Added rows keep the layout's declared order — pressing **Add d8** with d10
-and d6 already added inserts its line between them if that is where `d8`
-sits in `rows[]`, not at the end of whatever order the reader happened to
-press buttons in. The **Add** buttons for what remains follow, in the same
-declared order, however many are left.
+Pressing either opens a small anchored panel — `ui/anchored-panel.ts`, the
+same surface the modifier form opens, filled here with one plain line per
+row the trigger offers, named plainly (`d8`, `d12` for **Add**; `d10`, `d6`
+for **Remove**) rather than restating the verb on every line the way the
+second pass's own buttons did. Added rows keep the layout's declared
+order in both the card and the picker.
 
-The length field is unchanged from the first pass: Pool's ceiling reading
-(`.sheetsmith-pool-max`), no separator or paired value beside it since a
-run's segments are already the reading of the value, its own narrow
+The length field is unchanged from the first two passes: Pool's ceiling
+reading (`.sheetsmith-pool-max`), no separator or paired value beside it
+since a run's segments are already the reading of the value, its own narrow
 `.sheetsmith-track-row-length` wrapper, placed after the row's name and
 before its run.
 
 ### Adding a row
 
-**One small text button per not-yet-added character-owned row**, styled and
-worded on Record set's own **Add** control (`sheetsmith-record-add`,
-`Add ${noun}`) rather than Table's (`Add row`) — Table's wording fits because
-every added row is the same anonymous thing, where Record set already faces
-this feature's exact shape, several *specific*, already-named things a
-reader picks one of. So each button reads `Add d8`, not a single `Add row`
-that leaves which row ambiguous. No icon: neither precedent uses one, and a
-row of up to four candidates is legible as plain text at this size.
+**One picker behind one **Add** trigger**, rather than one named button per
+candidate. The trigger is `.sheetsmith-track-action-button`, Table's own
+delete glyph's circular shape reused for a `plus` icon, `aria-haspopup`
+`"dialog"` and `aria-expanded` kept in step with the panel exactly as the
+modifier form's own trigger does — including the same "a second press on the
+open trigger closes it" toggle, read off `openAnchoredPanelKey()`. The panel
+itself is `ui/anchored-panel.ts` filled with one `.sheetsmith-panel-line` per
+not-yet-added row, in declared order — the same line markup and the same
+hover and focus treatment the modifier form's own list already carries,
+since a plain named choice is exactly what that surface was built for and a
+component may not import Obsidian's own `Menu` (`docs/PATTERNS.md` §2).
 
-Pressing it writes a blank entry — `context.onChange({ values: { d8: '' } })`
-— immediately, no confirmation: adding is not destructive, and Table's and
-Record set's own **Add** controls fire on the first press for the same
-reason. The row then draws in its declared position, empty, ready for a
-length — exactly the first pass's own empty-row rendering, now reached only
-after **Add** rather than by default.
+Picking a line writes a blank entry — `context.onChange({ values: { d8: ''
+} })` — immediately, no confirmation: adding is not destructive, and every
+**Add** this plugin draws fires on the first press for the same reason. The
+row then draws in its declared position, empty, ready for a length —
+unchanged from the first two passes, now reached by picking the row from the
+panel rather than by pressing its own named button.
 
 **Focus lands in the new row's own length field**, mirroring Record set's
 `awaitingAdd` mechanism exactly: a module-level `let awaitingAdd: { id:
 string; key: string } | null` set on the press (before `onChange`, with the
-button blurred first — Record set's own reason, so the view's generic
-by-index focus restore has nothing stale to land on), and consumed on the
+panel closed first — `panel.close()` returns focus to the trigger, which is
+this pass's own version of Record set's "blur first, so the view's generic
+by-index focus restore has nothing stale to land on"), and consumed on the
 next render for this component's id, moving focus to that row's length field
 and clearing the flag. A card with no `awaitingAdd` pending renders exactly
 as it does today, unaffected.
 
-### Removing a row: arm, then confirm
+### Removing a row: pick, then pick again
 
-**A glyph-only remove button on every added row, `interaction/arm-to-
-confirm.ts`'s fourth consumer**, on the same terms Table's row delete and
-Record set's record delete already use it: a first press arms and tints the
-row, names what it would remove and says "select again to confirm"; a second
-press on the same control fires it; a press elsewhere, or arming a sibling
-row's remove control, stands it down silently. One `armRegister()` per card,
-so arming one row disarms another the same way two Table rows already do.
+**One picker behind one **Remove** trigger, and the two-step confirmation
+moved into it rather than dropped.** The second pass's per-row glyph was
+`interaction/arm-to-confirm.ts`'s fourth consumer, pressed twice on itself;
+this pass has no control that presses twice on itself at all, since the row
+lost its own remove glyph, so that module is no longer a consumer here.
+What survives is the two sentences it coined for the gesture —
+`armedName`, `armedPrompt`, `STOOD_DOWN`, all still exported from
+`arm-to-confirm.ts` and imported here directly — so an armed line in this
+picker says exactly what an armed bin icon always has: "d6. Select again to
+confirm."
 
-**This sits at Table's and Record set's stakes, not Passport's lighter
-one, and that is a considered choice rather than a default.** Passport's own
-list-part delete uses the identical module at a deliberately *lower* stake —
-a part is a short phrase, cheaply retyped — and hides its control until the
-part has focus, to keep a list field's resting width matching a scalar
-field's. A Track row is not a short phrase: an added row can be several
-sessions' worth of marked segments, closer to a Table row or a Record set
-record than to a passport tag, so the remove control follows their answer —
-**always visible on an added row**, never focus-gated, on the same argument
-Table's own comment makes for itself ("deleting is the only irreversible
-thing a component offers"). `commit: () => context.onChange({ values: {
-[row.key]: null } })`.
+The gesture: opening **Remove** lists every added row as a plain line.
+Picking one arms it — tints that line (`sheetsmith-track-remove-armed`,
+scoped under `.sheetsmith-panel` since the panel cannot carry
+`.sheetsmith-view`) and the row it names on the card underneath
+(`sheetsmith-track-row-arming`, unchanged from the first two passes),
+relabels the line to `armedName`'s sentence, and announces
+`armedPrompt`'s. Picking the *same* line again is the confirm: it stands
+itself down, closes the panel, and writes `null` for that row's key.
+Picking a *different* line stands the first down and arms the second
+instead — arming one row disarms another, the same property the second
+pass's shared `armRegister()` gave two per-row buttons, kept here across two
+lines of one picker instead. Dismissing the panel while a row is armed — a
+press outside it, Escape, or the picker being closed by anything else that
+opens a panel — stands the row down silently and announces `STOOD_DOWN`,
+`ui/anchored-panel.ts`'s own `onClose` callback the trigger for the same
+"arming, then walking away, cancels" rule the per-row control used to give
+for free through `blur` and an outside `pointerdown`.
 
-**Deletion is new storage behaviour, not new interaction behaviour, and it
-is `writeFenced`'s own primitive doing new work rather than a new one being
-built.** `writeFenced(body, updates)` has taken `updates: ReadonlyMap<string,
-string | null>` since it was written, a `null` value removing that entry's
-whole line — this is simply the first component to ever put one in the map.
-`TrackData.values` widens from `Record<string, string>` to `Record<string,
-string | null>` to carry it through a delta; `read()` is untouched and never
-produces one, since a section that read cannot contain an instruction to
-delete itself.
+**This still sits at Table's and Record set's stakes, not Passport's
+lighter one**, for the reason the second pass gave: an added row can be
+several sessions' worth of marked segments, closer to a Table row or a
+Record set record than to a passport tag. What changed is where the stakes
+are paid — the picker's own two-pick gesture rather than a bin icon's own
+two presses — not that they are lower. `commit: () => context.onChange({
+values: { [row.key]: null } })`, unchanged.
+
+**Deletion is still `writeFenced`'s own primitive doing the same work.**
+`writeFenced(body, updates)` takes `updates: ReadonlyMap<string, string |
+null>`, a `null` value removing that entry's whole line, unaffected by
+which control produces the delta. `TrackData.values` stays `Record<string,
+string | null>`; `read()` stays untouched and never produces one.
 
 **No confirmation-adjacent focus choreography beyond what the view already
-does.** Table's own remove accepts the generic by-index focus restore
-landing on whatever control is now in that row's old position — its own
-comment says so — and this reuses that acceptance rather than adding
-`awaitingAdd`'s own bookkeeping a second time for the opposite direction.
+does**, as before — the generic by-index focus restore lands on whatever
+control is now in the removed row's old position, or on the row set's own
+**Add**/**Remove** line if removing the last added row erased that
+position entirely.
 
 ### The gestures
 
@@ -348,21 +385,24 @@ preview rather than discovering it only once they read this document.
 added, which every character-owned row set with more than one candidate row
 guarantees by construction.
 
-### The fourth grid column
+### The third grid column, and the fourth one the third pass removed
 
 The first pass added a third subgrid column to `.sheetsmith-track-set`,
 reserved on every row once any row in the set needed one, so a mixed set's
 calculated rows do not slide their run one column left into a length field
-they do not draw. The remove button is the identical problem one column
-over: `.sheetsmith-track-lengths.sheetsmith-track-set` grows from three
-tracks to four, `auto auto minmax(0, 1fr) auto` (name, length, run, remove),
-and every row drawn in a set that has *any* character-owned row reserves all
-four — an added character-owned row draws a real remove button in the
-fourth, a calculated row in the same mixed set draws an empty span, on
-exactly the reservation rule the length column already established. A row
-that is not drawn at all (not added) contributes no grid row and so needs no
-reservation — removing a whole row does not misalign the rows that remain,
-only removing one *cell* from a row that still exists would.
+they do not draw: `.sheetsmith-track-lengths.sheetsmith-track-set` is `auto
+auto minmax(0, 1fr)` (name, length, run), and every row drawn in a set that
+has *any* character-owned row reserves it — a character-owned row a real
+field, a calculated row in the same mixed set an empty span.
+
+The second pass added a fourth column the identical way, for a remove
+button on every added row. **The third pass removes it again**: the remove
+button moved off the row entirely and into the row set's own shared
+picker, so there is nothing left in a row's own line to reserve a column
+for. `.sheetsmith-track-lengths.sheetsmith-track-set` is back to three
+tracks, and the reservation rule above is exactly what the first pass left
+it as. A row that is not drawn at all (not added) still contributes no grid
+row and so still needs no reservation of its own.
 
 ### The layout editor
 
@@ -514,11 +554,13 @@ Carried from the first pass, unchanged in substance:
 New to this pass:
 
 - [x] A character-owned row with **no entry at all** draws nothing of its
-      own — no name, no field, no run, no "—" — and contributes one **Add
-      `<name>`** button to a single line below the drawn rows.
+      own — no name, no field, no run, no "—" — and its name joins the row
+      set's shared **Add** picker (superseded in shape, not substance, by
+      the third pass — see below: it no longer contributes a button of its
+      own).
 - [x] A character-owned row with **an entry, blank** draws in full — name,
-      length field showing `—`, no run, a remove button — the first pass's
-      "graceful empty" state, now reached only once added.
+      length field showing `—`, no run — the first pass's "graceful empty"
+      state, now reached only once added.
 - [x] Pressing **Add `d8`** writes `d8:` (a bare, blank entry) and nothing
       else; the row then draws in its layout-declared position relative to
       whichever other rows are already added, not appended after them; focus
@@ -526,18 +568,10 @@ New to this pass:
 - [x] Two rows added out of declared order (e.g. `d12` before `d8`, where
       `rows[]` declares `d8` first) still draw `d8` above `d12`, matching
       `rows[]`'s own order.
-- [x] An added row's remove button is visible at rest — never hidden until
-      focus or hover — arms on a first press (tinted, announced, `aria-label`
-      naming what a second press removes), and a second press writes `null`
-      for that row's key, removing the whole entry (marks included) and
-      collapsing the row back to an **Add** button; a press elsewhere, or
-      arming a sibling row's remove button, stands the first down with no
-      write.
-- [x] Clearing only the length field (not pressing remove) on an added row
+- [x] Clearing only the length field (not removing the row) on an added row
       blanks the length half of its entry, keeps the entry itself (and any
-      marks) in the note, and the row stays drawn with its remove button
-      still present — distinct from removing, which the row's own remove
-      button alone reaches.
+      marks) in the note, and the row stays drawn — distinct from removing,
+      which only the **Remove** picker reaches.
 - [x] `write` of an unmodified note is byte-identical whether or not any row
       is added or removed elsewhere on the same card — an add or a remove
       touches only its own row's line.
@@ -555,19 +589,47 @@ New to this pass:
       last one `rows[]` declares, which it leaves un-added; the sample
       round-trips through `read` and `write`, and two added rows on one card
       draw different sampled lengths.
-- [x] `.sheetsmith-track-lengths.sheetsmith-track-set` reserves a fourth
-      subgrid column; a calculated row inside a set that also holds a
-      character-owned row draws an empty span in that column rather than
-      shifting its run into it.
 - [x] `TrackData.values` typed `Record<string, string | null>`; `read` never
       produces a `null` entry; `write` passes a `null` straight to
       `writeFenced`, which removes that entry's line and leaves every other
       line untouched.
-- [x] `git diff --stat` shows no change to `src/parse/bounded-entry.ts`,
-      `src/parse/fenced.ts`, `src/interaction/arm-to-confirm.ts`,
+- [x] `npm test`, `npm run lint` and `npm run build` are green.
+
+**New to the third pass:**
+
+- [x] A row set with at least one not-yet-added row draws one **Add** icon
+      button below the drawn rows, and no more than one whatever the number
+      of candidates; a row set with nothing left to add draws none. A row
+      set with at least one added row draws one **Remove** icon button
+      alongside it on the same terms; one with nothing added yet draws none.
+      A row set with neither — nothing left to add and nothing yet added,
+      which only a set with no character-owned rows at all can be — draws
+      no action row underneath at all.
+- [x] Pressing **Add** opens `ui/anchored-panel.ts`'s panel listing every
+      not-yet-added row by name, in declared order; picking one closes the
+      panel, writes its blank entry, and lands focus in its length field on
+      the next render, exactly as the second pass's own named button did.
+- [x] Pressing **Remove** opens the same kind of panel listing every added
+      row by name; picking one arms it — tints that line and the row it
+      names on the card, relabels the line to `armedName`'s sentence,
+      announces `armedPrompt`'s — without writing anything; picking the
+      *same* line again writes `null` for that row's key and closes the
+      panel; picking a *different* line disarms the first and arms the
+      second instead, writing nothing.
+- [x] Dismissing the **Remove** panel while a row is armed — a press
+      outside it, Escape, or opening a different panel anywhere on the
+      sheet — stands the row down, untints it, and announces `STOOD_DOWN`,
+      without writing anything.
+- [x] `interaction/arm-to-confirm.ts` gains no new consumer here and loses
+      one: `track.ts` imports only `armedName`, `armedPrompt` and
+      `STOOD_DOWN` from it, no longer `armRegister` or `bindArmToConfirm`.
+      `git diff --stat` shows no change to the module itself, or to
+      `src/parse/bounded-entry.ts`, `src/parse/fenced.ts`,
       `src/components/record-set.ts`, `src/components/table.ts`,
       `src/components/pool.ts`, or any other component.
-- [x] `npm test`, `npm run lint` and `npm run build` are green.
+- [x] `.sheetsmith-track-lengths.sheetsmith-track-set` is back to three
+      subgrid tracks (name, length, run); the fourth the second pass added
+      for a per-row remove button is gone, since no row draws one any more.
 
 **Look criteria**, in the harness, both themes:
 
@@ -575,42 +637,45 @@ New to this pass:
       colour as Pool's ceiling.
 - [x] A four-row hit-dice card with two rows added and two not reads as
       "this character has two of the four die types, and can add the rest,"
-      not as a partially broken card and not as four rows one of which is
-      still hunting for the placeholder that used to be there.
+      with one **Add** and one **Remove** icon underneath rather than a row
+      of named buttons and a bin icon per line.
 - [x] A mixed set (one calculated row, one character-owned) keeps its
       calculated row's run aligned with the character-owned row's run, in
       the same column, whether or not the character-owned row is currently
       added.
-- [x] An added row's remove button reads in the same vocabulary as Table's
-      row-delete glyph — same icon, same armed tint — so a reader who has
-      met one recognises the other.
+- [x] The **Add** and **Remove** triggers read in Table's own delete
+      glyph's vocabulary — the same circular icon-button shape — and an
+      armed line inside the **Remove** panel tints in the same red Table's
+      own armed row does, so a reader who has met one recognises the other.
 
 **Vault fixture** (`~/Developer/sheetsmith-test-vault`, mirrored under
 `src/test/fixtures/tracks/` and driven through the real parsers by
 `src/view/vault-fixture.test.ts`): `Track variations.json` and `Tracks.md`
-already exist from the first pass and need no new component — the same
-`hit_dice` row set demonstrates add/remove once this pass lands, since it
-already declares four character-owned rows. `Characters/Tracks.md`'s
-existing entries (`d6: 1 / 4`, and whatever the reader's own hand-testing
-since left there) all read as **added**, per **Data and file model**'s
-argument, so the fixture needs no rewrite for this pass to apply to it —
-only a re-read of the press list below.
+already exist and need no new component or data — the same `hit_dice` row
+set demonstrates add/remove under the third pass's picker exactly as it did
+under the second pass's buttons, since presence in the note is still the
+only signal. `Characters/Tracks.md`'s existing entries all read as
+**added**, per **Data and file model**'s argument, so the fixture needs no
+rewrite — only a re-read of the press list below.
 
 **The press list**: with `d8` and `d12` absent from the note, confirm the
-card draws only `d6` and `d10` plus an **Add d8** and an **Add d12** button;
-press **Add d8**, confirm the note gains a bare `d8:` line and the card now
-draws a `d8` row with `—` and no run; type a length into it and confirm the
-note holds `d8:  / <length>` — a blank marks half, the same "blank value half
-is a blank value" reading `per-record-ceiling.md` gives its own composite,
-not `0 / <length>`, since nothing has been typed into the marks half yet;
-press `d8`'s remove button once and confirm it
-arms (tinted, announced) without writing; press it a second time and confirm
-the whole `d8` line is gone from the note and the card shows **Add d8**
-again; press Long Rest and confirm every added row with a length restores,
-an added row with none and a not-added row are both left exactly as they
-were, and the layout's other components are unaffected. `DnD 5e Standard`'s
-`hit_dice` (still a Pool, `max: "level"`) is not touched by this pass — a
-separate decision, not scoped here.
+card draws only `d6` and `d10` plus one **Add** icon and one **Remove**
+icon underneath; press **Add**, confirm a panel opens listing `d8` and
+`d12`; pick `d8`, confirm the panel closes, the note gains a bare `d8:`
+line, and the card now draws a `d8` row with `—` and no run; type a length
+into it and confirm the note holds `d8:  / <length>` — a blank marks half,
+the same "blank value half is a blank value" reading `per-record-ceiling.md`
+gives its own composite, not `0 / <length>`, since nothing has been typed
+into the marks half yet; press **Remove**, confirm a panel opens listing
+`d6`, `d10` and `d8`; pick `d8` once and confirm it arms (tinted, announced)
+without writing and the `d8` row on the card tints too; pick `d8` again and
+confirm the whole `d8` line is gone from the note, the card no longer draws
+a `d8` row, and `d8` is back in the **Add** panel's own list; press Long
+Rest and confirm every added row with a length restores, an added row with
+none and a not-added row are both left exactly as they were, and the
+layout's other components are unaffected. `DnD 5e Standard`'s `hit_dice`
+(still a Pool, `max: "level"`) is not touched by this pass — a separate
+decision, not scoped here.
 
 ## Commit boundaries
 
@@ -640,6 +705,22 @@ rather than restarting it.
    document's `Status` to `built`; §4.2's Track entry and `docs/UI.md`'s
    arm-to-confirm and add-control rows amended for a fourth/third consumer;
    the vault fixture's press list re-verified against the built behaviour.
+
+The third pass continues the same sequence:
+
+6. `feat: Collapse a Track row set's Add and Remove into one picker each`.
+   The per-row **Add `<name>`** buttons and the per-row remove glyph both
+   removed; one **Add** and one **Remove** icon button drawn once per row
+   set, each opening `ui/anchored-panel.ts` filled with one line per row it
+   offers; the **Remove** panel's own arm-then-confirm gesture, reusing
+   `armedName`/`armedPrompt`/`STOOD_DOWN` from `arm-to-confirm.ts` without
+   taking `armRegister`/`bindArmToConfirm` any more; the fourth grid column
+   removed along with the row's own remove button.
+7. `docs: Move a Track row set's add and remove behind one picker each`.
+   This document's third-pass respec note, the amended **Design** sections,
+   the acceptance and look criteria, and the vault fixture's press list;
+   `docs/SPEC.md` §4.2's Track paragraph and `docs/UI.md`'s arm-to-confirm
+   and add-control rows amended for the picker.
 
 ## Deliberately not doing
 

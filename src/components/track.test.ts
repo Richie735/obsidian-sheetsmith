@@ -18,6 +18,8 @@ import { buildSheetScope } from '../formula/sheet';
 import { makeFieldResolver } from '../formula/resolve';
 import { RenderContext } from '../types';
 import { sampleOf } from '../test/sample';
+import { closeAnchoredPanel } from '../ui/anchored-panel';
+import { armedName } from '../interaction/arm-to-confirm';
 
 const config: TrackConfig = {
 	id: 'exhaustion',
@@ -961,6 +963,32 @@ describe('track rows', () => {
 	});
 });
 
+/**
+ * Open the row set's **Add** or **Remove** picker and return its lines, one
+ * per row it offers — the panel lives on `document.body` rather than inside
+ * `el` (`ui/anchored-panel.ts`), which is why every consumer of this looks
+ * there rather than inside the card.
+ */
+const openPicker = (
+	el: HTMLElement,
+	which: 'Add to' | 'Remove from',
+): HTMLButtonElement[] => {
+	const trigger = Array.from(
+		el.querySelectorAll<HTMLButtonElement>('.sheetsmith-track-action-button'),
+	).find((b) => b.getAttribute('aria-label')?.startsWith(which));
+	if (!trigger) throw new Error(`expected a "${which}" trigger`);
+	trigger.click();
+	const panel = document.querySelector('.sheetsmith-panel');
+	if (!panel) throw new Error('expected the picker to open');
+	return Array.from(
+		panel.querySelectorAll<HTMLButtonElement>('.sheetsmith-panel-line'),
+	);
+};
+
+/** A picker line's own row name. */
+const lineLabel = (line: HTMLElement): string | null =>
+	line.querySelector('.sheetsmith-panel-said')?.textContent ?? null;
+
 /** A row set of hit-dice-shaped rows, one of which the character owns. */
 const diceRows: TrackConfig = {
 	id: 'hit_dice',
@@ -974,6 +1002,8 @@ const diceRows: TrackConfig = {
 };
 
 describe('a row whose length the character owns', () => {
+	afterEach(() => closeAnchoredPanel());
+
 	it('is never a flag card, whatever count or marks say', () => {
 		expect(isFlagCard({ ...diceRows, marks: 1 })).toBe(false);
 		expect(
@@ -1158,7 +1188,7 @@ describe('a row whose length the character owns', () => {
 		});
 	});
 
-	it('draws nothing at all for a row with no entry, only an Add button', () => {
+	it('draws nothing at all for a row with no entry, only an Add trigger', () => {
 		const el = document.createElement('div');
 		document.body.appendChild(el);
 		track.render(el, diceRows, { values: {} }, context);
@@ -1168,10 +1198,7 @@ describe('a row whose length the character owns', () => {
 			el.querySelectorAll('.sheetsmith-track-row-length-input'),
 		).toHaveLength(0);
 		expect(el.querySelectorAll('.sheetsmith-track-row-name')).toHaveLength(0);
-		const buttons = Array.from(
-			el.querySelectorAll<HTMLElement>('.sheetsmith-track-add-button'),
-		).map((b) => b.textContent);
-		expect(buttons).toEqual(['Add d10', 'Add d6']);
+		expect(openPicker(el, 'Add to').map(lineLabel)).toEqual(['d10', 'd6']);
 	});
 
 	it('draws a row in full, with an empty length field, once its entry exists at all', () => {
@@ -1183,10 +1210,12 @@ describe('a row whose length the character owns', () => {
 		expect(
 			el.querySelectorAll('.sheetsmith-track-row-length-input'),
 		).toHaveLength(1);
-		expect(
-			el.querySelectorAll<HTMLElement>('.sheetsmith-track-add-button')
-				.length,
-		).toBe(1);
+		// One row left to add, so the Add trigger is still there; one row
+		// already added, so the Remove trigger has joined it. Opening the
+		// second picker closes the first on its own
+		// (`ui/anchored-panel.ts`'s "one at a time").
+		expect(openPicker(el, 'Add to').map(lineLabel)).toEqual(['d6']);
+		expect(openPicker(el, 'Remove from').map(lineLabel)).toEqual(['d10']);
 	});
 
 	it('draws the run at its stored length once one is typed', () => {
@@ -1362,28 +1391,27 @@ describe('a row whose length the character owns', () => {
 		).toBeNull();
 		// And d6's run still draws at its own declared length.
 		expect(runSegments(el, 1)).toHaveLength(4);
-		// d10 (character-owned) draws a real remove button; d6 (calculated)
-		// reserves the same column empty rather than getting one too.
-		expect(
-			lines[0]?.querySelector('.sheetsmith-track-remove-button'),
-		).not.toBeNull();
-		expect(
-			lines[1]?.querySelector('.sheetsmith-track-remove-button'),
-		).toBeNull();
+		// d10 (character-owned) offers itself to the Remove picker; d6
+		// (calculated) never does, whatever column it reserves.
+		expect(openPicker(el, 'Remove from').map(lineLabel)).toEqual(['d10']);
 	});
 
 	describe('adding and removing a row', () => {
-		it('contributes an Add button for a row with no entry, in declared order', () => {
+		it('draws no Add or Remove trigger for a row set with no character-owned row', () => {
+			const el = document.createElement('div');
+			document.body.appendChild(el);
+			track.render(el, slots, { values: {} }, context);
+			expect(el.querySelector('.sheetsmith-track-actions')).toBeNull();
+		});
+
+		it('offers a row with no entry to the Add picker, in declared order', () => {
 			const el = document.createElement('div');
 			document.body.appendChild(el);
 			track.render(el, diceRows, { values: {} }, context);
-			const buttons = Array.from(
-				el.querySelectorAll<HTMLElement>('.sheetsmith-track-add-button'),
-			).map((b) => b.textContent);
-			expect(buttons).toEqual(['Add d10', 'Add d6']);
+			expect(openPicker(el, 'Add to').map(lineLabel)).toEqual(['d10', 'd6']);
 		});
 
-		it('pressing Add writes a blank entry and nothing else', () => {
+		it('picking a row from Add writes a blank entry and nothing else', () => {
 			const changed = vi.fn();
 			const el = document.createElement('div');
 			document.body.appendChild(el);
@@ -1391,10 +1419,10 @@ describe('a row whose length the character owns', () => {
 				...context,
 				onChange: changed,
 			});
-			const add = Array.from(
-				el.querySelectorAll<HTMLElement>('.sheetsmith-track-add-button'),
-			).find((b) => b.textContent === 'Add d10');
-			if (!add) throw new Error('expected an Add d10 button');
+			const add = openPicker(el, 'Add to').find(
+				(line) => lineLabel(line) === 'd10',
+			);
+			if (!add) throw new Error('expected a d10 line');
 			add.click();
 			expect(changed).toHaveBeenCalledWith({ values: { d10: '' } });
 		});
@@ -1415,10 +1443,10 @@ describe('a row whose length the character owns', () => {
 			const el = document.createElement('div');
 			document.body.appendChild(el);
 			track.render(el, diceRows, { values: {} }, context);
-			const add = Array.from(
-				el.querySelectorAll<HTMLElement>('.sheetsmith-track-add-button'),
-			).find((b) => b.textContent === 'Add d10');
-			if (!add) throw new Error('expected an Add d10 button');
+			const add = openPicker(el, 'Add to').find(
+				(line) => lineLabel(line) === 'd10',
+			);
+			if (!add) throw new Error('expected a d10 line');
 			add.click();
 			// The press writes the entry (asserted above); the next render —
 			// the one the write would cause on a real sheet — is simulated
@@ -1439,20 +1467,29 @@ describe('a row whose length the character owns', () => {
 				...context,
 				onChange: changed,
 			});
-			const remove = el.querySelector<HTMLButtonElement>(
-				'.sheetsmith-track-remove-button',
+			const remove = openPicker(el, 'Remove from').find(
+				(line) => lineLabel(line) === 'd10',
 			);
-			if (!remove) throw new Error('expected a remove button');
+			if (!remove) throw new Error('expected a d10 line');
 			remove.click();
 			expect(changed).not.toHaveBeenCalled();
-			expect(remove.classList.contains('sheetsmith-track-remove-armed')).toBe(
-				true,
-			);
+			expect(
+				remove.classList.contains('sheetsmith-track-remove-armed'),
+			).toBe(true);
+			// The line relabels to the shared wording, the same sentence
+			// Table's and Record set's own armed rows already say.
+			expect(lineLabel(remove)).toBe(armedName('d10'));
+			// The row itself tints too, not only the line in the panel.
+			expect(
+				el
+					.querySelector('.sheetsmith-track-row')
+					?.classList.contains('sheetsmith-track-row-arming'),
+			).toBe(true);
 			remove.click();
 			expect(changed).toHaveBeenCalledWith({ values: { d10: null } });
 		});
 
-		it('arming one row\'s remove button stands a sibling\'s down', () => {
+		it('arming one row in the Remove picker stands a sibling\'s down', () => {
 			const el = document.createElement('div');
 			document.body.appendChild(el);
 			track.render(
@@ -1461,10 +1498,10 @@ describe('a row whose length the character owns', () => {
 				{ values: { d10: '1 / 4', d6: '2 / 11' } },
 				context,
 			);
-			const [first, second] = Array.from(
-				el.querySelectorAll<HTMLButtonElement>('.sheetsmith-track-remove-button'),
-			);
-			if (!first || !second) throw new Error('expected two remove buttons');
+			const lines = openPicker(el, 'Remove from');
+			const first = lines.find((line) => lineLabel(line) === 'd10');
+			const second = lines.find((line) => lineLabel(line) === 'd6');
+			if (!first || !second) throw new Error('expected two lines');
 			first.click();
 			expect(first.classList.contains('sheetsmith-track-remove-armed')).toBe(
 				true,
@@ -1476,6 +1513,28 @@ describe('a row whose length the character owns', () => {
 			expect(second.classList.contains('sheetsmith-track-remove-armed')).toBe(
 				true,
 			);
+		});
+
+		it('dismissing the Remove picker while armed stands the row down silently', () => {
+			const changed = vi.fn();
+			const el = document.createElement('div');
+			document.body.appendChild(el);
+			track.render(el, diceRows, { values: { d10: '1 / 4' } }, {
+				...context,
+				onChange: changed,
+			});
+			const remove = openPicker(el, 'Remove from').find(
+				(line) => lineLabel(line) === 'd10',
+			);
+			if (!remove) throw new Error('expected a d10 line');
+			remove.click();
+			closeAnchoredPanel();
+			expect(changed).not.toHaveBeenCalled();
+			expect(
+				el
+					.querySelector('.sheetsmith-track-row')
+					?.classList.contains('sheetsmith-track-row-arming'),
+			).toBe(false);
 		});
 	});
 

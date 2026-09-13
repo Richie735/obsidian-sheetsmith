@@ -3198,17 +3198,16 @@ a.sheetsmith-undo {
 	white-space: nowrap;
 }
 
-/* A third and fourth subgrid column, for the row whose own length the
-   character types and the row it may remove
+/* A third subgrid column, for the row whose own length the character types
    (`docs/features/track-row-length.md`). Added only where some row in the
-   set actually needs them — an ordinary spell-slot card must not gain blank
-   columns nobody uses — and every row then reserves both whether or not it
-   draws anything in them, so a mixed set's runs stay in the same track
-   rather than sliding into whichever one their own row happens to fill: a
-   calculated row draws an empty span in each, an added character-owned row
-   a real field and a real remove button. */
+   set actually needs it — an ordinary spell-slot card must not gain a blank
+   column nobody uses — and every row then reserves it whether or not it
+   draws anything there, so a mixed set's runs stay in the same track rather
+   than sliding into whichever one their own row happens to fill: a
+   calculated row draws an empty span, an added character-owned row a real
+   field. */
 .sheetsmith-track-lengths.sheetsmith-track-set {
-	grid-template-columns: auto auto minmax(0, 1fr) auto;
+	grid-template-columns: auto auto minmax(0, 1fr);
 }
 
 /* Pool's ceiling reading and its chrome removal, both reused whole
@@ -3222,12 +3221,32 @@ a.sheetsmith-undo {
 	font-size: var(--font-ui-small);
 }
 
-/* An added row's remove button, at Table's own stakes and in Table's own
-   vocabulary — always visible, never focus- or hover-gated, since an added
-   row can hold a session's worth of marked segments and is closer to a
-   Table row than to a passport tag (`docs/features/track-row-length.md`).
-   Faint at rest, per UI §7's rule against a hover-only affordance. */
-.sheetsmith-view .sheetsmith-track-remove-button {
+/* The row an armed remove button belongs to, tinted the same way Table's
+   own armed row is, so what is about to go is a row the reader can name
+   rather than one glyph among several. Set from the **Remove** picker below
+   rather than from a control of the row's own. */
+.sheetsmith-view .sheetsmith-track-row-arming {
+	background-color: color-mix(
+		in srgb,
+		var(--text-error) 12%,
+		var(--background-primary)
+	);
+}
+
+/* One **Add** and one **Remove** for the whole row set, each opening a
+   picker naming the specific rows it offers, rather than a button per
+   candidate and a bin icon per line (`docs/features/track-row-length.md`).
+   A plain flex row: at most two icon buttons, never wrapping. */
+.sheetsmith-track-actions {
+	display: flex;
+	gap: var(--size-2-2);
+	margin-top: var(--size-2-1);
+}
+
+/* Table's own delete glyph's shape and stakes, shared by both triggers
+   rather than one per row — always visible, never focus- or hover-gated,
+   since what either opens can hold a session's worth of marked segments. */
+.sheetsmith-view .sheetsmith-track-action-button {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
@@ -3246,90 +3265,38 @@ a.sheetsmith-undo {
 		color 160ms ease;
 }
 
-.sheetsmith-view .sheetsmith-track-remove-button .svg-icon {
+.sheetsmith-view .sheetsmith-track-action-button .svg-icon {
 	width: var(--icon-s);
 	height: var(--icon-s);
 }
 
-/* Full contrast on the row being looked at or the control a keyboard is on,
-   both stood down for an armed control — Table's own cascade, one component
-   over: an armed control is one press from an irreversible delete, and
-   nothing here competes with that rule. */
-.sheetsmith-view
-	.sheetsmith-track-row:hover
-	.sheetsmith-track-remove-button:not(.sheetsmith-track-remove-armed),
-.sheetsmith-view
-	.sheetsmith-track-remove-button:focus-visible:not(.sheetsmith-track-remove-armed) {
+.sheetsmith-view .sheetsmith-track-action-button:hover {
+	background-color: var(--background-modifier-hover);
 	color: var(--text-normal);
 }
 
-.sheetsmith-view
-	.sheetsmith-track-remove-button:hover:not(.sheetsmith-track-remove-armed) {
-	background-color: var(--background-modifier-hover);
-}
-
-.sheetsmith-view .sheetsmith-track-remove-button:focus-visible {
+.sheetsmith-view .sheetsmith-track-action-button:focus-visible {
 	outline: 2px solid var(--interactive-accent);
 	outline-offset: 2px;
 }
 
-.sheetsmith-view .sheetsmith-track-remove-armed {
+/* The **Remove** picker's own armed line, inside the anchored panel this
+   control opens rather than on a bin icon of the row's own — the panel
+   cannot carry `.sheetsmith-view` (`src/styles.test.ts` polices this), so
+   this repeats `.sheetsmith-panel` in front of it exactly as every other
+   panel control does. Same tint as the row it names
+   (`.sheetsmith-track-row-arming` above), so the panel's own line and the
+   sheet's own row agree about what is about to go, and the same weight as
+   `.sheetsmith-panel-line:hover` (both (0,2,0)) — so it is this file's own
+   later place in the cascade, `styles.build.mjs`'s `shared` before `sheet`,
+   that lets an armed line outrank a hover on it rather than the reverse. */
+.sheetsmith-panel .sheetsmith-track-remove-armed {
 	background-color: color-mix(
 		in srgb,
 		var(--text-error) 25%,
 		var(--background-primary)
 	);
 	color: var(--text-error);
-}
-
-/* The row an armed remove button belongs to, tinted the same way Table's
-   own armed row is, so what is about to go is a row the reader can name
-   rather than one glyph among several. */
-.sheetsmith-view .sheetsmith-track-row-arming {
-	background-color: color-mix(
-		in srgb,
-		var(--text-error) 12%,
-		var(--background-primary)
-	);
-}
-
-/* The row a character has not added yet contributes one of these instead of
-   a line of its own — Record set's own **Add** wording, several small
-   buttons rather than one full-width bar, since there are several specific
-   die types to choose among rather than one anonymous next row. */
-.sheetsmith-track-add {
-	display: flex;
-	flex-wrap: wrap;
-	gap: var(--size-2-2);
-	margin-top: var(--size-2-1);
-}
-
-.sheetsmith-view .sheetsmith-track-add-button {
-	padding: var(--size-2-1) var(--size-2-3);
-	border: 1px solid var(--background-modifier-border);
-	border-radius: var(--radius-s);
-	background-color: transparent;
-	box-shadow: none;
-	font-size: var(--font-ui-small);
-	color: var(--text-muted);
-	cursor: pointer;
-	transition:
-		background-color 160ms ease,
-		color 160ms ease;
-}
-
-.sheetsmith-track-add-label {
-	display: inline-block;
-}
-
-.sheetsmith-view .sheetsmith-track-add-button:hover {
-	background-color: var(--background-modifier-hover);
-	color: var(--text-normal);
-}
-
-.sheetsmith-view .sheetsmith-track-add-button:focus-visible {
-	outline: 2px solid var(--interactive-accent);
-	outline-offset: 2px;
 }
 
 /* One control and one tab stop, whatever it is a run of. The segments inside it
