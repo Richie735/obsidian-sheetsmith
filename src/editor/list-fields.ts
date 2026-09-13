@@ -1599,6 +1599,7 @@ type EntryRecord = {
 	[property: string]: string | number | undefined;
 	count?: string | number;
 	sense?: string;
+	maxSource?: string;
 };
 
 /**
@@ -1723,6 +1724,7 @@ export function renderEntriesEditor(
 		columns.createSpan({ text: primary.heading });
 		columns.createSpan({ text: secondary.heading });
 		if (withCount) {
+			columns.createSpan({ text: 'Length' });
 			columns.createSpan({ text: 'Segments' });
 			columns.createSpan({ text: 'Sense' });
 		}
@@ -1853,6 +1855,23 @@ export function renderEntriesEditor(
 		});
 
 		if (withCount) {
+			// Where this row's length comes from: the layout's formula below,
+			// or the character's own number typed on the sheet
+			// (`docs/features/track-row-length.md`). Ahead of Segments, so a
+			// reader picks the source before meeting the field it gates.
+			const sourceInput = row.createEl('select', {
+				attr: { 'aria-label': `${nameOf(entry)} length source` },
+			});
+			for (const [value, text] of [
+				['', 'Formula'],
+				['character', 'Character'],
+			] as const) {
+				sourceInput.createEl('option', { value, text });
+			}
+			sourceInput.value = entry.maxSource === 'character' ? 'character' : '';
+			sourceInput.dataset.sheetsmithFocus =
+				`attr-${prefix}-${nameOf(entry)}-maxSource`;
+
 			// A formula, not a number field: a caster's slots come from a
 			// level table, so a row's length is as much an expression as
 			// the component's own. Empty falls back to that one, which is
@@ -1883,6 +1902,34 @@ export function renderEntriesEditor(
 					entry.count = Number.isFinite(parsed) ? parsed : next;
 				}
 				fieldError(countInput, formulaProblem(entry.count));
+				context.persist();
+			});
+
+			// Nothing to type a formula into once the character owns the
+			// length — Pool's `visibleWhen` withholding its own Maximum
+			// field, one row over. `visibility: hidden` rather than
+			// `hidden`/`display: none`: this row is a grid of fixed tracks,
+			// and a child `display: none` removes takes itself out of grid
+			// placement entirely, sliding the Sense select one column left
+			// into the track Segments just vacated. `.sheetsmith-detail-
+			// field-reserved` already states the same answer for the
+			// Modifiers list's own bonus-type field.
+			countInput.classList.toggle(
+				'sheetsmith-detail-field-reserved',
+				entry.maxSource === 'character',
+			);
+
+			sourceInput.addEventListener('change', () => {
+				if (sourceInput.value === 'character') {
+					entry.maxSource = 'character';
+					countInput.classList.add('sheetsmith-detail-field-reserved');
+				} else {
+					// Left exactly as it was rather than cleared: Pool's own
+					// rule for a formula a mode switch stops using. Switching
+					// back finds it there.
+					delete entry.maxSource;
+					countInput.classList.remove('sheetsmith-detail-field-reserved');
+				}
 				context.persist();
 			});
 

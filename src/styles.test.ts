@@ -324,10 +324,15 @@ describe('every field the sheet styles has a focus indicator', () => {
 	 *   `sheetsmith-table-input` **as well**, so it takes the shared rule through
 	 *   that class. The exemption is about this check counting classes where the
 	 *   browser resolves elements.
+	 * - `sheetsmith-track-row-length-input` — the same shape one component over:
+	 *   a Track row's own length field carries `sheetsmith-pool-max-input` as
+	 *   well, and takes its focus ring, its hover and its chrome removal through
+	 *   that class. This one's own rule only narrows the size.
 	 */
 	const FOCUS_ELSEWHERE = [
 		'sheetsmith-pool-temp-input',
 		'sheetsmith-table-name-input',
+		'sheetsmith-track-row-length-input',
 	];
 
 	/** Whether any rule anywhere focuses this class and reaches for the accent. */

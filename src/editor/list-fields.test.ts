@@ -1132,12 +1132,12 @@ describe('entries editor', () => {
 		expect(headings).toEqual(['Key', 'Full name']);
 	});
 
-	it('heads a counted list with the two it owns, plus the control tracks', () => {
-		// Segments and Sense are the field's own words, unlike the two above,
-		// because they are what `withCount` *is*. The trailing spacers are not
-		// decoration: without them the last heading stops lining up with the
-		// last input, which is invisible in a two-column list and wrong in this
-		// one.
+	it('heads a counted list with the three it owns, plus the control tracks', () => {
+		// Length, Segments and Sense are the field's own words, unlike the two
+		// above, because they are what `withCount` *is*. The trailing spacers
+		// are not decoration: without them the last heading stops lining up
+		// with the last input, which is invisible in a two-column list and
+		// wrong in this one.
 		const columns = entriesEditor(abilities(), {
 			withCount: true,
 		}).querySelector('.sheetsmith-entry-columns');
@@ -1145,7 +1145,7 @@ describe('entries editor', () => {
 			Array.from(columns?.querySelectorAll(':scope > span') ?? [])
 				.map((el) => el.textContent)
 				.filter((text) => text !== ''),
-		).toEqual(['Key', 'Full name', 'Segments', 'Sense']);
+		).toEqual(['Key', 'Full name', 'Length', 'Segments', 'Sense']);
 		expect(
 			columns?.querySelectorAll('.sheetsmith-list-control-space'),
 		).toHaveLength(2);
@@ -1283,6 +1283,35 @@ describe('entries editor', () => {
 		expect(record.entries).toEqual([{ key: 'STR', sense: 'harm' }]);
 		commit(sense, '');
 		expect(record.entries).toEqual([{ key: 'STR' }]);
+	});
+
+	it('defaults a row\'s length to Formula, and switching to Character reserves Segments\' column without clearing it', () => {
+		const record: Record<string, unknown> = {
+			entries: [{ key: 'STR', count: 5 }],
+		};
+		const el = entriesEditor(record, { withCount: true });
+		const source = el.querySelector(
+			'select[aria-label="STR length source"]',
+		) as HTMLSelectElement;
+		expect(source.value).toBe('');
+		const segments = cell(el, 'STR segments');
+		const reserved = () =>
+			segments.classList.contains('sheetsmith-detail-field-reserved');
+		expect(reserved()).toBe(false);
+		commit(source, 'character');
+		expect(record.entries).toEqual([
+			{ key: 'STR', count: 5, maxSource: 'character' },
+		]);
+		// Visibility rather than removal: the row is a grid of fixed tracks,
+		// and taking Segments out of grid placement entirely would slide
+		// Sense one column left into the track it just vacated.
+		expect(reserved()).toBe(true);
+		// Left exactly as it was rather than cleared, Pool's own rule for a
+		// formula a mode switch stops using — switching back finds it there.
+		expect(segments.value).toBe('5');
+		commit(source, '');
+		expect(record.entries).toEqual([{ key: 'STR', count: 5 }]);
+		expect(reserved()).toBe(false);
 	});
 
 	it('reorders on the arrow keys, and names its controls without the entry', () => {
