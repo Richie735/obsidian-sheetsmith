@@ -887,16 +887,25 @@ implementation and every round of findings.
 
 ## Later additions
 
-**Not part of what shipped.** `cardLayout` and `dividerAfter` were built,
-tested, and verified against the owner's own screenshots through several
-rounds of refinement — everything below this note describes real, reasoned
-work. It was then lost during `/land-it`: a rate-limited dev session,
-reconstructing the original commit boundaries below, reverted the working tree
-past this addition and died before reapplying it, and the loss was judged
-better to accept than to reconstruct render-critical editing logic from a
-coordinating session's memory of it. The reasoning stands as the record for
-whoever rebuilds it, as its own follow-on feature; nothing below is in
-`src/components/roster.ts` today.
+**Rebuilt.** `cardLayout` and `dividerAfter` were built, tested, and verified
+against the owner's own screenshots through several rounds of refinement —
+everything below this note describes real, reasoned work. It was then lost
+during `/land-it`: a rate-limited dev session, reconstructing the original
+commit boundaries below, reverted the working tree past this addition and died
+before reapplying it, and the loss was judged better to accept than to
+reconstruct render-critical editing logic from a coordinating session's memory
+of it. This section survived that loss as the record for whoever rebuilt it,
+and a later session did, from this record alone rather than from any surviving
+code: `drawBandHead` in `src/components/roster.ts` now branches on
+`cardLayout`, `dividerAfter` is wired through `types.ts`'s `rowFlag` on the
+`rows` field exactly as described below, and `roster.test.ts`'s own
+`cardLayout` block and the harness's `roster_card_layout` sample hold the
+round trip and the look. The first four refinements below were re-derived from
+their own reasoning at rebuild time rather than re-measured against real
+Obsidian a second time — and the screenshot pass that reasoning stood in for
+did happen, later in the same broader effort: the owner reported the divider
+still unreadable and a stray gap in real Obsidian, against exactly this
+rebuilt code, which is what the remaining bullets below record.
 
 **`cardLayout` and `dividerAfter` were added after this spec was approved and
 built against, on the owner's own instruction** — an explicit override of the
@@ -919,20 +928,28 @@ the same classes a Card set wears.
 **`dividerAfter` is a per-row boolean, declared through the same `configFields`
 convention as any other row property** (a generic `rowFlag` capability on a
 `'rows'`-kind field, so the editor still learns nothing about what a Roster
-is). Set on a row, it draws a rule immediately beneath that row when
-`cardLayout` is active — separating, say, a stat's saving throw from the
-skills listed after it inside its own card. It has no effect in the
-shared-table layout, which has nothing this small to divide. **A row's own
-divider is suppressed where it is also the last row in its card**, on the same
+is). Set on a row, it draws a rule immediately beneath that row — separating,
+say, a stat's saving throw from the skills listed after it. **A row's own
+divider is suppressed where it is also the last row in its band**, on the same
 rule that already suppresses the ordinary hairline there: a rule beneath
-nothing is a rule against the card's own bottom edge rather than a division
-between two things, which is the same argument the table's last-row rule
-already made.
+nothing is a rule against the card's own bottom edge (or, in the shared table,
+a second rule stacked on the next stat's own band head) rather than a division
+between two things.
 
-**Four refinements followed, from the owner looking at `cardLayout` rendered in
-real Obsidian rather than the harness** — the same override as `cardLayout`
-itself, not a fresh model question, and folded into this section rather than
-opening a second one.
+**It was scoped to `cardLayout` alone at first — "the shared table has nothing
+this small to divide" — and the rebuild's own owner review reversed that.**
+Seeing it live in a real layout (six single-stat Rosters, each drawing a
+saving throw above its skills, `cardLayout` off on every one) argued the other
+way: a shared table's band can hold exactly as many rows as a card's can, so
+the grouping is worth exactly as much either way. `renderShared` now marks a
+row's divider on the identical rule `renderCards` already carried — same
+class, same last-row suppression, argued out once in `dividerAfter`'s own
+config description rather than twice.
+
+**Refinements followed, from the owner looking at `cardLayout` and
+`dividerAfter` rendered in real Obsidian rather than the harness** — the same
+override as `cardLayout` itself, not a fresh model question, and folded into
+this section rather than opening a second one.
 
 - **The card-mode band head draws in Card's own real order.** `card-face.ts`'s
   actual creation order is name, then `derived` (headline weight), then
@@ -945,19 +962,55 @@ opening a second one.
   draws name, then the reading, then the value, toggling the same
   `sheetsmith-card-has-derived` class `card-face.ts` toggles on itself so the
   value's pill treatment is Card's own CSS rather than a second copy of it.
-- **`hideColumnHeadings`**, an eleventh config field: draws no column-heading
-  row above each card's own rows, for several cards repeating the same
-  headings. A boolean, `configFields`-declared exactly like any other; it does
-  nothing in the shared-table layout, which draws its one header once
-  regardless — the same card-mode-only shape `dividerAfter` already has.
+- **`hideColumnHeadings`**, a twelfth config field (`cardLayout` above took the
+  eleventh): draws no column-heading row above the rows — each card's own
+  table in `cardLayout`, originally, for several cards repeating the same
+  headings. A boolean, `configFields`-declared exactly like any other.
+
+  **Reserved for card layout alone at first, on the reasoning that a shared
+  table's one header is already the one place the question is answered — and
+  reversed for the identical reason `dividerAfter`'s own scope was:** a real
+  layout with six single-stat Rosters, `cardLayout` off on every one, still
+  wants its six repeated `NAME` / `TRAINING` / `TOTAL` rows gone, and "the
+  shared table already answered this" turned out to describe the *component's*
+  header, not the *reader's* six identical copies of it. `renderShared` now
+  reads the same `config.hideColumnHeadings` guard `renderCards` already had.
 - **The mini-table inside a card is painted `--background-primary-alt`
   explicitly**, the same background a table wears everywhere else in this
   plugin. Without it the table showed the card's own `--background-secondary`
   through, one shade off — checked against Obsidian's real `app.css` rather
   than guessed, and confirmed to be this plugin's own gap rather than a stock
   Obsidian table rule reaching a view that sits outside `.markdown-rendered`.
-- **The divider's rule reads stronger**, `--background-modifier-border-focus`
-  in place of the ordinary hairline's `--background-modifier-border` — the
-  same stronger neutral line `.sheetsmith-group` already reaches for to tell
-  an outer region's rule from a nested one apart, borrowed rather than a new
-  color invented for the purpose.
+- **The divider's rule reads stronger, and it took three passes to land on
+  how.** The first cut used `--background-modifier-border-focus` in place of
+  the ordinary hairline's `--background-modifier-border` — the same stronger
+  neutral line `.sheetsmith-group` reaches for to tell an outer region's rule
+  from a nested one apart — and it still read as barely different from the
+  hairline beside it in real Obsidian: measured, it was under `legibility.md`'s
+  3:1 bar for "a border or fill that is the only thing marking a state"
+  (1.80–2.29:1 across this component's two backgrounds), the same bar
+  `.sheetsmith-modified`'s own underline had already failed with `--text-faint`
+  and cleared with `--text-muted`. The second pass took the identical fix —
+  `--text-muted`, 6.41–8.13:1 across the same four measurements — and added a
+  wider rule on top of it, reasoning the colour alone might not be enough; the
+  owner's own next look called that too heavy, an emphasis with nothing behind
+  it once the colour had already cleared the bar by two to three times over.
+  What shipped is colour alone, at the ordinary hairline's own width.
+- **The mini-table inside a card sat right under the card's own value pill on
+  a 2px flex gap while carrying 8px of padding on its other three sides**;
+  topped up to match on all four.
+- **The shared table's band head doubled its own vertical padding, and had
+  from the start.** The comment beside `.sheetsmith-roster-band-head` already
+  explained zeroing the generic `.sheetsmith-table td` rule's *border* — it
+  duplicates `.sheetsmith-roster-band-inner`'s own hairline one element in —
+  but said nothing about that same generic rule's *padding*, which duplicates
+  `.sheetsmith-roster-band-inner`'s own padding the identical way. A border
+  doubled draws a visible second line; a padding doubled draws nothing
+  visible of its own, just roughly twice the gap above a band's first row as
+  between any two ordinary rows after it — read, reasonably, as that first
+  row carrying extra space of its own, when the space belonged to the band
+  head above it. `padding-block: 0` on the same rule that already zeroes the
+  border, not `padding: 0`: the horizontal half of the `<td>`'s own padding
+  is the only thing that ever set the band head's inset from the table's
+  edges, so zeroing it too would have pulled the band head in while every row
+  under it stayed put.
