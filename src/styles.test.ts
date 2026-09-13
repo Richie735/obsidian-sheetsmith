@@ -226,6 +226,10 @@ describe('field rules outweigh Obsidian\'s input styling', () => {
 			'sheetsmith-panel-cancel',
 			'sheetsmith-panel-remove',
 			'sheetsmith-panel-remove-armed',
+			// Track's own **Remove** picker, one line per added row inside
+			// the same anchored panel — `sheetsmith-panel-line` already
+			// covers the resting line, and this is its armed tint.
+			'sheetsmith-track-remove-armed',
 		];
 		/**
 		 * The classes on the subject compound, exactly — not a substring of it.
