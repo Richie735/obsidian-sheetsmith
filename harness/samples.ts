@@ -2316,6 +2316,60 @@ export const SAMPLES: Sample[] = [
 			'',
 		].join('\n'),
 	},
+	/*
+	 * A Track row the character adds and removes
+	 * (`docs/features/track-row-length.md`): one row per hit die size, so a
+	 * fighter/wizard multiclass with a d10 and four d6 and a straight
+	 * fighter with eleven d8 read off the same layout. `d8` and `d12` have
+	 * no entry at all here, drawing nothing of their own — the ordinary
+	 * state of a die type this character does not have, not an error — and
+	 * contributing an **Add** button each instead, beside `d6` and `d10`,
+	 * which draw their runs at the length this character gave them.
+	 * Appended at the end rather than beside the spell-slot row set above,
+	 * on this file's own rule: inserting earlier renumbers every row below
+	 * it.
+	 */
+	{
+		config: {
+			id: 'hit_dice',
+			type: 'track',
+			label: 'Hit dice',
+			position: { col: 1, row: 62, width: 4, height: 2 },
+			rows: [
+				{ key: 'd6', name: 'd6', maxSource: 'character' },
+				{ key: 'd8', name: 'd8', maxSource: 'character' },
+				{ key: 'd10', name: 'd10', maxSource: 'character' },
+				{ key: 'd12', name: 'd12', maxSource: 'character' },
+			],
+		} as unknown as ComponentConfig,
+		// d8 and d12 have no entry at all, so the card draws only d6 and
+		// d10 plus the two remaining **Add** buttons — the design's own
+		// look criterion, not just the length field's empty state.
+		body: '```sheet\nd6: 1 / 4\nd10: 0 / 1\n```',
+	},
+	/*
+	 * The mixed case the fourth grid column exists for: a calculated row
+	 * beside a character-owned one, on one card, with the character-owned
+	 * row **not added** — the harder half of the look criterion, since a
+	 * not-added row contributes no grid row at all rather than an empty
+	 * cell. `bonus_die` is the layout's own count, a plain 6; `inspiration_die`
+	 * has no entry, so the card draws one run and one **Add** button, and
+	 * `bonus_die`'s run must stay in the same column whichever state
+	 * `inspiration_die` is in.
+	 */
+	{
+		config: {
+			id: 'mixed_dice',
+			type: 'track',
+			label: 'Mixed dice',
+			position: { col: 5, row: 62, width: 4, height: 2 },
+			rows: [
+				{ key: 'bonus_die', name: 'Bonus die', count: 6 },
+				{ key: 'inspiration_die', name: 'Inspiration die', maxSource: 'character' },
+			],
+		} as unknown as ComponentConfig,
+		body: '```sheet\nbonus_die: 1\n```',
+	},
 ];
 
 /** The same layout with nothing stored: every component's empty state. */
