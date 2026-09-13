@@ -6191,9 +6191,24 @@ a.sheetsmith-undo {
    the row under it exists. Three classes beats the generic rule's two classes
    and an element, so this wins on specificity; it sits below it in the
    cascade anyway, on this file's own rule that an override belongs under the
-   rule it overrides. */
+   rule it overrides.
+
+   **The generic rule's vertical padding doubles up the identical way, and
+   this zeros that too.** `.sheetsmith-roster-band-inner`'s own padding above
+   is what was meant to space the band head from its neighbours; the `<td>`'s
+   own `padding: var(--size-2-2) var(--size-4-2)` stacked underneath it
+   unnoticed, because unlike the border it drew no visible second line — just
+   roughly twice the gap above the first row of a band as between any two
+   ordinary rows after it, "extra padding" that read as belonging to the
+   first row when it was really this cell's own copy of a padding already
+   drawn one element in. `padding-block`, not `padding`: the horizontal half
+   of the `<td>`'s own padding is still the only thing that ever set it —
+   `.sheetsmith-roster-band-inner` carries a narrower `--size-4-1` on that
+   axis, for its own reason above — so zeroing both would pull the band head
+   in from the table's edges while every row under it stayed put. */
 .sheetsmith-view .sheetsmith-table .sheetsmith-roster-band-head {
 	border-bottom: none;
+	padding-block: 0;
 }
 
 .sheetsmith-roster-band-inner .sheetsmith-group-heading {
@@ -6225,6 +6240,71 @@ a.sheetsmith-undo {
 
 .sheetsmith-view .sheetsmith-roster-band-value .sheetsmith-card-input {
 	width: auto;
+}
+
+/* `cardLayout` — each stat as its own `.sheetsmith-card` (Card set's own
+   chrome, `.sheetsmith-card-set.sheetsmith-card-set-vertical` for the strip
+   around them, both borrowed rather than restyled) holding the band head and
+   then a small table of that stat's own rows. Nothing here touches the band
+   head itself: `drawBandHead` builds it from the same `sheetsmith-card-label`
+   / `sheetsmith-card-derived` / `sheetsmith-card-input` pieces an ordinary
+   Card does, so it already wears Card's own rules. */
+.sheetsmith-roster-card-table {
+	/* `.sheetsmith-card` centres and shrink-wraps its children; a table needs
+	   the card's own width back and its own left-set text, or a row of
+	   numbers centres under a name that does not. */
+	width: 100%;
+	align-self: stretch;
+	text-align: start;
+	/* `.sheetsmith-card`'s own `gap` is `--size-2-1` (2px), right for the
+	   label/reading/value trio above but too tight once a dense table follows
+	   them — the table read as jammed under the value pill rather than as its
+	   own block. Topped up to match the card's horizontal and bottom padding
+	   (`--size-4-2`, 8px) exactly, so the table sits in a margin the same
+	   width on all four sides instead of 2px on top and 8px everywhere else. */
+	margin-top: calc(var(--size-4-2) - var(--size-2-1));
+}
+
+/* Without this the mini table shows the card's own `--background-secondary`
+   through — one shade off a table everywhere else on the sheet, and checked
+   against Obsidian's real `app.css` rather than guessed: this plugin's own
+   gap, not a stock table rule a view outside `.markdown-rendered` fails to
+   reach. */
+.sheetsmith-view .sheetsmith-roster-card-table .sheetsmith-table {
+	background-color: var(--background-primary-alt);
+}
+
+/* A row's own divider (`dividerAfter`, `types.ts`'s `rowFlag`) — a stat's
+   rows are few enough, in either of Roster's two layouts, that a division
+   inside them means something, so this applies in the shared table exactly
+   as it does in a card: the owner's own call, over the first-cut design
+   below that reserved it for card layout alone and left `roster.ts`'s
+   `renderShared` marking it too on the identical last-row rule
+   `renderCards` already carries.
+
+   **`--text-muted` in place of `--background-modifier-border`, on
+   `.sheetsmith-modified`'s own measurement two rules up in this cascade for
+   the identical failure.** This mark is the only thing separating one group
+   of rows from the next — nothing else beside it says so — which is
+   `legibility.md`'s 3:1 bar for "a border or fill that is the only thing
+   marking a state". Measured against both of the backgrounds this rule can
+   land on: the card's own `--background-primary-alt` gives
+   `--background-modifier-border-focus` 1.80:1 light, 2.11:1 dark, and the
+   shared table's ambient `--background-primary` gives it 1.88:1 and
+   2.29:1 — under the bar in all four. `text-muted` gives 6.41–8.13:1 across
+   the same four, comfortably over it; `.sheetsmith-modified` reached
+   `text-muted` over `text-faint` (2.20:1, 2.74:1, still under) for the same
+   reason.
+
+   **A wider rule was tried alongside the colour and dropped.** Once
+   `text-muted` alone already cleared the bar by two to three times over, the
+   extra width was reaching for a distinction the colour had already made —
+   and next to the table's own ordinary hairline it read as heavier than the
+   thing it was marking, an emphasis with nothing behind it. Colour is the
+   whole of the mark. */
+.sheetsmith-view .sheetsmith-table tbody tr.sheetsmith-roster-row-divider th,
+.sheetsmith-view .sheetsmith-table tbody tr.sheetsmith-roster-row-divider td {
+	border-bottom-color: var(--text-muted);
 }
 
 /*

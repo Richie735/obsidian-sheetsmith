@@ -994,6 +994,145 @@ describe('render', () => {
 			).toEqual(['sheetsmith-card-input', 'sheetsmith-card-derived']);
 		});
 	});
+
+	describe('cardLayout', () => {
+		// Dexterity carries two rows so the divider and its last-row suppression
+		// both have something to prove; Strength keeps its single row so a band
+		// with nothing to divide is covered too.
+		const cardConfig: RosterConfig = {
+			...config,
+			cardLayout: true,
+			rows: [
+				{ label: 'Athletics', stat: 'STR', key: 'athletics' },
+				{ label: 'Acrobatics', stat: 'DEX', dividerAfter: true },
+				{ label: 'Stealth', stat: 'DEX', dividerAfter: true },
+			],
+		};
+		const cardBody = [
+			'```sheet',
+			'STR: 16',
+			'DEX: 12',
+			'```',
+			'',
+			'| Skill | Training | Total |',
+			'|---|---|---|',
+			'| Athletics | 1 | 0 |',
+			'| Acrobatics | 0 | 0 |',
+			'| Stealth | 0 | 0 |',
+		].join('\n');
+
+		function renderedCards(over: RosterConfig = cardConfig, body = cardBody) {
+			const result = roster.read(body, over);
+			const data = result.ok ? result.data : null;
+			return recording(over, data);
+		}
+
+		function cardFor(el: HTMLElement, name: string): HTMLElement | null {
+			return Array.from(el.querySelectorAll<HTMLElement>('.sheetsmith-card-set > .sheetsmith-card')).find(
+				(card) => card.querySelector('.sheetsmith-card-label')?.textContent === name,
+			) ?? null;
+		}
+
+		it('draws a vertical card set, one .sheetsmith-card per stat, in place of the shared table', () => {
+			const { el } = renderedCards();
+			expect(el.querySelector('.sheetsmith-card-set.sheetsmith-card-set-vertical')).not.toBeNull();
+			const cards = el.querySelectorAll('.sheetsmith-card-set > .sheetsmith-card');
+			expect(cards).toHaveLength(2);
+			const tables = Array.from(el.querySelectorAll('table.sheetsmith-roster'));
+			expect(tables.every((table) => table.closest('.sheetsmith-roster-card-table') !== null)).toBe(
+				true,
+			);
+		});
+
+		it('draws the band head in Card\'s own order: name, then the reading, then the value', () => {
+			const { el } = renderedCards();
+			const card = cardFor(el, 'Strength');
+			const kinds = Array.from(card?.children ?? []).map((child) =>
+				child.classList.contains('sheetsmith-card-label')
+					? 'label'
+					: child.classList.contains('sheetsmith-card-derived')
+						? 'derived'
+						: child.classList.contains('sheetsmith-card-value')
+							? 'value'
+							: child.classList.contains('sheetsmith-roster-card-table')
+								? 'table'
+								: 'other',
+			);
+			expect(kinds).toEqual(['label', 'derived', 'value', 'table']);
+			expect(card?.classList.contains('sheetsmith-card-has-derived')).toBe(true);
+		});
+
+		it('draws each stat\'s own rows in a small table beneath its card', () => {
+			const { el } = renderedCards();
+			const dex = cardFor(el, 'Dexterity');
+			const names = Array.from(
+				dex?.querySelectorAll('tbody .sheetsmith-table-name') ?? [],
+			).map((cell) => cell.textContent);
+			expect(names).toEqual(['Acrobatics', 'Stealth']);
+		});
+
+		it('draws no table at all under a stat with no rows', () => {
+			const noRows: RosterConfig = { ...cardConfig, rows: [] };
+			const { el } = renderedCards(noRows, '```sheet\nSTR: 16\nDEX: 12\n```');
+			expect(el.querySelector('.sheetsmith-roster-card-table')).toBeNull();
+			expect(el.querySelectorAll('.sheetsmith-card')).toHaveLength(2);
+		});
+
+		it('hides the column heading row when hideColumnHeadings is set, and keeps it otherwise', () => {
+			const { el } = renderedCards();
+			expect(cardFor(el, 'Dexterity')?.querySelector('thead')).not.toBeNull();
+
+			const hidden: RosterConfig = { ...cardConfig, hideColumnHeadings: true };
+			const { el: el2 } = renderedCards(hidden);
+			expect(cardFor(el2, 'Dexterity')?.querySelector('thead')).toBeNull();
+		});
+
+		it('hides the shared table\'s own heading row too, on the identical setting', () => {
+			const shared: RosterConfig = { ...cardConfig, cardLayout: false, hideColumnHeadings: true };
+			const { el } = renderedCards(shared);
+			expect(el.querySelector('thead')).toBeNull();
+		});
+
+		it('marks a row\'s divider, suppressed on the last row of its own card', () => {
+			const { el } = renderedCards();
+			const dex = cardFor(el, 'Dexterity');
+			const rows = Array.from(dex?.querySelectorAll<HTMLElement>('tbody tr') ?? []);
+			const divided = rows.map((row) => row.classList.contains('sheetsmith-roster-row-divider'));
+			// Acrobatics asked for a divider and is not the band's last row: it
+			// gets one. Stealth asked too, but is the last row of Dexterity's own
+			// card, so its divider is suppressed — the table's own last-row rule,
+			// read one level up.
+			expect(divided).toEqual([true, false]);
+		});
+
+		it('applies in the shared table too, on the owner\'s own call over card layout alone', () => {
+			const shared: RosterConfig = { ...cardConfig, cardLayout: false };
+			const { el } = renderedCards(shared);
+			const rows = Array.from(
+				el.querySelectorAll<HTMLElement>('tbody tr:not(.sheetsmith-roster-band)'),
+			);
+			expect(rows.map((row) => row.querySelector('.sheetsmith-table-name')?.textContent)).toEqual(
+				['Athletics', 'Acrobatics', 'Stealth'],
+			);
+			// Athletics is Strength's only row, so it is its own band's last row
+			// and draws nothing even though nothing asked it to. Acrobatics asked
+			// for a divider and is not Dexterity's last row: it draws one.
+			// Stealth asked too, but is Dexterity's own last row — suppressed on
+			// the identical rule `renderCards` already carries, applied one
+			// layout over: what follows a band's last row already has its own
+			// hairline (the next band head's, or nothing at all here), so a
+			// divider on it would double that rather than mark a division.
+			const divided = rows.map((row) => row.classList.contains('sheetsmith-roster-row-divider'));
+			expect(divided).toEqual([false, true, false]);
+		});
+
+		it('draws the empty-stats notice, same as the shared table, when the roster has no stats', () => {
+			const empty: RosterConfig = { ...cardConfig, stats: [], rows: [] };
+			const { el } = renderedCards(empty, '```sheet\n```');
+			expect(el.querySelector('.sheetsmith-card-set')).toBeNull();
+			expect(el.textContent).toContain('No stats yet.');
+		});
+	});
 });
 
 describe('contract shape', () => {

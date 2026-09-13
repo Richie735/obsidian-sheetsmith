@@ -114,6 +114,15 @@ export interface RosterRow {
 	/** The name a formula reads this row's published value by, as
 	 * `<component id>.<key>`. Only meaningful with a published column. */
 	key?: string;
+	/**
+	 * Draws a rule beneath this row, stronger than the ordinary line between
+	 * rows — grouping, inside a band that already shares one stat. Suppressed
+	 * where this is also the band's own last row: what follows it is either
+	 * the next stat's own band head or the card's own bottom edge, both of
+	 * which already close the band on their own, so a rule here would double
+	 * a division rather than mark one.
+	 */
+	dividerAfter?: boolean;
 }
 
 export interface RosterStat {
@@ -136,6 +145,14 @@ export interface RosterConfig extends ComponentConfig {
 	rowHeader?: string;
 	namePosition?: number;
 	hideLabel?: boolean;
+	/**
+	 * Draws each stat as its own card, with its own rows in a small table
+	 * beneath it, instead of one shared table for the whole roster. Additive:
+	 * `stats`, `rows`, `columns`, `derived`, `effective`, `scopeValues` and
+	 * `scopeRows` are unchanged either way — this reads only inside `render`.
+	 */
+	cardLayout?: boolean;
+	hideColumnHeadings?: boolean;
 }
 
 export interface RosterRowData {
@@ -484,6 +501,9 @@ export const roster: ComponentDefinition<RosterConfig, RosterData> = {
 			kind: 'rows',
 			label: 'Rows',
 			statsField: 'stats',
+			// `types.ts`'s `rowFlag`, on `entryFlag`'s own precedent: a per-row
+			// checkbox the shared list editor draws without knowing what it means.
+			rowFlag: { key: 'dividerAfter', label: 'Divider after' },
 			description:
 				'The rows the layout declares, each naming the stat it hangs off. A row the note does not hold is drawn with blank cells; a note row the layout no longer declares stays in the file, unrendered and untouched.',
 		},
@@ -518,6 +538,24 @@ export const roster: ComponentDefinition<RosterConfig, RosterData> = {
 			label: 'Hide the heading',
 			description:
 				'Draws the roster with no name over it, for one whose surroundings already say what it is.',
+			default: false,
+		},
+		{
+			key: 'cardLayout',
+			group: 'Appearance',
+			kind: 'boolean',
+			label: 'Card layout',
+			description:
+				'Draws each stat as its own card, with its rows in a small table beneath it, instead of one shared table for the whole roster. The same stats, rows and columns either way.',
+			default: false,
+		},
+		{
+			key: 'hideColumnHeadings',
+			group: 'Appearance',
+			kind: 'boolean',
+			label: 'Hide column headings',
+			description:
+				'Draws no heading row above the rows — each stat\'s own table in card layout, the one shared heading otherwise — for a roster placed where the columns are already obvious.',
 			default: false,
 		},
 	],
@@ -766,7 +804,11 @@ export const roster: ComponentDefinition<RosterConfig, RosterData> = {
 			});
 		}
 
-		renderShared(container, config, data, context);
+		if (config.cardLayout === true) {
+			renderCards(container, config, data, context);
+		} else {
+			renderShared(container, config, data, context);
+		}
 	},
 };
 
@@ -829,7 +871,7 @@ function renderShared(
 	const order = columnOrder(config);
 	const width = columns.length + 1;
 
-	drawHead(grid, config, order);
+	if (config.hideColumnHeadings !== true) drawHead(grid, config, order);
 
 	const stats = statList(config);
 	const noteNames = rowNames(data);
@@ -880,11 +922,21 @@ function renderShared(
 					() => ({ value: undefined, reading: null }),
 					key,
 				),
+			false,
 		);
 
-		for (const view of rowsOfStat) {
-			drawRow(body, config, data, view, order, context, status, statReading);
-		}
+		rowsOfStat.forEach((view, index) => {
+			const rowEl = drawRow(body, config, data, view, order, context, status, statReading);
+			// Suppressed on the band's own last row: what follows it is the
+			// next stat's own band head, which already carries its own
+			// hairline — a divider here would double against that rather
+			// than mark a division inside this band (`renderCards`'s own
+			// comment, the identical rule one layout over).
+			const last = index === rowsOfStat.length - 1;
+			if (view.row.dividerAfter === true && !last) {
+				rowEl.classList.add('sheetsmith-roster-row-divider');
+			}
+		});
 	}
 }
 
@@ -928,7 +980,20 @@ function statReadingFor(
 	};
 }
 
-/** One stat's band head: its name, its stored value, and its reading. */
+/**
+ * One stat's band head: its name, its stored value, and its reading.
+ *
+ * `cardLayout` switches both the chrome and the order. The shared table's
+ * band head is a `<tr>` spanning every column, so the score and the reading
+ * sit in their own sub-group beside the name (the comment below stays: it is
+ * this branch's own reason, not a fact about band heads in general). Card
+ * layout instead draws the stat as an actual `.sheetsmith-card` — the same
+ * class Card set's own cards wear — and inside one of those a value slot at
+ * `width: 100%` is exactly the pill treatment `.sheetsmith-card-has-derived`
+ * already gives it, so this branch reuses that CSS by building the same DOM
+ * shape rather than inventing a second copy of the pill: name, then the
+ * reading, then the value, `card-face.ts`'s own creation order.
+ */
 function drawBandHead(
 	parent: HTMLElement,
 	config: RosterConfig,
@@ -938,10 +1003,30 @@ function drawBandHead(
 	context: Parameters<ComponentDefinition<RosterConfig, RosterData>['render']>[3],
 	status: HTMLElement,
 	rowsOf: () => RowsSource,
+	cardLayout: boolean,
 ): void {
 	const key = (stat.key ?? '').trim();
 	const name = (stat.name ?? '').trim() || key;
 	const published = `${config.id}.${key}`;
+
+	if (cardLayout) {
+		parent.classList.add('sheetsmith-card');
+		parent.classList.toggle('sheetsmith-card-has-derived', config.derived !== undefined);
+
+		const label = parent.createDiv('sheetsmith-component-label sheetsmith-card-label');
+		label.textContent = name;
+		revealWhenTruncated(label);
+
+		if (config.derived !== undefined) {
+			drawDerivedReading(parent, config, stored, published, signed, context, rowsOf);
+		}
+		if (config.hideValue !== true) {
+			const value = parent.createDiv('sheetsmith-card-value');
+			drawValueField(value, parent, config, key, name, stored, published, context, status);
+		}
+		return;
+	}
+
 	const inner = parent.createDiv('sheetsmith-roster-band-inner');
 
 	inner.createDiv({ cls: 'sheetsmith-group-heading', text: name });
@@ -1115,7 +1200,7 @@ function drawRow(
 	context: Parameters<ComponentDefinition<RosterConfig, RosterData>['render']>[3],
 	status: HTMLElement,
 	statReading: (key: string) => { value: FieldValue | undefined; reading: FieldValue | null },
-): void {
+): HTMLTableRowElement {
 	const columns = config.columns ?? [];
 	const stored = view.at === null ? {} : (data?.rows?.[view.at]?.cells ?? {});
 	const tr = body.createEl('tr');
@@ -1356,6 +1441,87 @@ function drawRow(
 	}
 
 	recompute(true);
+	return tr;
+}
+
+/**
+ * `cardLayout`'s own render path (`drawBandHead`'s own comment for the
+ * reasoning): each stat as its own card, in one vertical `.sheetsmith-card-set`
+ * — Card set's own chrome, borrowed rather than invented — holding the band
+ * head and then, where the stat has any, a small table of its own rows.
+ * Additive over `renderShared`: the same `views`, the same `statReading`, the
+ * same `drawRow` per row, just gathered under a card per stat instead of one
+ * shared `<table>`.
+ */
+function renderCards(
+	container: HTMLElement,
+	config: RosterConfig,
+	data: RosterData | null,
+	context: Parameters<ComponentDefinition<RosterConfig, RosterData>['render']>[3],
+): void {
+	const order = columnOrder(config);
+	const stats = statList(config);
+	const noteNames = rowNames(data);
+	const views = rowViews(config, noteNames);
+
+	const status = container.createDiv('sheetsmith-sr-only');
+	status.setAttribute('aria-live', 'polite');
+
+	if (stats.length === 0) {
+		container.createDiv({
+			cls: 'sheetsmith-table-empty',
+			text: 'No stats yet. Add one to this component in the layout.',
+		});
+		return;
+	}
+
+	const signed = config.signed === true;
+	const statReading = statReadingFor(config, data, views, context.resolveField);
+
+	const strip = container.createDiv('sheetsmith-card-set sheetsmith-card-set-vertical');
+
+	for (const stat of stats) {
+		const key = (stat.key ?? '').trim();
+		const stored = data?.stats?.[key] ?? '';
+		const rowsOfStat = views.filter((view) => (view.row.stat ?? '').trim() === key);
+
+		const card = strip.createDiv();
+		drawBandHead(
+			card,
+			config,
+			stat,
+			stored,
+			signed,
+			context,
+			status,
+			() =>
+				bandRows(
+					config,
+					views,
+					(view) => storedCells(data, view),
+					() => ({ value: undefined, reading: null }),
+					key,
+				),
+			true,
+		);
+
+		if (rowsOfStat.length === 0) continue;
+
+		const wrapper = card.createDiv('sheetsmith-table-wrapper sheetsmith-roster-card-table');
+		const grid = wrapper.createEl('table', { cls: 'sheetsmith-table sheetsmith-roster' });
+		if (config.hideColumnHeadings !== true) drawHead(grid, config, order);
+		const body = grid.createEl('tbody');
+		rowsOfStat.forEach((view, index) => {
+			const tr = drawRow(body, config, data, view, order, context, status, statReading);
+			// Suppressed on the card's own last row: a rule under nothing is
+			// against the card's own bottom edge, not a division between two
+			// things — the table's own last-row rule, read one level up.
+			const last = index === rowsOfStat.length - 1;
+			if (view.row.dividerAfter === true && !last) {
+				tr.classList.add('sheetsmith-roster-row-divider');
+			}
+		});
+	}
 }
 
 /**

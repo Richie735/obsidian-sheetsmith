@@ -2135,7 +2135,11 @@ export const SAMPLES: Sample[] = [
 			],
 			rows: [
 				{ label: 'Athletics', stat: 'STR', key: 'athletics' },
-				{ label: 'Acrobatics', stat: 'DEX' },
+				// `dividerAfter`, on the owner's own call: it applies in the
+				// shared table exactly as it does in `roster_card_layout` below,
+				// so this is its one appearance outside card layout — a rule
+				// between Acrobatics and Stealth, inside Dexterity's own band.
+				{ label: 'Acrobatics', stat: 'DEX', dividerAfter: true },
 				{ label: 'Stealth', stat: 'DEX', key: 'stealth' },
 				{ label: 'Investigation', stat: 'INT' },
 				{ label: 'Perception', stat: 'WIS', key: 'perception' },
@@ -2370,6 +2374,62 @@ export const SAMPLES: Sample[] = [
 			],
 		} as unknown as ComponentConfig,
 		body: '```sheet\nbonus_die: 1\n```',
+	},
+	/*
+	 * `cardLayout`: the same job `stat_roster` above draws as one grouped
+	 * table, drawn instead as one card per stat — Card set's own chrome
+	 * (`.sheetsmith-card`, `.sheetsmith-card-set`), borrowed rather than
+	 * invented — with a small table of that stat's own rows beneath each.
+	 * `dividerAfter` draws the identical rule here as it does in
+	 * `stat_roster`'s shared table above: Athletics and Sleight of hand both
+	 * carry one and draw it, Stealth carries one too but is Dexterity's own
+	 * last row, so it draws none — the same last-row rule either layout
+	 * carries. Appended at the end rather than beside `stat_roster`, on this
+	 * file's own rule against renumbering.
+	 */
+	{
+		config: {
+			id: 'roster_card_layout',
+			type: 'roster',
+			label: 'Abilities, as cards',
+			cardLayout: true,
+			position: { col: 1, row: 65, width: 6, height: 8 },
+			stats: [
+				{ key: 'STR', name: 'Strength' },
+				{ key: 'DEX', name: 'Dexterity' },
+			],
+			derived: 'floor((value - 10) / 2)',
+			signed: true,
+			rowHeader: 'Skill',
+			columns: [
+				{
+					key: 'Training',
+					type: 'level',
+					levels: ['Untrained', 'Proficient:P', 'Expertise:E'],
+				},
+			],
+			rows: [
+				{ label: 'Athletics', stat: 'STR', dividerAfter: true },
+				{ label: 'Intimidation', stat: 'STR' },
+				{ label: 'Acrobatics', stat: 'DEX' },
+				{ label: 'Sleight of hand', stat: 'DEX', dividerAfter: true },
+				{ label: 'Stealth', stat: 'DEX', dividerAfter: true },
+			],
+		} as ComponentConfig,
+		body: [
+			'```sheet',
+			'STR: 15',
+			'DEX: 16',
+			'```',
+			'',
+			'| Skill | Training |',
+			'| --- | --- |',
+			'| Athletics | 1 |',
+			'| Intimidation | 0 |',
+			'| Acrobatics | 2 |',
+			'| Sleight of hand | 1 |',
+			'| Stealth | 0 |',
+		].join('\n'),
 	},
 ];
 
