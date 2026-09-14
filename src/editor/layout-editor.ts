@@ -489,6 +489,9 @@ export class LayoutEditorSection {
 		// selected — `docs/features/grid-canvas.md` §4 retires the old
 		// selection-gated schematic here.
 		this.canvas.draw(outline.createDiv(), layout);
+		// Above the tree it adds into, not below it: a layout with a long
+		// component list otherwise buries the one row that can grow it.
+		this.renderAddRow(outline, layout);
 		renderTree(outline, layout, {
 			persist: () => void this.persist(),
 			redraw: () => this.redraw(),
@@ -502,7 +505,6 @@ export class LayoutEditorSection {
 				new ConfirmModal(this.plugin.app, message, cta, onConfirm).open(),
 			drag: this.treeDrag,
 		});
-		this.renderAddRow(outline, layout);
 
 		this.panel.render(panel, layout, selected);
 

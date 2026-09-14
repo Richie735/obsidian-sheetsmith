@@ -2320,7 +2320,7 @@ describe('the tree', () => {
 		// layout's row is what makes this one selection rather than two: there is
 		// no second kind of panel and no mode switch, because selecting the
 		// layout is an ordinary selection.
-		expect(labels(harness).slice(0, 6)).toEqual([
+		expect(labels(harness).slice(0, 7)).toEqual([
 			// The picker, then the tree. Named apart on purpose: this one chooses
 			// which layout is open and the next configures the one that is.
 			'Layout file',
@@ -2328,6 +2328,9 @@ describe('the tree', () => {
 			// below it and writes nothing (`docs/features/preview-sample-values.md`
 			// §3), so it sits between the picker and the layout's own row.
 			'Sample values',
+			// Above the tree it adds into, not below it: a long component list
+			// otherwise buries the one row that can grow it.
+			'Add component',
 			'Layout',
 			'Defences',
 			'Armour class',
