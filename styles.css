@@ -658,15 +658,27 @@ body {
 
 .sheetsmith-grid {
 	display: grid;
-	grid-template-columns: repeat(var(--sheetsmith-columns, 12), 1fr);
+	/* Every column exactly 1/N of the grid, whatever is in it. `minmax(0, 1fr)`
+	   and not a bare `1fr`, which is `minmax(auto, 1fr)`: its floor is the
+	   content's own minimum, so a column holding a Passport's portrait grew to
+	   340px on an eight-column sheet while the empty columns beside it gave the
+	   width up, and "two columns wide" stopped meaning a fixed share of the
+	   sheet. Equal tracks are what SPEC §8's `W·T + (W-1)·G` has always
+	   assumed, and what makes a placement predictable in the layout editor,
+	   which draws this same grid. Content that cannot fit its share is the
+	   component's to handle inside its box — the container queries in
+	   `docs/UI.md` §4 — not the grid's to absorb by widening a column. */
+	grid-template-columns: repeat(var(--sheetsmith-columns, 12), minmax(0, 1fr));
 	/* SPEC §7: a cell already past the last column — a hand-authored file, or
 	   a `columns` reduced under it — is left where it is rather than snapped
 	   back. Left at the default `auto` it would size to its own content
 	   instead, which for a Track or a Pool is a handful of pixels: the cell
 	   collapses onto its neighbour rather than sitting the width every
 	   explicit column already has. Matching them is what "left where it is"
-	   has to mean once the cell is actually on screen. */
-	grid-auto-columns: 1fr;
+	   has to mean once the cell is actually on screen — at the same
+	   `minmax(0, 1fr)` as the explicit tracks above, or it is the one column
+	   content could still widen. */
+	grid-auto-columns: minmax(0, 1fr);
 	gap: var(--size-4-2);
 	/* Fills the pane by default; centred if a snippet caps it. */
 	max-width: var(--sheetsmith-sheet-max-width, none);
@@ -6238,8 +6250,17 @@ a.sheetsmith-undo {
 	flex: 0 0 auto;
 }
 
+/* Sized to a score, not left at `auto`. An `<input>` has no content width to
+   shrink-wrap: `auto` is its default of about twenty characters, which at the
+   card's headline size measured 316px. While sheet columns could grow to fit
+   their content that only made a stat's column wide; once every column is a
+   fixed share of the sheet it pushed the whole table past a 156px cell and
+   clipped the stat's own name and score out of view. Four tabular digits'
+   worth holds a signed or three-digit score with its padding, and never more
+   than the band it sits in. */
 .sheetsmith-view .sheetsmith-roster-band-value .sheetsmith-card-input {
-	width: auto;
+	width: 4ch;
+	max-width: 100%;
 }
 
 /* `cardLayout` — each stat as its own `.sheetsmith-card` (Card set's own
