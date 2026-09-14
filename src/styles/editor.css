@@ -1273,6 +1273,88 @@
 	border-color: var(--interactive-accent);
 }
 
+/* The grid itself, drawn behind the components for as long as one of them is
+   being dragged or resized, and taken back down when the gesture ends.
+
+   **Why it is not simply always on.** The canvas renders the real sheet
+   (`docs/features/grid-canvas.md` §1), and a permanent lattice behind a real
+   sheet is a lattice the author has to read past every time they look at their
+   own layout — the interim schematic could afford one because it was a field of
+   grey boxes and nothing else. What a grid answers is a question only a gesture
+   asks: where does this land, and how far can it grow. So it appears with the
+   first movement of a drag and goes with the release.
+
+   **The lines are the browser's resolved tracks on both axes**, which
+   `grid-guides.ts` explains at length: `1fr` columns are not equal once content
+   widens one, and rows are content-sized, so dividing the grid evenly draws a
+   lattice that is not the one on screen. The drag snaps against the same
+   reading, so what is drawn is where the block will land.
+
+   Geometry comes in on each line's own `style`, since a content-sized row grid
+   has no pitch a rule here could name (`docs/PATTERNS.md` §3's runtime-geometry
+   exception).
+
+   **In forced-colors mode the lattice does not paint**, and is left that way:
+   every background is repainted one system colour there, so a hairline drawn
+   as a background is a hairline the same colour as what is behind it. The
+   target below is a border and survives, which is the half that says where the
+   block lands; the block's label reads its column and row out as well. */
+.sheetsmith-grid-guided {
+	position: relative;
+	/* A stacking context of the grid's own, so the layer below sits behind
+	   every cell and in front of the pane's background rather than behind
+	   that too. Without it the guide is painted under the surface it is
+	   supposed to be drawn on and is simply never seen. */
+	isolation: isolate;
+}
+
+.sheetsmith-grid-guides {
+	position: absolute;
+	inset: 0;
+	/* Behind the cells, which are positioned and would otherwise win on tree
+	   order — the guide has to be appended last, because `canvas.ts` maps
+	   components onto this element's children by index. */
+	z-index: -1;
+	overflow: hidden;
+	pointer-events: none;
+}
+
+.sheetsmith-grid-guide-column,
+.sheetsmith-grid-guide-row {
+	position: absolute;
+	background-color: var(--background-modifier-border);
+}
+
+.sheetsmith-grid-guide-column {
+	top: 0;
+	bottom: 0;
+	width: 1px;
+}
+
+.sheetsmith-grid-guide-row {
+	left: 0;
+	right: 0;
+	height: 1px;
+}
+
+/* The cells the block will occupy if released now: the answer the lattice
+   alone leaves the reader to count lines for.
+
+   In front of the components, above even the dragged block's own lifted
+   overlay (`z-index: 2`), because the block sits on its own target and would
+   otherwise hide the one thing this exists to show — how far its placement
+   actually reaches, which on a content-sized grid is often further than the
+   component's own box. An outline with no fill, so nothing under it is
+   obscured, and a border rather than a shadow so forced-colors mode keeps it:
+   there it is the only part of the grid left. */
+.sheetsmith-grid-target {
+	position: absolute;
+	z-index: 3;
+	border: 2px solid var(--interactive-accent);
+	border-radius: var(--radius-s);
+	pointer-events: none;
+}
+
 .sheetsmith-layout-preview {
 	--sheetsmith-preview-track: calc(
 		(100% - (var(--sheetsmith-columns, 12) - 1) * var(--size-2-2)) /

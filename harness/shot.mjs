@@ -1325,6 +1325,20 @@ const DEFAULTS = [
 		size: '1400,1400',
 	},
 	{
+		/*
+		 * Mid-move, in the other theme: `Front` picked up and carried down and
+		 * right, pointer still down (`editor-pane.ts`'s `dragInPlace`). What to
+		 * look at is the grid drawn behind the canvas for the length of a
+		 * gesture (`grid-guides.ts`) — hairlines in the gutters on the tracks the
+		 * browser actually resolved, held still for the gesture — and the accent
+		 * outline marking the cells the card will occupy on release. The resize
+		 * view above shows the same in light.
+		 */
+		name: 'canvas-drag-grid',
+		query: 'surface=editor&theme=dark&layout=canvas-demo&drag=front%3A180%2C120',
+		size: '1400,1400',
+	},
+	{
 		// A valid drop, hovering: `Front` dragged onto `Gear`, a container
 		// that accepts it, showing the drop highlight before release.
 		name: 'canvas-tree-drag-valid',

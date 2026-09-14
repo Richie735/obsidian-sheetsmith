@@ -137,7 +137,15 @@ export async function renderEditorPane(
  * the caller has put it on screen.
  */
 export async function driveResize(pane: HTMLElement, spec: string): Promise<void> {
-	await resizeInPlace(pane, spec);
+	await dragInPlace(pane, spec, 'resize');
+}
+
+/**
+ * Drive `view.drag` against an already-attached pane: the same gesture on the
+ * block itself rather than on its corner, left mid-flight.
+ */
+export async function driveDrag(pane: HTMLElement, spec: string): Promise<void> {
+	await dragInPlace(pane, spec, 'move');
 }
 
 /**
@@ -270,8 +278,9 @@ async function chooseAdd(root: HTMLElement, value: string): Promise<void> {
 }
 
 /**
- * Drag a component's own resize corner by `(dx, dy)` pixels, in `"<id>:<dx>,
- * <dy>"` form, and leave the gesture mid-flight rather than releasing.
+ * Drag a component by `(dx, dy)` pixels, in `"<id>:<dx>,<dy>"` form, and leave
+ * the gesture mid-flight rather than releasing — by its resize corner, or by
+ * the block itself.
  *
  * A real pointer gesture rather than a static end state, so the live
  * component genuinely reflows under a real browser's own layout — the whole
@@ -279,20 +288,36 @@ async function chooseAdd(root: HTMLElement, value: string): Promise<void> {
  * `pointerId: 1` throughout, matching `src/test/pointer.ts`'s own
  * convention, so `setPointerCapture` is asked to capture the same pointer
  * every event in the sequence claims to be.
+ *
+ * **Both gestures rather than the corner alone**, since the grid a gesture
+ * draws behind itself appears on either and a still can reach neither any
+ * other way: `&press=` cannot hold a pointer down, and the lattice is gone
+ * before the release. The two differ in one line — which element is grabbed —
+ * so they are one function and not two.
  */
-async function resizeInPlace(root: HTMLElement, spec: string): Promise<void> {
+async function dragInPlace(
+	root: HTMLElement,
+	spec: string,
+	mode: 'move' | 'resize',
+): Promise<void> {
 	const [id, delta] = spec.split(':');
 	const [rawX, rawY] = (delta ?? '').split(',');
 	const dx = Number(rawX);
 	const dy = Number(rawY);
 	if (!id || !Number.isFinite(dx) || !Number.isFinite(dy)) {
-		console.warn(`Bad resize spec "${spec}"; want "<id>:<dx>,<dy>".`);
+		console.warn(`Bad ${mode} spec "${spec}"; want "<id>:<dx>,<dy>".`);
 		return;
 	}
 	const overlay = await control(root, `preview-${id}`);
-	const handle = overlay?.querySelector('.sheetsmith-preview-resize');
+	// The corner for a resize, the block itself for a move: the overlay is
+	// what carries both listeners, and the corner is a child of it that stops
+	// the press from reaching the move.
+	const handle =
+		mode === 'resize'
+			? overlay?.querySelector('.sheetsmith-preview-resize')
+			: overlay;
 	if (!handle) {
-		console.warn(`No resize handle on "${id}".`);
+		console.warn(`No ${mode} target on "${id}".`);
 		return;
 	}
 	// The real stylesheet may still be loading when this runs — under

@@ -40,7 +40,7 @@ import {
 import { nameAlreadyDeclared } from '../src/layouts';
 import { dropDetachedAnchoredPanel } from '../src/ui/anchored-panel';
 import { renderGrid } from '../src/view/grid-cells';
-import { driveResize, driveSuggest, renderEditorPane } from './editor-pane';
+import { driveDrag, driveResize, driveSuggest, renderEditorPane } from './editor-pane';
 import {
 	brokenSamples,
 	effectiveSamples,
@@ -853,6 +853,17 @@ function applyQuery(): void {
 	 */
 	const resize = params.get('resize');
 	/**
+	 * `&drag=<id>:<dx>,<dy>` — the same, on the block itself rather than on its
+	 * corner, so a still can catch a component part-way through being moved.
+	 *
+	 * `&resize=`'s sibling, and added for the reason that one already carries:
+	 * the grid a gesture draws behind itself (`grid-guides.ts`) exists only
+	 * while a pointer is down and is gone before the release, so the move — the
+	 * commoner of the two gestures, and the one where a lifted block sits over
+	 * the lattice — was reachable in no shot at all.
+	 */
+	const drag = params.get('drag');
+	/**
 	 * `&suggest=<focus token>:<text>` — type into a formula field and leave its
 	 * name suggester open over it. Driven here rather than inside `ensureEditor`
 	 * for `resize`'s reason one line up: the popup is placed against the field's
@@ -871,6 +882,9 @@ function applyQuery(): void {
 		scrollWanted();
 		if (resize !== null && editorPane) {
 			await driveResize(editorPane, resize);
+		}
+		if (drag !== null && editorPane) {
+			await driveDrag(editorPane, drag);
 		}
 		if (suggest !== null && editorPane) {
 			await driveSuggest(editorPane, suggest);

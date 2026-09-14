@@ -3720,20 +3720,35 @@ describe('dragging a block around the schematic', () => {
  * `grid-template-rows` never resolves into pixels on its own. Restored is not
  * needed — the whole environment is disposed with the test.
  */
-function measureRows(el: HTMLElement, tracks: string): void {
+function measureRows(
+	el: HTMLElement,
+	tracks: string,
+	property: 'gridTemplateRows' | 'gridTemplateColumns' = 'gridTemplateRows',
+): void {
 	const view = el.ownerDocument.defaultView;
 	if (!view) throw new Error('no window');
 	const original = view.getComputedStyle.bind(view);
 	view.getComputedStyle = ((target: Element, pseudo?: string | null) => {
 		const styles = original(target, pseudo);
 		if (target === el) {
-			Object.defineProperty(styles, 'gridTemplateRows', {
+			Object.defineProperty(styles, property, {
 				value: tracks,
 				configurable: true,
 			});
 		}
 		return styles;
 	});
+}
+
+/**
+ * The same, for columns: what a browser reports once content has widened some
+ * `1fr` tracks and squeezed the empty ones, which is what an eight-column sheet
+ * with three occupied columns looked like when the drag divided it evenly.
+ * Chains onto `measureRows`'s patch rather than replacing it, so a case can set
+ * both.
+ */
+function measureColumns(el: HTMLElement, tracks: string): void {
+	measureRows(el, tracks, 'gridTemplateColumns');
 }
 
 /**
@@ -3845,6 +3860,228 @@ describe('row geometry read off the grid rather than assumed', () => {
 		);
 		expect(box(cell)).toBe('1 / span 2, 3 / span 1');
 		release(cell);
+	});
+});
+
+/**
+ * Every guide line the schematic is showing, by axis, in the order drawn.
+ *
+ * Read off each line's own `style` and not off a rule, because the geometry is
+ * the one thing about a guide that cannot be in the stylesheet: a grid whose
+ * rows are content-sized has no pitch a CSS rule could name.
+ */
+function guides(grid: HTMLElement): { columns: number[]; rows: number[] } {
+	// This grid's own guide and not a nested container's, on `canvas.ts`'s own
+	// rule about reading a level locally: a `querySelectorAll` from the sheet's
+	// grid finds every line a container inside it is drawing too, and the case
+	// below turns on the sheet drawing none while a container draws five.
+	const box = grid.querySelector<HTMLElement>(':scope > .sheetsmith-grid-guides');
+	const read = (name: string, side: 'left' | 'top') =>
+		Array.from(
+			box?.querySelectorAll<HTMLElement>(`.sheetsmith-grid-guide-${name}`) ?? [],
+		).map((line) => parseFloat(line.style[side]));
+	return { columns: read('column', 'left'), rows: read('row', 'top') };
+}
+
+describe('the grid drawn behind a gesture', () => {
+	beforeEach(async () => {
+		harness = await open(schematic());
+	});
+
+	it('draws itself on the first movement and takes itself down on release', async () => {
+		/*
+		 * **When**, and the second half is the reason for the first: every
+		 * selection on this canvas is a press on the same overlay a drag starts
+		 * on, so a grid drawn at `pointerdown` would flash the whole lattice each
+		 * time an author opened a component's form.
+		 */
+		const grid = sheetGrid(harness);
+		const cell = control(harness, 'preview-left');
+
+		pressDown(cell, at(1, 1));
+		expect(guides(grid).columns).toEqual([]);
+		expect(grid.classList.contains('sheetsmith-grid-guided')).toBe(false);
+
+		dragTo(cell, 2, 1);
+		// Eleven interior boundaries across twelve columns, one every `TRACK`.
+		// The outer two edges take no line: there is no gutter there, and a line
+		// on them would read as a frame around the canvas rather than as the
+		// grid inside it.
+		expect(guides(grid).columns).toEqual([
+			10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110,
+		]);
+		expect(grid.classList.contains('sheetsmith-grid-guided')).toBe(true);
+
+		release(cell);
+		expect(guides(grid).columns).toEqual([]);
+		expect(grid.classList.contains('sheetsmith-grid-guided')).toBe(false);
+		await settle(harness.pane);
+	});
+
+	it('leaves a press that only selects with no grid behind it', async () => {
+		// The whole press, which the case above stops halfway through: what the
+		// first-movement rule has to tell apart from a drag is a press that ends
+		// where it started, and that is how an author opens a form.
+		const grid = sheetGrid(harness);
+		const cell = control(harness, 'preview-left');
+		pressDown(cell, at(1, 1));
+		release(cell);
+		cell.click();
+		await settle(harness.pane);
+		expect(guides(grid).columns).toEqual([]);
+		expect(guides(grid).rows).toEqual([]);
+	});
+
+	it('puts a row line where the drag changes row, not where a uniform pitch would', async () => {
+		/*
+		 * The claim the whole guide rests on: what is drawn is what the gesture
+		 * snaps to, because both come from one reading of the grid. The fixture
+		 * is `row geometry read off the grid`'s own — a two-row component beside
+		 * a one-row one, resolving to `88px 44px` — where a uniform 44px pitch
+		 * would draw lines at 44 and 88 and the grid actually changes row at 88
+		 * and 132. The drag to y=100 lands in row 2, the band between the two
+		 * lines that are drawn.
+		 */
+		harness = await open(unevenSchematic());
+		const grid = sheetGrid(harness);
+		measureRows(grid, '88px 44px');
+		const cell = control(harness, 'preview-left');
+
+		pressDown(cell, { clientX: TRACK / 2, clientY: 10 });
+		cell.dispatchEvent(
+			new PointerEvent('pointermove', {
+				pointerId: 1,
+				clientX: TRACK / 2,
+				clientY: 100,
+			}),
+		);
+		expect(guides(grid).rows).toEqual([88, 132]);
+		expect(box(cell)).toBe('1 / span 2, 2 / span 1');
+		release(cell);
+		await settle(harness.pane);
+	});
+
+	it('snaps to columns the content has widened, and draws them where they are', async () => {
+		/*
+		 * The defect this was reported on. `repeat(12, 1fr)` is not twelve equal
+		 * columns once a component's content will not shrink: its track grows and
+		 * the empty ones give up the width. Here the first two columns resolve to
+		 * 40px and the rest to nothing much, so column 3 starts at 80 — where an
+		 * even division of the 120px grid would put column 9. A pointer at x=82
+		 * is over column 3, the line is drawn at 80, and the block lands there.
+		 */
+		const grid = sheetGrid(harness);
+		measureColumns(grid, '40px 40px 4px 4px 4px 4px 4px 4px 4px 4px 4px 4px');
+		const cell = control(harness, 'preview-left');
+
+		pressDown(cell, { clientX: 5, clientY: ROW / 2 });
+		cell.dispatchEvent(
+			new PointerEvent('pointermove', { pointerId: 1, clientX: 82, clientY: ROW / 2 }),
+		);
+		expect(box(cell)).toBe('3 / span 2, 1 / span 1');
+		expect(guides(grid).columns.slice(0, 3)).toEqual([40, 80, 84]);
+		release(cell);
+		await settle(harness.pane);
+	});
+
+	it('holds the tracks still for the gesture, and lets them go at the end', async () => {
+		/*
+		 * The grid's tracks are content-sized, so the block being dragged resizes
+		 * the columns it passes through, and the lines and the target measured at
+		 * the press would drift off the grid on screen. What is asserted is the
+		 * mechanism: the measured sizes pinned inline at the press, and cleared
+		 * whichever way the gesture ends — including a press that moved nothing,
+		 * which returns before any other clean-up runs.
+		 */
+		const grid = sheetGrid(harness);
+		measureColumns(grid, '40px 40px 4px 4px 4px 4px 4px 4px 4px 4px 4px 4px');
+		measureRows(grid, '88px 44px');
+		const cell = control(harness, 'preview-left');
+
+		pressDown(cell, at(1, 1));
+		expect(grid.style.gridTemplateColumns).toBe(
+			'40px 40px 4px 4px 4px 4px 4px 4px 4px 4px 4px 4px',
+		);
+		expect(grid.style.gridTemplateRows).toBe('88px 44px');
+		expect(grid.style.gridAutoRows).toBe(`${ROW}px`);
+		release(cell);
+		expect(grid.style.gridTemplateColumns).toBe('');
+		expect(grid.style.gridTemplateRows).toBe('');
+		expect(grid.style.gridAutoRows).toBe('');
+		await settle(harness.pane);
+	});
+
+	it('marks the cells the block will occupy, and follows it', async () => {
+		/*
+		 * The lattice says where the lines are; the target says which cells this
+		 * block is about to take, which is the question a drag is actually asking.
+		 * Drawn from the tracks and not from the block's own box, so it is the
+		 * placement the file will hold.
+		 */
+		const grid = sheetGrid(harness);
+		const cell = control(harness, 'preview-left');
+		const target = () =>
+			grid.querySelector<HTMLElement>(':scope > .sheetsmith-grid-target');
+
+		pressDown(cell, at(1, 1));
+		expect(target()).toBeNull();
+		dragTo(cell, 2, 1);
+		// `left` is two columns wide: columns 2 and 3, one row.
+		expect(target()?.style.left).toBe('10px');
+		expect(target()?.style.width).toBe('20px');
+		expect(target()?.style.top).toBe('0px');
+		expect(target()?.style.height).toBe(`${ROW}px`);
+
+		dragTo(cell, 5, 3);
+		expect(target()?.style.left).toBe('40px');
+		expect(target()?.style.top).toBe(`${2 * ROW}px`);
+
+		release(cell);
+		expect(target()).toBeNull();
+		await settle(harness.pane);
+	});
+
+	it('goes down on an Escape as well as on a release', async () => {
+		// The restore is the other way a gesture ends, and a grid left behind by
+		// it would sit over a layout nobody is dragging.
+		const grid = sheetGrid(harness);
+		const cell = control(harness, 'preview-left');
+		pressDown(cell, at(1, 1));
+		dragTo(cell, 6, 3);
+		expect(guides(grid).columns.length).toBe(11);
+
+		cell.ownerDocument.dispatchEvent(
+			new KeyboardEvent('keydown', { key: 'Escape' }),
+		);
+		expect(guides(grid).columns).toEqual([]);
+		expect(box(cell)).toBe('1 / span 2, 1 / span 1');
+		await settle(harness.pane);
+	});
+
+	it("draws the container's own grid for a drag inside one, and not the sheet's", async () => {
+		/*
+		 * The guide is parameterised over the schematic exactly as the gesture
+		 * is: a child dragged inside a six-column container is snapping to six
+		 * columns, so that is the grid that appears, and the sheet's twelve stay
+		 * out of it. Reading the sheet's own grid as well is what makes this a
+		 * claim about *which* schematic rather than about any grid appearing.
+		 */
+		harness = await open(furnished());
+		control(harness, 'edit-defences').click();
+		await settle(harness.pane);
+		const inner = harness.container.querySelector(
+			'[data-sheetsmith-grid="defences"]',
+		);
+		if (!inner) throw new Error('no schematic for the container');
+		measure(inner as HTMLElement, 6);
+
+		const cell = control(harness, 'preview-armour');
+		pressDown(cell, at(1, 1));
+		dragTo(cell, 2, 1);
+		expect(guides(inner as HTMLElement).columns).toEqual([10, 20, 30, 40, 50]);
+		expect(guides(sheetGrid(harness)).columns).toEqual([]);
+		release(cell);
+		await settle(harness.pane);
 	});
 });
 
