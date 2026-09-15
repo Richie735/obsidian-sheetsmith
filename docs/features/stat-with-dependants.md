@@ -1014,3 +1014,13 @@ this section rather than opening a second one.
   is the only thing that ever set the band head's inset from the table's
   edges, so zeroing it too would have pulled the band head in while every row
   under it stayed put.
+- **The cards wrap, as many per line as the component's width holds, instead
+  of stacking one per line.** The first cut borrowed `.sheetsmith-card-set-vertical`,
+  which pins the strip to one column at any width, so a six-stat roster in a
+  real layout was six cards tall and widening the component only made each
+  card wider. The strip is now an ordinary `.sheetsmith-card-set` with
+  `.sheetsmith-roster-cards` raising its minimum card width to `12rem`: Card
+  set's own 90px is sized for a lone number and would fit several tables too
+  narrow to read. How many land per line is set by the component's width,
+  with no new config field — measured on a seven-column sheet, two per line
+  wants the roster four columns wide.
