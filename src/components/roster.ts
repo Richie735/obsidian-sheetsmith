@@ -1446,7 +1446,7 @@ function drawRow(
 
 /**
  * `cardLayout`'s own render path (`drawBandHead`'s own comment for the
- * reasoning): each stat as its own card, in one vertical `.sheetsmith-card-set`
+ * reasoning): each stat as its own card, in one wrapping `.sheetsmith-card-set`
  * — Card set's own chrome, borrowed rather than invented — holding the band
  * head and then, where the stat has any, a small table of its own rows.
  * Additive over `renderShared`: the same `views`, the same `statReading`, the
@@ -1478,7 +1478,7 @@ function renderCards(
 	const signed = config.signed === true;
 	const statReading = statReadingFor(config, data, views, context.resolveField);
 
-	const strip = container.createDiv('sheetsmith-card-set sheetsmith-card-set-vertical');
+	const strip = container.createDiv('sheetsmith-card-set sheetsmith-roster-cards');
 
 	for (const stat of stats) {
 		const key = (stat.key ?? '').trim();

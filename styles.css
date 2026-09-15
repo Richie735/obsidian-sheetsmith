@@ -6264,12 +6264,22 @@ a.sheetsmith-undo {
 }
 
 /* `cardLayout` — each stat as its own `.sheetsmith-card` (Card set's own
-   chrome, `.sheetsmith-card-set.sheetsmith-card-set-vertical` for the strip
-   around them, both borrowed rather than restyled) holding the band head and
-   then a small table of that stat's own rows. Nothing here touches the band
-   head itself: `drawBandHead` builds it from the same `sheetsmith-card-label`
-   / `sheetsmith-card-derived` / `sheetsmith-card-input` pieces an ordinary
-   Card does, so it already wears Card's own rules. */
+   chrome, `.sheetsmith-card-set` for the strip around them, both borrowed
+   rather than restyled) holding the band head and then a small table of that
+   stat's own rows. Nothing here touches the band head itself: `drawBandHead`
+   builds it from the same `sheetsmith-card-label` / `sheetsmith-card-derived`
+   / `sheetsmith-card-input` pieces an ordinary Card does, so it already wears
+   Card's own rules. */
+
+/* The strip wraps the way a Card set's own does, as many cards per line as the
+   component's width holds, rather than stacking one per line: a six-stat
+   roster stacked is six cards tall in a component only as wide as one of
+   them. The floor is what a card's small table needs — a name, a level badge
+   and a total side by side — where Card set's own 90px is sized for a lone
+   number and would fit four tables too narrow to read. */
+.sheetsmith-roster-cards {
+	--sheetsmith-card-min: 12rem;
+}
 .sheetsmith-roster-card-table {
 	/* `.sheetsmith-card` centres and shrink-wraps its children; a table needs
 	   the card's own width back and its own left-set text, or a row of
