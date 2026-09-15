@@ -1468,16 +1468,34 @@ body {
 	height: 100%;
 }
 
-/* A cell is only tall because a card beside it in the same grid row is
-   taller — an armour class next to an initiative, which carries a pill the
-   armour class does not. Centring each card's stack then leaves the row
-   with labels at three different heights and notes at three more. Holding
-   the top edge and pinning the note to the bottom lands both on one line
-   across the row, and the slack falls in the middle where nothing lines up
-   anyway. */
-.sheetsmith-card-single > .sheetsmith-card-note {
+/* A cell is taller than its card for two reasons: a card beside it in the same
+   grid row is taller (an armour class next to an initiative carrying a pill),
+   or the layout placed it several rows tall. The label holds the top edge and
+   the note the bottom one, so across a row labels share one line and notes
+   another. The number and its pill centre in what is left between them.
+
+   Both halves of that have been tried alone. Content held at the top left a
+   placed card's number stranded above a blank that read as something that
+   failed to render. Centring the number and the note together fixed that and
+   left the note floating mid-card over a margin the size of the value, taking
+   far more room than one quiet line needs.
+
+   Auto margins on the flex items rather than a wrapper, so the face stays one
+   flat structure shared with Card set. The sr-only carriers are absolutely
+   positioned, so they are not flex items and must be skipped when finding the
+   last one; and the note is skipped too, so the centred run ends above it. */
+.sheetsmith-card-single > .sheetsmith-card-label + *,
+.sheetsmith-card-single > :first-child:not(.sheetsmith-card-label) {
 	margin-top: auto;
-	/* Restores the separation the auto margin takes over from. */
+}
+
+.sheetsmith-card-single
+	> :nth-last-child(1 of :not(.sheetsmith-sr-only, .sheetsmith-card-note)) {
+	margin-bottom: auto;
+}
+
+.sheetsmith-card-single > .sheetsmith-card-note {
+	/* Restores the separation the auto margin above it takes over from. */
 	padding-top: var(--size-2-1);
 }
 
