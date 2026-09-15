@@ -1033,9 +1033,10 @@ describe('render', () => {
 			) ?? null;
 		}
 
-		it('draws a vertical card set, one .sheetsmith-card per stat, in place of the shared table', () => {
+		it('draws a wrapping card set, one .sheetsmith-card per stat, in place of the shared table', () => {
 			const { el } = renderedCards();
-			expect(el.querySelector('.sheetsmith-card-set.sheetsmith-card-set-vertical')).not.toBeNull();
+			expect(el.querySelector('.sheetsmith-card-set.sheetsmith-roster-cards')).not.toBeNull();
+			expect(el.querySelector('.sheetsmith-card-set-vertical')).toBeNull();
 			const cards = el.querySelectorAll('.sheetsmith-card-set > .sheetsmith-card');
 			expect(cards).toHaveLength(2);
 			const tables = Array.from(el.querySelectorAll('table.sheetsmith-roster'));
