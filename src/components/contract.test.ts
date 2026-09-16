@@ -1126,6 +1126,54 @@ describe.each(types)('component "%s"', (type) => {
 		}
 	});
 
+	it('addresses a stored entry only from a field whose commit is a key', () => {
+		/*
+		 * `entryFlag`'s check one test up, read for the member that carries the
+		 * rename migration (`docs/features/component-rename-migration.md`).
+		 * Only four kinds commit a name a note is keyed by: a `'text'` field's
+		 * own value (Card's `key`, Passport's `nameKey`), an `'entries'` or
+		 * `'track-rows'` field's primary column, and a `'columns'` field's key
+		 * column. Declared on a `'number'`, `'formula'`, `'select'`, `'rows'`
+		 * or `'text-list'` field it compiles, renders and migrates nothing —
+		 * no commit site reads it there — so the field would silently promise
+		 * a migration that never runs.
+		 *
+		 * The list kinds are also held to declaring their columns, because the
+		 * migration reads the *primary* one: an `'entries'` field addressing an
+		 * entry with no `entryColumns` has no key for a rename to come from.
+		 */
+		for (const field of component?.configFields ?? []) {
+			const address = field.addressesEntry;
+			if (address === undefined) continue;
+			expect(
+				['text', 'entries', 'track-rows', 'columns'],
+				`${field.key} addresses a stored entry from a ${field.kind} field`,
+			).toContain(field.kind);
+			expect(
+				['section', 'record'],
+				`${field.key} names an unknown fence shape`,
+			).toContain(address.fence);
+			if (field.kind === 'entries' || field.kind === 'track-rows') {
+				expect(
+					field.entryColumns,
+					`${field.key} addresses an entry with no key column`,
+				).toBeDefined();
+			}
+			// A fallback key is what a blank field is worth, so a blank one is
+			// not a fallback: it would migrate from or to no name at all.
+			if (address.whenBlank !== undefined) {
+				expect(
+					address.whenBlank.trim(),
+					`${field.key} falls back to a blank key`,
+				).not.toBe('');
+				expect(
+					field.kind,
+					`${field.key} falls back to a key on a list field, whose blank primary column is refused rather than defaulted`,
+				).toBe('text');
+			}
+		}
+	});
+
 	it('names only real column types in a columns field\'s offered list', () => {
 		/*
 		 * `ColumnOptionsSpec.types` is `readonly string[]` rather than the column

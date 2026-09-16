@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SHEET_DESTINATION } from './layout-editor';
 import { LayoutEditorView } from '../view/layout-editor-view';
 import { Layout, parseLayout, serialiseLayout } from '../parse/layout';
@@ -90,6 +90,12 @@ interface Harness {
 	container: HTMLElement;
 	pane: LayoutEditorView;
 	app: App;
+	/**
+	 * The plugin the pane was opened on, for a case about a *setting* rather
+	 * than a control — the pane's own reference is private, and reaching past
+	 * that would be asserting on an implementation the view may change.
+	 */
+	plugin: ReturnType<typeof fakePlugin>;
 	/** The layout as the file currently holds it. */
 	stored: () => Promise<Layout>;
 	/** The file's exact bytes, for the round-trip check. */
@@ -120,7 +126,8 @@ async function open(layout: Layout = fixture()): Promise<Harness> {
 	const path = `${LAYOUT_FOLDER}/${layout.name}.json`;
 	await app.vault.create(path, serialiseLayout(layout));
 
-	const pane = await openView(app, document.body, LayoutEditorView, fakePlugin(app));
+	const plugin = fakePlugin(app);
+	const pane = await openView(app, document.body, LayoutEditorView, plugin);
 
 	const raw = async () => {
 		const file = app.vault.getFileByPath(path);
@@ -132,6 +139,7 @@ async function open(layout: Layout = fixture()): Promise<Harness> {
 		container: pane.contentEl,
 		pane,
 		app,
+		plugin,
 		raw,
 		stored: async () => parseLayout(await raw()),
 		redraw: async () => {
@@ -5511,6 +5519,29 @@ describe('formula fields suggest the names the layout publishes', () => {
 					position: { col: 7, row: 1, width: 3, height: 1 },
 				} as unknown as ComponentConfig,
 				{
+					id: 'identity',
+					type: 'passport',
+					label: 'Identity',
+					nameKey: '',
+					fields: [{ key: 'Race', name: 'Ancestry' }],
+					position: { col: 1, row: 5, width: 6, height: 2 },
+					// `nameKey` commits through `config-panel.ts`'s own text-field
+					// branch and declares `whenBlank: 'name'`, so naming it for the
+					// first time is a migration off that default — Card's case on a
+					// second component. `fields` reaches the shared entries editor.
+				} as ComponentConfig,
+				{
+					id: 'gear',
+					type: 'table',
+					label: 'Gear',
+					rowHeader: 'Item',
+					columns: [{ key: 'Qty', type: 'number' }],
+					position: { col: 7, row: 5, width: 6, height: 2 },
+					// Out of scope end to end: a column key is a markdown-table
+					// header, not a fence entry, so renaming it must migrate
+					// nothing and say nothing.
+				} as ComponentConfig,
+				{
 					id: 'slots',
 					type: 'track',
 					label: 'Spell slots',
@@ -5733,6 +5764,590 @@ describe('the panel says what a component publishes', () => {
 		);
 		expect(text).toContain(
 			'total a column, or aggregate over the rows instead.',
+		);
+	});
+});
+
+/*
+ * The vault-wide rename migration (`docs/features/component-rename-
+ * migration.md`), reached the way it ships: a Label field's commit and a
+ * Card set entry's commit, both through this pane's own controls, both
+ * landing on a real character note in the same `App`.
+ *
+ * `parse/character.test.ts`, `parse/fenced.test.ts` and
+ * `component-rename-migration.test.ts` already hold the not-present,
+ * collision and byte-identical cases for the two `parse/` primitives and the
+ * vault scan around them. What is worth asserting here is what only this
+ * seam owns: that the editor's own commit — a blur on a rendered field —
+ * actually reaches `persist()` with a rename intent and the migration runs
+ * after the layout file's own write, on a note this test can read back.
+ */
+describe('the component rename migration', () => {
+	/** `fixture()` plus a Card set whose entries address a fence key. */
+	function renameFixture(): Layout {
+		return {
+			name: 'Test sheet',
+			columns: 12,
+			components: [
+				{
+					id: 'armour',
+					type: 'card',
+					label: 'Armour class',
+					position: { col: 1, row: 1, width: 2, height: 1 },
+				},
+				{
+					id: 'hit_points',
+					type: 'pool',
+					label: 'Hit points',
+					position: { col: 3, row: 1, width: 4, height: 1 },
+				},
+				{
+					id: 'abilities',
+					type: 'card-set',
+					label: 'Abilities',
+					entries: [{ key: 'DEX', name: 'Dexterity' }],
+					position: { col: 1, row: 2, width: 12, height: 1 },
+					// `entries` is a Card set's own config, not a member of the
+					// shared `ComponentConfig` every fixture in this file is typed
+					// against — the same assertion `furnished()` writes for the
+					// identical literal.
+				} as ComponentConfig,
+				{
+					id: 'spells',
+					type: 'record-set',
+					label: 'Spells',
+					recordName: 'Spell',
+					fields: [{ key: 'Level', type: 'number' }],
+					position: { col: 1, row: 3, width: 6, height: 2 },
+					// A Record set's `fields` is the shared *columns* editor, so its
+					// key commits through a different function from the entries
+					// editor above — and it is the one component whose section holds
+					// one fence per record, which is the only `perRecord` intent
+					// this feature builds.
+				} as ComponentConfig,
+				{
+					id: 'identity',
+					type: 'passport',
+					label: 'Identity',
+					nameKey: '',
+					fields: [{ key: 'Race', name: 'Ancestry' }],
+					position: { col: 1, row: 5, width: 6, height: 2 },
+					// `nameKey` commits through `config-panel.ts`'s own text-field
+					// branch and declares `whenBlank: 'name'`, so naming it for the
+					// first time is a migration off that default — Card's case on a
+					// second component. `fields` reaches the shared entries editor.
+				} as ComponentConfig,
+				{
+					id: 'gear',
+					type: 'table',
+					label: 'Gear',
+					rowHeader: 'Item',
+					columns: [{ key: 'Qty', type: 'number' }],
+					position: { col: 7, row: 5, width: 6, height: 2 },
+					// Out of scope end to end: a column key is a markdown-table
+					// header, not a fence entry, so renaming it must migrate
+					// nothing and say nothing.
+				} as ComponentConfig,
+				{
+					id: 'slots',
+					type: 'track',
+					label: 'Spell slots',
+					rows: [{ key: 'L1', name: 'First' }],
+					position: { col: 7, row: 3, width: 6, height: 2 },
+					// Track's `rows` reaches the shared entries editor under its own
+					// `track-rows` kind, which is a third route into the same
+					// migration and the one with no commit-path case of its own.
+				} as ComponentConfig,
+			],
+			functions: ['mod(score) = floor((score - 10) / 2)'],
+			triggers: ['Long rest'],
+		};
+	}
+
+	const CHARACTER =
+		'---\nsheet-layout: Test sheet\n---\n\n## Armour class\n```sheet\nvalue: 14\n```\n\n## Abilities\n```sheet\nDEX: 16\n```\n\n## Spells\n\n### Fireball\n```sheet\nLevel: 3\n```\n\n### Shield\n```sheet\nLevel: 1\n```\n\n## Spell slots\n```sheet\nL1: 2\n```\n\n## Identity\n```sheet\nname: Aramil\nRace: Elf\n```\n\n## Gear\n\n| Item | Qty |\n|---|---|\n| Rope | 1 |\n';
+
+	beforeEach(async () => {
+		harness = await open(renameFixture());
+		Notice.messages = [];
+	});
+
+	it('migrates a renamed label into every character note for this layout, and reports it', async () => {
+		await harness.app.vault.create('Aramil.md', CHARACTER);
+		// A note for a different layout, correctly left alone.
+		await harness.app.vault.create(
+			'Thora.md',
+			'---\nsheet-layout: Other sheet\n---\n\n## Armour class\n```sheet\nvalue: 9\n```\n',
+		);
+
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'label-armour'), 'Defence');
+		await settle(harness.pane);
+
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			CHARACTER.replace('## Armour class', '## Defence'),
+		);
+		expect(
+			await harness.app.vault.read(harness.app.vault.getFileByPath('Thora.md')!),
+		).toBe('---\nsheet-layout: Other sheet\n---\n\n## Armour class\n```sheet\nvalue: 9\n```\n');
+		expect(Notice.messages).toEqual([
+			'Renamed "Armour class" to "Defence" in 1 character note.',
+		]);
+	});
+
+	it('migrates a renamed entry key inside a Card set’s own fence, and reports it', async () => {
+		await harness.app.vault.create('Aramil.md', CHARACTER);
+
+		control(harness, 'edit-abilities').click();
+		await settle(harness.pane);
+		type(
+			control<HTMLInputElement>(harness, 'attr-abilities-0-key'),
+			'Dexterity',
+		);
+		await settle(harness.pane);
+
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			CHARACTER.replace('DEX: 16', 'Dexterity: 16'),
+		);
+		expect(Notice.messages).toEqual([
+			'Renamed "DEX" to "Dexterity" in 1 character note.',
+		]);
+	});
+
+	/*
+	 * The two remaining routes into the migration, each driven through the
+	 * control that ships rather than through the module.
+	 *
+	 * `component-rename-migration.test.ts` covers both shapes at the module
+	 * level, so what these add is the half only this seam owns: that the
+	 * *editor's* own commit reaches `persist()` with the right intent from these
+	 * two fields too. They were the last two of the feature's key surfaces with
+	 * no case at this level, and the spec review counted that as a criterion met
+	 * in a weaker form than it is written.
+	 */
+	it('migrates a renamed Record set field key in every record of every note', async () => {
+		await harness.app.vault.create('Aramil.md', CHARACTER);
+
+		control(harness, 'edit-spells').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'spells-col-0-key'), 'Spell level');
+		await settle(harness.pane);
+
+		// Both records, which is what makes this component's intent its own:
+		// one section holding one fence per `### ` record.
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			CHARACTER.split('Level: 3').join('Spell level: 3').split('Level: 1').join('Spell level: 1'),
+		);
+		expect(Notice.messages).toEqual([
+			'Renamed "Level" to "Spell level" in 1 character note.',
+		]);
+	});
+
+	it('migrates a renamed Track row key, which reaches the same migration', async () => {
+		await harness.app.vault.create('Aramil.md', CHARACTER);
+
+		control(harness, 'edit-slots').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'attr-slots-0-key'), 'Level 1');
+		await settle(harness.pane);
+
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			CHARACTER.replace('L1: 2', 'Level 1: 2'),
+		);
+		expect(Notice.messages).toEqual([
+			'Renamed "L1" to "Level 1" in 1 character note.',
+		]);
+	});
+
+	/*
+	 * The last two key surfaces with no case at this level, both on Passport, and
+	 * both pre-specified by the spec review rather than chosen here.
+	 */
+	it('migrates a Passport name key named for the first time, off its default', async () => {
+		await harness.app.vault.create('Aramil.md', CHARACTER);
+
+		control(harness, 'edit-identity').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'cfg-identity-nameKey'), 'Character');
+		await settle(harness.pane);
+
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			CHARACTER.replace('name: Aramil', 'Character: Aramil'),
+		);
+		expect(Notice.messages).toEqual([
+			'Renamed "name" to "Character" in 1 character note.',
+		]);
+	});
+
+	it('migrates a renamed Passport field key through the shared entries editor', async () => {
+		await harness.app.vault.create('Aramil.md', CHARACTER);
+
+		control(harness, 'edit-identity').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'attr-identity-0-key'), 'Ancestry');
+		await settle(harness.pane);
+
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			CHARACTER.replace('Race: Elf', 'Ancestry: Elf'),
+		);
+		expect(Notice.messages).toEqual([
+			'Renamed "Race" to "Ancestry" in 1 character note.',
+		]);
+	});
+
+	it('migrates nothing when a Table column’s key is renamed', async () => {
+		// Criterion 6 asked for this directly rather than by absence of a hook: a
+		// column key is a markdown-table header, so the fence primitive has
+		// nothing to operate on and the whole feature must pass it over.
+		await harness.app.vault.create('Aramil.md', CHARACTER);
+
+		control(harness, 'edit-gear').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'gear-col-0-key'), 'Count');
+		await settle(harness.pane);
+
+		// Vacuity guard: the rename did land in the layout, so a green below is
+		// not a commit that never happened.
+		expect(await harness.raw()).toContain('Count');
+		expect(Notice.messages).toEqual([]);
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			CHARACTER,
+		);
+	});
+
+	it('touches no note, and says nothing, when the layout write rejects', async () => {
+		/*
+		 * Criterion 9's own words: "a layout write that fails leaves every
+		 * character note untouched and triggers no migration attempt". A write
+		 * that *rejects* rather than one that hangs, which is the difference
+		 * between proving the guard and proving only that nothing happened yet.
+		 */
+		await harness.app.vault.create('Aramil.md', CHARACTER);
+		const scans = vi.spyOn(harness.app.vault, 'process');
+		vi.spyOn(harness.app.vault, 'modify').mockRejectedValue(
+			new Error('disk full'),
+		);
+
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'label-armour'), 'Defence');
+		await settle(harness.pane);
+
+		// No candidate was even opened, and the author is told the layout did not
+		// save rather than being told nothing at all — which is what writing this
+		// case found: the write was unwrapped, so the rejection reached no one
+		// and surfaced as an unhandled rejection in the run.
+		expect(scans).not.toHaveBeenCalled();
+		expect(Notice.messages).toEqual([
+			'Sheetsmith could not save this layout: disk full',
+		]);
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			CHARACTER,
+		);
+	});
+
+	it('fires no Notice, and touches no note, where nothing matches', async () => {
+		await harness.app.vault.create(
+			'Aramil.md',
+			'---\nsheet-layout: Other sheet\n---\n\n## Armour class\n```sheet\nvalue: 9\n```\n',
+		);
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'label-armour'), 'Defence');
+		await settle(harness.pane);
+
+		expect(Notice.messages).toEqual([]);
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			'---\nsheet-layout: Other sheet\n---\n\n## Armour class\n```sheet\nvalue: 9\n```\n',
+		);
+	});
+
+	/*
+	 * A Card that never set a key stores under the component's own default,
+	 * `value`, so naming the key for the first time is a rename off that
+	 * default and not the arrival of a name from nowhere. The same in reverse:
+	 * clearing the field puts the note back on `value`.
+	 *
+	 * `renameFixture()`'s `armour` card declares no `key`, and `CHARACTER`
+	 * holds `value: 14` under it, which is the state every character on a
+	 * freshly drafted layout is in.
+	 */
+	it('migrates off a key’s own default when the field is named for the first time', async () => {
+		await harness.app.vault.create('Aramil.md', CHARACTER);
+
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'cfg-armour-key'), 'AC');
+		await settle(harness.pane);
+
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			CHARACTER.replace('value: 14', 'AC: 14'),
+		);
+		expect(Notice.messages).toEqual([
+			'Renamed "value" to "AC" in 1 character note.',
+		]);
+	});
+
+	it('migrates back onto the default when the key field is cleared', async () => {
+		await harness.app.vault.create(
+			'Aramil.md',
+			CHARACTER.replace('value: 14', 'AC: 14'),
+		);
+		// The layout has to be holding the explicit key for clearing it to be a
+		// rename, so this commits one and then clears it.
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'cfg-armour-key'), 'AC');
+		await settle(harness.pane);
+		Notice.messages = [];
+
+		type(control<HTMLInputElement>(harness, 'cfg-armour-key'), '');
+		await settle(harness.pane);
+
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			CHARACTER,
+		);
+		expect(Notice.messages).toEqual([
+			'Renamed "AC" to "value" in 1 character note.',
+		]);
+	});
+
+	/*
+	 * A key holding a colon cannot be stored: the fence splits a line at the
+	 * first one, so `Armor: class: 14` reads back as `Armor` holding
+	 * `class: 14` and nothing can ever find `Armor: class` again. Before the
+	 * migration existed that was a config error on one component with every
+	 * note untouched; with it, a committed key is written into every character
+	 * note, so the commit is where it has to be refused.
+	 */
+	it('refuses a colon in a Card’s key, writing no note and no layout', async () => {
+		await harness.app.vault.create('Aramil.md', CHARACTER);
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		const input = control<HTMLInputElement>(harness, 'cfg-armour-key');
+		type(input, 'Armor: class');
+		await settle(harness.pane);
+
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			CHARACTER,
+		);
+		expect(Notice.messages).toEqual([]);
+		expect(await harness.raw()).not.toContain('Armor: class');
+		expect(
+			input.parentElement?.querySelector('.sheetsmith-field-error')
+				?.textContent,
+		).toBe(
+			'A key cannot contain a colon or a line break, because the sheet block separates key from value with a colon, so this one was left empty.',
+		);
+	});
+
+	it('refuses a colon in a Card set entry’s key the same way', async () => {
+		await harness.app.vault.create('Aramil.md', CHARACTER);
+		control(harness, 'edit-abilities').click();
+		await settle(harness.pane);
+		const input = control<HTMLInputElement>(harness, 'attr-abilities-0-key');
+		type(input, 'DEX: mod');
+		await settle(harness.pane);
+
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			CHARACTER,
+		);
+		expect(Notice.messages).toEqual([]);
+		expect(await harness.raw()).not.toContain('DEX: mod');
+	});
+
+	/*
+	 * The owner's own sequence, which shipped broken: a character note living
+	 * beside the folder new characters are written to.
+	 *
+	 * `characterFolder` is a *creation destination* — "New characters are
+	 * written here" — and the migration used to narrow its vault scan by it.
+	 * On a vault whose characters sit in `Characters/` while the setting names
+	 * `Characters/new`, every one of them was invisible: the rename reported
+	 * nothing, wrote nothing, and the note then rendered empty under a heading
+	 * the layout no longer named. Driven through the pane rather than the
+	 * module, because the editor's call site is what passed the folder.
+	 */
+	it('migrates a note beside the folder new characters are written to', async () => {
+		harness.plugin.settings.characterFolder = 'Characters/new';
+		await harness.app.vault.createFolder('Characters');
+		await harness.app.vault.create('Characters/Aramil.md', CHARACTER);
+
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'label-armour'), 'Armor Classs');
+		await settle(harness.pane);
+
+		expect(
+			await harness.app.vault.read(
+				harness.app.vault.getFileByPath('Characters/Aramil.md')!,
+			),
+		).toBe(CHARACTER.replace('## Armour class', '## Armor Classs'));
+		expect(Notice.messages).toEqual([
+			'Renamed "Armour class" to "Armor Classs" in 1 character note.',
+		]);
+	});
+
+	it('writes the layout before it touches a single character note', async () => {
+		await harness.app.vault.create('Aramil.md', CHARACTER);
+		const order: string[] = [];
+		vi.spyOn(harness.app.vault, 'modify').mockImplementation(() => {
+			order.push('layout');
+			return Promise.resolve();
+		});
+		const process = harness.app.vault.process.bind(harness.app.vault);
+		vi.spyOn(harness.app.vault, 'process').mockImplementation((file, fn) => {
+			order.push('note');
+			return process(file, fn);
+		});
+
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'label-armour'), 'Defence');
+		await settle(harness.pane);
+
+		// The first two writes, in order: the layout file, then the note. The
+		// redraw the commit triggers persists the layout again afterwards,
+		// carrying no rename of its own, which is why this reads the head of
+		// the sequence rather than the whole of it.
+		expect(order.slice(0, 2)).toEqual(['layout', 'note']);
+	});
+
+	it('touches no note while the layout write has not resolved', async () => {
+		await harness.app.vault.create('Aramil.md', CHARACTER);
+		// A layout write that never resolves stands in for one that fails: both
+		// leave the `await` in `persist` unfinished, which is the whole of what
+		// keeps the migration from running. Its own `modify` is bypassed, so
+		// the layout file below is deliberately still the old spelling too.
+		vi.spyOn(harness.app.vault, 'modify').mockImplementation(
+			() => new Promise<void>(() => undefined),
+		);
+		const spy = vi.spyOn(harness.app.vault, 'process');
+
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'label-armour'), 'Defence');
+		await settle(harness.pane);
+
+		expect(spy).not.toHaveBeenCalled();
+		expect(Notice.messages).toEqual([]);
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			CHARACTER,
+		);
+	});
+
+	/*
+	 * Roster's three `key`-shaped fields, one in scope and two out. Its
+	 * `stats[].key` names a fence entry and migrates; `columns[].key` is a
+	 * markdown-table header and `rows[].key` is a formula-facing publish name,
+	 * and neither addresses anything a character note stores under that name.
+	 *
+	 * The note below baits both. Its fence holds entries spelled exactly like
+	 * the column key and exactly like the row's publish key — which is not how
+	 * a Roster stores either — so a careless wiring pass reaching those two
+	 * fields, both also called `key` and both on the same component as a field
+	 * that does migrate, would rename one of those entries and fire a Notice.
+	 * That is what the feature doc asks be verified directly rather than
+	 * inferred from the absence of a hook.
+	 */
+	function rosterFixture(): Layout {
+		return {
+			name: 'Test sheet',
+			columns: 12,
+			components: [
+				{
+					id: 'skills',
+					type: 'roster',
+					label: 'Skills',
+					rowHeader: 'Skill',
+					stats: [{ key: 'STR', name: 'Strength' }],
+					rows: [{ label: 'Athletics', stat: 'STR', key: 'athletics' }],
+					columns: [
+						{
+							key: 'Training',
+							type: 'computed',
+							formula: 'stat',
+							publish: true,
+						},
+					],
+					position: { col: 1, row: 1, width: 12, height: 2 },
+				} as unknown as ComponentConfig,
+			],
+			functions: [],
+			triggers: [],
+		};
+	}
+
+	const ROSTER_CHARACTER = [
+		'---',
+		'sheet-layout: Test sheet',
+		'---',
+		'',
+		'## Skills',
+		'```sheet',
+		'STR: 16',
+		'Training: 1',
+		'athletics: 2',
+		'```',
+		'',
+		'| Skill | Training |',
+		'|---|---|',
+		'| Athletics | 1 |',
+		'',
+	].join('\n');
+
+	it('migrates a Roster stat’s key, which is the one of its three that a note stores', async () => {
+		harness = await open(rosterFixture());
+		Notice.messages = [];
+		await harness.app.vault.create('Aramil.md', ROSTER_CHARACTER);
+
+		control(harness, 'edit-skills').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'attr-skills-0-key'), 'Strength');
+		await settle(harness.pane);
+
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			ROSTER_CHARACTER.replace('STR: 16', 'Strength: 16'),
+		);
+		expect(Notice.messages).toEqual([
+			'Renamed "STR" to "Strength" in 1 character note.',
+		]);
+	});
+
+	it('migrates nothing when a Roster column’s key is renamed', async () => {
+		harness = await open(rosterFixture());
+		Notice.messages = [];
+		await harness.app.vault.create('Aramil.md', ROSTER_CHARACTER);
+
+		control(harness, 'edit-skills').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'skills-col-0-key'), 'Practice');
+		await settle(harness.pane);
+
+		// Vacuity guard: the rename itself did land in the layout, so this is
+		// not passing because the commit never happened.
+		expect(await harness.raw()).toContain('Practice');
+		expect(Notice.messages).toEqual([]);
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			ROSTER_CHARACTER,
+		);
+	});
+
+	it('migrates nothing when a Roster row’s publish key is renamed', async () => {
+		harness = await open(rosterFixture());
+		Notice.messages = [];
+		await harness.app.vault.create('Aramil.md', ROSTER_CHARACTER);
+
+		control(harness, 'edit-skills').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'skills-row-0-key'), 'acrobatics');
+		await settle(harness.pane);
+
+		expect(await harness.raw()).toContain('acrobatics');
+		expect(Notice.messages).toEqual([]);
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			ROSTER_CHARACTER,
 		);
 	});
 });

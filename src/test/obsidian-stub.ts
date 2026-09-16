@@ -1028,6 +1028,20 @@ export class Vault {
 	getFiles(): TFile[] {
 		return [...this.files.values()].map(({ file }) => file);
 	}
+
+	/**
+	 * Every markdown file, for a caller that wants character notes rather than
+	 * a vault's worth of everything — `component-rename-migration.ts`'s own
+	 * candidate scan, the first consumer of `getFiles` narrower than "all".
+	 */
+	getMarkdownFiles(): TFile[] {
+		return this.getFiles().filter((file) => file.extension === 'md');
+	}
+
+	/** A file's own text, read synchronously — `MetadataCache`'s own need. */
+	rawContent(path: string): string | null {
+		return this.files.get(path)?.content ?? null;
+	}
 }
 
 export class FileManager {
@@ -1331,9 +1345,109 @@ export class View extends Component {
 
 export class ItemView extends View {}
 
-/** Only ever extended, never constructed by anything the harness renders. */
+/**
+ * Only ever extended, never constructed by anything the harness renders.
+ *
+ * **The save half is modelled, not stubbed away**, because the two facts a
+ * `TextFileView` subclass depends on are both timing facts and both invisible
+ * from inside the subclass. `requestSave` is Obsidian's own *debounced* save —
+ * its typing says "Debounced save in 2 seconds from now" — so the text a view
+ * commits is not on disk when the commit returns; and the view's `data` is the
+ * only thing `save` ever writes, so a file rewritten underneath an open view is
+ * overwritten by it. A stub whose `requestSave` wrote through synchronously
+ * would make both of those unobservable, which is how `docs/PATTERNS.md` §11's
+ * "a rendered `SheetView` needs a vault fixture" stayed a gap: the view opens
+ * fine, it is the save that had nowhere to land.
+ *
+ * `savesRequested` and `runRequestedSave` are the debounce made explicit, the
+ * same bargain `LayoutEditorView.flush` already offers the editor's own: a test
+ * decides whether the two seconds have elapsed, rather than a timer deciding
+ * for it. **Named so they cannot be mistaken for Obsidian's own members**, and
+ * so a subclass adding a flush of its own — `SheetView.flushSave` does — is
+ * overriding nothing here.
+ */
 export class TextFileView extends ItemView {
 	data = '';
+	/** The file this view is showing, which `onLoadFile` sets. */
+	file: TFile | null = null;
+	/**
+	 * How many debounced saves are outstanding — Obsidian's 2-second window,
+	 * counted rather than flagged so a test can say the view asked twice.
+	 */
+	savesRequested = 0;
+
+	/**
+	 * A property rather than a method, as in `obsidian.d.ts`, so a subclass
+	 * calling `this.requestSave()` reaches this and not an override.
+	 */
+	requestSave = (): void => {
+		this.savesRequested += 1;
+	};
+
+	/** Fire the debounce: run a requested save, if one is outstanding. */
+	async runRequestedSave(): Promise<void> {
+		if (this.savesRequested === 0) return;
+		this.savesRequested = 0;
+		await this.save();
+	}
+
+	/**
+	 * Write what the view holds, and **leave the counter alone.**
+	 *
+	 * Discharging the request here was a fiction with consequences: Obsidian
+	 * types `requestSave` as a bare `() => void` with no cancel and no
+	 * `isPending`, so calling `save()` directly does **not** call off the
+	 * debounced write already scheduled — it still fires about two seconds
+	 * later, from whatever the view holds then. A double that cleared the
+	 * counter on any save made that interleaving inexpressible, which is the
+	 * one sequence a consumer most needs to be able to write: a save landing
+	 * *between* two other vault writes. Only `runRequestedSave` and
+	 * `onUnloadFile` discharge it, because those are the two moments the app
+	 * genuinely has nothing left outstanding.
+	 */
+	async save(_clear?: boolean): Promise<void> {
+		if (!this.file) return;
+		await this.app.vault.modify(this.file, this.getViewData());
+	}
+
+	async onLoadFile(file: TFile): Promise<void> {
+		this.file = file;
+		this.setViewData(await this.app.vault.read(file), true);
+	}
+
+	/**
+	 * The app's own order on the way out: the view saves, and only then is it
+	 * cleared — which is the whole reason a stale `data` matters.
+	 *
+	 * **Unconditional, because the app's is.** `obsidian.d.ts` says "by default,
+	 * this view only saves when it's closing", so the close write is the base
+	 * behaviour and `requestSave` is the *addition* a view makes on top of it.
+	 * Conditioning this on an outstanding request instead made the double
+	 * quietly permissive in the one direction that mattered: anything that had
+	 * already called `save()` discharged the counter, so closing wrote nothing,
+	 * and a view holding text staler than the file could be closed in a test
+	 * with no consequence. That is precisely the write-back this plugin's own
+	 * reload exists to prevent, so the double was hiding the bug its consumer
+	 * was written to catch.
+	 */
+	async onUnloadFile(_file: TFile): Promise<void> {
+		this.savesRequested = 0;
+		await this.save();
+		this.clear();
+		this.file = null;
+	}
+
+	getViewData(): string {
+		return this.data;
+	}
+
+	setViewData(data: string, _clear: boolean): void {
+		this.data = data;
+	}
+
+	clear(): void {
+		this.data = '';
+	}
 }
 
 export class MarkdownView extends TextFileView {}
@@ -1455,12 +1569,71 @@ export class Workspace {
 	}
 }
 
+/** The frontmatter block's own delimiter lines, and one `key: value` line inside it. */
+const FRONTMATTER_BLOCK = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
+const FRONTMATTER_LINE = /^([^:]+):[ \t]*(.*)$/;
+
+/**
+ * Enough of `MetadataCache` for `getFileCache(file)?.frontmatter` — the read
+ * every caller in `src/` already uses to answer "is this a character note for
+ * this layout" (`view/auto-open.ts`, `commands.ts`,
+ * `component-rename-migration.ts`) without parsing a body that will not
+ * match.
+ *
+ * **Derived from the file's own text on every call, not maintained as a
+ * separate index.** The real cache is asynchronous and can lag a fresh
+ * write — `characters.ts`'s own header cites that race — but nothing in this
+ * plugin's test suite depends on the lag itself, only on reading back what a
+ * note's frontmatter block says, so a synchronous read off `Vault.rawContent`
+ * is the double's whole job.
+ *
+ * **What this deliberately cannot show.** A value is never coerced past a
+ * trimmed string and one layer of surrounding quotes, which is
+ * `parse/character.ts`'s own `extractLayoutName` rule — so this models the
+ * *plugin's* reader, not the app's. `isPlainLayoutValue` exists precisely
+ * because those two have to agree about one line, and a double that
+ * implements the second as a copy of the first can never fail when they
+ * disagree: real YAML gives a typed scalar back for `sheet-layout: 12`,
+ * `: No` or `: null`, all three of which this plugin writes unquoted and this
+ * double answers as the strings `'12'`, `'No'` and `'null'`. Nothing here is
+ * a claim that Obsidian agrees. Every caller is therefore written to be
+ * correct either way — `component-rename-migration.ts` treats a non-string as
+ * undecidable and lets the note's own text settle it — and the missing probe
+ * is `docs/BACKLOG.md` § Patterns, where the typed-scalar case is named.
+ */
+export class MetadataCache {
+	constructor(private readonly vault: Vault) {}
+
+	getFileCache(file: TFile): { frontmatter?: Record<string, string> } | null {
+		const content = this.vault.rawContent(file.path);
+		if (content === null) return null;
+		const match = FRONTMATTER_BLOCK.exec(content);
+		if (!match) return {};
+		const frontmatter: Record<string, string> = {};
+		for (const rawLine of (match[1] ?? '').split(/\r?\n/)) {
+			const line = FRONTMATTER_LINE.exec(rawLine);
+			if (!line) continue;
+			const key = (line[1] ?? '').trim();
+			let value = (line[2] ?? '').trim();
+			if (
+				(value.startsWith('"') && value.endsWith('"') && value.length > 1) ||
+				(value.startsWith("'") && value.endsWith("'") && value.length > 1)
+			) {
+				value = value.slice(1, -1);
+			}
+			frontmatter[key] = value;
+		}
+		return { frontmatter };
+	}
+}
+
 export class App {
 	vault = new Vault();
 	workspace = new Workspace(this);
 	// After `vault`, which it needs in order to hand out a folder in it. Field
 	// initialisers run in declaration order, so the order here is load bearing.
 	fileManager = new FileManager(this.vault);
+	metadataCache = new MetadataCache(this.vault);
 }
 
 export class Modal {

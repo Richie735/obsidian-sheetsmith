@@ -86,8 +86,9 @@ export const cardSet: ComponentDefinition<CardSetConfig, CardSetData> = {
 				{ key: 'key', heading: 'Key' },
 				{ key: 'name', heading: 'Full name' },
 			],
+			addressesEntry: { fence: 'section' },
 			description:
-				'Each key is the entry name in the note and the abbreviation on the card. Order is display order. Renaming a key does not move a stored value; the old entry stays in the note under the old key.',
+				'Each key is the entry name in the note and the abbreviation on the card. Order is display order. Renaming a key moves that entry in every note on this layout.',
 		},
 		{
 			key: 'derived',

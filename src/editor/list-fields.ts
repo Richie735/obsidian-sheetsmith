@@ -16,6 +16,7 @@
  */
 
 import { Platform, setIcon } from 'obsidian';
+import { keyRename, RenameIntent } from '../component-rename-migration';
 import {
 	levelCount,
 	levelGlyph,
@@ -39,12 +40,21 @@ import { showFieldError } from './field-error';
 import { reasonMessage } from './field-reason';
 import { formulaProblem } from './field-formula';
 import { isName } from '../formula/expression';
-import { ColumnOptionsSpec, EntryColumnSpec } from '../types';
+import { fencedKeyProblem } from '../parse/fenced';
+import { ColumnOptionsSpec, EntryAddress, EntryColumnSpec } from '../types';
 
 /** What a list editor needs from the editor around it. */
 export interface ListContext {
-	/** Write the layout. */
-	persist: () => void;
+	/**
+	 * Write the layout.
+	 *
+	 * `rename` carries a primary entry field's or a column's own key rename,
+	 * old and new value both in hand at the moment of commit, for the caller
+	 * to run the vault-wide migration once the write lands
+	 * (`docs/features/component-rename-migration.md`). Every other commit in
+	 * this module omits it.
+	 */
+	persist: (rename?: RenameIntent) => void;
 	/** Rebuild the pane. */
 	redraw: () => void;
 	/** Focus this token once the redraw has happened. */
@@ -847,6 +857,14 @@ export function renderColumnsEditor(
 	 * other three have no use for it.
 	 */
 	offers?: ColumnOptionsSpec,
+	/**
+	 * Where this column's own key addresses a character's stored data, where
+	 * it does at all — declared by the component, since the fence shape is
+	 * its own fact and not this module's (`types.ts`, `EntryAddress`).
+	 * Absent for Table's and Roster's own `columns`, whose key is a
+	 * markdown-table header rather than a fence entry.
+	 */
+	address?: EntryAddress,
 ): void {
 	if (!Array.isArray(record[key])) record[key] = [];
 	const columns = record[key] as ColumnEntry[];
@@ -929,6 +947,11 @@ export function renderColumnsEditor(
 		) {
 			return `"${value}" is already used by another column`;
 		}
+		// Only where this column's key addresses a fence entry — Record set's
+		// own `fields`. Table's and Roster's columns are markdown-table
+		// headers, whose rule is the pipe and is checked by the component.
+		const stored = address === undefined ? null : fencedKeyProblem(value);
+		if (stored !== null) return `A key ${stored}`;
 		return null;
 	};
 
@@ -962,8 +985,16 @@ export function renderColumnsEditor(
 				return;
 			}
 			fieldError(keyInput, null);
+			const stored = column.key;
 			column.key = next;
-			context.persist();
+			context.persist(
+				keyRename(
+					address,
+					typeof record.label === 'string' ? record.label : '',
+					stored,
+					next,
+				),
+			);
 			context.redraw();
 		});
 
@@ -1660,6 +1691,14 @@ export function renderEntriesEditor(
 	 * checkbox's own label already says what it does.
 	 */
 	entryFlag?: { key: string; label: string },
+	/**
+	 * Where this field's primary column addresses a character's stored data,
+	 * where it does at all — Card set's, Track's and Roster's `stats`, and,
+	 * through `entryFlag`, Passport's `fields`. Absent for Card's own
+	 * `options`, which draws through this same function but stores nothing
+	 * under either column (`types.ts`, `EntryAddress`).
+	 */
+	address?: EntryAddress,
 ): void {
 	// A third content column changes both grids — the header's and the
 	// row's — and neither can be inferred from the markup, so the list
@@ -1712,6 +1751,18 @@ export function renderEntriesEditor(
 		if (list.some((other, i) => i !== index && nameOf(other) === value)) {
 			return `"${value}" is already used by another entry`;
 		}
+		/*
+		 * Only where this column addresses a fence entry, and the rule is the
+		 * fence's own (`parse/fenced.ts`) rather than a second spelling here.
+		 * **Refused at the commit, not only by the component that reads it**:
+		 * a committed key is written into every character note by the rename
+		 * migration, and a colon there is propagated as an entry `readFenced`
+		 * misreads and `renameFencedEntry` can never find again — damage no
+		 * later edit in this pane could undo. A Card's `options`, which draws
+		 * through this same editor and stores nothing, is correctly exempt.
+		 */
+		const stored = address === undefined ? null : fencedKeyProblem(value);
+		if (stored !== null) return `A ${primary.heading.toLowerCase()} ${stored}`;
 		return null;
 	};
 
@@ -1828,7 +1879,19 @@ export function renderEntriesEditor(
 			}
 			fieldError(primaryInput, null);
 			entry[primary.key] = next;
-			context.persist();
+			// Both values are already in hand at the moment of commit, which is
+			// what the migration asks of every trigger it hooks — an explicit
+			// rename, never one inferred later by diffing two saved configs.
+			// `stored` empty means there was no fence entry this could have
+			// addressed yet, so nothing is migrated from it.
+			context.persist(
+				keyRename(
+					address,
+					typeof record.label === 'string' ? record.label : '',
+					stored,
+					next,
+				),
+			);
 			context.redraw();
 		});
 

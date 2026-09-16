@@ -32,7 +32,7 @@
  * `record-set.test.ts` is where that round trip lives.
  */
 
-import { lineText, splitLines } from './lines';
+import { lineText, renameHeadingLine, splitLines } from './lines';
 
 /**
  * What starts a record.
@@ -43,9 +43,6 @@ import { lineText, splitLines } from './lines';
  * makes `#### ` the fix a refused body is told to use.
  */
 const HEADING = /^###[ \t]+\S/;
-
-/** The heading line's own spelling, so a rename keeps the author's spacing. */
-const HEADING_PARTS = /^(###[ \t]+)(.*?)([ \t]*)$/;
 
 const FENCE_OPEN = /^```sheet[ \t]*$/;
 const FENCE_CLOSE = /^```[ \t]*$/;
@@ -177,10 +174,11 @@ export function withRecordBody(
  */
 export function renameRecord(record: RecordBlock, name: string): RecordBlock {
 	if (name === record.name) return record;
-	const text = lineText(record.headingLine);
-	const ending = record.headingLine.slice(text.length);
-	const prefix = HEADING_PARTS.exec(text)?.[1] ?? '### ';
-	return { ...record, name, headingLine: `${prefix}${name}${ending}` };
+	return {
+		...record,
+		name,
+		headingLine: renameHeadingLine(record.headingLine, 3, name),
+	};
 }
 
 /**

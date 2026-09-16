@@ -161,6 +161,17 @@ export class SheetView extends TextFileView {
 	/** Generation counter; a render that awaits and comes back stale bails. */
 	private renderId = 0;
 	/**
+	 * Whether this view holds an edit the file does not.
+	 *
+	 * The plugin's own answer to a question `TextFileView` does not expose:
+	 * `requestSave` is a bare debouncer with no `isPending`, so the only party
+	 * that can know an edit is outstanding is the one that made it. Raised by
+	 * `commit`, which is the single `requestSave` call site, and lowered
+	 * wherever `data` stops being the reader's — a completed `save`, either
+	 * door into `setViewData`, and `clear`.
+	 */
+	private pendingSave = false;
+	/**
 	 * Where a hover preview opened from one of this sheet's links lives.
 	 *
 	 * Declared because the view hands itself to `hover-link` as the popover's
@@ -247,8 +258,56 @@ export class SheetView extends TextFileView {
 		return this.data;
 	}
 
-	setViewData(data: string, _clear: boolean): void {
+	/**
+	 * Write only what this reader typed, and lower the flag once it has landed.
+	 *
+	 * **Not the thing that closes the debounce race, and an earlier draft of this
+	 * comment claimed it was.** `requestSave` is typed `() => void` with no
+	 * `cancel`, so a pending write cannot be called off and firing `save()` early
+	 * does not discharge it — it still arrives about two seconds later. But the
+	 * base class refuses it on its own: its `save` returns early when
+	 * `lastSavedData === getViewData()`, and after a flush the view's text *is*
+	 * what it last saved. The race is closed with or without this guard.
+	 *
+	 * What the guard buys is worth having anyway. It says the same thing in
+	 * members the typings admit, rather than resting on a private field — the
+	 * `Debouncer.cancel` the runtime object probably has was declined on that
+	 * ground, as the suggestion popup's `suggestEl` was. It is assertable from
+	 * outside, which `lastSavedData` is not, so the rule is checkable rather than
+	 * merely argued. And it suppresses the redundant write `reload` would
+	 * otherwise invite, since `reload` moves `data` without touching the
+	 * platform's own bookkeeping — which is what keeps a modified time meaning
+	 * something. **Nothing is lost by refusing**: the flag is down only when
+	 * every edit this reader made is already on disk, `commit` being the one door
+	 * into `data` that raises it and the only one the reader can reach.
+	 *
+	 * It also settles the close write in the same safe direction — a view holding
+	 * text staler than its file no longer overwrites it on the way out, which is
+	 * the pre-existing half of this that `docs/BACKLOG.md` records.
+	 *
+	 * The flag drops **after** `super.save()`, never before: a write that throws
+	 * leaves the edit outstanding, which is what the flag is for.
+	 */
+	async save(clear?: boolean): Promise<void> {
+		if (!this.pendingSave) return;
+		await super.save(clear);
+		this.pendingSave = false;
+	}
+
+	setViewData(data: string, clear: boolean): void {
 		this.data = data;
+		/*
+		 * **Only a new file means nothing is owed**, which is what `clear` says —
+		 * `onLoadFile` calls the platform's loader with it set, an external-change
+		 * update calls it unset. The difference is load bearing and an earlier
+		 * draft of this lowered the flag either way, which quietly broke the
+		 * platform's merge: a dirty view that has just had an external write
+		 * merged into it is handed the *merged* text through this door, still owes
+		 * a write of it, and is still `dirty` as far as the base class is
+		 * concerned. Clearing the flag there left that merge unsaveable by the
+		 * `save` below and lost it on close.
+		 */
+		if (clear) this.pendingSave = false;
 		void this.renderSheet();
 	}
 
@@ -257,6 +316,10 @@ export class SheetView extends TextFileView {
 		// reported by getViewData, and an in-flight render for the previous
 		// file must bail rather than repaint the emptied view.
 		this.data = '';
+		// And nothing is owed on the file being left. Were this to stay raised,
+		// a flush arriving after a clear would write the empty string over a
+		// note whose only fault was being open a moment ago.
+		this.pendingSave = false;
 		this.renderId++;
 		this.activeTab.clear();
 		this.openRecords.clear();
@@ -280,6 +343,81 @@ export class SheetView extends TextFileView {
 	/** Re-render from current data, e.g. after the layout file changed. */
 	refresh(): void {
 		void this.renderSheet();
+	}
+
+	/**
+	 * Write what this view holds, if it is holding an edit nobody has saved.
+	 *
+	 * **`requestSave` is a two-second debounce** — that is what `obsidian.d.ts`
+	 * calls it — so for two seconds after a reader leaves a cell, the value they
+	 * typed exists only in `this.data`. Anything that scans the vault in that
+	 * window reads a note without it, which is how a rename committed moments
+	 * after an edit found no section to migrate and reported nothing
+	 * (`docs/features/component-rename-migration.md` § Design, "Open sheets").
+	 *
+	 * **The question is this view's own dirt, never whether the file differs**,
+	 * and the two come apart in exactly one direction — the destructive one. A
+	 * note whose bytes moved because something *else* wrote it (a Markdown pane
+	 * in a split on the same note, which `view/auto-open.ts`'s per-file override
+	 * makes a supported state; Sync; another plugin; an earlier rename) differs
+	 * from `this.data` while this view has nothing to contribute. Comparing bytes
+	 * would call that a flush and write the *older* text over it, because no
+	 * vault event ever told this view it was behind. Unsaved, that write waits
+	 * for the reader's next edit or for the close; asked for on every rename, it
+	 * would be forced on a note the reader never touched.
+	 *
+	 * So the flag is also what keeps the promise the mtime check in the vault
+	 * fixture rests on: a sheet with nothing pending is not written, and there is
+	 * no read here at all.
+	 */
+	async flushSave(): Promise<void> {
+		// Straight to `save`, which owns the "only what this reader typed" rule
+		// for every caller including the debounce. Repeating the flag test here
+		// would be a second copy of a decision that has to hold in one place.
+		await this.save();
+	}
+
+	/**
+	 * Take the file's current contents as this view's, and redraw from them.
+	 *
+	 * **The other half of the flush above**, and the one the reader sees: nothing
+	 * in this folder registers a vault event, so a note rewritten underneath an
+	 * open sheet leaves `this.data` holding the text from before. `refresh()`
+	 * re-renders *from that*, which after a rename means drawing the renamed
+	 * component off a heading its own data no longer carries — a card that goes
+	 * blank with its value still in the file. Worse than the blank: `getViewData`
+	 * is what a save writes, so the next edit on that sheet, or closing it, puts
+	 * the pre-rename heading back and orphans the data for good.
+	 */
+	async reload(): Promise<void> {
+		if (!this.file) return;
+		/*
+		 * **A view holding an unsaved edit is left to the platform**, which does
+		 * this better than a reload can. `TextFileView.onload` registers
+		 * `vault.on('modify', this.onModify)` — the base class this extends owns a
+		 * vault event even though nothing in `src/view/` registers one — and on a
+		 * write to the open file it re-reads, and where the view is dirty it
+		 * three-way merges the reader's text against it (base: what the view last
+		 * saved) and says so: "…has been modified externally, merging changes
+		 * automatically."
+		 *
+		 * Overwriting `data` here instead would throw the reader's keystroke away
+		 * — a keystroke committed between the flush and this call is exactly the
+		 * window — and lower the flag that would have saved it, which is worse
+		 * than the staleness this method exists to fix and worse than doing
+		 * nothing at all. The guard on `onModify` is `this.saving || file !==
+		 * this.file`, and `flushSheets` awaits each save to completion before the
+		 * migration writes, so `saving` is false by then and the handler is
+		 * genuinely reached.
+		 *
+		 * The clean case — no unsaved edit, which is the ordinary one — still
+		 * reloads here, and that is what step 4 is for.
+		 */
+		if (this.pendingSave) return;
+		// Through `setViewData`, which is the one door the app itself uses to put
+		// text into this view, and which renders. A second way in would be a
+		// second answer to what loading a file means.
+		this.setViewData(await this.app.vault.read(this.file), false);
 	}
 
 	/**
@@ -750,6 +888,7 @@ export class SheetView extends TextFileView {
 	private commit(text: string): void {
 		if (text === this.data) return;
 		this.data = text;
+		this.pendingSave = true;
 		this.requestSave();
 		void this.renderSheet();
 	}

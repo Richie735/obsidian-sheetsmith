@@ -18,6 +18,35 @@ const FENCE_OPEN = /^```sheet[ \t]*$/;
 const FENCE_CLOSE = /^```[ \t]*$/;
 const ENTRY = /^([^:]+?)([ \t]*:[ \t]*)(.*)$/;
 
+/**
+ * Why a key cannot name an entry in a `sheet` fence, as a reason clause a
+ * caller finishes its own sentence with — or null where the key is fine.
+ *
+ * **`ENTRY` above is the whole reason**, which is why this lives here: it
+ * splits a line at the *first* colon, so a key holding one is read back as a
+ * shorter key with the rest of itself stuck to the front of the value.
+ * `Armor: class: 14` reads as `Armor` holding `class: 14`, and nothing can
+ * find `Armor: class` again afterwards. A line break ends the entry outright.
+ *
+ * One clause rather than the six copies of `/[:\r\n]/` this replaced — Card's
+ * `key`, Passport's `nameKey` and its fields, Track's rows, Roster's stats,
+ * Record set's fields — each of which stated the same rule about the same
+ * regex, two of them without the reason and two of them silently. The
+ * *subject* stays the caller's, because only the caller knows whether it is
+ * refusing a stat, a row key or a field; the rule does not vary.
+ *
+ * Read at two moments, and both are needed: a component refuses a key a
+ * hand-edited layout file carries, and the layout editor refuses one before
+ * it is committed — which matters more than it looks, because a committed key
+ * is written into every character note by the rename migration, where a
+ * colon would be propagated as damage no later edit could undo.
+ */
+export function fencedKeyProblem(key: string): string | null {
+	return /[:\r\n]/.test(key)
+		? 'cannot contain a colon or a line break, because the sheet block separates key from value with a colon'
+		: null;
+}
+
 /** Parse the `sheet` fence in a section body into keyed raw values. */
 export function readFenced(body: string): FencedResult {
 	const lines = splitLines(body);
@@ -113,6 +142,90 @@ export function fenceLines(
 	}
 	// Unclosed: everything from the opening line on is inside it.
 	return open === -1 ? null : { open, close: lines.length - 1 };
+}
+
+/**
+ * The three things a rename of one fence entry's key can do
+ * (`docs/features/component-rename-migration.md`).
+ *
+ * `'absent'` where `from` is not a key this fence holds — including a body
+ * with no fence at all, which is `readFenced`'s own "no data yet" — so there
+ * is nothing here for the caller to touch. `'collision'` where `to` already
+ * names another entry: refused rather than merged, because a fence entry has
+ * no second way to tell two values apart once they share a key. `'renamed'`
+ * is the body with only that line's key token rewritten; renaming a key to
+ * itself is `'renamed'` with the body byte-identical, never a collision
+ * against itself.
+ */
+export type FencedRenameResult =
+	| { kind: 'renamed'; body: string }
+	| { kind: 'absent' }
+	| { kind: 'collision' };
+
+/** A key's own text within an `ENTRY` capture, split off its surrounding whitespace. */
+const KEY_TEXT = /^([ \t]*)(.*?)([ \t]*)$/;
+
+/**
+ * Rename one entry's key inside a section's `sheet` fence, keeping its
+ * separator, its value and its line ending exactly as `writeFenced` already
+ * keeps a value's own spelling — only the key token itself changes.
+ *
+ * Scoped to the first `sheet` fence and its first occurrence of `from`,
+ * exactly as `readFenced` is: a second fence or a duplicate key is that
+ * function's own business to refuse, not this one's, so a malformed body is
+ * read past rather than diagnosed twice.
+ */
+export function renameFencedEntry(
+	body: string,
+	from: string,
+	to: string,
+): FencedRenameResult {
+	const lines = splitLines(body);
+
+	/*
+	 * **One walk**, which decides and locates in the same pass: the verdict
+	 * needs to see the whole fence (a `to` further down is a collision) and
+	 * the rewrite needs one line, so the walk keeps that line rather than
+	 * being run again to find it. Two walks is what this was, and they had
+	 * already drifted — one skipped a blank line and the other did not, which
+	 * only failed to matter because `ENTRY` needs a colon that a blank line
+	 * has not got.
+	 */
+	let inFence = false;
+	let sawFence = false;
+	let sawTo = false;
+	let found: { index: number; text: string; entry: RegExpExecArray } | null =
+		null;
+	for (let at = 0; at < lines.length; at++) {
+		const text = lineText(lines[at] ?? '');
+		if (!inFence) {
+			if (!sawFence && FENCE_OPEN.test(text)) {
+				inFence = true;
+				sawFence = true;
+			}
+			continue;
+		}
+		if (FENCE_CLOSE.test(text)) {
+			inFence = false;
+			continue;
+		}
+		const entry = ENTRY.exec(text);
+		if (!entry) continue;
+		const key = (entry[1] ?? '').trim();
+		if (key === from && found === null) found = { index: at, text, entry };
+		if (key === to) sawTo = true;
+	}
+
+	if (found === null) return { kind: 'absent' };
+	if (from !== to && sawTo) return { kind: 'collision' };
+
+	const { index, text, entry } = found;
+	const line = lines[index] ?? '';
+	const [, leading = '', , trailing = ''] = KEY_TEXT.exec(entry[1] ?? '') ?? [];
+	const out = lines.slice();
+	out[index] =
+		`${leading}${to}${trailing}${entry[2] ?? ''}${entry[3] ?? ''}${line.slice(text.length)}`;
+	return { kind: 'renamed', body: out.join('') };
 }
 
 /** Canonical body for a section that does not exist yet. */

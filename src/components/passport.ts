@@ -89,7 +89,12 @@
 import { setIcon } from 'obsidian';
 import { ArmRegister, armRegister, bindArmToConfirm } from '../interaction/arm-to-confirm';
 import { bindEditable } from '../interaction/editable';
-import { fenceLines, readFenced, writeFenced } from '../parse/fenced';
+import {
+	fenceLines,
+	fencedKeyProblem,
+	readFenced,
+	writeFenced,
+} from '../parse/fenced';
 import { joinParts, listParts } from '../parse/list-value';
 import { lineText, splitLines } from '../parse/lines';
 import {
@@ -263,7 +268,7 @@ function storableFields(config: PassportConfig): PassportField[] {
 	const seen = new Set<string>([nameKey(config)]);
 	for (const field of config.fields ?? []) {
 		const key = (field.key ?? '').trim();
-		if (key === '' || /[:\r\n]/.test(key)) continue;
+		if (key === '' || fencedKeyProblem(key) !== null) continue;
 		// Two fields on one key are one entry in the note, so the second would
 		// draw the first's value and overwrite it on commit.
 		if (seen.has(key)) continue;
@@ -288,7 +293,7 @@ function storableFields(config: PassportConfig): PassportField[] {
  */
 function nameKey(config: PassportConfig): string {
 	const key = (config.nameKey ?? '').trim();
-	return key === '' || /[:\r\n]/.test(key) ? DEFAULT_NAME_KEY : key;
+	return key === '' || fencedKeyProblem(key) !== null ? DEFAULT_NAME_KEY : key;
 }
 
 /**
@@ -1084,8 +1089,9 @@ export const passport: ComponentDefinition<PassportConfig, PassportData> = {
 			key: 'nameKey',
 			kind: 'text',
 			label: 'Name key',
+			addressesEntry: { fence: 'section', whenBlank: DEFAULT_NAME_KEY },
 			description:
-				'Entry name for the character\'s name in the note, e.g. "Character". Not shown on the face, and not what formulas reference — they use the component id above. Defaults to "name". Renaming it does not move a stored value: the old entry stays in the note under the old key. A field below declaring this same key is left off the face, since two controls cannot write one entry.',
+				'Entry name for the character\'s name in the note, e.g. "Character". Not shown on the face, and not what formulas reference — they use the component id above. Defaults to "name". Renaming it moves that entry in every note on this layout. A field below declaring this same key is left off the face, since two controls cannot write one entry.',
 		},
 		{
 			key: 'fields',
@@ -1101,8 +1107,9 @@ export const passport: ComponentDefinition<PassportConfig, PassportData> = {
 			// `types.ts`'s `entryFlag`, on `rowFlag`'s own precedent: a per-entry
 			// checkbox the shared list editor draws without knowing what it means.
 			entryFlag: { key: 'list', label: 'Several values' },
+			addressesEntry: { fence: 'section' },
 			description:
-				'The values shown under the name, in this order. Each key is the entry\'s name in the note; its name is what the field shows while it is empty and what a screen reader calls it. Renaming a key does not move a stored value: the old entry stays in the note under the old key. A field may say it holds several values, drawn as one chip per part and stored as one line with the parts separated by semicolons — a multiclass character\'s class field reading "Fighter 1; Bladesinger Wizard 4" where a single-class character\'s reads "Bard 5", on the same layout.',
+				'The values shown under the name, in this order. Each key is the entry\'s name in the note, and renaming one moves it in every note on this layout; its name is what the field shows while it is empty and what a screen reader calls it. A field may say it holds several values, drawn as one chip per part and stored as one line with the parts separated by semicolons — a multiclass character\'s class field reading "Fighter 1; Bladesinger Wizard 4" where a single-class character\'s reads "Bard 5", on the same layout.',
 		},
 		{
 			key: 'hidePicture',

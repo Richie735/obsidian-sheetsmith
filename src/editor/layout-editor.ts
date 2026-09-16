@@ -6,6 +6,10 @@ import {
 	TFile,
 } from 'obsidian';
 import { acceptsChildren } from './accepts-children';
+import {
+	RenameIntent,
+	reportComponentRename,
+} from '../component-rename-migration';
 import { describedRow } from './described-row';
 import { getComponent, listComponentTypes, paletteEntries } from '../components';
 import { Canvas } from './canvas';
@@ -82,6 +86,24 @@ export interface LayoutEditorHost {
 	redraw(): void;
 	/** Refresh every open sheet view, after a write to the layout file. */
 	refreshSheets(): void;
+	/**
+	 * Let every open sheet write what it is holding, before this pane rewrites
+	 * the notes underneath them.
+	 *
+	 * An open sheet's edits reach disk through a two-second debounce, so what a
+	 * vault scan reads is not what the reader has typed
+	 * (`docs/features/component-rename-migration.md` § Design, "Open sheets").
+	 * The migration is the one caller: every other write this pane makes is to
+	 * the layout file, which no sheet is the editor of.
+	 */
+	flushSheets(): Promise<void>;
+	/**
+	 * Re-read every open sheet from its file, and redraw. The pair of
+	 * `flushSheets` above, for after the notes have been rewritten: a sheet
+	 * refreshed from its own memory draws the renamed component blank and then
+	 * saves the old heading back over the migration.
+	 */
+	reloadSheets(): Promise<void>;
 }
 
 /** The two regions of the pane, and which one a thing is drawn into. */
@@ -252,7 +274,7 @@ export class LayoutEditorSection {
 		// handed the map itself, so both halves write into one map rather than two
 		// answering the same question.
 		this.panel = new ConfigPanel({
-			persist: () => void this.persist(),
+			persist: (rename) => void this.persist(true, rename),
 			redraw: () => this.redraw(),
 			redrawSchematics: () => this.canvas.redraw(),
 			// The canvas reads `layout.columns` itself on every draw, so there is
@@ -979,7 +1001,7 @@ export class LayoutEditorSection {
 	/** What the list editors in list-fields.ts need from this editor. */
 	private listContext(): ListContext {
 		return {
-			persist: () => void this.persist(),
+			persist: (rename) => void this.persist(true, rename),
 			redraw: () => this.redraw(),
 			focusAfterRedraw: (token) => {
 				this.pendingFocus = token;
@@ -1010,8 +1032,32 @@ export class LayoutEditorSection {
 	 * past nothing that changed it, and a step that did nothing is not a step
 	 * to undo. An `undo`/`redo` write skips both, because the caller already
 	 * did its own push onto the *other* stack before calling this.
+	 *
+	 * `rename` is the one thing every other caller omits: a label or a
+	 * declared-key commit's own old and new value, captured at the moment it
+	 * committed. **The layout lands first, always** — the write above is the
+	 * whole of this method's existing body, untouched by this parameter — and
+	 * the migration begins only once it has resolved
+	 * (`docs/features/component-rename-migration.md`). A layout write that
+	 * throws returns above and never reaches this, so a rename never touches a
+	 * single character note when the layout itself could not be saved.
+	 *
+	 * **Ahead of the re-render, and that ordering is correctness rather than
+	 * preference.** Nothing in `src/view/` registers a vault event *of its own* —
+	 * the base `TextFileView` does, which is what makes a dirty sheet safe to
+	 * leave alone — so a refresh run before the scan re-renders an open sheet
+	 * from text the migration has not written yet, drawing the renamed component
+	 * off a heading the layout no longer names, blank, until the reader
+	 * navigated away and back. The cost is that the render waits for the scan;
+	 * one rename gesture is one scan, because every commit here is on `change`
+	 * and never per keystroke (`field-commit.ts`).
+	 *
+	 * `layoutName` cannot be null here while `this.file` is set: the file is
+	 * only ever assigned from the picker's own `files.find` on that name, and
+	 * `persist` returns above without one. The guard is the type's, not a
+	 * reachable state, so a rename is never silently dropped by it.
 	 */
-	private async persist(record = true): Promise<void> {
+	private async persist(record = true, rename?: RenameIntent): Promise<void> {
 		if (!this.file || !this.layout) return;
 		let serialised: string;
 		try {
@@ -1035,7 +1081,58 @@ export class LayoutEditorSection {
 		// writer exactly as this does. Worse, it would read as if `this.onDisk`
 		// had been reconciled with the file when it cannot be. `layouts.ts` is
 		// the site that genuinely derives, and it converted.
-		await this.plugin.app.vault.modify(this.file, serialised);
+		/*
+		 * **Reported, not thrown.** `persist` is called as `void this.persist(…)`
+		 * from every field's commit, so a rejection here had nowhere to go: the
+		 * author was told nothing and the app got an unhandled rejection. That
+		 * was inconsistent with the branch a dozen lines up, where a layout that
+		 * will not serialise announces itself — the same failure to save, from
+		 * the author's side, reported in one case and silent in the other.
+		 *
+		 * Returning is what the rename path needs as much as the message is: the
+		 * migration must not run when the layout it is migrating *to* is not on
+		 * disk, which is this method's own first promise and Acceptance criterion
+		 * 9 in `docs/features/component-rename-migration.md`. `onDisk` is left
+		 * holding the text that was not written, which is the pre-existing
+		 * behaviour of this method and not something this guard changes.
+		 */
+		try {
+			await this.plugin.app.vault.modify(this.file, serialised);
+		} catch (error) {
+			new Notice(
+				`Sheetsmith could not save this layout: ${error instanceof Error ? error.message : String(error)}`,
+			);
+			return;
+		}
+		if (rename !== undefined && this.host.layoutName !== null) {
+			/*
+			 * **The scan is bracketed by the open sheets, and both halves are
+			 * corrections rather than care.** A sheet's own edits reach disk
+			 * through Obsidian's two-second `requestSave` debounce, and nothing
+			 * in `src/view/` registers a vault event, so without this bracket
+			 * one rename gesture produced the whole of the owner's report: the
+			 * value typed seconds earlier was still only in the view, so the
+			 * scan found no section, migrated nothing and said nothing — no
+			 * `Notice` at all — and then the pending write landed the old
+			 * heading on disk under a layout that no longer named it, leaving
+			 * the card blank with its value still in the file.
+			 *
+			 * `reloadSheets` is the return half and stands in for
+			 * `refreshSheets` on this path: it renders, and it renders from
+			 * what the migration actually wrote. Refreshing instead drew the
+			 * renamed component off the stale text — blank — and left
+			 * `getViewData` holding the pre-rename heading, so the next edit on
+			 * that sheet, or closing it, wrote the migration back out.
+			 */
+			await this.host.flushSheets();
+			await reportComponentRename(
+				this.plugin.app,
+				this.host.layoutName,
+				rename,
+			);
+			await this.host.reloadSheets();
+			return;
+		}
 		this.host.refreshSheets();
 	}
 

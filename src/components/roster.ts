@@ -48,7 +48,7 @@
 
 import { isName, referencesName } from '../formula/expression';
 import { coerceValue } from '../formula/resolve';
-import { readFenced, writeFenced } from '../parse/fenced';
+import { fencedKeyProblem, readFenced, writeFenced } from '../parse/fenced';
 import { claimRows } from '../parse/row-claims';
 import { MarkdownTable, readTable, writeTable } from '../parse/table';
 import { displayText } from '../parse/wikilink';
@@ -367,9 +367,8 @@ function configError(config: RosterConfig): string | null {
 	for (const stat of stats) {
 		const key = (stat.key ?? '').trim();
 		if (key === '') return 'Every stat needs a key.';
-		if (/[:\r\n]/.test(key)) {
-			return `The stat "${key}" cannot contain a colon or a line break.`;
-		}
+		const problem = fencedKeyProblem(key);
+		if (problem !== null) return `The stat "${key}" ${problem}.`;
 		if (statKeys.has(key.toLowerCase())) return `Two stats are both called "${key}".`;
 		statKeys.add(key.toLowerCase());
 	}
@@ -463,8 +462,14 @@ export const roster: ComponentDefinition<RosterConfig, RosterData> = {
 				{ key: 'key', heading: 'Key' },
 				{ key: 'name', heading: 'Name' },
 			],
+			addressesEntry: { fence: 'section' },
+			// The one key field that names *both* of its halves in one sentence,
+			// and only the first half migrates: the entry moves, the published
+			// name does not carry formulas with it. Said here rather than on
+			// every publishing key field, because this is the only description
+			// that would otherwise read as though both were handled.
 			description:
-				'The values the rows hang off, in the order their bands are drawn. A key names the entry in the note and the name a formula reads; renaming one does not move a stored value — the old entry stays in the note under the old key.',
+				'The values the rows hang off, in the order their bands are drawn. A key names the entry in the note and the name a formula reads; renaming one moves it in every note on this layout, and leaves any formula that read the old name to be updated by hand.',
 		},
 		{
 			key: 'derived',

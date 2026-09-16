@@ -69,7 +69,7 @@ import {
 	withCeiling,
 	withValue,
 } from '../parse/bounded-entry';
-import { readFenced, writeFenced } from '../parse/fenced';
+import { fencedKeyProblem, readFenced, writeFenced } from '../parse/fenced';
 import { bodyText, writeBodyText } from '../parse/markdown-body';
 import { cellParts, spellParts, storedParts } from '../parse/modifier-cell';
 import {
@@ -466,12 +466,10 @@ function configError(config: RecordSetConfig): string | null {
 			// the colon has nowhere to be stored.
 			return `Every field needs a key: a ${noun}'s fields are stored one per line as "key: value", so a field with no key has nowhere to be written. Give it one, or remove it.`;
 		}
-		if (/[:\r\n]/.test(key)) {
-			// A colon separates a key from its value inside the fence, so a key
-			// holding one could not be stored at all. Card's rule, and validated
-			// because the file format requires it rather than because it is tidy.
-			return `The field "${key}" cannot contain a colon or a line break, because a colon separates a key from its value in the block.`;
-		}
+		// Validated because the file format requires it, not because it is tidy:
+		// the rule and its reason are the fence's own (`parse/fenced.ts`).
+		const problem = fencedKeyProblem(key);
+		if (problem !== null) return `The field "${key}" ${problem}.`;
 		if (seen.has(key.toLowerCase())) {
 			return `Two fields are both called "${key}".`;
 		}
@@ -831,8 +829,14 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				// drawn, but the field's own name beside its value.
 				heading: 'Name',
 			},
+			// Unlike Table's and Roster's own `columns`, this one addresses a
+			// fence entry rather than a markdown-table header — and the fence is
+			// each record's own, which is why the shape is declared here and not
+			// assumed by the editor (`types.ts`, `EntryAddress`;
+			// `docs/features/component-rename-migration.md`).
+			addressesEntry: { fence: 'record' },
 			description:
-				'The typed values every record holds, each an entry in that record\'s block in the note. Text is not offered: words a reader reads belong in the record\'s body, where they may hold links. A number field with a maximum is a uses counter: the field draws that maximum beside its value, and a reset trigger restores it to that maximum. A number field\'s maximum may belong to the field, so every record shares it, or to each record, so a reader types it on the sheet — and a reset restores each record to whichever one applies.',
+				'The typed values every record holds, each an entry in that record\'s block in the note. Renaming a key moves that entry in every record, in every note on this layout. Text is not offered: words a reader reads belong in the record\'s body, where they may hold links. A number field with a maximum is a uses counter: the field draws that maximum beside its value, and a reset trigger restores it to that maximum. A number field\'s maximum may belong to the field, so every record shares it, or to each record, so a reader types it on the sheet — and a reset restores each record to whichever one applies.',
 		},
 		{
 			key: 'hideLabel',

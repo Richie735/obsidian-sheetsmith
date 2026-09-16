@@ -59,7 +59,7 @@ import {
 	openAnchoredPanelKey,
 	showAnchoredPanel,
 } from '../ui/anchored-panel';
-import { readFenced, writeFenced } from '../parse/fenced';
+import { fencedKeyProblem, readFenced, writeFenced } from '../parse/fenced';
 import { splitBounded, withCeiling, withValue } from '../parse/bounded-entry';
 import {
 	ComponentConfig,
@@ -245,9 +245,8 @@ export function configError(config: TrackConfig): string | null {
 		for (const row of config.rows ?? []) {
 			const key = (row.key ?? '').trim();
 			if (key === '') return 'Every row needs a key.';
-			if (/[:\r\n]/.test(key)) {
-				return `The row key "${key}" cannot contain a colon or a line break, because the sheet block separates key from value with a colon.`;
-			}
+			const problem = fencedKeyProblem(key);
+			if (problem !== null) return `The row key "${key}" ${problem}.`;
 			if (seen.has(key)) return `Two rows are both called "${key}".`;
 			seen.add(key);
 		}
@@ -612,8 +611,9 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 				{ key: 'key', heading: 'Key' },
 				{ key: 'name', heading: 'Name' },
 			],
+			addressesEntry: { fence: 'section' },
 			description:
-				'One run per entry, sharing a heading, a reset binding and a write. Spell slots are five first-level, three second and one third. Each key names the entry in the character note; a row with no length of its own falls back to the segment count above. A row\'s length may be the layout\'s formula or the character\'s own number, typed on the sheet — the character\'s for a die type, a slot level, or anything else whose count differs per character rather than being computed. Rows and named levels do not combine.',
+				'One run per entry, sharing a heading, a reset binding and a write. Spell slots are five first-level, three second and one third. Each key names the entry in the character note, and renaming one moves it in every note on this layout; a row with no length of its own falls back to the segment count above. A row\'s length may be the layout\'s formula or the character\'s own number, typed on the sheet — the character\'s for a die type, a slot level, or anything else whose count differs per character rather than being computed. Rows and named levels do not combine.',
 		},
 		{
 			key: 'levels',
