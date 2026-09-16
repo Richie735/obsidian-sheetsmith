@@ -1081,7 +1081,29 @@ export class LayoutEditorSection {
 		// writer exactly as this does. Worse, it would read as if `this.onDisk`
 		// had been reconciled with the file when it cannot be. `layouts.ts` is
 		// the site that genuinely derives, and it converted.
-		await this.plugin.app.vault.modify(this.file, serialised);
+		/*
+		 * **Reported, not thrown.** `persist` is called as `void this.persist(…)`
+		 * from every field's commit, so a rejection here had nowhere to go: the
+		 * author was told nothing and the app got an unhandled rejection. That
+		 * was inconsistent with the branch a dozen lines up, where a layout that
+		 * will not serialise announces itself — the same failure to save, from
+		 * the author's side, reported in one case and silent in the other.
+		 *
+		 * Returning is what the rename path needs as much as the message is: the
+		 * migration must not run when the layout it is migrating *to* is not on
+		 * disk, which is this method's own first promise and Acceptance criterion
+		 * 9 in `docs/features/component-rename-migration.md`. `onDisk` is left
+		 * holding the text that was not written, which is the pre-existing
+		 * behaviour of this method and not something this guard changes.
+		 */
+		try {
+			await this.plugin.app.vault.modify(this.file, serialised);
+		} catch (error) {
+			new Notice(
+				`Sheetsmith could not save this layout: ${error instanceof Error ? error.message : String(error)}`,
+			);
+			return;
+		}
 		if (rename !== undefined && this.host.layoutName !== null) {
 			/*
 			 * **The scan is bracketed by the open sheets, and both halves are

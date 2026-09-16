@@ -6016,6 +6016,37 @@ describe('the component rename migration', () => {
 		);
 	});
 
+	it('touches no note, and says nothing, when the layout write rejects', async () => {
+		/*
+		 * Criterion 9's own words: "a layout write that fails leaves every
+		 * character note untouched and triggers no migration attempt". A write
+		 * that *rejects* rather than one that hangs, which is the difference
+		 * between proving the guard and proving only that nothing happened yet.
+		 */
+		await harness.app.vault.create('Aramil.md', CHARACTER);
+		const scans = vi.spyOn(harness.app.vault, 'process');
+		vi.spyOn(harness.app.vault, 'modify').mockRejectedValue(
+			new Error('disk full'),
+		);
+
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'label-armour'), 'Defence');
+		await settle(harness.pane);
+
+		// No candidate was even opened, and the author is told the layout did not
+		// save rather than being told nothing at all — which is what writing this
+		// case found: the write was unwrapped, so the rejection reached no one
+		// and surfaced as an unhandled rejection in the run.
+		expect(scans).not.toHaveBeenCalled();
+		expect(Notice.messages).toEqual([
+			'Sheetsmith could not save this layout: disk full',
+		]);
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			CHARACTER,
+		);
+	});
+
 	it('fires no Notice, and touches no note, where nothing matches', async () => {
 		await harness.app.vault.create(
 			'Aramil.md',
