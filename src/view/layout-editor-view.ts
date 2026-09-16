@@ -143,11 +143,41 @@ export class LayoutEditorView extends ItemView implements LayoutEditorHost {
 	 * does it.
 	 */
 	refreshSheets(): void {
+		for (const sheet of this.openSheets()) sheet.refresh();
+	}
+
+	/**
+	 * Every open sheet writes what it holds, before the editor rewrites notes.
+	 *
+	 * Sequential rather than `Promise.all`: these are vault writes, and the
+	 * migration that follows reads every one of the same files. The count is the
+	 * number of sheets a reader has on screen.
+	 */
+	async flushSheets(): Promise<void> {
+		for (const sheet of this.openSheets()) await sheet.flushSave();
+	}
+
+	/** Every open sheet re-reads its file, after the editor rewrote notes. */
+	async reloadSheets(): Promise<void> {
+		for (const sheet of this.openSheets()) await sheet.reload();
+	}
+
+	/**
+	 * The sheets currently on screen, which is what all three hops above walk.
+	 *
+	 * One `getLeavesOfType` and one `instanceof` rather than three copies of
+	 * both: the `instanceof` is the load-bearing half — a leaf of this type can
+	 * hold a deferred view, which is not a `SheetView` and has none of these
+	 * methods.
+	 */
+	private openSheets(): SheetView[] {
+		const sheets: SheetView[] = [];
 		for (const leaf of this.plugin.app.workspace.getLeavesOfType(
 			VIEW_TYPE_SHEET,
 		)) {
-			if (leaf.view instanceof SheetView) leaf.view.refresh();
+			if (leaf.view instanceof SheetView) sheets.push(leaf.view);
 		}
+		return sheets;
 	}
 
 	/**
