@@ -1345,9 +1345,109 @@ export class View extends Component {
 
 export class ItemView extends View {}
 
-/** Only ever extended, never constructed by anything the harness renders. */
+/**
+ * Only ever extended, never constructed by anything the harness renders.
+ *
+ * **The save half is modelled, not stubbed away**, because the two facts a
+ * `TextFileView` subclass depends on are both timing facts and both invisible
+ * from inside the subclass. `requestSave` is Obsidian's own *debounced* save —
+ * its typing says "Debounced save in 2 seconds from now" — so the text a view
+ * commits is not on disk when the commit returns; and the view's `data` is the
+ * only thing `save` ever writes, so a file rewritten underneath an open view is
+ * overwritten by it. A stub whose `requestSave` wrote through synchronously
+ * would make both of those unobservable, which is how `docs/PATTERNS.md` §11's
+ * "a rendered `SheetView` needs a vault fixture" stayed a gap: the view opens
+ * fine, it is the save that had nowhere to land.
+ *
+ * `savesRequested` and `runRequestedSave` are the debounce made explicit, the
+ * same bargain `LayoutEditorView.flush` already offers the editor's own: a test
+ * decides whether the two seconds have elapsed, rather than a timer deciding
+ * for it. **Named so they cannot be mistaken for Obsidian's own members**, and
+ * so a subclass adding a flush of its own — `SheetView.flushSave` does — is
+ * overriding nothing here.
+ */
 export class TextFileView extends ItemView {
 	data = '';
+	/** The file this view is showing, which `onLoadFile` sets. */
+	file: TFile | null = null;
+	/**
+	 * How many debounced saves are outstanding — Obsidian's 2-second window,
+	 * counted rather than flagged so a test can say the view asked twice.
+	 */
+	savesRequested = 0;
+
+	/**
+	 * A property rather than a method, as in `obsidian.d.ts`, so a subclass
+	 * calling `this.requestSave()` reaches this and not an override.
+	 */
+	requestSave = (): void => {
+		this.savesRequested += 1;
+	};
+
+	/** Fire the debounce: run a requested save, if one is outstanding. */
+	async runRequestedSave(): Promise<void> {
+		if (this.savesRequested === 0) return;
+		this.savesRequested = 0;
+		await this.save();
+	}
+
+	/**
+	 * Write what the view holds, and **leave the counter alone.**
+	 *
+	 * Discharging the request here was a fiction with consequences: Obsidian
+	 * types `requestSave` as a bare `() => void` with no cancel and no
+	 * `isPending`, so calling `save()` directly does **not** call off the
+	 * debounced write already scheduled — it still fires about two seconds
+	 * later, from whatever the view holds then. A double that cleared the
+	 * counter on any save made that interleaving inexpressible, which is the
+	 * one sequence a consumer most needs to be able to write: a save landing
+	 * *between* two other vault writes. Only `runRequestedSave` and
+	 * `onUnloadFile` discharge it, because those are the two moments the app
+	 * genuinely has nothing left outstanding.
+	 */
+	async save(_clear?: boolean): Promise<void> {
+		if (!this.file) return;
+		await this.app.vault.modify(this.file, this.getViewData());
+	}
+
+	async onLoadFile(file: TFile): Promise<void> {
+		this.file = file;
+		this.setViewData(await this.app.vault.read(file), true);
+	}
+
+	/**
+	 * The app's own order on the way out: the view saves, and only then is it
+	 * cleared — which is the whole reason a stale `data` matters.
+	 *
+	 * **Unconditional, because the app's is.** `obsidian.d.ts` says "by default,
+	 * this view only saves when it's closing", so the close write is the base
+	 * behaviour and `requestSave` is the *addition* a view makes on top of it.
+	 * Conditioning this on an outstanding request instead made the double
+	 * quietly permissive in the one direction that mattered: anything that had
+	 * already called `save()` discharged the counter, so closing wrote nothing,
+	 * and a view holding text staler than the file could be closed in a test
+	 * with no consequence. That is precisely the write-back this plugin's own
+	 * reload exists to prevent, so the double was hiding the bug its consumer
+	 * was written to catch.
+	 */
+	async onUnloadFile(_file: TFile): Promise<void> {
+		this.savesRequested = 0;
+		await this.save();
+		this.clear();
+		this.file = null;
+	}
+
+	getViewData(): string {
+		return this.data;
+	}
+
+	setViewData(data: string, _clear: boolean): void {
+		this.data = data;
+	}
+
+	clear(): void {
+		this.data = '';
+	}
 }
 
 export class MarkdownView extends TextFileView {}

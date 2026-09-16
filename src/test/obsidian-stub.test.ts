@@ -7,6 +7,8 @@ import {
 	PluginSettingTab,
 	Setting,
 	SettingDefinition,
+	TextFileView,
+	TFile,
 	normalizePath,
 } from './obsidian-stub';
 
@@ -954,5 +956,118 @@ describe('the input suggester', () => {
 		suggest.close();
 		expect(() => suggest.close()).not.toThrow();
 		expect(items()).toEqual([]);
+	});
+});
+
+/*
+ * The text file view double's save contract.
+ *
+ * Driven here for this file's own reason: a stub option "declared and not
+ * honoured fails in exactly one direction, and it is the silent one". The two
+ * facts a `TextFileView` subclass actually depends on are both timing facts —
+ * `requestSave` does not write, and `save` writes what the view holds rather
+ * than what the file does — and a double that wrote through synchronously would
+ * make a plugin's own staleness bug unreachable by every test in the
+ * repository. That is not hypothetical: it is how a rename migration came to
+ * report an all-clear over a value the reader had typed seconds earlier.
+ */
+describe('the text file view double', () => {
+	class Editable extends TextFileView {
+		getViewData(): string {
+			return this.data;
+		}
+		setViewData(data: string, _clear: boolean): void {
+			this.data = data;
+		}
+		clear(): void {
+			this.data = '';
+		}
+	}
+
+	async function opened(): Promise<{ app: App; view: Editable; file: TFile }> {
+		const app = new App();
+		const file = await app.vault.create('Note.md', 'first');
+		const view = new Editable(app.workspace.getLeaf(true));
+		await view.onLoadFile(file);
+		return { app, view, file };
+	}
+
+	it('loads a file into the view', async () => {
+		const { view, file } = await opened();
+		expect(view.data).toBe('first');
+		expect(view.file).toBe(file);
+	});
+
+	it('writes nothing when a save is merely requested', async () => {
+		// Obsidian's own wording: "Debounced save in 2 seconds from now". For
+		// those two seconds the typed text exists only in the view.
+		const { app, view, file } = await opened();
+		view.data = 'second';
+		view.requestSave();
+
+		expect(view.savesRequested).toBe(1);
+		expect(await app.vault.read(file)).toBe('first');
+	});
+
+	it('writes what the view holds once the debounce runs', async () => {
+		const { app, view, file } = await opened();
+		view.data = 'second';
+		view.requestSave();
+
+		await view.runRequestedSave();
+
+		expect(await app.vault.read(file)).toBe('second');
+		expect(view.savesRequested).toBe(0);
+	});
+
+	it('runs nothing where no save was requested', async () => {
+		const { app, view, file } = await opened();
+		await app.vault.modify(file, 'changed elsewhere');
+
+		await view.runRequestedSave();
+
+		// The view holds `first` and the file does not; a double that saved
+		// unconditionally would have put it back and hidden every staleness bug.
+		expect(await app.vault.read(file)).toBe('changed elsewhere');
+	});
+
+	it('overwrites a file changed underneath it, as the app does', async () => {
+		const { app, view, file } = await opened();
+		await app.vault.modify(file, 'changed elsewhere');
+
+		await view.save();
+
+		expect(await app.vault.read(file)).toBe('first');
+	});
+
+	it('saves on the way out whether or not one was requested, then clears', async () => {
+		// Unconditional, because the app's is: "by default, this view only saves
+		// when it's closing" makes the close write the base behaviour, with
+		// `requestSave` the addition on top. The second case below is the one
+		// that matters — it is the write-back a stale view performs on close,
+		// with nothing outstanding to announce it.
+		const { app, view, file } = await opened();
+		view.data = 'second';
+		view.requestSave();
+
+		await view.onUnloadFile(file);
+
+		expect(await app.vault.read(file)).toBe('second');
+		expect(view.data).toBe('');
+		expect(view.file).toBeNull();
+	});
+
+	it('writes its own stale text over the file on close, with nothing requested', async () => {
+		// The shape of the bug a consumer needs to be able to express: the view
+		// is *behind* the file, nothing is outstanding, and closing it still puts
+		// the older text back. A double that conditioned the close write on an
+		// outstanding request called this a no-op and hid it.
+		const { app, view, file } = await opened();
+		await app.vault.modify(file, 'changed elsewhere');
+		expect(view.savesRequested).toBe(0);
+
+		await view.onUnloadFile(file);
+
+		expect(await app.vault.read(file)).toBe('first');
 	});
 });
