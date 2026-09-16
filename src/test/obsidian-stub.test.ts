@@ -367,6 +367,74 @@ describe('the vault double', () => {
 			'Portraits/Thora.png',
 		]);
 	});
+
+	it('narrows getMarkdownFiles to the .md extension', async () => {
+		const app = new App();
+		await app.vault.create('Aramil.md', '');
+		await app.vault.createFolder('Portraits');
+		await app.vault.create('Portraits/Thora.png', '');
+		expect(app.vault.getMarkdownFiles().map((f) => f.path)).toEqual([
+			'Aramil.md',
+		]);
+	});
+});
+
+describe('the metadata cache double', () => {
+	it('reads a frontmatter property off the note\u2019s own text', async () => {
+		const app = new App();
+		const file = await app.vault.create(
+			'Aramil.md',
+			'---\nsheet-layout: DnD 5e Caster\n---\n\n## Abilities\n',
+		);
+		expect(app.metadataCache.getFileCache(file)?.frontmatter).toEqual({
+			'sheet-layout': 'DnD 5e Caster',
+		});
+	});
+
+	it('strips one layer of surrounding quotes, matching extractLayoutName', async () => {
+		const app = new App();
+		const file = await app.vault.create(
+			'Aramil.md',
+			'---\nsheet-layout: "Blades: the sequel"\n---\n',
+		);
+		expect(app.metadataCache.getFileCache(file)?.frontmatter?.['sheet-layout']).toBe(
+			'Blades: the sequel',
+		);
+	});
+
+	it('answers an empty frontmatter object for a note with none', async () => {
+		const app = new App();
+		const file = await app.vault.create('Aramil.md', 'Just prose.\n');
+		expect(app.metadataCache.getFileCache(file)?.frontmatter).toBeUndefined();
+	});
+
+	it('answers a typed scalar as the string it was written as, which the app would not', async () => {
+		/*
+		 * The double's own boundary, asserted so it reads as a limit rather
+		 * than as a claim: this models `extractLayoutName` — trim, strip one
+		 * pair of quotes — and real YAML would hand back the number 12 and
+		 * the boolean false. `isPlainLayoutValue` lets the plugin write both
+		 * unquoted, so the two readers genuinely can disagree here and no
+		 * test in this repository can catch it (`docs/BACKLOG.md` §
+		 * Patterns). Every caller is written to be correct either way.
+		 */
+		const app = new App();
+		const file = await app.vault.create(
+			'Aramil.md',
+			'---\nsheet-layout: 12\nattuned: No\n---\n',
+		);
+		expect(app.metadataCache.getFileCache(file)?.frontmatter).toEqual({
+			'sheet-layout': '12',
+			attuned: 'No',
+		});
+	});
+
+	it('answers null for a file the vault does not hold', async () => {
+		const app = new App();
+		const file = await app.vault.create('Aramil.md', '---\nx: 1\n---\n');
+		await app.vault.delete(file);
+		expect(app.metadataCache.getFileCache(file)).toBeNull();
+	});
 });
 
 describe('generateMarkdownLink', () => {

@@ -1028,6 +1028,20 @@ export class Vault {
 	getFiles(): TFile[] {
 		return [...this.files.values()].map(({ file }) => file);
 	}
+
+	/**
+	 * Every markdown file, for a caller that wants character notes rather than
+	 * a vault's worth of everything — `component-rename-migration.ts`'s own
+	 * candidate scan, the first consumer of `getFiles` narrower than "all".
+	 */
+	getMarkdownFiles(): TFile[] {
+		return this.getFiles().filter((file) => file.extension === 'md');
+	}
+
+	/** A file's own text, read synchronously — `MetadataCache`'s own need. */
+	rawContent(path: string): string | null {
+		return this.files.get(path)?.content ?? null;
+	}
 }
 
 export class FileManager {
@@ -1455,12 +1469,71 @@ export class Workspace {
 	}
 }
 
+/** The frontmatter block's own delimiter lines, and one `key: value` line inside it. */
+const FRONTMATTER_BLOCK = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
+const FRONTMATTER_LINE = /^([^:]+):[ \t]*(.*)$/;
+
+/**
+ * Enough of `MetadataCache` for `getFileCache(file)?.frontmatter` — the read
+ * every caller in `src/` already uses to answer "is this a character note for
+ * this layout" (`view/auto-open.ts`, `commands.ts`,
+ * `component-rename-migration.ts`) without parsing a body that will not
+ * match.
+ *
+ * **Derived from the file's own text on every call, not maintained as a
+ * separate index.** The real cache is asynchronous and can lag a fresh
+ * write — `characters.ts`'s own header cites that race — but nothing in this
+ * plugin's test suite depends on the lag itself, only on reading back what a
+ * note's frontmatter block says, so a synchronous read off `Vault.rawContent`
+ * is the double's whole job.
+ *
+ * **What this deliberately cannot show.** A value is never coerced past a
+ * trimmed string and one layer of surrounding quotes, which is
+ * `parse/character.ts`'s own `extractLayoutName` rule — so this models the
+ * *plugin's* reader, not the app's. `isPlainLayoutValue` exists precisely
+ * because those two have to agree about one line, and a double that
+ * implements the second as a copy of the first can never fail when they
+ * disagree: real YAML gives a typed scalar back for `sheet-layout: 12`,
+ * `: No` or `: null`, all three of which this plugin writes unquoted and this
+ * double answers as the strings `'12'`, `'No'` and `'null'`. Nothing here is
+ * a claim that Obsidian agrees. Every caller is therefore written to be
+ * correct either way — `component-rename-migration.ts` treats a non-string as
+ * undecidable and lets the note's own text settle it — and the missing probe
+ * is `docs/BACKLOG.md` § Patterns, where the typed-scalar case is named.
+ */
+export class MetadataCache {
+	constructor(private readonly vault: Vault) {}
+
+	getFileCache(file: TFile): { frontmatter?: Record<string, string> } | null {
+		const content = this.vault.rawContent(file.path);
+		if (content === null) return null;
+		const match = FRONTMATTER_BLOCK.exec(content);
+		if (!match) return {};
+		const frontmatter: Record<string, string> = {};
+		for (const rawLine of (match[1] ?? '').split(/\r?\n/)) {
+			const line = FRONTMATTER_LINE.exec(rawLine);
+			if (!line) continue;
+			const key = (line[1] ?? '').trim();
+			let value = (line[2] ?? '').trim();
+			if (
+				(value.startsWith('"') && value.endsWith('"') && value.length > 1) ||
+				(value.startsWith("'") && value.endsWith("'") && value.length > 1)
+			) {
+				value = value.slice(1, -1);
+			}
+			frontmatter[key] = value;
+		}
+		return { frontmatter };
+	}
+}
+
 export class App {
 	vault = new Vault();
 	workspace = new Workspace(this);
 	// After `vault`, which it needs in order to hand out a folder in it. Field
 	// initialisers run in declaration order, so the order here is load bearing.
 	fileManager = new FileManager(this.vault);
+	metadataCache = new MetadataCache(this.vault);
 }
 
 export class Modal {
