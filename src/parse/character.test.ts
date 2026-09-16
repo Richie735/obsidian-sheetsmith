@@ -6,6 +6,7 @@ import {
 	getSection,
 	newCharacterNote,
 	parseCharacter,
+	renameSectionLabel,
 	serialiseCharacter,
 	setSectionBody,
 	startsSection,
@@ -498,5 +499,59 @@ describe('withLayoutName', () => {
 			sections: [],
 		};
 		expect(() => withLayoutName(built, 'New')).toThrow(CharacterParseError);
+	});
+});
+
+describe('renameSectionLabel', () => {
+	it('reports absent where the note has no section under that label', () => {
+		expect(renameSectionLabel(parseCharacter(SAMPLE), 'Nope', 'Nada')).toEqual({
+			kind: 'absent',
+		});
+	});
+
+	it('reports collision where a section under the target label already exists', () => {
+		expect(renameSectionLabel(parseCharacter(SAMPLE), 'Abilities', 'HP')).toEqual(
+			{ kind: 'collision' },
+		);
+	});
+
+	it('renames the heading and leaves every other byte untouched', () => {
+		const note = parseCharacter(SAMPLE);
+		const result = renameSectionLabel(note, 'Abilities', 'Ability scores');
+		expect(result.kind).toBe('renamed');
+		if (result.kind !== 'renamed') return;
+		expect(serialiseCharacter(result.note)).toBe(
+			SAMPLE.replace('## Abilities', '## Ability scores'),
+		);
+		expect(getSection(result.note, 'Ability scores')?.label).toBe(
+			'Ability scores',
+		);
+	});
+
+	it('keeps the heading’s prefix and line ending, and drops its trailing run', () => {
+		const source = '---\r\nsheet-layout: X\r\n---\r\n\r\n##   AC  \r\nbody\r\n';
+		const note = parseCharacter(source);
+		const result = renameSectionLabel(note, 'AC', 'Armor class');
+		expect(result.kind).toBe('renamed');
+		if (result.kind !== 'renamed') return;
+		/*
+		 * The two spaces after `##` are the author's and are kept; the two
+		 * after `AC` are not, because they belonged to the old name and
+		 * keeping them would put spaces after a name nobody typed them for.
+		 * `renameRecord` settled that one level down and the feature doc's
+		 * §Design now states it, so this case is where a reader checks it.
+		 */
+		expect(serialiseCharacter(result.note)).toBe(
+			'---\r\nsheet-layout: X\r\n---\r\n\r\n##   Armor class\r\nbody\r\n',
+		);
+	});
+
+	it('renaming a label to itself is a no-op renamed result, never a collision', () => {
+		const note = parseCharacter(SAMPLE);
+		const result = renameSectionLabel(note, 'Abilities', 'Abilities');
+		expect(result).toEqual({ kind: 'renamed', note });
+		expect(serialiseCharacter(result.kind === 'renamed' ? result.note : note)).toBe(
+			SAMPLE,
+		);
 	});
 });

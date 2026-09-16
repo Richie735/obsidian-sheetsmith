@@ -144,6 +144,90 @@ export function fenceLines(
 	return open === -1 ? null : { open, close: lines.length - 1 };
 }
 
+/**
+ * The three things a rename of one fence entry's key can do
+ * (`docs/features/component-rename-migration.md`).
+ *
+ * `'absent'` where `from` is not a key this fence holds — including a body
+ * with no fence at all, which is `readFenced`'s own "no data yet" — so there
+ * is nothing here for the caller to touch. `'collision'` where `to` already
+ * names another entry: refused rather than merged, because a fence entry has
+ * no second way to tell two values apart once they share a key. `'renamed'`
+ * is the body with only that line's key token rewritten; renaming a key to
+ * itself is `'renamed'` with the body byte-identical, never a collision
+ * against itself.
+ */
+export type FencedRenameResult =
+	| { kind: 'renamed'; body: string }
+	| { kind: 'absent' }
+	| { kind: 'collision' };
+
+/** A key's own text within an `ENTRY` capture, split off its surrounding whitespace. */
+const KEY_TEXT = /^([ \t]*)(.*?)([ \t]*)$/;
+
+/**
+ * Rename one entry's key inside a section's `sheet` fence, keeping its
+ * separator, its value and its line ending exactly as `writeFenced` already
+ * keeps a value's own spelling — only the key token itself changes.
+ *
+ * Scoped to the first `sheet` fence and its first occurrence of `from`,
+ * exactly as `readFenced` is: a second fence or a duplicate key is that
+ * function's own business to refuse, not this one's, so a malformed body is
+ * read past rather than diagnosed twice.
+ */
+export function renameFencedEntry(
+	body: string,
+	from: string,
+	to: string,
+): FencedRenameResult {
+	const lines = splitLines(body);
+
+	/*
+	 * **One walk**, which decides and locates in the same pass: the verdict
+	 * needs to see the whole fence (a `to` further down is a collision) and
+	 * the rewrite needs one line, so the walk keeps that line rather than
+	 * being run again to find it. Two walks is what this was, and they had
+	 * already drifted — one skipped a blank line and the other did not, which
+	 * only failed to matter because `ENTRY` needs a colon that a blank line
+	 * has not got.
+	 */
+	let inFence = false;
+	let sawFence = false;
+	let sawTo = false;
+	let found: { index: number; text: string; entry: RegExpExecArray } | null =
+		null;
+	for (let at = 0; at < lines.length; at++) {
+		const text = lineText(lines[at] ?? '');
+		if (!inFence) {
+			if (!sawFence && FENCE_OPEN.test(text)) {
+				inFence = true;
+				sawFence = true;
+			}
+			continue;
+		}
+		if (FENCE_CLOSE.test(text)) {
+			inFence = false;
+			continue;
+		}
+		const entry = ENTRY.exec(text);
+		if (!entry) continue;
+		const key = (entry[1] ?? '').trim();
+		if (key === from && found === null) found = { index: at, text, entry };
+		if (key === to) sawTo = true;
+	}
+
+	if (found === null) return { kind: 'absent' };
+	if (from !== to && sawTo) return { kind: 'collision' };
+
+	const { index, text, entry } = found;
+	const line = lines[index] ?? '';
+	const [, leading = '', , trailing = ''] = KEY_TEXT.exec(entry[1] ?? '') ?? [];
+	const out = lines.slice();
+	out[index] =
+		`${leading}${to}${trailing}${entry[2] ?? ''}${entry[3] ?? ''}${line.slice(text.length)}`;
+	return { kind: 'renamed', body: out.join('') };
+}
+
 /** Canonical body for a section that does not exist yet. */
 function freshBody(updates: ReadonlyMap<string, string | null>): string {
 	let block = '\n```sheet\n';
