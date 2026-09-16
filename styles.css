@@ -6517,12 +6517,23 @@ a.sheetsmith-undo {
 
 /* A tree row's own name: a button, so it has a tab stop and a focus ring —
    and stripped of the app's button chrome, because it is a name that answers
-   a press rather than a thing that looks pressable. One rule is enough: a
-   class is (0,1,0) and beats the app's bare `button` element rule at
-   (0,0,1). The row itself also selects (`.sheetsmith-tree-row` below,
-   `docs/PATTERNS.md` §6) — the two do not compete, because a click on the
-   name never reaches the row's own listener (`tree.ts`'s `closest` guard). */
-.sheetsmith-tree-name {
+   a press rather than a thing that looks pressable. The row itself also
+   selects (`.sheetsmith-tree-row` below, `docs/PATTERNS.md` §6) — the two do
+   not compete, because a click on the name never reaches the row's own
+   listener (`tree.ts`'s `closest` guard).
+
+   Scoped under `.sheetsmith-tree-row` rather than bare, which used to read
+   "one rule is enough: a class is (0,1,0) and beats the app's bare `button`
+   element rule at (0,0,1)" — true of a bare element selector, but Obsidian's
+   actual rule is `button:not(.clickable-icon)`, whose `:not()` argument
+   counts as a class for specificity: (0,1,1), not (0,0,1). That beat the
+   single class here on every row, which is why every tree row name carried
+   the app's own button chrome — `--interactive-normal`'s fill and
+   `--input-shadow`'s shadow — showing as a box tight around the label text
+   instead of the plain name this was meant to read as. Two classes'
+   specificity (0,2,0) is what actually clears (0,1,1); the name is always
+   inside its own row, so nesting the selector costs nothing. */
+.sheetsmith-tree-row .sheetsmith-tree-name {
 	padding: 0;
 	border: none;
 	border-radius: 0;
