@@ -325,6 +325,12 @@ export class SheetView extends TextFileView {
 		if (run !== this.renderId) return;
 
 		const focus = captureFocus(root);
+		// `root` is the scroll container (`overflow-y: auto`), and emptying it
+		// collapses its scroll height to zero — the browser clamps `scrollTop`
+		// to 0 right along with it. Captured here and reapplied once the grid
+		// is rebuilt, or every committed edit would jump the reader back to the
+		// top of the sheet mid-way through editing several fields.
+		const scrollTop = root.scrollTop;
 		// Everything a popover could be anchored to is about to be replaced.
 		// A pointer interaction dismisses it on its own, but a rebuild driven
 		// by anything else — an external edit, a layout saved in settings —
@@ -487,6 +493,7 @@ export class SheetView extends TextFileView {
 		this.renderTriggers(triggerBar, layout, prepared, env);
 
 		restoreFocus(root, focus);
+		root.scrollTop = scrollTop;
 		/*
 		 * A modifier form left over from the render before this one is handed to the
 		 * cell it belongs to while the grid is being built, which is what keeps it
