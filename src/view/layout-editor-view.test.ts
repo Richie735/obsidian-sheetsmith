@@ -127,8 +127,8 @@ describe('what the workspace remembers', () => {
 
 	it('takes the scroll back with the selection, not instead of it', async () => {
 		/*
-		 * Both keys, because both keys is every value `getEphemeralState`
-		 * produces — and the pair is what broke. The scroll used to be assigned
+		 * All three keys, because all three is every value `getEphemeralState`
+		 * produces — and the pair used to be one number, `scroll`, assigned
 		 * beside the redraw rather than through it, so it landed on a pane the
 		 * redraw had just emptied and was then overwritten when the render
 		 * resolved. A published member nothing could ever restore.
@@ -141,13 +141,46 @@ describe('what the workspace remembers', () => {
 		const app = await vault();
 		const pane = await openView(app, document.body, LayoutEditorView, fakePlugin(app));
 
-		pane.setEphemeralState({ selection: 'hit_points', scroll: 400 });
+		pane.setEphemeralState({ selection: 'hit_points', outline: 120, panel: 400 });
 		await tick();
 
 		expect(pane.getEphemeralState()).toEqual({
 			selection: 'hit_points',
-			scroll: 400,
+			outline: 120,
+			panel: 400,
 		});
+	});
+
+	it('keeps the panel scrolled where the author left it, not the pane', async () => {
+		/*
+		 * The actual bug, driven directly rather than through the ephemeral-state
+		 * round trip above: `contentEl` holds the outline and the panel side by
+		 * side and never overflows itself, so `redraw()` used to measure and
+		 * restore *its* scroll — a number that was always zero — while
+		 * `.sheetsmith-editor-outline` and `.sheetsmith-editor-panel`, the two
+		 * elements that actually scroll, were silently reset to the top on every
+		 * edit. Happy-dom does not clamp `scrollTop` to a real layout, so this
+		 * would not have caught the browser's own collapse-then-clamp (measured
+		 * against the real app instead), but it does catch the coarser mistake
+		 * underneath it: `redraw()` reading and writing the wrong element,
+		 * which is what every edit in the pane goes through.
+		 */
+		const pane = await posed(await vault());
+		const panel = pane.contentEl.querySelector<HTMLElement>(
+			'.sheetsmith-editor-panel',
+		);
+		if (!panel) throw new Error('no panel');
+		panel.scrollTop = 400;
+
+		pane.redraw();
+		await tick();
+
+		const redrawn = pane.contentEl.querySelector<HTMLElement>(
+			'.sheetsmith-editor-panel',
+		);
+		expect(redrawn).not.toBeNull();
+		expect(redrawn).not.toBe(panel);
+		expect(redrawn?.scrollTop).toBe(400);
 	});
 
 	it('takes a selection back when the ephemeral state is replayed', async () => {
