@@ -6,6 +6,10 @@ import {
 	TFile,
 } from 'obsidian';
 import { acceptsChildren } from './accepts-children';
+import {
+	RenameIntent,
+	reportComponentRename,
+} from '../component-rename-migration';
 import { describedRow } from './described-row';
 import { getComponent, listComponentTypes, paletteEntries } from '../components';
 import { Canvas } from './canvas';
@@ -252,7 +256,7 @@ export class LayoutEditorSection {
 		// handed the map itself, so both halves write into one map rather than two
 		// answering the same question.
 		this.panel = new ConfigPanel({
-			persist: () => void this.persist(),
+			persist: (rename) => void this.persist(true, rename),
 			redraw: () => this.redraw(),
 			redrawSchematics: () => this.canvas.redraw(),
 			// The canvas reads `layout.columns` itself on every draw, so there is
@@ -979,7 +983,7 @@ export class LayoutEditorSection {
 	/** What the list editors in list-fields.ts need from this editor. */
 	private listContext(): ListContext {
 		return {
-			persist: () => void this.persist(),
+			persist: (rename) => void this.persist(true, rename),
 			redraw: () => this.redraw(),
 			focusAfterRedraw: (token) => {
 				this.pendingFocus = token;
@@ -1010,8 +1014,23 @@ export class LayoutEditorSection {
 	 * past nothing that changed it, and a step that did nothing is not a step
 	 * to undo. An `undo`/`redo` write skips both, because the caller already
 	 * did its own push onto the *other* stack before calling this.
+	 *
+	 * `rename` is the one thing every other caller omits: a label or a
+	 * declared-key commit's own old and new value, captured at the moment it
+	 * committed. **The layout lands first, always** — the write above is the
+	 * whole of this method's existing body, untouched by this parameter — and
+	 * the migration begins only once it has resolved
+	 * (`docs/features/component-rename-migration.md`). A layout write that
+	 * throws returns above and never reaches this, so a rename never touches a
+	 * single character note when the layout itself could not be saved.
+	 *
+	 *
+	 * `layoutName` cannot be null here while `this.file` is set: the file is
+	 * only ever assigned from the picker's own `files.find` on that name, and
+	 * `persist` returns above without one. The guard is the type's, not a
+	 * reachable state, so a rename is never silently dropped by it.
 	 */
-	private async persist(record = true): Promise<void> {
+	private async persist(record = true, rename?: RenameIntent): Promise<void> {
 		if (!this.file || !this.layout) return;
 		let serialised: string;
 		try {
@@ -1036,6 +1055,13 @@ export class LayoutEditorSection {
 		// had been reconciled with the file when it cannot be. `layouts.ts` is
 		// the site that genuinely derives, and it converted.
 		await this.plugin.app.vault.modify(this.file, serialised);
+		if (rename !== undefined && this.host.layoutName !== null) {
+			await reportComponentRename(
+				this.plugin.app,
+				this.host.layoutName,
+				rename,
+			);
+		}
 		this.host.refreshSheets();
 	}
 

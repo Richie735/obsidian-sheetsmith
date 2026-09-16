@@ -81,6 +81,7 @@
 
 import { Setting } from 'obsidian';
 import { acceptsChildren } from './accepts-children';
+import { keyRename, RenameIntent } from '../component-rename-migration';
 import { getComponent } from '../components';
 import { placedComponentName } from './component-name';
 import { conditionMet } from './config-fields';
@@ -89,6 +90,7 @@ import {
 	ModifierTargetSource,
 } from '../formula/modifier-targets';
 import { vocabularySource } from '../formula/vocabulary';
+import { fencedKeyProblem } from '../parse/fenced';
 import { parseModifierDefinitions } from '../parse/modifier-definitions';
 import { WalkEntry, walkComponents } from '../parse/layout-walk';
 import { onCommit } from './field-commit';
@@ -157,8 +159,16 @@ function positionToken(id: string, key: keyof GridPosition): string {
  * Five are commands. The sixth is not, and it is the one that owes an argument.
  */
 export interface ConfigPanelHost {
-	/** Write the layout now. Every control on the panel ends in this. */
-	persist(): void;
+	/**
+	 * Write the layout now. Every control on the panel ends in this.
+	 *
+	 * `rename` is the Label field's own commit and nothing else in this
+	 * module: the old and new label, captured together at the moment they
+	 * committed, so the host can run the vault-wide migration once the write
+	 * lands (`docs/features/component-rename-migration.md`). Every other
+	 * caller omits it.
+	 */
+	persist(rename?: RenameIntent): void;
 	/**
 	 * Rebuild both regions from the layout as it now stands.
 	 *
@@ -544,8 +554,25 @@ export class ConfigPanel {
 
 		new Setting(form)
 			.setName('Label')
+			/*
+			 * **This field speaks for the heading and for nothing else.** It
+			 * renders for every component in the catalog, with no capability
+			 * guard, so a sentence here about "any key below" was false on
+			 * Table (whose column keys migrate nothing), on two of Roster's
+			 * three key-shaped fields, and on Pool, Group, Image and Rich
+			 * text, which have no keys at all. Worse than merely false: a
+			 * rename that matches nothing shows no `Notice`, so an author who
+			 * renamed a Table column got exactly the silence a successful
+			 * migration produces, having just been told it migrates.
+			 *
+			 * So the promise sits on the key fields that actually keep it, one
+			 * short clause each — far off the 144-character repeat a design
+			 * review measured at 186px apart on a Card set and three deep on a
+			 * Passport, which is the defect SPEC §13 records a past review
+			 * cutting.
+			 */
 			.setDesc(
-				'Also the section heading in character notes. Existing notes keep their data under the old heading; rename those headings manually.',
+				'Also the section heading in character notes. Renaming it renames that heading in every character note using this layout.',
 			)
 			.addText((text) => {
 				text.setValue(config.label);
@@ -575,8 +602,15 @@ export class ConfigPanel {
 						return;
 					}
 					this.fieldError(text.inputEl, null);
+					const from = config.label;
 					config.label = label;
-					this.host.persist();
+					// Both values are already in hand at the moment of commit,
+					// which is what `docs/features/component-rename-migration.md`
+					// asks of every trigger it hooks — an explicit rename, never
+					// one inferred later by diffing two saved configs.
+					this.host.persist(
+						from === label ? undefined : { kind: 'label', from, to: label },
+					);
 					this.host.redraw();
 				});
 			});
@@ -742,6 +776,13 @@ export class ConfigPanel {
 							// per-entry checkbox (`types.ts`, `entryFlag`) — a
 							// Passport field's `list`.
 							field.entryFlag,
+							// Where the primary column's commit addresses stored
+							// data, where it does — Card set's, Track's and
+							// Roster's `stats`, and, through the same marker,
+							// Passport's `fields`; absent for Card's own `options`,
+							// which shares this list shape but stores nothing under
+							// either column (`types.ts`, `EntryAddress`).
+							field.addressesEntry,
 						);
 					}
 				} else if (field.kind === 'rows') {
@@ -776,6 +817,11 @@ export class ConfigPanel {
 						// than every column type or refuses a flag this form would
 						// otherwise show (`types.ts`, `columnOptions`).
 						field.columnOptions,
+						// Where this column's own key addresses stored data, and
+						// in which fence — Record set's `fields` is the one
+						// `'columns'` field that declares it, and declares it as
+						// one fence per record (`types.ts`, `EntryAddress`).
+						field.addressesEntry,
 					);
 				}
 				continue;
@@ -919,11 +965,67 @@ export class ConfigPanel {
 				}
 				onCommit(text, (raw) => {
 					const trimmed = raw.trim();
+					/*
+					 * What this field held before the commit, and what the note is
+					 * therefore keyed by. **A blank field is not the absence of a
+					 * name** — the component falls back to one, `value` for a Card
+					 * and `name` for a Passport, and that fallback is what every
+					 * existing note stores under. So the first naming of a blank
+					 * key migrates off `whenBlank`, and clearing an explicit key
+					 * migrates back onto it; a field with no declared fallback
+					 * (none today, but the member is optional) still commits
+					 * nothing from or to blank.
+					 *
+					 * Only `'text'` fields ever declare an address here — Card's
+					 * `key`, Passport's `nameKey` — never a number or a formula.
+					 */
+					const address = field.addressesEntry;
+					const stored =
+						typeof record[field.key] === 'string'
+							? (record[field.key] as string)
+							: '';
+					const previous = stored !== '' ? stored : (address?.whenBlank ?? '');
 					if (trimmed === '') {
 						this.fieldError(text.inputEl, null);
 						delete record[field.key];
-						this.host.persist();
+						this.host.persist(
+							keyRename(
+								address,
+								config.label,
+								stored,
+								address?.whenBlank ?? '',
+							),
+						);
 						return;
+					}
+					/*
+					 * A key that cannot be stored is refused before it is
+					 * committed, on the fence's own rule (`parse/fenced.ts`)
+					 * rather than a second spelling of it here. **Before, not
+					 * after**: this same commit hands the rename to the
+					 * vault-wide migration, which would write a colon-bearing
+					 * key into every character note as an entry `readFenced`
+					 * misreads and `renameFencedEntry` can never find again.
+					 * Card's own `valueKey` refuses it at read time too, for a
+					 * hand-edited layout file; Passport's `nameKey` only falls
+					 * back to `name` silently, so this is the only place that
+					 * tells the author anything.
+					 *
+					 * The revert clause says what the field went back to, on
+					 * the row key's own precedent: most of these are blank,
+					 * and "left empty" has to be sayable as readily as a name.
+					 */
+					if (address !== undefined) {
+						const problem = fencedKeyProblem(trimmed);
+						if (problem !== null) {
+							const kept =
+								stored === '' ? 'left empty' : `left as "${stored}"`;
+							this.fieldError(
+								text.inputEl,
+								`A key ${problem}, so this one was ${kept}.`,
+							);
+							return;
+						}
 					}
 					if (field.kind === 'number') {
 						const parsed = Number(trimmed);
@@ -945,7 +1047,9 @@ export class ConfigPanel {
 						);
 						record[field.key] = trimmed;
 					}
-					this.host.persist();
+					this.host.persist(
+						keyRename(address, config.label, previous, trimmed),
+					);
 				});
 			});
 		}
