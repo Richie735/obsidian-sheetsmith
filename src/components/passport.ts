@@ -1089,8 +1089,9 @@ export const passport: ComponentDefinition<PassportConfig, PassportData> = {
 			key: 'nameKey',
 			kind: 'text',
 			label: 'Name key',
+			addressesEntry: { fence: 'section', whenBlank: DEFAULT_NAME_KEY },
 			description:
-				'Entry name for the character\'s name in the note, e.g. "Character". Not shown on the face, and not what formulas reference — they use the component id above. Defaults to "name". Renaming it does not move a stored value: the old entry stays in the note under the old key. A field below declaring this same key is left off the face, since two controls cannot write one entry.',
+				'Entry name for the character\'s name in the note, e.g. "Character". Not shown on the face, and not what formulas reference — they use the component id above. Defaults to "name". Renaming it moves that entry in every note on this layout. A field below declaring this same key is left off the face, since two controls cannot write one entry.',
 		},
 		{
 			key: 'fields',
@@ -1106,8 +1107,9 @@ export const passport: ComponentDefinition<PassportConfig, PassportData> = {
 			// `types.ts`'s `entryFlag`, on `rowFlag`'s own precedent: a per-entry
 			// checkbox the shared list editor draws without knowing what it means.
 			entryFlag: { key: 'list', label: 'Several values' },
+			addressesEntry: { fence: 'section' },
 			description:
-				'The values shown under the name, in this order. Each key is the entry\'s name in the note; its name is what the field shows while it is empty and what a screen reader calls it. Renaming a key does not move a stored value: the old entry stays in the note under the old key. A field may say it holds several values, drawn as one chip per part and stored as one line with the parts separated by semicolons — a multiclass character\'s class field reading "Fighter 1; Bladesinger Wizard 4" where a single-class character\'s reads "Bard 5", on the same layout.',
+				'The values shown under the name, in this order. Each key is the entry\'s name in the note, and renaming one moves it in every note on this layout; its name is what the field shows while it is empty and what a screen reader calls it. A field may say it holds several values, drawn as one chip per part and stored as one line with the parts separated by semicolons — a multiclass character\'s class field reading "Fighter 1; Bladesinger Wizard 4" where a single-class character\'s reads "Bard 5", on the same layout.',
 		},
 		{
 			key: 'hidePicture',

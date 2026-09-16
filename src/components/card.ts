@@ -176,8 +176,12 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 			key: 'key',
 			kind: 'text',
 			label: 'Key',
+			// `whenBlank` is `DEFAULT_KEY` itself rather than a second spelling of
+			// it: a blank field stores under `value`, so that is the name a
+			// rename off the default has to move in every note.
+			addressesEntry: { fence: 'section', whenBlank: DEFAULT_KEY },
 			description:
-				'Entry name for the value in the character note, e.g. "AC". Not shown on the card, and not what formulas reference — they use the component id above. Defaults to "value". Renaming it does not move a stored value; the old entry stays in the note under the old key.',
+				'Entry name for the value in the character note, e.g. "AC". Not shown on the card, and not what formulas reference — they use the component id above. Defaults to "value". Renaming it moves that entry in every note on this layout.',
 		},
 		{
 			key: 'options',

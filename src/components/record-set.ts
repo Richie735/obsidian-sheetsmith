@@ -829,8 +829,14 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				// drawn, but the field's own name beside its value.
 				heading: 'Name',
 			},
+			// Unlike Table's and Roster's own `columns`, this one addresses a
+			// fence entry rather than a markdown-table header — and the fence is
+			// each record's own, which is why the shape is declared here and not
+			// assumed by the editor (`types.ts`, `EntryAddress`;
+			// `docs/features/component-rename-migration.md`).
+			addressesEntry: { fence: 'record' },
 			description:
-				'The typed values every record holds, each an entry in that record\'s block in the note. Text is not offered: words a reader reads belong in the record\'s body, where they may hold links. A number field with a maximum is a uses counter: the field draws that maximum beside its value, and a reset trigger restores it to that maximum. A number field\'s maximum may belong to the field, so every record shares it, or to each record, so a reader types it on the sheet — and a reset restores each record to whichever one applies.',
+				'The typed values every record holds, each an entry in that record\'s block in the note. Renaming a key moves that entry in every record, in every note on this layout. Text is not offered: words a reader reads belong in the record\'s body, where they may hold links. A number field with a maximum is a uses counter: the field draws that maximum beside its value, and a reset trigger restores it to that maximum. A number field\'s maximum may belong to the field, so every record shares it, or to each record, so a reader types it on the sheet — and a reset restores each record to whichever one applies.',
 		},
 		{
 			key: 'hideLabel',

@@ -437,6 +437,59 @@ export interface ConfigFieldSpec<
 	 * every `'entries'` field before this one had no per-entry flag at all.
 	 */
 	entryFlag?: { key: string; label: string };
+	/**
+	 * That this field's own commit addresses one entry's line inside a
+	 * character's `sheet` fence, and where that fence is — Card's `key`,
+	 * Passport's `nameKey`, or, for an `'entries'` or `'track-rows'` field,
+	 * its primary column (`entryColumns[0]`); for a `'columns'` field, its
+	 * `key` column (`docs/features/component-rename-migration.md`'s Model
+	 * question).
+	 *
+	 * Absent is every other field, including a Card's own `options[].value`,
+	 * which shares this member's two list kinds but is config only — nothing
+	 * in a note is ever keyed by it — and Table's and Roster's own `columns`,
+	 * whose key is a markdown-table header rather than a fence entry. A field
+	 * declaring it is what tells the editor's commit to carry the old and new
+	 * value into the vault-wide migration.
+	 */
+	addressesEntry?: EntryAddress;
+}
+
+/**
+ * Where a field's committed name addresses a character's stored data, declared
+ * by the component that owns the storage rather than worked out by the editor.
+ *
+ * Both members exist because the editor may not know either fact. `fence`
+ * carries what was briefly hardcoded in `editor/list-fields.ts` — that a
+ * Record set's section holds one fence per `### ` record while every other
+ * keyed component holds one for the whole section — which is a fact about the
+ * component and would have made a second such component silently migrate at
+ * the wrong granularity. `resetColumns` is the established precedent for the
+ * same move (SPEC §8).
+ *
+ * `whenBlank` is what the field is worth while the author has typed nothing
+ * in it. Only a field with a real fallback key declares it — Card's `key`
+ * stores under `value` and Passport's `nameKey` under `name` — and it is the
+ * difference between a migration that fires on the first naming of a key and
+ * one that quietly does not. It is *not* `ConfigFieldSpec.default`, which
+ * `contract.test.ts` and `conditionMet` both read as "boolean and select are
+ * the only kinds with a knowable default"; widening that member would change
+ * `visibleWhen` and the palette-prefill check for a fact only this feature
+ * reads.
+ */
+export interface EntryAddress {
+	/**
+	 * Which fence the entry sits in: `'section'` for the one fence a section
+	 * holds, `'record'` for one fence per `### ` record inside it.
+	 */
+	fence: 'section' | 'record';
+	/**
+	 * The key a note is stored under while this field is blank, where the
+	 * component falls back to one. Absent where blank is not a value at all —
+	 * every list field, whose empty primary column is refused rather than
+	 * defaulted.
+	 */
+	whenBlank?: string;
 }
 
 /**

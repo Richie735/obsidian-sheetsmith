@@ -611,8 +611,9 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 				{ key: 'key', heading: 'Key' },
 				{ key: 'name', heading: 'Name' },
 			],
+			addressesEntry: { fence: 'section' },
 			description:
-				'One run per entry, sharing a heading, a reset binding and a write. Spell slots are five first-level, three second and one third. Each key names the entry in the character note; a row with no length of its own falls back to the segment count above. A row\'s length may be the layout\'s formula or the character\'s own number, typed on the sheet — the character\'s for a die type, a slot level, or anything else whose count differs per character rather than being computed. Rows and named levels do not combine.',
+				'One run per entry, sharing a heading, a reset binding and a write. Spell slots are five first-level, three second and one third. Each key names the entry in the character note, and renaming one moves it in every note on this layout; a row with no length of its own falls back to the segment count above. A row\'s length may be the layout\'s formula or the character\'s own number, typed on the sheet — the character\'s for a die type, a slot level, or anything else whose count differs per character rather than being computed. Rows and named levels do not combine.',
 		},
 		{
 			key: 'levels',
