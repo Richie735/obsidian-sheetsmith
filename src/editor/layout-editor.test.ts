@@ -2378,6 +2378,43 @@ describe('the tree', () => {
 		expect(has(harness, 'cfg-abilities-direction')).toBe(true);
 	});
 
+	it('selects from anywhere on the row, not only the name', async () => {
+		// The whole card is the hit target (docs/PATTERNS.md §6) — a press on
+		// its description line, well away from the name button, still opens
+		// the component.
+		const description = treeRow(harness, 'edit-abilities').querySelector(
+			'.setting-item-description',
+		);
+		if (!description) throw new Error('row has no description to press');
+		description.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		await settle(harness.pane);
+
+		// A rebuild replaces the row, so it is re-read rather than reused
+		// (the same staleness `writes`' own comment warns against).
+		expect(
+			treeRow(harness, 'edit-abilities').classList.contains(
+				'sheetsmith-preview-editing',
+			),
+		).toBe(true);
+		expect(has(harness, 'cfg-abilities-direction')).toBe(true);
+	});
+
+	it('does not select a row for a press on its own icon buttons', async () => {
+		// Real controls own their own presses (PATTERNS §6): reordering
+		// `Abilities` from a row that is not selected must not also select it
+		// as a side effect of the button's click bubbling to the row.
+		expect(has(harness, 'cfg-abilities-direction')).toBe(false);
+		control(harness, 'tree-down-abilities').click();
+		await settle(harness.pane);
+
+		expect(has(harness, 'cfg-abilities-direction')).toBe(false);
+		expect(
+			treeRow(harness, `edit-${SHEET_DESTINATION}`).classList.contains(
+				'sheetsmith-preview-editing',
+			),
+		).toBe(true);
+	});
+
 	it('keeps the selection when the selected row is pressed again', async () => {
 		// Deselecting to nowhere would leave the panel empty, and nothing is the
 		// wrong thing to configure. The `Layout` row is the way back out.

@@ -6515,11 +6515,13 @@ a.sheetsmith-undo {
 	text-align: center;
 }
 
-/* A tree row's own control: its name is what selects it. A button rather than
-   a click handler on the row, so it has a tab stop and a focus ring — and
-   stripped of the app's button chrome, because it is a name that answers a
-   press rather than a thing that looks pressable. One rule is enough: a class
-   is (0,1,0) and beats the app's bare `button` element rule at (0,0,1). */
+/* A tree row's own name: a button, so it has a tab stop and a focus ring —
+   and stripped of the app's button chrome, because it is a name that answers
+   a press rather than a thing that looks pressable. One rule is enough: a
+   class is (0,1,0) and beats the app's bare `button` element rule at
+   (0,0,1). The row itself also selects (`.sheetsmith-tree-row` below,
+   `docs/PATTERNS.md` §6) — the two do not compete, because a click on the
+   name never reaches the row's own listener (`tree.ts`'s `closest` guard). */
 .sheetsmith-tree-name {
 	padding: 0;
 	border: none;
@@ -6534,6 +6536,20 @@ a.sheetsmith-undo {
 
 .sheetsmith-tree-name:hover {
 	color: var(--text-accent);
+}
+
+/* The whole row, not just the name, answers a press (`docs/PATTERNS.md` §6).
+   No hover fill where a drag is over the row already claims one
+   (`.sheetsmith-tree-drop-valid`, immediately below) or where the row is
+   already the selection (`.sheetsmith-preview-editing` owns that ring) —
+   this is only the cue for "press here" on a row neither state has spoken
+   for yet. */
+.sheetsmith-tree-row {
+	cursor: pointer;
+}
+
+.sheetsmith-tree-row:hover:not(.sheetsmith-tree-drop-valid):not(.sheetsmith-preview-editing) {
+	background-color: var(--background-modifier-hover);
 }
 
 /* A tree row a drag is currently over, and the drop would succeed
