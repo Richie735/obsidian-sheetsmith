@@ -59,7 +59,7 @@ import {
 	openAnchoredPanelKey,
 	showAnchoredPanel,
 } from '../ui/anchored-panel';
-import { readFenced, writeFenced } from '../parse/fenced';
+import { fencedKeyProblem, readFenced, writeFenced } from '../parse/fenced';
 import { splitBounded, withCeiling, withValue } from '../parse/bounded-entry';
 import {
 	ComponentConfig,
@@ -245,9 +245,8 @@ export function configError(config: TrackConfig): string | null {
 		for (const row of config.rows ?? []) {
 			const key = (row.key ?? '').trim();
 			if (key === '') return 'Every row needs a key.';
-			if (/[:\r\n]/.test(key)) {
-				return `The row key "${key}" cannot contain a colon or a line break, because the sheet block separates key from value with a colon.`;
-			}
+			const problem = fencedKeyProblem(key);
+			if (problem !== null) return `The row key "${key}" ${problem}.`;
 			if (seen.has(key)) return `Two rows are both called "${key}".`;
 			seen.add(key);
 		}

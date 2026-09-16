@@ -48,7 +48,7 @@
 
 import { isName, referencesName } from '../formula/expression';
 import { coerceValue } from '../formula/resolve';
-import { readFenced, writeFenced } from '../parse/fenced';
+import { fencedKeyProblem, readFenced, writeFenced } from '../parse/fenced';
 import { claimRows } from '../parse/row-claims';
 import { MarkdownTable, readTable, writeTable } from '../parse/table';
 import { displayText } from '../parse/wikilink';
@@ -367,9 +367,8 @@ function configError(config: RosterConfig): string | null {
 	for (const stat of stats) {
 		const key = (stat.key ?? '').trim();
 		if (key === '') return 'Every stat needs a key.';
-		if (/[:\r\n]/.test(key)) {
-			return `The stat "${key}" cannot contain a colon or a line break.`;
-		}
+		const problem = fencedKeyProblem(key);
+		if (problem !== null) return `The stat "${key}" ${problem}.`;
 		if (statKeys.has(key.toLowerCase())) return `Two stats are both called "${key}".`;
 		statKeys.add(key.toLowerCase());
 	}

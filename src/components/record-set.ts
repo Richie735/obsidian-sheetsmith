@@ -69,7 +69,7 @@ import {
 	withCeiling,
 	withValue,
 } from '../parse/bounded-entry';
-import { readFenced, writeFenced } from '../parse/fenced';
+import { fencedKeyProblem, readFenced, writeFenced } from '../parse/fenced';
 import { bodyText, writeBodyText } from '../parse/markdown-body';
 import { cellParts, spellParts, storedParts } from '../parse/modifier-cell';
 import {
@@ -466,12 +466,10 @@ function configError(config: RecordSetConfig): string | null {
 			// the colon has nowhere to be stored.
 			return `Every field needs a key: a ${noun}'s fields are stored one per line as "key: value", so a field with no key has nowhere to be written. Give it one, or remove it.`;
 		}
-		if (/[:\r\n]/.test(key)) {
-			// A colon separates a key from its value inside the fence, so a key
-			// holding one could not be stored at all. Card's rule, and validated
-			// because the file format requires it rather than because it is tidy.
-			return `The field "${key}" cannot contain a colon or a line break, because a colon separates a key from its value in the block.`;
-		}
+		// Validated because the file format requires it, not because it is tidy:
+		// the rule and its reason are the fence's own (`parse/fenced.ts`).
+		const problem = fencedKeyProblem(key);
+		if (problem !== null) return `The field "${key}" ${problem}.`;
 		if (seen.has(key.toLowerCase())) {
 			return `Two fields are both called "${key}".`;
 		}

@@ -18,6 +18,35 @@ const FENCE_OPEN = /^```sheet[ \t]*$/;
 const FENCE_CLOSE = /^```[ \t]*$/;
 const ENTRY = /^([^:]+?)([ \t]*:[ \t]*)(.*)$/;
 
+/**
+ * Why a key cannot name an entry in a `sheet` fence, as a reason clause a
+ * caller finishes its own sentence with — or null where the key is fine.
+ *
+ * **`ENTRY` above is the whole reason**, which is why this lives here: it
+ * splits a line at the *first* colon, so a key holding one is read back as a
+ * shorter key with the rest of itself stuck to the front of the value.
+ * `Armor: class: 14` reads as `Armor` holding `class: 14`, and nothing can
+ * find `Armor: class` again afterwards. A line break ends the entry outright.
+ *
+ * One clause rather than the six copies of `/[:\r\n]/` this replaced — Card's
+ * `key`, Passport's `nameKey` and its fields, Track's rows, Roster's stats,
+ * Record set's fields — each of which stated the same rule about the same
+ * regex, two of them without the reason and two of them silently. The
+ * *subject* stays the caller's, because only the caller knows whether it is
+ * refusing a stat, a row key or a field; the rule does not vary.
+ *
+ * Read at two moments, and both are needed: a component refuses a key a
+ * hand-edited layout file carries, and the layout editor refuses one before
+ * it is committed — which matters more than it looks, because a committed key
+ * is written into every character note by the rename migration, where a
+ * colon would be propagated as damage no later edit could undo.
+ */
+export function fencedKeyProblem(key: string): string | null {
+	return /[:\r\n]/.test(key)
+		? 'cannot contain a colon or a line break, because the sheet block separates key from value with a colon'
+		: null;
+}
+
 /** Parse the `sheet` fence in a section body into keyed raw values. */
 export function readFenced(body: string): FencedResult {
 	const lines = splitLines(body);

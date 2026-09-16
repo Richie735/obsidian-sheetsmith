@@ -89,7 +89,12 @@
 import { setIcon } from 'obsidian';
 import { ArmRegister, armRegister, bindArmToConfirm } from '../interaction/arm-to-confirm';
 import { bindEditable } from '../interaction/editable';
-import { fenceLines, readFenced, writeFenced } from '../parse/fenced';
+import {
+	fenceLines,
+	fencedKeyProblem,
+	readFenced,
+	writeFenced,
+} from '../parse/fenced';
 import { joinParts, listParts } from '../parse/list-value';
 import { lineText, splitLines } from '../parse/lines';
 import {
@@ -263,7 +268,7 @@ function storableFields(config: PassportConfig): PassportField[] {
 	const seen = new Set<string>([nameKey(config)]);
 	for (const field of config.fields ?? []) {
 		const key = (field.key ?? '').trim();
-		if (key === '' || /[:\r\n]/.test(key)) continue;
+		if (key === '' || fencedKeyProblem(key) !== null) continue;
 		// Two fields on one key are one entry in the note, so the second would
 		// draw the first's value and overwrite it on commit.
 		if (seen.has(key)) continue;
@@ -288,7 +293,7 @@ function storableFields(config: PassportConfig): PassportField[] {
  */
 function nameKey(config: PassportConfig): string {
 	const key = (config.nameKey ?? '').trim();
-	return key === '' || /[:\r\n]/.test(key) ? DEFAULT_NAME_KEY : key;
+	return key === '' || fencedKeyProblem(key) !== null ? DEFAULT_NAME_KEY : key;
 }
 
 /**

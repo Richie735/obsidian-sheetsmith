@@ -19,7 +19,7 @@
  */
 
 import { referencesName } from '../formula/expression';
-import { readFenced, writeFenced } from '../parse/fenced';
+import { fencedKeyProblem, readFenced, writeFenced } from '../parse/fenced';
 import {
 	ComponentConfig,
 	ComponentDefinition,
@@ -102,11 +102,8 @@ export interface CardData {
 function valueKey(config: CardConfig): { key: string } | { error: string } {
 	const key = (config.key ?? '').trim();
 	if (key === '') return { key: DEFAULT_KEY };
-	if (/[:\r\n]/.test(key)) {
-		return {
-			error: 'The key cannot contain a colon or a line break, because the sheet block separates key from value with a colon.',
-		};
-	}
+	const problem = fencedKeyProblem(key);
+	if (problem !== null) return { error: `The key ${problem}.` };
 	if (key === NOTE_KEY) {
 		return { error: `The key "${NOTE_KEY}" is reserved for the note line.` };
 	}
