@@ -223,6 +223,33 @@ describe('whether the sheet may write', () => {
 		expect(await app.vault.read(file!)).toBe(`${NOTE}\n## Migrated\n`);
 	});
 
+	it('leaves a view holding an unsaved edit alone rather than reloading over it', async () => {
+		/*
+		 * The platform's own `vault.on('modify')` handler merges an external write
+		 * into a dirty view and says so. Reloading over it would discard the
+		 * reader's keystroke and lower the flag that would have saved it, so
+		 * `reload` declines and lets that handler run.
+		 *
+		 * **What this can assert and what it cannot.** The double models no
+		 * `onload`, no `onModify` and no `lastSavedData`, so the merge itself is
+		 * not observable here — only that this view does not destroy the state the
+		 * merge needs: the reader's text still in `data`, and the flag still up.
+		 * That gap is `docs/BACKLOG.md`'s probe row, not something to fake.
+		 */
+		const { app, view, file } = await sheetOn(NOTE);
+		(view as unknown as { commit(text: string): void }).commit(
+			`${NOTE}\n## Typed by the reader\n`,
+		);
+		await app.vault.modify(file!, `${NOTE}\n## Written elsewhere\n`);
+
+		await view.reload();
+
+		expect(view.getViewData()).toBe(`${NOTE}\n## Typed by the reader\n`);
+		// And it is still owed, so the platform's merge can still be written.
+		await view.save();
+		expect(await app.vault.read(file!)).toBe(`${NOTE}\n## Typed by the reader\n`);
+	});
+
 	it('reloads a view that holds nothing of the reader’s, which is step 4’s case', async () => {
 		const { app, view, file } = await sheetOn(NOTE);
 		await app.vault.modify(file!, `${NOTE}\n## Migrated\n`);
@@ -230,6 +257,27 @@ describe('whether the sheet may write', () => {
 		await view.reload();
 
 		expect(view.getViewData()).toBe(`${NOTE}\n## Migrated\n`);
+	});
+
+	it('keeps owing a write when text arrives for the same file, and stops when a new one opens', async () => {
+		// `clear` is the difference, and it is the platform's own signal: set for
+		// `onLoadFile`, unset for an external-change update. A merge arrives
+		// through the unset door carrying the reader's edit, so the flag has to
+		// survive it.
+		const { app, view, file } = await sheetOn(NOTE);
+		(view as unknown as { commit(text: string): void }).commit(
+			`${NOTE}\n## Mine\n`,
+		);
+
+		view.setViewData(`${NOTE}\n## Merged\n`, false);
+		await view.save();
+		expect(await app.vault.read(file!)).toBe(`${NOTE}\n## Merged\n`);
+
+		// A different file, which owes nothing.
+		view.setViewData(`${NOTE}\n## Another note\n`, true);
+		const writes = vi.spyOn(app.vault, 'modify');
+		await view.save();
+		expect(writes).not.toHaveBeenCalled();
 	});
 
 	it('keeps owing a write when one failed', async () => {

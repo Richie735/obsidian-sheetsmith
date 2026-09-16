@@ -294,11 +294,20 @@ export class SheetView extends TextFileView {
 		this.pendingSave = false;
 	}
 
-	setViewData(data: string, _clear: boolean): void {
+	setViewData(data: string, clear: boolean): void {
 		this.data = data;
-		// This text came *from* the file, so there is nothing of the reader's
-		// left to write. Only `commit` raises the flag.
-		this.pendingSave = false;
+		/*
+		 * **Only a new file means nothing is owed**, which is what `clear` says —
+		 * `onLoadFile` calls the platform's loader with it set, an external-change
+		 * update calls it unset. The difference is load bearing and an earlier
+		 * draft of this lowered the flag either way, which quietly broke the
+		 * platform's merge: a dirty view that has just had an external write
+		 * merged into it is handed the *merged* text through this door, still owes
+		 * a write of it, and is still `dirty` as far as the base class is
+		 * concerned. Clearing the flag there left that merge unsaveable by the
+		 * `save` below and lost it on close.
+		 */
+		if (clear) this.pendingSave = false;
 		void this.renderSheet();
 	}
 
@@ -382,6 +391,29 @@ export class SheetView extends TextFileView {
 	 */
 	async reload(): Promise<void> {
 		if (!this.file) return;
+		/*
+		 * **A view holding an unsaved edit is left to the platform**, which does
+		 * this better than a reload can. `TextFileView.onload` registers
+		 * `vault.on('modify', this.onModify)` — the base class this extends owns a
+		 * vault event even though nothing in `src/view/` registers one — and on a
+		 * write to the open file it re-reads, and where the view is dirty it
+		 * three-way merges the reader's text against it (base: what the view last
+		 * saved) and says so: "…has been modified externally, merging changes
+		 * automatically."
+		 *
+		 * Overwriting `data` here instead would throw the reader's keystroke away
+		 * — a keystroke committed between the flush and this call is exactly the
+		 * window — and lower the flag that would have saved it, which is worse
+		 * than the staleness this method exists to fix and worse than doing
+		 * nothing at all. The guard on `onModify` is `this.saving || file !==
+		 * this.file`, and `flushSheets` awaits each save to completion before the
+		 * migration writes, so `saving` is false by then and the handler is
+		 * genuinely reached.
+		 *
+		 * The clean case — no unsaved edit, which is the ordinary one — still
+		 * reloads here, and that is what step 4 is for.
+		 */
+		if (this.pendingSave) return;
 		// Through `setViewData`, which is the one door the app itself uses to put
 		// text into this view, and which renders. A second way in would be a
 		// second answer to what loading a file means.
