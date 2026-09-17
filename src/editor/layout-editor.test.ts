@@ -6351,3 +6351,126 @@ describe('the component rename migration', () => {
 		);
 	});
 });
+
+/*
+ * The Layout panel's promoted fields (SPEC §9), at the seam only the pane has.
+ *
+ * **What is here is what needs the pane.** The field's own cases — the picker's
+ * options, the two error surfaces, the empty state, the count, the confirmation
+ * and the two write rules — are `promoted-fields-field.test.ts`'s, under
+ * `docs/PATTERNS.md` §10's rule about a module with its own entry point and its
+ * own reportable output. What stays is that the panel draws the field at all,
+ * that a *real* layout's published set reaches the picker, and that an edit
+ * reaches the file on disk.
+ */
+describe('a layout with promoted fields', () => {
+	let harness: Harness;
+
+	/**
+	 * An armour class and a pool, with whatever the case lists.
+	 *
+	 * **`promoting` beside `modifying` above**, which is what keeps the
+	 * inflection unambiguous in this file: that one builds a layout with modifier
+	 * definitions, this one a layout with promoted fields, and the two senses of
+	 * the word have a helper each rather than sharing a name. The spec's rule
+	 * forbids the bare `promote`, `promoted`, `promotion` and `promoteFlow`;
+	 * neither of these is one.
+	 */
+	function promoting(promotedFields?: readonly unknown[]): Layout {
+		return {
+			name: 'Promoting sheet',
+			columns: 12,
+			components: [
+				{
+					id: 'armour_class',
+					type: 'card',
+					label: 'Armour class',
+					position: { col: 1, row: 1, width: 2, height: 1 },
+				} as ComponentConfig,
+				{
+					id: 'hp',
+					type: 'pool',
+					label: 'Hit points',
+					position: { col: 3, row: 1, width: 2, height: 1 },
+					max: '10',
+				} as unknown as ComponentConfig,
+			],
+			// Absent rather than empty where a case promotes nothing, which is
+			// what a layout that never wanted the key actually holds — and what
+			// the sheet's own pass is gated on.
+			...(promotedFields ? { promotedFields } : {}),
+		} as unknown as Layout;
+	}
+
+	async function openLayoutPanel(layout: Layout) {
+		harness = await open(layout);
+		control(harness, `edit-${SHEET_DESTINATION}`).click();
+		await settle(harness.pane);
+	}
+
+	const said = (): string =>
+		harness.container.querySelector('.sheetsmith-editor-panel')?.textContent ??
+		'';
+
+	it('draws the list in the Layout panel, after the modifiers', async () => {
+		// Last because it reads *from* everything above it: a promoted value may
+		// be a formula calling the library and a number a modifier changed.
+		await openLayoutPanel(promoting([{ name: 'armour_class', property: 'ac' }]));
+		expect(said()).toContain('Promoted fields');
+		expect(said().indexOf('Modifiers')).toBeLessThan(
+			said().indexOf('Promoted fields'),
+		);
+		expect(has(harness, 'promoted-field-0-value')).toBe(true);
+	});
+
+	it('offers a real layout’s published names to the Value picker', async () => {
+		/*
+		 * Through the same assembly the sheet's own write reads, which is what
+		 * stops the picker offering a name no render could resolve — and what
+		 * `promotableNames` exists for: every published name plus the suffix
+		 * forms each one answers to.
+		 */
+		await openLayoutPanel(promoting([{ name: 'armour_class', property: 'ac' }]));
+		const picker = control<HTMLSelectElement>(harness, 'promoted-field-0-value');
+		expect(Array.from(picker.options).map((one) => one.value)).toEqual([
+			'',
+			'armour_class',
+			'armour_class.value',
+			'hp',
+			'hp.value',
+			'hp.max',
+			'hp.max.value',
+		]);
+		expect(picker.value).toBe('armour_class');
+	});
+
+	it('writes a chosen value and a typed property to the file', async () => {
+		await openLayoutPanel(promoting([{}]));
+		choose(control<HTMLSelectElement>(harness, 'promoted-field-0-value'), 'hp.max');
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'promoted-field-0-property'), 'hp_max');
+		await settle(harness.pane);
+		expect((await harness.stored()).promotedFields).toEqual([
+			{ name: 'hp.max', property: 'hp_max' },
+		]);
+	});
+
+	it('does not write the key into a layout that was only opened', async () => {
+		// The off-by-default promise reaching the file: a pane that merely drew
+		// the field must not make every character note's render read frontmatter.
+		await openLayoutPanel(promoting());
+		expect('promotedFields' in (await harness.stored())).toBe(false);
+	});
+
+	it('keeps an inline refusal across the rebuild a commit causes', async () => {
+		// The pane's own errors map is what carries it, which is the half no
+		// field-level case can drive.
+		await openLayoutPanel(promoting([{ name: 'armour_class', property: 'ac' }]));
+		type(control<HTMLInputElement>(harness, 'promoted-field-0-property'), 'sheet-layout');
+		await settle(harness.pane);
+		expect(said()).toContain("is this plugin's own property");
+		expect((await harness.stored()).promotedFields).toEqual([
+			{ name: 'armour_class', property: 'ac' },
+		]);
+	});
+});

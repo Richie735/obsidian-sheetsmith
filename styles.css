@@ -8057,6 +8057,41 @@ a.sheetsmith-undo {
 	--sheetsmith-list-fields: 1;
 }
 
+/* A row carrying an inline message aligns to the top instead of the middle.
+   A message is a third child of the `.sheetsmith-field` it belongs to, so that
+   cell grows while the other cells do not — and `align-items: center` on the
+   row then recentres them against the taller one, measured at 16px, which drops
+   the Property input, the drag handle and the trash below the Value select they
+   belong to. Top alignment puts the whole row's controls back on one baseline
+   and lines the trash up with the control it acts on rather than with the
+   sentence underneath it.
+
+   Scoped to this list rather than to `.sheetsmith-entry-row` pane-wide: the
+   other three lists have the same geometry and the same latent shift, and
+   moving every marked row in the pane is a wider visual change than this is —
+   `docs/BACKLOG.md` § UI holds it. The class is set by
+   `promoted-fields-field.ts`, recomputed from what the row holds, because a
+   `:has()` on the row is what `field-error.ts` already argues against. Column
+   tracks are untouched, so the 2:1 ratio below is unaffected. */
+.sheetsmith-list-promoted-fields .sheetsmith-entry-row-marked {
+	align-items: start;
+}
+
+/* The promoted-field list has two fields on its entry row and no detail line,
+   and they do not split it evenly: the Value picker carries authored labels —
+   `Abilities · DEX · stored`, as long as a component's own name plus two words
+   — where the Property beside it is a short frontmatter key somebody typed.
+   An even split is what the shared rule above would give, so the tracks are
+   written out here rather than through --sheetsmith-list-fields, which can only
+   say how many there are. Below that rule in the cascade, which is load bearing:
+   the two selectors are equal weight. */
+.sheetsmith-list-promoted-fields .sheetsmith-entry-columns,
+.sheetsmith-list-promoted-fields .sheetsmith-entry-row {
+	grid-template-columns:
+		minmax(0, 2fr) minmax(0, 1fr)
+		repeat(3, min-content);
+}
+
 .sheetsmith-entry-row > select {
 	width: 100%;
 }
