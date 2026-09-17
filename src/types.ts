@@ -1091,6 +1091,40 @@ export interface ModifierDefinitionView extends ModifierDefinition {
 }
 
 /**
+ * One value a layout mirrors into each character's frontmatter (SPEC §9).
+ *
+ * **Layout data, and not a component's.** No `ComponentConfig` gains a key and no
+ * component learns that it is promoted: the destination is a vault-global property
+ * namespace, so the decision is about the destination rather than about any one
+ * source, and `SPEC` §3.2 keeps the list in the layout file. A per-component flag
+ * could not carry an author-named key for `abilities.DEX` at all
+ * (`docs/features/promoted-fields.md`).
+ *
+ * **Two strings and nothing else, because a promoted field names a value and
+ * never an expression.** A formula here would be a second formula surface with no
+ * card to report its errors on; the answer to "I want something computed
+ * promoted" is to put it on a card, which is also how its author sees it.
+ */
+export interface PromotedField {
+	/**
+	 * A published name, exactly as a formula would write it — including the
+	 * `.value` and `.left` forms, which is what lets the author rather than the
+	 * plugin choose a Track's projection.
+	 */
+	name: string;
+	/**
+	 * The frontmatter property the value is written under.
+	 *
+	 * **Named by the author and never derived from the name above**, which is the
+	 * mechanism the whole feature rests on: Obsidian gives every property of one
+	 * name the same type everywhere in a vault, so the collision is the author's
+	 * to own — and nothing has to invent a key for `slots.L1.count`, in a format
+	 * with no object property type to nest one in.
+	 */
+	property: string;
+}
+
+/**
  * One part of one row's modifier cell (SPEC §5).
  *
  * **A push is one part, as raw text.** The row says what its cell says and hands

@@ -3,9 +3,11 @@ import {
 	acceptingTargets,
 	modifierTargetSource,
 	ModifierTargetSource,
+	publishedSuffixes,
 } from './modifier-targets';
-import { publishedComponent } from './sheet';
+import { buildSheetScope, publishedComponent } from './sheet';
 import { table, TableConfig } from '../components/table';
+import { ScopeEntry } from '../types';
 
 /*
  * Which published names accept a modifier (SPEC §5, §7).
@@ -187,5 +189,68 @@ describe('the accepting set belongs to the layout, not to a character', () => {
 		expect(table.read(broken, items).ok).toBe(false);
 		expect(fromNote(broken)).toEqual([]);
 		expect(names(modifierTargetSource(items, table))).toEqual(STATIC);
+	});
+});
+
+/*
+ * That the suffix set four surfaces now read is the set the sheet registers.
+ *
+ * `publishedSuffixes` is a *policy* extracted on `PATTERNS.md` §1's one-step
+ * tier — the shared thing is a set, so the only thing a test over the old copies
+ * could have asserted is that they still agreed. What is worth asserting instead
+ * is the thing none of them could check: that the set matches what
+ * `buildSheetScope` actually puts in the name table. A suffix offered by a picker
+ * and registered by nothing is a promoted field that silently never writes; a
+ * suffix registered and offered nowhere is a name no author can find.
+ *
+ * Driven over a synthetic `ScopeEntry` rather than a component, because the
+ * claim is about the member and not about who sets it.
+ */
+describe('the suffixes an entry publishes', () => {
+	/** The name table, over one component publishing `x` as this entry. */
+	const scopeOf = (entry: ScopeEntry) =>
+		buildSheetScope([
+			publishedComponent({
+				config: {
+					id: 'x',
+					type: 'card',
+					label: 'X',
+					position: { col: 1, row: 1, width: 1, height: 1 },
+				},
+				component: { scopeValues: () => ({ self: entry }) } as never,
+				data: null,
+				error: null,
+			}),
+		]);
+
+	/** Every suffix the sheet actually answers to under `x`. */
+	const registered = (entry: ScopeEntry): string[] => {
+		const scope = scopeOf(entry);
+		// A closed candidate list rather than the function's own answer, so this
+		// cannot pass by agreeing with itself: `total` and `max` are plausible
+		// suffixes nothing registers, and `.left` is the one that varies.
+		return ['value', 'left', 'total', 'max'].filter(
+			(suffix) => scope(`x.${suffix}`) !== undefined,
+		);
+	};
+
+	it('is the stored value alone for an entry with no ceiling', () => {
+		const entry: ScopeEntry = { value: 5 };
+		expect(publishedSuffixes(entry)).toEqual(['value']);
+		expect(registered(entry)).toEqual(['value']);
+	});
+
+	it('gains the remainder for an entry that sets one', () => {
+		const entry: ScopeEntry = { value: 5, left: () => 3 };
+		expect(publishedSuffixes(entry)).toEqual(['value', 'left']);
+		expect(registered(entry)).toEqual(['value', 'left']);
+	});
+
+	it('offers no suffix the sheet does not register', () => {
+		for (const entry of [{ value: 5 }, { value: 5, left: () => 3 }]) {
+			expect(registered(entry as ScopeEntry)).toEqual([
+				...publishedSuffixes(entry as ScopeEntry),
+			]);
+		}
 	});
 });
