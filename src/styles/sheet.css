@@ -19,7 +19,27 @@
 
 .sheetsmith-grid {
 	display: grid;
-	grid-template-columns: repeat(var(--sheetsmith-columns, 12), 1fr);
+	/* Every column exactly 1/N of the grid, whatever is in it. `minmax(0, 1fr)`
+	   and not a bare `1fr`, which is `minmax(auto, 1fr)`: its floor is the
+	   content's own minimum, so a column holding a Passport's portrait grew to
+	   340px on an eight-column sheet while the empty columns beside it gave the
+	   width up, and "two columns wide" stopped meaning a fixed share of the
+	   sheet. Equal tracks are what SPEC §8's `W·T + (W-1)·G` has always
+	   assumed, and what makes a placement predictable in the layout editor,
+	   which draws this same grid. Content that cannot fit its share is the
+	   component's to handle inside its box — the container queries in
+	   `docs/UI.md` §4 — not the grid's to absorb by widening a column. */
+	grid-template-columns: repeat(var(--sheetsmith-columns, 12), minmax(0, 1fr));
+	/* SPEC §7: a cell already past the last column — a hand-authored file, or
+	   a `columns` reduced under it — is left where it is rather than snapped
+	   back. Left at the default `auto` it would size to its own content
+	   instead, which for a Track or a Pool is a handful of pixels: the cell
+	   collapses onto its neighbour rather than sitting the width every
+	   explicit column already has. Matching them is what "left where it is"
+	   has to mean once the cell is actually on screen — at the same
+	   `minmax(0, 1fr)` as the explicit tracks above, or it is the one column
+	   content could still widen. */
+	grid-auto-columns: minmax(0, 1fr);
 	gap: var(--size-4-2);
 	/* Fills the pane by default; centred if a snippet caps it. */
 	max-width: var(--sheetsmith-sheet-max-width, none);
@@ -809,16 +829,34 @@
 	height: 100%;
 }
 
-/* A cell is only tall because a card beside it in the same grid row is
-   taller — an armour class next to an initiative, which carries a pill the
-   armour class does not. Centring each card's stack then leaves the row
-   with labels at three different heights and notes at three more. Holding
-   the top edge and pinning the note to the bottom lands both on one line
-   across the row, and the slack falls in the middle where nothing lines up
-   anyway. */
-.sheetsmith-card-single > .sheetsmith-card-note {
+/* A cell is taller than its card for two reasons: a card beside it in the same
+   grid row is taller (an armour class next to an initiative carrying a pill),
+   or the layout placed it several rows tall. The label holds the top edge and
+   the note the bottom one, so across a row labels share one line and notes
+   another. The number and its pill centre in what is left between them.
+
+   Both halves of that have been tried alone. Content held at the top left a
+   placed card's number stranded above a blank that read as something that
+   failed to render. Centring the number and the note together fixed that and
+   left the note floating mid-card over a margin the size of the value, taking
+   far more room than one quiet line needs.
+
+   Auto margins on the flex items rather than a wrapper, so the face stays one
+   flat structure shared with Card set. The sr-only carriers are absolutely
+   positioned, so they are not flex items and must be skipped when finding the
+   last one; and the note is skipped too, so the centred run ends above it. */
+.sheetsmith-card-single > .sheetsmith-card-label + *,
+.sheetsmith-card-single > :first-child:not(.sheetsmith-card-label) {
 	margin-top: auto;
-	/* Restores the separation the auto margin takes over from. */
+}
+
+.sheetsmith-card-single
+	> :nth-last-child(1 of :not(.sheetsmith-sr-only, .sheetsmith-card-note)) {
+	margin-bottom: auto;
+}
+
+.sheetsmith-card-single > .sheetsmith-card-note {
+	/* Restores the separation the auto margin above it takes over from. */
 	padding-top: var(--size-2-1);
 }
 
@@ -1617,7 +1655,8 @@
    unresolved treatment. Mixed prose and links keep the layer's ellipsis, where
    what is being cut off may be either. */
 .sheetsmith-view .sheetsmith-table-link-only > a,
-.sheetsmith-view .sheetsmith-record-link-only > a {
+.sheetsmith-view .sheetsmith-record-link-only > a,
+.sheetsmith-view .sheetsmith-roster-link-only > a {
 	display: block;
 	overflow: hidden;
 	text-overflow: ellipsis;
@@ -3189,6 +3228,107 @@ a.sheetsmith-undo {
 	white-space: nowrap;
 }
 
+/* A third subgrid column, for the row whose own length the character types
+   (`docs/features/track-row-length.md`). Added only where some row in the
+   set actually needs it — an ordinary spell-slot card must not gain a blank
+   column nobody uses — and every row then reserves it whether or not it
+   draws anything there, so a mixed set's runs stay in the same track rather
+   than sliding into whichever one their own row happens to fill: a
+   calculated row draws an empty span, an added character-owned row a real
+   field. */
+.sheetsmith-track-lengths.sheetsmith-track-set {
+	grid-template-columns: auto auto minmax(0, 1fr);
+}
+
+/* Pool's ceiling reading and its chrome removal, both reused whole
+   (`.sheetsmith-pool-max`, `.sheetsmith-pool-max-input`) — only the size
+   comes down, to the row-name's own scale rather than Pool's headline one:
+   nothing here is a card's centre-line number, so the field reads as part of
+   the row rather than as a second reading competing with the run beside
+   it. Scoped under `.sheetsmith-view` for the reason every bare input here
+   is: Obsidian styles `input[type='text']` at (0,1,1). */
+.sheetsmith-view .sheetsmith-track-row-length-input {
+	font-size: var(--font-ui-small);
+}
+
+/* The row an armed remove button belongs to, tinted the same way Table's
+   own armed row is, so what is about to go is a row the reader can name
+   rather than one glyph among several. Set from the **Remove** picker below
+   rather than from a control of the row's own. */
+.sheetsmith-view .sheetsmith-track-row-arming {
+	background-color: color-mix(
+		in srgb,
+		var(--text-error) 12%,
+		var(--background-primary)
+	);
+}
+
+/* One **Add** and one **Remove** for the whole row set, each opening a
+   picker naming the specific rows it offers, rather than a button per
+   candidate and a bin icon per line (`docs/features/track-row-length.md`).
+   A plain flex row: at most two icon buttons, never wrapping. */
+.sheetsmith-track-actions {
+	display: flex;
+	gap: var(--size-2-2);
+	margin-top: var(--size-2-1);
+}
+
+/* Table's own delete glyph's shape and stakes, shared by both triggers
+   rather than one per row — always visible, never focus- or hover-gated,
+   since what either opens can hold a session's worth of marked segments. */
+.sheetsmith-view .sheetsmith-track-action-button {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: var(--sheetsmith-inline-control, 1.6em);
+	height: var(--sheetsmith-inline-control, 1.6em);
+	padding: 0;
+	margin: 0;
+	border: none;
+	border-radius: 50%;
+	background-color: transparent;
+	box-shadow: none;
+	color: var(--text-faint);
+	cursor: pointer;
+	transition:
+		background-color 160ms ease,
+		color 160ms ease;
+}
+
+.sheetsmith-view .sheetsmith-track-action-button .svg-icon {
+	width: var(--icon-s);
+	height: var(--icon-s);
+}
+
+.sheetsmith-view .sheetsmith-track-action-button:hover {
+	background-color: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+.sheetsmith-view .sheetsmith-track-action-button:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
+}
+
+/* The **Remove** picker's own armed line, inside the anchored panel this
+   control opens rather than on a bin icon of the row's own — the panel
+   cannot carry `.sheetsmith-view` (`src/styles.test.ts` polices this), so
+   this repeats `.sheetsmith-panel` in front of it exactly as every other
+   panel control does. Same tint as the row it names
+   (`.sheetsmith-track-row-arming` above), so the panel's own line and the
+   sheet's own row agree about what is about to go, and the same weight as
+   `.sheetsmith-panel-line:hover` (both (0,2,0)) — so it is this file's own
+   later place in the cascade, `styles.build.mjs`'s `shared` before `sheet`,
+   that lets an armed line outrank a hover on it rather than the reverse. */
+.sheetsmith-panel .sheetsmith-track-remove-armed {
+	background-color: color-mix(
+		in srgb,
+		var(--text-error) 25%,
+		var(--background-primary)
+	);
+	color: var(--text-error);
+}
+
 /* One control and one tab stop, whatever it is a run of. The segments inside it
    are pictures; the run is the thing that answers a press, which is what lets
    the hit target be the whole row rather than each 12px segment.
@@ -3909,6 +4049,19 @@ a.sheetsmith-undo {
 	border-radius: var(--radius-s);
 }
 
+/* The two opt-in fits (`docs/features/picture-fit-and-suggest.md`), each one
+   declaration overriding the `object-fit` above. Neither changes the frame's own
+   centring: `cover`'s crop and `stretch`'s fill both use `object-position`'s
+   default, which nothing here has ever set. A layout that never asks for either
+   keeps the base rule above untouched and draws exactly as it does today. */
+.sheetsmith-fit-cover {
+	object-fit: cover;
+}
+
+.sheetsmith-fit-stretch {
+	object-fit: fill;
+}
+
 /* One line across the middle of the box, not the whole of it: the picture is what
    the reader is looking at, and the reference is what they are editing. Invisible
    but present and tabbable when unfocused, which is what keeps the view's focus
@@ -4140,7 +4293,17 @@ a.sheetsmith-undo {
 	/* An even gap in both directions, where a sentence wanted a tight row gap and
 	   a looser column one: a wrapped row of chips reads as a grid of them, and the
 	   two axes carrying different numbers is what makes it read as a paragraph
-	   that has broken instead. */
+	   that has broken instead.
+
+	   **One value for the whole line, deliberately** (`docs/features/
+	   passport-field-lists.md`, "Spacing is uniform"). A first pass gave a list
+	   field's own parts a tighter gap than the space between two fields, so a
+	   reader could tell where one field ended by the width of the gap alone —
+	   and the owner rejected differentiated spacing outright once it was on
+	   screen. What that costs — nothing here tells a reader that two parts
+	   belong to one field and a third does not — is recorded rather than
+	   solved: a container or a border is a follow-up decided with the owner,
+	   not guessed at in this diff. */
 	gap: var(--size-2-2);
 	/* The hit target the pill gave back by being 22px rather than Obsidian's 30px
 	   input height. `legibility.md` §5's pointer minimum is 20pt and its coarse
@@ -4208,15 +4371,14 @@ a.sheetsmith-undo {
    `input[type='text']` at a specificity a bare class loses to, so every
    declaration below would be dropped and a passport would read as a row of form
    controls. */
+/* **The tag surface, on the one control every part of the sheet reuses.**
+   A scalar field's single value, a list field's own part, and its add
+   control's transient new-value input are all `.sheetsmith-passport-input` —
+   the same element, reused once per part rather than once per field
+   (`docs/features/passport-field-lists.md`, "Each part is its own control,
+   always live") — so there is one declaration of the surface rather than one
+   per shape it is drawn in. */
 .sheetsmith-view .sheetsmith-passport-input {
-	width: auto;
-	max-width: 100%;
-	/* `height: auto` against Obsidian's own `--input-height: 30px`, so the pill is
-	   the height of its own text and its padding rather than of a form field. A
-	   30px pill around a 13px value reads as a button; the tag's own padding is
-	   what should decide this box. The line's `padding-block` puts the hit target
-	   back, since the pill is now about 22px tall. */
-	height: auto;
 	padding: var(--tag-padding-y) var(--tag-padding-x);
 	border: 1px solid var(--tag-border-color);
 	/* **The plugin's own corner, not the host's tag corner**, which is the third
@@ -4234,7 +4396,6 @@ a.sheetsmith-undo {
 	   borrowed-shape decision. */
 	border-radius: var(--radius-s);
 	background-color: var(--tag-background);
-	box-shadow: none;
 	/* **`--text-normal` rather than `--tag-color`, and it is the one member of the
 	   vocabulary swapped rather than withheld.** Two independent reasons, and the
 	   first is measured: the tag colour on the tag surface over a card comes out at
@@ -4258,6 +4419,15 @@ a.sheetsmith-undo {
 	font-family: inherit;
 	font-weight: var(--tag-weight);
 	text-decoration: var(--tag-decoration);
+	width: auto;
+	max-width: 100%;
+	/* `height: auto` against Obsidian's own `--input-height: 30px`, so the pill is
+	   the height of its own text and its padding rather than of a form field. A
+	   30px pill around a 13px value reads as a button; the tag's own padding is
+	   what should decide this box. The line's `padding-block` puts the hit target
+	   back, since the pill is now about 22px tall. */
+	height: auto;
+	box-shadow: none;
 	/* Centred inside the pill. An `<input>`'s `size` is counted in `0` advances,
 	   which is wider than the lowercase letters actually in it, so a box sized to
 	   hold "Half-elf" has a few pixels spare; centred, that slack splits and sits
@@ -4276,6 +4446,168 @@ a.sheetsmith-undo {
 	border-color: var(--tag-border-color-hover);
 	background-color: var(--tag-background-hover);
 	text-decoration: var(--tag-decoration-hover);
+}
+
+/* **A list field's own row: every stored part plus the add control**
+   (`docs/features/passport-field-lists.md`, second pass — per-part editing
+   rather than one field revealing its whole raw text). One flex item of the
+   fields line above, so the uniform gap there falls between this whole row
+   and the next declared field exactly as it falls between any two scalar
+   fields.
+
+   **No tint, no border, no radius, no padding of its own** — a group tint
+   was tried here between the last two passes (a `--background-primary`
+   fill, then a `--background-modifier-border` boundary added on top of it
+   after a design review measured the fill alone as imperceptible and
+   invisible under forced colors), and the owner withdrew it outright at the
+   land stop: see `docs/features/passport-field-lists.md`, "Grouping: tried,
+   and withdrawn." The bare flex row and its one uniform gap is what's left,
+   and that gap is the same token "Spacing is uniform" already names for the
+   fields line itself, so a part of one field and the next declared field
+   read at the same rhythm with nothing painted around either. */
+.sheetsmith-view .sheetsmith-passport-list {
+	display: inline-flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: var(--size-2-2);
+}
+
+/* One stored part: its own input and its own delete, close enough together
+   to read as one control rather than two adjacent ones. */
+.sheetsmith-view .sheetsmith-passport-part {
+	display: inline-flex;
+	align-items: center;
+	gap: var(--size-2-1);
+}
+
+/* **The delete control and the add control: one glyph-only reset, on both.**
+   `docs/UI.md` §7, "never a hover-only affordance… a phone has no hover" —
+   the same reset Table's and Record set's own row delete already apply,
+   sized by the same token so a fourth and fifth glyph-only control on the
+   sheet measure like the three they join under the same finger. Combined
+   into one selector list rather than two copies (`docs/PATTERNS.md` §1: a
+   shared *set* duplicated by selector is the case a guard test could only
+   prove still agree), since the two controls are the same glyph-button shape
+   and differ only in whether one of them ever arms. No shared class reaches
+   across files for this reset: each of Table's, Record set's and this pair's
+   own callers keeps its own name for it (`interaction/arm-to-confirm.ts`'s
+   own "the class names stay with the caller"), and `docs/UI.md` §9's
+   arm-to-confirm row already lists several different class names in one row
+   for exactly that reason — this is two of those names sharing one rule
+   body within the one file that declares both.
+
+   This rule's own `display: inline-flex` is the shape both controls draw
+   in when shown; it is deliberately placed *before* the delete control's own
+   hidden-at-rest rule below, since the two share one selector's worth of
+   specificity and CSS breaks that tie by source order — the later rule (the
+   one below) is the one that must win at rest. */
+.sheetsmith-view .sheetsmith-passport-part-remove,
+.sheetsmith-view .sheetsmith-passport-add {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: var(--sheetsmith-inline-control, 1.6em);
+	height: var(--sheetsmith-inline-control, 1.6em);
+	padding: 0;
+	margin: 0;
+	border: none;
+	border-radius: 50%;
+	background-color: transparent;
+	box-shadow: none;
+	color: var(--text-faint);
+	cursor: pointer;
+	transition:
+		background-color 160ms ease,
+		color 160ms ease;
+}
+
+.sheetsmith-view .sheetsmith-passport-part-remove .svg-icon,
+.sheetsmith-view .sheetsmith-passport-add .svg-icon {
+	width: var(--icon-s);
+	height: var(--icon-s);
+}
+
+/* **The delete control shows only while its own part has focus** — not on
+   hover, and the owner confirmed that distinction directly (`docs/features/
+   passport-field-lists.md`, "Showing the delete control: focus, not hover,
+   not always"). `:focus-within` on the whole part, not `:focus` on the input
+   alone, so the button is already visible by the time a further Tab press
+   would reach it, and so focus moving from the input to this same part's own
+   delete button — still inside the part — keeps it visible throughout rather
+   than hiding and reappearing between the two.
+
+   **`display: none` at rest, not `visibility: hidden`** — the document's own
+   "Third reversal" superseding what shipped before: `visibility: hidden`
+   reserved this button's box in `.sheetsmith-passport-part`'s own `gap`,
+   which made a list field's resting width wider than a non-list field's one
+   chip by exactly that reserved space, for no reason a reader could see. A
+   `display: none` child is not a flex item at all, so nothing is reserved,
+   and the row's rest-state width is exactly its input's — the owner's
+   explicitly chosen trade is a part's own width growing the instant it gains
+   focus and shrinking back the instant focus leaves, accepted rather than
+   solved. Both properties already remove the button from the accessibility
+   tree and the tab order while they apply — the swap changes only whether
+   its box reserves space, not when it becomes focusable — and `:focus-within`
+   going true is synchronous with the focus change that triggers it, so the
+   button already has a real `display` and tab position before any further
+   Tab press is possible; a descendant with focus always satisfies its own
+   ancestor's `:focus-within`, so the button holding focus is never the one
+   this rule hides. This rule's selector has the same specificity as the
+   shared reset above and comes after it in source order, on purpose: that is
+   what makes `display: none` win at rest. The reveal rule below outranks
+   both on specificity (an extra class plus `:focus-within`), so it wins
+   whenever a part has focus regardless of source order. */
+.sheetsmith-view .sheetsmith-passport-part-remove {
+	display: none;
+}
+
+.sheetsmith-view .sheetsmith-passport-part:focus-within .sheetsmith-passport-part-remove {
+	display: inline-flex;
+}
+
+/* The add control has no armed state, so its own hover and focus-visible
+   need no `:not()` guard; the delete control's do, since an armed control's
+   own rule below must not be outranked by the ordinary hover it is not
+   having right now. */
+.sheetsmith-view .sheetsmith-passport-part-remove:hover:not(.sheetsmith-passport-part-remove-armed),
+.sheetsmith-view .sheetsmith-passport-part-remove:focus-visible:not(.sheetsmith-passport-part-remove-armed),
+.sheetsmith-view .sheetsmith-passport-add:hover,
+.sheetsmith-view .sheetsmith-passport-add:focus-visible {
+	color: var(--text-normal);
+	background-color: var(--background-modifier-hover);
+}
+
+.sheetsmith-view .sheetsmith-passport-part-remove:focus-visible,
+.sheetsmith-view .sheetsmith-passport-add:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 2px;
+}
+
+/* Armed: the next press removes the part, so the control says so before
+   anything is applied — `interaction/arm-to-confirm.ts`'s own rule, a fourth
+   consumer of it. The glyph deliberately does not become a word; the naming
+   is in the tooltip, the accessible name and the announcement. Only the
+   delete control ever reaches this: the add control has no armed state.
+
+   **A tint, not a fill, on Table's own precedent and for the reason Table's
+   comment gives**: `--background-modifier-error` and `--text-error` are the
+   same red in Obsidian's real theme, so a flat fill behind a same-coloured
+   icon paints the glyph out of the button entirely — a design review found
+   this rendered invisible in both themes. `color-mix` most of the way back
+   to the page is what keeps the icon legible against its own background. */
+.sheetsmith-view .sheetsmith-passport-part-remove-armed {
+	background-color: color-mix(
+		in srgb,
+		var(--text-error) 25%,
+		var(--background-primary)
+	);
+	color: var(--text-error);
+}
+
+/* The part itself tints too, on the same terms a Table row or a Record set
+   record does while its own delete is armed. */
+.sheetsmith-view .sheetsmith-passport-part-arming .sheetsmith-passport-input {
+	border-color: var(--text-error);
 }
 
 /* The layout's word for the field, shown only while the field is empty — **at the
@@ -4306,8 +4638,9 @@ a.sheetsmith-undo {
    is gone. It is kept on the narrower ground that survives: `--text-faint` is
    2.97:1 against a card's fill, under `legibility.md` §3's bar, and these two
    strings are the ones that can least afford it. The placeholder is the *only*
-   thing naming a field the layout declared, and an empty chip is the one on the
-   line with nothing else to read.
+   thing naming a field the layout declared — a list field's own add control
+   carries the same invitation in its accessible name instead, which this query
+   has no text of to raise.
 
    **It is the only escalating placeholder on the sheet**, and that is stated
    rather than hidden: Rich text's, Image's and a record's body all stay faint
@@ -5204,4 +5537,182 @@ a.sheetsmith-undo {
 		margin-top: var(--size-4-2);
 	}
 
+}
+
+/* ---------------------------------------------------------------------------
+   Roster — a set of stats and the rows that hang off them, as one grouped
+   table. The table chrome, the row cells, the level ring and the modifier
+   mark are `.sheetsmith-table`'s own, borrowed rather than restyled
+   (docs/UI.md §9); what follows is the one thing Table has no shape for: the
+   band head, a `<tr>` spanning every column.
+
+   **A single hairline, not two.** The stat's name carries
+   `.sheetsmith-group-heading`, which already draws the rank's own rule under
+   the name text alone — right for a heading over a region, wrong here, where
+   the rule has to close the whole head, name and value and reading together.
+   `.sheetsmith-tabset > .sheetsmith-group-heading` is the precedent: it zeroes
+   the heading's own rule and lets its container draw the one that counts.
+
+   **The flex box is a `<div>` inside the `<td>`, never the `<td>` itself.**
+   `display: flex` directly on a table cell is a known trap: the engine boxes
+   the cell in an anonymous table-cell for layout purposes, so the flex box's
+   own width becomes shrink-to-fit content rather than the `colSpan`-driven
+   full row width — measured at ~124px of a ~930px table, worst on an empty
+   band where this hairline is the only separator there is. The `<td>` itself
+   carries only `colSpan`; `.sheetsmith-roster-band-inner` is where the flex
+   layout and the hairline actually live, at the full width the cell already
+   has. */
+.sheetsmith-roster-band-inner {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: baseline;
+	column-gap: var(--size-4-2);
+	row-gap: var(--size-2-1);
+	padding: var(--size-2-2) var(--size-4-1);
+	border-bottom: 1px solid
+		var(--sheetsmith-group-rule, var(--background-modifier-border));
+}
+
+/* **The second copy of the hairline, and it is the `<td>`'s own.** The band
+   head shares its element with every other cell in this table
+   (`sheetsmith-table`, borrowed rather than restyled), so it inherits
+   `.sheetsmith-table td`'s generic `border-bottom` on top of the one the div
+   above draws — two lines with a sliver of gap between them, on a populated
+   band and an empty one alike, since the generic rule does not care whether
+   the row under it exists. Three classes beats the generic rule's two classes
+   and an element, so this wins on specificity; it sits below it in the
+   cascade anyway, on this file's own rule that an override belongs under the
+   rule it overrides.
+
+   **The generic rule's vertical padding doubles up the identical way, and
+   this zeros that too.** `.sheetsmith-roster-band-inner`'s own padding above
+   is what was meant to space the band head from its neighbours; the `<td>`'s
+   own `padding: var(--size-2-2) var(--size-4-2)` stacked underneath it
+   unnoticed, because unlike the border it drew no visible second line — just
+   roughly twice the gap above the first row of a band as between any two
+   ordinary rows after it, "extra padding" that read as belonging to the
+   first row when it was really this cell's own copy of a padding already
+   drawn one element in. `padding-block`, not `padding`: the horizontal half
+   of the `<td>`'s own padding is still the only thing that ever set it —
+   `.sheetsmith-roster-band-inner` carries a narrower `--size-4-1` on that
+   axis, for its own reason above — so zeroing both would pull the band head
+   in from the table's edges while every row under it stayed put. */
+.sheetsmith-view .sheetsmith-table .sheetsmith-roster-band-head {
+	border-bottom: none;
+	padding-block: 0;
+}
+
+.sheetsmith-roster-band-inner .sheetsmith-group-heading {
+	flex: 1 1 auto;
+	min-width: 0;
+	margin-bottom: 0;
+	padding: 0;
+	border-bottom: none;
+}
+
+/* The score and its reading, stacked and centred on each other rather than
+   left in the band-inner row's own flow.
+
+   `.sheetsmith-card-input`'s `text-align: center` only visibly centres
+   where it is `width: 100%` of something with real slack to give — true
+   inside an ordinary Card, whose own width comes from the card set's
+   column, and false here: the row above shrink-wraps the score to its own
+   content so the name and the reading have room, and centred text with no
+   slack around it just looks left-set. The fix is the same shape Card
+   itself already is, one level narrower — a column, not the row's flex
+   context, so the shorter of the two (almost always the score) centres
+   under the wider. */
+.sheetsmith-roster-band-value {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	flex: 0 0 auto;
+}
+
+/* Sized to a score, not left at `auto`. An `<input>` has no content width to
+   shrink-wrap: `auto` is its default of about twenty characters, which at the
+   card's headline size measured 316px. While sheet columns could grow to fit
+   their content that only made a stat's column wide; once every column is a
+   fixed share of the sheet it pushed the whole table past a 156px cell and
+   clipped the stat's own name and score out of view. Four tabular digits'
+   worth holds a signed or three-digit score with its padding, and never more
+   than the band it sits in. */
+.sheetsmith-view .sheetsmith-roster-band-value .sheetsmith-card-input {
+	width: 4ch;
+	max-width: 100%;
+}
+
+/* `cardLayout` — each stat as its own `.sheetsmith-card` (Card set's own
+   chrome, `.sheetsmith-card-set` for the strip around them, both borrowed
+   rather than restyled) holding the band head and then a small table of that
+   stat's own rows. Nothing here touches the band head itself: `drawBandHead`
+   builds it from the same `sheetsmith-card-label` / `sheetsmith-card-derived`
+   / `sheetsmith-card-input` pieces an ordinary Card does, so it already wears
+   Card's own rules. */
+
+/* The strip wraps the way a Card set's own does, as many cards per line as the
+   component's width holds, rather than stacking one per line: a six-stat
+   roster stacked is six cards tall in a component only as wide as one of
+   them. The floor is what a card's small table needs — a name, a level badge
+   and a total side by side — where Card set's own 90px is sized for a lone
+   number and would fit four tables too narrow to read. */
+.sheetsmith-roster-cards {
+	--sheetsmith-card-min: 12rem;
+}
+.sheetsmith-roster-card-table {
+	/* `.sheetsmith-card` centres and shrink-wraps its children; a table needs
+	   the card's own width back and its own left-set text, or a row of
+	   numbers centres under a name that does not. */
+	width: 100%;
+	align-self: stretch;
+	text-align: start;
+	/* `.sheetsmith-card`'s own `gap` is `--size-2-1` (2px), right for the
+	   label/reading/value trio above but too tight once a dense table follows
+	   them — the table read as jammed under the value pill rather than as its
+	   own block. Topped up to match the card's horizontal and bottom padding
+	   (`--size-4-2`, 8px) exactly, so the table sits in a margin the same
+	   width on all four sides instead of 2px on top and 8px everywhere else. */
+	margin-top: calc(var(--size-4-2) - var(--size-2-1));
+}
+
+/* Without this the mini table shows the card's own `--background-secondary`
+   through — one shade off a table everywhere else on the sheet, and checked
+   against Obsidian's real `app.css` rather than guessed: this plugin's own
+   gap, not a stock table rule a view outside `.markdown-rendered` fails to
+   reach. */
+.sheetsmith-view .sheetsmith-roster-card-table .sheetsmith-table {
+	background-color: var(--background-primary-alt);
+}
+
+/* A row's own divider (`dividerAfter`, `types.ts`'s `rowFlag`) — a stat's
+   rows are few enough, in either of Roster's two layouts, that a division
+   inside them means something, so this applies in the shared table exactly
+   as it does in a card: the owner's own call, over the first-cut design
+   below that reserved it for card layout alone and left `roster.ts`'s
+   `renderShared` marking it too on the identical last-row rule
+   `renderCards` already carries.
+
+   **`--text-muted` in place of `--background-modifier-border`, on
+   `.sheetsmith-modified`'s own measurement two rules up in this cascade for
+   the identical failure.** This mark is the only thing separating one group
+   of rows from the next — nothing else beside it says so — which is
+   `legibility.md`'s 3:1 bar for "a border or fill that is the only thing
+   marking a state". Measured against both of the backgrounds this rule can
+   land on: the card's own `--background-primary-alt` gives
+   `--background-modifier-border-focus` 1.80:1 light, 2.11:1 dark, and the
+   shared table's ambient `--background-primary` gives it 1.88:1 and
+   2.29:1 — under the bar in all four. `text-muted` gives 6.41–8.13:1 across
+   the same four, comfortably over it; `.sheetsmith-modified` reached
+   `text-muted` over `text-faint` (2.20:1, 2.74:1, still under) for the same
+   reason.
+
+   **A wider rule was tried alongside the colour and dropped.** Once
+   `text-muted` alone already cleared the bar by two to three times over, the
+   extra width was reaching for a distinction the colour had already made —
+   and next to the table's own ordinary hairline it read as heavier than the
+   thing it was marking, an emphasis with nothing behind it. Colour is the
+   whole of the mark. */
+.sheetsmith-view .sheetsmith-table tbody tr.sheetsmith-roster-row-divider th,
+.sheetsmith-view .sheetsmith-table tbody tr.sheetsmith-roster-row-divider td {
+	border-bottom-color: var(--text-muted);
 }

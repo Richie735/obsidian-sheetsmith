@@ -162,6 +162,15 @@ export interface ResetFieldContext {
 	redraw: () => void;
 	/** Inline errors by focus token, so they outlive a rebuild of the pane. */
 	errors: Map<string, string>;
+	/**
+	 * Bind the formula-name suggester to **Resets to**, for as long as this
+	 * render's DOM lives (`docs/features/formula-name-suggestions.md`).
+	 *
+	 * Optional, on `ListContext`'s own reason: a context assembled by a test or
+	 * the harness for whatever the case is about leaves it out, and a field that
+	 * suggests nothing behaves exactly as it did.
+	 */
+	suggestNames?: (input: HTMLInputElement, owner?: string) => void;
 }
 
 /**
@@ -511,6 +520,9 @@ export function renderResetField(
 				.addText((text) => {
 					text.setValue(reset.to ?? '');
 					text.inputEl.dataset.sheetsmithFocus = `reset-to-${config.id}-${index}`;
+					// A reset expression is evaluated against the sheet, like
+					// every formula field on the panel above it.
+					context.suggestNames?.(text.inputEl);
 					/*
 					 * Judged as it renders, against whatever the binding already
 					 * holds — the **Acts on** picker's rule above, on the field

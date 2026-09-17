@@ -15,6 +15,7 @@
 import { bindEditable, UNRESOLVED_DELAY } from '../interaction/editable';
 import { showPopover } from '../ui/popover';
 import { revealWhenTruncated } from '../ui/truncation';
+import { sameNumber } from './effective-value';
 import { MODIFIED_CLASS } from './modifier-breakdown';
 
 /**
@@ -173,30 +174,6 @@ export function formatDerived(
 	return String(value);
 }
 
-/**
- * Whether two field spellings are the same number, so one is not a *change* to
- * the other.
- *
- * **Textual first, numeric second, and neither alone is enough.** A pill's stored
- * value is raw note text while its effective reading is `String(n)`, so `15.0`
- * and `15` are one number in two spellings and would otherwise read as a modifier
- * that is not there. And a card's value need not be a number at all — a Card set
- * entry may hold a word — so a purely numeric comparison would answer `0 === 0`
- * for two different pieces of text, `Number('')` being 0 and `Number(' ')` too.
- * Hence the empty guard: blank against blank is caught by the text arm above it,
- * and blank against anything else is a real difference.
- */
-function sameNumber(a: string, b: string): boolean {
-	const left = a.trim();
-	const right = b.trim();
-	if (left === right) return true;
-	if (left === '' || right === '') return false;
-	return (
-		Number.isFinite(Number(left)) &&
-		Number.isFinite(Number(right)) &&
-		Number(left) === Number(right)
-	);
-}
 
 function setDerived(el: HTMLElement, derived: CardFaceDerived): void {
 	el.textContent = derived.text;

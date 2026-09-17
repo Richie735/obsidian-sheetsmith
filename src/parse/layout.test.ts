@@ -484,6 +484,25 @@ describe('parseLayout: component ids', () => {
 		expect(idsOf(withId('mod_bonus'))).toEqual(['mod_bonus']);
 	});
 
+	it('migrates the reserved self keyword off a component, on the same argument', () => {
+		/*
+		 * `self` is a Roster's own rows in an aggregate's first argument
+		 * (SPEC §5): `sum(self, …)` inside a component's own formula has to mean
+		 * that component's own rows, whichever component the layout happens to
+		 * have called `self` — the same collision `mod` is reserved against, one
+		 * segment over.
+		 */
+		expect(idsOf(withId('self'))).toEqual(['self_2']);
+		expect(
+			parseLayout(withId('self')).components.map((one) => one.label),
+		).toEqual(['A']);
+	});
+
+	it('leaves a name merely starting with self alone', () => {
+		expect(idsOf(withId('selfish'))).toEqual(['selfish']);
+		expect(idsOf(withId('self_report'))).toEqual(['self_report']);
+	});
+
 	it('still reports two components genuinely sharing an id', () => {
 		// Renaming these apart would hide an authoring error.
 		const source = JSON.stringify({

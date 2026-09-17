@@ -18,6 +18,8 @@ import { buildSheetScope } from '../formula/sheet';
 import { makeFieldResolver } from '../formula/resolve';
 import { RenderContext } from '../types';
 import { sampleOf } from '../test/sample';
+import { closeAnchoredPanel } from '../ui/anchored-panel';
+import { armedName } from '../interaction/arm-to-confirm';
 
 const config: TrackConfig = {
 	id: 'exhaustion',
@@ -216,6 +218,12 @@ describe('track.write', () => {
 	it('creates a fresh block for a section that has none', () => {
 		expect(track.write({ values: { value: '2' } }, null, config)).toBe(
 			'\n```sheet\nvalue: 2\n```\n',
+		);
+	});
+
+	it('a null value removes that row\'s whole line, leaving every other row untouched', () => {
+		expect(track.write({ values: { L1: null } }, SLOT_BODY, slots)).toBe(
+			'\n```sheet\nL2: 1\nL3: 0\n```\n',
 		);
 	});
 });
@@ -661,8 +669,8 @@ describe('track.applyReset', () => {
 });
 
 describe('track.sample', () => {
-	/** The marks a sample stores, by run key. */
-	function marks(config: TrackConfig): Record<string, string> {
+	/** The marks a sample stores, by run key. `read` never produces null. */
+	function marks(config: TrackConfig): Record<string, string | null> {
 		const read = track.read(sampleOf(track, config), config);
 		if (!read.ok || read.data === null) throw new Error('expected data');
 		return read.data.values;
@@ -952,6 +960,614 @@ describe('track rows', () => {
 		const list = renderSlots().querySelector('.sheetsmith-track-set');
 		expect(list?.getAttribute('role')).toBe('group');
 		expect(list?.getAttribute('aria-label')).toBe('Spell slots');
+	});
+});
+
+/**
+ * Open the row set's **Add** or **Remove** picker and return its lines, one
+ * per row it offers — the panel lives on `document.body` rather than inside
+ * `el` (`ui/anchored-panel.ts`), which is why every consumer of this looks
+ * there rather than inside the card.
+ */
+const openPicker = (
+	el: HTMLElement,
+	which: 'Add to' | 'Remove from',
+): HTMLButtonElement[] => {
+	const trigger = Array.from(
+		el.querySelectorAll<HTMLButtonElement>('.sheetsmith-track-action-button'),
+	).find((b) => b.getAttribute('aria-label')?.startsWith(which));
+	if (!trigger) throw new Error(`expected a "${which}" trigger`);
+	trigger.click();
+	const panel = document.querySelector('.sheetsmith-panel');
+	if (!panel) throw new Error('expected the picker to open');
+	return Array.from(
+		panel.querySelectorAll<HTMLButtonElement>('.sheetsmith-panel-line'),
+	);
+};
+
+/** A picker line's own row name. */
+const lineLabel = (line: HTMLElement): string | null =>
+	line.querySelector('.sheetsmith-panel-said')?.textContent ?? null;
+
+/** A row set of hit-dice-shaped rows, one of which the character owns. */
+const diceRows: TrackConfig = {
+	id: 'hit_dice',
+	type: 'track',
+	label: 'Hit dice',
+	position: { col: 1, row: 1, width: 2, height: 1 },
+	rows: [
+		{ key: 'd10', name: 'd10', maxSource: 'character' },
+		{ key: 'd6', name: 'd6', maxSource: 'character' },
+	],
+};
+
+describe('a row whose length the character owns', () => {
+	afterEach(() => closeAnchoredPanel());
+
+	it('is never a flag card, whatever count or marks say', () => {
+		expect(isFlagCard({ ...diceRows, marks: 1 })).toBe(false);
+		expect(
+			isFlagCard({
+				...diceRows,
+				marks: 1,
+				rows: [{ key: 'd10', maxSource: 'character', count: 1 }],
+			}),
+		).toBe(false);
+	});
+
+	it('reads its marks from the value half and its length from the ceiling half', () => {
+		const read = track.read('\n```sheet\nd10: 1 / 4\nd6: 0 / 11\n```\n', diceRows);
+		expect(read).toEqual({ ok: true, data: { values: { d10: '1 / 4', d6: '0 / 11' } } });
+	});
+
+	it('reads a bare number as marks with no length', () => {
+		const read = track.read('\n```sheet\nd10: 2\n```\n', diceRows);
+		expect(read).toEqual({ ok: true, data: { values: { d10: '2' } } });
+	});
+
+	it('keeps a non-numeric value half a malformed section, and lets a non-numeric ceiling through', () => {
+		expect(track.read('\n```sheet\nd10: frog\n```\n', diceRows).ok).toBe(false);
+		const read = track.read('\n```sheet\nd10: 2 / lots\n```\n', diceRows);
+		expect(read).toEqual({ ok: true, data: { values: { d10: '2 / lots' } } });
+	});
+
+	it('round-trips ten spellings of a composite entry byte for byte', () => {
+		const bodies = [
+			'\n```sheet\nd10: 2 / 3\n```\n',
+			'\n```sheet\nd10: 2/3\n```\n',
+			'\n```sheet\nd10: 2 /3\n```\n',
+			'\n```sheet\nd10: 2/ 3\n```\n',
+			'\n```sheet\nd10: 2\t/\t3\n```\n',
+			'\n```sheet\nd10: \t/ 3\n```\n',
+			'\n```sheet\nd10: 2 / \n```\n',
+			'\n```sheet\nd10: 2\n```\n',
+			'\n```sheet\nd10: 2 / lots\n```\n',
+			'\n```sheet\nd10: 2 / 3\nd6: 1 /4\n```\n',
+		];
+		for (const body of bodies) {
+			const read = track.read(body, diceRows);
+			if (!read.ok || !read.data) throw new Error('expected data');
+			expect(track.write(read.data, body, diceRows)).toBe(body);
+		}
+	});
+
+	describe('publishes its remainder from its own stored length', () => {
+		it('is length - filled', () => {
+			const scope = scopeFor(
+				{ values: { d10: '1 / 4', d6: '0 / 11' } },
+				{},
+				diceRows,
+			);
+			expect(scope('hit_dice.d10.left')).toBe(3);
+			expect(scope('hit_dice.d6.left')).toBe(11);
+		});
+
+		it('publishes nothing where no length has been typed yet', () => {
+			const scope = scopeFor({ values: { d10: '0' } }, {}, diceRows);
+			expect(scope('hit_dice.d10.left')).toBeUndefined();
+		});
+	});
+
+	describe('applyReset', () => {
+		it('empty preserves the stored length', () => {
+			expect(
+				track.applyReset?.(
+					{ values: { d10: '1 / 4', d6: '0 / 11' } },
+					diceRows,
+					{ trigger: 'Long Rest', action: 'empty' },
+					{ resolve: () => null, explain: () => null },
+				),
+			).toEqual({
+				ok: true,
+				data: { values: { d10: '0 / 4', d6: '0 / 11' } },
+			});
+		});
+
+		it('full restores each row to its own stored length', () => {
+			expect(
+				track.applyReset?.(
+					{ values: { d10: '1 / 4', d6: '3 / 11' } },
+					diceRows,
+					{ trigger: 'Long Rest', action: 'full' },
+					{ resolve: () => null, explain: () => null },
+				),
+			).toEqual({
+				ok: true,
+				data: { values: { d10: '4 / 4', d6: '11 / 11' } },
+			});
+		});
+
+		it('full skips a row with no stored length, and still succeeds for the rest', () => {
+			expect(
+				track.applyReset?.(
+					{ values: { d10: '1 / 4', d6: '0' } },
+					diceRows,
+					{ trigger: 'Long Rest', action: 'full' },
+					{ resolve: () => null, explain: () => null },
+				),
+			).toEqual({ ok: true, data: { values: { d10: '4 / 4' } } });
+		});
+
+		it('full tells added-with-length, added-blank and never-added apart, all at once', () => {
+			const threeRows: TrackConfig = {
+				...diceRows,
+				rows: [
+					{ key: 'd10', name: 'd10', maxSource: 'character' },
+					{ key: 'd6', name: 'd6', maxSource: 'character' },
+					{ key: 'd8', name: 'd8', maxSource: 'character' },
+				],
+			};
+			expect(
+				track.applyReset?.(
+					// d10 added with a length; d6 added, blank; d8 never
+					// added at all.
+					{ values: { d10: '1 / 4', d6: '' } },
+					threeRows,
+					{ trigger: 'Long Rest', action: 'full' },
+					{ resolve: () => null, explain: () => null },
+				),
+			).toEqual({ ok: true, data: { values: { d10: '4 / 4' } } });
+		});
+
+		it('formula preserves the stored length', () => {
+			expect(
+				track.applyReset?.(
+					{ values: { d10: '1 / 4', d6: '0 / 11' } },
+					diceRows,
+					{ trigger: 'Long Rest', action: 'formula', to: 'x' },
+					{ resolve: () => 2, explain: () => null },
+				),
+			).toEqual({
+				ok: true,
+				data: { values: { d10: '2 / 4', d6: '2 / 11' } },
+			});
+		});
+
+		it('empty leaves a row with no entry at all absent, rather than materialising it', () => {
+			expect(
+				track.applyReset?.(
+					{ values: { d10: '1 / 4' } },
+					diceRows,
+					{ trigger: 'Long Rest', action: 'empty' },
+					{ resolve: () => null, explain: () => null },
+				),
+			).toEqual({ ok: true, data: { values: { d10: '0 / 4' } } });
+		});
+
+		it('formula leaves a row with no entry at all absent, rather than materialising it', () => {
+			expect(
+				track.applyReset?.(
+					{ values: { d10: '1 / 4' } },
+					diceRows,
+					{ trigger: 'Long Rest', action: 'formula', to: 'x' },
+					{ resolve: () => 2, explain: () => null },
+				),
+			).toEqual({ ok: true, data: { values: { d10: '2 / 4' } } });
+		});
+
+		it('a row added but blank still gets zeroed by empty and resolved by formula', () => {
+			// Added (an entry exists) is not the same as having a length —
+			// both actions still write to a blank-but-added row, unlike a row
+			// with no entry at all.
+			expect(
+				track.applyReset?.(
+					{ values: { d10: '1 / 4', d6: '' } },
+					diceRows,
+					{ trigger: 'Long Rest', action: 'empty' },
+					{ resolve: () => null, explain: () => null },
+				),
+			).toEqual({ ok: true, data: { values: { d10: '0 / 4', d6: '0' } } });
+			expect(
+				track.applyReset?.(
+					{ values: { d10: '1 / 4', d6: '' } },
+					diceRows,
+					{ trigger: 'Long Rest', action: 'formula', to: 'x' },
+					{ resolve: () => 2, explain: () => null },
+				),
+			).toEqual({ ok: true, data: { values: { d10: '2 / 4', d6: '2' } } });
+		});
+	});
+
+	it('draws nothing at all for a row with no entry, only an Add trigger', () => {
+		const el = document.createElement('div');
+		document.body.appendChild(el);
+		track.render(el, diceRows, { values: {} }, context);
+		expect(parts(el).runs).toHaveLength(0);
+		expect(parts(el).unresolved).toHaveLength(0);
+		expect(
+			el.querySelectorAll('.sheetsmith-track-row-length-input'),
+		).toHaveLength(0);
+		expect(el.querySelectorAll('.sheetsmith-track-row-name')).toHaveLength(0);
+		expect(openPicker(el, 'Add to').map(lineLabel)).toEqual(['d10', 'd6']);
+	});
+
+	it('draws a row in full, with an empty length field, once its entry exists at all', () => {
+		const el = document.createElement('div');
+		document.body.appendChild(el);
+		track.render(el, diceRows, { values: { d10: '' } }, context);
+		expect(parts(el).runs).toHaveLength(0);
+		expect(parts(el).unresolved).toHaveLength(0);
+		expect(
+			el.querySelectorAll('.sheetsmith-track-row-length-input'),
+		).toHaveLength(1);
+		// One row left to add, so the Add trigger is still there; one row
+		// already added, so the Remove trigger has joined it. Opening the
+		// second picker closes the first on its own
+		// (`ui/anchored-panel.ts`'s "one at a time").
+		expect(openPicker(el, 'Add to').map(lineLabel)).toEqual(['d6']);
+		expect(openPicker(el, 'Remove from').map(lineLabel)).toEqual(['d10']);
+	});
+
+	it('draws the run at its stored length once one is typed', () => {
+		const el = document.createElement('div');
+		document.body.appendChild(el);
+		track.render(el, diceRows, { values: { d10: '1 / 4', d6: '0' } }, context);
+		expect(parts(el).runs).toHaveLength(1);
+		expect(runSegments(el, 0)).toHaveLength(4);
+	});
+
+	it('prefills the length field from the stored ceiling', () => {
+		const el = document.createElement('div');
+		document.body.appendChild(el);
+		track.render(el, diceRows, { values: { d10: '1 / 4' } }, context);
+		const field = el.querySelector<HTMLInputElement>(
+			'.sheetsmith-track-row-length-input',
+		);
+		expect(field?.value).toBe('4');
+	});
+
+	it('committing a length writes the composite entry, blank marks to start', () => {
+		// A blank value half is a blank value, the same as an ordinary blank
+		// entry — Record set's own rule for the identical shape
+		// (`docs/features/per-record-ceiling.md`).
+		const changed = vi.fn();
+		const el = document.createElement('div');
+		document.body.appendChild(el);
+		track.render(el, diceRows, { values: { d10: '' } }, {
+			...context,
+			onChange: changed,
+		});
+		const field = el.querySelector<HTMLInputElement>(
+			'.sheetsmith-track-row-length-input',
+		);
+		if (!field) throw new Error('expected a length field');
+		field.value = '4';
+		field.dispatchEvent(new Event('blur'));
+		expect(changed).toHaveBeenCalledWith({ values: { d10: ' / 4' } });
+	});
+
+	it('settles arithmetic on commit', () => {
+		const changed = vi.fn();
+		const el = document.createElement('div');
+		document.body.appendChild(el);
+		track.render(el, diceRows, { values: { d10: '2 / 4' } }, {
+			...context,
+			onChange: changed,
+		});
+		const field = el.querySelector<HTMLInputElement>(
+			'.sheetsmith-track-row-length-input',
+		);
+		if (!field) throw new Error('expected a length field');
+		field.value = '4+1';
+		field.dispatchEvent(new Event('blur'));
+		expect(changed).toHaveBeenCalledWith({ values: { d10: '2 / 5' } });
+	});
+
+	it('declines a note reference, leaving the draft and writing nothing', () => {
+		const changed = vi.fn();
+		const el = document.createElement('div');
+		document.body.appendChild(el);
+		track.render(el, diceRows, { values: { d10: '' } }, {
+			...context,
+			onChange: changed,
+		});
+		const field = el.querySelector<HTMLInputElement>(
+			'.sheetsmith-track-row-length-input',
+		);
+		if (!field) throw new Error('expected a length field');
+		field.value = '[[Ring]]';
+		field.dispatchEvent(new Event('blur'));
+		expect(changed).not.toHaveBeenCalled();
+		expect(field.value).toBe('[[Ring]]');
+	});
+
+	it('settles valid arithmetic through a slash, since that never reaches storage as one', () => {
+		// `4/1` is division, not a stored slash: `settleEntry` evaluates it to
+		// a plain `4` before this field's own commit ever sees it, so nothing
+		// here needs to refuse it.
+		const changed = vi.fn();
+		const el = document.createElement('div');
+		document.body.appendChild(el);
+		track.render(el, diceRows, { values: { d10: '' } }, {
+			...context,
+			onChange: changed,
+		});
+		const field = el.querySelector<HTMLInputElement>(
+			'.sheetsmith-track-row-length-input',
+		);
+		if (!field) throw new Error('expected a length field');
+		field.value = '4/1';
+		field.dispatchEvent(new Event('blur'));
+		expect(changed).toHaveBeenCalledWith({ values: { d10: ' / 4' } });
+	});
+
+	it('declines a slash that is not valid arithmetic, before it ever reaches the fence', () => {
+		const changed = vi.fn();
+		const el = document.createElement('div');
+		document.body.appendChild(el);
+		track.render(el, diceRows, { values: { d10: '' } }, {
+			...context,
+			onChange: changed,
+		});
+		const field = el.querySelector<HTMLInputElement>(
+			'.sheetsmith-track-row-length-input',
+		);
+		if (!field) throw new Error('expected a length field');
+		field.value = '4/lots';
+		field.dispatchEvent(new Event('blur'));
+		expect(changed).not.toHaveBeenCalled();
+	});
+
+	it('a marks commit on a populated row carries the stored length through the join', () => {
+		vi.useFakeTimers();
+		const changed = vi.fn();
+		const el = document.createElement('div');
+		document.body.appendChild(el);
+		track.render(
+			el,
+			diceRows,
+			{ values: { d10: '0 / 4' } },
+			{ ...context, onChange: changed },
+		);
+		parts(el).runs[0]?.dispatchEvent(
+			new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true }),
+		);
+		vi.advanceTimersByTime(1000);
+		expect(changed).toHaveBeenCalledWith({ values: { d10: '1 / 4' } });
+	});
+
+	it('adds the third-column class only where a row actually needs it', () => {
+		const withoutLengths = document.createElement('div');
+		document.body.appendChild(withoutLengths);
+		track.render(withoutLengths, slots, { values: {} }, context);
+		expect(
+			withoutLengths.querySelector('.sheetsmith-track-lengths'),
+		).toBeNull();
+
+		const withLengths = document.createElement('div');
+		document.body.appendChild(withLengths);
+		track.render(withLengths, diceRows, { values: {} }, context);
+		expect(
+			withLengths.querySelector('.sheetsmith-track-lengths'),
+		).not.toBeNull();
+	});
+
+	it('reserves the length column on a mixed row rather than sliding its run into it', () => {
+		const mixed: TrackConfig = {
+			...diceRows,
+			rows: [
+				{ key: 'd10', name: 'd10', maxSource: 'character' },
+				{ key: 'd6', name: 'd6', count: 4 },
+			],
+		};
+		const el = document.createElement('div');
+		document.body.appendChild(el);
+		track.render(el, mixed, { values: { d10: '0 / 1', d6: '0' } }, {
+			...context,
+			resolveField: (field) => (field === 'rows.1.count' ? 4 : null),
+		});
+		const lines = Array.from(
+			el.querySelectorAll<HTMLElement>('.sheetsmith-track-row'),
+		);
+		expect(lines).toHaveLength(2);
+		// Both rows reserve the column: one field inside it, one empty.
+		expect(
+			lines[0]?.querySelector('.sheetsmith-track-row-length'),
+		).not.toBeNull();
+		const emptySlot = lines[1]?.querySelector('.sheetsmith-track-row-length');
+		expect(emptySlot).not.toBeNull();
+		expect(
+			emptySlot?.querySelector('.sheetsmith-track-row-length-input'),
+		).toBeNull();
+		// And d6's run still draws at its own declared length.
+		expect(runSegments(el, 1)).toHaveLength(4);
+		// d10 (character-owned) offers itself to the Remove picker; d6
+		// (calculated) never does, whatever column it reserves.
+		expect(openPicker(el, 'Remove from').map(lineLabel)).toEqual(['d10']);
+	});
+
+	describe('adding and removing a row', () => {
+		it('draws no Add or Remove trigger for a row set with no character-owned row', () => {
+			const el = document.createElement('div');
+			document.body.appendChild(el);
+			track.render(el, slots, { values: {} }, context);
+			expect(el.querySelector('.sheetsmith-track-actions')).toBeNull();
+		});
+
+		it('offers a row with no entry to the Add picker, in declared order', () => {
+			const el = document.createElement('div');
+			document.body.appendChild(el);
+			track.render(el, diceRows, { values: {} }, context);
+			expect(openPicker(el, 'Add to').map(lineLabel)).toEqual(['d10', 'd6']);
+		});
+
+		it('picking a row from Add writes a blank entry and nothing else', () => {
+			const changed = vi.fn();
+			const el = document.createElement('div');
+			document.body.appendChild(el);
+			track.render(el, diceRows, { values: { d6: '2 / 4' } }, {
+				...context,
+				onChange: changed,
+			});
+			const add = openPicker(el, 'Add to').find(
+				(line) => lineLabel(line) === 'd10',
+			);
+			if (!add) throw new Error('expected a d10 line');
+			add.click();
+			expect(changed).toHaveBeenCalledWith({ values: { d10: '' } });
+		});
+
+		it('draws an added row above one added later, matching declared order', () => {
+			// d10 is declared before d6 in `diceRows`; adding d6 first must
+			// not make it draw above d10 once both exist.
+			const el = document.createElement('div');
+			document.body.appendChild(el);
+			track.render(el, diceRows, { values: { d10: '', d6: '' } }, context);
+			const names = Array.from(
+				el.querySelectorAll<HTMLElement>('.sheetsmith-track-row-name'),
+			).map((n) => n.textContent);
+			expect(names).toEqual(['d10', 'd6']);
+		});
+
+		it('focuses the new row\'s length field on the render after Add is pressed', () => {
+			const el = document.createElement('div');
+			document.body.appendChild(el);
+			track.render(el, diceRows, { values: {} }, context);
+			const add = openPicker(el, 'Add to').find(
+				(line) => lineLabel(line) === 'd10',
+			);
+			if (!add) throw new Error('expected a d10 line');
+			add.click();
+			// The press writes the entry (asserted above); the next render —
+			// the one the write would cause on a real sheet — is simulated
+			// here by rendering again over the same element with the note
+			// now holding it, on the same `config.id` the press recorded.
+			track.render(el, diceRows, { values: { d10: '' } }, context);
+			const field = el.querySelector<HTMLInputElement>(
+				'.sheetsmith-track-row-length-input',
+			);
+			expect(document.activeElement).toBe(field);
+		});
+
+		it('removing an added row arms, then confirms on a second press', () => {
+			const changed = vi.fn();
+			const el = document.createElement('div');
+			document.body.appendChild(el);
+			track.render(el, diceRows, { values: { d10: '1 / 4' } }, {
+				...context,
+				onChange: changed,
+			});
+			const remove = openPicker(el, 'Remove from').find(
+				(line) => lineLabel(line) === 'd10',
+			);
+			if (!remove) throw new Error('expected a d10 line');
+			remove.click();
+			expect(changed).not.toHaveBeenCalled();
+			expect(
+				remove.classList.contains('sheetsmith-track-remove-armed'),
+			).toBe(true);
+			// The line relabels to the shared wording, the same sentence
+			// Table's and Record set's own armed rows already say.
+			expect(lineLabel(remove)).toBe(armedName('d10'));
+			// The row itself tints too, not only the line in the panel.
+			expect(
+				el
+					.querySelector('.sheetsmith-track-row')
+					?.classList.contains('sheetsmith-track-row-arming'),
+			).toBe(true);
+			remove.click();
+			expect(changed).toHaveBeenCalledWith({ values: { d10: null } });
+		});
+
+		it('arming one row in the Remove picker stands a sibling\'s down', () => {
+			const el = document.createElement('div');
+			document.body.appendChild(el);
+			track.render(
+				el,
+				diceRows,
+				{ values: { d10: '1 / 4', d6: '2 / 11' } },
+				context,
+			);
+			const lines = openPicker(el, 'Remove from');
+			const first = lines.find((line) => lineLabel(line) === 'd10');
+			const second = lines.find((line) => lineLabel(line) === 'd6');
+			if (!first || !second) throw new Error('expected two lines');
+			first.click();
+			expect(first.classList.contains('sheetsmith-track-remove-armed')).toBe(
+				true,
+			);
+			second.click();
+			expect(first.classList.contains('sheetsmith-track-remove-armed')).toBe(
+				false,
+			);
+			expect(second.classList.contains('sheetsmith-track-remove-armed')).toBe(
+				true,
+			);
+		});
+
+		it('dismissing the Remove picker while armed stands the row down silently', () => {
+			const changed = vi.fn();
+			const el = document.createElement('div');
+			document.body.appendChild(el);
+			track.render(el, diceRows, { values: { d10: '1 / 4' } }, {
+				...context,
+				onChange: changed,
+			});
+			const remove = openPicker(el, 'Remove from').find(
+				(line) => lineLabel(line) === 'd10',
+			);
+			if (!remove) throw new Error('expected a d10 line');
+			remove.click();
+			closeAnchoredPanel();
+			expect(changed).not.toHaveBeenCalled();
+			expect(
+				el
+					.querySelector('.sheetsmith-track-row')
+					?.classList.contains('sheetsmith-track-row-arming'),
+			).toBe(false);
+		});
+	});
+
+	it('samples a composite for every row but the last, which it leaves un-added', () => {
+		const body = track.sample?.(diceRows) ?? '';
+		const read = track.read(body, diceRows);
+		if (!read.ok || !read.data) throw new Error('expected data');
+		expect(track.write(read.data, body, diceRows)).toBe(body);
+		expect(read.data.values.d10).toMatch(/\d+ \/ \d+/);
+		expect(read.data.values.d6).toBeUndefined();
+	});
+
+	it('gives two added rows different sampled lengths, not the same number twice', () => {
+		const threeRows: TrackConfig = {
+			...diceRows,
+			rows: [
+				{ key: 'd10', name: 'd10', maxSource: 'character' },
+				{ key: 'd6', name: 'd6', maxSource: 'character' },
+				{ key: 'd8', name: 'd8', maxSource: 'character' },
+			],
+		};
+		const body = track.sample?.(threeRows) ?? '';
+		const read = track.read(body, threeRows);
+		if (!read.ok || !read.data) throw new Error('expected data');
+		expect(track.write(read.data, body, threeRows)).toBe(body);
+		// d10 and d6 are added (d8, the last, is left un-added); their
+		// sampled lengths differ, seeded off each row's own key.
+		const d10Length = read.data.values.d10?.split('/')[1]?.trim();
+		const d6Length = read.data.values.d6?.split('/')[1]?.trim();
+		expect(d10Length).toBeDefined();
+		expect(d6Length).toBeDefined();
+		expect(d10Length).not.toBe(d6Length);
+		expect(read.data.values.d8).toBeUndefined();
 	});
 });
 

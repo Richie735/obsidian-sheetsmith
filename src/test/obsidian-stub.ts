@@ -205,6 +205,15 @@ export function installDomHelpers(): void {
 	// the same write, and `''` is how a standard property is cleared
 	// (`docs/PATTERNS.md` §5), so `show` puts a row back to whatever display its
 	// class gives it rather than to `block`.
+	/*
+	 * Self-only and therefore honestly modellable, which is what separates it
+	 * from `isShown` above: the app's answer is `document.activeElement === this`
+	 * and nothing about an ancestor. `AbstractInputSuggest` gates every query on
+	 * it, so a double without it lets a test drive a path the app refuses.
+	 */
+	proto.isActiveElement = function (this: HTMLElement): boolean {
+		return this.ownerDocument.activeElement === this;
+	};
 	proto.show = function (this: HTMLElement): void {
 		this.setCssStyles({ display: '' });
 	};
@@ -1007,6 +1016,32 @@ export class Vault {
 	async delete(file: TAbstractFile): Promise<void> {
 		this.files.delete(file.path);
 	}
+
+	/**
+	 * Every file the vault holds, in no particular order — the app's own
+	 * contract, since it walks an internal map rather than a sorted list.
+	 *
+	 * Added for `view/file-suggest.ts`: a type-ahead over vault files has
+	 * nothing to offer without this, and a suggester nothing can list from is a
+	 * suggester nothing can test.
+	 */
+	getFiles(): TFile[] {
+		return [...this.files.values()].map(({ file }) => file);
+	}
+
+	/**
+	 * Every markdown file, for a caller that wants character notes rather than
+	 * a vault's worth of everything — `component-rename-migration.ts`'s own
+	 * candidate scan, the first consumer of `getFiles` narrower than "all".
+	 */
+	getMarkdownFiles(): TFile[] {
+		return this.getFiles().filter((file) => file.extension === 'md');
+	}
+
+	/** A file's own text, read synchronously — `MetadataCache`'s own need. */
+	rawContent(path: string): string | null {
+		return this.files.get(path)?.content ?? null;
+	}
 }
 
 export class FileManager {
@@ -1026,7 +1061,7 @@ export class FileManager {
 	/** Source paths asked about, in order. */
 	newFileParentSources: string[] = [];
 
-	constructor(vault: Vault) {
+	constructor(private readonly vault: Vault) {
 		// The vault's own root, whose path is `/`. The app falls back to
 		// `vault.getRoot()` for every **Default location for new notes** that is
 		// not a named folder, which includes the default.
@@ -1040,6 +1075,47 @@ export class FileManager {
 
 	async trashFile(file: TAbstractFile): Promise<void> {
 		await file.vault.delete(file);
+	}
+
+	/**
+	 * The reference the app's own paste and drag-and-drop write for `file`,
+	 * enough of it for `view/file-suggest.ts`'s one use: turning a picked file
+	 * into the embed a reader would have typed by hand.
+	 *
+	 * **What is modelled**: a markdown file links and every other extension
+	 * embeds — checked by extension *count* rather than an image allowlist, on
+	 * purpose: `image.test.ts`'s repository-wide guard refuses a second format
+	 * this close to the first, since a plugin holding its own idea of which
+	 * formats count is how webp stopped rendering inside one while working one
+	 * line outside it, and a single `'md'` check names no such list. A note's
+	 * own extension is dropped from the target the way every wikilink already
+	 * omits it, and the shortest path is used only where no other file in the
+	 * vault would answer to the same one — the two-file case a reader actually
+	 * hits, checked against every file rather than assumed unique.
+	 *
+	 * **What is not**: `subpath` and `alias`, and the app's own **Use
+	 * \[\[Wikilinks\]]** / **New link format** settings — nothing here reaches
+	 * for a relative-path format, so `sourcePath` is accepted and threaded
+	 * through the call the caller makes (`view/file-suggest.ts` passes the
+	 * character note's own path, not the vault root) but goes unused by this
+	 * double's own arithmetic, which only ever answers in shortest-path-or-full
+	 * form. Every consumer here wants a reference to whatever was picked and
+	 * nothing else.
+	 */
+	generateMarkdownLink(file: TFile, _sourcePath: string): string {
+		const markdown = file.extension.toLowerCase() === 'md';
+		const named = markdown ? file.basename : file.name;
+		const collides = this.vault
+			.getFiles()
+			.some(
+				(candidate) =>
+					candidate !== file &&
+					(candidate.extension.toLowerCase() === 'md'
+						? candidate.basename
+						: candidate.name) === named,
+			);
+		const target = collides ? file.path.replace(/\.md$/, '') : named;
+		return `${markdown ? '' : '!'}[[${target}]]`;
 	}
 }
 
@@ -1269,9 +1345,109 @@ export class View extends Component {
 
 export class ItemView extends View {}
 
-/** Only ever extended, never constructed by anything the harness renders. */
+/**
+ * Only ever extended, never constructed by anything the harness renders.
+ *
+ * **The save half is modelled, not stubbed away**, because the two facts a
+ * `TextFileView` subclass depends on are both timing facts and both invisible
+ * from inside the subclass. `requestSave` is Obsidian's own *debounced* save —
+ * its typing says "Debounced save in 2 seconds from now" — so the text a view
+ * commits is not on disk when the commit returns; and the view's `data` is the
+ * only thing `save` ever writes, so a file rewritten underneath an open view is
+ * overwritten by it. A stub whose `requestSave` wrote through synchronously
+ * would make both of those unobservable, which is how `docs/PATTERNS.md` §11's
+ * "a rendered `SheetView` needs a vault fixture" stayed a gap: the view opens
+ * fine, it is the save that had nowhere to land.
+ *
+ * `savesRequested` and `runRequestedSave` are the debounce made explicit, the
+ * same bargain `LayoutEditorView.flush` already offers the editor's own: a test
+ * decides whether the two seconds have elapsed, rather than a timer deciding
+ * for it. **Named so they cannot be mistaken for Obsidian's own members**, and
+ * so a subclass adding a flush of its own — `SheetView.flushSave` does — is
+ * overriding nothing here.
+ */
 export class TextFileView extends ItemView {
 	data = '';
+	/** The file this view is showing, which `onLoadFile` sets. */
+	file: TFile | null = null;
+	/**
+	 * How many debounced saves are outstanding — Obsidian's 2-second window,
+	 * counted rather than flagged so a test can say the view asked twice.
+	 */
+	savesRequested = 0;
+
+	/**
+	 * A property rather than a method, as in `obsidian.d.ts`, so a subclass
+	 * calling `this.requestSave()` reaches this and not an override.
+	 */
+	requestSave = (): void => {
+		this.savesRequested += 1;
+	};
+
+	/** Fire the debounce: run a requested save, if one is outstanding. */
+	async runRequestedSave(): Promise<void> {
+		if (this.savesRequested === 0) return;
+		this.savesRequested = 0;
+		await this.save();
+	}
+
+	/**
+	 * Write what the view holds, and **leave the counter alone.**
+	 *
+	 * Discharging the request here was a fiction with consequences: Obsidian
+	 * types `requestSave` as a bare `() => void` with no cancel and no
+	 * `isPending`, so calling `save()` directly does **not** call off the
+	 * debounced write already scheduled — it still fires about two seconds
+	 * later, from whatever the view holds then. A double that cleared the
+	 * counter on any save made that interleaving inexpressible, which is the
+	 * one sequence a consumer most needs to be able to write: a save landing
+	 * *between* two other vault writes. Only `runRequestedSave` and
+	 * `onUnloadFile` discharge it, because those are the two moments the app
+	 * genuinely has nothing left outstanding.
+	 */
+	async save(_clear?: boolean): Promise<void> {
+		if (!this.file) return;
+		await this.app.vault.modify(this.file, this.getViewData());
+	}
+
+	async onLoadFile(file: TFile): Promise<void> {
+		this.file = file;
+		this.setViewData(await this.app.vault.read(file), true);
+	}
+
+	/**
+	 * The app's own order on the way out: the view saves, and only then is it
+	 * cleared — which is the whole reason a stale `data` matters.
+	 *
+	 * **Unconditional, because the app's is.** `obsidian.d.ts` says "by default,
+	 * this view only saves when it's closing", so the close write is the base
+	 * behaviour and `requestSave` is the *addition* a view makes on top of it.
+	 * Conditioning this on an outstanding request instead made the double
+	 * quietly permissive in the one direction that mattered: anything that had
+	 * already called `save()` discharged the counter, so closing wrote nothing,
+	 * and a view holding text staler than the file could be closed in a test
+	 * with no consequence. That is precisely the write-back this plugin's own
+	 * reload exists to prevent, so the double was hiding the bug its consumer
+	 * was written to catch.
+	 */
+	async onUnloadFile(_file: TFile): Promise<void> {
+		this.savesRequested = 0;
+		await this.save();
+		this.clear();
+		this.file = null;
+	}
+
+	getViewData(): string {
+		return this.data;
+	}
+
+	setViewData(data: string, _clear: boolean): void {
+		this.data = data;
+	}
+
+	clear(): void {
+		this.data = '';
+	}
 }
 
 export class MarkdownView extends TextFileView {}
@@ -1393,12 +1569,71 @@ export class Workspace {
 	}
 }
 
+/** The frontmatter block's own delimiter lines, and one `key: value` line inside it. */
+const FRONTMATTER_BLOCK = /^---\r?\n([\s\S]*?)\r?\n---(?:\r?\n|$)/;
+const FRONTMATTER_LINE = /^([^:]+):[ \t]*(.*)$/;
+
+/**
+ * Enough of `MetadataCache` for `getFileCache(file)?.frontmatter` — the read
+ * every caller in `src/` already uses to answer "is this a character note for
+ * this layout" (`view/auto-open.ts`, `commands.ts`,
+ * `component-rename-migration.ts`) without parsing a body that will not
+ * match.
+ *
+ * **Derived from the file's own text on every call, not maintained as a
+ * separate index.** The real cache is asynchronous and can lag a fresh
+ * write — `characters.ts`'s own header cites that race — but nothing in this
+ * plugin's test suite depends on the lag itself, only on reading back what a
+ * note's frontmatter block says, so a synchronous read off `Vault.rawContent`
+ * is the double's whole job.
+ *
+ * **What this deliberately cannot show.** A value is never coerced past a
+ * trimmed string and one layer of surrounding quotes, which is
+ * `parse/character.ts`'s own `extractLayoutName` rule — so this models the
+ * *plugin's* reader, not the app's. `isPlainLayoutValue` exists precisely
+ * because those two have to agree about one line, and a double that
+ * implements the second as a copy of the first can never fail when they
+ * disagree: real YAML gives a typed scalar back for `sheet-layout: 12`,
+ * `: No` or `: null`, all three of which this plugin writes unquoted and this
+ * double answers as the strings `'12'`, `'No'` and `'null'`. Nothing here is
+ * a claim that Obsidian agrees. Every caller is therefore written to be
+ * correct either way — `component-rename-migration.ts` treats a non-string as
+ * undecidable and lets the note's own text settle it — and the missing probe
+ * is `docs/BACKLOG.md` § Patterns, where the typed-scalar case is named.
+ */
+export class MetadataCache {
+	constructor(private readonly vault: Vault) {}
+
+	getFileCache(file: TFile): { frontmatter?: Record<string, string> } | null {
+		const content = this.vault.rawContent(file.path);
+		if (content === null) return null;
+		const match = FRONTMATTER_BLOCK.exec(content);
+		if (!match) return {};
+		const frontmatter: Record<string, string> = {};
+		for (const rawLine of (match[1] ?? '').split(/\r?\n/)) {
+			const line = FRONTMATTER_LINE.exec(rawLine);
+			if (!line) continue;
+			const key = (line[1] ?? '').trim();
+			let value = (line[2] ?? '').trim();
+			if (
+				(value.startsWith('"') && value.endsWith('"') && value.length > 1) ||
+				(value.startsWith("'") && value.endsWith("'") && value.length > 1)
+			) {
+				value = value.slice(1, -1);
+			}
+			frontmatter[key] = value;
+		}
+		return { frontmatter };
+	}
+}
+
 export class App {
 	vault = new Vault();
 	workspace = new Workspace(this);
 	// After `vault`, which it needs in order to hand out a folder in it. Field
 	// initialisers run in declaration order, so the order here is load bearing.
 	fileManager = new FileManager(this.vault);
+	metadataCache = new MetadataCache(this.vault);
 }
 
 export class Modal {
@@ -1476,6 +1711,239 @@ export abstract class SuggestModal<T> extends Modal {
 		item: T,
 		event: MouseEvent | KeyboardEvent,
 	): void;
+}
+
+/**
+ * Obsidian's base for a type-ahead popover, enough of it to be a base.
+ *
+ * Declared beside `AbstractInputSuggest` rather than folded into it because the
+ * app splits them there: `open`, `close`, `renderSuggestion` and
+ * `selectSuggestion` are `PopoverSuggest`'s, and a module reaching one of those
+ * through a variable typed as the base compiles against the real declarations
+ * and has to compile against these.
+ *
+ * **`scope` is deliberately absent.** The real class carries a `Scope` whose
+ * pushed keymap consumes Enter, Escape, the arrows, Home, End and PageUp/Down
+ * while the popup is open; this double answers those on the element's own
+ * `keydown` instead, because a `Scope` with nothing to push it onto would be
+ * modelling Obsidian's keymap stack rather than doubling one class.
+ */
+export abstract class PopoverSuggest<T> {
+	constructor(public app: App) {}
+
+	open(): void {}
+	close(): void {}
+
+	abstract renderSuggestion(value: T, el: HTMLElement): void;
+	abstract selectSuggestion(value: T, evt: MouseEvent | KeyboardEvent): void;
+}
+
+/**
+ * Obsidian's input type-ahead, enough of it to drive a list, a keyboard and a
+ * choice.
+ *
+ * Added because a real surface reaches it: the layout editor's formula fields
+ * bind one (`docs/features/formula-name-suggestions.md`), and a popup nothing
+ * can construct is a popup nothing can test or photograph.
+ *
+ * **What is modelled** is the whole of what that feature's design rests on: the
+ * three listeners the app binds on the element, that `blur` closes, the
+ * `.suggestion-container > .suggestion > .suggestion-item` markup appended to
+ * `document.body` with `is-selected` on the highlighted item, `limit`, and the
+ * keys the popup consumes *only while it is open* — which is the property the
+ * accept-then-commit gesture rests on, since the second Enter has to reach the
+ * input and fire `change`.
+ *
+ * **What is not modelled, named rather than left to be assumed** (`PATTERNS.md`
+ * §2): the popup's placement, its flip when the input sits low in the window,
+ * its height clamp and its reposition on scroll; the `Scope` the real class
+ * pushes, and therefore Home, End and PageUp/PageDown; the mobile regime, which
+ * defers `onInputFocus` through a `requestAnimationFrame` until the keyboard
+ * settles and closes on the back gesture; the `autoDestroy` timer the app arms
+ * on every open; the `isShown()` gate in `showSuggestions`, for the reason
+ * `installDomHelpers` gives for leaving `isShown` out entirely; and
+ * `suggestEl`/`isOpen`, which the app does not declare and so nothing here may
+ * offer a test a way to read.
+ *
+ * **`getSuggestions` is awaited only where it returns a promise**, which is what
+ * the app does: `onInputChange` branches on `Array.isArray` and calls
+ * `showSuggestions` straight through for a plain array. This said the opposite
+ * for one wave — "awaited unconditionally" — and the cost was not a bug but a
+ * lie a test could not see through: every case and the harness both awaited a
+ * microtask the app never takes.
+ *
+ * **Every query is gated on `textInputEl.isActiveElement()`**, as the app's is.
+ * Without it a case could drive the whole popup at an element that was never
+ * focused, which the app would refuse outright — the double being kinder than
+ * the app, the one direction this file's header forbids.
+ *
+ * **A `mousedown` on a `.suggestion-item` is prevented and one on the container
+ * is not**, which is the app's own delegation and not an approximation of it.
+ * That distinction is load bearing rather than incidental: it is why pressing an
+ * item accepts without blurring the field, and why a press on the popup's own
+ * padding blurs and commits — a cost `docs/features/formula-name-suggestions.md`
+ * §4 accepts by name, and one nothing could have observed here before.
+ */
+export abstract class AbstractInputSuggest<T> extends PopoverSuggest<T> {
+	/** Elements rendered at once. 0 disables the cap, as the app's does. */
+	limit = 100;
+
+	private readonly textInputEl: HTMLInputElement | HTMLDivElement;
+	private containerEl: HTMLElement | null = null;
+	private shown: T[] = [];
+	private selected = 0;
+	private selectCallback:
+		| ((value: T, evt: MouseEvent | KeyboardEvent) => unknown)
+		| null = null;
+
+	constructor(app: App, textInputEl: HTMLInputElement | HTMLDivElement) {
+		super(app);
+		this.textInputEl = textInputEl;
+		textInputEl.addEventListener('input', () => this.refresh());
+		textInputEl.addEventListener('focus', () => this.refresh());
+		textInputEl.addEventListener('blur', () => this.close());
+		textInputEl.addEventListener('keydown', (event) =>
+			this.handleKey(event as KeyboardEvent),
+		);
+	}
+
+	/**
+	 * The app's own delegated handler: a press on an *item* keeps the field
+	 * focused, a press on the container's padding does not.
+	 *
+	 * Bound on the container each time one is built rather than once in the
+	 * constructor, because this double builds the container at `open()` where
+	 * the app builds it with the instance.
+	 */
+	private preventItemBlur(container: HTMLElement): void {
+		container.addEventListener('mousedown', (event) => {
+			const target = event.target;
+			if (target instanceof HTMLElement && target.closest('.suggestion-item')) {
+				event.preventDefault();
+			}
+		});
+	}
+
+	getValue(): string {
+		return this.textInputEl instanceof HTMLInputElement
+			? this.textInputEl.value
+			: (this.textInputEl.textContent ?? '');
+	}
+
+	setValue(value: string): void {
+		if (this.textInputEl instanceof HTMLInputElement) {
+			this.textInputEl.value = value;
+		} else {
+			this.textInputEl.textContent = value;
+		}
+	}
+
+	protected abstract getSuggestions(query: string): T[] | Promise<T[]>;
+
+	selectSuggestion(value: T, evt: MouseEvent | KeyboardEvent): void {
+		this.selectCallback?.(value, evt);
+	}
+
+	onSelect(
+		callback: (value: T, evt: MouseEvent | KeyboardEvent) => unknown,
+	): this {
+		this.selectCallback = callback;
+		return this;
+	}
+
+	open(): void {
+		if (this.containerEl !== null) return;
+		const container = document.createElement('div');
+		container.classList.add('suggestion-container');
+		const list = document.createElement('div');
+		list.classList.add('suggestion');
+		container.appendChild(list);
+		this.preventItemBlur(container);
+		document.body.appendChild(container);
+		this.containerEl = container;
+	}
+
+	close(): void {
+		this.containerEl?.remove();
+		this.containerEl = null;
+		this.shown = [];
+		this.selected = 0;
+	}
+
+	/**
+	 * Ask for suggestions and draw them, or close where there are none.
+	 *
+	 * The two gates are the app's, in the app's order: nothing is asked at all
+	 * unless the element is focused, and a plain array is drawn straight through
+	 * while a promise is awaited.
+	 */
+	private refresh(): void {
+		if (!this.textInputEl.isActiveElement()) return;
+		const answer = this.getSuggestions(this.getValue());
+		if (Array.isArray(answer)) {
+			this.show(answer);
+			return;
+		}
+		void answer.then((values) => {
+			this.show(values);
+		});
+	}
+
+	private show(values: T[]): void {
+		const capped = this.limit > 0 ? values.slice(0, this.limit) : values;
+		if (capped.length === 0) {
+			this.close();
+			return;
+		}
+		this.shown = capped;
+		this.selected = 0;
+		this.open();
+		this.paint();
+	}
+
+	private paint(): void {
+		const list = this.containerEl?.querySelector('.suggestion');
+		if (!(list instanceof HTMLElement)) return;
+		list.replaceChildren();
+		this.shown.forEach((value, index) => {
+			const item = document.createElement('div');
+			item.classList.add('suggestion-item');
+			if (index === this.selected) item.classList.add('is-selected');
+			this.renderSuggestion(value, item);
+			item.addEventListener('click', (event) =>
+				this.selectSuggestion(value, event),
+			);
+			list.appendChild(item);
+		});
+	}
+
+	/**
+	 * The keys the popup owns, and only while it is open.
+	 *
+	 * The guard is the whole point: closed, every one of these reaches the input,
+	 * which is what makes Enter a commit rather than a second accept.
+	 */
+	private handleKey(event: KeyboardEvent): void {
+		if (this.containerEl === null || this.shown.length === 0) return;
+		if (event.key === 'Escape') {
+			event.preventDefault();
+			this.close();
+			return;
+		}
+		if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+			event.preventDefault();
+			const step = event.key === 'ArrowDown' ? 1 : -1;
+			const count = this.shown.length;
+			this.selected = (this.selected + step + count) % count;
+			this.paint();
+			return;
+		}
+		if (event.key === 'Enter') {
+			event.preventDefault();
+			const value = this.shown[this.selected];
+			if (value !== undefined) this.selectSuggestion(value, event);
+		}
+	}
 }
 
 /**

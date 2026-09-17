@@ -8,7 +8,7 @@
  */
 
 import { LAYOUT_KEY } from '../types';
-import { lineText, splitLines } from './lines';
+import { lineText, renameHeadingLine, splitLines } from './lines';
 
 export class CharacterParseError extends Error {
 	constructor(message: string) {
@@ -317,6 +317,50 @@ export function setSectionBody(
 	}
 	sections.push({ label, headingLine: `## ${label}\n`, body });
 	return { ...note, preamble, sections };
+}
+
+/**
+ * The three things a rename of one section's label can do
+ * (`docs/features/component-rename-migration.md`), on `renameFencedEntry`'s
+ * own shape one file down.
+ *
+ * `'absent'` where the note holds no section under `from` — nothing here for
+ * the caller to touch. `'collision'` where a section under `to` already
+ * exists: refused rather than merged, since two components' data would land
+ * under one heading with no way to tell them apart again. `'renamed'` is the
+ * note with that section's heading rewritten and every other section, the
+ * preamble and the frontmatter untouched; renaming a label to itself is
+ * `'renamed'` with the note byte-identical, never a collision against itself.
+ */
+export type SectionRenameResult =
+	| { kind: 'renamed'; note: CharacterNote }
+	| { kind: 'absent' }
+	| { kind: 'collision' };
+
+/**
+ * Rename a section's heading, keeping the heading line's own prefix and line
+ * ending — `renameRecord`'s own trick (`parse/records.ts`), one level up.
+ * Nothing but that one heading line changes: every other section, the
+ * preamble and the frontmatter are the same object they were.
+ */
+export function renameSectionLabel(
+	note: CharacterNote,
+	from: string,
+	to: string,
+): SectionRenameResult {
+	const index = note.sections.findIndex((section) => section.label === from);
+	if (index === -1) return { kind: 'absent' };
+	if (from !== to && note.sections.some((section) => section.label === to)) {
+		return { kind: 'collision' };
+	}
+	const existing = note.sections[index] as CharacterSection;
+	const sections = note.sections.slice();
+	sections[index] = {
+		...existing,
+		label: to,
+		headingLine: renameHeadingLine(existing.headingLine, 2, to),
+	};
+	return { kind: 'renamed', note: { ...note, sections } };
 }
 
 /** One section's new body, as a function of the body it has now. */

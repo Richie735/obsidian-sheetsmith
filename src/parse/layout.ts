@@ -6,7 +6,7 @@
  * wrong rather than failing silently.
  */
 
-import { isName } from '../formula/expression';
+import { isName, SELF_KEYWORD } from '../formula/expression';
 import { MODIFIER_NAMESPACE } from '../formula/modifiers';
 import { walkComponents } from './layout-walk';
 import {
@@ -23,6 +23,23 @@ export class LayoutParseError extends Error {
 		this.name = 'LayoutParseError';
 	}
 }
+
+/**
+ * Words a component id may not be, because the sheet reserves them for
+ * something a formula reads instead — imported rather than spelled out, so
+ * a third reservation is one line added to this set and not a second copy of
+ * either string.
+ *
+ * `mod` is the modifier namespace (SPEC §5): `mod.<name>` is a slot in the
+ * same flat table a component's own name lives in. `self` is a Roster's own
+ * rows in an aggregate's first argument (also SPEC §5): `sum(self, …)` inside
+ * a component's own formula has to mean that component's rows and never a
+ * lookup by id, whichever component the layout happens to have called `self`.
+ */
+const RESERVED_IDS: ReadonlySet<string> = new Set([
+	MODIFIER_NAMESPACE,
+	SELF_KEYWORD,
+]);
 
 /**
  * Grid width for a layout that does not name one.
@@ -513,17 +530,23 @@ export function parseLayout(source: string): Layout {
 		// modifier namespace (SPEC §5): `buildSheetScope` registers `${id}` and
 		// `${id}.${name}` into the same flat table the slots go into, so a
 		// component called `mod` would register `mod.DEX` beside
-		// `mod.armour_class` and one name would mean two things. Rewritten rather
-		// than refused on the same argument the hyphen gets, and it is the safe
-		// half of the choice three times over: a note is keyed by `label` and not
-		// by `id`, so no character data moves (Constraint 4); a formula that said
-		// `mod` was already ambiguous between a component and a library function,
-		// so nothing well-formed breaks; and the constant is imported from beside
-		// the namespace it protects rather than spelled twice.
+		// `mod.armour_class` and one name would mean two things. `self` joined it
+		// once a component could group rows under names of its own: it is a
+		// Roster's own rows inside an aggregate's first argument
+		// (`sum(self, …)`), and a component actually called that would make
+		// every roster on the sheet ambiguous between its own rows and a lookup
+		// by id. Rewritten rather than refused on the same argument the hyphen
+		// gets, and it is the safe half of the choice three times over: a note is
+		// keyed by `label` and not by `id`, so no character data moves
+		// (Constraint 4); a formula that said `mod` or `self` was already
+		// ambiguous between a component and the reserved word, so nothing
+		// well-formed breaks; and both constants are imported from beside the
+		// thing they protect rather than spelled twice.
 		//
-		// It becomes `mod_2` rather than `mod`, because `usable` holds every id
-		// that already reads as a name and this component's own is one of them.
-		if (isName(component.id) && component.id !== MODIFIER_NAMESPACE) continue;
+		// It becomes `mod_2` or `self_2` rather than the bare word, because
+		// `usable` holds every id that already reads as a name and this
+		// component's own is one of them.
+		if (isName(component.id) && !RESERVED_IDS.has(component.id)) continue;
 		component.id = migrateId(component.id, usable);
 		usable.add(component.id);
 	}

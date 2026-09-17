@@ -10,6 +10,7 @@
  * into the FunctionLibrary this module evaluates against.
  */
 
+import { RowValues } from '../types';
 import { NO_ROWS, RowLookup } from './rows';
 
 export type Value = number | boolean | string;
@@ -95,6 +96,49 @@ const BUILTINS: ReadonlyMap<string, Builtin> = new Map<string, Builtin>([
 ]);
 
 /**
+ * How many arguments each aggregate takes, and what to say when it was given
+ * some other number.
+ *
+ * `sum(<table>, <expression>, [<condition>])` and `count(<table>,
+ * [<condition>])`. Written out per aggregate rather than derived from a shape,
+ * because the message is the whole value of the entry: "takes 2 or 3
+ * arguments" names the fault, and PATTERNS §4 wants the fix.
+ */
+interface Aggregate {
+	/** Arguments before the optional condition, the component reference included. */
+	least: number;
+	wrongCount: string;
+}
+
+const AGGREGATES: ReadonlyMap<string, Aggregate> = new Map<string, Aggregate>([
+	[
+		'sum',
+		{
+			least: 2,
+			wrongCount:
+				'sum() takes a table, what to add up, and optionally a condition.',
+		},
+	],
+	[
+		'count',
+		{ least: 1, wrongCount: 'count() takes a table, and optionally a condition.' },
+	],
+]);
+
+/**
+ * The calls that walk a component's rows, in declaration order.
+ *
+ * Derived from the table above rather than listed beside it, which is
+ * `RESERVED_NAMES`' own rule one entry over and for the same reason: two lists
+ * that must agree eventually will not, and the failure is silent. Measured
+ * direction of drift for *this* set — a third aggregate would parse and evaluate
+ * perfectly while `formula/completion.ts` never recognised its argument
+ * positions and the configuration panel's inventory never offered it, so an
+ * author would get a working call the editor behaved as though did not exist.
+ */
+export const AGGREGATE_NAMES: readonly string[] = [...AGGREGATES.keys()];
+
+/**
  * Names a layout function may not take, since a formula reading `floor` must
  * mean the one thing everywhere (SPEC §5).
  *
@@ -110,9 +154,10 @@ export const RESERVED_NAMES: readonly string[] = [
 	'if',
 	// Lazy in every argument but the first, which is not a value at all: the
 	// aggregates evaluate their arguments once per row, in the row's own scope.
-	// evalNode handles them for the same reason it handles `if`.
-	'sum',
-	'count',
+	// evalNode handles them for the same reason it handles `if`. Spread rather
+	// than written out, so this list and the aggregate table cannot disagree
+	// about which calls exist — the same derivation `BUILTINS` gets above.
+	...AGGREGATE_NAMES,
 	// Literals the parser reads before it looks any name up.
 	'true',
 	'false',
@@ -158,6 +203,24 @@ export interface FunctionEnv {
 	 */
 	rows?: RowLookup;
 	/**
+	 * This expression's own rows, for `sum(self, …)` and `count(self, …)`
+	 * (SPEC §5), where `id` is the component the guard below is keyed on and
+	 * `build` returns them. Absent everywhere the expression is not one of a
+	 * component's own rows — most fields, on every component but a Roster.
+	 */
+	self?: { id: string; build: () => readonly RowValues[] };
+	/**
+	 * The guard against a `self` walk re-entering itself, shared for the life
+	 * of one sheet build (`resolve.ts`'s `FormulaEnv.selfGuard`) rather than
+	 * per evaluation: the ring this catches crosses several separate
+	 * evaluations — a row's computed column reads `stat`, which resolves the
+	 * stat's own `derived`, which aggregates `self` back over that same
+	 * column — so a guard reset per `evaluate()` call would never see it.
+	 * Defaults to a fresh, empty one, which guards nothing and is the correct
+	 * answer for a `self` that is never read.
+	 */
+	selfGuard?: Set<string>;
+	/**
 	 * Never set, and here only so the compiler refuses a `FormulaEnv` passed
 	 * where this is wanted.
 	 *
@@ -179,6 +242,8 @@ interface Runtime {
 	base: Scope;
 	rows: RowLookup;
 	active: Set<string>;
+	self?: { id: string; build: () => readonly RowValues[] };
+	selfGuard: Set<string>;
 }
 
 export class FormulaError extends Error {
@@ -449,36 +514,6 @@ function callDefined(
 }
 
 /**
- * How many arguments each aggregate takes, and what to say when it was given
- * some other number.
- *
- * `sum(<table>, <expression>, [<condition>])` and `count(<table>,
- * [<condition>])`. Written out per aggregate rather than derived from a shape,
- * because the message is the whole value of the entry: "takes 2 or 3
- * arguments" names the fault, and PATTERNS §4 wants the fix.
- */
-interface Aggregate {
-	/** Arguments before the optional condition, the component reference included. */
-	least: number;
-	wrongCount: string;
-}
-
-const AGGREGATES: ReadonlyMap<string, Aggregate> = new Map<string, Aggregate>([
-	[
-		'sum',
-		{
-			least: 2,
-			wrongCount:
-				'sum() takes a table, what to add up, and optionally a condition.',
-		},
-	],
-	[
-		'count',
-		{ least: 1, wrongCount: 'count() takes a table, and optionally a condition.' },
-	],
-]);
-
-/**
  * Restate a row's failure as the row a reader sees, plus what went wrong.
  *
  * One row out of nine with an unreadable cell fails the whole aggregate, which
@@ -507,6 +542,59 @@ function inRow(label: string, error: unknown): FormulaError {
  */
 export function inRowMessage(label: string, said: string): string {
 	return `Row "${label}": ${said.charAt(0).toLowerCase()}${said.slice(1)}`;
+}
+
+/**
+ * The reserved word beside a component id, in an aggregate's first argument
+ * (SPEC §5): `self` is a Roster's own rows, never a lookup by id.
+ *
+ * Exported so `parse/layout.ts` can hold a component to the same rule
+ * `MODIFIER_NAMESPACE` already does for `mod`: `sum(self, …)` inside that
+ * component's own formula would otherwise mean two things depending on which
+ * component happened to be reading it, exactly the collision the modifier
+ * namespace is reserved against. One constant rather than the string spelled
+ * twice, since a reader of either file has to trust the other still means it.
+ */
+export const SELF_KEYWORD = 'self';
+
+/**
+ * `self`'s rows for this evaluation, or why there are none (SPEC §5).
+ *
+ * A reserved word beside a component id, read from the same argument position
+ * `evalAggregate` already parses as identifier text — never resolved through
+ * `rt.rows`, because `self` names no id on the sheet: `parse/layout.ts`
+ * refuses it as a component id for exactly that reason, on `mod`'s own
+ * precedent.
+ *
+ * **The guard is keyed on the component's own id and shared for the life of
+ * one sheet build**, not reset per evaluation: the ring this catches — a
+ * row's computed column reading `stat`, which resolves the stat's own
+ * `derived`, which aggregates `self` back over that same column — crosses
+ * several separate `resolveField` calls, each with its own fresh `Runtime`.
+ * `rt.selfGuard` is threaded through from `FormulaEnv` for exactly that
+ * reason: it is the one thing here that must not be per-call.
+ */
+function readSelf(
+	rt: Runtime,
+	caller: string,
+): { rows: readonly RowValues[] } | { error: string } {
+	if (rt.self === undefined) {
+		return {
+			error: `"self" names the rows of the component whose own formula this is, and this formula is not one of a component's rows or its own reading — so ${caller}(self, …) names nothing here.`,
+		};
+	}
+	const { id, build } = rt.self;
+	if (rt.selfGuard.has(id)) {
+		return {
+			error: `"${id}" is already being read, so "self" cannot resolve here. A formula on its own rows reaches back to itself — break that loop.`,
+		};
+	}
+	rt.selfGuard.add(id);
+	try {
+		return { rows: build() };
+	} finally {
+		rt.selfGuard.delete(id);
+	}
 }
 
 /**
@@ -550,7 +638,8 @@ function evalAggregate(
 				: 'count() names a table first: count(inventory).',
 		);
 	}
-	const found = rt.rows(table.name, name);
+	const found =
+		table.name === SELF_KEYWORD ? readSelf(rt, name) : rt.rows(table.name, name);
 	if ('error' in found) throw new FormulaError(found.error);
 
 	// count() has no expression to add up: each row it keeps is worth one.
@@ -800,6 +889,11 @@ export function evaluateExpression(
 		// Per evaluation, not per library: the guard is about one call chain,
 		// and a library outlives every expression that uses it.
 		active: new Set(),
+		self: env?.self,
+		// A fresh, empty guard where nothing carried one through: it guards
+		// nothing, which is the truth for every expression that never reads
+		// `self` at all.
+		selfGuard: env?.selfGuard ?? new Set(),
 	});
 	// Nothing downstream may ever render "NaN" or "Infinity" on a card.
 	if (typeof result === 'number' && !Number.isFinite(result)) {

@@ -124,8 +124,28 @@ mkdirSync(outDir, { recursive: true });
  * raising it here would be repairing somebody else's instrument inside a diff
  * about a component. Measured and recorded rather than fixed, which is what this
  * comment keeps asking for.
+ *
+ * **Raised again for the Roster fixture** (two rosters, one six-band wide and
+ * one three-band narrow, beside the six-up "Ability checks" group): measured
+ * 6342 here against the 5800 this was set to, 13077 narrow against 11800, 7182
+ * at 520 against 6600 and 7884 at `text=24` against 6800 — **all four over the
+ * frame**, on the exact trap this comment's own opening paragraph names, and
+ * the exact one a Roster addition was always going to fall into: two new
+ * components on the sheet and all three siblings went stale together, not
+ * only the default. Each measured through its own query, harness built first.
+ * 5800 to **6400**, 11800 to **13200**, 6600 to **7300**, 6800 to **8000**.
+ *
+ * **Raised again for the fit rows** (`docs/features/picture-fit-and-suggest.md`):
+ * a Cover and a Stretch Image beside a Passport in cover, one full-width row at
+ * the default, plus a Passport in stretch on its own row under that — four
+ * placements over two rows at the default, six separate one-column rows
+ * narrow. Measured twice as the second row was added; final numbers: 6667 here
+ * against the 6400 this was set to, 14195 at 380 against 13200, 7636 at 520
+ * against 7300, 8437 at `text=24` against 8000 — all four over, each measured
+ * through its own query with the harness built first. 6400 to **6700**, 13200
+ * to **14300**, 7300 to **7700**, 8000 to **8500**.
  */
-const SHEET_FRAME = '1400,5800';
+const SHEET_FRAME = '1400,6700';
 
 /**
  * The editor pane's frame, tall because the tree is the whole layout.
@@ -215,9 +235,28 @@ const DEFAULTS = [
 		// "Ability checks" six-up (`docs/SPEC.md` §4.3): at one column its six
 		// pairs stack one-per-row rather than two, which is the widest jump of
 		// the three frames this addition touches.
+		//
+		// Raised again with SHEET_FRAME for the Roster fixture: measured 13077
+		// against 11800. Roster's own narrow reflow is the reason this jump is
+		// again the widest of the three — a wide roster's band head wraps its
+		// name, value and reading onto their own lines at one column, on top
+		// of every row underneath it stacking the same way Table's already do.
+		//
+		// Raised again with SHEET_FRAME for the fit rows: measured 14195 against
+		// 13200 — the widest jump of the three again, since four placements that
+		// sit in two rows at the default each become a full-width row of their own
+		// at one column.
+		//
+		// Raised again for the multiclass list field (`docs/features/
+		// passport-field-lists.md`): measured 14529 against 14300, 229 over. At
+		// the default and at `text=24` the new Passport sits beside a *taller*
+		// one already in its row band and adds nothing to either frame, which is
+		// the one reflow that is not true of: at one column it becomes a
+		// full-width row of its own, the same shape every addition to this frame
+		// has taken. 14300 to **14700**.
 		name: 'sheet-narrow',
 		query: 'surface=sheet&theme=dark&width=380',
-		size: '520,11800',
+		size: '520,14700',
 	},
 	{
 		/*
@@ -243,9 +282,23 @@ const DEFAULTS = [
 		// push the sheet about 700px taller. Raised again to 6300 for the two
 		// Passports: measured 6020 against the 6000 it was set to, which is 20px
 		// over and therefore cropping.
+		//
+		// Raised again with SHEET_FRAME for the Roster fixture: measured 7182
+		// against 6600.
+		//
+		// Raised again with SHEET_FRAME for the fit rows: measured 7636 against
+		// 7300 — at 520 the sheet has not collapsed, so the four new placements
+		// still sit in two rows and the jump is the smallest of the three.
+		//
+		// Raised again for the multiclass list field: measured 7725 against
+		// 7700, 25 over. Unlike the other two frames this one does move: at
+		// 520 the new Passport's own face is already under its 400px stacking
+		// threshold, so it stacks picture-over-text in the row it shares with
+		// the fit row's own stacked Passport, and the row grows to hold both.
+		// 7700 to **7850**.
 		name: 'sheet-list-narrow',
 		query: 'surface=sheet&theme=light&width=520',
-		size: '620,6600',
+		size: '620,7850',
 	},
 	{
 		// UI.md §5 puts the card's headline number in `em` rather than pixels
@@ -271,7 +324,13 @@ const DEFAULTS = [
 		//
 		// Raised again with SHEET_FRAME for the "Ability checks" six-up, measured
 		// through `text=24` rather than assumed from the default-size delta.
-		size: '1400,6800',
+		//
+		// Raised again with SHEET_FRAME for the Roster fixture: measured 7884
+		// against 6800.
+		//
+		// Raised again with SHEET_FRAME for the fit rows: measured 8437 against
+		// 8000, through `text=24` as this comment asks.
+		size: '1400,8500',
 	},
 	{
 		// The first view to photograph a focus ring at all. A still cannot press
@@ -660,6 +719,91 @@ const DEFAULTS = [
 		// closed is to look.
 		name: 'editor-light',
 		query: 'surface=editor&theme=light&open=weapons',
+		size: EDITOR_FRAME,
+	},
+	{
+		/*
+		 * **The name suggester, which exists only while somebody is typing**
+		 * (`docs/features/formula-name-suggestions.md` §7). It is disarmed on
+		 * focus by design, so no stored layout and no press can reach it — the
+		 * `&suggest=` query is the third sibling of `&focus=` and `&press=`, and
+		 * without it this popup is drawn in no PNG at all.
+		 *
+		 * The top level: a name in code type with the component's label beside it,
+		 * against the pane it is drawn over.
+		 *
+		 * **`%2B` and not `+`.** `harness.ts` reads the query through
+		 * `URLSearchParams`, which decodes a `+` as a space — so these two views
+		 * rendered `10   abil` for a wave, and the one thing they exist to show
+		 * about §2's central claim, that the splice replaces the fragment and not
+		 * the value, had no operator left of the caret to survive.
+		 */
+		name: 'editor-suggest-light',
+		query:
+			'surface=editor&theme=light&open=armour_class&suggest=cfg-armour_class-derived:10 %2B abil',
+		size: EDITOR_FRAME,
+	},
+	{
+		// The same, in the other theme: the popup is Obsidian's own chrome and
+		// the plugin writes no rule for it, so what is being checked is that the
+		// code type and the muted note are legible on the app's own surface.
+		name: 'editor-suggest-dark',
+		query:
+			'surface=editor&theme=dark&open=armour_class&suggest=cfg-armour_class-derived:10 %2B abil',
+		size: EDITOR_FRAME,
+	},
+	{
+		// The second level, which is the half a flat list could not have: the dot
+		// opens the component's own members rather than listing every name the
+		// layout publishes at once.
+		name: 'editor-suggest-members',
+		query:
+			'surface=editor&theme=light&open=armour_class&suggest=cfg-armour_class-derived:10 %2B abilities.',
+		size: EDITOR_FRAME,
+	},
+	{
+		// Inside an aggregate's second argument, where the named table's own
+		// columns come before anything on the sheet. Nothing else photographs the
+		// argument-aware half of the vocabulary.
+		name: 'editor-suggest-aggregate',
+		query:
+			'surface=editor&theme=light&open=encumbrance&suggest=cfg-encumbrance-derived:sum(inventory, We',
+		size: EDITOR_FRAME,
+	},
+	{
+		// The inventory that replaced the panel's single copyable id: six groups
+		// of chips, each a name and the forms built on it.
+		name: 'editor-inventory',
+		query: 'surface=editor&theme=light&open=abilities',
+		size: EDITOR_FRAME,
+	},
+	{
+		/*
+		 * A table's inventory, which is the *other* shape: a published row's own
+		 * name beside the two aggregate calls, where a card set has names and no
+		 * rows.
+		 *
+		 * **Not the eighteen-group case the design accepted the sizing on**, and
+		 * the correction is measured: this sample's Skills table carries four rows
+		 * of which one has a key, so it draws three groups, and `abilities` at six
+		 * is the largest anything here stages. Eighteen exists only in the vault's
+		 * 5e layout. `docs/BACKLOG.md` § UI holds the row.
+		 */
+		name: 'editor-inventory-table',
+		query: 'surface=editor&theme=light&open=skills',
+		size: EDITOR_FRAME,
+	},
+	{
+		/*
+		 * A roster's own inventory: six stats and four published rows put ten
+		 * chips in the panel — each with its `.value` and `mod.` forms — plus
+		 * the two aggregate calls (`self` inside the roster's own formulas,
+		 * and `count()`/`sum()` from elsewhere). `docs/BACKLOG.md`'s
+		 * inventory-sizing row names this exact count as the criterion, and
+		 * it is closed only if this view is the one selecting the roster.
+		 */
+		name: 'editor-inventory-roster',
+		query: 'surface=editor&theme=light&open=stat_roster',
 		size: EDITOR_FRAME,
 	},
 	{
@@ -1181,6 +1325,20 @@ const DEFAULTS = [
 		size: '1400,1400',
 	},
 	{
+		/*
+		 * Mid-move, in the other theme: `Front` picked up and carried down and
+		 * right, pointer still down (`editor-pane.ts`'s `dragInPlace`). What to
+		 * look at is the grid drawn behind the canvas for the length of a
+		 * gesture (`grid-guides.ts`) — hairlines in the gutters on the tracks the
+		 * browser actually resolved, held still for the gesture — and the accent
+		 * outline marking the cells the card will occupy on release. The resize
+		 * view above shows the same in light.
+		 */
+		name: 'canvas-drag-grid',
+		query: 'surface=editor&theme=dark&layout=canvas-demo&drag=front%3A180%2C120',
+		size: '1400,1400',
+	},
+	{
 		// A valid drop, hovering: `Front` dragged onto `Gear`, a container
 		// that accepts it, showing the drop highlight before release.
 		name: 'canvas-tree-drag-valid',
@@ -1361,6 +1519,51 @@ const DEFAULTS = [
 		query: 'surface=sheet&theme=light',
 		size: SHEET_FRAME,
 		hover: '.sheetsmith-passport-name-input',
+	},
+	{
+		/*
+		 * **A list field's own part focused**, the state the owner's
+		 * refinement made focus-triggered rather than always-visible turns on
+		 * (`docs/features/passport-field-lists.md`, "Showing the delete
+		 * control: focus, not hover, not always"). The resting state alone
+		 * cannot show a delete control that only exists while a reader's
+		 * attention is on that one part, and no other shot exercises
+		 * `:focus-within` on `.sheetsmith-passport-part` — so this is the one
+		 * place a design review can see it appear at all, and check that the
+		 * sibling part's own delete stays hidden beside it.
+		 */
+		name: 'sheet-passport-list-part-focus',
+		query:
+			'surface=sheet&theme=light&focus=.sheetsmith-passport-list%20.sheetsmith-passport-input',
+		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * **The same part's delete armed**, against the bare card background
+		 * `.sheetsmith-passport-list` sits on now — the group tint this shot
+		 * was first added to check against was itself withdrawn at a later
+		 * land stop (`docs/features/passport-field-lists.md`, "Grouping:
+		 * tried, and withdrawn"), so what this checks today is narrower but
+		 * still real: the armed part's own reddened border and red-mixed
+		 * delete-button fill stay legible directly against the card, and the
+		 * sibling part's own delete control stays hidden beside it. `&focus=`
+		 * first, since the button does not exist to press at all until its
+		 * part has focus.
+		 */
+		name: 'sheet-passport-list-part-armed',
+		query:
+			'surface=sheet&theme=light&focus=.sheetsmith-passport-list%20.sheetsmith-passport-input&press=.sheetsmith-passport-part-remove',
+		size: SHEET_FRAME,
+	},
+	{
+		// The same armed state, in the theme its own contrast has to hold in
+		// as well — the armed fill is derived from `--background-primary`
+		// against `--background-secondary`'s card, and both are a different
+		// colour in each theme.
+		name: 'sheet-passport-list-part-armed-dark',
+		query:
+			'surface=sheet&theme=dark&focus=.sheetsmith-passport-list%20.sheetsmith-passport-input&press=.sheetsmith-passport-part-remove',
+		size: SHEET_FRAME,
 	},
 	{
 		/*

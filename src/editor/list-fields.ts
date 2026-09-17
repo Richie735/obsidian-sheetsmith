@@ -16,6 +16,7 @@
  */
 
 import { Platform, setIcon } from 'obsidian';
+import { keyRename, RenameIntent } from '../component-rename-migration';
 import {
 	levelCount,
 	levelGlyph,
@@ -39,12 +40,21 @@ import { showFieldError } from './field-error';
 import { reasonMessage } from './field-reason';
 import { formulaProblem } from './field-formula';
 import { isName } from '../formula/expression';
-import { ColumnOptionsSpec, EntryColumnSpec } from '../types';
+import { fencedKeyProblem } from '../parse/fenced';
+import { ColumnOptionsSpec, EntryAddress, EntryColumnSpec } from '../types';
 
 /** What a list editor needs from the editor around it. */
 export interface ListContext {
-	/** Write the layout. */
-	persist: () => void;
+	/**
+	 * Write the layout.
+	 *
+	 * `rename` carries a primary entry field's or a column's own key rename,
+	 * old and new value both in hand at the moment of commit, for the caller
+	 * to run the vault-wide migration once the write lands
+	 * (`docs/features/component-rename-migration.md`). Every other commit in
+	 * this module omits it.
+	 */
+	persist: (rename?: RenameIntent) => void;
 	/** Rebuild the pane. */
 	redraw: () => void;
 	/** Focus this token once the redraw has happened. */
@@ -62,6 +72,16 @@ export interface ListContext {
 	errors: Map<string, string>;
 	/** Index of the entry being dragged, shared so one list reads its own. */
 	drag: { index: number | null };
+	/**
+	 * Bind the formula-name suggester to a formula cell, for as long as this
+	 * render's DOM lives (`docs/features/formula-name-suggestions.md`).
+	 *
+	 * Optional, because a list editor is drawn by tests and by the harness with
+	 * a context assembled for whatever the case is about, and a field that
+	 * suggests nothing is a field that behaves exactly as it did. `owner` names
+	 * the component whose own rows the expression is evaluated against.
+	 */
+	suggestNames?: (input: HTMLInputElement, owner?: string) => void;
 }
 
 export function moveItem<T>(
@@ -228,10 +248,61 @@ export function addControlSpacers(header: HTMLElement): void {
 	}
 }
 
-interface RowEntry {
+interface RowEntry extends Record<string, unknown> {
 	label: string;
 	key?: string;
 	values?: Record<string, string>;
+	/** For a field naming a `statsField`: which sibling entry this row hangs off. */
+	stat?: string;
+}
+
+/** One `'entries'` choice, as a `statsField` list holds it. */
+interface StatChoice {
+	key: string;
+	name?: string;
+}
+
+/**
+ * A "Stat" column over a sibling `'entries'` list's choices, for a `'rows'`
+ * field declaring `statsField`.
+ *
+ * A native `<select>`, on Card's own reasoning for a closed list: it costs no
+ * gesture module and takes the platform's own picker on a phone. A choice the
+ * sibling list no longer declares is rendered rather than corrected
+ * (Constraint 4) — appended as its own stray option, last, so the layout's
+ * own order stays legible and the anomaly is not the first thing the eye
+ * meets, exactly as a Card's stray dropdown value is.
+ */
+function renderStatCell(
+	element: HTMLElement,
+	row: RowEntry,
+	choices: readonly StatChoice[],
+	prefix: string,
+	context: ListContext,
+): void {
+	const field = listField(element, 'Stat');
+	const select = field.createEl('select', {
+		attr: { 'aria-label': `${row.label || 'Row'} stat` },
+	});
+	select.dataset.sheetsmithFocus = `${prefix}-stat`;
+	const stray =
+		row.stat !== undefined && row.stat !== '' &&
+		!choices.some((choice) => choice.key === row.stat);
+	for (const choice of choices) {
+		const option = select.createEl('option', {
+			text: choice.name ?? choice.key,
+		});
+		option.value = choice.key;
+	}
+	if (stray) {
+		select.createEl('option', { text: row.stat as string }).value =
+			row.stat as string;
+	}
+	select.value = row.stat ?? '';
+	select.addEventListener('change', () => {
+		row.stat = select.value;
+		context.persist();
+	});
 }
 
 /**
@@ -242,6 +313,10 @@ interface RowEntry {
  * key, so there is one place a name can be wrong instead of two. An empty
  * expression is kept rather than deleted: the name has to survive being
  * cleared in one row while it is still typed into the next.
+ *
+ * `statsField` names a sibling `'entries'` field whose choices a row's own
+ * "Stat" cell offers — a Roster's `rows` over its own `stats` — and is absent
+ * everywhere a `'rows'` field names nothing beyond its own rows.
  */
 export function renderRowsEditor(
 	listEl: HTMLElement,
@@ -249,9 +324,15 @@ export function renderRowsEditor(
 	key: string,
 	prefix: string,
 	context: ListContext,
+	statsField?: string,
+	rowFlag?: { key: string; label: string },
 ): void {
 	if (!Array.isArray(record[key])) record[key] = [];
 	const rows = record[key] as RowEntry[];
+	const statChoices: readonly StatChoice[] =
+		statsField !== undefined && Array.isArray(record[statsField])
+			? (record[statsField] as StatChoice[])
+			: [];
 	// What a published row answers to, taken from the config rather than from
 	// the focus prefix that happens to hold the same string today.
 	const componentId = typeof record.id === 'string' ? record.id : '';
@@ -284,8 +365,12 @@ export function renderRowsEditor(
 
 	// One track per input, so the grid keeps its columns in step however
 	// many row values the layout defines. Two of them are fixed: the row's
-	// name and the key it publishes under.
-	listEl.style.setProperty('--sheetsmith-list-fields', String(names.length + 2));
+	// name and the key it publishes under. A third joins them where a sibling
+	// list offers each row a stat to hang off.
+	listEl.style.setProperty(
+		'--sheetsmith-list-fields',
+		String(names.length + 2 + (statsField === undefined ? 0 : 1)),
+	);
 
 	// A long list must not bury the sections under it: eighteen skills put
 	// eight hundred pixels between this field and the next one, and the add
@@ -301,7 +386,13 @@ export function renderRowsEditor(
 	} else {
 		const columns = scroller.createDiv('sheetsmith-entry-columns');
 		columns.createSpan({ text: 'Row name' });
+		if (statsField !== undefined) columns.createSpan({ text: 'Stat' });
 		columns.createSpan({ text: 'Publishes as' });
+		// No heading text of its own: `checkField` draws the flag's name beside
+		// every box it makes, so a heading above the column would repeat it.
+		// The track still has to exist, so the header's columns stay in step
+		// with the row beneath it (`addControlSpacers`'s own reasoning).
+		if (rowFlag !== undefined) columns.createSpan();
 		for (const name of names) {
 			const heading = columns.createDiv('sheetsmith-list-heading');
 			// The heading is an input, because renaming a value name is the
@@ -449,6 +540,16 @@ export function renderRowsEditor(
 			context.redraw();
 		});
 
+		if (statsField !== undefined) {
+			renderStatCell(
+				element,
+				row,
+				statChoices,
+				`${prefix}-row-${index}`,
+				context,
+			);
+		}
+
 		// One word set across the heading, the placeholder and the announced
 		// name, as the row name field beside it already has: a control whose
 		// accessible name says a word that is nowhere on screen leaves voice
@@ -530,6 +631,13 @@ export function renderRowsEditor(
 			copyableName(publishes, `${componentId}.${row.key}`);
 		}
 
+		// `checkField` is the sole checkbox factory (PATTERNS §1, `styles.test.ts`'s
+		// own guard for it) — a Roster's `dividerAfter` wears the same forced-colors
+		// mark as any other flag rather than a lookalike this list draws itself.
+		if (rowFlag !== undefined) {
+			checkField(element, rowFlag.label, row, rowFlag.key, context);
+		}
+
 		for (const name of names) {
 			const input = listField(element, name).createEl('input', {
 				type: 'text',
@@ -540,6 +648,10 @@ export function renderRowsEditor(
 			});
 			input.value = row.values?.[name] ?? '';
 			input.dataset.sheetsmithFocus = `${prefix}-row-${index}-${name}`;
+			// A row value is evaluated against the sheet, not against the row it
+			// is written into — it is what *makes* the row's names — so it takes
+			// the sheet vocabulary and no owner.
+			context.suggestNames?.(input);
 			// Checked as it renders and again on the commit, on the same terms
 			// as every other expression in the pane: an empty cell is the
 			// ordinary state, and a broken one is stored and reported rather
@@ -745,9 +857,23 @@ export function renderColumnsEditor(
 	 * other three have no use for it.
 	 */
 	offers?: ColumnOptionsSpec,
+	/**
+	 * Where this column's own key addresses a character's stored data, where
+	 * it does at all — declared by the component, since the fence shape is
+	 * its own fact and not this module's (`types.ts`, `EntryAddress`).
+	 * Absent for Table's and Roster's own `columns`, whose key is a
+	 * markdown-table header rather than a fence entry.
+	 */
+	address?: EntryAddress,
 ): void {
 	if (!Array.isArray(record[key])) record[key] = [];
 	const columns = record[key] as ColumnEntry[];
+	/**
+	 * Whose rows a computed cell here is evaluated against, taken from the config
+	 * rather than from the focus prefix that happens to hold the same string
+	 * today — `renderRowsEditor`'s own reading of the same fact.
+	 */
+	const ownerId = typeof record.id === 'string' ? record.id : '';
 	/**
 	 * The types this list offers, filtered against the vocabulary so a layout
 	 * or a component naming a type that does not exist cannot empty the select.
@@ -821,6 +947,11 @@ export function renderColumnsEditor(
 		) {
 			return `"${value}" is already used by another column`;
 		}
+		// Only where this column's key addresses a fence entry — Record set's
+		// own `fields`. Table's and Roster's columns are markdown-table
+		// headers, whose rule is the pipe and is checked by the component.
+		const stored = address === undefined ? null : fencedKeyProblem(value);
+		if (stored !== null) return `A key ${stored}`;
 		return null;
 	};
 
@@ -854,8 +985,16 @@ export function renderColumnsEditor(
 				return;
 			}
 			fieldError(keyInput, null);
+			const stored = column.key;
 			column.key = next;
-			context.persist();
+			context.persist(
+				keyRename(
+					address,
+					typeof record.label === 'string' ? record.label : '',
+					stored,
+					next,
+				),
+			);
 			context.redraw();
 		});
 
@@ -954,6 +1093,9 @@ export function renderColumnsEditor(
 			});
 			formula.value = column.formula ?? '';
 			formula.dataset.sheetsmithFocus = `${prefix}-col-${column.key}-formula`;
+			// Evaluated once per row, so this component's own keys come before
+			// anything on the sheet.
+			context.suggestNames?.(formula, ownerId);
 			// Checked as it renders, against whatever the layout already holds,
 			// like the two fields below it — so a hand-edited layout says what is
 			// wrong with an expression rather than looking clean beside a card
@@ -1362,7 +1504,7 @@ export function renderColumnsEditor(
 	if (columns.some((column) => column.total === true)) {
 		listEl.createDiv('sheetsmith-entry-footnote', (el) =>
 			el.setText(
-				'A total is published as "<component id>.<column key>", so a formula elsewhere on the sheet can read it. That makes a totalled column\'s key a name: letters, digits and underscores, where a column without a total may be headed anything.',
+				'A total is a name formulas read, so a totalled column\'s key is letters, digits and underscores, where a column without a total may be headed anything.',
 			),
 		);
 	}
@@ -1395,7 +1537,7 @@ export function renderColumnsEditor(
 	if (columns.some((column) => column.publish === true)) {
 		listEl.createDiv('sheetsmith-entry-footnote', (el) =>
 			el.setText(
-				'A published column gives every row below a name of its own, "<component id>.<row key>", so a formula elsewhere on the sheet can read that row. Give each row a key in the rows list above. Only one column can be published.',
+				'A published column gives every row below a name of its own, so a formula elsewhere on the sheet can read that row. Give each row a key in the rows list above. Only one column can be published.',
 			),
 		);
 	}
@@ -1488,6 +1630,7 @@ type EntryRecord = {
 	[property: string]: string | number | undefined;
 	count?: string | number;
 	sense?: string;
+	maxSource?: string;
 };
 
 /**
@@ -1541,11 +1684,30 @@ export function renderEntriesEditor(
 	withCount: boolean,
 	columnSpec: readonly [EntryColumnSpec, EntryColumnSpec],
 	context: ListContext,
+	/**
+	 * A per-entry boolean this field offers as a checkbox — a Passport field's
+	 * `list` — drawn exactly as `renderRowsEditor`'s own `rowFlag` is: a
+	 * reserved header track with no heading text of its own, since the
+	 * checkbox's own label already says what it does.
+	 */
+	entryFlag?: { key: string; label: string },
+	/**
+	 * Where this field's primary column addresses a character's stored data,
+	 * where it does at all — Card set's, Track's and Roster's `stats`, and,
+	 * through `entryFlag`, Passport's `fields`. Absent for Card's own
+	 * `options`, which draws through this same function but stores nothing
+	 * under either column (`types.ts`, `EntryAddress`).
+	 */
+	address?: EntryAddress,
 ): void {
 	// A third content column changes both grids — the header's and the
 	// row's — and neither can be inferred from the markup, so the list
 	// says so once and the stylesheet reads it.
 	listEl.toggleClass('sheetsmith-entry-counted', withCount);
+	// A per-entry checkbox is a content column too, on the counted column's own
+	// argument: without a reserved track the header's labels would drift off
+	// the row's inputs by however wide the checkbox is.
+	listEl.toggleClass('sheetsmith-entry-flagged', entryFlag !== undefined);
 	const [primary, secondary] = columnSpec;
 	// The geometry follows the vocabulary: a list whose first column holds
 	// the word rather than an abbreviation says so once and the stylesheet
@@ -1589,6 +1751,18 @@ export function renderEntriesEditor(
 		if (list.some((other, i) => i !== index && nameOf(other) === value)) {
 			return `"${value}" is already used by another entry`;
 		}
+		/*
+		 * Only where this column addresses a fence entry, and the rule is the
+		 * fence's own (`parse/fenced.ts`) rather than a second spelling here.
+		 * **Refused at the commit, not only by the component that reads it**:
+		 * a committed key is written into every character note by the rename
+		 * migration, and a colon there is propagated as an entry `readFenced`
+		 * misreads and `renameFencedEntry` can never find again — damage no
+		 * later edit in this pane could undo. A Card's `options`, which draws
+		 * through this same editor and stores nothing, is correctly exempt.
+		 */
+		const stored = address === undefined ? null : fencedKeyProblem(value);
+		if (stored !== null) return `A ${primary.heading.toLowerCase()} ${stored}`;
 		return null;
 	};
 
@@ -1601,8 +1775,18 @@ export function renderEntriesEditor(
 		columns.createSpan({ text: primary.heading });
 		columns.createSpan({ text: secondary.heading });
 		if (withCount) {
+			columns.createSpan({ text: 'Length' });
 			columns.createSpan({ text: 'Segments' });
 			columns.createSpan({ text: 'Sense' });
+		}
+		if (entryFlag !== undefined) {
+			// No heading text of its own: `checkField` draws the flag's own
+			// name beside every box it makes, so a heading above the column
+			// would repeat it. The track still has to exist, so the header's
+			// columns stay in step with the row beneath it.
+			columns.createSpan();
+		}
+		if (withCount || entryFlag !== undefined) {
 			/*
 			 * The header has to carry the row's control tracks too, or its
 			 * last label does not line up with the last input.
@@ -1695,7 +1879,19 @@ export function renderEntriesEditor(
 			}
 			fieldError(primaryInput, null);
 			entry[primary.key] = next;
-			context.persist();
+			// Both values are already in hand at the moment of commit, which is
+			// what the migration asks of every trigger it hooks — an explicit
+			// rename, never one inferred later by diffing two saved configs.
+			// `stored` empty means there was no fence entry this could have
+			// addressed yet, so nothing is migrated from it.
+			context.persist(
+				keyRename(
+					address,
+					typeof record.label === 'string' ? record.label : '',
+					stored,
+					next,
+				),
+			);
 			context.redraw();
 		});
 
@@ -1722,6 +1918,23 @@ export function renderEntriesEditor(
 		});
 
 		if (withCount) {
+			// Where this row's length comes from: the layout's formula below,
+			// or the character's own number typed on the sheet
+			// (`docs/features/track-row-length.md`). Ahead of Segments, so a
+			// reader picks the source before meeting the field it gates.
+			const sourceInput = row.createEl('select', {
+				attr: { 'aria-label': `${nameOf(entry)} length source` },
+			});
+			for (const [value, text] of [
+				['', 'Formula'],
+				['character', 'Character'],
+			] as const) {
+				sourceInput.createEl('option', { value, text });
+			}
+			sourceInput.value = entry.maxSource === 'character' ? 'character' : '';
+			sourceInput.dataset.sheetsmithFocus =
+				`attr-${prefix}-${nameOf(entry)}-maxSource`;
+
 			// A formula, not a number field: a caster's slots come from a
 			// level table, so a row's length is as much an expression as
 			// the component's own. Empty falls back to that one, which is
@@ -1736,6 +1949,7 @@ export function renderEntriesEditor(
 			countInput.value =
 				entry.count === undefined ? '' : String(entry.count);
 			countInput.dataset.sheetsmithFocus = `attr-${prefix}-${nameOf(entry)}-count`;
+			context.suggestNames?.(countInput);
 			// Checked as it renders and on the commit. A bare number stored as
 			// a number has no text to be wrong about, which is the one thing
 			// `formulaProblem` knows that the parser does not.
@@ -1751,6 +1965,34 @@ export function renderEntriesEditor(
 					entry.count = Number.isFinite(parsed) ? parsed : next;
 				}
 				fieldError(countInput, formulaProblem(entry.count));
+				context.persist();
+			});
+
+			// Nothing to type a formula into once the character owns the
+			// length — Pool's `visibleWhen` withholding its own Maximum
+			// field, one row over. `visibility: hidden` rather than
+			// `hidden`/`display: none`: this row is a grid of fixed tracks,
+			// and a child `display: none` removes takes itself out of grid
+			// placement entirely, sliding the Sense select one column left
+			// into the track Segments just vacated. `.sheetsmith-detail-
+			// field-reserved` already states the same answer for the
+			// Modifiers list's own bonus-type field.
+			countInput.classList.toggle(
+				'sheetsmith-detail-field-reserved',
+				entry.maxSource === 'character',
+			);
+
+			sourceInput.addEventListener('change', () => {
+				if (sourceInput.value === 'character') {
+					entry.maxSource = 'character';
+					countInput.classList.add('sheetsmith-detail-field-reserved');
+				} else {
+					// Left exactly as it was rather than cleared: Pool's own
+					// rule for a formula a mode switch stops using. Switching
+					// back finds it there.
+					delete entry.maxSource;
+					countInput.classList.remove('sheetsmith-detail-field-reserved');
+				}
 				context.persist();
 			});
 
@@ -1779,6 +2021,13 @@ export function renderEntriesEditor(
 				}
 				context.persist();
 			});
+		}
+
+		// `checkField` is the sole checkbox factory (PATTERNS §1, `styles.test.ts`'s
+		// own guard for it) — `renderRowsEditor`'s own reading of `rowFlag`, one
+		// list kind over.
+		if (entryFlag !== undefined) {
+			checkField(row, entryFlag.label, entry, entryFlag.key, context);
 		}
 
 		if (Platform.isMobile) {

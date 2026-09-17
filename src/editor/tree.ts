@@ -278,8 +278,15 @@ function renderComponentRow(
 /**
  * One row of the tree: a name that selects, at its own depth.
  *
- * A button in the row's name rather than a click handler on the row, so it
- * gets a tab stop, a focus ring and Enter for free.
+ * A button in the row's name rather than a click handler on the row alone,
+ * so it gets a tab stop, a focus ring and Enter for free. The row itself is
+ * *also* a click target, per `docs/PATTERNS.md` §6 ("the whole card is the
+ * hit target") — a row this crowded, with an icon column and a description
+ * line, reads as dead everywhere but the name text without it. Real controls
+ * still own their own presses, guarded the same way `passport.ts`'s card
+ * line already guards its: `closest('button, input, select, textarea')`
+ * excludes the name button itself (which keeps its own listener below), the
+ * drag handle, and every extra button `renderComponentRow` adds.
  */
 function renderRow(
 	outline: HTMLElement,
@@ -296,7 +303,7 @@ function renderRow(
 	// is what lets that line wrap onto its own row instead of squeezing the
 	// name and the icon controls sideways (docs/UI.md §9), the same
 	// treatment the Add component row already gets for its own extra line.
-	row.settingEl.addClass('sheetsmith-wrapping-row');
+	row.settingEl.addClass('sheetsmith-wrapping-row', 'sheetsmith-tree-row');
 	// One class for the row and for the canvas overlay, so the two paints
 	// cannot disagree about what is selected.
 	if (selected) row.settingEl.addClass('sheetsmith-preview-editing');
@@ -311,6 +318,11 @@ function renderRow(
 	button.dataset.sheetsmithFocus = `edit-${id}`;
 	if (selected) button.setAttribute('aria-current', 'true');
 	button.addEventListener('click', () => host.select(id));
+	row.settingEl.addEventListener('click', (event) => {
+		const target = event.target as HTMLElement | null;
+		if (target?.closest('button, input, select, textarea') !== null) return;
+		host.select(id);
+	});
 	return row;
 }
 

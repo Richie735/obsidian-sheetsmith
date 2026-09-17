@@ -99,6 +99,7 @@ function entriesEditor(
 		key?: string;
 		withCount?: boolean;
 		columns?: readonly [EntryColumnSpec, EntryColumnSpec];
+		entryFlag?: { key: string; label: string };
 	} = {},
 ): HTMLElement {
 	const el = host();
@@ -110,6 +111,7 @@ function entriesEditor(
 		options.withCount ?? false,
 		options.columns ?? KEY_AND_NAME,
 		context,
+		options.entryFlag,
 	);
 	return el;
 }
@@ -1015,6 +1017,83 @@ describe('rows editor', () => {
 });
 
 /*
+ * A `'rows'` field declaring `rowFlag` — a Roster's `dividerAfter`, but the
+ * mechanism itself knows nothing about Roster: it asks the field which
+ * property to read and what to call it, exactly as `statsField` does for a
+ * row's stat. Driven directly, on the entry list's own precedent above.
+ */
+describe('a rows field declaring rowFlag', () => {
+	const FLAG = { key: 'dividerAfter', label: 'Divider after' };
+
+	function flaggedRows(record: Record<string, unknown>): HTMLElement {
+		const el = host();
+		renderRowsEditor(el, record, 'rows', 'skills', context, undefined, FLAG);
+		return el;
+	}
+
+	it('draws one checkbox per row, through the shared checkbox factory', () => {
+		const record = {
+			rows: [{ label: 'Saving throw' }, { label: 'Concentration' }],
+		};
+		const el = flaggedRows(record);
+		const boxes = el.querySelectorAll('.sheetsmith-entry-check input[type="checkbox"]');
+		expect(boxes).toHaveLength(2);
+	});
+
+	it('reads the row\'s own flag as checked, unset as unchecked', () => {
+		const record = {
+			rows: [
+				{ label: 'Saving throw', dividerAfter: true },
+				{ label: 'Concentration' },
+			],
+		};
+		const el = flaggedRows(record);
+		const boxes = Array.from(
+			el.querySelectorAll<HTMLInputElement>(
+				'.sheetsmith-entry-check input[type="checkbox"]',
+			),
+		);
+		expect(boxes.map((box) => box.checked)).toEqual([true, false]);
+	});
+
+	it('sets the flag on check and clears the key entirely on uncheck', () => {
+		const record = {
+			rows: [{ label: 'Saving throw' }],
+		};
+		const el = flaggedRows(record);
+		const box = el.querySelector<HTMLInputElement>(
+			'.sheetsmith-entry-check input[type="checkbox"]',
+		);
+		box?.click();
+		expect(record.rows[0]).toMatchObject({ dividerAfter: true });
+		box?.click();
+		// Absent rather than `false`: a value matching the flag's own default
+		// writes nothing to a hand-edited, shared layout file (PATTERNS §8).
+		expect(record.rows[0]).not.toHaveProperty('dividerAfter');
+	});
+
+	it('reserves the header a track, with no heading text of its own', () => {
+		// `checkField` already names the flag beside every box it draws, so a
+		// heading above the column would repeat it — but the track still has
+		// to exist or the header drifts out of line with the row beneath it.
+		const plain = rowsEditor({ rows: [{ label: 'Saving throw' }] }).querySelector(
+			'.sheetsmith-entry-columns',
+		);
+		const flagged = flaggedRows({ rows: [{ label: 'Saving throw' }] }).querySelector(
+			'.sheetsmith-entry-columns',
+		);
+		expect(flagged?.textContent).not.toContain('Divider after');
+		expect(flagged?.children).toHaveLength((plain?.children.length ?? 0) + 1);
+	});
+
+	it('draws no checkbox at all where the field declares no rowFlag', () => {
+		const record = { rows: [{ label: 'Saving throw' }] };
+		const el = rowsEditor(record);
+		expect(el.querySelector('.sheetsmith-entry-check')).toBeNull();
+	});
+});
+
+/*
  * The entry list, driven directly.
  *
  * Its two siblings above have been reachable from here since this file existed;
@@ -1053,12 +1132,12 @@ describe('entries editor', () => {
 		expect(headings).toEqual(['Key', 'Full name']);
 	});
 
-	it('heads a counted list with the two it owns, plus the control tracks', () => {
-		// Segments and Sense are the field's own words, unlike the two above,
-		// because they are what `withCount` *is*. The trailing spacers are not
-		// decoration: without them the last heading stops lining up with the
-		// last input, which is invisible in a two-column list and wrong in this
-		// one.
+	it('heads a counted list with the three it owns, plus the control tracks', () => {
+		// Length, Segments and Sense are the field's own words, unlike the two
+		// above, because they are what `withCount` *is*. The trailing spacers
+		// are not decoration: without them the last heading stops lining up
+		// with the last input, which is invisible in a two-column list and
+		// wrong in this one.
 		const columns = entriesEditor(abilities(), {
 			withCount: true,
 		}).querySelector('.sheetsmith-entry-columns');
@@ -1066,7 +1145,7 @@ describe('entries editor', () => {
 			Array.from(columns?.querySelectorAll(':scope > span') ?? [])
 				.map((el) => el.textContent)
 				.filter((text) => text !== ''),
-		).toEqual(['Key', 'Full name', 'Segments', 'Sense']);
+		).toEqual(['Key', 'Full name', 'Length', 'Segments', 'Sense']);
 		expect(
 			columns?.querySelectorAll('.sheetsmith-list-control-space'),
 		).toHaveLength(2);
@@ -1206,6 +1285,35 @@ describe('entries editor', () => {
 		expect(record.entries).toEqual([{ key: 'STR' }]);
 	});
 
+	it('defaults a row\'s length to Formula, and switching to Character reserves Segments\' column without clearing it', () => {
+		const record: Record<string, unknown> = {
+			entries: [{ key: 'STR', count: 5 }],
+		};
+		const el = entriesEditor(record, { withCount: true });
+		const source = el.querySelector(
+			'select[aria-label="STR length source"]',
+		) as HTMLSelectElement;
+		expect(source.value).toBe('');
+		const segments = cell(el, 'STR segments');
+		const reserved = () =>
+			segments.classList.contains('sheetsmith-detail-field-reserved');
+		expect(reserved()).toBe(false);
+		commit(source, 'character');
+		expect(record.entries).toEqual([
+			{ key: 'STR', count: 5, maxSource: 'character' },
+		]);
+		// Visibility rather than removal: the row is a grid of fixed tracks,
+		// and taking Segments out of grid placement entirely would slide
+		// Sense one column left into the track it just vacated.
+		expect(reserved()).toBe(true);
+		// Left exactly as it was rather than cleared, Pool's own rule for a
+		// formula a mode switch stops using — switching back finds it there.
+		expect(segments.value).toBe('5');
+		commit(source, '');
+		expect(record.entries).toEqual([{ key: 'STR', count: 5 }]);
+		expect(reserved()).toBe(false);
+	});
+
 	it('reorders on the arrow keys, and names its controls without the entry', () => {
 		/*
 		 * The accessible names are the reason this list's controls are its own
@@ -1297,6 +1405,90 @@ describe('entries editor', () => {
 		expect(context.errors.size).toBe(1);
 		entriesEditor(record);
 		expect(context.errors.size).toBe(0);
+	});
+});
+
+/*
+ * An 'entries' field declaring `entryFlag` — a Passport field's `list`
+ * (`docs/features/passport-field-lists.md`) — drawn exactly as `renderRowsEditor`
+ * already draws `rowFlag` above: the mechanism asks the field which property to
+ * read and what to call it, and knows nothing about Passport.
+ */
+describe('an entries field declaring entryFlag', () => {
+	const FLAG = { key: 'list', label: 'Several values' };
+	const twoEntries = () => ({
+		entries: [{ key: 'STR', name: 'Strength' }, { key: 'DEX' }],
+	});
+
+	it('draws one checkbox per entry, through the shared checkbox factory', () => {
+		const record = twoEntries();
+		const el = entriesEditor(record, { entryFlag: FLAG });
+		const boxes = el.querySelectorAll(
+			'.sheetsmith-entry-check input[type="checkbox"]',
+		);
+		expect(boxes).toHaveLength(2);
+	});
+
+	it('reads the entry\'s own flag as checked, unset as unchecked', () => {
+		const record = {
+			entries: [
+				{ key: 'class', name: 'Class', list: true },
+				{ key: 'species', name: 'Species' },
+			],
+		};
+		const el = entriesEditor(record, { entryFlag: FLAG });
+		const boxes = Array.from(
+			el.querySelectorAll<HTMLInputElement>(
+				'.sheetsmith-entry-check input[type="checkbox"]',
+			),
+		);
+		expect(boxes.map((box) => box.checked)).toEqual([true, false]);
+	});
+
+	it('sets the flag on check and clears the key entirely on uncheck', () => {
+		const record = { entries: [{ key: 'class', name: 'Class' }] };
+		const el = entriesEditor(record, { entryFlag: FLAG });
+		const box = el.querySelector<HTMLInputElement>(
+			'.sheetsmith-entry-check input[type="checkbox"]',
+		);
+		box?.click();
+		expect(record.entries[0]).toMatchObject({ list: true });
+		box?.click();
+		// Absent rather than `false`: a value matching the flag's own default
+		// writes nothing to a hand-edited, shared layout file (PATTERNS §8).
+		expect(record.entries[0]).not.toHaveProperty('list');
+	});
+
+	it('reserves the header a track, with no heading text of its own', () => {
+		// One more than the counted list's own header gets for the same reason
+		// (`docs/UI.md` §9's alignment argument): the flag's own track, plus the
+		// two control-button spacers a flagged header now carries so its last
+		// label does not drift off the row's buttons — spacers the *unflagged*
+		// two-column header omits, since nothing after its `1fr` track needs
+		// aligning there.
+		const plain = entriesEditor(twoEntries()).querySelector(
+			'.sheetsmith-entry-columns',
+		);
+		const flagged = entriesEditor(twoEntries(), {
+			entryFlag: FLAG,
+		}).querySelector('.sheetsmith-entry-columns');
+		expect(flagged?.textContent).not.toContain('Several values');
+		expect(flagged?.children).toHaveLength((plain?.children.length ?? 0) + 3);
+		expect(
+			flagged?.querySelectorAll('.sheetsmith-list-control-space'),
+		).toHaveLength(2);
+	});
+
+	it('draws no checkbox at all where the field declares no entryFlag', () => {
+		const el = entriesEditor(twoEntries());
+		expect(el.querySelector('.sheetsmith-entry-check')).toBeNull();
+	});
+
+	it('says in a class that the list carries a flag, for the stylesheet', () => {
+		const plain = entriesEditor(twoEntries());
+		expect(plain.classList.contains('sheetsmith-entry-flagged')).toBe(false);
+		const flagged = entriesEditor(twoEntries(), { entryFlag: FLAG });
+		expect(flagged.classList.contains('sheetsmith-entry-flagged')).toBe(true);
 	});
 });
 

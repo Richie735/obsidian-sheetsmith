@@ -239,6 +239,36 @@ describe('image.render — the picture', () => {
 		);
 	});
 
+	it('draws the default fit with no second class at all', () => {
+		// `fit` absent and `fit: 'contain'` both mean today's behaviour, and both
+		// leave the modifier class off entirely — the same "a value matching its
+		// default is left out" rule read one level down into the DOM
+		// (`docs/features/picture-fit-and-suggest.md`).
+		for (const config of [{}, { fit: 'contain' as const }]) {
+			const el = render(config, { source: '![[Sildar Hallwinter.png]]' });
+			const classes = picture(el)?.className.split(' ') ?? [];
+			expect(classes).not.toContain('sheetsmith-fit-cover');
+			expect(classes).not.toContain('sheetsmith-fit-stretch');
+		}
+	});
+
+	it('carries the chosen fit as a second class on the picture', () => {
+		const cover = render(
+			{ fit: 'cover' },
+			{ source: '![[Sildar Hallwinter.png]]' },
+		);
+		expect(picture(cover)?.classList.contains('sheetsmith-fit-cover')).toBe(
+			true,
+		);
+		const stretch = render(
+			{ fit: 'stretch' },
+			{ source: '![[Sildar Hallwinter.png]]' },
+		);
+		expect(
+			picture(stretch)?.classList.contains('sheetsmith-fit-stretch'),
+		).toBe(true);
+	});
+
 	it('names the picture to assistive tech only where the heading does not', () => {
 		// Two names for one thing is worse than one. Where the heading is hidden
 		// this is the only name the picture has.
@@ -563,6 +593,26 @@ describe('image.render — every failure is on screen (the prior art)', () => {
 		expect(field(el).value).toBe(SOURCE);
 	});
 
+	it('hands the field to a suggester the host supplies, on resource\'s own terms', () => {
+		// Absent by default (every other case here draws with no such member),
+		// and where present it is called once with this field and a commit that
+		// writes and reports exactly as typing and blurring would
+		// (`docs/features/picture-fit-and-suggest.md`).
+		const calls: HTMLInputElement[] = [];
+		const el = render(
+			{},
+			{ source: SOURCE },
+			{
+				suggestFile: (input, commit) => {
+					calls.push(input);
+					commit('![[Someone Else.png]]');
+				},
+			},
+		);
+		expect(calls).toEqual([field(el)]);
+		expect(field(el).value).toBe('![[Someone Else.png]]');
+	});
+
 	it('draws an empty frame with a placeholder where nothing is stored', () => {
 		const el = render({}, null);
 		expect(picture(el)).toBeNull();
@@ -814,13 +864,19 @@ describe('image — what it deliberately does not have', () => {
 		expect(declares('hasBuffer')).toBe(false);
 	});
 
-	it('accepts no configuration but its label and whether to show it', () => {
-		// §4.2 promised `label` and nothing else. No width, no height, no fit, no
-		// crop: the grid is the sizing control (SPEC §8).
-		expect(image.configFields.map((f) => f.key)).toEqual(['hideLabel']);
+	it('accepts no configuration touching the box\'s own size', () => {
+		// No width, no height, no crop, no independent size: the grid is the
+		// sizing control (SPEC §8), and nothing here disagrees with it. `fit`
+		// (`docs/features/picture-fit-and-suggest.md`) is the one deliberate
+		// exception, and it does not touch this rule at all — the box stays
+		// exactly the size the placement gives it either way, and `fit` only
+		// decides what happens to the picture *inside* that fixed box, which is
+		// the same axis `object-fit: contain` already sat on before it was
+		// configurable.
+		expect(image.configFields.map((f) => f.key)).toEqual(['hideLabel', 'fit']);
 		expect(image.formulaFields).toEqual([]);
 		const keys = JSON.stringify(image.configFields);
-		for (const invented of ['width', 'height', 'fit', 'crop', 'size']) {
+		for (const invented of ['width', 'height', 'crop', 'size']) {
 			expect(keys).not.toContain(`"key":"${invented}"`);
 		}
 	});

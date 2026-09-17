@@ -20,6 +20,7 @@ import {
 	FieldExplainer,
 	FieldResolver,
 	ResolvedValues,
+	RowsSource,
 } from '../types';
 import {
 	EMPTY_SCOPE,
@@ -58,6 +59,13 @@ export interface FormulaEnv {
 	 * formulas that read the sheet, and the sheet is the thing being built.
 	 */
 	modifiers: ModifierLookup;
+	/**
+	 * The guard against a `self` walk re-entering itself (SPEC §5), shared for
+	 * the life of one sheet build. See `formula/expression.ts`'s own comment on
+	 * `FunctionEnv.selfGuard` for why it has to be this and not a fresh Set per
+	 * evaluation.
+	 */
+	selfGuard: Set<string>;
 }
 
 /**
@@ -70,6 +78,7 @@ export const NO_ENV: FormulaEnv = {
 	library: NO_FUNCTIONS,
 	rows: NO_ROWS,
 	modifiers: NO_MODIFIERS,
+	selfGuard: new Set(),
 };
 
 /**
@@ -85,7 +94,12 @@ export const NO_ENV: FormulaEnv = {
  * error sends the caller to.
  */
 export function callsFrom(env: FormulaEnv): FunctionEnv {
-	return { library: env.library, base: env.sheet, rows: env.rows };
+	return {
+		library: env.library,
+		base: env.sheet,
+		rows: env.rows,
+		selfGuard: env.selfGuard,
+	};
 }
 
 /** Numeric-looking strings become numbers; anything else passes through. */
@@ -229,6 +243,13 @@ function fieldReaders(
 		 * an override of the ability modifier as the score itself.
 		 */
 		displayOnly = false,
+		/**
+		 * This evaluation's own rows, for `self` (SPEC §5). See
+		 * `FieldResolver`'s own doc comment; `config.id` is what the guard
+		 * against a self walk re-entering itself is keyed on, since a
+		 * component's config is what this reader closes over.
+		 */
+		selfRows?: RowsSource,
 	): { literal: Value } | { evaluated: Value } | null => {
 		/**
 		 * The name whose slot this evaluation actually read, or null.
@@ -311,7 +332,40 @@ function fieldReaders(
 			// to share the name.
 			return dataScope(name) ?? env.sheet(name);
 		};
-		const value = evaluate(expression, scope, calls);
+		// `self` merged in per call rather than baked into `calls`: it is this
+		// one evaluation's own rows, not this component's for the whole of its
+		// life, so a stat with no `self` of its own must not see a sibling
+		// stat's. `resolve` is this same reader, referenced through the
+		// closure below rather than passed in — a row may hold a computed
+		// column that reads the rest of the sheet, which is exactly what
+		// `RowsSource` is lazy for.
+		//
+		// **The guard's key is the published name, not the bare component id.**
+		// A Roster publishes one `self`-carrying entry per stat, and two stats
+		// on one roster are two unrelated bands: a row under Insight reading
+		// Prowess's own published reading — a live, first-time touch, not yet
+		// memoised — must not be refused as "ring2 is already being read" for
+		// a walk that is Prowess's and not Insight's. Keying on `config.id`
+		// alone conflated the two, and the failure was silent: the read did
+		// not throw, it caught its own refusal and returned an absent value
+		// for that one cell, indistinguishable from a formula that never
+		// resolved — wrong only when a row happens to read a value nobody had
+		// asked for yet. The same-band ring this guard exists to catch —
+		// `stat`, resolving this stat's own `derived`, aggregating `self` back
+		// over the column that read `stat` — keeps exactly one `published`
+		// throughout, so it is caught precisely as before. Falls back to
+		// `config.id` where nothing publishes this evaluation, which is every
+		// call from inside a row's own scope: `self` is never read there.
+		const value = evaluate(
+			expression,
+			scope,
+			selfRows === undefined
+				? calls
+				: {
+						...calls,
+						self: { id: published ?? config.id, build: () => selfRows(resolve) },
+					},
+		);
 		return { evaluated: displayOnly ? value : withPublishedModifiers(asked, value) };
 	};
 
@@ -395,16 +449,22 @@ function fieldReaders(
 		return roundSum(base + after);
 	};
 
+	// A named const, so `read` above can call back into this same reader when
+	// it builds `self`'s row source — the same resolver a published row's
+	// cell already runs its own computed columns against, one layer out
+	// (`table.ts`'s `rowValues`), read here for the component's own rows.
+	const resolve: FieldResolver = (field, extra, published, displayOnly, selfRows) => {
+		try {
+			const outcome = read(field, extra, published, displayOnly, selfRows);
+			if (outcome === null) return null;
+			return 'literal' in outcome ? outcome.literal : outcome.evaluated;
+		} catch {
+			return null;
+		}
+	};
+
 	return {
-		resolve: (field, extra, published, displayOnly) => {
-			try {
-				const outcome = read(field, extra, published, displayOnly);
-				if (outcome === null) return null;
-				return 'literal' in outcome ? outcome.literal : outcome.evaluated;
-			} catch {
-				return null;
-			}
-		},
+		resolve,
 		explain: (field, extra, published) => {
 			try {
 				read(field, extra, published);

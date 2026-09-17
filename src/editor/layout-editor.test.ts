@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SHEET_DESTINATION } from './layout-editor';
 import { LayoutEditorView } from '../view/layout-editor-view';
 import { Layout, parseLayout, serialiseLayout } from '../parse/layout';
@@ -90,6 +90,12 @@ interface Harness {
 	container: HTMLElement;
 	pane: LayoutEditorView;
 	app: App;
+	/**
+	 * The plugin the pane was opened on, for a case about a *setting* rather
+	 * than a control — the pane's own reference is private, and reaching past
+	 * that would be asserting on an implementation the view may change.
+	 */
+	plugin: ReturnType<typeof fakePlugin>;
 	/** The layout as the file currently holds it. */
 	stored: () => Promise<Layout>;
 	/** The file's exact bytes, for the round-trip check. */
@@ -120,7 +126,8 @@ async function open(layout: Layout = fixture()): Promise<Harness> {
 	const path = `${LAYOUT_FOLDER}/${layout.name}.json`;
 	await app.vault.create(path, serialiseLayout(layout));
 
-	const pane = await openView(app, document.body, LayoutEditorView, fakePlugin(app));
+	const plugin = fakePlugin(app);
+	const pane = await openView(app, document.body, LayoutEditorView, plugin);
 
 	const raw = async () => {
 		const file = app.vault.getFileByPath(path);
@@ -132,6 +139,7 @@ async function open(layout: Layout = fixture()): Promise<Harness> {
 		container: pane.contentEl,
 		pane,
 		app,
+		plugin,
 		raw,
 		stored: async () => parseLayout(await raw()),
 		redraw: async () => {
@@ -2320,7 +2328,7 @@ describe('the tree', () => {
 		// layout's row is what makes this one selection rather than two: there is
 		// no second kind of panel and no mode switch, because selecting the
 		// layout is an ordinary selection.
-		expect(labels(harness).slice(0, 6)).toEqual([
+		expect(labels(harness).slice(0, 7)).toEqual([
 			// The picker, then the tree. Named apart on purpose: this one chooses
 			// which layout is open and the next configures the one that is.
 			'Layout file',
@@ -2328,6 +2336,9 @@ describe('the tree', () => {
 			// below it and writes nothing (`docs/features/preview-sample-values.md`
 			// §3), so it sits between the picker and the layout's own row.
 			'Sample values',
+			// Above the tree it adds into, not below it: a long component list
+			// otherwise buries the one row that can grow it.
+			'Add component',
 			'Layout',
 			'Defences',
 			'Armour class',
@@ -2373,6 +2384,43 @@ describe('the tree', () => {
 			),
 		).toBe(true);
 		expect(has(harness, 'cfg-abilities-direction')).toBe(true);
+	});
+
+	it('selects from anywhere on the row, not only the name', async () => {
+		// The whole card is the hit target (docs/PATTERNS.md §6) — a press on
+		// its description line, well away from the name button, still opens
+		// the component.
+		const description = treeRow(harness, 'edit-abilities').querySelector(
+			'.setting-item-description',
+		);
+		if (!description) throw new Error('row has no description to press');
+		description.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		await settle(harness.pane);
+
+		// A rebuild replaces the row, so it is re-read rather than reused
+		// (the same staleness `writes`' own comment warns against).
+		expect(
+			treeRow(harness, 'edit-abilities').classList.contains(
+				'sheetsmith-preview-editing',
+			),
+		).toBe(true);
+		expect(has(harness, 'cfg-abilities-direction')).toBe(true);
+	});
+
+	it('does not select a row for a press on its own icon buttons', async () => {
+		// Real controls own their own presses (PATTERNS §6): reordering
+		// `Abilities` from a row that is not selected must not also select it
+		// as a side effect of the button's click bubbling to the row.
+		expect(has(harness, 'cfg-abilities-direction')).toBe(false);
+		control(harness, 'tree-down-abilities').click();
+		await settle(harness.pane);
+
+		expect(has(harness, 'cfg-abilities-direction')).toBe(false);
+		expect(
+			treeRow(harness, `edit-${SHEET_DESTINATION}`).classList.contains(
+				'sheetsmith-preview-editing',
+			),
+		).toBe(true);
 	});
 
 	it('keeps the selection when the selected row is pressed again', async () => {
@@ -3717,20 +3765,35 @@ describe('dragging a block around the schematic', () => {
  * `grid-template-rows` never resolves into pixels on its own. Restored is not
  * needed — the whole environment is disposed with the test.
  */
-function measureRows(el: HTMLElement, tracks: string): void {
+function measureRows(
+	el: HTMLElement,
+	tracks: string,
+	property: 'gridTemplateRows' | 'gridTemplateColumns' = 'gridTemplateRows',
+): void {
 	const view = el.ownerDocument.defaultView;
 	if (!view) throw new Error('no window');
 	const original = view.getComputedStyle.bind(view);
 	view.getComputedStyle = ((target: Element, pseudo?: string | null) => {
 		const styles = original(target, pseudo);
 		if (target === el) {
-			Object.defineProperty(styles, 'gridTemplateRows', {
+			Object.defineProperty(styles, property, {
 				value: tracks,
 				configurable: true,
 			});
 		}
 		return styles;
 	});
+}
+
+/**
+ * The same, for columns: what a browser reports once content has widened some
+ * `1fr` tracks and squeezed the empty ones, which is what an eight-column sheet
+ * with three occupied columns looked like when the drag divided it evenly.
+ * Chains onto `measureRows`'s patch rather than replacing it, so a case can set
+ * both.
+ */
+function measureColumns(el: HTMLElement, tracks: string): void {
+	measureRows(el, tracks, 'gridTemplateColumns');
 }
 
 /**
@@ -3842,6 +3905,228 @@ describe('row geometry read off the grid rather than assumed', () => {
 		);
 		expect(box(cell)).toBe('1 / span 2, 3 / span 1');
 		release(cell);
+	});
+});
+
+/**
+ * Every guide line the schematic is showing, by axis, in the order drawn.
+ *
+ * Read off each line's own `style` and not off a rule, because the geometry is
+ * the one thing about a guide that cannot be in the stylesheet: a grid whose
+ * rows are content-sized has no pitch a CSS rule could name.
+ */
+function guides(grid: HTMLElement): { columns: number[]; rows: number[] } {
+	// This grid's own guide and not a nested container's, on `canvas.ts`'s own
+	// rule about reading a level locally: a `querySelectorAll` from the sheet's
+	// grid finds every line a container inside it is drawing too, and the case
+	// below turns on the sheet drawing none while a container draws five.
+	const box = grid.querySelector<HTMLElement>(':scope > .sheetsmith-grid-guides');
+	const read = (name: string, side: 'left' | 'top') =>
+		Array.from(
+			box?.querySelectorAll<HTMLElement>(`.sheetsmith-grid-guide-${name}`) ?? [],
+		).map((line) => parseFloat(line.style[side]));
+	return { columns: read('column', 'left'), rows: read('row', 'top') };
+}
+
+describe('the grid drawn behind a gesture', () => {
+	beforeEach(async () => {
+		harness = await open(schematic());
+	});
+
+	it('draws itself on the first movement and takes itself down on release', async () => {
+		/*
+		 * **When**, and the second half is the reason for the first: every
+		 * selection on this canvas is a press on the same overlay a drag starts
+		 * on, so a grid drawn at `pointerdown` would flash the whole lattice each
+		 * time an author opened a component's form.
+		 */
+		const grid = sheetGrid(harness);
+		const cell = control(harness, 'preview-left');
+
+		pressDown(cell, at(1, 1));
+		expect(guides(grid).columns).toEqual([]);
+		expect(grid.classList.contains('sheetsmith-grid-guided')).toBe(false);
+
+		dragTo(cell, 2, 1);
+		// Eleven interior boundaries across twelve columns, one every `TRACK`.
+		// The outer two edges take no line: there is no gutter there, and a line
+		// on them would read as a frame around the canvas rather than as the
+		// grid inside it.
+		expect(guides(grid).columns).toEqual([
+			10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 110,
+		]);
+		expect(grid.classList.contains('sheetsmith-grid-guided')).toBe(true);
+
+		release(cell);
+		expect(guides(grid).columns).toEqual([]);
+		expect(grid.classList.contains('sheetsmith-grid-guided')).toBe(false);
+		await settle(harness.pane);
+	});
+
+	it('leaves a press that only selects with no grid behind it', async () => {
+		// The whole press, which the case above stops halfway through: what the
+		// first-movement rule has to tell apart from a drag is a press that ends
+		// where it started, and that is how an author opens a form.
+		const grid = sheetGrid(harness);
+		const cell = control(harness, 'preview-left');
+		pressDown(cell, at(1, 1));
+		release(cell);
+		cell.click();
+		await settle(harness.pane);
+		expect(guides(grid).columns).toEqual([]);
+		expect(guides(grid).rows).toEqual([]);
+	});
+
+	it('puts a row line where the drag changes row, not where a uniform pitch would', async () => {
+		/*
+		 * The claim the whole guide rests on: what is drawn is what the gesture
+		 * snaps to, because both come from one reading of the grid. The fixture
+		 * is `row geometry read off the grid`'s own — a two-row component beside
+		 * a one-row one, resolving to `88px 44px` — where a uniform 44px pitch
+		 * would draw lines at 44 and 88 and the grid actually changes row at 88
+		 * and 132. The drag to y=100 lands in row 2, the band between the two
+		 * lines that are drawn.
+		 */
+		harness = await open(unevenSchematic());
+		const grid = sheetGrid(harness);
+		measureRows(grid, '88px 44px');
+		const cell = control(harness, 'preview-left');
+
+		pressDown(cell, { clientX: TRACK / 2, clientY: 10 });
+		cell.dispatchEvent(
+			new PointerEvent('pointermove', {
+				pointerId: 1,
+				clientX: TRACK / 2,
+				clientY: 100,
+			}),
+		);
+		expect(guides(grid).rows).toEqual([88, 132]);
+		expect(box(cell)).toBe('1 / span 2, 2 / span 1');
+		release(cell);
+		await settle(harness.pane);
+	});
+
+	it('snaps to columns the content has widened, and draws them where they are', async () => {
+		/*
+		 * The defect this was reported on. `repeat(12, 1fr)` is not twelve equal
+		 * columns once a component's content will not shrink: its track grows and
+		 * the empty ones give up the width. Here the first two columns resolve to
+		 * 40px and the rest to nothing much, so column 3 starts at 80 — where an
+		 * even division of the 120px grid would put column 9. A pointer at x=82
+		 * is over column 3, the line is drawn at 80, and the block lands there.
+		 */
+		const grid = sheetGrid(harness);
+		measureColumns(grid, '40px 40px 4px 4px 4px 4px 4px 4px 4px 4px 4px 4px');
+		const cell = control(harness, 'preview-left');
+
+		pressDown(cell, { clientX: 5, clientY: ROW / 2 });
+		cell.dispatchEvent(
+			new PointerEvent('pointermove', { pointerId: 1, clientX: 82, clientY: ROW / 2 }),
+		);
+		expect(box(cell)).toBe('3 / span 2, 1 / span 1');
+		expect(guides(grid).columns.slice(0, 3)).toEqual([40, 80, 84]);
+		release(cell);
+		await settle(harness.pane);
+	});
+
+	it('holds the tracks still for the gesture, and lets them go at the end', async () => {
+		/*
+		 * The grid's tracks are content-sized, so the block being dragged resizes
+		 * the columns it passes through, and the lines and the target measured at
+		 * the press would drift off the grid on screen. What is asserted is the
+		 * mechanism: the measured sizes pinned inline at the press, and cleared
+		 * whichever way the gesture ends — including a press that moved nothing,
+		 * which returns before any other clean-up runs.
+		 */
+		const grid = sheetGrid(harness);
+		measureColumns(grid, '40px 40px 4px 4px 4px 4px 4px 4px 4px 4px 4px 4px');
+		measureRows(grid, '88px 44px');
+		const cell = control(harness, 'preview-left');
+
+		pressDown(cell, at(1, 1));
+		expect(grid.style.gridTemplateColumns).toBe(
+			'40px 40px 4px 4px 4px 4px 4px 4px 4px 4px 4px 4px',
+		);
+		expect(grid.style.gridTemplateRows).toBe('88px 44px');
+		expect(grid.style.gridAutoRows).toBe(`${ROW}px`);
+		release(cell);
+		expect(grid.style.gridTemplateColumns).toBe('');
+		expect(grid.style.gridTemplateRows).toBe('');
+		expect(grid.style.gridAutoRows).toBe('');
+		await settle(harness.pane);
+	});
+
+	it('marks the cells the block will occupy, and follows it', async () => {
+		/*
+		 * The lattice says where the lines are; the target says which cells this
+		 * block is about to take, which is the question a drag is actually asking.
+		 * Drawn from the tracks and not from the block's own box, so it is the
+		 * placement the file will hold.
+		 */
+		const grid = sheetGrid(harness);
+		const cell = control(harness, 'preview-left');
+		const target = () =>
+			grid.querySelector<HTMLElement>(':scope > .sheetsmith-grid-target');
+
+		pressDown(cell, at(1, 1));
+		expect(target()).toBeNull();
+		dragTo(cell, 2, 1);
+		// `left` is two columns wide: columns 2 and 3, one row.
+		expect(target()?.style.left).toBe('10px');
+		expect(target()?.style.width).toBe('20px');
+		expect(target()?.style.top).toBe('0px');
+		expect(target()?.style.height).toBe(`${ROW}px`);
+
+		dragTo(cell, 5, 3);
+		expect(target()?.style.left).toBe('40px');
+		expect(target()?.style.top).toBe(`${2 * ROW}px`);
+
+		release(cell);
+		expect(target()).toBeNull();
+		await settle(harness.pane);
+	});
+
+	it('goes down on an Escape as well as on a release', async () => {
+		// The restore is the other way a gesture ends, and a grid left behind by
+		// it would sit over a layout nobody is dragging.
+		const grid = sheetGrid(harness);
+		const cell = control(harness, 'preview-left');
+		pressDown(cell, at(1, 1));
+		dragTo(cell, 6, 3);
+		expect(guides(grid).columns.length).toBe(11);
+
+		cell.ownerDocument.dispatchEvent(
+			new KeyboardEvent('keydown', { key: 'Escape' }),
+		);
+		expect(guides(grid).columns).toEqual([]);
+		expect(box(cell)).toBe('1 / span 2, 1 / span 1');
+		await settle(harness.pane);
+	});
+
+	it("draws the container's own grid for a drag inside one, and not the sheet's", async () => {
+		/*
+		 * The guide is parameterised over the schematic exactly as the gesture
+		 * is: a child dragged inside a six-column container is snapping to six
+		 * columns, so that is the grid that appears, and the sheet's twelve stay
+		 * out of it. Reading the sheet's own grid as well is what makes this a
+		 * claim about *which* schematic rather than about any grid appearing.
+		 */
+		harness = await open(furnished());
+		control(harness, 'edit-defences').click();
+		await settle(harness.pane);
+		const inner = harness.container.querySelector(
+			'[data-sheetsmith-grid="defences"]',
+		);
+		if (!inner) throw new Error('no schematic for the container');
+		measure(inner as HTMLElement, 6);
+
+		const cell = control(harness, 'preview-armour');
+		pressDown(cell, at(1, 1));
+		dragTo(cell, 2, 1);
+		expect(guides(inner as HTMLElement).columns).toEqual([10, 20, 30, 40, 50]);
+		expect(guides(sheetGrid(harness)).columns).toEqual([]);
+		release(cell);
+		await settle(harness.pane);
 	});
 });
 
@@ -3991,14 +4276,48 @@ describe('nudging a block', () => {
 			dragTo(cell, 20, 1);
 			release(cell);
 		});
+		// The panel's own numeral, a fourth way to move the same block and the
+		// one gesture that types a number rather than counting a delta from it —
+		// which is exactly why it went unguarded once: nothing here shares an
+		// argument list with `nudge` or `beginDrag` for a test to catch drifting.
+		const byField = await pushed((fresh) => {
+			control(fresh, 'edit-left').click();
+			type(control<HTMLInputElement>(fresh, 'pos-left-col'), '50');
+		});
 
 		// Real numbers, not merely equal ones. A 2-wide block pushed right ends
 		// flush at column 12, so its `col` stops at 11; grown from column 1 the
 		// same edge is a width of 12.
 		expect(byArrows.col).toBe(11);
 		expect(byDrag.col).toBe(byArrows.col);
+		expect(byField.col).toBe(byArrows.col);
 		expect(byShiftArrows.width).toBe(12);
 		expect(byCorner.width).toBe(byShiftArrows.width);
+	});
+
+	it('says why a typed position came back lower than what was typed', async () => {
+		// A drag or an arrow key stops at the edge and the stopping is itself
+		// the feedback; a typed number has none, so the field says why it did
+		// not keep what was typed.
+		const message = (input: HTMLElement): string =>
+			input.parentElement?.querySelector('.sheetsmith-field-error')
+				?.textContent ?? '';
+
+		harness = await open(schematic());
+		control(harness, 'edit-left').click();
+		const input = control<HTMLInputElement>(harness, 'pos-left-col');
+
+		type(input, '50');
+		expect(input.value).toBe('11');
+		expect(message(input)).toBe(
+			'Held to 12 columns. Raise "Grid columns" in the layout\'s own settings to place this further out.',
+		);
+
+		// Back inside the grid, the message clears — this is a boundary, not a
+		// standing error on the field.
+		type(input, '3');
+		expect(input.value).toBe('3');
+		expect(message(input)).toBe('');
 	});
 
 	it('keeps the block focused across its own redraw, so a run of keys lands', async () => {
@@ -5155,5 +5474,880 @@ describe('starting a new layout from the pane', () => {
 		expect(Notice.messages).toEqual([
 			`Added "Shared sheet" to ${LAYOUT_FOLDER}.`,
 		]);
+	});
+});
+
+/*
+ * Formula name suggestions (`docs/features/formula-name-suggestions.md`).
+ *
+ * The wiring half: which inputs are bound, what each one offers, and that a
+ * rebuild of the pane takes any open list down with it. What a candidate list
+ * holds is `formula/vocabulary.test.ts`, and how one input behaves is
+ * `formula-suggest.test.ts`; here the claim is that every field the design names
+ * is actually one of them.
+ */
+describe('formula fields suggest the names the layout publishes', () => {
+	/** A layout holding one of every field the design's §1 table names. */
+	function suggestFixture(): Layout {
+		return {
+			name: 'Suggest sheet',
+			columns: 12,
+			components: [
+				{
+					id: 'armour_class',
+					type: 'card',
+					label: 'Armour class',
+					derived: '10',
+					effective: 'value',
+					position: { col: 1, row: 1, width: 2, height: 1 },
+				} as unknown as ComponentConfig,
+				{
+					id: 'abilities',
+					type: 'card-set',
+					label: 'Abilities',
+					derived: 'mod(value)',
+					effective: 'value',
+					entries: [{ key: 'STR', name: 'Strength' }],
+					position: { col: 3, row: 1, width: 4, height: 1 },
+				} as unknown as ComponentConfig,
+				{
+					id: 'hit_points',
+					type: 'pool',
+					label: 'Hit points',
+					max: 'level',
+					reset: [{ trigger: 'Long rest', action: 'formula', to: 'level' }],
+					position: { col: 7, row: 1, width: 3, height: 1 },
+				} as unknown as ComponentConfig,
+				{
+					id: 'identity',
+					type: 'passport',
+					label: 'Identity',
+					nameKey: '',
+					fields: [{ key: 'Race', name: 'Ancestry' }],
+					position: { col: 1, row: 5, width: 6, height: 2 },
+					// `nameKey` commits through `config-panel.ts`'s own text-field
+					// branch and declares `whenBlank: 'name'`, so naming it for the
+					// first time is a migration off that default — Card's case on a
+					// second component. `fields` reaches the shared entries editor.
+				} as ComponentConfig,
+				{
+					id: 'gear',
+					type: 'table',
+					label: 'Gear',
+					rowHeader: 'Item',
+					columns: [{ key: 'Qty', type: 'number' }],
+					position: { col: 7, row: 5, width: 6, height: 2 },
+					// Out of scope end to end: a column key is a markdown-table
+					// header, not a fence entry, so renaming it must migrate
+					// nothing and say nothing.
+				} as ComponentConfig,
+				{
+					id: 'slots',
+					type: 'track',
+					label: 'Spell slots',
+					rows: [{ key: 'L1', name: '1st', count: '2' }],
+					position: { col: 10, row: 1, width: 3, height: 1 },
+				} as unknown as ComponentConfig,
+				{
+					id: 'inventory',
+					type: 'table',
+					label: 'Inventory',
+					rows: [{ label: 'Sword', values: { ability: 'abilities.STR' } }],
+					columns: [
+						{ key: 'Weight', type: 'number', total: true },
+						{ key: 'Total', type: 'computed', formula: 'Weight' },
+					],
+					position: { col: 1, row: 2, width: 6, height: 2 },
+				} as unknown as ComponentConfig,
+				{
+					id: 'traits',
+					type: 'record-set',
+					label: 'Traits',
+					fields: [
+						{ key: 'uses', type: 'number' },
+						{ key: 'left', type: 'computed', formula: 'uses' },
+					],
+					position: { col: 7, row: 2, width: 6, height: 2 },
+				} as unknown as ComponentConfig,
+			],
+			functions: ['mod(score) = floor((score - 10) / 2)'],
+			triggers: ['Long rest'],
+		};
+	}
+
+	/** Open a component's form and let the panel draw. */
+	async function form(harness: Harness, id: string): Promise<void> {
+		control(harness, `edit-${id}`).click();
+		await tick();
+	}
+
+	/**
+	 * Type into a field, without committing.
+	 *
+	 * Focused first, because the app gates every query on
+	 * `textInputEl.isActiveElement()`: an unfocused field is a path Obsidian
+	 * refuses outright, so a case driving one would prove nothing about the pane.
+	 */
+	function typing(input: HTMLInputElement, text: string): void {
+		input.focus();
+		input.value = text;
+		input.setSelectionRange(text.length, text.length);
+		input.dispatchEvent(new Event('input'));
+	}
+
+	function popupNames(): string[] {
+		return Array.from(
+			document.body.querySelectorAll('.suggestion-container .suggestion-item code'),
+		).map((code) => code.textContent ?? '');
+	}
+
+	it('binds every formula field the design names', async () => {
+		const harness = await open(suggestFixture());
+		// Component id, then the token of each of its formula fields.
+		const bound: [string, string[]][] = [
+			['armour_class', ['cfg-armour_class-derived', 'cfg-armour_class-effective']],
+			['abilities', ['cfg-abilities-derived', 'cfg-abilities-effective']],
+			// The pool's own maximum, and the expression its reset restores.
+			['hit_points', ['cfg-hit_points-max', 'reset-to-hit_points-0']],
+			// The track's own **Segments** field on the panel, and a row's own
+			// count in the entry list — two of the six §1 names, and the only
+			// component that draws one of each.
+			['slots', ['cfg-slots-count', 'attr-slots-L1-count']],
+			// A computed column's formula, and a row value cell beside it.
+			['inventory', ['inventory-col-Total-formula', 'inventory-row-0-ability']],
+			// A record field is a `columns`-kind list, so it is the same cell.
+			['traits', ['traits-col-left-formula']],
+		];
+		for (const [id, tokens] of bound) {
+			await form(harness, id);
+			for (const token of tokens) {
+				expect(
+					control(harness, token).getAttribute('aria-autocomplete'),
+					token,
+				).toBe('list');
+			}
+		}
+	});
+
+	it('leaves a field that holds no expression unbound', async () => {
+		const harness = await open(suggestFixture());
+		await form(harness, 'armour_class');
+		// The label is a name in the note, not a name in the language.
+		expect(
+			control(harness, 'label-armour_class').getAttribute('aria-autocomplete'),
+		).toBeNull();
+	});
+
+	it('offers a table its own column keys on a computed cell', async () => {
+		const harness = await open(suggestFixture());
+		await form(harness, 'inventory');
+		typing(control<HTMLInputElement>(harness, 'inventory-col-Total-formula'), 'W');
+		expect(popupNames()[0]).toBe('Weight');
+	});
+
+	it('withholds the computed column whose value the cell is', async () => {
+		// A self-reference: `table.ts`'s `rowScope` resolves a computed column
+		// against the stored layer alone, so completing `Total` here would write
+		// a formula that cannot resolve.
+		const harness = await open(suggestFixture());
+		await form(harness, 'inventory');
+		typing(control<HTMLInputElement>(harness, 'inventory-col-Total-formula'), 'T');
+		expect(popupNames()).not.toContain('Total');
+	});
+
+	it('offers no other component column keys on a field of the sheet', async () => {
+		const harness = await open(suggestFixture());
+		await form(harness, 'hit_points');
+		typing(control<HTMLInputElement>(harness, 'cfg-hit_points-max'), 'W');
+		expect(popupNames()).not.toContain('Weight');
+		// Not a vacuous pass: a popup that never opened contains nothing at all,
+		// which is the same assertion for the wrong reason.
+		typing(control<HTMLInputElement>(harness, 'cfg-hit_points-max'), 'abil');
+		expect(popupNames()).toEqual(['abilities']);
+	});
+
+	it('takes an open list down with the render that replaces its field', async () => {
+		// An input removed while its popup is open fires no `blur`, so a redraw
+		// driven from the keyboard would otherwise orphan the list.
+		const harness = await open(suggestFixture());
+		await form(harness, 'armour_class');
+		typing(control<HTMLInputElement>(harness, 'cfg-armour_class-derived'), 'abil');
+		expect(popupNames()).toEqual(['abilities']);
+		await harness.redraw();
+		expect(document.body.querySelector('.suggestion-container')).toBeNull();
+	});
+});
+
+describe('the panel says what a component publishes', () => {
+	it('lists every name as a chip rather than the bare id', async () => {
+		const harness = await open({
+			name: 'Test sheet',
+			columns: 12,
+			components: [
+				{
+					id: 'abilities',
+					type: 'card-set',
+					label: 'Abilities',
+					entries: [
+						{ key: 'STR', name: 'Strength' },
+						{ key: 'DEX', name: 'Dexterity' },
+					],
+					position: { col: 1, row: 1, width: 4, height: 1 },
+				} as unknown as ComponentConfig,
+			],
+			functions: [],
+			triggers: [],
+		});
+		control(harness, 'edit-abilities').click();
+		await tick();
+		const chips = Array.from(
+			harness.container.querySelectorAll('.sheetsmith-published-name code'),
+		).map((code) => code.textContent);
+		expect(chips).toEqual([
+			'abilities.STR',
+			'.value',
+			'mod.',
+			'abilities.DEX',
+			'.value',
+			'mod.',
+		]);
+	});
+
+	it('teaches no name as a placeholder pattern anywhere in the pane', async () => {
+		/*
+		 * The copy budget this feature relieves (`SPEC` §13): the panel used to
+		 * spell the grammar as `"<component id>.<column key>"` under the list
+		 * where a key is typed, leaving the reader to substitute two placeholders
+		 * to get a string they could have copied. The inventory shows the real
+		 * names, so the pattern goes.
+		 */
+		const harness = await open({
+			name: 'Test sheet',
+			columns: 12,
+			components: [
+				{
+					id: 'inventory',
+					type: 'table',
+					label: 'Inventory',
+					rows: [{ label: 'Sword', key: 'sword' }],
+					columns: [
+						{ key: 'Weight', type: 'number', total: true },
+						{ key: 'Worn', type: 'toggle', publish: true },
+					],
+					position: { col: 1, row: 1, width: 6, height: 2 },
+				} as unknown as ComponentConfig,
+			],
+			functions: [],
+			triggers: [],
+		});
+		control(harness, 'edit-inventory').click();
+		await tick();
+		const text = harness.container.textContent ?? '';
+		expect(text).not.toContain('"<component id>.');
+		// The pattern in *either* spelling now, since the two clauses the guard
+		// above cannot see were the last places it appeared as UI copy.
+		expect(text).not.toContain('<component id>');
+		expect(text).toContain(
+			'A total is a name formulas read, so a totalled column\'s key is letters, digits and underscores, where a column without a total may be headed anything.',
+		);
+		expect(text).toContain(
+			'A published column gives every row below a name of its own, so a formula elsewhere on the sheet can read that row.',
+		);
+		/*
+		 * The third and fourth trims, and the two the `not.toContain` guard above
+		 * cannot catch: each removed a `sum(<component id>, <expression>)` clause,
+		 * which carries neither the leading quote nor the trailing dot that guard
+		 * matches on. Only reading the sentences proves they went.
+		 */
+		expect(text).toContain(
+			"A column's total sums what the note stores; a formula elsewhere can sum any expression over the rows instead.",
+		);
+		expect(text).toContain(
+			'total a column, or aggregate over the rows instead.',
+		);
+	});
+});
+
+/*
+ * The vault-wide rename migration (`docs/features/component-rename-
+ * migration.md`), reached the way it ships: a Label field's commit and a
+ * Card set entry's commit, both through this pane's own controls, both
+ * landing on a real character note in the same `App`.
+ *
+ * `parse/character.test.ts`, `parse/fenced.test.ts` and
+ * `component-rename-migration.test.ts` already hold the not-present,
+ * collision and byte-identical cases for the two `parse/` primitives and the
+ * vault scan around them. What is worth asserting here is what only this
+ * seam owns: that the editor's own commit — a blur on a rendered field —
+ * actually reaches `persist()` with a rename intent and the migration runs
+ * after the layout file's own write, on a note this test can read back.
+ */
+describe('the component rename migration', () => {
+	/** `fixture()` plus a Card set whose entries address a fence key. */
+	function renameFixture(): Layout {
+		return {
+			name: 'Test sheet',
+			columns: 12,
+			components: [
+				{
+					id: 'armour',
+					type: 'card',
+					label: 'Armour class',
+					position: { col: 1, row: 1, width: 2, height: 1 },
+				},
+				{
+					id: 'hit_points',
+					type: 'pool',
+					label: 'Hit points',
+					position: { col: 3, row: 1, width: 4, height: 1 },
+				},
+				{
+					id: 'abilities',
+					type: 'card-set',
+					label: 'Abilities',
+					entries: [{ key: 'DEX', name: 'Dexterity' }],
+					position: { col: 1, row: 2, width: 12, height: 1 },
+					// `entries` is a Card set's own config, not a member of the
+					// shared `ComponentConfig` every fixture in this file is typed
+					// against — the same assertion `furnished()` writes for the
+					// identical literal.
+				} as ComponentConfig,
+				{
+					id: 'spells',
+					type: 'record-set',
+					label: 'Spells',
+					recordName: 'Spell',
+					fields: [{ key: 'Level', type: 'number' }],
+					position: { col: 1, row: 3, width: 6, height: 2 },
+					// A Record set's `fields` is the shared *columns* editor, so its
+					// key commits through a different function from the entries
+					// editor above — and it is the one component whose section holds
+					// one fence per record, which is the only `perRecord` intent
+					// this feature builds.
+				} as ComponentConfig,
+				{
+					id: 'identity',
+					type: 'passport',
+					label: 'Identity',
+					nameKey: '',
+					fields: [{ key: 'Race', name: 'Ancestry' }],
+					position: { col: 1, row: 5, width: 6, height: 2 },
+					// `nameKey` commits through `config-panel.ts`'s own text-field
+					// branch and declares `whenBlank: 'name'`, so naming it for the
+					// first time is a migration off that default — Card's case on a
+					// second component. `fields` reaches the shared entries editor.
+				} as ComponentConfig,
+				{
+					id: 'gear',
+					type: 'table',
+					label: 'Gear',
+					rowHeader: 'Item',
+					columns: [{ key: 'Qty', type: 'number' }],
+					position: { col: 7, row: 5, width: 6, height: 2 },
+					// Out of scope end to end: a column key is a markdown-table
+					// header, not a fence entry, so renaming it must migrate
+					// nothing and say nothing.
+				} as ComponentConfig,
+				{
+					id: 'slots',
+					type: 'track',
+					label: 'Spell slots',
+					rows: [{ key: 'L1', name: 'First' }],
+					position: { col: 7, row: 3, width: 6, height: 2 },
+					// Track's `rows` reaches the shared entries editor under its own
+					// `track-rows` kind, which is a third route into the same
+					// migration and the one with no commit-path case of its own.
+				} as ComponentConfig,
+			],
+			functions: ['mod(score) = floor((score - 10) / 2)'],
+			triggers: ['Long rest'],
+		};
+	}
+
+	const CHARACTER =
+		'---\nsheet-layout: Test sheet\n---\n\n## Armour class\n```sheet\nvalue: 14\n```\n\n## Abilities\n```sheet\nDEX: 16\n```\n\n## Spells\n\n### Fireball\n```sheet\nLevel: 3\n```\n\n### Shield\n```sheet\nLevel: 1\n```\n\n## Spell slots\n```sheet\nL1: 2\n```\n\n## Identity\n```sheet\nname: Aramil\nRace: Elf\n```\n\n## Gear\n\n| Item | Qty |\n|---|---|\n| Rope | 1 |\n';
+
+	beforeEach(async () => {
+		harness = await open(renameFixture());
+		Notice.messages = [];
+	});
+
+	it('migrates a renamed label into every character note for this layout, and reports it', async () => {
+		await harness.app.vault.create('Aramil.md', CHARACTER);
+		// A note for a different layout, correctly left alone.
+		await harness.app.vault.create(
+			'Thora.md',
+			'---\nsheet-layout: Other sheet\n---\n\n## Armour class\n```sheet\nvalue: 9\n```\n',
+		);
+
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'label-armour'), 'Defence');
+		await settle(harness.pane);
+
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			CHARACTER.replace('## Armour class', '## Defence'),
+		);
+		expect(
+			await harness.app.vault.read(harness.app.vault.getFileByPath('Thora.md')!),
+		).toBe('---\nsheet-layout: Other sheet\n---\n\n## Armour class\n```sheet\nvalue: 9\n```\n');
+		expect(Notice.messages).toEqual([
+			'Renamed "Armour class" to "Defence" in 1 character note.',
+		]);
+	});
+
+	it('migrates a renamed entry key inside a Card set’s own fence, and reports it', async () => {
+		await harness.app.vault.create('Aramil.md', CHARACTER);
+
+		control(harness, 'edit-abilities').click();
+		await settle(harness.pane);
+		type(
+			control<HTMLInputElement>(harness, 'attr-abilities-0-key'),
+			'Dexterity',
+		);
+		await settle(harness.pane);
+
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			CHARACTER.replace('DEX: 16', 'Dexterity: 16'),
+		);
+		expect(Notice.messages).toEqual([
+			'Renamed "DEX" to "Dexterity" in 1 character note.',
+		]);
+	});
+
+	/*
+	 * The two remaining routes into the migration, each driven through the
+	 * control that ships rather than through the module.
+	 *
+	 * `component-rename-migration.test.ts` covers both shapes at the module
+	 * level, so what these add is the half only this seam owns: that the
+	 * *editor's* own commit reaches `persist()` with the right intent from these
+	 * two fields too. They were the last two of the feature's key surfaces with
+	 * no case at this level, and the spec review counted that as a criterion met
+	 * in a weaker form than it is written.
+	 */
+	it('migrates a renamed Record set field key in every record of every note', async () => {
+		await harness.app.vault.create('Aramil.md', CHARACTER);
+
+		control(harness, 'edit-spells').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'spells-col-0-key'), 'Spell level');
+		await settle(harness.pane);
+
+		// Both records, which is what makes this component's intent its own:
+		// one section holding one fence per `### ` record.
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			CHARACTER.split('Level: 3').join('Spell level: 3').split('Level: 1').join('Spell level: 1'),
+		);
+		expect(Notice.messages).toEqual([
+			'Renamed "Level" to "Spell level" in 1 character note.',
+		]);
+	});
+
+	it('migrates a renamed Track row key, which reaches the same migration', async () => {
+		await harness.app.vault.create('Aramil.md', CHARACTER);
+
+		control(harness, 'edit-slots').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'attr-slots-0-key'), 'Level 1');
+		await settle(harness.pane);
+
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			CHARACTER.replace('L1: 2', 'Level 1: 2'),
+		);
+		expect(Notice.messages).toEqual([
+			'Renamed "L1" to "Level 1" in 1 character note.',
+		]);
+	});
+
+	/*
+	 * The last two key surfaces with no case at this level, both on Passport, and
+	 * both pre-specified by the spec review rather than chosen here.
+	 */
+	it('migrates a Passport name key named for the first time, off its default', async () => {
+		await harness.app.vault.create('Aramil.md', CHARACTER);
+
+		control(harness, 'edit-identity').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'cfg-identity-nameKey'), 'Character');
+		await settle(harness.pane);
+
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			CHARACTER.replace('name: Aramil', 'Character: Aramil'),
+		);
+		expect(Notice.messages).toEqual([
+			'Renamed "name" to "Character" in 1 character note.',
+		]);
+	});
+
+	it('migrates a renamed Passport field key through the shared entries editor', async () => {
+		await harness.app.vault.create('Aramil.md', CHARACTER);
+
+		control(harness, 'edit-identity').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'attr-identity-0-key'), 'Ancestry');
+		await settle(harness.pane);
+
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			CHARACTER.replace('Race: Elf', 'Ancestry: Elf'),
+		);
+		expect(Notice.messages).toEqual([
+			'Renamed "Race" to "Ancestry" in 1 character note.',
+		]);
+	});
+
+	it('migrates nothing when a Table column’s key is renamed', async () => {
+		// Criterion 6 asked for this directly rather than by absence of a hook: a
+		// column key is a markdown-table header, so the fence primitive has
+		// nothing to operate on and the whole feature must pass it over.
+		await harness.app.vault.create('Aramil.md', CHARACTER);
+
+		control(harness, 'edit-gear').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'gear-col-0-key'), 'Count');
+		await settle(harness.pane);
+
+		// Vacuity guard: the rename did land in the layout, so a green below is
+		// not a commit that never happened.
+		expect(await harness.raw()).toContain('Count');
+		expect(Notice.messages).toEqual([]);
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			CHARACTER,
+		);
+	});
+
+	it('touches no note, and says nothing, when the layout write rejects', async () => {
+		/*
+		 * Criterion 9's own words: "a layout write that fails leaves every
+		 * character note untouched and triggers no migration attempt". A write
+		 * that *rejects* rather than one that hangs, which is the difference
+		 * between proving the guard and proving only that nothing happened yet.
+		 */
+		await harness.app.vault.create('Aramil.md', CHARACTER);
+		const scans = vi.spyOn(harness.app.vault, 'process');
+		vi.spyOn(harness.app.vault, 'modify').mockRejectedValue(
+			new Error('disk full'),
+		);
+
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'label-armour'), 'Defence');
+		await settle(harness.pane);
+
+		// No candidate was even opened, and the author is told the layout did not
+		// save rather than being told nothing at all — which is what writing this
+		// case found: the write was unwrapped, so the rejection reached no one
+		// and surfaced as an unhandled rejection in the run.
+		expect(scans).not.toHaveBeenCalled();
+		expect(Notice.messages).toEqual([
+			'Sheetsmith could not save this layout: disk full',
+		]);
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			CHARACTER,
+		);
+	});
+
+	it('fires no Notice, and touches no note, where nothing matches', async () => {
+		await harness.app.vault.create(
+			'Aramil.md',
+			'---\nsheet-layout: Other sheet\n---\n\n## Armour class\n```sheet\nvalue: 9\n```\n',
+		);
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'label-armour'), 'Defence');
+		await settle(harness.pane);
+
+		expect(Notice.messages).toEqual([]);
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			'---\nsheet-layout: Other sheet\n---\n\n## Armour class\n```sheet\nvalue: 9\n```\n',
+		);
+	});
+
+	/*
+	 * A Card that never set a key stores under the component's own default,
+	 * `value`, so naming the key for the first time is a rename off that
+	 * default and not the arrival of a name from nowhere. The same in reverse:
+	 * clearing the field puts the note back on `value`.
+	 *
+	 * `renameFixture()`'s `armour` card declares no `key`, and `CHARACTER`
+	 * holds `value: 14` under it, which is the state every character on a
+	 * freshly drafted layout is in.
+	 */
+	it('migrates off a key’s own default when the field is named for the first time', async () => {
+		await harness.app.vault.create('Aramil.md', CHARACTER);
+
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'cfg-armour-key'), 'AC');
+		await settle(harness.pane);
+
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			CHARACTER.replace('value: 14', 'AC: 14'),
+		);
+		expect(Notice.messages).toEqual([
+			'Renamed "value" to "AC" in 1 character note.',
+		]);
+	});
+
+	it('migrates back onto the default when the key field is cleared', async () => {
+		await harness.app.vault.create(
+			'Aramil.md',
+			CHARACTER.replace('value: 14', 'AC: 14'),
+		);
+		// The layout has to be holding the explicit key for clearing it to be a
+		// rename, so this commits one and then clears it.
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'cfg-armour-key'), 'AC');
+		await settle(harness.pane);
+		Notice.messages = [];
+
+		type(control<HTMLInputElement>(harness, 'cfg-armour-key'), '');
+		await settle(harness.pane);
+
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			CHARACTER,
+		);
+		expect(Notice.messages).toEqual([
+			'Renamed "AC" to "value" in 1 character note.',
+		]);
+	});
+
+	/*
+	 * A key holding a colon cannot be stored: the fence splits a line at the
+	 * first one, so `Armor: class: 14` reads back as `Armor` holding
+	 * `class: 14` and nothing can ever find `Armor: class` again. Before the
+	 * migration existed that was a config error on one component with every
+	 * note untouched; with it, a committed key is written into every character
+	 * note, so the commit is where it has to be refused.
+	 */
+	it('refuses a colon in a Card’s key, writing no note and no layout', async () => {
+		await harness.app.vault.create('Aramil.md', CHARACTER);
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		const input = control<HTMLInputElement>(harness, 'cfg-armour-key');
+		type(input, 'Armor: class');
+		await settle(harness.pane);
+
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			CHARACTER,
+		);
+		expect(Notice.messages).toEqual([]);
+		expect(await harness.raw()).not.toContain('Armor: class');
+		expect(
+			input.parentElement?.querySelector('.sheetsmith-field-error')
+				?.textContent,
+		).toBe(
+			'A key cannot contain a colon or a line break, because the sheet block separates key from value with a colon, so this one was left empty.',
+		);
+	});
+
+	it('refuses a colon in a Card set entry’s key the same way', async () => {
+		await harness.app.vault.create('Aramil.md', CHARACTER);
+		control(harness, 'edit-abilities').click();
+		await settle(harness.pane);
+		const input = control<HTMLInputElement>(harness, 'attr-abilities-0-key');
+		type(input, 'DEX: mod');
+		await settle(harness.pane);
+
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			CHARACTER,
+		);
+		expect(Notice.messages).toEqual([]);
+		expect(await harness.raw()).not.toContain('DEX: mod');
+	});
+
+	/*
+	 * The owner's own sequence, which shipped broken: a character note living
+	 * beside the folder new characters are written to.
+	 *
+	 * `characterFolder` is a *creation destination* — "New characters are
+	 * written here" — and the migration used to narrow its vault scan by it.
+	 * On a vault whose characters sit in `Characters/` while the setting names
+	 * `Characters/new`, every one of them was invisible: the rename reported
+	 * nothing, wrote nothing, and the note then rendered empty under a heading
+	 * the layout no longer named. Driven through the pane rather than the
+	 * module, because the editor's call site is what passed the folder.
+	 */
+	it('migrates a note beside the folder new characters are written to', async () => {
+		harness.plugin.settings.characterFolder = 'Characters/new';
+		await harness.app.vault.createFolder('Characters');
+		await harness.app.vault.create('Characters/Aramil.md', CHARACTER);
+
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'label-armour'), 'Armor Classs');
+		await settle(harness.pane);
+
+		expect(
+			await harness.app.vault.read(
+				harness.app.vault.getFileByPath('Characters/Aramil.md')!,
+			),
+		).toBe(CHARACTER.replace('## Armour class', '## Armor Classs'));
+		expect(Notice.messages).toEqual([
+			'Renamed "Armour class" to "Armor Classs" in 1 character note.',
+		]);
+	});
+
+	it('writes the layout before it touches a single character note', async () => {
+		await harness.app.vault.create('Aramil.md', CHARACTER);
+		const order: string[] = [];
+		vi.spyOn(harness.app.vault, 'modify').mockImplementation(() => {
+			order.push('layout');
+			return Promise.resolve();
+		});
+		const process = harness.app.vault.process.bind(harness.app.vault);
+		vi.spyOn(harness.app.vault, 'process').mockImplementation((file, fn) => {
+			order.push('note');
+			return process(file, fn);
+		});
+
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'label-armour'), 'Defence');
+		await settle(harness.pane);
+
+		// The first two writes, in order: the layout file, then the note. The
+		// redraw the commit triggers persists the layout again afterwards,
+		// carrying no rename of its own, which is why this reads the head of
+		// the sequence rather than the whole of it.
+		expect(order.slice(0, 2)).toEqual(['layout', 'note']);
+	});
+
+	it('touches no note while the layout write has not resolved', async () => {
+		await harness.app.vault.create('Aramil.md', CHARACTER);
+		// A layout write that never resolves stands in for one that fails: both
+		// leave the `await` in `persist` unfinished, which is the whole of what
+		// keeps the migration from running. Its own `modify` is bypassed, so
+		// the layout file below is deliberately still the old spelling too.
+		vi.spyOn(harness.app.vault, 'modify').mockImplementation(
+			() => new Promise<void>(() => undefined),
+		);
+		const spy = vi.spyOn(harness.app.vault, 'process');
+
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'label-armour'), 'Defence');
+		await settle(harness.pane);
+
+		expect(spy).not.toHaveBeenCalled();
+		expect(Notice.messages).toEqual([]);
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			CHARACTER,
+		);
+	});
+
+	/*
+	 * Roster's three `key`-shaped fields, one in scope and two out. Its
+	 * `stats[].key` names a fence entry and migrates; `columns[].key` is a
+	 * markdown-table header and `rows[].key` is a formula-facing publish name,
+	 * and neither addresses anything a character note stores under that name.
+	 *
+	 * The note below baits both. Its fence holds entries spelled exactly like
+	 * the column key and exactly like the row's publish key — which is not how
+	 * a Roster stores either — so a careless wiring pass reaching those two
+	 * fields, both also called `key` and both on the same component as a field
+	 * that does migrate, would rename one of those entries and fire a Notice.
+	 * That is what the feature doc asks be verified directly rather than
+	 * inferred from the absence of a hook.
+	 */
+	function rosterFixture(): Layout {
+		return {
+			name: 'Test sheet',
+			columns: 12,
+			components: [
+				{
+					id: 'skills',
+					type: 'roster',
+					label: 'Skills',
+					rowHeader: 'Skill',
+					stats: [{ key: 'STR', name: 'Strength' }],
+					rows: [{ label: 'Athletics', stat: 'STR', key: 'athletics' }],
+					columns: [
+						{
+							key: 'Training',
+							type: 'computed',
+							formula: 'stat',
+							publish: true,
+						},
+					],
+					position: { col: 1, row: 1, width: 12, height: 2 },
+				} as unknown as ComponentConfig,
+			],
+			functions: [],
+			triggers: [],
+		};
+	}
+
+	const ROSTER_CHARACTER = [
+		'---',
+		'sheet-layout: Test sheet',
+		'---',
+		'',
+		'## Skills',
+		'```sheet',
+		'STR: 16',
+		'Training: 1',
+		'athletics: 2',
+		'```',
+		'',
+		'| Skill | Training |',
+		'|---|---|',
+		'| Athletics | 1 |',
+		'',
+	].join('\n');
+
+	it('migrates a Roster stat’s key, which is the one of its three that a note stores', async () => {
+		harness = await open(rosterFixture());
+		Notice.messages = [];
+		await harness.app.vault.create('Aramil.md', ROSTER_CHARACTER);
+
+		control(harness, 'edit-skills').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'attr-skills-0-key'), 'Strength');
+		await settle(harness.pane);
+
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			ROSTER_CHARACTER.replace('STR: 16', 'Strength: 16'),
+		);
+		expect(Notice.messages).toEqual([
+			'Renamed "STR" to "Strength" in 1 character note.',
+		]);
+	});
+
+	it('migrates nothing when a Roster column’s key is renamed', async () => {
+		harness = await open(rosterFixture());
+		Notice.messages = [];
+		await harness.app.vault.create('Aramil.md', ROSTER_CHARACTER);
+
+		control(harness, 'edit-skills').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'skills-col-0-key'), 'Practice');
+		await settle(harness.pane);
+
+		// Vacuity guard: the rename itself did land in the layout, so this is
+		// not passing because the commit never happened.
+		expect(await harness.raw()).toContain('Practice');
+		expect(Notice.messages).toEqual([]);
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			ROSTER_CHARACTER,
+		);
+	});
+
+	it('migrates nothing when a Roster row’s publish key is renamed', async () => {
+		harness = await open(rosterFixture());
+		Notice.messages = [];
+		await harness.app.vault.create('Aramil.md', ROSTER_CHARACTER);
+
+		control(harness, 'edit-skills').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'skills-row-0-key'), 'acrobatics');
+		await settle(harness.pane);
+
+		expect(await harness.raw()).toContain('acrobatics');
+		expect(Notice.messages).toEqual([]);
+		expect(await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!)).toBe(
+			ROSTER_CHARACTER,
+		);
 	});
 });

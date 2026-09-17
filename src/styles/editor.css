@@ -157,12 +157,25 @@
 	text-align: center;
 }
 
-/* A tree row's own control: its name is what selects it. A button rather than
-   a click handler on the row, so it has a tab stop and a focus ring — and
-   stripped of the app's button chrome, because it is a name that answers a
-   press rather than a thing that looks pressable. One rule is enough: a class
-   is (0,1,0) and beats the app's bare `button` element rule at (0,0,1). */
-.sheetsmith-tree-name {
+/* A tree row's own name: a button, so it has a tab stop and a focus ring —
+   and stripped of the app's button chrome, because it is a name that answers
+   a press rather than a thing that looks pressable. The row itself also
+   selects (`.sheetsmith-tree-row` below, `docs/PATTERNS.md` §6) — the two do
+   not compete, because a click on the name never reaches the row's own
+   listener (`tree.ts`'s `closest` guard).
+
+   Scoped under `.sheetsmith-tree-row` rather than bare, which used to read
+   "one rule is enough: a class is (0,1,0) and beats the app's bare `button`
+   element rule at (0,0,1)" — true of a bare element selector, but Obsidian's
+   actual rule is `button:not(.clickable-icon)`, whose `:not()` argument
+   counts as a class for specificity: (0,1,1), not (0,0,1). That beat the
+   single class here on every row, which is why every tree row name carried
+   the app's own button chrome — `--interactive-normal`'s fill and
+   `--input-shadow`'s shadow — showing as a box tight around the label text
+   instead of the plain name this was meant to read as. Two classes'
+   specificity (0,2,0) is what actually clears (0,1,1); the name is always
+   inside its own row, so nesting the selector costs nothing. */
+.sheetsmith-tree-row .sheetsmith-tree-name {
 	padding: 0;
 	border: none;
 	border-radius: 0;
@@ -176,6 +189,20 @@
 
 .sheetsmith-tree-name:hover {
 	color: var(--text-accent);
+}
+
+/* The whole row, not just the name, answers a press (`docs/PATTERNS.md` §6).
+   No hover fill where a drag is over the row already claims one
+   (`.sheetsmith-tree-drop-valid`, immediately below) or where the row is
+   already the selection (`.sheetsmith-preview-editing` owns that ring) —
+   this is only the cue for "press here" on a row neither state has spoken
+   for yet. */
+.sheetsmith-tree-row {
+	cursor: pointer;
+}
+
+.sheetsmith-tree-row:hover:not(.sheetsmith-tree-drop-valid):not(.sheetsmith-preview-editing) {
+	background-color: var(--background-modifier-hover);
 }
 
 /* A tree row a drag is currently over, and the drop would succeed
@@ -477,7 +504,18 @@
    squeezed them to nothing and pushed the row out of shape. Two fixed
    two-column grids cannot be told apart from the markup, so the list carries
    the fact and this reads it. */
-.sheetsmith-entry-counted {
+/* **The control-track geometry, on both lists that need a third column.**
+   `.sheetsmith-entry-counted` (a track's rows: a length and a sense) and
+   `.sheetsmith-entry-flagged` (a Passport field's `list`, one checkbox column)
+   share every declaration below except `grid-template-columns` itself — the
+   token, the header-spacer compensation, and both ends of the promise that a
+   control track measures the same in the header as in the row. Written as one
+   selector list rather than two copies (`docs/PATTERNS.md` §1: a shared *set*
+   duplicated by selector is the case a guard test could only prove still
+   agree), so a change to the icon token or the compensation math cannot land
+   on one list's buttons and miss the other's. */
+.sheetsmith-entry-counted,
+.sheetsmith-entry-flagged {
 	/* One icon button: the icon and the click padding around it. The header's
 	   spacers take the same width, so a control track measures the same on
 	   both and the field tracks land on the same edges. The same token the
@@ -490,16 +528,31 @@
    needed, because the second label starts at the `1fr` track's left edge and
    a track's start does not move with its width. A third column sits after
    that track, so it does move: the row spends width on its buttons, its `1fr`
-   comes out narrower, and every column past it slides. */
+   comes out narrower, and every column past it slides.
+
+   Four fixed tracks rather than two: where a row's length comes from, the
+   formula itself (offered only while that source is `calculated`), and its
+   sense — `docs/features/track-row-length.md`'s own column, ahead of
+   `Segments` so a reader picks the source before meeting the field it gates. */
 .sheetsmith-entry-counted .sheetsmith-entry-columns,
 .sheetsmith-entry-counted .sheetsmith-entry-row {
-	grid-template-columns: var(--sheetsmith-entry-first, 7em) minmax(0, 1fr) 7em 7em repeat(3, min-content);
+	grid-template-columns: var(--sheetsmith-entry-first, 7em) minmax(0, 1fr) 7em 7em 7em repeat(3, min-content);
+}
+
+/* The flagged list's own third column: one track rather than two, since a
+   flag is one column where a count and a sense are two. */
+.sheetsmith-entry-flagged .sheetsmith-entry-columns,
+.sheetsmith-entry-flagged .sheetsmith-entry-row {
+	grid-template-columns: var(--sheetsmith-entry-first, 7em) minmax(0, 1fr) min-content repeat(3, min-content);
 }
 
 /* A track is sized by its item's margin box, so the optical pull on the last
    button has to be mirrored here or the last track measures eight pixels
    narrower in the rows than in the header — and every field track shifts. */
 .sheetsmith-entry-counted
+	.sheetsmith-entry-columns
+	> .sheetsmith-list-control-space:last-child,
+.sheetsmith-entry-flagged
 	.sheetsmith-entry-columns
 	> .sheetsmith-list-control-space:last-child {
 	margin-right: calc(-1 * var(--size-2-2));
@@ -515,7 +568,8 @@
    third column started earlier than the header's and the last label sat right
    of its input. Pinning both ends of the promise is what makes `min-content`
    resolve to one answer. */
-.sheetsmith-entry-counted .sheetsmith-entry-row > button.clickable-icon {
+.sheetsmith-entry-counted .sheetsmith-entry-row > button.clickable-icon,
+.sheetsmith-entry-flagged .sheetsmith-entry-row > button.clickable-icon {
 	box-sizing: border-box;
 	width: var(--sheetsmith-list-control);
 }
@@ -526,6 +580,9 @@
    wherever the page is not border-box. Said here at a weight that wins,
    rather than relying on a global nobody in this file sets. */
 .sheetsmith-entry-counted
+	.sheetsmith-entry-columns
+	> .sheetsmith-list-control-space,
+.sheetsmith-entry-flagged
 	.sheetsmith-entry-columns
 	> .sheetsmith-list-control-space {
 	box-sizing: border-box;
@@ -770,7 +827,14 @@
    keeps the box, and its width, and takes the control out of the tab order and the
    accessibility tree. See `editor/modifier-definitions-field.ts`, which measures
    what the spacer cost. */
-.sheetsmith-list-modifiers .sheetsmith-detail-field-reserved {
+/* A track's Segments input, while its length is the character's own
+   (`docs/features/track-row-length.md`), shares the same answer: the column
+   is one of the row's own fixed grid tracks and has to stay, or the Sense
+   select after it slides one column left the moment the field disappears —
+   `display: none` removes a grid child from placement entirely, where a
+   plain two-column list never had a third track for anything to slide into. */
+.sheetsmith-list-modifiers .sheetsmith-detail-field-reserved,
+.sheetsmith-entry-row .sheetsmith-detail-field-reserved {
 	visibility: hidden;
 }
 
@@ -823,14 +887,53 @@
 	color: var(--text-muted);
 }
 
-/* The component id is the one thing a user cannot discover anywhere else and
-   has to retype into every formula. Say it is takeable. */
+/* A name a user cannot discover anywhere else and has to retype into every
+   formula that reads it. Say it is takeable — **at rest**, not on hover.
+
+   It was a cursor and a hover background and nothing else, which was survivable
+   while the pane drew one of these at the top of a form. The published-name
+   inventory draws eighteen on a six-entry Card set and fifty-six on an
+   eighteen-row table, and at that count a run of bare monospace words with no
+   surface is not a row of controls, it is a sentence. `docs/UI.md` §7 forbids a
+   hover-only affordance, and for a keyboard user this one was hover-only at all
+   times. So the surface is the resting state and the hover steps up from it,
+   which is the pair the rest of the pane already uses. */
 .sheetsmith-copyable {
 	cursor: pointer;
+	/* The fallback, not the rule that usually applies: inside a
+	   `.setting-item-description` Obsidian's own `.setting-item-description code`
+	   sets `0 3px 2px` at (0,1,1) and wins, which is where most of these are
+	   drawn. What this covers is a chip somewhere else — a published row's name
+	   in the rows editor — where nothing else gives the surface any padding at
+	   all. One pixel apart, so it is not worth a specificity war; said here so
+	   the next reader does not read a losing declaration as a bug. */
+	padding: 0 var(--size-2-2);
+	border-radius: var(--radius-s);
+	background-color: var(--background-modifier-hover);
 }
 
 .sheetsmith-copyable:hover {
-	background-color: var(--background-modifier-hover);
+	background-color: var(--background-modifier-active-hover);
+}
+
+/* **A `<code role="button" tabindex="0">` gets no ring from anywhere.**
+   `app.css` sets a global `:focus { outline: none }` and puts a ring back only
+   on its own control kinds, none of which a bare `code` matches — so every one
+   of these was a tab stop with nothing saying where focus was, dozens of them
+   ahead of the form's first field. The canvas overlay is the pane's own
+   precedent for declaring the mark by hand for exactly this reason, and this
+   borrows its treatment.
+
+   `outline` rather than a `box-shadow`, because forced-colors mode discards a
+   shadow and keeps an outline (`docs/UI.md` §6), and an offset so the ring sits
+   outside the chip's own surface rather than on it. Not photographable before
+   `calibrate.mjs` learned to extract the app's global `:focus` rule: until then
+   the harness drew the browser's default ring here and the shot said the
+   control was fine. */
+.sheetsmith-copyable:focus-visible,
+.sheetsmith-copyable:focus {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 1px;
 }
 
 /* A list heading that carries a control: the name takes the track, the
@@ -1071,6 +1174,74 @@
 	padding-bottom: var(--size-4-1);
 }
 
+/* Every name a component publishes, as a paragraph of chips
+   (`docs/features/formula-name-suggestions.md` §5). A flex wrap rather than a
+   list: the number of names is the layout's, from one to eighteen, and a list
+   of eighteen single-word rows is eighteen lines of mostly empty panel. */
+.sheetsmith-published-names {
+	display: flex;
+	flex-wrap: wrap;
+	/* Row gap tight and column gap wide, which is the whole of what separates
+	   one name from the next. Measured: at an even 8px both ways, six groups of
+	   three chips read as one run of text — `abilities.STR .value mod.
+	   abilities.DEX …` — because the space between two groups was the same
+	   space as the space inside one. Obsidian gives a `code` in a description a
+	   radius and a padding and no background, so the gap is the only channel
+	   there is. */
+	gap: var(--size-2-1) var(--size-4-4);
+	margin-top: var(--size-2-2);
+}
+
+/* One name and the forms built on it, kept together: `abilities.STR` and its
+   `.value` are one thing read left to right, and a wrap between them would
+   leave a bare `.value` opening a line. */
+.sheetsmith-published-name {
+	display: inline-flex;
+	align-items: center;
+	/* Wide enough for a focus ring to clear its neighbour. At `--size-2-1` the
+	   2px gap was exactly the ring's own reach — 1px of offset plus 2px of
+	   outline — so a focused chip's mark touched the chip beside it. 4px against
+	   the 16px between groups is still a 4x ratio, and the surfaces carry the
+	   grouping now in any case. */
+	gap: var(--size-2-2);
+	white-space: nowrap;
+	/* The name is the string an author came here to copy, so it takes the
+	   normal rank out of the muted description it sits in; the forms below stay
+	   at the description's own colour. That is the second channel the gap alone
+	   was doing without — `docs/UI.md` §5's one quiet style reused rather than a
+	   new fainter one invented. */
+	color: var(--text-normal);
+}
+
+/* **The name is raised; the forms are left where the app puts them.** This block
+   sits in a `.setting-item-description`, which is `--font-ui-smaller` (12px), and
+   Obsidian shrinks every `code` inside one to `--font-smaller` — `0.875em`, so
+   10.5px. That is the rank every chip starts at.
+
+   This rule used to set the *forms* to `--font-ui-smaller`, which is a literal
+   12px: the declaration written to size them down was cancelling the app's
+   shrink and sizing them **up**, so the name measured 10.5px against its own
+   qualifiers at 12px — backwards by 14%, and the primary content of a new block
+   half a pixel above `legibility.md`'s 10px floor. Invisible at the default
+   because colour carried the hierarchy, and unmissable in forced colors, where
+   every foreground is one colour and size is the only channel left.
+
+   So the name takes 12px explicitly and the forms inherit the app's 10.5px.
+   Deliberately **not** `--font-smaller` on the form: 0.875 x 10.5 is 9.2px,
+   under the floor.
+
+   Two classes deep (0,2,0) on both, which is what it takes: Obsidian's
+   `.setting-item-description code` is (0,1,1) and `.sheetsmith-copyable` beside
+   these is (0,1,0), so a single class loses to the app outright
+   (`docs/UI.md` §2). */
+.sheetsmith-published-name .sheetsmith-published-key {
+	font-size: var(--font-ui-smaller);
+}
+
+.sheetsmith-published-name .sheetsmith-published-form {
+	color: var(--text-muted);
+}
+
 /* The canvas: the layout's real components, rendered live
    (`docs/features/grid-canvas.md`). A margin to match the schematic it
    replaces at the top level, and nothing else — everything about how a
@@ -1127,6 +1298,88 @@
 .sheetsmith-view .sheetsmith-canvas-overlay:hover,
 .sheetsmith-view .sheetsmith-canvas-overlay:focus-visible {
 	border-color: var(--interactive-accent);
+}
+
+/* The grid itself, drawn behind the components for as long as one of them is
+   being dragged or resized, and taken back down when the gesture ends.
+
+   **Why it is not simply always on.** The canvas renders the real sheet
+   (`docs/features/grid-canvas.md` §1), and a permanent lattice behind a real
+   sheet is a lattice the author has to read past every time they look at their
+   own layout — the interim schematic could afford one because it was a field of
+   grey boxes and nothing else. What a grid answers is a question only a gesture
+   asks: where does this land, and how far can it grow. So it appears with the
+   first movement of a drag and goes with the release.
+
+   **The lines are the browser's resolved tracks on both axes**, which
+   `grid-guides.ts` explains at length: `1fr` columns are not equal once content
+   widens one, and rows are content-sized, so dividing the grid evenly draws a
+   lattice that is not the one on screen. The drag snaps against the same
+   reading, so what is drawn is where the block will land.
+
+   Geometry comes in on each line's own `style`, since a content-sized row grid
+   has no pitch a rule here could name (`docs/PATTERNS.md` §3's runtime-geometry
+   exception).
+
+   **In forced-colors mode the lattice does not paint**, and is left that way:
+   every background is repainted one system colour there, so a hairline drawn
+   as a background is a hairline the same colour as what is behind it. The
+   target below is a border and survives, which is the half that says where the
+   block lands; the block's label reads its column and row out as well. */
+.sheetsmith-grid-guided {
+	position: relative;
+	/* A stacking context of the grid's own, so the layer below sits behind
+	   every cell and in front of the pane's background rather than behind
+	   that too. Without it the guide is painted under the surface it is
+	   supposed to be drawn on and is simply never seen. */
+	isolation: isolate;
+}
+
+.sheetsmith-grid-guides {
+	position: absolute;
+	inset: 0;
+	/* Behind the cells, which are positioned and would otherwise win on tree
+	   order — the guide has to be appended last, because `canvas.ts` maps
+	   components onto this element's children by index. */
+	z-index: -1;
+	overflow: hidden;
+	pointer-events: none;
+}
+
+.sheetsmith-grid-guide-column,
+.sheetsmith-grid-guide-row {
+	position: absolute;
+	background-color: var(--background-modifier-border);
+}
+
+.sheetsmith-grid-guide-column {
+	top: 0;
+	bottom: 0;
+	width: 1px;
+}
+
+.sheetsmith-grid-guide-row {
+	left: 0;
+	right: 0;
+	height: 1px;
+}
+
+/* The cells the block will occupy if released now: the answer the lattice
+   alone leaves the reader to count lines for.
+
+   In front of the components, above even the dragged block's own lifted
+   overlay (`z-index: 2`), because the block sits on its own target and would
+   otherwise hide the one thing this exists to show — how far its placement
+   actually reaches, which on a content-sized grid is often further than the
+   component's own box. An outline with no fill, so nothing under it is
+   obscured, and a border rather than a shadow so forced-colors mode keeps it:
+   there it is the only part of the grid left. */
+.sheetsmith-grid-target {
+	position: absolute;
+	z-index: 3;
+	border: 2px solid var(--interactive-accent);
+	border-radius: var(--radius-s);
+	pointer-events: none;
 }
 
 .sheetsmith-layout-preview {
@@ -1527,7 +1780,8 @@
    the header can no longer give it. */
 @container (max-width: 380px) {
 .sheetsmith-entry-columns,
-.sheetsmith-entry-counted .sheetsmith-entry-columns {
+.sheetsmith-entry-counted .sheetsmith-entry-columns,
+.sheetsmith-entry-flagged .sheetsmith-entry-columns {
 		display: none;
 	}
 
@@ -1538,7 +1792,8 @@
 	}
 
 .sheetsmith-list .sheetsmith-entry-row,
-.sheetsmith-entry-counted .sheetsmith-entry-row {
+.sheetsmith-entry-counted .sheetsmith-entry-row,
+.sheetsmith-entry-flagged .sheetsmith-entry-row {
 		grid-template-columns: 1fr;
 	}
 

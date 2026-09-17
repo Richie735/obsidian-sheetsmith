@@ -40,7 +40,7 @@ import {
 import { nameAlreadyDeclared } from '../src/layouts';
 import { dropDetachedAnchoredPanel } from '../src/ui/anchored-panel';
 import { renderGrid } from '../src/view/grid-cells';
-import { driveResize, renderEditorPane } from './editor-pane';
+import { driveDrag, driveResize, driveSuggest, renderEditorPane } from './editor-pane';
 import {
 	brokenSamples,
 	effectiveSamples,
@@ -258,7 +258,21 @@ function portrait(width: number, height: number, label: string): string {
 		// file will not necessarily produce, on the single property this component is
 		// built around. An instrument that can only draw the flattering case is
 		// worse than one that omits the case.
-		`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`,
+		//
+		// **`preserveAspectRatio="none"`, found by `fit: 'stretch'`'s own shot.**
+		// Chrome maps an `<img>`'s `object-fit: fill` onto its *reported* size
+		// correctly — `getBoundingClientRect` on the element was the full box either
+		// way — but an SVG resource still applies its own viewport mapping inside
+		// that box, and the default `xMidYMid meet` re-imposes the aspect ratio
+		// `fill` was asked to break: the picture painted centred and undistorted
+		// with the frame's own background showing on two sides, indistinguishable
+		// from `contain` in every shot despite `getComputedStyle` correctly
+		// reporting `fill`. A raster file has no such second opinion to override,
+		// so this is a property of the fixture rather than of the component; unset,
+		// it left `stretch` unphotographable and would have read as a defect in
+		// `sheetsmith-fit-stretch` to the next reviewer who did not go looking
+		// past the computed style.
+		`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none">`,
 		`<rect width="${width}" height="${height}" fill="#8a7fbe"/>`,
 		// A circle, because a circle drawn as an ellipse is what a distorted
 		// picture looks like and nothing else in the shape would say so.
@@ -473,6 +487,7 @@ async function ensureEditor(): Promise<HTMLElement> {
 			// worth asking for is the empty canvas.
 			samples: params.get('samples') === 'off' ? false : undefined,
 			resize: params.get('resize') ?? undefined,
+			suggest: params.get('suggest') ?? undefined,
 			treeHover: params.get('treeHover') ?? undefined,
 			treeDrop: params.get('treeDrop') ?? undefined,
 		},
@@ -837,6 +852,24 @@ function applyQuery(): void {
 	 * because a synthetic `click`/`change` dispatches correctly either way.
 	 */
 	const resize = params.get('resize');
+	/**
+	 * `&drag=<id>:<dx>,<dy>` — the same, on the block itself rather than on its
+	 * corner, so a still can catch a component part-way through being moved.
+	 *
+	 * `&resize=`'s sibling, and added for the reason that one already carries:
+	 * the grid a gesture draws behind itself (`grid-guides.ts`) exists only
+	 * while a pointer is down and is gone before the release, so the move — the
+	 * commoner of the two gestures, and the one where a lifted block sits over
+	 * the lattice — was reachable in no shot at all.
+	 */
+	const drag = params.get('drag');
+	/**
+	 * `&suggest=<focus token>:<text>` — type into a formula field and leave its
+	 * name suggester open over it. Driven here rather than inside `ensureEditor`
+	 * for `resize`'s reason one line up: the popup is placed against the field's
+	 * real box, and every rect on an unattached element reads zero.
+	 */
+	const suggest = params.get('suggest');
 
 	void ensureSurface().then(async () => {
 		draw();
@@ -849,6 +882,12 @@ function applyQuery(): void {
 		scrollWanted();
 		if (resize !== null && editorPane) {
 			await driveResize(editorPane, resize);
+		}
+		if (drag !== null && editorPane) {
+			await driveDrag(editorPane, drag);
+		}
+		if (suggest !== null && editorPane) {
+			await driveSuggest(editorPane, suggest);
 		}
 	});
 }

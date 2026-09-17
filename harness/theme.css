@@ -267,6 +267,81 @@ body.theme-dark {
 	box-sizing: border-box;
 }
 
+/* **This block sits after the rule above, and that is load bearing.** It was
+   spliced into the middle of that five-selector list once — between `select,`
+   and the `button` the list ends on — so `.suggestion-container` became the
+   list's fifth selector and every text input, number input, textarea and select
+   in the harness editor took the popup's own declarations: `position: absolute`,
+   a popover `z-index`, a `max-height`, a border and a shadow, while losing the
+   `box-sizing: border-box` the list exists to give them. The pane's fields then
+   sized against the viewport rather than their own cells and painted over
+   whatever was under them. Nothing failed; the shots simply showed a pane that
+   Obsidian would never draw. */
+/* The type-ahead popup the layout editor's formula fields open
+   (`docs/features/formula-name-suggestions.md` §7). The plugin writes no rule
+   for it — it takes Obsidian's own `.suggestion-*` chrome — so before
+   `harness:calibrate` has run there is nothing at all to draw it, and a shot of
+   the popup is an unstyled column of divs floating over the pane.
+
+   `position` is here and the coordinates are not: `harness/editor-pane.ts` sets
+   `top`, `left` and `width` from the field's own box, because Obsidian places
+   this popup from JavaScript and `src/test/obsidian-stub.ts` deliberately models
+   none of that. What the fallback owes is the surface, the rows and the
+   highlight; where it goes is the instrument's. */
+.suggestion-container {
+	position: absolute;
+	z-index: var(--layer-popover, 30);
+	box-sizing: border-box;
+	max-height: 300px;
+	overflow: auto;
+	padding: var(--size-2-2);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background-color: var(--background-secondary);
+	box-shadow: 0 2px 8px var(--background-modifier-box-shadow, rgba(0, 0, 0, 0.25));
+}
+
+.suggestion-item {
+	padding: var(--size-2-2) var(--size-2-3);
+	border-radius: var(--radius-s);
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+	cursor: pointer;
+}
+
+.suggestion-item.is-selected {
+	background-color: var(--background-modifier-hover);
+}
+
+/* **Scoped exactly as the app scopes it, and the scope is the finding.** This
+   was a bare `.suggestion-note`, which matched every note whether or not its
+   item carried `mod-complex` — while Obsidian's only rule for it is the one
+   below. So the fallback painted a secondary rank the app would not have
+   painted, the plugin shipped an item with no `mod-complex` on it, and four
+   shots showed a name and its owner correctly while the app drew two identical
+   lines. An approximation kinder than the thing it approximates is worse than
+   none (`docs/UI.md` §11), and "kinder" here was one missing compound
+   selector. */
+.suggestion-item.mod-complex {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+}
+
+.suggestion-item.mod-complex .suggestion-content {
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
+	margin-inline-end: auto;
+}
+
+.suggestion-item.mod-complex .suggestion-note {
+	color: var(--text-muted);
+	font-size: 0.8em;
+	width: 100%;
+	flex-basis: 100%;
+}
+
 :is(.vertical-tab-content, .harness-editor) input[type='text'],
 :is(.vertical-tab-content, .harness-editor) input[type='number'],
 :is(.vertical-tab-content, .harness-editor) textarea,

@@ -36,6 +36,15 @@
  * `findOverlaps` are `preview-grid.ts`'s, and both this module and the paint
  * call them, which is what stops the two disagreeing about where the grid ends.
  *
+ * **Not here either: the grid's own pixels.** Where the tracks and the gutters
+ * fall, and the guides drawn on them while a gesture runs, are
+ * `grid-guides.ts`'s — the third cut of this file, and the one the header above
+ * predicts: a schematic's geometry is read for two purposes now, to decide
+ * which cell a pointer is over and to draw the lines it is snapping to, and the
+ * failure worth designing against is those two disagreeing. They cannot, because
+ * the drag measures once, keeps the answer for the length of the gesture, and
+ * hands that same answer to the paint.
+ *
  * **Not here either: `markOverlaps`.** It was the one member of this layer the
  * cut was genuinely open about. Its only caller is the drag, which argues for
  * moving it; but it repaints the marks and labels `drawSchematic` writes when it
@@ -62,6 +71,16 @@
  */
 
 import { ComponentConfig } from '../types';
+import {
+	freezeGrid,
+	hideGridGuides,
+	markGridTarget,
+	PreviewMetrics,
+	previewMetrics,
+	showGridGuides,
+	thawGrid,
+	trackAt,
+} from './grid-guides';
 import { clamp, lastColumn } from './preview-grid';
 
 /** Which pair of a block's four numbers a pointer drag is writing. */
@@ -173,94 +192,6 @@ export interface SchematicHost {
 	select(id: string): void;
 }
 
-/**
- * Where a schematic's grid lines fall, in client coordinates.
- *
- * Named rather than derived: this read `NonNullable<ReturnType<...>>` off the
- * method below, which named a class the code no longer sits in and made a
- * reader follow it to learn there were five numbers.
- *
- * **Rows are no longer one pitch.** The interim schematic's blocks all sat on
- * `repeat(rows, var(--sheetsmith-preview-row))`, a fixed height, so a single
- * pitch was exact. A live component's row is not fixed (`SPEC` §8: "the
- * sheet's rows are content-sized"), so a Table spanning three rows and a Card
- * spanning one can sit on tracks of genuinely different heights on the same
- * grid. `rowStarts` is the grid's own resolved per-track offsets, read off
- * `getComputedStyle(...).gridTemplateRows` rather than assumed; `pitch` is
- * what stands in wherever that cannot be resolved into pixels — a browser
- * that has not run layout, or one reporting explicit tracks only, and every
- * schematic's rows are implicit now: a container's declared height arrives
- * as a min-height floor rather than a row template, and the sheet's own row
- * count was never fixed (`SPEC` §8 again — it grows as components are
- * added). Columns keep a single pitch, since a component always fills its
- * placement's full width and the tracks there are `1fr`-uniform.
- */
-interface PreviewMetrics {
-	/** Left edge of the first column. */
-	left: number;
-	/** Top edge of the first row. */
-	top: number;
-	/** Column pitch: one track plus the gap after it. */
-	column: number;
-	/** Columns at this level, which is where the grid ends. */
-	columns: number;
-	/**
-	 * Cumulative top offset of each resolved row track, from `top`, each
-	 * already including the gap before it. `null` where the browser has not
-	 * resolved `grid-template-rows` into a pixel list — `pitch` alone answers
-	 * every row then.
-	 */
-	rowStarts: number[] | null;
-	/**
-	 * The uniform row pitch: `grid-auto-rows`, or the constant this module has
-	 * always fallen back to. Used in full where `rowStarts` is null, and used
-	 * past the last resolved track otherwise — a schematic with no declared
-	 * row count (the sheet's own) is never bounded from above.
-	 */
-	pitch: number;
-}
-
-/**
- * A grid's `grid-template-rows`, resolved to one pixel size per track, or
- * null where it cannot be read that way.
- *
- * `none` and the empty string are the two spellings of "no explicit tracks" —
- * every schematic grows on implicit rows now, the sheet's and a container's
- * alike — and a token that will not parse as a plain pixel length (a bare
- * `repeat(...)` a browser has not expanded, or a `fr` unit nothing has
- * resolved) means the same thing: there is nothing here to read pixels off
- * yet, and the uniform pitch is the honest answer rather than a wrong one
- * dressed as precise.
- */
-function parseRowTracks(raw: string): number[] | null {
-	const trimmed = raw.trim();
-	if (trimmed === '' || trimmed === 'none') return null;
-	const tracks = trimmed.split(/\s+/).map((token) => parseFloat(token));
-	if (tracks.length === 0 || tracks.some((size) => !(size > 0))) return null;
-	return tracks;
-}
-
-/**
- * The cumulative top offset of each resolved row track, plus one trailing
- * entry for where a row after the last one would begin (the grid's total
- * known height, without a gap it never had after it).
- *
- * The trailing entry is what lets `rowAt` tell "still inside the last known
- * row" from "past it" exactly, rather than guessing the last row's own height
- * from the uniform pitch — which would be wrong whenever the last row is not
- * the pitch's own height, exactly the case §3 exists to get right.
- */
-function rowStartsOf(tracks: readonly number[], gap: number): number[] {
-	const starts: number[] = [];
-	let offset = 0;
-	for (const size of tracks) {
-		starts.push(offset);
-		offset += size + gap;
-	}
-	starts.push(offset - gap);
-	return starts;
-}
-
 export class SchematicGestures {
 	private host: SchematicHost;
 	/** True between a drag ending and the click it produces. */
@@ -333,76 +264,18 @@ export class SchematicGestures {
 		);
 	}
 
-	/**
-	 * The preview's geometry, in the units the grid is actually drawn in.
-	 * Read from the element rather than assumed, so a theme changing the
-	 * padding or the gap moves the drop targets with it.
-	 */
-	private previewMetrics(schematic: Schematic): PreviewMetrics | null {
-		const el = schematic.el;
-		const view = el.ownerDocument.defaultView;
-		if (!view) return null;
-		const styles = view.getComputedStyle(el);
-		const columns = schematic.columns;
-		const columnGap = parseFloat(styles.columnGap) || 0;
-		const rowGap = parseFloat(styles.rowGap) || 0;
-		const padLeft = parseFloat(styles.paddingLeft) || 0;
-		const padTop = parseFloat(styles.paddingTop) || 0;
-		const inner =
-			el.clientWidth - padLeft - (parseFloat(styles.paddingRight) || 0);
-		const track = (inner - (columns - 1) * columnGap) / columns;
-		const rowHeight = parseFloat(styles.gridAutoRows) || 44;
-		if (!(track > 0)) return null;
-		const box = el.getBoundingClientRect();
-		const tracks = parseRowTracks(styles.gridTemplateRows);
-		const rowStarts = tracks ? rowStartsOf(tracks, rowGap) : null;
-		return {
-			left: box.left + padLeft,
-			top: box.top + padTop,
-			column: track + columnGap,
-			columns,
-			rowStarts,
-			pitch: rowHeight + rowGap,
-		};
-	}
-
-	/**
-	 * Which row a pointer this far below the grid's top edge is over, 1-based.
-	 *
-	 * Walks `rowStarts` rather than dividing by a pitch, because a schematic's
-	 * rows need not share one: a pointer over a Table's third row and a pointer
-	 * over the one-row Card beside it are different offsets into the same list
-	 * of tracks (§3). Past the last resolved track — a schematic with no fixed
-	 * row count, or a pointer dragged below every row a container declared —
-	 * the uniform pitch keeps counting from there, which is what lets a drag
-	 * past the last row still answer with an ever-larger row number rather than
-	 * sticking at the last one.
-	 */
-	private rowAt(y: number, metrics: PreviewMetrics): number {
-		const starts = metrics.rowStarts;
-		// `rowStartsOf` always returns at least the one trailing entry, so
-		// fewer than two means there was nothing to resolve at all.
-		if (!starts || starts.length < 2) {
-			return Math.floor(y / metrics.pitch) + 1;
-		}
-		const known = starts.length - 1;
-		for (let index = 0; index < known; index++) {
-			if (y < (starts[index + 1] as number)) return index + 1;
-		}
-		// Past every row the grid has resolved: keep counting with the pitch
-		// rather than pinning an ever-lower pointer to the last row.
-		const into = y - (starts[known] as number);
-		return known + 1 + Math.floor(into / metrics.pitch);
-	}
-
 	/** Which grid cell a pointer is over, 1-based, as the layout counts them. */
 	private cellAt(
 		event: PointerEvent,
 		metrics: PreviewMetrics,
 	): { col: number; row: number } {
 		return {
-			col: Math.floor((event.clientX - metrics.left) / metrics.column) + 1,
-			row: this.rowAt(event.clientY - metrics.top, metrics),
+			// Both axes walk the grid's own resolved tracks (`grid-guides.ts`
+			// explains why neither may be divided evenly), which is also what
+			// the guides are drawn from, so the cell answered here is the cell
+			// the reader can see highlighted.
+			col: trackAt(metrics.column, event.clientX - metrics.left) + 1,
+			row: trackAt(metrics.row, event.clientY - metrics.top) + 1,
 		};
 	}
 
@@ -430,7 +303,7 @@ export class SchematicGestures {
 		target: HTMLElement = cell,
 	): void {
 		if (event.button !== 0) return;
-		const metrics = this.previewMetrics(schematic);
+		const metrics = previewMetrics(schematic.el, schematic.columns);
 		if (!metrics) return;
 		// Suppress the text selection and the native button drag; the block
 		// itself is the thing being dragged.
@@ -440,6 +313,11 @@ export class SchematicGestures {
 		const start = { ...config.position };
 		let moved = false;
 		cell.setPointerCapture(event.pointerId);
+		// At the press, before anything can move: the first placement is
+		// already a reflow, and the tracks it would resize are the ones just
+		// measured. Invisible on a press that only selects, since the frozen
+		// sizes are the sizes the grid already had.
+		freezeGrid(schematic.el, metrics);
 
 		/**
 		 * Offer the block a position this far from where it was picked up,
@@ -488,6 +366,9 @@ export class SchematicGestures {
 				gridRow: `${row} / span ${height}`,
 			});
 			this.host.markOverlaps(schematic);
+			// Before the first move has drawn any guides this finds nothing to
+			// move, and `showGridGuides` places the target itself on that frame.
+			markGridTarget(schematic.el, metrics, position);
 			return true;
 		};
 
@@ -498,6 +379,14 @@ export class SchematicGestures {
 				moved = true;
 				cell.addClass('sheetsmith-preview-dragging');
 				if (mode === 'resize') cell.addClass('sheetsmith-preview-resizing');
+				// On the first move rather than on the press, which is the same
+				// moment `-dragging` is marked and for the same reason: a press
+				// that selects a component is a press that moves nothing, and
+				// drawing the grid under it would flash the whole lattice on
+				// every selection. Measured once, at the press, so what is on
+				// screen is the grid this gesture is snapping to for as long as
+				// it runs — not a second reading that could disagree with it.
+				showGridGuides(schematic.el, metrics, config.position);
 			}
 		};
 
@@ -508,6 +397,14 @@ export class SchematicGestures {
 			cell.ownerDocument.removeEventListener('keydown', onKey);
 			cell.removeClass('sheetsmith-preview-dragging');
 			cell.removeClass('sheetsmith-preview-resizing');
+			// Above the `moved` guard and beside the classes it matches, not
+			// below with the commit: the redraw a real drag ends with would
+			// discard this element anyway, so putting the removal there would
+			// make the guide's lifetime depend on a rebuild happening rather
+			// than on the gesture ending. A press that drew no grid has none
+			// to take down, and `hide` is written to be safe on one.
+			hideGridGuides(schematic.el);
+			thawGrid(schematic.el);
 			if (cell.hasPointerCapture(event.pointerId)) {
 				cell.releasePointerCapture(event.pointerId);
 			}
@@ -520,7 +417,7 @@ export class SchematicGestures {
 			// The cell's own window, not the global one. Nothing in production
 			// reaches for `window` directly — ten sites derive a view from
 			// `ownerDocument.defaultView` and `layout-editor.ts` uses `el.win`,
-			// and `previewMetrics` above is one of the ten — so a bare `window`
+			// and `previewMetrics`, now next door, is one of the ten — so a bare `window`
 			// here was the only one of its kind. The visible cost was nil, since
 			// a 0ms timer fires either way; the real cost was that the one
 			// exception lived in the file whose header argues about which folder

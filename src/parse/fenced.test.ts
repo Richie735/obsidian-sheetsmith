@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fenceLines, readFenced, writeFenced } from './fenced';
+import { fenceLines, readFenced, renameFencedEntry, writeFenced } from './fenced';
 
 const BODY = '\n```sheet\nSTR: 8\nDEX: 16\nWIS: 12\n```\n';
 
@@ -113,6 +113,75 @@ describe('writeFenced', () => {
 		expect(writeFenced(body, new Map([['DEX', '18']]))).toBe(
 			body.replace('DEX: 16', 'DEX: 18'),
 		);
+	});
+});
+
+describe('renameFencedEntry', () => {
+	it('reports absent where the key is not in the fence', () => {
+		expect(renameFencedEntry(BODY, 'CON', 'Constitution')).toEqual({
+			kind: 'absent',
+		});
+	});
+
+	it('reports absent where the body has no fence at all', () => {
+		expect(renameFencedEntry('\nJust prose.\n', 'DEX', 'Dexterity')).toEqual({
+			kind: 'absent',
+		});
+		expect(renameFencedEntry('', 'DEX', 'Dexterity')).toEqual({
+			kind: 'absent',
+		});
+	});
+
+	it('reports collision where the target key already exists', () => {
+		expect(renameFencedEntry(BODY, 'DEX', 'WIS')).toEqual({ kind: 'collision' });
+	});
+
+	it('renames the key, keeping the separator, value and line ending', () => {
+		expect(renameFencedEntry(BODY, 'DEX', 'Dexterity')).toEqual({
+			kind: 'renamed',
+			body: BODY.replace('DEX: 16', 'Dexterity: 16'),
+		});
+	});
+
+	it('preserves unusual spacing around the separator', () => {
+		const body = '\n```sheet\nDEX  :\t16\n```\n';
+		expect(renameFencedEntry(body, 'DEX', 'Dexterity')).toEqual({
+			kind: 'renamed',
+			body: '\n```sheet\nDexterity  :\t16\n```\n',
+		});
+	});
+
+	it('leaves every other line byte for byte untouched', () => {
+		const body = '\nBefore.\n\n```sheet\nSTR: 8\nDEX: 16\nWIS: 12\n```\n\nAfter.\n';
+		const result = renameFencedEntry(body, 'DEX', 'Dexterity');
+		expect(result).toEqual({
+			kind: 'renamed',
+			body: body.replace('DEX: 16', 'Dexterity: 16'),
+		});
+	});
+
+	it('renaming a key to itself is a no-op renamed result, never a collision', () => {
+		expect(renameFencedEntry(BODY, 'DEX', 'DEX')).toEqual({
+			kind: 'renamed',
+			body: BODY,
+		});
+	});
+
+	it('preserves CRLF line endings', () => {
+		const body = BODY.replace(/\n/g, '\r\n');
+		expect(renameFencedEntry(body, 'DEX', 'Dexterity')).toEqual({
+			kind: 'renamed',
+			body: body.replace('DEX: 16', 'Dexterity: 16'),
+		});
+	});
+
+	it('renames only the first fence, leaving a second one to readFenced to refuse', () => {
+		const body = '\n```sheet\nDEX: 16\n```\n\n```sheet\nDEX: 9\n```\n';
+		const result = renameFencedEntry(body, 'DEX', 'Dexterity');
+		expect(result).toEqual({
+			kind: 'renamed',
+			body: '\n```sheet\nDexterity: 16\n```\n\n```sheet\nDEX: 9\n```\n',
+		});
 	});
 });
 

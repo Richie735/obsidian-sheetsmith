@@ -226,6 +226,10 @@ describe('field rules outweigh Obsidian\'s input styling', () => {
 			'sheetsmith-panel-cancel',
 			'sheetsmith-panel-remove',
 			'sheetsmith-panel-remove-armed',
+			// Track's own **Remove** picker, one line per added row inside
+			// the same anchored panel — `sheetsmith-panel-line` already
+			// covers the resting line, and this is its armed tint.
+			'sheetsmith-track-remove-armed',
 		];
 		/**
 		 * The classes on the subject compound, exactly — not a substring of it.
@@ -324,10 +328,15 @@ describe('every field the sheet styles has a focus indicator', () => {
 	 *   `sheetsmith-table-input` **as well**, so it takes the shared rule through
 	 *   that class. The exemption is about this check counting classes where the
 	 *   browser resolves elements.
+	 * - `sheetsmith-track-row-length-input` — the same shape one component over:
+	 *   a Track row's own length field carries `sheetsmith-pool-max-input` as
+	 *   well, and takes its focus ring, its hover and its chrome removal through
+	 *   that class. This one's own rule only narrows the size.
 	 */
 	const FOCUS_ELSEWHERE = [
 		'sheetsmith-pool-temp-input',
 		'sheetsmith-table-name-input',
+		'sheetsmith-track-row-length-input',
 	];
 
 	/** Whether any rule anywhere focuses this class and reaches for the accent. */
@@ -1048,6 +1057,48 @@ describe('the armed delete keeps its warning under the pointer', () => {
 			(selector) => !ARMED.some((armed) => selector.includes(`:not(.${armed})`)),
 		);
 		expect(outranking).toEqual([]);
+	});
+});
+
+describe('a hidden-at-rest control outranks its own shared reset by order, not by specificity', () => {
+	const CSS_TEXT = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
+
+	/*
+	 * The same failure shape as "the armed delete keeps its warning under the
+	 * pointer" above, on a different pair of rules: `.sheetsmith-passport-part-
+	 * remove`'s own `display: none` (hidden at rest, `docs/features/passport-
+	 * field-lists.md`, "Third reversal") and the shared glyph-button reset it
+	 * shares with `.sheetsmith-passport-add` both resolve to one class's worth
+	 * of specificity, so whichever is declared *later* is the one that wins.
+	 * Nothing here can rescue a reorder the way `:not()` rescues the armed
+	 * state above — the two rules paint the same property on the same element
+	 * with the same specificity on purpose, so the only thing holding "hidden
+	 * wins at rest" true is that it is textually the later of the two.
+	 *
+	 * Invisible in review by construction: no unit test in this project reads
+	 * a computed `display`, and every harness shot of this control is either
+	 * the resting state (where a reorder would look identical to a passing
+	 * screenshot, since a headless shot cannot show the *absence* of a control
+	 * reserving space it should not) or the focused/armed state, which the
+	 * higher-specificity `:focus-within` reveal rule wins regardless of order
+	 * — so a reorder that silently stopped the control from ever hiding would
+	 * pass every existing shot and every existing test. This is the guard for
+	 * that: a static order check, on the compiled stylesheet, that needs no
+	 * browser to run.
+	 */
+	function ruleIndex(selector: string): number {
+		const needle = `${selector} {`;
+		const at = CSS_TEXT.indexOf(needle);
+		expect(at, `expected to find the rule ${JSON.stringify(selector)}`).toBeGreaterThan(-1);
+		return at;
+	}
+
+	it('declares the hidden-at-rest rule after the shared reset it ties with', () => {
+		const sharedReset = ruleIndex(
+			'.sheetsmith-view .sheetsmith-passport-part-remove,\n.sheetsmith-view .sheetsmith-passport-add',
+		);
+		const hiddenAtRest = ruleIndex('.sheetsmith-view .sheetsmith-passport-part-remove');
+		expect(hiddenAtRest).toBeGreaterThan(sharedReset);
 	});
 });
 
@@ -1844,6 +1895,18 @@ describe('every class the plugin adds is its own', () => {
 		 */
 		'mod-warning',
 		'is-active',
+		/*
+		 * The two the formula suggester adds to a popup item, and they are the
+		 * clearest case this list holds of a borrowed name that is *behaviour*
+		 * rather than paint. `app.css` styles `.suggestion-note` in exactly one
+		 * place — `.suggestion-item.mod-complex .suggestion-note` — so the
+		 * secondary rank that makes a name-and-its-owner readable at all exists
+		 * only under `mod-complex`, and the column the two children sit in is
+		 * `.suggestion-content` under the same class. Without them the item draws
+		 * two identical lines, which is what shipped for one wave.
+		 */
+		'mod-complex',
+		'suggestion-content',
 	];
 
 	/** Every `.ts` file under src/, as a repo-relative path. */

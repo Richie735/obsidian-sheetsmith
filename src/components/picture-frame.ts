@@ -101,6 +101,13 @@ export interface PictureFrameOptions {
 	 */
 	resource?: (target: string) => string | null;
 	/**
+	 * Attach a vault file suggester to the field, on `resource`'s own terms.
+	 * `RenderContext.suggestFile`'s own header carries the argument; this is a
+	 * plain pass-through, called once with the field and its own commit,
+	 * immediately after `bindEditable` produces one.
+	 */
+	suggestFile?: (input: HTMLInputElement, commit: (next: string) => void) => void;
+	/**
 	 * Why a draft must not be written, or null where it may be. Absent where any
 	 * text the reader types is text the component can hold.
 	 *
@@ -112,6 +119,20 @@ export interface PictureFrameOptions {
 	 * leave the reader's own text in the note as prose with the field empty.
 	 */
 	refuse?: (next: string) => string | null;
+	/**
+	 * How the picture fills its frame. Absent or `'contain'` draws exactly as
+	 * this component always has — scaled to fit inside the box, centred, never
+	 * cropped and never distorted (`docs/features/picture-fit-and-suggest.md`).
+	 * `'cover'` crops to fill the box, centred; `'stretch'` fills it exactly,
+	 * distorting the aspect ratio where the two disagree.
+	 *
+	 * A modifier class rather than an inline style, on the same reasoning as
+	 * every other rank on this sheet: the value the caller passes in decides
+	 * *which* class, and the stylesheet — not this module — decides what each
+	 * one draws, so the two non-default values cost one class each rather than
+	 * a property this file would otherwise be stating an opinion about.
+	 */
+	fit?: 'contain' | 'cover' | 'stretch';
 	onCommit: (next: string) => void;
 }
 
@@ -195,6 +216,10 @@ export function renderPictureFrame(
 		// caller's own `object-fit` rides on, so the fit is stated rather than
 		// hoped for.
 		picture.classList.add(options.classes.picture);
+		// The default draws with no second class at all — "a value matching its
+		// default is left out" (PATTERNS §8) read one level down into the DOM.
+		if (options.fit === 'cover') picture.classList.add('sheetsmith-fit-cover');
+		else if (options.fit === 'stretch') picture.classList.add('sheetsmith-fit-stretch');
 		// Exactly what the app returned, with nothing prepended and no extension
 		// inspected on the way (SPEC §4.2).
 		picture.src = url;
@@ -263,7 +288,7 @@ export function renderPictureFrame(
 		field.select();
 	});
 
-	bindEditable(field, {
+	const handle = bindEditable(field, {
 		initial: options.source,
 		announceCommit: (next) => {
 			options.status.textContent =
@@ -294,4 +319,10 @@ export function renderPictureFrame(
 					},
 				}),
 	});
+	// Absent wherever the caller has no app to ask — every unit test and the
+	// harness alike — in which case this is the plain field it has always
+	// been. `handle.set` is `EditableHandle`'s own commit, so a picked
+	// suggestion is written and announced exactly as typing it and pressing
+	// Enter would be.
+	options.suggestFile?.(field, (next) => handle.set(next));
 }

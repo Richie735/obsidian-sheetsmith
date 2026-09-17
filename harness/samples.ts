@@ -1306,6 +1306,7 @@ export const SAMPLES: Sample[] = [
 			'| Cloak of Elvenkind | Cloak of Elvenkind; Cloak of Displacement | yes | two named, one applying |',
 			'| Warded bracers | Bracers of Defence +1; Bracers of Defence +1 | yes | one name, twice: two lines, one enrolment |',
 			'| Lucky charm | abilities.STR += 1 as luck | yes | a bonus type the layout does not declare |',
+			'| Girdle of Giant Strength | stat_roster.STR += 2 as item | yes | pushes at a roster\'s stat, not a card\'s |',
 			'| Unfinished ward | armour_class += | yes | typed, with no amount yet |',
 			'| Eyes of the Eagle | Eyes of the Eagle |  | a table cell, not a card |',
 			'| Ring of Nonexistence | Ring of Nonexistence |  | no such modifier |',
@@ -2073,6 +2074,362 @@ export const SAMPLES: Sample[] = [
 			position: { col: 1, row: 45, width: 2, height: 1 },
 		} as ComponentConfig,
 		body: null,
+	},
+	/*
+	 * Roster, in both directions, on the same six abilities `skills` above
+	 * already reads — the comparison settled answer 2 asks for: a card beside
+	 * a table (row 1), the six-up (`ability_checks`, row 37), and now one
+	 * grouped table holding all six at once. `skills.perception` moving to
+	 * `stat_roster.perception` on the day a layout converts is the measured
+	 * cost of the flat arrangement, so this reuses `skills`' own rows and
+	 * arithmetic rather than inventing new ones — `ability + Training * 2`
+	 * there is `stat + Training * 2` here, with no `values: { ability: … }`
+	 * on a single row.
+	 *
+	 * **Appended here rather than placed beside `ability_checks`.** The two
+	 * are still in one shot — the harness draws the whole growing page rather
+	 * than a fixed viewport (`docs/UI.md` §11) — and inserting earlier would
+	 * renumber every row below it along with the comments that cite one.
+	 *
+	 * Six stats and four published rows (Athletics, Stealth, Perception,
+	 * Persuasion) is the exact count `docs/BACKLOG.md`'s inventory-sizing row
+	 * asks for: ten chips in the panel's published-name inventory, each with
+	 * its `.value` and `mod.` forms, plus this component's own two aggregate
+	 * calls. Constitution carries no row at all, which is the empty-band
+	 * state (Design's own "a layout with stats and no rows draws its bands
+	 * with nothing under them") arriving for free rather than staged.
+	 */
+	{
+		config: {
+			id: 'stat_roster',
+			type: 'roster',
+			label: 'Abilities, as a roster',
+			position: { col: 1, row: 49, width: 8, height: 7 },
+			stats: [
+				{ key: 'STR', name: 'Strength' },
+				{ key: 'DEX', name: 'Dexterity' },
+				{ key: 'CON', name: 'Constitution' },
+				{ key: 'INT', name: 'Intelligence' },
+				{ key: 'WIS', name: 'Wisdom' },
+				{ key: 'CHA', name: 'Charisma' },
+			],
+			derived: 'floor((value - 10) / 2)',
+			effective: 'value + mod.self',
+			signed: true,
+			rowHeader: 'Skill',
+			namePosition: 1,
+			columns: [
+				{
+					key: 'Training',
+					hideHeading: true,
+					type: 'level',
+					levels: ['Untrained', 'Proficient:P', 'Expertise:E'],
+				},
+				{
+					key: 'Total',
+					type: 'computed',
+					formula: 'stat + Training * 2',
+					signed: true,
+					publish: true,
+				},
+			],
+			rows: [
+				{ label: 'Athletics', stat: 'STR', key: 'athletics' },
+				// `dividerAfter`, on the owner's own call: it applies in the
+				// shared table exactly as it does in `roster_card_layout` below,
+				// so this is its one appearance outside card layout — a rule
+				// between Acrobatics and Stealth, inside Dexterity's own band.
+				{ label: 'Acrobatics', stat: 'DEX', dividerAfter: true },
+				{ label: 'Stealth', stat: 'DEX', key: 'stealth' },
+				{ label: 'Investigation', stat: 'INT' },
+				{ label: 'Perception', stat: 'WIS', key: 'perception' },
+				{ label: 'Insight', stat: 'WIS' },
+				{ label: 'Persuasion', stat: 'CHA', key: 'persuasion' },
+			],
+		} as ComponentConfig,
+		body: [
+			'```sheet',
+			'STR: 15',
+			'DEX: 14',
+			'CON: 13',
+			'INT: 12',
+			'WIS: 10',
+			'CHA: 8',
+			'```',
+			'',
+			'| Skill | Training | Total |',
+			'| --- | --- | --- |',
+			'| Athletics | 1 | |',
+			'| Acrobatics | 0 | |',
+			'| Stealth | 2 | |',
+			'| Investigation | 0 | |',
+			'| Perception | 1 | |',
+			'| Insight | 0 | |',
+			'| Persuasion | 1 | |',
+		].join('\n'),
+	},
+	/*
+	 * The other direction, narrow beside the first so both pictures are in
+	 * one shot without scrolling sideways: a Blades playbook's attributes,
+	 * each read as the count of its own actions with a dot in them —
+	 * `count(self, Rating > 0)`, aggregating one band and never the whole
+	 * roster. `hideValue` because an attribute is not typed in directly; the
+	 * reading is all there is, which is the other branch of that setting from
+	 * `passive_perception` above.
+	 */
+	{
+		config: {
+			id: 'attributes_roster',
+			type: 'roster',
+			label: 'Attributes',
+			position: { col: 9, row: 49, width: 4, height: 7 },
+			stats: [{ key: 'insight' }, { key: 'prowess' }, { key: 'resolve' }],
+			hideValue: true,
+			derived: 'count(self, Rating > 0)',
+			rowHeader: 'Action',
+			columns: [{ key: 'Rating', type: 'level', max: 4 }],
+			rows: [
+				{ label: 'Hunt', stat: 'insight' },
+				{ label: 'Study', stat: 'insight' },
+				{ label: 'Survey', stat: 'insight' },
+				{ label: 'Skirmish', stat: 'prowess' },
+				{ label: 'Wreck', stat: 'prowess' },
+				{ label: 'Sway', stat: 'resolve' },
+				{ label: 'Consort', stat: 'resolve' },
+			],
+		} as ComponentConfig,
+		// No fence at all: hideValue never writes one, and a roster's two
+		// halves are found rather than positioned, so a section holding only
+		// a table is the honest state rather than an empty one standing in.
+		body: [
+			'| Action | Rating |',
+			'| --- | --- |',
+			'| Hunt | 2 |',
+			'| Study | 0 |',
+			'| Survey | 1 |',
+			'| Skirmish | 3 |',
+			'| Wreck | 0 |',
+			'| Sway | 1 |',
+			'| Consort | 0 |',
+		].join('\n'),
+	},
+	/*
+	 * Fit (`docs/features/picture-fit-and-suggest.md`), on the same file and the
+	 * same box shape as **Portrait in a wide box** above so the only variable is
+	 * the setting: `Sildar Hallwinter.png` is 300×420, tall, in a 4×3 box that is
+	 * wider than it is — the exact case `contain` pillarboxes. `cover` crops it to
+	 * fill instead, centred, and `stretch` fills it exactly, which the picture's
+	 * own disc draws as an ellipse. Both on Image and on Passport, since the two
+	 * share one painter and a review of one is not a review of the other's chrome
+	 * — `contain` on Passport is already on screen above (**Passport**, row 43),
+	 * so this is the two settings that block adds rather than all three again.
+	 */
+	{
+		config: {
+			id: 'portrait_cover',
+			type: 'image',
+			label: 'Cover',
+			position: { col: 1, row: 56, width: 4, height: 3 },
+			fit: 'cover',
+		} as ComponentConfig,
+		body: '\n![[Sildar Hallwinter.png]]\n',
+	},
+	{
+		config: {
+			id: 'portrait_stretch',
+			type: 'image',
+			label: 'Stretch',
+			position: { col: 5, row: 56, width: 4, height: 3 },
+			fit: 'stretch',
+		} as ComponentConfig,
+		body: '\n![[Sildar Hallwinter.png]]\n',
+	},
+	{
+		config: {
+			id: 'passport_cover',
+			type: 'passport',
+			label: 'Passport, cover',
+			position: { col: 9, row: 56, width: 4, height: 3 },
+			fit: 'cover',
+			fields: [{ key: 'class', name: 'Class' }],
+		} as ComponentConfig,
+		body: [
+			'',
+			'![[Sildar Hallwinter.png]]',
+			'',
+			'```sheet',
+			'name: Thora Ironhelm of Mirabar',
+			'class: Bard',
+			'```',
+			'',
+		].join('\n'),
+	},
+	{
+		config: {
+			id: 'passport_stretch',
+			type: 'passport',
+			label: 'Passport, stretch',
+			position: { col: 1, row: 59, width: 4, height: 3 },
+			fit: 'stretch',
+			fields: [{ key: 'class', name: 'Class' }],
+		} as ComponentConfig,
+		body: [
+			'',
+			'![[Sildar Hallwinter.png]]',
+			'',
+			'```sheet',
+			'name: Thora Ironhelm of Mirabar',
+			'class: Bard',
+			'```',
+			'',
+		].join('\n'),
+	},
+	/*
+	 * A list field (`docs/features/passport-field-lists.md`): one declared
+	 * field holding several values, drawn as one chip per part rather than a
+	 * forked layout or a second field for a multiclass character. Beside the
+	 * fit row above rather than beside the header at row 43, on that block's
+	 * own reasoning: inserting earlier renumbers every row below it and every
+	 * comment that cites one.
+	 *
+	 * Two parts is the board card's own case — "Fighter 1" and "Bladesinger
+	 * Wizard 4" — and `species` stays an ordinary scalar field beside it so a
+	 * reviewer sees both kinds on one face at once, which is what shows a chip
+	 * is not just a differently-drawn tag.
+	 */
+	{
+		config: {
+			id: 'multiclass',
+			type: 'passport',
+			label: 'Multiclass',
+			position: { col: 5, row: 59, width: 6, height: 2 },
+			fields: [
+				{ key: 'class', name: 'Class', list: true },
+				{ key: 'species', name: 'Species' },
+			],
+		} as ComponentConfig,
+		body: [
+			'',
+			'![[Sildar Hallwinter.png]]',
+			'',
+			'```sheet',
+			'name: Thora Ironhelm of Mirabar',
+			'class: Fighter 1; Bladesinger Wizard 4',
+			'species: Half-elf',
+			'```',
+			'',
+		].join('\n'),
+	},
+	/*
+	 * A Track row the character adds and removes
+	 * (`docs/features/track-row-length.md`): one row per hit die size, so a
+	 * fighter/wizard multiclass with a d10 and four d6 and a straight
+	 * fighter with eleven d8 read off the same layout. `d8` and `d12` have
+	 * no entry at all here, drawing nothing of their own — the ordinary
+	 * state of a die type this character does not have, not an error — and
+	 * `d6` and `d10` draw their runs at the length this character gave
+	 * them. One **Add** icon offers `d8` and `d12` from a panel; one
+	 * **Remove** icon offers `d6` and `d10` from another, rather than a
+	 * button or a bin icon per row. Appended at the end rather than beside
+	 * the spell-slot row set above, on this file's own rule: inserting
+	 * earlier renumbers every row below it.
+	 */
+	{
+		config: {
+			id: 'hit_dice',
+			type: 'track',
+			label: 'Hit dice',
+			position: { col: 1, row: 62, width: 4, height: 2 },
+			rows: [
+				{ key: 'd6', name: 'd6', maxSource: 'character' },
+				{ key: 'd8', name: 'd8', maxSource: 'character' },
+				{ key: 'd10', name: 'd10', maxSource: 'character' },
+				{ key: 'd12', name: 'd12', maxSource: 'character' },
+			],
+		} as unknown as ComponentConfig,
+		// d8 and d12 have no entry at all, so the card draws only d6 and
+		// d10 plus the row set's own Add and Remove icons — the design's
+		// own look criterion, not just the length field's empty state.
+		body: '```sheet\nd6: 1 / 4\nd10: 0 / 1\n```',
+	},
+	/*
+	 * The mixed case the third grid column exists for: a calculated row
+	 * beside a character-owned one, on one card, with the character-owned
+	 * row **not added** — the harder half of the look criterion, since a
+	 * not-added row contributes no grid row at all rather than an empty
+	 * cell. `bonus_die` is the layout's own count, a plain 6; `inspiration_die`
+	 * has no entry, so the card draws one run and one **Add** icon (no
+	 * **Remove**, since nothing is added yet), and `bonus_die`'s run must
+	 * stay in the same column whichever state `inspiration_die` is in.
+	 */
+	{
+		config: {
+			id: 'mixed_dice',
+			type: 'track',
+			label: 'Mixed dice',
+			position: { col: 5, row: 62, width: 4, height: 2 },
+			rows: [
+				{ key: 'bonus_die', name: 'Bonus die', count: 6 },
+				{ key: 'inspiration_die', name: 'Inspiration die', maxSource: 'character' },
+			],
+		} as unknown as ComponentConfig,
+		body: '```sheet\nbonus_die: 1\n```',
+	},
+	/*
+	 * `cardLayout`: the same job `stat_roster` above draws as one grouped
+	 * table, drawn instead as one card per stat — Card set's own chrome
+	 * (`.sheetsmith-card`, `.sheetsmith-card-set`), borrowed rather than
+	 * invented — with a small table of that stat's own rows beneath each.
+	 * `dividerAfter` draws the identical rule here as it does in
+	 * `stat_roster`'s shared table above: Athletics and Sleight of hand both
+	 * carry one and draw it, Stealth carries one too but is Dexterity's own
+	 * last row, so it draws none — the same last-row rule either layout
+	 * carries. Appended at the end rather than beside `stat_roster`, on this
+	 * file's own rule against renumbering.
+	 */
+	{
+		config: {
+			id: 'roster_card_layout',
+			type: 'roster',
+			label: 'Abilities, as cards',
+			cardLayout: true,
+			position: { col: 1, row: 65, width: 6, height: 8 },
+			stats: [
+				{ key: 'STR', name: 'Strength' },
+				{ key: 'DEX', name: 'Dexterity' },
+			],
+			derived: 'floor((value - 10) / 2)',
+			signed: true,
+			rowHeader: 'Skill',
+			columns: [
+				{
+					key: 'Training',
+					type: 'level',
+					levels: ['Untrained', 'Proficient:P', 'Expertise:E'],
+				},
+			],
+			rows: [
+				{ label: 'Athletics', stat: 'STR', dividerAfter: true },
+				{ label: 'Intimidation', stat: 'STR' },
+				{ label: 'Acrobatics', stat: 'DEX' },
+				{ label: 'Sleight of hand', stat: 'DEX', dividerAfter: true },
+				{ label: 'Stealth', stat: 'DEX', dividerAfter: true },
+			],
+		} as ComponentConfig,
+		body: [
+			'```sheet',
+			'STR: 15',
+			'DEX: 16',
+			'```',
+			'',
+			'| Skill | Training |',
+			'| --- | --- |',
+			'| Athletics | 1 |',
+			'| Intimidation | 0 |',
+			'| Acrobatics | 2 |',
+			'| Sleight of hand | 1 |',
+			'| Stealth | 0 |',
+		].join('\n'),
 	},
 ];
 

@@ -404,6 +404,92 @@ export interface ConfigFieldSpec<
 	 * PATTERNS §1's worked example is against.
 	 */
 	entryColumns?: readonly [EntryColumnSpec<TEntryKey>, EntryColumnSpec<TEntryKey>];
+	/**
+	 * For a `'rows'` field only: the sibling config key whose `'entries'` list
+	 * offers each row's choice of what it hangs off — a Roster's `rows`
+	 * naming `stats`.
+	 *
+	 * The editor draws a select over that list's `key`/`name` pairs rather
+	 * than a typed field, on Record set's own precedent for offering a closed
+	 * list: the field asks the *field* which sibling holds its choices, so
+	 * the editor still learns nothing about what a Roster is. Absent is the
+	 * ordinary case — a row naming nothing beyond itself, which is every
+	 * `'rows'` field before this one.
+	 */
+	statsField?: string;
+	/**
+	 * For a `'rows'` field only: a per-row boolean the editor offers as a
+	 * checkbox, under `key` and named by `label` — a Roster's `dividerAfter`.
+	 *
+	 * The field asks the *field* what to call it and where to store it, so
+	 * the editor still learns nothing about what a Roster is or what the
+	 * flag means. Absent is the ordinary case — every `'rows'` field before
+	 * this one had no per-row flag at all.
+	 */
+	rowFlag?: { key: string; label: string };
+	/**
+	 * For an 'entries' field only: a per-entry boolean the editor offers as a
+	 * checkbox, under `key` and named by `label` — a Passport field's `list`.
+	 *
+	 * `rowFlag`'s own precedent, read for the other list kind: the field asks
+	 * the *field* what to call it and where to store it, so the editor still
+	 * learns nothing about what a Passport is. Absent is the ordinary case —
+	 * every `'entries'` field before this one had no per-entry flag at all.
+	 */
+	entryFlag?: { key: string; label: string };
+	/**
+	 * That this field's own commit addresses one entry's line inside a
+	 * character's `sheet` fence, and where that fence is — Card's `key`,
+	 * Passport's `nameKey`, or, for an `'entries'` or `'track-rows'` field,
+	 * its primary column (`entryColumns[0]`); for a `'columns'` field, its
+	 * `key` column (`docs/features/component-rename-migration.md`'s Model
+	 * question).
+	 *
+	 * Absent is every other field, including a Card's own `options[].value`,
+	 * which shares this member's two list kinds but is config only — nothing
+	 * in a note is ever keyed by it — and Table's and Roster's own `columns`,
+	 * whose key is a markdown-table header rather than a fence entry. A field
+	 * declaring it is what tells the editor's commit to carry the old and new
+	 * value into the vault-wide migration.
+	 */
+	addressesEntry?: EntryAddress;
+}
+
+/**
+ * Where a field's committed name addresses a character's stored data, declared
+ * by the component that owns the storage rather than worked out by the editor.
+ *
+ * Both members exist because the editor may not know either fact. `fence`
+ * carries what was briefly hardcoded in `editor/list-fields.ts` — that a
+ * Record set's section holds one fence per `### ` record while every other
+ * keyed component holds one for the whole section — which is a fact about the
+ * component and would have made a second such component silently migrate at
+ * the wrong granularity. `resetColumns` is the established precedent for the
+ * same move (SPEC §8).
+ *
+ * `whenBlank` is what the field is worth while the author has typed nothing
+ * in it. Only a field with a real fallback key declares it — Card's `key`
+ * stores under `value` and Passport's `nameKey` under `name` — and it is the
+ * difference between a migration that fires on the first naming of a key and
+ * one that quietly does not. It is *not* `ConfigFieldSpec.default`, which
+ * `contract.test.ts` and `conditionMet` both read as "boolean and select are
+ * the only kinds with a knowable default"; widening that member would change
+ * `visibleWhen` and the palette-prefill check for a fact only this feature
+ * reads.
+ */
+export interface EntryAddress {
+	/**
+	 * Which fence the entry sits in: `'section'` for the one fence a section
+	 * holds, `'record'` for one fence per `### ` record inside it.
+	 */
+	fence: 'section' | 'record';
+	/**
+	 * The key a note is stored under while this field is blank, where the
+	 * component falls back to one. Absent where blank is not a value at all —
+	 * every list field, whose empty primary column is refused rather than
+	 * defaulted.
+	 */
+	whenBlank?: string;
 }
 
 /**
@@ -621,6 +707,19 @@ type ScopeEntrySource =
 			display?: {
 				field: string;
 				scope: Readonly<Record<string, FieldValue>>;
+				/**
+				 * This entry's own rows, resolvable as `self` in an aggregate's
+				 * first argument inside `field`'s formula (SPEC §5), for a
+				 * component that groups rows under names — a Roster's stat,
+				 * reading `count(self, Rating > 0)` over its own band rather
+				 * than the whole component's.
+				 *
+				 * Beside `scope` rather than folded into it: `scope` answers to
+				 * `Record<string, FieldValue>`, and a row set is not a
+				 * `FieldValue`. Absent everywhere a `display` entry is not one
+				 * of a component's own rows.
+				 */
+				rows?: RowsSource;
 			};
 			compute?: never;
 	  }
@@ -717,6 +816,19 @@ export type FieldResolver = (
 	 * nothing and means what it always meant.
 	 */
 	displayOnly?: boolean,
+	/**
+	 * This evaluation's own rows, resolvable as `self` in an aggregate's first
+	 * argument (SPEC §5), for a component that groups rows under names. A
+	 * Roster's stat passes its own band here so `count(self, Rating > 0)`
+	 * walks that band and not the whole roster's.
+	 *
+	 * Lazy on `RowsSource`'s own terms — a row may hold a computed column that
+	 * reads the rest of the sheet — and re-entry is refused rather than
+	 * recursed: a stat's `derived` reading `self` over a column that reads
+	 * that same stat back is a ring, caught the same way a table walking its
+	 * own rows is (`formula/rows.ts`).
+	 */
+	self?: RowsSource,
 ) => FieldValue | null;
 
 /**
@@ -1459,6 +1571,30 @@ export interface RenderContext<TData = unknown> {
 	 * component reports what happened rather than predicting it.
 	 */
 	resource?: (target: string) => string | null;
+	/**
+	 * Attach a vault file suggester to a picture's reference field.
+	 *
+	 * Optional on `resource`'s own terms: absent, the field this reaches is the
+	 * plain text box it has always been. A component may import nothing from
+	 * `obsidian` beyond `setIcon` (`isolation.test.ts`'s `FROM_OBSIDIAN`), and
+	 * Obsidian's own `AbstractInputSuggest` is squarely past that line, so this
+	 * is the seam SPEC §13's `editMarkdown` entry named in advance — a fourth
+	 * member on `link`'s terms, wired the moment a case narrow enough to answer
+	 * without a real editing surface turned up
+	 * (`docs/features/picture-fit-and-suggest.md`).
+	 *
+	 * Called once, immediately after the field exists, with the field's own
+	 * commit — the second argument, on `interaction/editable.ts`'s
+	 * `EditableHandle.set` — so that picking a suggestion writes and announces
+	 * the choice exactly as typing it and pressing Enter would, through the
+	 * one path every other edit on this field already takes. This module owns
+	 * nothing beyond the element and that callback: the caller tracks whatever
+	 * it attaches and closes it before the next render, on
+	 * `editor/layout-editor.ts`'s own precedent for `FormulaSuggest` — an input
+	 * removed mid-focus fires no `blur`, so nothing else would close a popup
+	 * left open across a rebuild.
+	 */
+	suggestFile?: (input: HTMLInputElement, commit: (next: string) => void) => void;
 	/**
 	 * Draw this component's `children` into an element of its own choosing
 	 * (SPEC §4.2).

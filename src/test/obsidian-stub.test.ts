@@ -1,11 +1,14 @@
 // @vitest-environment happy-dom
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import './obsidian-stub';
 import {
+	AbstractInputSuggest,
 	App,
 	PluginSettingTab,
 	Setting,
 	SettingDefinition,
+	TextFileView,
+	TFile,
 	normalizePath,
 } from './obsidian-stub';
 
@@ -355,6 +358,126 @@ describe('the vault double', () => {
 		await app.vault.modify(file, 'edited');
 		expect(await app.vault.read(file)).toBe('edited');
 	});
+
+	it('lists every file `getFiles` was given, in no particular order', async () => {
+		const app = new App();
+		await app.vault.create('Aramil.md', '');
+		await app.vault.createFolder('Portraits');
+		await app.vault.create('Portraits/Thora.png', '');
+		expect(app.vault.getFiles().map((f) => f.path).sort()).toEqual([
+			'Aramil.md',
+			'Portraits/Thora.png',
+		]);
+	});
+
+	it('narrows getMarkdownFiles to the .md extension', async () => {
+		const app = new App();
+		await app.vault.create('Aramil.md', '');
+		await app.vault.createFolder('Portraits');
+		await app.vault.create('Portraits/Thora.png', '');
+		expect(app.vault.getMarkdownFiles().map((f) => f.path)).toEqual([
+			'Aramil.md',
+		]);
+	});
+});
+
+describe('the metadata cache double', () => {
+	it('reads a frontmatter property off the note\u2019s own text', async () => {
+		const app = new App();
+		const file = await app.vault.create(
+			'Aramil.md',
+			'---\nsheet-layout: DnD 5e Caster\n---\n\n## Abilities\n',
+		);
+		expect(app.metadataCache.getFileCache(file)?.frontmatter).toEqual({
+			'sheet-layout': 'DnD 5e Caster',
+		});
+	});
+
+	it('strips one layer of surrounding quotes, matching extractLayoutName', async () => {
+		const app = new App();
+		const file = await app.vault.create(
+			'Aramil.md',
+			'---\nsheet-layout: "Blades: the sequel"\n---\n',
+		);
+		expect(app.metadataCache.getFileCache(file)?.frontmatter?.['sheet-layout']).toBe(
+			'Blades: the sequel',
+		);
+	});
+
+	it('answers an empty frontmatter object for a note with none', async () => {
+		const app = new App();
+		const file = await app.vault.create('Aramil.md', 'Just prose.\n');
+		expect(app.metadataCache.getFileCache(file)?.frontmatter).toBeUndefined();
+	});
+
+	it('answers a typed scalar as the string it was written as, which the app would not', async () => {
+		/*
+		 * The double's own boundary, asserted so it reads as a limit rather
+		 * than as a claim: this models `extractLayoutName` — trim, strip one
+		 * pair of quotes — and real YAML would hand back the number 12 and
+		 * the boolean false. `isPlainLayoutValue` lets the plugin write both
+		 * unquoted, so the two readers genuinely can disagree here and no
+		 * test in this repository can catch it (`docs/BACKLOG.md` §
+		 * Patterns). Every caller is written to be correct either way.
+		 */
+		const app = new App();
+		const file = await app.vault.create(
+			'Aramil.md',
+			'---\nsheet-layout: 12\nattuned: No\n---\n',
+		);
+		expect(app.metadataCache.getFileCache(file)?.frontmatter).toEqual({
+			'sheet-layout': '12',
+			attuned: 'No',
+		});
+	});
+
+	it('answers null for a file the vault does not hold', async () => {
+		const app = new App();
+		const file = await app.vault.create('Aramil.md', '---\nx: 1\n---\n');
+		await app.vault.delete(file);
+		expect(app.metadataCache.getFileCache(file)).toBeNull();
+	});
+});
+
+describe('generateMarkdownLink', () => {
+	it('embeds anything that is not a markdown note', async () => {
+		const app = new App();
+		const file = await app.vault.create('Thora.png', '');
+		expect(app.fileManager.generateMarkdownLink(file, '')).toBe(
+			'![[Thora.png]]',
+		);
+	});
+
+	it('links a markdown note, with no extension and no bang', async () => {
+		const app = new App();
+		const file = await app.vault.create('Notes.md', '');
+		expect(app.fileManager.generateMarkdownLink(file, '')).toBe('[[Notes]]');
+	});
+
+	it('falls back to the full path where the target name collides', async () => {
+		const app = new App();
+		await app.vault.createFolder('Old');
+		await app.vault.create('Old/Thora.png', '');
+		const file = await app.vault.create('Thora.png', '');
+		expect(app.fileManager.generateMarkdownLink(file, '')).toBe(
+			'![[Thora.png]]',
+		);
+		const nested = app.vault.getFileByPath('Old/Thora.png');
+		expect(nested).not.toBeNull();
+		expect(app.fileManager.generateMarkdownLink(nested!, '')).toBe(
+			'![[Old/Thora.png]]',
+		);
+	});
+
+	it('does not collide with itself', async () => {
+		// The one file sharing its own name is itself, so a vault holding
+		// exactly one picture must not fall back to its full path.
+		const app = new App();
+		const file = await app.vault.create('Thora.png', '');
+		expect(app.fileManager.generateMarkdownLink(file, '')).toBe(
+			'![[Thora.png]]',
+		);
+	});
 });
 
 /*
@@ -633,5 +756,318 @@ describe('the setting definition renderer', () => {
 			const { tab } = tabFor([def]);
 			expect(() => tab.update(), member).toThrow(member);
 		}
+	});
+});
+
+/*
+ * `AbstractInputSuggest`, driven member by member.
+ *
+ * The reason is this file's own header, one class over: the formula suggester
+ * and the harness views that photograph it are both written against this
+ * double, so a member declared here and not honoured is a green test and a
+ * screenshot of markup Obsidian would have built differently.
+ */
+describe('the input suggester', () => {
+	/** A suggester over a fixed list, which is all a double needs driving. */
+	class Names extends AbstractInputSuggest<string> {
+		constructor(
+			app: App,
+			input: HTMLInputElement,
+			private readonly names: string[],
+		) {
+			super(app, input);
+		}
+
+		protected getSuggestions(query: string): string[] {
+			return this.names.filter((name) => name.startsWith(query));
+		}
+
+		renderSuggestion(value: string, el: HTMLElement): void {
+			el.createEl('code', { text: value });
+		}
+	}
+
+	function bound(names = ['abilities', 'armour_class']) {
+		const input = document.createElement('input');
+		input.type = 'text';
+		document.body.appendChild(input);
+		// Focused, because the app gates every query on
+		// `textInputEl.isActiveElement()`: a case driving an unfocused element
+		// would drive a path Obsidian refuses outright.
+		input.focus();
+		const suggest = new Names(new App(), input, names);
+		return { input, suggest };
+	}
+
+	/** The list as it stands on `document.body`, item by item. */
+	function items(): string[] {
+		return Array.from(
+			document.body.querySelectorAll('.suggestion-container .suggestion-item'),
+		).map((el) => el.textContent ?? '');
+	}
+
+	function selected(): string | null {
+		return document.body.querySelector('.suggestion-item.is-selected')?.textContent ?? null;
+	}
+
+	/** Type into the field the way a keyboard does. Synchronous, as the app is. */
+	function type(input: HTMLInputElement, text: string): void {
+		input.value = text;
+		input.dispatchEvent(new Event('input'));
+	}
+
+	beforeEach(() => {
+		document.body.replaceChildren();
+	});
+
+	it('draws the app\'s own markup into document.body', async () => {
+		const { input } = bound();
+		type(input, 'a');
+		expect(items()).toEqual(['abilities', 'armour_class']);
+		expect(selected()).toBe('abilities');
+	});
+
+	it('opens on focus as well as on input, which is why the binding disarms', () => {
+		const { input } = bound();
+		input.blur();
+		input.value = 'a';
+		input.focus();
+		expect(items()).toHaveLength(2);
+	});
+
+	it('asks nothing at all while the field is not focused', () => {
+		// The app's own gate. Without it a caller could drive the whole popup at
+		// an element Obsidian would have ignored.
+		const { input } = bound();
+		input.blur();
+		input.value = 'a';
+		input.dispatchEvent(new Event('input'));
+		expect(items()).toEqual([]);
+	});
+
+	it('draws a plain array without waiting for a microtask', () => {
+		// `onInputChange` branches on `Array.isArray` and calls `showSuggestions`
+		// straight through, so a synchronous subclass opens synchronously.
+		const { input } = bound();
+		input.value = 'a';
+		input.dispatchEvent(new Event('input'));
+		expect(items()).toHaveLength(2);
+	});
+
+	it('prevents a press on an item from blurring the field, and not one beside it', async () => {
+		const { input } = bound();
+		type(input, 'a');
+		const item = document.body.querySelector('.suggestion-item') as HTMLElement;
+		const onItem = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+		item.dispatchEvent(onItem);
+		expect(onItem.defaultPrevented).toBe(true);
+		const container = document.body.querySelector('.suggestion-container') as HTMLElement;
+		const onPadding = new MouseEvent('mousedown', { bubbles: true, cancelable: true });
+		container.dispatchEvent(onPadding);
+		// The padding is deliberately not guarded: a press there blurs the input
+		// and commits what is typed, which is the cost the feature accepts.
+		expect(onPadding.defaultPrevented).toBe(false);
+	});
+
+	it('closes on blur', async () => {
+		const { input } = bound();
+		type(input, 'a');
+		input.dispatchEvent(new Event('blur'));
+		expect(items()).toEqual([]);
+	});
+
+	it('closes where there is nothing to offer', async () => {
+		const { input } = bound();
+		type(input, 'a');
+		type(input, 'zz');
+		expect(items()).toEqual([]);
+	});
+
+	it('honours limit', async () => {
+		const { input, suggest } = bound();
+		suggest.limit = 1;
+		type(input, 'a');
+		expect(items()).toEqual(['abilities']);
+	});
+
+	it('reads and writes the field through getValue and setValue', async () => {
+		const { input, suggest } = bound();
+		type(input, 'ab');
+		expect(suggest.getValue()).toBe('ab');
+		suggest.setValue('armour_class');
+		expect(input.value).toBe('armour_class');
+	});
+
+	it('moves the selection on the arrows while open', async () => {
+		const { input } = bound();
+		type(input, 'a');
+		input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown' }));
+		expect(selected()).toBe('armour_class');
+		input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp' }));
+		expect(selected()).toBe('abilities');
+	});
+
+	it('accepts the selected item on Enter and reports it to onSelect', async () => {
+		const { input, suggest } = bound();
+		const chosen: string[] = [];
+		suggest.onSelect((value) => chosen.push(value));
+		type(input, 'a');
+		input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }));
+		expect(chosen).toEqual(['abilities']);
+	});
+
+	it('accepts on a press of an item', async () => {
+		const { input, suggest } = bound();
+		const chosen: string[] = [];
+		suggest.onSelect((value) => chosen.push(value));
+		type(input, 'a');
+		const first = document.body.querySelector('.suggestion-item');
+		(first as HTMLElement).click();
+		expect(chosen).toEqual(['abilities']);
+	});
+
+	it('closes on Escape and takes nothing', async () => {
+		const { input, suggest } = bound();
+		const chosen: string[] = [];
+		suggest.onSelect((value) => chosen.push(value));
+		type(input, 'a');
+		input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+		expect(items()).toEqual([]);
+		expect(chosen).toEqual([]);
+	});
+
+	it('leaves every key alone once it is closed', async () => {
+		// The property the accept-then-commit gesture rests on: the second Enter
+		// has to reach the input, which is what fires `change`.
+		const { input, suggest } = bound();
+		const chosen: string[] = [];
+		suggest.onSelect((value) => chosen.push(value));
+		type(input, 'a');
+		input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+		const enter = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true });
+		input.dispatchEvent(enter);
+		expect(enter.defaultPrevented).toBe(false);
+		expect(chosen).toEqual([]);
+	});
+
+	it('closes twice without complaint', async () => {
+		const { input, suggest } = bound();
+		type(input, 'a');
+		suggest.close();
+		expect(() => suggest.close()).not.toThrow();
+		expect(items()).toEqual([]);
+	});
+});
+
+/*
+ * The text file view double's save contract.
+ *
+ * Driven here for this file's own reason: a stub option "declared and not
+ * honoured fails in exactly one direction, and it is the silent one". The two
+ * facts a `TextFileView` subclass actually depends on are both timing facts —
+ * `requestSave` does not write, and `save` writes what the view holds rather
+ * than what the file does — and a double that wrote through synchronously would
+ * make a plugin's own staleness bug unreachable by every test in the
+ * repository. That is not hypothetical: it is how a rename migration came to
+ * report an all-clear over a value the reader had typed seconds earlier.
+ */
+describe('the text file view double', () => {
+	class Editable extends TextFileView {
+		getViewData(): string {
+			return this.data;
+		}
+		setViewData(data: string, _clear: boolean): void {
+			this.data = data;
+		}
+		clear(): void {
+			this.data = '';
+		}
+	}
+
+	async function opened(): Promise<{ app: App; view: Editable; file: TFile }> {
+		const app = new App();
+		const file = await app.vault.create('Note.md', 'first');
+		const view = new Editable(app.workspace.getLeaf(true));
+		await view.onLoadFile(file);
+		return { app, view, file };
+	}
+
+	it('loads a file into the view', async () => {
+		const { view, file } = await opened();
+		expect(view.data).toBe('first');
+		expect(view.file).toBe(file);
+	});
+
+	it('writes nothing when a save is merely requested', async () => {
+		// Obsidian's own wording: "Debounced save in 2 seconds from now". For
+		// those two seconds the typed text exists only in the view.
+		const { app, view, file } = await opened();
+		view.data = 'second';
+		view.requestSave();
+
+		expect(view.savesRequested).toBe(1);
+		expect(await app.vault.read(file)).toBe('first');
+	});
+
+	it('writes what the view holds once the debounce runs', async () => {
+		const { app, view, file } = await opened();
+		view.data = 'second';
+		view.requestSave();
+
+		await view.runRequestedSave();
+
+		expect(await app.vault.read(file)).toBe('second');
+		expect(view.savesRequested).toBe(0);
+	});
+
+	it('runs nothing where no save was requested', async () => {
+		const { app, view, file } = await opened();
+		await app.vault.modify(file, 'changed elsewhere');
+
+		await view.runRequestedSave();
+
+		// The view holds `first` and the file does not; a double that saved
+		// unconditionally would have put it back and hidden every staleness bug.
+		expect(await app.vault.read(file)).toBe('changed elsewhere');
+	});
+
+	it('overwrites a file changed underneath it, as the app does', async () => {
+		const { app, view, file } = await opened();
+		await app.vault.modify(file, 'changed elsewhere');
+
+		await view.save();
+
+		expect(await app.vault.read(file)).toBe('first');
+	});
+
+	it('saves on the way out whether or not one was requested, then clears', async () => {
+		// Unconditional, because the app's is: "by default, this view only saves
+		// when it's closing" makes the close write the base behaviour, with
+		// `requestSave` the addition on top. The second case below is the one
+		// that matters — it is the write-back a stale view performs on close,
+		// with nothing outstanding to announce it.
+		const { app, view, file } = await opened();
+		view.data = 'second';
+		view.requestSave();
+
+		await view.onUnloadFile(file);
+
+		expect(await app.vault.read(file)).toBe('second');
+		expect(view.data).toBe('');
+		expect(view.file).toBeNull();
+	});
+
+	it('writes its own stale text over the file on close, with nothing requested', async () => {
+		// The shape of the bug a consumer needs to be able to express: the view
+		// is *behind* the file, nothing is outstanding, and closing it still puts
+		// the older text back. A double that conditioned the close write on an
+		// outstanding request called this a no-op and hid it.
+		const { app, view, file } = await opened();
+		await app.vault.modify(file, 'changed elsewhere');
+		expect(view.savesRequested).toBe(0);
+
+		await view.onUnloadFile(file);
+
+		expect(await app.vault.read(file)).toBe('first');
 	});
 });

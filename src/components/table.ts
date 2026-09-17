@@ -42,6 +42,7 @@ import {
 	spellParts,
 	storedParts,
 } from '../parse/modifier-cell';
+import { claimRows as sharedClaimRows, RowClaims } from '../parse/row-claims';
 import { MarkdownTable, readTable, writeTable } from '../parse/table';
 import { displayText, hasLink } from '../parse/wikilink';
 import {
@@ -358,54 +359,18 @@ function headers(config: TableConfig): string[] {
 	];
 }
 
-/** Where each declared row sits in the note, and which rows are the character's. */
-interface RowClaims {
-	/**
-	 * Note row index per declared row, in declared order; null where the note
-	 * holds no row by that name yet.
-	 */
-	declared: (number | null)[];
-	/** Note rows no declared row claimed, in note order: the character's own. */
-	own: number[];
-}
-
 /**
- * **A declared row claims the first note row spelling its name, scanning top to
- * bottom, case-insensitively. Every unclaimed note row belongs to the
- * character.**
- *
- * One rule, and it settles the whole card: a 5e skill list claims every row and
- * behaves exactly as it did; an attack table declares nothing and every row is
- * the character's; a Blades load list has its printed gear declared above the
- * blank lines a player fills. It also disposes of the per-row flags a tool
- * carrying this feature needs — the claim *is* "who owns this row", so
- * "may not be deleted" is "claimed" and nothing has to be stored.
- *
- * Case-insensitive matching is safe here for the reason it was not safe in the
- * tool that shipped it: no formula names a row, so what a row's capitalisation
- * can change is which declared row claims it, never what any arithmetic
- * resolves. The note keeps its own spelling either way.
- *
- * One helper because `render` and `write` must agree. A delete control drawn
- * over a row the writer would refuse to delete is worse than no control at all.
+ * This card's own reading of the shared claim rule: the note's rows against
+ * the layout's declared labels, in declared order. `parse/row-claims.ts` owns
+ * the rule itself; a second component declaring rows calls the same function
+ * over its own stored names, so the two cannot drift about which line a
+ * declared row is (`docs/PATTERNS.md` §1).
  */
 function claimRows(config: TableConfig, names: readonly string[]): RowClaims {
-	const claimed = new Set<number>();
-	const declared = (config.rows ?? []).map((row) => {
-		const label = (row.label ?? '').trim().toLowerCase();
-		const at = names.findIndex(
-			(name, index) =>
-				!claimed.has(index) && name.trim().toLowerCase() === label,
-		);
-		if (at === -1) return null;
-		claimed.add(at);
-		return at;
-	});
-	const own: number[] = [];
-	names.forEach((_, index) => {
-		if (!claimed.has(index)) own.push(index);
-	});
-	return { declared, own };
+	return sharedClaimRows(
+		(config.rows ?? []).map((row) => row.label ?? ''),
+		names,
+	);
 }
 
 /** One row as the card draws it, whoever owns it. */
@@ -937,14 +902,14 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			kind: 'columns',
 			label: 'Columns',
 			description:
-				'Text, number, and toggle columns hold character data. A computed column is read-only and reads the row\'s other cells by column key, its row values by name, and anything else on the sheet by component id. One column may be published per row, which is what lets a formula read a single row\'s value rather than a column\'s total. A column\'s total sums what the note stores; a formula elsewhere can sum an expression over the rows instead, with sum(<component id>, <expression>).',
+				'Text, number, and toggle columns hold character data. A computed column is read-only and reads the row\'s other cells by column key, its row values by name, and anything else on the sheet by component id. One column may be published per row, which is what lets a formula read a single row\'s value rather than a column\'s total. A column\'s total sums what the note stores; a formula elsewhere can sum any expression over the rows instead.',
 		},
 		{
 			key: 'openRows',
 			kind: 'boolean',
 			label: 'Characters may add rows',
 			description:
-				'Adds a row control under the table. Rows a character adds are theirs to rename and delete, and no formula can name a row a character added — total a column, or aggregate over the rows with sum(<component id>, <expression>). Rows declared above stay read-only and cannot be deleted from a character.',
+				'Adds a row control under the table. Rows a character adds are theirs to rename and delete, and no formula can name a row a character added — total a column, or aggregate over the rows instead. Rows declared above stay read-only and cannot be deleted from a character.',
 			default: false,
 		},
 		{

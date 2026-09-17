@@ -1122,6 +1122,27 @@ describe('passport.render — the picture', () => {
 		expect(picture(render())?.getAttribute('src')).toBe('app://vault/Thora.png');
 	});
 
+	it('draws the default fit with no second class at all', () => {
+		for (const config of [{}, { fit: 'contain' as const }]) {
+			expect(picture(render(config))?.className.split(' ')).not.toContain(
+				'sheetsmith-fit-cover',
+			);
+		}
+	});
+
+	it('carries the chosen fit as a second class on the picture, exactly as Image\'s does', () => {
+		expect(
+			picture(render({ fit: 'cover' }))?.classList.contains(
+				'sheetsmith-fit-cover',
+			),
+		).toBe(true);
+		expect(
+			picture(render({ fit: 'stretch' }))?.classList.contains(
+				'sheetsmith-fit-stretch',
+			),
+		).toBe(true);
+	});
+
 	it('asks for the target rather than the source line', () => {
 		const asked: string[] = [];
 		render({}, { source: '![[Thora.png|200x300]]' }, {
@@ -1161,6 +1182,22 @@ describe('passport.render — the picture', () => {
 		expect(picture(el)).toBeNull();
 		expect(error(el)).toBeNull();
 		expect(pictureField(el)?.value).toBe(SOURCE);
+	});
+
+	it('hands the picture field to a suggester the host supplies, as Image does', () => {
+		const calls: HTMLInputElement[] = [];
+		const el = render(
+			{},
+			readData(BODY),
+			{
+				suggestFile: (input, commit) => {
+					calls.push(input);
+					commit('![[Someone Else.png]]');
+				},
+			},
+		);
+		expect(calls).toEqual([pictureField(el)]);
+		expect(pictureField(el)?.value).toBe('![[Someone Else.png]]');
 	});
 
 	it('draws Image\'s refusal in the frame, with the field still holding the value', () => {
@@ -1339,5 +1376,748 @@ describe('passport.sample', () => {
 			'level',
 		]);
 		expect(passport.write(data, body, config)).toBe(body);
+	});
+});
+
+describe('passport.configFields — the fields entry', () => {
+	it('declares a per-entry "Several values" checkbox', () => {
+		// `types.ts`'s `entryFlag`, on `rowFlag`'s own precedent — checked
+		// generically for every registered component in `contract.test.ts`;
+		// this is the one assertion that it is *this* key and *this* label.
+		const entry = passport.configFields.find((field) => field.key === 'fields');
+		expect(entry?.entryFlag).toEqual({ key: 'list', label: 'Several values' });
+	});
+});
+
+/*
+ * A field marked `list: true` (`docs/features/passport-field-lists.md`,
+ * second pass — per-part editing rather than one field holding the whole raw
+ * text).
+ *
+ * The three shape questions the owner settled stay true here and are not
+ * re-tested: `read`, `write` and `scopeValues` do not know a field is a list
+ * at all, so their own describe blocks above already cover it — a fence entry
+ * is one line of stored text regardless of what `render` later makes of it.
+ * What is new is confined to the config form (`passport.configFields` above)
+ * and to `render`, which is what this block drives.
+ */
+describe('passport.render — a list field\'s parts', () => {
+	const LIST_CONFIG: PassportConfig = {
+		...config,
+		fields: [
+			{ key: 'class', name: 'Class', list: true },
+			{ key: 'species', name: 'Species' },
+		],
+	};
+	const LIST_BODY = [
+		'',
+		'```sheet',
+		'name: Thora Ironhelm of Mirabar',
+		'class: Fighter 1; Bladesinger Wizard 4',
+		'species: Half-elf',
+		'```',
+		'',
+	].join('\n');
+
+	/** This field's own region, holding every part and the add control. */
+	const region = (el: HTMLElement, index = 0): HTMLElement | null =>
+		Array.from(el.querySelectorAll<HTMLElement>('.sheetsmith-passport-list'))[
+			index
+		] ?? null;
+	const partInputs = (el: HTMLElement, index = 0): HTMLInputElement[] =>
+		Array.from(
+			(region(el, index) ?? el).querySelectorAll<HTMLInputElement>(
+				'.sheetsmith-passport-part .sheetsmith-passport-input',
+			),
+		);
+	const deleteButtons = (el: HTMLElement, index = 0): HTMLButtonElement[] =>
+		Array.from(
+			(region(el, index) ?? el).querySelectorAll<HTMLButtonElement>(
+				'.sheetsmith-passport-part-remove',
+			),
+		);
+	/** Each part's own row — what the focus-triggered delete's CSS keys off. */
+	const partRows = (el: HTMLElement, index = 0): HTMLElement[] =>
+		Array.from(
+			(region(el, index) ?? el).querySelectorAll<HTMLElement>(
+				'.sheetsmith-passport-part',
+			),
+		);
+	const addButton = (el: HTMLElement, index = 0): HTMLButtonElement | null =>
+		(region(el, index) ?? el).querySelector<HTMLButtonElement>(
+			'.sheetsmith-passport-add',
+		);
+	/** Every real `<input>` this list field currently draws, transient add included. */
+	const listInputs = (el: HTMLElement, index = 0): HTMLInputElement[] =>
+		Array.from(
+			(region(el, index) ?? el).querySelectorAll<HTMLInputElement>(
+				'.sheetsmith-passport-input',
+			),
+		);
+
+	/** happy-dom reports zero rects; the fields line routes clicks by geometry. */
+	const stubRect = (el: HTMLElement, left: number, width: number): void => {
+		el.getBoundingClientRect = () => ({
+			top: 0,
+			bottom: 0,
+			height: 0,
+			left,
+			width,
+			right: left + width,
+			x: left,
+			y: 0,
+			toJSON: () => ({}),
+		});
+	};
+
+	/** Flush the deferred microtask every commit here schedules its repaint on. */
+	const flush = () => Promise.resolve();
+
+	it('draws one input per part, each with its own delete control in the DOM', () => {
+		const el = render(LIST_CONFIG, readData(LIST_BODY, LIST_CONFIG));
+		expect(partInputs(el).map((input) => input.value)).toEqual([
+			'Fighter 1',
+			'Bladesinger Wizard 4',
+		]);
+		expect(deleteButtons(el)).toHaveLength(2);
+		// Never hover-gated (docs/UI.md §7): nothing here is styled by CSS to
+		// need a hover to appear, and the button itself carries no such class.
+		// It is hidden at rest by CSS (`display: none`, keyed on the part's own
+		// `:focus-within`) rather than by the DOM `hidden` attribute, which this
+		// component never touches — that CSS behaviour is what the harness
+		// shots verify, not this unit test.
+		expect(deleteButtons(el).every((btn) => btn.hidden === false)).toBe(true);
+	});
+
+	it('names each part positionally, and each delete by the part\'s own text', () => {
+		const el = render(LIST_CONFIG, readData(LIST_BODY, LIST_CONFIG));
+		expect(partInputs(el).map((input) => input.getAttribute('aria-label'))).toEqual([
+			'Class 1',
+			'Class 2',
+		]);
+		expect(
+			deleteButtons(el).map((button) => button.getAttribute('aria-label')),
+		).toEqual(['Delete Fighter 1', 'Delete Bladesinger Wizard 4']);
+	});
+
+	it('draws only the add control where nothing is stored, no chip', () => {
+		const el = render(LIST_CONFIG, { values: { species: 'Half-elf' } });
+		expect(partInputs(el)).toHaveLength(0);
+		expect(deleteButtons(el)).toHaveLength(0);
+		expect(addButton(el)).not.toBeNull();
+		expect(addButton(el)?.getAttribute('aria-label')).toBe('Add Class');
+		expect(addButton(el)?.getAttribute('title')).toBe('Add Class');
+	});
+
+	it('carries its group\'s own class at zero, one, and many parts alike', () => {
+		// The class itself (`sheet.css`, a bare flex row with the uniform gap —
+		// no tint or border of its own; that grouping treatment was tried and
+		// withdrawn) is unconditional, never toggled by part count: list-ness
+		// is a property of the field's declaration, not of how many values
+		// happen to be stored right now.
+		const empty = render(LIST_CONFIG, { values: { species: 'Half-elf' } });
+		const one = render(LIST_CONFIG, { values: { class: 'Bard 5', species: 'Half-elf' } });
+		const many = render(LIST_CONFIG, readData(LIST_BODY, LIST_CONFIG));
+		for (const el of [empty, one, many]) {
+			expect(region(el)?.classList.contains('sheetsmith-passport-list')).toBe(
+				true,
+			);
+		}
+	});
+
+	it('draws the add control after the last part', () => {
+		const el = render(LIST_CONFIG, readData(LIST_BODY, LIST_CONFIG));
+		const children = Array.from(region(el)?.children ?? []);
+		expect(children.length).toBe(3);
+		expect(children[2]).toBe(addButton(el));
+	});
+
+	it('does not split a field the layout never marked as a list', () => {
+		// Settled answer 1: list-ness is declared, not inferred. A scalar
+		// field's stored text is never inspected for the separator.
+		const el = render({}, { values: { class: 'Ranger; former Beastmaster' } });
+		expect(fields(el)[0]?.value).toBe('Ranger; former Beastmaster');
+		expect(el.querySelector('.sheetsmith-passport-list')).toBeNull();
+	});
+
+	it('commits an edited part on blur, joining every other part unchanged', async () => {
+		const written: unknown[] = [];
+		const el = render(LIST_CONFIG, readData(LIST_BODY, LIST_CONFIG), {
+			onChange: (data) => written.push(data),
+		});
+		const input = partInputs(el)[0] as HTMLInputElement;
+		input.focus();
+		input.value = 'Fighter 2';
+		input.blur();
+		await flush();
+		expect(written).toEqual([
+			{ values: { class: 'Fighter 2; Bladesinger Wizard 4' } },
+		]);
+		expect(partInputs(el).map((i) => i.value)).toEqual([
+			'Fighter 2',
+			'Bladesinger Wizard 4',
+		]);
+	});
+
+	it('editing a part down to empty writes it through rather than removing it', async () => {
+		// The "Deliberately not doing" section refuses a lighter, one-press
+		// removal on purpose — clearing a part's text and blurring must not
+		// be a side door to the same outcome. Removal is the delete
+		// control's own job.
+		const written: unknown[] = [];
+		const el = render(LIST_CONFIG, readData(LIST_BODY, LIST_CONFIG), {
+			onChange: (data) => written.push(data),
+		});
+		const input = partInputs(el)[0] as HTMLInputElement;
+		input.focus();
+		input.value = '';
+		input.blur();
+		await flush();
+		expect(written).toEqual([
+			{ values: { class: '; Bladesinger Wizard 4' } },
+		]);
+		// The part stays: still two inputs, the first now empty, not one.
+		expect(partInputs(el).map((i) => i.value)).toEqual([
+			'',
+			'Bladesinger Wizard 4',
+		]);
+		expect(deleteButtons(el)).toHaveLength(2);
+	});
+
+	it('commits on Enter and moves focus to the next part\'s input', async () => {
+		const written: unknown[] = [];
+		const el = render(LIST_CONFIG, readData(LIST_BODY, LIST_CONFIG), {
+			onChange: (data) => written.push(data),
+		});
+		const first = partInputs(el)[0] as HTMLInputElement;
+		first.focus();
+		first.value = 'Fighter 2';
+		first.dispatchEvent(
+			new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+		);
+		await flush();
+		expect(written).toEqual([
+			{ values: { class: 'Fighter 2; Bladesinger Wizard 4' } },
+		]);
+		expect(document.activeElement).toBe(partInputs(el)[1]);
+	});
+
+	it('Enter on the last part\'s input moves focus to the add control', async () => {
+		const el = render(LIST_CONFIG, readData(LIST_BODY, LIST_CONFIG));
+		const last = partInputs(el)[1] as HTMLInputElement;
+		last.focus();
+		last.dispatchEvent(
+			new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+		);
+		await flush();
+		expect(document.activeElement).toBe(addButton(el));
+	});
+
+	it('restores just that part\'s previous text on Escape, and writes nothing', () => {
+		const written: unknown[] = [];
+		const el = render(LIST_CONFIG, readData(LIST_BODY, LIST_CONFIG), {
+			onChange: (data) => written.push(data),
+		});
+		const first = partInputs(el)[0] as HTMLInputElement;
+		first.focus();
+		first.value = 'Something else';
+		first.dispatchEvent(
+			new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+		);
+		expect(first.value).toBe('Fighter 1');
+		expect(written).toEqual([]);
+		// The other part is untouched.
+		expect(partInputs(el)[1]?.value).toBe('Bladesinger Wizard 4');
+		expect(el.querySelector('[aria-live]')?.textContent).toContain(
+			'Class 1 restored to Fighter 1',
+		);
+	});
+
+	it('arms a delete on the first press, naming what it removes', () => {
+		const el = render(LIST_CONFIG, readData(LIST_BODY, LIST_CONFIG));
+		const del = deleteButtons(el)[0] as HTMLButtonElement;
+		del.click();
+		expect(del.classList.contains('sheetsmith-passport-part-remove-armed')).toBe(
+			true,
+		);
+		expect(del.getAttribute('aria-label')).toContain('Delete Fighter 1');
+		expect(del.getAttribute('aria-label')).toContain('Select again to confirm');
+		expect(el.querySelector('[aria-live]')?.textContent).toContain(
+			'Delete Fighter 1',
+		);
+	});
+
+	it('removes that part on the second press, joining what remains', async () => {
+		const written: unknown[] = [];
+		const el = render(LIST_CONFIG, readData(LIST_BODY, LIST_CONFIG), {
+			onChange: (data) => written.push(data),
+		});
+		const del = deleteButtons(el)[0] as HTMLButtonElement;
+		del.click();
+		del.click();
+		await flush();
+		expect(written).toEqual([{ values: { class: 'Bladesinger Wizard 4' } }]);
+		expect(partInputs(el).map((i) => i.value)).toEqual(['Bladesinger Wizard 4']);
+	});
+
+	it('stands a delete down with no write when a press lands elsewhere', () => {
+		const el = render(LIST_CONFIG, readData(LIST_BODY, LIST_CONFIG));
+		const written: unknown[] = [];
+		render(LIST_CONFIG, readData(LIST_BODY, LIST_CONFIG), {
+			onChange: (data) => written.push(data),
+		});
+		const del = deleteButtons(el)[0] as HTMLButtonElement;
+		del.click();
+		document.body.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+		expect(del.classList.contains('sheetsmith-passport-part-remove-armed')).toBe(
+			false,
+		);
+		expect(el.querySelector('[aria-live]')?.textContent).toBe('Delete cancelled');
+	});
+
+	it('stands an armed delete down when focus leaves its part entirely', () => {
+		// `docs/features/passport-field-lists.md`, "Standing an armed delete
+		// down when its part loses focus" — additive to the outside-press
+		// listener above, needed because the delete control is now hidden
+		// except while its part has focus: a part that stayed armed while
+		// hidden would show a reddened input with nothing on screen
+		// explaining why.
+		//
+		// **A real `.focus()` transfer, not a synthetic `dispatchEvent`.**
+		// The button's own `blur` fires before `focusout` bubbles from it
+		// (UI Events), so a test driving `focusout` alone never exercises
+		// that race — which is exactly how this passed once while the
+		// announcement it asserts never actually fired for a real reader.
+		const el = render(LIST_CONFIG, readData(LIST_BODY, LIST_CONFIG));
+		const del = deleteButtons(el)[0] as HTMLButtonElement;
+		del.focus();
+		del.click();
+		expect(del.classList.contains('sheetsmith-passport-part-remove-armed')).toBe(
+			true,
+		);
+		const to = partInputs(el)[1] as HTMLInputElement;
+		to.focus();
+		expect(del.classList.contains('sheetsmith-passport-part-remove-armed')).toBe(
+			false,
+		);
+		expect(el.querySelector('[aria-live]')?.textContent).toBe('Delete cancelled');
+	});
+
+	it('does not stand an armed delete down when focus moves to its own delete button', () => {
+		// Progress within the same part — input to its own delete button —
+		// is not a departure and must not disarm it. A real `.focus()`
+		// transfer from the input, then a real click that arms the button
+		// it landed on.
+		const el = render(LIST_CONFIG, readData(LIST_BODY, LIST_CONFIG));
+		const input = partInputs(el)[0] as HTMLInputElement;
+		const del = deleteButtons(el)[0] as HTMLButtonElement;
+		input.focus();
+		del.focus();
+		del.click();
+		expect(document.activeElement).toBe(del);
+		expect(del.classList.contains('sheetsmith-passport-part-remove-armed')).toBe(
+			true,
+		);
+	});
+
+	it('a focusout on an unarmed part\'s row is a harmless no-op', () => {
+		const el = render(LIST_CONFIG, readData(LIST_BODY, LIST_CONFIG));
+		const [firstRow] = partRows(el);
+		expect(() =>
+			firstRow?.dispatchEvent(
+				new FocusEvent('focusout', { relatedTarget: null, bubbles: true }),
+			),
+		).not.toThrow();
+		expect(el.querySelector('[aria-live]')?.textContent).toBe('');
+	});
+
+	it('stands one part\'s armed delete down when a sibling\'s is armed', () => {
+		const el = render(LIST_CONFIG, readData(LIST_BODY, LIST_CONFIG));
+		const [first, second] = deleteButtons(el);
+		first?.click();
+		expect(first?.classList.contains('sheetsmith-passport-part-remove-armed')).toBe(
+			true,
+		);
+		second?.click();
+		expect(first?.classList.contains('sheetsmith-passport-part-remove-armed')).toBe(
+			false,
+		);
+		expect(second?.classList.contains('sheetsmith-passport-part-remove-armed')).toBe(
+			true,
+		);
+	});
+
+	it('stands a delete armed in one list field down when a different list field\'s is armed', () => {
+		// One register for the whole face, not one per list field
+		// (`interaction/arm-to-confirm.ts`'s own rule: "a fact about one card
+		// rather than about the page") — two list fields on one Passport must
+		// not each carry an independently armed delete at once.
+		const twoListFields: PassportConfig = {
+			...config,
+			fields: [
+				{ key: 'class', name: 'Class', list: true },
+				{ key: 'languages', name: 'Languages', list: true },
+			],
+		};
+		const body = [
+			'',
+			'```sheet',
+			'class: Fighter 1; Bladesinger Wizard 4',
+			'languages: Common; Elvish',
+			'```',
+			'',
+		].join('\n');
+		const el = render(twoListFields, readData(body, twoListFields));
+		const first = deleteButtons(el, 0)[0] as HTMLButtonElement;
+		const second = deleteButtons(el, 1)[0] as HTMLButtonElement;
+		first.click();
+		expect(first.classList.contains('sheetsmith-passport-part-remove-armed')).toBe(
+			true,
+		);
+		second.click();
+		expect(first.classList.contains('sheetsmith-passport-part-remove-armed')).toBe(
+			false,
+		);
+		expect(second.classList.contains('sheetsmith-passport-part-remove-armed')).toBe(
+			true,
+		);
+	});
+
+	it('removing every part leaves only the add control, and an empty fence entry', async () => {
+		const written: unknown[] = [];
+		const el = render(LIST_CONFIG, readData(LIST_BODY, LIST_CONFIG), {
+			onChange: (data) => written.push(data),
+		});
+		let del = deleteButtons(el)[0] as HTMLButtonElement;
+		del.click();
+		del.click();
+		await flush();
+		del = deleteButtons(el)[0] as HTMLButtonElement;
+		del.click();
+		del.click();
+		await flush();
+		expect(written[written.length - 1]).toEqual({ values: { class: '' } });
+		expect(partInputs(el)).toHaveLength(0);
+		expect(addButton(el)).not.toBeNull();
+		expect(
+			passport.write({ values: { class: '' } }, LIST_BODY, LIST_CONFIG),
+		).toContain('class: \n');
+	});
+
+	it('opens one empty, focused input on a press of the add control', () => {
+		const el = render(LIST_CONFIG, readData(LIST_BODY, LIST_CONFIG));
+		const add = addButton(el) as HTMLButtonElement;
+		add.click();
+		const inputs = listInputs(el);
+		const transient = inputs[inputs.length - 1] as HTMLInputElement;
+		expect(document.activeElement).toBe(transient);
+		expect(transient.value).toBe('');
+		expect(transient.getAttribute('aria-label')).toBe('New Class');
+	});
+
+	it('committing the new input with text appends it and rewrites the entry', async () => {
+		const written: unknown[] = [];
+		const el = render(LIST_CONFIG, readData(LIST_BODY, LIST_CONFIG), {
+			onChange: (data) => written.push(data),
+		});
+		addButton(el)?.click();
+		const transient = listInputs(el)[listInputs(el).length - 1] as HTMLInputElement;
+		transient.value = 'Ranger 1';
+		transient.blur();
+		await flush();
+		expect(written).toEqual([
+			{ values: { class: 'Fighter 1; Bladesinger Wizard 4; Ranger 1' } },
+		]);
+		expect(partInputs(el).map((i) => i.value)).toEqual([
+			'Fighter 1',
+			'Bladesinger Wizard 4',
+			'Ranger 1',
+		]);
+		expect(addButton(el)).not.toBeNull();
+		// Focus returns to a fresh add control on this path too, not only on
+		// Enter: Tab's own forward progress, already decided by the time
+		// this microtask runs, cannot be trusted to have landed there by
+		// itself once the transient input it was heading for is gone.
+		expect(document.activeElement).toBe(addButton(el));
+	});
+
+	it('committing the new input empty writes nothing, note stays byte-identical', async () => {
+		const written: unknown[] = [];
+		const el = render(LIST_CONFIG, readData(LIST_BODY, LIST_CONFIG), {
+			onChange: (data) => written.push(data),
+		});
+		addButton(el)?.click();
+		const transient = listInputs(el)[listInputs(el).length - 1] as HTMLInputElement;
+		transient.blur();
+		await flush();
+		expect(written).toEqual([]);
+		expect(partInputs(el).map((i) => i.value)).toEqual([
+			'Fighter 1',
+			'Bladesinger Wizard 4',
+		]);
+		expect(passport.write(readData(LIST_BODY, LIST_CONFIG), LIST_BODY, LIST_CONFIG)).toBe(
+			LIST_BODY,
+		);
+		expect(document.activeElement).toBe(addButton(el));
+	});
+
+	it('cancelling the new input with Escape writes nothing either', async () => {
+		const written: unknown[] = [];
+		const el = render(LIST_CONFIG, readData(LIST_BODY, LIST_CONFIG), {
+			onChange: (data) => written.push(data),
+		});
+		addButton(el)?.click();
+		const transient = listInputs(el)[listInputs(el).length - 1] as HTMLInputElement;
+		transient.value = 'Ranger 1';
+		transient.dispatchEvent(
+			new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }),
+		);
+		await flush();
+		expect(written).toEqual([]);
+		expect(partInputs(el)).toHaveLength(2);
+		expect(document.activeElement).toBe(addButton(el));
+	});
+
+	it('Enter on the new input commits and returns focus to a fresh add control', async () => {
+		const written: unknown[] = [];
+		const el = render(LIST_CONFIG, readData(LIST_BODY, LIST_CONFIG), {
+			onChange: (data) => written.push(data),
+		});
+		addButton(el)?.click();
+		let transient = listInputs(el)[listInputs(el).length - 1] as HTMLInputElement;
+		transient.value = 'Ranger 1';
+		transient.dispatchEvent(
+			new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+		);
+		await flush();
+		expect(written).toEqual([
+			{ values: { class: 'Fighter 1; Bladesinger Wizard 4; Ranger 1' } },
+		]);
+		expect(document.activeElement).toBe(addButton(el));
+
+		// And it works again immediately: one Enter per value, no pointer.
+		(document.activeElement as HTMLButtonElement).click();
+		transient = listInputs(el)[listInputs(el).length - 1] as HTMLInputElement;
+		transient.value = 'Ranger 2';
+		transient.dispatchEvent(
+			new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+		);
+		await flush();
+		expect(written).toEqual([
+			{ values: { class: 'Fighter 1; Bladesinger Wizard 4; Ranger 1' } },
+			{
+				values: {
+					class: 'Fighter 1; Bladesinger Wizard 4; Ranger 1; Ranger 2',
+				},
+			},
+		]);
+		expect(document.activeElement).toBe(addButton(el));
+	});
+
+	it('Enter on the new input left empty cancels and returns focus to a fresh add control', async () => {
+		const el = render(LIST_CONFIG, readData(LIST_BODY, LIST_CONFIG));
+		addButton(el)?.click();
+		const transient = listInputs(el)[listInputs(el).length - 1] as HTMLInputElement;
+		transient.dispatchEvent(
+			new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+		);
+		await flush();
+		expect(document.activeElement).toBe(addButton(el));
+		expect(partInputs(el)).toHaveLength(2);
+	});
+
+	it('a non-list field\'s Enter is unchanged: commit and move to the next declared field', () => {
+		// Species (a scalar field) sits after Class here; its own Enter has
+		// nothing to do with the list field's internal navigation.
+		const written: unknown[] = [];
+		const el = render(LIST_CONFIG, readData(LIST_BODY, LIST_CONFIG), {
+			onChange: (data) => written.push(data),
+		});
+		const species = fields(el).find(
+			(input) => input.getAttribute('aria-label') === 'Species',
+		) as HTMLInputElement;
+		species.focus();
+		species.value = 'Elf';
+		species.dispatchEvent(
+			new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }),
+		);
+		expect(written).toEqual([{ values: { species: 'Elf' } }]);
+	});
+
+	it('a click on the fields line nearest a list field\'s part opens it', () => {
+		const el = render(LIST_CONFIG, readData(LIST_BODY, LIST_CONFIG));
+		const line = el.querySelector('.sheetsmith-passport-fields') as HTMLElement;
+		const [first, second] = partInputs(el);
+		if (!first || !second) throw new Error('expected two parts');
+		stubRect(first, 0, 100);
+		stubRect(second, 200, 100);
+		line.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 210 }));
+		expect(document.activeElement).toBe(second);
+	});
+
+	it.each([
+		['the first part', '[[Bard]]', 0],
+		['the last part', '[[Bard]]', 1],
+	])('refuses a wikilink editing %s, keeps the draft, writes nothing', (_where, draft, index) => {
+		const written: unknown[] = [];
+		const el = render(LIST_CONFIG, readData(LIST_BODY, LIST_CONFIG), {
+			onChange: (data) => written.push(data),
+		});
+		const input = partInputs(el)[index] as HTMLInputElement;
+		const original = input.value;
+		input.focus();
+		input.value = draft;
+		input.blur();
+		expect(written).toEqual([]);
+		expect(input.value).toBe(draft);
+		expect(error(el)).toContain(
+			'are stored in a code block and Obsidian indexes no link inside one',
+		);
+		// Every other part is untouched.
+		const other = partInputs(el)[index === 0 ? 1 : 0];
+		expect(other?.value).not.toBe(draft);
+		void original;
+	});
+
+	it('refuses a wikilink in the add control\'s transient input, keeps the draft', () => {
+		const written: unknown[] = [];
+		const el = render(LIST_CONFIG, readData(LIST_BODY, LIST_CONFIG), {
+			onChange: (data) => written.push(data),
+		});
+		addButton(el)?.click();
+		const transient = listInputs(el)[listInputs(el).length - 1] as HTMLInputElement;
+		transient.value = '[[Bard]]';
+		transient.blur();
+		expect(written).toEqual([]);
+		expect(transient.value).toBe('[[Bard]]');
+		expect(error(el)).toContain(
+			'are stored in a code block and Obsidian indexes no link inside one',
+		);
+		// Both stored parts are untouched.
+		expect(partInputs(el).map((i) => i.value)).toEqual([
+			'Fighter 1',
+			'Bladesinger Wizard 4',
+		]);
+	});
+
+	it('clears a part\'s own refusal once its draft is storable again', () => {
+		const el = render(LIST_CONFIG, readData(LIST_BODY, LIST_CONFIG));
+		const input = partInputs(el)[0] as HTMLInputElement;
+		input.focus();
+		input.value = '[[Bard]]';
+		input.blur();
+		expect(error(el)).not.toBeNull();
+		input.focus();
+		input.value = 'Fighter 3';
+		input.blur();
+		expect(error(el)).toBeNull();
+	});
+
+	it('canonicalises separator spacing across the whole entry when any part is edited', async () => {
+		// `joinParts` is not `listParts`' exact inverse where the original
+		// spelling had irregular spacing — inherited from `modifier-cell.ts`'s
+		// existing behaviour, not a new decision — so editing one part of a
+		// three-part entry rewrites every part's own text preserved, with the
+		// spacing canonicalised to `'; '`.
+		const written: unknown[] = [];
+		const body = '\n```sheet\nclass: A;B ;C\n```\n';
+		const irregular: PassportConfig = {
+			...config,
+			fields: [{ key: 'class', name: 'Class', list: true }],
+		};
+		const el = render(irregular, readData(body, irregular), {
+			onChange: (data) => written.push(data),
+		});
+		expect(partInputs(el).map((i) => i.value)).toEqual(['A', 'B', 'C']);
+		const middle = partInputs(el)[1] as HTMLInputElement;
+		middle.focus();
+		middle.value = 'B2';
+		middle.blur();
+		await flush();
+		expect(written).toEqual([{ values: { class: 'A; B2; C' } }]);
+	});
+});
+
+describe('passport.write — a list field\'s entry (Constraint 3)', () => {
+	const LIST_CONFIG: PassportConfig = {
+		...config,
+		fields: [{ key: 'class', name: 'Class', list: true }],
+	};
+	const bodyFor = (raw: string) => `\n\`\`\`sheet\nclass: ${raw}\n\`\`\`\n`;
+
+	/**
+	 * Ten spellings of separator spacing, exactly the feature doc's own list.
+	 * `read`/`write` do not know a field is a list at all, so every one of
+	 * these is byte-identical for the same reason an untouched scalar entry
+	 * already is (`readFenced`/`writeFenced`).
+	 */
+	const SPELLINGS: [string, string][] = [
+		['no space', 'A;B'],
+		['a space after the separator', 'A; B'],
+		['a space before the separator', 'A ;B'],
+		['a space on both sides', 'A ; B'],
+		['a trailing separator', 'A;B;'],
+		['a doubled separator', 'A;;B'],
+		['tabs around the separator', 'A\t;\tB'],
+		['a single part with no separator at all', 'A'],
+	];
+
+	it.each(SPELLINGS)('round-trips %s byte for byte', (_label, raw) => {
+		const body = bodyFor(raw);
+		expect(passport.write(readData(body, LIST_CONFIG), body, LIST_CONFIG)).toBe(
+			body,
+		);
+	});
+
+	it('round-trips an entry the layout no longer declares as a field', () => {
+		const body = bodyFor('A;B');
+		const noFields: PassportConfig = { ...config, fields: [] };
+		expect(passport.write(readData(body, noFields), body, noFields)).toBe(body);
+	});
+
+	it('round-trips an entry whose list flag was toggled off since it was written', () => {
+		const body = bodyFor('A;B');
+		const scalar: PassportConfig = {
+			...config,
+			fields: [{ key: 'class', name: 'Class' }],
+		};
+		expect(passport.write(readData(body, scalar), body, scalar)).toBe(body);
+	});
+});
+
+describe('what a passport publishes — a list field', () => {
+	const LIST_CONFIG: PassportConfig = {
+		...config,
+		fields: [{ key: 'class', name: 'Class', list: true }],
+	};
+
+	function envFor(body: string) {
+		const data = passport.read(body, LIST_CONFIG);
+		const prepared: ReadComponent[] = [
+			{
+				config: LIST_CONFIG,
+				component: passport,
+				data: data.ok ? data.data : null,
+				error: null,
+			},
+		];
+		const layout: Layout = { name: 'L', components: [LIST_CONFIG] };
+		return buildSheet(layout, prepared);
+	}
+
+	it('publishes the stored text unchanged, list or not', () => {
+		const body = '\n```sheet\nclass: Fighter 1; Bladesinger Wizard 4\n```\n';
+		const { env } = envFor(body);
+		expect(evaluate('passport.class', env.sheet, callsFrom(env))).toBe(
+			'Fighter 1; Bladesinger Wizard 4',
+		);
+	});
+
+	it('fails a comparison against it with the existing unknown-name message', () => {
+		const body = '\n```sheet\nclass: Fighter 1; Bladesinger Wizard 4\n```\n';
+		const { env } = envFor(body);
+		expect(() =>
+			evaluate('passport.class == Bard', env.sheet, callsFrom(env)),
+		).toThrow(/Unknown name "Bard"/);
 	});
 });

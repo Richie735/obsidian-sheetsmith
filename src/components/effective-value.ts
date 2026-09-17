@@ -60,3 +60,36 @@ export function effectiveReading(
 	const resolved = resolve('effective', { value: stored }, published, true);
 	return typeof resolved === 'number' ? String(resolved) : undefined;
 }
+
+/**
+ * Whether two field spellings are the same number, so one is not a *change* to
+ * the other.
+ *
+ * Shared on Roster's arrival as a second independent caller of the comparison
+ * — `card-face.ts` held a private copy of exactly this, for exactly this
+ * reason, before a second component read a stored value against an
+ * `effectiveReading()` of its own. §1's one-step tier: two copies of this
+ * predicate could only be tested for still agreeing, which is what one name
+ * says for free.
+ *
+ * **Textual first, numeric second, and neither alone is enough.** A stored
+ * value is raw note text while `effectiveReading()`'s answer is
+ * `String(n)`, so `15.0` and `15` are one number in two spellings and would
+ * otherwise read as a modifier that is not there. And a stored value need
+ * not be a number at all, so a purely numeric comparison would answer
+ * `0 === 0` for two different pieces of text — `Number('')` being 0 and
+ * `Number(' ')` too. Hence the empty guard: blank against blank is caught by
+ * the text arm above it, and blank against anything else is a real
+ * difference.
+ */
+export function sameNumber(a: string, b: string): boolean {
+	const left = a.trim();
+	const right = b.trim();
+	if (left === right) return true;
+	if (left === '' || right === '') return false;
+	return (
+		Number.isFinite(Number(left)) &&
+		Number.isFinite(Number(right)) &&
+		Number(left) === Number(right)
+	);
+}

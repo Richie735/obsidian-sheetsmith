@@ -314,7 +314,7 @@ describe('component registry', () => {
 		const holding = types.filter(
 			(type) => getComponent(type)?.scopeRows !== undefined,
 		);
-		expect(holding).toEqual(['record-set', 'table']);
+		expect(holding).toEqual(['record-set', 'roster', 'table']);
 	});
 
 	it('leaves the modifier source off unless a component declares any', () => {
@@ -707,6 +707,7 @@ describe('a component that says what a sample of itself looks like', () => {
 		'record-set Spellbook',
 		'record-set Features',
 		'rich-text bare',
+		'roster bare',
 		'table bare',
 		'table Inventory',
 		'table Conditions',
@@ -724,8 +725,13 @@ describe('a component that says what a sample of itself looks like', () => {
 	 * reversal showing up here: its name used to be the note's *filename*, so a
 	 * passport with no declared fields held nothing a note could store. The name is
 	 * an entry in its fence now, so every configuration of it fills at least that.
+	 *
+	 * **A Roster with no stats is the fourth.** Like Card set's bare config, it
+	 * has nothing to fill — a stat or a row, neither declared — and drawing a
+	 * layout part-way through being built is Group's own reading rather than
+	 * an error (SPEC §10).
 	 */
-	const EMPTY = ['card-set bare', 'table bare', 'track bare'];
+	const EMPTY = ['card-set bare', 'roster bare', 'table bare', 'track bare'];
 
 	it('sweeps every sampled configuration, and fills all but the ones that name nothing', () => {
 		expect(samples().map((entry) => entry.where)).toEqual(SWEPT);
@@ -1100,6 +1106,71 @@ describe.each(types)('component "%s"', (type) => {
 			// Two columns writing one property is one column with two inputs,
 			// and the second would silently win every commit.
 			expect(columns[0].key).not.toBe(columns[1].key);
+		}
+	});
+
+	it('offers a per-entry checkbox only on an entries field', () => {
+		/*
+		 * The same shape as the `columnOptions`-must-be-`'columns'` check above:
+		 * a config-shape rule the registry can hold every component to, so a
+		 * future field cannot declare a checkbox its own list editor has no
+		 * column for. `renderEntriesEditor` draws `entryFlag` on an 'entries'
+		 * field only; a 'rows' field's equivalent is `rowFlag`, which this test
+		 * has no opinion about.
+		 */
+		for (const field of component?.configFields ?? []) {
+			if (field.entryFlag === undefined) continue;
+			expect(field.kind, `${field.key} offers a checkbox its list has no column for`).toBe(
+				'entries',
+			);
+		}
+	});
+
+	it('addresses a stored entry only from a field whose commit is a key', () => {
+		/*
+		 * `entryFlag`'s check one test up, read for the member that carries the
+		 * rename migration (`docs/features/component-rename-migration.md`).
+		 * Only four kinds commit a name a note is keyed by: a `'text'` field's
+		 * own value (Card's `key`, Passport's `nameKey`), an `'entries'` or
+		 * `'track-rows'` field's primary column, and a `'columns'` field's key
+		 * column. Declared on a `'number'`, `'formula'`, `'select'`, `'rows'`
+		 * or `'text-list'` field it compiles, renders and migrates nothing —
+		 * no commit site reads it there — so the field would silently promise
+		 * a migration that never runs.
+		 *
+		 * The list kinds are also held to declaring their columns, because the
+		 * migration reads the *primary* one: an `'entries'` field addressing an
+		 * entry with no `entryColumns` has no key for a rename to come from.
+		 */
+		for (const field of component?.configFields ?? []) {
+			const address = field.addressesEntry;
+			if (address === undefined) continue;
+			expect(
+				['text', 'entries', 'track-rows', 'columns'],
+				`${field.key} addresses a stored entry from a ${field.kind} field`,
+			).toContain(field.kind);
+			expect(
+				['section', 'record'],
+				`${field.key} names an unknown fence shape`,
+			).toContain(address.fence);
+			if (field.kind === 'entries' || field.kind === 'track-rows') {
+				expect(
+					field.entryColumns,
+					`${field.key} addresses an entry with no key column`,
+				).toBeDefined();
+			}
+			// A fallback key is what a blank field is worth, so a blank one is
+			// not a fallback: it would migrate from or to no name at all.
+			if (address.whenBlank !== undefined) {
+				expect(
+					address.whenBlank.trim(),
+					`${field.key} falls back to a blank key`,
+				).not.toBe('');
+				expect(
+					field.kind,
+					`${field.key} falls back to a key on a list field, whose blank primary column is refused rather than defaulted`,
+				).toBe('text');
+			}
 		}
 	});
 

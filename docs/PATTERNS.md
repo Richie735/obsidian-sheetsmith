@@ -870,7 +870,19 @@ decided.
   output earns a test file** [judgement]. That is the boundary of the exception
   above: the five modules reached only by pressing something the editor drew —
   `accepts-children.ts`, `component-name.ts`, `copyable-name.ts`,
-  `field-commit.ts`, `form-group.ts` — have neither, and stay under it.
+  `field-commit.ts`, `form-group.ts` — stay under it.
+
+  **The conjunction is what holds them there, and it is not "neither" any
+  more.** This bullet said all five had neither half, and `copyable-name.ts`
+  stopped being one of those the moment it grew a rule about *which string goes
+  where*: the visible text, a `title` that adds to it, and an accessible name
+  composed from what is shown rather than from what is copied, so that a
+  control's own text is always contained in its name
+  (`docs/UI.md` §6). That is a reportable output. What it still has no half of is
+  an entry point: it is reached only by rendering something the editor drew, and
+  `published-names.test.ts` asserts all three strings over the one case where
+  shown and copied differ. Worth correcting rather than leaving, because "have
+  neither" is the sentence a reader would check a sixth module against.
 - **Duplication between components requires a test that drives both** (§1).
 
 ---

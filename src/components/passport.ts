@@ -86,8 +86,16 @@
  * not one value, and `ScopeValues.self` is optional for exactly this case.
  */
 
+import { setIcon } from 'obsidian';
+import { ArmRegister, armRegister, bindArmToConfirm } from '../interaction/arm-to-confirm';
 import { bindEditable } from '../interaction/editable';
-import { fenceLines, readFenced, writeFenced } from '../parse/fenced';
+import {
+	fenceLines,
+	fencedKeyProblem,
+	readFenced,
+	writeFenced,
+} from '../parse/fenced';
+import { joinParts, listParts } from '../parse/list-value';
 import { lineText, splitLines } from '../parse/lines';
 import {
 	ComponentConfig,
@@ -195,6 +203,13 @@ const MIN_FIELD_WIDTH = 1;
 export interface PassportField {
 	key: string;
 	name?: string;
+	/**
+	 * This field holds several values rather than one, drawn as one chip per
+	 * part and stored on one line separated by semicolons
+	 * (`docs/features/passport-field-lists.md`). Absent means one value,
+	 * exactly as every field read before this existed.
+	 */
+	list?: boolean;
 }
 
 export interface PassportConfig extends ComponentConfig {
@@ -204,6 +219,8 @@ export interface PassportConfig extends ComponentConfig {
 	fields?: PassportField[];
 	hidePicture?: boolean;
 	hideLabel?: boolean;
+	/** How the picture fills its frame. Defaults to 'contain'. */
+	fit?: 'contain' | 'cover' | 'stretch';
 }
 
 /**
@@ -251,12 +268,16 @@ function storableFields(config: PassportConfig): PassportField[] {
 	const seen = new Set<string>([nameKey(config)]);
 	for (const field of config.fields ?? []) {
 		const key = (field.key ?? '').trim();
-		if (key === '' || /[:\r\n]/.test(key)) continue;
+		if (key === '' || fencedKeyProblem(key) !== null) continue;
 		// Two fields on one key are one entry in the note, so the second would
 		// draw the first's value and overwrite it on commit.
 		if (seen.has(key)) continue;
 		seen.add(key);
-		out.push(field.name === undefined ? { key } : { key, name: field.name });
+		out.push({
+			key,
+			...(field.name === undefined ? {} : { name: field.name }),
+			...(field.list === true ? { list: true } : {}),
+		});
 	}
 	return out;
 }
@@ -272,7 +293,7 @@ function storableFields(config: PassportConfig): PassportField[] {
  */
 function nameKey(config: PassportConfig): string {
 	const key = (config.nameKey ?? '').trim();
-	return key === '' || /[:\r\n]/.test(key) ? DEFAULT_NAME_KEY : key;
+	return key === '' || fencedKeyProblem(key) !== null ? DEFAULT_NAME_KEY : key;
 }
 
 /**
@@ -398,7 +419,11 @@ function drawPicture(
 		alt: '',
 		prefix: labelled ? null : config.label,
 		status,
+		fit: config.fit,
 		...(context.resource === undefined ? {} : { resource: context.resource }),
+		...(context.suggestFile === undefined
+			? {}
+			: { suggestFile: context.suggestFile }),
 		/*
 		 * **The one refusal this component makes that Image does not, and it is
 		 * about the file model rather than about pictures.** Image's whole body is
@@ -451,6 +476,36 @@ function drawPicture(
  * `ui/truncation.ts` stays on it. It was blocked by the read-only `title` and
  * that is gone; the owner's own case is a long name in a narrow card.
  */
+/**
+ * A commit's own refusal notice, anchored right after its own control and
+ * cleared on the next attempt that succeeds.
+ *
+ * **Three consumers now** (`docs/PATTERNS.md` §1's third-consumer rung): the
+ * name, and — since `docs/features/passport-field-lists.md`'s per-part
+ * rework — each list field part's own commit and its add control's transient
+ * one, each of which now owns its refusal independently rather than sharing
+ * one notice for the whole fields line. `record-set.ts`'s `refusalNotice` is
+ * the shape this already followed once with one consumer; this is that shape
+ * named and shared rather than copied twice more.
+ */
+function attachRefusalNotice(
+	after: HTMLElement,
+	status: HTMLElement,
+): (message: string | null) => void {
+	let notice: HTMLElement | null = null;
+	return (message: string | null): void => {
+		notice?.remove();
+		notice = null;
+		if (message === null) return;
+		// The *global* `createDiv`, which attaches to nothing: this goes *after a
+		// sibling* rather than into a parent, so `after.after` below is the
+		// attachment and no `parent` option could express it (`PATTERNS.md` §5).
+		notice = createDiv({ cls: 'sheetsmith-error', text: message });
+		after.after(notice);
+		status.textContent = message;
+	};
+}
+
 function drawName(
 	text: HTMLElement,
 	stored: string,
@@ -474,27 +529,10 @@ function drawName(
 	field.setAttribute('aria-label', 'Name');
 	revealWhenTruncated(field);
 
-	/**
-	 * Draw or clear the standing refusal under the name, and say it.
-	 *
-	 * Its own notice rather than the fields line's, because they are about
-	 * different controls and a message about a name must not be cleared by a
-	 * commit on a species. `record-set.ts`'s `refusalNotice` is the shape and its
-	 * comment is the argument: a closure per message, remembering which element to
-	 * remove.
-	 */
-	let notice: HTMLElement | null = null;
-	const showRefusal = (message: string | null): void => {
-		notice?.remove();
-		notice = null;
-		if (message === null) return;
-		// The *global* `createDiv`, which attaches to nothing: this goes *after a
-		// sibling* rather than into a parent, so `field.after` below is the
-		// attachment and no `parent` option could express it (`PATTERNS.md` §5).
-		notice = createDiv({ cls: 'sheetsmith-error', text: message });
-		field.after(notice);
-		status.textContent = message;
-	};
+	// Its own notice rather than the fields line's, because they are about
+	// different controls and a message about a name must not be cleared by a
+	// commit on a species.
+	const showRefusal = attachRefusalNotice(field, status);
 
 	bindEditable(field, {
 		initial: stored,
@@ -512,20 +550,13 @@ function drawName(
 }
 
 /**
- * The identity values, as a row of tags.
+ * The identity values, as a row of controls.
  *
  * Each declared field is an `editable.ts` field on the card's own interaction
- * rules — Enter commits and moves to the next field on the face, Escape restores,
- * blur commits — drawn as a discrete chip in Obsidian's own tag clothes.
- *
- * **A row of tags rather than a sentence, and that is the owner's call reversing
- * an earlier one of ours.** The line began as a sentence with middle dots between
- * the values, and the dots are gone with the chips: a chip separates itself, and a
- * dot between two padded pills reads as a third thing. That also took a real
- * defect with it — at six fields the line wrapped after a dot and stranded it at
- * the end of a row, which the vault fixture found and no harness view had. What
- * else went with them is the `aria-hidden` span each dot needed, so there is
- * nothing on this line now that a screen reader has to be told to skip.
+ * rules — Enter commits and moves to the next field on the face, Escape
+ * restores, blur commits — drawn as a discrete tag in Obsidian's own tag
+ * clothes. A field marked as a list draws several of these, one per stored
+ * part, each with its own delete control (`drawListField` below).
  *
  * The surface is `sheet.css`'s and the argument for borrowing rather than
  * inventing it is there.
@@ -543,8 +574,44 @@ function drawFields(
 
 	const line = text.createDiv('sheetsmith-passport-fields');
 
-	/** Every field on the face, so Enter can reach the next one. */
-	const inputs: HTMLInputElement[] = [];
+	/**
+	 * Which list field's part is armed, one register for the whole face
+	 * rather than one per list field.
+	 *
+	 * `interaction/arm-to-confirm.ts`'s own rule is that this is a fact about
+	 * one card rather than about the page: arming a second delete anywhere on
+	 * it has to stand the first one down, exactly as Table's `armedRow` and
+	 * Record set's `armedRecord` are each one register for their whole
+	 * component rather than one per row. A Passport declaring two `list: true`
+	 * fields — "Class" and, say, "Languages" — shares this one register
+	 * between them, so arming a part's delete in one stands down an armed one
+	 * in the other.
+	 */
+	const armedPart = armRegister();
+
+	/**
+	 * Every declared field's own current entry point, so Enter can reach it —
+	 * a plain function rather than an element, because a list field's own
+	 * first control changes as parts are added or removed under it (see
+	 * `drawListField` below), so a static reference taken once at render
+	 * would go stale the moment a reader adds a second value.
+	 */
+	const fieldEntry: (() => HTMLElement)[] = [];
+
+	/**
+	 * Focus a sibling field and select whatever it holds, for Enter's "done
+	 * with this field, on to the next" gesture.
+	 *
+	 * A plain `.focus()` is enough for a list field's own entry point: it is
+	 * either that field's first part, which selects its own text on focus the
+	 * way every part's own `bindEditable` already does below, or its add
+	 * control, which has no text to select.
+	 */
+	const focusAndSelect = (get: (() => HTMLElement) | undefined): void => {
+		const el = get?.();
+		el?.focus();
+		if (el?.instanceOf(HTMLInputElement)) el.select();
+	};
 
 	/*
 	 * **The line is the hit target, not the box** — PATTERNS §6's "the whole card
@@ -555,21 +622,21 @@ function drawFields(
 	 * level's is about as wide as one digit; without this the target for `5` would
 	 * be 19px against `legibility.md` §5's 20pt pointer minimum and its 28pt
 	 * coarse minimum, and the old four-character floor was quietly paying for that
-	 * with dead box on either side of the digit — which is what made the dots read
-	 * unevenly. Routing the press moves the payment to where it costs the reading
-	 * nothing: every pixel between two fields belongs to whichever is nearer, so
-	 * the target is as large as the line allows and no two targets overlap.
+	 * with dead box on either side of the digit. Routing the press moves the
+	 * payment to where it costs the reading nothing: every pixel between two
+	 * fields belongs to whichever is nearer, so the target is as large as the
+	 * line allows and no two targets overlap.
 	 *
-	 * **An inset `::after` per field is the alternative and it is worse here**,
-	 * which is worth writing down because it is the level ring's own answer
-	 * (`legibility.md` §8) and the obvious reach. Two reasons: a pseudo-element
-	 * does not render on an `<input>` at all — which is also why the middle dots
-	 * this line used to carry were real spans — so it would need a wrapper element
-	 * per field;
-	 * and the boxes sit about 12px apart, so two targets inset 8px each would
-	 * overlap, which is precisely §5's "a target big enough to hit is not big
-	 * enough if the neighbouring target starts before the gap does". Nearest-wins
-	 * has no overlap by construction.
+	 * **Read fresh from the DOM on every press, rather than from a list built
+	 * once at render.** A list field's own controls change count as parts are
+	 * added and removed, so an array captured once would drift the moment a
+	 * reader pressed **Add** — the exact class of staleness `docs/PATTERNS.md`
+	 * §1 warns a cached reference invites. `input, button` reaches every
+	 * control on the line — a scalar field's field, a list field's own part
+	 * inputs and delete buttons, and its add control alike — which is what
+	 * lets "a field's own cluster of controls as a whole" (`docs/features/
+	 * passport-field-lists.md`) resolve to whichever one is nearest without
+	 * this line needing to know a list field exists.
 	 *
 	 * `click` rather than `pointerdown`, and nearest by *horizontal* distance:
 	 * both are `card-face.ts`'s own rules, one axis over, because a card is a
@@ -578,15 +645,18 @@ function drawFields(
 	line.addEventListener('click', (event) => {
 		const target = event.target as HTMLElement | null;
 		// Real controls own their own presses (PATTERNS §6). A press that landed
-		// in a field is already where it was going.
-		if (target?.closest('input') !== null) return;
+		// on a control is already where it was going.
+		if (target?.closest('input, button') !== null) return;
 		// Never at the cost of a selection in progress: a reader dragging across
 		// "Half-elf · Bard" is copying it, not asking to edit.
 		const selection = doc.getSelection();
 		if (selection !== null && !selection.isCollapsed) return;
-		let nearest: HTMLInputElement | undefined = inputs[0];
+		const candidates = Array.from(
+			line.querySelectorAll<HTMLElement>('input, button'),
+		);
+		let nearest: HTMLElement | undefined = candidates[0];
 		let closest = Infinity;
-		for (const candidate of inputs) {
+		for (const candidate of candidates) {
 			const box = candidate.getBoundingClientRect();
 			const distance = Math.abs(event.clientX - (box.left + box.width / 2));
 			if (distance < closest) {
@@ -611,7 +681,9 @@ function drawFields(
 	 *
 	 * A note that *already* holds one is untouched: `read` never fails for it and
 	 * `write` never rewrites an entry the reader did not commit, so a hand-edited
-	 * link is rendered and carried under SPEC §10.
+	 * link is rendered and carried under SPEC §10. Shared by every part of a
+	 * list field too (`drawListField` below), since it is the same fence taking
+	 * the same values.
 	 */
 	const refuse = (next: string): string | null =>
 		fencedLinkRefusal(next, {
@@ -621,19 +693,19 @@ function drawFields(
 		});
 
 	/**
-	 * Draw or clear the standing refusal under the line, and say it.
+	 * A scalar field's own refusal notice, shared for the whole line.
 	 *
-	 * Under the line rather than beside the field, because the fields are a
-	 * *sentence* and a message wedged between two words would break the one thing
-	 * this component's layout is for. One notice for the whole line, since only
-	 * one commit is ever in flight: `editable.ts` reports a cleared refusal on
-	 * every commit attempt, so the next field to be left clears whatever is
-	 * standing. Record set's `refusalNotice` is the shape, and it keeps a closure
-	 * per message there because four controls have four hosts; there is one host
-	 * here, so there is one closure.
+	 * **Unchanged from before this feature, and deliberately not the per-part
+	 * mechanism below.** A list field's refusal moved to the part actually
+	 * being committed (`docs/features/passport-field-lists.md`, "Wikilink
+	 * refusal, now per commit rather than per field"), but a scalar field is
+	 * still one field with one commit, so it keeps the one shared notice under
+	 * the whole line it always had — `editable.ts` reports a cleared refusal
+	 * on every commit attempt, so the next scalar field to be left clears
+	 * whatever is standing.
 	 */
 	let notice: HTMLElement | null = null;
-	const showRefusal = (message: string | null): void => {
+	const showScalarRefusal = (message: string | null): void => {
 		notice?.remove();
 		notice = null;
 		if (message === null) return;
@@ -644,6 +716,23 @@ function drawFields(
 	fields.forEach((field, index) => {
 		const name = fieldName(field);
 		const stored = data?.values?.[field.key] ?? '';
+
+		if (field.list === true) {
+			fieldEntry.push(
+				drawListField(
+					line,
+					doc,
+					name,
+					stored,
+					refuse,
+					status,
+					(joined) => context.onChange({ values: { [field.key]: joined } }),
+					armedPart,
+				),
+			);
+			return;
+		}
+
 		const input = line.createEl('input');
 		input.type = 'text';
 		input.classList.add('sheetsmith-passport-input');
@@ -664,7 +753,7 @@ function drawFields(
 		 * rebuild a commit produces.
 		 */
 		input.size = Math.max(MIN_FIELD_WIDTH, (stored === '' ? name : stored).length);
-		inputs.push(input);
+		fieldEntry.push(() => input);
 
 		bindEditable(input, {
 			initial: stored,
@@ -673,13 +762,11 @@ function drawFields(
 			// level steps and a species does not.
 			step: true,
 			refuse,
-			onRefusal: showRefusal,
+			onRefusal: showScalarRefusal,
 			onEnter: () => {
 				// Enter means "done with this field", and the next field on the
 				// face is the obvious place to be.
-				const next = inputs[index + 1];
-				next?.focus();
-				next?.select();
+				focusAndSelect(fieldEntry[index + 1]);
 			},
 			announceCommit: (next) => {
 				status.textContent =
@@ -693,6 +780,299 @@ function drawFields(
 			onCommit: (next) => context.onChange({ values: { [field.key]: next } }),
 		});
 	});
+}
+
+/**
+ * A field marked `list: true`: one small, always-live control per stored
+ * part, each with its own always-visible delete control, plus a control to
+ * add another (`docs/features/passport-field-lists.md`, settled answer 3's
+ * second pass).
+ *
+ * **Every part is the same live editable-looking control every other value on
+ * the sheet already is.** There is no closed state to discover and no whole-
+ * field text to edit — the first pass tried both and the owner rejected the
+ * result on both counts. `editable.ts` governs each part's own `<input>` on
+ * exactly the rules a scalar field's already follows; what is new here is
+ * only what a commit computes before handing `onCommit` a string, and the
+ * add control, which has no analogue on a scalar field at all.
+ *
+ * **`parts` is this closure's own copy of what is currently stored**, kept in
+ * step with every commit so `paint` below can rebuild the row without
+ * waiting for the view's own rebuild to come back around — the optimistic
+ * half of `docs/PATTERNS.md` §5, applied to a control whose own shape changes
+ * on every add or remove rather than only its value.
+ *
+ * **`paint` always rebuilds the whole row, never one part in place.** Editing
+ * one part changes no one else's text or position, so a surgical patch is
+ * possible; it is not taken, because a full rebuild is one function for
+ * every commit (edit, add, remove) rather than three, and this row is short
+ * enough that the cost is not worth the branch.
+ *
+ * **Every DOM mutation the paint performs is deferred one microtask**, for
+ * the reason this feature's first pass already found the hard way: Enter
+ * fires this synchronously while the committing input is still focused, and
+ * removing it from the DOM immediately would blur it for real — reentering
+ * `editable.ts`'s own commit handler, one call still on the stack. By the
+ * next microtask, whatever else Enter is doing (moving focus to the next
+ * part, or to the add control) has already run, so there is nothing left for
+ * the rebuild to blur. Escape and an ordinary blur reach here with focus
+ * already moved on and would be just as correct done immediately; deferred
+ * is one rule for all commits rather than a special case for Enter alone.
+ *
+ * Returns this field's own current entry point, for a sibling field's Enter
+ * to focus (`drawFields` above) — a function rather than an element, since it
+ * changes as parts are added or removed.
+ */
+function drawListField(
+	line: HTMLElement,
+	doc: Document,
+	name: string,
+	stored: string,
+	refuse: (next: string) => string | null,
+	status: HTMLElement,
+	onCommit: (joined: string) => void,
+	armed: ArmRegister,
+): () => HTMLElement {
+	const region = line.createDiv('sheetsmith-passport-list');
+	let parts: readonly string[] = listParts(stored);
+	/** The add control, always the row's last child once `paint` has run. */
+	let addButton: HTMLButtonElement;
+
+	/**
+	 * Redraw every part and the add control from `parts`, in one pass.
+	 *
+	 * Zero parts draws the add control alone — no chip, on the settled
+	 * answer's own correction of the first pass's placeholder chip.
+	 */
+	const paint = (): void => {
+		region.replaceChildren();
+		parts.forEach((part, index) => {
+			const row = region.createDiv('sheetsmith-passport-part');
+			const input = row.createEl('input');
+			input.type = 'text';
+			input.classList.add('sheetsmith-passport-input');
+			input.value = part;
+			// Positional rather than by value: the value is already read back
+			// from the input itself, and a name built from it would repeat
+			// what a screen reader already says next.
+			input.setAttribute('aria-label', `${name} ${index + 1}`);
+			input.size = Math.max(MIN_FIELD_WIDTH, part.length);
+
+			// Anchored after the whole part, not after the input alone: the
+			// input and its delete button are one row, and a message wedged
+			// between the two would read as belonging to neither.
+			const showRefusal = attachRefusalNotice(row, status);
+
+			bindEditable(input, {
+				initial: part,
+				refuse,
+				onRefusal: showRefusal,
+				onCommit: (next) => {
+					queueMicrotask(() => {
+						// **Written through, empty text included — never
+						// filtered away.** An edit is not the delete control:
+						// removing a part is the arm-then-confirm gesture's
+						// own job, and the spec's own "Deliberately not
+						// doing" section already refuses a lighter, one-press
+						// removal on purpose — clearing a part's text and
+						// blurring is exactly that, reached through a side
+						// door, if committing it silently dropped the part.
+						// `joinParts` writes the empty entry out as a bare
+						// separator (`'; Bladesinger Wizard 4'`), which
+						// `listParts` already reads tolerantly on the next
+						// parse — the same "collapses on read, never rewritten
+						// unbidden" shape this feature's own separator module
+						// documents — so the part stays exactly where the
+						// reader left it: present, empty, and only a further,
+						// explicit delete away from actually going.
+						parts = parts.map((p, i) => (i === index ? next : p));
+						onCommit(joinParts(parts));
+						paint();
+					});
+				},
+				onEnter: () => {
+					queueMicrotask(() => {
+						const inputs = Array.from(
+							region.querySelectorAll<HTMLInputElement>(
+								'.sheetsmith-passport-input',
+							),
+						);
+						const next: HTMLElement = inputs[index + 1] ?? addButton;
+						next.focus();
+						if (next.instanceOf(HTMLInputElement)) next.select();
+					});
+				},
+				announceCommit: (next) => {
+					status.textContent =
+						next === '' ? `${name} ${index + 1} cleared` : `${name} ${index + 1} ${next}`;
+				},
+				announceRestore: (restored) => {
+					status.textContent = `${name} ${index + 1} restored to ${restored}`;
+				},
+			});
+
+			const remove = row.createEl('button');
+			remove.type = 'button';
+			remove.classList.add('sheetsmith-passport-part-remove');
+			// The app's own trash icon rather than a copy of it, the same mark
+			// Table's and Record set's own row delete already use, so a
+			// fourth control on the sheet asks the reader to recognise one
+			// glyph rather than a second one.
+			setIcon(remove, 'trash');
+			bindArmToConfirm({
+				button: remove,
+				row,
+				armedClass: 'sheetsmith-passport-part-remove-armed',
+				rowClass: 'sheetsmith-passport-part-arming',
+				named: `Delete ${part}`,
+				announce: (said) => {
+					status.textContent = said;
+				},
+				commit: () => {
+					queueMicrotask(() => {
+						parts = parts.filter((_, i) => i !== index);
+						onCommit(joinParts(parts));
+						paint();
+					});
+				},
+				register: armed,
+				doc,
+			});
+
+			/*
+			 * **Stands the arm down the moment focus genuinely leaves this
+			 * part**, additive to `bindArmToConfirm`'s own listeners rather
+			 * than a replacement for them (`docs/features/
+			 * passport-field-lists.md`, "Standing an armed delete down when
+			 * its part loses focus"). Needed because the delete control is
+			 * now hidden except while its own part has focus (below): without
+			 * this, a part that stayed armed while its control went on
+			 * hiding elsewhere would show a reddened input with nothing on
+			 * screen explaining why.
+			 *
+			 * `relatedTarget` is what tells "focus moved to this part's own
+			 * delete button" — progress within the same part, not a
+			 * departure — apart from "focus left the row entirely," which is
+			 * the one case this stands the arm down for. Calling the
+			 * register's own stand-down (`interaction/arm-to-confirm.ts`'s
+			 * `cancel`, which disarms *and* announces `STOOD_DOWN` in one
+			 * step now) rather than reaching into a specific button's own
+			 * handler: the armed control might not be this part's own (a
+			 * sibling's, or nothing), and `register.armed` already holds
+			 * whichever one is current — a safe no-op where nothing is
+			 * armed, since `cancel` itself does nothing unless armed.
+			 *
+			 * **Still needed alongside the button's own `blur` listener,
+			 * not made redundant by it.** A finger arming this control on a
+			 * platform where a tap never focuses a button (WebKit's own
+			 * documented behaviour, which is why the module arms on `click`
+			 * rather than relying on `blur` alone) leaves nothing to blur
+			 * when the reader moves on — the row's own `focusout` is the one
+			 * thing left watching in that case.
+			 */
+			row.addEventListener('focusout', (event) => {
+				const to = event.relatedTarget;
+				if (to instanceof Node && row.contains(to)) return;
+				armed.armed?.();
+			});
+		});
+
+		addButton = region.createEl('button');
+		addButton.type = 'button';
+		addButton.classList.add('sheetsmith-passport-add');
+		setIcon(addButton, 'plus');
+		// The invitation an empty field's placeholder used to carry, since a
+		// list field with zero parts draws no chip for one to sit in.
+		addButton.setAttribute('aria-label', `Add ${name}`);
+		addButton.setAttribute('title', `Add ${name}`);
+		addButton.addEventListener('click', () => openAdd());
+	};
+
+	/**
+	 * Turn the add control into a fresh, empty, focused input — "the same
+	 * position" the design calls for, since replacing it in place is exactly
+	 * what removing it and appending a plain input in its stead achieves.
+	 */
+	const openAdd = (): void => {
+		const current = addButton;
+		// The *global* `createEl`, detached, since it is attached later than it
+		// is created (`docs/PATTERNS.md` §5): `replaceWith` below is the
+		// attachment, and no `parent` option could express "in this button's
+		// own place".
+		const input = createEl('input');
+		input.type = 'text';
+		input.classList.add('sheetsmith-passport-input');
+		input.placeholder = name;
+		input.setAttribute('aria-label', `New ${name}`);
+		// Sized to the placeholder it is about to show, on the same terms as
+		// this field's other two input sites: a box floored at one character
+		// draws only a caret, which defeats the placeholder's own job of
+		// carrying the add control's invitation once it is a field rather
+		// than a glyph.
+		input.size = Math.max(MIN_FIELD_WIDTH, name.length);
+		current.replaceWith(input);
+
+		const showRefusal = attachRefusalNotice(input, status);
+
+		bindEditable(input, {
+			initial: '',
+			refuse,
+			onRefusal: (message) => {
+				showRefusal(message);
+				// `onRefusal` fires on every attempt, including the one that
+				// changed nothing — which, from an initial value of `''`, is
+				// exactly the empty commit/Escape cancellation the design
+				// calls for: nothing is written, and the transient input goes
+				// away in favour of a fresh add control, focused — on *every*
+				// path that ends here, blur included, not only Enter: the
+				// spec's own words for the empty case are "focus returns to
+				// the add control," and Tab order depends on it as much as
+				// convenience does. A reader who tabs (not clicks) out of an
+				// empty transient input has already had the browser decide
+				// where Tab is going before this rebuild runs a microtask
+				// later — the *next declared field*, since the add button
+				// Tab is supposed to reach does not exist yet at the moment
+				// the key is pressed — so without an explicit refocus here,
+				// Tab would skip the add control's own stop the one time its
+				// input closes empty.
+				if (message === null && input.value.trim() === '') {
+					queueMicrotask(() => {
+						paint();
+						addButton.focus();
+					});
+				}
+			},
+			onCommit: (next) => {
+				// Focus is returned here too, on the same argument as the
+				// empty path above: this input closing (whichever way it
+				// closes) always leaves a fresh add control in its place,
+				// and Tab's own forward progress already left mid-flight by
+				// the time this runs cannot be trusted to have landed on it
+				// by itself.
+				queueMicrotask(() => {
+					parts = [...parts, next];
+					onCommit(joinParts(parts));
+					paint();
+					addButton.focus();
+				});
+			},
+			announceCommit: (next) => {
+				status.textContent = `${name} added: ${next}`;
+			},
+			announceRestore: () => {
+				status.textContent = 'Add cancelled';
+			},
+		});
+
+		input.focus();
+	};
+
+	paint();
+
+	// This field's own current entry point, read live: the first part while
+	// there is one, the add control while there is none.
+	return () =>
+		region.querySelector<HTMLElement>('.sheetsmith-passport-input') ?? addButton;
 }
 
 export const passport: ComponentDefinition<PassportConfig, PassportData> = {
@@ -709,8 +1089,9 @@ export const passport: ComponentDefinition<PassportConfig, PassportData> = {
 			key: 'nameKey',
 			kind: 'text',
 			label: 'Name key',
+			addressesEntry: { fence: 'section', whenBlank: DEFAULT_NAME_KEY },
 			description:
-				'Entry name for the character\'s name in the note, e.g. "Character". Not shown on the face, and not what formulas reference — they use the component id above. Defaults to "name". Renaming it does not move a stored value: the old entry stays in the note under the old key. A field below declaring this same key is left off the face, since two controls cannot write one entry.',
+				'Entry name for the character\'s name in the note, e.g. "Character". Not shown on the face, and not what formulas reference — they use the component id above. Defaults to "name". Renaming it moves that entry in every note on this layout. A field below declaring this same key is left off the face, since two controls cannot write one entry.',
 		},
 		{
 			key: 'fields',
@@ -723,8 +1104,12 @@ export const passport: ComponentDefinition<PassportConfig, PassportData> = {
 				{ key: 'key', heading: 'Key' },
 				{ key: 'name', heading: 'Name' },
 			],
+			// `types.ts`'s `entryFlag`, on `rowFlag`'s own precedent: a per-entry
+			// checkbox the shared list editor draws without knowing what it means.
+			entryFlag: { key: 'list', label: 'Several values' },
+			addressesEntry: { fence: 'section' },
 			description:
-				'The values shown under the name, in this order. Each key is the entry\'s name in the note; its name is what the field shows while it is empty and what a screen reader calls it. Renaming a key does not move a stored value: the old entry stays in the note under the old key.',
+				'The values shown under the name, in this order. Each key is the entry\'s name in the note, and renaming one moves it in every note on this layout; its name is what the field shows while it is empty and what a screen reader calls it. A field may say it holds several values, drawn as one chip per part and stored as one line with the parts separated by semicolons — a multiclass character\'s class field reading "Fighter 1; Bladesinger Wizard 4" where a single-class character\'s reads "Bard 5", on the same layout.',
 		},
 		{
 			key: 'hidePicture',
@@ -743,6 +1128,15 @@ export const passport: ComponentDefinition<PassportConfig, PassportData> = {
 			description:
 				'Leaves the component\'s name off the sheet. A header usually does, since the face names itself.',
 			default: false,
+		},
+		{
+			key: 'fit',
+			group: 'Appearance',
+			kind: 'select',
+			label: 'Fit',
+			description:
+				'How the picture fills its frame. Fitted draws the whole picture with nothing cropped, which may leave empty space above or below it. Cropped fills the frame and cuts off whatever does not fit, centred. Stretched fills the frame exactly, distorting the picture where its shape does not match.',
+			options: ['contain', 'cover', 'stretch'],
 		},
 	],
 	/*

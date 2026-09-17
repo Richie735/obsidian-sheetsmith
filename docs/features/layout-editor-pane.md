@@ -177,16 +177,15 @@ SPEC §7's third stated reason for a workspace view.
 │                                      │   Position   col row w h    │
 │  Layout                              │             [ 1][ 1][2][1]  │
 │  Grid, functions, triggers           │                             │
-│  Armour class           Card     [🗑] │   Resets on                 │
-│  Hit points             Pool     [🗑] │   …                         │
+│  [ Card ▾ ] [ On the sheet ▾ ] [Add] │   Resets on                 │
+│  Armour class           Card     [🗑] │   …                         │
+│  Hit points             Pool     [🗑] │                             │
 │  Abilities              Card set [🗑] │                             │
 │    Strength             Card     [🗑] │                             │
-│                                      │                             │
-│  [ Card ▾ ] [ On the sheet ▾ ] [Add] │                             │
 └──────────────────────────────────────┴─────────────────────────────┘
 ```
 
-Left: the layout picker, the schematic, the tree, the add row. Right: the panel.
+Left: the layout picker, the schematic, the add row, the tree. Right: the panel.
 
 Three things in that picture are decisions rather than drawing. **The picker is
 "Layout file"**, not "Layout": the tree's first row is the layout, so two
@@ -310,7 +309,7 @@ so none needs the argument UI §6 would demand.
 | Click the selected row again | Nothing. Deselecting to nowhere would leave the panel empty; the `Layout` row is how you get back to the layout |
 | Drag a block, drag its corner | Unchanged, including Escape restoring the pick-up position |
 | Arrow keys, shift+arrows | Unchanged, and the panel's four position fields follow **without rebuilding the pane**. Holding an arrow key is the one rapid-fire gesture here, and a teardown per repeat is the latency cliff `nudge` was already written to avoid |
-| Tab | Through the tree in the depth-first walk the sheet reads in, then the add row, then the panel. The tree's order is already the sheet's reading order and that rule survives |
+| Tab | The add row, then through the tree in the depth-first walk the sheet reads in, then the panel. The add row moved above the tree so a long component list cannot bury it |
 | `Ctrl/Cmd`-click the picker's delete | Unchanged: `ConfirmModal`, naming that character notes are untouched |
 
 Per UI §7, focus moves on `pointerdown` and commits on `click` — the schematic

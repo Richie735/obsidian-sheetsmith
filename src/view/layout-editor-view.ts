@@ -22,6 +22,18 @@ import { SheetView, VIEW_TYPE_SHEET } from './sheet-view';
 
 export const VIEW_TYPE_LAYOUT_EDITOR = 'sheetsmith-layout-editor';
 
+/** The pane's two independently scrolling regions (`layout-editor.ts`'s own
+ * classes on the two halves of its split), and nowhere else — `contentEl`
+ * holds them side by side and never overflows itself. */
+const OUTLINE_SELECTOR = '.sheetsmith-editor-outline';
+const PANEL_SELECTOR = '.sheetsmith-editor-panel';
+
+/** Where the pane is scrolled to, one number per region. */
+interface ScrollPositions {
+	outline: number;
+	panel: number;
+}
+
 export class LayoutEditorView extends ItemView implements LayoutEditorHost {
 	private plugin: SheetsmithPlugin;
 	private editor: LayoutEditorSection;
@@ -131,11 +143,54 @@ export class LayoutEditorView extends ItemView implements LayoutEditorHost {
 	 * does it.
 	 */
 	refreshSheets(): void {
+		for (const sheet of this.openSheets()) sheet.refresh();
+	}
+
+	/**
+	 * Every open sheet writes what it holds, before the editor rewrites notes.
+	 *
+	 * Sequential rather than `Promise.all`: these are vault writes, and the
+	 * migration that follows reads every one of the same files. The count is the
+	 * number of sheets a reader has on screen.
+	 */
+	async flushSheets(): Promise<void> {
+		for (const sheet of this.openSheets()) await sheet.flushSave();
+	}
+
+	/** Every open sheet re-reads its file, after the editor rewrote notes. */
+	async reloadSheets(): Promise<void> {
+		for (const sheet of this.openSheets()) await sheet.reload();
+	}
+
+	/**
+	 * The sheets currently on screen, which is what all three hops above walk.
+	 *
+	 * One `getLeavesOfType` and one `instanceof` rather than three copies of
+	 * both: the `instanceof` is the load-bearing half — a leaf of this type can
+	 * hold a deferred view, which is not a `SheetView` and has none of these
+	 * methods.
+	 */
+	private openSheets(): SheetView[] {
+		const sheets: SheetView[] = [];
 		for (const leaf of this.plugin.app.workspace.getLeavesOfType(
 			VIEW_TYPE_SHEET,
 		)) {
-			if (leaf.view instanceof SheetView) leaf.view.refresh();
+			if (leaf.view instanceof SheetView) sheets.push(leaf.view);
 		}
+		return sheets;
+	}
+
+	/**
+	 * Where the pane is scrolled to, as the two regions that actually overflow
+	 * — never `contentEl` itself, which merely holds them and is never taller
+	 * than the leaf (`redraw`'s own note explains why that distinction is the
+	 * whole bug this shape exists to avoid repeating).
+	 */
+	private readScroll(): ScrollPositions {
+		return {
+			outline: this.root?.querySelector(OUTLINE_SELECTOR)?.scrollTop ?? 0,
+			panel: this.root?.querySelector(PANEL_SELECTOR)?.scrollTop ?? 0,
+		};
 	}
 
 	/**
@@ -146,6 +201,15 @@ export class LayoutEditorView extends ItemView implements LayoutEditorHost {
 	 * DOM down owns what survives. Focus is the other half and stays with the
 	 * editor, which owns the focus-token convention every control there follows.
 	 *
+	 * **Two positions, not one.** `contentEl` holds the outline and the panel
+	 * side by side and never overflows itself — `.sheetsmith-editor-outline` and
+	 * `.sheetsmith-editor-panel` are what actually scroll, independently, since
+	 * the pane split into two columns. A single `contentEl.scrollTop` measured
+	 * a number that was always zero, so every edit committed from wherever the
+	 * panel had scrolled to (`docs/features/`'s editor split) silently reset it
+	 * to the top — reachable because nothing asserted the pane keeps its
+	 * position, the gap `layout-editor-view.test.ts`'s scroll cases now close.
+	 *
 	 * A fresh root each time rather than emptying the old one, so a render that
 	 * comes back after a newer one has an orphan to append into rather than the
 	 * live pane.
@@ -153,19 +217,23 @@ export class LayoutEditorView extends ItemView implements LayoutEditorHost {
 	 * `scrollTo` defaults to wherever the pane is now, which is what every
 	 * ordinary redraw wants. It is a parameter rather than something a caller
 	 * arranges afterwards because there can only be one restore: a caller
-	 * assigning `scrollTop` around this call assigns it to a pane that has just
-	 * been emptied, so it clamps toward zero, and the deferred restore below then
+	 * assigning scroll around this call assigns it to a pane that has just been
+	 * emptied, so it clamps toward zero, and the deferred restore below then
 	 * overwrites whatever survived. Anything with a position in mind hands it in
 	 * here.
 	 */
-	redraw(scrollTo = this.contentEl.scrollTop): void {
+	redraw(scrollTo: ScrollPositions = this.readScroll()): void {
 		this.contentEl.empty();
 		const root = this.contentEl.createDiv();
 		this.root = root;
 		void this.editor.render(root).then(() => {
-			// Restored only after the editor has appended: a still-short pane
+			// Restored only after the editor has appended: a still-short region
 			// clamps the position back toward zero.
-			if (this.root === root) this.contentEl.scrollTop = scrollTo;
+			if (this.root !== root) return;
+			const outline = root.querySelector(OUTLINE_SELECTOR);
+			if (outline) outline.scrollTop = scrollTo.outline;
+			const panel = root.querySelector(PANEL_SELECTOR);
+			if (panel) panel.scrollTop = scrollTo.panel;
 		});
 	}
 
@@ -202,17 +270,19 @@ export class LayoutEditorView extends ItemView implements LayoutEditorHost {
 	 * middle of editing is clutter.
 	 */
 	getEphemeralState(): Record<string, unknown> {
-		return { selection: this.selected, scroll: this.contentEl.scrollTop };
+		return { selection: this.selected, ...this.readScroll() };
 	}
 
 	setEphemeralState(state: unknown): void {
 		const ephemeral = state as
-			| { selection?: unknown; scroll?: unknown }
+			| { selection?: unknown; outline?: unknown; panel?: unknown }
 			| null;
 		const selection =
 			typeof ephemeral?.selection === 'string' ? ephemeral.selection : undefined;
-		const scroll =
-			typeof ephemeral?.scroll === 'number' ? ephemeral.scroll : undefined;
+		const outline =
+			typeof ephemeral?.outline === 'number' ? ephemeral.outline : undefined;
+		const panel =
+			typeof ephemeral?.panel === 'number' ? ephemeral.panel : undefined;
 
 		if (selection !== undefined) this.selected = selection;
 		// Nothing drawn yet, so there is nothing to scroll and nothing to rebuild.
@@ -220,18 +290,27 @@ export class LayoutEditorView extends ItemView implements LayoutEditorHost {
 		// draws it at the top — which is where a pane nobody has read yet belongs.
 		if (this.root === null) return;
 		if (selection !== undefined) {
-			// The redraw carries the position rather than a second assignment
-			// carrying it. Both halves arriving together is every value
-			// `getEphemeralState` produces, and assigning the scroll beside the
-			// redraw rather than through it is how the published position came to
-			// be discarded on every one of them.
-			this.redraw(scroll);
+			// The redraw carries both positions rather than a second assignment
+			// carrying them. Both arriving together is every value
+			// `getEphemeralState` produces, and assigning them beside the redraw
+			// rather than through it is how the published position came to be
+			// discarded on every one of them. Either missing defaults to the top
+			// of its own region, which is where a redraw with nothing to say about
+			// it belongs.
+			this.redraw({ outline: outline ?? 0, panel: panel ?? 0 });
 			return;
 		}
 		// A position on its own changes nothing about what is drawn, so it is not
 		// worth a teardown: a rebuild here would throw away a half-typed field to
 		// move the scrollbar.
-		if (scroll !== undefined) this.contentEl.scrollTop = scroll;
+		if (outline !== undefined) {
+			const el = this.root.querySelector(OUTLINE_SELECTOR);
+			if (el) el.scrollTop = outline;
+		}
+		if (panel !== undefined) {
+			const el = this.root.querySelector(PANEL_SELECTOR);
+			if (el) el.scrollTop = panel;
+		}
 	}
 }
 
