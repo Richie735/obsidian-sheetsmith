@@ -183,6 +183,67 @@ describe('parseLayout: modifier definitions', () => {
 	});
 });
 
+describe('parseLayout: promoted fields', () => {
+	const withPromoted = (promotedFields: unknown) =>
+		JSON.stringify({ name: 'L', promotedFields, components: [] });
+
+	it('keeps every row through a round trip, in order', () => {
+		const layout = parseLayout(
+			withPromoted([
+				{ name: 'level', property: 'level' },
+				{ name: 'hp.max', property: 'hp_max' },
+			]),
+		);
+		expect(layout.promotedFields).toEqual([
+			{ name: 'level', property: 'level' },
+			{ name: 'hp.max', property: 'hp_max' },
+		]);
+		expect(parseLayout(serialiseLayout(layout))).toEqual(layout);
+	});
+
+	it('leaves the key absent where the layout declares none', () => {
+		// `parse/layout.ts`'s recorded trap, a fifth time — and here it is also
+		// the off-by-default promise: a layout with no key does no frontmatter
+		// work at all, so it must not grow one on first save.
+		const layout = parseLayout(JSON.stringify({ name: 'L', components: [] }));
+		expect('promotedFields' in layout).toBe(false);
+		expect(serialiseLayout(layout)).not.toContain('promotedFields');
+	});
+
+	it('refuses a key that is not an array of objects', () => {
+		// `modifiers`' own terms: the shape refuses the file, because a row that
+		// is not an object has no `name` or `property` to read off.
+		expect(() => parseLayout(withPromoted('level'))).toThrow(LayoutParseError);
+		expect(() => parseLayout(withPromoted(['level']))).toThrow(LayoutParseError);
+		expect(() => parseLayout(withPromoted([1]))).toThrow(LayoutParseError);
+		expect(() => parseLayout(withPromoted([null]))).toThrow(LayoutParseError);
+		expect(() => parseLayout(withPromoted([[]]))).toThrow(LayoutParseError);
+		expect(() => parseLayout(withPromoted({}))).toThrow(LayoutParseError);
+	});
+
+	it('names the key and the shape in the refusal', () => {
+		expect(() => parseLayout(withPromoted('level'))).toThrow(
+			'"promotedFields" must be an array of objects, one promoted field per entry.',
+		);
+	});
+
+	it('accepts rows it will later report as unusable', () => {
+		// Contents are the editor's business: a row with no property and one
+		// pointing at a name the layout does not publish both survive the parse.
+		const layout = parseLayout(
+			withPromoted([{ name: 'level' }, { name: 'gone', property: 'gone' }]),
+		);
+		expect(layout.promotedFields).toHaveLength(2);
+	});
+
+	it('preserves a member this version does not understand', () => {
+		const layout = parseLayout(
+			withPromoted([{ name: 'level', property: 'level', format: 'roman' }]),
+		);
+		expect(serialiseLayout(layout)).toContain('"format": "roman"');
+	});
+});
+
 describe('parseLayout: reset bindings', () => {
 	const withReset = (reset: unknown) =>
 		JSON.stringify({

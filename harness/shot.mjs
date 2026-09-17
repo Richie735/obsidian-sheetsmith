@@ -1153,11 +1153,23 @@ const DEFAULTS = [
 		 * row plus a six-control detail line over two lines, and **the problem
 		 * report under them is the whole point of the view** — it is the only thing
 		 * explaining why one `Changes` select shows a bare `passive_perception`
-		 * where the other nine show reader-facing labels. Measured at 2941; 3000
-		 * clears it with a small margin rather than cutting `10 modifiers defined.`
-		 * the way 2600 now does.
+		 * where the other nine show reader-facing labels.
+		 *
+		 * **Raised again for the Promoted fields list, and the re-measurement found
+		 * the old number already stale.** Measured as the panel's own bottom in
+		 * page coordinates, which is the quantity a frame has to clear: 3206
+		 * *without* that list, against the 2941 recorded here — so 3000 had been
+		 * cropping the report this view exists to show, for some earlier growth
+		 * nobody re-measured. With the list it is 3484: a header, a six-sentence
+		 * description, four rows, one problem and a count. 3550 clears it with the
+		 * same small margin.
+		 *
+		 * Worth recording because it is exactly what this comment's instruction is
+		 * for. A frame that is too short crops the bottom of the panel, which looks
+		 * identical to a panel that ends there — so the number goes stale silently
+		 * and the only way to notice is to measure rather than to look.
 		 */
-		size: '1400,3000',
+		size: '1400,3550',
 	},
 	{
 		/*
@@ -1178,7 +1190,7 @@ const DEFAULTS = [
 		// page and reflows nothing, so the two frames move together whenever the
 		// panel's content does — as they did not for a while, which is why this one
 		// used to carry the finding the other view's frame was too short to show.
-		size: '1400,3000',
+		size: '1400,3550',
 		flags: ['--force-high-contrast'],
 	},
 	{
@@ -1209,11 +1221,14 @@ const DEFAULTS = [
 		 */
 		name: 'editor-layout-threshold',
 		query: 'surface=editor&theme=light&open=::sheet::',
-		// Measured at 2975, close to `editor-layout`'s own 2941: the forced break
-		// makes every detail line two rows regardless of width, so the panel is
-		// only slightly taller narrow than wide rather than a different shape.
-		// 3000 clears both with the same small margin.
-		size: '1210,3000',
+		// Re-measured the same way as `editor-layout`, the panel's bottom in page
+		// coordinates: 3530 here against its 3484, where before the Promoted
+		// fields list the pair was 3253 against 3206. The relationship holds —
+		// the forced break makes every detail line two rows regardless of width,
+		// and the new list is a two-field row that does not wrap either — so the
+		// panel is only slightly taller narrow than wide rather than a different
+		// shape. 3600 clears both with the same small margin.
+		size: '1210,3600',
 	},
 	{
 		// The narrowest split there is, bounded. 1210 of window is 1184 of pane —

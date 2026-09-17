@@ -31,6 +31,12 @@ import {
 	withLayoutName,
 } from '../parse/character';
 import {
+	applyPromotedFields,
+	parsePromotedFields,
+	PromotedFieldRefusal,
+} from '../parse/promoted-fields';
+import { modifierTargetSource } from '../formula/modifier-targets';
+import {
 	FormulaEnv,
 	makeFieldExplainer,
 	makeFieldResolver,
@@ -103,6 +109,25 @@ function warn(heading: string, items: readonly string[]): void {
 			});
 		}),
 	);
+}
+
+/**
+ * What the sheet says about a promoted property it could not write (SPEC §9).
+ *
+ * **The only thing the sheet ever says about a promoted field**, and it goes
+ * through the channel this view already has for a write that did not land — the
+ * `Notice` `applyEdits` fires when a section could not be saved. `docs/UI.md`
+ * §10 wants failure in place and there is no place: a promoted property belongs
+ * to the layout rather than to a component, so no card is the right one to draw
+ * it on, and every card renders exactly as it would have.
+ *
+ * Outside the class because it reads no view state, which is what lets it be
+ * driven directly — the same reason `resetSummary` above is a function.
+ */
+export function promotedFieldMessage(refusal: PromotedFieldRefusal): string {
+	return refusal.property === undefined
+		? `Sheetsmith could not write this note's promoted properties: ${refusal.reason}`
+		: `Sheetsmith could not write the property "${refusal.property}": ${refusal.reason}`;
 }
 
 /** A component read for this render, with whatever its section gave up. */
@@ -232,6 +257,28 @@ export class SheetView extends TextFileView {
 	 * (`docs/features/picture-fit-and-suggest.md`).
 	 */
 	private fileSuggests: FileSuggest[] = [];
+	/**
+	 * What the note is expected to hold when the offered undo is pressed.
+	 *
+	 * A box rather than the string `offerUndo` used to close over, because the
+	 * text a trigger leaves is **not** the text the note ends up holding: the
+	 * reset's own render writes the promoted properties the reset moved (SPEC §9),
+	 * and it does so a turn later, after `applyTrigger` has already finished
+	 * synchronously. Measured: `applyEdits` → `commit` → `void renderSheet()`
+	 * returns before the render awaits its layout, so the snapshot was always the
+	 * pre-promotion text, `restoreDocument`'s guard always failed, and **Undo**
+	 * answered "this note has changed since the reset" on every layout that
+	 * promotes a value a reset moves — current HP, spell slots — which is this
+	 * feature's own motivating case.
+	 *
+	 * Carried forward by `commit` and only where the plugin is writing its own
+	 * output on top of exactly the text this box holds. A *reader's* edit lands
+	 * through the redrawing branch and never advances it, which is what keeps an
+	 * undo from swallowing an edit made while the offer was standing — and once
+	 * the reader has edited, the box stops matching and stays stale, so the
+	 * refusal happens for the reason it is for.
+	 */
+	private undoExpectation: { text: string } | null = null;
 
 	constructor(leaf: WorkspaceLeaf, plugin: SheetsmithPlugin) {
 		super(leaf);
@@ -323,6 +370,8 @@ export class SheetView extends TextFileView {
 		this.renderId++;
 		this.activeTab.clear();
 		this.openRecords.clear();
+		// An undo offered on the note being left has nothing to restore into.
+		this.undoExpectation = null;
 		// The outgoing note's embeds go with it: a transclusion loaded for the
 		// file just closed has nothing left to be attached to.
 		this.markdown.end();
@@ -640,6 +689,84 @@ export class SheetView extends TextFileView {
 		 * rather than floating over a sheet it has nothing to do with.
 		 */
 		dropDetachedAnchoredPanel();
+
+		// Last, and after everything on screen is final: a promoted property is
+		// derived from the same `env` the cards drew from, so there is nothing
+		// left to compute and nothing on screen it could change.
+		this.writePromotedProperties(run, note, layout, prepared, env);
+	}
+
+	/**
+	 * Mirror this layout's promoted values into the note's frontmatter (SPEC §9).
+	 *
+	 * **At the end of the render, from the same `env` the cards drew from.**
+	 * Picked over the other three cadences a plugin could choose — on edit, on
+	 * save, on close — because it is the only one that covers every way a promoted
+	 * value changes: a value edit, a layout edit (a formula, the function library,
+	 * a modifier definition), a first open after a field was promoted, and a reset
+	 * trigger. What makes it affordable is the change guard: the render already
+	 * holds the note parsed and the sheet resolved, so the added cost on a sheet
+	 * whose values have not moved is one string comparison per promoted field and
+	 * no write at all.
+	 *
+	 * **A layout with no `promotedFields` key does no work**, which is the
+	 * off-by-default promise honoured in the code path and not only in the config.
+	 *
+	 * **It does not re-render**, which is why `commit` is asked not to. The only
+	 * difference between the old text and the new is a frontmatter line no
+	 * component draws, so there is nothing on screen to recompute — and without
+	 * this the write would cost a second full render on every edit that moved a
+	 * promoted value, terminating on the guard rather than by construction.
+	 *
+	 * **The generation is re-checked here rather than only before the paint.**
+	 * Today that is the same answer, because nothing between the check after
+	 * `loadLayout` and this line awaits; it is stated at the *write* so that an
+	 * await introduced anywhere in the render cannot silently leave this one
+	 * statement outliving its own generation. What it guards is the properties-panel
+	 * race: such an edit arrives through `setViewData`, which bumps `renderId`, and
+	 * a write derived from frontmatter that has since changed would put the older
+	 * block back.
+	 */
+	private writePromotedProperties(
+		run: number,
+		note: CharacterNote,
+		layout: Layout,
+		prepared: readonly PreparedComponent[],
+		env: FormulaEnv,
+	): void {
+		if (layout.promotedFields === undefined) return;
+		if (run !== this.renderId) return;
+
+		// The same assembly the layout editor's own picker and report read, so
+		// the two cannot disagree about what this layout publishes
+		// (`formula/modifier-targets.ts`). Every problem this parser reports is
+		// the editor's; reporting one here would be `docs/UI.md` §9's two answers
+		// to one question.
+		const { fields, retired } = parsePromotedFields(
+			layout,
+			prepared.map((entry) =>
+				modifierTargetSource(entry.config, entry.component),
+			),
+		);
+		if (fields.length === 0 && retired.length === 0) return;
+
+		const { note: written, refusals } = applyPromotedFields(
+			note,
+			{ fields, retired },
+			(name) => env.sheet(name),
+		);
+		if (refusals.length > 0) {
+			// At most one per render that attempted a refused write, which is the
+			// cadence the existing save warning already has. A refusal changes
+			// nothing, so it re-fires whenever the value moves again — acceptable,
+			// because the state is rare, user-caused, named, and fixable in one
+			// gesture. One `Notice` rather than `warn`'s list: each refusal is a
+			// whole sentence naming its own property and its own fix, where
+			// `warn`'s items are names read to be counted.
+			new Notice(refusals.map(promotedFieldMessage).join(' '));
+		}
+		if (written === 'unchanged') return;
+		this.commit(serialiseCharacter(written), false);
 	}
 
 	/**
@@ -827,7 +954,11 @@ export class SheetView extends TextFileView {
 		this.applyEdits(edits);
 		// Nothing moved, so there is nothing to offer taking back.
 		if (this.data === before) return;
-		this.offerUndo(name, before, this.data);
+		// A box, because this render's own promoted-field write lands a turn from
+		// now and is part of what the trigger did rather than something the reader
+		// did (see `undoExpectation`).
+		this.undoExpectation = { text: this.data };
+		this.offerUndo(name, before, this.undoExpectation);
 	}
 
 	/**
@@ -836,7 +967,11 @@ export class SheetView extends TextFileView {
 	 * One string swapped for another, which is what the batched write bought:
 	 * no inverse edits to compute, and nothing that can half-succeed.
 	 */
-	private offerUndo(name: string, before: string, after: string): void {
+	private offerUndo(
+		name: string,
+		before: string,
+		after: { text: string },
+	): void {
 		const notice = new Notice('', UNDO_TIMEOUT);
 		notice.messageEl.createSpan({ text: `${name} applied. ` });
 		const undo = notice.messageEl.createEl('a', {
@@ -853,9 +988,14 @@ export class SheetView extends TextFileView {
 	 * Put `previous` back, but only if the note still holds what the trigger
 	 * left. Between the offer and the press the player can edit a field, and a
 	 * restore that swallowed that edit would destroy more than it reverted.
+	 *
+	 * **`expected` is a box rather than a string**, because what the trigger left
+	 * is still arriving when the offer is made: the reset's own render writes the
+	 * promoted properties it moved, a turn later. `undoExpectation` carries the
+	 * argument.
 	 */
-	private restoreDocument(previous: string, expected: string): void {
-		if (this.data !== expected) {
+	private restoreDocument(previous: string, expected: { text: string }): void {
+		if (this.data !== expected.text) {
 			new Notice(
 				'Sheetsmith did not undo: this note has changed since the reset.',
 			);
@@ -884,13 +1024,40 @@ export class SheetView extends TextFileView {
 	 * The redraw is what recomputes every derived display from the fresh data,
 	 * and `renderSheet` captures and restores focus, so tabbing into the next
 	 * input survives it.
+	 *
+	 * **`redraw` is asked for by every caller but one**, and the exception is
+	 * what the parameter exists for rather than a convenience: the promoted-field
+	 * write (SPEC §9) changes one frontmatter line **no component draws**, so
+	 * there is nothing on screen to recompute — and it runs *at the end of a
+	 * render*, so redrawing would cost a second full render on every edit that
+	 * moved a promoted value and would terminate on the change guard rather than
+	 * by construction. Suppressing the redraw is not an optimisation there; it is
+	 * what keeps the write from being recursive.
 	 */
-	private commit(text: string): void {
+	private commit(text: string, redraw = true): void {
 		if (text === this.data) return;
+		/*
+		 * A write the plugin made as its own *output* carries a standing undo's
+		 * expectation forward with it, and the promoted-field write is the only
+		 * one — which is what the suppressed redraw already marks.
+		 *
+		 * **Only where it is writing on top of exactly the text that expectation
+		 * holds**, and that condition is the whole of the rule rather than
+		 * caution. Advancing unconditionally would be worse than the bug it
+		 * fixes: a reader edits a card while the offer stands, that edit lands
+		 * through the redrawing branch and correctly leaves the expectation
+		 * stale, and its own render's promoted write would then advance the box
+		 * onto the reader's text — so **Undo** would be accepted and would
+		 * swallow the edit. Matching first is what keeps a refusal refusing for
+		 * the reason it is for.
+		 */
+		if (!redraw && this.undoExpectation?.text === this.data) {
+			this.undoExpectation.text = text;
+		}
 		this.data = text;
 		this.pendingSave = true;
 		this.requestSave();
-		void this.renderSheet();
+		if (redraw) void this.renderSheet();
 	}
 
 	/** One component's edit, as handed to `applyEdits`. */

@@ -24,6 +24,8 @@ import { AGGREGATE_NAMES } from '../formula/expression';
 import {
 	PublishedEntry,
 	publishedEntries,
+	PublishedSuffix,
+	publishedSuffixes,
 } from '../formula/modifier-targets';
 import { VocabularySource } from '../formula/vocabulary';
 
@@ -91,14 +93,28 @@ function renderGroup(block: HTMLElement, published: PublishedEntry): void {
 	// a `.setting-item-description` to `--font-smaller`, so without this the
 	// string an author opened the panel to read is the smallest type in the pane.
 	copyableName(group, published.name).addClass('sheetsmith-published-key');
-	form(group, '.value', `${published.name}.value`);
-	// SPEC §5: `.left` is published only by an entry that has a ceiling to count
-	// against, which is the entry itself saying so.
-	if (published.entry.left !== undefined) {
-		form(group, '.left', `${published.name}.left`);
+	// Which suffixes an entry answers to is `publishedSuffixes`' question — SPEC
+	// §5's rule that `.left` is published only by an entry with a ceiling to
+	// count against, said in one place rather than in each of its four readers
+	// (`formula/modifier-targets.ts`). The chip's own text stays here.
+	for (const suffix of publishedSuffixes(published.entry)) {
+		form(group, FORM_CHIPS[suffix], `${published.name}.${suffix}`);
 	}
 	form(group, 'mod.', `mod.${published.name}`);
 }
+
+/**
+ * What each suffix shows as a chip, against the name it copies.
+ *
+ * A `Record` over the suffix union, so a third suffix does not compile until it
+ * has a chip here. The chips are dotted because a form shows only the part it
+ * adds to the name above it; the suggester's own words for the same two
+ * suffixes are sentences, which is why only the set is shared.
+ */
+const FORM_CHIPS: Record<PublishedSuffix, string> = {
+	value: '.value',
+	left: '.left',
+};
 
 function form(group: HTMLElement, shown: string, full: string): void {
 	// The class goes on afterwards rather than through the helper: what it

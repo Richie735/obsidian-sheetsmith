@@ -28,6 +28,8 @@ import {
 	modifierTargetSource,
 	ModifierTargetSource,
 	publishedEntries,
+	PublishedSuffix,
+	publishedSuffixes,
 } from './modifier-targets';
 import { Completion } from './completion';
 import { ComponentConfig, ComponentDefinition, ScopeEntry } from '../types';
@@ -300,20 +302,31 @@ function members(
 }
 
 /**
- * The two suffixes an entry may answer to.
+ * What each suffix is called in the popup, against the name a formula writes.
  *
- * `value` wherever there is an entry at all, because every entry stores one;
- * `left` only where the entry sets it, which is SPEC §5's rule that `.left` is
- * published only by an entry that has a ceiling to count against.
+ * A `Record` over the suffix union rather than a pair of literals, so a third
+ * suffix does not compile until it has a word here — and the *words* stay this
+ * surface's, where the *set* is `publishedSuffixes`'.
+ */
+const FORM_NOTES: Record<PublishedSuffix, string> = {
+	value: 'Stored value',
+	left: 'Remaining',
+};
+
+/**
+ * The suffixes an entry answers to, as candidates.
+ *
+ * Which suffixes those are is `publishedSuffixes`' question — the fourth site of
+ * that policy is what moved it there (`formula/modifier-targets.ts`).
  */
 function forms(
 	entry: ScopeEntry | undefined,
 	candidate: (name: string, note: string) => Candidate,
 ): Candidate[] {
 	if (entry === undefined) return [];
-	const found = [candidate('value', 'Stored value')];
-	if (entry.left !== undefined) found.push(candidate('left', 'Remaining'));
-	return found;
+	return publishedSuffixes(entry).map((suffix) =>
+		candidate(suffix, FORM_NOTES[suffix]),
+	);
 }
 
 /**

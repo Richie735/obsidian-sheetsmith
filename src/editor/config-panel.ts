@@ -111,6 +111,7 @@ import {
 	renderRowsEditor,
 } from './list-fields';
 import { renderModifierDefinitions } from './modifier-definitions-field';
+import { renderPromotedFields } from './promoted-fields-field';
 import {
 	commitModifierTypes,
 	ModifierTypesField,
@@ -390,11 +391,42 @@ export class ConfigPanel {
 		// data" decision is taken and argued — a published name is a property of
 		// the configuration, so this needs no character in hand, and neither does
 		// the sheet, which reaches the same answer through the same function.
+		/*
+		 * Assembled once for both fields below, which saves the *expensive* walk:
+		 * `modifierSources` asks the registry per component and calls
+		 * `scopeValues` and `formulaTexts` on each, and two lists wanting it
+		 * would do all of that twice per render of this panel.
+		 *
+		 * **It buys no correctness, and this comment claimed it did.** It is a
+		 * pure function of one `layout`, so two calls could not have disagreed —
+		 * unlike the sheet-versus-editor divergence `modifier-targets.ts`'s own
+		 * header records, which was two *different* derivations.
+		 *
+		 * And it is not the last walk over the result: `renderPromotedFields`
+		 * maps these sources to the picker's options and `parsePromotedFields`
+		 * maps them again for its membership set. That pair is a map over
+		 * already-built sources rather than over components — no registry lookup
+		 * and no `scopeValues` — so it is left alone rather than threaded
+		 * through, which would couple the picker's list to the parser's signature
+		 * for the sake of one pass over a handful of entries.
+		 */
+		const sources = this.modifierSources(layout);
 		renderModifierDefinitions(form, layout, {
 			persist: () => this.host.persist(),
 			redraw: () => this.host.redraw(),
 			list: this.host.listContext(),
-			sources: this.modifierSources(layout),
+			sources,
+		});
+		// Last, because it reads *from* everything above it: a promoted value may
+		// be a formula calling the library and may be a number a modifier changed,
+		// so the reader meets what a value is made of before they meet where it is
+		// copied to. Through the same assembly, which is also the sheet's — the
+		// picker and the write cannot disagree about what this layout publishes.
+		renderPromotedFields(form, layout, {
+			persist: () => this.host.persist(),
+			redraw: () => this.host.redraw(),
+			list: this.host.listContext(),
+			sources,
 		});
 	}
 

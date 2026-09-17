@@ -136,6 +136,34 @@ export function harnessLayout(samples: readonly Sample[] = SAMPLES): Layout {
 				bonusType: 'item',
 			},
 		],
+		/*
+		 * The values this layout copies into a character's frontmatter (SPEC §9).
+		 *
+		 * Four, one per state the **Promoted fields** list has to be looked at in,
+		 * because none of them is visible in code (UI.md §11):
+		 *
+		 * - **a bare name**, which is the derived reading a card shows;
+		 * - **a `.value` form**, so a label carrying a suffix is on screen at the
+		 *   width the picker actually gets — `Abilities · STR · stored` is the
+		 *   longest thing this control ever holds, and the clipped-value `title`
+		 *   is the only recovery it has;
+		 * - **a table's column total**, so a published name that is not a card's
+		 *   is in the list;
+		 * - **a row pointed at a name this layout does not publish**, which is the
+		 *   one row here to be *marked* rather than to work: the field carries the
+		 *   parser's own clause and the report under the list says it in full, and
+		 *   both are on screen together.
+		 *
+		 * It has no effect on the sheet side of the harness, which writes no note
+		 * — `docs/BACKLOG.md` § UI already records that the harness sheet has no
+		 * note to write into — so what this state is for is the editor's own pane.
+		 */
+		promotedFields: [
+			{ name: 'armour_class', property: 'ac' },
+			{ name: 'abilities.STR.value', property: 'strength' },
+			{ name: 'inventory.Weight', property: 'carried' },
+			{ name: 'armor_class', property: 'ac_old' },
+		],
 	};
 }
 

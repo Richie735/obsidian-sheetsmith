@@ -4,6 +4,7 @@ import './obsidian-stub';
 import {
 	AbstractInputSuggest,
 	App,
+	Notice,
 	PluginSettingTab,
 	Setting,
 	SettingDefinition,
@@ -415,10 +416,13 @@ describe('the metadata cache double', () => {
 		 * The double's own boundary, asserted so it reads as a limit rather
 		 * than as a claim: this models `extractLayoutName` — trim, strip one
 		 * pair of quotes — and real YAML would hand back the number 12 and
-		 * the boolean false. `isPlainLayoutValue` lets the plugin write both
-		 * unquoted, so the two readers genuinely can disagree here and no
-		 * test in this repository can catch it (`docs/BACKLOG.md` §
-		 * Patterns). Every caller is written to be correct either way.
+		 * the boolean false.
+		 *
+		 * **The plugin's own writer can no longer produce either line**, since
+		 * `parse/frontmatter.ts`'s `isPlainScalar` quotes a number spelling and
+		 * a boolean word. So what this models is a *hand-edited* note, which is
+		 * the one way the disagreement is still reachable, and every caller is
+		 * written to be correct either way.
 		 */
 		const app = new App();
 		const file = await app.vault.create(
@@ -1069,5 +1073,88 @@ describe('the text file view double', () => {
 		await view.onUnloadFile(file);
 
 		expect(await app.vault.read(file)).toBe('first');
+	});
+});
+
+/*
+ * `Notice`, whose members are the double's answer to two different questions.
+ *
+ * Driven here because the *second* question went unmodelled and cost a shipped
+ * defect: `messageEl` and `hide` did not exist, so `view/sheet-view.ts`'s
+ * `offerUndo` threw the moment a test reached it, the whole undo gesture was
+ * undrivable, and the ordering bug in it went green through every gate
+ * (`docs/BACKLOG.md` § Patterns). A member that is declared and not honoured
+ * fails silently; a member that is *absent* fails loudly and then gets routed
+ * around, which is worse.
+ */
+describe('Notice', () => {
+	beforeEach(() => {
+		Notice.messages = [];
+		Notice.instances = [];
+	});
+
+	it('records a string message, which is what almost every case asks', () => {
+		new Notice('Undone.');
+		expect(Notice.messages).toEqual(['Undone.']);
+	});
+
+	it('records a fragment as an empty string rather than as an object', () => {
+		// `warn()` builds a `DocumentFragment`, which has no string form. The
+		// empty string is honest about that; pushing the object would put a value
+		// in `messages` that no assertion in this repository compares against.
+		new Notice(document.createDocumentFragment());
+		expect(Notice.messages).toEqual(['']);
+	});
+
+	it('hands out an element a notice’s own controls can be built into', () => {
+		// The undo is a link rather than a sentence, so what a test presses is in
+		// here and nothing about it is in `messages`.
+		const notice = new Notice('');
+		notice.messageEl.createEl('a', { text: 'Undo' });
+		expect(notice.messageEl.querySelector('a')?.textContent).toBe('Undo');
+	});
+
+	it('records every instance in order, beside the messages', () => {
+		// Sentence case on two throwaway fixtures, because
+		// `obsidianmd/ui/sentence-case` reads any string handed to `Notice` as
+		// user-facing copy and cannot tell a fixture from one — and it is right
+		// not to try. This case asserts ordering and identity, so the text is
+		// free.
+		new Notice('First');
+		const second = new Notice('Second');
+		expect(Notice.instances).toHaveLength(2);
+		expect(Notice.instances.at(-1)).toBe(second);
+	});
+
+	it('reports having been hidden, which is what pressing the link does', () => {
+		const notice = new Notice('');
+		expect(notice.hidden).toBe(false);
+		notice.hide();
+		expect(notice.hidden).toBe(true);
+	});
+
+	it('costs no DOM to construct, which a node-environment test needs', () => {
+		/*
+		 * `messageEl` was a field initialiser calling `document.createElement`,
+		 * so `new Notice('x')` threw `ReferenceError: document is not defined`
+		 * in every node-environment file — and the message named neither the
+		 * notice nor the environment. Asserted here in a happy-dom file, where
+		 * it cannot fail; what holds the real claim is that the element is built
+		 * on read, one line below.
+		 */
+		const notice = new Notice('Undone.');
+		expect(
+			Object.prototype.hasOwnProperty.call(notice, 'messageEl'),
+		).toBe(false);
+		expect(notice.messageEl).toBeInstanceOf(HTMLElement);
+		// And the same element every time, so a caller can build into it and
+		// then read what it built.
+		expect(notice.messageEl).toBe(notice.messageEl);
+	});
+
+	it('accepts a timeout and ignores it', () => {
+		// Faithful for what a test can see: the app's own timer removes an element
+		// this double never attaches, so there is nothing for a timer to observe.
+		expect(() => new Notice('', 12000)).not.toThrow();
 	});
 });

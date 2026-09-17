@@ -418,8 +418,62 @@ export function setIcon(el: HTMLElement, icon: string): void {
 
 export class Notice {
 	static messages: string[] = [];
-	constructor(message: string) {
-		Notice.messages.push(message);
+	/**
+	 * Every notice raised, in order, beside the messages.
+	 *
+	 * `messages` answers "what was the reader told", which is what almost every
+	 * case wants. This answers "which notice", and exists for the one notice that
+	 * is a control rather than a sentence: a test pressing the reset's **Undo**
+	 * has to reach the element the link was built into, and the string says
+	 * nothing about it. Reset by the same `beforeEach` that resets `messages`;
+	 * a case that leaves it standing only leaks a detached div.
+	 */
+	static instances: Notice[] = [];
+	/** Built on first read. See `messageEl`. */
+	private element: HTMLElement | null = null;
+	/**
+	 * The element the notice's own content goes in.
+	 *
+	 * Modelled because one notice in this plugin is a *control* rather than a
+	 * sentence: the reset trigger's undo builds a span and an `<a>` into it
+	 * (`view/sheet-view.ts`'s `offerUndo`), and until this existed any test that
+	 * reached that line threw on an undefined property — so the whole undo
+	 * gesture was undrivable and a real defect in it shipped.
+	 *
+	 * **A getter, because a field initialiser made `new Notice(...)` require a
+	 * DOM.** `document.createElement` in the initialiser threw
+	 * `ReferenceError: document is not defined` in every node-environment file —
+	 * `reset-flow.test.ts`, `worked-examples.test.ts`, `contract.test.ts` — and
+	 * the message named neither the notice nor the environment. `PATTERNS.md`
+	 * §2's recorded trap one step over: the question is not what a layer needs
+	 * in order to be *imported* but what it needs in order to be
+	 * *constructed*, and a notice that is only a string in a node test has to
+	 * cost nothing. Reading this still wants a DOM, which is honest — a caller
+	 * reading it is asking for an element.
+	 *
+	 * Detached, which is the one thing about it that is *not* the app: Obsidian
+	 * appends the notice to a container on `document.body`. Detached is enough
+	 * for everything a test can ask — the markup, the listeners, and pressing
+	 * the link — and attaching it would put a live element on the body that no
+	 * `hide` in a failing case ever takes down.
+	 */
+	get messageEl(): HTMLElement {
+		this.element ??= document.createElement('div');
+		return this.element;
+	}
+	/** Whether `hide()` has been called, which is what a press of the link does. */
+	hidden = false;
+	/**
+	 * `timeout` is accepted and ignored, which is faithful for what a test can
+	 * see: the app's own timer removes the element, and nothing here observes an
+	 * element that was never attached.
+	 */
+	constructor(message: string | DocumentFragment, _timeout?: number) {
+		Notice.messages.push(typeof message === 'string' ? message : '');
+		Notice.instances.push(this);
+	}
+	hide(): void {
+		this.hidden = true;
 	}
 }
 
@@ -1590,16 +1644,21 @@ const FRONTMATTER_LINE = /^([^:]+):[ \t]*(.*)$/;
  * **What this deliberately cannot show.** A value is never coerced past a
  * trimmed string and one layer of surrounding quotes, which is
  * `parse/character.ts`'s own `extractLayoutName` rule — so this models the
- * *plugin's* reader, not the app's. `isPlainLayoutValue` exists precisely
- * because those two have to agree about one line, and a double that
- * implements the second as a copy of the first can never fail when they
- * disagree: real YAML gives a typed scalar back for `sheet-layout: 12`,
- * `: No` or `: null`, all three of which this plugin writes unquoted and this
- * double answers as the strings `'12'`, `'No'` and `'null'`. Nothing here is
- * a claim that Obsidian agrees. Every caller is therefore written to be
- * correct either way — `component-rename-migration.ts` treats a non-string as
- * undecidable and lets the note's own text settle it — and the missing probe
- * is `docs/BACKLOG.md` § Patterns, where the typed-scalar case is named.
+ * *plugin's* reader, not the app's. `parse/frontmatter.ts`'s `isPlainScalar`
+ * exists precisely because those two have to agree about one line, and a double
+ * that implements the second as a copy of the first can never fail when they
+ * disagree: real YAML gives a typed scalar back for `sheet-layout: 12`, `: No`
+ * or `: null`, and this double answers all three as the strings `'12'`, `'No'`
+ * and `'null'`. Nothing here is a claim that Obsidian agrees.
+ *
+ * **The plugin no longer writes any of those three unquoted**, which is what
+ * closed the backlog row this paragraph used to end on: the predicate quotes
+ * what a bool or a number resolver would take, so a note this plugin wrote
+ * cannot reach the disagreement. What a *hand-edited* note can, and every caller
+ * is still written to be correct either way —
+ * `component-rename-migration.ts` treats a non-string as undecidable and lets
+ * the note's own text settle it. The wider missing probe, which would hold every
+ * comment here about the app to the app, is `docs/BACKLOG.md` § Patterns.
  */
 export class MetadataCache {
 	constructor(private readonly vault: Vault) {}

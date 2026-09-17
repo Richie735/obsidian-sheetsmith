@@ -14,6 +14,7 @@ import {
 	GRID_POSITION_KEYS,
 	GridPosition,
 	ModifierDefinition,
+	PromotedField,
 	ResetBinding,
 } from '../types';
 
@@ -107,8 +108,27 @@ export interface Layout {
 	 */
 	modifiers?: ModifierDefinition[];
 	/**
-	 * Top-level keys this version does not understand (promoted fields) are
-	 * preserved verbatim, so editing a layout never strips them from the file.
+	 * The values this layout copies into each character's frontmatter (SPEC §9),
+	 * each under a property its author names. Absent where nothing is promoted,
+	 * which is the off-by-default promise: a layout with no key here causes no
+	 * frontmatter read and no write at all.
+	 *
+	 * Held as written, on `modifiers`' own terms and as the fifth key on them:
+	 * whether `promotedFields` is an array of objects is the file format's
+	 * business and refuses the layout below, while what each row *says* — no
+	 * value, no property, a property twice, a value this layout does not publish
+	 * — is contents, reported in the editor with every sheet on the layout still
+	 * rendering (`parse/promoted-fields.ts`).
+	 *
+	 * Safer than `modifiers` in the one direction that matters: nothing a
+	 * character note *stores* names a promoted field, so a row edited or dropped
+	 * cannot orphan character data. What it can do is stop a property being
+	 * written, which the field's own description says out loud.
+	 */
+	promotedFields?: PromotedField[];
+	/**
+	 * Top-level keys this version does not understand are preserved verbatim, so
+	 * editing a layout never strips them from the file.
 	 */
 	[key: string]: unknown;
 }
@@ -502,6 +522,29 @@ export function parseLayout(source: string): Layout {
 		);
 	}
 
+	/*
+	 * The fifth key on exactly `modifiers`' terms (SPEC §9): a `promotedFields`
+	 * that is not an array of objects has no `name` or `property` to read off,
+	 * so the file refuses here, while what each row says is reported in the
+	 * editor. This key was already round-tripping through the index signature
+	 * above — whose own comment named promoted fields as the case it was written
+	 * for — so a hand-written list survived before this check existed; what is
+	 * added is the type and the shape.
+	 */
+	const promotedFields = raw.promotedFields;
+	if (
+		promotedFields !== undefined &&
+		(!Array.isArray(promotedFields) ||
+			promotedFields.some(
+				(entry) =>
+					typeof entry !== 'object' || entry === null || Array.isArray(entry),
+			))
+	) {
+		throw new LayoutParseError(
+			'"promotedFields" must be an array of objects, one promoted field per entry.',
+		);
+	}
+
 	const components = raw.components.map((component, index) =>
 		parseComponent(component, index),
 	);
@@ -579,6 +622,9 @@ export function parseLayout(source: string): Layout {
 			: {}),
 		...(modifiers !== undefined
 			? { modifiers: modifiers as ModifierDefinition[] }
+			: {}),
+		...(promotedFields !== undefined
+			? { promotedFields: promotedFields as PromotedField[] }
 			: {}),
 		components,
 	};

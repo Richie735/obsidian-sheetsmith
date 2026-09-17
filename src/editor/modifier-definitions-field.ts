@@ -44,6 +44,11 @@
  * holds — along with the fifth import, `setOptional`, which is not geometry but the
  * file-format rule that an empty field means an absent key.
  *
+ * **`titleChosen` left this file when its second consumer arrived**, and is now
+ * `editor/select-title.ts`: the promoted-field list's own **Value** picker needs
+ * the same rule about a clipped `<select>`, and a policy shared by two is
+ * `PATTERNS.md` §1's one-step tier. Nothing about the five selects here changed.
+ *
  * **It has its own test file**, under the rule §11 settled while this was written:
  * a module here with its own entry point *and* its own reportable output earns
  * one, where the five fixtures reached only by pressing something the editor drew
@@ -73,6 +78,7 @@ import { parseModifierDefinitions } from '../parse/modifier-definitions';
 import { parseModifierTypes } from '../parse/modifier-types';
 import { reasonMessage } from './field-reason';
 import { showFieldError } from './field-error';
+import { titleChosen } from './select-title';
 
 /** A definition as the editor handles one: every member free to be absent. */
 type DefinitionEntry = Partial<ModifierDefinition> & Record<string, unknown>;
@@ -92,29 +98,6 @@ const OPERATOR_LABELS: Record<ModifierOperator, string> = {
 	add: 'Adds to',
 	override: 'Sets',
 };
-
-/**
- * The chosen option's own words, in a `title`, because a `<select>` clips its
- * face with no mark and no recovery.
- *
- * `docs/UI.md` §12's clipped-value row names `text-overflow: ellipsis` plus the
- * full value in `title` as the answer for a control whose text is cut, and a
- * select is the case where the second half is not optional: `ui/truncation.ts`
- * reads `textContent`, which is empty on a form control, and a select's
- * `scrollWidth` equals its `clientWidth` however long the chosen option is — so
- * nothing on the page can detect the cut, let alone reveal it on hover. **The
- * ellipsis says the value continues and the title is the only thing that says
- * what it continues into.**
- *
- * Supplementary rather than a name, so §6's rule holds: each of these already
- * carries an `aria-label` naming the field, and the title adds the value to it
- * rather than replacing it.
- */
-function titleChosen(select: HTMLSelectElement): void {
-	const chosen = select.options[select.selectedIndex]?.text ?? '';
-	if (chosen === '') select.removeAttribute('title');
-	else select.title = chosen;
-}
 
 /** What the field needs back from the editor when something is committed. */
 export interface ModifierDefinitionsContext {
