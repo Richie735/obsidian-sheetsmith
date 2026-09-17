@@ -1590,16 +1590,21 @@ const FRONTMATTER_LINE = /^([^:]+):[ \t]*(.*)$/;
  * **What this deliberately cannot show.** A value is never coerced past a
  * trimmed string and one layer of surrounding quotes, which is
  * `parse/character.ts`'s own `extractLayoutName` rule — so this models the
- * *plugin's* reader, not the app's. `isPlainLayoutValue` exists precisely
- * because those two have to agree about one line, and a double that
- * implements the second as a copy of the first can never fail when they
- * disagree: real YAML gives a typed scalar back for `sheet-layout: 12`,
- * `: No` or `: null`, all three of which this plugin writes unquoted and this
- * double answers as the strings `'12'`, `'No'` and `'null'`. Nothing here is
- * a claim that Obsidian agrees. Every caller is therefore written to be
- * correct either way — `component-rename-migration.ts` treats a non-string as
- * undecidable and lets the note's own text settle it — and the missing probe
- * is `docs/BACKLOG.md` § Patterns, where the typed-scalar case is named.
+ * *plugin's* reader, not the app's. `parse/frontmatter.ts`'s `isPlainScalar`
+ * exists precisely because those two have to agree about one line, and a double
+ * that implements the second as a copy of the first can never fail when they
+ * disagree: real YAML gives a typed scalar back for `sheet-layout: 12`, `: No`
+ * or `: null`, and this double answers all three as the strings `'12'`, `'No'`
+ * and `'null'`. Nothing here is a claim that Obsidian agrees.
+ *
+ * **The plugin no longer writes any of those three unquoted**, which is what
+ * closed the backlog row this paragraph used to end on: the predicate quotes
+ * what a bool or a number resolver would take, so a note this plugin wrote
+ * cannot reach the disagreement. What a *hand-edited* note can, and every caller
+ * is still written to be correct either way —
+ * `component-rename-migration.ts` treats a non-string as undecidable and lets
+ * the note's own text settle it. The wider missing probe, which would hold every
+ * comment here about the app to the app, is `docs/BACKLOG.md` § Patterns.
  */
 export class MetadataCache {
 	constructor(private readonly vault: Vault) {}

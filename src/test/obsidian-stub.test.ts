@@ -415,10 +415,13 @@ describe('the metadata cache double', () => {
 		 * The double's own boundary, asserted so it reads as a limit rather
 		 * than as a claim: this models `extractLayoutName` — trim, strip one
 		 * pair of quotes — and real YAML would hand back the number 12 and
-		 * the boolean false. `isPlainLayoutValue` lets the plugin write both
-		 * unquoted, so the two readers genuinely can disagree here and no
-		 * test in this repository can catch it (`docs/BACKLOG.md` §
-		 * Patterns). Every caller is written to be correct either way.
+		 * the boolean false.
+		 *
+		 * **The plugin's own writer can no longer produce either line**, since
+		 * `parse/frontmatter.ts`'s `isPlainScalar` quotes a number spelling and
+		 * a boolean word. So what this models is a *hand-edited* note, which is
+		 * the one way the disagreement is still reachable, and every caller is
+		 * written to be correct either way.
 		 */
 		const app = new App();
 		const file = await app.vault.create(
@@ -1071,3 +1074,4 @@ describe('the text file view double', () => {
 		expect(await app.vault.read(file)).toBe('first');
 	});
 });
+
