@@ -6205,8 +6205,9 @@ a.sheetsmith-undo {
 	display: flex;
 	flex-wrap: wrap;
 	align-items: baseline;
-	column-gap: var(--size-4-2);
-	row-gap: var(--size-2-1);
+	/* Row then column, the same pair spelled long-hand; see
+	   `.sheetsmith-track-set` for why the shorthand. */
+	gap: var(--size-2-1) var(--size-4-2);
 	padding: var(--size-2-2) var(--size-4-1);
 	border-bottom: 1px solid
 		var(--sheetsmith-group-rule, var(--background-modifier-border));
