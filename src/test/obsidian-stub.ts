@@ -418,8 +418,62 @@ export function setIcon(el: HTMLElement, icon: string): void {
 
 export class Notice {
 	static messages: string[] = [];
-	constructor(message: string) {
-		Notice.messages.push(message);
+	/**
+	 * Every notice raised, in order, beside the messages.
+	 *
+	 * `messages` answers "what was the reader told", which is what almost every
+	 * case wants. This answers "which notice", and exists for the one notice that
+	 * is a control rather than a sentence: a test pressing the reset's **Undo**
+	 * has to reach the element the link was built into, and the string says
+	 * nothing about it. Reset by the same `beforeEach` that resets `messages`;
+	 * a case that leaves it standing only leaks a detached div.
+	 */
+	static instances: Notice[] = [];
+	/** Built on first read. See `messageEl`. */
+	private element: HTMLElement | null = null;
+	/**
+	 * The element the notice's own content goes in.
+	 *
+	 * Modelled because one notice in this plugin is a *control* rather than a
+	 * sentence: the reset trigger's undo builds a span and an `<a>` into it
+	 * (`view/sheet-view.ts`'s `offerUndo`), and until this existed any test that
+	 * reached that line threw on an undefined property — so the whole undo
+	 * gesture was undrivable and a real defect in it shipped.
+	 *
+	 * **A getter, because a field initialiser made `new Notice(...)` require a
+	 * DOM.** `document.createElement` in the initialiser threw
+	 * `ReferenceError: document is not defined` in every node-environment file —
+	 * `reset-flow.test.ts`, `worked-examples.test.ts`, `contract.test.ts` — and
+	 * the message named neither the notice nor the environment. `PATTERNS.md`
+	 * §2's recorded trap one step over: the question is not what a layer needs
+	 * in order to be *imported* but what it needs in order to be
+	 * *constructed*, and a notice that is only a string in a node test has to
+	 * cost nothing. Reading this still wants a DOM, which is honest — a caller
+	 * reading it is asking for an element.
+	 *
+	 * Detached, which is the one thing about it that is *not* the app: Obsidian
+	 * appends the notice to a container on `document.body`. Detached is enough
+	 * for everything a test can ask — the markup, the listeners, and pressing
+	 * the link — and attaching it would put a live element on the body that no
+	 * `hide` in a failing case ever takes down.
+	 */
+	get messageEl(): HTMLElement {
+		this.element ??= document.createElement('div');
+		return this.element;
+	}
+	/** Whether `hide()` has been called, which is what a press of the link does. */
+	hidden = false;
+	/**
+	 * `timeout` is accepted and ignored, which is faithful for what a test can
+	 * see: the app's own timer removes the element, and nothing here observes an
+	 * element that was never attached.
+	 */
+	constructor(message: string | DocumentFragment, _timeout?: number) {
+		Notice.messages.push(typeof message === 'string' ? message : '');
+		Notice.instances.push(this);
+	}
+	hide(): void {
+		this.hidden = true;
 	}
 }
 

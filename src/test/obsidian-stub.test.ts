@@ -4,6 +4,7 @@ import './obsidian-stub';
 import {
 	AbstractInputSuggest,
 	App,
+	Notice,
 	PluginSettingTab,
 	Setting,
 	SettingDefinition,
@@ -1075,3 +1076,85 @@ describe('the text file view double', () => {
 	});
 });
 
+/*
+ * `Notice`, whose members are the double's answer to two different questions.
+ *
+ * Driven here because the *second* question went unmodelled and cost a shipped
+ * defect: `messageEl` and `hide` did not exist, so `view/sheet-view.ts`'s
+ * `offerUndo` threw the moment a test reached it, the whole undo gesture was
+ * undrivable, and the ordering bug in it went green through every gate
+ * (`docs/BACKLOG.md` § Patterns). A member that is declared and not honoured
+ * fails silently; a member that is *absent* fails loudly and then gets routed
+ * around, which is worse.
+ */
+describe('Notice', () => {
+	beforeEach(() => {
+		Notice.messages = [];
+		Notice.instances = [];
+	});
+
+	it('records a string message, which is what almost every case asks', () => {
+		new Notice('Undone.');
+		expect(Notice.messages).toEqual(['Undone.']);
+	});
+
+	it('records a fragment as an empty string rather than as an object', () => {
+		// `warn()` builds a `DocumentFragment`, which has no string form. The
+		// empty string is honest about that; pushing the object would put a value
+		// in `messages` that no assertion in this repository compares against.
+		new Notice(document.createDocumentFragment());
+		expect(Notice.messages).toEqual(['']);
+	});
+
+	it('hands out an element a notice’s own controls can be built into', () => {
+		// The undo is a link rather than a sentence, so what a test presses is in
+		// here and nothing about it is in `messages`.
+		const notice = new Notice('');
+		notice.messageEl.createEl('a', { text: 'Undo' });
+		expect(notice.messageEl.querySelector('a')?.textContent).toBe('Undo');
+	});
+
+	it('records every instance in order, beside the messages', () => {
+		// Sentence case on two throwaway fixtures, because
+		// `obsidianmd/ui/sentence-case` reads any string handed to `Notice` as
+		// user-facing copy and cannot tell a fixture from one — and it is right
+		// not to try. This case asserts ordering and identity, so the text is
+		// free.
+		new Notice('First');
+		const second = new Notice('Second');
+		expect(Notice.instances).toHaveLength(2);
+		expect(Notice.instances.at(-1)).toBe(second);
+	});
+
+	it('reports having been hidden, which is what pressing the link does', () => {
+		const notice = new Notice('');
+		expect(notice.hidden).toBe(false);
+		notice.hide();
+		expect(notice.hidden).toBe(true);
+	});
+
+	it('costs no DOM to construct, which a node-environment test needs', () => {
+		/*
+		 * `messageEl` was a field initialiser calling `document.createElement`,
+		 * so `new Notice('x')` threw `ReferenceError: document is not defined`
+		 * in every node-environment file — and the message named neither the
+		 * notice nor the environment. Asserted here in a happy-dom file, where
+		 * it cannot fail; what holds the real claim is that the element is built
+		 * on read, one line below.
+		 */
+		const notice = new Notice('Undone.');
+		expect(
+			Object.prototype.hasOwnProperty.call(notice, 'messageEl'),
+		).toBe(false);
+		expect(notice.messageEl).toBeInstanceOf(HTMLElement);
+		// And the same element every time, so a caller can build into it and
+		// then read what it built.
+		expect(notice.messageEl).toBe(notice.messageEl);
+	});
+
+	it('accepts a timeout and ignores it', () => {
+		// Faithful for what a test can see: the app's own timer removes an element
+		// this double never attaches, so there is nothing for a timer to observe.
+		expect(() => new Notice('', 12000)).not.toThrow();
+	});
+});
