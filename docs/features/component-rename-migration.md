@@ -113,11 +113,12 @@ a layout write that *rejects* rather than one that hangs, asserting no `process`
 call; **12** by an actual close and reopen, for a label and for a key, rather
 than the live path alone.
 
-**20 is the only criterion left unticked.** It is the manual walkthrough, and it
-is blocked on the vault fixture rather than on the code: `Characters/Untouched.md`
-holds an `## AC` section it should not, which changes two of the walkthrough's
-stated `Notice` counts and defeats its modified-time check. The fixture is
-outside this repository and the owner's to correct.
+**20 was the last one ticked, and it needed the fixture corrected first.**
+`Characters/Untouched.md` held an `## AC` section it should not, which changed
+two of the walkthrough's stated `Notice` counts and defeated its modified-time
+check. With that section removed, all six gestures produced the sentences above
+and the three notes ended as written, `Untouched.md` among them with its
+modified time intact.
 
 
 - [x] Renaming a component's `label` and committing rewrites the matching `## ` heading, and nothing else, in every character note whose `sheet-layout` names this layout and that already has a section under the old label.
@@ -139,7 +140,7 @@ outside this repository and the owner's to correct.
 - [x] A sheet open on a note the migration rewrote shows the new text afterwards rather than its own stale copy, and cannot write the old name back over the migration — neither on its next edit nor on close.
 - [x] A debounced save that lands between the migration's write and the reload writes nothing, so the migrated note survives it; verified by driving that interleaving, not by reasoning about it.
 - [x] A sheet that is open but holds no unsaved edit is not written by a rename gesture at all — asserted on the write and not on the file's bytes, since an unconditional flush writes text identical to what the file already holds.
-- [ ] Manually verified in the throwaway test vault (per `AGENTS.md`'s testing policy — this cannot be shown in the harness, which holds no vault and no `metadataCache`): a layout with two or three character notes, one label rename and one key rename, each producing the `Notice` and the expected file contents.
+- [x] Manually verified in the throwaway test vault (per `AGENTS.md`'s testing policy — this cannot be shown in the harness, which holds no vault and no `metadataCache`): a layout with two or three character notes, one label rename and one key rename, each producing the `Notice` and the expected file contents.
 
 ## Vault fixture
 
