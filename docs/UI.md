@@ -157,6 +157,13 @@ A knob is public API once shipped. Renaming it breaks someone's snippet.
 - **Cascade order is load-bearing.** `@container` adds no specificity, so an
   override must sit *below* the rule it overrides. An equal selector placed
   above it simply loses.
+- **A gap is always the `gap` shorthand, never `column-gap`** [judgement]. On a
+  flex or grid box the long-hand is perfectly supported, but caniuse files
+  `column-gap` under multi-column layout, so a browser-support linter reads any
+  such box as using multicol — and Obsidian's plugin directory runs one over
+  every release. Three rules have reached for the long-hand and been rewritten;
+  the shorthand spells the same pair, row then column, at no cost but the
+  obvious word. `row-gap` alone is unaffected and needs no shorthand.
 
 ---
 
