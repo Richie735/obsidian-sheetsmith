@@ -289,7 +289,13 @@ record of it. **A one-consumer sibling arrives with the atomicity argument or it
 not arrive**, which is the sentence a reader of this file alone needs, because
 "shared" would admit the next one with no argument at all.
 
-`table.ts` takes `setIcon`, and that is the one import of its kind. The
+`setIcon` is the one import of its kind, and **four components take it now** —
+`table.ts`, `record-set.ts`, `passport.ts` and `track.ts`. This sentence said
+"`table.ts` takes `setIcon`" while three more had reached for it, which is the
+drift this tier is most prone to: the *rule* is that the allowlist stays one
+name long, and it has, so nothing was violated and nothing reported. A count of
+files is not that rule and goes stale silently; `components/isolation.test.ts`
+holds the name, and no check holds this sentence. The
 argument for it: the plugin's other three delete controls are Obsidian's trash
 icon, drawing an icon touches no vault, and taking the app's icon rather than a
 copy of it is what keeps it following the app's icon set. The cost is real and was

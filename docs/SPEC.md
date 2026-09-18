@@ -388,7 +388,9 @@ The pool publishes its current value under its bare id, its ceiling as `<id>.max
 
 **A row's length may be the layout's or the character's, and `maxSource` says which.** Absent means `calculated`, a row's own formula (or the component's, where it sets none) — the original rule, unchanged. Set to `character`, the length is a number the character types beside the row rather than a name the layout resolves, for a die type, a slot level, or anything else whose count differs per character rather than being computed: one hit die of d10 and four of d6 for one character, eleven of d8 for another, on one layout neither forks. Pool's own two words ported one level in, since a row's length is already a formula field the way a pool's max is, and the same argument: pointing every die type's count at a separate Card still works, and costs a card per die type for a number that belongs on this one. The entry becomes `d10: 1 / 4`, filled marks and the row's own length in one line — `parse/bounded-entry.ts`'s split, a second consumer beside Record set's per-record ceiling, on the identical discipline that a ceiling belongs inside the value it bounds rather than behind a second key.
 
-**A character-owned row is the character's to add and remove, and its own entry is what says whether it currently exists.** No entry at all draws nothing for that row — no name, no field, no run, no "—". Rather than a control per row, a row set draws one **Add** and one **Remove** icon button below the rows it holds, each opening `ui/anchored-panel.ts`'s panel — the same surface the modifier form opens — listing the specific rows that trigger offers, in declared order: **Add**'s panel lists what is not yet added, **Remove**'s lists what is. Picking a row from **Add** writes a blank entry, no confirmation, and focus lands in the new row's own length field. Picking a row from **Remove** arms it in place — tints the line and the row it names, and says what a second pick will do, `interaction/arm-to-confirm.ts`'s own two sentences (`armedName`, `armedPrompt`) reused directly though the module's own gesture function is not, since no control here presses twice on itself — and picking the same row again deletes the whole entry; picking a different row disarms the first and arms the second instead; dismissing the panel while a row is armed stands it down silently, announcing `STOOD_DOWN`. A `full` reset restores an added row with a length to it and **skips**, without failing the rest, both an added row with none and a row not added at all — the same Record set per-record argument, now covering `empty` and `formula` too, since a reset must not *create* a row nobody added. Clearing only the length field is not the same as removing: the first blanks the length and keeps the entry (and any marks); the second deletes the whole entry. Neither the row's name nor its cardinality is the character's — every addable row is one the layout already declares in `rows[]`, so this is not `openRows`: a Track row's name is stable and knowable when a formula is written, unlike an open row's, and publishing is unaffected. `docs/features/track-row-length.md`.
+**A character-owned row is the character's to add and remove, and its own entry is what says whether it currently exists.** No entry at all draws nothing for that row — no name, no field, no run, no "—". Rather than a control per row, a row set draws one **Add** and one **Remove** icon button below the rows it holds, each opening `ui/anchored-panel.ts`'s panel — the same surface the modifier form opens — listing the specific rows that trigger offers, in declared order: **Add**'s panel lists what is not yet added, **Remove**'s lists what is. Picking a row from **Add** writes a blank entry, no confirmation, and focus lands in the new row's own length field. Picking a row from **Remove** arms it in place — tints the line and the row it names, and says what a second pick will do, `interaction/arm-to-confirm.ts`'s own two sentences (`armedName`, `armedPrompt`) reused directly though the module's own gesture function is not, since no control here presses twice on itself — and picking the same row again deletes the whole entry; picking a different row disarms the first and arms the second instead; dismissing the panel while a row is armed stands it down silently, announcing `STOOD_DOWN`. A `full` reset restores an added row with a length to it and **skips**, without failing the rest, both an added row with none and a row not added at all — the same Record set per-record argument, now covering `empty` and `formula` too, since a reset must not *create* a row nobody added. Clearing only the length field is not the same as removing: the first blanks the length and keeps the entry (and any marks); the second deletes the whole entry. Neither the row's name nor its cardinality is the character's — every addable row is one the layout already declares in `rows[]`, so this is not `openRows`, which is the separate toggle below: a *declared* row's name is stable and knowable when a formula is written, unlike the name of a row the character invents, and publishing is unaffected. `docs/features/track-row-length.md`.
+
+**`openRows` lets the character add rows the layout never declared, and identity is the name they type.** A row a character adds is one entry in the section's own fence, keyed by that name — `Longsword: 2 / 4` — and **the mode is implied by the key not being declared**: an entry no declared row spells is the character's, so nothing is written into the note to record who owns a row, and turning the toggle off hides those rows again without deleting one. A fence has no ordinal the format states, which is why the answer is the typed name where `openRows` on a *table* chose position (§13). The length is the character's too, typed into the same `filled / length` composite `maxSource: 'character'` already stores. **It makes the card a row set whether or not `rows[]` holds anything**, so a card with the toggle on and nothing declared publishes no bare id and stores under no `value` key; it is refused beside `levels`, as `rows` is, and refused on a flag card, because every row a character adds is character-owned and a character-owned row can never be the literal one segment that makes a run two states. **A character-added row publishes nothing** — no `<id>.<key>`, no `.left`, and Track gains no `scopeRows` — so it is inert to formulas, which is the accepted cost of a name that resolves only because somebody typed it (§13). It is **not** inert to triggers: `applyReset` walks it beside the declared rows on identical terms. Its name is a field on the card where a declared row's is static text, and that is the whole of how a reader tells who owns a row; renaming rewrites the key token alone and leaves the marks, the length, the spacing and the line's position untouched. Declared rows draw in `rows[]`'s order and the character's in the note's own, which is the only order the file states. **What it costs is the re-cut guarantee**: with the toggle on, the leftover entry of a dropped declared row is drawn as the character's rather than ignored — a row appearing, never a value disappearing, and turning the toggle off is the way back. `docs/features/character-added-track-rows.md`.
 
 **Steps may be named, and `sense` says which end is the bad end.** `levels` names the states from none upwards using a `level` column's syntax, glyph after a colon included, and naming them settles how many there are, so `count` is only for a run whose steps are not worth naming. Named steps are what make a threshold track legible, since exhaustion, panic and corruption are ladders where the number is an index into a rule. `sense` is `progress` or `harm`, because the same run of segments fills toward an achievement in one system and a catastrophe in the next and no property of the data distinguishes them. It changes colour only, never whether a press lands.
 
@@ -1152,3 +1154,61 @@ Resolved: **the promise covers any name a component declares as the address of i
 **What the build found that the question did not anticipate.** The boundary is not "Card and Card set", which is what the question named while the surfaces were still under discussion: it is **every component that stores through the fence** — Card's `key`, a Card set entry's `key`, a Track row's `key`, a Passport's `nameKey` and its fields' keys, a Record set field's `key`, and **Roster's `stats[]`**, which the question did not mention at all. Each had to be checked against the code rather than inferred from a component's name, and the three exclusions that fell out are three *different* reasons, none of them the ones above. **Table** is excluded by storage format: its columns are markdown-table headers, so the fence primitive has nothing to operate on. **Pool** is excluded for having no author-declared key at all — `current`/`temp`/`max` are fixed constants no config field exposes, which is the missing-target reason that excludes an `id`, not a storage reason. And **Roster carries two of its three `key`-shaped fields out of scope on two further grounds**: `columns[].key` is Table's problem restated inside another component, and `rows[].key` is a formula-facing publish name of the same shape as an `id`, sitting one field away from a real fence-addressed key. So a component's name settles nothing here, and the phrase "a declared entry key" has to be read against each field rather than each type.
 
 **Record set is the only component whose section holds one fence per record**, so it is the only place a rename is applied many times within one section, and the only place a note can be part migrated and part refused — which is why the reported outcome carries that case as a clause of its own.
+
+- **What identifies a Track row the character added, what it publishes, and
+  where its length comes from.** Track's rows are entries in a `sheet` fence,
+  so the answer `docs/features/open-rows-for-table.md` gave for a markdown
+  table cannot simply be ported: that feature chose position as a row's
+  identity precisely because position "is not derived from anything the user
+  types", and **a fence has no ordinal the format states**. Its only address is
+  the key, every component over this storage addresses by key and nothing else,
+  and §3.1 invites a hand-editor to re-order the lines.
+
+Resolved: **the character's typed name is the fence key, a character-added row
+publishes nothing, and the character types the length into the composite
+`key: filled / length` that `maxSource: 'character'` already uses.**
+
+**The typed name is the only identity a fence has, and the generated-key
+alternative loses twice.** It puts a column of noise at the front of every line
+of a file whose whole promise is that it stays readable and hand-editable —
+`open-rows-for-table.md`'s own readability argument, sharper here because the
+key is where the name should be — and it needs a second key beside it to hold
+the name, which is the shape `docs/features/per-record-ceiling.md` refused
+under §10: given two keys, `read` cannot tell one of them from a field the
+layout dropped, so the second entry is either claimed or orphaned. The cost is
+that identity by typed name inherits every failure of keying by a name: two
+rows cannot share one, a duplicate key is a whole-section failure in this
+storage, and capitalisation is load-bearing. **The design answers those with
+one rule — the fence is exact everywhere and the input's guard is lenient
+once** — so the plugin never creates a collision and never folds one a
+hand-edit made.
+
+**A character-added row publishes nothing**, consistent with Table and Record
+set, and the accepted cost is that it is inert to formulas. A name that
+resolves only because somebody typed it is the CSB #313 failure class the claim
+rule was written against, and **Track has never gated a row key on `isName`**
+the way Table gates a declared row's publish key, so most typed names would
+publish names no formula can spell — "publishable, sometimes", which
+`open-rows-for-table.md` already judged worse than a refusal that says why.
+Unlike an open Table, Track has **no aggregate escape hatch**: it declares no
+`scopeRows` and gains none here, so nothing at all about a character-added row
+is reachable, rather than the row names being unreachable while a total is not.
+
+**The character types the length**, into the composite `key: filled / length`
+that `maxSource: 'character'` already stores, reusing `splitBounded`,
+`characterLength` and the slash refusal unchanged. **The mode is implied by the
+key not being declared** — no stored flag, no third `maxSource` value — which
+is what makes the toggle reversible with no data loss in either direction.
+
+**What it does not reach.** A character-typed *formula* for the length, which
+would answer the five systems that derive a track's length from another value
+(Vampire V5 health, Shadowrun's condition monitor, Cyberpunk RED humanity,
+Pathfinder 2e's focus pool, Genesys strain) — all five of which a *declared*
+row already answers, `count` being a formula field, and none of which a typed
+number does. That is blocked on this section's own open question about whether
+a character may override a single formula locally without forking the layout,
+and this feature moves it no nearer. **And the scene or party tracker question
+above is not moved either**: a fixed menu of clock lengths was considered and
+not taken, on the ground that a Blades clock, a countdown clock and a momentum
+pool belong to the table rather than to a character
+(`docs/features/character-added-track-rows.md`).
