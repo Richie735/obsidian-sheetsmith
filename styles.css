@@ -3036,12 +3036,23 @@ body {
 
 /* The same answer the value gives, for the same reason: the card's hover
    advertises the target and the field's says which field the press lands in.
-   A pool with a character-owned max has three fields on one card. */
-.sheetsmith-view .sheetsmith-pool-max-input:hover {
+   A pool with a character-owned max has three fields on one card.
+
+   **A second class is on both lists, and the list is the roster** (docs/UI.md
+   §9): a Track row's own name field is the same object one component over — a
+   field with no chrome at rest, sitting inline on a card row beside the length
+   field that already wears these. One focus treatment per component is §6's
+   rule, and a Track card's two fields answering a press with two different
+   rings is exactly what it forbids, so this is one line here rather than a
+   copy of four declarations in the track section below. The names stay each
+   component's own; what is shared is the treatment. */
+.sheetsmith-view .sheetsmith-pool-max-input:hover,
+.sheetsmith-view .sheetsmith-track-row-name-input:hover {
 	background-color: var(--background-modifier-hover);
 }
 
-.sheetsmith-view .sheetsmith-pool-max-input:focus {
+.sheetsmith-view .sheetsmith-pool-max-input:focus,
+.sheetsmith-view .sheetsmith-track-row-name-input:focus {
 	box-shadow: 0 0 0 2px var(--interactive-accent);
 	outline: 2px solid transparent;
 	outline-offset: 0;
@@ -3875,8 +3886,30 @@ a.sheetsmith-undo {
    than sliding into whichever one their own row happens to fill: a
    calculated row draws an empty span, an added character-owned row a real
    field. */
+/* **The run keeps a floor and the name yields to it**, which is the priority
+   this card is about stated in the grid rather than left to whichever column
+   asks first (`docs/UI.md` §4).
+
+   An `auto` name track is sized from its content *before* the run's `1fr` gets
+   anything, so at a 520px container one long character-typed name took 102.8px
+   of a 139px card and left the run **0.58px** — an eight-segment run drawn as a
+   15px vertical stack 138px tall. And because the track is shared, one long
+   name did that to every row on the card, the declared ones included.
+
+   `minmax(0, auto)` is what lets the name give: the track may go below its own
+   content, and the name already clips with an ellipsis and reveals on hover, so
+   what it loses is recoverable. The run's floor is `3.5em`, about three
+   segments — enough that a wrapped run still reads as a run rather than as one
+   segment per line, and small enough that the three tracks together do not
+   overflow a narrow card. Wrapping itself is fine and always was: `marksAtPoint`
+   finds a wrapped run's lines by x resetting.
+
+   Deliberately only on the sets that draw a length column. The plain
+   two-column set has the same shape latent in it with a long *declared* name,
+   but no card has one and changing that grid would move shots this feature has
+   nothing to do with. */
 .sheetsmith-track-lengths.sheetsmith-track-set {
-	grid-template-columns: auto auto minmax(0, 1fr);
+	grid-template-columns: minmax(0, auto) auto minmax(3.5em, 1fr);
 }
 
 /* Pool's ceiling reading and its chrome removal, both reused whole
@@ -3888,6 +3921,141 @@ a.sheetsmith-undo {
    is: Obsidian styles `input[type='text']` at (0,1,1). */
 .sheetsmith-view .sheetsmith-track-row-length-input {
 	font-size: var(--font-ui-small);
+}
+
+/* A row the character named wears the row-name rank as a *field*, in the same
+   column a declared row's static name sits in, so a mixed card's runs stay in
+   one column and the only difference a reader sees is that this name can be
+   typed in (`docs/features/character-added-track-rows.md`).
+
+   The rank is restated rather than inherited from `.sheetsmith-track-row-name`
+   above, and the scope is why: that class is (0,1,0) and Obsidian styles
+   `input[type='text']` at (0,1,1), so a field carrying it alone loses its
+   size, its colour and its box — the defect that drew a Passport's 28px
+   headline at 13px, one component over (docs/UI.md §9). Everything else here
+   is chrome removal, and the hover and the focus ring come from the pool's own
+   pair above.
+
+   Sized in `ch` with `field-sizing` where it exists, which is
+   `.sheetsmith-pool-max-input`'s own answer beside it: a bare input is about
+   twenty characters wide and would set the name column's width against a
+   column whose whole job is to be as narrow as the longest name in it. */
+.sheetsmith-view .sheetsmith-track-row-name-input {
+	width: 8ch;
+	/* **The field has to yield with its track, not just the track.** Letting
+	   the name column shrink (`minmax(0, auto)` above) does nothing on its own:
+	   a grid item with a `min-width` of its own simply overflows the area it
+	   was given, and at a 520px container the name drew straight over its own
+	   length and the first segments of its run. So the floor goes and the cap
+	   is bounded by the area. */
+	min-width: 0;
+	max-width: 100%;
+	height: auto;
+	/* **No horizontal padding, so the two kinds of name share one left edge.**
+	   `0 var(--size-2-1)` staggered them 2px — measured leftmost ink at x=27
+	   for a declared `d6` against x=29 for a typed `Homebrew d4` — which reads
+	   as a ragged column rather than as a signal, and is sharpest in forced
+	   colors where both are at full contrast. It is also §9's own general form,
+	   found one component over: *a field padded like a field cannot read as a
+	   span*, which is what a record's borrowed ceiling had to drop its padding
+	   for. The hover and focus surfaces lose 2px a side with it, and that is
+	   the right trade on a control whose whole job is to sit in a column. */
+	padding: 0;
+	border: none;
+	border-radius: var(--radius-s);
+	background: transparent;
+	box-shadow: none;
+	color: var(--text-faint);
+	font-size: calc(var(--font-ui-smaller) * 0.85);
+	font-weight: inherit;
+	letter-spacing: 0.06em;
+	line-height: inherit;
+	/* **The rank's `text-align: right` has to be undone here, and only here.**
+	   On the span it is inert: a span's box hugs its text, and the set places
+	   every name at the start of its own track, so a declared name is flush
+	   left whatever this property says. On a *field* it is not inert, because
+	   a field has a width of its own — so `Kills`, 23.3px of text inside the
+	   25.7px floor, sat 2.4px right of the column edge while the three longer
+	   names filled theirs and looked correct. Unbounded in the short
+	   direction, too: a two-character name would sit about 12px in.
+
+	   `start` rather than `left` because there is no reason to spell it
+	   physically; the length field beside it says `left` only because that is
+	   Pool's own rule, and the two are the same thing in every locale this
+	   plugin has been looked at in. */
+	text-align: start;
+}
+
+@supports (field-sizing: content) {
+	.sheetsmith-view .sheetsmith-track-row-name-input {
+		width: auto;
+		min-width: 4ch;
+		/* A cap rather than no cap: the name column is shared with the
+		   declared rows' own names and an invented name has no length the
+		   layout knows about, so an uncapped field would let one row's name
+		   set the width of every run on the card. `ch` is the width of a `0`,
+		   which is narrower than an average letter, so this is about fourteen
+		   letters — and past it the name clips and `ui/truncation.ts` reveals
+		   it on hover, which is what every other clipped string here does. */
+		max-width: min(16ch, 100%);
+		field-sizing: content;
+	}
+}
+
+/* A refused rename, under the row it is about.
+
+   **`.sheetsmith-error` specialised rather than a second inline-error class**,
+   which is what `shared.css` says that rule is second in the cascade for: the
+   boxed treatment is right for a component reporting its own configuration and
+   wrong inside a 139px card, where a bordered panel under one row of a set
+   reads as the card having failed rather than as one draft being declined.
+
+   So the box comes off and a **leading** border goes on — `.sheetsmith-field-
+   problem`'s own shape for a message under a field. That is deliberate rather
+   than decorative: the border is this message's second channel, and stripping
+   it outright would leave nothing but colour, which forced-colors mode repaints
+   to the same foreground as the row above it (`docs/UI.md` §6).
+
+   `grid-column: 1 / -1` because the row is a subgrid of three columns and the
+   message belongs to all of them: placed in a column it would sit under the
+   name alone and squeeze whichever track it landed in. */
+.sheetsmith-view .sheetsmith-track-row-problem {
+	grid-column: 1 / -1;
+	padding: 0 0 0 var(--size-2-2);
+	border: none;
+	border-left: 2px solid var(--background-modifier-error);
+	border-radius: 0;
+	font-size: var(--font-ui-smaller);
+	text-align: left;
+}
+
+/* The **Add** form, under whatever declared rows the picker still offers and
+   separated from them by a rule rather than by a box: a form inside a panel is
+   part of the panel, not a second surface floating in one (docs/UI.md §9).
+
+   `.sheetsmith-panel-fields`' own left inset is dropped, because that inset
+   lines a disclosure's fields up under the words of the line it opened from
+   and this form belongs to no line above it. */
+.sheetsmith-panel .sheetsmith-track-add-form {
+	padding-left: var(--size-2-3);
+}
+
+/* The gap is `--size-4-2` and not `--size-2-2`, which is the smaller thing this
+   got wrong first: a panel line is itself a bordered box, so a hairline four
+   pixels under one reads as a second edge of the same frame rather than as a
+   separator — `docs/UI.md` §9's own "one hairline under a container's chrome",
+   which a tab set had to learn by drawing two about 37px apart. Room above it
+   is what makes it a rule between two things instead. */
+.sheetsmith-panel .sheetsmith-panel-line + .sheetsmith-track-add-form {
+	margin-top: var(--size-4-2);
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+/* The fields stretch across the panel and the button does not: a submit as
+   wide as the form reads as a second surface's footer rather than as the last
+   thing in a short form. `.sheetsmith-panel-remove`'s own alignment. */
+.sheetsmith-panel .sheetsmith-track-add-form .sheetsmith-panel-save {
+	align-self: flex-start;
 }
 
 /* The row an armed remove button belongs to, tinted the same way Table's
