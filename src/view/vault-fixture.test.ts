@@ -1596,7 +1596,7 @@ describe('the Track fixture the recipe names', () => {
 		expect(built.layout.name).toBe(TRACKS_LAYOUT_FILE.replace(/\.json$/, ''));
 		expect(built.layout.columns).toBe(6);
 		expect(built.problems).toEqual([]);
-		expect(built.layout.components).toHaveLength(4);
+		expect(built.layout.components).toHaveLength(6);
 		for (const config of built.layout.components) {
 			expect(getComponent(config.type), config.type).toBeDefined();
 		}
@@ -1620,11 +1620,45 @@ describe('the Track fixture the recipe names', () => {
 		const hitDice = trackDataOf('hit_dice');
 		// One d10, four d6 (one already spent), and two die types this
 		// character has not added at all — the exact motivating case, on one
-		// layout neither forks.
+		// layout neither forks. Plus the one row the character invented, which
+		// the layout never declared and which sits after all four.
 		expect(hitDice.values).toEqual({
 			d6: '1 / 4',
 			d10: '0 / 1',
+			'Homebrew d4': '1 / 2',
 		});
+		expect(hitDice.own).toEqual(['Homebrew d4']);
+	});
+
+	it('reads a card with nothing declared as entirely the character\'s', () => {
+		const kills = trackDataOf('kills');
+		expect(kills.values).toEqual({
+			Goblins: '6 / 10',
+			Dragons: '3 / 5',
+		});
+		// In the note's own order, which is the only order the file states.
+		expect(kills.own).toEqual(['Goblins', 'Dragons']);
+		const clocks = trackDataOf('clocks');
+		expect(clocks.own).toEqual(['Rescue the miners']);
+	});
+
+	it('publishes nothing at all for a row the character named', () => {
+		const scope = built.env.sheet;
+		// Inert to formulas, under every spelling and both suffixes — the
+		// accepted cost of identity by typed name, and the reason a value
+		// another card reads belongs in a declared row.
+		for (const name of [
+			'kills',
+			'kills.Goblins',
+			'kills.goblins',
+			'kills.Goblins.left',
+			'hit_dice.Homebrew d4',
+			'clocks.Rescue the miners',
+		]) {
+			expect(scope(name), name).toBeUndefined();
+		}
+		// And the declared rows beside it publish what they always did.
+		expect(scope('hit_dice.d6.left')).toBe(3);
 	});
 
 	it('publishes each die type\'s own remainder from its own stored length', () => {
@@ -1657,6 +1691,9 @@ describe('the Track fixture the recipe names', () => {
 		// untouched.
 		expect(values.d6).toBe('4 / 4');
 		expect(values.d10).toBe('1 / 1');
+		// The character's own row is reached on identical terms: inert to
+		// formulas, and deliberately not inert to triggers.
+		expect(values['Homebrew d4']).toBe('2 / 2');
 		// Skipped, not failed, and nothing written for either — not even a
 		// zero, which is a value the reader never asked for.
 		expect(values.d8).toBeUndefined();
