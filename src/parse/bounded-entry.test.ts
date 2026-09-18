@@ -118,6 +118,28 @@ describe('rewriting one half of an entry', () => {
 		expect(after.ceiling).toBe(held.ceiling);
 	});
 
+	it('canonicalises a separator that only ever sat against an empty value', () => {
+		/*
+		 * The one deliberate exception to the case above, and the shape it
+		 * fires on is not in `SPELLINGS` because a reader cannot write it:
+		 * `parse/fenced.ts` produces it. A component composing a composite
+		 * with no value yet emits ` / 4`; a fence writes `Wolves:  / 4`, and
+		 * `ENTRY` takes that leading space into the *colon's* separator and
+		 * trims the rest — so what comes back is `/ 4`, whose separator
+		 * nothing in the file ever spelled. Joined verbatim, the first press
+		 * wrote `3/ 4` and every later read kept it, which lost the canonical
+		 * form in the one flow it exists for.
+		 */
+		expect(withValue('/ 4', '3')).toBe('3 / 4');
+		// And the already-canonical spelling of the same shape is untouched,
+		// which is what keeps this a repair rather than a rewrite.
+		expect(withValue(' / 4', '3')).toBe('3 / 4');
+		// A value half that exists keeps whatever spacing the reader gave it,
+		// because that spacing is something they can see and therefore chose.
+		expect(withValue('2/ 4', '3')).toBe('3/ 4');
+		expect(withValue('2/4', '3')).toBe('3/4');
+	});
+
 	it.each(SPELLINGS)('keeps %s\'s value and separator when the ceiling changes', (
 		_name,
 		raw,
