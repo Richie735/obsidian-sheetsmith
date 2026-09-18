@@ -62,7 +62,11 @@
  */
 
 import { setIcon } from 'obsidian';
-import { bindEditable, bindMultiline } from '../interaction/editable';
+import {
+	bindEditable,
+	bindMultiline,
+	keptRatherThanBlank,
+} from '../interaction/editable';
 import { armRegister, bindArmToConfirm } from '../interaction/arm-to-confirm';
 import {
 	splitBounded,
@@ -1523,7 +1527,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 						 * departure be stated somewhere.
 						 */
 						handle.sync(record.name);
-						status.textContent = `A ${noun.toLowerCase()} needs a name, so "${named}" was kept.`;
+						status.textContent = keptRatherThanBlank(noun.toLowerCase(), named);
 						return;
 					}
 					context.onChange({ records: { [at]: { name: next } } });
