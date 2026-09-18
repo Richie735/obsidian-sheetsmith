@@ -144,8 +144,29 @@ mkdirSync(outDir, { recursive: true });
  * against 7300, 8437 at `text=24` against 8000 — all four over, each measured
  * through its own query with the harness built first. 6400 to **6700**, 13200
  * to **14300**, 7300 to **7700**, 8000 to **8500**.
+ *
+ * **And over again, one feature later, which is why this paragraph keeps
+ * growing rather than being replaced.** Two Track cards were added to
+ * `samples.ts` and every full-sheet frame went stale in the same pass:
+ * measured `document.body.scrollHeight` of **7137** here against 6700,
+ * 15213 at 380 against 14700, 8449 at 520 against 7850, 9009 at
+ * `text=24` against 8500. What that cost is the part worth recording: the
+ * new cards were the *last* two on the sheet, so they fell outside every
+ * standard capture, and a real defect in them — a run collapsed to 0.58px
+ * at a 520px container — was invisible to the whole run and findable only
+ * by shooting an explicit frame. **A frame that is too short does not look
+ * wrong**, which is what makes this the one number here that has to be
+ * re-measured whenever `samples.ts` gains a row. 6700 to **7200**, 14700
+ * to **15500**, 7850 to **8600**, 8500 to **9100**.
+ *
+ * The 380 number is the one that had to be taken twice. 15300 was measured
+ * against the tree *before* the run-floor fix below, and once a narrow card
+ * wrapped differently the content came to 15295 — five pixels of headroom,
+ * which is a frame that fits today and clips on the next row anybody adds. So
+ * it is 15500, and the lesson is the order: **measure after the CSS settles,
+ * not before.**
  */
-const SHEET_FRAME = '1400,6700';
+const SHEET_FRAME = '1400,7200';
 
 /**
  * The editor pane's frame, tall because the tree is the whole layout.
@@ -194,6 +215,25 @@ const OPEN_MIXED_GLYPH =
 	"press=.sheetsmith-table-modifier-button%5Btitle*%3D'item%20%2B1%20%28changes%20nothing%29'%5D";
 const OPEN_MIXED_FORM = `${OPEN_MIXED_GLYPH}&press=.sheetsmith-panel-line%5Bdata-sheetsmith-part%3D'typed'%5D`;
 
+
+/*
+ * A Track that lets the character add rows, and the three states only a press
+ * reaches (`docs/features/character-added-track-rows.md`).
+ *
+ * Registered rather than shot by hand, which is this file's own standard and
+ * the thing this feature shipped without: the modifier form has six views and
+ * a Track's **Add** form had none, so its panel, its refusals and its armed
+ * row were reviewed by whoever remembered to open them. A state nothing
+ * registers is a state the next full run silently stops covering.
+ *
+ * The triggers are named by `aria-label`, which is the one string on them that
+ * says which card they belong to, so a fixture growing a card above cannot
+ * move them.
+ */
+const TRACK_ADD_TRIGGER =
+	"press=%5Baria-label%3D'Add%20to%20Open%20hit%20dice'%5D";
+const TRACK_REMOVE_TRIGGER =
+	"press=%5Baria-label%3D'Remove%20from%20Open%20hit%20dice'%5D";
 const DEFAULTS = [
 	{ name: 'sheet-light', query: 'surface=sheet&theme=light', size: SHEET_FRAME },
 	{ name: 'sheet-dark', query: 'surface=sheet&theme=dark', size: SHEET_FRAME },
@@ -256,7 +296,7 @@ const DEFAULTS = [
 		// has taken. 14300 to **14700**.
 		name: 'sheet-narrow',
 		query: 'surface=sheet&theme=dark&width=380',
-		size: '520,14700',
+		size: '520,15500',
 	},
 	{
 		/*
@@ -298,7 +338,7 @@ const DEFAULTS = [
 		// 7700 to **7850**.
 		name: 'sheet-list-narrow',
 		query: 'surface=sheet&theme=light&width=520',
-		size: '620,7850',
+		size: '620,8600',
 	},
 	{
 		// UI.md §5 puts the card's headline number in `em` rather than pixels
@@ -330,7 +370,7 @@ const DEFAULTS = [
 		//
 		// Raised again with SHEET_FRAME for the fit rows: measured 8437 against
 		// 8000, through `text=24` as this comment asks.
-		size: '1400,8500',
+		size: '1400,9100',
 	},
 	{
 		// The first view to photograph a focus ring at all. A still cannot press
@@ -1603,6 +1643,81 @@ const DEFAULTS = [
 		query:
 			'surface=sheet&theme=light&type=.sheetsmith-passport-name-input%7C%5B%5BThora%5D%5D',
 		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * The **Add** form, open under the one declared row still on offer, so
+		 * the rule between the list and the form is in a shot and so is the
+		 * form's own shape: two labelled fields and one button, in the panel's
+		 * clothes rather than a second surface inside it.
+		 */
+		name: 'sheet-track-add-form',
+		query: `surface=sheet&theme=light&${TRACK_ADD_TRIGGER}`,
+		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * The same form in the dark palette, on `sheet-modifier-form-dark`'s own
+		 * argument: the panel is this plugin's own surface, so what a reviewer
+		 * checks is its palette in each theme rather than borrowed chrome.
+		 */
+		name: 'sheet-track-add-form-dark',
+		query: `surface=sheet&theme=dark&${TRACK_ADD_TRIGGER}`,
+		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * **A rename refused at the commit**, which is a class of surface no
+		 * stored body can hold: the sentence exists only after somebody types a
+		 * name that is already taken and looks away, so `&type=` is the only
+		 * route to it (`docs/UI.md` §11). Typing `d6` over the character's own
+		 * row collides with the declared `d6` one column up.
+		 *
+		 * What to look at is that the message is *drawn* at all: it was
+		 * announced and not drawn, so the card showed two rows reading `d6`
+		 * with nothing on screen saying why the second was not taken.
+		 */
+		name: 'sheet-track-rename-refused',
+		query:
+			'surface=sheet&theme=light&type=.sheetsmith-track-row-name-input%7Cd6',
+		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * A row armed for removal, **on the mixed card rather than the one that
+		 * is all the character's**. Clocks would arm just as well and says less:
+		 * the picker's whole job here is that it lists two kinds of row in one
+		 * list — the declared character-owned ones first, then the ones the
+		 * character named — and what is worth photographing is an armed line
+		 * against its unarmed neighbours of the *other* kind. It is also the one
+		 * delete in this plugin whose target does not come back, so what to
+		 * check is that the armed line reads as heavier than the lines around it
+		 * without having become a second gesture.
+		 */
+		name: 'sheet-track-remove-armed',
+		query: `surface=sheet&theme=light&${TRACK_REMOVE_TRIGGER}&press=.sheetsmith-panel-line`,
+		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * **The refused rename in forced colors, because that is where its
+		 * treatment was decided.** The message drops `.sheetsmith-error`'s box
+		 * and keeps a leading border, on the argument that the border is the
+		 * one channel that survives this mode — every foreground repaints to
+		 * one system colour, so the red says nothing here and the bar is the
+		 * whole of what marks the line as a refusal.
+		 *
+		 * That argument rested on a rendering nothing rendered: the view was
+		 * shot into a scratch directory to check it and then thrown away, which
+		 * is the situation `docs/UI.md` §11 keeps being rewritten about. **An
+		 * argument that rests on a rendering owes a registered picture of it**,
+		 * or the next person to touch the rule has only the comment.
+		 */
+		name: 'sheet-track-rename-refused-forced-colors',
+		query:
+			'surface=sheet&theme=light&type=.sheetsmith-track-row-name-input%7Cd6',
+		size: SHEET_FRAME,
+		flags: ['--force-high-contrast'],
 	},
 ];
 

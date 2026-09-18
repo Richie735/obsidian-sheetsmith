@@ -2431,6 +2431,53 @@ export const SAMPLES: Sample[] = [
 			'| Stealth | 0 |',
 		].join('\n'),
 	},
+	/*
+	 * Rows the character added, beside rows the layout declared
+	 * (`docs/features/character-added-track-rows.md`). The look criterion is
+	 * that this card reads as "these two are the sheet's and these two are
+	 * mine" from the **name treatment alone** — a declared row's name is
+	 * static text and a character-added one's is a field — with no badge and
+	 * no glyph saying it, and with every run staying in one column across
+	 * both kinds. `Homebrew d4` and `Kills` are entries under keys no
+	 * declared row spells, which is the whole of what makes them the
+	 * character's: nothing in the note records the mode.
+	 */
+	{
+		config: {
+			id: 'open_dice',
+			type: 'track',
+			label: 'Open hit dice',
+			position: { col: 1, row: 73, width: 4, height: 2 },
+			openRows: true,
+			rows: [
+				{ key: 'd6', name: 'd6', maxSource: 'character' },
+				{ key: 'd10', name: 'd10', maxSource: 'character' },
+				// Declared and not added, so the **Add** panel has a line to
+				// draw above the form and the rule between them is on screen.
+				{ key: 'd20', name: 'd20', maxSource: 'character' },
+			],
+		} as unknown as ComponentConfig,
+		body: '```sheet\nd6: 1 / 4\nd10: 0 / 1\nHomebrew d4: 1 / 2\nKills: 3 / 8\n```',
+	},
+	/*
+	 * The same toggle on a card that declares nothing at all, which is the
+	 * other look criterion: filled, it is entirely the character's, and its
+	 * empty state — `emptySamples()` below draws every component with nothing
+	 * stored — has to read as a label and one **Add** trigger rather than as
+	 * something broken. `count` is here to be a *seed* for the **Add** form's
+	 * **Length** field and is consulted nowhere else on the card.
+	 */
+	{
+		config: {
+			id: 'clocks',
+			type: 'track',
+			label: 'Clocks',
+			count: 6,
+			openRows: true,
+			position: { col: 5, row: 73, width: 4, height: 2 },
+		} as unknown as ComponentConfig,
+		body: '```sheet\nRescue the miners: 2 / 8\nHeat: 4\n```',
+	},
 ];
 
 /** The same layout with nothing stored: every component's empty state. */

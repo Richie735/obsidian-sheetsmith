@@ -33,6 +33,25 @@
  * storage flag would be a third mutually exclusive pair on this form, and the
  * worst of the three, since the author would be holding a fact the layout
  * already states.
+ *
+ * A row may also be one the *character* invented, through `openRows` — Table's
+ * own key and label for the same fact. **The mode is implied by the key not
+ * being declared**: an entry whose key no row in `rows[]` spells is the
+ * character's, so nothing is written into the note to record who owns a row,
+ * and turning the toggle off hides those rows again rather than deleting one.
+ * That one sentence is what `runsOf`, `isRowSet`, `read` and `render` below all
+ * turn on — the card is a row set wherever the toggle is on, whether or not it
+ * declares a row, and `read` claims every unmapped entry instead of passing
+ * over it.
+ *
+ * **What that costs is the re-cut guarantee, and it is the one thing this file
+ * gives up.** With the toggle off, an entry no row maps to is invisible and
+ * untouched, which is what makes a slot table safe to re-cut (SPEC §7). With it
+ * on, the leftover entry of a dropped declared row is drawn as the character's
+ * — a row appearing, never a value disappearing, and turning the toggle off is
+ * the way back. Identity is the typed name and a fence has no other address, so
+ * nothing can tell a leftover from a row somebody typed
+ * (`docs/features/character-added-track-rows.md`).
  */
 
 import { setIcon } from 'obsidian';
@@ -42,7 +61,7 @@ import {
 	STOOD_DOWN,
 } from '../interaction/arm-to-confirm';
 import { GESTURE_COMMIT } from '../interaction/commit-window';
-import { bindEditable } from '../interaction/editable';
+import { bindEditable, keptRatherThanBlank } from '../interaction/editable';
 import { levelGlyph, levelName, paintLevelRing, parseLevel } from './level-ring';
 import {
 	flagReading,
@@ -51,15 +70,28 @@ import {
 	isFlagSpelling,
 } from './stored-flag';
 import { fencedLinkRefusal } from './fenced-link';
-import { sampleFlag, samplePart, sampleNumber, sampleSeed } from './sample-values';
-import { bindLongPress } from '../ui/popover';
 import {
+	sampleFlag,
+	samplePart,
+	sampleNumber,
+	sampleSeed,
+	sampleText,
+} from './sample-values';
+import { bindLongPress } from '../ui/popover';
+import { revealWhenTruncated } from '../ui/truncation';
+import {
+	AnchoredPanel,
 	closeAnchoredPanel,
 	focusFirstControl,
 	openAnchoredPanelKey,
 	showAnchoredPanel,
 } from '../ui/anchored-panel';
-import { fencedKeyProblem, readFenced, writeFenced } from '../parse/fenced';
+import {
+	fencedKeyProblem,
+	readFenced,
+	renameFencedEntry,
+	writeFenced,
+} from '../parse/fenced';
 import { splitBounded, withCeiling, withValue } from '../parse/bounded-entry';
 import {
 	ComponentConfig,
@@ -121,6 +153,16 @@ export interface TrackConfig extends ComponentConfig {
 	/** One run per entry. Absent is a single unnamed run. */
 	rows?: TrackRow[];
 	/**
+	 * Let the character add rows of their own beside the declared ones.
+	 *
+	 * Table's own key and its own label, because §2 names a thing for what it
+	 * is and this is the same thing. What it does to the *note* is the whole
+	 * of the mode: an entry whose key no declared row spells is the
+	 * character's, so nothing is written to record who owns a row, and turning
+	 * this off hides those entries again rather than deleting one.
+	 */
+	openRows?: boolean;
+	/**
 	 * Names for the steps from none upwards, in the syntax a `level` column
 	 * uses and parsed by the same code — including a glyph after a colon.
 	 */
@@ -150,6 +192,28 @@ export interface TrackData {
 	 * delete itself. See `docs/features/track-row-length.md`.
 	 */
 	values: Record<string, string | null>;
+	/**
+	 * The character's own keys — the entries no declared row spells — in the
+	 * note's own order. Filled by `read`, never by a delta.
+	 *
+	 * **Nothing may take a draw order off `values` instead.** That is a plain
+	 * object, which puts integer-like keys first and in numeric order however
+	 * they were inserted, so a character who names a row `10` would see it
+	 * jump above every other row and `write` would append the next one in the
+	 * wrong place. Named after `RowClaims.own`, whose sentence this is one
+	 * storage over: "note rows no declared row claimed, in note order: the
+	 * character's own".
+	 */
+	own?: readonly string[];
+	/**
+	 * One gesture: rename this key, keeping the whole of its line.
+	 *
+	 * Singular because one gesture reports one rename (PATTERNS §7), and a
+	 * delta rather than a new key beside a null old one, because `writeFenced`
+	 * flushes a key it did not find at the closing fence — so a delete plus an
+	 * add would move the reader's line to the bottom of the block.
+	 */
+	rename?: { from: string; to: string };
 }
 
 /**
@@ -176,6 +240,16 @@ const ADD_ICON = 'plus';
 let awaitingAdd: { id: string; key: string } | null = null;
 
 /**
+ * How many **Add** form messages have been built, so each one's id is its own.
+ *
+ * Module-level for `awaitingAdd`'s own reason: the render that builds a form
+ * and the next one that builds another are two calls into this file. Only one
+ * anchored panel is open at a time, so this is about never colliding rather
+ * than about addressing a particular message.
+ */
+let addFormMessages = 0;
+
+/**
  * The furthest a run travels past either end of itself, in pixels, and how
  * hard the pointer has to work to get there. A hard stop reads as a frozen
  * control; a few pixels of give reads as a responsive one with nothing
@@ -196,6 +270,12 @@ export function markSize(config: TrackConfig): number {
 export function runsOf(config: TrackConfig): TrackRow[] {
 	const rows = config.rows;
 	if (rows === undefined || rows.length === 0) {
+		// A card the character may add rows to declares none of its own, and
+		// that is a row set holding no declared runs rather than a single
+		// anonymous one: synthesising `value` here would give the card a run
+		// under the key SPEC §3.1 reserves for a single-value component, and
+		// a character could then collide with it by typing the word.
+		if (config.openRows === true) return [];
 		// The single run is a row set of one whose key is the storage key
 		// every scalar component uses, so nothing downstream needs a second
 		// shape for it.
@@ -204,9 +284,20 @@ export function runsOf(config: TrackConfig): TrackRow[] {
 	return rows;
 }
 
-/** Whether this track is a named set rather than one anonymous run. */
+/**
+ * Whether this track is a named set rather than one anonymous run.
+ *
+ * True wherever the character may add rows, declared rows or not: what makes
+ * a card a set is that its entries are *named*, and a card offering an **Add**
+ * control is offering to name one. That is what keeps `runsOf` above from
+ * synthesising a `value` run, and what keeps such a card from publishing under
+ * its bare id — there is no one number a set of runs could mean.
+ */
 export function isRowSet(config: TrackConfig): boolean {
-	return config.rows !== undefined && config.rows.length > 0;
+	return (
+		config.openRows === true ||
+		(config.rows !== undefined && config.rows.length > 0)
+	);
 }
 
 /**
@@ -224,6 +315,16 @@ export function configError(config: TrackConfig): string | null {
 		// Named steps are one run's meaning and rows are many runs'
 		// identities; together they would ask for step names per row, which
 		// is a third axis of configuration for a case nobody has had.
+		//
+		// **Two arms, because a card can now be a row set without declaring a
+		// row.** `isRowSet` reads true wherever `openRows` is on, so the
+		// sentence about `rows` reached an author who had declared none and
+		// named a control they had never touched — PATTERNS §4's "error text
+		// names the fix, not the fault", failed by the one refusal that has
+		// two ways in.
+		if ((config.rows ?? []).length === 0) {
+			return 'A track with named levels cannot also let characters add rows, because a row a character adds has a length of its own and named steps are one run\'s ladder. Clear the level names, or turn off "Characters may add rows".';
+		}
 		return 'A track has either named levels or rows, not both. A layout wanting both is describing several ladders, which are several components.';
 	}
 	if (config.levels !== undefined) {
@@ -249,6 +350,15 @@ export function configError(config: TrackConfig): string | null {
 			if (problem !== null) return `The row key "${key}" ${problem}.`;
 			if (seen.has(key)) return `Two rows are both called "${key}".`;
 			seen.add(key);
+		}
+		if (config.openRows === true && isFlagCard(config)) {
+			// `isFlagCard` already refuses to call a character-owned row a flag,
+			// whatever its count says, because a length the layout does not
+			// state cannot be the literal 1 that makes a run two states. Every
+			// row a character adds is character-owned by construction, so this
+			// combination asks for exactly the row that refusal says cannot
+			// exist.
+			return 'A checkbox card cannot also let characters add rows, because a row a character adds has a length of its own and a one-segment run stores yes or no. Raise the segment count, or turn off "Characters may add rows".';
 		}
 		return null;
 	}
@@ -465,7 +575,12 @@ export function isFlagCard(config: TrackConfig): boolean {
 	// Naming the steps settles the length, so two names is one segment. `rows`
 	// and `levels` are already refused together, so this is the single run.
 	if (config.levels !== undefined) return config.levels.length === 2;
-	return runsOf(config).every(
+	const runs = runsOf(config);
+	// `every` over an empty list is vacuously true, and `runsOf` can return one
+	// for the first time now that a card may declare no runs and still be a row
+	// set. A card with nothing on it is not a checkbox.
+	if (runs.length === 0) return false;
+	return runs.every(
 		// A character-owned row's length is not settled by the layout at all,
 		// so it can never be the literal 1 that makes a run a flag — whatever
 		// `row.count` happens to say, which `maxSource` makes irrelevant the
@@ -566,6 +681,130 @@ function refuseRowLength(text: string): string | null {
 	return `Not saved. A slash separates the marks from the length they are read against, so "${text}" would be stored as two numbers rather than one. Type just the number here.`;
 }
 
+/**
+ * Why this entry's value half is not a mark count this card can read, or null.
+ *
+ * Only the value half is looked at. The ceiling half, where one is there at
+ * all, is a character-owned row's own length and is not this method's
+ * business — `docs/features/track-row-length.md`'s rule that a ceiling which
+ * is not a number behaves as no ceiling rather than as a malformed entry.
+ *
+ * A number the run cannot represent is still a number and is left exactly as
+ * it is (SPEC §7). Something that is not one at all is a malformed section,
+ * reported on this component alone.
+ *
+ * A flag's spelling is accepted on *every* run, not only on a flag card, and
+ * that is the whole answer to a layout raising its count from 1 to 3: the
+ * narrow rule would turn every note the flag ever wrote into an error card at
+ * the moment the layout changed. `yes` on a ten-segment run is one mark;
+ * `maybe` is still malformed.
+ *
+ * One function because `read` asks it of a declared row's entry and of a
+ * character-added one, and the two must not drift: a spelling this card
+ * accepts under a key the layout names has to be the same spelling it accepts
+ * under a key the character typed, or the same note read either side of a
+ * config edit disagrees about whether it is malformed.
+ */
+function marksProblem(config: TrackConfig, raw: string): string | null {
+	const text = splitBounded(raw).value.trim();
+	if (text === '' || readsAsMarks(text)) return null;
+	// Named for what this card writes, not for what a Track writes in general:
+	// a checkbox stores yes and no, so telling its author about marks points
+	// them at a spelling that card never produces. SPEC §10 wants the fix
+	// rather than the fault, and here the two are different sentences for the
+	// same fault.
+	return isFlagCard(config)
+		? `"${text}" is not yes or no.`
+		: `"${text}" is not a number of marks.`;
+}
+
+/**
+ * The rows the character added, as rows.
+ *
+ * **A row the character added *is* a `maxSource: 'character'` row** whose key
+ * and whose name are the name they typed, and saying so here is what lets
+ * every path below reach one without a second shape: `countFor` reads its
+ * length off its own entry, the length field draws, a press joins through the
+ * composite, and `applyReset` walks it on identical terms. The mode is implied
+ * by the key not being declared, so nothing in the note says any of this.
+ *
+ * Read off `TrackData.own` rather than off `values`, for the reason that
+ * member exists: a plain object's key order is not the note's.
+ *
+ * Gated on the toggle as well as on the data, so turning it off hides every
+ * one of them on the next render without touching a byte of the note.
+ */
+function ownRows(
+	config: TrackConfig,
+	data: TrackData | null | undefined,
+): TrackRow[] {
+	if (config.openRows !== true) return [];
+	return (data?.own ?? []).map((key) => ({
+		key,
+		name: key,
+		maxSource: 'character' as const,
+	}));
+}
+
+/**
+ * Why this typed name cannot name a row on this card, or null.
+ *
+ * One list, two callers: the **Add** form's **Name** field, where the name is
+ * checked before the entry exists, and a drawn row's own name field, which is
+ * the rename. `taken` is every name already spoken for — every declared row's
+ * key and every key this character's fence holds — minus the caller's own,
+ * which a rename has to be allowed to keep.
+ *
+ * **This is the one lenient function in the component, and it can only ever
+ * prevent a write.** The fence is exact everywhere else: what `readFenced`
+ * stores, which declared row an entry maps to, what `write` addresses and what
+ * `renameFencedEntry` calls a collision are all byte-exact and
+ * case-sensitive, so `d6` and `D6` are two entries and both survive. Here the
+ * comparison folds case, and it folds in the *refusing* direction — the plugin
+ * will not create a pair differing only in case, and it will not repair one a
+ * hand-edit made, because repairing means writing over a name the user typed.
+ * A fold in one place and not the others is precisely the failure this
+ * arrangement is shaped to avoid.
+ *
+ * **`parse/row-claims.ts` is deliberately not reused**, though its `claimRows`
+ * folds case too. That is safe on a Table because no formula names a row
+ * there, so what a row's capitalisation can change is which declared row
+ * claims it and never what any arithmetic resolves. Here the rest of this file
+ * addresses by exact key, so a lenient claim would have a declared `d6` claim a
+ * note's `D6` while `read`, `write`, `applyReset` and `scopeValues` went on
+ * looking for `d6` and finding nothing.
+ */
+function refuseRowName(text: string, taken: readonly string[]): string | null {
+	const name = text.trim();
+	if (name === '') {
+		// A fence entry with no key is not an entry, and `ENTRY`'s own regex
+		// would read a whitespace-only key back as the empty string.
+		return 'A row needs a name.';
+	}
+	const problem = fencedKeyProblem(name);
+	if (problem !== null) return `A row name ${problem}.`;
+	const link = fencedLinkRefusal(name, {
+		subject: 'Row names',
+		instead:
+			'Type the plain name here, and put the link in a Rich text block or a table cell, which store markdown.',
+	});
+	if (link !== null) return link;
+	const folded = name.toLowerCase();
+	if (folded === VALUE_KEY) {
+		// SPEC §3.1 reserves it, and `runsOf` synthesises it for a plain run —
+		// so an entry under this key would become the card's own run the
+		// moment an author turned the toggle back off.
+		return `"${VALUE_KEY}" is the entry a card with a single run stores under, so a row cannot be called that. Pick another name.`;
+	}
+	const clash = taken.find((held) => held.trim().toLowerCase() === folded);
+	if (clash !== undefined) {
+		// Naming the spelling that is already there, so a reader who typed
+		// `goblins` beside a stored `Goblins` can see what they collided with.
+		return `"${clash}" is already a row here, so this card cannot hold a second one called that.`;
+	}
+	return null;
+}
+
 export const track: ComponentDefinition<TrackConfig, TrackData> = {
 	type: 'track',
 	storage: 'fenced',
@@ -613,7 +852,15 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			],
 			addressesEntry: { fence: 'section' },
 			description:
-				'One run per entry, sharing a heading, a reset binding and a write. Spell slots are five first-level, three second and one third. Each key names the entry in the character note, and renaming one moves it in every note on this layout; a row with no length of its own falls back to the segment count above. A row\'s length may be the layout\'s formula or the character\'s own number, typed on the sheet — the character\'s for a die type, a slot level, or anything else whose count differs per character rather than being computed. Rows and named levels do not combine.',
+				'One run per entry, sharing a heading, a reset binding and a write. Spell slots are five first-level, three second and one third. Each key names the entry in the character note, and renaming one moves it in every note on this layout; a row with no length of its own falls back to the segment count above. A row\'s length may be the layout\'s formula or the character\'s own number, typed on the sheet — the character\'s for a die type, a slot level, or anything else whose count differs per character rather than being computed. Characters may add rows of their own beside these, where the setting below allows it. Rows and named levels do not combine.',
+		},
+		{
+			key: 'openRows',
+			kind: 'boolean',
+			label: 'Characters may add rows',
+			description:
+				'Adds a control under the runs for naming a row of this character\'s own and choosing how many segments it holds — a counter this actor keeps and no other does. Rows a character adds are theirs to rename and remove, and no formula can name one, so a value another card has to read belongs in a row declared above. The rows declared above are unaffected. Turning this off hides the rows characters added without deleting them, and turning it back on brings them back. Refused where the runs are named levels, or where every run is one segment.',
+			default: false,
 		},
 		{
 			key: 'levels',
@@ -713,6 +960,40 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 				spelledMarks(config, count === null ? marks : samplePart(count * marks)),
 			);
 		});
+		/*
+		 * One row the character added, so an author can see what the toggle
+		 * does to the card before opening a character note.
+		 *
+		 * **It invents no vocabulary** (SPEC §4.1): the name comes from the
+		 * config, exactly as Table's open-row sample takes its names from the
+		 * name column's own heading. One rather than two, because what is
+		 * being shown is that the character's rows sit after the layout's and
+		 * wear a field for a name — a second one says nothing the first does
+		 * not.
+		 *
+		 * **Skipped on the same guard the two character-facing paths use**, and
+		 * that is the point rather than convenience: the name is composed from
+		 * `config.label`, which is author free text, so this is the one place
+		 * in the component where text nobody checked becomes a fence key. A
+		 * narrower gate let a label holding a wikilink compose one — Constraint
+		 * 2, since Obsidian indexes no link inside a fence — and neither
+		 * `contract.test.ts`'s "puts no wikilink in a sample" nor the round
+		 * trip could see it, because every configuration either sweeps is
+		 * labelled in plain words. It also subsumes what this used to check by
+		 * hand: a duplicate of a declared key, and a key the fence could not
+		 * hold.
+		 */
+		if (config.openRows === true) {
+			const name = sampleText(config.label, 0);
+			if (refuseRowName(name, rows.map((row) => row.key)) === null) {
+				const ceiling = sampleNumber(sampleSeed(config.id + name));
+				const filled = samplePart(ceiling * marks);
+				updates.set(
+					name,
+					withCeiling(spelledMarks(config, filled), String(ceiling)),
+				);
+			}
+		}
 		return updates.size === 0 ? '' : writeFenced(null, updates);
 	},
 
@@ -721,45 +1002,65 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 		if (!parsed.ok) return parsed;
 		// No fence yet: an editable empty card, not an error.
 		if (parsed.values === null) return { ok: true, data: null };
-		const values: Record<string, string> = {};
-		for (const row of runsOf(config)) {
+		// Keyed by text out of the note once the toggle is on, so it may not
+		// inherit from `Object.prototype` — Table's own rule for the same
+		// reason, one storage over. A hand-edited `__proto__:` or `toString:`
+		// line is a key like any other here, and on a plain object literal the
+		// first sets a prototype instead of an entry and the second reads back
+		// as a function.
+		const values = Object.create(null) as Record<string, string>;
+		const declared = runsOf(config);
+		for (const row of declared) {
 			const raw = parsed.values.get(row.key);
 			if (raw === undefined) continue;
-			// Only the value half is validated as marks. The ceiling half, where
-			// one is there at all, is a character-owned row's own length and is
-			// not this method's business — `docs/features/track-row-length.md`'s
-			// rule that a ceiling which is not a number behaves as no ceiling
-			// rather than as a malformed entry, `bounded-entry.ts`'s own answer
-			// one component over.
-			const text = splitBounded(raw).value.trim();
-			// A number the run cannot represent is still a number and is left
-			// exactly as it is (§7). Something that is not one at all is a
-			// malformed section, reported on this component alone.
-			//
-			// A flag's spelling is accepted on *every* run, not only on a flag
-			// card, and that is the whole answer to a layout raising its count
-			// from 1 to 3: the narrow rule would turn every note the flag ever
-			// wrote into an error card at the moment the layout changed. `yes` on
-			// a ten-segment run is one mark; `maybe` is still malformed.
-			if (text !== '' && !readsAsMarks(text)) {
-				// Named for what this card writes, not for what a Track writes in
-				// general: a checkbox stores yes and no, so telling its author
-				// about marks points them at a spelling that card never produces.
-				// SPEC §10 wants the fix rather than the fault, and here the two
-				// are different sentences for the same fault.
-				return {
-					ok: false,
-					error: isFlagCard(config)
-						? `"${text}" is not yes or no.`
-						: `"${text}" is not a number of marks.`,
-				};
-			}
+			const problem = marksProblem(config, raw);
+			if (problem !== null) return { ok: false, error: problem };
 			values[row.key] = raw;
 		}
-		// An entry no row maps to is not read, and `write` touches only the
-		// entries it is given — so it stays in the note untouched, which is
-		// what makes a slot table safe to re-cut (§7).
-		return { ok: true, data: { values } };
+		if (config.openRows !== true) {
+			// An entry no row maps to is not read, and `write` touches only the
+			// entries it is given — so it stays in the note untouched, which is
+			// what makes a slot table safe to re-cut (§7).
+			//
+			// **With the toggle on that guarantee inverts**, which is the one
+			// thing this feature costs: the leftover entry of a dropped
+			// declared row is no longer unmapped-and-invisible, it is a row the
+			// character owns, drawn and named after the key the author just
+			// removed. Accepted rather than mitigated, because the typed name
+			// is the only identity a fence has and nothing distinguishes a
+			// leftover from a row the character typed. What is lost is
+			// quietness, not data: turning the toggle off again hides every one
+			// of them without deleting one.
+			return { ok: true, data: { values } };
+		}
+		/*
+		 * The character's own, in the order `readFenced`'s `Map` holds them,
+		 * which is the note's own order and the only order the file states.
+		 *
+		 * The map lookup above is what claims a declared row, exactly and
+		 * case-sensitively, so a note holding `D6` under a layout declaring
+		 * `d6` leaves the declared row empty and reads `D6` as the
+		 * character's — two rows on screen, which is the honest consequence of
+		 * exactness and visible rather than silent.
+		 */
+		const spoken = new Set(declared.map((row) => row.key));
+		const own: string[] = [];
+		for (const [key, raw] of parsed.values) {
+			if (spoken.has(key)) continue;
+			// Validated as marks the same way a declared row's entry is, which
+			// is what `marksProblem` being one function guarantees.
+			const problem = marksProblem(config, raw);
+			if (problem !== null) return { ok: false, error: problem };
+			values[key] = raw;
+			own.push(key);
+		}
+		return {
+			ok: true,
+			// Absent rather than empty where the character has added nothing,
+			// so a card with the toggle on and no rows of its own reads exactly
+			// as it did with the toggle off.
+			data: own.length === 0 ? { values } : { values, own },
+		};
 	},
 
 	scopeValues(data, config): ScopeValues {
@@ -882,18 +1183,77 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 	},
 
 	write(data, body): string {
+		/*
+		 * The rename first, then the value deltas, and the order is
+		 * load-bearing: a rename and an unrelated edit arriving in one commit
+		 * would otherwise address a key that no longer exists.
+		 *
+		 * `renameFencedEntry` rewrites the key token alone and puts the
+		 * separator, the value, the trailing text and the line ending back
+		 * verbatim, so the marks, the length and the line's position in the
+		 * fence all survive. A delete plus an add would not: `writeFenced`
+		 * flushes a key it did not find at the closing fence, so the row would
+		 * silently move to the bottom of the reader's block.
+		 *
+		 * A `collision` is a state the name field's own guard already
+		 * excluded, and an `absent` one is a rename of a key this body has not
+		 * got. Both leave the body exactly as it was rather than being
+		 * half-applied — for a rename delta, whose `values` is empty, that is
+		 * the whole of the write.
+		 */
+		let next = body;
+		if (data.rename !== undefined) {
+			const renamed = renameFencedEntry(
+				next ?? '',
+				data.rename.from,
+				data.rename.to,
+			);
+			if (renamed.kind === 'renamed') next = renamed.body;
+		}
+		/*
+		 * **This walks `values`, which `TrackData.own` says nothing may take an
+		 * order off, and the exemption is a property of `writeFenced` and of
+		 * the callers rather than of this loop.**
+		 *
+		 * `writeFenced` addresses an entry the body already holds by key and
+		 * rewrites it in place, so for those the order here is not observable
+		 * at all. It is observable for a key the body does *not* hold, which is
+		 * appended at the closing fence in the order it arrives — and a row the
+		 * character added always has an entry by construction, so it is never
+		 * one of those. The order `own` exists to protect is therefore never
+		 * decided here.
+		 *
+		 * What can be new is a *declared* row's key, whose order is `rows[]`'s
+		 * and not the note's. **`Object.create(null)` does not help with any of
+		 * this** — a prototype has nothing to do with key order, and an
+		 * integer-like key sorts first whatever the object inherits from. So a
+		 * layout declaring rows keyed `10` and `d6`, both unstored and both
+		 * pressed inside one debounce window, would append them in numeric
+		 * order rather than declared order. That is the whole of the residue,
+		 * it predates this feature, and it is recorded here so the next delta
+		 * shape that can create several entries at once knows it has to carry
+		 * its own order rather than inherit one from an object.
+		 */
 		const updates = new Map<string, string | null>();
 		for (const [key, value] of Object.entries(data.values)) {
 			updates.set(key, value);
 		}
-		return writeFenced(body, updates);
+		return writeFenced(next, updates);
 	},
 
 	applyReset(data, config, reset, context): ResetResult<TrackData> {
 		const marks = markSize(config);
-		const rows = runsOf(config);
+		// The character's rows beside the declared ones, on identical terms:
+		// a character-added row is inert to formulas and is deliberately not
+		// inert to triggers, which is the one place the second-class outcome
+		// is avoided rather than accepted. Every branch below already knows
+		// what to do with a `maxSource: 'character'` row, and that is exactly
+		// what one of these is.
+		const rows = [...runsOf(config), ...ownRows(config, data)];
 		const flag = isFlagCard(config);
-		const values: Record<string, string> = {};
+		// Null-prototype for `read`'s own reason: with the toggle on, a row's
+		// key is text out of the note.
+		const values = Object.create(null) as Record<string, string>;
 		// §6's `full` and `empty` name the states rather than the numbers
 		// precisely so that one set of three actions covers a Pool's max and zero
 		// and a flag's yes and no, and `spelledMarks` is where that pays: no
@@ -1036,6 +1396,17 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 
 		const marks = markSize(config);
 		const rows = runsOf(config);
+		const open = config.openRows === true;
+		/**
+		 * Every row the card draws: the layout's in `rows[]`'s own order, then
+		 * the character's in the note's own order. Table's order exactly, and
+		 * the only order the file itself states.
+		 */
+		const drawn = [...rows, ...ownRows(config, data)];
+		/** Whether the row at this index is one the character named. */
+		const isOwnName = (index: number): boolean => index >= rows.length;
+		/** Every key already spoken for on this card, declared or typed. */
+		const takenNames = drawn.map((row) => row.key);
 		const rowSet = isRowSet(config);
 		const named = config.levels !== undefined;
 		const flag = isFlagCard(config);
@@ -1074,7 +1445,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 		// mixed set's runs would misalign into whichever track its own row
 		// happens to fill (`docs/features/track-row-length.md`).
 		const lengthsInSet =
-			rowSet && rows.some((r) => r.maxSource === 'character');
+			rowSet && drawn.some((r) => r.maxSource === 'character');
 		if (lengthsInSet) list.classList.add('sheetsmith-track-lengths');
 
 		/** One run on the card: its own value, its own geometry, its own gesture. */
@@ -1111,7 +1482,9 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			// A rebuild replaces the card, and a commit arriving after that
 			// would be writing out of a detached control.
 			if (!card.isConnected) return;
-			const values: Record<string, string> = {};
+			// Null-prototype for `read`'s own reason: with the toggle on, a
+			// run's key is text out of the note.
+			const values = Object.create(null) as Record<string, string>;
 			for (const run of runs) {
 				// Through the join: `run.sent` holds the row's whole raw entry,
 				// composite or not, so a press on a character-owned row's
@@ -1184,9 +1557,10 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 				: null;
 		if (landingKey !== null) awaitingAdd = null;
 
-		rows.forEach((row, index) => {
+		drawn.forEach((row, index) => {
 			const rowLabel = rowSet ? (row.name ?? row.key) : config.label;
 			const characterOwned = row.maxSource === 'character';
+			const ownName = isOwnName(index);
 			// Read once per render, the same rule a resolved count already
 			// follows: a row's length is layout-adjacent state, not something
 			// that changes mid-render.
@@ -1208,13 +1582,120 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			const harm = row.sense === undefined ? cardHarm : row.sense === 'harm';
 			const line = list.createDiv('sheetsmith-track-row');
 
-			if (rowSet) {
+			if (rowSet && !ownName) {
 				// Immediately left of its run, in the clothes the step name
 				// wears. Proximity is what says a name belongs to the run
 				// beside it rather than the one above it, and the column is
 				// what lets the runs be read down as a shape.
 				const name = line.createSpan('sheetsmith-track-row-name');
 				name.textContent = row.name ?? row.key;
+			} else if (rowSet) {
+				/*
+				 * A row the character named wears the same rank in the same
+				 * column, as a field rather than as static text — and that is
+				 * the whole of how a reader tells who owns a row. No badge, no
+				 * glyph, no second treatment: the read-only/editable split
+				 * Table already draws for the same fact.
+				 *
+				 * The rename is in the design rather than deferred because
+				 * **Remove** deletes the entry whole, marks and length
+				 * together, so remove-and-retype costs a session's worth of
+				 * marked segments to fix a typo.
+				 */
+				const field = line.createEl('input');
+				field.type = 'text';
+				field.classList.add(
+					'sheetsmith-track-row-name',
+					'sheetsmith-track-row-name-input',
+				);
+				field.value = row.key;
+				// The column's own word alone, where every other control on the
+				// row is named for its row as well: this field's *value* is the
+				// row's name, and a reader is given the value with the name, so
+				// qualifying it would announce the same word twice. Table's own
+				// rule for the same field.
+				field.setAttribute('aria-label', 'Row name');
+				// The reveal owns `title` here, and the explanatory tooltip the
+				// length field beside it carries is deliberately not repeated:
+				// this field's `title` is its *own text*, shown only where the
+				// name is too long for the column to draw (docs/UI.md §9). The
+				// two cannot both have it, and a clipped name a reader cannot
+				// read at all is the worse loss — while the fact that the row
+				// is this character's is already carried by the name being
+				// editable, which is the whole of the design's own answer.
+				revealWhenTruncated(field);
+				// Every other name on the card, so the guard can refuse a
+				// collision while letting this row keep its own spelling.
+				const others = takenNames.filter((key) => key !== row.key);
+				/**
+				 * The refused draft's own sentence, under the row it is about.
+				 *
+				 * **Announced *and* drawn, which is the half this was missing.**
+				 * The live region alone left the card showing two rows both
+				 * reading `d6` with nothing on screen saying why the second had
+				 * not been taken — while the identical sentence is drawn as a
+				 * visible line inside the **Add** panel, so one refusal was
+				 * visible on one surface and invisible on the other. SPEC's own
+				 * "a refused name: the message sits under the field that refused
+				 * it, inside the panel *or on the card*", and `docs/UI.md` §10.
+				 *
+				 * It takes the message the live region is already given rather
+				 * than composing a second one, so the two can never say
+				 * different things about one refusal.
+				 *
+				 * Built on the first refusal rather than at every render: a card
+				 * whose names are all fine keeps the DOM it always had, which is
+				 * the rule a table cell with nothing to render already follows.
+				 */
+				let refusal: HTMLElement | null = null;
+				const drawRefusal = (message: string | null): void => {
+					if (message === null) {
+						refusal?.remove();
+						refusal = null;
+						return;
+					}
+					refusal ??= line.createDiv(
+						'sheetsmith-error sheetsmith-track-row-problem',
+					);
+					refusal.textContent = message;
+				};
+				const handle = bindEditable(field, {
+					initial: row.key,
+					// The blank is deliberately not a refusal here, which is
+					// what keeps `refuse`'s own rule — a refused draft is kept —
+					// from leaving an empty field with a message beside it where
+					// the name actually stored would say more. It is a "put the
+					// stored one back and say so" instead, which is Record set's
+					// departure at `drawName` and its argument exactly.
+					refuse: (next) =>
+						next.trim() === '' ? null : refuseRowName(next, others),
+					onRefusal: (message) => {
+						status.textContent = message ?? '';
+						drawRefusal(message);
+					},
+					announceCommit: (next) => {
+						// The restore below says what happened to a blank one.
+						if (next === '') return;
+						status.textContent = `Row renamed to ${next}`;
+					},
+					announceRestore: (restored) => {
+						status.textContent = `Row name restored to ${restored}`;
+					},
+					onCommit: (next) => {
+						if (next.trim() === '') {
+							handle.sync(row.key);
+							status.textContent = keptRatherThanBlank('row', row.key);
+							return;
+						}
+						// One gesture, one rename, and no value with it: the
+						// key token alone moves and everything else on the line
+						// stays exactly as the note spells it.
+						context.onChange({
+							values: {},
+							rename: { from: row.key, to: next },
+						});
+					},
+				});
 			}
 
 			/**
@@ -1940,6 +2421,173 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			rowSet ? (row.name ?? row.key) : config.label;
 
 		/**
+		 * What the **Length** field arrives holding: the card's own segment
+		 * count where the layout sets one and it resolves, and nothing where it
+		 * does not.
+		 *
+		 * A *seed for the field*, consulted once at the add and never again —
+		 * which is what lets a layout say "a clock here is usually six" without
+		 * a second storage mode. Once the entry exists its length is the stored
+		 * one and only the stored one, and a character-added row with a blank
+		 * length has no length exactly as a declared one does.
+		 */
+		const seeded =
+			config.count === undefined
+				? null
+				: segmentCount(config, context.resolved['count']);
+
+		/**
+		 * The form that names a row before it exists, appended under whatever
+		 * declared rows the **Add** picker still has to offer.
+		 *
+		 * **The name is typed before the entry exists, and that is the
+		 * load-bearing decision.** Record set's **Add** writes a record named
+		 * after the noun and lands focus in its name field, which works because
+		 * a record's identity is its position and two records called "Shield"
+		 * are two records. Here the name *is* the key, so a placeholder pressed
+		 * twice would be a duplicate — and a duplicate key is not a second row,
+		 * it is a whole-section failure that takes the card down. Uniquifying a
+		 * placeholder would be name-plus-occurrence, which invents syntax the
+		 * note does not contain. So the name is typed, checked here, and only
+		 * then written: nothing a reader can do through this plugin can put the
+		 * section into the duplicate-key state.
+		 */
+		const addForm = (panel: AnchoredPanel<null>): void => {
+			const form = panel.body.createDiv(
+				'sheetsmith-panel-fields sheetsmith-track-add-form',
+			);
+			/**
+			 * One labelled control, in the panel's own field clothes.
+			 *
+			 * **A `<label>` with the control inside it**, which is
+			 * `modifier-form.ts`'s own shape and is here for a reason beyond
+			 * matching: the visible word is then the control's accessible name
+			 * outright. Written as a `<div>` with an `aria-label` saying more,
+			 * the **Length** field announced "Segments in the row to add" —
+			 * a name that does not contain the word on screen, which is what
+			 * WCAG 2.5.3 forbids and what leaves voice control with nothing to
+			 * match when a reader says "Length" (`docs/UI.md` §6). The dialog's
+			 * own label carries the context those words were trying to add.
+			 */
+			const field = (label: string): HTMLInputElement => {
+				const row = form.createEl('label', { cls: 'sheetsmith-panel-field' });
+				row.createSpan({ cls: 'sheetsmith-panel-field-label', text: label });
+				const input = row.createEl('input');
+				input.type = 'text';
+				input.classList.add('sheetsmith-panel-input');
+				return input;
+			};
+			/**
+			 * Where a refusal about the field above it goes.
+			 *
+			 * It carries an id because a field points at its own through
+			 * `aria-describedby`, and the id is counted rather than derived
+			 * from `config.id`: only one anchored panel is ever open, so a
+			 * counter is enough, and a component id is not guaranteed to be a
+			 * token an `id` can hold.
+			 */
+			const problem = (which: string): HTMLElement => {
+				const said = form.createEl('p');
+				said.classList.add('sheetsmith-panel-problem');
+				said.id = `sheetsmith-track-add-${++addFormMessages}-${which}`;
+				said.hidden = true;
+				return said;
+			};
+
+			const nameField = field('Name');
+			const nameProblem = problem('name');
+			const lengthField = field('Length');
+			lengthField.inputMode = 'numeric';
+			// **No placeholder, and the `—` it had was borrowed wrongly.** On a
+			// card that dash is a *reading*: it says this row has no ceiling,
+			// which is a state the note is actually in. In an empty form field
+			// it reads as a value already sitting there waiting to be cleared,
+			// and says nothing about what may be typed — while the field is
+			// optional, so the honest empty state is empty. The label beside it
+			// is what names it (`docs/UI.md` §6).
+			lengthField.value = seeded === null ? '' : String(seeded);
+			const lengthProblem = problem('length');
+
+			const submit = form.createEl('button');
+			submit.type = 'button';
+			submit.classList.add('sheetsmith-panel-save');
+			submit.textContent = 'Add';
+
+			/**
+			 * Show or clear one field's refusal, and wire the field to it.
+			 *
+			 * **A description on a hidden element is not exposed**, so the
+			 * `aria-describedby` goes on with the message and comes off with
+			 * it rather than being set once at build time — which would point
+			 * every field at an empty paragraph for the whole life of the
+			 * form.
+			 */
+			const say = (
+				input: HTMLInputElement,
+				into: HTMLElement,
+				message: string | null,
+			): void => {
+				into.textContent = message ?? '';
+				into.hidden = message === null;
+				if (message === null) {
+					input.removeAttribute('aria-describedby');
+					input.removeAttribute('aria-invalid');
+					return;
+				}
+				input.setAttribute('aria-describedby', into.id);
+				input.setAttribute('aria-invalid', 'true');
+			};
+
+			const add = (): void => {
+				const name = nameField.value.trim();
+				const length = lengthField.value.trim();
+				const refusedName = refuseRowName(name, takenNames);
+				// The length goes into the same entry the card's own length
+				// field writes, so it answers to the same refusals: a slash
+				// would be read back as a second number, and a note reference
+				// inside a fence is a link Obsidian never indexes.
+				const refusedLength = length === '' ? null : refuseRowLength(length);
+				say(nameField, nameProblem, refusedName);
+				say(lengthField, lengthProblem, refusedLength);
+				if (refusedName !== null || refusedLength !== null) {
+					// **Announced as well as drawn**, which is the half a
+					// description cannot carry: the press leaves focus on the
+					// button, so a message tied to the field it is about says
+					// nothing until the reader goes back there. The card's own
+					// live region is what the row's rename field already
+					// refuses through, so one feature does not answer the same
+					// refusal two ways (PATTERNS §6).
+					status.textContent = refusedName ?? refusedLength ?? '';
+					// A message grows the panel by a line, and a panel anchored
+					// above its trigger would otherwise drift off it.
+					panel.place();
+					return;
+				}
+				status.textContent = `${name} added`;
+				// Set before the change, as the declared rows' own **Add**
+				// already does, so the render the write causes lands focus in
+				// the new row's length field.
+				awaitingAdd = { id: config.id, key: name };
+				panel.close();
+				// A blank length drops the separator with it, so a row added
+				// with no length is a bare `name:` rather than `name: /`.
+				context.onChange({ values: { [name]: withCeiling('', length) } });
+			};
+
+			submit.addEventListener('click', add);
+			for (const input of [nameField, lengthField]) {
+				input.addEventListener('keydown', (event) => {
+					if (event.key !== 'Enter') return;
+					// Enter in either field submits, which is the gesture a
+					// two-field form owes a reader who never reaches for the
+					// button.
+					event.preventDefault();
+					add();
+				});
+			}
+		};
+
+		/**
 		 * One **Add** and one **Remove**, each behind a picker naming the
 		 * specific rows it offers, rather than one button per candidate —
 		 * a hit-dice set with four die types no longer sits under four named
@@ -1950,10 +2598,14 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 		 * for exactly this shape of list (`docs/UI.md`'s "what it holds is a
 		 * list and one disclosure").
 		 */
-		if (notAdded.length > 0 || addedRows.length > 0) {
+		if (notAdded.length > 0 || addedRows.length > 0 || open) {
 			const actions = card.createDiv('sheetsmith-track-actions');
 
-			if (notAdded.length > 0) {
+			// Whenever the character may add a row, rather than only while a
+			// declared one is left to add: the form below is always something
+			// to offer, so a card that has run out of declared rows still has
+			// an **Add** control and a card that declares none starts with one.
+			if (notAdded.length > 0 || open) {
 				const addButton = actions.createEl('button');
 				addButton.type = 'button';
 				addButton.classList.add('sheetsmith-track-action-button');
@@ -1995,6 +2647,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 							context.onChange({ values: { [row.key]: '' } });
 						});
 					}
+					if (open) addForm(panel);
 					focusFirstControl(panel);
 				});
 			}
