@@ -2508,6 +2508,57 @@ describe('a Track the character may add rows to', () => {
 		});
 	});
 
+	describe('the sample', () => {
+		it('writes one row named from the label, and reads it back', () => {
+			const body = sampleOf(track, clocks);
+			expect(body).toContain('Clocks 1:');
+			const data = dataFrom(body, clocks);
+			expect(data.own).toEqual(['Clocks 1']);
+			expect(track.write(data, body, clocks)).toBe(body);
+		});
+
+		it('draws the character\'s row after the declared ones', () => {
+			const body = sampleOf(track, openDice);
+			// The last character-owned declared row is left un-added by the
+			// sample on purpose, so an author's first preview already shows the
+			// **Add** control rather than a set that looks permanently full.
+			expect(drawnNames(renderBody(openDice, body))).toEqual([
+				'd10',
+				'Hit dice 1',
+			]);
+		});
+
+		it('composes no key from a label the fence could not hold', () => {
+			// The label is author free text, and composing a name from it is
+			// the one place in this component where text nobody checked
+			// becomes a fence key. Obsidian indexes no link inside a fence
+			// (CLAUDE.md 2), so a label holding one composes no row at all.
+			// `contract.test.ts`'s own wikilink sweep cannot see this: every
+			// configuration it reaches is labelled in plain words, so it
+			// passes over this path vacuously.
+			for (const label of ['[[Goblin]] kills', 'Armor: class']) {
+				const cfg = { ...openDice, label };
+				const body = sampleOf(track, cfg);
+				expect(body, label).not.toContain('[[');
+				expect(body, label).not.toContain(label);
+				const data = dataFrom(body, cfg);
+				expect(data.own, label).toBeUndefined();
+				expect(track.write(data, body, cfg), label).toBe(body);
+			}
+		});
+
+		it('skips it where the composed name is already a declared key', () => {
+			const clash: TrackConfig = {
+				...kills,
+				label: 'Kills',
+				rows: [{ key: 'Kills 1', name: 'Kills 1', count: 3 }],
+			};
+			const body = sampleOf(track, clash);
+			const data = dataFrom(body, clash);
+			expect(data.own).toBeUndefined();
+			expect(track.write(data, body, clash)).toBe(body);
+		});
+	});
 });
 
 describe('track keyboard', () => {

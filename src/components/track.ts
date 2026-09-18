@@ -75,6 +75,7 @@ import {
 	samplePart,
 	sampleNumber,
 	sampleSeed,
+	sampleText,
 } from './sample-values';
 import { bindLongPress } from '../ui/popover';
 import { revealWhenTruncated } from '../ui/truncation';
@@ -851,7 +852,15 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			],
 			addressesEntry: { fence: 'section' },
 			description:
-				'One run per entry, sharing a heading, a reset binding and a write. Spell slots are five first-level, three second and one third. Each key names the entry in the character note, and renaming one moves it in every note on this layout; a row with no length of its own falls back to the segment count above. A row\'s length may be the layout\'s formula or the character\'s own number, typed on the sheet — the character\'s for a die type, a slot level, or anything else whose count differs per character rather than being computed. Rows and named levels do not combine.',
+				'One run per entry, sharing a heading, a reset binding and a write. Spell slots are five first-level, three second and one third. Each key names the entry in the character note, and renaming one moves it in every note on this layout; a row with no length of its own falls back to the segment count above. A row\'s length may be the layout\'s formula or the character\'s own number, typed on the sheet — the character\'s for a die type, a slot level, or anything else whose count differs per character rather than being computed. Characters may add rows of their own beside these, where the setting below allows it. Rows and named levels do not combine.',
+		},
+		{
+			key: 'openRows',
+			kind: 'boolean',
+			label: 'Characters may add rows',
+			description:
+				'Adds a control under the runs for naming a row of this character\'s own and choosing how many segments it holds — a counter this actor keeps and no other does. Rows a character adds are theirs to rename and remove, and no formula can name one, so a value another card has to read belongs in a row declared above. The rows declared above are unaffected. Turning this off hides the rows characters added without deleting them, and turning it back on brings them back. Refused where the runs are named levels, or where every run is one segment.',
+			default: false,
 		},
 		{
 			key: 'levels',
@@ -951,6 +960,40 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 				spelledMarks(config, count === null ? marks : samplePart(count * marks)),
 			);
 		});
+		/*
+		 * One row the character added, so an author can see what the toggle
+		 * does to the card before opening a character note.
+		 *
+		 * **It invents no vocabulary** (SPEC §4.1): the name comes from the
+		 * config, exactly as Table's open-row sample takes its names from the
+		 * name column's own heading. One rather than two, because what is
+		 * being shown is that the character's rows sit after the layout's and
+		 * wear a field for a name — a second one says nothing the first does
+		 * not.
+		 *
+		 * **Skipped on the same guard the two character-facing paths use**, and
+		 * that is the point rather than convenience: the name is composed from
+		 * `config.label`, which is author free text, so this is the one place
+		 * in the component where text nobody checked becomes a fence key. A
+		 * narrower gate let a label holding a wikilink compose one — Constraint
+		 * 2, since Obsidian indexes no link inside a fence — and neither
+		 * `contract.test.ts`'s "puts no wikilink in a sample" nor the round
+		 * trip could see it, because every configuration either sweeps is
+		 * labelled in plain words. It also subsumes what this used to check by
+		 * hand: a duplicate of a declared key, and a key the fence could not
+		 * hold.
+		 */
+		if (config.openRows === true) {
+			const name = sampleText(config.label, 0);
+			if (refuseRowName(name, rows.map((row) => row.key)) === null) {
+				const ceiling = sampleNumber(sampleSeed(config.id + name));
+				const filled = samplePart(ceiling * marks);
+				updates.set(
+					name,
+					withCeiling(spelledMarks(config, filled), String(ceiling)),
+				);
+			}
+		}
 		return updates.size === 0 ? '' : writeFenced(null, updates);
 	},
 
