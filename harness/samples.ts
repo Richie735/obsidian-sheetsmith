@@ -1343,7 +1343,123 @@ export const SAMPLES: Sample[] = [
 			'| Worn | Modifiers |',
 			'| --- | --- |',
 			'| Ring of Protection | Ring of Protection |',
+			// The pushes every run below is drawn against. Here rather than in
+			// Magic items so the ten states that table is counted against stay
+			// exactly ten, and untyped because what is being looked at is the
+			// segments rather than the bonus-type contest one table over. Two
+			// rows rather than five, each naming several targets, because one
+			// item lengthening three runs is also the shape a reader meets.
+			'| Talisman of Endurance | endurance.count += 2; endurance_low.count += 2; all_granted.count += 2 |',
+			'| Shackles | vigour.count += -2; cursed_run.count += -5; unmade.count += -1 |',
 		].join('\n'),
+	},
+	/*
+	 * **A modifier that lengthens a run, and one that shortens it**
+	 * (`docs/features/modifier-granted-track-segments.md`). Directly under the
+	 * table pushing at them, because what has to be read is the granted tail
+	 * against the row that granted it.
+	 *
+	 * **Five cards, and the split is forced rather than chosen.** The second
+	 * channel has to hold across four states — base filled, base empty, granted
+	 * filled, granted empty — and **no single run can show all four**: a run
+	 * fills contiguously from the near end, so the moment any granted segment is
+	 * filled every base segment is too. The two comparisons that matter are
+	 * therefore on two cards, each with its pair side by side and one segment
+	 * apart.
+	 *
+	 * - **Endurance** is four granted two at five marks: base filled beside
+	 *   granted *filled* beside granted empty. The filled-granted segment is the
+	 *   one the channel was rebuilt for — a dashed border's gaps show the card
+	 *   rather than the fill, so this is where a bitten-out edge would appear.
+	 * - **Endurance (low)** is the same run standing at two: base filled, base
+	 *   *empty*, granted empty. That is the harder pair, since an empty granted
+	 *   segment differs from an empty base one by the dash alone.
+	 * - **Vigour** is the other direction on a `harm` run, and it draws **six**
+	 *   slots rather than four: the two the shackles took are still there, with a
+	 *   slash through them. That is the owner's rule — a slot a feature takes
+	 *   should look blocked rather than disappear — and it is the third state this
+	 *   row has to separate, against a plain square and a granted ring. The grade
+	 *   runs to the *fourth* slot rather than the sixth, because a blocked one
+	 *   never fills.
+	 * - **Fettle** is `count: "mod.self"` — every segment granted, which the
+	 *   feature names and which nothing else here draws. Its own risk is the
+	 *   join: a leading margin inside a centred row would push the whole run off
+	 *   centre, so the first segment of a run is exempt from it and this is the
+	 *   card that shows the exemption working.
+	 * - **Cursed vigour** is the whole run taken: `2 + mod.self` with a −5, so both
+	 *   its slots draw blocked and `aria-valuemax` is 0. It used to draw `?`, and
+	 *   the change is what returns `?` to meaning what `SPEC` §5 reserves it for —
+	 *   a count that did not *resolve*, where this one resolved perfectly well to
+	 *   nothing. It is also the only card here where a run is drawn and no part of
+	 *   it can be pressed.
+	 * - **Unmade** is where `?` still lives, and it is here because the card above
+	 *   took its old job: `count: "mod.self"` with a penalty has no unmodified run
+	 *   to hold open either, so there are no slots to block and nothing to draw.
+	 *   The sentence it carries — what the count worked out to, and the breakdown
+	 *   behind it — is a `title` no still can hold, so what this shows is the glyph
+	 *   and that the card is not taken down by it.
+	 */
+	{
+		config: {
+			id: 'endurance',
+			type: 'track',
+			label: 'Endurance',
+			position: { col: 1, row: 33, width: 4, height: 1 },
+			count: '4 + mod.self',
+		} as ComponentConfig,
+		body: '```sheet\nvalue: 5\n```',
+	},
+	{
+		config: {
+			id: 'endurance_low',
+			type: 'track',
+			label: 'Endurance (low)',
+			position: { col: 5, row: 33, width: 4, height: 1 },
+			count: '4 + mod.self',
+		} as ComponentConfig,
+		body: '```sheet\nvalue: 2\n```',
+	},
+	{
+		config: {
+			id: 'vigour',
+			type: 'track',
+			label: 'Vigour',
+			position: { col: 9, row: 33, width: 4, height: 1 },
+			count: '6 + mod.self',
+			sense: 'harm',
+		} as ComponentConfig,
+		body: '```sheet\nvalue: 3\n```',
+	},
+	{
+		config: {
+			id: 'all_granted',
+			type: 'track',
+			label: 'Fettle',
+			position: { col: 1, row: 34, width: 4, height: 1 },
+			count: 'mod.self',
+		} as ComponentConfig,
+		body: '```sheet\nvalue: 1\n```',
+	},
+	{
+		config: {
+			id: 'cursed_run',
+			type: 'track',
+			label: 'Cursed vigour',
+			position: { col: 5, row: 34, width: 4, height: 1 },
+			count: '2 + mod.self',
+			sense: 'harm',
+		} as ComponentConfig,
+		body: '```sheet\nvalue: 1\n```',
+	},
+	{
+		config: {
+			id: 'unmade',
+			type: 'track',
+			label: 'Unmade',
+			position: { col: 9, row: 34, width: 4, height: 1 },
+			count: 'mod.self',
+		} as ComponentConfig,
+		body: '```sheet\nvalue: 1\n```',
 	},
 	/*
 	 * Two record sets, directly under the two modifier tables — which is the
@@ -1379,7 +1495,7 @@ export const SAMPLES: Sample[] = [
 			id: 'traits',
 			type: 'record-set',
 			label: 'Traits',
-			position: { col: 1, row: 33, width: 7, height: 3 },
+			position: { col: 1, row: 35, width: 7, height: 3 },
 			recordName: 'Feature',
 			/*
 			 * **All five offered field types on one subject**, because a design
@@ -1497,7 +1613,7 @@ export const SAMPLES: Sample[] = [
 			id: 'spells',
 			type: 'record-set',
 			label: 'Spells',
-			position: { col: 8, row: 33, width: 5, height: 3 },
+			position: { col: 8, row: 35, width: 5, height: 3 },
 			recordName: 'Spell',
 			fields: [
 				{ key: 'Level', type: 'number', max: 9 },
@@ -1573,7 +1689,7 @@ export const SAMPLES: Sample[] = [
 			id: 'rituals',
 			type: 'record-set',
 			label: 'Rituals',
-			position: { col: 1, row: 36, width: 4, height: 1 },
+			position: { col: 1, row: 38, width: 4, height: 1 },
 			recordName: 'Ritual',
 			fields: [{ key: 'Level', type: 'number', max: 9 }],
 		} as ComponentConfig,
@@ -1621,7 +1737,7 @@ export const SAMPLES: Sample[] = [
 			id: 'ability_checks',
 			type: 'group',
 			label: 'Ability checks',
-			position: { col: 1, row: 37, width: 12, height: 6 },
+			position: { col: 1, row: 39, width: 12, height: 6 },
 			children: [
 				{
 					id: 'str_group',

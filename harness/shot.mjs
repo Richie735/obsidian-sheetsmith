@@ -49,8 +49,11 @@ mkdirSync(outDir, { recursive: true });
  * **All three sheet frames are one number in three places and go stale together.**
  * `sheet-narrow` and `sheet-large-text` were left behind when this one was raised
  * for the Image row, and each then cropped the feature it was supposed to show.
- * Measure all three when the sample grows: load the harness at the view's width
- * and read `document.scrollingElement.scrollHeight`. Last raised when the modifier
+ * Measure all three when the sample grows: load the harness through the view's own
+ * query and read **`document.body.scrollHeight`**, never
+ * `document.scrollingElement.scrollHeight` — the paragraph below says why, and
+ * this line said the wrong one of the two for long enough to mislead somebody who
+ * read it. Last raised when the modifier
  * tables gained a `Worn` column and a row, at which point the default measured
  * 3810, the narrow one 7000 and the large-text one 3800 — which is why only two of
  * the three moved.
@@ -165,8 +168,37 @@ mkdirSync(outDir, { recursive: true });
  * which is a frame that fits today and clips on the next row anybody adds. So
  * it is 15500, and the lesson is the order: **measure after the CSS settles,
  * not before.**
+ * **Raised again for the granted-segment runs**
+ * (`docs/features/modifier-granted-track-segments.md`), which add one full grid
+ * row of Tracks under the modifier tables. Measured after the CSS settled, as
+ * the paragraph above asks: 7133 against 7200, 8967 against 9100 and 15431
+ * against 15500 — all three still fitting, and all three inside 135px of their
+ * frame, which is the state this comment's own history says goes stale on the
+ * next addition. 7200 to **7500**, 9100 to **9300**, 15500 to **15800**.
+ *
+ * **And again in the same wave**, when a design review asked for the states the
+ * first pass had left unphotographed: five Track cards over two grid rows rather
+ * than two over one. 7500 to **7800**, 9300 to **9600**, 15800 to **16100**.
+ *
+ * **Both of those raises were justified by a number that could not have detected
+ * staleness, and the paragraph above had already said so.** They were taken from
+ * `document.scrollingElement.scrollHeight`, which returns the greater of the
+ * content and the viewport — so at a frame of 7500 it reported 7413, at 7800 it
+ * reported 7713, and it would have reported "87px of headroom" against any frame
+ * whatsoever. The instruction at the top of this comment said to read exactly that
+ * property, which is the whole of how it happened: the correction was written down
+ * and the instruction was not updated to match it. Both are fixed now.
+ *
+ * Re-measured honestly, through each view's own query and off `document.body`:
+ * **7117** here, **8912** at `text=24`, **15709** at `&width=380` (the heading row
+ * a modified Track grows costs about 12px in each). So the frames
+ * stand — the narrow one genuinely needed the first raise, since 15500 was 174px
+ * *under* today's content — but the slack is now 695, 699 and 426 rather than the
+ * tight margin this file usually runs. **Measure before raising again rather than
+ * following the pattern**, because two of these three did not need the second
+ * raise at all.
  */
-const SHEET_FRAME = '1400,7200';
+const SHEET_FRAME = '1400,7800';
 
 /**
  * The editor pane's frame, tall because the tree is the whole layout.
@@ -265,9 +297,13 @@ const DEFAULTS = [
 		//
 		// **Measure it rather than guessing.** Eyeballing a shot is what let it
 		// go stale twice, because a cropped shot looks like a finished sheet. In
-		// a browser on the harness page: `document.scrollingElement.scrollHeight`
-		// at the width this view uses. A test cannot hold it — that needs a real
-		// browser, and this file opens with the reason it does not drive one.
+		// a browser on the harness page: `document.body.scrollHeight`, through
+		// this view's own query rather than merely at its width. **Not
+		// `document.scrollingElement.scrollHeight`**, which returns the greater of
+		// the content and the viewport and so reports whatever frame it is given
+		// — this line named that one and somebody raised all three frames on it.
+		// A test cannot hold it — that needs a real browser, and this file opens
+		// with the reason it does not drive one.
 		//
 		// Found stale and fixed to 8700 in a separate pass just before this one
 		// (it was cropping Rituals and everything below it, for reasons this
@@ -296,7 +332,7 @@ const DEFAULTS = [
 		// has taken. 14300 to **14700**.
 		name: 'sheet-narrow',
 		query: 'surface=sheet&theme=dark&width=380',
-		size: '520,15500',
+		size: '520,16100',
 	},
 	{
 		/*
@@ -370,7 +406,7 @@ const DEFAULTS = [
 		//
 		// Raised again with SHEET_FRAME for the fit rows: measured 8437 against
 		// 8000, through `text=24` as this comment asks.
-		size: '1400,9100',
+		size: '1400,9600',
 	},
 	{
 		// The first view to photograph a focus ring at all. A still cannot press
@@ -476,6 +512,82 @@ const DEFAULTS = [
 		query:
 			'surface=sheet&theme=dark&press=.sheetsmith-table-value.sheetsmith-modified',
 		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * **The third door onto one builder, and the first on a control whose own
+		 * press is taken.** A Card opens its breakdown from the number and a
+		 * computed cell from the cell; a Track cannot, because a press on the run
+		 * sets the value — so the affordance is a glyph button beside the card's
+		 * name, and this is the only view in which it is open.
+		 *
+		 * It is also the only way this surface can be looked at at all. The
+		 * content was reachable before it, through the run's `title` and its
+		 * `.sheetsmith-sr-only` twin, and neither appears in a screenshot — a
+		 * native tooltip is the host's and a twin is 1px of clipped text. So the
+		 * bubble here is the whole of what a sighted reader ever sees of it.
+		 *
+		 * What to look at: that the mark reads beside an uppercase name a rank
+		 * quieter than it, that it measures the same as the two picker glyphs
+		 * under the runs, and that the bubble's lines read as a list the way
+		 * `sheet-breakdown`'s do. The glyph is `info` and deliberately not the
+		 * `zap` a modifier cell draws — that one opens a control that edits and
+		 * this opens an account that does not (`docs/UI.md` §9).
+		 */
+		name: 'sheet-breakdown-track',
+		query:
+			"surface=sheet&theme=light&bar=off&press=%5Baria-label%3D'Modifiers%20on%20Endurance'%5D",
+		size: SHEET_FRAME,
+	},
+	{
+		// The same, in forced colors, because this is a *fourth* figure on a
+		// component that already draws three — a plain square, a granted ring and
+		// a blocked slash — and the mode that strips every fill is where a fourth
+		// one would collide with the other three if it were going to. It is a
+		// circle where those are rounded squares, on the label's row rather than
+		// in the run, and at a smaller size: three ways of not being one of them.
+		name: 'sheet-breakdown-track-forced-colors',
+		query:
+			"surface=sheet&theme=light&bar=off&press=%5Baria-label%3D'Modifiers%20on%20Endurance'%5D",
+		size: SHEET_FRAME,
+		flags: ['--force-high-contrast'],
+	},
+	{
+		/*
+		 * **The same door in the dark theme**, which this surface had never been
+		 * seen in on a Track: the bubble is the host's own popover chrome and the
+		 * bolt is `--text-muted`, and both are palette-dependent.
+		 */
+		name: 'sheet-breakdown-track-dark',
+		query:
+			"surface=sheet&theme=dark&bar=off&press=%5Baria-label%3D'Modifiers%20on%20Endurance'%5D",
+		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * **Anchored at the right edge of the grid**, which is the case a
+		 * viewport clamp exists for. Unmade sits at columns 9 to 12, so its bolt
+		 * is within a bubble's width of the pane's edge — the arithmetic says it
+		 * fits at 1400 and `docs/UI.md` §11 is precisely the rule that arithmetic
+		 * does not settle where a picture can. It is also the `?` card, so this
+		 * is the one view holding the sentence the popover now carries.
+		 */
+		name: 'sheet-breakdown-track-right',
+		query:
+			"surface=sheet&theme=light&bar=off&press=%5Baria-label%3D'Modifiers%20on%20Unmade'%5D",
+		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * **And at 380px of container**, where a bubble anchored near the edge has
+		 * the least room to be clamped into and the lines wrap hardest. The
+		 * narrowest true viewport a still can hold is 520 (`docs/BACKLOG.md`), so
+		 * this is the floor rather than a phone.
+		 */
+		name: 'sheet-breakdown-track-narrow',
+		query:
+			"surface=sheet&theme=dark&width=380&bar=off&press=%5Baria-label%3D'Modifiers%20on%20Endurance'%5D",
+		size: '520,16100',
 	},
 	{
 		/*
