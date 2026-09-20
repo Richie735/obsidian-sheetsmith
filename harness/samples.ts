@@ -1309,6 +1309,14 @@ export const SAMPLES: Sample[] = [
 			'| Girdle of Giant Strength | stat_roster.STR += 2 as item | yes | pushes at a roster\'s stat, not a card\'s |',
 			'| Unfinished ward | armour_class += | yes | typed, with no amount yet |',
 			'| Eyes of the Eagle | Eyes of the Eagle |  | a table cell, not a card |',
+			// The row that exists so a *multi-change* modifier can be photographed
+			// in the form, on `Warded bracers`' own precedent — a row added purely
+			// so one panel state has a picture. **Worn is off deliberately**:
+			// `Blessing of the Bear` carries `when: 'Worn'`, so this row applies
+			// nothing and moves no number on the sheet, while its panel still draws
+			// the two-line part, each change's own second line, the fields-block
+			// sentence and the `(2 values)` the Modifier picker hangs on the name.
+			'| Bear charm | Blessing of the Bear |  | one modifier, two values |',
 			'| Ring of Nonexistence | Ring of Nonexistence |  | no such modifier |',
 			'| Chalk |  |  | nothing on this row yet |',
 		].join('\n'),
