@@ -366,6 +366,20 @@ const ICONS: Readonly<Record<string, readonly IconShape[]>> = {
 			},
 		],
 	],
+	/*
+	 * The read-only account of a modifier, which is deliberately *not* the bolt
+	 * beside it: `zap` marks a control that edits which modifiers a row declares,
+	 * and this marks one that only explains (`docs/UI.md` §9).
+	 *
+	 * `h.01` is Lucide's own spelling of the dot — a zero-length stroke with a
+	 * round cap — rather than a fourth circle, and it is copied as written for
+	 * the reason this table exists at all.
+	 */
+	info: [
+		['circle', { cx: '12', cy: '12', r: '10' }],
+		['path', { d: 'M12 16v-4' }],
+		['path', { d: 'M12 8h.01' }],
+	],
 	'zap-off': [
 		['path', { d: 'M10.513 4.856 13.12 2.17a.5.5 0 0 1 .86.46l-1.377 4.317' }],
 		['path', { d: 'M15.656 10H20a1 1 0 0 1 .78 1.63l-1.72 1.773' }],
