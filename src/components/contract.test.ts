@@ -588,6 +588,63 @@ describe('a component that draws a label asks whether it should', () => {
 		expect(unwired).toEqual([]);
 	});
 
+	it('catches a hand-wired ring however it is spelled, so the scans mean something', () => {
+		/*
+		 * **Both scans above assert an empty list, and neither population can
+		 * contain the marker's own proof.** `ring-control.ts` declares no
+		 * `ComponentDefinition`, so it is outside `componentFiles()` — and now
+		 * that the four callers have handed their ARIA over, it is the only
+		 * non-test file in this folder that spells `'aria-pressed'` at all. So
+		 * both markers match nothing in the set they are run against, and a
+		 * mistyped constant reads exactly like a rule nothing violates.
+		 *
+		 * `NATIVE_CHECKBOX` below is the model and the one this file already
+		 * had: prove the marker against the spellings it must catch and the
+		 * prose it must not, asserted against the constant itself rather than
+		 * against a filtered list. The narrowness argument was written without
+		 * it (`docs/PATTERNS.md` §10, and the open BACKLOG row about a scan
+		 * tested in one direction).
+		 */
+		for (const spelling of [
+			"button.setAttribute('aria-pressed', String(level > 0));",
+			"el.setAttribute('aria-pressed', String(on));",
+		]) {
+			expect(spelling).toContain(QUOTED_PRESSED);
+		}
+		// The prose that exists today, which the backtick spelling keeps out.
+		expect(
+			'A `<button aria-pressed>` because that is the word ARIA has',
+		).not.toContain(QUOTED_PRESSED);
+		// And the limit, pinned rather than claimed: a comment that *quotes* the
+		// attribute is reported. Nothing in `components/` writes one, and the
+		// alternative — a predicate that reads code position — is the shared
+		// source reader the BACKLOG row above already waits on.
+		expect("// the word is 'aria-pressed'").toContain(QUOTED_PRESSED);
+
+		for (const spelling of [
+			"element('button', 'sheetsmith-level-ring', td);",
+			"td.createEl('button', { cls: 'sheetsmith-level-ring' });",
+			"el.classList.add('sheetsmith-level-ring', 'sheetsmith-track-flag');",
+		]) {
+			expect(spelling).toContain(RING_CLASS);
+		}
+		// The painter's own state class is not a ring being drawn, and neither is
+		// a comment naming the selector.
+		expect(
+			"ring.classList.toggle('sheetsmith-level-ring-on', level > 0);",
+		).not.toContain(RING_CLASS);
+		expect('Named for the mark, the way `.sheetsmith-level-ring` is').not.toContain(
+			RING_CLASS,
+		);
+
+		// Anchored to real repository text as well as to literals here: the one
+		// file that does spell the attribute is the one the four handed it to, so
+		// a marker that stopped matching the code fails here too.
+		expect(readFileSync(join(HERE, 'ring-control.ts'), 'utf8')).toContain(
+			QUOTED_PRESSED,
+		);
+	});
+
 	it('finds the two-state controls it is meant to be checking', () => {
 		// Both checks above are absence assertions, which an empty walk satisfies
 		// perfectly (§10). The population they are about is the four components
