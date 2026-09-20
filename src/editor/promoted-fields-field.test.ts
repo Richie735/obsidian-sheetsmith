@@ -620,7 +620,7 @@ describe('the chosen option’s own words, for a select that clips', () => {
 			},
 		);
 		const changes = container.querySelector(
-			'[data-sheetsmith-focus="modifier-Ring-target"]',
+			'[data-sheetsmith-focus="modifier-Ring-0-target"]',
 		) as HTMLSelectElement;
 		expect(changes.title).toBe('Abilities and saving throws · DEX');
 	});

@@ -4,7 +4,7 @@ import { ListContext } from './list-fields';
 import { renderModifierDefinitions } from './modifier-definitions-field';
 import { ModifierTargetSource } from '../formula/modifier-targets';
 import { Layout } from '../parse/layout';
-import { ModifierDefinition } from '../types';
+import { ModifierChange, ModifierDefinition } from '../types';
 
 /*
  * The layout's modifier definitions, as a field, driven directly.
@@ -28,13 +28,23 @@ interface Recorded {
 	persists: number;
 	redraws: number;
 	confirms: string[];
+	/** Every token the field asked to be focused once the pane had redrawn. */
+	focused: string[];
+	/** Every token the field asked to be marked once the pane had redrawn. */
+	flashed: string[];
 }
 
 let recorded: Recorded;
 let list: ListContext;
 
 beforeEach(() => {
-	recorded = { persists: 0, redraws: 0, confirms: [] };
+	recorded = {
+		persists: 0,
+		redraws: 0,
+		confirms: [],
+		focused: [],
+		flashed: [],
+	};
 	list = {
 		persist: () => {
 			recorded.persists++;
@@ -42,7 +52,12 @@ beforeEach(() => {
 		redraw: () => {
 			recorded.redraws++;
 		},
-		focusAfterRedraw: () => undefined,
+		focusAfterRedraw: (token) => {
+			recorded.focused.push(token);
+		},
+		flashAfterRedraw: (token) => {
+			recorded.flashed.push(token);
+		},
 		confirm: (message, _cta, onConfirm) => {
 			recorded.confirms.push(message);
 			onConfirm();
@@ -76,13 +91,25 @@ const SOURCES: readonly ModifierTargetSource[] = [
 	},
 ];
 
-function layout(modifiers?: ModifierDefinition[]): Layout {
+/**
+ * A definition as a *file* may hold one, which is what this field reads.
+ *
+ * Every member free to be absent, including a change's own two required ones: an
+ * author presses **Add change** and gets an entry with nothing in it, and a hand
+ * edit can leave anything out. The declared types are what the parser produces,
+ * not what it is handed.
+ */
+type Declared = Omit<Partial<ModifierDefinition>, 'changes'> & {
+	changes?: readonly Partial<ModifierChange>[];
+};
+
+function layout(modifiers?: Declared[]): Layout {
 	return {
 		name: 'Sheet',
 		columns: 12,
 		components: [],
 		modifierTypes: ['item', 'status'],
-		...(modifiers ? { modifiers } : {}),
+		...(modifiers ? { modifiers: modifiers as ModifierDefinition[] } : {}),
 	};
 }
 
@@ -130,8 +157,9 @@ function control<T extends HTMLElement = HTMLElement>(
 /** The inline message under one field, addressed by its own focus token. */
 function fieldError(el: HTMLElement, token: string): string | null {
 	return (
-		el.querySelector(`.sheetsmith-field-error[data-sheetsmith-for="${token}"]`)
-			?.textContent ?? null
+		el.querySelector(
+			`.sheetsmith-field-error[data-sheetsmith-for="${token}"]`,
+		)?.textContent ?? null
 	);
 }
 
@@ -147,7 +175,9 @@ describe('the empty state', () => {
 		const el = render(layout());
 		expect(el.textContent).toContain('No modifiers yet.');
 		expect(
-			Array.from(el.querySelectorAll('button')).map((one) => one.textContent),
+			Array.from(el.querySelectorAll('button')).map(
+				(one) => one.textContent,
+			),
 		).toContain('Add modifier');
 	});
 
@@ -175,7 +205,9 @@ describe('the empty state', () => {
 			(one) => one.textContent === 'Add modifier',
 		);
 		add?.click();
-		expect(from.modifiers?.map((one) => one.name)).toEqual(['New modifier']);
+		expect(from.modifiers?.map((one) => one.name)).toEqual([
+			'New modifier',
+		]);
 		expect(recorded.persists).toBe(1);
 	});
 });
@@ -188,7 +220,7 @@ describe('what the list writes to the layout', () => {
 		const el = render(from);
 		const operator = control<HTMLSelectElement>(
 			el,
-			'modifier-Ring of Protection-operator',
+			'modifier-Ring of Protection-0-operator',
 		);
 		operator.value = 'override';
 		operator.dispatchEvent(new Event('change'));
@@ -216,12 +248,12 @@ describe('what the list writes to the layout', () => {
 		const el = render(from);
 		const phase = control<HTMLSelectElement>(
 			el,
-			'modifier-Ring of Protection-applies',
+			'modifier-Ring of Protection-0-applies',
 		);
 		expect(phase.value).toBe('result');
 		const operator = control<HTMLSelectElement>(
 			el,
-			'modifier-Ring of Protection-operator',
+			'modifier-Ring of Protection-0-operator',
 		);
 		operator.value = 'override';
 		operator.dispatchEvent(new Event('change'));
@@ -238,7 +270,7 @@ describe('what the list writes to the layout', () => {
 		const el = render(from);
 		const phase = control<HTMLSelectElement>(
 			el,
-			'modifier-Ring of Protection-applies',
+			'modifier-Ring of Protection-0-applies',
 		);
 		expect(phase.value).toBe('value');
 		phase.value = 'result';
@@ -252,7 +284,10 @@ describe('what the list writes to the layout', () => {
 	it('deletes a key an empty field clears rather than storing ""', () => {
 		const from = layout([{ ...RING, when: 'Worn' }]);
 		const el = render(from);
-		const when = control<HTMLInputElement>(el, 'modifier-Ring of Protection-when');
+		const when = control<HTMLInputElement>(
+			el,
+			'modifier-Ring of Protection-when',
+		);
 		expect(when.value).toBe('Worn');
 		when.value = '   ';
 		when.dispatchEvent(new Event('change'));
@@ -346,7 +381,9 @@ describe('a stored name the list already refuses', () => {
 		 * which, because there is no name to locate it by.
 		 */
 		const el = render(layout([{ ...RING, name: '   ' }]));
-		expect(fieldError(el, 'modifier-0-name')).toBe('A modifier needs a name.');
+		expect(fieldError(el, 'modifier-0-name')).toBe(
+			'A modifier needs a name.',
+		);
 		expect(recorded.persists).toBe(0);
 		expect(recorded.redraws).toBe(0);
 	});
@@ -367,7 +404,7 @@ describe('a stored name the list already refuses', () => {
 		);
 	});
 
-	it('says what the report says, in the report\'s own words', () => {
+	it("says what the report says, in the report's own words", () => {
 		/*
 		 * Both are on screen from the same paint, so two wordings for one fault
 		 * would be two answers to one question (`docs/UI.md` §9). Asserted
@@ -402,7 +439,9 @@ describe('a stored name the list already refuses', () => {
 		// corrected fault clear itself rather than outliving its own text.
 		const from = layout([{ ...RING, name: '' }]);
 		render(from);
-		expect(list.errors.get('modifier-0-name')).toBe('A modifier needs a name.');
+		expect(list.errors.get('modifier-0-name')).toBe(
+			'A modifier needs a name.',
+		);
 		from.modifiers = [{ ...RING, name: 'Ring' }];
 		render(from);
 		expect(list.errors.size).toBe(0);
@@ -424,12 +463,11 @@ describe('the controls a definition offers', () => {
 		const el = render(layout([{ ...RING }]));
 		const picker = control<HTMLSelectElement>(
 			el,
-			'modifier-Ring of Protection-target',
+			'modifier-Ring of Protection-0-target',
 		);
-		expect(Array.from(picker.options).map((one) => one.textContent)).toEqual([
-			'—',
-			'Armour class',
-		]);
+		expect(
+			Array.from(picker.options).map((one) => one.textContent),
+		).toEqual(['—', 'Armour class']);
 	});
 
 	it('carries a stored target the picker no longer offers, rather than snapping it', () => {
@@ -438,7 +476,7 @@ describe('the controls a definition offers', () => {
 		const el = render(layout([{ ...RING, target: 'passive_perception' }]));
 		const picker = control<HTMLSelectElement>(
 			el,
-			'modifier-Ring of Protection-target',
+			'modifier-Ring of Protection-0-target',
 		);
 		/*
 		 * **Its bare name, with no qualifier.** It read `passive_perception (not
@@ -447,9 +485,9 @@ describe('the controls a definition offers', () => {
 		 * list carries that in full and unclipped, so this option carries identity
 		 * only.
 		 */
-		expect(Array.from(picker.options).map((one) => one.textContent)).toContain(
-			'passive_perception',
-		);
+		expect(
+			Array.from(picker.options).map((one) => one.textContent),
+		).toContain('passive_perception');
 		expect(picker.value).toBe('passive_perception');
 		// And the diagnosis is still said, where it has room to be read.
 		expect(el.textContent).toContain('reads no modifier');
@@ -459,12 +497,11 @@ describe('the controls a definition offers', () => {
 		const el = render(layout([{ ...RING }]));
 		const operator = control<HTMLSelectElement>(
 			el,
-			'modifier-Ring of Protection-operator',
+			'modifier-Ring of Protection-0-operator',
 		);
-		expect(Array.from(operator.options).map((one) => one.textContent)).toEqual([
-			'Adds to',
-			'Sets',
-		]);
+		expect(
+			Array.from(operator.options).map((one) => one.textContent),
+		).toEqual(['Adds to', 'Sets']);
 	});
 
 	/**
@@ -479,7 +516,9 @@ describe('the controls a definition offers', () => {
 	function reservedField(el: HTMLElement, label: string): HTMLElement | null {
 		return (
 			Array.from(
-				el.querySelectorAll<HTMLElement>('.sheetsmith-detail-field-reserved'),
+				el.querySelectorAll<HTMLElement>(
+					'.sheetsmith-detail-field-reserved',
+				),
 			).find((field) => field.textContent?.startsWith(label)) ?? null
 		);
 	}
@@ -490,11 +529,15 @@ describe('the controls a definition offers', () => {
 		// in the columns list.
 		const adds = render(layout([{ ...RING }]));
 		expect(
-			adds.querySelector('[data-sheetsmith-focus="modifier-Ring of Protection-bonus-type"]'),
+			adds.querySelector(
+				'[data-sheetsmith-focus="modifier-Ring of Protection-0-bonus-type"]',
+			),
 		).not.toBeNull();
 		const sets = render(layout([{ ...RING, operator: 'override' }]));
 		expect(
-			sets.querySelector('[data-sheetsmith-focus="modifier-Ring of Protection-bonus-type"]'),
+			sets.querySelector(
+				'[data-sheetsmith-focus="modifier-Ring of Protection-0-bonus-type"]',
+			),
 		).toBeNull();
 		/*
 		 * **And the slot it left is reserved rather than empty.** The field is still
@@ -509,7 +552,9 @@ describe('the controls a definition offers', () => {
 		expect(reserved?.getAttribute('aria-hidden')).toBe('true');
 		expect(reserved?.querySelector('select')).not.toBeNull();
 		// And no such slot where the control is real.
-		expect(adds.querySelector('.sheetsmith-detail-field-reserved')).toBeNull();
+		expect(
+			adds.querySelector('.sheetsmith-detail-field-reserved'),
+		).toBeNull();
 	});
 
 	it('offers the phase on Adds to and not on Sets, reserving its slot too', () => {
@@ -523,11 +568,15 @@ describe('the controls a definition offers', () => {
 		 */
 		const adds = render(layout([{ ...RING }]));
 		expect(
-			adds.querySelector('[data-sheetsmith-focus="modifier-Ring of Protection-applies"]'),
+			adds.querySelector(
+				'[data-sheetsmith-focus="modifier-Ring of Protection-0-applies"]',
+			),
 		).not.toBeNull();
 		const sets = render(layout([{ ...RING, operator: 'override' }]));
 		expect(
-			sets.querySelector('[data-sheetsmith-focus="modifier-Ring of Protection-applies"]'),
+			sets.querySelector(
+				'[data-sheetsmith-focus="modifier-Ring of Protection-0-applies"]',
+			),
 		).toBeNull();
 		const reserved = reservedField(sets, 'Applies to');
 		expect(reserved).not.toBeNull();
@@ -535,11 +584,11 @@ describe('the controls a definition offers', () => {
 		expect(reserved?.querySelector('select')).not.toBeNull();
 	});
 
-	it('offers the layout\'s own bonus types over an untyped first line', () => {
+	it("offers the layout's own bonus types over an untyped first line", () => {
 		const el = render(layout([{ ...RING }]));
 		const type = control<HTMLSelectElement>(
 			el,
-			'modifier-Ring of Protection-bonus-type',
+			'modifier-Ring of Protection-0-bonus-type',
 		);
 		expect(Array.from(type.options).map((one) => one.textContent)).toEqual([
 			'Untyped',
@@ -557,11 +606,11 @@ describe('the controls a definition offers', () => {
 		const el = render(layout([{ ...RING, bonusType: 'circumstance' }]));
 		const type = control<HTMLSelectElement>(
 			el,
-			'modifier-Ring of Protection-bonus-type',
+			'modifier-Ring of Protection-0-bonus-type',
 		);
-		expect(Array.from(type.options).map((one) => one.textContent)).toContain(
-			'circumstance (not declared)',
-		);
+		expect(
+			Array.from(type.options).map((one) => one.textContent),
+		).toContain('circumstance (not declared)');
 		expect(type.value).toBe('circumstance');
 	});
 });
@@ -590,7 +639,9 @@ describe('what the field reports under itself', () => {
 	it('reports a target that reads no modifier, with the fix in it', () => {
 		// dnd5e#3900 caught in the editor, and complete rather than half of it: a
 		// target is layout data, so every change on the layout is visible here.
-		const said = problems(render(layout([{ ...RING, target: 'passive_perception' }])));
+		const said = problems(
+			render(layout([{ ...RING, target: 'passive_perception' }])),
+		);
 		expect(said).toHaveLength(1);
 		expect(said[0]).toContain('reads no modifier');
 		expect(said[0]).toContain('+ mod.self');
@@ -605,7 +656,9 @@ describe('what the field reports under itself', () => {
 		 * refused on the field, because refusing inline would leave a hand-edited
 		 * layout's own text unreachable while the reader tried to correct it.
 		 */
-		const el = render(layout([{ ...RING, name: 'Boots; gloves' }, { ...RING }]));
+		const el = render(
+			layout([{ ...RING, name: 'Boots; gloves' }, { ...RING }]),
+		);
 		expect(problems(el)[0]).toContain('cannot be a name');
 		expect(problems(el)[0]).toContain('Rename it without one');
 		// And it stops being offered anywhere: the count is the usable list's.
@@ -637,7 +690,362 @@ describe('what the field reports under itself', () => {
 		// reader is looking elsewhere by then. Polite, so it waits for a pause.
 		const el = render(layout([{ ...RING }]));
 		expect(
-			el.querySelector('.sheetsmith-field-problems')?.getAttribute('role'),
+			el
+				.querySelector('.sheetsmith-field-problems')
+				?.getAttribute('role'),
 		).toBe('status');
+	});
+});
+
+/*
+ * The changes list (`docs/features/multi-change-definitions.md`).
+ *
+ * A definition's **Changes** stopped being one picker and became a small list of
+ * them, each with its own operator, amount, phase and bonus type, with the
+ * definition's **Only when** kept once beneath.
+ */
+describe('a definition naming several changes', () => {
+	/** Every change line the list drew, in order. */
+	function lines(el: HTMLElement): HTMLElement[] {
+		return Array.from(el.querySelectorAll('.sheetsmith-nested-line'));
+	}
+
+	/** The **Add change** button of the one definition on screen. */
+	function addChange(el: HTMLElement): HTMLButtonElement {
+		const found = Array.from(el.querySelectorAll('button')).find(
+			(one) => one.textContent === 'Add change',
+		);
+		if (!found) throw new Error('no Add change button');
+		return found;
+	}
+
+	it('draws exactly one change line for a flat definition, with its remove reserved', () => {
+		/*
+		 * The one-change case is the overwhelming majority of every layout in
+		 * existence, and it must not be made to look like a new kind of thing to
+		 * accommodate the rare one. The remove is built and hidden rather than
+		 * skipped, on `.sheetsmith-detail-field-reserved`'s own argument: a control
+		 * that is not created gives its width back to the line's grow.
+		 */
+		const el = render(layout([{ ...RING }]));
+		expect(lines(el)).toHaveLength(1);
+		const track = el.querySelector('.sheetsmith-nested-controls');
+		expect(
+			track?.classList.contains('sheetsmith-nested-controls-reserved'),
+		).toBe(true);
+		expect(track?.getAttribute('aria-hidden')).toBe('true');
+		// And **Only when** is on the definition's own line, under the whole list.
+		expect(control(el, 'modifier-Ring of Protection-when')).not.toBeNull();
+	});
+
+	it('draws a line per change, each with its own five controls', () => {
+		const el = render(
+			layout([
+				{
+					name: 'Ring',
+					changes: [
+						{
+							target: 'armour_class',
+							amount: '1',
+							bonusType: 'item',
+						},
+						{ target: 'armour_class', amount: '2' },
+					],
+				},
+			]),
+		);
+		expect(lines(el)).toHaveLength(2);
+		expect(
+			control<HTMLSelectElement>(el, 'modifier-Ring-1-target').value,
+		).toBe('armour_class');
+		expect(
+			control<HTMLInputElement>(el, 'modifier-Ring-1-amount').value,
+		).toBe('2');
+		// And one **Only when** for the definition, not one per change.
+		expect(
+			el.querySelectorAll('[data-sheetsmith-focus="modifier-Ring-when"]'),
+		).toHaveLength(1);
+	});
+
+	it('names each control by the value it belongs to, where a definition has several', () => {
+		/*
+		 * Four identical accessible names down one entry is exactly what a screen
+		 * reader cannot tell apart while a sighted reader can — the columns line up
+		 * and the labels are above them. A one-change definition announces what it
+		 * always did, which is the other half of the same rule.
+		 */
+		const el = render(
+			layout([
+				{
+					name: 'Ring',
+					changes: [
+						{ target: 'armour_class', amount: '1' },
+						{ target: 'passive_perception', amount: '1' },
+					],
+				},
+			]),
+		);
+		expect(
+			control(el, 'modifier-Ring-0-operator').getAttribute('aria-label'),
+		).toBe('Ring operator, Armour class');
+		expect(
+			control(el, 'modifier-Ring-1-target').getAttribute('aria-label'),
+			// The bare name, because that is what the select shows for a target the
+			// picker does not offer: a name announcing a word that appears nowhere in
+			// the control fails WCAG 2.5.3 and leaves voice control nothing to match
+			// (`docs/UI.md` §6).
+		).toBe('Ring value, passive_perception');
+		const one = render(layout([{ ...RING }]));
+		expect(
+			control(one, 'modifier-Ring of Protection-0-operator').getAttribute(
+				'aria-label',
+			),
+		).toBe('Ring of Protection operator');
+	});
+
+	it('converts a flat definition on Add change, moving its members into the first entry', () => {
+		/*
+		 * **A write the author asked for, in the author's own layout, through the
+		 * editor that is taking the flat spelling away** — the same distinction the
+		 * operator handler already draws when it deletes `applies`. Removing the
+		 * second change does not convert back, which is named rather than hidden.
+		 */
+		const from = layout([{ ...RING }]);
+		const el = render(from);
+		addChange(el).click();
+		const definition = from.modifiers?.[0];
+		expect(definition?.changes).toEqual([
+			{ target: 'armour_class', amount: '1', bonusType: 'item' },
+			{},
+		]);
+		/*
+		 * **And focus lands on the new change's own Value select**, which is the
+		 * rule every add in this pane follows and was the half nothing asserted: the
+		 * field asks for a token and the pane restores it after the redraw, so a
+		 * token naming the wrong index leaves the hand on another change's control
+		 * — invisible to a test that only reads the layout.
+		 */
+		expect(recorded.focused).toEqual([
+			'modifier-Ring of Protection-1-target',
+		]);
+		// And the new line is marked, so the reader can see which one the press made.
+		expect(recorded.flashed).toEqual([
+			'modifier-Ring of Protection-1-detail',
+		]);
+		expect('target' in (definition ?? {})).toBe(false);
+		expect('amount' in (definition ?? {})).toBe(false);
+		expect('bonusType' in (definition ?? {})).toBe(false);
+		expect(recorded.persists).toBeGreaterThan(0);
+	});
+
+	it('appends to a list that already exists, rather than converting again', () => {
+		const from = layout([
+			{
+				name: 'Ring',
+				changes: [{ target: 'armour_class', amount: '1' }],
+			},
+		]);
+		const el = render(from);
+		addChange(el).click();
+		expect(from.modifiers?.[0]?.changes).toEqual([
+			{ target: 'armour_class', amount: '1' },
+			{},
+		]);
+	});
+
+	it('removes one change and leaves the definition applying the rest', () => {
+		const from = layout([
+			{
+				name: 'Ring',
+				changes: [
+					{ target: 'armour_class', amount: '1' },
+					{ target: 'passive_perception', amount: '2' },
+				],
+			},
+		]);
+		const el = render(from);
+		control(el, 'modifier-Ring-1-remove').click();
+		expect(recorded.confirms[0]).toBe(
+			'Remove the change to passive_perception? Its amount, bonus type and phase are lost. "Ring" goes on applying its other changes.',
+		);
+		expect(from.modifiers?.[0]?.changes).toEqual([
+			{ target: 'armour_class', amount: '1' },
+		]);
+	});
+
+	it('asks nothing before removing a change with no amount', () => {
+		// The confirmation belongs on the change that has been written, not on the
+		// one just added and still empty — `addControls`' own rule one level down.
+		const from = layout([
+			{
+				name: 'Ring',
+				changes: [{ target: 'armour_class', amount: '1' }, {}],
+			},
+		]);
+		const el = render(from);
+		control(el, 'modifier-Ring-1-remove').click();
+		expect(recorded.confirms).toEqual([]);
+		expect(from.modifiers?.[0]?.changes).toHaveLength(1);
+	});
+
+	it("keeps the one-change confirmation word for word", () => {
+		// The case the feature said must not move: a definition naming one value is
+		// what almost every layout holds, and its confirmation is the shipped
+		// sentence. Nothing asserted it before, which is how half a clause was
+		// reworded without anything noticing.
+		const from = layout([{ ...RING, when: 'Worn' }]);
+		const el = render(from);
+		control(el, 'modifier-Ring of Protection-remove').click();
+		expect(recorded.confirms[0]).toBe(
+			'Remove the modifier "Ring of Protection"? Its target, amount and condition are lost. Every character\'s row that names it keeps the name and changes nothing until it is pointed at another modifier.',
+		);
+	});
+
+	it("names the count in the definition's own remove confirmation", () => {
+		const from = layout([
+			{
+				name: 'Ring',
+				when: 'Worn',
+				changes: [
+					{ target: 'armour_class', amount: '1' },
+					{ target: 'passive_perception', amount: '2' },
+				],
+			},
+		]);
+		const el = render(from);
+		control(el, 'modifier-Ring-remove').click();
+		expect(recorded.confirms[0]).toContain(
+			'Its 2 changes and its condition are lost.',
+		);
+		// The sentence about the cost the editor cannot see is unchanged, and is
+		// the load-bearing half.
+		expect(recorded.confirms[0]).toContain(
+			"Every character's row that names it keeps the name and changes nothing",
+		);
+	});
+
+	it('asks nothing before removing a definition no change of which carries an amount', () => {
+		const from = layout([{ name: 'Ring', changes: [{}, {}] }]);
+		const el = render(from);
+		control(el, 'modifier-Ring-remove').click();
+		expect(recorded.confirms).toEqual([]);
+		expect(from.modifiers).toEqual([]);
+	});
+
+	it('leaves a hand-written empty list empty until something on its line commits', () => {
+		/*
+		 * The restraint this field already shows in not materialising
+		 * `"modifiers": []`, read one level down. Nothing persists at render, but
+		 * the *next* commit anywhere in the pane serialises the whole layout — so an
+		 * entry pushed in at render time would come back in the file after an edit
+		 * to an unrelated field, which is the editor rewriting a file it was only
+		 * asked to show.
+		 */
+		const from = layout([{ name: 'Ring', changes: [] }, { ...RING }]);
+		render(from);
+		expect(from.modifiers?.[0]?.changes).toEqual([]);
+		// An unrelated commit — another definition's condition — still leaves it.
+		const again = render(from);
+		const when = control<HTMLInputElement>(
+			again,
+			'modifier-Ring of Protection-when',
+		);
+		when.value = 'Worn';
+		when.dispatchEvent(new Event('change'));
+		expect(from.modifiers?.[0]?.changes).toEqual([]);
+	});
+
+	it('draws a line for a definition holding an empty list, rather than none', () => {
+		// A hand edit can leave `changes: []`, the parser reads that as a definition
+		// naming no value, and a line with nowhere to write would take an edit and
+		// drop it.
+		const from = layout([{ name: 'Ring', changes: [] }]);
+		const el = render(from);
+		expect(lines(el)).toHaveLength(1);
+		const value = control<HTMLSelectElement>(el, 'modifier-Ring-0-target');
+		value.value = 'armour_class';
+		value.dispatchEvent(new Event('change'));
+		expect(from.modifiers?.[0]?.changes).toEqual([
+			{ target: 'armour_class' },
+		]);
+	});
+
+	it('says every new problem in the words the parser uses, so the two cannot be reworded apart', () => {
+		/*
+		 * The rule this file already holds for the two name faults, read on **every**
+		 * message a definition naming several changes can earn — which is the point
+		 * of the pairing: the parser is where the sentences live, this is where a
+		 * reader sees them, and a reword on either side alone fails here.
+		 *
+		 * One definition earns all of them, because each is per change and a
+		 * definition has as many changes as it needs. The flat members beside the
+		 * list are what make the first one fire.
+		 */
+		const el = render(
+			layout([
+				{
+					name: 'Ring',
+					target: 'armour_class',
+					amount: '1',
+					when: 'Attuned &&',
+					changes: [
+						{ target: 'armour_class', amount: '1' },
+						{ target: '', amount: '' },
+						{ target: 'armour_class', amount: '' },
+						{ target: 'passive_perception', amount: '2' },
+						{ target: 'armour_class', amount: '1 +' },
+						{ target: 'armour_class', amount: '1', applies: 'sideways' },
+						{
+							target: 'armour_class',
+							operator: 'override',
+							amount: '18',
+							applies: 'result',
+						},
+						{
+							target: 'armour_class',
+							operator: 'override',
+							amount: '18',
+							bonusType: 'item',
+						},
+					],
+				},
+			] as Declared[]),
+		);
+		const report = problems(el).join('\n');
+		for (const said of [
+			'"Ring" lists its changes, so "target" and "amount" beside the list are ignored. Delete them, or delete the list.',
+			'"Ring" has a change that names no value. Choose one under Value, or remove the change.',
+			'"Ring" changes "passive_perception", which reads no modifier, so that change does nothing. Add "+ mod.self" to that value\'s own formula.',
+			'"Ring" has no amount for "armour_class", so that change does nothing. Give it an expression under Amount.',
+			'"Ring" has an amount for "armour_class" that is not an expression: "1 +".',
+			'"Ring" has a condition that is not an expression: "Attuned &&".',
+			'"Ring" applies "armour_class" to "sideways", which is not a phase. Use "value" to change the number behind the formula, or "result" to change what the formula came to.',
+			'"Ring" sets "armour_class", so it always applies to the result and "applies" is ignored. Clear it, or make that change add to the value instead.',
+			'"Ring" sets "armour_class", so its bonus type "item" is ignored: overrides are not contested by type. Clear it, or make that change add to the value instead.',
+			'"Ring" changes "armour_class" twice. Both apply and contest as two separate modifiers would. Remove one, or point it at a different value.',
+		]) {
+			expect(report, said).toContain(said);
+		}
+	});
+
+	it("names the row's first control Value and the list Changes, and never the same word twice", () => {
+		// `Changes` over rows whose first control also read `Changes` said the word
+		// twice for two different things; the row's control is the narrower of the
+		// two — one value, where the list is every value this modifier moves. So
+		// both words are on screen and neither is on the other's element.
+		const el = render(layout([{ ...RING }]));
+		const list = el.querySelector('.sheetsmith-nested-list');
+		expect(list?.querySelector('.sheetsmith-nested-label')?.textContent).toBe(
+			'Changes',
+		);
+		// The group carries the same word as its own name, so a reader arrowing
+		// into it is told what the lines belong to.
+		expect(list?.getAttribute('role')).toBe('group');
+		expect(list?.getAttribute('aria-label')).toBe('Changes');
+		const labels = Array.from(
+			el.querySelectorAll('.sheetsmith-position-label'),
+		).map((one) => one.textContent);
+		expect(labels).toContain('Value');
+		expect(labels).not.toContain('Changes');
 	});
 });
