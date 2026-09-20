@@ -67,7 +67,7 @@ import {
 import { paintLinkedText } from './linked-text';
 import { MODIFIED_CLASS, modifierBreakdown } from './modifier-breakdown';
 import { sampleFlag, sampleNumber, sampleSeed, sampleText } from './sample-values';
-import { flagReading, flagText, isFlagSet } from './stored-flag';
+import { flagText, isFlagSet } from './stored-flag';
 import { boundedText, formatComputed, typedValue, typeOf } from './typed-value';
 import {
 	ComponentConfig,
@@ -1328,7 +1328,7 @@ function drawRow(
 			let current = graded ? levelOf(column, raw) : (isFlagSet(raw) ? 1 : 0);
 			let repaint = () => undefined as void;
 			const stateOf = (level: number) => (graded ? String(level) : flagText(level > 0));
-			const nameOf = (level: number) => (graded ? levelName(column, level) : flagReading(level > 0));
+			const nameOf = (level: number) => levelName(column, level);
 			const setLevel = (next: number) => {
 				if (next === current) return;
 				current = next;

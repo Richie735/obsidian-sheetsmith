@@ -101,7 +101,7 @@ import {
 	sampleSeed,
 	sampleText,
 } from './sample-values';
-import { flagReading, flagText } from './stored-flag';
+import { flagText } from './stored-flag';
 import {
 	AnchoredPanel,
 	focusFirstControl,
@@ -2397,8 +2397,7 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 					const stateOf = (level: number) =>
 						graded ? String(level) : flagText(level > 0);
 					/** What the level is called, to a reader and to a listener. */
-					const nameOf = (level: number) =>
-						graded ? levelName(column, level) : flagReading(level > 0);
+					const nameOf = (level: number) => levelName(column, level);
 
 					const setLevel = (next: number) => {
 						if (next === current) return;

@@ -63,12 +63,7 @@ import {
 import { GESTURE_COMMIT } from '../interaction/commit-window';
 import { bindEditable, keptRatherThanBlank } from '../interaction/editable';
 import { levelGlyph, levelName, paintLevelRing, parseLevel } from './level-ring';
-import {
-	flagReading,
-	flagText,
-	isFlagSet,
-	isFlagSpelling,
-} from './stored-flag';
+import { flagText, isFlagSet, isFlagSpelling } from './stored-flag';
 import { fencedLinkRefusal } from './fenced-link';
 import { modifierBreakdown } from './modifier-breakdown';
 import { publishedFieldNames } from '../formula/resolve';
@@ -2080,9 +2075,8 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 					setMarks: () => undefined,
 				};
 
-				/** The step's own name where they are named, yes or no otherwise. */
-				const reading = (on: boolean): string =>
-					named ? stepLabel(config, on ? 1 : 0, 1) : flagReading(on);
+				/** The step's own name, where the steps are named. */
+				const reading = (on: boolean): string => stepLabel(config, on ? 1 : 0, 1);
 
 				run.paint = (): void => {
 					const on = run.value >= 1;
