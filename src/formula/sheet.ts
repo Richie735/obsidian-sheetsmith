@@ -58,7 +58,7 @@ import {
 } from './modifier-targets';
 import {
 	definitionTable,
-	resolveEnrolment,
+	resolveEnrolments,
 } from './modifier-definitions';
 import {
 	buildModifierTable,
@@ -279,7 +279,7 @@ export interface SheetModifiers {
 	/**
 	 * The accepting targets with their labels, in publication order.
 	 *
-	 * The form's **Changes** select is over this, and so is the layout editor's own
+	 * The form's **Value** select is over this, and so is the layout editor's own
 	 * picker: one derivation, so the sheet and the pane cannot offer different
 	 * lists. It is the same set `accepting` below is a bare index of.
 	 */
@@ -534,26 +534,31 @@ export function sheetModifiers(
 		 * already has the same shape, telling the reader to choose another and the
 		 * author to add one.
 		 */
-		outcome: (part, row) => {
-			const found = resolveEnrolment(table, part, row, calls);
-			if (
-				found.kind === 'applies' &&
-				!modifiers.accepting.has(found.contribution.target)
-			) {
-				const named = label(found.contribution.target);
-				return {
-					definition: found.definition,
-					typed: found.typed,
-					target: found.contribution.target,
-					targetLabel: named,
-					applies: false,
-					amount: found.contribution.amount,
-					condition: found.conditional ? true : null,
-					suppressed: `${named} does not take modifiers, so nothing changes. Its own formula has to ask for them, which is a layout edit.`,
-				};
-			}
-			return enrolmentOutcome(found, (target) => env.modifiers(target), label);
-		},
+		outcomes: (part, row) =>
+			// One per change the part's modifier names, in the definition's own
+			// order, so a two-change modifier states both on the row that enrols in
+			// it. The gate below is per change for the same reason the walk's is:
+			// one of a definition's values may read no modifier while another does.
+			resolveEnrolments(table, part, row, calls).map((found) => {
+				if (
+					found.kind === 'applies' &&
+					!modifiers.accepting.has(found.contribution.target)
+				) {
+					const named = label(found.contribution.target);
+					return {
+						definition: found.definition,
+						change: found.change,
+						typed: found.typed,
+						target: found.contribution.target,
+						targetLabel: named,
+						applies: false,
+						amount: found.contribution.amount,
+						condition: found.conditional ? true : null,
+						suppressed: `${named} does not take modifiers, so nothing changes. Its own formula has to ask for them, which is a layout edit.`,
+					};
+				}
+				return enrolmentOutcome(found, (target) => env.modifiers(target), label);
+			}),
 		breakdown: (name) => {
 			if (!modifiers.accepting.has(name)) {
 				return { lines: [], override: null, total: 0, resultTotal: 0 };

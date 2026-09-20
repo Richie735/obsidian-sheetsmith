@@ -64,6 +64,7 @@
  */
 
 import {
+	ModifierChangeView,
 	ModifierDefinitionView,
 	ModifierOutcome,
 	ModifierTarget,
@@ -86,6 +87,7 @@ import {
 } from '../parse/modifier-cell';
 import {
 	modifierOutcomeText,
+	applying,
 	modifierPartName,
 } from './modifier-breakdown';
 import { element } from '../ui/element';
@@ -127,8 +129,8 @@ export interface ModifierFormState {
 	 * A part being typed that is not in the cell yet.
 	 *
 	 * A part with no target could not be spelled in the cell at all (§6's
-	 * discriminator needs a name token), so it exists here until **Changes** is
-	 * chosen — which is why **Changes** is the first of the four fields rather than
+	 * discriminator needs a name token), so it exists here until **Value** is
+	 * chosen — which is why **Value** is the first of the four fields rather than
 	 * **Amount**.
 	 */
 	draft: TypedEffect;
@@ -170,10 +172,13 @@ export interface ModifierFormOptions {
 	label: string;
 	/** Every part's own stored text, in the cell's order. */
 	parts: readonly string[];
-	/** What one part comes to on this row, or null where there is no sheet. */
-	outcome: (part: string) => ModifierOutcome | null;
+	/**
+	 * What one part comes to on this row: one outcome per change its modifier
+	 * names, and an empty list where there is no sheet.
+	 */
+	outcomes: (part: string) => readonly ModifierOutcome[];
 	definitions: readonly ModifierDefinitionView[];
-	/** The values a modifier may be aimed at: the form's **Changes** options. */
+	/** The values a modifier may be aimed at: the form's **Value** options. */
 	targets: readonly ModifierTarget[];
 	/** Every published name and its label, so a stray target has a word. */
 	published: readonly ModifierTarget[];
@@ -204,11 +209,7 @@ export interface ModifierFormOptions {
 }
 
 /** One `<option>`, with its value and its words. */
-function option(
-	select: HTMLSelectElement,
-	value: string,
-	text: string,
-): void {
+function option(select: HTMLSelectElement, value: string, text: string): void {
 	select.createEl('option', { value, text });
 }
 
@@ -236,21 +237,60 @@ function field(
 	return row;
 }
 
-/** The words for one part in the list: what it is, and why it is not applying. */
+/**
+ * The words for one part in the list: **one pair per change** its modifier names,
+ * and why each is not applying.
+ *
+ * ```
+ * Ring of Protection · Armour class — deflection +1
+ *                      Saving throws — deflection +1
+ * ```
+ *
+ * The identifying half is the surface's and rides on the first line only — a
+ * definition has one name however many values it moves, and printing it again
+ * under itself would be the one word on the line that is not new. The outcome
+ * half is the shared builder's, once per change, so a line here, the `title` on
+ * the glyph and a line in each moved number's breakdown all spell the outcome the
+ * same way.
+ */
 function partLines(
 	stored: string,
-	outcome: ModifierOutcome | null,
-): { said: string; why: string | null } {
-	if (outcome === null) return { said: stored, why: null };
-	const lines = modifierOutcomeText(stored, outcome).split('\n');
-	const named = modifierPartName(outcome);
-	const first = lines[0] ?? stored;
+	outcomes: readonly ModifierOutcome[],
+): readonly { said: string; why: string | null }[] {
+	if (outcomes.length === 0) return [{ said: stored, why: null }];
+	// The name is the same on every change, so the first is the only one asked.
+	const named = modifierPartName(outcomes[0] as ModifierOutcome);
+	return outcomes.map((outcome, at) => {
+		const lines = modifierOutcomeText(stored, outcome).split('\n');
+		const first = lines[0] ?? stored;
+		return {
+			said: named === null || at > 0 ? first : `${named} · ${first}`,
+			why: lines[1] ?? null,
+		};
+	});
+}
+
+/**
+ * One change of a named definition, as the effect a row would spell for itself.
+ *
+ * What the five read-only fields show, and what **Copy onto this row** writes —
+ * one part per change, which is the only conversion that loses nothing. The
+ * condition comes from the definition because that is where it lives; every other
+ * slot is the change's own.
+ */
+function changeAsEffect(
+	change: ModifierChangeView,
+	definition: ModifierDefinitionView,
+): TypedEffect {
 	return {
-		// The identifying half is the surface's, and the outcome half is the shared
-		// builder's — so a line here, the `title` on the glyph and a line in the
-		// number's breakdown all spell the outcome the same way.
-		said: named === null ? first : `${named} · ${first}`,
-		why: lines[1] ?? null,
+		target: change.target,
+		operator: change.operator ?? 'add',
+		amount: change.amount,
+		...(change.applies === undefined ? {} : { applies: change.applies }),
+		...(change.bonusType === undefined
+			? {}
+			: { bonusType: change.bonusType }),
+		...(definition.when === undefined ? {} : { when: definition.when }),
 	};
 }
 
@@ -274,10 +314,22 @@ export function renderModifierForm(
 		options.onResize();
 	};
 
-	/** Report a cell rewrite with exactly one part replaced, added or dropped. */
-	const write = (at: number | 'new', text: string | null): void => {
+	/**
+	 * Report a cell rewrite with exactly one part replaced, added or dropped.
+	 *
+	 * **Several replacing one is the one plural case**, and it is detaching a
+	 * definition that names several values: a cell part is one change by
+	 * construction, so the honest copy of a two-change modifier onto a row is two
+	 * parts. Every other caller passes one string and lands where it always did.
+	 */
+	const write = (
+		at: number | 'new',
+		text: string | readonly string[] | null,
+	): void => {
+		const added =
+			text === null ? [] : typeof text === 'string' ? [text] : text;
 		if (at === 'new') {
-			options.onCommit(text === null ? parts : [...parts, text]);
+			options.onCommit(text === null ? parts : [...parts, ...added]);
 			return;
 		}
 		if (text === null) {
@@ -292,7 +344,7 @@ export function renderModifierForm(
 			return;
 		}
 		const next = parts.slice();
-		next[at] = text;
+		next.splice(at, 1, ...added);
 		options.onCommit(next);
 	};
 
@@ -326,8 +378,9 @@ export function renderModifierForm(
 	}
 
 	parts.forEach((stored, at) => {
-		const outcome = options.outcome(stored);
-		const { said, why } = partLines(stored, outcome);
+		const outcomes = options.outcomes(stored);
+		const said = partLines(stored, outcomes);
+		const first = outcomes[0] ?? null;
 		/*
 		 * **How many lines one Remove would take**, which is one wherever a part is
 		 * the only one of its enrolment and two or more where a name repeats.
@@ -360,29 +413,56 @@ export function renderModifierForm(
 		 * shot that selected a row by state rather than by index.
 		 */
 		line.dataset.sheetsmithPart =
-			outcome === null || (outcome.definition === null && outcome.typed === null)
+			first === null ||
+			(first.definition === null && first.typed === null)
 				? 'stray'
-				: outcome.typed !== null
+				: first.typed !== null
 					? 'typed'
 					: 'named';
 		// The modifier's own words plus its state, which is the whole of what a
 		// sighted reader gets from the line and its reason together.
-		const spoken = [said, why, repeat ? `one of ${takes} lines naming it` : null]
+		const spoken = [
+			...said.flatMap(({ said: one, why }) => [one, why]),
+			repeat ? `one of ${takes} lines naming it` : null,
+		]
 			.filter((one): one is string => one !== null && one !== '')
 			.join(', ');
 		line.setAttribute('aria-label', spoken);
 		const glyph = element('span', 'sheetsmith-panel-glyph', line);
 		glyph.setAttribute('aria-hidden', 'true');
-		// The same mark the row's own glyph draws, which is what leaves the icon
-		// slot in this list meaning *state*.
-		options.icon(glyph, outcome?.applies === true ? 'zap' : 'zap-off');
+		/*
+		 * The same mark the row's own glyph draws, which is what leaves the icon
+		 * slot in this list meaning *state* — and **one mark for the whole part**,
+		 * on the row glyph's own rule: a modifier one of whose two changes is
+		 * suppressed is a modifier that is applying. The per-change `Not applied`
+		 * lines below are where the other half is said.
+		 */
+		options.icon(glyph, applying(outcomes) ? 'zap' : 'zap-off');
 		const words = element('span', 'sheetsmith-panel-line-words', line);
-		element('span', 'sheetsmith-panel-said', words, said);
-		if (why !== null) {
-			// A quiet line under the line it is about, in the editor's own
-			// `.sheetsmith-field-problems` shape.
-			element('span', 'sheetsmith-panel-why', words, why);
-		}
+		said.forEach(({ said: one, why }, change) => {
+			/*
+			 * Indented under the name the first line carries, so several changes of
+			 * one modifier read as one block rather than as several lines that
+			 * happen to be adjacent. Geometry rather than a background, so it still
+			 * reads as nesting under `forced-colors: active`.
+			 *
+			 * **A change's reason takes the indent too**, which it did not at first
+			 * and which the shot is what caught: reading down the left edge gave
+			 * name, reason, outcome, reason — the grouping breaking at exactly the
+			 * point where there are two of them, which is the case the indent exists
+			 * for. A reason belongs to the outcome above it, so it is indented with
+			 * that outcome rather than with the first one.
+			 */
+			const inset = change > 0 ? 'sheetsmith-panel-said-more' : null;
+			const text = element('span', 'sheetsmith-panel-said', words, one);
+			if (inset !== null) text.addClass(inset);
+			if (why !== null) {
+				// A quiet line under the line it is about, in the editor's own
+				// `.sheetsmith-field-problems` shape.
+				const reason = element('span', 'sheetsmith-panel-why', words, why);
+				if (inset !== null) reason.addClass(inset);
+			}
+		});
 		if (repeat) {
 			// Every line not doing what a reader expects already carries one of
 			// these, and this is such a line: it is a second drawing of one
@@ -412,7 +492,8 @@ export function renderModifierForm(
 			state.focused = open ? null : 'modifier';
 			redraw();
 		});
-		if (open) renderFields(entry, state, options, stored, at, write, redraw);
+		if (open)
+			renderFields(entry, state, options, stored, at, write, redraw);
 	});
 
 	if (state.open === 'new') {
@@ -438,11 +519,9 @@ export function renderModifierForm(
 	// rebuilds this body from under the control that committed, and without this
 	// a reader who pressed Enter in **Amount** would be left with focus nowhere.
 	if (state.focused !== null) {
-		body
-			.querySelector<HTMLElement>(
-				`[data-sheetsmith-panel-field="${state.focused}"]`,
-			)
-			?.focus();
+		body.querySelector<HTMLElement>(
+			`[data-sheetsmith-panel-field="${state.focused}"]`,
+		)?.focus();
 	}
 }
 
@@ -457,12 +536,15 @@ function renderFields(
 	options: ModifierFormOptions,
 	stored: string | null,
 	at: number | 'new',
-	write: (at: number | 'new', text: string | null) => void,
+	write: (
+		at: number | 'new',
+		text: string | readonly string[] | null,
+	) => void,
 	redraw: () => void,
 ): void {
 	const fields = element('div', 'sheetsmith-panel-fields', entry);
 	/*
-	 * **The part's five slots come from `outcome` and are never parsed here**, which
+	 * **The part's five slots come from `outcomes` and are never parsed here**, which
 	 * is the whole of "there is exactly one parse of a cell part in the codebase,
 	 * and it is on the formula side of the seam". This component spells a part —
 	 * `spellTypedEffect`, because it writes the cell — and never reads one. Two
@@ -472,9 +554,22 @@ function renderFields(
 	 * `definition` and `typed` are never both set, so the three cases below are the
 	 * whole of the discrimination the form needs.
 	 */
-	const outcome = stored === null ? null : options.outcome(stored);
+	const resolved = stored === null ? [] : options.outcomes(stored);
+	/**
+	 * The part's first change, which is the one these fields show.
+	 *
+	 * **A definition naming several values is shown by its first here**, with the
+	 * count said under the picker below, because these five fields describe *one*
+	 * change and a named part's are read-only in any case: the list line above
+	 * already states every change in full, which is the surface a reader asking
+	 * "what does this do" is looking at. What the five are still for is the typed
+	 * tier, where they are the editor.
+	 */
+	const outcome = resolved[0] ?? null;
 	/** The named definition this part points at, where it points at a live one. */
 	const named = outcome?.definition ?? null;
+	/** That definition's first change, which is where the five slots come from. */
+	const moved = outcome?.change ?? null;
 	/**
 	 * A part the layout can make nothing of: carried, never corrected.
 	 *
@@ -526,7 +621,11 @@ function renderFields(
 		return el;
 	};
 	const text = (label: string, key: string): HTMLInputElement => {
-		const el = element('input', 'sheetsmith-panel-input', field(fields, label));
+		const el = element(
+			'input',
+			'sheetsmith-panel-input',
+			field(fields, label),
+		);
 		el.type = 'text';
 		token(el, key);
 		return el;
@@ -534,15 +633,8 @@ function renderFields(
 
 	/** What the part's five slots read, whichever tier it came from. */
 	const shown: TypedEffect =
-		named !== null
-			? {
-					target: named.target,
-					operator: named.operator ?? 'add',
-					amount: named.amount,
-					...(named.applies === undefined ? {} : { applies: named.applies }),
-					...(named.bonusType === undefined ? {} : { bonusType: named.bonusType }),
-					...(named.when === undefined ? {} : { when: named.when }),
-				}
+		named !== null && moved !== null
+			? changeAsEffect(moved, named)
 			: (typed ?? blankEffect());
 	/** Whether the reader may edit those five slots on this row. */
 	const editable = typed !== null;
@@ -553,7 +645,7 @@ function renderFields(
 		 * **A draft composes onto the live draft, not the render-time snapshot.**
 		 * `shown` is captured when the fields were drawn, and a commit does not redraw
 		 * them — the sheet's own re-render does, one `await` later. So a reader who
-		 * chose **Changes** and typed an **Amount** inside that window composed the
+		 * chose **Value** and typed an **Amount** inside that window composed the
 		 * amount onto a *blank* snapshot, which had no target, and the amount was
 		 * silently dropped.
 		 */
@@ -571,7 +663,7 @@ function renderFields(
 		if (stored === null) {
 			state.draft = effect;
 			// A part with no target cannot be spelled in a cell at all, so it stays
-			// a draft until **Changes** is chosen.
+			// a draft until **Value** is chosen.
 			if (effect.target === '') {
 				redraw();
 				return;
@@ -582,7 +674,7 @@ function renderFields(
 			 *
 			 * Blanking it lost the next field: a commit does not redraw this body, the
 			 * sheet's own re-render does, and that is one `await` away. A reader who
-			 * chose **Changes** and typed an **Amount** inside that window had the
+			 * chose **Value** and typed an **Amount** inside that window had the
 			 * amount silently dropped, because the second `put` composed onto a blank
 			 * draft, found no target and wrote nothing. Keeping the effect makes the
 			 * second commit overwrite the first — one part, not two, which is also the
@@ -602,7 +694,7 @@ function renderFields(
 	 * `Typed on this row` first, then every definition the layout declares, each
 	 * resolved against this row so it reads `Bull's Strength · Strength — status +1`
 	 * rather than a bare name — which is the whole difference between a picker and a
-	 * list of words. One `outcome` call per definition, on a **press**, which
+	 * list of words. One `outcomes` call per definition, on a **press**, which
 	 * happens after a render has finished, so these can never be the first entry
 	 * into the modifier walk in a render.
 	 *
@@ -618,24 +710,70 @@ function renderFields(
 	const tier = select('Modifier', 'modifier', true);
 	option(tier, TYPED_OPTION, 'Typed on this row');
 	for (const definition of options.definitions) {
-		const said = options.outcome(definition.name);
+		/*
+		 * **The first change only, and the rest are not printed.** An option is one
+		 * line in a `<select>` with no room for a second, and the picker's job is to
+		 * tell one definition from another rather than to state what each does in
+		 * full — which the list line above does the moment one is chosen. A
+		 * definition moving several values says so, so the option is not read as a
+		 * complete account of it.
+		 */
+		const said = options.outcomes(definition.name);
+		const one = said[0];
 		const lines =
-			said === null ? [] : modifierOutcomeText(definition.name, said).split('\n');
+			one === undefined
+				? []
+				: modifierOutcomeText(definition.name, one).split('\n');
+		/*
+		 * **The count rides with the name, not after the outcome.** It was a
+		 * trailing ` (+1 more)` and the shot showed it clipped off the end — a
+		 * `<select>` is as wide as its box and the outcome is the long half, so the
+		 * one token saying "this option is not the whole story" was the first token
+		 * to go. Qualifying the name puts it where clipping starts from rather than
+		 * where clipping ends.
+		 */
+		const moves = said.length > 1 ? ` (${said.length} values)` : '';
 		option(
 			tier,
 			definition.name,
 			lines[0] === undefined
-				? definition.name
-				: `${definition.name} · ${lines[0]}`,
+				? `${definition.name}${moves}`
+				: `${definition.name}${moves} · ${lines[0]}`,
 		);
 	}
 	if (stray !== null) {
 		// Carried as its own option and never offered otherwise: §4.2's rule for a
 		// Card's stray stored option, read on the control that replaced the one it
 		// was first read on.
-		option(tier, STRAY_OPTION, `${stray} · not a modifier this layout declares`);
+		option(
+			tier,
+			STRAY_OPTION,
+			`${stray} · not a modifier this layout declares`,
+		);
 	}
-	tier.value = stray !== null ? STRAY_OPTION : named !== null ? named.name : TYPED_OPTION;
+	tier.value =
+		stray !== null
+			? STRAY_OPTION
+			: named !== null
+				? named.name
+				: TYPED_OPTION;
+	if (named !== null && named.changes.length > 1) {
+		/*
+		 * **Said rather than shown**, because the five fields below describe one
+		 * change and this definition has several. Drawing a set of them per change
+		 * would make a read-only account of the layout the tallest thing in the
+		 * panel — `docs/UI.md` §12 already records the panel as the largest surface
+		 * on a sheet — while the list line above states every change in full and is
+		 * one press away. So the fields say which one they are, and the reader who
+		 * wants the rest reads the line they just opened.
+		 */
+		element(
+			'p',
+			'sheetsmith-panel-why',
+			fields,
+			`"${named.name}" changes ${named.changes.length} values. These fields show the first; the line above lists them all.`,
+		);
+	}
 	tier.addEventListener('change', () => {
 		/*
 		 * **A tier change arms and commits**, and the select's own change is the
@@ -661,7 +799,9 @@ function renderFields(
 		);
 		const confirm = element('button', 'sheetsmith-panel-confirm', box);
 		confirm.type = 'button';
-		confirm.textContent = detaching ? 'Copy onto this row' : 'Use this modifier';
+		confirm.textContent = detaching
+			? 'Copy onto this row'
+			: 'Use this modifier';
 		token(confirm, 'confirm');
 		confirm.addEventListener('click', () => {
 			const chosen = state.pending;
@@ -671,16 +811,37 @@ function renderFields(
 				return;
 			}
 			if (chosen === TYPED_OPTION) {
-				// Foundry's own #4451 "detach to instance", one-way. **Not the cache
-				// §1 forbids**: a cache is a copy of what something else still owns,
-				// and a detached effect is the effect itself, owned by this row from
-				// now on and referring to nothing.
+				/*
+				 * Foundry's own #4451 "detach to instance", one-way. **Not the cache
+				 * §1 forbids**: a cache is a copy of what something else still owns,
+				 * and a detached effect is the effect itself, owned by this row from
+				 * now on and referring to nothing.
+				 *
+				 * **Every change, not the first**, where the definition names several:
+				 * a cell part is one change, so the copy is one part each. Copying only
+				 * the first would silently take half the modifier off the row on a
+				 * press whose whole promise is that nothing is lost.
+				 */
+				if (named !== null && stored !== null) {
+					write(
+						at,
+						named.changes.map((one) =>
+							spellTypedEffect(changeAsEffect(one, named)),
+						),
+					);
+					return;
+				}
 				put({ ...shown });
 				return;
 			}
 			write(at, chosen);
 		});
-		const cancel = element('button', 'sheetsmith-panel-cancel', box, 'Keep it as it is');
+		const cancel = element(
+			'button',
+			'sheetsmith-panel-cancel',
+			box,
+			'Keep it as it is',
+		);
 		cancel.type = 'button';
 		token(cancel, 'cancel');
 		cancel.addEventListener('click', () => {
@@ -690,12 +851,20 @@ function renderFields(
 	}
 
 	/*
-	 * **Changes**: the accepting targets, by their reader-facing labels. A stored
+	 * **Value**: the accepting targets, by their reader-facing labels. A stored
 	 * target outside the set is carried and never offered — the sheet's own half of
 	 * dnd5e#3900's check, because a typed effect's target lives in a file the layout
 	 * has never seen.
+	 *
+	 * **Renamed from Changes with the layout editor's own control**, and for the
+	 * same reason read one surface over: a definition now *has* changes, so the
+	 * word names the list of them and this control names one value inside one. Two
+	 * surfaces calling one control two things is `docs/UI.md` §9's second answer to
+	 * one question — and `parse/modifier-cell.ts`'s refusal names both fields by
+	 * name in a sentence both surfaces show, so the two could not have differed
+	 * without one of them being told to press something that is not there.
 	 */
-	const changes = select('Changes', 'target');
+	const changes = select('Value', 'target');
 	if (shown.target === '') option(changes, '', 'Choose a value');
 	for (const target of options.targets) {
 		option(changes, target.name, target.label);
@@ -705,8 +874,8 @@ function renderFields(
 		!options.targets.some((target) => target.name === shown.target)
 	) {
 		const label =
-			options.published.find((target) => target.name === shown.target)?.label ??
-			shown.target;
+			options.published.find((target) => target.name === shown.target)
+				?.label ?? shown.target;
 		option(changes, shown.target, `${label} (reads no modifier)`);
 	}
 	changes.value = shown.target;
@@ -737,7 +906,9 @@ function renderFields(
 		bindEditable(amount, {
 			initial: shown.amount,
 			announceCommit: (next) =>
-				options.announce(next === '' ? 'Amount cleared' : `Amount ${next}`),
+				options.announce(
+					next === '' ? 'Amount cleared' : `Amount ${next}`,
+				),
 			announceRestore: () => options.announce('Amount restored'),
 			onCommit: (next) => put({ amount: next }),
 		});
@@ -813,7 +984,9 @@ function renderFields(
 		bindEditable(when, {
 			initial: shown.when ?? '',
 			announceCommit: (next) =>
-				options.announce(next === '' ? 'Condition cleared' : `Only when ${next}`),
+				options.announce(
+					next === '' ? 'Condition cleared' : `Only when ${next}`,
+				),
 			announceRestore: () => options.announce('Condition restored'),
 			onCommit: (next) => put({ when: next }),
 		});
@@ -877,7 +1050,10 @@ function renderPromote(
 	options: ModifierFormOptions,
 	effect: TypedEffect,
 	at: number | 'new',
-	write: (at: number | 'new', text: string | null) => void,
+	write: (
+		at: number | 'new',
+		text: string | readonly string[] | null,
+	) => void,
 	redraw: () => void,
 ): void {
 	const box = element('div', 'sheetsmith-panel-promote', fields);
@@ -898,7 +1074,12 @@ function renderPromote(
 	name.addEventListener('input', () => {
 		state.promoteName = name.value;
 	});
-	const save = element('button', 'sheetsmith-panel-save', row, 'Save to the layout');
+	const save = element(
+		'button',
+		'sheetsmith-panel-save',
+		row,
+		'Save to the layout',
+	);
 	save.type = 'button';
 	save.dataset.sheetsmithPanelField = 'promote';
 	save.addEventListener('focus', () => {
@@ -964,7 +1145,10 @@ function renderRemove(
 	options: ModifierFormOptions,
 	/** Always a real index: a part the cell does not hold yet has nothing to remove. */
 	at: number,
-	write: (at: number | 'new', text: string | null) => void,
+	write: (
+		at: number | 'new',
+		text: string | readonly string[] | null,
+	) => void,
 	redraw: () => void,
 ): void {
 	/*
@@ -992,10 +1176,7 @@ function renderRemove(
 		: plural
 			? `Remove all ${takes}`
 			: 'Remove';
-	button.setAttribute(
-		'aria-label',
-		state.armed ? armedName(named) : named,
-	);
+	button.setAttribute('aria-label', state.armed ? armedName(named) : named);
 	button.dataset.sheetsmithPanelField = 'remove';
 	button.addEventListener('focus', () => {
 		state.focused = 'remove';

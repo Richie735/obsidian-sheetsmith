@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { table, TableConfig, TableData } from './table';
+import { definitionView, outcomeView } from '../test/modifier-views';
 import { roster, RosterConfig } from './roster';
 import { closePopover, LONG_PRESS } from '../ui/popover';
 import { UNRESOLVED_DELAY } from '../interaction/editable';
@@ -17,6 +18,7 @@ import { buildSheetEnv, buildSheetScope } from '../formula/sheet';
 import { buildModifierTable } from '../formula/modifiers';
 import {
 	ModifierContext,
+	ModifierChangeView,
 	ModifierDefinitionView,
 	ModifierOutcome,
 	RenderContext,
@@ -69,8 +71,14 @@ function contextFor(data: TableData | null, over = config): RenderContext {
 		// The real resolver, so these exercise the dotted formula paths
 		// (columns.2.formula, rows.0.values.ability) rather than a stub that
 		// agrees with them.
-		resolveField: makeFieldResolver(table, over, data, { ...NO_ENV, sheet }),
-		explainField: makeFieldExplainer(table, over, data, { ...NO_ENV, sheet }),
+		resolveField: makeFieldResolver(table, over, data, {
+			...NO_ENV,
+			sheet,
+		}),
+		explainField: makeFieldExplainer(table, over, data, {
+			...NO_ENV,
+			sheet,
+		}),
 		onChange: () => undefined,
 	};
 }
@@ -135,7 +143,7 @@ function recording(
 }
 
 function totals(el: HTMLElement): string[] {
-	return Array.from(el.querySelectorAll("tbody .sheetsmith-table-value")).map(
+	return Array.from(el.querySelectorAll('tbody .sheetsmith-table-value')).map(
 		(cell) => cell.textContent ?? '',
 	);
 }
@@ -147,8 +155,14 @@ describe('table.read', () => {
 			ok: true,
 			data: {
 				rows: {
-					0: { name: 'Acrobatics', cells: { training: '1', bonus: '0' } },
-					1: { name: 'Perception', cells: { training: '2', bonus: '1' } },
+					0: {
+						name: 'Acrobatics',
+						cells: { training: '1', bonus: '0' },
+					},
+					1: {
+						name: 'Perception',
+						cells: { training: '2', bonus: '1' },
+					},
 				},
 			},
 		});
@@ -222,7 +236,8 @@ describe('table.read', () => {
 | Acrobatics | 2 | 0 |
 `;
 		const result = table.read(body, config);
-		if (!result.ok || result.data === null) throw new Error('expected data');
+		if (!result.ok || result.data === null)
+			throw new Error('expected data');
 		expect(result.data.rows[0]).toEqual({
 			name: 'toString',
 			cells: { training: '1', bonus: '4' },
@@ -240,7 +255,8 @@ describe('table.read', () => {
 | Acrobatics | 7 |
 `;
 		const result = table.read(body, shadowing);
-		if (!result.ok || result.data === null) throw new Error('expected data');
+		if (!result.ok || result.data === null)
+			throw new Error('expected data');
 		expect(Object.entries(result.data.rows[0]?.cells ?? {})).toEqual([
 			['constructor', '7'],
 		]);
@@ -271,7 +287,9 @@ describe('table.write', () => {
 			BODY,
 			config,
 		);
-		expect(out).toBe(BODY.replace('| Acrobatics | 1 |', '| Acrobatics | 2 |'));
+		expect(out).toBe(
+			BODY.replace('| Acrobatics | 1 |', '| Acrobatics | 2 |'),
+		);
 	});
 
 	it('never writes a computed column into the note', () => {
@@ -289,7 +307,10 @@ describe('table.write', () => {
 		// and its first edit arrives as an append. Seeding means the note reads
 		// as the whole list from that first edit rather than a row at a time.
 		const out = table.write(
-			{ rows: {}, added: [{ name: 'Acrobatics', cells: { Training: '1' } }] },
+			{
+				rows: {},
+				added: [{ name: 'Acrobatics', cells: { Training: '1' } }],
+			},
 			null,
 			config,
 		);
@@ -319,33 +340,51 @@ describe('table.write', () => {
 
 	it('edits the second of two rows sharing a name, leaving the first alone', () => {
 		const twins = `${BODY.trimEnd()}\n| Dagger | 1 | 0 |\n| Dagger | 1 | 0 |\n`;
-		const out = table.write({ rows: { 3: { cells: { Bonus: '4' } } } }, twins, config);
-		expect(out).toBe(twins.replace('| Dagger | 1 | 0 |\n| Dagger | 1 | 0 |', '| Dagger | 1 | 0 |\n| Dagger | 1 | 4 |'));
+		const out = table.write(
+			{ rows: { 3: { cells: { Bonus: '4' } } } },
+			twins,
+			config,
+		);
+		expect(out).toBe(
+			twins.replace(
+				'| Dagger | 1 | 0 |\n| Dagger | 1 | 0 |',
+				'| Dagger | 1 | 0 |\n| Dagger | 1 | 4 |',
+			),
+		);
 	});
 
 	it("keeps a case-differing row's own spelling", () => {
 		// The declared row claims it, so the cells are the character's and the
 		// name is not: what the note says it is called is what it stays called.
-		const lower = '\n| Skill | Training | Bonus |\n|---|---|---|\n| acrobatics | 1 | 0 |\n';
+		const lower =
+			'\n| Skill | Training | Bonus |\n|---|---|---|\n| acrobatics | 1 | 0 |\n';
 		const out = table.write(
 			{ rows: { 0: { name: 'Acrobatics', cells: { Training: '2' } } } },
 			lower,
 			config,
 		);
-		expect(out).toBe(lower.replace('| acrobatics | 1 |', '| acrobatics | 2 |'));
+		expect(out).toBe(
+			lower.replace('| acrobatics | 1 |', '| acrobatics | 2 |'),
+		);
 	});
 
 	it('claims a row the character already typed rather than duplicating it', () => {
 		// Constraint 4's new case: the layout adds a row the character has. The
 		// declared row claims what is there, so nothing duplicates and no cell
 		// is overwritten — the row simply stops being theirs to rename.
-		const typed = '\n| Skill | Training | Bonus |\n|---|---|---|\n| Perception | 2 | 1 |\n';
+		const typed =
+			'\n| Skill | Training | Bonus |\n|---|---|---|\n| Perception | 2 | 1 |\n';
 		const out = table.write(
-			{ rows: {}, added: [{ name: 'Perception', cells: { Bonus: '3' } }] },
+			{
+				rows: {},
+				added: [{ name: 'Perception', cells: { Bonus: '3' } }],
+			},
 			typed,
 			config,
 		);
-		expect(out).toBe(typed.replace('| Perception | 2 | 1 |', '| Perception | 2 | 3 |'));
+		expect(out).toBe(
+			typed.replace('| Perception | 2 | 1 |', '| Perception | 2 | 3 |'),
+		);
 	});
 
 	it('writes nothing into a section it cannot read', () => {
@@ -383,7 +422,9 @@ describe('table.write', () => {
 
 describe('table.sample', () => {
 	/** A sample's rows, as `read` hands them back. */
-	function rows(over: TableConfig): { name: string; cells: Record<string, string> }[] {
+	function rows(
+		over: TableConfig,
+	): { name: string; cells: Record<string, string> }[] {
 		const body = sampleOf(table, over);
 		const read = table.read(body, over);
 		if (!read.ok || read.data === null) throw new Error('expected data');
@@ -393,9 +434,12 @@ describe('table.sample', () => {
 		}));
 	}
 
-	it('fills the rows the layout declares, under the layout\'s own headings', () => {
+	it("fills the rows the layout declares, under the layout's own headings", () => {
 		const filled = rows(config);
-		expect(filled.map((row) => row.name)).toEqual(['Acrobatics', 'Perception']);
+		expect(filled.map((row) => row.name)).toEqual([
+			'Acrobatics',
+			'Perception',
+		]);
 		// A number per stored column, and no two side by side alike.
 		expect(Number(filled[0]?.cells.training)).toBeGreaterThan(1);
 		expect(filled[0]?.cells.training).not.toBe(filled[0]?.cells.bonus);
@@ -403,7 +447,7 @@ describe('table.sample', () => {
 		expect(sampleOf(table, config)).not.toContain('Total');
 	});
 
-	it('adds rows of the character\'s own only where the layout allows them', () => {
+	it("adds rows of the character's own only where the layout allows them", () => {
 		// A declared-rows table with `openRows` off fills its rows and adds none;
 		// a row the config refuses is a row no character could type.
 		expect(rows(config)).toHaveLength(2);
@@ -424,7 +468,10 @@ describe('table.sample', () => {
 			rowHeader: 'Item',
 			rows: undefined,
 			openRows: true,
-			columns: [{ key: 'Qty', type: 'number' }, { key: 'Weight', type: 'number', total: true }],
+			columns: [
+				{ key: 'Qty', type: 'number' },
+				{ key: 'Weight', type: 'number', total: true },
+			],
 		};
 		const filled = rows(inventory);
 		expect(filled.map((row) => row.name)).toEqual(['Item 1', 'Item 2']);
@@ -435,7 +482,11 @@ describe('table.sample', () => {
 		const marked: TableConfig = {
 			...config,
 			columns: [
-				{ key: 'Prof', type: 'level', levels: ['Untrained', 'Trained', 'Expert'] },
+				{
+					key: 'Prof',
+					type: 'level',
+					levels: ['Untrained', 'Trained', 'Expert'],
+				},
 				{ key: 'Worn', type: 'toggle' },
 			],
 		};
@@ -457,7 +508,10 @@ describe('table.sample', () => {
 		 */
 		const enrolling: TableConfig = {
 			...config,
-			columns: [{ key: 'Qty', type: 'number' }, { key: 'Mods', type: 'modifier' }],
+			columns: [
+				{ key: 'Qty', type: 'number' },
+				{ key: 'Mods', type: 'modifier' },
+			],
 		};
 		const filled = rows(enrolling);
 		expect(filled.every((row) => (row.cells.mods ?? '') === '')).toBe(true);
@@ -477,7 +531,10 @@ describe('table.sample', () => {
 
 	it('fills nothing for a table that cannot be drawn', () => {
 		expect(
-			sampleOf(table, { ...config, columns: [{ key: 'Qty' }, { key: 'Qty' }] }),
+			sampleOf(table, {
+				...config,
+				columns: [{ key: 'Qty' }, { key: 'Qty' }],
+			}),
 		).toBe('');
 	});
 });
@@ -492,7 +549,8 @@ describe('table.render', () => {
 	});
 
 	it('fills a declared row from a note row differing only in case', () => {
-		const lower = '\n| Skill | Training | Bonus |\n|---|---|---|\n| acrobatics | 1 | 0 |\n';
+		const lower =
+			'\n| Skill | Training | Bonus |\n|---|---|---|\n| acrobatics | 1 | 0 |\n';
 		const el = render(stored(lower));
 		const input = el.querySelector(
 			'input[aria-label="Acrobatics Training"]',
@@ -515,7 +573,10 @@ describe('table.render', () => {
 	it('keeps the name first in the note however it is drawn', () => {
 		// Display order is not storage order: the name is the note's first cell.
 		const out = table.write(
-			{ rows: {}, added: [{ name: 'Acrobatics', cells: { Training: '1' } }] },
+			{
+				rows: {},
+				added: [{ name: 'Acrobatics', cells: { Training: '1' } }],
+			},
 			null,
 			{ ...config, namePosition: 1 },
 		);
@@ -535,9 +596,9 @@ describe('table.render', () => {
 		// text is taken off screen, and it is still there for a screen reader.
 		expect(headings).toHaveLength(3);
 		const training = el.querySelector('thead .sheetsmith-table-level');
-		expect(training?.querySelector('.sheetsmith-sr-only')?.textContent).toBe(
-			'Training',
-		);
+		expect(
+			training?.querySelector('.sheetsmith-sr-only')?.textContent,
+		).toBe('Training');
 		// Its neighbours are untouched: hiding one heading hides one heading.
 		expect(headings.map((cell) => cell.textContent)).toEqual([
 			'Skill',
@@ -585,14 +646,16 @@ describe('table.render', () => {
 			...config,
 			columns: [
 				{ key: 'Training', type: 'number' as const },
-				{ key: 'Total', type: 'computed' as const, formula: 'nonexistent + 1' },
+				{
+					key: 'Total',
+					type: 'computed' as const,
+					formula: 'nonexistent + 1',
+				},
 			],
 		};
 		const el = render(note({}), broken);
 		expect(totals(el)).toEqual(['?', '?']);
-		expect(
-			el.querySelector('.sheetsmith-table-unresolved'),
-		).not.toBeNull();
+		expect(el.querySelector('.sheetsmith-table-unresolved')).not.toBeNull();
 	});
 
 	it('shows a computed column with no formula as empty, not as unresolved', () => {
@@ -614,7 +677,9 @@ describe('table.render', () => {
 	it('reveals the formula behind a computed cell on hover', () => {
 		const el = render(note({}));
 		expect(
-			el.querySelector("tbody .sheetsmith-table-value")?.getAttribute('title'),
+			el
+				.querySelector('tbody .sheetsmith-table-value')
+				?.getAttribute('title'),
 		).toBe('ability + Training * prof + Bonus');
 	});
 
@@ -628,14 +693,27 @@ describe('table.render', () => {
 	it('says which level it is on, by name where the column names them', () => {
 		const el = render(note({ Acrobatics: { training: '2' } }), levelled);
 		const buttons = el.querySelectorAll('tbody .sheetsmith-level-ring');
-		expect(buttons[0]?.getAttribute('aria-label')).toBe('Acrobatics Training: 2');
-		expect(buttons[1]?.getAttribute('aria-label')).toBe('Perception Training: 0');
+		expect(buttons[0]?.getAttribute('aria-label')).toBe(
+			'Acrobatics Training: 2',
+		);
+		expect(buttons[1]?.getAttribute('aria-label')).toBe(
+			'Perception Training: 0',
+		);
 
-		const named = { ...levelled, columns: [
-			{ key: 'Training', type: 'level' as const,
-				levels: ['Untrained', 'Proficient', 'Expertise'] },
-		] };
-		const withNames = render(note({ Acrobatics: { training: '2' } }), named);
+		const named = {
+			...levelled,
+			columns: [
+				{
+					key: 'Training',
+					type: 'level' as const,
+					levels: ['Untrained', 'Proficient', 'Expertise'],
+				},
+			],
+		};
+		const withNames = render(
+			note({ Acrobatics: { training: '2' } }),
+			named,
+		);
 		const first = withNames.querySelector('tbody .sheetsmith-level-ring');
 		expect(first?.getAttribute('aria-label')).toBe(
 			'Acrobatics Training: Expertise',
@@ -665,9 +743,14 @@ describe('table.render', () => {
 			hideHeading: true,
 		};
 		const named = { ...levelled, columns: [training] };
-		const withNames = render(note({ Acrobatics: { training: '2' } }), named);
+		const withNames = render(
+			note({ Acrobatics: { training: '2' } }),
+			named,
+		);
 		const first = withNames.querySelector('tbody .sheetsmith-level-ring');
-		expect(first?.getAttribute('title')).toBe('Acrobatics Training: Expertise');
+		expect(first?.getAttribute('title')).toBe(
+			'Acrobatics Training: Expertise',
+		);
 		// The accessible name is unchanged either way: this is about the eye.
 		expect(first?.getAttribute('aria-label')).toBe(
 			'Acrobatics Training: Expertise',
@@ -677,12 +760,19 @@ describe('table.render', () => {
 		const bare = {
 			...levelled,
 			columns: [
-				{ key: 'Training', type: 'level' as const, max: 4, hideHeading: true },
+				{
+					key: 'Training',
+					type: 'level' as const,
+					max: 4,
+					hideHeading: true,
+				},
 			],
 		};
 		const unnamed = render(note({ Acrobatics: { training: '2' } }), bare);
 		expect(
-			unnamed.querySelector('tbody .sheetsmith-level-ring')?.getAttribute('title'),
+			unnamed
+				.querySelector('tbody .sheetsmith-level-ring')
+				?.getAttribute('title'),
 		).toBe('Acrobatics Training');
 
 		// And a column that kept its heading keeps the word alone, which is the
@@ -692,13 +782,17 @@ describe('table.render', () => {
 			columns: [{ ...training, hideHeading: false }],
 		});
 		expect(
-			shown.querySelector('tbody .sheetsmith-level-ring')?.getAttribute('title'),
+			shown
+				.querySelector('tbody .sheetsmith-level-ring')
+				?.getAttribute('title'),
 		).toBe('Expertise');
 	});
 
 	it('cycles through the levels and back to none on click', () => {
 		const { el, changes } = recording(levelled);
-		const button = el.querySelector('tbody .sheetsmith-level-ring') as HTMLElement;
+		const button = el.querySelector(
+			'tbody .sheetsmith-level-ring',
+		) as HTMLElement;
 		button.click();
 		button.click();
 		button.click();
@@ -711,10 +805,16 @@ describe('table.render', () => {
 
 	it('repaints as it cycles, without waiting for the view to rebuild', () => {
 		const { el } = recording(levelled);
-		const button = el.querySelector('tbody .sheetsmith-level-ring') as HTMLElement;
+		const button = el.querySelector(
+			'tbody .sheetsmith-level-ring',
+		) as HTMLElement;
 		button.click();
-		expect(button.getAttribute('aria-label')).toBe('Acrobatics Training: 1');
-		expect(button.classList.contains('sheetsmith-level-ring-on')).toBe(true);
+		expect(button.getAttribute('aria-label')).toBe(
+			'Acrobatics Training: 1',
+		);
+		expect(button.classList.contains('sheetsmith-level-ring-on')).toBe(
+			true,
+		);
 	});
 
 	it('shows the level as one glyph, and nothing at all for none', () => {
@@ -736,31 +836,44 @@ describe('table.render', () => {
 		// Untrained is an empty ring: it needs no letter to say so.
 		expect(buttons[1]?.textContent).toBe('');
 		expect(buttons[1]?.getAttribute('title')).toBe('Untrained');
-		expect(
-			buttons[1]?.classList.contains('sheetsmith-level-ring-on'),
-		).toBe(false);
+		expect(buttons[1]?.classList.contains('sheetsmith-level-ring-on')).toBe(
+			false,
+		);
 	});
 
 	it('shades a marked level by how far up the column it is', () => {
-		const el = render(note({ Acrobatics: { training: '1' }, Perception: { training: '2' } }),
+		const el = render(
+			note({
+				Acrobatics: { training: '1' },
+				Perception: { training: '2' },
+			}),
 			levelled,
 		);
 		const rings = Array.from(
 			el.querySelectorAll<HTMLElement>('tbody .sheetsmith-level-ring'),
 		);
 		// Two of two levels is the whole way; one of two is half of it.
-		expect(rings.map((ring) => ring.style.getPropertyValue('--sheetsmith-level')))
-			.toEqual(['0.5', '1']);
+		expect(
+			rings.map((ring) =>
+				ring.style.getPropertyValue('--sheetsmith-level'),
+			),
+		).toEqual(['0.5', '1']);
 		// Short of the top the glyph reads against the page, not the accent.
 		expect(
-			rings.map((ring) => ring.classList.contains('sheetsmith-level-ring-part')),
+			rings.map((ring) =>
+				ring.classList.contains('sheetsmith-level-ring-part'),
+			),
 		).toEqual([true, false]);
 	});
 
 	it('lets a level say its ring carries no letter', () => {
 		// The 5e case: untrained is an empty ring, proficient a plain fill,
 		// expertise the fill with its initial on it.
-		const el = render(note({ Acrobatics: { training: '1' }, Perception: { training: '2' } }),
+		const el = render(
+			note({
+				Acrobatics: { training: '1' },
+				Perception: { training: '2' },
+			}),
 			{
 				...levelled,
 				columns: [
@@ -778,10 +891,16 @@ describe('table.render', () => {
 		expect(rings.map((ring) => ring.textContent)).toEqual(['', 'E']);
 		// A fill with nothing on it is still a marked ring, and still says
 		// which level it is on through the ramp.
-		expect(rings.map((ring) => ring.classList.contains('sheetsmith-level-ring-on')))
-			.toEqual([true, true]);
-		expect(rings.map((ring) => ring.style.getPropertyValue('--sheetsmith-level')))
-			.toEqual(['0.5', '1']);
+		expect(
+			rings.map((ring) =>
+				ring.classList.contains('sheetsmith-level-ring-on'),
+			),
+		).toEqual([true, true]);
+		expect(
+			rings.map((ring) =>
+				ring.style.getPropertyValue('--sheetsmith-level'),
+			),
+		).toEqual(['0.5', '1']);
 		// The mark is what the ring shows, never what the level is called: the
 		// name is still there for a reader, a listener, and a hover.
 		expect(rings.map((ring) => ring.getAttribute('title'))).toEqual([
@@ -794,8 +913,12 @@ describe('table.render', () => {
 		]);
 	});
 
-	it('takes a mark of the layout\'s own where a level gives one', () => {
-		const el = render(note({ Acrobatics: { training: '1' }, Perception: { training: '2' } }),
+	it("takes a mark of the layout's own where a level gives one", () => {
+		const el = render(
+			note({
+				Acrobatics: { training: '1' },
+				Perception: { training: '2' },
+			}),
 			{
 				...levelled,
 				columns: [
@@ -807,7 +930,9 @@ describe('table.render', () => {
 				],
 			},
 		);
-		const rings = Array.from(el.querySelectorAll('tbody .sheetsmith-level-ring'));
+		const rings = Array.from(
+			el.querySelectorAll('tbody .sheetsmith-level-ring'),
+		);
 		expect(rings.map((ring) => ring.textContent)).toEqual(['●', '★']);
 	});
 
@@ -859,17 +984,25 @@ describe('table.render', () => {
 		// number says.
 		const el = render(note({ Acrobatics: { training: '1000' } }), {
 			...levelled,
-			columns: [{ key: 'Training', type: 'level' as const, max: 1000000 }],
+			columns: [
+				{ key: 'Training', type: 'level' as const, max: 1000000 },
+			],
 		});
 		const ring = el.querySelector('tbody .sheetsmith-level-ring');
-		expect(ring?.getAttribute('aria-label')).toBe('Acrobatics Training: 20');
+		expect(ring?.getAttribute('aria-label')).toBe(
+			'Acrobatics Training: 20',
+		);
 	});
 
 	it('reports a level carrying a mark and no name', () => {
 		const el = render(null, {
 			...levelled,
 			columns: [
-				{ key: 'Training', type: 'level' as const, levels: ['Untrained', ':P'] },
+				{
+					key: 'Training',
+					type: 'level' as const,
+					levels: ['Untrained', ':P'],
+				},
 			],
 		});
 		expect(el.querySelector('.sheetsmith-error')?.textContent).toContain(
@@ -889,16 +1022,23 @@ describe('table.render', () => {
 		// A toggle has one state to be in, so a share of the way up says
 		// nothing; it takes the full fill, as it always did. Acrobatics is
 		// ticked, Perception is not, and neither carries a share.
-		expect(rings.map((ring) => ring.style.getPropertyValue('--sheetsmith-level')))
-			.toEqual(['', '']);
 		expect(
-			rings.map((ring) => ring.classList.contains('sheetsmith-level-ring-part')),
+			rings.map((ring) =>
+				ring.style.getPropertyValue('--sheetsmith-level'),
+			),
+		).toEqual(['', '']);
+		expect(
+			rings.map((ring) =>
+				ring.classList.contains('sheetsmith-level-ring-part'),
+			),
 		).toEqual([false, false]);
 	});
 
 	it('reshades as it cycles, without waiting for the view to rebuild', () => {
 		const el = render(note({}), levelled);
-		const ring = el.querySelector('tbody .sheetsmith-level-ring') as HTMLElement;
+		const ring = el.querySelector(
+			'tbody .sheetsmith-level-ring',
+		) as HTMLElement;
 		expect(ring.style.getPropertyValue('--sheetsmith-level')).toBe('');
 		ring.click();
 		expect(ring.style.getPropertyValue('--sheetsmith-level')).toBe('0.5');
@@ -921,11 +1061,19 @@ describe('table.render', () => {
 		const { el, changes } = recording(levelled, {
 			rows: { 0: { name: 'Acrobatics', cells: { training: '2' } } },
 		});
-		const button = el.querySelector('tbody .sheetsmith-level-ring') as HTMLElement;
-		button.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight' }));
+		const button = el.querySelector(
+			'tbody .sheetsmith-level-ring',
+		) as HTMLElement;
+		button.dispatchEvent(
+			new KeyboardEvent('keydown', { key: 'ArrowRight' }),
+		);
 		expect(changes).toEqual([]);
-		button.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft' }));
-		expect(changes).toEqual([{ rows: { 0: { cells: { Training: '1' } } } }]);
+		button.dispatchEvent(
+			new KeyboardEvent('keydown', { key: 'ArrowLeft' }),
+		);
+		expect(changes).toEqual([
+			{ rows: { 0: { cells: { Training: '1' } } } },
+		]);
 	});
 
 	it('offers a dropdown where the column asks for one', () => {
@@ -949,7 +1097,9 @@ describe('table.render', () => {
 		]);
 		select.value = '2';
 		select.dispatchEvent(new Event('change'));
-		expect(changes).toEqual([{ rows: { 0: { cells: { Training: '2' } } } }]);
+		expect(changes).toEqual([
+			{ rows: { 0: { cells: { Training: '2' } } } },
+		]);
 	});
 
 	it('is an ordinary toggle when the column has one level', () => {
@@ -958,7 +1108,9 @@ describe('table.render', () => {
 			columns: [{ key: 'Training', type: 'level' as const }],
 		};
 		const { el, changes } = recording(single);
-		const button = el.querySelector('tbody .sheetsmith-level-ring') as HTMLElement;
+		const button = el.querySelector(
+			'tbody .sheetsmith-level-ring',
+		) as HTMLElement;
 		button.click();
 		button.click();
 		expect(changes).toEqual([
@@ -970,7 +1122,9 @@ describe('table.render', () => {
 	it('reports too few level names as a configuration error', () => {
 		const broken = {
 			...levelled,
-			columns: [{ key: 'Training', type: 'level' as const, levels: ['Only'] }],
+			columns: [
+				{ key: 'Training', type: 'level' as const, levels: ['Only'] },
+			],
 		};
 		expect(table.read(BODY, broken).ok).toBe(false);
 	});
@@ -1008,7 +1162,9 @@ describe('table.render', () => {
 			columns: [{ key: 'Trained', type: 'toggle' as const }],
 		};
 		const { el, changes } = recording(toggles);
-		const ring = el.querySelector('tbody .sheetsmith-level-ring') as HTMLElement;
+		const ring = el.querySelector(
+			'tbody .sheetsmith-level-ring',
+		) as HTMLElement;
 		ring.click();
 		ring.click();
 		expect(changes).toEqual([
@@ -1036,13 +1192,19 @@ describe('table.render', () => {
 			columns: [{ key: 'Trained', type: 'toggle' as const }],
 		};
 		for (const spelling of ['yes', 'true', 'x', '✓', '✔', '1']) {
-			const el = render(note({ Acrobatics: { trained: spelling } }, toggles), toggles);
+			const el = render(
+				note({ Acrobatics: { trained: spelling } }, toggles),
+				toggles,
+			);
 			const ring = el.querySelector('tbody .sheetsmith-level-ring');
 			expect(ring?.getAttribute('aria-pressed'), spelling).toBe('true');
 		}
 		// And the negative, so the loop above is not passing on a ring stuck on.
 		for (const spelling of ['no', 'false', '0', '', 'maybe']) {
-			const el = render(note({ Acrobatics: { trained: spelling } }, toggles), toggles);
+			const el = render(
+				note({ Acrobatics: { trained: spelling } }, toggles),
+				toggles,
+			);
 			const ring = el.querySelector('tbody .sheetsmith-level-ring');
 			expect(ring?.getAttribute('aria-pressed'), spelling).toBe('false');
 		}
@@ -1059,7 +1221,11 @@ describe('table.render', () => {
 		const broken = {
 			...config,
 			columns: [
-				{ key: 'Total', type: 'computed' as const, formula: 'nonexistent + 1' },
+				{
+					key: 'Total',
+					type: 'computed' as const,
+					formula: 'nonexistent + 1',
+				},
 			],
 		};
 		const el = render(note({}), broken);
@@ -1105,7 +1271,9 @@ describe('table.render', () => {
 		) as HTMLInputElement;
 		input.value = '5';
 		input.dispatchEvent(new Event('blur'));
-		expect(changes).toEqual([{ rows: { 0: { cells: { Training: '2' } } } }]);
+		expect(changes).toEqual([
+			{ rows: { 0: { cells: { Training: '2' } } } },
+		]);
 		expect(input.value).toBe('2');
 	});
 
@@ -1141,7 +1309,9 @@ describe('table touch affordances', () => {
 			const { el, changes } = recording(named, {
 				rows: { 0: { name: 'Acrobatics', cells: { training: '2' } } },
 			});
-			const ring = el.querySelector('tbody .sheetsmith-level-ring') as HTMLElement;
+			const ring = el.querySelector(
+				'tbody .sheetsmith-level-ring',
+			) as HTMLElement;
 			hold(ring, LONG_PRESS + 10, { pointerType: 'touch' });
 
 			const bubble = document.querySelector('.sheetsmith-popover');
@@ -1165,12 +1335,16 @@ describe('table touch affordances', () => {
 		vi.useFakeTimers();
 		try {
 			const { el, changes } = recording(named);
-			const ring = el.querySelector('tbody .sheetsmith-level-ring') as HTMLElement;
+			const ring = el.querySelector(
+				'tbody .sheetsmith-level-ring',
+			) as HTMLElement;
 			hold(ring, LONG_PRESS + 10, { pointerType: 'mouse' });
 
 			expect(document.querySelector('.sheetsmith-popover')).toBeNull();
 			ring.click();
-			expect(changes).toEqual([{ rows: { 0: { cells: { Training: '1' } } } }]);
+			expect(changes).toEqual([
+				{ rows: { 0: { cells: { Training: '1' } } } },
+			]);
 		} finally {
 			vi.useRealTimers();
 		}
@@ -1180,13 +1354,17 @@ describe('table touch affordances', () => {
 		vi.useFakeTimers();
 		try {
 			const { el, changes } = recording(named);
-			const ring = el.querySelector('tbody .sheetsmith-level-ring') as HTMLElement;
+			const ring = el.querySelector(
+				'tbody .sheetsmith-level-ring',
+			) as HTMLElement;
 			pressDown(ring, { pointerType: 'touch' });
 			release(ring);
 			vi.advanceTimersByTime(LONG_PRESS + 10);
 			expect(document.querySelector('.sheetsmith-popover')).toBeNull();
 			ring.click();
-			expect(changes).toEqual([{ rows: { 0: { cells: { Training: '1' } } } }]);
+			expect(changes).toEqual([
+				{ rows: { 0: { cells: { Training: '1' } } } },
+			]);
 		} finally {
 			vi.useRealTimers();
 		}
@@ -1194,7 +1372,9 @@ describe('table touch affordances', () => {
 
 	it('reveals the formula behind a computed cell on a tap', () => {
 		const el = render(note({}), named);
-		const cell = el.querySelector('tbody .sheetsmith-table-value') as HTMLElement;
+		const cell = el.querySelector(
+			'tbody .sheetsmith-table-value',
+		) as HTMLElement;
 		cell.click();
 		expect(document.querySelector('.sheetsmith-popover')?.textContent).toBe(
 			'ability + Training',
@@ -1205,14 +1385,22 @@ describe('table touch affordances', () => {
 	it('shows the failure, not the formula, where it failed', () => {
 		const broken = {
 			...named,
-			columns: [{ key: 'Total', type: 'computed' as const, formula: 'nope + 1' }],
+			columns: [
+				{
+					key: 'Total',
+					type: 'computed' as const,
+					formula: 'nope + 1',
+				},
+			],
 		};
 		const el = render(note({}), broken);
-		const cell = el.querySelector('tbody .sheetsmith-table-value') as HTMLElement;
+		const cell = el.querySelector(
+			'tbody .sheetsmith-table-value',
+		) as HTMLElement;
 		cell.click();
-		expect(document.querySelector('.sheetsmith-popover')?.textContent).toContain(
-			'nope',
-		);
+		expect(
+			document.querySelector('.sheetsmith-popover')?.textContent,
+		).toContain('nope');
 		closePopover();
 	});
 
@@ -1221,7 +1409,9 @@ describe('table touch affordances', () => {
 		const cells = el.querySelectorAll('tbody .sheetsmith-table-value');
 		(cells[0] as HTMLElement).click();
 		(cells[1] as HTMLElement).click();
-		expect(document.querySelectorAll('.sheetsmith-popover')).toHaveLength(1);
+		expect(document.querySelectorAll('.sheetsmith-popover')).toHaveLength(
+			1,
+		);
 		closePopover();
 	});
 });
@@ -1247,7 +1437,11 @@ describe('table publishes a declared row', () => {
 		),
 		rows: [
 			{ label: 'Acrobatics', values: { ability: 'abilities.DEX' } },
-			{ label: 'Perception', key: 'perception', values: { ability: 'abilities.WIS' } },
+			{
+				label: 'Perception',
+				key: 'perception',
+				values: { ability: 'abilities.WIS' },
+			},
 		],
 	};
 
@@ -1284,11 +1478,14 @@ describe('table publishes a declared row', () => {
 		// the sweep cannot see it: a Table with nothing configured publishes
 		// nothing, and this card is the one that actually uses `compute`.
 		const entries = Object.values(
-			table.scopeValues?.(stored(BODY, published), published)?.named ?? {},
+			table.scopeValues?.(stored(BODY, published), published)?.named ??
+				{},
 		);
 		expect(entries).not.toHaveLength(0);
 		for (const entry of entries) {
-			expect(entry.display === undefined || entry.compute === undefined).toBe(true);
+			expect(
+				entry.display === undefined || entry.compute === undefined,
+			).toBe(true);
 		}
 	});
 
@@ -1372,12 +1569,25 @@ describe('table publishes a declared row', () => {
 		const paired: TableConfig = {
 			...config,
 			rows: [
-				{ label: 'Athletics', key: 'row_a', values: { other: 'skills.row_b' } },
-				{ label: 'Perception', key: 'row_b', values: { other: 'skills.row_a' } },
+				{
+					label: 'Athletics',
+					key: 'row_a',
+					values: { other: 'skills.row_b' },
+				},
+				{
+					label: 'Perception',
+					key: 'row_b',
+					values: { other: 'skills.row_a' },
+				},
 			],
 			columns: [
 				{ key: 'Bonus', type: 'number' },
-				{ key: 'Total', type: 'computed', formula: 'other + Bonus', publish: true },
+				{
+					key: 'Total',
+					type: 'computed',
+					formula: 'other + Bonus',
+					publish: true,
+				},
 			],
 		};
 		const body = `
@@ -1423,7 +1633,9 @@ describe('table publishes a declared row', () => {
 			const result = table.read(BODY, over);
 			if (result.ok) throw new Error('expected a configuration error');
 			// Rendered on the card, and nothing published behind it.
-			expect(render(null, over).querySelector('.sheetsmith-error')).not.toBeNull();
+			expect(
+				render(null, over).querySelector('.sheetsmith-error'),
+			).not.toBeNull();
 			expect(table.scopeValues?.(null, over)).toEqual({});
 			return result.error;
 		}
@@ -1463,7 +1675,10 @@ describe('table publishes a declared row', () => {
 			// `<id>.<key>` is two segments, and a third would collide with the
 			// `.value` every published name already answers to.
 			expect(
-				refused({ ...published, rows: [{ label: 'Perception', key: 'a.b' }] }),
+				refused({
+					...published,
+					rows: [{ label: 'Perception', key: 'a.b' }],
+				}),
 			).toContain('letters, digits and underscores');
 		});
 
@@ -1486,7 +1701,12 @@ describe('table publishes a declared row', () => {
 				rows: [{ label: 'Perception', key: 'Bonus' }],
 				columns: [
 					{ key: 'Bonus', type: 'number', total: true },
-					{ key: 'Total', type: 'computed', formula: 'Bonus', publish: true },
+					{
+						key: 'Total',
+						type: 'computed',
+						formula: 'Bonus',
+						publish: true,
+					},
 				],
 			});
 			expect(error).toContain('skills.Bonus');
@@ -1560,7 +1780,9 @@ describe('table with open rows', () => {
 
 	function removeButtons(el: HTMLElement): HTMLElement[] {
 		return Array.from(
-			el.querySelectorAll<HTMLElement>('tbody .sheetsmith-table-remove-button'),
+			el.querySelectorAll<HTMLElement>(
+				'tbody .sheetsmith-table-remove-button',
+			),
 		);
 	}
 
@@ -1591,7 +1813,10 @@ describe('table with open rows', () => {
 
 	it('shows a cell holding a pipe as one pipe, with no backslash', () => {
 		const piped = '\n| Item | Qty |\n|---|---|\n| Bread \\| Cheese | 1 |\n';
-		const { el } = openRender(piped, { ...inventory, columns: [{ key: 'Qty' }] });
+		const { el } = openRender(piped, {
+			...inventory,
+			columns: [{ key: 'Qty' }],
+		});
 		expect(names(el)).toEqual(['Bread | Cheese']);
 	});
 
@@ -1604,7 +1829,9 @@ describe('table with open rows', () => {
 
 	it('renames a character row through the shared editing gesture', () => {
 		const { el, changes } = openRender(PACK);
-		const name = el.querySelector('input[aria-label="Item"]') as HTMLInputElement;
+		const name = el.querySelector(
+			'input[aria-label="Item"]',
+		) as HTMLInputElement;
 		name.value = 'Silver dagger';
 		name.dispatchEvent(new Event('blur'));
 		expect(changes).toEqual([{ rows: { 0: { name: 'Silver dagger' } } }]);
@@ -1612,7 +1839,9 @@ describe('table with open rows', () => {
 
 	it('restores a name on Escape and says that it did', () => {
 		const { el, changes } = openRender(PACK);
-		const name = el.querySelector('input[aria-label="Item"]') as HTMLInputElement;
+		const name = el.querySelector(
+			'input[aria-label="Item"]',
+		) as HTMLInputElement;
 		name.value = 'Silver dagger';
 		name.dispatchEvent(new Event('input'));
 		name.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
@@ -1628,7 +1857,9 @@ describe('table with open rows', () => {
 		const blank = `${PACK.trimEnd()}\n|  |  |  |  |\n`;
 		const { el } = openRender(blank);
 		expect(names(el)).toEqual(['Dagger', 'Rope', '']);
-		expect(table.write(stored(blank, inventory), blank, inventory)).toBe(blank);
+		expect(table.write(stored(blank, inventory), blank, inventory)).toBe(
+			blank,
+		);
 	});
 
 	it('names a row with no name, the same way everywhere', () => {
@@ -1638,7 +1869,9 @@ describe('table with open rows', () => {
 		const blank = `${PACK.trimEnd()}\n|  | 1 | some | no |\n`;
 		const { el } = openRender(blank);
 		const cells = Array.from(
-			el.querySelectorAll<HTMLElement>('tbody tr:nth-child(3) [aria-label]'),
+			el.querySelectorAll<HTMLElement>(
+				'tbody tr:nth-child(3) [aria-label]',
+			),
 		).map((control) => control.getAttribute('aria-label'));
 		expect(cells).toEqual([
 			'Item',
@@ -1649,7 +1882,9 @@ describe('table with open rows', () => {
 		]);
 		// And the total names it as the row it could not read.
 		expect(
-			el.querySelector('tfoot .sheetsmith-table-value')?.getAttribute('title'),
+			el
+				.querySelector('tfoot .sheetsmith-table-value')
+				?.getAttribute('title'),
 		).toBe('Unnamed row is not a number, so this column has no total.');
 	});
 
@@ -1665,15 +1900,19 @@ describe('table with open rows', () => {
 
 	it('appends a row to the note when the add control is pressed', () => {
 		const { el, changes } = openRender(PACK);
-		const add = el.querySelector('.sheetsmith-table-add-button') as HTMLElement;
+		const add = el.querySelector(
+			'.sheetsmith-table-add-button',
+		) as HTMLElement;
 		add.click();
-		expect(changes).toEqual([{ rows: {}, added: [{ name: '', cells: {} }] }]);
+		expect(changes).toEqual([
+			{ rows: {}, added: [{ name: '', cells: {} }] },
+		]);
 		expect(table.write(changes[0] as TableData, PACK, inventory)).toBe(
 			`${PACK.trimEnd()}\n|  |  |  |  |\n`,
 		);
 	});
 
-	it('leaves focus in the new row\'s name field', () => {
+	it("leaves focus in the new row's name field", () => {
 		/*
 		 * The view restores focus by control index within the cell, so the new
 		 * row's name field lands under the finger only because the row's
@@ -1693,7 +1932,9 @@ describe('table with open rows', () => {
 		);
 		const after = openRender(grown).el;
 		const landed = Array.from(after.querySelectorAll(FOCUSABLE))[focused];
-		expect(landed?.classList.contains('sheetsmith-table-name-input')).toBe(true);
+		expect(landed?.classList.contains('sheetsmith-table-name-input')).toBe(
+			true,
+		);
 		expect((landed as HTMLInputElement).value).toBe('');
 	});
 
@@ -1724,7 +1965,9 @@ describe('table with open rows', () => {
 		// The next press arms it again rather than deleting.
 		dagger?.click();
 		expect(changes).toEqual([]);
-		expect(dagger?.classList.contains('sheetsmith-table-remove-armed')).toBe(true);
+		expect(
+			dagger?.classList.contains('sheetsmith-table-remove-armed'),
+		).toBe(true);
 	});
 
 	/**
@@ -1746,12 +1989,18 @@ describe('table with open rows', () => {
 		try {
 			const [dagger] = removeButtons(el);
 			dagger?.click();
-			const elsewhere = el.querySelector('input[aria-label="Item"]') as HTMLElement;
-			elsewhere.dispatchEvent(new Event('pointerdown', { bubbles: true }));
-			expect(dagger?.classList.contains('sheetsmith-table-remove-armed')).toBe(
-				false,
+			const elsewhere = el.querySelector(
+				'input[aria-label="Item"]',
+			) as HTMLElement;
+			elsewhere.dispatchEvent(
+				new Event('pointerdown', { bubbles: true }),
 			);
-			expect(el.querySelector('[aria-live]')?.textContent).toBe('Delete cancelled');
+			expect(
+				dagger?.classList.contains('sheetsmith-table-remove-armed'),
+			).toBe(false);
+			expect(el.querySelector('[aria-live]')?.textContent).toBe(
+				'Delete cancelled',
+			);
 			// And the next press on the glyph arms it again rather than deleting.
 			dagger?.click();
 			expect(changes).toEqual([]);
@@ -1781,14 +2030,20 @@ describe('table with open rows', () => {
 		const [dagger, rope] = removeButtons(el);
 		dagger?.click();
 		dagger?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
-		expect(dagger?.classList.contains('sheetsmith-table-remove-armed')).toBe(false);
+		expect(
+			dagger?.classList.contains('sheetsmith-table-remove-armed'),
+		).toBe(false);
 
 		dagger?.click();
 		rope?.click();
 		// Two rows armed at once is two rows about to go, and only one of them
 		// is: arming the second stood the first down.
-		expect(dagger?.classList.contains('sheetsmith-table-remove-armed')).toBe(false);
-		expect(rope?.classList.contains('sheetsmith-table-remove-armed')).toBe(true);
+		expect(
+			dagger?.classList.contains('sheetsmith-table-remove-armed'),
+		).toBe(false);
+		expect(rope?.classList.contains('sheetsmith-table-remove-armed')).toBe(
+			true,
+		);
 		expect(changes).toEqual([]);
 	});
 
@@ -1801,15 +2056,17 @@ describe('table with open rows', () => {
 `;
 		const { el } = openRender(printed, load);
 		// Declared rows first in declared order, then the character's own.
-		expect(names(el)).toEqual(['Blade or two', 'Throwing knives', 'Lockpicks']);
+		expect(names(el)).toEqual([
+			'Blade or two',
+			'Throwing knives',
+			'Lockpicks',
+		]);
 		const cells = Array.from(
 			el.querySelectorAll('tbody .sheetsmith-table-name'),
 		);
-		expect(cells.map((cell) => cell.querySelector('input') !== null)).toEqual([
-			false,
-			false,
-			true,
-		]);
+		expect(
+			cells.map((cell) => cell.querySelector('input') !== null),
+		).toEqual([false, false, true]);
 		// One control, on the row the character owns. Absence is what says the
 		// layout owns the others; eighteen disabled buttons would be noise.
 		expect(removeButtons(el)).toHaveLength(1);
@@ -1823,7 +2080,9 @@ describe('table with open rows', () => {
 `;
 		// Only reachable through a stale index, and the file boundary is where
 		// Constraint 4 belongs.
-		expect(table.write({ rows: {}, removed: [0] }, printed, load)).toBe(printed);
+		expect(table.write({ rows: {}, removed: [0] }, printed, load)).toBe(
+			printed,
+		);
 	});
 
 	it('claims a row the character typed without duplicating or overwriting it', () => {
@@ -1836,9 +2095,15 @@ describe('table with open rows', () => {
 		const { el } = openRender(typed, load);
 		// The case-differing row fills its declared row rather than sitting
 		// below it unrendered, and its cells are untouched.
-		expect(names(el)).toEqual(['Blade or two', 'Throwing knives', 'Lockpicks']);
+		expect(names(el)).toEqual([
+			'Blade or two',
+			'Throwing knives',
+			'Lockpicks',
+		]);
 		const weights = Array.from(
-			el.querySelectorAll<HTMLInputElement>('input[aria-label$="Weight"]'),
+			el.querySelectorAll<HTMLInputElement>(
+				'input[aria-label$="Weight"]',
+			),
 		).map((input) => input.value);
 		expect(weights).toEqual(['2', '', '1']);
 		// It stops being theirs to rename or delete, which is visible and is not
@@ -1885,7 +2150,9 @@ describe('table with open rows', () => {
 		};
 		const { el } = openRender(PACK, worn);
 		expect(footTotals(el)).toEqual(['1']);
-		(el.querySelector('tbody .sheetsmith-level-ring') as HTMLElement).click();
+		(
+			el.querySelector('tbody .sheetsmith-level-ring') as HTMLElement
+		).click();
 		expect(footTotals(el)).toEqual(['2']);
 	});
 
@@ -1910,12 +2177,18 @@ describe('table with open rows', () => {
 	});
 
 	it('counts the rows that are on for a totalled toggle column', () => {
-		const worn = { ...inventory, columns: [{ key: 'Worn', type: 'toggle' as const, total: true }] };
+		const worn = {
+			...inventory,
+			columns: [{ key: 'Worn', type: 'toggle' as const, total: true }],
+		};
 		expect(footTotals(openRender(PACK, worn).el)).toEqual(['1']);
 	});
 
 	it('publishes a total as <id>.<key>', () => {
-		const published = table.scopeValues?.(stored(PACK, inventory), inventory);
+		const published = table.scopeValues?.(
+			stored(PACK, inventory),
+			inventory,
+		);
 		expect(published?.named?.['Weight']).toEqual({ value: 11 });
 	});
 
@@ -1924,15 +2197,22 @@ describe('table with open rows', () => {
 		const el = openRender(prose).el;
 		expect(footTotals(el)).toEqual(['?']);
 		expect(
-			el.querySelector('tfoot .sheetsmith-table-value')?.getAttribute('title'),
+			el
+				.querySelector('tfoot .sheetsmith-table-value')
+				?.getAttribute('title'),
 		).toBe('Sack of coins is not a number, so this column has no total.');
 		// And it publishes nothing rather than the sum of the rows it could
 		// read: a quietly wrong number is worse than an unknown name.
-		expect(table.scopeValues?.(stored(prose, inventory), inventory)).toEqual({});
+		expect(
+			table.scopeValues?.(stored(prose, inventory), inventory),
+		).toEqual({});
 	});
 
 	it('reports a total on a text column, naming what to do instead', () => {
-		const broken = { ...inventory, columns: [{ key: 'Notes', total: true }] };
+		const broken = {
+			...inventory,
+			columns: [{ key: 'Notes', total: true }],
+		};
 		const result = table.read(PACK, broken);
 		expect(result.ok).toBe(false);
 		expect(!result.ok && result.error).toContain('nothing to add up');
@@ -1948,7 +2228,9 @@ describe('table with open rows', () => {
 		// total under a name no formula could ever write.
 		const spaced = {
 			...inventory,
-			columns: [{ key: 'Load cost', type: 'number' as const, total: true }],
+			columns: [
+				{ key: 'Load cost', type: 'number' as const, total: true },
+			],
 		};
 		const result = table.read(PACK, spaced);
 		expect(!result.ok && result.error).toBe(
@@ -1958,14 +2240,18 @@ describe('table with open rows', () => {
 		// tokens: "Load-cost" is "Load minus cost".
 		const hyphen = {
 			...inventory,
-			columns: [{ key: 'Load-cost', type: 'number' as const, total: true }],
+			columns: [
+				{ key: 'Load-cost', type: 'number' as const, total: true },
+			],
 		};
 		expect(table.read(PACK, hyphen).ok).toBe(false);
 		// A dot would publish a name a segment deeper than the contract has, and
 		// collide with the `.value` every published entry already answers to.
 		const dotted = {
 			...inventory,
-			columns: [{ key: 'Load.cost', type: 'number' as const, total: true }],
+			columns: [
+				{ key: 'Load.cost', type: 'number' as const, total: true },
+			],
 		};
 		expect(table.read(PACK, dotted).ok).toBe(false);
 	});
@@ -1984,12 +2270,13 @@ describe('table with open rows', () => {
 				id: spaced.id,
 				values: table.scopeValues?.(data, spaced) ?? {},
 				rows: table.scopeRows?.(data, spaced),
-				resolver: (bound) => makeFieldResolver(table, spaced, data, bound),
+				resolver: (bound) =>
+					makeFieldResolver(table, spaced, data, bound),
 			},
 		]);
-		expect(() => evaluate('sum(inventory, Load cost)', env.sheet, callsFrom(env))).toThrow(
-			/Expected "\)"/,
-		);
+		expect(() =>
+			evaluate('sum(inventory, Load cost)', env.sheet, callsFrom(env)),
+		).toThrow(/Expected "\)"/);
 		// The same key under a name a formula can read is reachable.
 		const named = {
 			...inventory,
@@ -2001,11 +2288,16 @@ describe('table with open rows', () => {
 				id: named.id,
 				values: table.scopeValues?.(paid, named) ?? {},
 				rows: table.scopeRows?.(paid, named),
-				resolver: (bound) => makeFieldResolver(table, named, paid, bound),
+				resolver: (bound) =>
+					makeFieldResolver(table, named, paid, bound),
 			},
 		]);
 		expect(
-			evaluate('sum(inventory, Load_cost)', withName.sheet, callsFrom(withName)),
+			evaluate(
+				'sum(inventory, Load_cost)',
+				withName.sheet,
+				callsFrom(withName),
+			),
 		).toBe(0);
 	});
 
@@ -2026,14 +2318,25 @@ describe('table with open rows', () => {
 		// than pointing at a limit that no longer exists.
 		const broken = {
 			...inventory,
-			columns: [{ key: 'Bulk', type: 'computed' as const, formula: 'Qty', total: true }],
+			columns: [
+				{
+					key: 'Bulk',
+					type: 'computed' as const,
+					formula: 'Qty',
+					total: true,
+				},
+			],
 		};
 		const result = table.read(PACK, broken);
 		expect(!result.ok && result.error).toContain('adds up stored cells');
-		expect(!result.ok && result.error).toContain('as many rows as the character has');
+		expect(!result.ok && result.error).toContain(
+			'as many rows as the character has',
+		);
 		// And the fix it names is the aggregate, which is the thing that can
 		// actually add a derived value up over the rows a character has.
-		expect(!result.ok && result.error).toContain('sum(inventory, <expression>)');
+		expect(!result.ok && result.error).toContain(
+			'sum(inventory, <expression>)',
+		);
 		// A misconfigured card publishes nothing, so a formula reading its total
 		// fails and says so rather than reading a number the card refuses to show.
 		expect(table.scopeValues?.(null, broken)).toEqual({});
@@ -2087,7 +2390,8 @@ describe('table link cells', () => {
 			onChange: (edited) => changes.push(edited),
 			link: {
 				resolves,
-				open: (target, event) => asked.push({ open: target, mod: event.type }),
+				open: (target, event) =>
+					asked.push({ open: target, mod: event.type }),
 				preview: (target, anchor) =>
 					asked.push({ preview: target, on: anchor.textContent }),
 			},
@@ -2100,7 +2404,9 @@ describe('table link cells', () => {
 	}
 
 	it('renders an aliased link as its alias, pointing at its target', () => {
-		const anchor = links(driven().el).find((a) => a.textContent === 'sword');
+		const anchor = links(driven().el).find(
+			(a) => a.textContent === 'sword',
+		);
 		expect(anchor?.classList.contains('internal-link')).toBe(true);
 		expect(anchor?.getAttribute('href')).toBe('Sunblade');
 		expect(anchor?.getAttribute('data-href')).toBe('Sunblade');
@@ -2139,11 +2445,17 @@ describe('table link cells', () => {
 		expect(remove?.getAttribute('title')).toBe('Delete sword');
 		// And the cells of that row, which name it the same way.
 		expect(
-			row.querySelector('.sheetsmith-table-number input')?.getAttribute('aria-label'),
+			row
+				.querySelector('.sheetsmith-table-number input')
+				?.getAttribute('aria-label'),
 		).toBe('sword Qty');
 		// The field itself still holds the raw text: that is what is being edited.
 		expect(
-			(row.querySelector('.sheetsmith-table-name-input') as HTMLInputElement).value,
+			(
+				row.querySelector(
+					'.sheetsmith-table-name-input',
+				) as HTMLInputElement
+			).value,
 		).toBe('[[Sunblade|sword]]');
 	});
 
@@ -2156,7 +2468,9 @@ describe('table link cells', () => {
 		};
 		const { el } = driven(prose, totalled);
 		expect(
-			el.querySelector('tfoot .sheetsmith-table-value')?.getAttribute('title'),
+			el
+				.querySelector('tfoot .sheetsmith-table-value')
+				?.getAttribute('title'),
 		).toBe('chalk stick is not a number, so this column has no total.');
 	});
 
@@ -2171,25 +2485,42 @@ describe('table link cells', () => {
 		const anchor = links(el).find(
 			(a) => a.textContent === 'Bag of Holding',
 		) as HTMLElement;
-		Object.defineProperty(anchor, 'scrollWidth', { value: 200, configurable: true });
-		Object.defineProperty(anchor, 'clientWidth', { value: 100, configurable: true });
+		Object.defineProperty(anchor, 'scrollWidth', {
+			value: 200,
+			configurable: true,
+		});
+		Object.defineProperty(anchor, 'clientWidth', {
+			value: 100,
+			configurable: true,
+		});
 		anchor.dispatchEvent(new Event('pointerenter'));
 		expect(anchor.getAttribute('title')).toBe('Bag of Holding');
 
-		Object.defineProperty(anchor, 'clientWidth', { value: 400, configurable: true });
+		Object.defineProperty(anchor, 'clientWidth', {
+			value: 400,
+			configurable: true,
+		});
 		anchor.dispatchEvent(new Event('pointerenter'));
 		expect(anchor.hasAttribute('title')).toBe(false);
 	});
 
-	it('leaves an aliased link\'s tooltip naming its target', () => {
+	it("leaves an aliased link's tooltip naming its target", () => {
 		// Its `title` already answers the question a tooltip on this anchor can
 		// answer — where the link goes — so the truncation reveal stays off it and
 		// cannot overwrite that with the text it is clipping. The remainder of a
 		// clipped alias is a cell focus away.
 		const { el } = driven();
-		const aliased = links(el).find((a) => a.textContent === 'sword') as HTMLElement;
-		Object.defineProperty(aliased, 'scrollWidth', { value: 200, configurable: true });
-		Object.defineProperty(aliased, 'clientWidth', { value: 100, configurable: true });
+		const aliased = links(el).find(
+			(a) => a.textContent === 'sword',
+		) as HTMLElement;
+		Object.defineProperty(aliased, 'scrollWidth', {
+			value: 200,
+			configurable: true,
+		});
+		Object.defineProperty(aliased, 'clientWidth', {
+			value: 100,
+			configurable: true,
+		});
 		aliased.dispatchEvent(new Event('pointerenter'));
 		expect(aliased.getAttribute('title')).toBe('Sunblade');
 	});
@@ -2220,8 +2551,12 @@ describe('table link cells', () => {
 			'.sheetsmith-table-text .sheetsmith-table-link-layer',
 		) as HTMLElement;
 		expect(sole.textContent).toBe('sword');
-		expect(sole.classList.contains('sheetsmith-table-link-only')).toBe(true);
-		expect(mixed.classList.contains('sheetsmith-table-link-only')).toBe(false);
+		expect(sole.classList.contains('sheetsmith-table-link-only')).toBe(
+			true,
+		);
+		expect(mixed.classList.contains('sheetsmith-table-link-only')).toBe(
+			false,
+		);
 	});
 
 	it('marks a whole-cell link, and only a whole-cell link', () => {
@@ -2232,7 +2567,9 @@ describe('table link cells', () => {
 		const only = driven().el.querySelectorAll('tbody tr')[1] as HTMLElement;
 		expect(
 			only
-				.querySelector('.sheetsmith-table-name .sheetsmith-table-link-layer')
+				.querySelector(
+					'.sheetsmith-table-name .sheetsmith-table-link-layer',
+				)
 				?.classList.contains('sheetsmith-table-link-only'),
 		).toBe(true);
 
@@ -2242,10 +2579,14 @@ describe('table link cells', () => {
 | [[Sunblade\\|sword]], drawn | 1 |  |
 `;
 		// Index 1: the layout's own declared row is drawn first, whoever fills it.
-		const row = driven(sentence).el.querySelectorAll('tbody tr')[1] as HTMLElement;
+		const row = driven(sentence).el.querySelectorAll(
+			'tbody tr',
+		)[1] as HTMLElement;
 		expect(
 			row
-				.querySelector('.sheetsmith-table-name .sheetsmith-table-link-layer')
+				.querySelector(
+					'.sheetsmith-table-name .sheetsmith-table-link-layer',
+				)
 				?.classList.contains('sheetsmith-table-link-only'),
 		).toBe(false);
 	});
@@ -2253,7 +2594,9 @@ describe('table link cells', () => {
 	it('renders a link in a declared row name with no field to edit it', () => {
 		// Static text from the layout: the display alone, and no stack.
 		const el = driven().el;
-		const name = el.querySelector('tbody .sheetsmith-table-name') as HTMLElement;
+		const name = el.querySelector(
+			'tbody .sheetsmith-table-name',
+		) as HTMLElement;
 		expect(name.querySelector('input')).toBeNull();
 		expect(name.querySelector('a')?.textContent).toBe('Chain mail');
 		expect(name.textContent).toBe('Worn: Chain mail');
@@ -2264,13 +2607,19 @@ describe('table link cells', () => {
 		const unresolved = links(el).filter((a) =>
 			a.classList.contains('is-unresolved'),
 		);
-		expect(unresolved.map((a) => a.getAttribute('data-href'))).toEqual(['Sunblade']);
+		expect(unresolved.map((a) => a.getAttribute('data-href'))).toEqual([
+			'Sunblade',
+		]);
 	});
 
 	it('opens the note on a press, without touching the cell behind it', () => {
 		const { el, asked } = driven();
-		const anchor = links(el).find((a) => a.textContent === 'sword') as HTMLElement;
-		anchor.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+		const anchor = links(el).find(
+			(a) => a.textContent === 'sword',
+		) as HTMLElement;
+		anchor.dispatchEvent(
+			new MouseEvent('click', { bubbles: true, cancelable: true }),
+		);
 		expect(asked).toEqual([{ open: 'Sunblade', mod: 'click' }]);
 		// The press belongs to the link. The field under it must not take focus
 		// and must not commit anything.
@@ -2281,7 +2630,9 @@ describe('table link cells', () => {
 
 	it('offers the anchor to the hover preview', () => {
 		const { el, asked } = driven();
-		const anchor = links(el).find((a) => a.textContent === 'sword') as HTMLElement;
+		const anchor = links(el).find(
+			(a) => a.textContent === 'sword',
+		) as HTMLElement;
 		anchor.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
 		expect(asked).toEqual([{ preview: 'Sunblade', on: 'sword' }]);
 	});
@@ -2292,7 +2643,9 @@ describe('table link cells', () => {
 		const data = stored(PACK, carried);
 		const el = document.createElement('div');
 		table.render(el, carried, data, contextFor(data, carried));
-		const anchor = links(el).find((a) => a.textContent === 'sword') as HTMLElement;
+		const anchor = links(el).find(
+			(a) => a.textContent === 'sword',
+		) as HTMLElement;
 		expect(anchor.classList.contains('is-unresolved')).toBe(false);
 		expect(() =>
 			anchor.dispatchEvent(new MouseEvent('click', { bubbles: true })),
@@ -2348,7 +2701,9 @@ describe('table link cells', () => {
 			input.dispatchEvent(new Event('blur'));
 			expect(anchor.isConnected).toBe(true);
 			// And the edit was reported, so the rebuild that repaints it will happen.
-			expect(changes).toEqual([{ rows: { 1: { name: '[[Moonblade|blade]]' } } }]);
+			expect(changes).toEqual([
+				{ rows: { 1: { name: '[[Moonblade|blade]]' } } },
+			]);
 		} finally {
 			el.remove();
 		}
@@ -2369,8 +2724,11 @@ describe('table link cells', () => {
 				?.hasAttribute('spellcheck'),
 		).toBe(false);
 		expect(
-			(plain.querySelector('.sheetsmith-table-name-input') as HTMLInputElement)
-				.value,
+			(
+				plain.querySelector(
+					'.sheetsmith-table-name-input',
+				) as HTMLInputElement
+			).value,
 		).toBe('Chalk');
 	});
 
@@ -2441,7 +2799,11 @@ describe('table publishes its rows to an aggregate', () => {
 		]);
 	}
 
-	const sum = (formula: string, over = inventory, body: string | null = PACK) => {
+	const sum = (
+		formula: string,
+		over = inventory,
+		body: string | null = PACK,
+	) => {
 		const env = envWith(over, body);
 		return evaluate(formula, env.sheet, callsFrom(env));
 	};
@@ -2472,10 +2834,14 @@ describe('table publishes its rows to an aggregate', () => {
 `;
 		const data = stored(reordered, inventory);
 		const env = envWith(inventory, reordered);
-		const rows = table
-			.scopeRows?.(data, inventory)
-			?.(makeFieldResolver(table, inventory, data, env));
-		expect(rows?.map((row) => row.label)).toEqual(["Adventurer's pack", 'Dagger']);
+		const rows = table.scopeRows?.(
+			data,
+			inventory,
+		)?.(makeFieldResolver(table, inventory, data, env));
+		expect(rows?.map((row) => row.label)).toEqual([
+			"Adventurer's pack",
+			'Dagger',
+		]);
 	});
 
 	it('is 0 over a card with no rows at all', () => {
@@ -2510,11 +2876,14 @@ describe('table publishes its rows to an aggregate', () => {
 		// formula in; this is handed a resolver bound to the finished sheet.
 		const withLoad: TableConfig = {
 			...inventory,
-			columns: [...(inventory.columns ?? []), {
-				key: 'Load',
-				type: 'computed',
-				formula: 'Qty * Weight',
-			}],
+			columns: [
+				...(inventory.columns ?? []),
+				{
+					key: 'Load',
+					type: 'computed',
+					formula: 'Qty * Weight',
+				},
+			],
 		};
 		expect(sum('sum(inventory, Load)', withLoad)).toBe(24);
 	});
@@ -2522,7 +2891,12 @@ describe('table publishes its rows to an aggregate', () => {
 	it('reads a row value and a name off the sheet from inside a row expression', () => {
 		const withValues: TableConfig = {
 			...inventory,
-			rows: [{ label: "Adventurer's pack", values: { bulk: 'abilities.STR' } }],
+			rows: [
+				{
+					label: "Adventurer's pack",
+					values: { bulk: 'abilities.STR' },
+				},
+			],
 		};
 		// Only the declared row carries `bulk`, so the character's rows fail on
 		// it — which is the aggregate naming the first row that cannot be read.
@@ -2552,9 +2926,9 @@ describe('table publishes its rows to an aggregate', () => {
 |---|---|---|---|
 |  | 1 | a coil | no |
 `;
-		expect(() => sum('sum(inventory, Weight)', inventory, nameless)).toThrow(
-			'Row "Unnamed row": sum() needs a number, got "a coil".',
-		);
+		expect(() =>
+			sum('sum(inventory, Weight)', inventory, nameless),
+		).toThrow('Row "Unnamed row": sum() needs a number, got "a coil".');
 	});
 
 	it('names the row as a reader sees it, never as the note spells it', () => {
@@ -2574,16 +2948,21 @@ describe('table publishes its rows to an aggregate', () => {
 		// still drawn and still editable.
 		const selfSumming: TableConfig = {
 			...inventory,
-			columns: [...(inventory.columns ?? []), {
-				key: 'Load',
-				type: 'computed',
-				formula: 'sum(inventory, Weight)',
-			}],
+			columns: [
+				...(inventory.columns ?? []),
+				{
+					key: 'Load',
+					type: 'computed',
+					formula: 'sum(inventory, Weight)',
+				},
+			],
 		};
 		const data = stored(PACK, selfSumming);
 		const env = envWith(selfSumming, PACK);
 		const explain = makeFieldExplainer(table, selfSumming, data, env);
-		expect(explain('columns.3.formula', {})).toContain('already being read');
+		expect(explain('columns.3.formula', {})).toContain(
+			'already being read',
+		);
 		// And an aggregate elsewhere on the sheet over the same table is
 		// refused too, rather than reading a number the cell cannot show.
 		expect(() => sum('sum(inventory, Weight)', selfSumming)).toThrow(
@@ -2600,11 +2979,17 @@ describe('table publishes its rows to an aggregate', () => {
 		const computed = Array.from(
 			el.querySelectorAll('tbody .sheetsmith-table-value'),
 		);
-		expect(computed.map((cell) => cell.textContent)).toEqual(['?', '?', '?']);
+		expect(computed.map((cell) => cell.textContent)).toEqual([
+			'?',
+			'?',
+			'?',
+		]);
 		// The rest of the card still draws and is still editable: the failure
 		// is one column's, not the component's.
 		const names = Array.from(
-			el.querySelectorAll<HTMLInputElement>('.sheetsmith-table-name-input'),
+			el.querySelectorAll<HTMLInputElement>(
+				'.sheetsmith-table-name-input',
+			),
 		);
 		// The declared row's name is text rather than a field, because the
 		// layout owns it; the character's two are still fields.
@@ -2636,7 +3021,11 @@ describe('table publishes its rows to an aggregate', () => {
 		/** The aggregate over a body, as a card elsewhere on the sheet reads it. */
 		const readout = (body: string, over = inventory) => {
 			const env = envWith(over, body);
-			return evaluate('sum(inventory, Qty * Weight)', env.sheet, callsFrom(env));
+			return evaluate(
+				'sum(inventory, Qty * Weight)',
+				env.sheet,
+				callsFrom(env),
+			);
 		};
 
 		/** Render, drive one gesture, and return the note it would be saved as. */
@@ -2650,7 +3039,12 @@ describe('table publishes its rows to an aggregate', () => {
 			const el = document.createElement('div');
 			table.render(el, over, data, {
 				resolved: {},
-				resolveField: makeFieldResolver(table, over, data, envWith(over, body)),
+				resolveField: makeFieldResolver(
+					table,
+					over,
+					data,
+					envWith(over, body),
+				),
 				onChange: (edited) => changes.push(edited),
 			});
 			drive(el);
@@ -2661,15 +3055,24 @@ describe('table publishes its rows to an aggregate', () => {
 		it('grows when a row is added and edited', () => {
 			expect(readout(PACK)).toBe(24);
 			const added = commit(PACK, (el) =>
-				(el.querySelector('.sheetsmith-table-add-button') as HTMLElement).click(),
+				(
+					el.querySelector(
+						'.sheetsmith-table-add-button',
+					) as HTMLElement
+				).click(),
 			);
 			// A blank row is worth nothing, so the number holds while the player
 			// fills it in — and the row is really there, which the count says.
 			expect(readout(added)).toBe(24);
 			const env = envWith(inventory, added);
-			expect(evaluate('count(inventory)', env.sheet, callsFrom(env))).toBe(4);
+			expect(
+				evaluate('count(inventory)', env.sheet, callsFrom(env)),
+			).toBe(4);
 
-			const filled = added.replace('|  |  |  |  |', '| Torch | 2 | 1 | no |');
+			const filled = added.replace(
+				'|  |  |  |  |',
+				'| Torch | 2 | 1 | no |',
+			);
 			expect(readout(filled)).toBe(26);
 		});
 
@@ -2698,7 +3101,12 @@ describe('table publishes its rows to an aggregate', () => {
 			const el = document.createElement('div');
 			table.render(el, inventory, data, {
 				resolved: {},
-				resolveField: makeFieldResolver(table, inventory, data, envWith(inventory, PACK)),
+				resolveField: makeFieldResolver(
+					table,
+					inventory,
+					data,
+					envWith(inventory, PACK),
+				),
 				onChange: (edited) => changes.push(edited),
 			});
 			const qty = el.querySelectorAll<HTMLInputElement>(
@@ -2713,7 +3121,11 @@ describe('table publishes its rows to an aggregate', () => {
 
 			qty.dispatchEvent(new FocusEvent('blur'));
 			expect(changes).toHaveLength(1);
-			const committed = table.write(changes[0] as TableData, PACK, inventory);
+			const committed = table.write(
+				changes[0] as TableData,
+				PACK,
+				inventory,
+			);
 			// Nine packs at 12, the dagger's 2 and the rope's 10.
 			expect(readout(committed)).toBe(120);
 		});
@@ -2757,12 +3169,17 @@ describe('a column total and sum() over the same rows agree', () => {
 				id: config.id,
 				values: table.scopeValues?.(data, config) ?? {},
 				rows: table.scopeRows?.(data, config),
-				resolver: (bound) => makeFieldResolver(table, config, data, bound),
+				resolver: (bound) =>
+					makeFieldResolver(table, config, data, bound),
 			},
 		]);
 		return {
 			total: env.sheet(`inventory.${key}`),
-			aggregate: evaluate(`sum(inventory, ${key})`, env.sheet, callsFrom(env)),
+			aggregate: evaluate(
+				`sum(inventory, ${key})`,
+				env.sheet,
+				callsFrom(env),
+			),
 		};
 	}
 
@@ -2830,12 +3247,17 @@ describe('a column total and sum() over the same rows agree', () => {
 				id: config.id,
 				values: table.scopeValues?.(data, config) ?? {},
 				rows: table.scopeRows?.(data, config),
-				resolver: (bound) => makeFieldResolver(table, config, data, bound),
+				resolver: (bound) =>
+					makeFieldResolver(table, config, data, bound),
 			},
 		]);
 		expect(env.sheet('inventory.Worn')).toBe(2);
-		expect(evaluate('count(inventory, Worn)', env.sheet, callsFrom(env))).toBe(2);
-		expect(() => evaluate('sum(inventory, Worn)', env.sheet, callsFrom(env))).toThrow(
+		expect(
+			evaluate('count(inventory, Worn)', env.sheet, callsFrom(env)),
+		).toBe(2);
+		expect(() =>
+			evaluate('sum(inventory, Worn)', env.sheet, callsFrom(env)),
+		).toThrow(
 			'Row "Dagger": sum() adds numbers up and this is yes or no. Count the rows it holds for instead, with count(inventory, <condition>).',
 		);
 	});
@@ -2855,7 +3277,7 @@ describe('a column total and sum() over the same rows agree', () => {
  * equivalent configs — one column stored, one computed reading it — driven
  * through each component's own `scopeRows`, over the same note.
  */
-describe('a row\'s own layering agrees between Table and Roster', () => {
+describe("a row's own layering agrees between Table and Roster", () => {
 	const BODY = [
 		'| Name | Score | Doubled |',
 		'| --- | --- | --- |',
@@ -2894,7 +3316,9 @@ describe('a row\'s own layering agrees between Table and Roster', () => {
 	};
 
 	/** This row's `Doubled`, however that component read its own note. */
-	function doubled(values: readonly { values: Record<string, unknown> }[]): (number | null)[] {
+	function doubled(
+		values: readonly { values: Record<string, unknown> }[],
+	): (number | null)[] {
 		return values.map((row) =>
 			typeof row.values.Doubled === 'number' ? row.values.Doubled : null,
 		);
@@ -2902,16 +3326,26 @@ describe('a row\'s own layering agrees between Table and Roster', () => {
 
 	function tableRows(body: string) {
 		const result = table.read(body, tableConfig);
-		if (!result.ok || result.data === null) throw new Error('expected data');
+		if (!result.ok || result.data === null)
+			throw new Error('expected data');
 		const source = table.scopeRows?.(result.data, tableConfig);
-		return source?.(makeFieldResolver(table, tableConfig, result.data, NO_ENV)) ?? [];
+		return (
+			source?.(
+				makeFieldResolver(table, tableConfig, result.data, NO_ENV),
+			) ?? []
+		);
 	}
 
 	function rosterRows(body: string) {
 		const result = roster.read(body, rosterConfig);
-		if (!result.ok || result.data === null) throw new Error('expected data');
+		if (!result.ok || result.data === null)
+			throw new Error('expected data');
 		const source = roster.scopeRows?.(result.data, rosterConfig);
-		return source?.(makeFieldResolver(roster, rosterConfig, result.data, NO_ENV)) ?? [];
+		return (
+			source?.(
+				makeFieldResolver(roster, rosterConfig, result.data, NO_ENV),
+			) ?? []
+		);
 	}
 
 	it('both build a computed column from the same stored cell, over the same note', () => {
@@ -2947,19 +3381,7 @@ describe('a row\'s own layering agrees between Table and Roster', () => {
  * about is `applies`, `amount` and `suppressed`, and eight-member literals were
  * hiding that. It also means adding a member to the contract is one edit.
  */
-function outcomeOf(over: Partial<ModifierOutcome> = {}): ModifierOutcome {
-	return {
-		definition: null,
-		typed: null,
-		target: '',
-		targetLabel: '',
-		applies: false,
-		amount: null,
-		condition: null,
-		suppressed: null,
-		...over,
-	};
-}
+const outcomeOf = outcomeView;
 
 /**
  * A named part's outcome: the definition, the label of what it changes, and the
@@ -2972,10 +3394,14 @@ function named(
 	definition: ModifierDefinitionView,
 	over: Partial<ModifierOutcome> = {},
 ): ModifierOutcome {
+	// The first change, which is the only one a one-change definition has and the
+	// one every case here means. A case about several passes its own `change`.
+	const change = definition.changes[0] as ModifierChangeView;
 	return outcomeOf({
 		definition,
-		target: definition.target,
-		targetLabel: definition.targetLabel,
+		change,
+		target: change.target,
+		targetLabel: change.targetLabel,
 		applies: true,
 		amount: 1,
 		...over,
@@ -2983,15 +3409,13 @@ function named(
 }
 
 /** A modifier context whose definitions and breakdowns a case supplies. */
-function modifierContext(
-	over: Partial<ModifierContext> = {},
-): ModifierContext {
+function modifierContext(over: Partial<ModifierContext> = {}): ModifierContext {
 	return {
 		definitions: [],
 		targets: [],
 		published: [],
 		bonusTypes: [],
-		outcome: () => outcomeOf(),
+		outcomes: () => [outcomeOf()],
 		breakdown: () => ({ override: null, total: 0, lines: [] }),
 		// The host's write, absent here: a component drawn with no view around it
 		// has nothing to write a layout with, and the form says so rather than
@@ -3061,7 +3485,7 @@ describe('table and its enrolments', () => {
 		]);
 	});
 
-	it('enrols once per name in one cell, in the cell\'s own order', () => {
+	it("enrols once per name in one cell, in the cell's own order", () => {
 		/*
 		 * The second wave's whole footprint on this side: a cell holds a list, so
 		 * three names in one cell reach the formula layer as three pushes over one
@@ -3124,7 +3548,9 @@ describe('table and its enrolments', () => {
 |---|---|---|---|
 | Belt | ${cell} |  |  |
 `;
-			expect(table.write(stored(body, items), body, items), cell).toBe(body);
+			expect(table.write(stored(body, items), body, items), cell).toBe(
+				body,
+			);
 		}
 	});
 
@@ -3136,7 +3562,7 @@ describe('table and its enrolments', () => {
 		expect(pushes[0]?.row).toBe(pushes[1]?.row);
 	});
 
-	it('hands over the row\'s own names, including its toggle cells', () => {
+	it("hands over the row's own names, including its toggle cells", () => {
 		// Which is what makes `when: "Worn"` an ordinary cell rather than a second
 		// stored fact: the flag reaches the definition through the row scope.
 		expect(pushesOf(items, ITEMS_BODY)[0]?.row.values.Worn).toBe(true);
@@ -3187,12 +3613,15 @@ describe('table and its enrolments', () => {
 		// has agreed to yet would be a number derived from an error.
 		const broken = {
 			...items,
-			columns: [...(items.columns ?? []), { key: 'Effect', type: 'modifier' as const }],
+			columns: [
+				...(items.columns ?? []),
+				{ key: 'Effect', type: 'modifier' as const },
+			],
 		};
 		expect(table.scopeModifiers?.(null, broken)).toBeUndefined();
 	});
 
-	it('keeps the cell\'s spelling whatever the layout declares', () => {
+	it("keeps the cell's spelling whatever the layout declares", () => {
 		// The component cannot know what a definition is, so a name nothing
 		// declares travels exactly as a name something does.
 		const body = `
@@ -3211,7 +3640,8 @@ describe('table and its enrolments', () => {
 		 * mechanism and stays one, so a row a character typed publishes nothing
 		 * however many values it changes.
 		 */
-		const values = table.scopeValues?.(stored(ITEMS_BODY, items), items) ?? {};
+		const values =
+			table.scopeValues?.(stored(ITEMS_BODY, items), items) ?? {};
 		// Nothing at all: no `self`, and not one named entry.
 		expect(values).toEqual({});
 		const scope = buildSheetScope([{ id: 'items', values }]);
@@ -3235,7 +3665,8 @@ describe('table and its enrolments', () => {
 		 */
 		const data = stored(ITEMS_BODY, items);
 		const source = table.scopeRows?.(data, items);
-		const rows = source?.(makeFieldResolver(table, items, data, NO_ENV)) ?? [];
+		const rows =
+			source?.(makeFieldResolver(table, items, data, NO_ENV)) ?? [];
 		expect(rows[0]?.values.Effect).toBe('Belt');
 		const env = buildSheetEnv([{ id: 'items', values: {}, rows: source }]);
 		expect(() =>
@@ -3320,8 +3751,12 @@ describe('table.configError over a modifier column', () => {
 	};
 
 	it('refuses a total on a modifier column, naming the fix', () => {
-		const said = refusal([{ key: 'Effect', type: 'modifier', total: true }]);
-		expect(said).toContain('a modifier cell holds the changes a row applies');
+		const said = refusal([
+			{ key: 'Effect', type: 'modifier', total: true },
+		]);
+		expect(said).toContain(
+			'a modifier cell holds the changes a row applies',
+		);
 		expect(said).toContain('turn the total off');
 	});
 
@@ -3349,7 +3784,9 @@ describe('table.configError over a modifier column', () => {
 	});
 
 	it('refuses a published modifier column, naming the fix', () => {
-		const said = refusal([{ key: 'Effect', type: 'modifier', publish: true }]);
+		const said = refusal([
+			{ key: 'Effect', type: 'modifier', publish: true },
+		]);
 		expect(said).toContain('the language has no text');
 		expect(said).toContain('Publish a number or computed column instead');
 	});
@@ -3393,7 +3830,6 @@ describe('table renders a modifier cell', () => {
 	 */
 	afterEach(() => closeAnchoredPanel());
 
-
 	const items: TableConfig = {
 		id: 'items',
 		type: 'table',
@@ -3407,23 +3843,23 @@ describe('table renders a modifier cell', () => {
 		],
 	};
 
-	const RING: ModifierDefinitionView = {
+	const RING: ModifierDefinitionView = definitionView({
 		name: 'Ring of Protection',
 		target: 'armour_class',
 		targetLabel: 'Armour class',
 		operator: 'add',
 		amount: '1',
 		bonusType: 'item',
-	};
-	const PLATE: ModifierDefinitionView = {
+	});
+	const PLATE: ModifierDefinitionView = definitionView({
 		name: 'Plate armour',
 		target: 'armour_class',
 		targetLabel: 'Armour class',
 		operator: 'override',
 		amount: '18',
-	};
+	});
 	/** A third, with a condition, so a line can say which way it went here. */
-	const CLOAK: ModifierDefinitionView = {
+	const CLOAK: ModifierDefinitionView = definitionView({
 		name: 'Cloak of Elvenkind',
 		target: 'armour_class',
 		targetLabel: 'Armour class',
@@ -3431,7 +3867,7 @@ describe('table renders a modifier cell', () => {
 		amount: '1',
 		bonusType: 'status',
 		when: 'Worn',
-	};
+	});
 
 	/** The values a modifier may be aimed at, for the form's Changes select. */
 	const TARGETS = [
@@ -3440,13 +3876,18 @@ describe('table renders a modifier cell', () => {
 	];
 
 	/** What a part comes to, resolved the way `sheetModifiers` would resolve it. */
-	function resolve(part: string, over: Partial<ModifierOutcome>): ModifierOutcome {
+	function resolve(
+		part: string,
+		over: Partial<ModifierOutcome>,
+	): ModifierOutcome {
 		const declared = [RING, PLATE, CLOAK].find((one) => one.name === part);
 		if (declared !== undefined) {
+			const change = declared.changes[0] as ModifierChangeView;
 			return outcomeOf({
 				definition: declared,
-				target: declared.target,
-				targetLabel: declared.targetLabel,
+				change,
+				target: change.target,
+				targetLabel: change.targetLabel,
 				applies: true,
 				amount: 1,
 				...over,
@@ -3458,10 +3899,13 @@ describe('table renders a modifier cell', () => {
 				typed: read.effect,
 				target: read.effect.target,
 				targetLabel:
-					TARGETS.find((one) => one.name === read.effect.target)?.label ??
-					read.effect.target,
+					TARGETS.find((one) => one.name === read.effect.target)
+						?.label ?? read.effect.target,
 				applies: read.effect.amount !== '',
-				amount: read.effect.amount === '' ? null : Number(read.effect.amount),
+				amount:
+					read.effect.amount === ''
+						? null
+						: Number(read.effect.amount),
 				...(read.effect.amount === ''
 					? { applies: false, suppressed: 'it needs an amount.' }
 					: {}),
@@ -3479,7 +3923,7 @@ describe('table renders a modifier cell', () => {
 			targets: TARGETS,
 			published: TARGETS,
 			bonusTypes: ['item', 'status'],
-			outcome: (part: string) => resolve(part, over),
+			outcomes: (part: string) => [resolve(part, over)],
 		});
 
 	/** A stray: the layout declares nothing of the name the cell holds. */
@@ -3489,7 +3933,7 @@ describe('table renders a modifier cell', () => {
 			targets: TARGETS,
 			published: TARGETS,
 			bonusTypes: ['item', 'status'],
-			outcome: (part: string) => resolve(part, {}),
+			outcomes: (part: string) => [resolve(part, {})],
 		});
 
 	const body = (cell: string) => `
@@ -3510,7 +3954,9 @@ describe('table renders a modifier cell', () => {
 		return {
 			el,
 			changes,
-			cell: el.querySelector('.sheetsmith-table-modifier-cell') as HTMLElement,
+			cell: el.querySelector(
+				'.sheetsmith-table-modifier-cell',
+			) as HTMLElement,
 			button: el.querySelector(
 				'.sheetsmith-table-modifier-button',
 			) as HTMLButtonElement,
@@ -3538,16 +3984,27 @@ describe('table renders a modifier cell', () => {
 		closeAnchoredPanel();
 		const drew = drawn(cell, ctx);
 		drew.button.click();
-		const panel = document.querySelector('.sheetsmith-panel') as HTMLElement;
-		return { ...drew, panel, lines: () => lines(panel), field: (label: string) => field(panel, label) };
+		const panel = document.querySelector(
+			'.sheetsmith-panel',
+		) as HTMLElement;
+		return {
+			...drew,
+			panel,
+			lines: () => lines(panel),
+			field: (label: string) => field(panel, label),
+		};
 	}
 
 	/** Every line of the list: its words, its reason, its mark and its tier. */
 	function lines(panel: HTMLElement) {
 		return Array.from(panel.querySelectorAll('.sheetsmith-panel-line')).map(
 			(line) => ({
-				text: line.querySelector('.sheetsmith-panel-said')?.textContent ?? '',
-				why: line.querySelector('.sheetsmith-panel-why')?.textContent ?? null,
+				text:
+					line.querySelector('.sheetsmith-panel-said')?.textContent ??
+					'',
+				why:
+					line.querySelector('.sheetsmith-panel-why')?.textContent ??
+					null,
 				icon:
 					line
 						.querySelector('.sheetsmith-panel-glyph')
@@ -3565,7 +4022,9 @@ describe('table renders a modifier cell', () => {
 		for (const row of Array.from(
 			panel.querySelectorAll('.sheetsmith-panel-field'),
 		)) {
-			const said = row.querySelector('.sheetsmith-panel-field-label')?.textContent;
+			const said = row.querySelector(
+				'.sheetsmith-panel-field-label',
+			)?.textContent;
 			if (said !== label) continue;
 			return row.querySelector<HTMLSelectElement | HTMLInputElement>(
 				'select, input',
@@ -3584,14 +4043,20 @@ describe('table renders a modifier cell', () => {
 	}
 
 	/** Choose `value` in a select and fire the `change` the form listens for. */
-	function choose(select: HTMLSelectElement | HTMLInputElement | null, value: string) {
+	function choose(
+		select: HTMLSelectElement | HTMLInputElement | null,
+		value: string,
+	) {
 		if (select === null) throw new Error('no such control');
 		(select as HTMLSelectElement).value = value;
 		select.dispatchEvent(new Event('change'));
 	}
 
 	/** Type into a field and commit it the way `editable.ts` does. */
-	function type(input: HTMLSelectElement | HTMLInputElement | null, value: string) {
+	function type(
+		input: HTMLSelectElement | HTMLInputElement | null,
+		value: string,
+	) {
 		if (input === null) throw new Error('no such control');
 		input.value = value;
 		input.dispatchEvent(new Event('input'));
@@ -3611,15 +4076,17 @@ describe('table renders a modifier cell', () => {
 		expect(glyph.dataset.icon).toBe('plus');
 		// And the faint treatment is a class rather than an inline paint, so the
 		// hover and focus steps are the stylesheet's.
-		expect(cell.classList.contains('sheetsmith-table-modifier-empty')).toBe(true);
+		expect(cell.classList.contains('sheetsmith-table-modifier-empty')).toBe(
+			true,
+		);
 	});
 
 	it('draws zap where the row is applying and zap-off where it is not', () => {
 		// Three shapes, because `docs/UI.md` §6 refuses a mark whose only channel is
 		// fill strength, and `zap-off` against `zap` carries itself.
 		expect(
-			drawn('Ring of Protection', { modifiers: withOutcome() }).glyph.dataset
-				.icon,
+			drawn('Ring of Protection', { modifiers: withOutcome() }).glyph
+				.dataset.icon,
 		).toBe('zap');
 		expect(
 			drawn('Ring of Protection', {
@@ -3642,10 +4109,15 @@ describe('table renders a modifier cell', () => {
 		const { glyph } = drawn('Ring of Protection; Plate armour', {
 			modifiers: modifierContext({
 				definitions: [RING, PLATE],
-				outcome: (name: string) =>
+				outcomes: (name: string) => [
 					name === RING.name
 						? named(RING, { applies: true, amount: 1 })
-						: named(PLATE, { applies: false, amount: 18, suppressed: 'a higher override applies' }),
+						: named(PLATE, {
+								applies: false,
+								amount: 18,
+								suppressed: 'a higher override applies',
+							}),
+				],
 			}),
 		});
 		expect(glyph.dataset.icon).toBe('zap');
@@ -3653,7 +4125,10 @@ describe('table renders a modifier cell', () => {
 
 	it('draws zap-off for two names where neither applies', () => {
 		const { glyph } = drawn('Ring of Protection; Plate armour', {
-			modifiers: withOutcome({ applies: false, suppressed: 'nothing doing' }),
+			modifiers: withOutcome({
+				applies: false,
+				suppressed: 'nothing doing',
+			}),
 		});
 		expect(glyph.dataset.icon).toBe('zap-off');
 	});
@@ -3676,7 +4151,9 @@ describe('table renders a modifier cell', () => {
 			nameOf('Ring of Nonexistence', { modifiers: strayContext() }),
 		).toBe('Ring Modifiers: Ring of Nonexistence, changes nothing');
 		expect(
-			nameOf('Ring of Protection; Plate armour', { modifiers: withOutcome() }),
+			nameOf('Ring of Protection; Plate armour', {
+				modifiers: withOutcome(),
+			}),
 		).toBe('Ring Modifiers: 2 applying');
 		expect(
 			nameOf('Ring of Protection; Ring of Nonexistence', {
@@ -3689,7 +4166,7 @@ describe('table renders a modifier cell', () => {
 		const { button } = drawn('Plate armour', {
 			modifiers: modifierContext({
 				definitions: [RING, PLATE],
-				outcome: () => (named(PLATE, { applies: true, amount: 18 })),
+				outcomes: () => [named(PLATE, { applies: true, amount: 18 })],
 			}),
 		});
 		expect(button.getAttribute('title')).toBe('Armour class — sets to 18');
@@ -3710,16 +4187,22 @@ describe('table renders a modifier cell', () => {
 		const suppressed = drawn('Ring of Protection; Plate armour', {
 			modifiers: modifierContext({
 				definitions: [RING, PLATE],
-				outcome: (name: string) =>
+				outcomes: (name: string) => [
 					name === RING.name
 						? named(RING, { applies: true, amount: 1 })
-						: named(PLATE, { applies: false, amount: 18, suppressed: 'a higher override applies' }),
+						: named(PLATE, {
+								applies: false,
+								amount: 18,
+								suppressed: 'a higher override applies',
+							}),
+				],
 			}),
 		});
 		expect(suppressed.button.getAttribute('title')).toBe(
-			['Armour class — item +1', 'Armour class — sets to 18 (changes nothing)'].join(
-				'\n',
-			),
+			[
+				'Armour class — item +1',
+				'Armour class — sets to 18 (changes nothing)',
+			].join('\n'),
 		);
 	});
 
@@ -3758,7 +4241,9 @@ describe('table renders a modifier cell', () => {
 		 */
 		vi.useFakeTimers();
 		try {
-			const { button } = drawn('Plate armour', { modifiers: withOutcome() });
+			const { button } = drawn('Plate armour', {
+				modifiers: withOutcome(),
+			});
 			hold(button, LONG_PRESS + 10, { pointerType: 'touch' });
 			expect(document.querySelector('.sheetsmith-popover')).toBeNull();
 			// And nothing takes the press: the button's own click is the gesture.
@@ -3780,7 +4265,9 @@ describe('table renders a modifier cell', () => {
 		 * `rowLabel`, so a row spelled `[[Ring of Protection|ring]]` in the file is
 		 * named `ring` here, exactly as it is in a breakdown.
 		 */
-		const { panel } = opened('Ring of Protection', { modifiers: withOutcome() });
+		const { panel } = opened('Ring of Protection', {
+			modifiers: withOutcome(),
+		});
 		expect(panel.getAttribute('role')).toBe('dialog');
 		expect(panel.getAttribute('aria-label')).toBe('Modifiers on "Ring"');
 	});
@@ -3826,7 +4313,7 @@ describe('table renders a modifier cell', () => {
 			targets: TARGETS,
 			published: TARGETS,
 			bonusTypes: ['item', 'status'],
-			outcome: (part: string) =>
+			outcomes: (part: string) => [
 				part === RING.name
 					? named(RING, { applies: true, amount: 1 })
 					: part === PLATE.name
@@ -3836,11 +4323,16 @@ describe('table renders a modifier cell', () => {
 								suppressed: 'a higher override applies',
 							})
 						: part === CLOAK.name
-							? named(CLOAK, { applies: false, amount: 1, condition: false })
+							? named(CLOAK, {
+									applies: false,
+									amount: 1,
+									condition: false,
+								})
 							: resolve(part, {}),
+			],
 		});
 
-	it('lists one line per part in the cell\'s own order, with its own wording', () => {
+	it("lists one line per part in the cell's own order, with its own wording", () => {
 		/*
 		 * One list, labelled `On this row`, and a press on a line *opens* it. Under
 		 * the menu round there were two sections and position carried membership;
@@ -3848,9 +4340,12 @@ describe('table renders a modifier cell', () => {
 		 * job — offering what the row could apply — is the `Modifier` select inside
 		 * the form.
 		 */
-		const { panel, lines: read } = opened('Plate armour; Ring of Protection', {
-			modifiers: threeStates(),
-		});
+		const { panel, lines: read } = opened(
+			'Plate armour; Ring of Protection',
+			{
+				modifiers: threeStates(),
+			},
+		);
 		expect(
 			panel.querySelector('.sheetsmith-panel-heading')?.textContent,
 		).toBe('On this row · select to edit');
@@ -3860,7 +4355,9 @@ describe('table renders a modifier cell', () => {
 		// A reason on a line of its own under the line it is about, which is
 		// `.sheetsmith-field-problems`' shape in the editor.
 		expect(list[0]?.why).toBe('Not applied: a higher override applies');
-		expect(list[1]?.text).toBe('Ring of Protection · Armour class — item +1');
+		expect(list[1]?.text).toBe(
+			'Ring of Protection · Armour class — item +1',
+		);
 		expect(list[1]?.icon).toBe('zap');
 		expect(list[1]?.why).toBeNull();
 		// The modifier's own words plus its state, which is the whole of what the
@@ -3868,6 +4365,143 @@ describe('table renders a modifier cell', () => {
 		expect(list[0]?.name).toBe(
 			'Plate armour · Armour class — sets to 18, Not applied: a higher override applies',
 		);
+	});
+
+	it('states every change of a definition that moves several, under one name', () => {
+		/*
+		 * `docs/features/multi-change-definitions.md`. The line keeps its
+		 * identifying half — the definition's name, once — and its outcome half
+		 * becomes one line per change, indented under the name. One press, one
+		 * mark, and as many sentences as the modifier has values.
+		 */
+		const RING_OF_PROTECTION: ModifierDefinitionView = definitionView({
+			name: 'Ring of Protection',
+			changes: [
+				{
+					target: 'armour_class',
+					targetLabel: 'Armour class',
+					amount: '1',
+					bonusType: 'deflection',
+				},
+				{
+					target: 'saving_throws',
+					targetLabel: 'Saving throws',
+					amount: '1',
+					bonusType: 'deflection',
+				},
+			],
+		});
+		const two = (index: number, over: Partial<ModifierOutcome> = {}) => {
+			const change = RING_OF_PROTECTION.changes[
+				index
+			] as ModifierChangeView;
+			return outcomeOf({
+				definition: RING_OF_PROTECTION,
+				change,
+				target: change.target,
+				targetLabel: change.targetLabel,
+				applies: true,
+				amount: 1,
+				...over,
+			});
+		};
+		const { panel, lines: read } = opened('Ring of Protection', {
+			modifiers: modifierContext({
+				definitions: [RING_OF_PROTECTION],
+				targets: TARGETS,
+				published: TARGETS,
+				bonusTypes: ['deflection'],
+				outcomes: () => [two(0), two(1)],
+			}),
+		});
+		const said = Array.from(
+			panel.querySelectorAll('.sheetsmith-panel-said'),
+		).map((one) => one.textContent);
+		expect(said).toEqual([
+			'Ring of Protection · Armour class — deflection +1',
+			'Saving throws — deflection +1',
+		]);
+		// The second and later lines are indented under the name rather than
+		// repeating it: geometry, so the nesting survives forced colors.
+		expect(
+			panel
+				.querySelectorAll('.sheetsmith-panel-said')[1]
+				?.classList.contains('sheetsmith-panel-said-more'),
+		).toBe(true);
+		expect(
+			panel
+				.querySelectorAll('.sheetsmith-panel-said')[0]
+				?.classList.contains('sheetsmith-panel-said-more'),
+		).toBe(false);
+		// One mark for the whole part, on the row glyph's own rule.
+		expect(read()).toHaveLength(1);
+		expect(read()[0]?.icon).toBe('zap');
+		expect(read()[0]?.name).toBe(
+			'Ring of Protection · Armour class — deflection +1, Saving throws — deflection +1',
+		);
+	});
+
+	it('marks a part applying where one of its two changes is suppressed', () => {
+		// A modifier one of whose two changes lost is a modifier that is applying,
+		// and the `Not applied` line under that change is where the other half is
+		// said.
+		const RING_OF_PROTECTION: ModifierDefinitionView = definitionView({
+			name: 'Ring of Protection',
+			changes: [
+				{
+					target: 'armour_class',
+					targetLabel: 'Armour class',
+					amount: '1',
+				},
+				{
+					target: 'saving_throws',
+					targetLabel: 'Saving throws',
+					amount: '1',
+				},
+			],
+		});
+		const two = (index: number, over: Partial<ModifierOutcome> = {}) => {
+			const change = RING_OF_PROTECTION.changes[
+				index
+			] as ModifierChangeView;
+			return outcomeOf({
+				definition: RING_OF_PROTECTION,
+				change,
+				target: change.target,
+				targetLabel: change.targetLabel,
+				applies: true,
+				amount: 1,
+				...over,
+			});
+		};
+		const { panel, lines: read } = opened('Ring of Protection', {
+			modifiers: modifierContext({
+				definitions: [RING_OF_PROTECTION],
+				targets: TARGETS,
+				published: TARGETS,
+				outcomes: () => [
+					two(0),
+					two(1, {
+						applies: false,
+						suppressed: 'a larger bonus applies',
+					}),
+				],
+			}),
+		});
+		expect(read()[0]?.icon).toBe('zap');
+		const why = Array.from(
+			panel.querySelectorAll<HTMLElement>('.sheetsmith-panel-why'),
+		);
+		expect(why.map((one) => one.textContent)).toEqual([
+			'Not applied: a larger bonus applies',
+		]);
+		/*
+		 * **And it carries its own change's indent**, which is what keeps a reason
+		 * under the outcome it explains rather than under the one above it: this
+		 * reason belongs to the *second* change, so reading down the left edge gives
+		 * name, outcome, reason rather than name, reason, outcome.
+		 */
+		expect(why[0]?.classList.contains('sheetsmith-panel-said-more')).toBe(true);
 	});
 
 	it('spells a typed part by what it does, because it has no name', () => {
@@ -3919,7 +4553,7 @@ describe('table renders a modifier cell', () => {
 		/*
 		 * The whole difference between a picker and a list of words: the reader
 		 * choosing a named modifier reads what it would do *here*, not a bare name.
-		 * One `outcome` call per definition, and it happens on a **press** — after a
+		 * One `outcomes` call per definition, and it happens on a **press** — after a
 		 * render has finished — so it can never be the first entry into the modifier
 		 * walk in a render.
 		 */
@@ -3937,7 +4571,7 @@ describe('table renders a modifier cell', () => {
 		expect(tier.value).toBe('Plate armour');
 	});
 
-	it('shows a named part\'s fields read-only, and says where they are edited', () => {
+	it("shows a named part's fields read-only, and says where they are edited", () => {
 		// One edit in the layout editor moves every character on the layout at once,
 		// and a sheet that could make that edit would be a far larger change than
 		// this feature (SPEC §7).
@@ -3945,10 +4579,18 @@ describe('table renders a modifier cell', () => {
 			modifiers: threeStates(),
 		});
 		read()[0]?.press();
-		expect((field(panel, 'Changes') as HTMLSelectElement).disabled).toBe(true);
-		expect((field(panel, 'Operator') as HTMLSelectElement).disabled).toBe(true);
-		expect((field(panel, 'Amount') as HTMLInputElement).readOnly).toBe(true);
-		expect((field(panel, 'Bonus type') as HTMLSelectElement).disabled).toBe(true);
+		expect((field(panel, 'Value') as HTMLSelectElement).disabled).toBe(
+			true,
+		);
+		expect((field(panel, 'Operator') as HTMLSelectElement).disabled).toBe(
+			true,
+		);
+		expect((field(panel, 'Amount') as HTMLInputElement).readOnly).toBe(
+			true,
+		);
+		expect((field(panel, 'Bonus type') as HTMLSelectElement).disabled).toBe(
+			true,
+		);
 		/*
 		 * **And no Only when row at all**, because this definition has no condition.
 		 * The four read-only fields draw as a printed summary rather than as four
@@ -3963,7 +4605,7 @@ describe('table renders a modifier cell', () => {
 		expect(control(panel, 'Save to the layout')).toBeNull();
 	});
 
-	it('keeps a named part\'s condition, read-only, where it has one', () => {
+	it("keeps a named part's condition, read-only, where it has one", () => {
 		// The other half of the rule above: a blank read-only field is not drawn, and
 		// a filled one is — so the omission is "nothing to say" rather than "this
 		// field is gone".
@@ -3986,7 +4628,9 @@ describe('table renders a modifier cell', () => {
 		expect(list[0]?.text).toBe(
 			'"Ring of Nonexistence" is not a modifier this layout declares.',
 		);
-		expect(list[0]?.why).toBe('Choose one it does, or add it in the layout editor.');
+		expect(list[0]?.why).toBe(
+			'Choose one it does, or add it in the layout editor.',
+		);
 		expect(list[0]?.icon).toBe('zap-off');
 		expect(list[0]?.tier).toBe('stray');
 		list[0]?.press();
@@ -4009,7 +4653,11 @@ describe('table renders a modifier cell', () => {
 		 * name with a copy of the definition's fields: both are destructive, so
 		 * neither may land on a stray change of a select.
 		 */
-		const { panel, changes, lines: read } = opened('armour_class += 2 as item', {
+		const {
+			panel,
+			changes,
+			lines: read,
+		} = opened('armour_class += 2 as item', {
 			modifiers: threeStates(),
 		});
 		read()[0]?.press();
@@ -4021,14 +4669,85 @@ describe('table renders a modifier cell', () => {
 		]);
 	});
 
-	it('copies a definition\'s fields onto the row when it is detached', () => {
+	it('copies every change of a definition that names several, as one part each', () => {
+		/*
+		 * A cell part is one change by construction, so the honest copy of a
+		 * two-change modifier onto a row is two parts. Copying only the first would
+		 * silently take half the modifier off the row on a press whose whole promise
+		 * is that nothing is lost.
+		 */
+		const RING_OF_PROTECTION: ModifierDefinitionView = definitionView({
+			name: 'Ring of Protection',
+			when: 'Worn',
+			changes: [
+				{
+					target: 'armour_class',
+					targetLabel: 'Armour class',
+					amount: '1',
+					bonusType: 'item',
+				},
+				{
+					target: 'abilities.STR',
+					targetLabel: 'Abilities · STR',
+					amount: '1',
+				},
+			],
+		});
+		const two = (index: number) => {
+			const change = RING_OF_PROTECTION.changes[
+				index
+			] as ModifierChangeView;
+			return outcomeOf({
+				definition: RING_OF_PROTECTION,
+				change,
+				target: change.target,
+				targetLabel: change.targetLabel,
+				applies: true,
+				amount: 1,
+			});
+		};
+		const {
+			panel,
+			changes,
+			lines: read,
+		} = opened('Ring of Protection', {
+			modifiers: modifierContext({
+				definitions: [RING_OF_PROTECTION],
+				targets: TARGETS,
+				published: TARGETS,
+				bonusTypes: ['item'],
+				outcomes: () => [two(0), two(1)],
+			}),
+		});
+		read()[0]?.press();
+		choose(field(panel, 'Modifier'), 'sheetsmith-typed');
+		control(panel, 'Copy onto this row')?.click();
+		expect(changes).toEqual([
+			{
+				rows: {
+					0: {
+						cells: {
+							Modifiers:
+								'armour_class += 1 as item when Worn; abilities.STR += 1 when Worn',
+						},
+					},
+				},
+			},
+		]);
+	});
+
+	it("copies a definition's fields onto the row when it is detached", () => {
 		/*
 		 * Foundry's own #4451 "detach to instance", one-way — and **not the cache §1
 		 * forbids**: a cache is a copy of what something else still owns, and a
 		 * detached effect is the effect itself, owned by this row from that moment
 		 * and referring to nothing.
 		 */
-		const { panel, changes, lines: read } = opened('Cloak of Elvenkind', {
+		const {
+			panel,
+			changes,
+			lines: read,
+		} = opened('Cloak of Elvenkind', {
 			modifiers: threeStates(),
 		});
 		read()[0]?.press();
@@ -4055,7 +4774,11 @@ describe('table renders a modifier cell', () => {
 		 * commit button would be a second commit regime on one sheet.
 		 */
 		const each = (start: string, act: (panel: HTMLElement) => void) => {
-			const { panel, changes, lines: read } = opened(start, {
+			const {
+				panel,
+				changes,
+				lines: read,
+			} = opened(start, {
 				modifiers: withOutcome(),
 			});
 			read()[0]?.press();
@@ -4064,10 +4787,14 @@ describe('table renders a modifier cell', () => {
 		};
 		expect(
 			each('armour_class += 2 as item', (panel) =>
-				choose(field(panel, 'Changes'), 'abilities.STR'),
+				choose(field(panel, 'Value'), 'abilities.STR'),
 			),
 		).toEqual([
-			{ rows: { 0: { cells: { Modifiers: 'abilities.STR += 2 as item' } } } },
+			{
+				rows: {
+					0: { cells: { Modifiers: 'abilities.STR += 2 as item' } },
+				},
+			},
 		]);
 		// **Sets** takes the bonus type away, because an override is not contested
 		// by type — so the written part loses its `as item` with it.
@@ -4075,20 +4802,30 @@ describe('table renders a modifier cell', () => {
 			each('armour_class += 2 as item', (panel) =>
 				choose(field(panel, 'Operator'), 'override'),
 			),
-		).toEqual([{ rows: { 0: { cells: { Modifiers: 'armour_class = 2' } } } }]);
+		).toEqual([
+			{ rows: { 0: { cells: { Modifiers: 'armour_class = 2' } } } },
+		]);
 		expect(
 			each('armour_class += 2 as item', (panel) =>
 				type(field(panel, 'Amount'), '3'),
 			),
 		).toEqual([
-			{ rows: { 0: { cells: { Modifiers: 'armour_class += 3 as item' } } } },
+			{
+				rows: {
+					0: { cells: { Modifiers: 'armour_class += 3 as item' } },
+				},
+			},
 		]);
 		expect(
 			each('armour_class += 2 as item', (panel) =>
 				choose(field(panel, 'Bonus type'), 'status'),
 			),
 		).toEqual([
-			{ rows: { 0: { cells: { Modifiers: 'armour_class += 2 as status' } } } },
+			{
+				rows: {
+					0: { cells: { Modifiers: 'armour_class += 2 as status' } },
+				},
+			},
 		]);
 		expect(
 			each('armour_class += 2 as item', (panel) =>
@@ -4097,7 +4834,11 @@ describe('table renders a modifier cell', () => {
 		).toEqual([
 			{
 				rows: {
-					0: { cells: { Modifiers: 'armour_class += 2 as item when Worn' } },
+					0: {
+						cells: {
+							Modifiers: 'armour_class += 2 as item when Worn',
+						},
+					},
 				},
 			},
 		]);
@@ -4111,13 +4852,12 @@ describe('table renders a modifier cell', () => {
 		});
 		read()[0]?.press();
 		const bonus = field(panel, 'Bonus type') as HTMLSelectElement;
-		expect(bonus.selectedOptions[0]?.textContent).toBe('luck (not declared)');
-		expect(Array.from(bonus.options).map((one) => one.textContent)).toEqual([
-			'Untyped',
-			'item',
-			'status',
+		expect(bonus.selectedOptions[0]?.textContent).toBe(
 			'luck (not declared)',
-		]);
+		);
+		expect(Array.from(bonus.options).map((one) => one.textContent)).toEqual(
+			['Untyped', 'item', 'status', 'luck (not declared)'],
+		);
 	});
 
 	it('offers no bonus type on Sets', () => {
@@ -4132,10 +4872,13 @@ describe('table renders a modifier cell', () => {
 		// A control rather than a press on a line, because a press now *opens* a
 		// line and one gesture cannot both open and delete. It borrows the delete
 		// glyph's own arm-then-commit rather than inventing one.
-		const { panel, changes, lines: read } = opened(
-			'Plate armour; Ring of Protection',
-			{ modifiers: threeStates() },
-		);
+		const {
+			panel,
+			changes,
+			lines: read,
+		} = opened('Plate armour; Ring of Protection', {
+			modifiers: threeStates(),
+		});
 		read()[0]?.press();
 		control(panel, 'Remove')?.click();
 		expect(changes).toEqual([]);
@@ -4175,8 +4918,12 @@ describe('table renders a modifier cell', () => {
 			onChange: (edited) => changes.push(edited),
 			modifiers: threeStates(),
 		});
-		(el.querySelector('.sheetsmith-table-modifier-button') as HTMLElement).click();
-		const panel = document.querySelector('.sheetsmith-panel') as HTMLElement;
+		(
+			el.querySelector('.sheetsmith-table-modifier-button') as HTMLElement
+		).click();
+		const panel = document.querySelector(
+			'.sheetsmith-panel',
+		) as HTMLElement;
 		// Three parts, so three lines: what the cell *holds*. The row is doing two
 		// things, which is what the glyph counts.
 		expect(lines(panel)).toHaveLength(3);
@@ -4222,7 +4969,9 @@ describe('table renders a modifier cell', () => {
 		);
 		remove.click();
 		expect(
-			(control(panel, 'Remove') as HTMLElement).getAttribute('aria-label'),
+			(control(panel, 'Remove') as HTMLElement).getAttribute(
+				'aria-label',
+			),
 		).toBe(
 			'Remove this modifier from all 2 lines that name it. Select again to confirm.',
 		);
@@ -4272,7 +5021,11 @@ describe('table renders a modifier cell', () => {
 		expect(changes).toEqual([
 			{
 				rows: {
-					0: { cells: { Modifiers: 'Ring of Protection; Ring of Protection' } },
+					0: {
+						cells: {
+							Modifiers: 'Ring of Protection; Ring of Protection',
+						},
+					},
 				},
 			},
 		]);
@@ -4287,7 +5040,7 @@ describe('table renders a modifier cell', () => {
 		 */
 		const { panel } = opened('', { modifiers: withOutcome() });
 		expect(panel.textContent).toContain('This row applies no modifier.');
-		const changesField = field(panel, 'Changes') as HTMLSelectElement;
+		const changesField = field(panel, 'Value') as HTMLSelectElement;
 		expect(changesField).not.toBeNull();
 		expect(changesField.value).toBe('');
 		expect(document.activeElement).toBe(changesField);
@@ -4320,7 +5073,7 @@ describe('table renders a modifier cell', () => {
 		// discriminator needs a name token), so nothing is written until there is
 		// one — and then an unfinished effect is written, which changes nothing.
 		const { panel, changes } = opened('', { modifiers: withOutcome() });
-		choose(field(panel, 'Changes'), 'armour_class');
+		choose(field(panel, 'Value'), 'armour_class');
 		expect(changes).toEqual([
 			{ rows: { 0: { cells: { Modifiers: 'armour_class +=' } } } },
 		]);
@@ -4343,7 +5096,7 @@ describe('table renders a modifier cell', () => {
 		 * state the app is in for the instant before `onChange` comes back.
 		 */
 		const { panel, changes } = opened('', { modifiers: withOutcome() });
-		choose(field(panel, 'Changes'), 'armour_class');
+		choose(field(panel, 'Value'), 'armour_class');
 		type(field(panel, 'Amount'), '2');
 		expect(changes).toEqual([
 			{ rows: { 0: { cells: { Modifiers: 'armour_class +=' } } } },
@@ -4353,9 +5106,9 @@ describe('table renders a modifier cell', () => {
 		const last = changes[changes.length - 1] as {
 			rows: Record<number, { cells: Record<string, string> }>;
 		};
-		expect(
-			cellParts(last.rows[0]?.cells.Modifiers ?? ''),
-		).toEqual(['armour_class += 2']);
+		expect(cellParts(last.rows[0]?.cells.Modifiers ?? '')).toEqual([
+			'armour_class += 2',
+		]);
 	});
 
 	it('shows one Modifier option and no error where the layout names none', () => {
@@ -4393,10 +5146,13 @@ describe('table renders a modifier cell', () => {
 		 * forbids absolutely.
 		 */
 		const landed = vi.fn(() => Promise.resolve({ ok: true as const }));
-		const { panel, changes, lines: read } = opened(
-			'Ring of Protection; armour_class += 2 as item',
-			{ modifiers: modifierContext({ ...withOutcome(), promote: landed }) },
-		);
+		const {
+			panel,
+			changes,
+			lines: read,
+		} = opened('Ring of Protection; armour_class += 2 as item', {
+			modifiers: modifierContext({ ...withOutcome(), promote: landed }),
+		});
 		read()[1]?.press();
 		const name = panel.querySelector(
 			'[data-sheetsmith-panel-field="promote-name"]',
@@ -4417,7 +5173,8 @@ describe('table renders a modifier cell', () => {
 					rows: {
 						0: {
 							cells: {
-								Modifiers: 'Ring of Protection; Bracers of Warding',
+								Modifiers:
+									'Ring of Protection; Bracers of Warding',
 							},
 						},
 					},
@@ -4436,7 +5193,11 @@ describe('table renders a modifier cell', () => {
 		const refused = vi.fn(() =>
 			Promise.resolve({ error: 'The layout file is read-only.' }),
 		);
-		const { panel, changes, lines: read } = opened('armour_class += 2 as item', {
+		const {
+			panel,
+			changes,
+			lines: read,
+		} = opened('armour_class += 2 as item', {
 			modifiers: modifierContext({ ...withOutcome(), promote: refused }),
 		});
 		read()[0]?.press();
@@ -4457,7 +5218,11 @@ describe('table renders a modifier cell', () => {
 	it('refuses a promotion the form can judge itself, naming the fix', () => {
 		// Two of §8's four refusals are checked where the name is being typed
 		// rather than in another pane afterwards, and in the parser's own words.
-		const { panel, changes, lines: read } = opened('armour_class += 2 as item', {
+		const {
+			panel,
+			changes,
+			lines: read,
+		} = opened('armour_class += 2 as item', {
 			modifiers: withOutcome(),
 		});
 		read()[0]?.press();
@@ -4500,8 +5265,12 @@ describe('table renders a modifier cell', () => {
 			onChange: (edited) => changes.push(edited),
 			modifiers: threeStates(),
 		});
-		(el.querySelector('.sheetsmith-table-modifier-button') as HTMLElement).click();
-		const panel = document.querySelector('.sheetsmith-panel') as HTMLElement;
+		(
+			el.querySelector('.sheetsmith-table-modifier-button') as HTMLElement
+		).click();
+		const panel = document.querySelector(
+			'.sheetsmith-panel',
+		) as HTMLElement;
 		lines(panel)[0]?.press();
 		control(panel, 'Remove')?.click();
 		control(panel, 'Remove')?.click();
@@ -4522,26 +5291,30 @@ describe('table renders a modifier cell', () => {
 		);
 	});
 
-	it('carries the cell\'s own spelling where there is no sheet to resolve it', () => {
+	it("carries the cell's own spelling where there is no sheet to resolve it", () => {
 		/*
 		 * A component draws what it can without the context, which is `link`'s own
 		 * rule. With no layout there is nothing to resolve any part against, so every
 		 * part lands in the case a stray already has — the cell's own spelling,
 		 * carried, with the fields read-only. **The point of pinning it is that the
-		 * form derives its fields from `outcome` rather than from a parse of its own**,
+		 * form derives its fields from `outcomes` rather than from a parse of its own**,
 		 * so a missing outcome has to have a defined answer.
 		 */
 		closeAnchoredPanel();
 		const drew = drawn('armour_class += 2 as item');
 		drew.button.click();
-		const panel = document.querySelector('.sheetsmith-panel') as HTMLElement;
+		const panel = document.querySelector(
+			'.sheetsmith-panel',
+		) as HTMLElement;
 		expect(lines(panel)[0]?.text).toBe('armour_class += 2 as item');
 		lines(panel)[0]?.press();
 		const tier = field(panel, 'Modifier') as HTMLSelectElement;
 		expect(tier.selectedOptions[0]?.textContent).toContain(
 			'armour_class += 2 as item',
 		);
-		expect((field(panel, 'Amount') as HTMLInputElement).readOnly).toBe(true);
+		expect((field(panel, 'Amount') as HTMLInputElement).readOnly).toBe(
+			true,
+		);
 	});
 
 	it('keeps a repeated name when another part of the cell is edited', () => {
@@ -4569,8 +5342,12 @@ describe('table renders a modifier cell', () => {
 			onChange: (edited) => changes.push(edited),
 			modifiers: threeStates(),
 		});
-		(el.querySelector('.sheetsmith-table-modifier-button') as HTMLElement).click();
-		const panel = document.querySelector('.sheetsmith-panel') as HTMLElement;
+		(
+			el.querySelector('.sheetsmith-table-modifier-button') as HTMLElement
+		).click();
+		const panel = document.querySelector(
+			'.sheetsmith-panel',
+		) as HTMLElement;
 		// The cell holds three parts, so the form lists three: what the *cell* holds
 		// is a different question from what the row is *doing*, which is two.
 		expect(lines(panel)).toHaveLength(3);
@@ -4584,9 +5361,7 @@ describe('table renders a modifier cell', () => {
 			source,
 			items,
 		);
-		expect(written).toContain(
-			'| Ring of Protection; Ring of Protection |',
-		);
+		expect(written).toContain('| Ring of Protection; Ring of Protection |');
 	});
 
 	it('re-joins every part the reader did not touch, byte for byte', () => {
@@ -4610,8 +5385,12 @@ describe('table renders a modifier cell', () => {
 			onChange: (edited) => changes.push(edited),
 			modifiers: threeStates(),
 		});
-		(el.querySelector('.sheetsmith-table-modifier-button') as HTMLElement).click();
-		const panel = document.querySelector('.sheetsmith-panel') as HTMLElement;
+		(
+			el.querySelector('.sheetsmith-table-modifier-button') as HTMLElement
+		).click();
+		const panel = document.querySelector(
+			'.sheetsmith-panel',
+		) as HTMLElement;
 		// The third part is the typed one; edit its amount and nothing else.
 		const typedLine = panel.querySelector(
 			'.sheetsmith-panel-line[data-sheetsmith-part="typed"]',
@@ -4694,7 +5473,11 @@ describe('table and mod.self', () => {
 	const modifiable: TableConfig = {
 		...config,
 		rows: [
-			{ label: 'Acrobatics', key: 'acrobatics', values: { ability: 'abilities.DEX' } },
+			{
+				label: 'Acrobatics',
+				key: 'acrobatics',
+				values: { ability: 'abilities.DEX' },
+			},
 			{ label: 'Perception', values: { ability: 'abilities.WIS' } },
 		],
 		columns: [
@@ -4712,44 +5495,65 @@ describe('table and mod.self', () => {
 
 	/** A sheet where two are pushed at `skills.acrobatics` and nothing else. */
 	function sheetWith(pushes: readonly [string, number][]) {
-		return buildSheetEnv([
+		return buildSheetEnv(
+			[
+				{
+					id: 'abilities',
+					values: { named: { DEX: { value: 3 }, WIS: { value: 2 } } },
+				},
+				{ id: 'prof', values: { self: { value: 3 } } },
+				{
+					id: 'skills',
+					values:
+						table.scopeValues?.(
+							stored(BODY, modifiable),
+							modifiable,
+						) ?? {},
+					resolver: (env) =>
+						makeFieldResolver(
+							table,
+							modifiable,
+							stored(BODY, modifiable),
+							env,
+						),
+				},
+				{
+					id: 'items',
+					values: {},
+					// One push per part, in a definition named for its target: the
+					// component hands over one part's raw text and a row, and the formula
+					// layer is what turns that into an amount at a target.
+					modifiers: () =>
+						pushes.map(([target]) => ({
+							part: target,
+							source: 'Items',
+							row: { label: 'A row', values: {} },
+						})),
+				},
+			],
+			undefined,
 			{
-				id: 'abilities',
-				values: { named: { DEX: { value: 3 }, WIS: { value: 2 } } },
+				definitions: pushes.map(([target, amount]) =>
+					definitionView({
+						name: target,
+						target,
+						targetLabel: target,
+						operator: 'add' as const,
+						amount: String(amount),
+					}),
+				),
+				targets: pushes.map(([target]) => ({
+					name: target,
+					label: target,
+				})),
+				published: pushes.map(([target]) => ({
+					name: target,
+					label: target,
+				})),
+				bonusTypes: [],
+				accepting: new Set(pushes.map(([target]) => target)),
 			},
-			{ id: 'prof', values: { self: { value: 3 } } },
-			{
-				id: 'skills',
-				values: table.scopeValues?.(stored(BODY, modifiable), modifiable) ?? {},
-				resolver: (env) =>
-					makeFieldResolver(table, modifiable, stored(BODY, modifiable), env),
-			},
-			{
-				id: 'items',
-				values: {},
-				// One push per part, in a definition named for its target: the
-				// component hands over one part's raw text and a row, and the formula
-				// layer is what turns that into an amount at a target.
-				modifiers: () =>
-					pushes.map(([target]) => ({
-						part: target,
-						source: 'Items',
-						row: { label: 'A row', values: {} },
-					})),
-			},
-		], undefined, {
-			definitions: pushes.map(([target, amount]) => ({
-				name: target,
-				target,
-				targetLabel: target,
-				operator: 'add' as const,
-				amount: String(amount),
-			})),
-			targets: pushes.map(([target]) => ({ name: target, label: target })),
-			published: pushes.map(([target]) => ({ name: target, label: target })),
-			bonusTypes: [],
-			accepting: new Set(pushes.map(([target]) => target)),
-		});
+		);
 	}
 
 	it('modifies a declared row carrying a key, and only that row', () => {
@@ -4860,7 +5664,9 @@ describe('table and mod.self', () => {
 				}),
 			}),
 		});
-		const cell = el.querySelector('tbody .sheetsmith-table-value') as HTMLElement;
+		const cell = el.querySelector(
+			'tbody .sheetsmith-table-value',
+		) as HTMLElement;
 		expect(cell.textContent).toBe('—');
 		expect(cell.classList.contains('sheetsmith-modified')).toBe(false);
 		// And no bubble is one press away either, which is the half a mark
@@ -4912,7 +5718,8 @@ describe('table and mod.self', () => {
 		});
 		const cells = Array.from(el.querySelectorAll('tbody td'));
 		const twins = cells.map(
-			(td) => td.querySelector('.sheetsmith-sr-only')?.textContent ?? null,
+			(td) =>
+				td.querySelector('.sheetsmith-sr-only')?.textContent ?? null,
 		);
 		// One, on the row that was modified, and nothing on the row that was not.
 		/*
@@ -4930,7 +5737,7 @@ describe('table and mod.self', () => {
 		expect(totals(el)).toEqual(['+8', '+9']);
 	});
 
-	it('prints the cell\'s own number in the total line, under an override', () => {
+	it("prints the cell's own number in the total line, under an override", () => {
 		/*
 		 * **The `shown` guard, on this drawer.** `modifierBreakdown`'s second
 		 * argument exists so a total line prints the number its caller drew rather
@@ -4974,7 +5781,9 @@ describe('table and mod.self', () => {
 						: { override: null, total: 0, lines: [] },
 			}),
 		});
-		const twin = Array.from(el.querySelectorAll('tbody .sheetsmith-sr-only'))
+		const twin = Array.from(
+			el.querySelectorAll('tbody .sheetsmith-sr-only'),
+		)
 			.map((one) => one.textContent ?? '')
 			.find((said) => said.includes('Plate armour'));
 		expect(totals(el)[0]).toBe('+8');
@@ -5010,9 +5819,12 @@ describe('table and mod.self', () => {
 				}),
 			}),
 		});
-		const cell = el.querySelector('tbody .sheetsmith-table-value') as HTMLElement;
+		const cell = el.querySelector(
+			'tbody .sheetsmith-table-value',
+		) as HTMLElement;
 		cell.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-		const said = document.querySelector('.sheetsmith-popover')?.textContent ?? '';
+		const said =
+			document.querySelector('.sheetsmith-popover')?.textContent ?? '';
 		expect(said).toContain('mod.self');
 		expect(said).toContain('Belt — item +2');
 		closePopover();
@@ -5042,45 +5854,53 @@ describe('table and mod.self', () => {
 		 * so the Total cell shows "?" and its title says which row.
 		 */
 		const data = stored(BODY, modifiable);
-		const env = buildSheetEnv([
-			{
-				id: 'abilities',
-				values: { named: { DEX: { value: 3 }, WIS: { value: 2 } } },
-			},
-			{ id: 'prof', values: { self: { value: 3 } } },
-			{
-				id: 'skills',
-				values: table.scopeValues?.(data, modifiable) ?? {},
-				resolver: (inner) => makeFieldResolver(table, modifiable, data, inner),
-			},
-			{
-				id: 'items',
-				values: {},
-				modifiers: () => [
-					{
-						part: 'Belt',
-						source: 'Magic items',
-						row: { label: 'Belt of Giant Strength', values: {} },
-					},
-				],
-			},
-		], undefined, {
-			// A definition whose amount reads a name nothing publishes, which is
-			// the shape a layout arrives in after a card was renamed.
-			definitions: [
+		const env = buildSheetEnv(
+			[
 				{
-					name: 'Belt',
-					target: 'skills.acrobatics',
-					targetLabel: 'Skills · acrobatics',
-					operator: 'add',
-					amount: 'ability',
+					id: 'abilities',
+					values: { named: { DEX: { value: 3 }, WIS: { value: 2 } } },
+				},
+				{ id: 'prof', values: { self: { value: 3 } } },
+				{
+					id: 'skills',
+					values: table.scopeValues?.(data, modifiable) ?? {},
+					resolver: (inner) =>
+						makeFieldResolver(table, modifiable, data, inner),
+				},
+				{
+					id: 'items',
+					values: {},
+					modifiers: () => [
+						{
+							part: 'Belt',
+							source: 'Magic items',
+							row: {
+								label: 'Belt of Giant Strength',
+								values: {},
+							},
+						},
+					],
 				},
 			],
-			targets: [],
-			published: [],
-			bonusTypes: [],
-			accepting: new Set(['skills.acrobatics']),
-		});
+			undefined,
+			{
+				// A definition whose amount reads a name nothing publishes, which is
+				// the shape a layout arrives in after a card was renamed.
+				definitions: [
+					definitionView({
+						name: 'Belt',
+						target: 'skills.acrobatics',
+						targetLabel: 'Skills · acrobatics',
+						operator: 'add',
+						amount: 'ability',
+					}),
+				],
+				targets: [],
+				published: [],
+				bonusTypes: [],
+				accepting: new Set(['skills.acrobatics']),
+			},
+		);
 		const el = document.createElement('div');
 		table.render(el, modifiable, data, {
 			resolved: {},
@@ -5152,18 +5972,19 @@ describe('table.applyReset', () => {
 		resolve: (field: string) => number | string | null = () => null,
 	): string => {
 		const result = reset(binding, over, body, resolve);
-		if (result?.ok !== true) throw new Error(`expected a reset: ${String(result?.ok === false && result.error)}`);
+		if (result?.ok !== true)
+			throw new Error(
+				`expected a reset: ${String(result?.ok === false && result.error)}`,
+			);
 		return table.write(result.data, body, over);
 	};
 
 	it('offers the number and toggle columns, and no others', () => {
 		// A computed column stores nothing to write, `text` and `modifier` hold
 		// words, and `level` is refused on a judgement rather than a shape.
-		expect(table.resetColumns?.(conditions).map((entry) => entry.key)).toEqual([
-			'Active',
-			'Uses',
-			'Qty',
-		]);
+		expect(
+			table.resetColumns?.(conditions).map((entry) => entry.key),
+		).toEqual(['Active', 'Uses', 'Qty']);
 	});
 
 	it('offers no column the layout gave no key', () => {
@@ -5179,18 +6000,22 @@ describe('table.applyReset', () => {
 				{ key: 'Active', type: 'toggle' },
 			],
 		} as TableConfig;
-		expect(table.resetColumns?.(keyless).map((entry) => entry.key)).toEqual([
-			'Active',
-		]);
+		expect(table.resetColumns?.(keyless).map((entry) => entry.key)).toEqual(
+			['Active'],
+		);
 	});
 
 	it('says which action a column with no ceiling refuses, and why', () => {
 		const offered = table.resetColumns?.(conditions) ?? [];
-		expect(offered.find((entry) => entry.key === 'Uses')?.refuses).toBeUndefined();
+		expect(
+			offered.find((entry) => entry.key === 'Uses')?.refuses,
+		).toBeUndefined();
 		// Framed as a `ResetResult` error, which is the contract the shared
 		// string owes: it continues "Conditions — " on the sheet, so it opens
 		// lower case, and the editor is the reader that adapts.
-		expect(offered.find((entry) => entry.key === 'Qty')?.refuses?.full).toBe(
+		expect(
+			offered.find((entry) => entry.key === 'Qty')?.refuses?.full,
+		).toBe(
 			'the column "Qty" has no maximum to restore to. Give it one, or set this trigger to empty.',
 		);
 		// And nothing else is refused: emptying a column with no ceiling is
@@ -5201,7 +6026,11 @@ describe('table.applyReset', () => {
 	});
 
 	it('clears a toggle column over every row the note holds', () => {
-		const text = written({ trigger: 'Long rest', column: 'Active', action: 'empty' });
+		const text = written({
+			trigger: 'Long rest',
+			column: 'Active',
+			action: 'empty',
+		});
 		expect(text).toContain('| Poisoned | no | 0 | 7 | disadvantage |');
 		expect(text).toContain('|Frightened|no|1|2|cannot approach|');
 		expect(text).toContain('| Charmed | no |  | 4 | |');
@@ -5210,14 +6039,22 @@ describe('table.applyReset', () => {
 	it('sets a toggle column, and leaves a hand-written spelling that already means yes', () => {
 		// The comparison is on the reading, not the text: `x` reads as set, so
 		// `full` has nothing to write into that cell (PATTERNS §7).
-		const text = written({ trigger: 'Long rest', column: 'Active', action: 'full' });
+		const text = written({
+			trigger: 'Long rest',
+			column: 'Active',
+			action: 'full',
+		});
 		expect(text).toContain('|Frightened|x|1|2|cannot approach|');
 		expect(text).toContain('| Poisoned | yes | 0 | 7 | disadvantage |');
 		expect(text).toContain('| Charmed | yes |  | 4 | |');
 	});
 
 	it('leaves every unbound column byte-identical, ragged pipes and all', () => {
-		const text = written({ trigger: 'Long rest', column: 'Active', action: 'empty' });
+		const text = written({
+			trigger: 'Long rest',
+			column: 'Active',
+			action: 'empty',
+		});
 		// The Qty column the rest was never pointed at, and the notes beside it.
 		expect(text).toContain('| 7 | disadvantage |');
 		expect(text).toContain('|2|cannot approach|');
@@ -5227,16 +6064,28 @@ describe('table.applyReset', () => {
 	it('writes no bytes at all where every cell already reads that way', () => {
 		// A cell already holding the value is not rewritten, so a second press
 		// of the same rest returns the note it was handed.
-		const once = written({ trigger: 'Long rest', column: 'Active', action: 'empty' });
+		const once = written({
+			trigger: 'Long rest',
+			column: 'Active',
+			action: 'empty',
+		});
 		expect(
-			written({ trigger: 'Long rest', column: 'Active', action: 'empty' }, conditions, once),
+			written(
+				{ trigger: 'Long rest', column: 'Active', action: 'empty' },
+				conditions,
+				once,
+			),
 		).toBe(once);
 	});
 
 	it('empties a number column to nothing where it declares no min', () => {
 		// A blank cell reads as 0 (SPEC §4.2), so emptying does not fill a
 		// column with zeros nobody typed.
-		const text = written({ trigger: 'Long rest', column: 'Qty', action: 'empty' });
+		const text = written({
+			trigger: 'Long rest',
+			column: 'Qty',
+			action: 'empty',
+		});
 		expect(text).toContain('| Poisoned | yes | 0 | 0 | disadvantage |');
 		// The blank Uses cell on the character's own row is untouched, because
 		// nothing pointed at that column.
@@ -5290,20 +6139,29 @@ describe('table.applyReset', () => {
 	});
 
 	it('restores a number column to the ceiling the column declares', () => {
-		const text = written({ trigger: 'Long rest', column: 'Uses', action: 'full' });
+		const text = written({
+			trigger: 'Long rest',
+			column: 'Uses',
+			action: 'full',
+		});
 		expect(text).toContain('| Poisoned | yes | 3 | 7 | disadvantage |');
 		expect(text).toContain('| Charmed | no | 3 | 4 | |');
 	});
 
 	it('writes no cell for a full binding on a column with no ceiling, and names it', () => {
-		const result = reset({ trigger: 'Long rest', column: 'Qty', action: 'full' });
+		const result = reset({
+			trigger: 'Long rest',
+			column: 'Qty',
+			action: 'full',
+		});
 		expect(result?.ok).toBe(false);
 		if (result?.ok === false) {
 			expect(result.error).toContain('no maximum to restore to');
 			// The same sentence the editor draws: one list, two readers.
 			expect(result.error).toBe(
-				table.resetColumns?.(conditions).find((entry) => entry.key === 'Qty')
-					?.refuses?.full,
+				table
+					.resetColumns?.(conditions)
+					.find((entry) => entry.key === 'Qty')?.refuses?.full,
 			);
 		}
 		// And the same column still clears.
@@ -5335,7 +6193,12 @@ describe('table.applyReset', () => {
 
 	it('writes a resolved formula into a number column, held to its bounds', () => {
 		const text = written(
-			{ trigger: 'Long rest', column: 'Uses', action: 'formula', to: 'x' },
+			{
+				trigger: 'Long rest',
+				column: 'Uses',
+				action: 'formula',
+				to: 'x',
+			},
 			conditions,
 			LIST,
 			() => 9,
@@ -5347,7 +6210,12 @@ describe('table.applyReset', () => {
 		// Track's and Record set's rule: `to: '0'` must not turn a column on.
 		expect(
 			written(
-				{ trigger: 'Long rest', column: 'Active', action: 'formula', to: 'x' },
+				{
+					trigger: 'Long rest',
+					column: 'Active',
+					action: 'formula',
+					to: 'x',
+				},
 				conditions,
 				LIST,
 				() => 0,
@@ -5355,7 +6223,12 @@ describe('table.applyReset', () => {
 		).toContain('| Poisoned | no | 0 | 7 | disadvantage |');
 		expect(
 			written(
-				{ trigger: 'Long rest', column: 'Active', action: 'formula', to: 'x' },
+				{
+					trigger: 'Long rest',
+					column: 'Active',
+					action: 'formula',
+					to: 'x',
+				},
 				conditions,
 				LIST,
 				() => 1,
@@ -5365,15 +6238,26 @@ describe('table.applyReset', () => {
 
 	it('reports a reset formula that will not resolve, and one that is not a number', () => {
 		const empty = reset(
-			{ trigger: 'Long rest', column: 'Uses', action: 'formula', to: 'x' },
+			{
+				trigger: 'Long rest',
+				column: 'Uses',
+				action: 'formula',
+				to: 'x',
+			},
 			conditions,
 			LIST,
 			() => null,
 		);
 		expect(empty?.ok).toBe(false);
-		if (empty?.ok === false) expect(empty.error).toContain('reset formula is empty');
+		if (empty?.ok === false)
+			expect(empty.error).toContain('reset formula is empty');
 		const words = reset(
-			{ trigger: 'Long rest', column: 'Uses', action: 'formula', to: 'x' },
+			{
+				trigger: 'Long rest',
+				column: 'Uses',
+				action: 'formula',
+				to: 'x',
+			},
 			conditions,
 			LIST,
 			() => 'rested',
@@ -5401,7 +6285,13 @@ describe('table.applyReset', () => {
 		 */
 		const bound = {
 			...conditions,
-			reset: [{ trigger: 'Long rest', column: 'Notes', action: 'full' as const }],
+			reset: [
+				{
+					trigger: 'Long rest',
+					column: 'Notes',
+					action: 'full' as const,
+				},
+			],
 		} as TableConfig;
 		const data = stored(LIST, bound);
 		const el = document.createElement('div');
@@ -5419,14 +6309,22 @@ describe('table.applyReset', () => {
 	it('tells a column that is gone from one it cannot act on', () => {
 		// Two mistakes with two fixes: one sentence for both sent an author
 		// looking at a column's type when there was no column (PATTERNS §4).
-		const gone = reset({ trigger: 'Long rest', column: 'Fatigue', action: 'empty' });
+		const gone = reset({
+			trigger: 'Long rest',
+			column: 'Fatigue',
+			action: 'empty',
+		});
 		expect(gone?.ok).toBe(false);
 		if (gone?.ok === false) {
 			expect(gone.error).toBe(
 				'this table has no column called "Fatigue". Point the trigger at one it has, or remove the binding.',
 			);
 		}
-		const words = reset({ trigger: 'Long rest', column: 'Notes', action: 'empty' });
+		const words = reset({
+			trigger: 'Long rest',
+			column: 'Notes',
+			action: 'empty',
+		});
 		expect(words?.ok).toBe(false);
 		if (words?.ok === false) {
 			expect(words.error).toBe(
@@ -5451,7 +6349,9 @@ describe('table.applyReset', () => {
 		);
 		expect(result?.ok).toBe(false);
 		if (result?.ok === false) {
-			expect(result.error).toContain('holds no state a trigger can restore');
+			expect(result.error).toContain(
+				'holds no state a trigger can restore',
+			);
 		}
 	});
 
@@ -5475,13 +6375,20 @@ describe('table.applyReset', () => {
 `;
 		// The reset: Frightened is declared, absent, and stays absent.
 		expect(
-			written({ trigger: 'Long rest', column: 'Active', action: 'full' }, conditions, SHORT),
+			written(
+				{ trigger: 'Long rest', column: 'Active', action: 'full' },
+				conditions,
+				SHORT,
+			),
 		).not.toContain('Frightened');
 
 		// A cell edit on that same row: appended, with only the cell that was
 		// touched, and every row already in the note left as it was.
 		const edited = table.write(
-			{ rows: {}, added: [{ name: 'Frightened', cells: { Active: 'yes' } }] },
+			{
+				rows: {},
+				added: [{ name: 'Frightened', cells: { Active: 'yes' } }],
+			},
 			SHORT,
 			conditions,
 		);
@@ -5548,7 +6455,9 @@ describe('table.applyReset', () => {
 		expect(result?.ok).toBe(true);
 		if (result?.ok === true) {
 			expect(table.write(result.data, '', conditions)).toBe('');
-			expect(table.write(result.data, 'Some prose.', conditions)).toBe('Some prose.');
+			expect(table.write(result.data, 'Some prose.', conditions)).toBe(
+				'Some prose.',
+			);
 			// The input that actually reaches it: the section is missing, so
 			// there is no body and no table, and the answer is still nothing.
 			// `applySectionWrites` is what turns that into "create no section"
@@ -5574,7 +6483,8 @@ describe('the Conditions palette entry', () => {
 	/** One entry's prefill, read off the palette. */
 	function prefill(name: string): Partial<TableConfig> {
 		const entry = table.palette?.find((one) => one.name === name);
-		if (entry === undefined) throw new Error(`no palette entry called ${name}`);
+		if (entry === undefined)
+			throw new Error(`no palette entry called ${name}`);
 		return entry.config;
 	}
 
@@ -5605,13 +6515,13 @@ describe('the Conditions palette entry', () => {
 `;
 
 	/** One change, conditioned on the flag the entry prefills. */
-	const DISADVANTAGE: ModifierDefinitionView = {
+	const DISADVANTAGE: ModifierDefinitionView = definitionView({
 		name: 'Disadvantage',
 		target: 'attack_bonus',
 		targetLabel: 'Attack bonus',
 		amount: '-2',
 		when: 'Active',
-	};
+	});
 
 	it('applies a definition whose condition reads the flag, and only where it is set', () => {
 		const data = stored(NOTE, placed);
@@ -5633,12 +6543,14 @@ describe('the Conditions palette entry', () => {
 			[{ id: placed.id, pushes: () => pushes }],
 			[DISADVANTAGE],
 		);
-		const result = lookup(DISADVANTAGE.target);
+		const result = lookup('attack_bonus');
 		// One row's worth and not two: the switched-off row leaves no line at all,
 		// because a breakdown is the number's story.
 		expect('error' in result ? null : result.total).toBe(-2);
 		expect(
-			'error' in result ? [] : result.lines.map((line) => [line.label, line.amount]),
+			'error' in result
+				? []
+				: result.lines.map((line) => [line.label, line.amount]),
 		).toEqual([['Frightened', -2]]);
 	});
 

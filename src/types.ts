@@ -1007,12 +1007,21 @@ export interface ModifierDefinition {
 	 * tests `parse/modifier-cell.ts` exports.
 	 */
 	name: string;
-	/** The published name this changes. */
-	target: string;
+	/**
+	 * The flat spelling of one change, for a definition written before a
+	 * definition could name several (`docs/features/multi-change-definitions.md`).
+	 *
+	 * **Optional together with the four below, and only because `changes` may
+	 * carry them instead.** A definition holding neither names no value, which is
+	 * what a blank `target` already was. A definition holding both is read through
+	 * `changes` and told that these are ignored — the author's bytes stay, which is
+	 * SPEC §10 applied to a hand-edited layout.
+	 */
+	target?: string;
 	/** Omitted for 'add', which is what a definition that says nothing is. */
 	operator?: ModifierOperator;
 	/** An expression, evaluated in the enrolling row's scope. */
-	amount: string;
+	amount?: string;
 	/** One of the layout's `modifierTypes`. Absent is untyped. */
 	bonusType?: string;
 	/**
@@ -1021,8 +1030,83 @@ export interface ModifierDefinition {
 	 * the phase existed stays.
 	 */
 	applies?: ModifierPhase;
-	/** An expression; absent means always. */
+	/**
+	 * An expression; absent means always.
+	 *
+	 * **On the definition and never on a change**, so every change a definition
+	 * names is on or off together: the condition is a fact about the *thing* — the
+	 * ring is worn, the spell is up — and not about each arithmetic clause. A boon
+	 * granting one change always and another only sometimes is two definitions,
+	 * and the row's cell names both.
+	 */
 	when?: string;
+	/**
+	 * Every value this definition moves, where it names more than the flat
+	 * spelling can.
+	 *
+	 * Absent is the flat spelling above, which is what every definition written
+	 * before this existed is and what one still round-trips as. Present, it is
+	 * what the sheet reads and the five members above are ignored.
+	 */
+	changes?: readonly ModifierChange[];
+}
+
+/**
+ * The five members `ModifierChange` declares, as a list something can walk.
+ *
+ * **One copy, because the only thing a test over two could assert is that they
+ * still agree** (`PATTERNS.md` §1's one-step tier, which extracts a *set* on the
+ * second consumer). It had two: `parse/modifier-definitions.ts` reports the flat
+ * members it finds beside a `changes` list as ignored, and the layout editor's
+ * **Add change** moves and deletes exactly those members when it converts a flat
+ * definition. Those are two halves of one contract — add a sixth member to the
+ * interface and update only the parser's copy, and **Add change** strands the key
+ * while the parser reports a fault the editor just caused.
+ *
+ * Here rather than in either consumer because it is the *shape's* own fact, and
+ * because `contract.test.ts` reads this file's declarations by regex — so the
+ * list is [checked] against the interface below rather than held by two comments
+ * pointing at each other.
+ */
+export const MODIFIER_CHANGE_KEYS = [
+	'target',
+	'operator',
+	'amount',
+	'bonusType',
+	'applies',
+] as const;
+
+/**
+ * One value a modifier definition moves: everything a definition used to carry
+ * flat, minus its name and its condition (SPEC §5).
+ *
+ * **The third of three interfaces of nearly one shape, and it is deliberately
+ * not the other two.** `TypedEffect` below is a *nearer* miss than
+ * `ModifierDefinition` was — it differs from this only by `when` — which is
+ * exactly why `TypedEffect = ModifierChange & { when?: string }` is refused:
+ * it would make a typed effect "one change of a definition with no name yet",
+ * which is the promotion-in-place §7 forbids. `contract.test.ts` holds the field
+ * list once across all three.
+ *
+ * **Each change is a full, independent contributor.** Two changes of one
+ * definition may carry different bonus types and different phases; two landing on
+ * the same target contest exactly as two separate definitions would, with no
+ * special case for sharing a parent.
+ */
+export interface ModifierChange {
+	/** The published name this changes. */
+	target: string;
+	/** Omitted for 'add', which is what a change that says nothing is. */
+	operator?: ModifierOperator;
+	/** An expression, evaluated in the enrolling row's scope. */
+	amount: string;
+	/** One of the layout's `modifierTypes`. Absent is untyped. */
+	bonusType?: string;
+	/**
+	 * Which phase this addition lands in. Omitted for `value`, which is what a
+	 * change that says nothing is.
+	 */
+	applies?: ModifierPhase;
 }
 
 /**
@@ -1076,16 +1160,48 @@ export interface TypedEffect {
 }
 
 /**
- * A definition as a sheet shows one: the layout's own words, plus what to call
- * the value it changes.
+ * A definition as a sheet shows one: the layout's own words, normalised to one
+ * shape, with what to call each value it changes.
  *
- * The label travels with the definition rather than being looked up per surface,
+ * The label travels with the change rather than being looked up per surface,
  * so the editor's list, the form's line and a breakdown all call the value the
  * same thing: "Armour class" where `armour_class` is the name. A typed effect has
  * no view of its own — the form and the sheet label its target through
  * `ModifierContext.published`, which is the same derivation.
+ *
+ * **Deliberately not `extends ModifierDefinition`**, which it used to be. The two
+ * spellings of a definition are the parser's business and nobody else's, so a
+ * view that still carried `target` and `amount` would let a reader downstream ask
+ * a question with two answers on a definition naming two values.
  */
-export interface ModifierDefinitionView extends ModifierDefinition {
+export interface ModifierDefinitionView {
+	/** The layout's own name for it, which is what a cell stores. */
+	name: string;
+	/** An expression governing every change below; absent means always. */
+	when?: string;
+	/**
+	 * Every change this definition names, **always present and always
+	 * normalised**: a definition still spelled flat arrives here as a one-entry
+	 * list, and one holding `changes: []` as a single blank change, which is what
+	 * a definition naming no value already was.
+	 *
+	 * The consequence is the property worth keeping: **nothing downstream of
+	 * `parse/modifier-definitions.ts` reads a definition's flat members again.**
+	 * The two spellings exist inside `parse/`, and the formula layer, the sheet
+	 * and the editor's report all see one shape.
+	 */
+	changes: readonly ModifierChangeView[];
+}
+
+/**
+ * One change as a sheet shows one: the layout's own words, plus what to call the
+ * value it moves.
+ *
+ * **The label is here and not on the definition**, which is where it used to be:
+ * a definition naming two values has two labels, so one at the top could only
+ * ever mean the first. Moving it is what made the compiler find every reader.
+ */
+export interface ModifierChangeView extends ModifierChange {
 	/** The publishing component's own label, or the bare name where none. */
 	targetLabel: string;
 }
@@ -1305,8 +1421,8 @@ export interface ModifierBreakdown {
 /**
  * One name a modifier may be pushed at, and what to show for it.
  *
- * The layout editor's **Changes** picker, now that a definition names its target
- * once instead of every row naming one. Foundry's own Active Effects article
+ * The layout editor's **Value** picker, now that a definition names the values
+ * it moves once instead of every row naming one. Foundry's own Active Effects article
  * tells users to press F12 and run a console script to enumerate attribute keys;
  * this is the answer to that, moved from the sheet to the one place a target is
  * chosen.
@@ -1335,6 +1451,18 @@ export interface ModifierOutcome {
 	 * part has neither, a named part has the first, a typed part has the second.
 	 */
 	definition: ModifierDefinitionView | null;
+	/**
+	 * Which of that definition's changes this outcome is about, or null where the
+	 * part names no definition.
+	 *
+	 * **One outcome is about one change, which is what a definition naming several
+	 * made necessary and what makes every reader below single-valued again.** It
+	 * is also the one place the change's own operator, bonus type and raw amount
+	 * are reachable from an outcome, so `modifier-breakdown.ts` reads them here
+	 * rather than re-deriving them off the definition — which on a definition
+	 * naming two values could only ever have meant the first.
+	 */
+	change: ModifierChangeView | null;
 	/** The effect this part spells out, or null where it names a definition. */
 	typed: TypedEffect | null;
 	/**
@@ -1401,7 +1529,7 @@ export interface ModifierContext {
 	 */
 	definitions: readonly ModifierDefinitionView[];
 	/**
-	 * The values a modifier may be aimed at, for the form's **Changes** select.
+	 * The values a modifier may be aimed at, for the form's **Value** select.
 	 *
 	 * The accepting set — every published name whose own formula reads a modifier —
 	 * derived once in `formula/modifier-targets.ts` and shared with the layout
@@ -1421,12 +1549,18 @@ export interface ModifierContext {
 	/** The layout's bonus types, for the form's **Bonus type** select. */
 	bonusTypes: readonly string[];
 	/**
-	 * What one part of one cell comes to on this row.
+	 * What one part of one cell comes to on this row: **one outcome per change**
+	 * the part's modifier names, in the definition's own order.
 	 *
 	 * Takes the part's raw text rather than a name, and the row rather than an
 	 * index, so nothing about a row's position leaves the component (SPEC §4.2).
+	 *
+	 * **Never empty for a part that resolves**, so a caller reading the first entry
+	 * reads something: a stray name, a typed effect and a definition naming no
+	 * value each give exactly one. Plural because a named part gives one per
+	 * change, which is the whole of what a multi-change definition is on the sheet.
 	 */
-	outcome(part: string, row: RowValues): ModifierOutcome;
+	outcomes(part: string, row: RowValues): readonly ModifierOutcome[];
 	/**
 	 * What applies at this name, in declaration order, and what it comes to. No
 	 * lines where nothing does, and none for a name that accepts no modifier — so

@@ -75,7 +75,7 @@ import { parseLayout, serialiseLayout } from '../parse/layout';
 import { cellParts } from '../parse/modifier-cell';
 import { parseModifierDefinitions } from '../parse/modifier-definitions';
 import { walkComponents } from '../parse/layout-walk';
-import { isContainer } from '../types';
+import { isContainer, ModifierOutcome } from '../types';
 
 /**
  * Where the two files sit, and the constants the feature doc's paths have to
@@ -786,12 +786,13 @@ describe('what a modifier cell says about its own row', () => {
 	function applied(label: string, cell: string) {
 		const values = row(label).row;
 		return rowModifiers(cellParts(cell), (stored) =>
-			built.modifiers.outcome(stored, values),
+			built.modifiers.outcomes(stored, values),
 		);
 	}
 
+	/** The one outcome a part naming a one-change definition comes to. */
 	const outcomeFor = (part: string, label: string) =>
-		built.modifiers.outcome(part, row(label).row);
+		built.modifiers.outcomes(part, row(label).row)[0] as ModifierOutcome;
 
 	it('says what one row is doing when its cell names two, at both depths', () => {
 		/*

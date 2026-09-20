@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
+import { definitionView, outcomeView } from '../test/modifier-views';
 import {
 	MODIFIED_CLASS,
 	modifierBreakdown,
 	modifierOutcomeText,
+	modifierRowName,
+	modifierRowText,
 } from './modifier-breakdown';
 import {
+	ModifierChangeView,
 	ModifierDefinitionView,
 	ModifierLine,
 	ModifierOutcome,
@@ -81,7 +85,17 @@ describe('modifierBreakdown', () => {
 		// An override is not an addend, and a "+18" over a row setting armour class
 		// to 18 would be a line that says the wrong thing.
 		expect(
-			said([line({ label: 'Plate armour', operator: 'override', amount: 18 })], 0, 18),
+			said(
+				[
+					line({
+						label: 'Plate armour',
+						operator: 'override',
+						amount: 18,
+					}),
+				],
+				0,
+				18,
+			),
 		).toBe('Plate armour — sets to 18\n\nTotal 18');
 	});
 
@@ -91,15 +105,17 @@ describe('modifierBreakdown', () => {
 		expect(
 			said(
 				[
-					line({ label: 'Plate armour', operator: 'override', amount: 18 }),
+					line({
+						label: 'Plate armour',
+						operator: 'override',
+						amount: 18,
+					}),
 					line({ label: 'Ring', type: 'item', amount: 1 }),
 				],
 				1,
 				18,
 			),
-		).toBe(
-			'Plate armour — sets to 18\nRing — item +1\n\nTotal 19',
-		);
+		).toBe('Plate armour — sets to 18\nRing — item +1\n\nTotal 19');
 	});
 
 	it('lists a suppressed override and says which wording is true', () => {
@@ -132,7 +148,7 @@ describe('modifierBreakdown', () => {
 		);
 	});
 
-	it('prints the caller\'s number, never its own arithmetic, under an override', () => {
+	it("prints the caller's number, never its own arithmetic, under an override", () => {
 		/*
 		 * The finding this parameter exists for. A breakdown is offered on the
 		 * lazy-proof text scan while an override is *applied* only where the slot
@@ -146,7 +162,11 @@ describe('modifierBreakdown', () => {
 		expect(
 			said(
 				[
-					line({ label: 'Plate armour', operator: 'override', amount: 18 }),
+					line({
+						label: 'Plate armour',
+						operator: 'override',
+						amount: 18,
+					}),
 					line({ label: 'Ring', type: 'item', amount: 1 }),
 				],
 				1,
@@ -160,14 +180,23 @@ describe('modifierBreakdown', () => {
 		// An unresolved formula, or a cell with nothing to compute: the delta
 		// asserts nothing about a value, where a value would be a guess.
 		expect(
-			said([line({ label: 'Plate', operator: 'override', amount: 18 })], 1, 18, null),
+			said(
+				[line({ label: 'Plate', operator: 'override', amount: 18 })],
+				1,
+				18,
+				null,
+			),
 		).toBe('Plate — sets to 18\n\nTotal +1');
 	});
 
 	it('lists an override to 0, because setting to zero is a real effect', () => {
-		expect(said([line({ label: 'Antimagic', operator: 'override', amount: 0 })], 0, 0)).toBe(
-			'Antimagic — sets to 0\n\nTotal 0',
-		);
+		expect(
+			said(
+				[line({ label: 'Antimagic', operator: 'override', amount: 0 })],
+				0,
+				0,
+			),
+		).toBe('Antimagic — sets to 0\n\nTotal 0');
 	});
 
 	it('lists a suppressed contributor and why it did not apply', () => {
@@ -212,32 +241,38 @@ describe('a breakdown read inside a table', () => {
 		 * looking at a list of rows and went hunting for a skill called that.
 		 */
 		expect(
-			said([line({ label: 'Eyes of the Eagle', amount: 2 })], 2, null, null, true),
+			said(
+				[line({ label: 'Eyes of the Eagle', amount: 2 })],
+				2,
+				null,
+				null,
+				true,
+			),
 		).toContain('Magic items · Eyes of the Eagle — +2');
 	});
 
-	it('leaves a card\'s breakdown alone, because a card has no rows', () => {
+	it("leaves a card's breakdown alone, because a card has no rows", () => {
 		// Which is why this is the table's flag rather than a rule for everyone:
 		// there is no competing referent on a card, so the token would be noise.
-		expect(said([line({ label: 'Eyes of the Eagle', amount: 2 })], 2)).toContain(
-			'Eyes of the Eagle — +2',
-		);
-		expect(said([line({ label: 'Eyes of the Eagle', amount: 2 })], 2)).not.toContain(
-			'Magic items',
-		);
+		expect(
+			said([line({ label: 'Eyes of the Eagle', amount: 2 })], 2),
+		).toContain('Eyes of the Eagle — +2');
+		expect(
+			said([line({ label: 'Eyes of the Eagle', amount: 2 })], 2),
+		).not.toContain('Magic items');
 	});
 });
 
-describe('the modifier\'s own name, and when it earns its place', () => {
+describe("the modifier's own name, and when it earns its place", () => {
 	it('is left off where the row is already called by it', () => {
 		/*
 		 * The ordinary case, and the reason this clause is invisible almost
 		 * everywhere: an item's row is named after the modifier it applies, so the
 		 * two are the same word and printing both would print one word twice.
 		 */
-		expect(said([line({ label: 'Ring of Protection', amount: 1 })], 1)).toContain(
-			'Ring of Protection — +1',
-		);
+		expect(
+			said([line({ label: 'Ring of Protection', amount: 1 })], 1),
+		).toContain('Ring of Protection — +1');
 	});
 
 	it('is shown where the row applies a modifier it is not named after', () => {
@@ -260,14 +295,21 @@ describe('the modifier\'s own name, and when it earns its place', () => {
 				],
 				1,
 			),
-		).toContain('Belt of Giant Strength · Bracers of Defence — circumstance +1');
+		).toContain(
+			'Belt of Giant Strength · Bracers of Defence — circumstance +1',
+		);
 	});
 
 	it('keeps the row as well, so the reader can find the thing to untick', () => {
 		// Never the modifier alone: a breakdown naming only `Bracers of Defence`
 		// sends the reader scanning an inventory for a row that does not exist.
 		const drawn = said(
-			[line({ label: 'Belt of Giant Strength', definition: 'Bracers of Defence' })],
+			[
+				line({
+					label: 'Belt of Giant Strength',
+					definition: 'Bracers of Defence',
+				}),
+			],
 			1,
 		);
 		expect(drawn).toContain('Belt of Giant Strength');
@@ -291,12 +333,7 @@ describe('the modifier\'s own name, and when it earns its place', () => {
 				],
 				2,
 			)?.split('\n'),
-		).toEqual([
-			'Belt · Bracers — +1',
-			'Ring — +1',
-			'',
-			'Total +2',
-		]);
+		).toEqual(['Belt · Bracers — +1', 'Ring — +1', '', 'Total +2']);
 	});
 });
 
@@ -323,8 +360,18 @@ describe('the source, and when it earns its place', () => {
 		expect(
 			said(
 				[
-					line({ label: 'Ring', source: 'Worn items', type: 'item', amount: 1 }),
-					line({ label: 'Ring', source: 'Weapons', type: 'status', amount: 2 }),
+					line({
+						label: 'Ring',
+						source: 'Worn items',
+						type: 'item',
+						amount: 1,
+					}),
+					line({
+						label: 'Ring',
+						source: 'Weapons',
+						type: 'status',
+						amount: 2,
+					}),
 				],
 				3,
 			),
@@ -386,28 +433,50 @@ describe('the mark', () => {
  * take it, and one builder is what stops the three saying different things.
  */
 describe('modifierOutcomeText', () => {
+	/**
+	 * A definition naming one value, spelled the way a case reads best: the
+	 * change's own five slots flat, plus the definition's name and condition.
+	 *
+	 * The shared builder with this file's own defaults, rather than a local copy
+	 * of the same construction: it was a copy, with the same destructure, the same
+	 * optional-`when` spread and the same one-entry `changes` — which is the half
+	 * of an extraction that nothing was watching (`PATTERNS.md` §10).
+	 */
 	const definition = (
-		over: Partial<ModifierDefinitionView> = {},
-	): ModifierDefinitionView => ({
-		name: 'Plate armour',
-		target: 'armour_class',
-		targetLabel: 'Armour class',
-		operator: 'override',
-		amount: '18',
-		...over,
-	});
+		over: Partial<ModifierChangeView> & { name?: string; when?: string } = {},
+	): ModifierDefinitionView =>
+		definitionView({
+			name: 'Plate armour',
+			target: 'armour_class',
+			targetLabel: 'Armour class',
+			operator: 'override',
+			amount: '18',
+			...over,
+		});
 
-	const outcome = (over: Partial<ModifierOutcome> = {}): ModifierOutcome => ({
-		definition: definition(),
-		typed: null,
-		target: 'armour_class',
-		targetLabel: 'Armour class',
-		applies: true,
-		amount: 18,
-		condition: null,
-		suppressed: null,
-		...over,
-	});
+	/**
+	 * One outcome, defaulted to this file's own definition applying at 18.
+	 *
+	 * The shared builder with those defaults, for the reason the one above it
+	 * gives — and this is the copy that lesson is actually about: a nine-key
+	 * literal, in the same file, two lines under a comment citing "the half of an
+	 * extraction that nothing was watching".
+	 */
+	const outcome = (over: Partial<ModifierOutcome> = {}): ModifierOutcome => {
+		const named =
+			over.definition === undefined ? definition() : over.definition;
+		return outcomeView({
+			definition: named,
+			// The change an outcome is about, which for a one-change definition is
+			// the only one there is. A case naming several passes its own.
+			change: named === null ? null : (named.changes[0] ?? null),
+			target: 'armour_class',
+			targetLabel: 'Armour class',
+			applies: true,
+			amount: 18,
+			...over,
+		});
+	};
 
 	it('names the target and what the modifier sets it to', () => {
 		expect(modifierOutcomeText('Plate armour', outcome())).toBe(
@@ -444,7 +513,11 @@ describe('modifierOutcomeText', () => {
 		expect(
 			modifierOutcomeText(
 				'Cloak',
-				outcome({ definition: conditional, amount: 1, condition: true }),
+				outcome({
+					definition: conditional,
+					amount: 1,
+					condition: true,
+				}),
 			),
 		).toBe('Armour class — +1\nOnly while Equipped, which holds now');
 		expect(
@@ -457,7 +530,9 @@ describe('modifierOutcomeText', () => {
 					condition: false,
 				}),
 			),
-		).toBe('Armour class — +1\nOnly while Equipped, which does not hold now');
+		).toBe(
+			'Armour class — +1\nOnly while Equipped, which does not hold now',
+		);
 	});
 
 	it('says why it is not applied, in preference to the condition', () => {
@@ -481,10 +556,12 @@ describe('modifierOutcomeText', () => {
 					suppressed: 'a larger item bonus applies',
 				}),
 			),
-		).toBe('Armour class — item +1\nNot applied: a larger item bonus applies');
+		).toBe(
+			'Armour class — item +1\nNot applied: a larger item bonus applies',
+		);
 	});
 
-	it('names the cell\'s own spelling where the layout declares no such modifier', () => {
+	it("names the cell's own spelling where the layout declares no such modifier", () => {
 		// The one shape that names the cell rather than a target: there is no
 		// definition to take a target from, and the spelling is the thing a reader
 		// has to recognise as theirs before they replace it.
@@ -523,12 +600,121 @@ describe('modifierOutcomeText', () => {
 					suppressed: 'unknown name "Charges".',
 				}),
 			),
-		).toBe('Armour class — item bonus\nNot applied: unknown name "Charges".');
+		).toBe(
+			'Armour class — item bonus\nNot applied: unknown name "Charges".',
+		);
 		expect(
 			modifierOutcomeText(
 				'Plate armour',
 				outcome({ applies: false, amount: null, suppressed: 'no.' }),
 			),
 		).toBe('Armour class — sets a value\nNot applied: no.');
+	});
+});
+
+/*
+ * A row whose cell names a definition moving several values
+ * (`docs/features/multi-change-definitions.md`).
+ *
+ * `RowModifier` holds one outcome per change, so the two builders count changes
+ * rather than enrolments — which is what the number is about: how many values
+ * this row is moving. A reader standing on the row cannot see how those were
+ * grouped into definitions.
+ */
+describe('a row whose modifier names several changes', () => {
+	const ring: ModifierDefinitionView = {
+		name: 'Ring of Protection',
+		changes: [
+			{
+				target: 'armour_class',
+				targetLabel: 'Armour class',
+				operator: 'add',
+				amount: '1',
+				bonusType: 'deflection',
+			},
+			{
+				target: 'saving_throws',
+				targetLabel: 'Saving throws',
+				operator: 'add',
+				amount: '1',
+				bonusType: 'deflection',
+			},
+		],
+	};
+
+	const at = (
+		index: number,
+		over: Partial<ModifierOutcome> = {},
+	): ModifierOutcome => {
+		const change = ring.changes[index] as ModifierChangeView;
+		return outcomeView({
+			definition: ring,
+			change,
+			target: change.target,
+			targetLabel: change.targetLabel,
+			applies: true,
+			amount: 1,
+			...over,
+		});
+	};
+
+	it('says a line per change in the title, not a line per part', () => {
+		expect(
+			modifierRowText([
+				{ stored: 'Ring of Protection', outcomes: [at(0), at(1)] },
+			]),
+		).toBe('Armour class — deflection +1\nSaving throws — deflection +1');
+	});
+
+	it('counts the changes, so one modifier moving two reads as two applying', () => {
+		expect(
+			modifierRowName('Modifiers', [
+				{ stored: 'Ring of Protection', outcomes: [at(0), at(1)] },
+			]),
+		).toBe('Modifiers: 2 applying');
+	});
+
+	it('counts a suppressed change against the row, and the row still applies', () => {
+		// The glyph's own rule: a definition with two changes of which one is
+		// suppressed is a row that *is* applying, and the count is where the other
+		// half is said.
+		const said = [
+			{
+				stored: 'Ring of Protection',
+				outcomes: [
+					at(0),
+					at(1, {
+						applies: false,
+						suppressed: 'a larger deflection bonus applies',
+					}),
+				],
+			},
+		];
+		expect(modifierRowName('Modifiers', said)).toBe(
+			'Modifiers: 1 applying, 1 changing nothing',
+		);
+		expect(modifierRowText(said)).toBe(
+			'Armour class — deflection +1\nSaving throws — deflection +1 (changes nothing)',
+		);
+	});
+
+	it('is the single form where one modifier moves one value, exactly as before', () => {
+		// The one-change case is what almost every layout is, and its two builders
+		// must not acquire a count it never had.
+		expect(
+			modifierRowName('Modifiers', [
+				{ stored: 'Ring of Protection', outcomes: [at(0)] },
+			]),
+		).toBe('Modifiers: Ring of Protection');
+	});
+
+	it('still names a part with nothing resolved, and counts it as one', () => {
+		// A component drawn with no sheet around it resolves nothing, and the cell's
+		// own spelling is what the reader has to recognise as theirs.
+		const said = [{ stored: 'Ring of Protection', outcomes: [] }];
+		expect(modifierRowName('Modifiers', said)).toBe(
+			'Modifiers: Ring of Protection, changes nothing',
+		);
+		expect(modifierRowText(said)).toBeNull();
 	});
 });

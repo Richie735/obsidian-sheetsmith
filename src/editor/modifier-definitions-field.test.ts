@@ -329,7 +329,7 @@ describe('what the list writes to the layout', () => {
 	it('asks nothing before removing one that is still empty', () => {
 		// The confirmation belongs on the definition carrying an author's own
 		// writing, not on the one just added.
-		const from = layout([{ name: 'New modifier' } as ModifierDefinition]);
+		const from = layout([{ name: 'New modifier' }]);
 		const el = render(from);
 		control(el, 'modifier-New modifier-remove').click();
 		expect(recorded.confirms).toEqual([]);
@@ -623,7 +623,7 @@ describe('what the field reports under itself', () => {
 		// shape-refuses / contents-are-reported split.
 		const el = render(
 			layout([
-				{ name: '' } as ModifierDefinition,
+				{ name: '' },
 				{ ...RING },
 				{ ...RING, name: 'Belt', target: 'nowhere' },
 			]),

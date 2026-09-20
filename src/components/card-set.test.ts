@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it } from 'vitest';
 import { cardSet, CardSetConfig } from './card-set';
+import { outcomeView } from '../test/modifier-views';
 import { FieldValue, ModifierOutcome, RenderContext } from '../types';
 import { sampleOf } from '../test/sample';
 
@@ -499,16 +500,7 @@ describe('cardSet contract', () => {
  * A Card set never asks for one — `outcome` is the modifier *cell's* question —
  * so a stub context needs a member it can hand back and nothing more.
  */
-const NO_OUTCOME: ModifierOutcome = {
-	definition: null,
-	typed: null,
-	target: '',
-	targetLabel: '',
-	applies: false,
-	amount: null,
-	condition: null,
-	suppressed: null,
-};
+const NO_OUTCOME: ModifierOutcome = outcomeView();
 
 /**
  * The three members a Card never reaches, so a stub context can declare them
@@ -584,7 +576,7 @@ describe('cardSet and its modifier slots', () => {
 			modifiers: {
 				definitions: [],
 				...NO_AUTHORING,
-				outcome: () => NO_OUTCOME,
+				outcomes: () => [NO_OUTCOME],
 				breakdown: (name) =>
 					name === 'card-set.STR'
 						? {
@@ -633,7 +625,7 @@ describe('cardSet and its modifier slots', () => {
 			modifiers: {
 				definitions: [],
 				...NO_AUTHORING,
-				outcome: () => NO_OUTCOME,
+				outcomes: () => [NO_OUTCOME],
 				breakdown: (name) =>
 					name === 'card-set.STR'
 						? {

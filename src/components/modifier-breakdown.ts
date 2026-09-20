@@ -293,7 +293,7 @@ export function modifierOutcomeText(
 	stored: string,
 	outcome: ModifierOutcome,
 ): string {
-	const { definition, typed } = outcome;
+	const { change: moved, definition, typed } = outcome;
 	if (definition === null && typed === null) {
 		// The one shape that names the cell's own text rather than a target: there
 		// is no modifier to name a target with, and the spelling is the thing
@@ -304,15 +304,18 @@ export function modifierOutcomeText(
 		].join('\n');
 	}
 	/*
-	 * **The five slots, from whichever tier holds them.** Nothing below this line
+	 * **The five slots, from whichever tier holds them.** On the named tier they are
+	 * the *change's* rather than the definition's, because a definition naming two
+	 * values has two of each and the outcome is about one of them. Nothing below this line
 	 * differs by tier, which is the property to keep: a row reading `item +2`
 	 * because a definition said so and one reading `item +2` because the reader
 	 * typed it are the same sentence about the same arithmetic.
 	 */
 	const operator: ModifierOperator =
-		definition !== null ? (definition.operator ?? 'add') : (typed?.operator ?? 'add');
-	const bonusType =
-		definition !== null ? definition.bonusType : typed?.bonusType;
+		moved !== null ? (moved.operator ?? 'add') : (typed?.operator ?? 'add');
+	const bonusType = moved !== null ? moved.bonusType : typed?.bonusType;
+	// The condition is the definition's and the other two are the change's, which
+	// is the whole of "one `when` governs every change a definition names".
 	const when = (definition !== null ? definition.when : typed?.when) ?? '';
 	// An amount of null is an expression that would not resolve, or one the reader
 	// has not typed yet, and the reason is in `suppressed`; the line then says what
@@ -376,27 +379,37 @@ export function modifierPartName(outcome: ModifierOutcome): string | null {
  * The accessible name's and the `title`'s identifying token. A named part is its
  * name; a typed part has none, so it is the outcome's own first line; a stray is
  * the cell's own spelling, which is what the reader has to recognise as theirs.
+ *
+ * **Read off the first outcome, which is the one place that is right.** Every
+ * change of one definition carries the same name, so which one is asked cannot
+ * matter — and a part with no outcomes at all has no sheet to have resolved it,
+ * which is the cell's own spelling by the same rule a stray follows.
  */
 function partIdentity(modifier: RowModifier): string {
-	const { outcome } = modifier;
-	if (outcome === null) return modifier.stored;
+	const outcome = modifier.outcomes[0];
+	if (outcome === undefined) return modifier.stored;
 	if (outcome.definition !== null) return outcome.definition.name;
 	if (outcome.typed === null) return modifier.stored;
 	return modifierOutcomeText(modifier.stored, outcome).split('\n')[0] as string;
 }
 
 /**
- * One name a row's modifier cell holds, and what it comes to on that row.
+ * One name a row's modifier cell holds, and what each of its changes comes to on
+ * that row.
  *
  * Exported because the two builders below own the shape and Table is the caller.
- * `outcome` is null where there is no sheet to ask — a component drawn with no
- * layout around it — which is the same absence `modifierBreakdown` takes an
- * undefined breakdown for.
+ *
+ * **Empty where there is no sheet to ask** — a component drawn with no layout
+ * around it — which is the same absence `modifierBreakdown` takes an undefined
+ * breakdown for, and is why it replaced a nullable single outcome rather than
+ * becoming a nullable list: a part that resolves always has at least one, so an
+ * empty list already means exactly the one thing the null meant.
  */
 export interface RowModifier {
 	/** The name the cell holds, as the note spells it. */
 	stored: string;
-	outcome: ModifierOutcome | null;
+	/** One per change the part's modifier names, in the definition's own order. */
+	outcomes: readonly ModifierOutcome[];
 }
 
 /**
@@ -408,26 +421,62 @@ export interface RowModifier {
  * and a shape with two spellings of how it is built is a shape that can be built
  * wrong once.
  *
- * `ask` returns null where there is no sheet to ask, which is a component drawn
- * with no layout around it.
+ * `ask` returns an empty list where there is no sheet to ask, which is a
+ * component drawn with no layout around it.
  */
 export function rowModifiers(
 	names: readonly string[],
-	ask: (name: string) => ModifierOutcome | null,
+	ask: (name: string) => readonly ModifierOutcome[],
 ): RowModifier[] {
-	return names.map((stored) => ({ stored, outcome: ask(stored) }));
+	return names.map((stored) => ({ stored, outcomes: ask(stored) }));
 }
 
-/** Whether this line is changing a value. Null is not an answer, so it is no. */
-function applying(modifier: RowModifier): boolean {
-	return modifier.outcome?.applies === true;
+/**
+ * Whether a part is changing any value. Nothing resolved is not an answer, so it
+ * is no.
+ *
+ * **Any, not every**, which is the row glyph's own rule read on a part: a
+ * definition with two changes of which one is suppressed is a row that *is*
+ * applying, and that is what the glyph already says.
+ *
+ * **Exported, because it is a predicate with four consumers and it is new.**
+ * `PATTERNS.md` §1's one-step tier is explicit that a predicate extracts on the
+ * second, and the reason is exactly this rule's shape: two copies could only be
+ * tested for still agreeing, and the drift would be silent — a Table's glyph
+ * saying a row applies while the panel's line for the same row says it does not.
+ * It takes the outcomes rather than a `RowModifier` so the form, which holds a
+ * bare list, speaks the same name as the two cells, which hold the pair.
+ */
+export function applying(outcomes: readonly ModifierOutcome[]): boolean {
+	return outcomes.some((outcome) => outcome.applies);
+}
+
+/**
+ * How many values this part is moving, for a count the reader can check against
+ * the sheet.
+ *
+ * **One where nothing resolved**, because the part is still a line the reader can
+ * see: a cell with two names and no layout around it is two of something, and
+ * zero would say the row holds nothing.
+ */
+function moves(modifier: RowModifier): number {
+	return Math.max(1, modifier.outcomes.length);
+}
+
+/** Every resolved change on a row, with the part's own text beside each. */
+function saidChanges(
+	modifiers: readonly RowModifier[],
+): { stored: string; outcome: ModifierOutcome }[] {
+	return modifiers.flatMap((modifier) =>
+		modifier.outcomes.map((outcome) => ({ stored: modifier.stored, outcome })),
+	);
 }
 
 /**
  * What a row's modifiers are doing, as one block of text for a `title`.
  *
  * **Two shapes, and the second is a summary rather than a truncated detail.** One
- * modifier is `modifierOutcomeText` unchanged — the target, what it does, and why
+ * change is `modifierOutcomeText` unchanged — the target, what it does, and why
  * not on a second line. Several is one line each, with the *fact* of a
  * non-applying line inline and the reason left to the popup, so the block stays
  * bounded however many the row applies:
@@ -437,6 +486,12 @@ function applying(modifier: RowModifier): boolean {
  * Armour class — circumstance +1
  * Passive perception — item +2 (changes nothing)
  * ```
+ *
+ * **A line per change and not per part**, which is what a definition naming two
+ * values made of it: the reader is looking at a row and asking which numbers it
+ * moves, and how those numbers were grouped into definitions is not a fact they
+ * can see. Two changes of one definition therefore read as two lines, exactly as
+ * two definitions would.
  *
  * Null where there is nothing to say: an empty cell, or a cell whose names have
  * no sheet to resolve against. A caller cannot then set a `title` over nothing,
@@ -450,26 +505,20 @@ function applying(modifier: RowModifier): boolean {
 export function modifierRowText(
 	modifiers: readonly RowModifier[],
 ): string | null {
-	const said = modifiers.filter(
-		(modifier): modifier is RowModifier & { outcome: ModifierOutcome } =>
-			modifier.outcome !== null,
-	);
+	const said = saidChanges(modifiers);
 	if (said.length === 0) return null;
 	if (said.length === 1) {
-		const only = said[0] as RowModifier & { outcome: ModifierOutcome };
+		const only = said[0] as { stored: string; outcome: ModifierOutcome };
 		return modifierOutcomeText(only.stored, only.outcome);
 	}
 	return said
-		.map((modifier) => {
-			const first = modifierOutcomeText(modifier.stored, modifier.outcome).split(
-				'\n',
-			)[0] as string;
+		.map(({ stored, outcome }) => {
+			const first = modifierOutcomeText(stored, outcome).split('\n')[0] as string;
 			// A stray takes no `(changes nothing)` clause: its own first line already
 			// says the layout declares no modifier of that name, which *is* the fact
 			// the clause carries. A typed part earns one exactly as a named one does.
-			const known =
-				modifier.outcome.definition !== null || modifier.outcome.typed !== null;
-			return known && !applying(modifier) ? `${first} (changes nothing)` : first;
+			const known = outcome.definition !== null || outcome.typed !== null;
+			return known && !outcome.applies ? `${first} (changes nothing)` : first;
 		})
 		.join('\n');
 }
@@ -488,6 +537,13 @@ export function modifierRowText(
  * Modifiers: 2 applying, 1 changing nothing  (several, one not)
  * ```
  *
+ * **The count is of changes and not of enrolments**, which is what a definition
+ * naming several values changed here. The number is about how many values this
+ * row is moving, and a reader standing on the row cannot see how those were
+ * grouped into definitions — so one modifier moving two is `2 applying`, exactly
+ * as two modifiers moving one each is. Only the wording's *subject* moved; the
+ * wording did not.
+ *
  * **The several-form gives a count and not the names, and that is parity rather
  * than a shortcut.** A sighted reader gets no names from the glyph either — one
  * bolt, however many modifiers — so naming three items in a cell a screen reader
@@ -501,19 +557,24 @@ export function modifierRowName(
 	modifiers: readonly RowModifier[],
 ): string {
 	if (modifiers.length === 0) return label;
-	if (modifiers.length === 1) {
+	const total = modifiers.reduce((sum, modifier) => sum + moves(modifier), 0);
+	if (total === 1) {
 		const only = modifiers[0] as RowModifier;
 		// **A typed part is spelled by what it does**, because it has no name to be
 		// spelled by (§7's edge) — `Modifiers: Armour class — item +2`. One builder,
 		// so a row reading `item +2` and a breakdown reading `item +2` cannot come
 		// apart.
 		const said = partIdentity(only);
-		return applying(only)
+		return applying(only.outcomes)
 			? `${label}: ${said}`
 			: `${label}: ${said}, changes nothing`;
 	}
-	const on = modifiers.filter(applying).length;
-	const off = modifiers.length - on;
+	const on = modifiers.reduce(
+		(sum, modifier) =>
+			sum + modifier.outcomes.filter((outcome) => outcome.applies).length,
+		0,
+	);
+	const off = total - on;
 	// "2 applying" and not "2 of 3": the reader is asking what this row is doing,
 	// and a fraction makes them do the subtraction to find out.
 	const said = `${label}: ${on} applying`;

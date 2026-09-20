@@ -441,6 +441,26 @@ body {
 	overflow-wrap: anywhere;
 }
 
+/* The second and later changes of one modifier, under the line carrying its name.
+   Indented so several changes read as one block rather than as adjacent lines,
+   and indented by *geometry* rather than by a background or a rule, so the
+   nesting survives `forced-colors: active` where an author background does not.
+   `--size-4-3` rather than the name's own measured width: a name is free text out
+   of a layout file, so aligning under it would need a measurement per line and
+   would re-wrap at every panel width.
+
+   **A change's own reason line takes it as well**, which is why this is not a
+   `-said` selector: measured on `sheet-modifier-form-multi`, the outcome sat at
+   x=59 and the `Only while …` under it at x=48, so reading down the left edge
+   gave name, reason, outcome, reason — the block breaking at the one place there
+   is more than one of them. It matters more than 11px suggests, because at 390px
+   the outcome already runs close to the panel's width: a longer name or target
+   label wraps, and a wrapped fragment landing at the unindented edge compounds
+   exactly this misreading. */
+.sheetsmith-panel-said-more {
+	padding-left: var(--size-4-3);
+}
+
 /* A quiet, subordinate line under the entry it belongs to, which is exactly what
    the editor's `.sheetsmith-field-problems` is at that surface. Indented nowhere,
    because the glyph column already carries the attachment here. */

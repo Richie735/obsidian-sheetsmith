@@ -289,7 +289,7 @@ describe('a cell part is parsed in one place, on the formula side of the seam', 
 	 * **Two readings of one part's text is the one way this design could have the
 	 * form and the number disagree**, so the rule is that a component *spells* a
 	 * part and never *reads* one: `spellTypedEffect` because Table writes the cell,
-	 * and every field the form draws off `ModifierContext.outcome`, which the
+	 * and every field the form draws off `ModifierContext.outcomes`, which the
 	 * formula layer has already resolved.
 	 *
 	 * A scan and not an eslint case, for the `Menu` check's reason one paragraph up:

@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { card, CardConfig, CardOption } from './card';
+import { outcomeView } from '../test/modifier-views';
 import {
 	FieldValue,
 	ModifierBreakdown,
@@ -1069,16 +1070,7 @@ describe('card palette', () => {
  * A Card never asks for one — `outcome` is the modifier *cell's* question — so a
  * stub context needs a member it can hand back and nothing more.
  */
-const NO_OUTCOME: ModifierOutcome = {
-	definition: null,
-	typed: null,
-	target: '',
-	targetLabel: '',
-	applies: false,
-	amount: null,
-	condition: null,
-	suppressed: null,
-};
+const NO_OUTCOME: ModifierOutcome = outcomeView();
 
 /**
  * The three members a Card never reaches, so a stub context can declare them
@@ -1150,7 +1142,7 @@ describe('card and its modifier slot', () => {
 			modifiers: {
 				definitions: [],
 				...NO_AUTHORING,
-				outcome: () => NO_OUTCOME,
+				outcomes: () => [NO_OUTCOME],
 				breakdown: () => ({
 					override: null,
 					total: 2,
@@ -1199,7 +1191,7 @@ describe('card and its modifier slot', () => {
 			modifiers: {
 				definitions: [],
 				...NO_AUTHORING,
-				outcome: () => NO_OUTCOME,
+				outcomes: () => [NO_OUTCOME],
 				breakdown: () => ({
 					override: null,
 					total: 2,
@@ -1289,7 +1281,7 @@ describe('card and its modifier slot', () => {
 				modifiers: {
 					definitions: [],
 					...NO_AUTHORING,
-					outcome: () => NO_OUTCOME,
+					outcomes: () => [NO_OUTCOME],
 					breakdown: () => OVERRIDDEN,
 				},
 			});
@@ -1327,7 +1319,7 @@ describe('card and its modifier slot', () => {
 			modifiers: {
 				definitions: [],
 				...NO_AUTHORING,
-				outcome: () => NO_OUTCOME,
+				outcomes: () => [NO_OUTCOME],
 				breakdown: () => ({ override: null, total: 0, lines: [] }),
 			},
 		});
@@ -1351,7 +1343,7 @@ describe('card and its modifier slot', () => {
 			modifiers: {
 				definitions: [],
 				...NO_AUTHORING,
-				outcome: () => NO_OUTCOME,
+				outcomes: () => [NO_OUTCOME],
 				breakdown: () => ({
 					override: null,
 					total: 2,

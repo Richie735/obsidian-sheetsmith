@@ -270,7 +270,7 @@ function fieldReaders(
 		 * asks the walk a question the formula did not already ask it, so *this*
 		 * step leaves the two cycle guards the shares of a ring they had before the
 		 * feature. The widening the finding describes is real and comes from
-		 * somewhere else — `ModifierContext.outcome`, which a modifier cell asks for
+		 * somewhere else — `ModifierContext.outcomes`, which a modifier cell asks for
 		 * every filled cell it draws, bounded by the accepting set and by nothing
 		 * narrower, and which running at render can be the first entry into the walk
 		 * in a render (`formula/sheet.ts`).

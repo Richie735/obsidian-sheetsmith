@@ -16,7 +16,7 @@
  * **There is exactly one parse of a cell part in the codebase and it is here**, on
  * the formula side of the seam. Table imports the split, the join and
  * `spellTypedEffect` from `parse/modifier-cell.ts` — it has to, because it writes a
- * cell — and it reads a part's *fields* from `ModifierContext.outcome`, never by
+ * cell — and it reads a part's *fields* from `ModifierContext.outcomes`, never by
  * parsing the part itself. So the component spells a part and never reads one, this
  * file reads one and never spells one, and the two cannot come apart about what
  * `armour_class += 2 as item when Worn` means.
@@ -41,6 +41,7 @@
 
 import { parseModifierPart } from '../parse/modifier-cell';
 import {
+	ModifierChangeView,
 	ModifierDefinitionView,
 	ModifierOperator,
 	ModifierPhase,
@@ -104,6 +105,18 @@ export interface Contribution {
  */
 export interface PartSource {
 	definition: ModifierDefinitionView | null;
+	/**
+	 * Which of that definition's changes this enrolment is, and null on the typed
+	 * tier for the same reason `definition` is.
+	 *
+	 * **It does not make a third tier**, which is what the invariant above is
+	 * about: `definition` and `change` are set together or neither is. What it adds
+	 * is *which value of it* — a definition naming two moves two, so the tier alone
+	 * no longer says what one enrolment is doing, and every surface that reads an
+	 * operator or a bonus type off a part reads it here rather than off a
+	 * definition that has as many as it has changes.
+	 */
+	change: ModifierChangeView | null;
 	typed: TypedEffect | null;
 }
 
@@ -193,16 +206,26 @@ function read(
 	}
 }
 
-/** A definition's five facts, as the fields both tiers reduce to. */
-function fieldsOfDefinition(definition: ModifierDefinitionView): PartFields {
-	const bonusType = (definition.bonusType ?? '').trim();
+/**
+ * One change's five facts plus its definition's condition, as the fields both
+ * tiers reduce to.
+ *
+ * **The condition comes from the definition and the other five from the change**,
+ * which is the whole of sub-question 1 made mechanical: one `when` governs every
+ * change a definition names, and every other slot is the change's own.
+ */
+function fieldsOfChange(
+	change: ModifierChangeView,
+	definition: ModifierDefinitionView,
+): PartFields {
+	const bonusType = (change.bonusType ?? '').trim();
 	const when = (definition.when ?? '').trim();
 	return {
-		target: definition.target.trim(),
-		operator: operatorOf(definition),
-		amount: (definition.amount ?? '').trim(),
+		target: change.target.trim(),
+		operator: operatorOf(change),
+		amount: (change.amount ?? '').trim(),
 		bonusType: bonusType === '' ? null : bonusType,
-		applies: phaseOf(definition),
+		applies: phaseOf(change),
 		when: when === '' ? null : when,
 	};
 }
@@ -235,7 +258,12 @@ function called(source: PartSource): string {
 }
 
 /**
- * Resolve one part of one cell on one row.
+ * Resolve one part of one cell on one row: **one enrolment per change** the
+ * part's modifier names.
+ *
+ * A stray gives one, a typed part gives one — a cell part is one change by
+ * construction, and the row tier already spells several by writing several parts
+ * — and a named part gives one per change, never zero.
  *
  * The amount has to be a number: a modifier adding "yes" to an armour class is
  * the same failure a number column holding prose already is, and it refuses the
@@ -254,51 +282,133 @@ function called(source: PartSource): string {
  * the reader's own half-written text, so it changes nothing and refuses nothing —
  * the tier whose text lives in the note is the tier whose text can be half-written.
  */
-export function resolveEnrolment(
+export function resolveEnrolments(
 	definitions: DefinitionTable,
 	part: string,
 	row: RowValues,
 	calls: FunctionEnv,
-): Enrolment {
+): readonly Enrolment[] {
 	const parsed = parseModifierPart(part);
-	let source: PartSource;
-	let fields: PartFields;
-	if (parsed.kind === 'named') {
-		const definition = definitions.get(parsed.name);
-		if (definition === undefined) return { kind: 'unknown' };
-		source = { definition, typed: null };
-		fields = fieldsOfDefinition(definition);
-	} else {
-		source = { definition: null, typed: parsed.effect };
-		fields = fieldsOfTyped(parsed.effect);
-	}
-
 	const scope = rowScope(row, calls.base ?? EMPTY_SCOPE);
-	let conditional = false;
-	if (fields.when !== null) {
-		conditional = true;
-		const condition = read(fields.when, scope, calls);
-		if ('reason' in condition) {
-			return { kind: 'unreadable', ...source, fields, reason: condition.reason };
-		}
-		if (
-			condition.value === false ||
-			condition.value === 0 ||
-			condition.value === ''
-		) {
-			// Read tolerantly: an inactive row contributes nothing, so an amount it
-			// cannot resolve must not be able to refuse its target's slot.
-			const amount = read(fields.amount, scope, calls);
-			return {
-				kind: 'inactive',
-				...source,
+	if (parsed.kind !== 'named') {
+		const fields = fieldsOfTyped(parsed.effect);
+		return [
+			settle(
+				{ definition: null, change: null, typed: parsed.effect },
 				fields,
-				amount:
-					'value' in amount && typeof amount.value === 'number'
-						? amount.value
-						: null,
-			};
-		}
+				verdictOf(fields.when, scope, calls),
+				scope,
+				calls,
+			),
+		];
+	}
+	const definition = definitions.get(parsed.name);
+	if (definition === undefined) return [{ kind: 'unknown' }];
+	/*
+	 * **The condition is read once per part, not once per change**, which is
+	 * sub-question 1 made mechanical: one `when`, one evaluation, one verdict
+	 * covering every change the definition names. Mapping the whole resolution over
+	 * the list would evaluate it once per change, which is the same answer at a
+	 * price — until a condition calls a function with a cost, or until two
+	 * evaluations of one expression disagree, at which point a definition would be
+	 * half on. `modifier-definitions.test.ts` counts the reads rather than
+	 * inferring it from the verdicts, because a per-change evaluation produces
+	 * identical verdicts.
+	 */
+	const when = (definition.when ?? '').trim();
+	const verdict = verdictOf(when === '' ? null : when, scope, calls);
+	/*
+	 * **Never zero, whatever the layout says.** `parseModifierDefinitions`
+	 * normalises an empty `changes` list to one blank change precisely so this
+	 * holds: a definition with no usable change still gives one enrolment with a
+	 * blank target, because the form's line for it has to say what it *would* do.
+	 *
+	 * The fallback is here as well rather than only there, because the claim above
+	 * is the one every caller reads — a cell part that resolved to nothing would
+	 * disappear from the form's list, the row's count and the glyph's state all at
+	 * once, and none of the three would report it.
+	 */
+	const changes: readonly ModifierChangeView[] =
+		definition.changes.length === 0
+			? [{ target: '', amount: '', targetLabel: definition.name }]
+			: definition.changes;
+	return changes.map((change) =>
+		settle(
+			{ definition, change, typed: null },
+			fieldsOfChange(change, definition),
+			verdict,
+			scope,
+			calls,
+		),
+	);
+}
+
+/**
+ * What a part's condition came to, decided once however many changes it governs.
+ *
+ * `always` and `holds` are deliberately two: a part with no condition carries no
+ * `Only while …` line, and one whose condition is true does.
+ */
+type Verdict =
+	| { kind: 'always' }
+	| { kind: 'holds' }
+	| { kind: 'inactive' }
+	| { kind: 'unreadable'; reason: string };
+
+/**
+ * Read one condition, or say there is none.
+ *
+ * **One spelling of what a false condition is**, which is `PATTERNS.md` §1's own
+ * standing example — the truthiness spellings a second reader would have to
+ * match. It was written out twice in this file, once for the named tier and once
+ * for the typed one, and those are the two tiers of one feature: a rule landing in
+ * one copy and not the other would be a typed effect behaving differently from the
+ * identical definition, which is exactly the second engine this file's header
+ * forbids.
+ */
+function verdictOf(
+	when: string | null,
+	scope: Scope,
+	calls: FunctionEnv,
+): Verdict {
+	if (when === null) return { kind: 'always' };
+	const condition = read(when, scope, calls);
+	if ('reason' in condition) {
+		return { kind: 'unreadable', reason: condition.reason };
+	}
+	// A blank string and a zero both read as false, which is what a cell nobody
+	// has filled in is.
+	return condition.value === false ||
+		condition.value === 0 ||
+		condition.value === ''
+		? { kind: 'inactive' }
+		: { kind: 'holds' };
+}
+
+/** One change, against a condition somebody else has already read. */
+function settle(
+	source: PartSource,
+	fields: PartFields,
+	verdict: Verdict,
+	scope: Scope,
+	calls: FunctionEnv,
+): Enrolment {
+	if (verdict.kind === 'unreadable') {
+		return { kind: 'unreadable', ...source, fields, reason: verdict.reason };
+	}
+	if (verdict.kind === 'inactive') {
+		// Read tolerantly: an inactive row contributes nothing, so an amount it
+		// cannot resolve must not be able to refuse its target's slot.
+		const amount = read(fields.amount, scope, calls);
+		return {
+			kind: 'inactive',
+			...source,
+			fields,
+			amount:
+				'value' in amount && typeof amount.value === 'number'
+					? amount.value
+					: null,
+		};
 	}
 
 	if (fields.amount === '') {
@@ -327,7 +437,7 @@ export function resolveEnrolment(
 		kind: 'applies',
 		...source,
 		fields,
-		conditional,
+		conditional: verdict.kind === 'holds',
 		contribution: {
 			target: fields.target,
 			operator: fields.operator,

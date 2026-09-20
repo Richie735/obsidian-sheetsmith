@@ -68,11 +68,7 @@ import {
 	keptRatherThanBlank,
 } from '../interaction/editable';
 import { armRegister, bindArmToConfirm } from '../interaction/arm-to-confirm';
-import {
-	splitBounded,
-	withCeiling,
-	withValue,
-} from '../parse/bounded-entry';
+import { splitBounded, withCeiling, withValue } from '../parse/bounded-entry';
 import { fencedKeyProblem, readFenced, writeFenced } from '../parse/fenced';
 import { bodyText, writeBodyText } from '../parse/markdown-body';
 import { cellParts, spellParts, storedParts } from '../parse/modifier-cell';
@@ -120,6 +116,7 @@ import {
 	renderModifierForm,
 } from './modifier-form';
 import {
+	applying,
 	modifierRowName,
 	modifierRowText,
 	rowModifiers,
@@ -352,7 +349,9 @@ function fieldLabel(field: RecordField): string {
 
 /** Whether this field's ceiling belongs to each record rather than to the field. */
 function recordsOwnMax(field: RecordField): boolean {
-	return fieldType(field) === 'number' && field.maxSource === HOLDER_MAX_SOURCE;
+	return (
+		fieldType(field) === 'number' && field.maxSource === HOLDER_MAX_SOURCE
+	);
 }
 
 /**
@@ -548,7 +547,10 @@ function recordValues(
 		// The value half, never the whole entry: a record's `Uses` name is worth
 		// `2` when the entry says `2 / 3`, which is what `sum(features, Uses)`
 		// added up before this feature and what it must go on adding up.
-		stored[field.key] = typedValue(field, storedValue(field, record.fields[field.key]));
+		stored[field.key] = typedValue(
+			field,
+			storedValue(field, record.fields[field.key]),
+		);
 	}
 	const values: Record<string, FieldValue> = { ...stored };
 	(config.fields ?? []).forEach((field, at) => {
@@ -620,7 +622,9 @@ function sampleField(
 			// A level is a flag with a ladder in it, so it answers both rules at
 			// once: alternate records carry a level at all, and the level they
 			// carry is partway up rather than at the top.
-			return String(sampleFlag(record) ? samplePart(levelCount(field)) : 0);
+			return String(
+				sampleFlag(record) ? samplePart(levelCount(field)) : 0,
+			);
 		// A modifier field is left empty, and that is the one rule here about
 		// something other than looking plausible: a name in it enrols the record
 		// in one of the *layout's* definitions, and a layout the author is still
@@ -668,7 +672,9 @@ function resetWrite(
 		// is right there.
 		if (value === null) {
 			return {
-				error: context.explain('reset.to', {}) ?? 'its reset formula is empty.',
+				error:
+					context.explain('reset.to', {}) ??
+					'its reset formula is empty.',
 			};
 		}
 		const number = Number(value);
@@ -835,7 +841,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			// `docs/features/component-rename-migration.md`).
 			addressesEntry: { fence: 'record' },
 			description:
-				'The typed values every record holds, each an entry in that record\'s block in the note. Renaming a key moves that entry in every record, in every note on this layout. Text is not offered: words a reader reads belong in the record\'s body, where they may hold links. A number field with a maximum is a uses counter: the field draws that maximum beside its value, and a reset trigger restores it to that maximum. A number field\'s maximum may belong to the field, so every record shares it, or to each record, so a reader types it on the sheet — and a reset restores each record to whichever one applies.',
+				"The typed values every record holds, each an entry in that record's block in the note. Renaming a key moves that entry in every record, in every note on this layout. Text is not offered: words a reader reads belong in the record's body, where they may hold links. A number field with a maximum is a uses counter: the field draws that maximum beside its value, and a reset trigger restores it to that maximum. A number field's maximum may belong to the field, so every record shares it, or to each record, so a reader types it on the sheet — and a reset restores each record to whichever one applies.",
 		},
 		{
 			key: 'hideLabel',
@@ -878,7 +884,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		{
 			name: 'Features',
 			description:
-				'A list of features, traits or moves the character adds, each with a uses counter, the modifiers it applies while it is switched on, and its full text under it. A Record set, because a feature\'s text is a paragraph and a table cell is one line.',
+				"A list of features, traits or moves the character adds, each with a uses counter, the modifiers it applies while it is switched on, and its full text under it. A Record set, because a feature's text is a paragraph and a table cell is one line.",
 			config: {
 				recordName: 'Feature',
 				fields: [
@@ -918,7 +924,11 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			parts.push(`### ${sampleText(noun, which)}\n`);
 			const entries: string[] = [];
 			fields.forEach((field, at) => {
-				const value = sampleField(field, which, seed + which * fields.length + at);
+				const value = sampleField(
+					field,
+					which,
+					seed + which * fields.length + at,
+				);
 				if (value !== null) entries.push(`${field.key}: ${value}`);
 			});
 			if (entries.length > 0) {
@@ -948,10 +958,9 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			// The whole block rather than its fence alone, so a second fence and an
 			// unclosed one are both reported rather than silently drawn as prose.
 			const parsed = readFenced(block.head + block.rest);
-			const fields: Record<string, string> = Object.create(null) as Record<
-				string,
-				string
-			>;
+			const fields: Record<string, string> = Object.create(
+				null,
+			) as Record<string, string>;
 			if (parsed.ok && parsed.values !== null) {
 				for (const [key, value] of parsed.values) fields[key] = value;
 			}
@@ -1021,7 +1030,9 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				/** Built once per record, however many fields on it enrol. */
 				let row: RowValues | null = null;
 				for (const field of enrolling) {
-					for (const part of cellParts(record.fields[field.key] ?? '')) {
+					for (const part of cellParts(
+						record.fields[field.key] ?? '',
+					)) {
 						row ??= recordValues(config, record, resolve);
 						pushes.push({
 							part,
@@ -1042,7 +1053,10 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		const section = splitRecords(body ?? '');
 		const records = [...section.records];
 		const known = new Map(
-			storedFields(config).map((field) => [field.key.toLowerCase(), field.key]),
+			storedFields(config).map((field) => [
+				field.key.toLowerCase(),
+				field.key,
+			]),
 		);
 
 		for (const [position, delta] of Object.entries(data.records ?? {})) {
@@ -1166,7 +1180,10 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		// The placement, handed to CSS as the box's own floor: the box is `height`
 		// grid rows tall whatever is in it and the list scrolls inside it, so
 		// opening a record moves nothing on the sheet (SPEC §8).
-		block.style.setProperty('--sheetsmith-rows', String(config.position.height));
+		block.style.setProperty(
+			'--sheetsmith-rows',
+			String(config.position.height),
+		);
 
 		if (showsOwnLabel(config, context)) {
 			element(
@@ -1408,7 +1425,11 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			const bodyEl = element('div', 'sheetsmith-record-body', row);
 			bodyEl.id = `sheetsmith-record-${config.id}-${at}`;
 
-			const chevron = element('button', 'sheetsmith-record-disclosure', summary);
+			const chevron = element(
+				'button',
+				'sheetsmith-record-disclosure',
+				summary,
+			);
 			chevron.type = 'button';
 			chevron.setAttribute('aria-controls', bodyEl.id);
 
@@ -1443,7 +1464,11 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 
 			drawName(summary, record, at, named);
 
-			const fieldRow = element('div', 'sheetsmith-record-fields', summary);
+			const fieldRow = element(
+				'div',
+				'sheetsmith-record-fields',
+				summary,
+			);
 			if (record.error === null) {
 				fields.forEach((field, index) => {
 					drawField(fieldRow, row, field, index, record, at, named);
@@ -1522,7 +1547,10 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 						 * departure be stated somewhere.
 						 */
 						handle.sync(record.name);
-						status.textContent = keptRatherThanBlank(noun.toLowerCase(), named);
+						status.textContent = keptRatherThanBlank(
+							noun.toLowerCase(),
+							named,
+						);
 						return;
 					}
 					context.onChange({ records: { [at]: { name: next } } });
@@ -1541,7 +1569,11 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				return element('input', 'sheetsmith-record-name-input', cell);
 			}
 			const stack = element('div', 'sheetsmith-record-linked', cell);
-			const input = element('input', 'sheetsmith-record-name-input', stack);
+			const input = element(
+				'input',
+				'sheetsmith-record-name-input',
+				stack,
+			);
 			// This branch is the stacked one: unfocused, the field's text is
 			// transparent under the link layer, and its spelling marks would not be.
 			spellcheckWhileFocused(input);
@@ -1591,7 +1623,14 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				return;
 			}
 			if (type === 'level' || type === 'toggle') {
-				drawRing(cell, field, raw, type === 'level', accessible, commit);
+				drawRing(
+					cell,
+					field,
+					raw,
+					type === 'level',
+					accessible,
+					commit,
+				);
 				return;
 			}
 
@@ -1668,7 +1707,11 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 
 			let ceilingInput: HTMLInputElement | null = null;
 			if (ownMax || field.max !== undefined) {
-				const ceiling = element('span', 'sheetsmith-pool-ceiling', cell);
+				const ceiling = element(
+					'span',
+					'sheetsmith-pool-ceiling',
+					cell,
+				);
 				element('span', 'sheetsmith-pool-separator', ceiling, '/');
 				if (ownMax) {
 					// `maxInput`, which is Pool's own name for the same control — and
@@ -1687,11 +1730,19 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 					// bare span prohibits naming, so the read-only ceiling reaches a
 					// screen reader only through the field's announcement; an input is
 					// nameable, and both channels are kept rather than traded.
-					maxInput.setAttribute('aria-label', `${accessible} maximum`);
+					maxInput.setAttribute(
+						'aria-label',
+						`${accessible} maximum`,
+					);
 					maxInput.title = `Maximum ${name}, held by this ${noun.toLowerCase()}.`;
 					ceilingInput = maxInput;
 				} else {
-					element('span', 'sheetsmith-pool-max', ceiling, String(field.max));
+					element(
+						'span',
+						'sheetsmith-pool-max',
+						ceiling,
+						String(field.max),
+					);
 				}
 			}
 
@@ -1819,7 +1870,10 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				refuse: refuseNumber,
 				onRefusal: showCeilingRefusal,
 				onCommit: (next) => {
-					const settled = boundedText(next, { type: 'number', min: field.min });
+					const settled = boundedText(next, {
+						type: 'number',
+						min: field.min,
+					});
 					if (settled !== next) {
 						ceilingInput.value = settled;
 						status.textContent = `${ceilingName} held to ${settled}`;
@@ -1884,8 +1938,10 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				// because that is the one the reader can go and define.
 				const said =
 					resolved === null
-						? (context.explainField?.(`fields.${index}.formula`, scope) ??
-							'The formula did not resolve.')
+						? (context.explainField?.(
+								`fields.${index}.formula`,
+								scope,
+							) ?? 'The formula did not resolve.')
 						: field.formula;
 				value.setAttribute('title', said);
 				/*
@@ -1916,14 +1972,27 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			commit: (next: string) => void,
 		): void {
 			const count = graded ? levelCount(field) : 1;
-			const initial = graded ? levelOf(field, raw) : isFlagSet(raw) ? 1 : 0;
+			const initial = graded
+				? levelOf(field, raw)
+				: isFlagSet(raw)
+					? 1
+					: 0;
 			const stateOf = (level: number): string =>
 				graded ? String(level) : flagText(level > 0);
 
 			if (graded && field.input === 'select') {
-				const select = element('select', 'sheetsmith-record-select', cell);
+				const select = element(
+					'select',
+					'sheetsmith-record-select',
+					cell,
+				);
 				for (let level = 0; level <= count; level++) {
-					const option = element('option', '', select, levelName(field, level));
+					const option = element(
+						'option',
+						'',
+						select,
+						levelName(field, level),
+					);
 					option.value = String(level);
 				}
 				select.value = String(initial);
@@ -1985,9 +2054,17 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			commit: (next: string) => void,
 		): void {
 			const raw = record.fields[field.key] ?? '';
-			const button = element('button', 'sheetsmith-record-modifier', cell);
+			const button = element(
+				'button',
+				'sheetsmith-record-modifier',
+				cell,
+			);
 			button.type = 'button';
-			const glyph = element('span', 'sheetsmith-record-modifier-glyph', button);
+			const glyph = element(
+				'span',
+				'sheetsmith-record-modifier-glyph',
+				button,
+			);
 			glyph.setAttribute('aria-hidden', 'true');
 
 			// The stored list is what the form addresses, so every index is an index
@@ -1998,13 +2075,20 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			/** Built once per record, however many parts the field holds. */
 			let values: RowValues | null = null;
 			const ask = (part: string) =>
-				context.modifiers?.outcome(
+				context.modifiers?.outcomes(
 					part,
-					(values ??= recordValues(config, record, context.resolveField)),
-				) ?? null;
+					(values ??= recordValues(
+						config,
+						record,
+						context.resolveField,
+					)),
+				) ?? [];
 			const applied = rowModifiers(enrolled, ask);
-			const applying = applied.filter((one) => one.outcome?.applies === true)
-				.length;
+			// Through the shared predicate: see `modifier-breakdown.ts` for why one
+			// name rather than four copies.
+			const applyingParts = applied.filter((one) =>
+				applying(one.outcomes),
+			).length;
 			if (enrolled.length === 0) {
 				cell.classList.add('sheetsmith-record-modifier-empty');
 			}
@@ -2013,7 +2097,11 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			// `zap` where any part applies, `zap-off` where none does.
 			setIcon(
 				glyph,
-				enrolled.length === 0 ? 'plus' : applying > 0 ? 'zap' : 'zap-off',
+				enrolled.length === 0
+					? 'plus'
+					: applyingParts > 0
+						? 'zap'
+						: 'zap-off',
 			);
 			button.setAttribute(
 				'aria-label',
@@ -2060,7 +2148,8 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				const offending = parts.find(
 					(part) => !held.has(part) && refuseLink(part) !== null,
 				);
-				const said = offending === undefined ? null : refusal(offending);
+				const said =
+					offending === undefined ? null : refusal(offending);
 				// Called on every attempt including the ones that succeed, so the last
 				// message clears without this tracking when to.
 				showRefusal(said);
@@ -2074,7 +2163,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 					// The stored list, never the collapsed one: the form's indices are
 					// indices into the note.
 					parts: stored,
-					outcome: ask,
+					outcomes: ask,
 					definitions: context.modifiers?.definitions ?? [],
 					targets: context.modifiers?.targets ?? [],
 					published: context.modifiers?.published ?? [],
@@ -2127,7 +2216,10 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			// a glyph opened in *this* render would find a null handle and close
 			// nothing, which is a control carrying `aria-expanded` that only answers
 			// the attribute after a commit has rebuilt it.
-			let standing = reanchorAnchoredPanel<ModifierFormState>(panelKey, button);
+			let standing = reanchorAnchoredPanel<ModifierFormState>(
+				panelKey,
+				button,
+			);
 			if (standing !== null) {
 				button.setAttribute('aria-expanded', 'true');
 				fill(standing);
@@ -2155,7 +2247,8 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				// Focus moves to the first control on open, which is the platform's
 				// own contract for a dialog — unless the form has already placed it,
 				// which it does on a record with no parts.
-				if (!panel.body.contains(doc.activeElement)) focusFirstControl(panel);
+				if (!panel.body.contains(doc.activeElement))
+					focusFirstControl(panel);
 			});
 		}
 
@@ -2182,12 +2275,20 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				// A record whose fence will not read still shows what it holds, and
 				// shows it read-only: every write into it is refused at the file
 				// boundary, so a field would be a gesture that does nothing.
-				const shown = element('div', 'sheetsmith-record-body-rendered', into);
+				const shown = element(
+					'div',
+					'sheetsmith-record-body-rendered',
+					into,
+				);
 				paintProse(shown, text);
 				return;
 			}
 
-			const input = element('textarea', 'sheetsmith-record-body-input', into);
+			const input = element(
+				'textarea',
+				'sheetsmith-record-body-input',
+				into,
+			);
 			input.value = text;
 			// The start, chosen, rather than the end, inherited: assigning `value`
 			// moves the cursor to the end of the control and focusing scrolls it into
@@ -2202,9 +2303,17 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			// than `:has(.sheetsmith-record-body-input:focus)`. Flagged on `into`,
 			// which is what holds the rendered layer below, so the pair cannot be
 			// separated by a wrapper appearing between them.
-			flagWhileFocused(into, input, 'sheetsmith-record-body-field-focused');
+			flagWhileFocused(
+				into,
+				input,
+				'sheetsmith-record-body-field-focused',
+			);
 
-			const rendered = element('div', 'sheetsmith-record-body-rendered', into);
+			const rendered = element(
+				'div',
+				'sheetsmith-record-body-rendered',
+				into,
+			);
 			// The links the app draws, given this plugin's behaviour. Bound to the
 			// layer once, before anything is painted into it: the fallback painter
 			// wires each anchor as it makes it, and the app's renderer makes its own.
@@ -2213,7 +2322,9 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				if (context.renderMarkdown !== undefined) {
 					// And the fallback again where the app's renderer rejected, which is
 					// not something the reader caused or can fix.
-					context.renderMarkdown(text, rendered, () => paintProse(rendered, text));
+					context.renderMarkdown(text, rendered, () =>
+						paintProse(rendered, text),
+					);
 				} else {
 					paintProse(rendered, text);
 				}
@@ -2225,7 +2336,8 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			// behind it. A link owns its own press, as everywhere else on the sheet.
 			rendered.addEventListener('click', (event) => {
 				const target = event.target;
-				if (target instanceof HTMLElement && target.closest('a[href]')) return;
+				if (target instanceof HTMLElement && target.closest('a[href]'))
+					return;
 				event.preventDefault();
 				// A drag that selected text is not a request to edit.
 				const selection = doc.getSelection();
@@ -2264,7 +2376,10 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				 * invisible. The class swaps that round, as Rich text's does.
 				 */
 				onRefusal: (message) => {
-					into.classList.toggle('sheetsmith-record-body-refused', message !== null);
+					into.classList.toggle(
+						'sheetsmith-record-body-refused',
+						message !== null,
+					);
 					// Under the body rather than inside it: the body is a two-layer
 					// stack in one grid cell, so a third child there would sit on top
 					// of the prose the message is about — which is why the host is the
@@ -2274,7 +2389,8 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				// The label and the outcome, never the prose: reading a record's text
 				// back at its author is not feedback.
 				announceCommit: (next) => {
-					status.textContent = next === '' ? `${named} cleared` : `${named} saved`;
+					status.textContent =
+						next === '' ? `${named} cleared` : `${named} saved`;
 				},
 				announceRestore: () => {
 					status.textContent = `${named} restored`;
