@@ -926,6 +926,15 @@ describe('render', () => {
 	});
 
 	describe('a level ring cycling a row\'s own cell', () => {
+		/**
+		 * Named once so a variant can be built from it rather than by indexing
+		 * `levelled.columns`, which `RosterConfig` declares optional.
+		 */
+		const training = {
+			key: 'Training',
+			type: 'level' as const,
+			levels: ['Untrained', 'Proficient:P', 'Expertise:E'],
+		};
 		const levelled: RosterConfig = {
 			...config,
 			// No `key` on either row: `Total`, the only published column, is
@@ -936,9 +945,7 @@ describe('render', () => {
 				{ label: 'Athletics', stat: 'STR' },
 				{ label: 'Acrobatics', stat: 'DEX' },
 			],
-			columns: [
-				{ key: 'Training', type: 'level', levels: ['Untrained', 'Proficient:P', 'Expertise:E'] },
-			],
+			columns: [training],
 		};
 		const levelledBody = [
 			'```sheet',
@@ -976,6 +983,52 @@ describe('render', () => {
 			button?.click();
 			expect(button?.getAttribute('aria-label')).toBe('Athletics Training: Proficient');
 			expect(button?.classList.contains('sheetsmith-level-ring-on')).toBe(true);
+		});
+
+		it('names the ring in its tooltip where the column hid its heading', () => {
+			// Table's case, one component over, and for its reason: `hideHeading`
+			// exists for a ring column (`SPEC` §4.2) and takes the heading off the
+			// eye alone, so the tooltip is the only route a pointer has left
+			// (`docs/UI.md` §6). Both families, because they fail differently — a
+			// named level's tooltip gains the column's name, and an unnamed one
+			// had no tooltip at all.
+			const hidden = {
+				...levelled,
+				columns: [{ ...training, hideHeading: true }],
+			};
+			const result = roster.read(levelledBody, hidden);
+			const data = result.ok ? result.data : null;
+			const { el } = recording(hidden, data);
+			const button = el.querySelector<HTMLElement>('tbody .sheetsmith-level-ring');
+			button?.click();
+			expect(button?.getAttribute('title')).toBe('Athletics Training: Proficient');
+			// Unchanged by the derivation: this is about the eye, not the listener.
+			expect(button?.getAttribute('aria-label')).toBe(
+				'Athletics Training: Proficient',
+			);
+
+			const bare = {
+				...levelled,
+				columns: [
+					{ key: 'Training', type: 'level' as const, max: 4, hideHeading: true },
+				],
+			} as RosterConfig;
+			const plainResult = roster.read(levelledBody, bare);
+			const plainData = plainResult.ok ? plainResult.data : null;
+			const plain = recording(bare, plainData);
+			const unnamed = plain.el.querySelector<HTMLElement>(
+				'tbody .sheetsmith-level-ring',
+			);
+			expect(unnamed?.getAttribute('title')).toBe('Athletics Training');
+
+			// The heading left on: the word alone, which is what a visible `<th>`
+			// leaves missing and all it leaves missing.
+			const { el: withHeading } = recording(levelled, data);
+			expect(
+				withHeading
+					.querySelector<HTMLElement>('tbody .sheetsmith-level-ring')
+					?.getAttribute('title'),
+			).toBe('Untrained');
 		});
 
 		it('reveals a level name on a long press, and swallows the click', () => {

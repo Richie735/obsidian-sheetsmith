@@ -2437,8 +2437,22 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 						graded,
 						level: initial,
 						name: label,
-						// The column's own `<th>` stands over every cell in it.
-						nameOnScreen: true,
+						/*
+						 * The column's own `<th>` stands over every cell in it —
+						 * **unless the column took it off the sheet**, and this is
+						 * derived rather than written `true` because `hideHeading`
+						 * was built for exactly this column. `SPEC` §4.2: it is
+						 * "for the one whose control names itself", since a word
+						 * several times wider than a ring was setting the column's
+						 * width against a control that needed none of it — and the
+						 * heading stays rendered for assistive tech. So the name is
+						 * still in the accessible name and is gone from the *eye*,
+						 * which is the fact this parameter is named for, and the
+						 * tooltip is then the only route a pointer has to it
+						 * (`docs/UI.md` §7's no-hover-only-affordance rule, read
+						 * from the other side).
+						 */
+						nameOnScreen: column.hideHeading !== true,
 						onSet: store,
 					});
 					return;

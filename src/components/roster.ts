@@ -1362,8 +1362,14 @@ function drawRow(
 				graded,
 				level: initial,
 				name: label,
-				// The column's own `<th>` stands over every cell in it.
-				nameOnScreen: true,
+				/*
+				 * Derived for Table's reason, which is this column's reason:
+				 * `hideHeading` exists for a ring column (`SPEC` §4.2), so the
+				 * literal `true` would be false on exactly the columns where
+				 * the name is the thing a reader is missing. The heading stays
+				 * rendered for assistive tech; it is the eye that loses it.
+				 */
+				nameOnScreen: column.hideHeading !== true,
 				onSet: store,
 			});
 			return;

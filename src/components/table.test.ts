@@ -642,6 +642,60 @@ describe('table.render', () => {
 		);
 	});
 
+	it('names the ring in its tooltip where the column hid its heading', () => {
+		/*
+		 * `hideHeading` was built for a ring column (`SPEC` §4.2), and it takes
+		 * the heading off the *eye* while leaving it rendered for assistive tech
+		 * — so a pointer over a ring in such a column has nothing on screen
+		 * telling it what the column is, and the tooltip is the only route left
+		 * (`docs/UI.md` §6, §7). The rule reads "the control's name being on
+		 * screen beside it", and here it is not, so the ring takes the branch a
+		 * record already takes.
+		 *
+		 * Both families in one case, because they fail differently. A named
+		 * level's tooltip *gained* a name it did not carry; an unnamed one had
+		 * no tooltip at all, and so no touch route either.
+		 */
+		// Named once so the heading-shown variant below is built from it rather
+		// than by indexing a `columns` the config type declares optional.
+		const training = {
+			key: 'Training',
+			type: 'level' as const,
+			levels: ['Untrained', 'Proficient:', 'Expertise:E'],
+			hideHeading: true,
+		};
+		const named = { ...levelled, columns: [training] };
+		const withNames = render(note({ Acrobatics: { training: '2' } }), named);
+		const first = withNames.querySelector('tbody .sheetsmith-level-ring');
+		expect(first?.getAttribute('title')).toBe('Acrobatics Training: Expertise');
+		// The accessible name is unchanged either way: this is about the eye.
+		expect(first?.getAttribute('aria-label')).toBe(
+			'Acrobatics Training: Expertise',
+		);
+
+		// An unnamed level has no word, so the name is the whole tooltip.
+		const bare = {
+			...levelled,
+			columns: [
+				{ key: 'Training', type: 'level' as const, max: 4, hideHeading: true },
+			],
+		};
+		const unnamed = render(note({ Acrobatics: { training: '2' } }), bare);
+		expect(
+			unnamed.querySelector('tbody .sheetsmith-level-ring')?.getAttribute('title'),
+		).toBe('Acrobatics Training');
+
+		// And a column that kept its heading keeps the word alone, which is the
+		// branch this derivation must not have taken away.
+		const shown = render(note({ Acrobatics: { training: '2' } }), {
+			...named,
+			columns: [{ ...training, hideHeading: false }],
+		});
+		expect(
+			shown.querySelector('tbody .sheetsmith-level-ring')?.getAttribute('title'),
+		).toBe('Expertise');
+	});
+
 	it('cycles through the levels and back to none on click', () => {
 		const { el, changes } = recording(levelled);
 		const button = el.querySelector('tbody .sheetsmith-level-ring') as HTMLElement;
