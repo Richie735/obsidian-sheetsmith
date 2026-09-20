@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { evaluate, Scope } from './expression';
 import { parseFunctions } from './functions';
+import { definitionView } from '../test/modifier-views';
 import {
 	callsFrom,
 	makeFieldResolver,
@@ -20,6 +21,7 @@ import {
 	ComponentConfig,
 	FieldValue,
 	ModifierDefinitionView,
+	ModifierOutcome,
 } from '../types';
 
 /** A card set with the 5e modifier formula on every entry. */
@@ -636,21 +638,21 @@ function source(over: Partial<ModifierTargetSource>): ModifierTargetSource {
 describe('sheetModifiers', () => {
 	/** The two definitions every case here shares. */
 	const DEFINITIONS: readonly ModifierDefinitionView[] = [
-		{
+		definitionView({
 			name: 'Ring',
 			target: 'armour_class',
 			targetLabel: 'Armour class',
 			operator: 'add',
 			amount: '2',
 			bonusType: 'item',
-		},
-		{
+		}),
+		definitionView({
 			name: 'Boots',
 			target: 'speed',
 			targetLabel: 'Speed',
 			operator: 'add',
 			amount: '10',
-		},
+		}),
 	];
 
 	/** A card reading its own slot, and a component whose rows enrol. */
@@ -752,10 +754,10 @@ describe('sheetModifiers', () => {
 	it('answers what one row\'s enrolment comes to, on that row', () => {
 		// The modifier cell's own question, and the reason the context carries a
 		// second member: the glyph and the mark on the number must agree.
-		const outcome = sheet('10 + mod.self').outcome('Ring', {
+		const outcome = sheet('10 + mod.self').outcomes('Ring', {
 			label: 'Ring of Protection',
 			values: {},
-		});
+		})[0] as ModifierOutcome;
 		expect(outcome.definition?.name).toBe('Ring');
 		expect(outcome.applies).toBe(true);
 		expect(outcome.amount).toBe(2);
@@ -763,10 +765,10 @@ describe('sheetModifiers', () => {
 	});
 
 	it('says nothing at all for a name the layout does not declare', () => {
-		const outcome = sheet('10 + mod.self').outcome('Ring of Nonexistence', {
+		const outcome = sheet('10 + mod.self').outcomes('Ring of Nonexistence', {
 			label: 'Amulet',
 			values: {},
-		});
+		})[0] as ModifierOutcome;
 		expect(outcome.definition).toBeNull();
 		expect(outcome.applies).toBe(false);
 	});
@@ -793,13 +795,13 @@ describe('sheetModifiers', () => {
 		];
 		const input = sheetModifierInput(
 			[
-				{
+				definitionView({
 					name: 'Broken',
 					target: 'armour_class',
 					targetLabel: 'Armour class',
 					operator: 'add',
 					amount: 'nothing_publishes_this',
-				},
+				}),
 			],
 			[
 				source({

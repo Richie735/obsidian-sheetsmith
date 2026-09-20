@@ -335,7 +335,7 @@ describe('why a name a cell cannot spell is refused', () => {
 			'"Boots; gloves" cannot be a name, because a row separates the modifiers it applies with a semicolon. Rename it without one.',
 		);
 		expect(unspellableName('armour_class = 18')).toBe(
-			'"armour_class = 18" cannot be a name, because a row spells its own modifiers that way. Rename it, or write it as a modifier\'s Changes and Amount instead.',
+			'"armour_class = 18" cannot be a name, because a row spells its own modifiers that way. Rename it, or write it as a modifier\'s Value and Amount instead.',
 		);
 	});
 

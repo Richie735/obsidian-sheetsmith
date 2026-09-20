@@ -413,7 +413,7 @@ describe('a promotion that is refused', () => {
 
 	it('refuses a name that reads as an assignment', async () => {
 		expect(await refused('armour_class = 18')).toBe(
-			'"armour_class = 18" cannot be a name, because a row spells its own modifiers that way. Rename it, or write it as a modifier\'s Changes and Amount instead.',
+			'"armour_class = 18" cannot be a name, because a row spells its own modifiers that way. Rename it, or write it as a modifier\'s Value and Amount instead.',
 		);
 	});
 

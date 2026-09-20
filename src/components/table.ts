@@ -37,25 +37,12 @@
 
 import { setIcon } from 'obsidian';
 import { isName, roundSum } from '../formula/expression';
-import {
-	cellParts,
-	spellParts,
-	storedParts,
-} from '../parse/modifier-cell';
+import { cellParts, spellParts, storedParts } from '../parse/modifier-cell';
 import { claimRows as sharedClaimRows, RowClaims } from '../parse/row-claims';
 import { MarkdownTable, readTable, writeTable } from '../parse/table';
 import { displayText, hasLink } from '../parse/wikilink';
-import {
-	ColumnType,
-	PUBLISHABLE_TYPES,
-	TOTALLED_TYPES,
-} from './column-types';
-import {
-	boundedText,
-	formatComputed,
-	typedValue,
-	typeOf,
-} from './typed-value';
+import { ColumnType, PUBLISHABLE_TYPES, TOTALLED_TYPES } from './column-types';
+import { boundedText, formatComputed, typedValue, typeOf } from './typed-value';
 import {
 	ComponentConfig,
 	ComponentDefinition,
@@ -78,6 +65,7 @@ import { levelCount, levelName, levelOf, parseLevel } from './level-ring';
 import { paintLinkedText } from './linked-text';
 import {
 	MODIFIED_CLASS,
+	applying,
 	modifierBreakdown,
 	modifierRowName,
 	modifierRowText,
@@ -424,7 +412,12 @@ function rowViews(config: TableConfig, data: TableData | null): RowView[] {
 	// declare stays in the note, unrendered and untouched (SPEC §10).
 	if (config.openRows === true) {
 		for (const at of claims.own) {
-			views.push({ label: names[at] ?? '', declared: null, at, owned: true });
+			views.push({
+				label: names[at] ?? '',
+				declared: null,
+				at,
+				owned: true,
+			});
 		}
 	}
 	return views;
@@ -680,8 +673,9 @@ function baseConfigError(config: TableConfig): string | null {
 			return `The column "${key}" has a level with a mark but no name.`;
 		}
 	}
-	const rowHeader = ((config.rowHeader ?? '').trim() || DEFAULT_ROW_HEADER)
-		.toLowerCase();
+	const rowHeader = (
+		(config.rowHeader ?? '').trim() || DEFAULT_ROW_HEADER
+	).toLowerCase();
 	if (seen.has(rowHeader)) {
 		return `A column is called "${config.rowHeader ?? DEFAULT_ROW_HEADER}", which is already the name column's heading.`;
 	}
@@ -776,7 +770,11 @@ function configError(config: TableConfig): string | null {
  * §2). An empty modifier cell is also an ordinary state: on an inventory, most
  * rows have one.
  */
-function sampleCell(column: TableColumn, row: number, at: number): string | null {
+function sampleCell(
+	column: TableColumn,
+	row: number,
+	at: number,
+): string | null {
 	switch (columnType(column)) {
 		case 'number':
 			return String(sampleNumber(at));
@@ -838,30 +836,34 @@ const RESET_TYPES: ReadonlySet<ColumnType> = new Set<ColumnType>([
  * per-record ceiling, which is data-dependent and so is skipped in silence.
  */
 function resetColumnsOf(config: TableConfig): ResetColumn[] {
-	return storedColumns(config)
-		// A column with no key is one `baseConfigError` already refuses, so the
-		// card is drawing an error — but the editor does not run `read`, and an
-		// option valued `''` here persists `column: ""`, which `parseBinding`
-		// refuses outright. That turns a component the author can still fix into
-		// a layout file that will not load at all.
-		.filter((column) => (column.key ?? '').trim() !== '')
-		.filter((column) => RESET_TYPES.has(columnType(column)))
-		.map((column) => {
-			const shown = column.name ?? column.key;
-			const uncapped =
-				columnType(column) === 'number' && column.max === undefined;
-			return {
-				key: column.key,
-				...(column.name !== undefined ? { label: column.name } : {}),
-				...(uncapped
-					? {
-							refuses: {
-								full: `the column "${shown}" has no maximum to restore to. Give it one, or set this trigger to empty.`,
-							},
-						}
-					: {}),
-			};
-		});
+	return (
+		storedColumns(config)
+			// A column with no key is one `baseConfigError` already refuses, so the
+			// card is drawing an error — but the editor does not run `read`, and an
+			// option valued `''` here persists `column: ""`, which `parseBinding`
+			// refuses outright. That turns a component the author can still fix into
+			// a layout file that will not load at all.
+			.filter((column) => (column.key ?? '').trim() !== '')
+			.filter((column) => RESET_TYPES.has(columnType(column)))
+			.map((column) => {
+				const shown = column.name ?? column.key;
+				const uncapped =
+					columnType(column) === 'number' && column.max === undefined;
+				return {
+					key: column.key,
+					...(column.name !== undefined
+						? { label: column.name }
+						: {}),
+					...(uncapped
+						? {
+								refuses: {
+									full: `the column "${shown}" has no maximum to restore to. Give it one, or set this trigger to empty.`,
+								},
+							}
+						: {}),
+				};
+			})
+	);
 }
 
 export const table: ComponentDefinition<TableConfig, TableData> = {
@@ -897,7 +899,7 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			kind: 'columns',
 			label: 'Columns',
 			description:
-				'Text, number, and toggle columns hold character data. A computed column is read-only and reads the row\'s other cells by column key, its row values by name, and anything else on the sheet by component id. One column may be published per row, which is what lets a formula read a single row\'s value rather than a column\'s total. A column\'s total sums what the note stores; a formula elsewhere can sum any expression over the rows instead.',
+				"Text, number, and toggle columns hold character data. A computed column is read-only and reads the row's other cells by column key, its row values by name, and anything else on the sheet by component id. One column may be published per row, which is what lets a formula read a single row's value rather than a column's total. A column's total sums what the note stores; a formula elsewhere can sum any expression over the rows instead.",
 		},
 		{
 			key: 'openRows',
@@ -1033,7 +1035,11 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 		const rowAt = (name: string, index: number): Map<string, string> => {
 			const cells = new Map<string, string>([[nameHeader, name]]);
 			columns.forEach((column, at) => {
-				const value = sampleCell(column, index, seed + index * columns.length + at);
+				const value = sampleCell(
+					column,
+					index,
+					seed + index * columns.length + at,
+				);
 				if (value !== null) cells.set(column.key, value);
 			});
 			return cells;
@@ -1065,7 +1071,9 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 		if (parsed.table === null) return { ok: true, data: null };
 
 		const { headers: found, rows } = parsed.table;
-		const data: TableData = { rows: Object.create(null) as TableData['rows'] };
+		const data: TableData = {
+			rows: Object.create(null) as TableData['rows'],
+		};
 		rows.forEach((cells, index) => {
 			// Keyed by text out of the note, so it may not inherit from
 			// Object.prototype: on a plain object a column called "constructor"
@@ -1074,10 +1082,9 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			// either way, so the sheet would show a blank over a filled cell and
 			// the first edit would overwrite it — the one failure this component
 			// exists to prevent.
-			const values: Record<string, string> = Object.create(null) as Record<
-				string,
-				string
-			>;
+			const values: Record<string, string> = Object.create(
+				null,
+			) as Record<string, string>;
 			found.forEach((header, at) => {
 				if (at === 0) return;
 				values[header.toLowerCase()] = cells[at] ?? '';
@@ -1131,7 +1138,11 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			cell: storedCells(data, view),
 		}));
 		for (const column of columns) {
-			if (column.total !== true || !TOTALLED_TYPES.has(columnType(column))) continue;
+			if (
+				column.total !== true ||
+				!TOTALLED_TYPES.has(columnType(column))
+			)
+				continue;
 			const total = columnTotal(column, rows);
 			// A total that could not be read publishes nothing rather than the
 			// sum of the rows it could read (SPEC §5). The cell says which row
@@ -1153,7 +1164,9 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 					// the card shows, so the bare name and `.value` agree. A
 					// declared row the note has no row for reads as blank, which
 					// in a number column is zero — the number the card shows.
-					named[key] = { value: typedValue(published, cell(published)) };
+					named[key] = {
+						value: typedValue(published, cell(published)),
+					};
 					continue;
 				}
 				// A computed column stores nothing, so there is no `.value` to
@@ -1208,7 +1221,8 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 		// number derived from a configuration nobody has agreed to yet.
 		if (configError(config) !== null) return undefined;
 		const views = rowViews(config, data);
-		return (resolve) => views.map((view) => rowValues(config, data, view, resolve));
+		return (resolve) =>
+			views.map((view) => rowValues(config, data, view, resolve));
 	},
 
 	/**
@@ -1290,7 +1304,10 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 	write(data, body, config): string {
 		const nameHeader = headers(config)[0] as string;
 		const known = new Map(
-			storedColumns(config).map((column) => [column.key.toLowerCase(), column.key]),
+			storedColumns(config).map((column) => [
+				column.key.toLowerCase(),
+				column.key,
+			]),
 		);
 		/** One row's cells as the table writer takes them, under the layout's
 		 * own header spelling so the match is exact. */
@@ -1352,7 +1369,9 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 		const put = (index: number, update: Map<string, string>): void => {
 			const already = rows.get(index);
 			if (already === undefined) rows.set(index, update);
-			else for (const [header, value] of update) already.set(header, value);
+			else
+				for (const [header, value] of update)
+					already.set(header, value);
 		};
 		for (const [key, row] of Object.entries(data.rows ?? {})) {
 			const index = Number(key);
@@ -1425,7 +1444,9 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 				update.set(nameHeader, label);
 				return update;
 			});
-			return writeTable(body, headers(config), { added: [...seeded, ...spare] });
+			return writeTable(body, headers(config), {
+				added: [...seeded, ...spare],
+			});
 		}
 		return writeTable(body, headers(config), { rows, added, removed });
 	},
@@ -1492,8 +1513,7 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 				 * reach is worse than naming none. It is the one message here a
 				 * *pre-existing, untouched* layout can produce on its own.
 				 */
-				error:
-					'this trigger does not say which column to act on. Give the binding a column, or remove it.',
+				error: 'this trigger does not say which column to act on. Give the binding a column, or remove it.',
 			};
 		}
 		const named = resetColumnsOf(config).find(
@@ -1538,7 +1558,9 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			if (value === null) {
 				return {
 					ok: false,
-					error: context.explain('reset.to', {}) ?? 'its reset formula is empty.',
+					error:
+						context.explain('reset.to', {}) ??
+						'its reset formula is empty.',
 				};
 			}
 			const number = Number(value);
@@ -1548,7 +1570,9 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 					error: `its reset formula produced "${String(value)}", which is not a number.`,
 				};
 			}
-			text = flag ? flagText(number >= 1) : boundedText(String(number), column);
+			text = flag
+				? flagText(number >= 1)
+				: boundedText(String(number), column);
 		} else if (flag) {
 			text = flagText(reset.action === 'full');
 		} else if (reset.action === 'full') {
@@ -1605,7 +1629,8 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 
 		const columns = config.columns ?? [];
 		const open = config.openRows === true;
-		const nameHeading = (config.rowHeader ?? '').trim() || DEFAULT_ROW_HEADER;
+		const nameHeading =
+			(config.rowHeader ?? '').trim() || DEFAULT_ROW_HEADER;
 		// The table scrolls inside its own box: a sheet must never scroll
 		// sideways because one component grew a column.
 		const wrapper = element('div', 'sheetsmith-table-wrapper', container);
@@ -1771,7 +1796,10 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			// `:focus-within` is not the answer here.
 			flagWhileFocused(stack, input, 'sheetsmith-table-field-focused');
 			const layer = element('div', 'sheetsmith-table-link-layer', stack);
-			paintLinkedText(layer, raw, { link: context.link, clipping: CELL_CLIPPING });
+			paintLinkedText(layer, raw, {
+				link: context.link,
+				clipping: CELL_CLIPPING,
+			});
 			// A name column is as narrow as the table lets it be, so a link is the
 			// text on this card most likely to clip — and a clipped one had no route
 			// to the rest of itself, since the layer is what is on screen and the
@@ -1815,7 +1843,11 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			if (!rowView.owned || rowView.at === null) return;
 			const at = rowView.at;
 			const named = rowLabel(rowView.label);
-			const button = element('button', 'sheetsmith-table-remove-button', cell);
+			const button = element(
+				'button',
+				'sheetsmith-table-remove-button',
+				cell,
+			);
 			button.type = 'button';
 			// The one import from `obsidian` in this folder. The convention it
 			// brushes against is about vault access (PATTERNS §5) and about staying
@@ -1845,7 +1877,9 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 		views.forEach((rowView) => {
 			const rowIndex = rowView.declared;
 			const stored =
-				rowView.at === null ? {} : (data?.rows[rowView.at]?.cells ?? {});
+				rowView.at === null
+					? {}
+					: (data?.rows[rowView.at]?.cells ?? {});
 			const tr = element('tr', '', body);
 
 			/** What is being typed in this row's cells, by column key. */
@@ -1879,10 +1913,18 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			 */
 			let noteValues: RowValues | null = null;
 			const noteRow = (): RowValues =>
-				(noteValues ??= rowValues(config, data, rowView, context.resolveField));
+				(noteValues ??= rowValues(
+					config,
+					data,
+					rowView,
+					context.resolveField,
+				));
 
-			const computed: { column: TableColumn; el: HTMLElement; index: number }[] =
-				[];
+			const computed: {
+				column: TableColumn;
+				el: HTMLElement;
+				index: number;
+			}[] = [];
 			const view = doc.defaultView;
 			let pending: number | undefined;
 			/**
@@ -1928,8 +1970,14 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 							return;
 						}
 						const value = results[i] ?? null;
-						el.textContent = formatComputed(value, column.signed === true);
-						el.classList.toggle('sheetsmith-table-unresolved', value === null);
+						el.textContent = formatComputed(
+							value,
+							column.signed === true,
+						);
+						el.classList.toggle(
+							'sheetsmith-table-unresolved',
+							value === null,
+						);
 						el.setAttribute(
 							'title',
 							// SPEC §4.2: hovering a computed value reveals the
@@ -2095,7 +2143,10 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 								if (pushed !== null) showPopover(cell, pushed);
 								return;
 							}
-							showPopover(cell, pushed === null ? said : `${said}\n\n${pushed}`);
+							showPopover(
+								cell,
+								pushed === null ? said : `${said}\n\n${pushed}`,
+							);
 						});
 					}
 					computed.push({ column, el: cell, index });
@@ -2108,7 +2159,9 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 					// rebuild of the sheet.
 					if (rowView.at !== null) {
 						context.onChange({
-							rows: { [rowView.at]: { cells: { [column.key]: next } } },
+							rows: {
+								[rowView.at]: { cells: { [column.key]: next } },
+							},
 						});
 						return;
 					}
@@ -2118,7 +2171,12 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 					// arriving before the re-read from appending a twin.
 					context.onChange({
 						rows: {},
-						added: [{ name: rowView.label, cells: { [column.key]: next } }],
+						added: [
+							{
+								name: rowView.label,
+								cells: { [column.key]: next },
+							},
+						],
 					});
 				};
 
@@ -2176,7 +2234,11 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 				 * deleting character data, which Constraint 4 and §10 both refuse.
 				 */
 				if (type === 'modifier') {
-					const cell = element('span', 'sheetsmith-table-modifier-cell', td);
+					const cell = element(
+						'span',
+						'sheetsmith-table-modifier-cell',
+						td,
+					);
 					const button = element(
 						'button',
 						'sheetsmith-table-modifier-button',
@@ -2222,17 +2284,25 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 					 * the same reason the breakdown is.
 					 */
 					const ask = (part: string) =>
-						context.modifiers?.outcome(part, noteRow()) ?? null;
+						context.modifiers?.outcomes(part, noteRow()) ?? [];
 					const applied = rowModifiers(enrolled, ask);
-					const applying = applied.filter(
-						(one) => one.outcome?.applies === true,
+					// Through the shared predicate, which is where "a part applies if
+					// any of its changes does" lives: the glyph here, the glyph on a
+					// record, the mark on a panel line and the row's own name are one
+					// rule, and four copies of it could only be tested for agreeing.
+					const applyingParts = applied.filter((one) =>
+						applying(one.outcomes),
 					).length;
 					if (enrolled.length === 0) {
 						cell.classList.add('sheetsmith-table-modifier-empty');
 					}
 					setIcon(
 						glyph,
-						enrolled.length === 0 ? 'plus' : applying > 0 ? 'zap' : 'zap-off',
+						enrolled.length === 0
+							? 'plus'
+							: applyingParts > 0
+								? 'zap'
+								: 'zap-off',
 					);
 
 					/*
@@ -2243,7 +2313,10 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 					 * carrier here rather than a `title` addition: the visible mark is
 					 * a glyph.
 					 */
-					button.setAttribute('aria-label', modifierRowName(label, applied));
+					button.setAttribute(
+						'aria-label',
+						modifierRowName(label, applied),
+					);
 					const said = modifierRowText(applied);
 					if (said !== null) button.setAttribute('title', said);
 					button.setAttribute('aria-haspopup', 'dialog');
@@ -2284,7 +2357,7 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 							// The stored list, never the collapsed one: the form's
 							// indices are indices into the note.
 							parts: stored,
-							outcome: ask,
+							outcomes: ask,
 							definitions: context.modifiers?.definitions ?? [],
 							targets: context.modifiers?.targets ?? [],
 							published: context.modifiers?.published ?? [],
@@ -2358,7 +2431,7 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 						 *
 						 * Unless the form has already placed it, which it does on a row
 						 * with no parts: that opens straight into a new effect with
-						 * **Changes** focused, and the first control is the `Modifier`
+						 * **Value** focused, and the first control is the `Modifier`
 						 * select one line above it. Two answers to "where does focus
 						 * go" would make the common case land on the wrong field.
 						 */
@@ -2399,9 +2472,18 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 					};
 
 					if (graded && column.input === 'select') {
-						const select = element('select', 'sheetsmith-table-select', td);
+						const select = element(
+							'select',
+							'sheetsmith-table-select',
+							td,
+						);
 						for (let i = 0; i <= count; i++) {
-							const option = element('option', '', select, levelName(column, i));
+							const option = element(
+								'option',
+								'',
+								select,
+								levelName(column, i),
+							);
 							option.value = String(i);
 						}
 						select.value = String(initial);
@@ -2425,7 +2507,11 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 						return;
 					}
 
-					const button = element('button', 'sheetsmith-level-ring', td);
+					const button = element(
+						'button',
+						'sheetsmith-level-ring',
+						td,
+					);
 					button.type = 'button';
 					// The ARIA, the tooltip, the touch route and the presses are
 					// `ring-control.ts`'s, so a cell and the same control on a card
@@ -2479,7 +2565,9 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 					},
 					announceCommit: (next) => {
 						status.textContent =
-							next === '' ? `${label} cleared` : `${label} ${next}`;
+							next === ''
+								? `${label} cleared`
+								: `${label} ${next}`;
 					},
 					announceRestore: (restored) => {
 						// The same undo the card has, and it was silent
@@ -2493,7 +2581,10 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 						// Bounds hold however the value arrived: a training
 						// level typed as 5 in a two-level system is the same
 						// mistake as one stepped there.
-						const bounded = type === 'number' ? boundedText(next, column) : next;
+						const bounded =
+							type === 'number'
+								? boundedText(next, column)
+								: next;
 						if (bounded !== next) {
 							// A correction lands on blur, at the moment the cell
 							// gives up its hover chrome and goes transparent, so
@@ -2504,9 +2595,14 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 							drafts.set(column.key, bounded);
 							recompute(true);
 							status.textContent = `${label} held to ${bounded}`;
-							input.classList.add('sheetsmith-table-input-corrected');
+							input.classList.add(
+								'sheetsmith-table-input-corrected',
+							);
 							view?.setTimeout(
-								() => input.classList.remove('sheetsmith-table-input-corrected'),
+								() =>
+									input.classList.remove(
+										'sheetsmith-table-input-corrected',
+									),
 								CORRECTION_FLASH,
 							);
 						}
@@ -2554,7 +2650,9 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 					initial: rowView.label,
 					announceCommit: (next) => {
 						status.textContent =
-							next === '' ? `${nameHeading} cleared` : `${nameHeading} ${next}`;
+							next === ''
+								? `${nameHeading} cleared`
+								: `${nameHeading} ${next}`;
 					},
 					announceRestore: (restored) => {
 						status.textContent =
@@ -2615,7 +2713,10 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 				// that was focused. That makes it an accident rather than a
 				// design, so it has a test of its own.
 				status.textContent = 'Row added';
-				context.onChange({ rows: {}, added: [{ name: '', cells: {} }] });
+				context.onChange({
+					rows: {},
+					added: [{ name: '', cells: {} }],
+				});
 			});
 		}
 
@@ -2630,16 +2731,28 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 					// The name column is sticky, so this cell carries that class
 					// too — otherwise "Total" slides out from under its own column
 					// on a phone-width sheet while the numbers stay put.
-					const cell = element('th', 'sheetsmith-table-name', foot, 'Total');
+					const cell = element(
+						'th',
+						'sheetsmith-table-name',
+						foot,
+						'Total',
+					);
 					cell.setAttribute('scope', 'row');
 					continue;
 				}
 				const column = columns[entry] as TableColumn;
-				const cell = element('td', `sheetsmith-table-${columnType(column)}`, foot);
+				const cell = element(
+					'td',
+					`sheetsmith-table-${columnType(column)}`,
+					foot,
+				);
 				if (column.total !== true) continue;
 				// The same class the computed cells use, for its tabular figures:
 				// a total must not twitch while a cell above it is being typed.
-				totals.push({ column, el: element('div', 'sheetsmith-table-value', cell) });
+				totals.push({
+					column,
+					el: element('div', 'sheetsmith-table-value', cell),
+				});
 			}
 			if (open) element('td', 'sheetsmith-table-remove', foot);
 
@@ -2650,13 +2763,18 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 					view?.clearTimeout(pending);
 					pending = undefined;
 				}
-				const sums = totals.map(({ column }) => columnTotal(column, counted));
+				const sums = totals.map(({ column }) =>
+					columnTotal(column, counted),
+				);
 				const paint = () => {
 					totals.forEach(({ el }, i) => {
 						const total = sums[i] as ColumnTotal;
 						const missing = 'unreadable' in total;
 						el.textContent = missing ? '?' : String(total.sum);
-						el.classList.toggle('sheetsmith-table-unresolved', missing);
+						el.classList.toggle(
+							'sheetsmith-table-unresolved',
+							missing,
+						);
 						if (missing) {
 							el.setAttribute(
 								'title',
@@ -2673,7 +2791,10 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 				// A commit, a bounds correction, or a level change is settled and
 				// shows the truth at once. The same rule the computed cells above
 				// follow, because they are the same kind of number.
-				if (settled || sums.every((total) => !('unreadable' in total))) {
+				if (
+					settled ||
+					sums.every((total) => !('unreadable' in total))
+				) {
 					paint();
 					return;
 				}

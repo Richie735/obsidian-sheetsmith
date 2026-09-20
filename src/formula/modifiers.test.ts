@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { makeFieldResolver, NO_ENV } from './resolve';
 import { evaluate } from './expression';
 import { parseFunctions } from './functions';
+import { definitionView } from '../test/modifier-views';
 import {
 	buildModifierTable,
 	Contributor,
@@ -20,7 +21,6 @@ import {
 import {
 	ComponentConfig,
 	ModifierDefinition,
-	ModifierDefinitionView,
 	ModifierLine,
 	ModifierPush,
 } from '../types';
@@ -54,11 +54,7 @@ function typedAt(...args: Parameters<typeof at>): Contributor {
 }
 
 /** A definition as the layout declares one, with a label for its target. */
-function define(
-	definition: ModifierDefinition,
-): ModifierDefinitionView {
-	return { ...definition, targetLabel: definition.target };
-}
+const define = definitionView;
 
 /**
  * One part of one row's cell, with the row's own names where a case needs them.
@@ -173,7 +169,7 @@ describe('the mod. namespace', () => {
 		expect(scope('mod.armour_class.value')).toBeUndefined();
 	});
 
-	it('does not collide with a layout\'s own mod() function', () => {
+	it("does not collide with a layout's own mod() function", () => {
 		// Every 5e layout writes `mod(score) = floor((score - 10) / 2)`. Bare
 		// `mod` is never registered, so the two live side by side with no rule.
 		const { library } = parseFunctions([
@@ -182,8 +178,12 @@ describe('the mod. namespace', () => {
 		const scope = buildSheetScope([
 			{ id: 'abilities', values: { named: { STR: { value: '15' } } } },
 		]);
-		expect(evaluate('mod(abilities.STR)', scope, { library, base: scope })).toBe(2);
-		expect(evaluate('mod.abilities.STR', scope, { library, base: scope })).toBe(0);
+		expect(
+			evaluate('mod(abilities.STR)', scope, { library, base: scope }),
+		).toBe(2);
+		expect(
+			evaluate('mod.abilities.STR', scope, { library, base: scope }),
+		).toBe(0);
 	});
 });
 
@@ -197,8 +197,16 @@ describe('stackModifiers: the stacking step', () => {
 	 * full.
 	 */
 	const cases: [string, readonly Contributor[], number][] = [
-		['two of one type give the larger', [at('x', 2, 'item'), at('x', 1, 'item')], 2],
-		['two of different types add', [at('x', 2, 'item'), at('x', 1, 'status')], 3],
+		[
+			'two of one type give the larger',
+			[at('x', 2, 'item'), at('x', 1, 'item')],
+			2,
+		],
+		[
+			'two of different types add',
+			[at('x', 2, 'item'), at('x', 1, 'status')],
+			3,
+		],
 		['two untyped ones add', [at('x', 2), at('x', 1)], 3],
 		[
 			'a bonus and a penalty of one type give both',
@@ -210,7 +218,11 @@ describe('stackModifiers: the stacking step', () => {
 			[at('x', -1, 'item'), at('x', -3, 'item')],
 			-3,
 		],
-		['a zero contributes nothing', [at('x', 0, 'item'), at('x', 1, 'item')], 1],
+		[
+			'a zero contributes nothing',
+			[at('x', 0, 'item'), at('x', 1, 'item')],
+			1,
+		],
 		['nothing at all is nothing', [], 0],
 	];
 
@@ -283,7 +295,10 @@ describe('stackModifiers: the override step', () => {
 		at('x', amount, null, label, 'override');
 
 	it('takes the highest override, and says why the other did not apply', () => {
-		const result = stackModifiers([override(18, 'Plate'), override(13, 'Mage')]);
+		const result = stackModifiers([
+			override(18, 'Plate'),
+			override(13, 'Mage'),
+		]);
 		expect('error' in result ? null : result.override).toBe(18);
 		expect('error' in result ? [] : result.lines).toEqual([
 			{
@@ -316,7 +331,10 @@ describe('stackModifiers: the override step', () => {
 		// The second wording, and the only case it is true of: telling a reader a
 		// *higher* one applies would send them looking for a number that is not
 		// on the sheet.
-		const result = stackModifiers([override(13, 'Mage'), override(13, 'Shield')]);
+		const result = stackModifiers([
+			override(13, 'Mage'),
+			override(13, 'Shield'),
+		]);
 		expect('error' in result ? null : result.override).toBe(13);
 		expect('error' in result ? null : result.lines[1]?.suppressed).toBe(
 			'another override of the same value applies',
@@ -372,7 +390,12 @@ describe('the shuffle assertion, over both steps', () => {
 	 * Every rotation rather than one shuffle, so a case cannot pass by luck.
 	 */
 	const cases: [string, readonly Contributor[], number | null, number][] = [
-		['two of one type give the larger', [at('x', 2, 'item'), at('x', 1, 'item')], null, 2],
+		[
+			'two of one type give the larger',
+			[at('x', 2, 'item'), at('x', 1, 'item')],
+			null,
+			2,
+		],
 		['two types add', [at('x', 2, 'item'), at('x', 1, 'status')], null, 3],
 		['two untyped add', [at('x', 2), at('x', 1)], null, 3],
 		[
@@ -383,7 +406,10 @@ describe('the shuffle assertion, over both steps', () => {
 		],
 		[
 			'an override and an addition',
-			[at('x', 18, null, 'Plate', 'override'), at('x', 1, 'item', 'Ring')],
+			[
+				at('x', 18, null, 'Plate', 'override'),
+				at('x', 1, 'item', 'Ring'),
+			],
 			18,
 			1,
 		],
@@ -451,7 +477,11 @@ describe('the shuffle assertion, over both steps', () => {
 	});
 
 	it.each([
-		['named', at('str', 18, null, 'Belt', 'override'), at('str', 1, 'item', 'Ring')],
+		[
+			'named',
+			at('str', 18, null, 'Belt', 'override'),
+			at('str', 1, 'item', 'Ring'),
+		],
 		[
 			'typed',
 			typedAt('str', 18, null, 'Belt', 'override'),
@@ -463,7 +493,7 @@ describe('the shuffle assertion, over both steps', () => {
 			typedAt('str', 1, 'item', 'Ring'),
 		],
 	])(
-		'gives the owner\'s case 19 for a %s pair, either way round',
+		"gives the owner's case 19 for a %s pair, either way round",
 		(_tier, override, addition) => {
 			// "set my str 18 and another item gives +1 while worn, my bonus should be
 			// 19", and the answer is the same whichever tier either half came out of.
@@ -478,7 +508,7 @@ describe('the shuffle assertion, over both steps', () => {
 		},
 	);
 
-	it('gives the owner\'s case the same answer with the two reversed', () => {
+	it("gives the owner's case the same answer with the two reversed", () => {
 		// Stated as its own case because it is the sentence the feature was asked
 		// for: "set my str 18 and another item gives +1 while worn, my bonus should
 		// be 19."
@@ -504,10 +534,18 @@ describe('suppressionOf', () => {
 			at('x', 13, null, 'Mage', 'override'),
 		]);
 		expect(
-			suppressionOf(result, { operator: 'override', type: null, amount: 13 }),
+			suppressionOf(result, {
+				operator: 'override',
+				type: null,
+				amount: 13,
+			}),
 		).toBe('a higher override applies');
 		expect(
-			suppressionOf(result, { operator: 'override', type: null, amount: 18 }),
+			suppressionOf(result, {
+				operator: 'override',
+				type: null,
+				amount: 18,
+			}),
 		).toBeNull();
 	});
 
@@ -526,7 +564,9 @@ describe('suppressionOf', () => {
 		expect('error' in result ? null : result.lines[1]?.suppressed).toBe(
 			'another item bonus of the same size applies',
 		);
-		expect(suppressionOf(result, { operator: 'add', type: 'item', amount: 1 })).toBeNull();
+		expect(
+			suppressionOf(result, { operator: 'add', type: 'item', amount: 1 }),
+		).toBeNull();
 	});
 
 	it('reports a larger bonus of the same type', () => {
@@ -534,34 +574,49 @@ describe('suppressionOf', () => {
 			at('x', 2, 'item', 'Belt'),
 			at('x', 1, 'item', 'Gauntlets'),
 		]);
-		expect(suppressionOf(result, { operator: 'add', type: 'item', amount: 1 })).toBe(
-			'a larger item bonus applies',
-		);
+		expect(
+			suppressionOf(result, { operator: 'add', type: 'item', amount: 1 }),
+		).toBe('a larger item bonus applies');
 	});
 
 	it('lets an untyped addition through, and says an addition of 0 adds nothing', () => {
 		const result = stackModifiers([at('x', 2), at('x', 1)]);
-		expect(suppressionOf(result, { operator: 'add', type: null, amount: 1 })).toBeNull();
-		expect(suppressionOf(result, { operator: 'add', type: null, amount: 0 })).toBe(
-			'it adds nothing',
-		);
+		expect(
+			suppressionOf(result, { operator: 'add', type: null, amount: 1 }),
+		).toBeNull();
+		expect(
+			suppressionOf(result, { operator: 'add', type: null, amount: 0 }),
+		).toBe('it adds nothing');
 	});
 
-	it('reports the slot\'s own refusal where another row stopped it', () => {
+	it("reports the slot's own refusal where another row stopped it", () => {
 		expect(
-			suppressionOf({ error: 'Row "Belt": no.' }, {
-				operator: 'add',
-				type: 'item',
-				amount: 2,
-			}),
+			suppressionOf(
+				{ error: 'Row "Belt": no.' },
+				{
+					operator: 'add',
+					type: 'item',
+					amount: 2,
+				},
+			),
 		).toBe('Row "Belt": no.');
 	});
 });
 
 describe('buildModifierTable', () => {
 	const definitions: ModifierDefinition[] = [
-		{ name: 'Belt', target: 'abilities.STR', amount: '2', bonusType: 'item' },
-		{ name: 'Ring', target: 'armour_class', amount: '1', bonusType: 'item' },
+		{
+			name: 'Belt',
+			target: 'abilities.STR',
+			amount: '2',
+			bonusType: 'item',
+		},
+		{
+			name: 'Ring',
+			target: 'armour_class',
+			amount: '1',
+			bonusType: 'item',
+		},
 		{ name: 'Blank', target: '   ', amount: '5' },
 	];
 
@@ -625,12 +680,20 @@ describe('buildModifierTable', () => {
 					],
 				},
 			],
-			[define({ name: 'Charge', target: 'spell_bonus', amount: 'Charges' })],
+			[
+				define({
+					name: 'Charge',
+					target: 'spell_bonus',
+					amount: 'Charges',
+				}),
+			],
 		);
 		const result = table('spell_bonus');
 		expect('error' in result ? null : result.total).toBe(8);
 		expect(
-			'error' in result ? [] : result.lines.map((line) => [line.label, line.amount]),
+			'error' in result
+				? []
+				: result.lines.map((line) => [line.label, line.amount]),
 		).toEqual([
 			['Wand', 3],
 			['Staff', 5],
@@ -646,7 +709,12 @@ describe('a part typed on the row', () => {
 	 * exactly the same terms as a named one.
 	 */
 	const definitions: ModifierDefinition[] = [
-		{ name: 'Ring', target: 'armour_class', amount: '1', bonusType: 'item' },
+		{
+			name: 'Ring',
+			target: 'armour_class',
+			amount: '1',
+			bonusType: 'item',
+		},
 		{
 			name: 'Plate',
 			target: 'armour_class',
@@ -748,7 +816,9 @@ describe('a part typed on the row', () => {
 		// the same rule a definition's bad amount already earns.
 		const table = walked('armour_class += ability');
 		const result = table('armour_class');
-		expect('error' in result ? result.error : null).toContain('Row "A row"');
+		expect('error' in result ? result.error : null).toContain(
+			'Row "A row"',
+		);
 	});
 
 	it('reads a typed amount against the row that typed it', () => {
@@ -776,8 +846,12 @@ describe('a part typed on the row', () => {
 				{
 					id: 'items',
 					pushes: () => [
-						enrol('armour_class += 2 when Worn', 'Worn', { Worn: true }),
-						enrol('armour_class += 2 when Worn', 'Stowed', { Worn: false }),
+						enrol('armour_class += 2 when Worn', 'Worn', {
+							Worn: true,
+						}),
+						enrol('armour_class += 2 when Worn', 'Stowed', {
+							Worn: false,
+						}),
 					],
 				},
 			],
@@ -814,7 +888,7 @@ describe('a part typed on the row', () => {
 	});
 });
 
-describe('a definition\'s condition', () => {
+describe("a definition's condition", () => {
 	const conditional = [
 		define({
 			name: 'Cloak',
@@ -825,7 +899,7 @@ describe('a definition\'s condition', () => {
 		}),
 	];
 
-	it('applies where the row\'s flag is set, and changes nothing where it is not', () => {
+	it("applies where the row's flag is set, and changes nothing where it is not", () => {
 		const table = buildModifierTable(
 			[
 				{
@@ -843,9 +917,9 @@ describe('a definition\'s condition', () => {
 		// And the inactive row appears in no breakdown at all: a breakdown is about
 		// what changed the number, and listing every stowed item in every popover
 		// would put the inventory in there.
-		expect('error' in result ? [] : result.lines.map((line) => line.label)).toEqual(
-			['Cloak of Elvenkind'],
-		);
+		expect(
+			'error' in result ? [] : result.lines.map((line) => line.label),
+		).toEqual(['Cloak of Elvenkind']);
 	});
 
 	it('applies unconditionally where the definition carries no condition', () => {
@@ -857,7 +931,7 @@ describe('a definition\'s condition', () => {
 		expect('error' in result ? null : result.total).toBe(1);
 	});
 
-	it('never lets an inactive row\'s unreadable amount refuse the slot', () => {
+	it("never lets an inactive row's unreadable amount refuse the slot", () => {
 		/*
 		 * The ordering that makes the condition safe: a stowed item whose amount
 		 * reads a column the author has since renamed must not be able to break a
@@ -891,13 +965,20 @@ describe('a definition\'s condition', () => {
 });
 
 describe('a slot the sheet publishes', () => {
-	it('adds what was pushed to the target\'s own derived', () => {
+	it("adds what was pushed to the target's own derived", () => {
 		const env = sheet(
 			[
 				computed('armour_class', '10 + mod.self'),
 				enrolling('items', [enrol('Ring', 'Ring of Protection')]),
 			],
-			[{ name: 'Ring', target: 'armour_class', amount: '2', bonusType: 'item' }],
+			[
+				{
+					name: 'Ring',
+					target: 'armour_class',
+					amount: '2',
+					bonusType: 'item',
+				},
+			],
 		);
 		expect(env.sheet('armour_class')).toBe(12);
 		expect(env.sheet('mod.armour_class')).toBe(2);
@@ -937,7 +1018,7 @@ describe('a slot the sheet publishes', () => {
 		expect(typed.sheet('mod.armour_class')).toBe(2);
 	});
 
-	it('publishes nothing where one row\'s amount will not resolve', () => {
+	it("publishes nothing where one row's amount will not resolve", () => {
 		/*
 		 * The slot throws rather than answering undefined, which is the only route
 		 * to the sentence: a thrown FormulaError reaches the explainer and lands
@@ -961,7 +1042,9 @@ describe('a slot the sheet publishes', () => {
 		const env = sheet(
 			[
 				computed('armour_class', '10 + mod.self'),
-				enrolling('items', [enrol('Worn?', 'A shield', { Worn: true })]),
+				enrolling('items', [
+					enrol('Worn?', 'A shield', { Worn: true }),
+				]),
 			],
 			[{ name: 'Worn?', target: 'armour_class', amount: 'Worn' }],
 		);
@@ -1003,7 +1086,13 @@ describe('a slot the sheet publishes', () => {
 				computed('armour_class', '10 + mod.self'),
 				enrolling('items', [enrol('Ouroboros', 'Ouroboros')]),
 			],
-			[{ name: 'Ouroboros', target: 'armour_class', amount: 'armour_class' }],
+			[
+				{
+					name: 'Ouroboros',
+					target: 'armour_class',
+					amount: 'armour_class',
+				},
+			],
 		);
 		expect(() => env.sheet('mod.armour_class')).toThrow('Row "Ouroboros"');
 		expect(env.sheet('armour_class')).toBeUndefined();
@@ -1011,18 +1100,31 @@ describe('a slot the sheet publishes', () => {
 });
 
 describe('the override where it lands', () => {
-	it('replaces the formula\'s result and re-adds the additive total', () => {
+	it("replaces the formula's result and re-adds the additive total", () => {
 		// The owner's arithmetic, through the whole engine rather than through
 		// `stackModifiers` alone: 10 + 0 would be the formula, 18 is the override,
 		// +1 lands on top.
 		const env = sheet(
 			[
 				computed('armour_class', '10 + mod.self'),
-				enrolling('items', [enrol('Plate', 'Plate armour'), enrol('Ring', 'Ring')]),
+				enrolling('items', [
+					enrol('Plate', 'Plate armour'),
+					enrol('Ring', 'Ring'),
+				]),
 			],
 			[
-				{ name: 'Plate', target: 'armour_class', operator: 'override', amount: '18' },
-				{ name: 'Ring', target: 'armour_class', amount: '1', bonusType: 'item' },
+				{
+					name: 'Plate',
+					target: 'armour_class',
+					operator: 'override',
+					amount: '18',
+				},
+				{
+					name: 'Ring',
+					target: 'armour_class',
+					amount: '1',
+					bonusType: 'item',
+				},
 			],
 		);
 		expect(env.sheet('armour_class')).toBe(19);
@@ -1035,11 +1137,24 @@ describe('the override where it lands', () => {
 		const reversed = sheet(
 			[
 				computed('armour_class', '10 + mod.self'),
-				enrolling('items', [enrol('Ring', 'Ring'), enrol('Plate', 'Plate armour')]),
+				enrolling('items', [
+					enrol('Ring', 'Ring'),
+					enrol('Plate', 'Plate armour'),
+				]),
 			],
 			[
-				{ name: 'Plate', target: 'armour_class', operator: 'override', amount: '18' },
-				{ name: 'Ring', target: 'armour_class', amount: '1', bonusType: 'item' },
+				{
+					name: 'Plate',
+					target: 'armour_class',
+					operator: 'override',
+					amount: '18',
+				},
+				{
+					name: 'Ring',
+					target: 'armour_class',
+					amount: '1',
+					bonusType: 'item',
+				},
 			],
 		);
 		expect(reversed.sheet('armour_class')).toBe(19);
@@ -1054,8 +1169,20 @@ describe('the override where it lands', () => {
 					id: 'abilities',
 					values: {
 						named: {
-							STR: { value: '15', display: { field: 'derived', scope: { value: '15' } } },
-							DEX: { value: '14', display: { field: 'derived', scope: { value: '14' } } },
+							STR: {
+								value: '15',
+								display: {
+									field: 'derived',
+									scope: { value: '15' },
+								},
+							},
+							DEX: {
+								value: '14',
+								display: {
+									field: 'derived',
+									scope: { value: '14' },
+								},
+							},
 						},
 					},
 					resolver: (inner) => (field, scope, publishedName) =>
@@ -1065,7 +1192,12 @@ describe('the override where it lands', () => {
 								id: 'abilities',
 								type: 'card-set',
 								label: 'Abilities',
-								position: { col: 1, row: 1, width: 1, height: 1 },
+								position: {
+									col: 1,
+									row: 1,
+									width: 1,
+									height: 1,
+								},
 								derived: 'value + mod.self',
 							} as ComponentConfig,
 							null,
@@ -1128,7 +1260,12 @@ describe('the override where it lands', () => {
 				enrolling('items', [enrol('Plate', 'Plate armour')]),
 			],
 			[
-				{ name: 'Plate', target: 'armour_class', operator: 'override', amount: '18' },
+				{
+					name: 'Plate',
+					target: 'armour_class',
+					operator: 'override',
+					amount: '18',
+				},
 			],
 		);
 		expect(env.sheet('armour_class')).toBe(10);
@@ -1145,11 +1282,24 @@ describe('the override where it lands', () => {
 		const env = sheet(
 			[
 				computed('armour_class', '10 + mod.self'),
-				enrolling('items', [enrol('Plate', 'Plate armour'), enrol('Ring', 'Ring')]),
+				enrolling('items', [
+					enrol('Plate', 'Plate armour'),
+					enrol('Ring', 'Ring'),
+				]),
 			],
 			[
-				{ name: 'Plate', target: 'armour_class', operator: 'override', amount: '18' },
-				{ name: 'Ring', target: 'armour_class', amount: '1', bonusType: 'item' },
+				{
+					name: 'Plate',
+					target: 'armour_class',
+					operator: 'override',
+					amount: '18',
+				},
+				{
+					name: 'Ring',
+					target: 'armour_class',
+					amount: '1',
+					bonusType: 'item',
+				},
 			],
 		);
 		const drawn = makeFieldResolver(
@@ -1178,7 +1328,12 @@ describe('the override where it lands', () => {
 				enrolling('items', [enrol('Plate', 'Plate armour')]),
 			],
 			[
-				{ name: 'Plate', target: 'armour_class', operator: 'override', amount: '18' },
+				{
+					name: 'Plate',
+					target: 'armour_class',
+					operator: 'override',
+					amount: '18',
+				},
 			],
 		);
 		expect(env.sheet('armour_class')).toBeUndefined();
@@ -1193,7 +1348,13 @@ describe('the override where it lands', () => {
 				{
 					id: 'armour_class',
 					values: {
-						self: { value: '15', display: { field: 'derived', scope: { value: '15' } } },
+						self: {
+							value: '15',
+							display: {
+								field: 'derived',
+								scope: { value: '15' },
+							},
+						},
 					},
 					resolver: (inner) => (field, scope, publishedName) =>
 						makeFieldResolver(
@@ -1202,7 +1363,12 @@ describe('the override where it lands', () => {
 								id: 'armour_class',
 								type: 'card',
 								label: 'AC',
-								position: { col: 1, row: 1, width: 1, height: 1 },
+								position: {
+									col: 1,
+									row: 1,
+									width: 1,
+									height: 1,
+								},
 								derived: 'value + mod.self',
 							} as ComponentConfig,
 							null,
@@ -1212,7 +1378,12 @@ describe('the override where it lands', () => {
 				enrolling('items', [enrol('Plate', 'Plate armour')]),
 			],
 			[
-				{ name: 'Plate', target: 'armour_class', operator: 'override', amount: '18' },
+				{
+					name: 'Plate',
+					target: 'armour_class',
+					operator: 'override',
+					amount: '18',
+				},
 			],
 		);
 		expect(env.sheet('armour_class')).toBe(18);
@@ -1252,7 +1423,14 @@ describe('mod.self', () => {
 				computed('armour_class', '10 + mod.self'),
 				enrolling('items', [enrol('Ring', 'Ring')]),
 			],
-			[{ name: 'Ring', target: 'armour_class', amount: '3', bonusType: 'item' }],
+			[
+				{
+					name: 'Ring',
+					target: 'armour_class',
+					amount: '3',
+					bonusType: 'item',
+				},
+			],
 		);
 		const resolve = makeFieldResolver(
 			{ formulaFields: ['derived'] },
@@ -1287,7 +1465,7 @@ describe('the third guard, and what it refuses', () => {
 			],
 		);
 
-	it('refuses an amount that reads another target\'s slot, asked cold', () => {
+	it("refuses an amount that reads another target's slot, asked cold", () => {
 		// No ring anywhere: `speed`'s own enrolment is a plain number. The walk
 		// still cannot answer `mod.speed` from inside itself.
 		expect(() => reading('mod.speed').sheet('mod.armour_class')).toThrow(
@@ -1328,7 +1506,11 @@ describe('sheetModifierInput', () => {
 					values: { self: {} },
 					formulas: ['10 + mod.self'],
 				},
-				{ id: 'passive_perception', values: { self: {} }, formulas: ['10'] },
+				{
+					id: 'passive_perception',
+					values: { self: {} },
+					formulas: ['10'],
+				},
 			],
 		);
 		expect(input.definitions.map((d) => d.name)).toEqual(['Ring']);
@@ -1415,7 +1597,10 @@ describe('stackModifiers: the two phases', () => {
 			phased(1, 'result', null, 'Blessing'),
 		]);
 		if ('error' in result) throw new Error('expected a result');
-		expect(result.lines.map((one) => one.applies)).toEqual(['value', 'result']);
+		expect(result.lines.map((one) => one.applies)).toEqual([
+			'value',
+			'result',
+		]);
 	});
 
 	it('reports an override in the result phase, whatever it stored', () => {
@@ -1450,5 +1635,312 @@ describe('stackModifiers: the two phases', () => {
 			expect(result.resultTotal, String(stored)).toBe(0);
 			expect(result.lines[0]?.applies, String(stored)).toBe('result');
 		}
+	});
+});
+
+/*
+ * A definition naming several values, through the walk
+ * (`docs/features/multi-change-definitions.md`).
+ *
+ * Sub-question 2 needs no code — `stackModifiers` is untouched, because two
+ * contributors from one definition are two contributors — so these cases exist to
+ * hold that claim rather than to drive anything new.
+ */
+describe('buildModifierTable over a definition naming several changes', () => {
+	const RING = define({
+		name: 'Ring of Protection',
+		changes: [
+			{ target: 'armour_class', amount: '1', bonusType: 'deflection' },
+			{ target: 'saving_throws', amount: '1', bonusType: 'deflection' },
+		],
+	});
+
+	it("stacks a definition's two changes independently at their own targets", () => {
+		const table = buildModifierTable(
+			[
+				{
+					id: 'items',
+					pushes: () => [
+						enrol('Ring of Protection', 'Ring'),
+						enrol('Cloak', 'Cloak of Protection'),
+					],
+				},
+			],
+			[
+				RING,
+				define({
+					name: 'Cloak',
+					target: 'armour_class',
+					amount: '2',
+					bonusType: 'deflection',
+				}),
+			],
+		);
+		// Two slots moved off one cell, and the armour class one contests with the
+		// cloak exactly as a separate definition would: best of a type wins, and the
+		// saving throws one is untouched by that contest.
+		const armour = table('armour_class');
+		expect('error' in armour ? null : armour.total).toBe(2);
+		const saves = table('saving_throws');
+		expect('error' in saves ? null : saves.total).toBe(1);
+		expect(
+			'error' in armour
+				? []
+				: armour.lines.map((line) => [
+						line.definition,
+						line.suppressed !== null,
+					]),
+		).toEqual([
+			['Ring of Protection', true],
+			['Cloak', false],
+		]);
+	});
+
+	it('contests two changes of one definition at a shared target exactly as two definitions do', () => {
+		/*
+		 * Sub-question 2's own case. There is no special case for sharing a parent:
+		 * the larger deflection bonus wins and the smaller is suppressed with the
+		 * ordinary reason, which is the thing that had to be true for
+		 * `parseModifierDefinitions` to be allowed to report a repeat and apply it
+		 * anyway.
+		 */
+		const table = buildModifierTable(
+			[{ id: 'items', pushes: () => [enrol('Twice', 'A ring')] }],
+			[
+				define({
+					name: 'Twice',
+					changes: [
+						{
+							target: 'armour_class',
+							amount: '1',
+							bonusType: 'deflection',
+						},
+						{
+							target: 'armour_class',
+							amount: '3',
+							bonusType: 'deflection',
+						},
+					],
+				}),
+			],
+		);
+		const armour = table('armour_class');
+		expect('error' in armour ? null : armour.total).toBe(3);
+		expect(
+			'error' in armour
+				? []
+				: armour.lines.map((line) => [line.amount, line.suppressed]),
+		).toEqual([
+			[1, 'a larger deflection bonus applies'],
+			[3, null],
+		]);
+	});
+
+	it("carries a different bonus type and a different phase on each of a definition's changes", () => {
+		/*
+		 * **Sub-question 2's own case, and the one every other fixture here is too
+		 * uniform to make.** Each change is a full, independent contributor: the
+		 * type and the phase are the *change's* rather than the definition's, so one
+		 * definition can push an item bonus at a score and a status bonus at a
+		 * derived number, and each contests with whatever else is already in that
+		 * slot rather than with its own sibling.
+		 */
+		const table = buildModifierTable(
+			[
+				{
+					id: 'items',
+					pushes: () => [
+						enrol('Mixed', 'A kit'),
+						enrol('Belt', 'Belt of Giant Strength'),
+					],
+				},
+			],
+			[
+				define({
+					name: 'Mixed',
+					changes: [
+						{
+							target: 'abilities.STR',
+							amount: '1',
+							bonusType: 'item',
+						},
+						{
+							target: 'armour_class',
+							amount: '1',
+							bonusType: 'status',
+							applies: 'result',
+						},
+					],
+				}),
+				define({
+					name: 'Belt',
+					target: 'abilities.STR',
+					amount: '2',
+					bonusType: 'item',
+				}),
+			],
+		);
+		// The item half contests with the Belt's item bonus and loses on size; the
+		// status half lands in the *result* phase at a different target and is
+		// untouched by any of it.
+		const strength = table('abilities.STR');
+		expect('error' in strength ? null : strength.total).toBe(2);
+		expect(
+			'error' in strength
+				? []
+				: strength.lines.map((line) => [
+						line.definition,
+						line.suppressed !== null,
+					]),
+		).toEqual([
+			['Mixed', true],
+			['Belt', false],
+		]);
+		const armour = table('armour_class');
+		expect('error' in armour ? null : armour.total).toBe(0);
+		expect('error' in armour ? null : armour.resultTotal).toBe(1);
+	});
+
+	it("carries two phases on one definition's two additions to one target", () => {
+		// The phase is the change's too, so a definition may raise the number behind
+		// a formula and the number the formula came to — two slots at one name,
+		// which contest separately because they are two different quantities.
+		const table = buildModifierTable(
+			[{ id: 'items', pushes: () => [enrol('Both ways', 'A charm')] }],
+			[
+				define({
+					name: 'Both ways',
+					changes: [
+						{
+							target: 'armour_class',
+							amount: '1',
+							bonusType: 'item',
+						},
+						{
+							target: 'armour_class',
+							amount: '2',
+							bonusType: 'item',
+							applies: 'result',
+						},
+					],
+				}),
+			],
+		);
+		const armour = table('armour_class');
+		expect('error' in armour ? null : armour.total).toBe(1);
+		expect('error' in armour ? null : armour.resultTotal).toBe(2);
+		// Neither suppresses the other: the best-of-a-type rule runs once per phase
+		// rather than across both.
+		expect(
+			'error' in armour
+				? []
+				: armour.lines.map((line) => line.suppressed),
+		).toEqual([null, null]);
+	});
+
+	it("adds a definition's typed change and its untyped one at one target", () => {
+		/*
+		 * **The case the ruling's own justification names**: "either both are wanted
+		 * (a deflection bonus and an untyped one at the same value) or neither is".
+		 * Untyped modifiers all stack, so the two add rather than contest — which is
+		 * what makes reporting the repeated target and applying it anyway a true
+		 * statement rather than a shrug.
+		 */
+		const table = buildModifierTable(
+			[{ id: 'items', pushes: () => [enrol('Both', 'A ring')] }],
+			[
+				define({
+					name: 'Both',
+					changes: [
+						{
+							target: 'armour_class',
+							amount: '1',
+							bonusType: 'deflection',
+						},
+						{ target: 'armour_class', amount: '2' },
+					],
+				}),
+			],
+		);
+		const armour = table('armour_class');
+		expect('error' in armour ? null : armour.total).toBe(3);
+		expect(
+			'error' in armour
+				? []
+				: armour.lines.map((line) => [line.type, line.suppressed]),
+		).toEqual([
+			['deflection', null],
+			[null, null],
+		]);
+	});
+
+	it('applies the changes it can where one amount will not resolve', () => {
+		// The refusal is keyed by target, so a broken amount refuses its own change's
+		// slot and leaves the definition's other one alone. Blanking an unrelated
+		// card because of an unrelated expression is the failure this prevents.
+		const table = buildModifierTable(
+			[{ id: 'items', pushes: () => [enrol('Half', 'A ring')] }],
+			[
+				define({
+					name: 'Half',
+					changes: [
+						{ target: 'armour_class', amount: '1' },
+						{ target: 'saving_throws', amount: 'no_such_name' },
+					],
+				}),
+			],
+		);
+		const armour = table('armour_class');
+		expect('error' in armour ? null : armour.total).toBe(1);
+		expect('error' in table('saving_throws')).toBe(true);
+	});
+
+	it('applies an override and an addition from one definition at two targets', () => {
+		// And the override carries no bonus type whatever the file says, which is
+		// the arithmetic's rule rather than the parser's report.
+		const table = buildModifierTable(
+			[{ id: 'items', pushes: () => [enrol('Plate and belt', 'A kit')] }],
+			[
+				define({
+					name: 'Plate and belt',
+					changes: [
+						{
+							target: 'armour_class',
+							operator: 'override',
+							amount: '18',
+							bonusType: 'item',
+						},
+						{
+							target: 'abilities.STR',
+							amount: '2',
+							bonusType: 'item',
+						},
+					],
+				}),
+			],
+		);
+		const armour = table('armour_class');
+		expect('error' in armour ? null : armour.override).toBe(18);
+		expect('error' in armour ? null : armour.lines[0]?.type).toBeNull();
+		const strength = table('abilities.STR');
+		expect('error' in strength ? null : strength.total).toBe(2);
+	});
+
+	it('switches off every change of a definition whose condition is false', () => {
+		const table = buildModifierTable(
+			[
+				{
+					id: 'items',
+					pushes: () => [
+						enrol('Ring of Protection', 'Ring', { Worn: false }),
+					],
+				},
+			],
+			[define({ ...RING, when: 'Worn' })],
+		);
+		const armour = table('armour_class');
+		const saves = table('saving_throws');
+		expect('error' in armour ? null : armour.lines).toEqual([]);
+		expect('error' in saves ? null : saves.lines).toEqual([]);
 	});
 });

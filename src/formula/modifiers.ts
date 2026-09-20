@@ -56,7 +56,7 @@ import {
 	Contribution,
 	definitionTable,
 	Enrolment,
-	resolveEnrolment,
+	resolveEnrolments,
 } from './modifier-definitions';
 
 /**
@@ -207,7 +207,7 @@ export interface Contributor extends Contribution {
 	/**
 	 * The modifier, as the layout spells its name, or absent where it has none.
 	 *
-	 * Not the push's spelling: `resolveEnrolment` has already matched the cell's
+	 * Not the push's spelling: `resolveEnrolments` has already matched the cell's
 	 * text against the layout's, so the definition it found is the canonical name
 	 * and is what every other surface shows.
 	 *
@@ -309,50 +309,66 @@ export function buildModifierTable(
 				// inventory with a modifier column most rows are blank, and that is
 				// the ordinary case rather than a degenerate one.
 				if (push.part.trim() === '') continue;
-				const found = resolveEnrolment(table, push.part, push.row, calls);
 				/*
-				 * A stray reference, an inactive row and an unfinished typed effect
-				 * all contribute nothing and none of them is an error: the first is
-				 * §4.2's "rendered, not corrected", the second is the condition doing
-				 * its job, and the third is a cell the reader has not finished
-				 * typing. All three are said at the row, which is where the reader is
-				 * looking, and none of them may refuse a slot — an unfinished effect
-				 * that refused would blank a card mid-keystroke.
+				 * **One part, as many enrolments as its modifier names changes.** A
+				 * definition moving two values pushes at two slots off one cell, and
+				 * every rule below is per enrolment rather than per part — including
+				 * the refusal, which the map already keys by target, so **an amount
+				 * that will not resolve refuses only its own change's target.**
+				 * Refusing every target a definition names because one of its amounts
+				 * is broken would blank an unrelated card, which is the same failure
+				 * the condition-before-amount ordering already exists to prevent.
 				 */
-				if (
-					found.kind === 'unknown' ||
-					found.kind === 'inactive' ||
-					found.kind === 'unfinished'
-				) {
-					continue;
-				}
-				const target = found.fields.target;
-				if (target === '') continue;
-				if (found.kind === 'unreadable') {
-					// The first refusal wins, so the message names one row rather
-					// than however many the reader has to read past.
-					if (!refused.has(target)) {
-						refused.set(target, {
-							label: push.row.label,
-							reason: found.reason,
-						});
+				for (const found of resolveEnrolments(
+					table,
+					push.part,
+					push.row,
+					calls,
+				)) {
+					/*
+					 * A stray reference, an inactive row and an unfinished typed effect
+					 * all contribute nothing and none of them is an error: the first is
+					 * §4.2's "rendered, not corrected", the second is the condition doing
+					 * its job, and the third is a cell the reader has not finished
+					 * typing. All three are said at the row, which is where the reader is
+					 * looking, and none of them may refuse a slot — an unfinished effect
+					 * that refused would blank a card mid-keystroke.
+					 */
+					if (
+						found.kind === 'unknown' ||
+						found.kind === 'inactive' ||
+						found.kind === 'unfinished'
+					) {
+						continue;
 					}
-					continue;
+					const target = found.fields.target;
+					if (target === '') continue;
+					if (found.kind === 'unreadable') {
+						// The first refusal wins, so the message names one row rather
+						// than however many the reader has to read past.
+						if (!refused.has(target)) {
+							refused.set(target, {
+								label: push.row.label,
+								reason: found.reason,
+							});
+						}
+						continue;
+					}
+					const line: Contributor = {
+						...found.contribution,
+						label: push.row.label,
+						source: push.source,
+						// The layout's name where the part named one, and nothing where
+						// the row typed its own: a push carries no tier and neither does
+						// the arithmetic, so this is the only place the two differ.
+						...(found.definition === null
+							? {}
+							: { definition: found.definition.name }),
+					};
+					const already = applied.get(target);
+					if (already === undefined) applied.set(target, [line]);
+					else already.push(line);
 				}
-				const line: Contributor = {
-					...found.contribution,
-					label: push.row.label,
-					source: push.source,
-					// The layout's name where the part named one, and nothing where
-					// the row typed its own: a push carries no tier and neither does
-					// the arithmetic, so this is the only place the two differ.
-					...(found.definition === null
-						? {}
-						: { definition: found.definition.name }),
-				};
-				const already = applied.get(target);
-				if (already === undefined) applied.set(target, [line]);
-				else already.push(line);
 			}
 		}
 		return { applied, refused };
@@ -633,7 +649,7 @@ export function suppressionOf(
  * is applying, and what to say if it is not.
  *
  * Here rather than in `sheet.ts` because both halves of the answer are this
- * file's: `resolveEnrolment` says what the row comes to and `suppressionOf` says
+ * file's: `resolveEnrolments` says what the row comes to and `suppressionOf` says
  * what the slot did with it, and a caller composing them would be a second place
  * holding the rule that a suppressed contribution is not applying.
  *
@@ -651,6 +667,7 @@ export function enrolmentOutcome(
 		// it is about the *name* rather than about a value.
 		return {
 			definition: null,
+			change: null,
 			typed: null,
 			target: '',
 			targetLabel: '',
@@ -660,9 +677,10 @@ export function enrolmentOutcome(
 			suppressed: null,
 		};
 	}
-	const { definition, typed, fields } = found;
+	const { definition, change, typed, fields } = found;
 	const named = {
 		definition,
+		change,
 		typed,
 		target: fields.target,
 		targetLabel: label(fields.target),

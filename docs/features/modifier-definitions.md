@@ -2284,14 +2284,16 @@ changed their mind", and `check-menu.ts` never appears in the history at all.
 - **A priority field, or a phase field.** Not deferred so much as unnecessary, and
   asserted rather than claimed: with two phases each reducing to one number the result
   is order-independent, and the shuffle test covers both.
-- **A modifier holding more than one change.** One target, one operator, one amount,
-  from either tier. An item that changes two values is two parts of one cell. **Wave 3
-  takes the last of the pressure off this**: wave 2 left it open with the note that a
-  cell holding a list had removed the *surface* reason for wanting it, and typing an
-  effect removes the authoring reason too — two typed parts in one cell is two lines
-  in one form, which is where an author would have wanted the pair anyway. What is left
-  is economy in the layout editor for a definition used by many rows, which is a real
-  design and an open item, not a gap.
+- **A modifier holding more than one change.** ~~One target, one operator, one
+  amount, from either tier.~~ **Done, and this row is closed**
+  (`docs/features/multi-change-definitions.md`). The open item this row ended on —
+  "economy in the layout editor for a definition used by many rows" — was taken: a
+  definition grows a nested `changes` list, each entry carrying the five members it
+  used to carry flat, with `when` kept once above them so every change is on or off
+  together. A definition with no `changes` key goes on reading its flat members, so
+  nothing written under this row's rule migrated. What stays true of the *row* tier
+  is everything this row said about it: a cell part is still one change, and an item
+  that changes two values typed on a row is still two parts of one cell.
 - **Refusing a second modifier column.** One is enough and the editor says so; the
   sheet refuses nothing, because `configError` would take the table and every modifier
   its rows apply down with it.

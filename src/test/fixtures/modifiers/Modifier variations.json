@@ -72,6 +72,20 @@
 			"hideNote": true
 		},
 		{
+			"id": "saving_throws",
+			"type": "card",
+			"label": "Saving throws",
+			"position": {
+				"col": 1,
+				"row": 9,
+				"width": 3,
+				"height": 1
+			},
+			"derived": "abilities.CON + mod.self",
+			"hideValue": true,
+			"hideNote": true
+		},
+		{
 			"id": "skills",
 			"type": "table",
 			"label": "Skills",
@@ -182,9 +196,18 @@
 		},
 		{
 			"name": "Ring of Protection",
-			"target": "armour_class",
-			"amount": "1",
-			"bonusType": "item"
+			"changes": [
+				{
+					"target": "armour_class",
+					"amount": "1",
+					"bonusType": "item"
+				},
+				{
+					"target": "saving_throws",
+					"amount": "1",
+					"bonusType": "item"
+				}
+			]
 		},
 		{
 			"name": "Bracers of Defence +1",

@@ -9,7 +9,7 @@ value this row changes, whether it adds or sets, by how much, its bonus type, an
 when it applies. A change typed here can be **saved to the layout** to reuse it.
 Nothing about a *named* change is in this note — only which changes each row
 applies — so editing one in the layout editor moves every character using it.
-**Twelve things are worth looking at, and five of them nothing outside the app can
+**Thirteen things are worth looking at, and five of them nothing outside the app can
 show**: a form opened by a press, that form under a finger, a layout file written
 from this sheet, a rename propagating, and a wikilink that hovers.
 
@@ -81,6 +81,18 @@ from this sheet, a rename propagating, and a wikilink that hovers.
     The `Cloak of Displacement` line on `Cloak +1` names a real modifier aimed at a
     value that does not take modifiers, so it says so and says that changing it is a
     layout edit. Neither is corrected, and neither is an error.
+
+13. **One modifier, two numbers, named once.** `Ring of Protection` is a single
+    definition naming **two changes** — item +1 to armour class and item +1 to
+    saving throws — and the rows that apply it say its name once, exactly as they
+    did when it moved one value. Press either row's glyph: the line reads
+    `Ring of Protection · Armour class — item +1` with `Saving throws — item +1`
+    indented under it, one name and two sentences. Saving throws reads **+2**, its
+    breakdown names the ring, and the armour class breakdown still names it too.
+    In the layout editor the definition's **Changes** is a small list with a
+    **Value** picker per line and one **Only when** beneath them all, while the
+    other nine definitions still draw one line each — the flat spelling and the
+    nested one side by side, in one file.
 
 The full fifteen steps, including the ones that change the layout, are in
 `docs/features/modifier-definitions.md` in the plugin repository.

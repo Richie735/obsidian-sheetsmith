@@ -36,7 +36,13 @@ import {
 } from '../formula/modifier-targets';
 import { Layout } from './layout';
 import { unspellableName } from './modifier-cell';
-import { ModifierDefinitionView, operatorOf, phaseOf } from '../types';
+import {
+	MODIFIER_CHANGE_KEYS,
+	ModifierChangeView,
+	ModifierDefinitionView,
+	operatorOf,
+	phaseOf,
+} from '../types';
 import { expressionProblem } from '../formula/expression';
 
 /** Something wrong with one modifier definition, or with the list. */
@@ -72,6 +78,13 @@ type RawDefinition = Record<string, unknown>;
 function text(raw: RawDefinition, key: string): string {
 	const value = raw[key];
 	return typeof value === 'string' ? value.trim() : '';
+}
+
+/** Quote a list of keys as an English series: `"a"`, `"a" and "b"`, `"a", "b" and "c"`. */
+function spelled(keys: readonly string[]): string {
+	const quoted = keys.map((key) => `"${key}"`);
+	if (quoted.length <= 1) return quoted.join('');
+	return `${quoted.slice(0, -1).join(', ')} and ${quoted[quoted.length - 1]}`;
 }
 
 /**
@@ -177,52 +190,148 @@ export function parseModifierDefinitions(
 		}
 		seen.add(name);
 
-		const target = text(raw, 'target');
-		const operator = operatorOf(raw);
-		const amount = text(raw, 'amount');
-		const bonusType = text(raw, 'bonusType');
-		/*
-		 * **Anything but the word `result` is the value phase** (SPEC §5), which is
-		 * what keeps a hand-edited layout safe: a typo leaves the modifier doing
-		 * what it did before phases existed rather than moving it somewhere the
-		 * author did not ask for. A stray spelling is reported below and dropped to
-		 * the default, on §10's "rendered, not corrected" — the layout file keeps
-		 * whatever was typed.
-		 */
-		const storedPhase = text(raw, 'applies');
-		const applies = phaseOf(raw);
 		const when = text(raw, 'when');
 
-		if (target === '') {
-			problems.push({
-				definition: name,
-				message: `"${name}" changes nothing, because it names no value. Choose one under Changes.`,
-			});
-		} else if (!published.has(target)) {
-			problems.push({
-				definition: name,
-				message: `"${name}" changes "${target}", which this layout publishes no value under. Choose one it does, or correct the spelling.`,
-			});
-		} else if (!accepting.has(target)) {
-			// dnd5e#3900 caught in the editor rather than on a sheet: an effect
-			// aimed at a value whose own formula reads no slot adds nothing and
-			// says nothing. Reported per definition, with the fix in it.
-			problems.push({
-				definition: name,
-				message: `"${target}" reads no modifier, so "${name}" changes nothing. Add "+ mod.self" to that value's own formula.`,
-			});
+		/*
+		 * **The two spellings, reduced to one here and nowhere else.** A definition
+		 * with a `changes` list names as many values as it holds; one without reads
+		 * the five flat members off itself, which is what every definition written
+		 * before this existed is and what one still round-trips as.
+		 *
+		 * A non-object entry in the list becomes a blank change rather than being
+		 * dropped, so it earns the two problems a definition naming no value already
+		 * earns instead of vanishing from a count the author is reading.
+		 */
+		const listed = Array.isArray(raw.changes)
+			? (raw.changes as readonly unknown[]).map((entry) =>
+					typeof entry === 'object' && entry !== null
+						? (entry as RawDefinition)
+						: {},
+				)
+			: null;
+		if (listed !== null) {
+			/*
+			 * **Reported as ignored rather than deleted**, which is SPEC §10's
+			 * "rendered, not corrected" applied to a hand-edited layout: the author's
+			 * bytes stay and they are told which half the sheet is reading. First of
+			 * this definition's problems, because it is the one that explains why the
+			 * others name values the author may not have expected.
+			 */
+			const stray = MODIFIER_CHANGE_KEYS.filter((key) => raw[key] !== undefined);
+			if (stray.length > 0) {
+				problems.push({
+					definition: name,
+					message: `"${name}" lists its changes, so ${spelled(stray)} beside the list ${stray.length === 1 ? 'is' : 'are'} ignored. Delete ${stray.length === 1 ? 'it' : 'them'}, or delete the list.`,
+				});
+			}
+		}
+		/*
+		 * `changes: []` reads as a definition that names no value, which is what one
+		 * with a blank target already is — so it becomes a single blank change and
+		 * earns that definition's existing two problems. It also keeps the list
+		 * non-empty for everything downstream, which is what lets one part always
+		 * resolve to at least one enrolment.
+		 */
+		const spelt: readonly RawDefinition[] =
+			listed === null ? [raw] : listed.length === 0 ? [{}] : listed;
+		/** Whether a message has to say *which* change it is about. */
+		const several = spelt.length > 1;
+
+		const changes: ModifierChangeView[] = spelt.map((one) => {
+			const target = text(one, 'target');
+			const operator = operatorOf(one);
+			const applies = phaseOf(one);
+			const bonusType = text(one, 'bonusType');
+			return {
+				target,
+				operator,
+				amount: text(one, 'amount'),
+				...(bonusType !== '' ? { bonusType } : {}),
+				// Omitted for the value phase, so a layout gains a key only where it
+				// means something other than the default (PATTERNS §8).
+				...(applies === 'result' && operator !== 'override' ? { applies } : {}),
+				/*
+				 * The reader's own words for the value, wherever there are any.
+				 *
+				 * The accepting map first, since it is the same derivation and already in
+				 * hand; then the published one, which is the case the sheet had wrong —
+				 * a definition aimed at a value that reads no modifier is *published*, so
+				 * it has a label, and falling straight through to the identifier put
+				 * `passive_perception` in a popover on a player's inventory row. The bare
+				 * name is left only for a target this layout does not publish at all,
+				 * where there is nothing else it could be called, and the definition's own
+				 * name for a change with no target at all.
+				 */
+				targetLabel:
+					accepting.get(target) ??
+					published.get(target) ??
+					(target === '' ? name : target),
+			};
+		});
+
+		/*
+		 * **The problems, in the order a one-change definition already reports
+		 * them**: what it changes, what by, when, and then the two refusals an
+		 * override earns. A definition naming several values reports each kind for
+		 * every change before moving on, rather than every kind for each change,
+		 * which is what keeps a flat layout's report byte-identical — and costs
+		 * nothing, because every message below names its own target the moment
+		 * there is more than one to tell apart.
+		 */
+		for (const change of changes) {
+			const { target } = change;
+			if (target === '') {
+				problems.push({
+					definition: name,
+					message: several
+						? `"${name}" has a change that names no value. Choose one under Value, or remove the change.`
+						: `"${name}" changes nothing, because it names no value. Choose one under Value.`,
+				});
+			} else if (!published.has(target)) {
+				problems.push({
+					definition: name,
+					message: `"${name}" changes "${target}", which this layout publishes no value under. Choose one it does, or correct the spelling.`,
+				});
+			} else if (!accepting.has(target)) {
+				// dnd5e#3900 caught in the editor rather than on a sheet: an effect
+				// aimed at a value whose own formula reads no slot adds nothing and
+				// says nothing. Reported per change, with the fix in it.
+				problems.push({
+					definition: name,
+					message: several
+						? `"${name}" changes "${target}", which reads no modifier, so that change does nothing. Add "+ mod.self" to that value's own formula.`
+						: `"${target}" reads no modifier, so "${name}" changes nothing. Add "+ mod.self" to that value's own formula.`,
+				});
+			}
 		}
 
-		if (amount === '') {
-			problems.push({
-				definition: name,
-				message: `"${name}" has no amount, so it changes nothing. Give it an expression under Amount.`,
-			});
-		} else if (!parses(amount)) {
-			problems.push({
-				definition: name,
-				message: `"${name}" has an amount that is not an expression: "${amount}".`,
-			});
+		for (const change of changes) {
+			const { amount, target } = change;
+			/*
+			 * **A change with no value is not also told it has no amount**, where
+			 * there are several to tell apart: the line above already says that change
+			 * does nothing and names the fix, and a second sentence about the same
+			 * line quoting an empty target is `docs/UI.md` §9's two answers to one
+			 * question. A definition with *one* change still reports both, because
+			 * there the two sentences are about the definition rather than about a
+			 * line, and a flat layout's report must not move.
+			 */
+			if (several && target === '') continue;
+			if (amount === '') {
+				problems.push({
+					definition: name,
+					message: several
+						? `"${name}" has no amount for "${target}", so that change does nothing. Give it an expression under Amount.`
+						: `"${name}" has no amount, so it changes nothing. Give it an expression under Amount.`,
+				});
+			} else if (!parses(amount)) {
+				problems.push({
+					definition: name,
+					message: several
+						? `"${name}" has an amount for "${target}" that is not an expression: "${amount}".`
+						: `"${name}" has an amount that is not an expression: "${amount}".`,
+				});
+			}
 		}
 
 		if (when !== '' && !parses(when)) {
@@ -232,58 +341,75 @@ export function parseModifierDefinitions(
 			});
 		}
 
-		if (storedPhase !== '' && storedPhase !== 'value' && storedPhase !== 'result') {
-			problems.push({
-				definition: name,
-				message: `"${name}" applies to "${storedPhase}", which is not a phase. Use "value" to change the number behind the formula, or "result" to change what the formula came to.`,
-			});
-		} else if (applies === 'result' && operator === 'override') {
-			// An override already replaces the published number, which is the result
-			// phase by construction; saying so a second way would be two spellings
-			// for one behaviour.
-			problems.push({
-				definition: name,
-				message: `"${name}" sets a value, so it always applies to the result and "applies" is ignored. Clear it, or make this modifier add to the value instead.`,
-			});
-		}
+		spelt.forEach((one, at) => {
+			const change = changes[at] as ModifierChangeView;
+			const operator = operatorOf(one);
+			/*
+			 * **Anything but the word `result` is the value phase** (SPEC §5), which is
+			 * what keeps a hand-edited layout safe: a typo leaves the modifier doing
+			 * what it did before phases existed rather than moving it somewhere the
+			 * author did not ask for. A stray spelling is reported here and dropped to
+			 * the default, on §10's "rendered, not corrected" — the layout file keeps
+			 * whatever was typed.
+			 */
+			const storedPhase = text(one, 'applies');
+			const bonusType = text(one, 'bonusType');
+			const which = several ? `"${change.target}"` : 'a value';
+			const other = several ? 'that change' : 'this modifier';
+			if (storedPhase !== '' && storedPhase !== 'value' && storedPhase !== 'result') {
+				problems.push({
+					definition: name,
+					message: several
+						? `"${name}" applies "${change.target}" to "${storedPhase}", which is not a phase. Use "value" to change the number behind the formula, or "result" to change what the formula came to.`
+						: `"${name}" applies to "${storedPhase}", which is not a phase. Use "value" to change the number behind the formula, or "result" to change what the formula came to.`,
+				});
+			} else if (phaseOf(one) === 'result' && operator === 'override') {
+				// An override already replaces the published number, which is the result
+				// phase by construction; saying so a second way would be two spellings
+				// for one behaviour.
+				problems.push({
+					definition: name,
+					message: `"${name}" sets ${which}, so it always applies to the result and "applies" is ignored. Clear it, or make ${other} add to the value instead.`,
+				});
+			}
 
-		if (bonusType !== '' && operator === 'override') {
-			// Ignored in the arithmetic rather than refused, because overrides do
-			// not contest by type: the highest wins whatever either was called.
+			if (bonusType !== '' && operator === 'override') {
+				// Ignored in the arithmetic rather than refused, because overrides do
+				// not contest by type: the highest wins whatever either was called.
+				problems.push({
+					definition: name,
+					message: `"${name}" sets ${which}, so its bonus type "${bonusType}" is ignored: overrides are not contested by type. Clear it, or make ${other} add to the value instead.`,
+				});
+			}
+		});
+
+		/*
+		 * **Reported and still applied**, which is the ruling and not a softening.
+		 * Two changes at one target are perfectly addressable and perfectly
+		 * arithmetic — either both are wanted, a deflection bonus and an untyped one
+		 * at the same value, or neither is — and the stacking rule says something
+		 * true either way. Deliberately *not* the collapse-to-first-appearance
+		 * treatment a repeated definition *name* gets, where the second is dropped
+		 * because a cell storing a name could not tell them apart.
+		 */
+		const twice = new Set<string>();
+		const counted = new Set<string>();
+		for (const change of changes) {
+			if (change.target === '') continue;
+			if (counted.has(change.target)) twice.add(change.target);
+			counted.add(change.target);
+		}
+		for (const target of twice) {
 			problems.push({
 				definition: name,
-				message: `"${name}" sets a value, so its bonus type "${bonusType}" is ignored: overrides are not contested by type. Clear it, or make this modifier add to the value instead.`,
+				message: `"${name}" changes "${target}" twice. Both apply and contest as two separate modifiers would. Remove one, or point it at a different value.`,
 			});
 		}
 
 		definitions.push({
 			name,
-			target,
-			operator,
-			amount,
-			...(bonusType !== '' ? { bonusType } : {}),
-			// Omitted for the value phase, so a layout gains a key only where it
-			// means something other than the default (PATTERNS §8).
-			...(applies === 'result' && operator !== 'override'
-				? { applies }
-				: {}),
 			...(when !== '' ? { when } : {}),
-			/*
-			 * The reader's own words for the value, wherever there are any.
-			 *
-			 * The accepting map first, since it is the same derivation and already in
-			 * hand; then the published one, which is the case the sheet had wrong —
-			 * a definition aimed at a value that reads no modifier is *published*, so
-			 * it has a label, and falling straight through to the identifier put
-			 * `passive_perception` in a popover on a player's inventory row. The bare
-			 * name is left only for a target this layout does not publish at all,
-			 * where there is nothing else it could be called, and the definition's own
-			 * name for a definition with no target at all.
-			 */
-			targetLabel:
-				accepting.get(target) ??
-				published.get(target) ??
-				(target === '' ? name : target),
+			changes,
 		});
 	}
 

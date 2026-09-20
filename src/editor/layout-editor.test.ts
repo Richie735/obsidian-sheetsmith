@@ -2977,7 +2977,7 @@ describe('a layout with modifier definitions', () => {
 		 * short enough to read.
 		 */
 		await openLayoutPanel(modifying('10 + mod.self'));
-		const picker = control<HTMLSelectElement>(harness, 'modifier-Ring of Protection-target');
+		const picker = control<HTMLSelectElement>(harness, 'modifier-Ring of Protection-0-target');
 		expect(Array.from(picker.options).map((one) => one.value)).toEqual([
 			'',
 			'armour',
@@ -2989,7 +2989,7 @@ describe('a layout with modifier definitions', () => {
 		// The language's `if` is lazy, so an observed set would report this as
 		// accepting nothing on a character whose item is stowed.
 		await openLayoutPanel(modifying('if(worn, 10 + mod.self, 10)'));
-		const picker = control<HTMLSelectElement>(harness, 'modifier-Ring of Protection-target');
+		const picker = control<HTMLSelectElement>(harness, 'modifier-Ring of Protection-0-target');
 		expect(Array.from(picker.options).map((one) => one.value)).toContain('armour');
 	});
 
@@ -3005,16 +3005,16 @@ describe('a layout with modifier definitions', () => {
 		await openLayoutPanel(modifying('10 + mod.self'));
 		const operator = control<HTMLSelectElement>(
 			harness,
-			'modifier-Ring of Protection-operator',
+			'modifier-Ring of Protection-0-operator',
 		);
 		expect(Array.from(operator.options).map((one) => one.textContent)).toEqual([
 			'Adds to',
 			'Sets',
 		]);
-		expect(has(harness, 'modifier-Ring of Protection-bonus-type')).toBe(true);
+		expect(has(harness, 'modifier-Ring of Protection-0-bonus-type')).toBe(true);
 		choose(operator, 'override');
 		await settle(harness.pane);
-		expect(has(harness, 'modifier-Ring of Protection-bonus-type')).toBe(false);
+		expect(has(harness, 'modifier-Ring of Protection-0-bonus-type')).toBe(false);
 		// And the layout says so, with the default left out of the file.
 		expect((await harness.stored()).modifiers?.[0]?.operator).toBe('override');
 	});
@@ -3063,7 +3063,7 @@ describe('a layout with modifier definitions', () => {
 
 	it('writes the amount and the condition, and omits a blank condition', async () => {
 		await openLayoutPanel(modifying('10 + mod.self'));
-		type(control<HTMLInputElement>(harness, 'modifier-Ring of Protection-amount'), '2');
+		type(control<HTMLInputElement>(harness, 'modifier-Ring of Protection-0-amount'), '2');
 		await settle(harness.pane);
 		expect((await harness.stored()).modifiers?.[0]?.amount).toBe('2');
 		type(control<HTMLInputElement>(harness, 'modifier-Ring of Protection-when'), 'Worn');

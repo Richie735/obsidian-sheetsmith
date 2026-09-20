@@ -247,6 +247,18 @@ const OPEN_MIXED_GLYPH =
 	"press=.sheetsmith-table-modifier-button%5Btitle*%3D'item%20%2B1%20%28changes%20nothing%29'%5D";
 const OPEN_MIXED_FORM = `${OPEN_MIXED_GLYPH}&press=.sheetsmith-panel-line%5Bdata-sheetsmith-part%3D'typed'%5D`;
 
+/**
+ * The `Bear charm` row's glyph, and then its one line.
+ *
+ * Named by the count in its accessible name, which is the one thing only a row
+ * whose modifier moves several values says — a fixture growing a row above it
+ * cannot move that, where an `:nth-child` would. `*=` rather than `=` because the
+ * count is the stable half and the label before it is the column's, which
+ * `hideHeading` leaves the shot unable to assert.
+ */
+const OPEN_MULTI_FORM =
+	"press=.sheetsmith-table-modifier-button%5Baria-label*%3D'0%20applying%2C%202%20changing%20nothing'%5D&press=.sheetsmith-panel-line";
+
 
 /*
  * A Track that lets the character add rows, and the three states only a press
@@ -689,6 +701,58 @@ const DEFAULTS = [
 		query:
 			"surface=sheet&theme=dark&bar=off&press=.sheetsmith-table-modifier-button%5Btitle%3D'Armour%20class%20%E2%80%94%20sets%20to%2018'%5D&press=.sheetsmith-panel-line",
 		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * **A part naming a modifier that moves two values**, which is three strings
+		 * no other view can reach (`docs/features/multi-change-definitions.md`): the
+		 * line's indented continuation under one name, each change's own second line,
+		 * and — once the line is open — the fields block's `changes 2 values`
+		 * sentence and the `(2 values)` the **Modifier** picker's chosen option hangs
+		 * on the name — beside it rather than after the outcome, which is where a
+		 * `<select>`'s clipping starts from.
+		 *
+		 * **The row it presses moves no number**, which is what let it be added at
+		 * all. `Blessing of the Bear` carries `when: 'Worn'` and the `Bear charm`
+		 * row leaves Worn off, so every arithmetic assertion and every measured
+		 * comment about this sheet is untouched while the panel still draws the
+		 * whole shape. The row exists for this and nothing else, which is
+		 * `sheet-modifier-form-repeat`'s own arrangement one state over.
+		 *
+		 * Named by its accessible name rather than by an `:nth-child`: the count is
+		 * the one thing only a multi-change row says, so a fixture growing a row
+		 * above it cannot move the selector.
+		 */
+		name: 'sheet-modifier-form-multi',
+		query: `surface=sheet&theme=light&bar=off&${OPEN_MULTI_FORM}`,
+		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * The same state at a phone's *container* width, in the dark palette.
+		 *
+		 * **And it does not narrow the panel, which is worth saying rather than
+		 * hoping otherwise.** It was added to catch an indented hanging block
+		 * wrapping under its own indent, and it cannot: the panel hangs off
+		 * `document.body` and is capped at `min(500px, …)` of *viewport*, so it
+		 * draws at the same 390px here as at 1400 — which `docs/UI.md` §12 already
+		 * records twice, once for the panel not following the reader's text size
+		 * and once for headless Chrome refusing a viewport under 500px. What this
+		 * does photograph is the two-line part in the other palette against a narrow
+		 * sheet.
+		 *
+		 * **Driving the wrap needs `Emulation.setDeviceMetricsOverride` over the
+		 * DevTools protocol, not `--window-size`**, which is the same instrument
+		 * three backlog rows already wait on — the sub-500px floor,
+		 * `prefers-contrast: more`, and the bad-drag border that exists only during
+		 * a drag. So it joins that queue rather than being a gap of its own, and the
+		 * expectation this view was added under was wrong about the mechanism as
+		 * well as about the outcome.
+		 */
+		name: 'sheet-modifier-form-multi-narrow',
+		query: `surface=sheet&theme=dark&width=380&bar=off&${OPEN_MULTI_FORM}`,
+		// Kept equal to `sheet-modifier-form-narrow`'s own frame, for its reason.
+		size: '520,11800',
 	},
 	{
 		/*
@@ -1304,8 +1368,8 @@ const DEFAULTS = [
 		 * split each definition's detail across two rows: ten definitions, each a
 		 * row plus a six-control detail line over two lines, and **the problem
 		 * report under them is the whole point of the view** — it is the only thing
-		 * explaining why one `Changes` select shows a bare `passive_perception`
-		 * where the other nine show reader-facing labels.
+		 * explaining why one **Value** select shows a bare `passive_perception`
+		 * where the others show reader-facing labels.
 		 *
 		 * **Raised again for the Promoted fields list, and the re-measurement found
 		 * the old number already stale.** Measured as the panel's own bottom in
@@ -1320,8 +1384,24 @@ const DEFAULTS = [
 		 * for. A frame that is too short crops the bottom of the panel, which looks
 		 * identical to a panel that ends there — so the number goes stale silently
 		 * and the only way to notice is to measure rather than to look.
+		 *
+		 * **Raised again for a definition's Changes list**
+		 * (`docs/features/multi-change-definitions.md`), and this one is the largest
+		 * single jump the number has taken: every definition gained an **Add change**
+		 * footer and moved **Only when** onto a line of its own, and the list gained
+		 * an eleventh entry — the one spelled with a `changes` list, which is the
+		 * state this view now exists to show. Measured the way this comment asks: the
+		 * panel's own bottom in page coordinates is 4718 against the 3484 recorded
+		 * above; 4910 once each list gained its own **Changes** heading; **4980**
+		 * once the list gained a closing rule and the field's description grew a
+		 * sentence about a modifier moving several values. 5080 clears it with the
+		 * same small margin.
+		 *
+		 * Three re-measurements in one feature is the number worth noticing, and
+		 * every one of them was a line of chrome per entry across eleven entries.
+		 * The instruction above is the whole defence: measure, never estimate.
 		 */
-		size: '1400,3550',
+		size: '1400,5080',
 	},
 	{
 		/*
@@ -1342,7 +1422,7 @@ const DEFAULTS = [
 		// page and reflows nothing, so the two frames move together whenever the
 		// panel's content does — as they did not for a while, which is why this one
 		// used to carry the finding the other view's frame was too short to show.
-		size: '1400,3550',
+		size: '1400,5080',
 		flags: ['--force-high-contrast'],
 	},
 	{
@@ -1380,7 +1460,12 @@ const DEFAULTS = [
 		// and the new list is a two-field row that does not wrap either — so the
 		// panel is only slightly taller narrow than wide rather than a different
 		// shape. 3600 clears both with the same small margin.
-		size: '1210,3600',
+		//
+		// Re-measured again for a definition's Changes list, and again after its
+		// closing rule: 4996 here against the wide view's 4980, so the relationship
+		// still holds and 5080 clears both
+		// (`docs/features/multi-change-definitions.md`).
+		size: '1210,5080',
 	},
 	{
 		// The narrowest split there is, bounded. 1210 of window is 1184 of pane —

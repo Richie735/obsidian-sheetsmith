@@ -15,6 +15,7 @@ import {
 	ComponentConfig,
 	EDITOR_OWNED_KEYS,
 	isContainer,
+	MODIFIER_CHANGE_KEYS,
 	placesChildren,
 	ScopeEntry,
 } from '../types';
@@ -352,23 +353,29 @@ describe('component registry', () => {
 		expect(declared).not.toContain('definition:');
 	});
 
-	it('declares a typed effect as a definition minus its name, and no more', () => {
+	it('declares a typed effect as a change plus a condition, and no more', () => {
 		/*
-		 * **The field list, held once.** `TypedEffect` and `ModifierDefinition` are
-		 * deliberately two interfaces of the same shape rather than one expressed as
-		 * `Omit<ModifierDefinition, 'name'>` — because §7's edge is precisely that
-		 * being *nameable* is what separates them, and naming one in terms of the
-		 * other invites the next feature to give a typed effect a name in place.
+		 * **The field list, held once, across three interfaces now.**
+		 * `ModifierChange`, `TypedEffect` and `ModifierDefinition` are deliberately
+		 * three of nearly one shape rather than any of them expressed in terms of
+		 * another — because §7's edge is precisely that being *nameable* is what
+		 * separates a definition from an effect, and `TypedEffect = ModifierChange &
+		 * { when?: string }` would make a typed effect "one change of a definition
+		 * with no name yet", which is the promotion-in-place §7 forbids.
 		 *
-		 * The cost of that decision is that the two can drift, and this is what
-		 * stops them: a member added to one and not the other fails here rather than
-		 * as a modifier that behaves differently depending on which file it came out
-		 * of.
+		 * The cost of that decision is that they can drift, and this is what stops
+		 * them: a member added to one and not the others fails here rather than as a
+		 * modifier that behaves differently depending on which file it came out of.
+		 *
+		 * `changes` is the one member that is a definition's alone, because it is
+		 * what *holds* the others — a change with changes of its own is not a shape
+		 * this model has.
 		 */
 		const members = (name: string) =>
 			[...declaration(TYPES, name).matchAll(/^\t(\w+)\??:/gm)].map(
 				(match) => match[1],
 			);
+		const change = members('ModifierChange');
 		const typed = members('TypedEffect');
 		/*
 		 * **The floor first**, because without it this case passes on two empty
@@ -385,9 +392,23 @@ describe('component registry', () => {
 			'applies',
 			'when',
 		]);
-		expect(typed).toEqual(
-			members('ModifierDefinition').filter((one) => one !== 'name'),
-		);
+		// A change is the effect minus the condition, which is the one thing a
+		// definition holds once for every change it names.
+		expect(change).toEqual(typed.filter((one) => one !== 'when'));
+		/*
+		 * **And the walkable copy of that list is held to the interface**, which is
+		 * what stops the parser and the layout editor drifting apart about which
+		 * members the flat spelling carries: one reports them as ignored beside a
+		 * `changes` list and the other moves and deletes them on **Add change**, so a
+		 * sixth member reaching the interface and not this list strands a key in one
+		 * surface and reports it in the other.
+		 */
+		expect([...MODIFIER_CHANGE_KEYS]).toEqual(change);
+		expect(
+			members('ModifierDefinition').filter(
+				(one) => one !== 'name' && one !== 'changes',
+			),
+		).toEqual(typed);
 	});
 
 	/*

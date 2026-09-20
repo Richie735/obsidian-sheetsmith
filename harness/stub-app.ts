@@ -67,7 +67,28 @@ export function harnessLayout(samples: readonly Sample[] = SAMPLES): Layout {
 		 *   definition here to be *reported* in the editor rather than to work;
 		 * - **a second bonus at `armour_class` of a third type**, which exists so
 		 *   one row's cell can name two modifiers that both apply, to two
-		 *   different values — one glyph, two numbers moving.
+		 *   different values — one glyph, two numbers moving;
+		 * - **one definition naming two changes**, which is the only state the
+		 *   editor's Modifiers list could not draw before
+		 *   (`docs/features/multi-change-definitions.md`).
+		 *
+		 * **The nested one sits directly under `Ring of Protection`, deliberately**,
+		 * so a reviewer reads a one-change definition and a two-change one against
+		 * each other rather than scrolling between them — and so it is inside the
+		 * frame `editor-layout` captures, which the foot of an eleven-entry list is
+		 * not.
+		 *
+		 * **And it is enrolled in by no row, also deliberately.** What it is here
+		 * for is the *editor*: `editor-layout` has to show a nested Changes list
+		 * beside nine flat ones, and a one-change definition and a two-change one
+		 * have to read as one form. Putting it in a cell would move two numbers on
+		 * the sheet and rewrite the arithmetic every comment in this file and every
+		 * sheet shot is measured against, to show something the vault fixture
+		 * already shows end to end (`src/test/fixtures/modifiers/`). It still
+		 * reaches the sheet where it costs nothing: the modifier form's **Modifier**
+		 * picker lists it, with `(2 values)` qualifying the *name* — beside it
+		 * rather than after the outcome, because a `<select>` clips from the end and
+		 * the outcome is the long half.
 		 */
 		modifiers: [
 			{
@@ -93,6 +114,30 @@ export function harnessLayout(samples: readonly Sample[] = SAMPLES): Layout {
 				target: 'armour_class',
 				amount: '1',
 				bonusType: 'item',
+			},
+			{
+				/*
+				 * The one definition here spelled with a `changes` list. Two values,
+				 * one name, one condition governing both.
+				 *
+				 * **The two changes carry different bonus types and different
+				 * phases**, which is what the shot is for: each change is a full
+				 * independent contributor, and a list whose every line read the same
+				 * type and the same phase would look like a definition-level field
+				 * drawn twice. `morale` is the one type nothing else on this layout
+				 * uses, so the pair is visibly not a copy.
+				 */
+				name: 'Blessing of the Bear',
+				when: 'Worn',
+				changes: [
+					{ target: 'abilities.STR', amount: '1', bonusType: 'morale' },
+					{
+						target: 'armour_class',
+						amount: '1',
+						bonusType: 'status',
+						applies: 'result',
+					},
+				],
 			},
 			{
 				// **The `+1` in the name is deliberate**: a name carrying arithmetic,
