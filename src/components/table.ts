@@ -74,13 +74,7 @@ import {
 } from '../types';
 import { bindEditable, UNRESOLVED_DELAY } from '../interaction/editable';
 import { armRegister, bindArmToConfirm } from '../interaction/arm-to-confirm';
-import {
-	levelCount,
-	levelName,
-	levelOf,
-	paintLevelRing,
-	parseLevel,
-} from './level-ring';
+import { levelCount, levelName, levelOf, parseLevel } from './level-ring';
 import { paintLinkedText } from './linked-text';
 import {
 	MODIFIED_CLASS,
@@ -101,6 +95,7 @@ import {
 	sampleSeed,
 	sampleText,
 } from './sample-values';
+import { bindRingControl } from './ring-control';
 import { flagText } from './stored-flag';
 import {
 	AnchoredPanel,
@@ -110,7 +105,7 @@ import {
 	showAnchoredPanel,
 } from '../ui/anchored-panel';
 import { element } from '../ui/element';
-import { bindLongPress, showPopover } from '../ui/popover';
+import { showPopover } from '../ui/popover';
 import { revealWhenTruncated } from '../ui/truncation';
 import { flagWhileFocused } from '../interaction/field-focus-flag';
 import { spellcheckWhileFocused } from '../ui/spellcheck';
@@ -2383,108 +2378,69 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 				if (type === 'level' || type === 'toggle') {
 					const graded = type === 'level';
 					const count = graded ? levelCount(column) : 1;
-					let current = graded
+					const initial = graded
 						? levelOf(column, raw)
 						: typedValue(column, raw) === true
 							? 1
 							: 0;
-					// The view rebuilds on a change, but a write that produces
-					// the same file does not, and the control must never be
-					// left showing a level the user has already moved off.
-					let repaint = () => undefined as void;
 
 					/** What the note stores for a level: a count, or yes/no. */
 					const stateOf = (level: number) =>
 						graded ? String(level) : flagText(level > 0);
-					/** What the level is called, to a reader and to a listener. */
-					const nameOf = (level: number) => levelName(column, level);
 
-					const setLevel = (next: number) => {
-						if (next === current) return;
-						current = next;
-						repaint();
-						drafts.set(column.key, stateOf(current));
+					/**
+					 * Report a level the reader moved to: the draft it edits, the
+					 * row's arithmetic, then the note.
+					 */
+					const store = (level: number) => {
+						drafts.set(column.key, stateOf(level));
 						recompute(true);
-						commit(stateOf(current));
+						commit(stateOf(level));
 					};
 
 					if (graded && column.input === 'select') {
 						const select = element('select', 'sheetsmith-table-select', td);
 						for (let i = 0; i <= count; i++) {
-							const option = element('option', '', select, nameOf(i));
+							const option = element('option', '', select, levelName(column, i));
 							option.value = String(i);
 						}
-						select.value = String(current);
+						select.value = String(initial);
 						select.setAttribute('aria-label', label);
-						select.addEventListener('change', () => setLevel(Number(select.value)));
+						let shown = initial;
+						// **The guard is kept, and it is dead.** A native `change`
+						// does not fire on re-picking the option already chosen, so
+						// nothing a reader can do reaches the early return — but the
+						// spec fenced this branch off from the extraction, and its
+						// own "one behaviour change, named" section exists so that a
+						// diff reader can count them. Removing a dead line is not
+						// worth being the second. It compares a *running* value, as
+						// the `setLevel` it came out of did, rather than the level
+						// the cell was rendered at.
+						select.addEventListener('change', () => {
+							const next = Number(select.value);
+							if (next === shown) return;
+							shown = next;
+							store(next);
+						});
 						return;
 					}
 
 					const button = element('button', 'sheetsmith-level-ring', td);
 					button.type = 'button';
-					// Two states is a toggle button, and ARIA has a word for
-					// that; more than two is not, so those carry their state in
-					// the name instead.
-					const pressed = count === 1;
-					const show = () => {
-						const name = nameOf(current);
-						// Everything a reader sees comes from the shared painter,
-						// so the layout editor's sample of this control cannot
-						// drift from the control. What stays here is what the
-						// sample has no business carrying: the naming, and the
-						// routes to a name the ring is not showing.
-						paintLevelRing(button, column, current, graded);
-						if (pressed) {
-							button.setAttribute('aria-pressed', String(current > 0));
-							button.setAttribute('aria-label', label);
-						} else {
-							button.setAttribute('aria-label', `${label}: ${name}`);
-						}
-						// A tooltip that repeats what is already legible is noise
-						// fired at every pass, as the card's label learned.
-						// Only an abbreviation earns one, and every named level is
-						// one: an initial, a mark of the layout's own, or a bare
-						// fill saying nothing at all. An unnamed level shows the
-						// number that is already the whole answer.
-						if (graded && column.levels !== undefined) {
-							button.setAttribute('title', name);
-						} else {
-							button.removeAttribute('title');
-						}
-					};
-
-					// A glyph is an abbreviation, and on a touch device `title`
-					// is not a route to the word behind it — there is no hover
-					// to find it with. A long press is that route, and only
-					// where there is something the glyph is not already saying.
-					const longPressed = bindLongPress(button, () =>
-						graded && column.levels !== undefined ? nameOf(current) : null,
-					);
-
-					// Clicking cycles and wraps, so one control reaches every
-					// level and returns to none without a second gesture. The
-					// arrows step without wrapping, for the hand that wants to
-					// aim rather than count.
-					button.addEventListener('click', () => {
-						// The press that opened the bubble ends in a click, and
-						// it did not mean "change the level".
-						if (longPressed()) return;
-						setLevel(current === count ? 0 : current + 1);
+					// The ARIA, the tooltip, the touch route and the presses are
+					// `ring-control.ts`'s, so a cell and the same control on a card
+					// cannot come to disagree about what either of them says.
+					bindRingControl({
+						button,
+						column,
+						count,
+						graded,
+						level: initial,
+						name: label,
+						// The column's own `<th>` stands over every cell in it.
+						nameOnScreen: true,
+						onSet: store,
 					});
-					repaint = show;
-					button.addEventListener('keydown', (event) => {
-						const step =
-							event.key === 'ArrowRight' || event.key === 'ArrowUp'
-								? 1
-								: event.key === 'ArrowLeft' || event.key === 'ArrowDown'
-									? -1
-									: 0;
-						if (step === 0) return;
-						event.preventDefault();
-						setLevel(Math.max(0, Math.min(count, current + step)));
-					});
-
-					show();
 					return;
 				}
 
