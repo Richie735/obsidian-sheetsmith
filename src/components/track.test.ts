@@ -14,12 +14,21 @@ import {
 	TrackConfig,
 	TrackData,
 } from './track';
-import { buildSheetScope } from '../formula/sheet';
-import { makeFieldResolver } from '../formula/resolve';
+import { buildSheet, buildSheetScope, ReadComponent } from '../formula/sheet';
+import {
+	makeFieldExplainer,
+	makeFieldResolver,
+	resolveFormulaFields,
+} from '../formula/resolve';
+import { table, TableConfig } from './table';
+import { Layout } from '../parse/layout';
 import { RenderContext } from '../types';
 import { sampleOf } from '../test/sample';
+import { expectSpokenChildrenLast } from '../test/spoken-order';
 import { closeAnchoredPanel } from '../ui/anchored-panel';
+import { closePopover } from '../ui/popover';
 import { armedName, STOOD_DOWN } from '../interaction/arm-to-confirm';
+import { pressDown, release } from '../test/pointer';
 
 const config: TrackConfig = {
 	id: 'exhaustion',
@@ -3463,5 +3472,688 @@ describe('a flag track', () => {
 			key(0, 'ArrowDown');
 			expect(rings(el).map((r) => r.tabIndex)).toEqual([-1, 0]);
 		});
+	});
+});
+
+/*
+ * **A modifier that lengthens a run** (`docs/features/modifier-granted-track-segments.md`).
+ *
+ * Driven through a real sheet rather than a stubbed `resolved`, because the
+ * whole defect was a number that two halves of the plugin disagreed about: a
+ * fixture that states the count cannot show the run and the published name
+ * arriving at the same one. Every case below asserts both sides where it can.
+ */
+describe('a modifier granting segments', () => {
+	const run: TrackConfig = {
+		id: 'exhaustion',
+		type: 'track',
+		label: 'Exhaustion',
+		position: { col: 1, row: 1, width: 1, height: 1 },
+		count: '3 + mod.self',
+	};
+	const gear: TableConfig = {
+		id: 'worn',
+		type: 'table',
+		label: 'Worn items',
+		position: { col: 2, row: 1, width: 4, height: 2 },
+		rowHeader: 'Item',
+		rows: [{ label: 'Talisman' }],
+		columns: [{ key: 'Modifiers', type: 'modifier' }],
+	};
+
+	/**
+	 * The whole sheet: a run whose length reads its own slot, and a push at it.
+	 *
+	 * `amount` of null is the talisman off the character — an empty cell rather
+	 * than a second layout — which is how the removal cases are driven.
+	 */
+	const sheetOf = (
+		amount: string | null = '+= 2',
+		trackConfig: TrackConfig = run,
+		body = '\n```sheet\nvalue: 1\n```\n',
+	) => {
+		const gearBody = [
+			'| Item | Modifiers |',
+			'| --- | --- |',
+			amount === null
+				? '| Talisman | |'
+				: `| Talisman | exhaustion.count ${amount} as item |`,
+		].join('\n');
+		const trackRead = track.read(body, trackConfig);
+		const gearRead = table.read(gearBody, gear);
+		if (!trackRead.ok || !gearRead.ok) throw new Error('read failed');
+		const layout: Layout = { name: 'Test', components: [trackConfig, gear] };
+		const prepared: ReadComponent[] = [
+			{ config: trackConfig, component: track, data: trackRead.data, error: null },
+			{ config: gear, component: table, data: gearRead.data, error: null },
+		];
+		const { env, modifiers } = buildSheet(layout, prepared);
+		const data = trackRead.data;
+		const el = document.createElement('div');
+		document.body.appendChild(el);
+		track.render(el, trackConfig, data, {
+			resolved: resolveFormulaFields(track, trackConfig, data, env),
+			resolveField: makeFieldResolver(track, trackConfig, data, env),
+			explainField: makeFieldExplainer(track, trackConfig, data, env),
+			onChange: () => undefined,
+			modifiers,
+		});
+		return { el, env, data };
+	};
+
+	it('draws the run the sheet publishes, not the one the layout wrote', () => {
+		const { el, env } = sheetOf();
+		// Both halves in one case, deliberately: they used to be 3 and 5, and a
+		// case asserting either alone would have passed throughout.
+		expect(parts(el).segments).toHaveLength(5);
+		expect(parts(el).run?.getAttribute('aria-valuemax')).toBe('5');
+		expect(env.sheet('exhaustion.count')).toBe(5);
+	});
+
+	it('marks the granted segments and only those', () => {
+		const { el } = sheetOf();
+		const marked = parts(el).segments.map((s) =>
+			s.classList.contains('sheetsmith-track-segment-granted'),
+		);
+		// The far end, because a run fills from the near one: putting the grant
+		// first would refill a different pair of segments from the same note.
+		expect(marked).toEqual([false, false, false, true, true]);
+	});
+
+	it('reads "1 of 5", so the ceiling a reader hears is the one drawn', () => {
+		const { el } = sheetOf();
+		expect(parts(el).run?.getAttribute('aria-valuetext')).toBe('1 of 5');
+		expect(parts(el).run?.getAttribute('aria-label')).toBe('Exhaustion, 1 of 5');
+	});
+
+	/*
+	 * The absolute spelling reaches the ceiling through the accepting set's
+	 * *second* rule — a `mod.<name>` written anywhere on the layout — so the run
+	 * genuinely gets longer while the component's own formula can say nothing
+	 * about how much of its length came from a push. A uniform run is the honest
+	 * drawing, and it needs no text scan to arrive at: only `mod.self` resolves
+	 * differently with and without the published name.
+	 */
+	it('lengthens without marking where the count names the slot absolutely', () => {
+		const { el, env } = sheetOf('+= 2', {
+			...run,
+			count: '3 + mod.exhaustion.count',
+		});
+		expect(parts(el).segments).toHaveLength(5);
+		expect(env.sheet('exhaustion.count')).toBe(5);
+		expect(
+			parts(el).segments.filter((s) =>
+				s.classList.contains('sheetsmith-track-segment-granted'),
+			),
+		).toHaveLength(0);
+	});
+
+	it('grants every segment where the whole count is the slot', () => {
+		const { el } = sheetOf('+= 2', { ...run, count: 'mod.self' });
+		expect(
+			parts(el).segments.map((s) =>
+				s.classList.contains('sheetsmith-track-segment-granted'),
+			),
+		).toEqual([true, true]);
+	});
+
+	it('grants what the formula made of the push, not the push', () => {
+		// floor((3 + 2) / 2) is 2 against a base of 1: a slot total of +2 and one
+		// segment granted. Reading the total would have said two.
+		const { el } = sheetOf('+= 2', {
+			...run,
+			count: 'floor((3 + mod.self) / 2)',
+		});
+		expect(
+			parts(el).segments.map((s) =>
+				s.classList.contains('sheetsmith-track-segment-granted'),
+			),
+		).toEqual([false, true]);
+	});
+
+	/*
+	 * **A penalty leaves its slots on the card, blocked.** The owner's rule, and
+	 * the reversal of what this feature first shipped: "those slots should still
+	 * be there, instead of just disappearing". A run of three with a −1 draws
+	 * three, not two.
+	 */
+	it('keeps the slots a penalty took, drawn and blocked', () => {
+		const { el } = sheetOf('+= -1');
+		expect(parts(el).segments).toHaveLength(3);
+		const marked = parts(el).segments.map((s) => ({
+			blocked: s.classList.contains('sheetsmith-track-segment-blocked'),
+			granted: s.classList.contains('sheetsmith-track-segment-granted'),
+		}));
+		expect(marked).toEqual([
+			{ blocked: false, granted: false },
+			{ blocked: false, granted: false },
+			{ blocked: true, granted: false },
+		]);
+	});
+
+	it('holds the ceiling to the live run and says the rest in words', () => {
+		/*
+		 * A slider is one value between two bounds, and a blocked slot is not a
+		 * value this control can take — so `aria-valuemax` is the *live* run and
+		 * the drawn boxes deliberately outnumber it. `aria-valuetext` is the only
+		 * sanctioned place to explain that, which is what it is for.
+		 */
+		const { el } = sheetOf('+= -1');
+		expect(parts(el).run?.getAttribute('aria-valuemax')).toBe('2');
+		expect(parts(el).run?.getAttribute('aria-valuetext')).toBe('1 of 2, 1 blocked');
+		expect(parts(el).run?.getAttribute('aria-label')).toBe(
+			'Exhaustion, 1 of 2, 1 blocked',
+		);
+	});
+
+	it('cannot be pressed into the blocked region', () => {
+		/*
+		 * Not a guard that refuses a press — a run that never had those
+		 * positions. The hit test is handed the live segments' rectangles only,
+		 * so a press out in the blocked tail lands past the end and fills the
+		 * live run, which is what a press past the end of any run already does.
+		 */
+		const { el } = sheetOf('+= -1');
+		const runEl = parts(el).run;
+		parts(el).segments.forEach((segment, i) => {
+			segment.getBoundingClientRect = () =>
+				({ left: i * 20, right: i * 20 + 10, top: 0, bottom: 10 }) as DOMRect;
+		});
+		if (runEl === null) throw new Error('no run');
+		runEl.getBoundingClientRect = () =>
+			({ left: 0, right: 60, top: 0, bottom: 10 }) as DOMRect;
+		runEl.setPointerCapture = () => undefined;
+		runEl.releasePointerCapture = () => undefined;
+		// Dead centre of the third box, which is the blocked one.
+		pressDown(runEl, { clientX: 45, clientY: 5 });
+		release(runEl, { clientX: 45, clientY: 5 });
+		expect(runEl.getAttribute('aria-valuenow')).toBe('2');
+		expect(runEl.getAttribute('aria-valuetext')).toBe('2 of 2, 1 blocked');
+	});
+
+	it('never fills a blocked slot, whatever the note holds', () => {
+		/*
+		 * The case Ilona reaches by filling a run and then wearing the shackles.
+		 * SPEC §4.2's "rendered, not corrected" governs the *note*; the drawing
+		 * has always clamped to the run, and the run is now the live part of it.
+		 */
+		const { el, data } = sheetOf('+= -1', run, '\n```sheet\nvalue: 3\n```\n');
+		// Three drawn, two filled: the blocked one is on screen and empty, which
+		// is the whole claim. A stored 3 would have filled it.
+		expect(fills(el)).toEqual([1, 1, 0]);
+		expect(parts(el).run?.getAttribute('aria-valuetext')).toBe('2 of 2, 1 blocked');
+		if (data === null) throw new Error('expected data');
+		expect(data.values['value']).toBe('3');
+	});
+
+	it('draws a run a penalty took whole as blocked rather than as "?"', () => {
+		// `?` is reserved for a count that did not resolve (SPEC §5). This one
+		// resolved perfectly well, to nothing, and the slots are still the
+		// layout's — so the honest drawing is the run, entirely shut.
+		const { el } = sheetOf('+= -5', { ...run, count: '2 + mod.self' });
+		expect(parts(el).unresolved).toHaveLength(0);
+		expect(parts(el).segments).toHaveLength(2);
+		expect(
+			parts(el).segments.every((s) =>
+				s.classList.contains('sheetsmith-track-segment-blocked'),
+			),
+		).toBe(true);
+		expect(parts(el).run?.getAttribute('aria-valuemax')).toBe('0');
+		expect(parts(el).run?.getAttribute('aria-valuetext')).toBe('0 of 0, 2 blocked');
+	});
+
+	/*
+	 * SPEC §4.2: a stored value outside the run is rendered, not corrected. The
+	 * removal path inherits it whole, so taking the talisman off is not a
+	 * destructive act — which is the same rule a level-down and a hand-edited
+	 * note already get.
+	 */
+	it('keeps marks past a shrunken run in the note, and reports the run', () => {
+		const body = '\n```sheet\nvalue: 5\n```\n';
+		const { el, data } = sheetOf(null, run, body);
+		expect(parts(el).segments).toHaveLength(3);
+		expect(parts(el).run?.getAttribute('aria-valuetext')).toBe('3 of 3');
+		// Every one of them filled, which is the half "3 of 3" does not state.
+		expect(fills(el)).toEqual([1, 1, 1]);
+		/*
+		 * **Constraint 3, through the data `read` actually produced.** An empty
+		 * delta round-trips whatever the caller hands it and would pass on a
+		 * `write` that had stopped preserving anything at all, which is exactly
+		 * the vacuous pass `PATTERNS.md` §10 forbids on the one assertion
+		 * guarding a hard constraint. What has to survive is the stored `5` a
+		 * three-segment run cannot draw.
+		 */
+		if (data === null) throw new Error('expected data');
+		expect(track.write({ values: data.values }, body, run)).toBe(body);
+		expect(data.values['value']).toBe('5');
+	});
+
+	it('says what a run that works out to nothing is, rather than blaming the formula', () => {
+		/*
+		 * The floor, which is now narrower than it was: a run with slots of its
+		 * own draws them blocked, so "?" is left for a run that has none to draw
+		 * either. `count: "mod.self"` is that case — the unmodified length is
+		 * nothing, so there is no base run to hold open.
+		 */
+		const { el } = sheetOf('+= -2', { ...run, count: 'mod.self' });
+		expect(parts(el).segments).toHaveLength(0);
+		const said = parts(el).unresolved[0]?.getAttribute('title') ?? '';
+		expect(said).toContain('This run works out to -2 segments.');
+		expect(said).not.toContain('did not resolve');
+		// And the breakdown beside it, so the -2 is findable rather than
+		// merely reported.
+		expect(said).toContain('Talisman');
+	});
+
+	it('puts the sentence behind the door too, on the one card with no run', () => {
+		/*
+		 * **The popover carries what the reader cannot otherwise see.** On a
+		 * drawn run the reading is the segments, so the bubble holds the
+		 * breakdown alone; on a `?` there is no run and no `aria-valuetext`, so
+		 * the sentence is said nowhere else and the bubble is its only door —
+		 * which matters most here, because this is the card with least else on
+		 * it. The glyph's own `title` takes the same string.
+		 */
+		const { el } = sheetOf('+= -2', { ...run, count: 'mod.self' });
+		doorOf(el)?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		const said = document.querySelector('.sheetsmith-popover')?.textContent ?? '';
+		expect(said).toContain('This run works out to -2 segments.');
+		expect(said).toContain('Talisman');
+		expect(said).toBe(parts(el).unresolved[0]?.getAttribute('title'));
+		closePopover();
+	});
+
+	it('leaves the sentence off the door where a run is drawn', () => {
+		// A blocked run *is* the reading, so saying "works out to -3" over it
+		// would be a second account of a picture the reader already has.
+		const { el } = sheetOf('+= -5', { ...run, count: '2 + mod.self' });
+		doorOf(el)?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		const said = document.querySelector('.sheetsmith-popover')?.textContent ?? '';
+		expect(said).not.toContain('works out to');
+		expect(said).toContain('Talisman');
+		closePopover();
+	});
+
+	it('says it where there is no pointer too, which is this state\'s own gap', () => {
+		// A "?" is not focusable and carries no name, so a `title` alone left
+		// the one state this feature added a sentence for with one channel.
+		const { el } = sheetOf('+= -2', { ...run, count: 'mod.self' });
+		const mark = parts(el).unresolved[0];
+		const twin = mark?.parentElement?.querySelector('.sheetsmith-sr-only');
+		expect(twin?.textContent).toBe(mark?.getAttribute('title'));
+		// And the glyph itself is still the one character it draws.
+		expect(mark?.textContent).toBe('?');
+		// After the glyph, for the reason above: the mark, then the news.
+		expectSpokenChildrenLast(mark?.parentElement, 1);
+		expect(twin?.textContent).toContain('This run works out to -2 segments.');
+	});
+
+	it('still says a broken formula did not resolve', () => {
+		const { el } = sheetOf('+= 2', { ...run, count: '3 + nowhere' });
+		const said = parts(el).unresolved[0]?.getAttribute('title') ?? '';
+		expect(said).not.toContain('works out to');
+	});
+
+	/** The door beside the card's name, where a modifier is doing something. */
+	const doorOf = (el: HTMLElement) =>
+		el.querySelector<HTMLButtonElement>('.sheetsmith-track-modifier-button');
+
+	it('says the same thing to a pointer and to a screen reader', () => {
+		const { el } = sheetOf();
+		const run_ = parts(el).run;
+		const described = run_?.getAttribute('aria-describedby');
+		expect(described).not.toBeNull();
+		const twin = described ? el.querySelector(`#${described}`) : null;
+		// One string and one builder, whatever the carrier: the twin a screen
+		// reader is handed and the popover the button opens are the same text.
+		expect(twin?.textContent).toContain('Talisman — item +2');
+		doorOf(el)?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		const bubble = document.querySelector('.sheetsmith-popover');
+		expect(bubble?.textContent).toBe(twin?.textContent);
+		closePopover();
+		/*
+		 * And it is drawn after the run and the step line, which is the one
+		 * claim about it no shot and no visible-order assertion can see: an
+		 * invisible element's position *is* reading order, so a reader meets
+		 * the control and then the news about it. `src/test/spoken-order.ts`
+		 * exists because exactly this rule was broken and shipped once.
+		 */
+		expectSpokenChildrenLast(
+			el.querySelector('.sheetsmith-track-row'),
+			1,
+		);
+	});
+
+	/*
+	 * **The affordance, which is the half a `title` never had.** The content was
+	 * already right and reachable from the keyboard and from a screen reader; a
+	 * native tooltip is slow, unstyled, truncating, and a finger never sees one.
+	 * This is Card's door, on a component whose own press is taken.
+	 */
+	it('grows a door beside the name where a modifier is doing something', () => {
+		const { el } = sheetOf();
+		const door = doorOf(el);
+		expect(door?.tagName).toBe('BUTTON');
+		expect(door?.getAttribute('aria-label')).toBe('Modifiers on Exhaustion');
+		// Beside the name rather than in the run: everything in the run's own
+		// row is a target or something a drag passes over.
+		expect(door?.parentElement?.classList.contains('sheetsmith-track-heading')).toBe(
+			true,
+		);
+		expect(door?.closest('.sheetsmith-track-run')).toBeNull();
+	});
+
+	it('opens the breakdown on a press, and on Enter without a second path', () => {
+		const { el } = sheetOf();
+		const door = doorOf(el);
+		if (!door) throw new Error('no door');
+		door.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		expect(document.querySelector('.sheetsmith-popover')?.textContent).toContain(
+			'Talisman — item +2',
+		);
+		closePopover();
+		// A `<button>`'s Enter arrives as a click, which is the one route in
+		// (`docs/PATTERNS.md` §6). Nothing here handles a key.
+		door.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+		door.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		expect(document.querySelector('.sheetsmith-popover')).not.toBeNull();
+		closePopover();
+	});
+
+	/*
+	 * **The component prefix is the builder's drop rule and not a caller's, and
+	 * this case is what makes the one-vocabulary claim checkable rather than
+	 * asserted.**
+	 *
+	 * A design review read Track's bubble as saying less than Card's — `Talisman
+	 * of Endurance — +2` against `Worn items · Ring of Protection — +1` — and
+	 * read that as Track dropping a token Card keeps. It is not: `sources.size >
+	 * 1` decides it, so a Card with one contributor from one table prints no
+	 * prefix either, and the sample's armour class prints one only because two
+	 * modifier tables push at it. The rule is `docs/UI.md` §9's — a token that is
+	 * the same on every line carries no information — and the case below is the
+	 * one where it stops being the same on every line.
+	 */
+	it('names the component on every line once two of them push at the run', () => {
+		const gearBody = [
+			'| Item | Modifiers |',
+			'| --- | --- |',
+			'| Talisman | exhaustion.count += 2 as item |',
+		].join('\n');
+		const second: TableConfig = {
+			...gear,
+			id: 'packed',
+			label: 'Packed items',
+			rows: [{ label: 'Charm' }],
+		};
+		const packedBody = [
+			'| Item | Modifiers |',
+			'| --- | --- |',
+			'| Charm | exhaustion.count += 1 as luck |',
+		].join('\n');
+		const trackRead = track.read('\n```sheet\nvalue: 1\n```\n', run);
+		const gearRead = table.read(gearBody, gear);
+		const packedRead = table.read(packedBody, second);
+		if (!trackRead.ok || !gearRead.ok || !packedRead.ok) throw new Error('read');
+		const layout: Layout = { name: 'Test', components: [run, gear, second] };
+		const prepared: ReadComponent[] = [
+			{ config: run, component: track, data: trackRead.data, error: null },
+			{ config: gear, component: table, data: gearRead.data, error: null },
+			{ config: second, component: table, data: packedRead.data, error: null },
+		];
+		const { env, modifiers } = buildSheet(layout, prepared);
+		const el = document.createElement('div');
+		document.body.appendChild(el);
+		track.render(el, run, trackRead.data, {
+			resolved: resolveFormulaFields(track, run, trackRead.data, env),
+			resolveField: makeFieldResolver(track, run, trackRead.data, env),
+			onChange: () => undefined,
+			modifiers,
+		});
+		doorOf(el)?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		const said = document.querySelector('.sheetsmith-popover')?.textContent ?? '';
+		expect(said).toContain('Worn items · Talisman — item +2');
+		expect(said).toContain('Packed items · Charm — luck +1');
+		closePopover();
+	});
+
+	it('never draws the breakdown button and the row pickers on one card', () => {
+		/*
+		 * **A CSS decision rests on this**: the modifier button's ink is a rank
+		 * smaller than the row pickers', while the two share a rule holding their
+		 * *targets* equal. That is only safe because the pair cannot be seen side
+		 * by side — the pickers belong to a row set, and a row set publishes no
+		 * ceiling, so it gets no breakdown and no button. Asserted rather than
+		 * left to a comment, because the comment is what would go stale.
+		 */
+		const set: TrackConfig = {
+			...run,
+			id: 'slots',
+			count: undefined,
+			openRows: true,
+			rows: [{ key: 'L1', name: '1st', count: 2 }],
+		};
+		const el = document.createElement('div');
+		document.body.appendChild(el);
+		track.render(el, set, { values: { L1: '1' } }, {
+			resolved: {},
+			resolveField: () => null,
+			onChange: () => undefined,
+		});
+		// The pickers are there, and the door is not.
+		expect(
+			el.querySelectorAll('.sheetsmith-track-action-button').length,
+		).toBeGreaterThan(0);
+		expect(doorOf(el)).toBeNull();
+		// And the other way round, on the card that does have a door.
+		const modified = sheetOf().el;
+		expect(doorOf(modified)).not.toBeNull();
+		expect(modified.querySelectorAll('.sheetsmith-track-action-button')).toHaveLength(
+			0,
+		);
+	});
+
+	it('grows nothing on a run nothing is pushed at', () => {
+		const { el } = sheetOf(null, { ...run, count: 6 });
+		expect(doorOf(el)).toBeNull();
+		expect(el.querySelector('.sheetsmith-track-heading')).toBeNull();
+		// And the label is still a direct child of the card, which is what keeps
+		// every unmodified Track the DOM and the pixels it always had.
+		expect(
+			el.querySelector('.sheetsmith-track-label')?.parentElement?.classList.contains(
+				'sheetsmith-track',
+			),
+		).toBe(true);
+	});
+
+	it('follows the wide set, so an absolute spelling gets the door and no dashes', () => {
+		const { el } = sheetOf('+= 2', { ...run, count: '3 + mod.exhaustion.count' });
+		expect(doorOf(el)).not.toBeNull();
+		expect(
+			parts(el).segments.filter((s) =>
+				s.classList.contains('sheetsmith-track-segment-granted'),
+			),
+		).toHaveLength(0);
+	});
+
+	it('leaves the run\'s own title to the reading', () => {
+		// The breakdown left it when the button arrived: two doors to one room,
+		// and the tooltip was the worse of the two.
+		const { el } = sheetOf();
+		expect(parts(el).run?.hasAttribute('title')).toBe(false);
+		const named = sheetOf('+= 2', {
+			...run,
+			levels: ['Rested', 'Tired', 'Weary'],
+		});
+		expect(parts(named.el).run?.title).toBe('Tired');
+	});
+
+	it('leaves an unmodified run with no title and no description', () => {
+		const { el } = sheetOf(null, { ...run, count: 6 });
+		expect(parts(el).run?.hasAttribute('title')).toBe(false);
+		expect(parts(el).run?.hasAttribute('aria-describedby')).toBe(false);
+	});
+
+	/*
+	 * The boundary, asserted rather than assumed. `rows.*.count` is a pattern
+	 * field, so the pre-resolve pass skips it by construction, and a row set
+	 * publishes no name for a ceiling to sit at (SPEC §13) — so `mod.self` there
+	 * is legitimately 0 and the row draws the length the layout declared.
+	 */
+	it('leaves a row set alone', () => {
+		const set: TrackConfig = {
+			...run,
+			id: 'slots',
+			count: undefined,
+			rows: [{ key: 'L1', name: '1st', count: '2 + mod.self' }],
+		};
+		const gearBody = [
+			'| Item | Modifiers |',
+			'| --- | --- |',
+			'| Talisman | slots.L1 += 2 as item |',
+		].join('\n');
+		const trackRead = track.read('\n```sheet\nL1: 1\n```\n', set);
+		const gearRead = table.read(gearBody, gear);
+		if (!trackRead.ok || !gearRead.ok) throw new Error('read failed');
+		const layout: Layout = { name: 'Test', components: [set, gear] };
+		const prepared: ReadComponent[] = [
+			{ config: set, component: track, data: trackRead.data, error: null },
+			{ config: gear, component: table, data: gearRead.data, error: null },
+		];
+		const { env, modifiers } = buildSheet(layout, prepared);
+		const el = document.createElement('div');
+		document.body.appendChild(el);
+		track.render(el, set, trackRead.data, {
+			resolved: resolveFormulaFields(track, set, trackRead.data, env),
+			resolveField: makeFieldResolver(track, set, trackRead.data, env),
+			onChange: () => undefined,
+			modifiers,
+		});
+		expect(parts(el).error).toBeNull();
+		expect(parts(el).segments).toHaveLength(2);
+		expect(
+			parts(el).segments.filter((s) =>
+				s.classList.contains('sheetsmith-track-segment-granted'),
+			),
+		).toHaveLength(0);
+	});
+
+	it('leaves named levels and a flag alone', () => {
+		const levels = sheetOf('+= 2', {
+			...run,
+			count: '3 + mod.self',
+			levels: ['Rested', 'Tired', 'Weary'],
+		});
+		expect(parts(levels.el).segments).toHaveLength(2);
+		expect(levels.env.sheet('exhaustion.count')).toBe(2);
+
+		const flag = sheetOf('+= 2', { ...run, count: 1 }, '\n```sheet\nvalue: yes\n```\n');
+		expect(
+			flag.el.querySelectorAll('.sheetsmith-track-flag'),
+		).toHaveLength(1);
+		expect(flag.env.sheet('exhaustion.count')).toBe(1);
+	});
+
+	/*
+	 * **The gesture, driven, and against a run of the same length with no
+	 * grant** — because "the same as" is the whole criterion and a single run
+	 * cannot state it.
+	 *
+	 * `measured` is `track pointer`'s own device: happy-dom lays nothing out, so
+	 * every gesture case in this file models the geometry it presses against.
+	 * What this one models is the join — the granted segments start 10px further
+	 * right than an even run's would — so the rectangles the run hit-tests with
+	 * are the shape the margin actually produces, and pressing the *fourth
+	 * segment* of each run is a different `x` in each. The claim is that it
+	 * reaches the same mark anyway.
+	 */
+	const measured = (el: HTMLElement, joinAt: number): HTMLElement => {
+		parts(el).runs.forEach((runEl) => {
+			const segments = Array.from(
+				runEl.querySelectorAll<HTMLElement>('.sheetsmith-track-segment'),
+			);
+			segments.forEach((segment, i) => {
+				const left = i * 20 + (i >= joinAt ? 10 : 0);
+				segment.getBoundingClientRect = () =>
+					({ left, right: left + 10, top: 0, bottom: 10 }) as DOMRect;
+			});
+			runEl.getBoundingClientRect = () =>
+				({ left: 0, right: 200, top: 0, bottom: 10 }) as DOMRect;
+			runEl.setPointerCapture = () => undefined;
+			runEl.releasePointerCapture = () => undefined;
+		});
+		return el;
+	};
+
+	/** The rectangles the run itself hit-tests with. */
+	const boxesOf = (el: HTMLElement): SegmentBox[] =>
+		parts(el).segments.map((segment) => {
+			const box = segment.getBoundingClientRect();
+			return { left: box.left, right: box.right, top: box.top, bottom: box.bottom };
+		});
+
+	/** The centre of one segment, in that run's own geometry. */
+	const centreOf = (el: HTMLElement, index: number): number => {
+		const box = parts(el).segments[index]?.getBoundingClientRect();
+		if (box === undefined) throw new Error(`no segment ${index}`);
+		return box.left + (box.right - box.left) / 2;
+	};
+
+	/** A five-segment run whose last two are granted, and a plain five. */
+	const pair = () => ({
+		granted: measured(sheetOf().el, 3),
+		plain: measured(sheetOf(null, { ...run, count: 5 }).el, 5),
+	});
+
+	it('reaches the same mark on a press as a plain run of the same length', () => {
+		const { granted, plain } = pair();
+		expect(parts(granted).segments).toHaveLength(5);
+		expect(parts(plain).segments).toHaveLength(5);
+		// The premise, asserted rather than assumed: the two runs are not the
+		// same geometry, so "the same mark" is a claim about the hit test and
+		// not about two identical presses. 75 against 65.
+		expect(centreOf(granted, 3)).not.toBe(centreOf(plain, 3));
+		// And the join must not read as a wrap — a segment starting no further
+		// right than the one before it begins a new line, which is the one way
+		// a wider gap could have changed what a point inside it means.
+		expect(marksAtPoint(boxesOf(granted), centreOf(granted, 0) - 30, 5, 1)).toBe(0);
+		expect(marksAtPoint(boxesOf(granted), centreOf(granted, 4) + 30, 5, 1)).toBe(5);
+		for (const el of [granted, plain]) {
+			pressDown(parts(el).run, { clientX: centreOf(el, 3), clientY: 5 });
+			release(parts(el).run, { clientX: centreOf(el, 3), clientY: 5 });
+		}
+		expect(parts(granted).run?.getAttribute('aria-valuetext')).toBe('4 of 5');
+		expect(parts(plain).run?.getAttribute('aria-valuetext')).toBe('4 of 5');
+	});
+
+	it('reaches the same mark on a drag across the join', () => {
+		const { granted, plain } = pair();
+		for (const el of [granted, plain]) {
+			const runEl = parts(el).run;
+			pressDown(runEl, { clientX: centreOf(el, 0), clientY: 5 });
+			runEl?.dispatchEvent(
+				new PointerEvent('pointermove', {
+					pointerId: 1,
+					clientX: centreOf(el, 4),
+					clientY: 5,
+				}),
+			);
+			release(runEl, { clientX: centreOf(el, 4), clientY: 5 });
+		}
+		expect(parts(granted).run?.getAttribute('aria-valuetext')).toBe('5 of 5');
+		expect(parts(plain).run?.getAttribute('aria-valuetext')).toBe('5 of 5');
+	});
+
+	it('steps to the same mark on the arrow keys', () => {
+		// Geometry-free by construction, which is the point of asserting it: a
+		// granted tail must not have made the run a different control.
+		const { granted, plain } = pair();
+		for (const el of [granted, plain]) {
+			parts(el).run?.dispatchEvent(
+				new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true }),
+			);
+		}
+		expect(parts(granted).run?.getAttribute('aria-valuetext')).toBe('2 of 5');
+		expect(parts(plain).run?.getAttribute('aria-valuetext')).toBe('2 of 5');
 	});
 });

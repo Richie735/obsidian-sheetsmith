@@ -71,6 +71,7 @@ const VARIABLES = [
 	'--radius-s',
 	'--radius-m',
 	'--radius-l',
+	'--icon-xs',
 	'--icon-s',
 	'--layer-popover',
 	'--file-line-width',

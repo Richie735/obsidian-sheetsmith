@@ -70,6 +70,8 @@ import {
 	isFlagSpelling,
 } from './stored-flag';
 import { fencedLinkRefusal } from './fenced-link';
+import { modifierBreakdown } from './modifier-breakdown';
+import { publishedFieldNames } from '../formula/resolve';
 import {
 	sampleFlag,
 	samplePart,
@@ -77,7 +79,7 @@ import {
 	sampleSeed,
 	sampleText,
 } from './sample-values';
-import { bindLongPress } from '../ui/popover';
+import { bindLongPress, showPopover } from '../ui/popover';
 import { revealWhenTruncated } from '../ui/truncation';
 import {
 	AnchoredPanel,
@@ -98,6 +100,7 @@ import {
 	ComponentDefinition,
 	FieldResolver,
 	ReadResult,
+	RenderContext,
 	ResetResult,
 	ScopeEntry,
 	ScopeValues,
@@ -660,6 +663,123 @@ function countFor(
 }
 
 /**
+ * What a count worked out to, where that is a number the run cannot draw.
+ *
+ * `segmentCount` refuses anything below one, so a penalty pushed at a run's
+ * length reaches a caller having resolved perfectly well — and `explainField`
+ * correctly has nothing to say, because no formula failed. This is the sentence
+ * that replaces the false one.
+ *
+ * Only a `number` counts as "worked out": a failed evaluation resolves to
+ * `null`, and `Number(null)` is 0, which would put the honest sentence on the
+ * dishonest branch.
+ *
+ * Here rather than inline because two carriers say it — the "?" the card draws,
+ * and the popover the breakdown button opens on the one kind of card where the
+ * reader has nothing else to read.
+ */
+function worksOutTo(value: unknown): string | null {
+	if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+	return `This run works out to ${Math.floor(value)} segments.`;
+}
+
+/** The card's own `count`, and what a modifier did to it. */
+interface CardCount {
+	/**
+	 * How many segments the card draws, or null where it draws none: the live
+	 * run, or the *unmodified* run where a penalty is holding part of it shut.
+	 */
+	drawn: number | null;
+	/** How many of those a press can reach. Zero where a penalty took them all. */
+	live: number;
+	/**
+	 * How many of the live segments a modifier granted, counted from the far
+	 * end. Zero where the run's length publishes no name to be pushed at, and
+	 * zero on every card that ships today.
+	 */
+	granted: number;
+	/**
+	 * How many segments a penalty put out of reach, counted from the far end
+	 * and drawn past the live ones.
+	 *
+	 * **Never nonzero at the same time as `granted`.** A modifier slot holds one
+	 * number, so a run is either longer than the layout wrote it or shorter, and
+	 * the two marks can never land on one segment.
+	 */
+	blocked: number;
+}
+
+/**
+ * One reading of `count` for everything a render does with it: the run drawn,
+ * how much of that run was granted, and the length the **Add** form seeds a new
+ * row with.
+ *
+ * **One helper because the grant is a difference between two resolutions**, and
+ * a second derivation of either half is a granted tail that disagrees with the
+ * run it is drawn on. `PATTERNS.md` §1's `roundSum` rule read on an arithmetic
+ * rather than on a number: share the application, not the inputs.
+ *
+ * **The grant is measured, not declared, and the mechanism is the bug read
+ * backwards.** `context.resolved['count']` is now evaluated *as* the published
+ * name `<id>.count`, so `mod.self` inside it reads the slot; resolving the same
+ * field with no name is what zeroes that slot, which is exactly what the field
+ * used to do everywhere. The difference between the two is therefore what the
+ * push is worth *after* the formula has had its way with it —
+ * `floor((3 + mod.self) / 2)` has a slot total of +2 and grants one segment, and
+ * reading the slot total instead would say two.
+ *
+ * **It is also why nothing has to scan the formula text.** A run whose `count`
+ * reads the absolute spelling — `3 + mod.exhaustion.count` — resolves to the
+ * same number either way, because only `mod.self` is sensitive to the name, so
+ * it correctly draws a longer run with nothing marked as granted. `docs/UI.md`
+ * §9's wide set still decides whether there is a breakdown to read.
+ *
+ * **A penalty is the same subtraction read the other way, and what it produces
+ * is drawn rather than thrown away.** The slots an item takes stay on the card
+ * and read as blocked: present and unusable, which is a state rather than a
+ * second ceiling. (This was `Math.max(0, …)` and the negative half was
+ * discarded; `docs/features/modifier-granted-track-segments.md` carries the
+ * argument that replaced it.)
+ *
+ * Where the base does not resolve to a drawable run but the modified one does —
+ * `count: "mod.self"` — the base is nothing and every segment is granted. Where
+ * neither resolves, nothing is drawn and `render` shows "?".
+ *
+ * **`published` is the name this card's `count` becomes, and it gates the grant
+ * here rather than at the caller**, so the member's own doc is a property of
+ * this function rather than of one call site: no name is no slot, so nothing
+ * could have been pushed, so nothing could have been granted. The arithmetic
+ * would reach zero by itself everywhere the name is absent — the gate is belt
+ * and braces, and a rule that holds by accident is one the next row shape can
+ * take away. Taken as an argument rather than looked up, because looking it up
+ * would mean this module-level helper naming the definition it lives inside.
+ */
+function cardCount(
+	config: TrackConfig,
+	context: Pick<RenderContext, 'resolved' | 'resolveField'>,
+	published: string | undefined,
+): CardCount {
+	const modified = segmentCount(config, context.resolved['count']);
+	const unmodified = segmentCount(config, context.resolveField('count', {}));
+	// A push this component publishes no name for cannot have moved anything,
+	// so the run is whatever it resolved to and nothing is marked either way.
+	if (published === undefined) {
+		return { drawn: modified, live: modified ?? 0, granted: 0, blocked: 0 };
+	}
+	const base = unmodified ?? 0;
+	const live = modified ?? 0;
+	// The unmodified run wherever a penalty is holding part of it shut, and the
+	// live run otherwise. Null where there is no run either way.
+	const drawn = Math.max(base, live);
+	return {
+		drawn: drawn < 1 ? null : drawn,
+		live,
+		granted: Math.max(0, live - base),
+		blocked: drawn - live,
+	};
+}
+
+/**
  * Why a character-owned row's length field commit cannot be stored, or null.
  *
  * A note reference, as everywhere else that reaches a fence — Passport's own
@@ -820,7 +940,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			kind: 'formula',
 			label: 'Segments',
 			description:
-				'How many segments a run holds, as a number or a formula, e.g. 10, or 2 + if(abilities.PHY >= 3, 2, 1). Ignored where the levels below are named. Where there are rows it is the fallback for a row that sets no length of its own. A plain 1 makes this a checkbox: two states, drawn as one ring, stored in the note as yes or no rather than as a count. A formula that happens to work out to 1 does not, since the note would then change spelling whenever the number behind it did.',
+				'How many segments a run holds, as a number or a formula, e.g. 10, or 2 + if(abilities.PHY >= 3, 2, 1). Ignored where the levels below are named. Where there are rows it is the fallback for a row that sets no length of its own. A plain 1 makes this a checkbox: two states, drawn as one ring, stored in the note as yes or no rather than as a count. A formula that happens to work out to 1 does not, since the note would then change spelling whenever the number behind it did. Write mod.self here to let an item or a spell lengthen the run: the segments it grants are drawn apart from these, filled last, and go away with it rather than being written into the note.',
 		},
 		{
 			key: 'marks',
@@ -1386,12 +1506,135 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			return;
 		}
 
+		/**
+		 * The name this card's own `count` publishes under, or absent where it
+		 * publishes none.
+		 *
+		 * **Asked rather than spelled**, which is the same decision the reset path
+		 * takes one layer out. A `<id>.count` written here would be a second copy
+		 * of the conditions `scopeValues` already decides — a row set publishes no
+		 * ceiling at all (SPEC §13's open name-depth question), and named levels
+		 * and a flag publish theirs as a literal — and a predicate in two places is
+		 * what `PATTERNS.md` §1's one-step tier refuses.
+		 */
+		const countName = publishedFieldNames(track, config).get('count');
+
+		/** The card's own `count` and what a modifier did to it, once per render. */
+		const ownCount = cardCount(config, context, countName);
+
+		/**
+		 * What a modifier is doing to this card's run, as one block of text, or
+		 * null where nothing is.
+		 *
+		 * **One string and one builder, whatever the carrier.** It is the popover
+		 * the button below opens *and* the `.sheetsmith-sr-only` twin the run
+		 * points at, so a pointer and a screen reader cannot be told different
+		 * things about one number — the rule the `title` and the twin were already
+		 * held to, with the carriers changed under it.
+		 *
+		 * **It follows the wide set, which the granted drawing deliberately does
+		 * not.** A breakdown answers "has anything been pushed at this name",
+		 * which is a question about the name; the dashed tail answers "how much of
+		 * this length came from a push", which is a question about the formula. A
+		 * run whose `count` reads `mod.exhaustion.count` gets the door and no
+		 * dashes, and that is right on both counts.
+		 *
+		 * Row sets get none by the same absence everything else here turns on:
+		 * `countName` is undefined, so there is no name to break down.
+		 */
+		const cardPushed =
+			countName === undefined
+				? null
+				: modifierBreakdown(
+						context.modifiers?.breakdown(countName),
+						ownCount.live,
+					);
+
+		/**
+		 * What this card's own count worked out to, where the card draws no run
+		 * at all.
+		 *
+		 * Gated on nothing being drawn, which is narrower than "the count is
+		 * below one": a penalty a run has slots to absorb draws them blocked, and
+		 * the blocked slots *are* the reading — saying "works out to −3" over a
+		 * drawn run would be a second account of a picture the reader has.
+		 */
+		const worksOut =
+			ownCount.drawn === null ? worksOutTo(context.resolved['count']) : null;
+
+		/**
+		 * What the breakdown button opens.
+		 *
+		 * **The popover carries what the reader cannot otherwise see, and that is
+		 * one rule rather than two.** Where a run is drawn, the reading is the
+		 * segments and `aria-valuetext` says it, so the popover holds the
+		 * breakdown alone — repeating the reading would be the number said twice,
+		 * which is why the run's own `title` gave it up. Where the card draws `?`
+		 * there is no run to read and no `aria-valuetext` to carry one, so the
+		 * sentence is said *nowhere* else and the popover is the only door to it.
+		 *
+		 * That state is the whole of why this matters: a `?` card told a reader
+		 * who pushed at it and not what happened, and it is the card with least
+		 * else to go on. The "?" glyph's own `title` and twin take this same
+		 * string, so the three carriers cannot disagree.
+		 */
+		const withBreakdown = (lead: string): string =>
+			cardPushed === null ? lead : `${lead}\n\n${cardPushed}`;
+		const doorText = worksOut === null ? cardPushed : withBreakdown(worksOut);
+
+		/*
+		 * **A heading row, and only where there is something to put in it.** An
+		 * unmodified card keeps the DOM it always had — the label as a direct
+		 * child of the card — so nothing about the common Track moves.
+		 */
+		const heading = cardPushed === null ? null : card.createDiv('sheetsmith-track-heading');
 		if (showsOwnLabel(config, context)) {
-			const label = card.createDiv();
+			const label = (heading ?? card).createDiv();
 			// The shared rank (docs/UI.md §9); this component's own class carries only
 			// the narrow-card tracking, which needs a container to ask about.
 			label.classList.add('sheetsmith-component-label', 'sheetsmith-track-label');
 			label.textContent = config.label;
+		}
+		if (heading !== null && cardPushed !== null) {
+			/*
+			 * **The door to the breakdown, and it is deliberately not the run.**
+			 * A press on the run sets the value, so the second door a Card and a
+			 * computed cell open on the number itself is not available here —
+			 * which is what § *What a granted segment announces* concluded, and
+			 * it stopped one step short: the conclusion it drew was `title`, and
+			 * the answer is a *different control*. A native tooltip is slow,
+			 * unstyled, truncates, and a finger never sees one at all.
+			 *
+			 * Beside the label rather than beside the run, for the reason the run
+			 * cannot carry it: everything in the run's own row is either a target
+			 * or a thing a drag passes over, and a control there would be pressed
+			 * by accident on the way to setting a mark. The label is the one part
+			 * of this card that answers no gesture.
+			 *
+			 * A glyph-only `<button>` is `docs/UI.md` §9's shape for exactly this.
+			 * The press works on a pointer, under a finger and from the keyboard
+			 * without a second code path, which is the whole of what it is for.
+			 *
+			 * **`info` and not `zap`, and the trade is worth recording because
+			 * the bolt had a real argument.** Every existing `zap` on a sheet is
+			 * a control that *edits* — a modifier cell's picker and the form it
+			 * opens, where an author writes `endurance.count += 2` — so a reader
+			 * who has learnt that a bolt opens something they can change would
+			 * press this one expecting to and get a panel they can only read.
+			 * What is given up is real: a design review found the bolt read as
+			 * "what is affecting this" precisely *because* the same glyph is
+			 * doing that job in a modifier column three cards up the same
+			 * screen. That association against the edit/explain distinction, and
+			 * the distinction won (`docs/UI.md` §9).
+			 */
+			const button = heading.createEl('button');
+			button.type = 'button';
+			button.classList.add('sheetsmith-track-modifier-button');
+			setIcon(button, 'info');
+			button.setAttribute('aria-label', `Modifiers on ${config.label}`);
+			button.addEventListener('click', () => {
+				showPopover(button, doorText ?? cardPushed);
+			});
 		}
 
 		const marks = markSize(config);
@@ -1447,6 +1690,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 		const lengthsInSet =
 			rowSet && drawn.some((r) => r.maxSource === 'character');
 		if (lengthsInSet) list.classList.add('sheetsmith-track-lengths');
+
 
 		/** One run on the card: its own value, its own geometry, its own gesture. */
 		interface Run {
@@ -1917,12 +2161,17 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 				return;
 			}
 
+			// The card's own count arrives already resolved, so the run drawn and
+			// the marks measured against it come from one reading. `countFor`
+			// floors and clamps it a second time, which is the same number back:
+			// its other two callers hand it a raw resolved value, and taking the
+			// raw one here is what would let a run and its tail disagree.
 			const count = countFor(
 				config,
 				row,
 				index,
 				context.resolveField,
-				context.resolved['count'],
+				ownCount.drawn,
 				stored,
 			);
 
@@ -1963,17 +2212,85 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 				 */
 				const unresolved = line.createDiv('sheetsmith-track-unresolved');
 				unresolved.textContent = '?';
-				unresolved.setAttribute(
-					'title',
-					context.explainField?.(
-						row.count !== undefined ? `rows.${index}.count` : 'count',
-						{},
-					) ?? 'The number of segments did not resolve.',
+				const field =
+					row.count !== undefined ? `rows.${index}.count` : 'count';
+				/*
+				 * **A count that resolved perfectly well and came to nothing is a
+				 * different state, and saying "it did not resolve" about it is
+				 * false.** `segmentCount` refuses anything below one, so a penalty
+				 * pushed at the run's length — `2 + mod.self` with a −5 — reaches
+				 * here having worked out to −3, and `explainField` correctly has
+				 * nothing to say, because no formula failed.
+				 *
+				 * Until a modifier could reach a ceiling this state needed a layout
+				 * author to write it; now a player can put on a cursed item and
+				 * meet it, so the sentence has to name the number rather than
+				 * blame the formula. The breakdown goes with it, which is what
+				 * makes the −5 findable rather than merely reported.
+				 *
+				 * Only a `number` counts as "worked out": a failed evaluation
+				 * resolves to `null`, and `Number(null)` is 0, which would put the
+				 * honest sentence on the dishonest branch.
+				 */
+				const settled =
+					row.count !== undefined
+						? worksOutTo(context.resolveField(field, {}))
+						: worksOut;
+				// One join spelling for both leads, so the "?" and the button
+				// cannot drift apart about where the account begins.
+				const said = withBreakdown(
+					settled ??
+						context.explainField?.(field, {}) ??
+						'The number of segments did not resolve.',
 				);
+				unresolved.setAttribute('title', said);
+				/*
+				 * **The same text where there is no pointer**, and it is the
+				 * *table's* spelling of that rather than the run's, because this
+				 * is the table's case: `aria-describedby` needs something to hang
+				 * on, a run is one focusable control and has it, and a "?" is a
+				 * static div that is neither focusable nor named. `table.ts`
+				 * already answers exactly that shape — a `.sheetsmith-sr-only`
+				 * span beside the mark, inside the box both are read as part of,
+				 * with no ARIA wiring at all.
+				 *
+				 * **Beside the "?" rather than inside it**, which is that
+				 * precedent read to the element: a cell's twin sits in the `td`
+				 * next to the cell, not in it, and here the equivalent is the row
+				 * rather than the glyph. It also keeps the glyph's own
+				 * `textContent` the one character it draws, which a test already
+				 * asserts and which would otherwise have had to be loosened to
+				 * accommodate text nobody can see.
+				 *
+				 * This state is the one the sentence above was *added* for, and
+				 * until now it was the one state on the card with a single
+				 * channel: a reader who cannot see a tooltip met "?" and had no
+				 * route to the number or to the push that produced it. Not
+				 * `role="img"` with the text as an `aria-label`: that replaces
+				 * the glyph with the sentence and flattens it to one string,
+				 * where this is a sentence and then a breakdown.
+				 */
+				line.createSpan({ cls: 'sheetsmith-sr-only', text: said });
 				return;
 			}
 
-			const total = count * marks;
+			/*
+			 * **How much of the drawn run a press can reach.** A row set and a
+			 * card nothing is pushed at draw exactly what they always did, since
+			 * `blocked` is zero for both; where an item has taken slots away,
+			 * `count` is the unmodified run and this is what is left of it.
+			 *
+			 * Every number the control is built from is this one rather than
+			 * `count`: the mark total it clamps to, `aria-valuemax`, the reading,
+			 * and the rectangles the hit test is given. That is the whole of how
+			 * a blocked slot stops being a value — not a guard that refuses a
+			 * press, but a run that never had those positions. A press out there
+			 * lands past the end and fills the live run, which is what a press
+			 * past the end of any run already does.
+			 */
+			const blocked = rowSet ? 0 : ownCount.blocked;
+			const live = count - blocked;
+			const total = live * marks;
 			const el = line.createDiv('sheetsmith-track-run');
 			if (harm) el.classList.add('sheetsmith-track-harm');
 			if (marks > 1) {
@@ -1996,6 +2313,30 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			const segments: HTMLElement[] = [];
 			for (let at = 0; at < count; at++) {
 				const segment = el.createSpan('sheetsmith-track-segment');
+				/*
+				 * The granted segments are the last of the run, and that follows
+				 * from the file model rather than from taste. A run is filled in
+				 * order from the near end, so raising `count` adds indices at the
+				 * far end by arithmetic; putting the grant at the near end would
+				 * renumber, and the same stored `value: 2` would fill a different
+				 * pair of segments with the talisman on than with it off — a
+				 * modifier changing what the note means without the note changing.
+				 * Being last is also what makes them spent last, which is the
+				 * whole of "spent last" as a rule.
+				 */
+				if (at >= live) {
+					/*
+					 * Past the live run: a slot an item has taken, drawn where it
+					 * has always been and marked as unusable. The owner's rule —
+					 * "those slots should still be there, instead of just
+					 * disappearing" — and it is not the ghost this feature
+					 * refuses: a ghost faintly shows what is *not* there, which is
+					 * a second ceiling, where this is present and shut.
+					 */
+					segment.classList.add('sheetsmith-track-segment-blocked');
+				} else if (at >= live - ownCount.granted) {
+					segment.classList.add('sheetsmith-track-segment-granted');
+				}
 				// How far along the run this segment is. A harm run mixes its
 				// fill from it, so the escalation is read as a shape before a
 				// single name is; a progress run takes the accent whole. The
@@ -2003,9 +2344,12 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 				// how long this run is — the same reason a level ring is
 				// handed its own.
 				if (harm) {
+					// Over the live run rather than the drawn one: a blocked
+					// segment never fills, so its grade is never painted, and
+					// `live` can be zero where a penalty took the whole run.
 					segment.style.setProperty(
 						'--sheetsmith-track-grade',
-						String((at + 1) / count),
+						String((at + 1) / Math.max(1, live)),
 					);
 				}
 
@@ -2047,10 +2391,48 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 					}
 				}
 
-				segments.push(segment);
+				/*
+				 * **The live ones only, and that is where "not pressable" is
+				 * decided.** `segments` is what the fill is painted over and what
+				 * the hit test is handed rectangles from, so a blocked slot is
+				 * drawn and then plays no further part: no gesture can land in
+				 * it, and no stored value can fill it — which is the case a note
+				 * holding six marks reaches the moment the shackles go on. The
+				 * note is untouched (SPEC §4.2's "rendered, not corrected"); what
+				 * is clamped is the drawing, exactly as a stored 9 on a
+				 * six-segment run already fills six and stays 9.
+				 */
+				if (at < live) segments.push(segment);
 			}
 
 			const step = named ? line.createDiv('sheetsmith-track-step') : null;
+
+			/**
+			 * The breakdown where there is no pointer.
+			 *
+			 * A `.sheetsmith-sr-only` twin with `aria-describedby`, which is the
+			 * card's spelling of this rather than the table's: a run is one
+			 * focusable control, so it has something to hang the reference on,
+			 * where a cell has only its own contents. Drawn after the step line so
+			 * the row reads run, name, explanation.
+			 *
+			 * **It is the same string the button above opens**, from the same
+			 * builder — the carriers changed when the affordance arrived and the
+			 * one-string rule did not. It holds the breakdown alone rather than
+			 * the reading and the breakdown, because the reading is already in
+			 * `aria-valuetext` and a description repeating it is a number said
+			 * twice; `card-face.ts`'s own twin holds the breakdown alone for the
+			 * same reason.
+			 *
+			 * Built only where there is something to say, which keeps every
+			 * unmodified card the DOM it always had.
+			 */
+			const explanation =
+				cardPushed === null ? null : line.createDiv('sheetsmith-sr-only');
+			if (explanation !== null) {
+				explanation.id = `sheetsmith-track-modified-${config.id}`;
+				el.setAttribute('aria-describedby', explanation.id);
+			}
 
 			const run: Run = {
 				key: row.key,
@@ -2100,21 +2482,50 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 				// run fills every segment and stays 9 in the note (§7).
 				const shown = Math.max(0, Math.min(run.total, landing));
 				const filled = Math.floor(shown / marks);
-				const reading = stepLabel(config, filled, count);
+				const reading = stepLabel(config, filled, live);
+				/*
+				 * **What the run says when part of it is shut, and the reason it
+				 * has to be said in words.** ARIA models a slider as one value
+				 * between `aria-valuemin` and `aria-valuemax`, and a blocked slot
+				 * is not a value this control can take — so the ceiling stays the
+				 * *live* run and the drawn boxes deliberately outnumber it. That
+				 * disagreement is real and `aria-valuetext` is the only sanctioned
+				 * place to explain it, which is what it is for: a flat string
+				 * where the number alone would mislead.
+				 *
+				 * Not spelled inside `stepLabel`, which a named run's step line
+				 * also draws: `levels` publishes its count as a literal, so a
+				 * named run can never be blocked, and putting the clause there
+				 * would be a branch nothing reaches.
+				 */
+				const said =
+					blocked === 0 ? reading : `${reading}, ${blocked} blocked`;
 				el.setAttribute('aria-valuenow', String(shown));
-				el.setAttribute('aria-valuetext', reading);
+				el.setAttribute('aria-valuetext', said);
 				el.setAttribute(
 					'aria-label',
 					rowSet
-						? `${row.name ?? row.key}, ${reading}`
-						: `${config.label}, ${reading}`,
+						? `${row.name ?? row.key}, ${said}`
+						: `${config.label}, ${said}`,
 				);
 				if (step !== null) step.textContent = reading;
-				// Only a named run earns one. An unnamed step's name is the
-				// count, which the segments already state — and a tooltip
-				// repeating what is legible is noise fired at every pass, as
-				// the card's label and the level ring both learned.
+				/*
+				 * Only a named run earns one. An unnamed step's name is the
+				 * count, which the segments already state — and a tooltip
+				 * repeating what is legible is noise fired at every pass, as
+				 * the card's label and the level ring both learned.
+				 *
+				 * **The breakdown used to be the exception and is not any more.**
+				 * It rode here because the run's own press was taken and a
+				 * `title` was what was left; the button beside the label is the
+				 * door now, so carrying it here as well would be two doors to
+				 * one room — and the worse of the two, since a native tooltip is
+				 * slow, unstyled, truncating and invisible to a finger. What the
+				 * run keeps is the route that never depended on a pointer: the
+				 * twin below, which it points at.
+				 */
 				if (named) el.title = reading;
+				if (explanation !== null) explanation.textContent = cardPushed ?? '';
 			};
 
 			/** Move the run without writing. Feedback is continuous (SPEC §4.2). */
@@ -2409,7 +2820,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			 */
 			if (named) {
 				longPressed = bindLongPress(el, () =>
-					stepLabel(config, Math.floor(run.value / marks), count),
+					stepLabel(config, Math.floor(run.value / marks), live),
 				);
 			}
 
@@ -2431,10 +2842,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 		 * one and only the stored one, and a character-added row with a blank
 		 * length has no length exactly as a declared one does.
 		 */
-		const seeded =
-			config.count === undefined
-				? null
-				: segmentCount(config, context.resolved['count']);
+		const seeded = config.count === undefined ? null : ownCount.drawn;
 
 		/**
 		 * The form that names a row before it exists, appended under whatever

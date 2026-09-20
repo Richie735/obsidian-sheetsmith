@@ -4,6 +4,10 @@ import { cancel, hold, press, pressDown, release } from '../test/pointer';
 import { FOCUSABLE } from '../view/cell-focus';
 import { expectSpokenChildrenLast } from '../test/spoken-order';
 import { pool, PoolConfig, PoolData } from './pool';
+import { table, TableConfig } from './table';
+import { buildSheet, ReadComponent } from '../formula/sheet';
+import { makeFieldResolver, resolveFormulaFields } from '../formula/resolve';
+import { Layout } from '../parse/layout';
 import { RenderContext } from '../types';
 import { sampleOf } from '../test/sample';
 
@@ -2341,5 +2345,90 @@ describe('a pool whose max the character owns', () => {
 		expect(pool.write({ max: '38' }, BODY, config)).toBe(
 			'\n```sheet\ncurrent: 22\ntemp: 4\nmax: 38\n```\n',
 		);
+	});
+});
+
+/*
+ * **The same split, on the component it was reported against**
+ * (`docs/features/modifier-granted-track-segments.md`). A Pool's `max` is a
+ * formula that becomes `hp.max`, so `mod.self` inside it meant one number to
+ * `env.sheet('hp.max')` and zero to the card: the numeral, the bar's
+ * proportion and the throw's bound were all held to a ceiling nothing else on
+ * the sheet agreed with. The generic fix corrects it in the same pass, which is
+ * the one thing Pool gets out of a Track feature.
+ *
+ * Driven through a real sheet rather than a stubbed `resolved`, because a
+ * fixture that states the ceiling cannot show the card and the published name
+ * arriving at the same one.
+ */
+describe('a modifier pushed at the ceiling', () => {
+	const bounded: PoolConfig = { ...config, max: '10 + mod.self' };
+	const gear: TableConfig = {
+		id: 'worn',
+		type: 'table',
+		label: 'Worn items',
+		position: { col: 3, row: 1, width: 4, height: 2 },
+		rowHeader: 'Item',
+		rows: [{ label: 'Amulet' }],
+		columns: [{ key: 'Modifiers', type: 'modifier' }],
+	};
+
+	const sheetOf = (current = '7') => {
+		const body = `\n\`\`\`sheet\ncurrent: ${current}\n\`\`\`\n`;
+		const gearBody = [
+			'| Item | Modifiers |',
+			'| --- | --- |',
+			'| Amulet | hp.max += 4 as item |',
+		].join('\n');
+		const poolRead = pool.read(body, bounded);
+		const gearRead = table.read(gearBody, gear);
+		if (!poolRead.ok || !gearRead.ok) throw new Error('read failed');
+		const layout: Layout = { name: 'Test', components: [bounded, gear] };
+		const prepared: ReadComponent[] = [
+			{ config: bounded, component: pool, data: poolRead.data, error: null },
+			{ config: gear, component: table, data: gearRead.data, error: null },
+		];
+		const { env, modifiers } = buildSheet(layout, prepared);
+		const el = document.createElement('div');
+		document.body.appendChild(el);
+		pool.render(el, bounded, poolRead.data, {
+			resolved: resolveFormulaFields(pool, bounded, poolRead.data, env),
+			resolveField: makeFieldResolver(pool, bounded, poolRead.data, env),
+			onChange: () => undefined,
+			modifiers,
+		});
+		return { el, env };
+	};
+
+	it('draws the ceiling the sheet publishes', () => {
+		const { el, env } = sheetOf();
+		// Both halves in one case: they used to be 10 and 14.
+		expect(parts(el).max?.textContent).toBe('14');
+		expect(env.sheet('hp.max')).toBe(14);
+	});
+
+	it('takes the bar proportion against it', () => {
+		// 7 of 14, not 7 of 10: the bar was the most visible half of the split.
+		const { el } = sheetOf();
+		expect(
+			el.querySelector<HTMLElement>('.sheetsmith-pool')?.style.getPropertyValue(
+				'--sheetsmith-pool-fill',
+			),
+		).toBe('0.5');
+	});
+
+	it('holds the boundary state to it, so 12 is not over the top', () => {
+		// The state the card paints when a value has passed its ceiling. At 12
+		// the answer is no against 14 and yes against the 10 the card used to
+		// draw, which is what makes this case about the fix rather than about
+		// the class.
+		const { el } = sheetOf('12');
+		expect(parts(el).current?.classList.contains('sheetsmith-pool-over')).toBe(
+			false,
+		);
+		const past = sheetOf('15');
+		expect(
+			parts(past.el).current?.classList.contains('sheetsmith-pool-over'),
+		).toBe(true);
 	});
 });
