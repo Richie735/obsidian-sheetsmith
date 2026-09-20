@@ -4080,10 +4080,36 @@ a.sheetsmith-undo {
 	margin-top: var(--size-2-1);
 }
 
-/* Table's own delete glyph's shape and stakes, shared by both triggers
-   rather than one per row — always visible, never focus- or hover-gated,
-   since what either opens can hold a session's worth of marked segments. */
-.sheetsmith-view .sheetsmith-track-action-button {
+/* The card's name and the door to what is changing its run, on one line.
+
+   Drawn only where there is a breakdown to open, so an unmodified Track keeps
+   the DOM and the pixels it always had: the label stays a direct child of the
+   card and this row never exists. `min-width` on the label because a flex item
+   does not shrink below its content by default, and the rank it wears clips
+   with an ellipsis rather than pushing the button off the card. */
+.sheetsmith-track-heading {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	max-width: 100%;
+}
+
+.sheetsmith-track-heading .sheetsmith-component-label {
+	min-width: 0;
+}
+
+/* Table's own delete glyph's shape and stakes, shared by three Track controls
+   rather than one per row — always visible, never focus- or hover-gated, since
+   what any of them opens can hold a session's worth of marked segments.
+
+   The third is the breakdown button beside the card's name, and it is on this
+   selector list rather than in a copy of the rule because what they share is
+   the *treatment* and not only the measurement (`docs/UI.md` §9): three glyph
+   buttons on one card must not measure differently under one finger. What it
+   does not share is the class name — this one opens no picker and performs no
+   action, so it is named for what it is about. */
+.sheetsmith-view .sheetsmith-track-action-button,
+.sheetsmith-view .sheetsmith-track-modifier-button {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
@@ -4102,19 +4128,53 @@ a.sheetsmith-undo {
 		color 160ms ease;
 }
 
-.sheetsmith-view .sheetsmith-track-action-button .svg-icon {
+.sheetsmith-view .sheetsmith-track-action-button .svg-icon,
+.sheetsmith-view .sheetsmith-track-modifier-button .svg-icon {
 	width: var(--icon-s);
 	height: var(--icon-s);
 }
 
-.sheetsmith-view .sheetsmith-track-action-button:hover {
+.sheetsmith-view .sheetsmith-track-action-button:hover,
+.sheetsmith-view .sheetsmith-track-modifier-button:hover {
 	background-color: var(--background-modifier-hover);
 	color: var(--text-normal);
 }
 
-.sheetsmith-view .sheetsmith-track-action-button:focus-visible {
+.sheetsmith-view .sheetsmith-track-action-button:focus-visible,
+.sheetsmith-view .sheetsmith-track-modifier-button:focus-visible {
 	outline: 2px solid var(--interactive-accent);
 	outline-offset: 2px;
+}
+
+/* The bolt reads as a state rather than as an affordance, so it sits a rank
+   above the two pickers' faint glyphs: something *is* changing this run, and a
+   reader who never presses it should still see that it is there. --text-muted
+   is the same value a modifier cell's own glyph was raised to, and for the
+   measured reason recorded there — at this size a faint bolt reads as a smudge
+   rather than as a mark (`docs/UI.md` §9). */
+.sheetsmith-view .sheetsmith-track-modifier-button {
+	color: var(--text-muted);
+}
+
+/* A rank of ink down from the pickers', and only the ink: the box above stays
+   `--sheetsmith-inline-control`, so the target, the accessible name and the
+   selector-list membership are untouched and this does not become a second
+   entry on `docs/BACKLOG.md`'s row about a Track control under the pointer
+   minimum.
+
+   **Splitting the ink does not split the treatment, because the two can never
+   be drawn on one card.** The action glyphs belong to a row set — their row is
+   gated on a character-owned row or the `openRows` toggle, both of which make
+   `isRowSet` true — and a row set publishes no ceiling, so it gets no breakdown
+   and no button. `track.test.ts` asserts the pair rather than leaving it to this
+   comment. The shared rule above is still what keeps the two *targets* equal,
+   which is the thing a finger measures.
+
+   At a circled glyph's size the mark was reading heavier than the name beside
+   it, which is a smaller type rank than a picker's neighbours are. */
+.sheetsmith-view .sheetsmith-track-modifier-button .svg-icon {
+	width: var(--icon-xs);
+	height: var(--icon-xs);
 }
 
 /* The **Remove** picker's own armed line, inside the anchored panel this
@@ -4164,6 +4224,9 @@ a.sheetsmith-undo {
    from their current computed value, so a run of quick presses neither queues
    nor jumps. */
 .sheetsmith-track-run {
+	/* The space between two segments, named because the granted tail's own join
+	   is a multiple of it and the container query below moves it. */
+	--sheetsmith-track-gap: var(--size-2-2);
 	--sheetsmith-track-response: 200ms;
 	--sheetsmith-track-settle: 300ms;
 	/* The curve for both. Monotone by construction: damping 1.0. */
@@ -4172,7 +4235,7 @@ a.sheetsmith-undo {
 	flex-wrap: wrap;
 	align-items: center;
 	justify-content: center;
-	gap: var(--size-2-2);
+	gap: var(--sheetsmith-track-gap, var(--size-2-2));
 	padding: var(--size-2-1) 0;
 	cursor: pointer;
 	/* The browser must not claim the horizontal pan before the drag threshold
@@ -4282,6 +4345,165 @@ a.sheetsmith-undo {
 	/* One glyph in a small segment: normal tracking would push it off centre. */
 	letter-spacing: 0;
 	line-height: 1;
+}
+
+/* A segment a modifier granted, drawn apart from the ones the layout gave.
+
+   Two geometric channels and no colour, which is not a preference: §1 gives the
+   plugin no colours of its own, and both of these are what survives
+   `forced-colors: active` — that mode strips author border and background
+   *colours* and forces box-shadow to none, and leaves `border-style` and layout
+   alone. This is `.sheetsmith-modified`'s own argument one component over, where
+   the mark is `text-decoration` for the same reason. The convergent prior art
+   separates a raised ceiling by fill colour alone over one flat black outline,
+   which is WCAG 1.4.1 failure technique F13 and exactly what copying it would
+   copy.
+
+   **The dash is drawn over the fill rather than on the segment's own border, and
+   that is the whole of what two rewrites of this rule were about.** A segment's
+   fill is an absolutely positioned child, so it occupies the *padding* box and
+   stops at the inside edge of the border — which means a dashed border's gaps
+   show the card behind rather than the fill, and a filled granted segment drew
+   as a purple square with grey nibbles bitten out of its edges and corners.
+   Measured off the shot at 15px: the dash against the card is 2.12:1 light and
+   2.57:1 dark, and against the fill 1.49:1 and 1.35:1, so the gaps were both
+   conspicuous and illegible. Recolouring it changed the colour of the chipping;
+   it did not remove it. An overlay ring is the fix, because a positioned
+   `::after` paints after its element's other positioned children and so lands
+   *on* the fill: its gaps show purple, and it reads as a line on a filled
+   segment rather than as a bite out of one.
+
+   An `outline` outside the box was tried and is worse: two consecutive granted
+   segments sit one ordinary gap apart, and their outlines overlap in the middle
+   of the tail.
+
+   **--text-muted rather than the base segment's --text-faint**, because this
+   ring cannot inherit that rule — it is a different element — and because a
+   border that is the only thing marking a state clears 3:1
+   (`legibility.md` §3), which faint does not at either theme's measurement
+   above. The `prefers-contrast: more` block raises every segment's border to the
+   same value, so the granted ring and the base border agree there and the dash
+   stays the whole of the difference.
+
+   **The border under it is `transparent` and `dashed`, which is the plugin's own
+   forced-colors idiom rather than a second mark.** `docs/UI.md` §6: a ring drawn
+   in a way the mode discards carries a companion that is invisible in an
+   ordinary theme and repainted where the mode bites. Here it is the other way
+   round from a focus ring and for the same reason — forced colors strips every
+   fill, so there is nothing for the overlay to sit on and nothing to bite out of
+   the border, and the border alone draws a clean dashed square. So the overlay
+   stands down in that mode and the border takes over. The two mechanisms differ
+   exactly where the *fill* does, which is what they are both about.
+
+   The second is a wider gap at the join — the run's own gap again, so the pair
+   reads as "further apart than the others" rather than as a measurement of its
+   own — carried by the first granted segment and reset between consecutive
+   ones, so a tail of three has one join and not three. `margin-inline-start`
+   rather than a margin on the base side, so it follows a right-to-left run.
+
+   **It reads --sheetsmith-track-gap rather than the token the run happens to set
+   it from, and that is the claim above rather than an indirection.** The run
+   narrows its own gap inside a one-column card — "the gap goes first, since the
+   segments are the thing being read" — and a flat --size-2-2 here did not come
+   with it, so the join drew at three times the ordinary gap there against twice
+   everywhere else: the sentence "the run's own gap again" was true at one width
+   and false at the other. A number shared and its application written out at
+   both sites is `docs/PATTERNS.md` §1's named trap, and the property is the
+   application. */
+.sheetsmith-track-segment-granted {
+	margin-inline-start: var(--sheetsmith-track-gap, var(--size-2-2));
+	/* The border's width becomes padding, which is the whole of how the ring
+	   below paints at the base segment's own footprint. Nothing about the box
+	   moves — `box-sizing` is border-box, so the square is the same 14.9px and
+	   every gap on the run is unchanged — but the *padding box* grows to the
+	   whole square, and the padding box is what an absolutely positioned child
+	   is laid out against and what `overflow: hidden` clips to. So the fill
+	   reaches the outer edge and the ring is drawn on top of it there.
+
+	   **It is the fix for a regression the first overlay caused, and the
+	   regression is worth keeping written down**: that one held the border at
+	   `transparent`, which left the outermost 1.5px painting nothing, so a
+	   granted segment *drew* 13px inside a 15px box. The layout never moved —
+	   measured identical at 14.9px with 4.1px gaps — but the visible join read 9
+	   against 8 and two consecutive granted segments read 6 apart against 4, so
+	   the rule three lines down claiming a tail of three has one join was true of
+	   the boxes and false of the picture.
+
+	   **And it removes the forced-colors branch rather than needing one.** With no
+	   border of its own there is nothing for that mode to repaint into a second
+	   ring, so the overlay is the mark in every mode and the base segment's own
+	   border is still the thing it differs from.
+
+	   The one place this is observable beyond the edge: a multi-mark segment's
+	   dividers are positioned against the padding box too, so on a granted
+	   segment they span the whole square rather than the inside of a border —
+	   about 0.75px per boundary on a four-mark run, self-consistent with that
+	   segment's own fill, and only ever compared against a base segment beside
+	   it. */
+	border-width: 0;
+	padding: 1.5px;
+}
+
+.sheetsmith-track-segment-granted::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	border: 1.5px dashed var(--text-muted);
+	border-radius: var(--radius-s);
+	/* The run owns every press on this card; nothing inside a segment is a
+	   target, and an overlay that took one would be the first. */
+	pointer-events: none;
+}
+
+.sheetsmith-track-segment-granted + .sheetsmith-track-segment-granted {
+	margin-inline-start: 0;
+}
+
+/* A run whose every segment is granted has nothing to join *to*, and a leading
+   margin inside a centred row is not a gap at all — it shifts the whole run off
+   centre by half of itself. `count: "mod.self"` is the case, and it is a real
+   layout rather than a curiosity: a run that exists only while an item is worn.
+   The segments are the run's own children, so `:first-child` is the first
+   segment and nothing else. */
+.sheetsmith-track-segment-granted:first-child {
+	margin-inline-start: 0;
+}
+
+
+/* A slot a modifier took away, drawn where it has always been and marked as
+   unusable.
+
+   **Not a ghost, and the distinction is the whole of why this is drawn at all.**
+   A ghost faintly shows what is *not* there, which is a second ceiling on screen
+   and the thing the granted tail's own rule refuses. A blocked slot is present
+   and shut — a first-class state, and one the reader can count. The convergent
+   prior art asks for exactly this rather than a recolour: foundryvtt-lancer 548
+   wants "a slash through the icon" on a spent pip.
+
+   **A third state on one row, so the shape has to separate it from two others
+   and not one.** A base slot is a solid square, a granted slot is a dashed ring,
+   and a line style is not a third channel at this size — solid against dashed
+   against dotted at 15px is one mark a reader can name and two they cannot. A
+   slash is a different *figure*, so it reads against both.
+
+   Drawn as a rotated `border-top` rather than a gradient or a background,
+   because forced colors strips a background and recolours a border, and this
+   mode is where a mark most has to survive. The bar is longer than the box and
+   the segment's own `overflow: hidden` clips it to the padding box, which is
+   what makes it a clean corner-to-corner diagonal rather than a line with ends
+   hanging out past the corners. */
+.sheetsmith-track-segment-blocked::after {
+	content: '';
+	position: absolute;
+	right: -6px;
+	left: -6px;
+	top: 50%;
+	height: 0;
+	border-top: 1.5px solid var(--text-muted);
+	transform: rotate(-45deg);
+	/* The run owns every press; a blocked slot is not a target and its mark
+	   must not become one. */
+	pointer-events: none;
 }
 
 /* The glyph sits above both fills, so a segment the layout lettered stays
@@ -4447,10 +4669,13 @@ a.sheetsmith-undo {
 }
 
 /* A run squeezed into one grid unit. The segments come down with the card; the
-   gap goes first, since the segments are the thing being read. */
+   gap goes first, since the segments are the thing being read — and it moves
+   through --sheetsmith-track-gap rather than through `gap`, so the granted
+   tail's own join comes down with it and stays the multiple of the run's gap
+   its rule says it is. */
 @container (max-width: 160px) {
 .sheetsmith-track-run {
-		gap: var(--size-2-1);
+		--sheetsmith-track-gap: var(--size-2-1);
 	}
 
 .sheetsmith-track-label {
