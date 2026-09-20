@@ -26,9 +26,9 @@ import { RenderContext } from '../types';
 import { sampleOf } from '../test/sample';
 import { expectSpokenChildrenLast } from '../test/spoken-order';
 import { closeAnchoredPanel } from '../ui/anchored-panel';
-import { closePopover } from '../ui/popover';
+import { closePopover, LONG_PRESS } from '../ui/popover';
 import { armedName, STOOD_DOWN } from '../interaction/arm-to-confirm';
-import { pressDown, release } from '../test/pointer';
+import { hold, pressDown, release } from '../test/pointer';
 
 const config: TrackConfig = {
 	id: 'exhaustion',
@@ -3338,6 +3338,47 @@ describe('a flag track', () => {
 			expect(rings(drawFlag())[0]?.getAttribute('title')).toBeNull();
 		});
 
+		it('reaches a named step\'s word by touch, and opens nothing without one', () => {
+			/*
+			 * `docs/UI.md` §7: `title` is a pointer's route and a finger has no
+			 * hover, so a held press is the only way to the word a glyph stands
+			 * for. Asserted here rather than left to the module because this is
+			 * the call site whose touch route **changed shape**: the binding used
+			 * to be made only where the steps are named, and is now made on every
+			 * ring with a provider that answers `null` where there is no tooltip.
+			 * "The same behaviour with one fewer branch" is a claim about this
+			 * component, so it is checked in this component.
+			 */
+			vi.useFakeTimers();
+			try {
+				const named = drawFlag(
+					{ count: undefined, levels: ['Fine', 'Bloodied:!'] },
+					{ values: { value: 'yes' } },
+				);
+				hold(rings(named)[0], LONG_PRESS + 10, { pointerType: 'touch' });
+				expect(
+					document.querySelector('.sheetsmith-popover')?.textContent,
+				).toBe('Bloodied');
+				closePopover();
+
+				// And the branch that used to be missing rather than empty: a flag
+				// with no word has no `title`, so the hold opens nothing and the
+				// press that ends it still flips the card.
+				// `unknown`, because `RenderContext.onChange` is untyped at this
+				// boundary and `drawFlag` hands the context straight through.
+				const seen: unknown[] = [];
+				const plain = drawFlag({}, { values: { value: 'no' } }, {
+					onChange: (delta) => seen.push(delta),
+				});
+				hold(rings(plain)[0], LONG_PRESS + 10, { pointerType: 'touch' });
+				expect(document.querySelector('.sheetsmith-popover')).toBeNull();
+				rings(plain)[0]?.click();
+				expect(seen).toEqual([{ values: { value: 'yes' } }]);
+			} finally {
+				vi.useRealTimers();
+			}
+		});
+
 		it('draws no step line: a flag\'s one step is already on the ring', () => {
 			const el = drawFlag(
 				{ count: undefined, levels: ['Fine', 'Bloodied:!'] },
@@ -3435,10 +3476,15 @@ describe('a flag track', () => {
 			 * A flag has no blur listener, because it writes on the press and so
 			 * has nothing to defer; dispatching one here reached no code at all
 			 * and the assertion held under every implementation, including one
-			 * that spelled `sent` wrong. Right arrow on a ring already set is the
-			 * route that does reach it: `setMarks` returns early and `commit`
-			 * runs anyway, with the note's own spelling as the only thing it can
-			 * compare against.
+			 * that spelled `sent` wrong.
+			 *
+			 * **What this route reaches is now one step earlier**, and the case
+			 * kept its assertions across the change rather than being rewritten to
+			 * fit it. It used to reach `commit`, which compared the note's own
+			 * spelling and declined; `ring-control.ts` reports a level only when it
+			 * moved, so an arrow that asks for the level the ring is already at now
+			 * writes nothing by never reaching `commit` at all. The case below
+			 * drives the comparison this one no longer does.
 			 */
 			const card = changes();
 			const el = card.render({}, { values: { value: '1' } });
@@ -3449,6 +3495,29 @@ describe('a flag track', () => {
 			// And the ring still reads the note, rather than having been reset
 			// along the way.
 			expect(rings(el)[0]?.getAttribute('aria-pressed')).toBe('true');
+		});
+
+		it('leaves a row nobody pressed out of the write the sweep collects', () => {
+			/*
+			 * `commit` sweeps *every* run on the card, so a row stored as `1`
+			 * before the fold is compared against "yes" on a press somewhere else
+			 * entirely. What keeps it out of the change is that `sent` is spelled
+			 * through `spelledMarks` at construction rather than taken from the
+			 * note's raw text — spell it wrong and pressing `lucky` rewrites
+			 * `alert` as well, having changed nothing the reader asked to change.
+			 *
+			 * Here rather than folded into the case above, because the two now
+			 * reach different code: that one stops at the ring and never calls
+			 * `commit`, and this is the only route left that drives the sweep over
+			 * a run the reader did not touch.
+			 */
+			const card = changes();
+			const el = card.render(
+				{ rows: [{ key: 'alert' }, { key: 'lucky' }] },
+				{ values: { alert: '1', lucky: 'no' } },
+			);
+			rings(el)[1]?.click();
+			expect(card.seen).toEqual([{ values: { lucky: 'yes' } }]);
 		});
 
 		it('sets with right, clears with left, and moves rows with up and down', () => {

@@ -112,13 +112,7 @@ import {
 	RowValues,
 	showsOwnLabel,
 } from '../types';
-import {
-	levelCount,
-	levelName,
-	levelOf,
-	paintLevelRing,
-	parseLevel,
-} from './level-ring';
+import { levelCount, levelName, levelOf, parseLevel } from './level-ring';
 import { adoptRenderedLinks, paintLinkedText } from './linked-text';
 import {
 	ModifierFormState,
@@ -130,6 +124,7 @@ import {
 	modifierRowText,
 	rowModifiers,
 } from './modifier-breakdown';
+import { bindRingControl } from './ring-control';
 import {
 	sampleFlag,
 	sampleNumber,
@@ -146,7 +141,7 @@ import {
 	showAnchoredPanel,
 } from '../ui/anchored-panel';
 import { element } from '../ui/element';
-import { bindLongPress, showPopover } from '../ui/popover';
+import { showPopover } from '../ui/popover';
 import { flagWhileFocused } from '../interaction/field-focus-flag';
 import { spellcheckWhileFocused } from '../ui/spellcheck';
 import { revealWhenTruncated } from '../ui/truncation';
@@ -1911,7 +1906,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			element('span', 'sheetsmith-sr-only', cell, accessible);
 		}
 
-		/** A level or a toggle, through the one painter both share. */
+		/** A level or a toggle, through the one control every ring on a sheet is. */
 		function drawRing(
 			cell: HTMLElement,
 			field: RecordField,
@@ -1921,7 +1916,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			commit: (next: string) => void,
 		): void {
 			const count = graded ? levelCount(field) : 1;
-			let current = graded ? levelOf(field, raw) : isFlagSet(raw) ? 1 : 0;
+			const initial = graded ? levelOf(field, raw) : isFlagSet(raw) ? 1 : 0;
 			const stateOf = (level: number): string =>
 				graded ? String(level) : flagText(level > 0);
 
@@ -1931,108 +1926,43 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 					const option = element('option', '', select, levelName(field, level));
 					option.value = String(level);
 				}
-				select.value = String(current);
+				select.value = String(initial);
 				select.setAttribute('aria-label', accessible);
 				select.addEventListener('change', () => {
-					current = Number(select.value);
-					commit(stateOf(current));
+					commit(stateOf(Number(select.value)));
 				});
 				return;
 			}
 
 			const button = element('button', 'sheetsmith-level-ring', cell);
 			button.type = 'button';
-			// Two states is a toggle button and ARIA has a word for it; more than
-			// two is not, so those carry their state in the name instead.
-			const pressed = count === 1;
-			const show = (): void => {
-				// Everything a reader sees comes from the shared painter, so a ring on
-				// a record and the same ring in a cell cannot measure differently
-				// under one finger. What stays here is the naming.
-				const name = levelName(field, current);
-				paintLevelRing(button, field, current, graded);
-				if (pressed) {
-					button.setAttribute('aria-pressed', String(current > 0));
-					button.setAttribute('aria-label', accessible);
-				} else {
-					button.setAttribute('aria-label', `${accessible}: ${name}`);
-				}
-				/*
-				 * **Only a named level earns a tooltip**, which is Table's and
-				 * Track's rule and was the one place this third copy diverged: it
-				 * set `title` unconditionally to the accessible name, so a toggle in
-				 * a table row had no tooltip and the identical toggle in a record set
-				 * had one repeating what a reader could already hear. A tooltip that
-				 * repeats what is legible is noise fired at every pass, as the card's
-				 * label learned — and every named level *is* an abbreviation, an
-				 * initial or a mark of the layout's own, where an unnamed one shows
-				 * the number that is already the whole answer.
-				 */
-				/*
-				 * **What the tooltip carries is not what Table's carries, and the
-				 * difference is the heading strip.** Table and Track set a `title`
-				 * only for a *named level*, on the argument that a tooltip repeating
-				 * legible text is noise — and in a cell that is right, because the
-				 * field's own name is already in a `<th>` over the column and only the
-				 * level's word is missing. A record has no `<th>`. Here the missing
-				 * word is the *field's own name*, and it is missing on a `toggle` as
-				 * much as on a `level`: a reader sees `Fireball · Level 3 · ●` and
-				 * nothing on screen says the dot is "Prepared".
-				 *
-				 * So the tooltip is the accessible name, always, and a *named* level
-				 * adds its own word to it. Which is a change from the copy that
-				 * shipped in two ways: it is set on a toggle as well, and it names the
-				 * field rather than only the level.
-				 */
-				button.setAttribute(
-					'title',
-					graded && field.levels !== undefined
-						? `${accessible}: ${name}`
-						: accessible,
-				);
-			};
-			const setLevel = (next: number): void => {
-				if (next === current) return;
-				current = next;
-				show();
-				commit(stateOf(current));
-			};
 			/*
-			 * **The touch route to the word the ring is not showing**, and it is bound
-			 * on every ring this component draws rather than on Table's named-level
-			 * predicate. `title` is a pointer's route and UI §7 forbids a hover-only
-			 * affordance: what a reader of a record sees is `Fireball · Level 3 · ●`,
-			 * and the only thing that says the dot is "Prepared" is the tooltip. Table
-			 * guards this on a *named level* because a cell's field is already named by
-			 * its `<th>`; a record has none, so the guard that is right there would
-			 * leave the shipping case — every ring on the sample sheet is a toggle —
-			 * with no route at all. It is the shape the `computed` field already has:
-			 * hover reveals, a tap opens the same text.
+			 * **What the tooltip carries is not what Table's carries, and the
+			 * difference is the heading strip.** Table and Track set a `title` only
+			 * for a *named level*, on the argument that a tooltip repeating legible
+			 * text is noise — and in a cell that is right, because the field's own
+			 * name is already in a `<th>` over the column and only the level's word
+			 * is missing. **A record has no `<th>`.** Here the missing word is the
+			 * *field's own name*, and it is missing on a `toggle` as much as on a
+			 * `level`: a reader sees `Fireball · Level 3 · ●` and nothing on screen
+			 * says the dot is "Prepared".
+			 *
+			 * So this is the one caller that says its name is *not* on screen, and
+			 * that is the whole of the divergence: `ring-control.ts` decides what to
+			 * do about it, including the touch route to the same words, which UI §7
+			 * requires because `title` is a pointer's route and every ring that ships
+			 * on the sample sheet is a toggle.
 			 */
-			const longPressed = bindLongPress(
+			bindRingControl({
 				button,
-				() => button.getAttribute('title'),
-			);
-			// Clicking cycles and wraps, so one control reaches every level and
-			// returns to none; the arrows step without wrapping.
-			button.addEventListener('click', () => {
-				// The press that opened the bubble ends in a click, and it did not
-				// mean "change the level".
-				if (longPressed()) return;
-				setLevel(current === count ? 0 : current + 1);
+				column: field,
+				count,
+				graded,
+				level: initial,
+				name: accessible,
+				nameOnScreen: false,
+				onSet: (level) => commit(stateOf(level)),
 			});
-			button.addEventListener('keydown', (event) => {
-				const step =
-					event.key === 'ArrowRight' || event.key === 'ArrowUp'
-						? 1
-						: event.key === 'ArrowLeft' || event.key === 'ArrowDown'
-							? -1
-							: 0;
-				if (step === 0) return;
-				event.preventDefault();
-				setLevel(Math.max(0, Math.min(count, current + step)));
-			});
-			show();
 		}
 
 		/**

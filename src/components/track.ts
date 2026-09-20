@@ -62,7 +62,8 @@ import {
 } from '../interaction/arm-to-confirm';
 import { GESTURE_COMMIT } from '../interaction/commit-window';
 import { bindEditable, keptRatherThanBlank } from '../interaction/editable';
-import { levelGlyph, levelName, paintLevelRing, parseLevel } from './level-ring';
+import { levelGlyph, levelName, parseLevel } from './level-ring';
+import { bindRingControl } from './ring-control';
 import { flagText, isFlagSet, isFlagSpelling } from './stored-flag';
 import { fencedLinkRefusal } from './fenced-link';
 import { modifierBreakdown } from './modifier-breakdown';
@@ -1700,6 +1701,20 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			/** Where a gesture in flight would land, or null when none is. */
 			pending: number | null;
 			paint: () => void;
+			/**
+			 * Move the run without writing, for both kinds of run.
+			 *
+			 * **One member, one meaning**, which is worth stating because the two
+			 * implementations are now built out of different parts: a segmented
+			 * run sets `value` and paints, and a flag sets `value` and hands the
+			 * level to `ring-control.ts`'s own silent setter. Neither tells the
+			 * note. `commit` writes every dirty run in one change, which is the
+			 * whole argument for a row set over three components, so a `setMarks`
+			 * that wrote for itself would turn a sweep over a checklist into one
+			 * change per row. Nothing sweeps a flag run today — its presses are
+			 * the control's — so this is the contract a later sweep inherits
+			 * rather than one anything currently exercises.
+			 */
 			setMarks: (next: number) => void;
 		}
 
@@ -2075,83 +2090,62 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 					setMarks: () => undefined,
 				};
 
-				/** The step's own name, where the steps are named. */
-				const reading = (on: boolean): string => stepLabel(config, on ? 1 : 0, 1);
-
-				run.paint = (): void => {
-					const on = run.value >= 1;
-					// Everything a reader sees comes from the shared painter, so
-					// a flag on a card cannot measure differently from the same
-					// flag in a cell. `graded` only where the steps are named,
-					// which is what puts the level's own mark in the ring.
-					paintLevelRing(el, { levels: config.levels }, on ? 1 : 0, named);
-					el.setAttribute('aria-pressed', String(on));
-					el.setAttribute(
-						'aria-label',
-						rowSet ? (row.name ?? row.key) : config.label,
-					);
-					// Only a named step earns a tooltip, and every named one is an
-					// abbreviation: an initial, a mark of the layout's own, or a
-					// bare fill saying nothing. An unnamed flag is a box, and
-					// aria-pressed already says which way it is — a tooltip
-					// repeating what is legible is noise fired at every pass.
-					if (named) el.title = reading(on);
-				};
-
+				/*
+				 * The ARIA, the tooltip, the touch route and the presses are
+				 * `ring-control.ts`'s, so a flag on a card and the same control in a
+				 * cell cannot come to disagree about what either of them says. What
+				 * stays here is what a card has and a cell does not: the run record
+				 * the rest of this component sweeps, and the axis a checklist is
+				 * laid out on.
+				 *
+				 * `graded` where the steps are *named*, which is what puts the level's
+				 * own mark in the ring — and a flag is the one place `count === 1` and
+				 * `graded` meet, since a cell's toggle is never graded.
+				 */
+				const control = bindRingControl({
+					button: el,
+					column: { levels: config.levels },
+					count: 1,
+					graded: named,
+					level: held >= 1 ? 1 : 0,
+					name: rowSet ? (row.name ?? row.key) : config.label,
+					// The card's own label stands over it, or the row's name beside it.
+					nameOnScreen: true,
+					onSet: (level) => {
+						run.value = level;
+						// Synchronously, not through `commitSoon`: a press's outcome
+						// is its input, so there is no run of presses to wait out and
+						// the debounce would only make the note late. So a checklist
+						// writes once per ring rather than once per burst — `commit`
+						// collects every dirty run, but this path has already written
+						// the last one before the next press can arrive.
+						commit();
+					},
+					// Up and down move between a checklist's flags, on the axis they
+					// are laid out on — the row set's rule unchanged, so a card is
+					// still one tab stop. The ring's own axis is the level's and
+					// points the other way, so moving *down* the list is `-step`.
+					// A card with one flag answers neither key rather than stepping.
+					onVertical: (step) => {
+						if (runs.length < 2) return false;
+						focusRun(runs.indexOf(run) - step);
+						return true;
+					},
+				});
+				run.paint = control.repaint;
+				// The segmented run's own shape, with the control's silent setter
+				// where that one calls `run.paint()`. One interface member has to
+				// mean one thing: `commit` writes every dirty run in *one* change
+				// to the note, which is the whole argument for a row set over three
+				// components, and a `setMarks` that wrote for itself would turn a
+				// sweep over a checklist into one change per row.
 				run.setMarks = (next: number): void => {
 					const wanted = next >= 1 ? 1 : 0;
 					if (wanted === run.value) return;
 					run.value = wanted;
-					run.paint();
+					control.setLevel(wanted);
 				};
-
 				runs.push(run);
-
-				// The touch route to what a glyph stands for, where there is
-				// something it is not already saying. A press held that long was
-				// a question rather than an instruction, and it ends in a click.
-				const longPressed = named
-					? bindLongPress(el, () => reading(run.value >= 1))
-					: null;
-
-				el.addEventListener('click', () => {
-					if (longPressed?.() === true) return;
-					run.setMarks(run.value >= 1 ? 0 : 1);
-					// Synchronously, not through `commitSoon`: a press's outcome
-					// is its input, so there is no run of presses to wait out and
-					// the debounce would only make the note late. So a checklist
-					// writes once per ring rather than once per burst — `commit`
-					// collects every dirty run, but this path has already written
-					// the last one before the next press can arrive.
-					commit();
-				});
-
-				el.addEventListener('keydown', (event) => {
-					// Up and down move between a checklist's flags, on the axis
-					// they are laid out on — the row set's rule unchanged, so a
-					// card is still one tab stop. Left and right set and clear
-					// without wrapping, which is the ring's "aim rather than
-					// count" at two states. Space and Enter are the button's own
-					// click and need nothing here.
-					if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
-						if (runs.length < 2) return;
-						event.preventDefault();
-						focusRun(runs.indexOf(run) + (event.key === 'ArrowDown' ? 1 : -1));
-						return;
-					}
-					const wanted =
-						event.key === 'ArrowRight'
-							? 1
-							: event.key === 'ArrowLeft'
-								? 0
-								: null;
-					if (wanted === null) return;
-					event.preventDefault();
-					run.setMarks(wanted);
-					commit();
-				});
-
-				run.paint();
 				return;
 			}
 

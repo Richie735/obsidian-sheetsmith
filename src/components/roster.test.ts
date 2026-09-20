@@ -8,6 +8,8 @@ import { parseFunctions } from '../formula/functions';
 import { buildSheet, ReadComponent } from '../formula/sheet';
 import { Layout } from '../parse/layout';
 import { RenderContext } from '../types';
+import { hold } from '../test/pointer';
+import { closePopover, LONG_PRESS } from '../ui/popover';
 
 /*
  * A D&D-shaped roster: two abilities, each with a skill. `mod(value)` is the
@@ -974,6 +976,36 @@ describe('render', () => {
 			button?.click();
 			expect(button?.getAttribute('aria-label')).toBe('Athletics Training: Proficient');
 			expect(button?.classList.contains('sheetsmith-level-ring-on')).toBe(true);
+		});
+
+		it('reveals a level name on a long press, and swallows the click', () => {
+			// `docs/UI.md` §7 forbids a hover-only affordance, and a glyph is an
+			// abbreviation: `P` stands for "Proficient" and a finger has no hover
+			// to find that out with. Asserted in this component because the
+			// criterion is per component — the module's own case cannot say that
+			// a Roster cell reached it.
+			vi.useFakeTimers();
+			try {
+				const result = roster.read(levelledBody, levelled);
+				const data = result.ok ? result.data : null;
+				const { el, changes } = recording(levelled, data);
+				const button = el.querySelector<HTMLElement>(
+					'tbody .sheetsmith-level-ring',
+				);
+				button?.click();
+				hold(button, LONG_PRESS + 10, { pointerType: 'touch' });
+				expect(
+					document.querySelector('.sheetsmith-popover')?.textContent,
+				).toBe('Proficient');
+				// The press ends in a click, and it did not mean "cycle".
+				button?.click();
+				expect(changes).toEqual([
+					{ rows: { 0: { cells: { Training: '1' } } } },
+				]);
+				closePopover();
+			} finally {
+				vi.useRealTimers();
+			}
 		});
 	});
 
