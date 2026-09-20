@@ -659,6 +659,28 @@ A component inventing its own is the failure mode to watch for.
   for two-state marks; `aria-label` composed from the label and the state name
   the layout author chose. Announce commits and restores where the change is not
   visible on its own.
+- **An unnamed two-state control lets `aria-pressed` say its state, and says no
+  word beside it** [checked: `contract.test.ts`]. `SPEC` §13's ruling, and the
+  rule two components had each written down as an aside: two states is a toggle
+  button and ARIA has a word for exactly that, which every screen reader already
+  reads, so a "Yes" or a "No" in the name is a *second* name for one state —
+  announced after the platform had already announced it. **More than two states
+  is not a toggle button**, and those carry the state in the name instead, which
+  is the other half of the same rule. Where the states have names of their own a
+  named level says itself, which is the whole point of naming it.
+
+  What makes it [checked] is not the sentence but the population: one module
+  wires every ring on a sheet (`components/ring-control.ts`), and a component
+  setting `'aria-pressed'` for itself is reported by name. The rule was held in
+  four files' comments before that, and the drift was the kind a comment cannot
+  stop — three of the four computed a reading for an unnamed flag and discarded
+  it, because no branch that could have shown it was reachable.
+
+  The cost is stated rather than discovered: "Yes" and "No" left
+  `stored-flag.ts` with the member that computed them, so a later surface
+  needing a *word* for a stored flag — a printed sheet, an export, a formula
+  reading one into text — reopens the question there. That is a reading for a stored value, which is a different
+  question from what a control announces to a listener standing on it.
 - **Arithmetic uses the formula parser, never `eval`** [checked]. `amountOf`
   and `settleEntry` in `editable.ts` are the shared entry points.
 
@@ -827,8 +849,8 @@ decided.
   `components/column-types.ts` and `components/stored-flag.ts` are the second,
   and they hold nothing but the policy §1's one-step tier extracted: which column
   types exist, which is the default, which can be totalled and which published;
-  which spellings of a flag a note may hold, what one is written as, and what a
-  two-state control is called. A file of its own could assert little past a
+  which spellings of a flag a note may hold, and what one is written as.
+  A file of its own could assert little past a
   constant equalling itself, which is §1's own reason the copies were merged —
   the only thing such a test could check is that they still agree, and that is
   what one name says for free. What holds them is three consumer test files:
@@ -838,8 +860,14 @@ decided.
   through the editor field that offers it. Each spelling is written out literally
   rather than iterated from an exported set: a test walking `SET` passes after a
   member is deleted from it, because the deletion takes the iteration with it,
-  which is the vacuous pass this section forbids above. One member of
-  `stored-flag.ts` does not meet the condition below, and §11 holds it.
+  which is the vacuous pass this section forbids above. **Every member of
+  `stored-flag.ts` now meets the condition below**, which it did not when this
+  paragraph was written: it held a third policy, what a two-state control is
+  called, whose every caller computed it and threw it away — so the one thing
+  the exception rests on, that what the module owns is actually driven
+  somewhere, was false of it. `SPEC` §13 ruled that `aria-pressed` says an
+  unnamed flag's state, and the member went with the ruling rather than gaining
+  a test.
   **A note-format primitive is tested through the round trip it is part of.**
   `parse/lines.ts`, `parse/layout-walk.ts` and `parse/markdown-body.ts` are the
   third, and this clause is written because the two above did not describe them —

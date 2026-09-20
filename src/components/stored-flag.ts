@@ -1,15 +1,21 @@
 /*
  * How a boolean is spelled in a character note, and which spellings read as set.
  *
- * Shared by the two components that store one: a Table's `toggle` column, and a
- * Track whose run is one segment (SPEC §4.2). That is the whole reason the file
- * exists, and it is `column-types.ts`'s reason one step over. PATTERNS §1 names
+ * Shared by every component that stores one, and by the module that says what a
+ * typed value means: a Table's `toggle` column, a Track whose run is one segment
+ * (SPEC §4.2), a Record set's `toggle` field, a Roster cell, and
+ * `typed-value.ts`. **Five importers, and this sentence said "the two
+ * components" until somebody counted** — a count of files is not the rule and
+ * goes stale silently, which is the drift `PATTERNS` §2 records against its own
+ * `setIcon` paragraph for exactly this reason. The rule is that one file owns
+ * the spellings; the roster is what it happens to have grown to. It is
+ * `column-types.ts`'s reason one step over. PATTERNS §1 names
  * this case twice — the truthiness spellings are its standing example of what a
  * second reader has to match, and its policy tier says a *set* climbs the reuse
  * ladder in one step, because the only thing a guard test over two copies could
  * assert is that they still agree, which is what one name says for free.
  *
- * Each of the three would drift on its own:
+ * Each of the two would drift on its own:
  *
  * - **Which spellings mean yes.** A note hand-edited to `✔` reads as ticked in a
  *   table cell and as untouched on a card, from the same file, with nothing on
@@ -17,9 +23,13 @@
  * - **What gets written.** Two components writing `yes` and `true` into one note
  *   makes the file inconsistent in a way the user never asked for and cannot
  *   fix, since each card rewrites its own entry on the next press.
- * - **What a two-state control is called.** "Yes" and "No" are what a reader
- *   hears and what a title says, and a pair of strings is a policy like any
- *   other number.
+ *
+ * It held a third — **what a two-state control is called** — and that one has
+ * gone with the function that computed it. `SPEC` §13 ruled that `aria-pressed`
+ * says an unnamed flag's state and no word is announced beside it, so there was
+ * nothing left for the pair of strings to be read by: every caller computed the
+ * reading and discarded it. What is left is note format and nothing else, which
+ * is why every member below is now driven by a real read or a real write.
  *
  * The application is here rather than only the values, which is the half that
  * matters: a shared set with `has(text.toLowerCase())` written at both sites is
@@ -68,14 +78,4 @@ export function isFlagSet(raw: string): boolean {
 export function isFlagSpelling(raw: string): boolean {
 	const text = raw.trim().toLowerCase();
 	return SET.has(text) || CLEAR.has(text);
-}
-
-/**
- * What a two-state control is called, to a reader and to a listener.
- *
- * Only where the states have no names of their own. A named level says itself,
- * which is the whole point of naming it.
- */
-export function flagReading(on: boolean): string {
-	return on ? 'Yes' : 'No';
 }

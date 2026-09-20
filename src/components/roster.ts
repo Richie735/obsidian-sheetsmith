@@ -53,21 +53,17 @@ import { claimRows } from '../parse/row-claims';
 import { MarkdownTable, readTable, writeTable } from '../parse/table';
 import { displayText } from '../parse/wikilink';
 import { bindEditable, UNRESOLVED_DELAY } from '../interaction/editable';
-import { bindLongPress, showPopover } from '../ui/popover';
+import { showPopover } from '../ui/popover';
 import { revealWhenTruncated } from '../ui/truncation';
 import { ColumnType, COLUMN_TYPES } from './column-types';
 import { effectiveReading, sameNumber } from './effective-value';
 import { fencedLinkRefusal } from './fenced-link';
-import {
-	levelCount,
-	levelName,
-	levelOf,
-	paintLevelRing,
-} from './level-ring';
+import { levelCount, levelName, levelOf } from './level-ring';
 import { paintLinkedText } from './linked-text';
 import { MODIFIED_CLASS, modifierBreakdown } from './modifier-breakdown';
+import { bindRingControl } from './ring-control';
 import { sampleFlag, sampleNumber, sampleSeed, sampleText } from './sample-values';
-import { flagReading, flagText, isFlagSet } from './stored-flag';
+import { flagText, isFlagSet } from './stored-flag';
 import { boundedText, formatComputed, typedValue, typeOf } from './typed-value';
 import {
 	ComponentConfig,
@@ -1325,69 +1321,57 @@ function drawRow(
 		if (type === 'level' || type === 'toggle') {
 			const graded = type === 'level';
 			const count = graded ? levelCount(column) : 1;
-			let current = graded ? levelOf(column, raw) : (isFlagSet(raw) ? 1 : 0);
-			let repaint = () => undefined as void;
+			const initial = graded ? levelOf(column, raw) : isFlagSet(raw) ? 1 : 0;
 			const stateOf = (level: number) => (graded ? String(level) : flagText(level > 0));
-			const nameOf = (level: number) => (graded ? levelName(column, level) : flagReading(level > 0));
-			const setLevel = (next: number) => {
-				if (next === current) return;
-				current = next;
-				repaint();
-				drafts.set(column.key, stateOf(current));
+			/** The draft the row edits, the band's arithmetic, then the note. */
+			const store = (level: number) => {
+				drafts.set(column.key, stateOf(level));
 				recompute(true);
-				commit(stateOf(current));
+				commit(stateOf(level));
 			};
 
 			if (graded && column.input === 'select') {
 				const select = td.createEl('select', { cls: 'sheetsmith-table-select' });
 				for (let i = 0; i <= count; i++) {
-					const option = select.createEl('option', { text: nameOf(i) });
+					const option = select.createEl('option', { text: levelName(column, i) });
 					option.value = String(i);
 				}
-				select.value = String(current);
+				select.value = String(initial);
 				select.setAttribute('aria-label', label);
-				select.addEventListener('change', () => setLevel(Number(select.value)));
+				// Table's own dead-but-kept guard, for its reason: the spec fenced
+				// this branch off, so it keeps the shape it had.
+				let shown = initial;
+				select.addEventListener('change', () => {
+					const next = Number(select.value);
+					if (next === shown) return;
+					shown = next;
+					store(next);
+				});
 				return;
 			}
 
 			const button = td.createEl('button', { cls: 'sheetsmith-level-ring' });
 			button.type = 'button';
-			const pressed = count === 1;
-			const show = () => {
-				const name = nameOf(current);
-				paintLevelRing(button, column, current, graded);
-				if (pressed) {
-					button.setAttribute('aria-pressed', String(current > 0));
-					button.setAttribute('aria-label', label);
-				} else {
-					button.setAttribute('aria-label', `${label}: ${name}`);
-				}
-				if (graded && column.levels !== undefined) {
-					button.setAttribute('title', name);
-				} else {
-					button.removeAttribute('title');
-				}
-			};
-			const longPressed = bindLongPress(button, () =>
-				graded && column.levels !== undefined ? nameOf(current) : null,
-			);
-			button.addEventListener('click', () => {
-				if (longPressed()) return;
-				setLevel(current === count ? 0 : current + 1);
+			// Table's cell verbatim, and now literally so: this component's copy
+			// of the ARIA, the tooltip and the presses was the fourth spelling of
+			// one control (`ring-control.ts`).
+			bindRingControl({
+				button,
+				column,
+				count,
+				graded,
+				level: initial,
+				name: label,
+				/*
+				 * Derived for Table's reason, which is this column's reason:
+				 * `hideHeading` exists for a ring column (`SPEC` §4.2), so the
+				 * literal `true` would be false on exactly the columns where
+				 * the name is the thing a reader is missing. The heading stays
+				 * rendered for assistive tech; it is the eye that loses it.
+				 */
+				nameOnScreen: column.hideHeading !== true,
+				onSet: store,
 			});
-			repaint = show;
-			button.addEventListener('keydown', (event) => {
-				const step =
-					event.key === 'ArrowRight' || event.key === 'ArrowUp'
-						? 1
-						: event.key === 'ArrowLeft' || event.key === 'ArrowDown'
-							? -1
-							: 0;
-				if (step === 0) return;
-				event.preventDefault();
-				setLevel(Math.max(0, Math.min(count, current + step)));
-			});
-			show();
 			return;
 		}
 

@@ -219,6 +219,28 @@ sheet.
   nothing left to say, while a *named* level has a word the glyph cannot draw.
   Written down because the third component to draw a ring set `title`
   unconditionally.
+
+  **What "already legible" rests on is the control's name being on screen beside
+  it, and that is the condition rather than an exception to the rule.** A card's
+  name is above it and a cell's is in a `<th>` over its column, so there the
+  level's word is the only thing a tooltip could add. A record has neither: a
+  reader sees `Fireball · Level 3 · ●` and nothing on screen says the dot is
+  "Prepared", so the name is the first thing missing and a named level adds its
+  word to it. Without the condition this bullet reads as saying a record is
+  wrong, and it is not.
+
+  **It is a question every caller answers, never an answer a surface is assumed
+  to have** — which is the whole reason `components/ring-control.ts` takes it as
+  `nameOnScreen`, a fact about the surface, rather than as a request for a
+  tooltip. The cell is where that matters rather than being a formality: a column
+  may take its heading off the sheet with `hideHeading`, which `SPEC` §4.2 built
+  for the ring column specifically, and it leaves the heading rendered for
+  assistive tech — so the name goes from the *eye* alone, and the tooltip becomes
+  the only route a pointer has to it. Table and Roster therefore derive the fact
+  rather than asserting it, and on the sheets that ship it is false more often
+  than not: nine of the level columns across the three starter layouts hide their
+  heading. **The rule needs no exception, which is the point** — it is true of
+  every caller, and the two branches cannot drift into three.
 - **A mark whose state is only a fill strength has one channel.** Filled against
   empty is a shape difference and carries itself; two marked levels differing
   only by how far the mix went do not. `paintLevelRing` is the model, and its
@@ -311,7 +333,8 @@ belongs to the component that is only that, not to whoever renders one.
 | A stat's name, value and reading as one line of a table | `.sheetsmith-roster-band-inner`, `.sheetsmith-roster-band-value` | Roster's band head. **Reuses rather than restyles**: the name takes `.sheetsmith-group-heading`, the score `.sheetsmith-card-input`, the reading `.sheetsmith-card-derived`. What is new: the band-inner wrapper, a `<div>` inside the table's own `<td>` rather than `display: flex` on the `<td>` itself, which the engine boxes in an anonymous table-cell and loses the `colSpan`-driven width; and the value/reading centring sub-group `.sheetsmith-roster-band-value`, needed only because a band head's own width is not a card's |
 | A component's own name | `.sheetsmith-component-label` | the card face, Pool, Track, Rich text, Image, Record set, Passport — **six consumers**, which is what took it from a comment in each file to a name in this table |
 | A strip of alternatives over a region | `.sheetsmith-tabset-strip` | Tab set's tabs |
-| The level ring | `paintLevelRing`, `.sheetsmith-level-ring` | Table's `level` and `toggle` columns, Record set's `level` and `toggle` fields, Track's flag, the editor's level sample |
+| The level ring | `paintLevelRing`, `.sheetsmith-level-ring` | Table's `level` and `toggle` columns, Record set's `level` and `toggle` fields, Track's flag, a Roster cell, the editor's level sample |
+| The control that ring is | `components/ring-control.ts`'s `bindRingControl` | the same four components, and **deliberately not the editor's sample**. The painter and the control are two rows because they have different rosters, and the sample is the reason rather than an omission: it is a `<button>` with an `aria-label`, an `aria-pressed`, a `title` and a click of its own, but **its two states are a fact about the layout** — "this level shows a mark" against "shows nothing" — where every state here is a fact about a character's level, and its press sets a glyph rather than cycling. So folding the ARIA into `paintLevelRing` would overwrite a true statement with a false one. What the module owns is everything the four had a copy of — `aria-pressed` against a state carried in the name, which level earns a `title`, the long press that is a finger's only route to that word, and the press that cycles against the arrows that step. It knows no caller: the button and its classes are the caller's, as `linked-text.ts`'s are, and here not even the class name is passed in. The one thing that differs per surface arrives as `nameOnScreen` (§6) |
 | The editing gesture | `editable.ts` | every stored value on a sheet |
 | The focus a transparent field takes | one selector list in `sheet.css` | Table's cells, Rich text's prose, Image's reference, a record's name, its number fields and its body, a Passport's name. **A third list sits beside these two and is not a fourth kind of treatment**: a chromeless field drawn *inline on a card row* takes `.sheetsmith-pool-max-input`'s own hover and its box-shadow ring instead — a Pool's character-owned max, a Track row's own length through that very class, and a Track row's own name, which is one selector on each rule rather than a copy of either. The split is the control's shape and not its component: these three paint no border at rest, so an accent *border-color* has nothing to colour, and §6's one-focus-treatment-per-component is what puts a Track card's two fields on the same one of them |
 | The hover a transparent field takes | a second selector list beside it | Table's cells, a record's name and its number fields, a Passport's name — **a deliberately different roster from the focus list above**, and each absence is the roster's own definition rather than an exception: Image's field is `pointer-events: none` until its frame hands the press over, Rich text's display layer owns the press so its field never sees a hover, a record's body is a textarea with chrome of its own, and a Passport's *values* left the list when they became tags, because a control with a surface at rest has nothing to reveal. Order is not load-bearing in either list: `:hover` and `:focus` are pseudo-classes, so every selector is (0,3,0) against its base rule's (0,2,0) |

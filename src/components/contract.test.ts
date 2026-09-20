@@ -539,33 +539,162 @@ describe('a component that draws a label asks whether it should', () => {
 		expect(forgetful).toEqual([]);
 	});
 
-	it('draws every two-state control through the shared ring painter', () => {
+	/**
+	 * A quoted `aria-pressed`, which is what an attribute is actually set with.
+	 *
+	 * Narrow on purpose, and the narrowness is the point: `track.ts` names the
+	 * attribute in a comment explaining why a flag is one, and
+	 * `modifier-breakdown.ts` in a comment about what one already announces, so a
+	 * predicate matching the bare word would fail the build on the sentences
+	 * explaining the rule. That is `NATIVE_CHECKBOX`'s own lesson below — a guard
+	 * whose false positive is the prose about the guard is a guard somebody
+	 * deletes.
+	 */
+	const QUOTED_PRESSED = "'aria-pressed'";
+
+	/** The class every ring on a sheet wears, as a caller spells it. */
+	const RING_CLASS = "'sheetsmith-level-ring'";
+
+	it('leaves a two-state ring\'s ARIA to the one control module', () => {
 		/*
-		 * `docs/UI.md` §9: when a card and a cell do the same job they share the
-		 * painter, "precisely so one flag cannot measure differently from the
-		 * other under the same finger". A `toggle` column and a Track's flag are
-		 * that case, and the way it would drift is somebody giving the second one
-		 * a lookalike — a native checkbox, or its own class with its own
-		 * measurements — which reads perfectly well in the file it is written in.
+		 * `docs/UI.md` §9 and `docs/PATTERNS.md` §6: what a two-state mark
+		 * announces is one rule, and four components drew one. Each spelled the
+		 * ARIA, the tooltip, the touch route and the presses for itself, and
+		 * nothing reported it when they disagreed — which they did, in both
+		 * directions, until `ring-control.ts`.
 		 *
 		 * `aria-pressed` is the marker because it is the one thing a two-state
-		 * control cannot be written without: ARIA has a word for two states, and
-		 * a control declaring it is declaring itself to be one.
+		 * control cannot be written without: ARIA has a word for two states, and a
+		 * control declaring it is declaring itself to be one. So a component
+		 * setting it is a component that has started wiring its own ring.
 		 */
-		const lookalikes = componentFiles()
-			.filter(({ source }) => source.includes('aria-pressed'))
-			.filter(({ source }) => !source.includes('paintLevelRing'))
+		const hand = componentFiles()
+			.filter(({ source }) => source.includes(QUOTED_PRESSED))
 			.map(({ name }) => name);
-		expect(lookalikes).toEqual([]);
+		expect(hand).toEqual([]);
+	});
+
+	it('reports a ring that is drawn without being wired', () => {
+		/*
+		 * The half the check above cannot see. A copy that forgot `aria-pressed`
+		 * altogether passes it perfectly, and that is exactly the disagreement
+		 * worth catching: a ring measuring the same as every other under one
+		 * finger and saying nothing at all to a listener.
+		 */
+		const unwired = componentFiles()
+			.filter(({ source }) => source.includes(RING_CLASS))
+			.filter(({ source }) => !source.includes('bindRingControl'))
+			.map(({ name }) => name);
+		expect(unwired).toEqual([]);
+	});
+
+	it('catches a hand-wired ring however it is spelled, so the scans mean something', () => {
+		/*
+		 * **Both scans above assert an empty list, and neither population can
+		 * contain the marker's own proof.** `ring-control.ts` declares no
+		 * `ComponentDefinition`, so it is outside `componentFiles()` — and now
+		 * that the four callers have handed their ARIA over, it is the only
+		 * non-test file in this folder that spells `'aria-pressed'` at all. So
+		 * both markers match nothing in the set they are run against, and a
+		 * mistyped constant reads exactly like a rule nothing violates.
+		 *
+		 * `NATIVE_CHECKBOX` below is the model and the one this file already
+		 * had: prove the marker against the spellings it must catch and the
+		 * prose it must not, asserted against the constant itself rather than
+		 * against a filtered list. The narrowness argument was written without
+		 * it (`docs/PATTERNS.md` §10, and the open BACKLOG row about a scan
+		 * tested in one direction).
+		 */
+		for (const spelling of [
+			"button.setAttribute('aria-pressed', String(level > 0));",
+			"el.setAttribute('aria-pressed', String(on));",
+		]) {
+			expect(spelling).toContain(QUOTED_PRESSED);
+		}
+		// The prose that exists today, which the backtick spelling keeps out.
+		expect(
+			'A `<button aria-pressed>` because that is the word ARIA has',
+		).not.toContain(QUOTED_PRESSED);
+		// And the limit, pinned rather than claimed: a comment that *quotes* the
+		// attribute is reported. Nothing in `components/` writes one, and the
+		// alternative — a predicate that reads code position — is the shared
+		// source reader the BACKLOG row above already waits on.
+		expect("// the word is 'aria-pressed'").toContain(QUOTED_PRESSED);
+
+		for (const spelling of [
+			"element('button', 'sheetsmith-level-ring', td);",
+			"td.createEl('button', { cls: 'sheetsmith-level-ring' });",
+			"el.classList.add('sheetsmith-level-ring', 'sheetsmith-track-flag');",
+		]) {
+			expect(spelling).toContain(RING_CLASS);
+		}
+		// The painter's own state class is not a ring being drawn, and neither is
+		// a comment naming the selector.
+		expect(
+			"ring.classList.toggle('sheetsmith-level-ring-on', level > 0);",
+		).not.toContain(RING_CLASS);
+		expect('Named for the mark, the way `.sheetsmith-level-ring` is').not.toContain(
+			RING_CLASS,
+		);
+
+		// Anchored to real repository text as well as to literals here: the one
+		// file that does spell the attribute is the one the four handed it to, so
+		// a marker that stopped matching the code fails here too.
+		expect(readFileSync(join(HERE, 'ring-control.ts'), 'utf8')).toContain(
+			QUOTED_PRESSED,
+		);
 	});
 
 	it('finds the two-state controls it is meant to be checking', () => {
-		// A marker that stopped matching would pass the check above by iterating
-		// nothing, and the rule it holds is about the *second* implementor.
-		const pressing = componentFiles().filter(({ source }) =>
+		// Both checks above are absence assertions, which an empty walk satisfies
+		// perfectly (§10). The population they are about is the four components
+		// that draw a ring, so that is what is asserted rather than the markers:
+		// a marker that stopped matching fails here instead of iterating nothing.
+		const wired = componentFiles()
+			.filter(({ source }) => source.includes('bindRingControl'))
+			.map(({ name }) => name);
+		expect(wired.sort()).toEqual([
+			'record-set.ts',
+			'roster.ts',
+			'table.ts',
+			'track.ts',
+		]);
+	});
+
+	it('does not report the prose that explains the rule', () => {
+		/*
+		 * §10's other direction, which the backlog asks of every scan claiming to
+		 * be narrow: a case for the spellings it must **not** report, so the claim
+		 * is tested both ways rather than only by staying green.
+		 *
+		 * **What is asserted here is the one near-miss that is real repository
+		 * text**: `track.ts` explains in a comment why a flag is a
+		 * `<button aria-pressed>`, so the scan runs over a file naming the
+		 * attribute and reports nothing. The marker's other direction — the
+		 * spellings it must catch, and the limit it has — is the case above,
+		 * against the constant itself.
+		 *
+		 * Two things this case used to assert and no longer does, because each
+		 * held under every implementation and so measured nothing. That
+		 * `componentFiles()` excludes `modifier-breakdown.ts` is already held by
+		 * `finds every component file`, and is a fact about the filter rather than
+		 * about this predicate. And Track's run carrying `role="slider"` and
+		 * `'aria-valuenow'` was checked by filtering `['track.ts']` out of a set
+		 * already shown to contain no match — a subset of a proof, which proves
+		 * nothing further. Both remain true and are recorded here rather than
+		 * asserted: a run is a different control with ARIA of its own, and
+		 * `src/editor/list-fields.ts` draws rings whose two states are a fact
+		 * about the *layout* an author is writing rather than about a character's
+		 * level, outside the file set by construction and named so the next reader
+		 * does not widen the scan to catch it.
+		 */
+		const prose = componentFiles().filter(({ source }) =>
 			source.includes('aria-pressed'),
 		);
-		expect(pressing.length).toBeGreaterThan(1);
+		expect(prose.map(({ name }) => name)).toEqual(['track.ts']);
+		expect(
+			prose.filter(({ source }) => source.includes(QUOTED_PRESSED)),
+		).toEqual([]);
 	});
 
 	/*

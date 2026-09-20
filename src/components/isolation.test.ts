@@ -133,6 +133,15 @@ const ALLOWED = [
 	// which is the half §1 says drifts (`roundSum`).
 	"import { renderPictureFrame } from './picture-frame';",
 	"import { renderPictureFrame } from '../components/picture-frame';",
+	// A painted level ring, made into a control: its ARIA, its tooltip, its touch
+	// route and its presses. Added deliberately, and at four consumers rather
+	// than two — Table, Track, Record set and Roster — which is one past where
+	// §1's ladder stops arguing. The painter stays beside it rather than absorbing
+	// this, because it has a consumer whose two states are a fact about the
+	// *layout* — the editor's sample says whether a level shows a mark — where
+	// every state here is a fact about a character's level.
+	"import { bindRingControl } from './ring-control';",
+	"import { bindRingControl } from '../components/ring-control';",
 	"import { MODIFIED_CLASS } from '../components/modifier-breakdown';",
 	"import { paintLinkedText } from '../components/linked-text';",
 	"import { paintLevelRing } from '../components/level-ring';",
