@@ -154,6 +154,13 @@ a test could check is that the copies still agree". So they move to
 `flagText(on)` and `flagReading(on)` — the last because "Yes" and "No" are what a
 two-state control is called in both components and a pair of strings is a policy too.
 
+**The third of those is superseded.** `SPEC` §13 later ruled that an unnamed
+two-state control lets `aria-pressed` say its state and says no word beside it, so
+`flagReading` went with the ruling: every caller had computed it and discarded it,
+because no branch that could have shown it was reachable
+(`docs/features/two-state-control-module.md`). The first two are untouched, and
+nothing this section says about the *spellings* has changed.
+
 ### 3. The palette entry's shape
 
 `PaletteEntry`, in `src/types.ts` beside the rest of the component contract, declared
