@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parseFunctions } from './functions';
 import {
@@ -5,8 +6,11 @@ import {
 	makeFieldExplainer,
 	makeFieldResolver,
 	NO_ENV,
+	publishedFieldNames,
 	resolveFormulaFields,
 } from './resolve';
+import { card, CardConfig } from '../components/card';
+import { cardSet, CardSetConfig } from '../components/card-set';
 import { ComponentConfig } from '../types';
 import { modifierSlot } from './modifiers';
 
@@ -309,5 +313,219 @@ describe('formulaTexts', () => {
 
 	it('has nothing to say about a component declaring no formula fields', () => {
 		expect(formulaTexts({ formulaFields: [] }, table)).toEqual([]);
+	});
+});
+
+/*
+ * **Which published name a formula field becomes, read off `scopeValues`**
+ * (SPEC §5), and the guard that keeps the reading narrow.
+ *
+ * The bug this closes is one optional argument: a field evaluated without its
+ * published name reads `mod.self` as 0, which is what left a Track drawing three
+ * segments while `<id>.count` published five. `FieldResolver`'s own doc comment
+ * predicted it and said nothing would report it, and nothing did.
+ *
+ * **Here rather than in a component's file**, on the precedent directly above:
+ * the branch is observable only where the resolver itself is driven. A component
+ * test can show the number that came out; only these cases can show *why* it is
+ * that number, and only these can be made to fail by deleting the guard.
+ */
+describe('the published name a formula field becomes', () => {
+	/** A slot holding +2 for whichever name asks for one. */
+	const env = {
+		...NO_ENV,
+		sheet: (name: string) => (name.startsWith('mod.') ? 2 : undefined),
+		modifiers: () => ({ override: null, total: 2, resultTotal: 0, lines: [] }),
+	};
+
+	/** A Track's shape: one named entry, its own field, nothing in its scope. */
+	const track = {
+		formulaFields: ['count'] as const,
+		scopeValues: () => ({
+			named: { count: { display: { field: 'count', scope: {} } } },
+		}),
+	};
+	const run = {
+		...config,
+		id: 'exhaustion',
+		count: '3 + mod.self',
+	} as typeof config;
+
+	it('hands a plain display entry its own name, so the field reads its slot', () => {
+		expect(resolveFormulaFields(track, run, null, env).count).toBe(5);
+	});
+
+	it('is the same number the name table publishes, which is the whole point', () => {
+		// The name table's own call, spelled as `formula/sheet.ts` spells it.
+		const resolve = makeFieldResolver(track, run, null, env);
+		expect(resolveFormulaFields(track, run, null, env).count).toBe(
+			resolve('count', {}, 'exhaustion.count'),
+		);
+	});
+
+	/*
+	 * **The case the whole guard exists for, and it is written to fail loudly.**
+	 *
+	 * Card, Card set and Roster all publish `derived` under an entry that runs it
+	 * in an internal scope — `{ value: <the stored score> }` — because the formula
+	 * is *about* that value. This pass supplies `{}`, so it is not that evaluation
+	 * and may not take the name.
+	 *
+	 * Measured rather than asserted: dropping the scope clause from
+	 * `publishedFieldNames` makes this case read 17 instead of 15, because the
+	 * slot's +2 then lands on a number this pass had no business modifying.
+	 */
+	it('withholds the name from an entry that wants an internal scope', () => {
+		/*
+		 * **The real component, not a stand-in written to satisfy the guard.**
+		 * `card.scopeValues` is what decides this, and a local object literal
+		 * shaped like it would keep passing on the day `card.ts` stopped scoping
+		 * its entry — which is the day Card silently starts reading a slot this
+		 * pass has no business handing it. The import is a test importing two
+		 * modules, which `roster.test.ts` already does; the rule `PATTERNS.md` §1
+		 * enforces is that a *component* imports no sibling.
+		 */
+		const resolved = resolveFormulaFields(
+			card,
+			{
+				...config,
+				id: 'armour_class',
+				derived: 'value + mod.self',
+			} as CardConfig,
+			{ value: '15' },
+			env,
+		);
+		expect(resolved.derived).toBe(15);
+	});
+
+	it('withholds it from a Card set, whose entries are one per name', () => {
+		/*
+		 * **The one-entry case, which is the counter-example to counting names.**
+		 * Exactly one entry publishes here, so a guard that asked "is there a
+		 * single name?" would hand `derived` the name and modify it — and
+		 * `abilities.STR` is a different number from whatever this pass came to.
+		 *
+		 * The formula reads no `value` deliberately: Card set's own entries scope
+		 * one in and this pass does not, so `value + mod.self` resolves to null
+		 * either way and could not tell the two apart. `10 + mod.self` reads 10
+		 * with the guard and 12 without it.
+		 */
+		const resolved = resolveFormulaFields(
+			cardSet,
+			{
+				...config,
+				id: 'abilities',
+				derived: '10 + mod.self',
+				entries: [{ key: 'STR' }],
+			} as unknown as CardSetConfig,
+			{ values: { STR: '15' } },
+			env,
+		);
+		expect(resolved.derived).toBe(10);
+	});
+
+	/*
+	 * A count of names would admit a one-entry Card set and evaluate its `derived`
+	 * without the `value` it is about, so the condition is the entry's own scope
+	 * and not how many names the component has. The case above is a component with
+	 * exactly one entry, which is what makes it the counter-example as well as the
+	 * regression guard.
+	 */
+	it('withholds it from an entry that wants rows of its own', () => {
+		/*
+		 * `formula/sheet.ts` registers a display entry as `resolve(display.field,
+		 * display.scope, name, false, display.rows)`. This pass supplies neither
+		 * the scope nor the rows, so an entry asking for either is not the
+		 * evaluation that becomes the name. Nothing in the registry declares rows
+		 * with an empty scope today — Roster, the only carrier, scopes a `value` —
+		 * so this is the branch that has no consumer yet, pinned here because the
+		 * clause exists.
+		 */
+		const banded = {
+			formulaFields: ['derived'] as const,
+			scopeValues: () => ({
+				named: {
+					PHY: {
+						display: { field: 'derived', scope: {}, rows: () => [] },
+					},
+				},
+			}),
+		};
+		const resolved = resolveFormulaFields(
+			banded,
+			{ ...config, id: 'stats', derived: '1 + mod.self' } as typeof config,
+			null,
+			env,
+		);
+		expect(resolved.derived).toBe(1);
+	});
+
+	it('withholds it where two entries name one field', () => {
+		// Neither is *the* name the field becomes, and taking the first would make
+		// the answer depend on the key order of an object.
+		const twice = {
+			formulaFields: ['count'] as const,
+			scopeValues: () => ({
+				named: {
+					count: { display: { field: 'count', scope: {} } },
+					total: { display: { field: 'count', scope: {} } },
+				},
+			}),
+		};
+		const resolved = resolveFormulaFields(
+			twice,
+			{ ...config, id: 'clock', count: '3 + mod.self' } as typeof config,
+			null,
+			env,
+		);
+		expect(resolved.count).toBe(3);
+	});
+
+	it('leaves a component that publishes nothing exactly as it was', () => {
+		// `mod.self` on a name nothing publishes is 0, which is the answer a
+		// Table's keyless row already depends on.
+		const resolved = resolveFormulaFields(
+			{ formulaFields: ['count'] as const },
+			{ ...config, id: 'clock', count: '3 + mod.self' } as typeof config,
+			null,
+			env,
+		);
+		expect(resolved.count).toBe(3);
+	});
+
+	/*
+	 * **The guard's premise is a call in another file, and nothing but this holds
+	 * the two together.**
+	 *
+	 * `publishedFieldNames` may hand a field its name only where this pass
+	 * reproduces the evaluation the name table performs, and what the name table
+	 * performs is one call in `formula/sheet.ts`. The two clauses — an empty
+	 * `display.scope`, an absent `display.rows` — are that call's third and fifth
+	 * arguments read as conditions. Add a sixth argument there, or change one,
+	 * and the guard is silently answering a question about an evaluation that no
+	 * longer exists: `mod.self` goes back to reading 0 in a pass that should have
+	 * had a name, which is precisely how this bug shipped the first time and
+	 * precisely what no other test can see.
+	 *
+	 * A source scan rather than a behavioural case, on `sheet.test.ts`'s own
+	 * precedent two files over: the cases above prove the answer is right, and
+	 * this proves the *reason* still is. It cannot pass vacuously — a spelling it
+	 * cannot find is the failure.
+	 */
+	it('mirrors the one call the name table makes for a display entry', () => {
+		const source = readFileSync(new URL('./sheet.ts', import.meta.url), 'utf8');
+		expect(source).toContain(
+			'resolve(display.field, display.scope, name, false, display.rows)',
+		);
+	});
+
+	it('reads the layout and not the character, so a null note changes nothing', () => {
+		// `scopeValues(null, config)` is what decides the mapping, on
+		// `modifierTargetSource`'s own terms: which name a field publishes is a
+		// fact about the layout. A component whose entries depend on its data
+		// would otherwise publish a different name per character.
+		expect(publishedFieldNames(track, run)).toEqual(
+			new Map([['count', 'exhaustion.count']]),
+		);
 	});
 });

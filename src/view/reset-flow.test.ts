@@ -19,6 +19,7 @@ import {
 	FormulaEnv,
 	makeFieldExplainer,
 	makeFieldResolver,
+	publishedFieldNames,
 } from '../formula/resolve';
 import { buildSheet } from '../formula/sheet';
 import { applySectionWrites, getSection, parseCharacter } from '../parse/character';
@@ -40,6 +41,7 @@ interface FixtureComponent {
 	hasTemp?: boolean;
 	rowHeader?: string;
 	openRows?: boolean;
+	rows?: { label: string }[];
 	columns?: { key: string; type?: string; min?: number; max?: number }[];
 	reset?: {
 		trigger: string;
@@ -205,6 +207,11 @@ function applyTrigger(
 		if (!component.applyReset) continue;
 		const resolve = makeFieldResolver(component, config, data, env);
 		const explain = makeFieldExplainer(component, config, data, env);
+		// The view supplies each field's published name here, so a ceiling that
+		// is a formula resolves on this path exactly as it does at the render.
+		// Spelled rather than skipped for this file's own reason: a mirror's
+		// divergence is only ever visible on a case the mirror does not have.
+		const published = publishedFieldNames(component, config);
 		// **Every binding matching this trigger, not the first**, each with its
 		// own index — which is where its own `to` expression lives now that the
 		// bindings are a list. A binding may name a column, so one trigger can
@@ -216,8 +223,10 @@ function applyTrigger(
 			const at = (field: string): string =>
 				field === 'reset.to' ? `reset.${index}.to` : field;
 			const result = component.applyReset(data, config, reset, {
-				resolve: (field, scope) => resolve(at(field), scope),
-				explain: (field, scope) => explain(at(field), scope),
+				resolve: (field, scope) =>
+					resolve(at(field), scope, published.get(at(field))),
+				explain: (field, scope) =>
+					explain(at(field), scope, published.get(at(field))),
 			});
 			if (!result.ok) {
 				failed.push(`${config.label}: ${result.error}`);
@@ -844,5 +853,60 @@ describe('a long rest reaching two columns of one table', () => {
 		// half-succeed. Applying it twice changes nothing further.
 		const once = applyTrigger(LISTED, WITH_CONDITIONS, 'Long rest').text;
 		expect(applyTrigger(once, WITH_CONDITIONS, 'Long rest').text).toBe(once);
+	});
+});
+
+/*
+ * **A rest restores to the ceiling the card is drawing**
+ * (`docs/features/modifier-granted-track-segments.md`).
+ *
+ * This is the third reader of a ceiling that is a formula, after the card and
+ * the published name — and the one a reader would meet as a plugin that filled
+ * their hit points to the wrong number. Correcting the other two without this
+ * one would have put a fresh disagreement in exactly the place the feature
+ * exists to remove it from.
+ */
+describe('a long rest against a maximum a modifier moved', () => {
+	const LAYOUT_WITH_ITEM = variant((shape) => {
+		componentIn(shape, 'hp').max = '10 + mod.self';
+		shape.components.push({
+			id: 'worn',
+			type: 'table',
+			label: 'Worn items',
+			position: { col: 1, row: 3, width: 4, height: 2 },
+			rowHeader: 'Item',
+			rows: [{ label: 'Amulet' }],
+			columns: [{ key: 'Modifiers', type: 'modifier' }],
+		});
+	});
+
+	const WORN = (effect: string) =>
+		NOTE.replace(
+			'## Backstory',
+			[
+				'## Worn items',
+				'',
+				'| Item | Modifiers |',
+				'| --- | --- |',
+				`| Amulet | ${effect} |`,
+				'',
+				'## Backstory',
+			].join('\n'),
+		);
+
+	it('restores to the number the sheet publishes, not the base', () => {
+		const { text } = applyTrigger(
+			WORN('hp.max += 4 as item'),
+			LAYOUT_WITH_ITEM,
+			'Long rest',
+		);
+		expect(text).toContain('current: 14');
+	});
+
+	it('restores to the base once the item comes off', () => {
+		// The same layout and the same trigger: what changed is the character's
+		// inventory, which is the whole of what a modifier is.
+		const { text } = applyTrigger(WORN(''), LAYOUT_WITH_ITEM, 'Long rest');
+		expect(text).toContain('current: 10');
 	});
 });

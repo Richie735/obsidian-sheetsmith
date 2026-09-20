@@ -40,6 +40,7 @@ import {
 	FormulaEnv,
 	makeFieldExplainer,
 	makeFieldResolver,
+	publishedFieldNames,
 	resolveFormulaFields,
 } from '../formula/resolve';
 import { parseFunctions } from '../formula/functions';
@@ -913,6 +914,22 @@ export class SheetView extends TextFileView {
 			if (!component?.applyReset) continue;
 			const resolve = makeFieldResolver(component, config, data, env);
 			const explain = makeFieldExplainer(component, config, data, env);
+			/*
+			 * The same mapping the pre-resolve pass uses, so a rest restores to the
+			 * ceiling the card is *drawing* rather than to the one it drew before a
+			 * modifier arrived. `max` and `count` are formulas that become published
+			 * names, so `mod.self` inside either has to mean the same thing on this
+			 * path as it does at the render — which is what `resolveFormulaFields`
+			 * now guarantees on the other side.
+			 *
+			 * Supplied here rather than spelled in each component, and that is the
+			 * point of it: a component restating which of its own fields publishes a
+			 * name would be a second copy of the conditions `scopeValues` already
+			 * decides — a Track's `count` carries a `display` only when it is
+			 * neither a row set, nor named levels, nor a flag — and a copy of that
+			 * predicate is what `PATTERNS.md` §1's one-step tier refuses.
+			 */
+			const published = publishedFieldNames(component, config);
 
 			/*
 			 * **Every binding this trigger matches, not the first.** This was a
@@ -938,8 +955,10 @@ export class SheetView extends TextFileView {
 					field === 'reset.to' ? `reset.${index}.to` : field;
 
 				const result = component.applyReset(data, config, reset, {
-					resolve: (field, scope) => resolve(at(field), scope),
-					explain: (field, scope) => explain(at(field), scope),
+					resolve: (field, scope) =>
+						resolve(at(field), scope, published.get(at(field))),
+					explain: (field, scope) =>
+						explain(at(field), scope, published.get(at(field))),
 				});
 				if (result.ok) edits.push({ component, config, data: result.data });
 				else failed.push(`${config.label} — ${result.error}`);
