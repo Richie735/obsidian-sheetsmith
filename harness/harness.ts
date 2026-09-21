@@ -873,13 +873,21 @@ function applyQuery(): void {
 
 	void ensureSurface().then(async () => {
 		draw();
-		focusWanted();
+		// Before the presses, as it always was — unless the view also scrolls, in
+		// which case it goes after the scroll (below). A programmatic focus scrolls
+		// its control into view by the same algorithm a Tab press uses, honouring
+		// `scroll-padding`, so "focus a control the scrolled list has put under a
+		// sticky strip" is only photographable if the list is scrolled *first*:
+		// focused first, the scroll then moved the list out from under a control
+		// that had already been brought into view.
+		if (scrolled.length === 0) focusWanted();
 		pressWanted();
 		// After the presses, and before the scroll: a commit can draw a message,
 		// and a message is a thing worth scrolling to.
 		typeWanted();
 		// After the presses, so a press that draws something can be scrolled to.
 		scrollWanted();
+		if (scrolled.length > 0) focusWanted();
 		if (resize !== null && editorPane) {
 			await driveResize(editorPane, resize);
 		}

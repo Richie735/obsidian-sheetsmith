@@ -921,10 +921,35 @@ const DEFAULTS = [
 		 * Scrolled rather than re-cut: the clipping is the component honouring its
 		 * placement, and shaping the sample so these landed above the fold would
 		 * be shaping the subject to the photograph.
+		 *
+		 * **Pointed at `traits` by its field count, not by document order.** The
+		 * selector used to be `.sheetsmith-record-set-list .sheetsmith-record`
+		 * and took the first match on the page, which is the Spellbook's
+		 * `known_spells` — a list that does not scroll — so the shot scrolled
+		 * nothing and no PNG held the states this comment names. `-fields-5` is
+		 * `traits` alone among the lists with a strip, and is also what makes this
+		 * the picture of the sticky strip (`docs/features/record-set-heading-strip.md`):
+		 * scrolled to the last record, the strip is at the top edge, opaque, with a
+		 * hairline under it and no record text above or through it.
 		 */
 		name: 'sheet-record-ceilings',
 		query:
-			'surface=sheet&theme=light&scroll=.sheetsmith-record-set-list%20.sheetsmith-record%3Alast-of-type',
+			'surface=sheet&theme=light&scroll=.sheetsmith-record-set-fields-5%20.sheetsmith-record%3Alast-of-type',
+		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * **A control the scrolled list has put under the strip, focused.** A still
+		 * cannot press Tab, and a programmatic focus scrolls its control into view by
+		 * the same algorithm — honouring `scroll-padding-top`, which is what keeps it
+		 * from being obscured (WCAG 2.4.11). So: scrolled to the last record, then
+		 * the *first* record's ring focused, which brings it back up to sit directly
+		 * under the strip and never behind it. The sheet styles `:focus`, so what
+		 * paints is what a Tab press paints (`docs/UI.md` §11).
+		 */
+		name: 'sheet-record-strip-focus',
+		query:
+			'surface=sheet&theme=light&scroll=.sheetsmith-record-set-fields-5%20.sheetsmith-record%3Alast-of-type&focus=.sheetsmith-record-set-fields-5%20.sheetsmith-record%3Afirst-of-type%20.sheetsmith-record-field-toggle%20.sheetsmith-level-ring',
 		size: SHEET_FRAME,
 	},
 	{
@@ -1033,7 +1058,14 @@ const DEFAULTS = [
 		 */
 		name: 'editor-record-fields',
 		query: 'surface=editor&theme=light&open=traits',
-		size: EDITOR_FRAME,
+		// **Wider than `EDITOR_FRAME`, because the canvas preview is the subject
+		// and it has to be wide enough for the strip.** At 1500 the Traits preview
+		// is 467px against the 712px a five-field list needs, so the setting read
+		// ON over a preview that drew nothing — correct, and indistinguishable from
+		// a fault (`docs/features/record-set-heading-strip.md`, Layout editor). At
+		// 2000 it is 759px and the strip draws. The threshold is not lowered to fit
+		// a frame.
+		size: '2000,8600',
 	},
 	{
 		/*
