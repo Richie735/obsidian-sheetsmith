@@ -19,6 +19,7 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { PARTS, renderStyles } from '../styles.build.mjs';
+import { MAX_TABULATED_FIELDS } from './components/record-set';
 
 const CSS = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 
@@ -2372,5 +2373,253 @@ describe('the stylesheet wins on specificity, never on !important', () => {
 		// §10: the assertion above passes on a stylesheet this failed to read.
 		expect(CSS.length).toBeGreaterThan(10000);
 		expect(withoutComments).toContain('.sheetsmith-input-invalid');
+	});
+});
+
+describe("a Record set's strip of field names", () => {
+	/*
+	 * `docs/features/record-set-heading-strip.md`. Two things are held here and
+	 * neither is visible in a unit test: that the strip's *thresholds* are the
+	 * formula they were measured to be, and that the feature is a single gated
+	 * block, so that leaving it leaves the feature and a list with the strip off
+	 * (or under its threshold) is drawn by the rules that were always there.
+	 *
+	 * The scan reads rules with the at-rules they sit inside, which the flat
+	 * `selectors()` above cannot: the claim is about *where* a rule lives.
+	 */
+	const withoutComments = CSS.replace(/\/\*[\s\S]*?\*\//g, ' ');
+
+	interface Rule {
+		/** Every at-rule prelude the rule sits inside, outermost first. */
+		context: string[];
+		selector: string;
+		body: string;
+	}
+
+	/** Every style rule in the file, with the at-rules around it. */
+	function rules(text: string): Rule[] {
+		const found: Rule[] = [];
+		const walk = (from: number, to: number, context: string[]): void => {
+			let at = from;
+			while (at < to) {
+				const open = text.indexOf('{', at);
+				if (open === -1 || open >= to) return;
+				const prelude = text.slice(at, open).replace(/^[\s;}]+/, '').trim();
+				// The matching brace, counting nesting.
+				let depth = 1;
+				let close = open + 1;
+				while (depth > 0 && close < to) {
+					const char = text[close];
+					if (char === '{') depth += 1;
+					else if (char === '}') depth -= 1;
+					close += 1;
+				}
+				const inner = text.slice(open + 1, close - 1);
+				if (prelude.startsWith('@')) {
+					walk(open + 1, close - 1, [...context, prelude]);
+				} else {
+					found.push({ context, selector: prelude, body: inner.trim() });
+				}
+				at = close;
+			}
+		};
+		walk(0, text.length, []);
+		return found;
+	}
+
+	const all = rules(withoutComments);
+	const GATE = '@supports (grid-template-columns: subgrid)';
+	const STYLE_QUERY = '@container style(--sheetsmith-record-strip: on)';
+	const inGate = (rule: Rule) => rule.context[0] === GATE;
+
+	/** The per-count entries: `[N, em]`. */
+	function thresholds(): [number, number][] {
+		const out: [number, number][] = [];
+		for (const rule of all) {
+			const query = rule.context[1]?.match(
+				/^@container sheetsmith-record-set \(min-width: ([\d.]+)em\)$/,
+			);
+			const count = rule.selector.match(
+				/^\.sheetsmith-record-set-fields-(\d+) \.sheetsmith-record-set-box$/,
+			);
+			if (!inGate(rule) || !query || !count) continue;
+			out.push([Number(count[1]), Number(query[1])]);
+		}
+		return out;
+	}
+
+	/**
+	 * The measured formula, in `em` at the container's own type size.
+	 *
+	 * Swept in the harness with the strip forced on and every field the widest
+	 * kind there is — a number whose ceiling the reader types — the narrowest list
+	 * that leaves the name six ems and everything inside the delete glyph is 264,
+	 * 372, 464, 556, 646, 738, 830 and 922px at 16px for one to eight fields
+	 * (`188px + 92px × N` from two). `14.5em + 6em × N` clears each by 52 to 76px,
+	 * and its base is what lifts one field over the stacking rule below.
+	 */
+	const BASE = 14.5;
+	const STEP = 6;
+	const FIT_PX = [264, 372, 464, 556, 646, 738, 830, 922];
+
+	it('tabulates every count from one to eight, once each', () => {
+		// A scan that found nothing, or a table missing an end, would pass the
+		// cases below by having nothing to hold.
+		// Against the component's own ceiling, not a literal: the class it stamps is
+		// clamped to this number, so a table that stops short of it is a strip that
+		// never draws for that count.
+		expect(thresholds().map(([count]) => count)).toEqual(
+			Array.from({ length: MAX_TABULATED_FIELDS }, (_, at) => at + 1),
+		);
+		expect(MAX_TABULATED_FIELDS).toBe(FIT_PX.length);
+	});
+
+	it('holds every threshold to the formula it was measured to', () => {
+		const off = thresholds()
+			.filter(([count, em]) => em !== BASE + STEP * count)
+			.map(([count, em]) => `${count} fields at ${em}em`);
+		expect(off).toEqual([]);
+	});
+
+	it('never puts a threshold under the narrowest width that holds its fields', () => {
+		// At 16px. A number below the measurement is a list the strip is drawn
+		// over at a width its fields do not fit.
+		const short = thresholds()
+			.filter(([count, em]) => em * 16 < (FIT_PX[count - 1] ?? Infinity))
+			.map(([count, em]) => `${count} fields at ${em * 16}px`);
+		expect(short).toEqual([]);
+	});
+
+	it('keeps every threshold above the 320px stacking rule, so the two never apply together', () => {
+		const stacking = 320;
+		expect(
+			all.some(
+				(rule) =>
+					rule.context[0] === '@container (max-width: 320px)' &&
+					rule.selector === '.sheetsmith-record-summary',
+			),
+		).toBe(true);
+		const under = thresholds()
+			.filter(([, em]) => em * 16 <= stacking)
+			.map(([count, em]) => `${count} fields at ${em * 16}px`);
+		expect(under).toEqual([]);
+	});
+
+	it('gates the strip and everything it lays out behind the one query', () => {
+		const inside = all.filter(
+			(rule) =>
+				rule.context[0] === GATE && rule.context[1] === STYLE_QUERY,
+		);
+		// It found the block, and the block is not most of nothing.
+		expect(inside.length).toBeGreaterThan(8);
+		const selectorsInside = inside.map((rule) => rule.selector);
+		for (const wanted of [
+			'.sheetsmith-record-set-list',
+			'.sheetsmith-record-strip',
+			'.sheetsmith-record-set-records',
+			'.sheetsmith-record-fields',
+		]) {
+			expect(selectorsInside, wanted).toContain(wanted);
+		}
+	});
+
+	it('draws nothing of the layout outside the gate', () => {
+		// The claim is that leaving the query leaves the feature, so no rule outside
+		// it may read the properties the feature stamps, and no rule for a Record
+		// set's own classes may speak subgrid or stick. (Track's rows use subgrid
+		// for their own reasons, which is why this asks about the record classes.)
+		const outside = all.filter((rule) => !inGate(rule));
+		const stamped = outside.filter((rule) =>
+			/--sheetsmith-record-(fields|strip)/.test(rule.body),
+		);
+		expect(stamped).toEqual([]);
+		const laidOut = outside.filter(
+			(rule) =>
+				/sheetsmith-record/.test(rule.selector) &&
+				/subgrid|position:\s*sticky/.test(rule.body),
+		);
+		expect(laidOut).toEqual([]);
+	});
+
+	it('leaves three rules outside the gate, and they only take the strip away', () => {
+		const featureClass =
+			/sheetsmith-record-strip|sheetsmith-record-set-records|sheetsmith-record-set-headed/;
+		const outside = all
+			.filter((rule) => !inGate(rule) && featureClass.test(rule.selector))
+			.map((rule) => [rule.selector, rule.body.replace(/\s+/g, ' ')]);
+		expect(outside).toEqual([
+			['.sheetsmith-record-set-headed', 'container-name: sheetsmith-record-set;'],
+			['.sheetsmith-record-strip', 'display: none;'],
+			['.sheetsmith-record-set-records', 'display: contents;'],
+		]);
+	});
+
+	it('names the container on a headed list only, and adds none of its own', () => {
+		// The block was already the list's container (`container-type` on
+		// `.sheetsmith-record-set`, measured at the narrow rule); adding a second
+		// would change what that unnamed rule answers to.
+		const types = all.filter((rule) => /container-type/.test(rule.body));
+		const onRecordSet = types
+			.filter((rule) => /sheetsmith-record-set\b/.test(rule.selector))
+			.map((rule) => rule.selector);
+		expect(onRecordSet).toEqual(['.sheetsmith-record-set']);
+		const names = all.filter(
+			(rule) =>
+				/container-name:\s*sheetsmith-record-set;/.test(rule.body),
+		);
+		expect(names.map((rule) => rule.selector)).toEqual([
+			'.sheetsmith-record-set-headed',
+		]);
+	});
+
+	it('keeps the strip opaque and sticky, and scrolls a focused control clear of it', () => {
+		const inside = all.filter(
+			(rule) => rule.context[1] === STYLE_QUERY,
+		);
+		const strip = inside.find(
+			(rule) => rule.selector === '.sheetsmith-record-strip',
+		);
+		expect(strip?.body).toMatch(/position:\s*sticky/);
+		expect(strip?.body).toMatch(/top:\s*0/);
+		// Opaque: a record scrolls under it and is not read through it.
+		expect(strip?.body).toMatch(
+			/background-color:\s*var\(--background-primary-alt\)/,
+		);
+		const list = inside.find(
+			(rule) => rule.selector === '.sheetsmith-record-set-list',
+		);
+		expect(list?.body).toMatch(
+			/scroll-padding-top:\s*var\(--sheetsmith-record-strip-height\)/,
+		);
+		// The list's own padding moved off the top, or a band above the strip shows
+		// records passing through.
+		expect(list?.body).toMatch(/padding-block:\s*0/);
+	});
+
+	it("moves a number field's ink under its heading inside the gate, and by paint alone", () => {
+		// The shift is a `transform` so it changes no layout: the tracks, and with
+		// them every threshold measured on the box, are what they were. And it is
+		// inside the gate, so an unheaded list and a narrow headed one draw the
+		// number field exactly where it always drew.
+		const shifts = all.filter((rule) =>
+			/transform:\s*translateX\(/.test(rule.body) &&
+			/sheetsmith-record-field/.test(rule.selector),
+		);
+		expect(shifts.map((rule) => rule.selector)).toEqual([
+			'.sheetsmith-record-field-number',
+		]);
+		expect(shifts[0]?.context).toEqual([GATE, STYLE_QUERY]);
+		expect(shifts[0]?.body).toMatch(/translateX\(-0\.4em\)/);
+		// Nothing in the gate changes a number field's width, which would move the
+		// tracks the measured formula rests on.
+		expect(shifts[0]?.body).not.toMatch(/width|padding|margin/);
+	});
+
+	it('paints no colour of its own', () => {
+		const inside = all.filter((rule) => rule.context[1] === STYLE_QUERY);
+		const literal = inside.filter((rule) =>
+			/#[0-9a-f]{3,8}\b|\brgba?\(|\bhsla?\(/i.test(rule.body),
+		);
+		expect(literal).toEqual([]);
 	});
 });

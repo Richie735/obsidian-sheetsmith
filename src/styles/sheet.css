@@ -5124,8 +5124,9 @@ a.sheetsmith-undo {
 
    Not a fourth kind of panel (§9 of docs/UI.md). A record is a summary line and
    a block under it, on the same surface Rich text and Image already use — no
-   border of its own, no card, and no strip of headings over the fields, which
-   would claim a tabular reading of a thing that is deliberately not a table.
+   border of its own, no card, and a strip of headings over the fields only where
+   the layout asks for one (`fieldHeadings`, below), which would otherwise claim a
+   tabular reading of a thing that is deliberately not a table.
    --------------------------------------------------------------------------- */
 
 /* **Its own reflow context**, because a summary line has to answer to the width
@@ -5137,6 +5138,28 @@ a.sheetsmith-undo {
    wear and neither of which reflows. */
 .sheetsmith-record-set {
 	container-type: inline-size;
+}
+
+/* **Named only on a headed list**, which is what keeps every other list's
+   rules exactly what they were: the strip's thresholds below query this
+   container by name, and an unheaded list has nothing that asks. The block is
+   already the container, so no second one is added — see the measurement at the
+   narrow regime's rule. */
+.sheetsmith-record-set-headed {
+	container-name: sheetsmith-record-set;
+}
+
+/* Where a headed list draws nothing of the strip yet. Both are the *narrow*
+   regime's whole account of them, so leaving the wide query leaves the feature:
+   the strip is not drawn and the wrapper the strip's second row needs is not a
+   box, which is what makes a headed list below its threshold the unheaded list
+   to the pixel. */
+.sheetsmith-record-strip {
+	display: none;
+}
+
+.sheetsmith-record-set-records {
+	display: contents;
 }
 
 /* Out of flow and scrolling, which is the pair that keeps the box from being
@@ -5502,11 +5525,13 @@ a.sheetsmith-undo {
 
 }
 
-/* The fields, in the order the layout declared them. No heading strip over
-   them: a header row would claim a tabular reading of a thing that is
-   deliberately not a table, and a record's fields are few by design, so a name
-   per field is cheaper than a header that has to stay aligned over rows whose
-   heights differ.
+/* The fields, in the order the layout declared them. **No heading strip over
+   them unless the layout opts in**, and that is an amendment rather than a
+   reversal: a header row would claim a tabular reading of a thing that is
+   deliberately not a table, so a name per field is the default and the strip is
+   `fieldHeadings`' and only where the list is wide enough for it — the last
+   block of this section. What this rule is, on its own, is the unheaded list and
+   the headed list's narrow regime, which are the same list.
 
    **The gap is sized off the level ring's own expanded target rather than by
    eye.** `.sheetsmith-level-ring::after` reaches `--size-4-2` past the ring's box
@@ -5544,9 +5569,10 @@ a.sheetsmith-undo {
    light and 2.74:1 dark against `legibility.md` §3's 4.5:1, at the 10.2px this
    type already is. On a Card set that costs nothing: "STR" restates "STRENGTH"
    directly above it, so the faint copy is a second sighting of a word already
-   read. Here — correctly, because there is no heading strip — "Uses" is the
-   *only* place a sighted reader meets the field's name, and below it they see a
-   bare number. `--text-muted` measures 6.41:1 and 7.50:1, which is what this
+   read. Here — correctly, wherever no strip is over it: the unheaded list, and
+   a headed one below its threshold — "Uses" is the *only* place a sighted reader
+   meets the field's name, and below it they see a bare number. (On a wide
+   headed list this span is hidden and the strip names the column.) `--text-muted` measures 6.41:1 and 7.50:1, which is what this
    component's own chevron already wears, and the size and the tracking stay so
    the name is still visibly secondary to the value beside it. */
 .sheetsmith-view .sheetsmith-record-field .sheetsmith-card-abbreviation {
@@ -5898,6 +5924,18 @@ a.sheetsmith-undo {
 
    320px rather than the sheet's 480: this is one component's own line, and it
    is the width at which the four things in it stop fitting.
+
+   **Measured: the query's subject is the list, at every width.** The query is
+   unnamed, so it answers to the nearest container of any name, and the block
+   that wraps the box (`.sheetsmith-record-set`, above) declares
+   `container-type: inline-size` itself. The harness at `width=380` puts every
+   summary's nearest container at that block, 346px wide, which is the box's own
+   width; at `width=520` it is 157px (Known spells), 280px (Traits) and 198px
+   (Spells), and at the default width 221, 794 and 565. Nothing between the list
+   and the sheet is what it measures. So the comment above is true, and a
+   six-field record's fields wrapping at a container of 338 to 361px is the
+   rule's threshold and not a subject the rule has wrong. A headed list's strip
+   is gated on the same container, one rung up, so the two can never both apply.
    --------------------------------------------------------------------------- */
 @container (max-width: 320px) {
 .sheetsmith-record-summary {
@@ -5930,6 +5968,272 @@ a.sheetsmith-undo {
 		margin-top: var(--size-4-2);
 	}
 
+}
+
+/* ---------------------------------------------------------------------------
+   A strip of field names over the list — opt-in, and only where it fits.
+
+   **Everything the feature adds is in this block**, so leaving it leaves the
+   feature: below a list's threshold, or in an engine with no subgrid or no style
+   query, the strip is `display: none` and the wrapper is `display: contents`
+   (above), and the list is drawn by the rules above this section exactly as an
+   unheaded one is. `styles.test.ts` holds that those two base rules and the
+   container's name are the only strip rules outside it.
+
+   **Two gates, because a container query can neither read a custom property nor
+   multiply.** The threshold depends on how many fields there are, and that is a
+   number, so it is *tabulated* — the sheet's own `.sheetsmith-cols-N` pattern,
+   and `styles.test.ts` holds each entry to the formula. Each entry does one
+   thing and does it small: it sets `--sheetsmith-record-strip` on the box when
+   the list is at least that wide. Everything else is written once, under a style
+   query on that property, which is what stops eight copies of the same fifty
+   declarations. An engine with no style queries ignores that rule whole, and so
+   draws the narrow regime at every width, which is today's list.
+
+   **The threshold is `14.5em + 6em × N`**, in `em` so it follows the
+   container's own type size: the strip drops sooner as the vault's text grows,
+   where a `px` threshold would let larger type overflow a list that used to
+   fit. The container is the block, and its font size is the sheet's.
+
+   **Measured, not derived, and the constraint is the behaviour**: no width at
+   which the strip is drawn and a record's fields leave the delete glyph behind,
+   or the name's track is under six ems (96px). Swept in the harness with the
+   strip forced on and every field the widest kind there is — a number whose
+   ceiling the reader types, 88px of track with its margins — the narrowest list
+   that holds it is **264, 372, 464, 556, 646, 738, 830 and 922px** at 16px for
+   one to eight fields, which is `188px + 92px × N` from two up. The starting
+   values the design began from (`18em + 4.5em × N`) clear five fields by two
+   pixels and *fail* from six: 864px against 922 at eight. This is the fit
+   rounded up to whole sixes, with the base lifted until one field clears the
+   320px stacking rule above (`20.5em`, 328px, where the fit alone is 288), so a
+   headed list never has the strip and the stacked line at once. It clears the
+   fit by 52 to 76px from two fields up. The mixed fixture (a ceiling, a toggle,
+   a named level, a computed value and a modifier) fits in 468px at five and this
+   is 712px there, which is the price of the constraint holding for a list of
+   five counters: the strip drops earlier than the commonest list needs.
+   --------------------------------------------------------------------------- */
+@supports (grid-template-columns: subgrid) {
+	@container sheetsmith-record-set (min-width: 20.5em) {
+		.sheetsmith-record-set-fields-1 .sheetsmith-record-set-box {
+			--sheetsmith-record-strip: on;
+		}
+	}
+
+	@container sheetsmith-record-set (min-width: 26.5em) {
+		.sheetsmith-record-set-fields-2 .sheetsmith-record-set-box {
+			--sheetsmith-record-strip: on;
+		}
+	}
+
+	@container sheetsmith-record-set (min-width: 32.5em) {
+		.sheetsmith-record-set-fields-3 .sheetsmith-record-set-box {
+			--sheetsmith-record-strip: on;
+		}
+	}
+
+	@container sheetsmith-record-set (min-width: 38.5em) {
+		.sheetsmith-record-set-fields-4 .sheetsmith-record-set-box {
+			--sheetsmith-record-strip: on;
+		}
+	}
+
+	@container sheetsmith-record-set (min-width: 44.5em) {
+		.sheetsmith-record-set-fields-5 .sheetsmith-record-set-box {
+			--sheetsmith-record-strip: on;
+		}
+	}
+
+	@container sheetsmith-record-set (min-width: 50.5em) {
+		.sheetsmith-record-set-fields-6 .sheetsmith-record-set-box {
+			--sheetsmith-record-strip: on;
+		}
+	}
+
+	@container sheetsmith-record-set (min-width: 56.5em) {
+		.sheetsmith-record-set-fields-7 .sheetsmith-record-set-box {
+			--sheetsmith-record-strip: on;
+		}
+	}
+
+	@container sheetsmith-record-set (min-width: 62.5em) {
+		.sheetsmith-record-set-fields-8 .sheetsmith-record-set-box {
+			--sheetsmith-record-strip: on;
+		}
+	}
+
+	@container style(--sheetsmith-record-strip: on) {
+		/* **The list is one grid, and the records are subgrids of it.** That is
+		   the whole of what lets a heading sit over a field: with the columns
+		   shared, every record's field lands on the same x whatever it holds
+		   (`1` against `1 / 3`, `+1` against `+12`), where each summary line
+		   used to size its own `auto` track from its own content.
+
+		   The tracks are today's first two and last, with one `auto` track per
+		   declared field between the name and the slack, so the chevron, the
+		   name and the delete glyph sit where they sit unheaded. Two rows: the
+		   strip's own height and the records', because a sticky item is confined
+		   to its grid area and a strip in row 1 alone could not follow the scroll.
+		   `align-content: start` so the records' row is not stretched to fill a
+		   box taller than they are. */
+		.sheetsmith-record-set-list {
+			--sheetsmith-record-strip-height: calc(var(--font-ui-smaller) * 2.2);
+			display: grid;
+			grid-template-columns:
+				auto
+				minmax(0, var(--sheetsmith-record-name, 13em))
+				repeat(var(--sheetsmith-record-fields), auto)
+				1fr
+				auto;
+			grid-template-rows: var(--sheetsmith-record-strip-height) auto;
+			align-content: start;
+			gap: 0 var(--size-2-2);
+			/* The vertical padding moves to the records' wrapper. `top: 0` sticks at
+			   the scrollport's edge, so padding above the strip would leave a band
+			   for records to scroll through. */
+			padding-block: 0;
+			/* A control focused by keyboard is scrolled clear of the strip rather
+			   than left behind it (WCAG 2.4.11). */
+			scroll-padding-top: var(--sheetsmith-record-strip-height);
+		}
+
+		/* **Sticky, deliberately.** The list scrolls inside a box that never
+		   grows, so a long list would scroll its labels away with the first records
+		   and leave every ring unnamed again, which is the defect. The area is the
+		   whole list (`1 / -1` over both rows), which is what gives it somewhere to
+		   stick, and `align-self: start` keeps its own height the token's.
+		   Opaque, in the box's own fill, so a record scrolls *under* it and is not
+		   read through it. */
+		.sheetsmith-record-strip {
+			position: sticky;
+			top: 0;
+			z-index: 1;
+			display: grid;
+			grid-template-columns: subgrid;
+			grid-column: 1 / -1;
+			grid-row: 1 / -1;
+			align-self: start;
+			align-items: center;
+			height: var(--sheetsmith-record-strip-height);
+			background-color: var(--background-primary-alt);
+		}
+
+		/* The fill and the hairline bleed over the list's own side padding, so the
+		   band reaches the box's edge and nothing scrolls past in the gutters. A
+		   pseudo-element rather than a negative margin on the strip, because a
+		   subgrid's margin is counted into the edge tracks it sits in. Behind the
+		   headings, which the strip's own stacking context puts above it. */
+		.sheetsmith-record-strip::before {
+			content: '';
+			position: absolute;
+			inset: 0 calc(-1 * var(--size-2-2));
+			z-index: -1;
+			background-color: var(--background-primary-alt);
+			border-bottom: 1px solid var(--background-modifier-border);
+		}
+
+		@media (prefers-contrast: more) {
+			.sheetsmith-record-strip::before {
+				border-bottom-color: var(--text-muted);
+			}
+		}
+
+		/* The first heading starts over the first field's track; the rest follow
+		   it by auto-placement, one to a track. */
+		.sheetsmith-record-strip > :first-child {
+			grid-column: 3;
+		}
+
+		/* **The secondary type, borrowed and not copied**: the shared rank for a
+		   name the eye has to find and not read (§9 of docs/UI.md), in the muted
+		   colour a record's own field name wears for the same measured reason —
+		   `--text-faint` is 2.20:1 here. Centred over the control and never
+		   wrapped, so a word wider than its control sets the track's width, which
+		   is what a column heading does. The margin is the field's own, so a
+		   heading and its control are centred on the same box. */
+		.sheetsmith-view .sheetsmith-record-strip .sheetsmith-card-abbreviation {
+			justify-self: center;
+			min-height: 0;
+			margin-inline: calc((var(--size-4-5) - var(--size-2-2)) / 2);
+			white-space: nowrap;
+			text-align: center;
+			color: var(--text-muted);
+		}
+
+		.sheetsmith-record-set-records {
+			display: grid;
+			grid-template-columns: subgrid;
+			grid-column: 1 / -1;
+			grid-row: 2;
+			align-content: start;
+			gap: 0 var(--size-2-2);
+			padding-block: var(--size-2-2);
+		}
+
+		.sheetsmith-record,
+		.sheetsmith-record-summary {
+			display: grid;
+			grid-template-columns: subgrid;
+			grid-column: 1 / -1;
+		}
+
+		/* The fields span their own tracks and are a subgrid of them, so a cell
+		   lands in the track its heading is centred over. Two fields' controls keep
+		   the clearance `docs/UI.md`'s target-size rule set, because the gap is the
+		   field's own margin on each side (8px of gap and 6px a side is the 20px a
+		   flex row had): a subgrid's own `column-gap` would be the same arithmetic
+		   done by the engine, asymmetrically at the two ends, which would put the
+		   first and last control 3px off the centre its heading is on. */
+		.sheetsmith-record-fields {
+			display: grid;
+			grid-template-columns: subgrid;
+			grid-column: 3 / span var(--sheetsmith-record-fields);
+			gap: 0 var(--size-2-2);
+			align-items: center;
+		}
+
+		.sheetsmith-record-field {
+			justify-self: center;
+			margin-inline: calc((var(--size-4-5) - var(--size-2-2)) / 2);
+		}
+
+		/* **A heading is centred over what a reader sees, which for a number is not
+		   its box.** The value's box is fixed at 3.5em and the ceiling's at two
+		   digits, both so that stepping a number moves nothing beside it — and a
+		   digit centred in the first with a digit left-aligned in the second leaves
+		   about 20px empty on the left of the pair and 10px on the right. Measured in
+		   the harness, the ink of `1 / 3` sits 5.2px right of the box's centre, `0 / 1`
+		   3.6px and `3 / —` 6.3px; nothing about the box changes, so the field is
+		   moved instead. A `transform`, because it changes no layout: the track, and
+		   so every threshold above, is measured on the box and stays exactly what it
+		   was. 0.4em is the middle of that range at the field's own size, and it
+		   leaves the ink within about 1.6px of its heading for one to three digits
+		   in either half, where the box alone was off by up to 6.4. No static offset
+		   can do better than the spread, which is the digits' own. */
+		.sheetsmith-record-field-number {
+			transform: translateX(-0.4em);
+		}
+
+		.sheetsmith-view .sheetsmith-record-remove {
+			grid-column: -2;
+		}
+
+		/* An open body, a problem line and the add control span every track, so
+		   opening a record moves the records below it and never a column. */
+		.sheetsmith-record-body,
+		.sheetsmith-view .sheetsmith-record > .sheetsmith-error,
+		.sheetsmith-view .sheetsmith-record-add {
+			grid-column: 1 / -1;
+		}
+
+		/* **The strip names the column, so the same word beside every number would
+		   be a second sighting of one label.** Hidden here rather than left out of
+		   the DOM, so the one query that shows the strip is the one that hides it
+		   and a number can never have neither. The input keeps its own
+		   `aria-label`, so nothing goes from assistive tech. */
+		.sheetsmith-view .sheetsmith-record-field .sheetsmith-card-abbreviation {
+			display: none;
+		}
+	}
 }
 
 /* ---------------------------------------------------------------------------
