@@ -3076,6 +3076,50 @@ describe('a layout with modifier definitions', () => {
 
 });
 
+describe('a Record set with its field names shown', () => {
+	/** One list, with the strip off. */
+	function listed(): Layout {
+		return {
+			name: 'Listed sheet',
+			components: [
+				{
+					id: 'traits',
+					type: 'record-set',
+					label: 'Traits',
+					position: { col: 1, row: 1, width: 7, height: 3 },
+					fields: [{ key: 'Uses', type: 'number' }],
+				} as unknown as ComponentConfig,
+			],
+			triggers: [],
+		};
+	}
+
+	it('offers the setting in Appearance, and writes it only while it is on', async () => {
+		const harness = await open(listed());
+		control(harness, 'edit-traits').click();
+		await settle(harness.pane);
+
+		// Offered beside **Hide the heading**, the other Appearance toggle.
+		const name = 'Field names over the list';
+		expect(checkbox(harness, name).checked).toBe(false);
+		expect(checkbox(harness, 'Hide the heading')).toBeTruthy();
+
+		toggle(checkbox(harness, name), true);
+		await settle(harness.pane);
+		expect((await harness.stored()).components[0]).toMatchObject({
+			fieldHeadings: true,
+		});
+
+		// Back to the default: the key goes rather than saying `false`, so an
+		// author turning it off leaves a layout the way it was before they turned it on.
+		toggle(checkbox(harness, name), false);
+		await settle(harness.pane);
+		expect((await harness.stored()).components[0]).not.toHaveProperty(
+			'fieldHeadings',
+		);
+	});
+});
+
 describe('a layout that omits its column count', () => {
 	/** No `columns` key at all, which is a layout the parser accepts. */
 	function bare(): Layout {
