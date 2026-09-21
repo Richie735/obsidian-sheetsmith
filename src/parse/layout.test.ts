@@ -1160,3 +1160,42 @@ describe('mayHoldChildren', () => {
 		expect(mayHoldChildren(2)).toBe(false);
 	});
 });
+
+describe('parseLayout: a Record set with its field names shown', () => {
+	const withHeadings = (extra: Record<string, unknown>) =>
+		JSON.stringify({
+			name: 'L',
+			components: [
+				{
+					id: 'traits',
+					type: 'record-set',
+					label: 'Traits',
+					position: { col: 1, row: 1, width: 7, height: 3 },
+					fields: [{ key: 'Uses', type: 'number', hideHeading: true }],
+					...extra,
+				},
+			],
+		});
+
+	it('keeps `fieldHeadings: true` through a round trip, byte for byte', () => {
+		const once = serialiseLayout(parseLayout(withHeadings({ fieldHeadings: true })));
+		expect(once).toContain('"fieldHeadings": true');
+		expect(serialiseLayout(parseLayout(once))).toBe(once);
+		// A field's own `hideHeading` rides along, ignored and kept.
+		expect(once).toContain('"hideHeading": true');
+	});
+
+	it('reads a layout without the key as off, and does not grow one', () => {
+		const layout = parseLayout(withHeadings({}));
+		expect(layout.components[0]).not.toHaveProperty('fieldHeadings');
+		expect(serialiseLayout(layout)).not.toContain('fieldHeadings');
+	});
+
+	it('keeps a hand-written `false` as written rather than rewriting the file', () => {
+		// The editor omits a value matching the default when *it* writes; a
+		// hand-edited `false` is the author's own spelling and survives.
+		const once = serialiseLayout(parseLayout(withHeadings({ fieldHeadings: false })));
+		expect(once).toContain('"fieldHeadings": false');
+		expect(serialiseLayout(parseLayout(once))).toBe(once);
+	});
+});

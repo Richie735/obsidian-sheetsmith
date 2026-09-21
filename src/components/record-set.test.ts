@@ -1,12 +1,17 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest';
-import { recordSet, RecordSetConfig, RecordSetData } from './record-set';
+import {
+	MAX_TABULATED_FIELDS,
+	recordSet,
+	RecordSetConfig,
+	RecordSetData,
+} from './record-set';
 import { outcomeView } from '../test/modifier-views';
 import { card, CardConfig } from './card';
 import { buildSheet, ReadComponent } from '../formula/sheet';
 import { evaluate } from '../formula/expression';
 import { callsFrom, makeFieldResolver, NO_ENV } from '../formula/resolve';
-import { Layout } from '../parse/layout';
+import { Layout, serialiseLayout } from '../parse/layout';
 import { COLUMN_TYPES } from './column-types';
 import { RenderContext } from '../types';
 import { sampleOf } from '../test/sample';
@@ -2813,5 +2818,337 @@ describe('recordSet.sample', () => {
 		const el = render({}, sampleOf(recordSet, config));
 		expect(records(el)).toHaveLength(2);
 		expect(bodyFields(el)[0]?.value).toContain('Sample text');
+	});
+});
+
+describe('a strip of field names over the list', () => {
+	/*
+	 * `fieldHeadings`, off by default (`docs/features/record-set-heading-strip.md`).
+	 * happy-dom lays nothing out, so what is held here is the DOM the stylesheet
+	 * is handed and the accessibility of it; whether a heading is centred over
+	 * its control, whether the strip stays put under a scroll and where the
+	 * threshold falls are look criteria, and the thresholds are `styles.test.ts`'s.
+	 */
+	const HEADED: RecordSetConfig = {
+		...config,
+		fieldHeadings: true,
+		fields: [
+			{ key: 'Uses', type: 'number', maxSource: 'record' },
+			{ key: 'Attuned', type: 'toggle' },
+			{
+				key: 'Rank',
+				name: 'Skill rank',
+				type: 'level',
+				levels: ['Untrained', 'Trained:', 'Expert:★'],
+			},
+			{ key: 'Left', type: 'computed', formula: '3 - Uses' },
+			{ key: 'Modifiers', type: 'modifier' },
+		],
+	};
+
+	const HEADED_BODY = [
+		'',
+		'### Second Wind',
+		'```sheet',
+		'Uses: 1 / 3',
+		'Attuned: no',
+		'Rank: 1',
+		'```',
+		'Prose.',
+		'',
+		'### Lucky',
+		'```sheet',
+		'Uses: 3',
+		'Attuned: yes',
+		'```',
+		'Prose.',
+		'',
+	].join('\n');
+
+	const list = (el: HTMLElement) =>
+		el.querySelector('.sheetsmith-record-set-list') as HTMLElement;
+	const strip = (el: HTMLElement) =>
+		el.querySelector<HTMLElement>('.sheetsmith-record-strip');
+	const block = (el: HTMLElement) =>
+		el.querySelector('.sheetsmith-record-set') as HTMLElement;
+
+	it('declares one boolean in Appearance, off by default', () => {
+		const declared = recordSet.configFields.find(
+			(one) => one.key === 'fieldHeadings',
+		);
+		expect(declared).toMatchObject({
+			kind: 'boolean',
+			group: 'Appearance',
+			default: false,
+		});
+		expect(declared?.description.length).toBeGreaterThan(0);
+	});
+
+	it('draws the list it always drew where the key is absent or false', () => {
+		const bare = render({ ...HEADED, fieldHeadings: undefined }, HEADED_BODY);
+		const off = render({ ...HEADED, fieldHeadings: false }, HEADED_BODY);
+		for (const el of [bare, off]) {
+			expect(strip(el)).toBeNull();
+			expect(el.querySelector('.sheetsmith-record-set-records')).toBeNull();
+			expect(
+				block(el).className.includes('sheetsmith-record-set-headed'),
+			).toBe(false);
+			expect(block(el).className).not.toContain('-fields-');
+			expect(
+				block(el).style.getPropertyValue('--sheetsmith-record-fields'),
+			).toBe('');
+		}
+		// And the tree is the same one the key's absence draws, byte for byte.
+		expect(bare.innerHTML).toBe(off.innerHTML);
+	});
+
+	it('draws one strip as the list\'s first child, one heading per field in declared order', () => {
+		const el = render(HEADED, HEADED_BODY);
+		const drawn = strip(el) as HTMLElement;
+		expect(list(el).firstElementChild).toBe(drawn);
+		expect(list(el).querySelectorAll('.sheetsmith-record-strip')).toHaveLength(
+			1,
+		);
+		// The field's `name`, else its `key`: the word its own accessible name uses.
+		expect(Array.from(drawn.children).map((one) => one.textContent)).toEqual([
+			'Uses',
+			'Attuned',
+			'Skill rank',
+			'Left',
+			'Modifiers',
+		]);
+		// In the secondary type a Card set's abbreviation wears, borrowed rather
+		// than written again.
+		for (const heading of Array.from(drawn.children)) {
+			expect(heading.classList.contains('sheetsmith-card-abbreviation')).toBe(
+				true,
+			);
+		}
+		// The records and the add control moved into the strip's second row.
+		const wrapper = list(el).children[1] as HTMLElement;
+		expect(wrapper.classList.contains('sheetsmith-record-set-records')).toBe(
+			true,
+		);
+		expect(list(el).children).toHaveLength(2);
+		expect(wrapper.querySelectorAll('.sheetsmith-record')).toHaveLength(2);
+		expect(wrapper.lastElementChild).toBe(addButton(el));
+	});
+
+	it('stamps the true count, and a class clamped to the table the stylesheet holds', () => {
+		const few = render(HEADED, HEADED_BODY);
+		expect(
+			block(few).style.getPropertyValue('--sheetsmith-record-fields'),
+		).toBe('5');
+		expect(
+			block(few).classList.contains('sheetsmith-record-set-headed'),
+		).toBe(true);
+		expect(
+			block(few).classList.contains('sheetsmith-record-set-fields-5'),
+		).toBe(true);
+
+		const many: RecordSetConfig = {
+			...HEADED,
+			fields: Array.from({ length: 10 }, (_, at) => ({
+				key: `N${at}`,
+				type: 'number' as const,
+			})),
+		};
+		const wide = render(many, HEADED_BODY);
+		// Ten fields take the last threshold, and the property still says ten.
+		expect(
+			block(wide).style.getPropertyValue('--sheetsmith-record-fields'),
+		).toBe('10');
+		expect(
+			block(wide).classList.contains(
+				`sheetsmith-record-set-fields-${MAX_TABULATED_FIELDS}`,
+			),
+		).toBe(true);
+		expect(block(wide).className).not.toContain('fields-10');
+
+		const one = render({ ...HEADED, fields: [HEADED.fields![0]!] }, HEADED_BODY);
+		expect(
+			block(one).classList.contains('sheetsmith-record-set-fields-1'),
+		).toBe(true);
+	});
+
+	it('is hidden from assistive tech and carries no table role', () => {
+		const el = render(HEADED, HEADED_BODY);
+		const drawn = strip(el) as HTMLElement;
+		expect(drawn.getAttribute('aria-hidden')).toBe('true');
+		// Not a control: nothing in it takes focus or a press.
+		expect(
+			drawn.querySelectorAll(
+				'a, button, input, select, textarea, [tabindex]',
+			),
+		).toHaveLength(0);
+		// And no tabular reading anywhere in the list, which is the reading this
+		// component declines.
+		for (const tag of ['th', 'table', 'tr', 'td']) {
+			expect(el.querySelector(tag)).toBeNull();
+		}
+		expect(
+			el.querySelector(
+				'[role="table"], [role="row"], [role="columnheader"], [role="cell"], [role="grid"]',
+			),
+		).toBeNull();
+	});
+
+	it('names each control with the word over it, for every field type', () => {
+		/*
+		 * Label in Name (WCAG 2.5.3): voice control says the word on screen, so the
+		 * word has to be in the accessible name of the control beneath it. The
+		 * strip is aria-hidden, which is safe only while this holds.
+		 */
+		const el = render(HEADED, HEADED_BODY);
+		const headings = Array.from(
+			(strip(el) as HTMLElement).children,
+		).map((one) => one.textContent ?? '');
+		for (const record of records(el)) {
+			const cells = Array.from(
+				record.querySelectorAll<HTMLElement>(
+					'.sheetsmith-record-fields > .sheetsmith-record-field',
+				),
+			);
+			expect(cells).toHaveLength(headings.length);
+			cells.forEach((cell, at) => {
+				const control = cell.querySelector<HTMLElement>(
+					'button, select, input:not(.sheetsmith-pool-max)',
+				);
+				const said =
+					control?.getAttribute('aria-label') ??
+					cell.querySelector('.sheetsmith-sr-only')?.textContent ??
+					'';
+				expect(said, `${headings[at]}`).toContain(headings[at]);
+			});
+		}
+		// All five kinds were among them, so this is not a check over one.
+		expect(
+			new Set(
+				Array.from(
+					el.querySelectorAll('.sheetsmith-record:first-child .sheetsmith-record-field'),
+				).map((cell) => cell.className.match(/field-(\w+)/)?.[1]),
+			),
+		).toEqual(new Set(['number', 'toggle', 'level', 'computed', 'modifier']));
+	});
+
+	it('draws no strip until there is a record that read, and drops it with the last', () => {
+		// No records.
+		const empty = render(HEADED, null);
+		expect(strip(empty)).toBeNull();
+		expect(
+			block(empty).classList.contains('sheetsmith-record-set-headed'),
+		).toBe(false);
+		expect(empty.querySelector('.sheetsmith-record-set-records')).toBeNull();
+
+		// Only records whose fence will not read.
+		const broken = render(
+			HEADED,
+			'\n### Broken\n```sheet\nUses: 1\nUses: 2\n```\nProse.\n',
+		);
+		expect(errors(broken).length).toBeGreaterThan(0);
+		expect(strip(broken)).toBeNull();
+
+		// One that reads among one that does not still draws it.
+		const mixed = render(
+			HEADED,
+			`${HEADED_BODY}\n### Broken\n\`\`\`sheet\nUses: 1\nUses: 2\n\`\`\`\nProse.\n`,
+		);
+		expect(strip(mixed)).not.toBeNull();
+
+		// No fields to name.
+		const bare = render({ ...HEADED, fields: [] }, HEADED_BODY);
+		expect(strip(bare)).toBeNull();
+
+		// A refused configuration draws its error and no list, so no strip.
+		// Rendered without `read`, which would refuse it first.
+		const refused = document.createElement('div');
+		recordSet.render(
+			refused,
+			{ ...HEADED, fields: [{ key: 'Uses', type: 'text' }] },
+			readData(HEADED_BODY, HEADED),
+			context,
+		);
+		expect(errors(refused).length).toBeGreaterThan(0);
+		expect(strip(refused)).toBeNull();
+		expect(refused.querySelector('.sheetsmith-record-set-list')).toBeNull();
+
+		// It appears with the first record and goes with the last: the same
+		// component drawn from each note the write would leave behind.
+		expect(strip(render(HEADED, HEADED_BODY))).not.toBeNull();
+		expect(strip(render(HEADED, null))).toBeNull();
+	});
+
+	it('ignores a field\'s hideHeading and secondary, and keeps both in the layout', () => {
+		const hand: RecordSetConfig = {
+			...HEADED,
+			fields: [
+				{ key: 'Uses', type: 'number', hideHeading: true, secondary: true },
+				{ key: 'Attuned', type: 'toggle', hideHeading: true },
+			],
+		};
+		const el = render(hand, HEADED_BODY);
+		expect(
+			Array.from((strip(el) as HTMLElement).children).map(
+				(one) => one.textContent,
+			),
+		).toEqual(['Uses', 'Attuned']);
+		// The keys survive the round trip, as a hand-edited layout expects.
+		const layout = JSON.parse(
+			serialiseLayout({
+				name: 'L',
+				components: [hand],
+				triggers: [],
+			}),
+		) as { components: RecordSetConfig[] };
+		expect(layout.components[0]?.fields?.[0]).toMatchObject({
+			hideHeading: true,
+			secondary: true,
+		});
+		expect(layout.components[0]?.fields?.[1]).toMatchObject({
+			hideHeading: true,
+		});
+	});
+
+	it("keeps a ring's tooltip and long press, and a number's own name in the DOM", () => {
+		/*
+		 * The strip is width-dependent and only the stylesheet knows the width, so
+		 * the same DOM serves the wide regime and the narrow one: the tooltip and
+		 * the touch route to it stay (`nameOnScreen` is false, and this is why),
+		 * and the number's name stays for the stylesheet to hide in the wide regime
+		 * and to return in the narrow.
+		 */
+		closePopover();
+		const held: RecordSetData[] = [];
+		const el = render(HEADED, HEADED_BODY, {
+			onChange: (data) => held.push(data),
+		});
+		const toggle = records(el)[0]?.querySelector(
+			'.sheetsmith-record-field-toggle .sheetsmith-level-ring',
+		) as HTMLElement;
+		expect(toggle.getAttribute('title')).toBe('Second Wind Attuned');
+		const graded = records(el)[0]?.querySelector(
+			'.sheetsmith-record-field-level .sheetsmith-level-ring',
+		) as HTMLElement;
+		expect(graded.getAttribute('title')).toBe('Second Wind Skill rank: Trained');
+		vi.useFakeTimers();
+		try {
+			hold(toggle, LONG_PRESS + 10, { pointerType: 'touch' });
+			expect(
+				document.querySelector('.sheetsmith-popover')?.textContent,
+			).toBe('Second Wind Attuned');
+			toggle.click();
+			expect(held).toEqual([]);
+			closePopover();
+		} finally {
+			vi.useRealTimers();
+		}
+		const inline = records(el)[0]?.querySelector(
+			'.sheetsmith-record-field-number .sheetsmith-card-abbreviation',
+		);
+		expect(inline?.textContent).toBe('Uses');
+		// Its ceiling is still drawn beside the value.
+		expect(
+			records(el)[0]?.querySelector('.sheetsmith-pool-max'),
+		).not.toBeNull();
 	});
 });

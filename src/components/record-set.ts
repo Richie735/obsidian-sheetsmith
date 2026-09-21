@@ -156,6 +156,18 @@ const OPEN_ICON = 'chevron-down';
 /** The delete control's mark, which is Table's and the layout editor's. */
 const REMOVE_ICON = 'trash';
 
+/**
+ * The largest field count the stylesheet tabulates a strip threshold for.
+ *
+ * A list with more fields than this takes the last entry, which is a residue
+ * and not a case: a record with nine fields already wraps at any width today.
+ *
+ * Exported so `styles.test.ts` can hold the stylesheet's table to it: raising
+ * this alone stamps a class no threshold rule answers, and the strip then never
+ * draws for that count with nothing red to say so.
+ */
+export const MAX_TABULATED_FIELDS = 8;
+
 /** A blank line, which is what separates one paragraph from the next. */
 const PARAGRAPH_BREAK = /(?:\r?\n[ \t]*)+\r?\n/;
 
@@ -265,9 +277,11 @@ export interface RecordField {
 	 */
 	secondary?: boolean;
 	/**
-	 * Ignored: there is no heading strip over a record's fields for one to be
-	 * hidden from. Declared for `secondary`'s reason — a hand-edited layout may
-	 * carry it, and the key must survive the round trip.
+	 * Ignored, and **not** honoured now that a strip exists: the strip is the
+	 * component's and not the field's, and a hole in it over a ring would leave
+	 * exactly the unnamed ring the strip is there to name. Declared for
+	 * `secondary`'s reason — a hand-edited layout may carry a Table's, and the
+	 * key must survive the round trip.
 	 */
 	hideHeading?: boolean;
 	/**
@@ -288,6 +302,12 @@ export interface RecordSetConfig extends ComponentConfig {
 	recordName?: string;
 	fields?: RecordField[];
 	hideLabel?: boolean;
+	/**
+	 * Off unless asked for, and drawn only where there is something to name: a
+	 * strip over an empty list would label nothing, so the list is exactly the
+	 * unheaded one until it holds a record that read.
+	 */
+	fieldHeadings?: boolean;
 }
 
 /** One record, as the note holds it. */
@@ -818,9 +838,9 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				// uses is the record's rather than the layout's. Table does not ask
 				// for it, which is what keeps this feature out of Table.
 				holderMax: true,
-				// There is no heading strip over a record's fields, so a control that
-				// hides one is a control that does nothing. The *key* is still read
-				// and still round-trips.
+				// The strip is the component's, and a per-field hide would leave a
+				// ring unnamed, which is what the strip is for. The *key* is still
+				// read and still round-trips.
 				hideHeading: false,
 				// The editor's own words, so the one panel where an author reads about
 				// their Record set does not describe it as cells and rows — which is
@@ -830,8 +850,8 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				// Where the value sits, which for a record *is* the field: Table needs
 				// both words, since its entry is a column and its value is in a cell.
 				cell: 'field',
-				// What that column actually sets here: not a heading, since none is
-				// drawn, but the field's own name beside its value.
+				// What that column actually sets here: the word shown beside a
+				// number when there is no strip, and over the field when there is.
 				heading: 'Name',
 			},
 			// Unlike Table's and Roster's own `columns`, this one addresses a
@@ -850,6 +870,15 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			label: 'Hide the heading',
 			description:
 				'Draws the list with no name over it, for a list whose surroundings already say what it is. The records keep their own names either way.',
+			default: false,
+		},
+		{
+			key: 'fieldHeadings',
+			group: 'Appearance',
+			kind: 'boolean',
+			label: 'Field names over the list',
+			description:
+				'Names every field on screen, so a ring or toggle is not named only by its tooltip. Left out where the list is too narrow, so a narrow placement looks the same either way. A long field name widens its column; shorten it in the list above.',
 			default: false,
 		},
 	],
@@ -1172,11 +1201,35 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			awaitingAdd?.id === config.id && records.length > awaitingAdd.held;
 		if (landing) awaitingAdd = null;
 
+		/**
+		 * Whether this list draws the strip, and so whether it is a headed list at
+		 * all.
+		 *
+		 * **The stamps below follow the strip and not the flag**, so a list with
+		 * nothing to name is the unheaded list to the byte: no wrapper, no class,
+		 * no custom property. The strip appears with the first record that read
+		 * and goes with the last, which is what a label over nothing would not do.
+		 */
+		const headed =
+			config.fieldHeadings === true &&
+			fields.length > 0 &&
+			records.some((record) => record.error === null);
+
 		const block = element(
 			'div',
-			'sheetsmith-placed sheetsmith-record-set',
+			headed
+				? `sheetsmith-placed sheetsmith-record-set sheetsmith-record-set-headed sheetsmith-record-set-fields-${Math.min(fields.length, MAX_TABULATED_FIELDS)}`
+				: 'sheetsmith-placed sheetsmith-record-set',
 			container,
 		);
+		// The true count, for the shared tracks; the class above is only the
+		// clamped one the threshold table is keyed on.
+		if (headed) {
+			block.style.setProperty(
+				'--sheetsmith-record-fields',
+				String(fields.length),
+			);
+		}
 		// The placement, handed to CSS as the box's own floor: the box is `height`
 		// grid rows tall whatever is in it and the list scrolls inside it, so
 		// opening a record moves nothing on the sheet (SPEC §8).
@@ -1202,6 +1255,37 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		// Out of flow, so nothing inside contributes intrinsic height and the box
 		// cannot be grown past its placement by a long list or a long body.
 		const list = element('div', 'sheetsmith-record-set-list', box);
+		if (headed) {
+			/*
+			 * **Aria-hidden, and no table role anywhere.** Every control already
+			 * announces its record and its field, so a strip read aloud would be a
+			 * second sighting of names each control says, with no relationship to
+			 * say which record it belongs to — and a `columnheader` would hand
+			 * assistive tech the tabular reading this component declines.
+			 */
+			const strip = element('div', 'sheetsmith-record-strip', list);
+			strip.setAttribute('aria-hidden', 'true');
+			for (const field of fields) {
+				element(
+					'span',
+					'sheetsmith-card-abbreviation',
+					strip,
+					fieldLabel(field),
+				);
+			}
+		}
+		/**
+		 * Where the records and the add control go: the list itself, or on a headed
+		 * list a wrapper of their own.
+		 *
+		 * **The wrapper is the strip's second row.** A sticky item is confined to
+		 * its grid area, so the strip can only follow the scroll if its area is the
+		 * whole list; that leaves the records needing an area of their own beneath
+		 * the strip's reserved height. It draws nothing outside the wide regime.
+		 */
+		const host = headed
+			? element('div', 'sheetsmith-record-set-records', list)
+			: list;
 
 		// Announces once per commit. Built before the records so it is in the
 		// document by the time any of them speaks; a live region has to be attached
@@ -1377,7 +1461,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		// The add control sits in the last position of the list, so it reads as the
 		// next record rather than as chrome beside it — `.sheetsmith-table-add`'s
 		// own vocabulary, one storage over.
-		const add = element('button', 'sheetsmith-record-add', list);
+		const add = element('button', 'sheetsmith-record-add', host);
 		add.type = 'button';
 		element(
 			'span',
@@ -1411,7 +1495,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		/** One record: its summary line, its body, and the controls on both. */
 		function drawRecord(record: RecordEntry, at: number): void {
 			const named = recordLabel(record.name, noun);
-			const row = element('div', 'sheetsmith-record', list);
+			const row = element('div', 'sheetsmith-record', host);
 			const summary = element('div', 'sheetsmith-record-summary', row);
 
 			/*
@@ -1635,9 +1719,9 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			}
 
 			// A number, whose entry may carry its ceiling beside its value. Its name
-			// is drawn beside it in the shared secondary clothes, because there is
-			// no heading strip over a record's fields and a number with no word
-			// beside it says nothing.
+			// is drawn beside it in the shared secondary clothes, always: the
+			// stylesheet hides it only where a strip is over it, so the one query
+			// decides both and a number can never have neither.
 			element('span', 'sheetsmith-card-abbreviation', cell, name);
 			const ownMax = recordsOwnMax(field);
 			const entry = splitBounded(raw);
@@ -2021,6 +2105,16 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			 * do about it, including the touch route to the same words, which UI §7
 			 * requires because `title` is a pointer's route and every ring that ships
 			 * on the sample sheet is a toggle.
+			 *
+			 * **A strip does not change the answer, and the reason is that the fact
+			 * is not knowable here.** Whether one is showing depends on the list's
+			 * width, which only the stylesheet sees, and the same DOM serves both
+			 * regimes; answering `true` would take the tooltip and the long press
+			 * away in the narrow regime, which is exactly where no name is on screen.
+			 * Table derives the fact from `hideHeading` because its heading is there
+			 * at every width. What a wide headed list costs is a tooltip restating
+			 * the heading — and it reads `Shield Prepared`, so it names the record as
+			 * well, which no heading can.
 			 */
 			bindRingControl({
 				button,

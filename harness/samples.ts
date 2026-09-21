@@ -480,6 +480,11 @@ export const SAMPLES: Sample[] = [
 					label: 'Known spells',
 					position: { col: 1, row: 1, width: 2, height: 4 },
 					recordName: 'Spell',
+					// Two columns wide, so this list is under every threshold at any
+					// pane width the harness draws: the flag is on to photograph the
+					// strip *dropping* — no strip, each number with its name back —
+					// where `spells` beside it is the unheaded control.
+					fieldHeadings: true,
 					fields: [
 						{ key: 'Level', type: 'number' },
 						{ key: 'Prepared', type: 'toggle' },
@@ -1505,6 +1510,10 @@ export const SAMPLES: Sample[] = [
 			label: 'Traits',
 			position: { col: 1, row: 35, width: 7, height: 3 },
 			recordName: 'Feature',
+			// The wide case: seven columns and five fields of every kind, so the
+			// strip is over a per-record ceiling, a toggle, a named level, a computed
+			// value and a modifier. `spells` beside it stays off, as the control.
+			fieldHeadings: true,
 			/*
 			 * **All five offered field types on one subject**, because a design
 			 * review found `level` and `computed` drawn on no shot at all: the axis
