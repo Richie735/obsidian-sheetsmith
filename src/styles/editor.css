@@ -227,6 +227,26 @@
 	background-color: var(--background-modifier-hover);
 }
 
+/* What a container holds, nested the way the layout nests
+   (`docs/features/layout-editor-tree.md` §2). **The card steps in, not its
+   text**: every row is a card of its own, so a text offset inside one draws
+   depth 1 and depth 2 as identical boxes — the defect this replaced. Indented
+   so the rule down its leading edge falls under the centre of the container's
+   chevron: the card's own padding, then half the slot.
+
+   **The guide is this wrapper's own border**, so it runs the full height of
+   everything the container holds, gaps between cards included, where a rule
+   drawn on each row was cut into row-height pieces. Two containers deep is two
+   wrappers and so two guides, which is the depth drawn rather than inferred.
+   `--background-modifier-border-hover` rather than the card's own border colour,
+   so it reads as structure and not as one more card edge, and a border rather
+   than a background, so forced colors repaints it rather than dropping it. */
+.sheetsmith-tree-children {
+	margin-inline-start: calc(var(--size-4-4) + var(--size-4-6) / 2);
+	padding-inline-start: var(--size-2-3);
+	border-inline-start: 1px solid var(--background-modifier-border-hover);
+}
+
 /* A tree row a drag is currently over, and the drop would succeed
    (`docs/features/grid-canvas.md` §5). The accent inset the schematic's own
    selection mark already uses, so a reader learns the one ring in this pane
@@ -1835,6 +1855,17 @@
 	.sheetsmith-preview-editing {
 		outline: 2px solid SelectedItem;
 		outline-offset: 1px;
+	}
+
+	/* A tree row draws the same ring *inside* its card, as the picker's active
+	   line does. The row fills the outline column edge to edge, and the column
+	   scrolls (`overflow-y: auto`, which clips the other axis too), so a ring
+	   offset outward lost both side edges on a top-level row — measured with no
+	   ring pixels at all at mid-height — and its right edge at every depth. A
+	   tree row has no border for an inward ring to sit on, which is the block's
+	   whole reason for going outward. */
+	.sheetsmith-tree-row.sheetsmith-preview-editing {
+		outline-offset: -2px;
 	}
 }
 

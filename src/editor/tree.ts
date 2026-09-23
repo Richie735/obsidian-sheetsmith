@@ -17,6 +17,11 @@
  * button. `tree-moves.ts` decides all four, once, for both routes, and asks
  * `reparent.ts`'s `canReparent` before any of them writes; a refusal is shown
  * in place rather than the gesture being silently ignored.
+ *
+ * **The DOM nests the way the layout does.** A container's children render
+ * into a `role="group"` wrapper directly after its row, indented as a whole and
+ * ruled down its leading edge, so depth reads as a narrower card and one guide
+ * per enclosing container rather than as a text offset inside identical boxes.
  */
 
 import { Setting, setIcon } from 'obsidian';
@@ -155,14 +160,20 @@ function showMoveError(row: Setting, message: string | null): void {
 	);
 }
 
+/** The id of the wrapper a container's children render into. */
+function childrenId(id: string): string {
+	return `sheetsmith-tree-children-${id}`;
+}
+
 /**
  * The layout, then everything in it, in the depth-first walk the sheet reads
- * in — the pane's complete table of contents.
+ * in — the pane's complete table of contents, nested the way the layout is.
  *
  * The first row is the layout itself, selectable exactly as a component row
- * is, which is what keeps the panel needing no chrome of its own. No
- * disclosure control: a container's children are always listed, and the
- * indent and the rule down its left say what holds what.
+ * is, which is what keeps the panel needing no chrome of its own. Every
+ * component row follows in the same order as ever; a container's own are
+ * inside a wrapper after its row, which changes the DOM's shape and not its
+ * order, so the reading order and the tab order are the sheet's.
  */
 export function renderTree(
 	outline: HTMLElement,
@@ -172,16 +183,45 @@ export function renderTree(
 	const walk = walkComponents(layout.components);
 	const byConfig = new Map(walk.map((entry) => [entry.config, entry]));
 	renderLayoutRow(outline, layout, host);
-	for (const entry of walk) {
-		renderComponentRow(outline, entry, { layout, byConfig, host });
-	}
+	renderLevel(outline, null, { layout, walk, byConfig, host });
 }
 
 /** What every row of one render reads, passed down rather than recomputed. */
 interface TreeRender {
 	layout: Layout;
+	walk: WalkEntry[];
 	byConfig: Map<ComponentConfig, WalkEntry>;
 	host: TreeHost;
+}
+
+/**
+ * The rows directly inside , in the walk's order, each container's own
+ * after it in a wrapper of their own.
+ *
+ * A container with nothing in it draws no wrapper, because an empty group
+ * would draw a guide line with nothing to run beside.
+ */
+function renderLevel(
+	into: HTMLElement,
+	parent: ComponentConfig | null,
+	tree: TreeRender,
+): void {
+	for (const entry of tree.walk) {
+		if (entry.parent !== parent) continue;
+		renderComponentRow(into, entry, tree);
+		const { config } = entry;
+		if (!holdsChildren(config)) continue;
+		if ((config.children ?? []).length === 0) continue;
+		const wrapper = into.createDiv({
+			cls: 'sheetsmith-tree-children',
+			attr: {
+				role: 'group',
+				'aria-label': `Inside ${config.label}`,
+				id: childrenId(config.id),
+			},
+		});
+		renderLevel(wrapper, config, tree);
+	}
 }
 
 /** The layout's own row: no drag, no menu, no chord — just a drop target. */
@@ -195,7 +235,6 @@ function renderLayoutRow(
 		SHEET_DESTINATION,
 		'Layout',
 		'The grid, the function library, the reset triggers and the bonus types.',
-		0,
 		host,
 	);
 	bindDropTarget(row, layout, null, host);
@@ -207,13 +246,12 @@ function renderComponentRow(
 	tree: TreeRender,
 ): void {
 	const { layout, host } = tree;
-	const { config, depth } = entry;
+	const { config } = entry;
 	const row = renderRow(
 		into,
 		config.id,
 		config.label,
 		placedComponentName(config),
-		depth,
 		host,
 	);
 
@@ -313,13 +351,15 @@ function removeComponent(entry: WalkEntry, tree: TreeRender): void {
  * its: `closest('button, input, select, textarea')` excludes the name button
  * itself (which keeps its own listener below), the drag handle and the menu
  * button.
+ *
+ * Depth is not this row's to draw any more: the wrapper it sits in is indented
+ * and ruled, so every row at every depth is the same card.
  */
 function renderRow(
 	into: HTMLElement,
 	id: string,
 	name: string,
 	description: string,
-	depth: number,
 	host: TreeHost,
 ): Setting {
 	const selected = host.selection === id;
@@ -333,10 +373,6 @@ function renderRow(
 	// One class for the row and for the canvas overlay, so the two paints
 	// cannot disagree about what is selected.
 	if (selected) row.settingEl.addClass('sheetsmith-preview-editing');
-	if (depth > 0) {
-		row.settingEl.addClass('sheetsmith-row-child');
-		row.settingEl.style.setProperty('--sheetsmith-row-depth', String(depth));
-	}
 	const button = row.nameEl.createEl('button', {
 		cls: 'sheetsmith-tree-name',
 		text: name,

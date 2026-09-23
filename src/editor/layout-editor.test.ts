@@ -1456,15 +1456,25 @@ describe('the component list', () => {
 		harness = await open(nested());
 	});
 
-	it('lists the children of a container beneath it, indented', () => {
+	it('lists the children of a container beneath it, inside a group named for it', () => {
 		// The same depth-first walk the sheet reads in, so what the list shows in
 		// order is what the sheet reflows and tabs through in order: a child sits
 		// between its container and the container's next neighbour.
 		const rows = labels(harness);
 		expect(rows.indexOf('Armour class')).toBe(rows.indexOf('Defences') + 1);
 		expect(rows.indexOf('Hit points')).toBe(rows.indexOf('Armour class') + 1);
+		// Nested in the DOM the way the layout nests, rather than indented by a
+		// class on the row: the wrapper is what carries the step and the guide.
 		const row = control(harness, 'edit-armour').closest('.setting-item');
-		expect(row?.classList.contains('sheetsmith-row-child')).toBe(true);
+		const wrapper = row?.parentElement;
+		expect(wrapper?.classList.contains('sheetsmith-tree-children')).toBe(true);
+		expect(wrapper?.getAttribute('role')).toBe('group');
+		expect(wrapper?.getAttribute('aria-label')).toBe('Inside Defences');
+		expect(row?.classList.contains('sheetsmith-row-child')).toBe(false);
+		// Hit points is back at the top level, outside the wrapper.
+		expect(
+			control(harness, 'edit-hit_points').closest('.sheetsmith-tree-children'),
+		).toBeNull();
 	});
 
 	it('orders the list by the walk the sheet reads in, not by file order', async () => {
@@ -2830,9 +2840,11 @@ describe('the tree', () => {
 		control(harness, 'edit-defences').click();
 		await settle(harness.pane);
 
+		// The wrapper follows the row directly, and its first row is the child.
 		const container = treeRow(harness, 'edit-defences');
 		const child = treeRow(harness, 'edit-armour');
-		expect(container.nextElementSibling).toBe(child);
+		expect(container.nextElementSibling).toBe(child.parentElement);
+		expect(child.parentElement?.firstElementChild).toBe(child);
 	});
 });
 
@@ -3316,6 +3328,17 @@ describe('a tree row at rest', () => {
 		);
 	});
 
+	it('nests two containers deep as two wrappers', async () => {
+		harness = await open(deep());
+		const row = treeRow(harness, 'edit-armour');
+		const wrappers: string[] = [];
+		for (let el = row.parentElement; el !== null; el = el.parentElement) {
+			if (el.classList.contains('sheetsmith-tree-children')) {
+				wrappers.push(el.getAttribute('aria-label') ?? '');
+			}
+		}
+		expect(wrappers).toEqual(['Inside Melee', 'Inside Defences']);
+	});
 });
 
 describe('removing from the tree', () => {
