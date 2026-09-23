@@ -15,17 +15,17 @@ import { getComponent, listComponentTypes, paletteEntries } from '../components'
 import { Canvas } from './canvas';
 import { componentDisplayName } from './component-name';
 import { ConfigPanel } from './config-panel';
+import {
+	LayoutFileRowHost,
+	promptForNewLayout,
+	renderLayoutFileRow,
+} from './layout-file-row';
 import { showFieldError } from './field-error';
 import { attachFormulaSuggest, FormulaSuggest } from './formula-suggest';
 import { focusToken } from './focus-token';
 import { ConfirmModal } from '../ui/confirm-modal';
-import { NEW_LAYOUT_LABEL, promptNewLayout } from './new-layout';
-import {
-	isLayoutPath,
-	isResolvedLayout,
-	layoutFileFor,
-	listLayouts,
-} from '../layouts';
+import { NEW_LAYOUT_LABEL } from './new-layout';
+import { isResolvedLayout, listLayouts } from '../layouts';
 import { ListContext } from './list-fields';
 import type SheetsmithPlugin from '../main';
 import { Layout, parseLayout, serialiseLayout } from '../parse/layout';
@@ -39,9 +39,6 @@ import { childIsPlaced } from '../view/grid-cells';
 
 /** Ties the add menu to the description under it, for a screen reader. */
 const ADD_DESCRIPTION_ID = 'sheetsmith-add-description';
-
-/** Mints the **Layout file** row's description id; see its one use. */
-let fileNoteIds = 0;
 
 /**
  * The top level, wherever something has to be named that is not a component.
@@ -146,7 +143,8 @@ interface Regions {
  * It still owns the *render*, which is why the class is not named for the
  * outline alone: it loads the file, draws both regions, and applies the pending
  * focus and flash afterwards. What it no longer holds is the configuration of
- * whatever is selected (`docs/PATTERNS.md` §11).
+ * whatever is selected (`docs/PATTERNS.md` §11), nor the **Layout file** row and
+ * its file operations, which `layout-file-row.ts` draws.
  *
  * Text fields commit on change (blur or Enter), never per keystroke, and
  * invalid input shows an inline error instead of being silently ignored.
@@ -202,6 +200,8 @@ export class LayoutEditorSection {
 	private renderId = 0;
 	/** The panel drawing whatever is selected, and the fields it holds. */
 	private panel: ConfigPanel;
+	/** What the **Layout file** row reads and asks for, built once like the panel. */
+	private fileRow: LayoutFileRowHost;
 	/**
 	 * The layout's bytes as this session last knew them on disk: what the
 	 * initial read produced, or what the last successful `persist` wrote.
@@ -326,6 +326,21 @@ export class LayoutEditorSection {
 			listContext: () => this.listContext(),
 			suggestNames: (input, owner) => this.suggestNames(input, owner),
 		});
+		// The row's host, and the same mapping again. `redraw` is the wrapped one
+		// above rather than the host's, for the flush and the focus it adds, and
+		// the two getters stay live because the trash reads them after a confirm
+		// modal rather than when the row was drawn.
+		this.fileRow = {
+			app: plugin.app,
+			get folder(): string {
+				return plugin.settings.layoutFolder;
+			},
+			get layoutFile(): TFile | null {
+				return host.layoutFile;
+			},
+			openLayoutFile: (file) => host.openLayoutFile(file),
+			redraw: () => this.redraw(),
+		};
 	}
 
 	/**
@@ -531,17 +546,7 @@ export class LayoutEditorSection {
 		const outline = grid.createDiv('sheetsmith-editor-outline');
 		this.regions = null;
 
-		// With no file: after an outside delete, or a restored workspace naming
-		// a layout that is gone. The pane never binds itself to a file the reader
-		// did not choose, so it says what to do rather than picking one.
-		this.renderSelectionRow(
-			outline,
-			files,
-			open,
-			open === null
-				? 'No layout is open. Choose one above.'
-				: this.outsideNote(open, folder),
-		);
+		renderLayoutFileRow(outline, files, this.fileRow);
 		if (open === null) return;
 
 		if (this.layout === null) {
@@ -670,7 +675,7 @@ export class LayoutEditorSection {
 				// row, because here it is the only thing on screen.
 				.setButtonText(NEW_LAYOUT_LABEL)
 				.setCta()
-				.onClick(() => this.promptForNewLayout());
+				.onClick(() => promptForNewLayout(this.fileRow));
 		});
 	}
 
@@ -753,269 +758,6 @@ export class LayoutEditorSection {
 					this.canvas.redraw();
 				});
 			});
-	}
-
-	/**
-	 * The **Layout file** row: which file is open, and what acts on it.
-	 *
-	 * The options are the folder's layouts, one per name as `listLayouts` gives
-	 * them, **keyed by path** — the pane is bound to a file, so a path is what
-	 * choosing one hands the host, and it is unambiguous where a basename would
-	 * not be for the one option that is not in the folder.
-	 *
-	 * **That option is the open file, where the folder's lookup does not reach
-	 * it** — a file in another folder, a subfolder, or a `.json` a `.sheetsmith`
-	 * of the same name shadows. It goes first, labelled with its vault path so
-	 * it cannot be mistaken for a layout of the same name in the folder, and it
-	 * is the selected one. With no file open, nothing is selected: a `<select>`
-	 * whose value matches no option shows none, and choosing any option is then
-	 * a change the dropdown reports.
-	 */
-	private renderSelectionRow(
-		container: HTMLElement,
-		files: TFile[],
-		open: TFile | null,
-		note: string | null,
-	): void {
-		const offered =
-			open !== null && !files.includes(open) ? [open, ...files] : files;
-		let picker: HTMLSelectElement | null = null;
-		const row = new Setting(container)
-			// "Layout file", not "Layout", because the tree's first row is the
-			// layout and this is the file it lives in. Two adjacent rows both
-			// named Layout — one choosing which one is open, one configuring the
-			// one that is — would be a reader's problem, not a naming quibble.
-			.setName('Layout file')
-			.addDropdown((dropdown) => {
-				for (const file of offered) {
-					dropdown.addOption(
-						file.path,
-						files.includes(file) ? file.basename : file.path,
-					);
-				}
-				// **Nouns only.** Creating a layout used to be two options in
-				// here — `New layout…` and `Import a layout…` — and the row rule
-				// that put them there is genuine but does not reach them: the
-				// dropdown answers *which layout is open* and the row's buttons
-				// *act on* the one that is, and create does neither. It acts on
-				// the **folder**, which is a third kind of thing, and it was
-				// filed here by a side effect ("it ends with a different layout
-				// open") rather than by what it is. Delete is the tell that the
-				// partition was already leaking: it ends with a different layout
-				// open too, and it is correctly a button
-				// (`docs/features/starting-a-new-layout.md`).
-				dropdown.setValue(open?.path ?? '');
-				dropdown.selectEl.dataset.sheetsmithFocus = 'layout-picker';
-				picker = dropdown.selectEl;
-				dropdown.onChange((value) => {
-					const chosen = offered.find((file) => file.path === value);
-					if (chosen) this.host.openLayoutFile(chosen);
-				});
-			})
-			.addButton((button) =>
-				button
-					// Not a CTA: creating a layout is not this pane's primary
-					// action. A plain button on a row of dropdowns is the **Add
-					// component** row's own precedent, and it goes before the
-					// two icon buttons so the irreversible one stays last.
-					.setButtonText(NEW_LAYOUT_LABEL)
-					.onClick(() => this.promptForNewLayout()),
-			)
-			.addExtraButton((button) =>
-				button
-					// Before the trash rather than after it, so the one
-					// irreversible control on the row stays last: a press that
-					// lands one control off its mark then hits the harmless one.
-					.setIcon('copy')
-					.setTooltip('Copy layout JSON')
-					.onClick(() => void this.copyLayoutJson(container)),
-			)
-			.addExtraButton((button) =>
-				button
-					.setIcon('trash')
-					.setTooltip('Delete layout')
-					.onClick(() => {
-						// The open file, whatever folder it is in: the trash acts
-						// on what the pane shows, never on a lookup by name.
-						const file = this.host.layoutFile;
-						if (!file) return;
-						new ConfirmModal(
-							this.plugin.app,
-							`Delete the layout "${file.basename}"? Character notes are not touched, but the layout's components and formulas are gone.`,
-							'Delete layout',
-							() => void this.deleteLayout(file),
-						).open();
-					}),
-			);
-
-		/*
-		 * What the pane has to say about the file itself — that no character can
-		 * use it from where it is, or that no file is open — as the row's own
-		 * description, under its controls (`editor/described-row.ts`, `docs/UI.md`
-		 * §9). A line of its own between two rows read as the *next* row's: it sat
-		 * 12px under this card and 3px over the one below, at the card's outer
-		 * edge rather than its text. Inside the row it takes the row's inset and
-		 * groups with the dropdown it is about, and the dropdown is described by
-		 * it for a screen reader too.
-		 *
-		 * The id is per render and per pane, because two panes on one layout is a
-		 * supported state and a repeated id would describe one pane's dropdown by
-		 * the other's line.
-		 */
-		if (note !== null && picker !== null) {
-			const described = describedRow(
-				row,
-				`sheetsmith-layout-file-note-${++fileNoteIds}`,
-				() => note,
-			);
-			described.describes(picker);
-			described.describe('');
-		}
-	}
-
-	/**
-	 * Put the open layout's own bytes on the clipboard
-	 * (`docs/features/layout-import-export.md`).
-	 *
-	 * **The file's bytes, not a re-serialisation of them.** A layout carrying a
-	 * key this version's parser does not know would have it silently dropped by
-	 * a parse-then-serialise round trip, which is the one thing a share must not
-	 * do — and a layout that will not parse at all is exportable on purpose,
-	 * since handing the broken file to somebody who can read it is a reasonable
-	 * thing to want. Nothing is written anywhere, so there is no writer here for
-	 * the one-writer-one-spelling rule to be about.
-	 *
-	 * **It guards rather than disabling.** With no layout selected — a vault
-	 * whose folder holds none — this returns silently, which is `deleteLayout`'s
-	 * existing spelling one control to the right. Disabling it would look
-	 * identical to a live control (`setDisabled` reaches no paint for a
-	 * `.clickable-icon`) and would make this the fifth member of a
-	 * `docs/BACKLOG.md` row waiting on one decision about four.
-	 *
-	 * The clipboard comes off the container's own window rather than the global
-	 * one, which is `docs/PATTERNS.md` §5: a pane may be rendered into a popout.
-	 */
-	private async copyLayoutJson(container: HTMLElement): Promise<void> {
-		// The open file, never a lookup by name — which is what makes a layout
-		// opened from outside the folder copyable too.
-		const file = this.host.layoutFile;
-		if (!file) return;
-		let text: string;
-		try {
-			text = await this.plugin.app.vault.read(file);
-		} catch (error) {
-			// The vault's own reason: the file was trashed or renamed under a
-			// pane that has not redrawn yet.
-			new Notice(error instanceof Error ? error.message : String(error));
-			return;
-		}
-		try {
-			await container.win.navigator.clipboard.writeText(text);
-		} catch {
-			/*
-			 * Deliberately the same words `src/editor/copyable-name.ts` gives,
-			 * and deliberately not the same code. The argument is here rather
-			 * than cited, because that file's header does not make it: it argues
-			 * only why the module exists at all, and says nothing about the
-			 * clipboard write or about this sentence.
-			 *
-			 * `copyableName` exports a builder for a `<code>` control with the
-			 * copy bound inside it, so a settings-row button cannot reach the
-			 * write without splitting the function in two — which is a change to
-			 * a shipped control for the benefit of one caller.
-			 *
-			 * And only half of what such a module would hold is actually common:
-			 * this failure sentence is shared, while the success sentences are
-			 * not — a chip says `Copied "x"` about a name, and this says
-			 * `Copied "x" to the clipboard.` about a file. So the shared thing is
-			 * one short sentence rather than the gesture, which `docs/PATTERNS.md`
-			 * §1's one-step tier would extract on a second consumer if the
-			 * *whole* policy were shared. **A third caller is where that gets
-			 * revisited**, and it is the honest cost of two copies until then.
-			 */
-			new Notice('Could not copy to the clipboard.');
-			return;
-		}
-		// The layout is named because the row can only show one at a time and a
-		// bare "Copied." leaves a reader wondering which; "to the clipboard" is
-		// the half that says where, in the failure sentence's own words.
-		new Notice(`Copied "${file.basename}" to the clipboard.`);
-	}
-
-	/**
-	 * Trash the open layout, and end with a different one open (SPEC §7).
-	 *
-	 * The trash itself is what lets the pane go of the file: the vault's
-	 * `delete` reaches the view, which unbinds it without writing anything to a
-	 * file that is gone. What is left here is the shipped ending — the first
-	 * layout the folder still holds, in this same leaf, or the vacant state where
-	 * none is left. A delete from *outside* the pane does not come here and does
-	 * not pick one: the reader did not ask for another layout.
-	 */
-	private async deleteLayout(file: TFile): Promise<void> {
-		await this.plugin.app.fileManager.trashFile(file);
-		const next = listLayouts(
-			this.plugin.app,
-			this.plugin.settings.layoutFolder,
-		).find((candidate) => candidate !== file);
-		if (next) this.host.openLayoutFile(next);
-		else this.redraw();
-	}
-
-	/**
-	 * Ask what a new layout starts from, and open whatever lands.
-	 *
-	 * **No cancel arm**, which is the whole of what moving this off the dropdown
-	 * bought: a sentinel option left the `<select>` showing the wrong value, so
-	 * both prompts used to take an `onCancel` that redrew the pane purely to
-	 * snap it back. A button press changes no `<select>` value, so cancelling
-	 * now leaves the pane exactly as it was.
-	 *
-	 * The pane hands over the layout it has open, which is what **Layout to
-	 * copy** prefills to, and a basename rather than the layout it holds in
-	 * memory: `startLayout` reads the source's file, so a copy cannot differ
-	 * from what is on disk (`docs/features/starting-a-new-layout.md`).
-	 */
-	// Named apart from the module function it calls: a method and an import
-	// spelled the same read as recursion at a glance.
-	private promptForNewLayout(): void {
-		const folder = this.plugin.settings.layoutFolder;
-		const open = this.host.layoutFile;
-		promptNewLayout(
-			this.plugin.app,
-			folder,
-			// A basename only where it names a layout the copy list offers: a
-			// file outside the folder is not one, and the modal falls back.
-			open !== null && isResolvedLayout(this.plugin.app, folder, open)
-				? open.basename
-				: null,
-			(name) => {
-				// What `createLayout` just wrote, resolved the way every name is
-				// — which is the `.sheetsmith` it wrote, since it refuses a name
-				// either extension already holds.
-				const created = layoutFileFor(this.plugin.app, folder, name);
-				if (created) this.host.openLayoutFile(created);
-			},
-		);
-	}
-
-	/**
-	 * Why no character can use the open file, or null where one can.
-	 *
-	 * Two reasons, and they read differently because the fixes differ. A file
-	 * outside the folder — another folder, or a subfolder of it, since lookup is
-	 * by name in the one folder — is fixed by moving it. A `.json` in the folder
-	 * that a `.sheetsmith` of the same name outvotes is not fixed by moving
-	 * anything: the folder already answers that name with the other file.
-	 */
-	private outsideNote(file: TFile, folder: string): string | null {
-		const app = this.plugin.app;
-		if (isResolvedLayout(app, folder, file)) return null;
-		const winner = layoutFileFor(app, folder, file.basename);
-		if (winner !== null && isLayoutPath(file.path, folder)) {
-			return `"${folder}" uses "${winner.name}" under this name, so no character can use this file.`;
-		}
-		return `This file is not in "${folder}", so no character can use it from here. Move it into that folder to use it.`;
 	}
 
 	/**
