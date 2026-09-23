@@ -1,6 +1,6 @@
 # Layout editor tree
 
-Status: shipped, bar the manual vault walkthrough (§9's five presses in the throwaway vault), which has not been run
+Status: shipped
 Board card: The layout editor's component tree (`src/editor/tree.ts`,
 `renderTree`). Three changes to one row, taken as one feature: a container row
 can be collapsed so its children are not listed; nesting is legible at a glance
