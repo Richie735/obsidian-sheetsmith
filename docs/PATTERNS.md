@@ -195,9 +195,22 @@ with one import, in one spelling.
 ```
 src/
   main.ts          plugin lifecycle only, nothing else
-  commands.ts
-  settings.ts
+  commands.ts      the command palette's entries, each delegating elsewhere
+  settings.ts      the preferences and the settings tab that edits them
   types.ts         the component contract
+  layouts.ts       the layout folder: which files are layouts, the name each
+                   one resolves to, and every write into the folder
+  layout-conversion.ts
+                   offering and running the .json → .sheetsmith conversion,
+                   and the two sentences a reader is shown about it
+  layout-notes.ts  which character notes name a layout, the scan two callers
+                   share
+  layout-picker.ts the modal that chooses one of the vault's layouts, shared
+                   by two callers in two folders
+  characters.ts    creating a character note: its path, its bytes, and the
+                   gesture that opens it
+  component-rename-migration.ts
+                   carrying a component rename across every note on the layout
   parse/           note and layout parsing, and the ordered walk over a parsed
                    layout. Imports nothing from obsidian [checked]
   formula/         expression parsing and evaluation. Same rule [checked]
@@ -209,7 +222,8 @@ src/
                    about a leaf: it renders into an element it is handed
   styles/          the stylesheet, split by area; styles.css is assembled
                    from these at build time and is not edited directly
-  view/            sheet view, layout editor pane, auto-open, reset flow
+  view/            sheet view, layout editor pane, auto-open, reset flow,
+                   and what a layout file's registration and file events do
   ui/              generic building blocks that know nothing of components
   starters/        the layouts the plugin ships and the flow that installs one.
                    The sources are real layout files, inlined into main.js at
