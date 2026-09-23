@@ -1956,6 +1956,26 @@ export interface ComponentDefinition<
 	 */
 	showsOneChild?: boolean;
 	/**
+	 * A configuration for the component picker to draw this type with, where the
+	 * empty config an insert writes draws nothing useful: a blank body, an
+	 * empty-state message, or a configuration error
+	 * (`docs/features/component-picker.md` §1).
+	 *
+	 * **Drawn, never inserted.** Choosing the bare type still writes `config: {}`,
+	 * so the picker labels a drawing made from this as an example. That is the
+	 * whole difference from a palette entry, which is inserted: an example names no
+	 * job, has no name, is never written to a layout, and never appears as a line
+	 * in the list. Its vocabulary is filler — `Entry 1`, `Row 1` — never a game's.
+	 *
+	 * **Optional under §4.1's rule, on `palette`'s grounds**: the alternative is a
+	 * table in `src/editor/` holding Table's column shape and Track's count. It is
+	 * handed to `sample`, so it is declared only beside one, directly before it —
+	 * the configuration `sample` is asked about, then the body it produces.
+	 * `contract.test.ts` holds it to a non-empty config of fields the form
+	 * renders, with no editor-owned key, whose sample reads back and round-trips.
+	 */
+	example?: Partial<Omit<TConfig, EditorOwnedKey>>;
+	/**
 	 * What a section of this component would hold, for a config it was handed:
 	 * the plausible filler the layout editor's canvas draws in place of an empty
 	 * character's blank (`docs/features/preview-sample-values.md`).

@@ -399,7 +399,7 @@ Every component follows the same order. A reader who knows one knows them all.
 7. **`export const x: ComponentDefinition<XConfig, XData>`**, members in this
    order [judgement]:
    `type`, `description`, `storage`, `showsOneChild`, `formulaFields`,
-   `configFields`, `palette`, `configName`, `sample`, `read`,
+   `configFields`, `palette`, `configName`, `example`, `sample`, `read`,
    `scopeValues`, `scopeRows`, `scopeModifiers`, `write`, `hasBuffer`,
    `resetColumns`, `applyReset`, `render`.
    Contract first, then the data path in the order it runs, then rendering last
@@ -410,7 +410,9 @@ Every component follows the same order. A reader who knows one knows them all.
    for a job; `configName` follows `palette` because it is the same job read the
    other way, one offering a configuration under a name and the other naming a
    configuration. `description` sits directly after `type`, where the name and
-   its gloss read together. `sample` sits directly
+   its gloss read together. `example` sits directly before `sample` because it
+   is the configuration `sample` is asked about, so it comes before the body it
+   produces (`docs/features/component-picker.md`). `sample` sits directly
    before `read` because it is the body `read` is handed: the data path's own
    first step, in the one context where there is no note. `scopeRows` sits beside `scopeValues` because it
    is the same job read the other way: one publishes the component's names, the

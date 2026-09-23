@@ -204,6 +204,17 @@ export const cardSet: ComponentDefinition<CardSetConfig, CardSetData> = {
 	],
 
 	/*
+	 * What the component picker draws for a bare Card set, whose empty config
+	 * holds no entries and so draws its heading over nothing. Filler keys rather
+	 * than a game's — `STR` here would put a D&D sheet in the catalog — and three
+	 * of them, so the strip reads as a row of cards. Never inserted: choosing the
+	 * type still writes an empty config, which is why the picker labels this.
+	 */
+	example: {
+		entries: [{ key: 'Entry 1' }, { key: 'Entry 2' }, { key: 'Entry 3' }],
+	},
+
+	/*
 	 * One number per declared entry, under the layout's own keys, each different
 	 * from its neighbour — six abilities all reading 10 make
 	 * `floor((value - 10) / 2)` look broken, which is the one thing an author

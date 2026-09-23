@@ -563,6 +563,23 @@ export const roster: ComponentDefinition<RosterConfig, RosterData> = {
 	],
 
 	/*
+	 * What the component picker draws for a bare Roster, whose empty config
+	 * draws only its "No stats yet" message. Two stats with unequal bands — two
+	 * rows under the first, one under the second — because a band is the thing
+	 * this component draws that a Table does not, and two alike would hide it.
+	 * Never inserted, which is why the picker labels it.
+	 */
+	example: {
+		stats: [{ key: 'Stat 1' }, { key: 'Stat 2' }],
+		rows: [
+			{ label: 'Row 1', stat: 'Stat 1' },
+			{ label: 'Row 2', stat: 'Stat 1' },
+			{ label: 'Row 3', stat: 'Stat 2' },
+		],
+		columns: [{ key: 'Value', type: 'number' }],
+	},
+
+	/*
 	 * Two stats with scores from the shared sequence, two rows each, every
 	 * key, name and label taken from the config and only the values the
 	 * component's own — so the canvas draws a roster with two bands that

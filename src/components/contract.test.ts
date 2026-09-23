@@ -10,6 +10,7 @@ import {
 	unknownComponentMessage,
 } from './index';
 import { COLUMN_TYPES } from './column-types';
+import { conditionMet } from '../editor/config-fields';
 import {
 	ColumnOptionsSpec,
 	ComponentConfig,
@@ -92,6 +93,9 @@ const MEMBER_ORDER = [
 	// Beside `palette` because it is the same job read the other way: one
 	// offers a configuration under a name, the other names a configuration.
 	'configName',
+	// Directly before `sample`, because it is the configuration `sample` is
+	// asked about, and so it comes before the body it produces.
+	'example',
 	// Directly before `read`, because it is the body `read` is handed: the data
 	// path's own first step, in the one context where there is no note.
 	'sample',
@@ -579,6 +583,68 @@ describe('component registry', () => {
 		}
 	});
 
+	it('declares an example only beside a sample, and never on a container', () => {
+		// It is drawn through `sample`, so without one it would draw nothing; a
+		// container declares no sample, and what a container draws depends on
+		// `children`, which an example may not set.
+		for (const type of types) {
+			const component = getComponent(type);
+			if (component?.example === undefined) continue;
+			expect(typeof component.sample, `${type} has an example and no sample`).toBe('function');
+			expect(isContainer(component), `${type} is a container`).toBe(false);
+		}
+	});
+
+	it('sets no editor-owned key in an example', () => {
+		// The type forbids them, and the registry holds definitions typed without
+		// their config, so the `Omit` widens: this asks again at runtime.
+		for (const type of types) {
+			for (const key of Object.keys(getComponent(type)?.example ?? {})) {
+				expect(EDITOR_OWNED_KEYS, `${type} example sets ${key}`).not.toContain(key);
+			}
+		}
+	});
+
+	it('declares every example key as a config field it also renders', () => {
+		// An example is a configuration an author could reach through the form,
+		// never one they could not — or the preview shows a thing no insert can
+		// become. So each key is a declared field, and one the form actually
+		// draws under the example's own config: a field whose `visibleWhen` the
+		// example does not meet is declared and never on screen.
+		for (const type of types) {
+			const component = getComponent(type);
+			const fields = component?.configFields ?? [];
+			const example = (component?.example ?? {}) as Record<string, unknown>;
+			for (const key of Object.keys(example)) {
+				const field = fields.find((candidate) => candidate.key === key);
+				expect(field, `${type} example sets ${key}`).toBeDefined();
+				if (field?.visibleWhen === undefined) continue;
+				expect(
+					conditionMet(field.visibleWhen, fields, example),
+					`${type} example sets ${key}, which its form hides`,
+				).toBe(true);
+			}
+		}
+	});
+
+	it('never declares an empty example', () => {
+		// `{}` is what the bare type already draws.
+		for (const type of types) {
+			const example = getComponent(type)?.example;
+			if (example === undefined) continue;
+			expect(Object.keys(example).length, type).toBeGreaterThan(0);
+		}
+	});
+
+	it('names the types that declare an example, so a fifth is a decision', () => {
+		// `docs/features/component-picker.md` §1's threshold: an example where the
+		// empty config draws a blank, an empty-state message, or an error. Adding
+		// one means updating that table with its photograph.
+		expect(
+			types.filter((type) => getComponent(type)?.example !== undefined),
+		).toEqual(['card-set', 'roster', 'table', 'track']);
+	});
+
 	it('names the types a layout may use when one is unknown', () => {
 		// A stale layout file is the one place a user meets a type id they
 		// have to fix by hand, so the message carries the vocabulary rather
@@ -860,12 +926,16 @@ describe('a component that says what a sample of itself looks like', () => {
 	 * thing it exists not to do.
 	 */
 	function configsFor(type: string): ComponentConfig[] {
+		const example = getComponent(type)?.example;
 		return [
 			bareConfig(type),
 			...paletteEntries(type).map((entry) => ({
 				...bareConfig(type),
 				...entry.config,
 			})),
+			// The picker draws a declared example through `sample`, so it is one
+			// more configuration the sweep holds to every rule below.
+			...(example === undefined ? [] : [{ ...bareConfig(type), ...example }]),
 		];
 	}
 
@@ -888,7 +958,11 @@ describe('a component that says what a sample of itself looks like', () => {
 				out.push({
 					type,
 					where:
-						index === 0 ? `${type} bare` : `${type} ${entries[index - 1]?.name ?? ''}`,
+						index === 0
+							? `${type} bare`
+							: index > entries.length
+								? `${type} example`
+								: `${type} ${entries[index - 1]?.name ?? ''}`,
 					config,
 					body: component.sample?.(config) ?? '',
 				});
@@ -922,6 +996,7 @@ describe('a component that says what a sample of itself looks like', () => {
 		'card Dropdown',
 		'card-set bare',
 		'card-set Currency',
+		'card-set example',
 		'passport bare',
 		'passport Header',
 		'pool bare',
@@ -930,11 +1005,14 @@ describe('a component that says what a sample of itself looks like', () => {
 		'record-set Features',
 		'rich-text bare',
 		'roster bare',
+		'roster example',
 		'table bare',
 		'table Inventory',
 		'table Conditions',
+		'table example',
 		'track bare',
 		'track Checkbox',
+		'track example',
 	];
 
 	/**
@@ -968,8 +1046,13 @@ describe('a component that says what a sample of itself looks like', () => {
 		// The member order is checked per component below; what it cannot say is
 		// *where* this one belongs, since a component that declares it in the
 		// wrong place is only caught if `MEMBER_ORDER` holds the right place.
-		expect(MEMBER_ORDER.indexOf('sample')).toBe(
+		// `example` sits between the two: the configuration `sample` is asked
+		// about, directly before the body it produces.
+		expect(MEMBER_ORDER.indexOf('example')).toBe(
 			MEMBER_ORDER.indexOf('configName') + 1,
+		);
+		expect(MEMBER_ORDER.indexOf('sample')).toBe(
+			MEMBER_ORDER.indexOf('example') + 1,
 		);
 		expect(MEMBER_ORDER.indexOf('description')).toBe(
 			MEMBER_ORDER.indexOf('type') + 1,

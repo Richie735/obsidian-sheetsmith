@@ -1011,6 +1011,14 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 	],
 
 	/*
+	 * What the component picker draws for a bare Track, whose empty config is a
+	 * configuration error. Five segments rather than Checkbox's one, so the bare
+	 * type is shown as the row of boxes it is and never borrows an entry's config.
+	 * Never inserted, which is why the picker labels it.
+	 */
+	example: { count: 5 },
+
+	/*
 	 * Every run part-marked, under the layout's own keys and in this card's own
 	 * spelling — which is `spelledMarks`' whole job, so nothing here learns
 	 * whether it is filling a checkbox or a ten-segment clock.

@@ -1003,6 +1003,17 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 	],
 
 	/*
+	 * What the component picker draws for a bare Table, whose empty config draws
+	 * only its "No rows yet" message. Declared rows under one number column, and
+	 * no open rows, so it reads as the plain table and not as Inventory's open
+	 * list with a total. Never inserted, which is why the picker labels it.
+	 */
+	example: {
+		rows: [{ label: 'Row 1' }, { label: 'Row 2' }, { label: 'Row 3' }],
+		columns: [{ key: 'Value', type: 'number' }],
+	},
+
+	/*
 	 * The layout's own rows filled in, and — only where the layout lets a
 	 * character add rows — two rows of the character's own under them.
 	 *
