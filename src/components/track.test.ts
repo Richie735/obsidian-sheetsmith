@@ -244,10 +244,11 @@ describe('track config errors', () => {
 		expect(configError(slots)).toBeNull();
 	});
 
-	it('needs a count, names, or rows', () => {
-		expect(configError({ ...config, count: undefined })).toContain(
-			'number of segments',
-		);
+	it('does not refuse a card with no count, names or rows, which is empty rather than broken', () => {
+		// What a bare Track inserted from the component picker is: the layout
+		// has not said yet how long the run is, which is Table-with-no-rows
+		// empty, not undrawable (docs/features/component-picker.md § Amendment).
+		expect(configError({ ...config, count: undefined })).toBeNull();
 	});
 
 	it('refuses rows and levels together', () => {
@@ -285,9 +286,59 @@ describe('track config errors', () => {
 	});
 
 	it('renders the error on this component alone', () => {
-		const el = render({ count: undefined });
-		expect(parts(el).error?.textContent).toContain('number of segments');
+		const el = render({ marks: 0 });
+		expect(parts(el).error?.textContent).toContain('1 or more');
 		expect(parts(el).segments).toHaveLength(0);
+	});
+
+	it('still draws every configuration a card cannot be drawn under as an error', () => {
+		// The empty state below takes over only a card with no length; the
+		// refusals that really are undrawable keep drawing the error.
+		const refused: Partial<TrackConfig>[] = [
+			{ marks: 0 },
+			{ ...slots, rows: [{ key: '' }] },
+			{ ...slots, rows: [{ key: 'L1' }, { key: 'L1' }] },
+			{ ...slots, rows: [{ key: 'a:b' }] },
+			{ count: 1, rows: [{ key: 'blessed' }], openRows: true },
+		];
+		for (const overrides of refused) {
+			const el = render(overrides, null);
+			expect(parts(el).error, JSON.stringify(overrides)).not.toBeNull();
+			expect(el.querySelector('.sheetsmith-table-empty')).toBeNull();
+			expect(parts(el).segments).toHaveLength(0);
+		}
+	});
+});
+
+describe('a track with no count, levels or rows', () => {
+	const bare: Partial<TrackConfig> = { count: undefined };
+
+	it('draws a card with no count, levels or rows as an empty state, not an error', () => {
+		const el = render(bare);
+		expect(parts(el).error).toBeNull();
+		expect(parts(el).label?.textContent).toBe('Exhaustion');
+		const empty = el.querySelector('.sheetsmith-table-empty');
+		expect(empty?.textContent).toBe(
+			'No segments yet. Set Segments in the layout.',
+		);
+		// No run, no control, no breakdown door, and nothing to focus.
+		expect(parts(el).runs).toHaveLength(0);
+		expect(parts(el).segments).toHaveLength(0);
+		expect(el.querySelector('button, input, [tabindex]')).toBeNull();
+	});
+
+	it('leaves the label off where the layout hides it, and keeps the line', () => {
+		const el = render({ ...bare, hideLabel: true });
+		expect(parts(el).label).toBeNull();
+		expect(el.querySelector('.sheetsmith-table-empty')).not.toBeNull();
+	});
+
+	it('keeps a stored value under a card with no count', () => {
+		const empty = { ...config, ...bare };
+		const read = track.read(BODY, empty);
+		expect(read).toEqual({ ok: true, data: { values: { value: '3' } } });
+		if (!read.ok || !read.data) throw new Error('expected data');
+		expect(track.write(read.data, BODY, empty)).toBe(BODY);
 	});
 });
 
@@ -733,6 +784,10 @@ describe('track.sample', () => {
 	it('fills nothing for a card that cannot be drawn', () => {
 		// `render` reports the configuration instead, and a body under a key
 		// this card refuses would be a second fault on one card.
+		expect(sampleOf(track, { ...config, marks: 0 })).toBe('');
+	});
+
+	it('fills nothing for a card with no length, which has no run to fill', () => {
 		expect(sampleOf(track, { ...config, count: undefined })).toBe('');
 	});
 });
@@ -1784,7 +1839,12 @@ describe('a Track the character may add rows to', () => {
 			// A card with the toggle on and nothing declared is an empty list a
 			// reader can fill, which is the ordinary state of a new character.
 			expect(configError(kills)).toBeNull();
-			expect(configError({ ...config, count: undefined })).not.toBeNull();
+			// And it is not the empty state a card with no length draws: the
+			// toggle is what the layout said, so the card offers its **Add**.
+			const el = document.createElement('div');
+			document.body.appendChild(el);
+			track.render(el, kills, null, context);
+			expect(el.querySelector('.sheetsmith-table-empty')).toBeNull();
 		});
 	});
 

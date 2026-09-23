@@ -1251,6 +1251,37 @@ describe('the component picker', () => {
 		expect(Object.keys(added).sort()).toEqual(['id', 'label', 'position', 'type']);
 	});
 
+	/*
+	 * The example tag's sentence says a bare type "is added empty", and empty is
+	 * not broken: a Track once arrived drawing a configuration error after its
+	 * preview showed a working run (`docs/features/component-picker.md`
+	 * § Amendment). Walked off the registry, so the next type is held to it
+	 * without being named here.
+	 */
+	it('inserts every bare type without a configuration error', async () => {
+		const canvasErrors = () =>
+			harness.container.querySelectorAll('.sheetsmith-editor-canvas .sheetsmith-error');
+		const cells = () =>
+			harness.container.querySelectorAll('.sheetsmith-editor-canvas .sheetsmith-cell')
+				.length;
+		expect(canvasErrors()).toHaveLength(0);
+		const types = listComponentTypes();
+		expect(types.length).toBeGreaterThan(2);
+		for (const type of types) {
+			const before = cells();
+			pick(harness, type);
+			pressAdd(harness);
+			await settle(harness.pane);
+			// The insert really reached the canvas, so a clean canvas means
+			// something.
+			expect(cells(), `${type} drawn`).toBe(before + 1);
+			expect(
+				Array.from(canvasErrors()).map((error) => error.textContent),
+				type,
+			).toEqual([]);
+		}
+	});
+
 	it('stays open after Add, keeping the query, the line and the report', async () => {
 		openPicker(harness);
 		search(harness, 'box');
