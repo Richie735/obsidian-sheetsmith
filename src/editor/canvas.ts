@@ -34,11 +34,7 @@
  * `Schematic` to drag or resize against.
  */
 
-import {
-	makeFieldExplainer,
-	makeFieldResolver,
-	resolveFormulaFields,
-} from '../formula/resolve';
+import { formulaContext } from '../formula/resolve';
 import { parseFunctions } from '../formula/functions';
 import { buildSheet, ReadComponent } from '../formula/sheet';
 import { DEFAULT_COLUMNS, Layout } from '../parse/layout';
@@ -159,9 +155,7 @@ export class Canvas {
 		renderGrid(grid, walk, prepared, (entry) => {
 			const { config, component, data } = entry;
 			return {
-				resolved: resolveFormulaFields(component, config, data, env),
-				resolveField: makeFieldResolver(component, config, data, env),
-				explainField: makeFieldExplainer(component, config, data, env),
+				...formulaContext(component, config, data, env),
 				// Defensive only: `inert` already prevents the dispatch that
 				// would reach this. There is no character behind the canvas
 				// for an edit to land on.

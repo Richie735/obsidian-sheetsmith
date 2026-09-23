@@ -2173,8 +2173,8 @@ export interface ComponentDefinition<
 	 * name is not the honest answer. `null` means it is.
 	 *
 	 * The editor shows it wherever it would otherwise show the type, so an
-	 * author who chose **Dropdown** from the add menu is not told a line later
-	 * that they have a Card. It is derived from the config every time rather
+	 * author who chose **Dropdown** from the component picker is not told a
+	 * line later that they have a Card. It is derived from the config every time rather
 	 * than stored: a layout keeps the component a palette entry produced and
 	 * never the entry itself (SPEC §13), so the only honest source for the name
 	 * is what the configuration now says — an author who deletes a card's last

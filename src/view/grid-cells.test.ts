@@ -379,7 +379,7 @@ describe('renderGrid', () => {
 });
 
 /*
- * That both hosts still draw through `renderGrid` and nothing else.
+ * That every listed host still draws through `renderGrid` and nothing else.
  *
  * The tests above prove the shared renderer is right. This proves it is the only
  * one — which is the half that decays, because nothing stops a later edit
@@ -397,7 +397,17 @@ describe('renderGrid', () => {
 describe('the grid has one renderer', () => {
 	// Relative paths rather than URLs, because `it.each` serialises what it is
 	// given and a URL does not survive the round trip.
-	const HOSTS = ['./sheet-view.ts', '../../harness/harness.ts'] as const;
+	//
+	// The component picker's preview is the third host, and is held to exactly
+	// what the other two are. The layout editor's canvas is a fourth and is not
+	// listed: it takes `innerPlacement` as well, to give each container's grid a
+	// schematic of its own size, so it would need a rule of its own here rather
+	// than this one.
+	const HOSTS = [
+		'./sheet-view.ts',
+		'../../harness/harness.ts',
+		'../editor/component-preview.ts',
+	] as const;
 
 	/** What a host takes from `grid-cells`, as written. */
 	function imported(source: string): string[] {

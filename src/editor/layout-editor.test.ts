@@ -5,7 +5,6 @@ import { LayoutEditorView } from '../view/layout-editor-view';
 import { Layout, parseLayout, serialiseLayout } from '../parse/layout';
 import { walkComponents } from '../parse/layout-walk';
 import { renderGrid } from '../view/grid-cells';
-import { expectDescribedRow } from '../test/described-row';
 import { openModal, pressModalButton } from '../test/modal';
 import { App, Notice } from '../test/obsidian-stub';
 import { fakePlugin, LAYOUT_FOLDER } from '../test/plugin';
@@ -171,6 +170,33 @@ function has(harness: Harness, token: string): boolean {
 	);
 }
 
+/** Open the component picker, where it is not open already. */
+function openPicker(harness: Harness): void {
+	const toggle = control<HTMLButtonElement>(harness, 'picker-toggle');
+	if (toggle.getAttribute('aria-expanded') !== 'true') toggle.click();
+}
+
+/**
+ * Make one picker line active the way a press does, by the value that addresses
+ * it: a type, or `type:index` for a palette entry.
+ */
+function pick(harness: Harness, value: string): void {
+	openPicker(harness);
+	const option = harness.container.querySelector<HTMLElement>(
+		`[data-sheetsmith-choice="${value}"]`,
+	);
+	if (!option) throw new Error(`no picker line for "${value}"`);
+	option.click();
+}
+
+/** Every line the picker is showing, by value, in the order it shows them. */
+function pickerLines(harness: Harness): string[] {
+	openPicker(harness);
+	return Array.from(
+		harness.container.querySelectorAll<HTMLElement>('[data-sheetsmith-choice]'),
+	).map((option) => option.dataset.sheetsmithChoice ?? '');
+}
+
 /**
  * Type into a text field and leave it, which is what commits.
  *
@@ -324,16 +350,8 @@ describe('adding and removing a component', () => {
 	});
 
 	it('appends the chosen type and opens it for editing', async () => {
-		const add = Array.from(harness.container.querySelectorAll('select')).find(
-			(select) =>
-				Array.from(select.options).some((o) => o.value === 'track'),
-		);
-		if (!add) throw new Error('no type dropdown');
-		choose(add, 'track');
-		const button = Array.from(
-			harness.container.querySelectorAll('button'),
-		).find((el) => el.textContent === 'Add');
-		button?.click();
+		pick(harness, 'track');
+		pressAdd(harness);
 		await settle(harness.pane);
 
 		const components = (await harness.stored()).components;
@@ -345,50 +363,37 @@ describe('adding and removing a component', () => {
 	});
 
 	it('offers every type, with each entry indented under the type it prefills', () => {
-		const options = Array.from(
-			control<HTMLSelectElement>(harness, 'add-choice').options,
-		);
 		// The vocabulary is still the whole catalog: an author who wants a plain
 		// Track has to be able to ask for one, and an entry is a starting point
 		// they then edit rather than a variant with capabilities of its own.
-		for (const type of listComponentTypes()) {
-			expect(options.map((option) => option.value)).toContain(type);
-		}
-		const checkbox = options.find((option) => option.value === 'track:0');
-		expect(checkbox?.text.trim()).toBe('Checkbox');
-		// Indented, which is the only thing a dropdown has for saying that one
-		// option sits under another — the destination dropdown's own spelling.
-		expect(checkbox?.text.startsWith('\u2007')).toBe(true);
-		// And directly under it, so the list reads as the catalog with each
-		// block's own prefills beneath it.
-		expect(options.indexOf(checkbox as HTMLOptionElement)).toBe(
-			options.findIndex((option) => option.value === 'track') + 1,
+		const lines = pickerLines(harness);
+		for (const type of listComponentTypes()) expect(lines).toContain(type);
+		const checkbox = harness.container.querySelector<HTMLElement>(
+			'[data-sheetsmith-choice="track:0"]',
 		);
+		expect(checkbox?.querySelector('.sheetsmith-picker-name')?.textContent).toBe(
+			'Checkbox',
+		);
+		// Indented by a class of its own rather than by figure spaces, and in the
+		// group its type heads, directly under it.
+		expect(checkbox?.classList.contains('sheetsmith-picker-entry')).toBe(true);
+		expect(lines.indexOf('track:0')).toBe(lines.indexOf('track') + 1);
+		const group = checkbox?.closest('[role="group"]');
+		expect(group?.querySelector('[data-sheetsmith-choice="track"]')).not.toBeNull();
 	});
 
 	it('runs each type, then every prefill of it, then the next type', () => {
 		/*
-		 * The menu's whole structure in one assertion, and it is written as the
-		 * rule rather than against the catalog of the day: Table is the first
-		 * type carrying two entries, but a version naming Table would hold the
-		 * run only for Table, and would fail the moment Table gained a third —
-		 * on the check that is not the point.
-		 *
-		 * The shape is what the option *value* scheme rests on. `paletteEntries`
-		 * returns a list and the value is `type:index`, so a second entry is a
-		 * second option rather than one displacing the other, and the indent that
-		 * says an entry sits under its type is only true while the entry actually
-		 * follows it. The check above cannot see any of that: it looks at the one
-		 * option after a type, so an interleaved menu passes it.
+		 * The list's whole structure in one assertion, written as the rule rather
+		 * than against the catalog of the day. The shape is what the line *value*
+		 * scheme rests on: `paletteEntries` returns a list and the value is
+		 * `type:index`, so a second entry is a second line rather than one
+		 * displacing the other.
 		 *
 		 * Expected from `paletteEntries` — the registry — and not from
-		 * `addChoices`, which is the thing under test. Derived from the latter
-		 * this would only assert that a function equals itself.
+		 * `pickerCatalog`, which is the thing under test.
 		 */
-		const values = Array.from(
-			control<HTMLSelectElement>(harness, 'add-choice').options,
-		).map((option) => option.value);
-		expect(values).toEqual(
+		expect(pickerLines(harness)).toEqual(
 			listComponentTypes().flatMap((type) => [
 				type,
 				...paletteEntries(type).map((_entry, index) => `${type}:${index}`),
@@ -407,11 +412,10 @@ describe('adding and removing a component', () => {
 		 * acceptable rather than merely tolerated — a second inventory is a real
 		 * layout, and the suffix is the author's cue to rename it.
 		 */
-		const menu = () => control<HTMLSelectElement>(harness, 'add-choice');
-		choose(menu(), 'table:0');
+		pick(harness, 'table:0');
 		pressAdd(harness);
 		await settle(harness.pane);
-		choose(menu(), 'table:0');
+		pick(harness, 'table:0');
 		pressAdd(harness);
 		await settle(harness.pane);
 
@@ -449,7 +453,7 @@ describe('adding and removing a component', () => {
 		expect(entries.length).toBeGreaterThan(1);
 
 		for (const [index, entry] of entries.entries()) {
-			choose(control<HTMLSelectElement>(harness, 'add-choice'), `${type ?? ''}:${index}`);
+			pick(harness, `${type ?? ''}:${index}`);
 			pressAdd(harness);
 			await settle(harness.pane);
 
@@ -468,7 +472,7 @@ describe('adding and removing a component', () => {
 	});
 
 	it('writes the entry\'s config, its name and an ordinary component', async () => {
-		choose(control<HTMLSelectElement>(harness, 'add-choice'), 'track:0');
+		pick(harness, 'track:0');
 		pressAdd(harness);
 		await settle(harness.pane);
 
@@ -487,54 +491,36 @@ describe('adding and removing a component', () => {
 		expect(has(harness, `cfg-${added?.id ?? ''}-count`)).toBe(true);
 	});
 
-	it('puts the chosen line\'s description below the menu, a type\'s as well as an entry\'s', () => {
-		const menu = control<HTMLSelectElement>(harness, 'add-choice');
-		const description = () =>
-			menu.closest('.setting-item')?.querySelector('.setting-item-description')
-				?.textContent ?? '';
-		// SPEC §13's warning is that a menu nobody can read is worse than the
-		// type list it replaced, and a dropdown line is one or two words. So what
-		// a prefill is for has to be on screen.
-		choose(menu, 'track:0');
-		expect(description()).toBe(paletteEntries('track')[0]?.description);
-		choose(menu, 'track');
-		expect(description()).toBe(getComponent('track')?.description);
-	});
-
-	it('leaves the description a direct child of the row, after the controls', () => {
+	it('gives every line its own sentence, a type\'s and an entry\'s alike', () => {
 		/*
-		 * The stylesheet's half of the fix for docs/UI.md §12's moved **Add**
-		 * button: `.sheetsmith-add-row > .setting-item-description` is a child
-		 * combinator, and it is what gives the description `flex-basis: 100%` so
-		 * it takes a line of its own instead of widening the info column until
-		 * the control column wraps.
-		 *
-		 * Guarded because the failure is invisible (docs/PATTERNS.md §10). Drop
-		 * the `appendChild` — in an edit here, or in the M4 rewrite of this row —
-		 * and `descEl` goes back inside the info column, the selector matches
-		 * nothing, and the button an author presses next moves 35px while they
-		 * are choosing what to press it for. Nothing type-checks it, and the test
-		 * above passes either way: it reaches the description with a descendant
-		 * query, which finds it in both positions.
-		 *
-		 * `lastElementChild` rather than a containment check, because both facts
-		 * are load bearing and it holds them in one. Direct child is what the
-		 * selector needs; *after* the controls is what puts it on the second flex
-		 * line rather than the first.
+		 * SPEC §13's warning is that a menu nobody can read is worse than the type
+		 * list it replaced. A bare type used to say nothing at all; it now has a
+		 * description of its own, and an entry keeps its own.
 		 */
-		const menu = control(harness, 'add-choice');
-		// The whole treatment through the one assertion both consumers of
-		// `editor/described-row.ts` make, rather than a transcription of it:
-		// the classes, the description's position, and the association the only
-		// explanation an entry gets depends on to reach a screen reader.
-		expectDescribedRow(menu.closest('.setting-item'), menu);
+		const sentence = (value: string): string =>
+			harness.container.querySelector(
+				`[data-sheetsmith-choice="${value}"] .sheetsmith-picker-description`,
+			)?.textContent ?? '';
+		openPicker(harness);
+		expect(sentence('track:0')).toBe(paletteEntries('track')[0]?.description);
+		expect(sentence('pool')).toBe(getComponent('pool')?.description);
+		// An option is named by its name and described by its sentence.
+		const option = harness.container.querySelector<HTMLElement>(
+			'[data-sheetsmith-choice="pool"]',
+		);
+		const describedBy = option?.getAttribute('aria-describedby') ?? '';
+		expect(harness.container.querySelector(`#${describedBy}`)?.textContent).toBe(
+			getComponent('pool')?.description,
+		);
+		const labelledBy = option?.getAttribute('aria-labelledby') ?? '';
+		expect(harness.container.querySelector(`#${labelledBy}`)?.textContent).toBe('Pool');
 	});
 
 	it('names an entry against the whole sheet, as a type is named', async () => {
-		choose(control<HTMLSelectElement>(harness, 'add-choice'), 'track:0');
+		pick(harness, 'track:0');
 		pressAdd(harness);
 		await settle(harness.pane);
-		choose(control<HTMLSelectElement>(harness, 'add-choice'), 'track:0');
+		pick(harness, 'track:0');
 		pressAdd(harness);
 		await settle(harness.pane);
 
@@ -1035,6 +1021,7 @@ function deep(): Layout {
 
 /** The "Add component" row's destination dropdown, or nothing if absent. */
 function destinations(harness: Harness): string[] | null {
+	openPicker(harness);
 	const select = harness.container.querySelector(
 		'[data-sheetsmith-focus="add-destination"]',
 	);
@@ -1044,23 +1031,338 @@ function destinations(harness: Harness): string[] | null {
 	);
 }
 
+/** Press **Add** on the component picker, opening it first where it is shut. */
 function pressAdd(harness: Harness): void {
-	const button = Array.from(harness.container.querySelectorAll('button')).find(
-		(el) => el.textContent === 'Add',
-	);
-	if (!button) throw new Error('no Add button');
-	button.click();
+	openPicker(harness);
+	control<HTMLButtonElement>(harness, 'picker-add').click();
 }
 
-/** The type dropdown on the add row, found by an option only it carries. */
-function typeDropdown(harness: Harness): HTMLSelectElement {
-	const select = Array.from(harness.container.querySelectorAll('select')).find(
-		(candidate) =>
-			Array.from(candidate.options).some((option) => option.value === 'group'),
-	);
-	if (!select) throw new Error('no type dropdown');
-	return select;
+/** Choose where the next insert goes, on the picker's action bar. */
+function chooseDestination(harness: Harness, value: string): void {
+	openPicker(harness);
+	choose(control<HTMLSelectElement>(harness, 'add-destination'), value);
 }
+
+/** The picker's active line's value, read off the search field's own ARIA. */
+function activeLine(harness: Harness): string {
+	const id = control(harness, 'picker-search').getAttribute('aria-activedescendant');
+	const option = id === null ? null : harness.container.querySelector<HTMLElement>(`#${id}`);
+	return option?.dataset.sheetsmithChoice ?? '';
+}
+
+/** A key pressed on a picker control. */
+function key(harness: Harness, token: string, name: string): void {
+	control(harness, token).dispatchEvent(
+		new KeyboardEvent('keydown', { key: name, bubbles: true, cancelable: true }),
+	);
+}
+
+/** Type into the picker's search field. */
+function search(harness: Harness, query: string): void {
+	const field = control<HTMLInputElement>(harness, 'picker-search');
+	field.value = query;
+	field.dispatchEvent(new Event('input'));
+}
+
+describe('the component picker', () => {
+	beforeEach(async () => {
+		harness = await open();
+	});
+
+	it('opens from Choose, which says what it controls, onto the search field with Card active', () => {
+		const toggle = control(harness, 'picker-toggle');
+		expect(toggle.textContent).toBe('Choose');
+		expect(toggle.getAttribute('aria-expanded')).toBe('false');
+		expect(has(harness, 'picker-search')).toBe(false);
+		toggle.click();
+		expect(toggle.getAttribute('aria-expanded')).toBe('true');
+		expect(toggle.textContent).toBe('Done');
+		const region = harness.container.querySelector(
+			`#${toggle.getAttribute('aria-controls') ?? ''}`,
+		);
+		expect(region?.contains(control(harness, 'picker-search'))).toBe(true);
+		expect(document.activeElement).toBe(control(harness, 'picker-search'));
+		expect(activeLine(harness)).toBe(listComponentTypes()[0]);
+		expect(activeLine(harness)).toBe('card');
+	});
+
+	it('moves the active line across groups with the arrows, stopping at both ends', () => {
+		openPicker(harness);
+		const lines = pickerLines(harness);
+		key(harness, 'picker-search', 'ArrowUp');
+		expect(activeLine(harness)).toBe(lines[0]);
+		key(harness, 'picker-search', 'ArrowDown');
+		expect(activeLine(harness)).toBe(lines[1]);
+		key(harness, 'picker-search', 'ArrowDown');
+		// Out of Card's group and into Card set's.
+		expect(activeLine(harness)).toBe(lines[2]);
+		for (let press = 0; press < lines.length + 2; press++) {
+			key(harness, 'picker-search', 'ArrowDown');
+		}
+		expect(activeLine(harness)).toBe(lines.at(-1));
+		// The list answers the same keys, and names the same line.
+		key(harness, 'picker-list', 'ArrowUp');
+		expect(activeLine(harness)).toBe(lines.at(-2));
+		expect(control(harness, 'picker-list').getAttribute('aria-activedescendant')).toBe(
+			control(harness, 'picker-search').getAttribute('aria-activedescendant'),
+		);
+	});
+
+	it('adds the active line on Enter, and keeps focus in the search field', async () => {
+		openPicker(harness);
+		key(harness, 'picker-search', 'ArrowDown');
+		key(harness, 'picker-search', 'Enter');
+		await settle(harness.pane);
+		const added = (await harness.stored()).components.at(-1);
+		expect(added).toMatchObject({ type: 'card', label: 'Dropdown' });
+		// The redraw rebuilt the field; focus is on the new one, so a second
+		// Enter adds a second.
+		expect(document.activeElement).toBe(control(harness, 'picker-search'));
+	});
+
+	it('adds on Enter from the list, and keeps focus on the list', async () => {
+		pick(harness, 'pool');
+		expect(document.activeElement).toBe(control(harness, 'picker-list'));
+		key(harness, 'picker-list', 'Enter');
+		await settle(harness.pane);
+		expect((await harness.stored()).components.at(-1)).toMatchObject({ type: 'pool' });
+		expect(document.activeElement).toBe(control(harness, 'picker-list'));
+	});
+
+	it('scrolls the field and the active line into view on opening, and never on Add', async () => {
+		/*
+		 * In a short pane the picker opens below the fold, and a focused field
+		 * under the pinned bar is focus nobody can see (WCAG 2.4.11). Opening and
+		 * moving the active line scroll; an insert's redraw must not, or the
+		 * pane's own scroll restore would be undone by the picker.
+		 */
+		const scrolled: string[] = [];
+		const spy = vi
+			.spyOn(HTMLElement.prototype, 'scrollIntoView')
+			.mockImplementation(function (this: HTMLElement) {
+				scrolled.push(this.dataset.sheetsmithFocus ?? this.dataset.sheetsmithChoice ?? '');
+			});
+		try {
+			openPicker(harness);
+			expect(scrolled).toEqual(['card', 'picker-search']);
+			key(harness, 'picker-search', 'ArrowDown');
+			expect(scrolled.at(-1)).toBe('card:0');
+			scrolled.length = 0;
+			pressAdd(harness);
+			await settle(harness.pane);
+			expect(scrolled).toEqual([]);
+		} finally {
+			spy.mockRestore();
+		}
+	});
+
+	it('leaves the outline scrolled where it was after Add', async () => {
+		/*
+		 * The picker holds no scroll of its own: it lives in the outline column,
+		 * and the pane restores that column's scroll across every redraw
+		 * (`layout-editor-view.ts` `redraw`). So "scroll kept" is that restore,
+		 * reached through an insert — which also selects the new component, and
+		 * nothing on that path moves the view: `ensureSelectionVisible` only
+		 * switches Tab set tabs, and focus comes back with `preventScroll`.
+		 * Happy-dom does not clamp `scrollTop` to a layout, which is what lets a
+		 * number stand for a position here.
+		 */
+		pick(harness, 'pool');
+		const outline = harness.container.querySelector<HTMLElement>(
+			'.sheetsmith-editor-outline',
+		);
+		if (!outline) throw new Error('no outline');
+		outline.scrollTop = 300;
+		pressAdd(harness);
+		await settle(harness.pane);
+		const redrawn = harness.container.querySelector<HTMLElement>(
+			'.sheetsmith-editor-outline',
+		);
+		expect(redrawn).not.toBe(outline);
+		expect(redrawn?.scrollTop).toBe(300);
+	});
+
+	it('activates a line on a press and inserts nothing', async () => {
+		const wrote = writes(harness);
+		pick(harness, 'pool');
+		await settle(harness.pane);
+		expect(activeLine(harness)).toBe('pool');
+		expect(document.activeElement).toBe(control(harness, 'picker-list'));
+		expect(wrote()).toBe(0);
+		expect((await harness.stored()).components).toHaveLength(2);
+	});
+
+	it('draws exactly one preview, inert and hidden from assistive tech', () => {
+		for (const value of ['card', 'track', 'table:0']) {
+			pick(harness, value);
+			const previews = harness.container.querySelectorAll('.sheetsmith-picker-preview');
+			expect(previews).toHaveLength(1);
+			const preview = previews[0] as HTMLElement;
+			expect(preview.hasAttribute('inert')).toBe(true);
+			expect(preview.getAttribute('aria-hidden')).toBe('true');
+			expect(preview.closest(`[data-sheetsmith-choice="${value}"]`)).not.toBeNull();
+		}
+	});
+
+	it('labels an example for the bare types that draw one and for no other line', () => {
+		const examples = ['card-set', 'roster', 'table', 'track', 'group', 'tab-set'];
+		for (const value of pickerLines(harness)) {
+			pick(harness, value);
+			const option = harness.container.querySelector(
+				`[data-sheetsmith-choice="${value}"]`,
+			);
+			const tagged = option?.querySelector('.sheetsmith-picker-example') !== null;
+			const said = (option?.querySelector('.sheetsmith-picker-description')?.textContent ?? '')
+				.includes('The preview is an example. It is added empty.');
+			expect(tagged, `${value} tag`).toBe(examples.includes(value));
+			expect(said, `${value} sentence`).toBe(examples.includes(value));
+		}
+	});
+
+	it('draws a bare Track from its example, never from Checkbox', () => {
+		pick(harness, 'track');
+		const preview = harness.container.querySelector('.sheetsmith-picker-preview');
+		// Five segments, and not Checkbox's one ring.
+		expect(preview?.querySelectorAll('.sheetsmith-track-segment')).toHaveLength(5);
+		expect(preview?.querySelector('.sheetsmith-level-ring')).toBeNull();
+		pick(harness, 'track:0');
+		const checkbox = harness.container.querySelector('.sheetsmith-picker-preview');
+		expect(checkbox?.querySelector('.sheetsmith-level-ring')).not.toBeNull();
+	});
+
+	it('draws a container with two placeholder children', () => {
+		pick(harness, 'tab-set');
+		const preview = harness.container.querySelector('.sheetsmith-picker-preview');
+		expect(preview?.textContent).toContain('Component 1');
+		expect(preview?.textContent).toContain('Component 2');
+		pick(harness, 'group');
+		const group = harness.container.querySelector('.sheetsmith-picker-preview');
+		expect(group?.querySelectorAll('.sheetsmith-subgrid .sheetsmith-cell')).toHaveLength(2);
+	});
+
+	it('inserts a bare type empty, never with its example', async () => {
+		pick(harness, 'track');
+		pressAdd(harness);
+		await settle(harness.pane);
+		const added = (await harness.stored()).components.at(-1) as unknown as Record<
+			string,
+			unknown
+		>;
+		expect(Object.keys(added).sort()).toEqual(['id', 'label', 'position', 'type']);
+	});
+
+	it('stays open after Add, keeping the query, the line and the report', async () => {
+		openPicker(harness);
+		search(harness, 'box');
+		pick(harness, 'track:0');
+		pressAdd(harness);
+		await settle(harness.pane);
+
+		expect(control(harness, 'picker-toggle').getAttribute('aria-expanded')).toBe('true');
+		expect(control<HTMLInputElement>(harness, 'picker-search').value).toBe('box');
+		expect(activeLine(harness)).toBe('track:0');
+		const status = harness.container.querySelector('.sheetsmith-picker-status');
+		expect(status?.getAttribute('role')).toBe('status');
+		expect(status?.textContent).toBe('Added Checkbox on the sheet');
+		// Focus is back on the control that added.
+		expect(document.activeElement).toBe(control(harness, 'picker-add'));
+
+		pressAdd(harness);
+		await settle(harness.pane);
+		const labels = (await harness.stored()).components.map((c) => c.label);
+		expect(labels).toEqual(expect.arrayContaining(['Checkbox', 'Checkbox 2']));
+		expect(
+			harness.container.querySelector('.sheetsmith-picker-status')?.textContent,
+		).toBe('Added Checkbox 2 on the sheet');
+	});
+
+	it('clears a query on Escape, then closes and hands focus back to Choose', () => {
+		openPicker(harness);
+		search(harness, 'box');
+		key(harness, 'picker-search', 'Escape');
+		expect(control<HTMLInputElement>(harness, 'picker-search').value).toBe('');
+		expect(pickerLines(harness).length).toBeGreaterThan(2);
+		key(harness, 'picker-search', 'Escape');
+		expect(has(harness, 'picker-search')).toBe(false);
+		expect(document.activeElement).toBe(control(harness, 'picker-toggle'));
+	});
+
+	it('closes on Done', () => {
+		openPicker(harness);
+		control(harness, 'picker-toggle').click();
+		expect(has(harness, 'picker-search')).toBe(false);
+		expect(control(harness, 'picker-toggle').textContent).toBe('Choose');
+	});
+
+	it('says what does work when a query finds nothing, and cannot add', () => {
+		openPicker(harness);
+		search(harness, 'stress');
+		expect(pickerLines(harness)).toEqual([]);
+		expect(harness.container.querySelector('.sheetsmith-picker-empty')?.textContent).toBe(
+			'Nothing matches "stress". Search by shape: number, boxes, list, table, picture, text.',
+		);
+		expect(control<HTMLButtonElement>(harness, 'picker-add').disabled).toBe(true);
+	});
+
+	it('survives an undo and a panel edit while open', async () => {
+		pick(harness, 'pool');
+		pressAdd(harness);
+		await settle(harness.pane);
+		expect(await undo(harness)).toBe(true);
+		expect(activeLine(harness)).toBe('pool');
+
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'cfg-armour-key'), 'AC');
+		await settle(harness.pane);
+		expect(control(harness, 'picker-toggle').getAttribute('aria-expanded')).toBe('true');
+		expect(activeLine(harness)).toBe('pool');
+	});
+
+	it('closes when the pane opens another layout', async () => {
+		openPicker(harness);
+		await harness.app.vault.create(
+			`${LAYOUT_FOLDER}/Second sheet.sheetsmith`,
+			serialiseLayout({ name: 'Second sheet', columns: 12, components: [], triggers: [] }),
+		);
+		await harness.redraw();
+		expect(control(harness, 'picker-toggle').getAttribute('aria-expanded')).toBe('true');
+		choose(
+			control<HTMLSelectElement>(harness, 'layout-picker'),
+			`${LAYOUT_FOLDER}/Second sheet.sheetsmith`,
+		);
+		await settle(harness.pane);
+		expect(control(harness, 'picker-toggle').getAttribute('aria-expanded')).toBe('false');
+		expect(has(harness, 'picker-search')).toBe(false);
+	});
+});
+
+describe('the component picker on a layout with a container', () => {
+	beforeEach(async () => {
+		harness = await open(nested());
+	});
+
+	it('keeps the destination across inserts and reports where each went', async () => {
+		pick(harness, 'card');
+		chooseDestination(harness, 'defences');
+		pressAdd(harness);
+		await settle(harness.pane);
+		expect(
+			harness.container.querySelector('.sheetsmith-picker-status')?.textContent,
+		).toBe('Added Card in Defences');
+		expect(control<HTMLSelectElement>(harness, 'add-destination').value).toBe('defences');
+
+		pressAdd(harness);
+		await settle(harness.pane);
+		expect((await harness.stored()).components[0]?.children).toHaveLength(3);
+	});
+
+	it('draws no destination on a layout without a container', async () => {
+		harness = await open();
+		openPicker(harness);
+		expect(has(harness, 'add-destination')).toBe(false);
+	});
+});
 
 describe('the component list', () => {
 	beforeEach(async () => {
@@ -1125,10 +1427,8 @@ describe('adding a component into a container', () => {
 	});
 
 	it('puts the new component in the chosen container', async () => {
-		choose(typeDropdown(harness), 'card');
-		choose(
-			control<HTMLSelectElement>(harness, 'add-destination'),
-			'defences',
+		pick(harness, 'card');
+		chooseDestination(harness, 'defences',
 		);
 		pressAdd(harness);
 		await settle(harness.pane);
@@ -1146,7 +1446,7 @@ describe('adding a component into a container', () => {
 	});
 
 	it('leaves it on the sheet where no container was chosen', async () => {
-		choose(typeDropdown(harness), 'card');
+		pick(harness, 'card');
 		pressAdd(harness);
 		await settle(harness.pane);
 		expect((await harness.stored()).components).toHaveLength(3);
@@ -1156,8 +1456,8 @@ describe('adding a component into a container', () => {
 		// A label keys a note section and an id is what a formula writes, and
 		// containment scopes neither — so a child may not take a name a
 		// component in another container already has.
-		choose(typeDropdown(harness), 'pool');
-		choose(control<HTMLSelectElement>(harness, 'add-destination'), 'defences');
+		pick(harness, 'pool');
+		chooseDestination(harness, 'defences');
 		pressAdd(harness);
 		await settle(harness.pane);
 
@@ -1175,13 +1475,12 @@ describe('adding a component into a container', () => {
 		 * and uniqueness is checked against every component rather than against
 		 * this container's children.
 		 */
-		const menu = control<HTMLSelectElement>(harness, 'add-choice');
-		choose(menu, 'track:0');
+		pick(harness, 'track:0');
 		pressAdd(harness);
 		await settle(harness.pane);
 
-		choose(control<HTMLSelectElement>(harness, 'add-choice'), 'track:0');
-		choose(control<HTMLSelectElement>(harness, 'add-destination'), 'defences');
+		pick(harness, 'track:0');
+		chooseDestination(harness, 'defences');
 		pressAdd(harness);
 		await settle(harness.pane);
 
@@ -1202,8 +1501,8 @@ describe('adding a component into a container', () => {
 		// The parser refuses a third container, so the editor must not be able to
 		// walk into it. A Group inside a Group is still a destination for a card;
 		// a component inside *that* is not a destination at all.
-		choose(typeDropdown(harness), 'group');
-		choose(control<HTMLSelectElement>(harness, 'add-destination'), 'defences');
+		pick(harness, 'group');
+		chooseDestination(harness, 'defences');
 		pressAdd(harness);
 		await settle(harness.pane);
 
@@ -1217,10 +1516,8 @@ describe('adding a component into a container', () => {
 			`\u2007\u2007In ${inner?.label ?? ''}`,
 		]);
 
-		choose(typeDropdown(harness), 'group');
-		choose(
-			control<HTMLSelectElement>(harness, 'add-destination'),
-			inner?.id ?? '',
+		pick(harness, 'group');
+		chooseDestination(harness, inner?.id ?? '',
 		);
 		pressAdd(harness);
 		await settle(harness.pane);
@@ -1455,8 +1752,8 @@ describe('a container that may hold nothing', () => {
 	 */
 	beforeEach(async () => {
 		harness = await open(deep());
-		choose(typeDropdown(harness), 'group');
-		choose(control<HTMLSelectElement>(harness, 'add-destination'), 'melee');
+		pick(harness, 'group');
+		chooseDestination(harness, 'melee');
 		pressAdd(harness);
 		await settle(harness.pane);
 	});
@@ -1537,8 +1834,8 @@ describe('drawing a container form is not an edit', () => {
 		// refused and the author loses edits to a message about a depth rule
 		// they never broke.
 		harness = await open(deep());
-		choose(typeDropdown(harness), 'group');
-		choose(control<HTMLSelectElement>(harness, 'add-destination'), 'melee');
+		pick(harness, 'group');
+		chooseDestination(harness, 'melee');
 		pressAdd(harness);
 		await settle(harness.pane);
 
@@ -1709,7 +2006,7 @@ describe('a container that shows one child at a time', () => {
 		// The numbers are not read, but they are in the file: `row: 4` on a tab
 		// would tell a hand-editor it sits somewhere. The box it actually fills is
 		// the honest thing to write.
-		choose(control<HTMLSelectElement>(harness, 'add-destination'), 'pages');
+		chooseDestination(harness, 'pages');
 		pressAdd(harness);
 		await settle(harness.pane);
 		const added = (await harness.stored()).components[0]?.children?.[3];
@@ -2242,20 +2539,20 @@ describe('the Dropdown entry on Card', () => {
 		harness = await open();
 	});
 
-	it('sits indented under Card in the add menu', () => {
-		const options = Array.from(
-			control<HTMLSelectElement>(harness, 'add-choice').options,
+	it('sits indented under Card in the picker', () => {
+		const lines = pickerLines(harness);
+		const dropdown = harness.container.querySelector<HTMLElement>(
+			'[data-sheetsmith-choice="card:0"]',
 		);
-		const dropdown = options.find((option) => option.value === 'card:0');
-		expect(dropdown?.text.trim()).toBe('Dropdown');
-		expect(dropdown?.text.startsWith(' ')).toBe(true);
-		expect(options.indexOf(dropdown as HTMLOptionElement)).toBe(
-			options.findIndex((option) => option.value === 'card') + 1,
+		expect(dropdown?.querySelector('.sheetsmith-picker-name')?.textContent).toBe(
+			'Dropdown',
 		);
+		expect(dropdown?.classList.contains('sheetsmith-picker-entry')).toBe(true);
+		expect(lines.indexOf('card:0')).toBe(lines.indexOf('card') + 1);
 	});
 
 	it('adds a card carrying two options, labelled Dropdown', async () => {
-		choose(control<HTMLSelectElement>(harness, 'add-choice'), 'card:0');
+		pick(harness, 'card:0');
 		pressAdd(harness);
 		await settle(harness.pane);
 
@@ -4907,7 +5204,7 @@ describe('undo and redo', () => {
 		it('undoes adding a component', async () => {
 			harness = await open();
 			const before = await harness.raw();
-			choose(control<HTMLSelectElement>(harness, 'add-choice'), 'track:0');
+			pick(harness, 'track:0');
 			pressAdd(harness);
 			await settle(harness.pane);
 			expect((await harness.stored()).components).toHaveLength(3);
@@ -5164,7 +5461,7 @@ describe('undo and redo', () => {
 	describe('the stale-selection fallback', () => {
 		it('falls back to the Layout row when undo removes what was selected', async () => {
 			harness = await open();
-			choose(control<HTMLSelectElement>(harness, 'add-choice'), 'track:0');
+			pick(harness, 'track:0');
 			pressAdd(harness);
 			await settle(harness.pane);
 			// Opened for editing, per "appends the chosen type and opens it".

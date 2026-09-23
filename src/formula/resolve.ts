@@ -581,6 +581,29 @@ export function publishedFieldNames(
 }
 
 /**
+ * The three formula members every `renderGrid` host hands a component: what its
+ * fields resolved to, a resolver for its per-scope fields, and why one failed.
+ *
+ * One function because four hosts built this triple by hand — the sheet view,
+ * the layout editor's canvas, the component picker's preview and the harness —
+ * and a host that dropped or rewired one of the three would draw a component
+ * the others do not (`docs/PATTERNS.md` §1: three consumers, extract). Spread
+ * into the host's own context, which adds what differs per host.
+ */
+export function formulaContext(
+	component: Pick<ComponentDefinition, 'formulaFields' | 'scopeValues'>,
+	config: ComponentConfig,
+	data: unknown,
+	env: FormulaEnv = NO_ENV,
+): { resolved: ResolvedValues; resolveField: FieldResolver; explainField: FieldExplainer } {
+	return {
+		resolved: resolveFormulaFields(component, config, data, env),
+		resolveField: makeFieldResolver(component, config, data, env),
+		explainField: makeFieldExplainer(component, config, data, env),
+	};
+}
+
+/**
  * Evaluate each of the component's formula fields against the data scope
  * alone. Literals pass through, and a field that fails to evaluate resolves
  * to null so the component can show a placeholder without taking the sheet

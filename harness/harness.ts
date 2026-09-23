@@ -23,9 +23,7 @@ import { getComponent } from '../src/components';
 import { parseFunctions } from '../src/formula/functions';
 import {
 	FormulaEnv,
-	makeFieldExplainer,
-	makeFieldResolver,
-	resolveFormulaFields,
+	formulaContext,
 } from '../src/formula/resolve';
 import { buildSheet } from '../src/formula/sheet';
 import { Layout } from '../src/parse/layout';
@@ -40,7 +38,13 @@ import {
 import { nameAlreadyDeclared } from '../src/layouts';
 import { dropDetachedAnchoredPanel } from '../src/ui/anchored-panel';
 import { renderGrid } from '../src/view/grid-cells';
-import { driveDrag, driveResize, driveSuggest, renderEditorPane } from './editor-pane';
+import {
+	driveDrag,
+	drivePicker,
+	driveResize,
+	driveSuggest,
+	renderEditorPane,
+} from './editor-pane';
 import {
 	brokenSamples,
 	effectiveSamples,
@@ -366,9 +370,7 @@ function renderSheet(into: HTMLElement): void {
 		(entry) => {
 			const { config, component, data } = entry;
 			return {
-				resolved: resolveFormulaFields(component, config, data, env),
-				resolveField: makeFieldResolver(component, config, data, env),
-				explainField: makeFieldExplainer(component, config, data, env),
+				...formulaContext(component, config, data, env),
 				// The entry the grid was given, which is this module's own `Live`:
 				// `applyEdit` writes the re-read section back into it.
 				onChange: (edited: unknown) => applyEdit(entry as Live, edited),
@@ -486,7 +488,6 @@ async function ensureEditor(): Promise<HTMLElement> {
 			: harnessLayout(samplesFor(state)),
 		{
 			open: params.get('open') ?? undefined,
-			choice: params.get('choice') ?? undefined,
 			// Only ever off: a pane opens with sample values on, so the state
 			// worth asking for is the empty canvas.
 			samples: params.get('samples') === 'off' ? false : undefined,
@@ -621,9 +622,10 @@ document
  *
  * Two more for the editor pane, whose controls a still cannot press:
  * `&open=<component id>` selects that component, and `::sheet::` selects the
- * layout itself; `&choice=<type>` or `&choice=<type>:<index>` selects an option
- * of the **Add component** menu — which is the only way to see a palette entry's
- * description, since the menu opens on a bare type and those have none. And
+ * layout itself; `&picker=open` opens the component picker, `&pickerQuery=`
+ * types into its search, `&pickerActive=<type>` or `<type>:<index>` presses a
+ * line so its preview draws, `&pickerInto=<container id>` chooses a
+ * destination, and `&pickerAdd` presses **Add** once the rest is done. And
  * `&samples=off` presses the pane's **Sample values** toggle off, which is the
  * only way to photograph the empty canvas now that a pane opens filled.
  *
@@ -855,7 +857,7 @@ function applyQuery(): void {
 	 * state (`docs/features/grid-canvas.md` §3, §7). Driven here rather than
 	 * inside `ensureEditor`, after `draw()` has appended the pane: a resize
 	 * reads real geometry (`getBoundingClientRect`), and every rect on an
-	 * unattached element reads zero, which `open=`/`choice=` never hit
+	 * unattached element reads zero, which `open=`/`picker=` never hit
 	 * because a synthetic `click`/`change` dispatches correctly either way.
 	 */
 	const resize = params.get('resize');
@@ -895,6 +897,17 @@ function applyQuery(): void {
 		// After the presses, so a press that draws something can be scrolled to.
 		scrollWanted();
 		if (scrolled.length > 0) focusWanted();
+		// The component picker, once the pane is on screen: opening it scrolls
+		// the search field clear of the pinned bar, which reads real geometry.
+		if (editorPane) {
+			await drivePicker(editorPane, {
+				picker: params.get('picker') === 'open' ? 'open' : undefined,
+				pickerQuery: params.get('pickerQuery') ?? undefined,
+				pickerActive: params.get('pickerActive') ?? undefined,
+				pickerInto: params.get('pickerInto') ?? undefined,
+				pickerAdd: params.has('pickerAdd') ? true : undefined,
+			});
+		}
 		if (resize !== null && editorPane) {
 			await driveResize(editorPane, resize);
 		}

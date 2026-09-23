@@ -1606,6 +1606,129 @@ const DEFAULTS = [
 		query: 'surface=editor&theme=dark&layout=broken',
 		size: '1400,420',
 	},
+	/*
+	 * The component picker (`docs/features/component-picker.md`), every state
+	 * its Look criteria name. On `layout=canvas-demo` unless a view says
+	 * otherwise: its canvas is a few hundred pixels tall where the harness
+	 * layout's is four thousand, so the picker, which sits under the canvas,
+	 * is on screen rather than below a frame nobody would open. It also holds a
+	 * Group, so the destination dropdown is on the bar as it is on most real
+	 * layouts. The frames are the open picker's own height at the view's width
+	 * plus the tree under it, measured rather than inherited.
+	 */
+	{
+		// The **Choose** row where the three old controls were.
+		name: 'picker-closed',
+		query: 'surface=editor&theme=light&layout=canvas-demo',
+		size: '1500,1400',
+	},
+	{
+		// Open, Card active: the bare type draws itself from an empty config.
+		name: 'picker-open-light',
+		query: 'surface=editor&theme=light&layout=canvas-demo&picker=open',
+		size: '1500,2600',
+	},
+	{
+		name: 'picker-open-dark',
+		query: 'surface=editor&theme=dark&layout=canvas-demo&picker=open',
+		size: '1500,2600',
+	},
+	{
+		// A bare Track draws from its `example` — five boxes — under the tag,
+		// never from Checkbox's config.
+		name: 'picker-example',
+		query: 'surface=editor&theme=light&layout=canvas-demo&pickerActive=track',
+		size: '1500,2600',
+	},
+	{
+		// An entry draws its own config, which is what it inserts: no tag.
+		name: 'picker-entry',
+		query: 'surface=editor&theme=light&layout=canvas-demo&pickerActive=track:0',
+		size: '1500,2600',
+	},
+	{
+		// A container draws the two placeholder children the picker supplies,
+		// as two tabs, under the tag.
+		name: 'picker-container',
+		query: 'surface=editor&theme=light&layout=canvas-demo&pickerActive=tab-set',
+		size: '1500,2800',
+	},
+	{
+		// Image declares no sample: its empty frame is the component.
+		name: 'picker-image',
+		query: 'surface=editor&theme=light&layout=canvas-demo&pickerActive=image',
+		size: '1500,2800',
+	},
+	{
+		// A shape word finds Track's whole block.
+		name: 'picker-search',
+		query: 'surface=editor&theme=light&layout=canvas-demo&pickerQuery=box',
+		size: '1500,1600',
+	},
+	{
+		// A job word finds nothing, and the line says what does work.
+		name: 'picker-no-match',
+		query: 'surface=editor&theme=light&layout=canvas-demo&pickerQuery=stress',
+		size: '1500,1400',
+	},
+	{
+		// The harness layout, whose containers fill the destination dropdown,
+		// with one chosen. Framed to the picker's bar, not to the pane: the
+		// harness canvas is about 4000px, the picker ends near 8350, and the
+		// tree under it is cut on purpose, as `editor-layout` cuts it.
+		name: 'picker-destination',
+		query: 'surface=editor&theme=light&picker=open&pickerInto=weapons',
+		size: '1500,10400',
+	},
+	{
+		// After **Add**: still open, the report on the bar, the new Track on
+		// the canvas above and selected in the panel beside it.
+		name: 'picker-after-add',
+		query: 'surface=editor&theme=light&layout=canvas-demo&pickerActive=track&pickerAdd',
+		size: '1500,2800',
+	},
+	{
+		// The leaf at a laptop's height, with the list running past it: the bar
+		// stays pinned at the leaf's foot, so **Add** is in reach.
+		name: 'picker-bounded',
+		query: 'surface=editor&theme=light&layout=canvas-demo&picker=open&bounded',
+		size: '1400,900',
+	},
+	{
+		// The single-column regime: the picker takes the pane's width, still
+		// under **Choose** and above the tree, the panel after both.
+		name: 'picker-stacked',
+		query: 'surface=editor&theme=light&layout=canvas-demo&picker=open',
+		size: '1190,3600',
+	},
+	{
+		// Below the pane's missing narrow regime (`docs/BACKLOG.md` § UI).
+		// `&width=` rather than a narrow window, `editor-outside-folder-narrow`'s
+		// spelling and for its reason: headless Chrome floors the viewport at 500.
+		name: 'picker-narrow-480',
+		query: 'surface=editor&theme=light&layout=canvas-demo&picker=open&width=480',
+		size: '520,4600',
+	},
+	{
+		name: 'picker-narrow-380',
+		query: 'surface=editor&theme=light&layout=canvas-demo&picker=open&width=380',
+		size: '520,5200',
+	},
+	{
+		name: 'picker-large-text',
+		query: 'surface=editor&theme=light&layout=canvas-demo&picker=open&text=24',
+		size: '1500,3600',
+	},
+	{
+		// Forced colors: the active line takes the system selection, and the
+		// list's focus ring is an outline, so both survive. The list is focused
+		// after the page draws, which a detached pane cannot be.
+		name: 'picker-forced-colors',
+		query:
+			'surface=editor&theme=light&layout=canvas-demo&pickerActive=pool&focus=.sheetsmith-picker-list',
+		size: '1500,2600',
+		flags: ['--force-high-contrast'],
+	},
 	{
 		// The grid canvas's own layout (`docs/features/grid-canvas.md`):
 		// two overlapping cards and a Group holding a Table, all rendered

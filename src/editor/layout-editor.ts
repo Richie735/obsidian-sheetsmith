@@ -5,15 +5,13 @@ import {
 	Setting,
 	TFile,
 } from 'obsidian';
-import { acceptsChildren } from './accepts-children';
 import {
 	RenameIntent,
 	reportComponentRename,
 } from '../component-rename-migration';
-import { describedRow } from './described-row';
-import { getComponent, listComponentTypes, paletteEntries } from '../components';
+import { getComponent } from '../components';
 import { Canvas } from './canvas';
-import { componentDisplayName } from './component-name';
+import { ComponentPicker } from './component-picker';
 import { ConfigPanel } from './config-panel';
 import {
 	LayoutFileRowHost,
@@ -27,6 +25,7 @@ import { ConfirmModal } from '../ui/confirm-modal';
 import { NEW_LAYOUT_LABEL } from './new-layout';
 import { isResolvedLayout, listLayouts } from '../layouts';
 import { ListContext } from './list-fields';
+import { PickerChoice } from './picker-catalog';
 import type SheetsmithPlugin from '../main';
 import { Layout, parseLayout, serialiseLayout } from '../parse/layout';
 import { WalkEntry, walkComponents } from '../parse/layout-walk';
@@ -37,16 +36,14 @@ import { ComponentConfig } from '../types';
 import { UndoStack } from './undo-stack';
 import { childIsPlaced } from '../view/grid-cells';
 
-/** Ties the add menu to the description under it, for a screen reader. */
-const ADD_DESCRIPTION_ID = 'sheetsmith-add-description';
-
 /**
  * The top level, wherever something has to be named that is not a component.
  *
  * Defined in `tree.ts` and re-exported here: the tree needs it to draw and
  * select the layout's own row, and this module needs it for the same
- * question one level up (the **Add component** row's destination, and what
- * the panel configures when nothing else is selected) — declaring it in
+ * question one level up (what the panel configures when nothing else is
+ * selected; the component picker's destination imports it from `tree.ts`
+ * too) — declaring it in
  * whichever of the two imports the other would make a cycle of two runtime
  * values, where this file already imports `renderTree` from `tree.ts`.
  */
@@ -177,6 +174,12 @@ export class LayoutEditorSection {
 	private regions: Regions | null = null;
 	/** The layout's live render and its gestures (`docs/features/grid-canvas.md`). */
 	private canvas: Canvas;
+	/**
+	 * What **Add component** opens (`docs/features/component-picker.md`). Built
+	 * once, like the canvas, because it holds posture a redraw must keep: open,
+	 * the query, the active line, the destination and its last report.
+	 */
+	private picker = new ComponentPicker();
 	/**
 	 * Inline errors, by the focus token of the field showing them. A redraw
 	 * tears down the DOM they live in, so an error on one field would vanish
@@ -462,6 +465,9 @@ export class LayoutEditorSection {
 		this.onDisk = null;
 		this.undoStack.clear();
 		this.redoStack.clear();
+		// Closed and cleared where the undo history is, which is the same moment:
+		// the picker's posture belongs to the layout it was adding to.
+		this.picker.reset();
 	}
 
 	/**
@@ -624,7 +630,13 @@ export class LayoutEditorSection {
 		this.canvas.draw(outline.createDiv(), layout);
 		// Above the tree it adds into, not below it: a layout with a long
 		// component list otherwise buries the one row that can grow it.
-		this.renderAddRow(outline, layout);
+		this.picker.render(outline, layout, {
+			insert: (choice, into) => this.insert(layout, choice, into),
+			focusAfterRedraw: (token) => {
+				this.pendingFocus = token;
+			},
+			redraw: () => this.redraw(),
+		});
 		renderTree(outline, layout, {
 			persist: () => void this.persist(),
 			redraw: () => this.redraw(),
@@ -773,135 +785,66 @@ export class LayoutEditorSection {
 		el.win.setTimeout(() => el.removeClass('sheetsmith-flash'), FLASH_HOLD);
 	}
 
-	private renderAddRow(container: HTMLElement, layout: Layout): void {
-		const choices = addChoices();
-		let chosen = choices[0]?.value ?? 'card-set';
-		// Every container that may still take a child. A container already two
-		// deep is left out, so the depth the parser refuses is never something
-		// the editor can walk into.
-		const destinations = walkComponents(layout.components).filter((entry) =>
-			acceptsChildren(entry.config, entry.depth),
-		);
-		let into: ComponentConfig | null = null;
-
-		const row = new Setting(container).setName('Add component');
-		/*
-		 * The entry's own description, below the menu it was chosen from
-		 * (`docs/UI.md` §9, `editor/described-row.ts`, which holds why it sits
-		 * there and what the treatment is). A dropdown line is one or two words,
-		 * and SPEC §13's warning about the palette is that a menu nobody can
-		 * read is worse than the type list it replaced — so what a prefill is
-		 * *for* has to be on screen, not only in the code. A bare type shows its
-		 * own `description`, what it looks like in one sentence.
-		 *
-		 * **A module literal is safe for the id here**, and it is the reason the
-		 * shared module takes one rather than generating it: this row is drawn
-		 * once per render and `redraw` replaces the container's children, so
-		 * only one element ever carries it.
-		 */
-		const described = describedRow(
-			row,
-			ADD_DESCRIPTION_ID,
-			(value) =>
-				choices.find((choice) => choice.value === value)?.description ?? '',
-		);
-		row.addDropdown((dropdown) => {
-			for (const choice of choices) {
-				// An entry sits one level under the type it prefills. It is what
-				// keeps the menu readable as the entries multiply — the list gets
-				// longer, and its structure stays the catalog with each block's
-				// own prefills beneath it.
-				dropdown.addOption(
-					choice.value,
-					`${indent(choice.entry ? 1 : 0)}${choice.name}`,
-				);
-			}
-			dropdown.setValue(chosen);
-			dropdown.selectEl.dataset.sheetsmithFocus = 'add-choice';
-			described.describes(dropdown.selectEl);
-			dropdown.onChange((value) => {
-				chosen = value;
-				described.describe(value);
-			});
+	/**
+	 * Put the component a picker line describes into the layout, select it and
+	 * persist; the picker redraws once it has written its report. Returns the
+	 * label the component was given.
+	 *
+	 * Moved out of the old **Add** button without changing what it writes
+	 * (`docs/features/component-picker.md` §7): a bare type writes `config: {}`
+	 * and never its `example`, which is why the picker labels an example.
+	 */
+	private insert(
+		layout: Layout,
+		choice: PickerChoice,
+		parent: ComponentConfig | null,
+	): string {
+		// `children` is shared config the editor owns, so this is where a
+		// container becomes one: a component holds the key only once something
+		// has been put in it.
+		const list = parent === null ? layout.components : (parent.children ??= []);
+		// Checked against the whole sheet, not this list: a label keys a note
+		// section and an id is what a formula writes, and containment scopes
+		// neither.
+		const all = this.allComponents();
+		// The line's own name, so an author who chose "Checkbox" has a component
+		// called Checkbox until they rename it.
+		const label = uniqueLabel(choice.name, all);
+		// A tab has no placement, so the numbers written here are not read by
+		// anything — but they are still in the file, and a hand-editor reading
+		// `row: 4` on a tab would reasonably conclude it sits somewhere. The
+		// container's own size is the honest thing to write: it is the box the
+		// tab actually fills. `parsePosition` requires all four, which is why this
+		// is a sensible value rather than no key.
+		//
+		// It goes stale the moment the container is resized, and nothing keeps it
+		// in step on purpose: every drawing asks `innerPlacement` for the live box
+		// instead. Do not add a sync — reading this number was the bug, not
+		// writing it.
+		list.push({
+			// The prefill first, so nothing an entry carries can displace what the
+			// editor owns. The type forbids those keys outright; this is the spread
+			// order that makes the refusal true at runtime as well.
+			...choice.config,
+			id: uniqueId(label, all),
+			type: choice.type,
+			label,
+			position: childIsPlaced(parent)
+				? {
+						col: 1,
+						row: nextFreeRow(list),
+						// Never wider than the grid it lands on. A child spanning
+						// past its container's last column would open an implicit
+						// column and take the alignment with it.
+						width: Math.min(2, parent?.position.width ?? 2),
+						height: 1,
+					}
+				: { ...(parent as ComponentConfig).position, col: 1, row: 1 },
 		});
-		described.describe(chosen);
-
-		// Only where there is somewhere else to put one. A dropdown offering the
-		// sheet and nothing else says a layout has containers when it has none.
-		if (destinations.length > 0) {
-			row.addDropdown((dropdown) => {
-				dropdown.addOption(SHEET_DESTINATION, 'On the sheet');
-				for (const { config, depth } of destinations) {
-					dropdown.addOption(config.id, `${indent(depth)}In ${config.label}`);
-				}
-				dropdown.setValue(SHEET_DESTINATION);
-				dropdown.selectEl.dataset.sheetsmithFocus = 'add-destination';
-				dropdown.onChange((value) => {
-					into =
-						destinations.find((entry) => entry.config.id === value)?.config ??
-						null;
-				});
-			});
-		}
-
-		row.addButton((button) =>
-			button.setButtonText('Add').onClick(() => {
-				const parent = into;
-				// `children` is shared config the editor owns, so this is where a
-				// container becomes one: a component holds the key only once
-				// something has been put in it.
-				const list =
-					parent === null ? layout.components : (parent.children ??= []);
-				// Checked against the whole sheet, not this list: a label keys a
-				// note section and an id is what a formula writes, and containment
-				// scopes neither.
-				const all = this.allComponents();
-				const choice =
-					choices.find((candidate) => candidate.value === chosen) ??
-					choices[0];
-				const type = choice?.type ?? chosen;
-				// The entry's own name, so an author who chose "Checkbox" has a
-				// component called Checkbox until they rename it.
-				const label = uniqueLabel(choice?.name ?? componentDisplayName(type), all);
-				// A tab has no placement, so the numbers written here are not read
-				// by anything — but they are still in the file, and a hand-editor
-				// reading `row: 4` on a tab would reasonably conclude it sits
-				// somewhere. The container's own size is the honest thing to write:
-				// it is the box the tab actually fills. `parsePosition` requires all
-				// four, which is why this is a sensible value rather than no key.
-				//
-				// It goes stale the moment the container is resized, and nothing
-				// keeps it in step on purpose: every drawing asks
-				// `innerPlacement` for the live box instead. Do not add a sync —
-				// reading this number was the bug, not writing it.
-				list.push({
-					// The prefill first, so nothing an entry carries can displace
-					// what the editor owns. The type forbids those keys outright;
-					// this is the spread order that makes the refusal true at
-					// runtime as well.
-					...(choice?.config ?? {}),
-					id: uniqueId(label, all),
-					type,
-					label,
-					position: childIsPlaced(parent)
-						? {
-								col: 1,
-								row: nextFreeRow(list),
-								// Never wider than the grid it lands on. A child
-								// spanning past its container's last column would
-								// open an implicit column and take the alignment
-								// with it.
-								width: Math.min(2, parent?.position.width ?? 2),
-								height: 1,
-							}
-						: { ...(parent as ComponentConfig).position, col: 1, row: 1 },
-				});
-				const added = list[list.length - 1]?.id;
-				if (added !== undefined) this.host.setSelection(added);
-				void this.persist();
-				this.redraw();
-			}),
-		);
+		const added = list[list.length - 1]?.id;
+		if (added !== undefined) this.host.setSelection(added);
+		void this.persist();
+		return label;
 	}
 
 	/** Select a component, or the layout itself, and rebuild both regions. */
@@ -1109,87 +1052,6 @@ export class LayoutEditorSection {
 		this.restoreSnapshot(snapshot);
 		return true;
 	}
-}
-
-/**
- * Leading space for a dropdown option that sits under another, by how many
- * levels in it is.
- *
- * A figure space, because it is the one space character with a width that does
- * not collapse and does not vary with the digits around it. Both dropdowns on
- * the **Add component** row use it — an entry under its type, a container under
- * its parent — for the same reason: a `<select>` has no other way to say that
- * one option sits under another.
- *
- * One function because the bound is the whole of it, and the two callers sit in
- * one row of the pane. Spelled twice they agreed only by accident: one
- * multiplied by depth and the other hard-coded a flat two, so widening the
- * indent in either place would have indented the two dropdowns beside each other
- * differently. Taking the depth rather than a character count is also what lets a
- * caller say "one level in" instead of restating the arithmetic (PATTERNS §1).
- */
-function indent(depth: number): string {
-	return '\u2007'.repeat(depth * 2);
-}
-
-/**
- * One line of the add menu: a bare type, or a type with its config prefilled.
- *
- * Flattened here rather than in the registry because this is the only thing that
- * draws a palette today, and PATTERNS §1 is explicit that one consumer earns no
- * module. M4's grid canvas is the second and it moves then; what the registry
- * owns is which entries exist, not how a menu spells them.
- */
-interface AddChoice {
-	/** Stable option value. A type on its own, or the type and the entry's index. */
-	value: string;
-	type: string;
-	/** The menu line, and the label the new component starts with. */
-	name: string;
-	description: string;
-	/** Whether it is a prefill of the type above it, which is what indents it. */
-	entry: boolean;
-	config: Readonly<Partial<ComponentConfig>>;
-}
-
-/**
- * Every type, each followed by its own prefills.
- *
- * Types stay, and not for completeness: an author who wants a plain Track has to
- * be able to ask for one, and an entry is a starting point they then edit rather
- * than a variant with capabilities of its own. A menu of entries alone would hide
- * the generic block behind a job name, which is the failure SPEC §2 records twice
- * — nobody building an inventory looks for a skill card.
- */
-function addChoices(): AddChoice[] {
-	return listComponentTypes().flatMap((type) => [
-		{
-			value: type,
-			type,
-			name: componentDisplayName(type),
-			// The type's own line, so a bare type says what it is too.
-			description: getComponent(type)?.description ?? '',
-			entry: false,
-			config: {},
-		},
-		// The index rather than a machine id on the entry itself: the value only
-		// has to tell one option from another inside one dropdown, and a member
-		// for it would be a member every future entry has to invent a value for.
-		//
-		// A colon rather than a hash, because the harness addresses this menu by
-		// query string and `#` is the one character that cannot survive one — it
-		// starts a fragment, so `choice=track#0` arrives as `choice=track` and
-		// selects the bare type instead. A type id is lower-case and hyphenated,
-		// so a colon parses unambiguously.
-		...paletteEntries(type).map((entry, index) => ({
-			value: `${type}:${index}`,
-			type,
-			name: entry.name,
-			description: entry.description,
-			entry: true,
-			config: entry.config,
-		})),
-	]);
 }
 
 function uniqueLabel(base: string, components: ComponentConfig[]): string {
