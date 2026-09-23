@@ -791,9 +791,8 @@ export class LayoutEditorSection {
 		 * there and what the treatment is). A dropdown line is one or two words,
 		 * and SPEC §13's warning about the palette is that a menu nobody can
 		 * read is worse than the type list it replaced — so what a prefill is
-		 * *for* has to be on screen, not only in the code. A bare type has none
-		 * and the line is empty, which is the truth: a type's name is all this
-		 * editor has ever offered for one.
+		 * *for* has to be on screen, not only in the code. A bare type shows its
+		 * own `description`, what it looks like in one sentence.
 		 *
 		 * **A module literal is safe for the id here**, and it is the reason the
 		 * shared module takes one rather than generating it: this row is drawn
@@ -1168,7 +1167,8 @@ function addChoices(): AddChoice[] {
 			value: type,
 			type,
 			name: componentDisplayName(type),
-			description: '',
+			// The type's own line, so a bare type says what it is too.
+			description: getComponent(type)?.description ?? '',
 			entry: false,
 			config: {},
 		},

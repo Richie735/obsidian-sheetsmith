@@ -487,7 +487,7 @@ describe('adding and removing a component', () => {
 		expect(has(harness, `cfg-${added?.id ?? ''}-count`)).toBe(true);
 	});
 
-	it('puts the chosen entry\'s description below the menu, and a type\'s nothing', () => {
+	it('puts the chosen line\'s description below the menu, a type\'s as well as an entry\'s', () => {
 		const menu = control<HTMLSelectElement>(harness, 'add-choice');
 		const description = () =>
 			menu.closest('.setting-item')?.querySelector('.setting-item-description')
@@ -496,9 +496,9 @@ describe('adding and removing a component', () => {
 		// type list it replaced, and a dropdown line is one or two words. So what
 		// a prefill is for has to be on screen.
 		choose(menu, 'track:0');
-		expect(description()).toContain('yes or no');
+		expect(description()).toBe(paletteEntries('track')[0]?.description);
 		choose(menu, 'track');
-		expect(description()).toBe('');
+		expect(description()).toBe(getComponent('track')?.description);
 	});
 
 	it('leaves the description a direct child of the row, after the controls', () => {

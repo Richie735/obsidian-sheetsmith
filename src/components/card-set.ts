@@ -72,6 +72,7 @@ export interface CardSetData {
 
 export const cardSet: ComponentDefinition<CardSetConfig, CardSetData> = {
 	type: 'card-set',
+	description: 'A row of cards, one per named value, under one heading and one shared formula.',
 	storage: 'fenced',
 	formulaFields: ['derived', 'effective'],
 	configFields: [
@@ -189,8 +190,7 @@ export const cardSet: ComponentDefinition<CardSetConfig, CardSetData> = {
 	palette: [
 		{
 			name: 'Currency',
-			description:
-				'Coins as five cards in a row, one per denomination: CP, SP, EP, GP, PP. A Card set, so the note stores one entry per denomination and each publishes a name a formula can read. Rename or drop the ones your game does not use.',
+			description: 'Coins as one card per denomination, each a value a formula can read.',
 			config: {
 				entries: [
 					{ key: 'CP', name: 'Copper' },

@@ -91,6 +91,7 @@ function fill(into: HTMLElement, context: RenderContext<GroupData>): void {
 
 export const group: ComponentDefinition<GroupConfig, GroupData> = {
 	type: 'group',
+	description: 'A region with a heading that holds other components on a grid of its own.',
 	storage: 'none',
 	formulaFields: [],
 	configFields: [

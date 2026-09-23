@@ -447,6 +447,7 @@ function bandRows(
 
 export const roster: ComponentDefinition<RosterConfig, RosterData> = {
 	type: 'roster',
+	description: 'One table of stats, each stat heading a band of its own rows.',
 	storage: 'markdown',
 	formulaFields: ['derived', 'effective', 'columns.*.formula'],
 	configFields: [

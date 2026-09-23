@@ -88,6 +88,7 @@ function activeIndex(chosen: number | undefined, count: number): number {
 
 export const tabSet: ComponentDefinition<TabSetConfig, TabSetData> = {
 	type: 'tab-set',
+	description: 'A strip of tabs, each showing one component or region at a time.',
 	storage: 'none',
 	// A tab fills the panel, so a tab has no placement. Declared because nothing
 	// outside a component can see which half of containment it reaches for, and

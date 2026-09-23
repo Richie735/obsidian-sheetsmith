@@ -29,6 +29,7 @@ import { ComponentConfig, ComponentDefinition, RenderContext } from '../types';
 function marker(type: string): ComponentDefinition {
 	return {
 		type,
+		description: 'A marker.',
 		storage: 'fenced',
 		formulaFields: [],
 		configFields: [],
@@ -102,6 +103,7 @@ function tree(source: string, components?: readonly GridComponent[]): string[] {
 function group(): ComponentDefinition {
 	return {
 		type: CONTAINER,
+		description: 'A container.',
 		storage: 'none',
 		formulaFields: [],
 		configFields: [],
@@ -124,6 +126,7 @@ const ALTERNATIVES = 'tab-set';
 function alternatives(): ComponentDefinition {
 	return {
 		type: ALTERNATIVES,
+		description: 'A set of alternatives.',
 		storage: 'none',
 		formulaFields: [],
 		configFields: [],
@@ -603,6 +606,7 @@ describe('a container that shows one child at a time', () => {
 		 */
 		const recorder = (type: string): ComponentDefinition => ({
 			type,
+			description: 'A recorder.',
 			storage: type === 'card' ? 'fenced' : 'none',
 			...(type === ALTERNATIVES ? { showsOneChild: true } : {}),
 			formulaFields: [],

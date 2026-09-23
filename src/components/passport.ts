@@ -1077,6 +1077,7 @@ function drawListField(
 
 export const passport: ComponentDefinition<PassportConfig, PassportData> = {
 	type: 'passport',
+	description: 'A name at headline size beside a picture, over a line of short values.',
 	storage: 'markdown',
 	/*
 	 * No expression anywhere on this component. The line under the name is three
@@ -1109,7 +1110,7 @@ export const passport: ComponentDefinition<PassportConfig, PassportData> = {
 			entryFlag: { key: 'list', label: 'Several values' },
 			addressesEntry: { fence: 'section' },
 			description:
-				'The values shown under the name, in this order. Each key is the entry\'s name in the note, and renaming one moves it in every note on this layout; its name is what the field shows while it is empty and what a screen reader calls it. A field may say it holds several values, drawn as one chip per part and stored as one line with the parts separated by semicolons — a multiclass character\'s class field reading "Fighter 1; Bladesinger Wizard 4" where a single-class character\'s reads "Bard 5", on the same layout.',
+				'The values shown under the name, in this order, each typed on the sheet. Each key is the entry\'s name in the note, and renaming one moves it in every note on this layout; its name is what the field shows while it is empty and what a screen reader calls it. A field may say it holds several values, drawn as one chip per part and stored as one line with the parts separated by semicolons — a multiclass character\'s class field reading "Fighter 1; Bladesinger Wizard 4" where a single-class character\'s reads "Bard 5", on the same layout.',
 		},
 		{
 			key: 'hidePicture',
@@ -1155,8 +1156,7 @@ export const passport: ComponentDefinition<PassportConfig, PassportData> = {
 	palette: [
 		{
 			name: 'Header',
-			description:
-				'The character\'s name, a picture and a short line of identity values: class, species and level. The name comes from the note\'s own filename and is not edited here; the three values are edited on the sheet. Rename, reorder or drop the fields your game does not use. Two rows suit a header with a picture; turn the picture off and one row suits it, since the text alone does not fill two.',
+			description: "The character's name and picture over a line of identity values.",
 			config: {
 				fields: [
 					{ key: 'class', name: 'Class' },

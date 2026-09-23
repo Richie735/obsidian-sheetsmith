@@ -151,6 +151,7 @@ function paintParagraphs(
 
 export const richText: ComponentDefinition<RichTextConfig, RichTextData> = {
 	type: 'rich-text',
+	description: 'A block of markdown prose the character writes, links included.',
 	storage: 'markdown',
 	formulaFields: [],
 	configFields: [

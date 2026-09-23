@@ -868,6 +868,7 @@ function resetColumnsOf(config: TableConfig): ResetColumn[] {
 
 export const table: ComponentDefinition<TableConfig, TableData> = {
 	type: 'table',
+	description: 'Named rows under typed columns: numbers, text, toggles and computed values.',
 	storage: 'markdown',
 	// `*` stands for one path segment: every column's formula, and every
 	// named expression on every row. See isDeclared in formula/resolve.ts.
@@ -967,8 +968,7 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 	palette: [
 		{
 			name: 'Inventory',
-			description:
-				'An open list of gear: the character adds every row, names it, and fills in a quantity and a weight. A Table with the weights totalled under it, storing as ordinary markdown, so an item named as a wikilink stays a real link the vault indexes.',
+			description: 'Gear the character adds, with quantity and weight, and the weight totalled.',
 			config: {
 				columns: [
 					{ key: 'Qty', type: 'number' },
@@ -980,8 +980,7 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 		},
 		{
 			name: 'Conditions',
-			description:
-				'An open list of the states the character is in: raging, blessed, poisoned. Each row carries an Active flag beside the Modifiers it applies while that flag is set, so a modifier conditioned on Active stops counting the moment the row is switched off. A Table storing as ordinary markdown, so a rest can be bound to empty the whole Active column at once.',
+			description: 'States the character is in, each switched on or off with the modifiers it applies.',
 			config: {
 				columns: [
 					{ key: 'Active', type: 'toggle' },

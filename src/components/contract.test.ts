@@ -78,6 +78,8 @@ const KINDS = [
  */
 const MEMBER_ORDER = [
 	'type',
+	// Directly after `type`, where the name and its gloss read together.
+	'description',
 	'storage',
 	// Beside `storage` because it is the same kind of fact: what this component
 	// is structurally, before anything about its data or its drawing.
@@ -111,6 +113,21 @@ const MEMBER_ORDER = [
 ];
 
 const types = listComponentTypes();
+
+/**
+ * The picker line's budget, in characters and in words
+ * (`docs/features/component-picker.md` § Model question, decision 3).
+ */
+const DESCRIPTION_BUDGET = 90;
+const NAME_BUDGET = 3;
+
+/**
+ * One sentence: it ends in a full stop, and nothing before that ends one — no
+ * `.`, `!` or `?` followed by a space. A decimal point is not followed by one.
+ */
+function isOneSentence(text: string): boolean {
+	return text.endsWith('.') && !/[.!?]\s/.test(text.slice(0, -1));
+}
 
 /** A child to place inside another component, for the containment checks. */
 function child(): ComponentConfig {
@@ -507,6 +524,61 @@ describe('component registry', () => {
 		}
 	});
 
+	it('gives every type a description of one sentence within 90 characters', () => {
+		/*
+		 * The line the component picker shows under a type's name, and the only
+		 * explanation of the type an author is given
+		 * (`docs/features/component-picker.md` § Copy). The budget is the picker's:
+		 * a line that wraps to three rows under every option makes the list a wall.
+		 */
+		for (const type of types) {
+			const description = getComponent(type)?.description ?? '';
+			expect(description, `${type} has no description`).not.toBe('');
+			expect(description.length, `${type}: "${description}"`).toBeLessThanOrEqual(
+				DESCRIPTION_BUDGET,
+			);
+			expect(isOneSentence(description), `${type}: "${description}"`).toBe(true);
+		}
+	});
+
+	it('keeps every palette entry description to one sentence within 90 characters', () => {
+		// The same budget as a type's, because the two are the same line in the
+		// picker. A consequence for the note belongs in the description of the
+		// config field it concerns, which is where the rewrite sent each one.
+		const entries = types.flatMap((type) => [...paletteEntries(type)]);
+		expect(entries.length).toBeGreaterThan(0);
+		for (const entry of entries) {
+			expect(entry.description.length, `${entry.name}: "${entry.description}"`)
+				.toBeLessThanOrEqual(DESCRIPTION_BUDGET);
+			expect(isOneSentence(entry.description), `${entry.name}: "${entry.description}"`)
+				.toBe(true);
+		}
+	});
+
+	it('tells one sentence from two, so the budget checks mean something', () => {
+		// Driven over what it refuses, since a predicate that had stopped
+		// refusing anything would pass every description above.
+		expect(isOneSentence('A row of boxes, marked in order.')).toBe(true);
+		expect(isOneSentence('A value of 2.5 on a card.')).toBe(true);
+		expect(isOneSentence('A row of boxes. Marked in order.')).toBe(false);
+		expect(isOneSentence('A row of boxes! Marked in order.')).toBe(false);
+		expect(isOneSentence('A row of boxes? Marked in order.')).toBe(false);
+		expect(isOneSentence('A row of boxes')).toBe(false);
+	});
+
+	it('names every type and palette entry in at most three words', () => {
+		// A type's name in the picker is its id with the hyphens spaced out
+		// (`editor/component-name.ts`), so its words are its id's parts.
+		for (const type of types) {
+			expect(type.split('-').length, type).toBeLessThanOrEqual(NAME_BUDGET);
+		}
+		for (const entry of types.flatMap((type) => [...paletteEntries(type)])) {
+			expect(entry.name.trim().split(/\s+/).length, entry.name).toBeLessThanOrEqual(
+				NAME_BUDGET,
+			);
+		}
+	});
+
 	it('names the types a layout may use when one is unknown', () => {
 		// A stale layout file is the one place a user meets a type id they
 		// have to fix by hand, so the message carries the vocabulary rather
@@ -898,6 +970,9 @@ describe('a component that says what a sample of itself looks like', () => {
 		// wrong place is only caught if `MEMBER_ORDER` holds the right place.
 		expect(MEMBER_ORDER.indexOf('sample')).toBe(
 			MEMBER_ORDER.indexOf('configName') + 1,
+		);
+		expect(MEMBER_ORDER.indexOf('description')).toBe(
+			MEMBER_ORDER.indexOf('type') + 1,
 		);
 		expect(MEMBER_ORDER.indexOf('read')).toBe(MEMBER_ORDER.indexOf('sample') + 1);
 		// And the rule applied to something that breaks it, so an order check
