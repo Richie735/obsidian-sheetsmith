@@ -17,22 +17,21 @@
  * what is left here is one job: carry one rename across every note that
  * names this layout.
  *
- * **Not split, though it holds a scan, a write and a sentence**
- * (`docs/PATTERNS.md` §1). The three are one decision seen at three moments:
- * which notes a rename reaches, what each one's own text becomes, and what
- * the author is told happened — and the middle one is the only one with a
- * choice in it. `migrationMessage` is the half that looks separable, being a
- * pure function of `MigrationSummary` with no vault in it, and a module of
- * its own would have one consumer and would take the summary type with it or
- * import it back; §1 extracts a policy at its second site and a behaviour at
- * its third, and this is the first of both. What would change the answer is a
- * second caller of the scan — a command that migrated without an editor
- * commit — at which point the sentence is what two callers share and the
- * split is the extraction rather than a tidy.
+ * **Split once, on the scan, and not on the sentence** (`docs/PATTERNS.md`
+ * §1). This held a scan, a write and a sentence as one decision seen at three
+ * moments — which notes a rename reaches, what each one's own text becomes, and
+ * what the author is told happened. The scan got a second caller: a *layout
+ * file* renamed in the file explorer counts the notes still naming its old name
+ * (`docs/features/visible-layout-files.md`), and "which notes name this layout"
+ * is a predicate, which §1 extracts on its second consumer. So it lives in
+ * `layout-notes.ts` and both import it. `migrationMessage` stays: it is still a
+ * pure function with one consumer, and the layout rename's sentence is a
+ * different sentence about a different event.
  */
 
-import { App, Notice, TFile } from 'obsidian';
-import { EntryAddress, LAYOUT_KEY } from './types';
+import { App, Notice } from 'obsidian';
+import { layoutCandidates } from './layout-notes';
+import { EntryAddress } from './types';
 import {
 	getSection,
 	parseCharacter,
@@ -126,72 +125,6 @@ export interface MigrationSummary {
 }
 
 /**
- * Every character note naming this layout, through `metadataCache` rather
- * than by reading a body that will not match — the same cheap frontmatter
- * read `commands.ts` and `view/auto-open.ts` already use to answer "is this a
- * character note for this layout".
- *
- * **The whole vault, never narrowed by the character folder setting.** That
- * setting is a *creation destination* — its own description is "New
- * characters are written here" — and `characters.ts` is the only other reader
- * of it, which uses it to decide where a new note goes. Reading it as a
- * residence rule made every existing character outside it invisible to this
- * scan: a rename reported nothing, migrated nothing, and left the note
- * rendering empty under a heading the layout no longer names. That is the
- * silent orphaning this feature exists to prevent, and it happened to the
- * owner on a vault whose characters sit in `Characters/` while new ones are
- * written to `Characters/new`. The frontmatter read is what makes the whole
- * vault cheap; the folder was never what made it cheap.
- *
- * **A filter and not the verdict.** The cache's value is YAML, and the plugin
- * writes a plain scalar wherever `isPlainLayoutValue` allows one — so a layout
- * named `12`, `No` or `null` is written unquoted and read back as a number, a
- * boolean and nothing at all, none of which equals its own name. A compare
- * that trusted this would skip every character on such a layout in total
- * silence, which is the orphaning this whole feature exists to prevent. So a
- * value that is not a string is admitted as *undecidable* rather than
- * rejected, and the note's own `layoutName` — `parseCharacter`'s reader, the
- * one the sheet view itself uses — settles it below. **`null` is one of those
- * three**, not a rejection: `isPlainLayoutValue('null')` passes, so a layout
- * named `null`, `Null` or `NULL` is written unquoted and comes back as
- * nothing at all. Only `undefined` — the key absent entirely, which is every
- * note in the vault that is not a character — is refused outright. The two
- * existing cache readers (`view/auto-open.ts`, `commands.ts`) only ever test
- * presence, which is why this hazard appears here first.
- *
- * `certain` is what the caller needs the distinction for: a note admitted on
- * an exact string match claims this layout, so failing to parse it is worth
- * reporting; a note admitted as undecidable might belong to anyone, and a
- * `sheet-layout:` left empty is `null` here and unparseable below — reported,
- * it would put "1 character note could not be read" on every rename in the
- * vault for a note that was never ours.
- */
-interface Candidate {
-	file: TFile;
-	certain: boolean;
-}
-
-function candidates(app: App, layoutName: string): Candidate[] {
-	const found: Candidate[] = [];
-	for (const file of app.vault.getMarkdownFiles()) {
-		// `unknown`, not the `any` the frontmatter index signature hands over:
-		// what YAML put here is the whole question this guard is about.
-		const declared: unknown = app.metadataCache.getFileCache(file)
-			?.frontmatter?.[LAYOUT_KEY];
-		if (declared === undefined) continue;
-		if (typeof declared === 'string') {
-			if (declared === layoutName) found.push({ file, certain: true });
-			continue;
-		}
-		// Coerced by YAML past recovering: read the note and let its own text
-		// say. Rare by construction, so the cheap string compare above is
-		// still what the overwhelming majority of notes cost.
-		found.push({ file, certain: false });
-	}
-	return found;
-}
-
-/**
  * One note's outcome for this intent: nothing to touch, a refused collision,
  * or new text.
  *
@@ -217,7 +150,7 @@ type NoteOutcome =
  * outside this call may decide what it returns.
  *
  * **The note's own layout line is the authority**, not the candidate filter
- * that got it here: `candidates` admits a frontmatter value YAML coerced past
+ * that got it here: `layoutCandidates` admits a frontmatter value YAML coerced past
  * recognition, and this is what settles it. Checked on every call, so the
  * write's own re-decision honours it too — a note repointed at another layout
  * between the read and the write is left alone rather than migrated on the
@@ -337,7 +270,7 @@ export async function migrateComponentRename(
 	let partlyKept = 0;
 	let unreadable = 0;
 
-	for (const { file, certain } of candidates(app, layoutName)) {
+	for (const { file, certain } of layoutCandidates(app, layoutName)) {
 		let source: string;
 		try {
 			source = await app.vault.read(file);
