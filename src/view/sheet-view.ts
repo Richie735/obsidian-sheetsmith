@@ -39,10 +39,10 @@ import {
 import { modifierTargetSource } from '../formula/modifier-targets';
 import {
 	FormulaEnv,
+	formulaContext,
 	makeFieldExplainer,
 	makeFieldResolver,
 	publishedFieldNames,
-	resolveFormulaFields,
 } from '../formula/resolve';
 import { parseFunctions } from '../formula/functions';
 import { buildSheet } from '../formula/sheet';
@@ -671,9 +671,7 @@ export class SheetView extends TextFileView {
 		);
 
 		renderGrid(grid, walk, prepared, ({ config, component, data }) => ({
-			resolved: resolveFormulaFields(component, config, data, env),
-			resolveField: makeFieldResolver(component, config, data, env),
-			explainField: makeFieldExplainer(component, config, data, env),
+			...formulaContext(component, config, data, env),
 			onChange: (edited: unknown) => this.applyEdit(component, config, edited),
 			link,
 			modifiers,

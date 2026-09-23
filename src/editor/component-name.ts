@@ -4,8 +4,8 @@
  *
  * A module because the two halves of the pane both ask it and neither owns it.
  * `placedComponentName` names a tree row in the outline and a tab row in the
- * panel; `componentDisplayName` is its fallback and the add menu's own naming of
- * types. That is `docs/PATTERNS.md` §1's one-step tier: what is shared here is a
+ * panel; `componentDisplayName` is its fallback and the component picker's own
+ * naming of types. That is `docs/PATTERNS.md` §1's one-step tier: what is shared here is a
  * *policy* — which of two names a component answers to — so the only thing a
  * two-consumer guard test could assert is that the copies still agree, which is
  * what one name says for free. Spelled twice, the copy that stopped asking the
@@ -38,8 +38,8 @@ export function componentDisplayName(type: string): string {
  * component answers, never this module: whether options make a dropdown is
  * exactly the kind of thing nothing outside a component may know.
  *
- * The add menu keeps `componentDisplayName`, because there it is naming *types*
- * and the prefills are listed under them by name already.
+ * The component picker keeps `componentDisplayName`, because there it is naming
+ * *types* and the prefills are listed under them by name already.
  */
 export function placedComponentName(config: ComponentConfig): string {
 	const named = getComponent(config.type)?.configName?.(config);

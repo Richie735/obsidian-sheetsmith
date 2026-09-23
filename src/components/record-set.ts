@@ -803,6 +803,7 @@ function applyDelta(
 
 export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 	type: 'record-set',
+	description: 'A list of named entries, each with a few typed fields and a paragraph of prose.',
 	storage: 'markdown',
 	// `*` stands for one path segment: every field's formula. `reset.*.to` is the
 	// reset expression, at the index of the binding being applied.
@@ -900,8 +901,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 	palette: [
 		{
 			name: 'Spellbook',
-			description:
-				'A list of spells the character adds, each with its level, whether it is prepared, and its description under it. A Record set, so a spell is a heading in the note with its own paragraph, and a spell named as a wikilink keeps a working link.',
+			description: 'Spells the character adds, each with a level, a prepared flag and its text.',
 			config: {
 				recordName: 'Spell',
 				fields: [
@@ -912,8 +912,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		},
 		{
 			name: 'Features',
-			description:
-				"A list of features, traits or moves the character adds, each with a uses counter, the modifiers it applies while it is switched on, and its full text under it. A Record set, because a feature's text is a paragraph and a table cell is one line.",
+			description: 'Features the character adds, each with uses, modifiers and its full text.',
 			config: {
 				recordName: 'Feature',
 				fields: [

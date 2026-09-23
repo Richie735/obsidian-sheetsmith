@@ -1229,16 +1229,18 @@
    which is how selecting a palette entry used to move the **Add** button
    35px down while the menu it was chosen from stayed put.
 
-   Shared rather than declared per row: the Add component row's own
-   description and the tree's refused-drop message are two rows with the
+   Shared rather than declared per row: a described row's own description
+   (`editor/described-row.ts`) and the tree's refused-drop message are two rows with the
    same growing-copy problem, and docs/UI.md §9 already says the second one
    reuses this rather than inventing its own. */
 .sheetsmith-wrapping-row {
 	flex-wrap: wrap;
 }
 
-/* The Add component row, whose description is a second line rather than copy
-   beside the name (docs/UI.md §12).
+/* A described row, whose description is a second line rather than copy beside
+   the name (docs/UI.md §9). Named for the pane's old Add component row, where it
+   was first needed; New layout's Start from and the Layout file row wear it now,
+   and the class keeps its name because the name is the rule's address.
 
    The description element is moved out of the info column and appended after
    the controls, so it is a flex child of the row itself; `flex-basis: 100%`
@@ -1259,6 +1261,175 @@
    the reserved line this layout exists to avoid, arrived at by accident. */
 .sheetsmith-add-row > .setting-item-description:empty {
 	display: none;
+}
+
+/* ------------------------------------------------------------------------ *
+ * The component picker: what **Add component** opens
+ * (docs/features/component-picker.md).
+ * ------------------------------------------------------------------------ */
+
+/* A disclosure in the pane's own flow, clothed like the pane's other blocks —
+   the list fields' border, radius and secondary surface — so it reads as part
+   of the pane rather than as a fifth kind of panel (docs/UI.md §9). Padded on
+   three sides only: the action bar at its foot is pinned, and carries its own. */
+.sheetsmith-picker {
+	margin: 0 0 var(--size-4-4);
+	padding: var(--size-4-2) var(--size-4-2) 0;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background-color: var(--background-secondary);
+}
+
+/* Two classes, because Obsidian styles `input[type='search']` at (0,1,1) and a
+   bare class at (0,1,0) would lose its width to it (docs/UI.md §2). */
+.sheetsmith-picker .sheetsmith-picker-search {
+	width: 100%;
+}
+
+/* What scrolling the search field or the active line into view keeps clear of:
+   the pinned bar, whose height `component-picker.ts` publishes when it scrolls,
+   because `block: 'nearest'` would otherwise land either one under it. A gap's
+   worth more, so the line does not sit flush against the bar's rule. */
+.sheetsmith-picker .sheetsmith-picker-search,
+.sheetsmith-picker-option {
+	scroll-margin-bottom: calc(var(--sheetsmith-picker-bar, 0px) + var(--size-4-2));
+}
+
+.sheetsmith-picker-list {
+	margin-top: var(--size-4-2);
+}
+
+/* The list takes focus so a press can drop a phone's keyboard, and its focus is
+   shown on the active line rather than around the whole list: that is where
+   the arrows act, which is the listbox pattern's own visual focus. */
+.sheetsmith-picker-list:focus {
+	outline: none;
+}
+
+.sheetsmith-picker-group + .sheetsmith-picker-group {
+	margin-top: var(--size-2-2);
+}
+
+/* The whole line is the target, two lines of text with padding, which clears
+   the 44px a coarse pointer asks for. Hover is the app's own hover surface and
+   changes nothing else; a press activates and never inserts. */
+.sheetsmith-picker-option {
+	padding: var(--size-4-2) var(--size-4-3);
+	border-radius: var(--radius-s);
+	cursor: pointer;
+}
+
+.sheetsmith-picker-option:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.sheetsmith-picker-option.is-active {
+	background-color: var(--background-modifier-hover);
+}
+
+/* The focus ring while the list itself has focus, as an outline so it survives
+   forced colors, where a box-shadow is discarded (docs/UI.md §6). */
+.sheetsmith-picker-list:focus .sheetsmith-picker-option.is-active {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: -2px;
+}
+
+/* Indented by padding rather than by figure spaces, which is what the dropdown
+   had to do: an entry is a prefill of the type above it. */
+.sheetsmith-picker-option.sheetsmith-picker-entry {
+	padding-left: calc(var(--size-4-3) + var(--size-4-6));
+}
+
+.sheetsmith-picker-name {
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+}
+
+.sheetsmith-picker-description {
+	margin-top: var(--size-2-1);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+/* The active line's drawing of itself, framed so it reads as a picture on the
+   page rather than as part of the list, on the page background the component
+   is drawn against on a sheet. **Solid, and one step darker than the ordinary
+   border**: the ordinary one is the active line's own fill to within one level
+   (228 against 229 light, 53 against 54 dark), so a dashed edge in it read as a
+   perforated rendering fault rather than a frame. */
+.sheetsmith-picker-preview {
+	margin-top: var(--size-4-2);
+	border: 1px solid var(--background-modifier-border-hover);
+	border-radius: var(--radius-m);
+	background-color: var(--background-primary);
+	cursor: default;
+}
+
+.sheetsmith-picker-preview > .sheetsmith-view {
+	padding: var(--size-4-2) var(--size-4-3) var(--size-4-3);
+	overflow: visible;
+}
+
+/* Where the drawing is not what **Add** writes: the quiet flair type, at the
+   frame's top-left corner, above the drawing rather than over it so it never
+   covers the component's own label. */
+.sheetsmith-picker-example {
+	display: inline-block;
+	margin: var(--size-4-2) 0 0 var(--size-4-3);
+	padding: 0 var(--size-4-1);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.sheetsmith-picker-empty {
+	padding: var(--size-4-3);
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+
+/* Pinned to the foot of whichever box scrolls the pane, so **Add** is in reach
+   while the list runs past the viewport, and sits at the picker's own foot
+   once its end is on screen. Stretched to the picker's edges against its
+   padding, with the picker's own surface so the list passes under it. */
+.sheetsmith-picker-bar {
+	position: sticky;
+	bottom: 0;
+	z-index: 1;
+	margin: var(--size-4-2) calc(-1 * var(--size-4-2)) 0;
+	padding: var(--size-4-2);
+	border-top: 1px solid var(--background-modifier-border);
+	border-radius: 0 0 var(--radius-m) var(--radius-m);
+	background-color: var(--background-secondary);
+}
+
+.sheetsmith-picker-controls {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-4-2);
+	align-items: center;
+	justify-content: flex-end;
+}
+
+.sheetsmith-picker-status {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	text-align: end;
+}
+
+.sheetsmith-picker-status:not(:empty) {
+	margin-top: var(--size-2-3);
+}
+
+/* Forced colors repaints both surfaces one system colour, so the active line
+   takes the system's own selection instead: the one mark there that says which
+   line **Add** acts on. */
+@media (forced-colors: active) {
+	.sheetsmith-picker-option.is-active {
+		outline: 2px solid SelectedItem;
+		outline-offset: -2px;
+	}
 }
 
 /* A component sitting inside a container, one level of disclosure in the list.

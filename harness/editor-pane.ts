@@ -26,8 +26,20 @@ export interface PaneView {
 	 * word for the top level.
 	 */
 	open?: string;
-	/** An **Add component** option to select, as a type id or `<type>:<index>`. */
-	choice?: string;
+	/**
+	 * `open` presses **Choose**, which opens the component picker
+	 * (`docs/features/component-picker.md`). The four below it act on the open
+	 * picker, and any of them opens it first.
+	 */
+	picker?: 'open';
+	/** Text typed into the picker's search field. */
+	pickerQuery?: string;
+	/** A picker line to press, as a type id or `<type>:<index>`. */
+	pickerActive?: string;
+	/** A container id to choose as the destination, on the picker's action bar. */
+	pickerInto?: string;
+	/** Press the picker's **Add**, once everything above has been driven. */
+	pickerAdd?: boolean;
 	/**
 	 * `<id>:<dx>,<dy>` — drag that component's own resize corner by `(dx,
 	 * dy)` pixels and leave the gesture mid-flight rather than releasing. A
@@ -116,14 +128,16 @@ export async function renderEditorPane(
 	// opens one: the pane is bound to a file and never picks one for itself.
 	if (path !== null) await showFile(pane, path);
 	if (view.open !== undefined) await select(pane.contentEl, view.open);
-	if (view.choice !== undefined) await chooseAdd(pane.contentEl, view.choice);
+	// The picker is not driven here either, for `resize`'s reason below: opening
+	// it scrolls the search field clear of the pinned bar, which reads real
+	// geometry. `drivePicker` is `harness.ts`'s to call once the pane is on
+	// screen.
 	if (view.samples !== undefined) await setSamples(pane.contentEl, view.samples);
 	// `resize` is deliberately not driven here: it reads real geometry
 	// (`getBoundingClientRect`), and `container` has not been attached to
 	// the visible document by the caller yet at this point — every rect on
 	// it reads zero. `driveResize` below is `harness.ts`'s to call once its
-	// own `draw()` has appended the pane, which `select` and `chooseAdd`
-	// never needed because a synthetic `click`/`change` dispatches
+	// own `draw()` has appended the pane, which `select` never needed because a synthetic `click`/`change` dispatches
 	// correctly whether or not the element is on screen.
 	if (view.treeHover !== undefined) {
 		await dragTreeRow(pane.contentEl, view.treeHover, false);
@@ -258,26 +272,66 @@ async function setSamples(root: HTMLElement, on: boolean): Promise<void> {
 }
 
 /**
- * Select one option of the **Add component** menu.
+ * Drive the component picker the way an author would: press **Choose**, type
+ * into the search field, press a line, choose a destination, press **Add** — in
+ * that order, and only the steps the view asks for.
  *
- * Without this the menu can only ever be shot on its first option, which is a
- * bare type — so a palette entry's description, the line that says what the
- * prefill is *for*, was unreachable to any still. A native `<select>` shows only
- * its selection, so the indent still needs a hand on the mouse; the description
- * does not.
+ * Every step presses or dispatches on the control a user would reach, rather
+ * than reaching into the picker's state. Called once the pane is attached,
+ * because opening scrolls the field and the active line clear of the pinned bar
+ * and a detached pane has no geometry to scroll by. The search field is still
+ * dispatched an `input` rather than typed at, which is the route `setSamples`
+ * measures out.
  */
-async function chooseAdd(root: HTMLElement, value: string): Promise<void> {
-	const menu = await control(root, 'add-choice');
-	if (!(menu instanceof HTMLSelectElement)) {
-		console.warn('No add menu in the pane.');
+export async function drivePicker(root: HTMLElement, view: PaneView): Promise<void> {
+	const wanted =
+		view.picker === 'open' ||
+		view.pickerQuery !== undefined ||
+		view.pickerActive !== undefined ||
+		view.pickerInto !== undefined ||
+		view.pickerAdd === true;
+	if (!wanted) return;
+	const toggle = await control(root, 'picker-toggle');
+	if (toggle === null) {
+		console.warn('No Choose button in the pane.');
 		return;
 	}
-	if (!Array.from(menu.options).some((option) => option.value === value)) {
-		console.warn(`No add choice "${value}". Try a type id, or "<type>:<index>".`);
-		return;
+	if (toggle.getAttribute('aria-expanded') !== 'true') toggle.click();
+	if (view.pickerQuery !== undefined) {
+		const search = await control(root, 'picker-search');
+		if (search instanceof HTMLInputElement) {
+			search.value = view.pickerQuery;
+			search.dispatchEvent(new Event('input'));
+		}
 	}
-	menu.value = value;
-	menu.dispatchEvent(new Event('change'));
+	if (view.pickerActive !== undefined) {
+		const line = root.querySelector<HTMLElement>(
+			`[data-sheetsmith-choice="${CSS.escape(view.pickerActive)}"]`,
+		);
+		if (line === null) {
+			console.warn(`No picker line "${view.pickerActive}". Try a type id, or "<type>:<index>".`);
+		} else {
+			line.click();
+		}
+	}
+	if (view.pickerInto !== undefined) {
+		const menu = await control(root, 'add-destination');
+		if (
+			menu instanceof HTMLSelectElement &&
+			Array.from(menu.options).some((option) => option.value === view.pickerInto)
+		) {
+			menu.value = view.pickerInto;
+			menu.dispatchEvent(new Event('change'));
+		} else {
+			console.warn(`No destination "${view.pickerInto}" on the picker.`);
+		}
+	}
+	if (view.pickerAdd === true) {
+		const add = await control(root, 'picker-add');
+		add?.click();
+		// The insert redraws the pane; wait for the picker to be drawn again.
+		await control(root, 'picker-search');
+	}
 }
 
 /**

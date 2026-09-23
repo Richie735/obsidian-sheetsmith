@@ -112,6 +112,7 @@ export interface ImageData {
 
 export const image: ComponentDefinition<ImageConfig, ImageData> = {
 	type: 'image',
+	description: 'A picture from the vault, embedded in the note and fitted to its frame.',
 	storage: 'markdown',
 	formulaFields: [],
 	configFields: [

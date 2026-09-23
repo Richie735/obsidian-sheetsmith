@@ -46,7 +46,7 @@ export function getComponent(type: string): ComponentDefinition | undefined {
 	return registry.get(type);
 }
 
-/** All registered component types, for the layout editor's add menu. */
+/** All registered component types, in the order the component picker lists them. */
 export function listComponentTypes(): string[] {
 	return [...registry.keys()];
 }
@@ -59,9 +59,11 @@ export function listComponentTypes(): string[] {
  * prefills: the palette is the catalog, each block followed by its own
  * prefills, which is what keeps it readable as the entries multiply.
  *
- * Which options a menu holds and how they are drawn stays in the editor. There
- * is one consumer of that today, and PATTERNS §1 is explicit that one consumer
- * earns no module; M4's palette is the second, and it moves then.
+ * How a picker lists and searches them stays in the editor
+ * (`editor/picker-catalog.ts`). The component picker replaced the dropdown that
+ * was the one consumer of that flattening rather than becoming a second, so it
+ * did not climb here: PATTERNS §1 is explicit that one consumer earns no
+ * module, and it moved to a module of the picker's own on the atomic rule.
  */
 export function paletteEntries(type: string): readonly PaletteEntry[] {
 	return registry.get(type)?.palette ?? [];

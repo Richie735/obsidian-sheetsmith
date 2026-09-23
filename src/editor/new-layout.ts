@@ -67,7 +67,7 @@ type SourceKind = 'blank' | 'copy' | 'paste';
 /**
  * What each source does, under the dropdown that chose it.
  *
- * The **Add component** row's own `describe` mechanism: a menu line is two or
+ * The pane's old **Add component** row's `describe` mechanism: a menu line is two or
  * three words, and what a source actually *does* — that a copy leaves the
  * original alone, that a paste is checked before anything is written — has to be
  * on screen rather than only in this file. `docs/PATTERNS.md` §8's rule for a

@@ -447,6 +447,7 @@ function bandRows(
 
 export const roster: ComponentDefinition<RosterConfig, RosterData> = {
 	type: 'roster',
+	description: 'One table of stats, each stat heading a band of its own rows.',
 	storage: 'markdown',
 	formulaFields: ['derived', 'effective', 'columns.*.formula'],
 	configFields: [
@@ -560,6 +561,23 @@ export const roster: ComponentDefinition<RosterConfig, RosterData> = {
 			default: false,
 		},
 	],
+
+	/*
+	 * What the component picker draws for a bare Roster, whose empty config
+	 * draws only its "No stats yet" message. Two stats with unequal bands — two
+	 * rows under the first, one under the second — because a band is the thing
+	 * this component draws that a Table does not, and two alike would hide it.
+	 * Never inserted, which is why the picker labels it.
+	 */
+	example: {
+		stats: [{ key: 'Stat 1' }, { key: 'Stat 2' }],
+		rows: [
+			{ label: 'Row 1', stat: 'Stat 1' },
+			{ label: 'Row 2', stat: 'Stat 1' },
+			{ label: 'Row 3', stat: 'Stat 2' },
+		],
+		columns: [{ key: 'Value', type: 'number' }],
+	},
 
 	/*
 	 * Two stats with scores from the shared sequence, two rows each, every

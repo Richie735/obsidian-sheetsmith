@@ -923,6 +923,7 @@ function refuseRowName(text: string, taken: readonly string[]): string | null {
 
 export const track: ComponentDefinition<TrackConfig, TrackData> = {
 	type: 'track',
+	description: 'A row of boxes marked in order, as a count or as named levels.',
 	storage: 'fenced',
 	// `reset.*.to` rather than `reset.to`: the bindings are a list, so each
 	// one's expression lives at its own index and the sheet rewrites the
@@ -968,7 +969,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			],
 			addressesEntry: { fence: 'section' },
 			description:
-				'One run per entry, sharing a heading, a reset binding and a write. Spell slots are five first-level, three second and one third. Each key names the entry in the character note, and renaming one moves it in every note on this layout; a row with no length of its own falls back to the segment count above. A row\'s length may be the layout\'s formula or the character\'s own number, typed on the sheet — the character\'s for a die type, a slot level, or anything else whose count differs per character rather than being computed. Characters may add rows of their own beside these, where the setting below allows it. Rows and named levels do not combine.',
+				'One run per entry, sharing a heading, a reset binding and a write. Spell slots are five first-level, three second and one third. Each key names the entry in the character note, and renaming one moves it in every note on this layout; a row with no length of its own falls back to the segment count above. A row\'s length may be the layout\'s formula or the character\'s own number, typed on the sheet — the character\'s for a die type, a slot level, or anything else whose count differs per character rather than being computed. Characters may add rows of their own beside these, where the setting below allows it. Rows and named levels do not combine. With one segment each, rows make a checklist of flags under one heading.',
 		},
 		{
 			key: 'openRows',
@@ -983,7 +984,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			kind: 'text-list',
 			label: 'Level names',
 			description:
-				'Names the steps from none upwards, comma separated, e.g. Rested, Exhaustion 1, Exhaustion 2. A name may carry one glyph after a colon, as in "Exhaustion 6:☠". Naming the levels settles how many segments there are, so this wins over the count above.',
+				'Names the steps from none upwards, comma separated, e.g. Rested, Exhaustion 1, Exhaustion 2. A name may carry one glyph after a colon, as in "Exhaustion 6:☠". Naming the levels settles how many segments there are, so this wins over the count above. On a checkbox, naming the levels letters its ring.',
 		},
 		{
 			key: 'hideLabel',
@@ -1004,11 +1005,18 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 	palette: [
 		{
 			name: 'Checkbox',
-			description:
-				'One yes-or-no flag: inspiration, equipped, trained. A track of one segment, so the note stores yes or no rather than a count, and the card draws one ring. Name the levels to letter the ring, or add rows for a checklist of flags under one heading.',
+			description: 'One yes-or-no flag, drawn as a single ring.',
 			config: { count: 1 },
 		},
 	],
+
+	/*
+	 * What the component picker draws for a bare Track, whose empty config is a
+	 * configuration error. Five segments rather than Checkbox's one, so the bare
+	 * type is shown as the row of boxes it is and never borrows an entry's config.
+	 * Never inserted, which is why the picker labels it.
+	 */
+	example: { count: 5 },
 
 	/*
 	 * Every run part-marked, under the layout's own keys and in this card's own

@@ -657,11 +657,14 @@ export interface PaletteEntry<TConfig extends ComponentConfig = ComponentConfig>
 	 */
 	name: string;
 	/**
-	 * What the entry is for, and what it does to the note.
+	 * What the entry is, in one sentence of at most 90 characters: the line the
+	 * component picker shows under its name.
 	 *
 	 * Required on `ConfigFieldSpec.description`'s rule: it is the only
-	 * explanation the author is given, and here the menu line is one or two
-	 * words. State the consequence, not the label.
+	 * explanation the author is given, and here the name is one or two words.
+	 * One sentence, what it is — a consequence for the note belongs in the
+	 * description of the config field it concerns, which is where the budget
+	 * sends it (`docs/features/component-picker.md` § Copy).
 	 */
 	description: string;
 	/**
@@ -1909,6 +1912,22 @@ export interface ComponentDefinition<
 	TField extends ConfigFieldSpec = ConfigFieldOf<TConfig>,
 > {
 	type: string;
+	/**
+	 * What this type looks like, in one sentence of at most 90 characters: the
+	 * line the layout editor's component picker shows under the type's name
+	 * (`docs/features/component-picker.md`).
+	 *
+	 * **A look, never a job.** A job does not name one component across systems —
+	 * a row of boxes is stress in one game, death saves in another and a clock in
+	 * a third — so a description that named one would be system flavour in the
+	 * catalog, which SPEC §4.2's palette rule exists to stop. A job has its place
+	 * in a palette entry's name and description, and search reaches it there.
+	 *
+	 * Required on `ConfigFieldSpec.description`'s rule: it is the only explanation
+	 * of the type an author is given. Declared beside `type`, where the name and
+	 * its gloss read together. The budget is `contract.test.ts`'s.
+	 */
+	description: string;
 	storage: StorageKind;
 	/**
 	 * True where this container shows one child at a time rather than all of
@@ -1936,6 +1955,26 @@ export interface ComponentDefinition<
 	 * there rather than leaving it as a flag with no reading.
 	 */
 	showsOneChild?: boolean;
+	/**
+	 * A configuration for the component picker to draw this type with, where the
+	 * empty config an insert writes draws nothing useful: a blank body, an
+	 * empty-state message, or a configuration error
+	 * (`docs/features/component-picker.md` §1).
+	 *
+	 * **Drawn, never inserted.** Choosing the bare type still writes `config: {}`,
+	 * so the picker labels a drawing made from this as an example. That is the
+	 * whole difference from a palette entry, which is inserted: an example names no
+	 * job, has no name, is never written to a layout, and never appears as a line
+	 * in the list. Its vocabulary is filler — `Entry 1`, `Row 1` — never a game's.
+	 *
+	 * **Optional under §4.1's rule, on `palette`'s grounds**: the alternative is a
+	 * table in `src/editor/` holding Table's column shape and Track's count. It is
+	 * handed to `sample`, so it is declared only beside one, directly before it —
+	 * the configuration `sample` is asked about, then the body it produces.
+	 * `contract.test.ts` holds it to a non-empty config of fields the form
+	 * renders, with no editor-owned key, whose sample reads back and round-trips.
+	 */
+	example?: Partial<Omit<TConfig, EditorOwnedKey>>;
 	/**
 	 * What a section of this component would hold, for a config it was handed:
 	 * the plausible filler the layout editor's canvas draws in place of an empty
@@ -2134,8 +2173,8 @@ export interface ComponentDefinition<
 	 * name is not the honest answer. `null` means it is.
 	 *
 	 * The editor shows it wherever it would otherwise show the type, so an
-	 * author who chose **Dropdown** from the add menu is not told a line later
-	 * that they have a Card. It is derived from the config every time rather
+	 * author who chose **Dropdown** from the component picker is not told a
+	 * line later that they have a Card. It is derived from the config every time rather
 	 * than stored: a layout keeps the component a palette entry produced and
 	 * never the entry itself (SPEC §13), so the only honest source for the name
 	 * is what the configuration now says — an author who deletes a card's last
