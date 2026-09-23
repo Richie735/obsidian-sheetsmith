@@ -270,9 +270,23 @@ export function canvasDemoLayout(): Layout {
  * ordinary way a layout is wrong — it is a thing people hand-edit and
  * share. `'canvas-demo'` is `canvasDemoLayout` above, addressed by name for
  * the same reason the other two are: `harness.ts`'s `&layout=` query has no
- * way to hand over a whole object.
+ * way to hand over a whole object. `'outside'` is the harness layout filed
+ * somewhere a character cannot reach it — another folder — which is the one
+ * state of a *valid* layout the pane draws differently
+ * (`docs/features/visible-layout-files.md`). `'no-file'` is the harness layout
+ * in the folder with the pane opened on nothing, which is what a pane shows
+ * after its file is deleted from outside.
  */
-export type LayoutSource = Layout | 'none' | 'broken' | 'canvas-demo';
+export type LayoutSource =
+	| Layout
+	| 'none'
+	| 'broken'
+	| 'canvas-demo'
+	| 'outside'
+	| 'no-file';
+
+/** Where the outside-the-folder layout is filed. */
+const OUTSIDE_FOLDER = 'Elsewhere';
 
 /** A truncated file, which is what a hand edit interrupted actually leaves. */
 const UNPARSEABLE = '{\n\t"name": "Harness sheet",\n\t"components": [\n';
@@ -283,7 +297,9 @@ const UNPARSEABLE = '{\n\t"name": "Harness sheet",\n\t"components": [\n';
  *
  * The folder is created either way, including for `'none'`: an author who has
  * set a layout folder and put nothing in it has a folder, and the editor's empty
- * state is about having no layouts rather than no folder.
+ * state is about having no layouts rather than no folder. It answers the path
+ * the pane is to be opened on, because the pane is bound to a file — or null
+ * for `'none'` and `'no-file'`, which open it on nothing.
  *
  * The plugin object itself is `src/test/plugin.ts`'s, shared with the tests. Two
  * calls at each surface rather than one function doing both, because writing a
@@ -293,15 +309,33 @@ const UNPARSEABLE = '{\n\t"name": "Harness sheet",\n\t"components": [\n';
 export async function plantLayout(
 	app: App,
 	layout: LayoutSource,
-): Promise<void> {
+): Promise<string | null> {
 	await app.vault.createFolder(LAYOUT_FOLDER);
-	if (layout === 'none') return;
-	await app.vault.create(
-		`${LAYOUT_FOLDER}/${LAYOUT_NAME}.json`,
+	if (layout === 'none') return null;
+	// A `.sheetsmith` file, which is what the plugin writes and what a pane is
+	// opened on from the file explorer.
+	if (layout === 'outside') {
+		await app.vault.createFolder(OUTSIDE_FOLDER);
+		const file = await app.vault.create(
+			`${OUTSIDE_FOLDER}/${LAYOUT_NAME}.sheetsmith`,
+			serialiseLayout(harnessLayout()),
+		);
+		return file.path;
+	}
+	if (layout === 'no-file') {
+		await app.vault.create(
+			`${LAYOUT_FOLDER}/${LAYOUT_NAME}.sheetsmith`,
+			serialiseLayout(harnessLayout()),
+		);
+		return null;
+	}
+	const file = await app.vault.create(
+		`${LAYOUT_FOLDER}/${LAYOUT_NAME}.sheetsmith`,
 		layout === 'broken'
 			? UNPARSEABLE
 			: serialiseLayout(layout === 'canvas-demo' ? canvasDemoLayout() : layout),
 	);
+	return file.path;
 }
 
 /**

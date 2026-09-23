@@ -1557,6 +1557,47 @@ const DEFAULTS = [
 		size: '1000,700',
 	},
 	{
+		// A valid layout opened from outside the layout folder
+		// (`docs/features/visible-layout-files.md`): the header carries the
+		// file's basename, the dropdown carries the file as an extra first
+		// option labelled with its vault path, and a line under the row says no
+		// character can use it from there. Light, because the line is in the
+		// muted description style and light is where muted text is faintest.
+		name: 'editor-outside-folder-light',
+		query: 'surface=editor&theme=light&layout=outside',
+		size: '1400,900',
+	},
+	{
+		// The same state dark, which `docs/UI.md` §11 asks of every error and
+		// empty state: the line is muted description text, and dark is the other
+		// half of where muted text can fade.
+		name: 'editor-outside-folder-dark',
+		query: 'surface=editor&theme=dark&layout=outside',
+		size: '1400,900',
+	},
+	{
+		// The same state in a 380px pane, because the dropdown's selected label
+		// is now a whole vault path. **`&width=380` rather than a 380-wide
+		// window**, which is `sheet-narrow`'s own spelling and for its reason:
+		// headless Chrome floors the viewport at 500 (`docs/BACKLOG.md` § UI), so
+		// a `380,…` frame is a 500px render cropped to 380 — and it drew this
+		// row's description as cut off mid-sentence at the frame's edge, which
+		// looks exactly like a line that fails to wrap. Measured in a true 380px
+		// pane the row is 354 wide, the controls and the description 322 each,
+		// with nothing past the row's edge.
+		name: 'editor-outside-folder-narrow',
+		query: 'surface=editor&theme=light&layout=outside&width=380',
+		size: '520,1400',
+	},
+	{
+		// Layouts in the folder and none open: a pane whose file was deleted from
+		// outside, or a restored workspace naming a layout that is gone. The row
+		// with nothing selected, and the row's own line saying what to do.
+		name: 'editor-no-file',
+		query: 'surface=editor&theme=light&layout=no-file',
+		size: '1400,400',
+	},
+	{
 		// A layout file that will not parse. The order is the load-bearing part:
 		// the picker first, because it is how an author leaves a layout they
 		// cannot edit, then the message where the tree would be — and no panel, so

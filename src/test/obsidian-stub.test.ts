@@ -4,7 +4,9 @@ import './obsidian-stub';
 import {
 	AbstractInputSuggest,
 	App,
+	FileView,
 	Notice,
+	Plugin,
 	PluginSettingTab,
 	Setting,
 	SettingDefinition,
@@ -12,6 +14,7 @@ import {
 	TFile,
 	normalizePath,
 } from './obsidian-stub';
+import { openView } from './workspace';
 
 /*
  * The element helpers the double installs, driven option by option.
@@ -1156,5 +1159,156 @@ describe('Notice', () => {
 		// Faithful for what a test can see: the app's own timer removes an element
 		// this double never attaches, so there is nothing for a timer to observe.
 		expect(() => new Notice('', 12000)).not.toThrow();
+	});
+});
+
+/*
+ * The members `docs/features/visible-layout-files.md` added: file events, a
+ * rename that keeps its object, a rename that carries links, a `FileView`, a
+ * leaf that reuses a view of the same type, and a registry that refuses. Each
+ * is a place where the app's behaviour is what a plugin leans on, and a double
+ * ignoring it would pass a case the app fails.
+ */
+describe('the file lifecycle doubles', () => {
+	it('fires each file event once the vault has changed, with the old path on a rename', async () => {
+		const app = new App();
+		const seen: string[] = [];
+		for (const name of ['create', 'modify', 'rename', 'delete']) {
+			app.vault.on(name, (file, oldPath) => {
+				if (!(file instanceof TFile)) return;
+				const held = app.vault.getAbstractFileByPath(file.path) !== null;
+				const from = typeof oldPath === 'string' ? `<${oldPath}` : '';
+				seen.push(`${name}:${file.path}${from}:${held}`);
+			});
+		}
+		const file = await app.vault.create('A.md', 'one');
+		await app.vault.modify(file, 'two');
+		await app.vault.rename(file, 'B.md');
+		await app.vault.delete(file);
+
+		expect(seen).toEqual([
+			'create:A.md:true',
+			'modify:A.md:true',
+			'rename:B.md<A.md:true',
+			'delete:B.md:false',
+		]);
+	});
+
+	it('renames in place and refuses a destination that is taken', async () => {
+		const app = new App();
+		const file = await app.vault.create('A.md', 'one');
+		await app.vault.create('B.md', 'two');
+
+		await expect(app.vault.rename(file, 'B.md')).rejects.toThrow(
+			'Destination file already exists!',
+		);
+		await app.vault.rename(file, 'C.md');
+		expect(app.vault.getFileByPath('C.md')).toBe(file);
+		expect(app.vault.getFileByPath('A.md')).toBeNull();
+		expect(await app.vault.read(file)).toBe('one');
+	});
+
+	it('carries a wikilink along with a renamed file, by name or by path', async () => {
+		const app = new App();
+		await app.vault.createFolder('Layouts');
+		const file = await app.vault.create('Layouts/X.json', '{}');
+		const note = await app.vault.create(
+			'Note.md',
+			'[[X.json]] [[Layouts/X.json#top|alias]] ![[X.json]] [[X]] [[Other.json]]',
+		);
+
+		await app.fileManager.renameFile(file, 'Layouts/X.sheetsmith');
+
+		expect(await app.vault.read(note)).toBe(
+			'[[X.sheetsmith]] [[Layouts/X.sheetsmith#top|alias]] ![[X.sheetsmith]] [[X]] [[Other.json]]',
+		);
+	});
+
+	it('loads a file through setState, and a leaf of the same type keeps its view', async () => {
+		class Viewer extends FileView {
+			events: string[] = [];
+			getViewType(): string {
+				return 'viewer';
+			}
+			async onLoadFile(file: TFile): Promise<void> {
+				this.events.push(`load:${file.path}`);
+			}
+			async onUnloadFile(file: TFile): Promise<void> {
+				this.events.push(`unload:${file.path}`);
+			}
+		}
+		const app = new App();
+		await app.vault.create('A.md', '');
+		await app.vault.create('B.md', '');
+		const view = await openView(app, document.body, Viewer);
+
+		await view.leaf.setViewState({ type: 'viewer', state: { file: 'A.md' } });
+		await view.leaf.setViewState({ type: 'viewer', state: { file: 'B.md' } });
+
+		expect(view.leaf.view).toBe(view);
+		expect(view.events).toEqual(['load:A.md', 'unload:A.md', 'load:B.md']);
+		expect(view.getState()).toEqual({ file: 'B.md' });
+		expect(view.titleEl.textContent).toBe('B');
+	});
+
+	it('lets go of a deleted file where the view allows none', async () => {
+		class Viewer extends FileView {
+			allowNoFile = true;
+			getViewType(): string {
+				return 'viewer';
+			}
+		}
+		const app = new App();
+		const file = await app.vault.create('A.md', '');
+		const view = await openView(app, document.body, Viewer);
+		await view.setState({ file: 'A.md' }, {});
+
+		await app.vault.delete(file);
+		await new Promise((resolve) => window.setTimeout(resolve, 0));
+
+		expect(view.file).toBeNull();
+	});
+
+	it('answers the active view only where it is of the class asked for', async () => {
+		class Viewer extends FileView {
+			getViewType(): string {
+				return 'viewer';
+			}
+		}
+		class Other extends FileView {}
+		const app = new App();
+		expect(app.workspace.getActiveViewOfType(Viewer)).toBeNull();
+
+		const view = await openView(app, document.body, Viewer);
+		await app.workspace.revealLeaf(view.leaf);
+
+		expect(app.workspace.getActiveViewOfType(Viewer)).toBe(view);
+		expect(app.workspace.getActiveViewOfType(FileView)).toBe(view);
+		expect(app.workspace.getActiveViewOfType(Other)).toBeNull();
+	});
+
+	it('refuses a taken extension before registering any of a call’s', () => {
+		const app = new App();
+		app.viewRegistry.registerExtensions(['b'], 'theirs');
+
+		expect(() => app.viewRegistry.registerExtensions(['a', 'b'], 'ours')).toThrow(
+			'Attempting to register an existing file extension "b"',
+		);
+		expect(app.viewRegistry.getTypeByExtension('a')).toBeUndefined();
+	});
+
+	it('records each plugin registration, and undoes the registry\'s on unload', () => {
+		const app = new App();
+		const plugin = new Plugin(app, { id: 'p', name: 'P', version: '0' });
+		plugin.load();
+		plugin.registerView('v', () => {
+			throw new Error('not constructed here');
+		});
+		plugin.registerExtensions(['x'], 'v');
+
+		expect(plugin.registrations).toEqual(['registerView:v', 'registerExtensions:x']);
+		plugin.unload();
+		expect(app.viewRegistry.getTypeByExtension('x')).toBeUndefined();
+		expect(app.viewRegistry.viewByType.v).toBeUndefined();
 	});
 });

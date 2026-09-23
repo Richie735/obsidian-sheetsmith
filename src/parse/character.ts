@@ -147,7 +147,7 @@ function extractLayoutName(frontmatter: string): string {
  *
  * Double quotes need no escaping here, and that is not luck: `"` and `\` are
  * both in Obsidian's forbidden set for file names, and a layout's name *is* its
- * filename's basename — `createLayout` writes `<name>.json` — so no name that
+ * filename's basename — `createLayout` writes `<name>.sheetsmith` — so no name that
  * can exist in the layout folder holds either character. Recorded because the
  * next reader will otherwise reach for `yamlScalar`, which does escape, and
  * escaping would *break* the round trip: `extractLayoutName` strips quotes and

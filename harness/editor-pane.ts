@@ -11,7 +11,7 @@
  */
 
 import { App } from '../src/test/obsidian-stub';
-import { openView } from '../src/test/workspace';
+import { openView, showFile } from '../src/test/workspace';
 import { LayoutEditorView } from '../src/view/layout-editor-view';
 import { Layout } from '../src/parse/layout';
 import { fakePlugin } from '../src/test/plugin';
@@ -104,7 +104,7 @@ export async function renderEditorPane(
 ): Promise<void> {
 	const app = new App();
 	watchLayoutFile(app.vault, host.onLayoutChange);
-	await plantLayout(app, layout);
+	const path = await plantLayout(app, layout);
 
 	const pane = await openView(
 		app,
@@ -112,6 +112,9 @@ export async function renderEditorPane(
 		LayoutEditorView,
 		fakePlugin(app),
 	);
+	// Opened on the file it planted, the way a click in the file explorer
+	// opens one: the pane is bound to a file and never picks one for itself.
+	if (path !== null) await showFile(pane, path);
 	if (view.open !== undefined) await select(pane.contentEl, view.open);
 	if (view.choice !== undefined) await chooseAdd(pane.contentEl, view.choice);
 	if (view.samples !== undefined) await setSamples(pane.contentEl, view.samples);

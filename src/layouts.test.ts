@@ -25,6 +25,11 @@
  * policy and an ordering, each put in one place precisely because two copies
  * could only ever be tested for still agreeing.
  *
+ * `docs/features/visible-layout-files.md` added the extension rule and the
+ * conversion, driven here directly because the rule is the *tie* between
+ * `X.sheetsmith` and `X.json`, which is a fact about the folder and not about
+ * any surface reading it.
+ *
  * happy-dom because `obsidian` resolves to the stub, whose `TFolder` and
  * `Vault` are what a folder listing is read out of.
  */
@@ -32,6 +37,13 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { App as ObsidianApp } from 'obsidian';
 import {
+	convertLegacyLayouts,
+	createLayout,
+	installLayoutSource,
+	legacyLayouts,
+	listLayouts,
+	loadLayout,
+	layoutFileFor,
 	hasLayouts,
 	noLayoutsMessage,
 	startLayout,
@@ -46,7 +58,7 @@ let app: App;
 
 const vault = () => app as unknown as ObsidianApp;
 
-const pathOf = (name: string): string => `${LAYOUT_FOLDER}/${name}.json`;
+const pathOf = (name: string): string => `${LAYOUT_FOLDER}/${name}.sheetsmith`;
 
 /** A layout as a source: valid, named, and with something in it. */
 const SOURCE = serialiseLayout({
@@ -457,5 +469,160 @@ describe('startLayout from pasted text', () => {
 			error: 'The layout needs a "components" array.',
 		});
 		expect(layoutPaths(vault(), LAYOUT_FOLDER)).toEqual([]);
+	});
+});
+
+/*
+ * Two extensions for one cycle (`docs/features/visible-layout-files.md`).
+ *
+ * Every case below seeds a `.json` and a `.sheetsmith` side by side somewhere,
+ * because the rule under test is the *tie*: which one a name means, which one
+ * a list shows, which one a writer may not stand beside. A case with one
+ * extension in the folder passes whatever the precedence is.
+ */
+describe('reading layouts from both extensions', () => {
+	async function give(path: string, text = SOURCE): Promise<void> {
+		if (!app.vault.getFolderByPath(LAYOUT_FOLDER)) {
+			await app.vault.createFolder(LAYOUT_FOLDER);
+		}
+		await app.vault.create(path, text);
+	}
+
+	it('lists both, one per name, sorted by name, the .sheetsmith winning a tie', async () => {
+		await give(`${LAYOUT_FOLDER}/Charlie.json`);
+		await give(`${LAYOUT_FOLDER}/Alpha.sheetsmith`);
+		await give(`${LAYOUT_FOLDER}/Bravo.json`);
+		await give(`${LAYOUT_FOLDER}/Bravo.sheetsmith`);
+		await give(`${LAYOUT_FOLDER}/notes.md`, 'not a layout');
+
+		expect(listLayouts(vault(), LAYOUT_FOLDER).map((file) => file.path)).toEqual([
+			`${LAYOUT_FOLDER}/Alpha.sheetsmith`,
+			`${LAYOUT_FOLDER}/Bravo.sheetsmith`,
+			`${LAYOUT_FOLDER}/Charlie.json`,
+		]);
+	});
+
+	it('resolves a name to the .sheetsmith where it exists, and to the .json otherwise', async () => {
+		await give(`${LAYOUT_FOLDER}/Bravo.json`, serialiseLayout({ name: 'Old', columns: 12, components: [] }));
+		await give(`${LAYOUT_FOLDER}/Bravo.sheetsmith`, serialiseLayout({ name: 'New', columns: 6, components: [] }));
+		await give(`${LAYOUT_FOLDER}/Charlie.json`);
+
+		expect(layoutFileFor(vault(), LAYOUT_FOLDER, 'Bravo')?.path).toBe(
+			`${LAYOUT_FOLDER}/Bravo.sheetsmith`,
+		);
+		expect((await loadLayout(vault(), LAYOUT_FOLDER, 'Bravo'))?.columns).toBe(6);
+		expect(layoutFileFor(vault(), LAYOUT_FOLDER, 'Charlie')?.path).toBe(
+			`${LAYOUT_FOLDER}/Charlie.json`,
+		);
+		expect(layoutFileFor(vault(), LAYOUT_FOLDER, 'Delta')).toBeNull();
+	});
+
+	it('writes every new file as .sheetsmith, whichever door it came through', async () => {
+		await createLayout(vault(), LAYOUT_FOLDER, 'Blank');
+		await installLayoutSource(vault(), LAYOUT_FOLDER, SOURCE);
+		await give(`${LAYOUT_FOLDER}/Source.json`);
+		await startLayout(vault(), LAYOUT_FOLDER, 'Copied', { copyOf: 'Source' });
+
+		expect(layoutPaths(vault(), LAYOUT_FOLDER)).toEqual([
+			`${LAYOUT_FOLDER}/Blank.sheetsmith`,
+			`${LAYOUT_FOLDER}/Copied.sheetsmith`,
+			`${LAYOUT_FOLDER}/Shared sheet.sheetsmith`,
+			`${LAYOUT_FOLDER}/Source.json`,
+		]);
+	});
+
+	it('refuses a name the folder holds as .json, and leaves that file as it was', async () => {
+		/*
+		 * The shadow this refusal prevents: `X.sheetsmith` written beside a
+		 * reader's own `X.json` would win every lookup of `X`, so every
+		 * character on their layout would silently start drawing the new one.
+		 * Each of the four doors is asked, because each is a writer.
+		 */
+		const mine = serialiseLayout({ name: 'Taken', columns: 3, components: [] });
+		await give(`${LAYOUT_FOLDER}/Taken.json`, mine);
+		await give(`${LAYOUT_FOLDER}/Source.sheetsmith`);
+
+		await expect(createLayout(vault(), LAYOUT_FOLDER, 'Taken')).rejects.toThrow(
+			'A layout named "Taken" already exists.',
+		);
+		expect(
+			await installLayoutSource(vault(), LAYOUT_FOLDER, SOURCE, 'Taken'),
+		).toEqual({ error: 'A layout named "Taken" already exists.' });
+		expect(
+			await startLayout(vault(), LAYOUT_FOLDER, 'Taken', { blank: true }),
+		).toEqual({ error: 'A layout named "Taken" already exists.' });
+		expect(
+			await startLayout(vault(), LAYOUT_FOLDER, 'Taken', { copyOf: 'Source' }),
+		).toEqual({ error: 'A layout named "Taken" already exists.' });
+
+		expect(app.vault.getFileByPath(`${LAYOUT_FOLDER}/Taken.sheetsmith`)).toBeNull();
+		expect(await read(`${LAYOUT_FOLDER}/Taken.json`)).toBe(mine);
+	});
+});
+
+describe('converting .json layouts', () => {
+	async function give(path: string, text = SOURCE): Promise<void> {
+		const folder = path.slice(0, path.lastIndexOf('/'));
+		if (!app.vault.getFolderByPath(folder)) await app.vault.createFolder(folder);
+		await app.vault.create(path, text);
+	}
+
+	it('lists only the .json layouts no .sheetsmith of the same name shadows', async () => {
+		await give(`${LAYOUT_FOLDER}/Alpha.json`);
+		await give(`${LAYOUT_FOLDER}/Bravo.json`);
+		await give(`${LAYOUT_FOLDER}/Bravo.sheetsmith`);
+		await give(`${LAYOUT_FOLDER}/Charlie.sheetsmith`);
+
+		expect(legacyLayouts(vault(), LAYOUT_FOLDER).map((file) => file.path)).toEqual([
+			`${LAYOUT_FOLDER}/Alpha.json`,
+		]);
+	});
+
+	it('renames every unshadowed one with its bytes unchanged, and leaves a shadowed one alone', async () => {
+		const alpha = '{"name":"Alpha","columns":12,"components":[]}';
+		const shadowed = '{"name":"Bravo","columns":12,"components":[]}';
+		await give(`${LAYOUT_FOLDER}/Alpha.json`, alpha);
+		await give(`${LAYOUT_FOLDER}/Bravo.json`, shadowed);
+		await give(`${LAYOUT_FOLDER}/Bravo.sheetsmith`);
+		const kept = app.vault.getFileByPath(`${LAYOUT_FOLDER}/Bravo.json`);
+
+		const result = await convertLegacyLayouts(vault(), LAYOUT_FOLDER);
+
+		expect(result).toEqual({ converted: 1, skipped: 1, failed: [] });
+		expect(app.vault.getFileByPath(`${LAYOUT_FOLDER}/Alpha.json`)).toBeNull();
+		// The bytes as written by hand, compact: a conversion is a rename, and a
+		// re-serialisation would have tabbed them.
+		expect(await read(`${LAYOUT_FOLDER}/Alpha.sheetsmith`)).toBe(alpha);
+		// The shadowed one: same object, same path, same bytes.
+		expect(app.vault.getFileByPath(`${LAYOUT_FOLDER}/Bravo.json`)).toBe(kept);
+		expect(await read(`${LAYOUT_FOLDER}/Bravo.json`)).toBe(shadowed);
+	});
+
+	it('carries a link to the file along, and leaves a character\'s layout line byte for byte', async () => {
+		await give(`${LAYOUT_FOLDER}/Alpha.json`);
+		const links = 'See [[Alpha.json]] and [[Sheetsmith layouts/Alpha.json|the sheet]].\n';
+		const character = '---\nsheet-layout: Alpha\n---\n\n## Armour class\n';
+		await give('Notes/Links.md', links);
+		await give('Characters/Aramil.md', character);
+
+		await convertLegacyLayouts(vault(), LAYOUT_FOLDER);
+
+		expect(await read('Notes/Links.md')).toBe(
+			'See [[Alpha.sheetsmith]] and [[Sheetsmith layouts/Alpha.sheetsmith|the sheet]].\n',
+		);
+		expect(await read('Characters/Aramil.md')).toBe(character);
+	});
+
+	it('reports a rename the vault refused, with the vault\'s own reason', async () => {
+		await give(`${LAYOUT_FOLDER}/Alpha.json`);
+		app.fileManager.renameFile = async () => {
+			throw new Error('Permission denied.');
+		};
+
+		expect(await convertLegacyLayouts(vault(), LAYOUT_FOLDER)).toEqual({
+			converted: 0,
+			skipped: 0,
+			failed: ['Permission denied.'],
+		});
 	});
 });

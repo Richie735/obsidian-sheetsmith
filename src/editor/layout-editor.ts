@@ -20,7 +20,12 @@ import { attachFormulaSuggest, FormulaSuggest } from './formula-suggest';
 import { focusToken } from './focus-token';
 import { ConfirmModal } from '../ui/confirm-modal';
 import { NEW_LAYOUT_LABEL, promptNewLayout } from './new-layout';
-import { listLayouts } from '../layouts';
+import {
+	isLayoutPath,
+	isResolvedLayout,
+	layoutFileFor,
+	listLayouts,
+} from '../layouts';
 import { ListContext } from './list-fields';
 import type SheetsmithPlugin from '../main';
 import { Layout, parseLayout, serialiseLayout } from '../parse/layout';
@@ -34,6 +39,9 @@ import { childIsPlaced } from '../view/grid-cells';
 
 /** Ties the add menu to the description under it, for a screen reader. */
 const ADD_DESCRIPTION_ID = 'sheetsmith-add-description';
+
+/** Mints the **Layout file** row's description id; see its one use. */
+let fileNoteIds = 0;
 
 /**
  * The top level, wherever something has to be named that is not a component.
@@ -54,27 +62,39 @@ const FLASH_HOLD = 900;
  * What the editor needs from the pane hosting it.
  *
  * The two pieces of state are the *author's posture* rather than the layout's
- * content — which layout they have open, and what they are looking at — so both
- * belong to the view, which is where a workspace remembers posture at all
+ * content — which layout file they have open, and what they are looking at — so
+ * both belong to the view, which is where a workspace remembers posture at all
  * (`View.getState` for one, `View.setEphemeralState` for the other). The editor
  * reads them at render time and asks for a change; it never keeps a copy,
  * because a copy is a second answer to "what is selected" and the two would
  * disagree the first time a pane was restored.
  *
- * The setters do not redraw. A render that has to correct one of these — a
- * selection naming a component the layout no longer holds — would otherwise
- * redraw from inside a render, and the caller that wants both says so in two
- * lines instead.
+ * **The open layout is a file, and the editor can only ask for another one**
+ * (`docs/features/visible-layout-files.md`). It used to be a basename the editor
+ * set for itself and resolved out of `listLayouts`, which made "which file is
+ * open" a thing the editor could change behind the view's back. The pane is a
+ * `FileView` now and the file is its binding, so the editor is handed the file
+ * and asks the host to open a different one — and the host does that the way
+ * Obsidian opens any file, in the same leaf.
+ *
+ * `setSelection` does not redraw. A render that has to correct the selection —
+ * one naming a component the layout no longer holds — would otherwise redraw
+ * from inside a render, and the caller that wants both says so in two lines
+ * instead.
  *
  * `refreshSheets` is here for a different reason: a write to the layout file has
  * to reach every sheet rendering it, and reaching into a view is the view
  * layer's hop to make rather than this one's (`docs/PATTERNS.md` §2).
  */
 export interface LayoutEditorHost {
-	/** The layout file the pane has open, by basename, or null before one is. */
-	readonly layoutName: string | null;
-	/** Remember which layout is open. Does not redraw. */
-	setLayoutName(name: string | null): void;
+	/** The layout file the pane has open, or null where it has none. */
+	readonly layoutFile: TFile | null;
+	/**
+	 * Open another layout file in this pane. The host lets go of the one it
+	 * had — which is where a pending edit is written and the undo history is
+	 * cleared — and draws the new one.
+	 */
+	openLayoutFile(file: TFile): void;
 	/**
 	 * What the panel configures: a component id, or `SHEET_DESTINATION` for the
 	 * layout itself.
@@ -216,8 +236,24 @@ export class LayoutEditorSection {
 	private undoStack = new UndoStack();
 	private redoStack = new UndoStack();
 
-	/** Debounced persist, used only by rapid-fire paths (keyboard nudging). */
-	private persistSoon = debounce(() => void this.persist(), 500, true);
+	/**
+	 * Debounced persist, used only by rapid-fire paths (keyboard nudging).
+	 *
+	 * `nudgePending` says whether it is holding a write, which the debouncer
+	 * cannot: Obsidian's `Debouncer` offers `run` and `cancel` and no way to ask.
+	 * The one reader is an outside change to the file, which drops a pending
+	 * edit rather than writing it and has to know whether there was one to say
+	 * so (`discardPending`).
+	 */
+	private persistSoon = debounce(
+		() => {
+			this.nudgePending = false;
+			void this.persist();
+		},
+		500,
+		true,
+	);
+	private nudgePending = false;
 
 	constructor(plugin: SheetsmithPlugin, host: LayoutEditorHost) {
 		this.plugin = plugin;
@@ -253,7 +289,10 @@ export class LayoutEditorSection {
 		// mapping rather than a mix of two kinds.
 		this.canvas = new Canvas({
 			persist: () => void this.persist(),
-			persistSoon: () => this.persistSoon(),
+			persistSoon: () => {
+				this.nudgePending = true;
+				this.persistSoon();
+			},
 			// Delegated rather than answered here: those four fields are the
 			// panel's own, minted under the panel's own token, so finding them
 			// again from out here would be this half querying for controls the
@@ -350,26 +389,81 @@ export class LayoutEditorSection {
 	 * Flushes first, and that order is the whole point of the method: a
 	 * pending edit belongs to the layout being released, and `persist` writes
 	 * `this.layout` to `this.file`. Clear those first and the commit lands on
-	 * an object nothing will ever write, silently. The redraw these callers go
-	 * on to make flushes too, but by then it is too late — which is exactly
-	 * the kind of ordering that should not be left to each call site to
-	 * remember.
+	 * an object nothing will ever write, silently.
 	 *
-	 * Every caller of this method is a real change of which layout is open —
-	 * the picker, deleting the open one, creating a new one, or `render`
-	 * correcting a name that no longer exists — so this is also where the
-	 * undo history is scoped per layout (`docs/features/editor-undo.md`): an
-	 * author's undo posture belongs to the file they were editing, and Mod+Z
-	 * reaching across a switch to rewrite a *different* layout would be a
-	 * worse surprise than an empty stack.
+	 * **`write` is false for a file that is gone**, and only then: a pending
+	 * edit has nowhere to land when the file was deleted underneath the pane,
+	 * and writing it would put the file back. The pane's own `onUnloadFile` is
+	 * the caller and the one that knows which case it is in.
+	 *
+	 * The pane calls this on every real change of which file is open — the
+	 * dropdown, **New layout**, the trash, a file opened from anywhere Obsidian
+	 * opens one, a delete from outside — so this is also where the undo history
+	 * is scoped per layout (`docs/features/editor-undo.md`): an author's undo
+	 * posture belongs to the file they were editing, and Mod+Z reaching across
+	 * a switch to rewrite a *different* layout would be a worse surprise than an
+	 * empty stack. A rename is not a change of file and does not come here.
 	 */
-	private releaseLayout(): void {
-		this.flush();
+	release(write = true): void {
+		if (write) this.flush();
+		else this.discardPending();
+		this.forget();
 		this.file = null;
+	}
+
+	/**
+	 * Take the file's new contents rather than what this pane holds, because
+	 * something else wrote it (`docs/features/visible-layout-files.md`).
+	 *
+	 * **A pending edit is dropped, not written.** Writing it would overwrite the
+	 * very change the pane has just been told about, which is the lost update
+	 * this exists to prevent; so what the reader had not yet committed goes, and
+	 * the return value says whether there was any, for the one sentence the pane
+	 * shows about it. **Both stacks go too**: a step recorded against the old
+	 * contents would restore text nobody on disk ever had.
+	 *
+	 * The file stays bound, so the next render reads it again.
+	 */
+	reload(): boolean {
+		const dropped = this.discardPending();
+		this.forget();
+		return dropped;
+	}
+
+	/**
+	 * Whether `text` is what this pane last wrote or loaded — the test for a
+	 * `modify` that is the pane's own write coming back rather than somebody
+	 * else's. By content rather than by a "saving" flag, because a flag cannot
+	 * tell two quick writes of this pane's apart from one outside write between
+	 * them, and content can.
+	 */
+	holds(text: string): boolean {
+		return this.onDisk !== null && text === this.onDisk;
+	}
+
+	/** Drop the loaded layout and its history, keeping which file it is. */
+	private forget(): void {
 		this.layout = null;
 		this.onDisk = null;
 		this.undoStack.clear();
 		this.redoStack.clear();
+	}
+
+	/**
+	 * Throw away whatever edit is still waiting to be written, and say whether
+	 * there was one.
+	 *
+	 * The panel's textareas are read through `commitPending`, which folds what
+	 * was typed into `this.layout` — about to be dropped by every caller — so
+	 * reading them is how "was anything typed" gets answered without a second
+	 * copy of which fields those are.
+	 */
+	private discardPending(): boolean {
+		const typed = this.layout !== null && this.panel.commitPending();
+		const nudged = this.nudgePending;
+		this.persistSoon.cancel();
+		this.nudgePending = false;
+		return typed || nudged;
 	}
 
 	/**
@@ -405,24 +499,25 @@ export class LayoutEditorSection {
 		// query its own width.
 		container.addClass('sheetsmith-layout-editor-pane');
 
-		const files = listLayouts(
-			this.plugin.app,
-			this.plugin.settings.layoutFolder,
-		);
+		const folder = this.plugin.settings.layoutFolder;
+		const files = listLayouts(this.plugin.app, folder);
+		const open = this.host.layoutFile;
 
-		if (files.length === 0) {
+		// Only where there is nothing to show at all. A pane open on a file
+		// outside the folder has something to show even when the folder is
+		// empty, so it draws the picker with that one file in it.
+		if (open === null && files.length === 0) {
 			this.renderVacant(container);
 			return;
 		}
 
-		// The open layout, corrected where it names a file that is gone. Set
-		// without redrawing, because this is already inside a render.
-		if (
-			this.host.layoutName === null ||
-			!files.some((file) => file.basename === this.host.layoutName)
-		) {
-			this.host.setLayoutName(files[0]?.basename ?? null);
-			this.releaseLayout();
+		// The file the pane is bound to, taken as given. Nothing here resolves
+		// or corrects it: which file is open is the view's, and a different one
+		// is only ever asked for (`LayoutEditorHost`). What this does is notice
+		// that the host has moved on, which is also how a first render loads.
+		if (this.file !== open) {
+			this.forget();
+			this.file = open;
 		}
 
 		const grid = container.createDiv('sheetsmith-layout-editor');
@@ -436,42 +531,53 @@ export class LayoutEditorSection {
 		const outline = grid.createDiv('sheetsmith-editor-outline');
 		this.regions = null;
 
-		this.renderSelectionRow(outline, files);
-
-		const selectedFile = files.find(
-			(file) => file.basename === this.host.layoutName,
+		// With no file: after an outside delete, or a restored workspace naming
+		// a layout that is gone. The pane never binds itself to a file the reader
+		// did not choose, so it says what to do rather than picking one.
+		this.renderSelectionRow(
+			outline,
+			files,
+			open,
+			open === null
+				? 'No layout is open. Choose one above.'
+				: this.outsideNote(open, folder),
 		);
-		if (!selectedFile) return;
-		if (this.file?.path !== selectedFile.path || this.layout === null) {
+		if (open === null) return;
+
+		if (this.layout === null) {
 			const run = ++this.renderId;
-			this.file = selectedFile;
 			let source: string;
 			try {
-				source = await this.plugin.app.vault.read(selectedFile);
+				source = await this.plugin.app.vault.read(open);
 			} catch (error) {
-				this.layout = null;
-				if (run !== this.renderId) return;
+				if (run !== this.renderId || this.file !== open) return;
 				// Where the tree would be, under the picker rather than over it.
 				// The order is load bearing: the picker is how an author leaves a
 				// layout they cannot edit, so a message that displaced it would
 				// trap them on the broken one.
 				outline.createDiv('sheetsmith-error', (el) =>
 					el.setText(
-						`This layout cannot be read: ${error instanceof Error ? error.message : String(error)}`,
+						`"${open.basename}" cannot be read: ${error instanceof Error ? error.message : String(error)}`,
 					),
 				);
 				return;
 			}
-			// A redraw may have rebuilt the pane while the read was in flight;
-			// only the newest run may append.
-			if (run !== this.renderId) return;
+			// A redraw may have rebuilt the pane while the read was in flight,
+			// or the pane moved to another file; only the newest run, still on
+			// the file it read, may append.
+			if (run !== this.renderId || this.file !== open) return;
 			try {
 				this.layout = parseLayout(source);
 			} catch (error) {
 				this.layout = null;
+				// Named, because the pane now opens on whatever file the reader
+				// clicked, from anywhere Obsidian opens one — so "this layout"
+				// could be a file they did not know was one. Nothing is written
+				// in this state: `persist` returns without a parsed layout, and
+				// what recovers the pane is the view's reload on an outside fix.
 				outline.createDiv('sheetsmith-error', (el) =>
 					el.setText(
-						`This layout cannot be edited until its file is fixed: ${error instanceof Error ? error.message : String(error)}`,
+						`"${open.basename}" cannot be edited until its file is fixed: ${error instanceof Error ? error.message : String(error)}`,
 					),
 				);
 				return;
@@ -649,16 +755,43 @@ export class LayoutEditorSection {
 			});
 	}
 
-	private renderSelectionRow(container: HTMLElement, files: TFile[]): void {
-		new Setting(container)
+	/**
+	 * The **Layout file** row: which file is open, and what acts on it.
+	 *
+	 * The options are the folder's layouts, one per name as `listLayouts` gives
+	 * them, **keyed by path** — the pane is bound to a file, so a path is what
+	 * choosing one hands the host, and it is unambiguous where a basename would
+	 * not be for the one option that is not in the folder.
+	 *
+	 * **That option is the open file, where the folder's lookup does not reach
+	 * it** — a file in another folder, a subfolder, or a `.json` a `.sheetsmith`
+	 * of the same name shadows. It goes first, labelled with its vault path so
+	 * it cannot be mistaken for a layout of the same name in the folder, and it
+	 * is the selected one. With no file open, nothing is selected: a `<select>`
+	 * whose value matches no option shows none, and choosing any option is then
+	 * a change the dropdown reports.
+	 */
+	private renderSelectionRow(
+		container: HTMLElement,
+		files: TFile[],
+		open: TFile | null,
+		note: string | null,
+	): void {
+		const offered =
+			open !== null && !files.includes(open) ? [open, ...files] : files;
+		let picker: HTMLSelectElement | null = null;
+		const row = new Setting(container)
 			// "Layout file", not "Layout", because the tree's first row is the
 			// layout and this is the file it lives in. Two adjacent rows both
 			// named Layout — one choosing which one is open, one configuring the
 			// one that is — would be a reader's problem, not a naming quibble.
 			.setName('Layout file')
 			.addDropdown((dropdown) => {
-				for (const file of files) {
-					dropdown.addOption(file.basename, file.basename);
+				for (const file of offered) {
+					dropdown.addOption(
+						file.path,
+						files.includes(file) ? file.basename : file.path,
+					);
 				}
 				// **Nouns only.** Creating a layout used to be two options in
 				// here — `New layout…` and `Import a layout…` — and the row rule
@@ -671,9 +804,13 @@ export class LayoutEditorSection {
 				// partition was already leaking: it ends with a different layout
 				// open too, and it is correctly a button
 				// (`docs/features/starting-a-new-layout.md`).
-				dropdown.setValue(this.host.layoutName ?? '');
+				dropdown.setValue(open?.path ?? '');
 				dropdown.selectEl.dataset.sheetsmithFocus = 'layout-picker';
-				dropdown.onChange((value) => this.openLayout(value));
+				picker = dropdown.selectEl;
+				dropdown.onChange((value) => {
+					const chosen = offered.find((file) => file.path === value);
+					if (chosen) this.host.openLayoutFile(chosen);
+				});
 			})
 			.addButton((button) =>
 				button
@@ -691,16 +828,16 @@ export class LayoutEditorSection {
 					// lands one control off its mark then hits the harmless one.
 					.setIcon('copy')
 					.setTooltip('Copy layout JSON')
-					.onClick(() => void this.copyLayoutJson(container, files)),
+					.onClick(() => void this.copyLayoutJson(container)),
 			)
 			.addExtraButton((button) =>
 				button
 					.setIcon('trash')
 					.setTooltip('Delete layout')
 					.onClick(() => {
-						const file = files.find(
-							(candidate) => candidate.basename === this.host.layoutName,
-						);
+						// The open file, whatever folder it is in: the trash acts
+						// on what the pane shows, never on a lookup by name.
+						const file = this.host.layoutFile;
 						if (!file) return;
 						new ConfirmModal(
 							this.plugin.app,
@@ -710,6 +847,30 @@ export class LayoutEditorSection {
 						).open();
 					}),
 			);
+
+		/*
+		 * What the pane has to say about the file itself — that no character can
+		 * use it from where it is, or that no file is open — as the row's own
+		 * description, under its controls (`editor/described-row.ts`, `docs/UI.md`
+		 * §9). A line of its own between two rows read as the *next* row's: it sat
+		 * 12px under this card and 3px over the one below, at the card's outer
+		 * edge rather than its text. Inside the row it takes the row's inset and
+		 * groups with the dropdown it is about, and the dropdown is described by
+		 * it for a screen reader too.
+		 *
+		 * The id is per render and per pane, because two panes on one layout is a
+		 * supported state and a repeated id would describe one pane's dropdown by
+		 * the other's line.
+		 */
+		if (note !== null && picker !== null) {
+			const described = describedRow(
+				row,
+				`sheetsmith-layout-file-note-${++fileNoteIds}`,
+				() => note,
+			);
+			described.describes(picker);
+			described.describe('');
+		}
 	}
 
 	/**
@@ -734,13 +895,10 @@ export class LayoutEditorSection {
 	 * The clipboard comes off the container's own window rather than the global
 	 * one, which is `docs/PATTERNS.md` §5: a pane may be rendered into a popout.
 	 */
-	private async copyLayoutJson(
-		container: HTMLElement,
-		files: TFile[],
-	): Promise<void> {
-		const file = files.find(
-			(candidate) => candidate.basename === this.host.layoutName,
-		);
+	private async copyLayoutJson(container: HTMLElement): Promise<void> {
+		// The open file, never a lookup by name — which is what makes a layout
+		// opened from outside the folder copyable too.
+		const file = this.host.layoutFile;
 		if (!file) return;
 		let text: string;
 		try {
@@ -784,11 +942,24 @@ export class LayoutEditorSection {
 		new Notice(`Copied "${file.basename}" to the clipboard.`);
 	}
 
+	/**
+	 * Trash the open layout, and end with a different one open (SPEC §7).
+	 *
+	 * The trash itself is what lets the pane go of the file: the vault's
+	 * `delete` reaches the view, which unbinds it without writing anything to a
+	 * file that is gone. What is left here is the shipped ending — the first
+	 * layout the folder still holds, in this same leaf, or the vacant state where
+	 * none is left. A delete from *outside* the pane does not come here and does
+	 * not pick one: the reader did not ask for another layout.
+	 */
 	private async deleteLayout(file: TFile): Promise<void> {
 		await this.plugin.app.fileManager.trashFile(file);
-		this.releaseLayout();
-		this.host.setLayoutName(null);
-		this.redraw();
+		const next = listLayouts(
+			this.plugin.app,
+			this.plugin.settings.layoutFolder,
+		).find((candidate) => candidate !== file);
+		if (next) this.host.openLayoutFile(next);
+		else this.redraw();
 	}
 
 	/**
@@ -808,37 +979,43 @@ export class LayoutEditorSection {
 	// Named apart from the module function it calls: a method and an import
 	// spelled the same read as recursion at a glance.
 	private promptForNewLayout(): void {
+		const folder = this.plugin.settings.layoutFolder;
+		const open = this.host.layoutFile;
 		promptNewLayout(
 			this.plugin.app,
-			this.plugin.settings.layoutFolder,
-			this.host.layoutName,
-			(name) => this.openLayout(name),
+			folder,
+			// A basename only where it names a layout the copy list offers: a
+			// file outside the folder is not one, and the modal falls back.
+			open !== null && isResolvedLayout(this.plugin.app, folder, open)
+				? open.basename
+				: null,
+			(name) => {
+				// What `createLayout` just wrote, resolved the way every name is
+				// — which is the `.sheetsmith` it wrote, since it refuses a name
+				// either extension already holds.
+				const created = layoutFileFor(this.plugin.app, folder, name);
+				if (created) this.host.openLayoutFile(created);
+			},
 		);
 	}
 
 	/**
-	 * Open a layout in this pane, by name.
+	 * Why no character can use the open file, or null where one can.
 	 *
-	 * Three calls in one order, shared rather than spelled three times:
-	 * `docs/PATTERNS.md` §1's one-step tier is why this is a name rather than a
-	 * copy, since the only thing a guard test over the copies could assert is
-	 * that they still call the three in the same order — while what they were
-	 * free to drift about is whether a pane keeps open a layout it no longer
-	 * has.
-	 *
-	 * It arrived as `openLanded` over two callers, both of which had *just
-	 * written* a file, and the third caller is why the name moved: the dropdown
-	 * opens a layout that has been there all along, and a reader meeting
-	 * `openLanded(value)` there would look for the write. §1 asks that a shared
-	 * thing be named for the behaviour, and the behaviour is opening one.
-	 *
-	 * `deleteLayout` deliberately does not call it: it names *no* layout, and a
-	 * helper taking `string | null` would be one name over two different jobs.
+	 * Two reasons, and they read differently because the fixes differ. A file
+	 * outside the folder — another folder, or a subfolder of it, since lookup is
+	 * by name in the one folder — is fixed by moving it. A `.json` in the folder
+	 * that a `.sheetsmith` of the same name outvotes is not fixed by moving
+	 * anything: the folder already answers that name with the other file.
 	 */
-	private openLayout(name: string): void {
-		this.releaseLayout();
-		this.host.setLayoutName(name);
-		this.redraw();
+	private outsideNote(file: TFile, folder: string): string | null {
+		const app = this.plugin.app;
+		if (isResolvedLayout(app, folder, file)) return null;
+		const winner = layoutFileFor(app, folder, file.basename);
+		if (winner !== null && isLayoutPath(file.path, folder)) {
+			return `"${folder}" uses "${winner.name}" under this name, so no character can use this file.`;
+		}
+		return `This file is not in "${folder}", so no character can use it from here. Move it into that folder to use it.`;
 	}
 
 	/**
@@ -1052,13 +1229,22 @@ export class LayoutEditorSection {
 	 * one rename gesture is one scan, because every commit here is on `change`
 	 * and never per keystroke (`field-commit.ts`).
 	 *
-	 * `layoutName` cannot be null here while `this.file` is set: the file is
-	 * only ever assigned from the picker's own `files.find` on that name, and
-	 * `persist` returns above without one. The guard is the type's, not a
-	 * reachable state, so a rename is never silently dropped by it.
+	 * **A rename migrates only where the file is the one its name resolves
+	 * to.** The notes a migration rewrites are the notes naming this file's
+	 * basename, and those notes read *this* file only where the folder's lookup
+	 * lands on it. A file opened from outside the folder, or a `.json` a
+	 * `.sheetsmith` of the same name shadows, shares its basename with a
+	 * different layout or with none — so migrating from it would rewrite
+	 * characters built on some other file, which is Constraint 4 broken by an
+	 * edit to a file those characters never read. The layout still saves; the
+	 * notes are left alone, as they are for any edit to a file nobody uses.
 	 */
 	private async persist(record = true, rename?: RenameIntent): Promise<void> {
-		if (!this.file || !this.layout) return;
+		// Taken once, before the write is awaited: the pane may be on another
+		// file by the time it resolves, and the migration below belongs to the
+		// file this write went to.
+		const file = this.file;
+		if (!file || !this.layout) return;
 		let serialised: string;
 		try {
 			serialised = serialiseLayout(this.layout);
@@ -1097,14 +1283,21 @@ export class LayoutEditorSection {
 		 * behaviour of this method and not something this guard changes.
 		 */
 		try {
-			await this.plugin.app.vault.modify(this.file, serialised);
+			await this.plugin.app.vault.modify(file, serialised);
 		} catch (error) {
 			new Notice(
 				`Sheetsmith could not save this layout: ${error instanceof Error ? error.message : String(error)}`,
 			);
 			return;
 		}
-		if (rename !== undefined && this.host.layoutName !== null) {
+		if (
+			rename !== undefined &&
+			isResolvedLayout(
+				this.plugin.app,
+				this.plugin.settings.layoutFolder,
+				file,
+			)
+		) {
 			/*
 			 * **The scan is bracketed by the open sheets, and both halves are
 			 * corrections rather than care.** A sheet's own edits reach disk
@@ -1125,11 +1318,7 @@ export class LayoutEditorSection {
 			 * that sheet, or closing it, wrote the migration back out.
 			 */
 			await this.host.flushSheets();
-			await reportComponentRename(
-				this.plugin.app,
-				this.host.layoutName,
-				rename,
-			);
+			await reportComponentRename(this.plugin.app, file.basename, rename);
 			await this.host.reloadSheets();
 			return;
 		}

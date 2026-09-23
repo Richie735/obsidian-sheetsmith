@@ -7,18 +7,35 @@
  *
  * What this owns is the pane. Every region inside it, every form and every field
  * belong to `src/editor/`, and this builds none of them. What is left is the
- * frame: which layout is open, what is selected, what survives a redraw, and the
- * hop into open sheet views after a write.
+ * frame: which layout file is open, what is selected, what survives a redraw,
+ * the hop into open sheet views after a write, and what the vault tells it
+ * about its own file.
+ *
+ * **A `FileView`, bound to one layout file** (`docs/features/visible-layout-files.md`).
+ * A `.sheetsmith` file opens here from anywhere Obsidian opens a file, because
+ * `layout-extension.ts` registers the extension for this view type; the pane's
+ * own dropdown opens one in the same leaf through `setViewState`, which is also
+ * the only route to a `.json` layout, since that extension is not registered.
+ * Rename and delete are the base class's: it keeps the `TFile`, whose path
+ * moves, and lets go of a file that is gone.
  */
 
-import { ItemView, ViewStateResult, WorkspaceLeaf } from 'obsidian';
+import {
+	FileView,
+	Notice,
+	TAbstractFile,
+	TFile,
+	ViewStateResult,
+	WorkspaceLeaf,
+} from 'obsidian';
 import {
 	LayoutEditorHost,
 	LayoutEditorSection,
 	SHEET_DESTINATION,
 } from '../editor/layout-editor';
+import { isLayoutExtension, layoutFileFor, listLayouts } from '../layouts';
 import type SheetsmithPlugin from '../main';
-import { SheetView, VIEW_TYPE_SHEET } from './sheet-view';
+import { openSheetViews } from './sheet-view';
 
 export const VIEW_TYPE_LAYOUT_EDITOR = 'sheetsmith-layout-editor';
 
@@ -34,7 +51,7 @@ interface ScrollPositions {
 	panel: number;
 }
 
-export class LayoutEditorView extends ItemView implements LayoutEditorHost {
+export class LayoutEditorView extends FileView implements LayoutEditorHost {
 	private plugin: SheetsmithPlugin;
 	private editor: LayoutEditorSection;
 	/**
@@ -46,18 +63,33 @@ export class LayoutEditorView extends ItemView implements LayoutEditorHost {
 	 * what says a state change has nothing to redraw yet.
 	 */
 	private root: HTMLElement | null = null;
-	/** Which layout the pane has open, by basename. Workspace state. */
-	private openLayout: string | null = null;
+	/**
+	 * The file the editor is handed, which is `file` except while the base
+	 * class is between two files.
+	 *
+	 * A second field because of one ordering in `FileView`: it calls
+	 * `onUnloadFile` for the file being left *before* it clears `file`, so a
+	 * redraw from there would draw the file being let go of. This is cleared
+	 * first, so a pane whose file was deleted draws the no-file state from inside
+	 * the unload, and set again as the next file loads.
+	 */
+	private bound: TFile | null = null;
+	/** Set while the pane closes, so letting go of its file draws nothing. */
+	private closing = false;
 	/** What the panel is configuring. Ephemeral state. */
 	private selected: string = SHEET_DESTINATION;
 
 	/*
-	 * `navigation` is Obsidian's own property, and the API's test for it is
-	 * whether the view "opens a file or can be otherwise navigated". The layout
-	 * picker is a control inside the pane rather than the workspace's own
-	 * history, so nothing here is navigated to: false.
+	 * `navigation` is left at `FileView`'s own `true`, which is a decision with a
+	 * cost rather than a default taken. It is what lets Obsidian treat this leaf
+	 * as one a file open may replace, which is how a layout clicked in the file
+	 * explorer lands in the pane already showing one. The cost: a *note* clicked
+	 * while this pane is the active tab replaces the pane, as it would replace a
+	 * note. Pinning the tab keeps it, as it does for any file.
 	 */
-	navigation = false;
+
+	/** No file at all is a state this pane has: the vacant folder, or a delete. */
+	allowNoFile = true;
 
 	constructor(leaf: WorkspaceLeaf, plugin: SheetsmithPlugin) {
 		super(leaf);
@@ -69,8 +101,36 @@ export class LayoutEditorView extends ItemView implements LayoutEditorHost {
 		return VIEW_TYPE_LAYOUT_EDITOR;
 	}
 
+	/**
+	 * The file's basename, which Obsidian shows in the tab and the header.
+	 *
+	 * The basename is the layout's name as far as anything here is concerned —
+	 * it is what a note's `sheet-layout` holds — so it is the title, and the
+	 * `pencil-ruler` icon is what still says which kind of pane this is.
+	 */
 	getDisplayText(): string {
-		return 'Layout editor';
+		return this.file?.basename ?? 'Layout editor';
+	}
+
+	/**
+	 * Both layout extensions, so the one route to a `.json` layout — this pane's
+	 * dropdown, by path — is not refused. Only `.sheetsmith` is registered, so
+	 * nothing else in the app opens a `.json` file here.
+	 */
+	canAcceptExtension(extension: string): boolean {
+		return isLayoutExtension(extension);
+	}
+
+	onload(): void {
+		super.onload();
+		// The file's own writes, so a change made anywhere else — another pane
+		// on the same layout, a promotion from a sheet, a hand edit — is taken
+		// rather than overwritten. `FileView` owns no `modify` handler;
+		// `TextFileView` does, and this pane is not one: it writes immediately
+		// where that class buffers.
+		this.registerEvent(
+			this.app.vault.on('modify', (file) => void this.onModify(file)),
+		);
 	}
 
 	getIcon(): string {
@@ -81,8 +141,83 @@ export class LayoutEditorView extends ItemView implements LayoutEditorHost {
 		this.redraw();
 	}
 
+	/**
+	 * The base class lets go of the file, which is where the last edit is
+	 * written: `onUnloadFile` flushes, and `closing` keeps it from drawing into
+	 * a pane that is going.
+	 */
 	async onClose(): Promise<void> {
-		this.flush();
+		this.closing = true;
+		await super.onClose();
+	}
+
+	/** Draw the layout this pane has just been bound to. */
+	async onLoadFile(file: TFile): Promise<void> {
+		this.bound = file;
+		this.redraw();
+	}
+
+	/**
+	 * Let go of a layout: its pending edit written where the file is still
+	 * there, dropped where it is gone, and its undo history cleared either way
+	 * (the editor's `release`, which used to run on a name change and now runs
+	 * on a file change).
+	 *
+	 * **Whether the file is gone is asked of the vault**, because the base class
+	 * calls this for a switch, a close and a delete alike and says nothing about
+	 * which. A write to a deleted file would put it back.
+	 *
+	 * It redraws, which for a switch is a render the next file's load replaces
+	 * at once — both inside one turn, before anything paints — and for a delete
+	 * is the "No layout is open" state, which nothing else would draw.
+	 */
+	async onUnloadFile(file: TFile): Promise<void> {
+		const present = this.app.vault.getAbstractFileByPath(file.path) === file;
+		this.editor.release(present);
+		this.bound = null;
+		if (!this.closing) this.redraw();
+	}
+
+	/**
+	 * The title follows through the base class; the redraw is what moves the
+	 * "no character can use it" line, since moving a file in or out of the
+	 * folder is a rename. The undo history survives: the contents did not change.
+	 */
+	async onRename(file: TFile): Promise<void> {
+		await super.onRename(file);
+		if (file === this.bound) this.redraw();
+	}
+
+	/**
+	 * A write to this pane's file, from here or from anywhere
+	 * (`docs/features/visible-layout-files.md`).
+	 *
+	 * **Its own writes are told apart by content.** The file is read and compared
+	 * with what the pane last wrote or loaded; a match is this pane's write
+	 * coming back, including one that landed out of order, and changes nothing.
+	 * A difference is somebody else's, and the pane reloads from disk — dropping
+	 * any edit it had not yet written, and saying so, because writing it would
+	 * overwrite the change it has just been told about. Two panes on one layout
+	 * follow with no special case: each writes, and each reloads on the other's.
+	 */
+	private async onModify(file: TAbstractFile): Promise<void> {
+		const bound = this.bound;
+		if (bound === null || file !== bound) return;
+		let text: string;
+		try {
+			text = await this.app.vault.read(bound);
+		} catch {
+			// Gone between the write and this read; the delete handles it.
+			return;
+		}
+		if (this.bound !== bound || this.editor.holds(text)) return;
+		const dropped = this.editor.reload();
+		if (dropped) {
+			new Notice(
+				`"${bound.basename}" changed on disk, so the layout editor reloaded it. An edit not yet saved here was dropped.`,
+			);
+		}
+		this.redraw();
 	}
 
 	/**
@@ -117,12 +252,24 @@ export class LayoutEditorView extends ItemView implements LayoutEditorHost {
 
 	/* --- What the editor asks of its host ------------------------------- */
 
-	get layoutName(): string | null {
-		return this.openLayout;
+	get layoutFile(): TFile | null {
+		return this.bound;
 	}
 
-	setLayoutName(name: string | null): void {
-		this.openLayout = name;
+	/**
+	 * Open another layout file in this leaf, through the workspace rather than
+	 * by loading it here.
+	 *
+	 * `setViewState` with this view's own type keeps this instance and hands it
+	 * `{ file }`, which the base class loads — so the switch goes through exactly
+	 * the path a file opened from anywhere else takes, unload and all. Not
+	 * `openFile`, which resolves a view by extension and finds none for `.json`.
+	 */
+	openLayoutFile(file: TFile): void {
+		void this.leaf.setViewState({
+			type: VIEW_TYPE_LAYOUT_EDITOR,
+			state: { file: file.path },
+		});
 	}
 
 	get selection(): string {
@@ -143,7 +290,7 @@ export class LayoutEditorView extends ItemView implements LayoutEditorHost {
 	 * does it.
 	 */
 	refreshSheets(): void {
-		for (const sheet of this.openSheets()) sheet.refresh();
+		for (const sheet of openSheetViews(this.app)) sheet.refresh();
 	}
 
 	/**
@@ -154,30 +301,12 @@ export class LayoutEditorView extends ItemView implements LayoutEditorHost {
 	 * number of sheets a reader has on screen.
 	 */
 	async flushSheets(): Promise<void> {
-		for (const sheet of this.openSheets()) await sheet.flushSave();
+		for (const sheet of openSheetViews(this.app)) await sheet.flushSave();
 	}
 
 	/** Every open sheet re-reads its file, after the editor rewrote notes. */
 	async reloadSheets(): Promise<void> {
-		for (const sheet of this.openSheets()) await sheet.reload();
-	}
-
-	/**
-	 * The sheets currently on screen, which is what all three hops above walk.
-	 *
-	 * One `getLeavesOfType` and one `instanceof` rather than three copies of
-	 * both: the `instanceof` is the load-bearing half — a leaf of this type can
-	 * hold a deferred view, which is not a `SheetView` and has none of these
-	 * methods.
-	 */
-	private openSheets(): SheetView[] {
-		const sheets: SheetView[] = [];
-		for (const leaf of this.plugin.app.workspace.getLeavesOfType(
-			VIEW_TYPE_SHEET,
-		)) {
-			if (leaf.view instanceof SheetView) sheets.push(leaf.view);
-		}
-		return sheets;
+		for (const sheet of openSheetViews(this.app)) await sheet.reload();
 	}
 
 	/**
@@ -239,25 +368,37 @@ export class LayoutEditorView extends ItemView implements LayoutEditorHost {
 
 	/* --- Posture the workspace remembers ------------------------------- */
 
-	/**
-	 * Which layout is open, and nothing else.
-	 *
-	 * This is what a restored workspace comes back to, so it carries the one
-	 * piece of posture that reopening on a different layout would read as a bug.
-	 * What is *selected* is deliberately not here: see `getEphemeralState`.
+	/*
+	 * `getState` is `FileView`'s own, `{ file: <path> }`: which file is open and
+	 * nothing else, which is the one piece of posture that reopening on a
+	 * different layout would read as a bug. What is *selected* is deliberately
+	 * not in it: see `getEphemeralState`.
 	 */
-	getState(): Record<string, unknown> {
-		return { layout: this.openLayout };
-	}
 
+	/**
+	 * `FileView`'s own, after one translation: the shape an earlier version
+	 * saved.
+	 *
+	 * That was `{ layout: <basename> }`, so a workspace saved before this pane
+	 * was bound to a file reopens on the same layout by resolving the name the
+	 * way a character does — `.sheetsmith` first, then `.json`. A name resolving
+	 * to nothing leaves the pane with no file rather than picking one. A state
+	 * naming neither — which is what revealing the pane looks like — changes
+	 * nothing, which is the base class's own rule for a state with no `file`.
+	 */
 	async setState(state: unknown, result: ViewStateResult): Promise<void> {
+		const given = (state ?? {}) as Record<string, unknown>;
+		const legacy = given.layout;
+		if (!('file' in given) && typeof legacy === 'string') {
+			const file = layoutFileFor(
+				this.app,
+				this.plugin.settings.layoutFolder,
+				legacy,
+			);
+			await super.setState({ ...given, file: file?.path ?? null }, result);
+			return;
+		}
 		await super.setState(state, result);
-		const layout = (state as { layout?: unknown } | null)?.layout;
-		// A `setViewState` carrying no layout — which is what opening the pane
-		// looks like — must not clear the one already open. Only a state that
-		// names a layout changes which one it is.
-		if (typeof layout === 'string') this.openLayout = layout;
-		if (this.root !== null) this.redraw();
 	}
 
 	/**
@@ -322,9 +463,14 @@ export class LayoutEditorView extends ItemView implements LayoutEditorHost {
  * them every time.
  *
  * An open pane is revealed rather than re-opened, and that is not tidiness: a
- * `setViewState` on the leaf would hand the view a state naming no layout, so
- * running the command while the pane was open on the third layout would land the
- * author back on the first.
+ * `setViewState` on the leaf would hand the view a state naming another file,
+ * so running the command while the pane was open on the third layout would land
+ * the author back on the first.
+ *
+ * **With none open, a new tab opens on the first layout in the folder** — the
+ * pane is bound to a file and never chooses one for itself once open, so the
+ * command is where "the first layout" is still decided — or on the vacant state
+ * where the folder holds none.
  */
 export async function openLayoutEditor(
 	plugin: SheetsmithPlugin,
@@ -335,7 +481,12 @@ export async function openLayoutEditor(
 		await workspace.revealLeaf(open);
 		return;
 	}
+	const first = listLayouts(plugin.app, plugin.settings.layoutFolder)[0];
 	const leaf = workspace.getLeaf('tab');
-	await leaf.setViewState({ type: VIEW_TYPE_LAYOUT_EDITOR, active: true });
+	await leaf.setViewState({
+		type: VIEW_TYPE_LAYOUT_EDITOR,
+		active: true,
+		state: first ? { file: first.path } : {},
+	});
 	await workspace.revealLeaf(leaf);
 }

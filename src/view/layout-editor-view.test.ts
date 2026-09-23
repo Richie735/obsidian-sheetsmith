@@ -10,7 +10,8 @@ import { Layout, serialiseLayout } from '../parse/layout';
 import { SheetView } from './sheet-view';
 import { App, Notice, TextFileView } from '../test/obsidian-stub';
 import { fakePlugin, LAYOUT_FOLDER } from '../test/plugin';
-import { openView } from '../test/workspace';
+import { expectDescribedRow } from '../test/described-row';
+import { openView, showFile } from '../test/workspace';
 
 /*
  * The pane, as distinct from the editor inside it.
@@ -47,12 +48,14 @@ async function vault(): Promise<App> {
 	const app = new App();
 	await app.vault.createFolder(LAYOUT_FOLDER);
 	for (const name of ['Alpha', 'Beta']) {
-		await app.vault.create(
-			`${LAYOUT_FOLDER}/${name}.json`,
-			serialiseLayout(layout(name)),
-		);
+		await app.vault.create(pathOf(name), serialiseLayout(layout(name)));
 	}
 	return app;
+}
+
+/** Where a layout of this name lives in the folder. */
+function pathOf(name: string, extension = 'sheetsmith'): string {
+	return `${LAYOUT_FOLDER}/${name}.${extension}`;
 }
 
 async function tick(): Promise<void> {
@@ -70,11 +73,18 @@ function control<T extends HTMLElement = HTMLElement>(
 	return el as T;
 }
 
+/** A pane opened on a file, the way a click in the file explorer opens one. */
+async function paneOn(app: App, name = 'Alpha'): Promise<LayoutEditorView> {
+	const pane = await openView(app, document.body, LayoutEditorView, fakePlugin(app));
+	await showFile(pane, pathOf(name));
+	return pane;
+}
+
 /** Open the pane on Beta with its pool selected, which is a posture to restore. */
 async function posed(app: App): Promise<LayoutEditorView> {
-	const pane = await openView(app, document.body, LayoutEditorView, fakePlugin(app));
+	const pane = await paneOn(app);
 	const picker = control<HTMLSelectElement>(pane, 'layout-picker');
-	picker.value = 'Beta';
+	picker.value = pathOf('Beta');
 	picker.dispatchEvent(new Event('change'));
 	await tick();
 	control(pane, 'edit-hit_points').click();
@@ -89,7 +99,7 @@ describe('what the workspace remembers', () => {
 		// ephemeral state, so which of the two a thing goes in decides whether it
 		// comes back. Asserting the selection is *absent* from the state is the
 		// half that would otherwise pass by accident.
-		expect(pane.getState()).toEqual({ layout: 'Beta' });
+		expect(pane.getState()).toEqual({ file: pathOf('Beta') });
 		expect(pane.getEphemeralState().selection).toBe('hit_points');
 	});
 
@@ -101,12 +111,12 @@ describe('what the workspace remembers', () => {
 		await reopened.setState(state, { history: false });
 		await tick();
 
-		expect(reopened.getState()).toEqual({ layout: 'Beta' });
+		expect(reopened.getState()).toEqual({ file: pathOf('Beta') });
 		// Alpha sorts first, so this is also the check that the fallback did not
 		// simply take the first file.
 		expect(
 			control<HTMLSelectElement>(reopened, 'layout-picker').value,
-		).toBe('Beta');
+		).toBe(pathOf('Beta'));
 	});
 
 	it('does not reopen on the component that was selected', async () => {
@@ -134,13 +144,14 @@ describe('what the workspace remembers', () => {
 		 * redraw had just emptied and was then overwritten when the render
 		 * resolved. A published member nothing could ever restore.
 		 *
-		 * Nothing replays ephemeral state on this pane today, because
-		 * `navigation` is false and Obsidian keeps no history for it. That is why
-		 * this went unnoticed and it is not a reason to leave it: the member is
-		 * published, so something reading it back has to get it back.
+		 * Nothing replayed ephemeral state on this pane while `navigation` was
+		 * false and Obsidian kept no history for it, which is why this went
+		 * unnoticed. The pane is a `FileView` now and navigates, so the history
+		 * that replays it is real — and the member was published either way, so
+		 * something reading it back has to get it back.
 		 */
 		const app = await vault();
-		const pane = await openView(app, document.body, LayoutEditorView, fakePlugin(app));
+		const pane = await paneOn(app);
 
 		pane.setEphemeralState({ selection: 'hit_points', outline: 120, panel: 400 });
 		await tick();
@@ -189,7 +200,7 @@ describe('what the workspace remembers', () => {
 		// works, and the reason a restored pane does not use it is that Obsidian
 		// does not replay ephemeral state.
 		const app = await vault();
-		const pane = await openView(app, document.body, LayoutEditorView, fakePlugin(app));
+		const pane = await paneOn(app);
 
 		pane.setEphemeralState({ selection: 'hit_points' });
 		await tick();
@@ -207,12 +218,10 @@ describe('opening the pane again', () => {
 	 * pane was open on the second layout lands the author back on the first — so
 	 * the branch that avoids it is worth driving rather than describing.
 	 *
-	 * The *cold* path, where no pane is open, is not driven and cannot be: it
-	 * ends in `leaf.setViewState`, which the stub does not carry because making
-	 * one work means a view registry, which means a real `Plugin` whose `onload`
-	 * runs. That is the workspace fixture `docs/PATTERNS.md` §11 already has a
-	 * row waiting on, and the cold path is three lines with no decision in them.
-	 * The branch with the reasoning in it is this one.
+	 * The *cold* path, where no pane is open, ends in `leaf.setViewState` on a
+	 * fresh leaf, which the stub records rather than acts on — constructing a
+	 * view of a registered type is the app's. What is asserted of it is the
+	 * request: which file it names.
 	 */
 	it('reveals the pane that is open rather than opening a second', async () => {
 		const app = await vault();
@@ -230,7 +239,7 @@ describe('opening the pane again', () => {
 		expect(app.workspace.activeLeaf).toBe(leaf);
 		// And the author is still on the layout they were on, which is the whole
 		// point of not re-opening it.
-		expect(pane.getState()).toEqual({ layout: 'Beta' });
+		expect(pane.getState()).toEqual({ file: pathOf('Beta') });
 	});
 
 	it('keeps the layout the author had open when handed a state naming none', async () => {
@@ -242,7 +251,7 @@ describe('opening the pane again', () => {
 		await pane.setState({}, { history: false });
 		await tick();
 
-		expect(pane.getState()).toEqual({ layout: 'Beta' });
+		expect(pane.getState()).toEqual({ file: pathOf('Beta') });
 	});
 });
 
@@ -314,10 +323,7 @@ describe('a rename while a sheet is open', () => {
 	}> {
 		const app = new App();
 		await app.vault.createFolder(LAYOUT_FOLDER);
-		await app.vault.create(
-			`${LAYOUT_FOLDER}/Alpha.json`,
-			serialiseLayout(CARD_LAYOUT),
-		);
+		await app.vault.create(pathOf('Alpha'), serialiseLayout(CARD_LAYOUT));
 		const file = await app.vault.create('Renames.md', BLANK);
 		const plugin = fakePlugin(app);
 
@@ -327,7 +333,7 @@ describe('a rename while a sheet is open', () => {
 		await asFileView(sheet).onLoadFile(file);
 		await tick();
 		const pane = await openView(app, document.body, LayoutEditorView, plugin);
-		await tick();
+		await showFile(pane, pathOf('Alpha'));
 		Notice.messages = [];
 
 		return {
@@ -576,5 +582,401 @@ describe('a rename while a sheet is open', () => {
 		// And nothing was queued by the reload either, so the sheet is not left
 		// holding a write it will make later.
 		expect(asFileView(sheet).savesRequested).toBe(0);
+	});
+});
+
+/*
+ * The pane bound to a file (`docs/features/visible-layout-files.md`).
+ *
+ * Every open below goes through the leaf — `showFile`, or the pane's own
+ * dropdown — and never through a call on the view, because the binding is the
+ * base class's and the claim is that a file opened the way the app opens one
+ * lands here. Which leaf the app picks for a file opened from the explorer is
+ * the app's, and is a manual check in the feature doc rather than a case.
+ */
+describe('the pane bound to a file', () => {
+	/** How many times each path has been written since this was installed. */
+	function writesTo(app: App): Map<string, number> {
+		const counts = new Map<string, number>();
+		const modify = app.vault.modify.bind(app.vault);
+		app.vault.modify = async (file, content) => {
+			counts.set(file.path, (counts.get(file.path) ?? 0) + 1);
+			return modify(file, content);
+		};
+		return counts;
+	}
+
+	/** Change the pool's max through the panel, and let the write land. */
+	async function editMax(pane: LayoutEditorView, to: string): Promise<void> {
+		control(pane, 'edit-hit_points').click();
+		pane.flush();
+		await tick();
+		const max = control<HTMLInputElement>(pane, 'cfg-hit_points-max');
+		max.value = to;
+		max.dispatchEvent(new Event('input'));
+		max.dispatchEvent(new Event('change'));
+		pane.flush();
+		await tick();
+	}
+
+	/**
+	 * The pane's own line about the file: the **Layout file** row's description,
+	 * under its controls, and what its dropdown is described by.
+	 */
+	function fileNote(pane: LayoutEditorView): string | null {
+		const picker = control<HTMLSelectElement>(pane, 'layout-picker');
+		const row = picker.closest('.setting-item');
+		const note = row?.querySelector(':scope > .setting-item-description');
+		if (!note?.textContent) return null;
+		expectDescribedRow(row, picker);
+		return note.textContent;
+	}
+
+	async function text(app: App, path: string): Promise<string> {
+		return app.vault.read(app.vault.getFileByPath(path)!);
+	}
+
+	it('loads the file it is handed, not a lookup by name', async () => {
+		const app = await vault();
+		const pane = await paneOn(app, 'Beta');
+
+		expect(pane.file?.path).toBe(pathOf('Beta'));
+		expect(pane.file).toBe(app.vault.getFileByPath(pathOf('Beta')));
+		expect(control(pane, 'edit-hit_points')).not.toBeNull();
+		expect(fileNote(pane)).toBeNull();
+	});
+
+	it('is titled by the file, and says what it is with no file', async () => {
+		const app = await vault();
+		const pane = await openView(app, document.body, LayoutEditorView, fakePlugin(app));
+		expect(pane.getDisplayText()).toBe('Layout editor');
+
+		await showFile(pane, pathOf('Beta'));
+		expect(pane.getDisplayText()).toBe('Beta');
+		expect(pane.containerEl.querySelector('.view-header-title')?.textContent).toBe('Beta');
+	});
+
+	it('accepts both layout extensions and nothing else', async () => {
+		const pane = await paneOn(await vault());
+		expect(pane.canAcceptExtension('sheetsmith')).toBe(true);
+		expect(pane.canAcceptExtension('json')).toBe(true);
+		expect(pane.canAcceptExtension('md')).toBe(false);
+	});
+
+	it('opens a file outside the folder, edits it, and says no character can use it', async () => {
+		const app = await vault();
+		await app.vault.createFolder('Elsewhere');
+		await app.vault.create('Elsewhere/Stray.sheetsmith', serialiseLayout(layout('Stray')));
+		const pane = await openView(app, document.body, LayoutEditorView, fakePlugin(app));
+		await showFile(pane, 'Elsewhere/Stray.sheetsmith');
+
+		expect(fileNote(pane)).toBe(
+			`This file is not in "${LAYOUT_FOLDER}", so no character can use it from here. Move it into that folder to use it.`,
+		);
+		// First and selected, by its path, so it cannot pass for a layout of the
+		// same name in the folder.
+		const picker = control<HTMLSelectElement>(pane, 'layout-picker');
+		expect(Array.from(picker.options).map((o) => o.textContent)).toEqual([
+			'Elsewhere/Stray.sheetsmith',
+			'Alpha',
+			'Beta',
+		]);
+		expect(picker.value).toBe('Elsewhere/Stray.sheetsmith');
+
+		await editMax(pane, '9');
+		expect(await text(app, 'Elsewhere/Stray.sheetsmith')).toContain('"max": "9"');
+	});
+
+	it('counts a subfolder of the layout folder as outside it', async () => {
+		const app = await vault();
+		await app.vault.createFolder(`${LAYOUT_FOLDER}/Drafts`);
+		await app.vault.create(
+			`${LAYOUT_FOLDER}/Drafts/Gamma.sheetsmith`,
+			serialiseLayout(layout('Gamma')),
+		);
+		const pane = await openView(app, document.body, LayoutEditorView, fakePlugin(app));
+		await showFile(pane, `${LAYOUT_FOLDER}/Drafts/Gamma.sheetsmith`);
+
+		expect(fileNote(pane)).toContain(`is not in "${LAYOUT_FOLDER}"`);
+	});
+
+	it('names a shadowed .json the folder does not use, and opens it', async () => {
+		const app = await vault();
+		await app.vault.create(pathOf('Beta', 'json'), serialiseLayout(layout('Beta')));
+		const pane = await openView(app, document.body, LayoutEditorView, fakePlugin(app));
+		await showFile(pane, pathOf('Beta', 'json'));
+
+		expect(fileNote(pane)).toBe(
+			`"${LAYOUT_FOLDER}" uses "Beta.sheetsmith" under this name, so no character can use this file.`,
+		);
+		expect(control(pane, 'edit-hit_points')).not.toBeNull();
+	});
+
+	it('shows a file that will not parse by name, and writes nothing to it', async () => {
+		const app = await vault();
+		await app.vault.create(pathOf('Broken'), '{ "name": "Broken", "columns": ');
+		const writes = writesTo(app);
+		const pane = await openView(app, document.body, LayoutEditorView, fakePlugin(app));
+		await showFile(pane, pathOf('Broken'));
+
+		const error = pane.contentEl.querySelector('.sheetsmith-error');
+		expect(error?.textContent).toMatch(
+			/^"Broken" cannot be edited until its file is fixed: /,
+		);
+		expect(pane.contentEl.querySelector('.sheetsmith-editor-tree')).toBeNull();
+		expect(pane.contentEl.querySelector('.sheetsmith-editor-panel')).toBeNull();
+		expect(pane.contentEl.querySelector('.sheetsmith-canvas')).toBeNull();
+
+		// Every control the state leaves standing that could write: a flush, a
+		// redraw, and the undo pair.
+		pane.flush();
+		pane.redraw();
+		pane.undo();
+		pane.redo();
+		await tick();
+		expect(writes.get(pathOf('Broken')) ?? 0).toBe(0);
+	});
+
+	it('opens an unconverted .json from the dropdown and saves it back to its own path', async () => {
+		const app = await vault();
+		await app.vault.create(pathOf('Legacy', 'json'), serialiseLayout(layout('Legacy')));
+		const pane = await paneOn(app);
+
+		const picker = control<HTMLSelectElement>(pane, 'layout-picker');
+		picker.value = pathOf('Legacy', 'json');
+		picker.dispatchEvent(new Event('change'));
+		await tick();
+		await editMax(pane, '7');
+
+		// Saving is not converting: the command and the load notice are the
+		// only two doors to that, so an older device reading only `.json` is
+		// never stranded by one save.
+		expect(await text(app, pathOf('Legacy', 'json'))).toContain('"max": "7"');
+		expect(app.vault.getFileByPath(pathOf('Legacy'))).toBeNull();
+		expect(pane.file?.path).toBe(pathOf('Legacy', 'json'));
+	});
+
+	it('opens a layout chosen in the dropdown in the same leaf', async () => {
+		const app = await vault();
+		const pane = await paneOn(app);
+		const leaf = pane.leaf;
+
+		const picker = control<HTMLSelectElement>(pane, 'layout-picker');
+		picker.value = pathOf('Beta');
+		picker.dispatchEvent(new Event('change'));
+		await tick();
+
+		expect(app.workspace.getLeavesOfType(VIEW_TYPE_LAYOUT_EDITOR)).toEqual([leaf]);
+		expect(leaf.view).toBe(pane);
+		expect(pane.file?.path).toBe(pathOf('Beta'));
+	});
+
+	it('reopens a workspace saved as a layout name, preferring .sheetsmith', async () => {
+		// The shape every earlier version saved, which a restored workspace
+		// still hands over.
+		const app = await vault();
+		await app.vault.create(pathOf('Beta', 'json'), serialiseLayout(layout('Beta')));
+		await app.vault.create(pathOf('Legacy', 'json'), serialiseLayout(layout('Legacy')));
+		const pane = await openView(app, document.body, LayoutEditorView, fakePlugin(app));
+
+		await pane.setState({ layout: 'Beta' }, { history: false });
+		expect(pane.getState()).toEqual({ file: pathOf('Beta') });
+
+		await pane.setState({ layout: 'Legacy' }, { history: false });
+		expect(pane.getState()).toEqual({ file: pathOf('Legacy', 'json') });
+
+		// A name that resolves to nothing leaves no file rather than picking one.
+		await pane.setState({ layout: 'Gone' }, { history: false });
+		await tick();
+		expect(pane.file).toBeNull();
+		expect(pane.getState()).toEqual({});
+		expect(fileNote(pane)).toBe('No layout is open. Choose one above.');
+	});
+
+	it('follows a rename, keeping its undo history and taking the new title', async () => {
+		const app = await vault();
+		const pane = await paneOn(app);
+		await editMax(pane, '9');
+
+		const file = app.vault.getFileByPath(pathOf('Alpha'))!;
+		await app.vault.rename(file, pathOf('Renamed'));
+		await tick();
+
+		expect(pane.file).toBe(file);
+		expect(pane.containerEl.querySelector('.view-header-title')?.textContent).toBe('Renamed');
+		expect(pane.getDisplayText()).toBe('Renamed');
+		expect(pane.undo()).toBe(true);
+		await tick();
+		expect(await text(app, pathOf('Renamed'))).not.toContain('"max": "9"');
+	});
+
+	it('shows the outside line once its file is moved out of the folder', async () => {
+		const app = await vault();
+		await app.vault.createFolder('Elsewhere');
+		const pane = await paneOn(app);
+		expect(fileNote(pane)).toBeNull();
+
+		await app.vault.rename(app.vault.getFileByPath(pathOf('Alpha'))!, 'Elsewhere/Alpha.sheetsmith');
+		await tick();
+
+		expect(fileNote(pane)).toContain(`is not in "${LAYOUT_FOLDER}"`);
+	});
+
+	it('lets go of a file deleted from outside, and writes nothing', async () => {
+		const app = await vault();
+		const pane = await paneOn(app);
+		// Something typed and not committed, which a flush on the way out would
+		// otherwise write — and a write would put the file back.
+		control<HTMLTextAreaElement>(pane, 'function-library').value = 'double(n) = n * 2';
+		const writes = writesTo(app);
+
+		await app.vault.delete(app.vault.getFileByPath(pathOf('Alpha'))!);
+		await tick();
+
+		expect(pane.file).toBeNull();
+		expect(fileNote(pane)).toBe('No layout is open. Choose one above.');
+		expect(writes.size).toBe(0);
+		expect(app.vault.getFileByPath(pathOf('Alpha'))).toBeNull();
+		expect(pane.undo()).toBe(false);
+	});
+
+	it('migrates no note from a file no note resolves to, and still saves it', async () => {
+		/*
+		 * Constraint 4's guard in `persist`: a note naming "Alpha" reads the
+		 * folder's `Alpha.sheetsmith`, so a label renamed in some *other* file
+		 * called Alpha — outside the folder, or a `.json` the `.sheetsmith`
+		 * hides — must not rewrite that note's heading. The control arm is the
+		 * third: the same rename in the resolved file does migrate, so the
+		 * note's bytes staying put in the first two is the guard and not a
+		 * migration that never runs.
+		 */
+		const note = '---\nsheet-layout: Alpha\n---\n\n## Hit points\n\n```sheet\ncurrent: 3\n```\n';
+		const arms = [
+			{ path: 'Elsewhere/Alpha.sheetsmith', migrates: false },
+			{ path: pathOf('Alpha', 'json'), migrates: false },
+			{ path: pathOf('Alpha'), migrates: true },
+		];
+		for (const { path, migrates } of arms) {
+			const app = await vault();
+			await app.vault.createFolder('Elsewhere');
+			if (path !== pathOf('Alpha')) {
+				await app.vault.create(path, serialiseLayout(layout('Alpha')));
+			}
+			const character = await app.vault.create('Aramil.md', note);
+			const pane = await openView(app, document.body, LayoutEditorView, fakePlugin(app));
+			await showFile(pane, path);
+			Notice.messages = [];
+
+			control(pane, 'edit-hit_points').click();
+			pane.flush();
+			await tick();
+			const label = control<HTMLInputElement>(pane, 'label-hit_points');
+			label.value = 'Health';
+			label.dispatchEvent(new Event('input'));
+			label.dispatchEvent(new Event('change'));
+			pane.flush();
+			await tick();
+			await tick();
+
+			expect(await text(app, path)).toContain('"label": "Health"');
+			if (migrates) {
+				expect(await app.vault.read(character)).toBe(note.replace('## Hit points', '## Health'));
+			} else {
+				expect(await app.vault.read(character)).toBe(note);
+				expect(Notice.messages).toEqual([]);
+			}
+		}
+	});
+
+	it('ignores its own write coming back, and keeps its undo history', async () => {
+		const app = await vault();
+		const pane = await paneOn(app);
+		const tree = () => pane.contentEl.querySelector('.sheetsmith-editor-tree');
+		await editMax(pane, '9');
+		const drawn = tree();
+		await tick();
+
+		expect(tree()).toBe(drawn);
+		expect(pane.undo()).toBe(true);
+	});
+
+	it('reloads on a write it did not make, and clears both stacks', async () => {
+		const app = await vault();
+		const pane = await paneOn(app);
+		await editMax(pane, '9');
+		Notice.messages = [];
+
+		// The file as it was before the edit, written by somebody else: the
+		// pool's max goes back to having none.
+		await app.vault.modify(
+			app.vault.getFileByPath(pathOf('Alpha'))!,
+			serialiseLayout(layout('Alpha')),
+		);
+		await tick();
+		await tick();
+
+		expect(control<HTMLInputElement>(pane, 'cfg-hit_points-max').value).toBe('');
+		expect(pane.undo()).toBe(false);
+		expect(pane.redo()).toBe(false);
+		// Nothing was pending, so there is nothing to say.
+		expect(Notice.messages).toEqual([]);
+	});
+
+	it('drops an edit still pending on an outside write, and says so', async () => {
+		const app = await vault();
+		const pane = await paneOn(app);
+		control<HTMLTextAreaElement>(pane, 'function-library').value = 'double(n) = n * 2';
+		Notice.messages = [];
+		const outside = serialiseLayout({ ...layout('Alpha'), columns: 6 });
+
+		await app.vault.modify(app.vault.getFileByPath(pathOf('Alpha'))!, outside);
+		await tick();
+		await tick();
+		pane.flush();
+		await tick();
+
+		expect(await text(app, pathOf('Alpha'))).toBe(outside);
+		expect(Notice.messages).toEqual([
+			'"Alpha" changed on disk, so the layout editor reloaded it. An edit not yet saved here was dropped.',
+		]);
+	});
+
+	it('keeps two panes on one file in step, each keeping its own history', async () => {
+		const app = await vault();
+		const first = await paneOn(app);
+		const second = await paneOn(app);
+
+		await editMax(first, '9');
+		await tick();
+
+		control(second, 'edit-hit_points').click();
+		await tick();
+		expect(control<HTMLInputElement>(second, 'cfg-hit_points-max').value).toBe('9');
+		expect(first.undo()).toBe(true);
+	});
+});
+
+describe('opening the pane cold', () => {
+	it('opens a new tab on the first layout in the folder', async () => {
+		const app = await vault();
+		await openLayoutEditor(fakePlugin(app));
+
+		const leaf = app.workspace.leaves.at(-1);
+		expect(leaf?.viewStates).toEqual([
+			{
+				type: VIEW_TYPE_LAYOUT_EDITOR,
+				active: true,
+				state: { file: pathOf('Alpha') },
+			},
+		]);
+	});
+
+	it('opens on the vacant state where the folder holds none', async () => {
+		const app = new App();
+		await openLayoutEditor(fakePlugin(app));
+
+		expect(app.workspace.leaves.at(-1)?.viewStates).toEqual([
+			{ type: VIEW_TYPE_LAYOUT_EDITOR, active: true, state: {} },
+		]);
 	});
 });

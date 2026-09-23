@@ -477,7 +477,11 @@ async function ensureEditor(): Promise<HTMLElement> {
 				draw();
 			},
 		},
-		file === 'none' || file === 'broken' || file === 'canvas-demo'
+		file === 'none' ||
+		file === 'broken' ||
+		file === 'canvas-demo' ||
+		file === 'outside' ||
+		file === 'no-file'
 			? file
 			: harnessLayout(samplesFor(state)),
 		{
@@ -624,9 +628,12 @@ document
  * only way to photograph the empty canvas now that a pane opens filled.
  *
  * And one for what the layout *folder* holds: `&layout=none` for a vault with no
- * layouts in it, `&layout=broken` for one whose file will not parse. Neither is
- * reachable through **State**, which breaks a component's config and leaves the
- * file perfectly parseable.
+ * layouts in it, `&layout=broken` for one whose file will not parse, and
+ * `&layout=outside` for a valid layout filed outside the folder, which the pane
+ * opens with a line saying no character can use it, and `&layout=no-file` for
+ * a folder holding a layout with the pane open on none. None is reachable
+ * through **State**, which breaks a component's config and leaves the file
+ * perfectly parseable where it is.
  *
  * And one for the fold: `&bounded` holds the surface to the window's height, so
  * it scrolls inside itself the way a leaf scrolls inside a workspace. The

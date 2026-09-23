@@ -26,7 +26,7 @@ const forged = STARTERS[0];
 const fifth = STARTERS[1];
 if (!forged || !fifth) throw new Error('The catalog lost an entry.');
 
-const pathOf = (name: string): string => `${LAYOUT_FOLDER}/${name}.json`;
+const pathOf = (name: string): string => `${LAYOUT_FOLDER}/${name}.sheetsmith`;
 
 let app: App;
 
@@ -144,7 +144,7 @@ describe('installing a starter', () => {
 			name: 'Starter Forged in the Dark',
 		});
 		expect(
-			app.vault.getFileByPath('Elsewhere/Sheets/Starter Forged in the Dark.json'),
+			app.vault.getFileByPath('Elsewhere/Sheets/Starter Forged in the Dark.sheetsmith'),
 		).not.toBeNull();
 	});
 });

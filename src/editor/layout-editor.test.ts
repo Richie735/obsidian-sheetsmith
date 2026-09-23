@@ -10,7 +10,7 @@ import { openModal, pressModalButton } from '../test/modal';
 import { App, Notice } from '../test/obsidian-stub';
 import { fakePlugin, LAYOUT_FOLDER } from '../test/plugin';
 import { cancel, pressDown, release } from '../test/pointer';
-import { openView } from '../test/workspace';
+import { openView, showFile } from '../test/workspace';
 import { ComponentConfig, GridPosition } from '../types';
 import { getComponent, listComponentTypes, paletteEntries } from '../components';
 
@@ -123,11 +123,14 @@ async function settle(pane: LayoutEditorView): Promise<void> {
 async function open(layout: Layout = fixture()): Promise<Harness> {
 	const app = new App();
 	await app.vault.createFolder(LAYOUT_FOLDER);
-	const path = `${LAYOUT_FOLDER}/${layout.name}.json`;
+	const path = `${LAYOUT_FOLDER}/${layout.name}.sheetsmith`;
 	await app.vault.create(path, serialiseLayout(layout));
 
 	const plugin = fakePlugin(app);
 	const pane = await openView(app, document.body, LayoutEditorView, plugin);
+	// The pane is bound to a file and never picks one for itself, so it is
+	// opened on this one the way a click in the file explorer would.
+	await showFile(pane, path);
 
 	const raw = async () => {
 		const file = app.vault.getFileByPath(path);
@@ -919,12 +922,15 @@ describe('a layout file the editor cannot read', () => {
 	it('reports it rather than throwing', async () => {
 		const app = new App();
 		await app.vault.createFolder(LAYOUT_FOLDER);
-		await app.vault.create(`${LAYOUT_FOLDER}/Broken.json`, '{ not json');
+		await app.vault.create(`${LAYOUT_FOLDER}/Broken.sheetsmith`, '{ not json');
 
 		const pane = await openView(app, document.body, LayoutEditorView, fakePlugin(app));
+		await showFile(pane, `${LAYOUT_FOLDER}/Broken.sheetsmith`);
 
 		const error = pane.contentEl.querySelector('.sheetsmith-error');
 		expect(error?.textContent).toContain('cannot be edited');
+		// Named, because the pane opens on whatever file was clicked.
+		expect(error?.textContent).toContain('"Broken"');
 		// The picker survives, because it is how an author leaves a layout they
 		// cannot edit — the message goes where the tree would be, under it.
 		expect(
@@ -5117,7 +5123,7 @@ describe('undo and redo', () => {
 			await settle(harness.pane);
 
 			await harness.app.vault.create(
-				`${LAYOUT_FOLDER}/Second sheet.json`,
+				`${LAYOUT_FOLDER}/Second sheet.sheetsmith`,
 				serialiseLayout({
 					name: 'Second sheet',
 					columns: 12,
@@ -5129,7 +5135,7 @@ describe('undo and redo', () => {
 
 			choose(
 				control<HTMLSelectElement>(harness, 'layout-picker'),
-				'Second sheet',
+				`${LAYOUT_FOLDER}/Second sheet.sheetsmith`,
 			);
 			await settle(harness.pane);
 
@@ -5299,13 +5305,14 @@ describe('copying the open layout out', () => {
 			components: [],
 			unknownToThisParser: 'kept',
 		});
-		await app.vault.create(`${LAYOUT_FOLDER}/Hand written.json`, bytes);
+		await app.vault.create(`${LAYOUT_FOLDER}/Hand written.sheetsmith`, bytes);
 		const pane = await openView(
 			app,
 			document.body,
 			LayoutEditorView,
 			fakePlugin(app),
 		);
+		await showFile(pane, `${LAYOUT_FOLDER}/Hand written.sheetsmith`);
 		const el = pane.contentEl.querySelector('[aria-label="Copy layout JSON"]');
 		(el as HTMLButtonElement).click();
 		await tick();
@@ -5476,7 +5483,7 @@ describe('starting a new layout from the pane', () => {
 		await tick();
 
 		expect(control<HTMLSelectElement>(harness, 'layout-picker').value).toBe(
-			'Test sheet',
+			`${LAYOUT_FOLDER}/Test sheet.sheetsmith`,
 		);
 		expect(harness.container.querySelector('.sheetsmith-editor-tree')).toBe(
 			tree,
@@ -5509,11 +5516,14 @@ describe('starting a new layout from the pane', () => {
 		await tick();
 		await tick();
 
-		// The pane opened what it just wrote, through `openLayout` rather than a
-		// second spelling of its three calls.
+		// The pane opened what it just wrote, in its own leaf, as the file the
+		// write produced — a `.sheetsmith`, whatever the pasted source was.
 		expect(
 			control<HTMLSelectElement>(harness, 'layout-picker').value,
-		).toBe('Shared sheet');
+		).toBe(`${LAYOUT_FOLDER}/Shared sheet.sheetsmith`);
+		expect(harness.pane.file?.path).toBe(
+			`${LAYOUT_FOLDER}/Shared sheet.sheetsmith`,
+		);
 		expect(await harness.stored()).toMatchObject({ name: 'Test sheet' });
 		expect(Notice.messages).toEqual([
 			`Added "Shared sheet" to ${LAYOUT_FOLDER}.`,

@@ -70,7 +70,7 @@ const SOURCE = JSON.stringify({
 	],
 });
 
-const pathOf = (name: string): string => `${LAYOUT_FOLDER}/${name}.json`;
+const pathOf = (name: string): string => `${LAYOUT_FOLDER}/${name}.sheetsmith`;
 
 let app: App;
 /** The names handed back, in order. */
@@ -263,7 +263,7 @@ describe('importing a pasted layout', () => {
 		await tick();
 
 		expect(layoutPaths(vault(), 'Elsewhere/Sheets')).toEqual([
-			'Elsewhere/Sheets/Shared sheet.json',
+			'Elsewhere/Sheets/Shared sheet.sheetsmith',
 		]);
 		expect(Notice.messages).toEqual([
 			'Added "Shared sheet" to Elsewhere/Sheets.',

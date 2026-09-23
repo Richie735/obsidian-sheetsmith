@@ -12,12 +12,12 @@
  *
  * **Why the files are files and not fenced blocks in the feature doc.** Three
  * reasons, in the order they decide it. The layout is addressed by *filename* —
- * `sheet-layout` names `<folder>/<that name>.json` (`src/layouts.ts`) — so
- * `Modifier variations.json` is part of the fixture and a fence cannot carry it. The
- * owner copies two files rather than transcribing two blocks, which is the whole
- * point. And a doc holding no copy has nothing to drift from: extracting content
- * back out of prose would make the fence the source of truth and the extraction
- * a second parser to maintain. `docs/PATTERNS.md` §2 already names `src/test/`
+ * `sheet-layout` names `<folder>/<that name>.sheetsmith` (`src/layouts.ts`) — so
+ * `Modifier variations.sheetsmith` is part of the fixture and a fence cannot
+ * carry it. The owner copies two files rather than transcribing two blocks,
+ * which is the whole point. And a doc holding no copy has nothing to drift
+ * from: extracting content back out of prose would make the fence the source
+ * of truth and the extraction a second parser to maintain. `docs/PATTERNS.md` §2 already names `src/test/`
  * as the home of "the fixtures", so this needs no new folder policy.
  *
  * **What this file cannot check, and does not pretend to.** Every press step in
@@ -83,7 +83,7 @@ import { isContainer, ModifierOutcome } from '../types';
  * would not notice the folder moving under one of them.
  */
 const FIXTURE_DIR = new URL('../test/fixtures/modifiers/', import.meta.url);
-const LAYOUT_FILE = 'Modifier variations.json';
+const LAYOUT_FILE = 'Modifier variations.sheetsmith';
 const NOTE_FILE = 'Ilona.md';
 
 const LAYOUT_TEXT = readFileSync(new URL(LAYOUT_FILE, FIXTURE_DIR), 'utf8');
@@ -91,7 +91,7 @@ const NOTE_TEXT = readFileSync(new URL(NOTE_FILE, FIXTURE_DIR), 'utf8');
 
 /** The Record set fixture, on the same terms and in a folder of its own. */
 const RECORDS_DIR = new URL('../test/fixtures/records/', import.meta.url);
-const RECORDS_LAYOUT_FILE = 'Record variations.json';
+const RECORDS_LAYOUT_FILE = 'Record variations.sheetsmith';
 const RECORDS_NOTE_FILE = 'Records.md';
 
 const RECORDS_LAYOUT_TEXT = readFileSync(
@@ -105,7 +105,7 @@ const RECORDS_NOTE_TEXT = readFileSync(
 
 /** The Track fixture, on the same terms and in a folder of its own. */
 const TRACKS_DIR = new URL('../test/fixtures/tracks/', import.meta.url);
-const TRACKS_LAYOUT_FILE = 'Track variations.json';
+const TRACKS_LAYOUT_FILE = 'Track variations.sheetsmith';
 const TRACKS_NOTE_FILE = 'Tracks.md';
 
 const TRACKS_LAYOUT_TEXT = readFileSync(
@@ -230,7 +230,7 @@ describe('the layout file the fixture recipe names', () => {
 	const { layout, problems } = sheetFrom(LAYOUT_TEXT, NOTE_TEXT);
 
 	it('is accepted by the real layout parser', () => {
-		expect(layout.name).toBe(LAYOUT_FILE.replace(/\.json$/, ''));
+		expect(layout.name).toBe(LAYOUT_FILE.replace(/\.sheetsmith$/, ''));
 		// Six columns, not the plugin's default twelve: every layout in the
 		// throwaway vault is `"columns": 6`, and a fixture laying out on a
 		// different grid from its siblings looks different for a reason that has
@@ -377,7 +377,7 @@ describe('the character note the fixture recipe names', () => {
 	const { note } = sheetFrom(LAYOUT_TEXT, NOTE_TEXT);
 
 	it('names the layout by its filename, which is how a note finds one', () => {
-		expect(note.layoutName).toBe(LAYOUT_FILE.replace(/\.json$/, ''));
+		expect(note.layoutName).toBe(LAYOUT_FILE.replace(/\.sheetsmith$/, ''));
 	});
 
 	it('holds a section for each component that stores anything', () => {
@@ -1383,7 +1383,7 @@ describe('the Record set fixture the recipe names', () => {
 	}
 
 	it('is accepted by the real layout parser, on the vault\'s own grid', () => {
-		expect(built.layout.name).toBe(RECORDS_LAYOUT_FILE.replace(/\.json$/, ''));
+		expect(built.layout.name).toBe(RECORDS_LAYOUT_FILE.replace(/\.sheetsmith$/, ''));
 		// Six columns, like every other layout in the throwaway vault: a fixture
 		// laying out on a different grid looks different for a reason that has
 		// nothing to do with what it tests.
@@ -1397,7 +1397,7 @@ describe('the Record set fixture the recipe names', () => {
 
 	it('names the layout the note names, so neither can be renamed alone', () => {
 		expect(built.note.layoutName).toBe(
-			RECORDS_LAYOUT_FILE.replace(/\.json$/, ''),
+			RECORDS_LAYOUT_FILE.replace(/\.sheetsmith$/, ''),
 		);
 	});
 
@@ -1648,7 +1648,7 @@ describe('the Track fixture the recipe names', () => {
 	}
 
 	it('is accepted by the real layout parser, on the vault\'s own grid', () => {
-		expect(built.layout.name).toBe(TRACKS_LAYOUT_FILE.replace(/\.json$/, ''));
+		expect(built.layout.name).toBe(TRACKS_LAYOUT_FILE.replace(/\.sheetsmith$/, ''));
 		expect(built.layout.columns).toBe(6);
 		expect(built.problems).toEqual([]);
 		expect(built.layout.components).toHaveLength(6);

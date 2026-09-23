@@ -82,6 +82,16 @@ Sheetsmith is in the [Obsidian community plugin list](https://community.obsidian
 
 Do this in a new vault made for the purpose, not in one you care about. The plugin rewrites note bodies, and the parser has little mileage outside the author's own vaults.
 
+### Layout files
+
+A layout is a file ending in `.sheetsmith`, kept in the layout folder (**Sheetsmith layouts** unless you change it in the plugin's settings). Layout files show in the file explorer and in Notebook Navigator, and selecting one opens it in the layout editor. Inside, it is plain JSON, so any text editor can open it too.
+
+Layouts made by earlier versions end in `.json`. They keep working. While any are left, Sheetsmith offers to convert them each time it loads, and the command **Sheetsmith: Convert JSON layout files** does the same. Update Sheetsmith on your other devices first: an older version reads only `.json` files, and it shows every layout as missing once the converted files sync.
+
+With the plugin disabled, or on a device that does not have it, layout files are hidden unless **Settings → Files and links → Detect all file extensions** is on. Where they do show, selecting one opens your operating system's app for it, or nothing on mobile. Notebook Navigator's **Documents** mode hides layout files whether or not the plugin is enabled. Its default **Supported** mode and **All** mode show them.
+
+<!-- HELD: the sentence on how Obsidian Sync treats .sheetsmith files goes here once the owner has observed it in the app (docs/features/visible-layout-files.md, Documentation). Not written from the docs. -->
+
 ## Development
 
 ```bash
