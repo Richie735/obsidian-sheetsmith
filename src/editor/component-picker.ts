@@ -387,7 +387,7 @@ export class ComponentPicker {
 			});
 			// Said to a screen reader for every line whose drawing is an example,
 			// because the drawing is not what **Add** writes — a Track inserted after
-			// its example arrives showing its configuration error.
+			// its five-segment example arrives with no length, drawing its empty state.
 			if (isExample(choice)) {
 				description.createSpan({
 					cls: 'sheetsmith-sr-only',

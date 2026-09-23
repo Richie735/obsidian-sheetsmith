@@ -1957,9 +1957,10 @@ export interface ComponentDefinition<
 	showsOneChild?: boolean;
 	/**
 	 * A configuration for the component picker to draw this type with, where the
-	 * empty config an insert writes draws nothing useful: a blank body, an
-	 * empty-state message, or a configuration error
-	 * (`docs/features/component-picker.md` §1).
+	 * empty config an insert writes draws nothing useful: a blank body or an
+	 * empty-state message (`docs/features/component-picker.md` §1). Never a
+	 * configuration error: a bare type's empty config may not draw one, and the
+	 * layout editor's tests insert every type to hold that.
 	 *
 	 * **Drawn, never inserted.** Choosing the bare type still writes `config: {}`,
 	 * so the picker labels a drawing made from this as an example. That is the

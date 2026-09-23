@@ -2116,6 +2116,17 @@ body {
 	color: var(--text-muted);
 }
 
+/* A Track with no length yet borrows the line, and its setting differs from a
+   cell's twice over. The size: a cell sets one and a card does not, so the line
+   would draw at body size under the card's small-caps label and outrank it. The
+   inset: the card already pads, so a cell's horizontal padding would pad a
+   second time and leave the sentence a sliver of the card to wrap in. Scoped to
+   the card so Table and Roster do not move. */
+.sheetsmith-view .sheetsmith-track > .sheetsmith-table-empty {
+	padding-inline: 0;
+	font-size: var(--font-ui-smaller);
+}
+
 /* A computed cell answers "why this number?" on a tap. Say so with the
    cursor; the cell is still read-only, and still not a tab stop. */
 .sheetsmith-view .sheetsmith-table-askable {

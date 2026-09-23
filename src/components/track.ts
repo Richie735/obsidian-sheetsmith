@@ -361,10 +361,53 @@ export function configError(config: TrackConfig): string | null {
 		}
 		return null;
 	}
-	if (config.count === undefined) {
-		return 'This track needs a number of segments, named levels, or rows.';
-	}
 	return null;
+}
+
+/**
+ * Whether the layout has not yet said how long this card's run is: no count,
+ * no level names and no rows.
+ *
+ * **Empty, not broken**, which is `configError`'s own line above: nothing about
+ * such a card is undrawable, it is a Track the layout has not filled in yet, as
+ * a Table with no rows and a Roster with no stats are. It is what a bare Track
+ * inserted from the component picker is. Defaulting a length instead was
+ * weighed and refused — an absent key would start meaning a run the file never
+ * states, and a count of one is a flag that stores a different spelling
+ * (`docs/features/component-picker.md` § Amendment).
+ */
+function awaitsLength(config: TrackConfig): boolean {
+	return (
+		config.count === undefined &&
+		config.levels === undefined &&
+		!isRowSet(config)
+	);
+}
+
+/**
+ * The line a card with no length draws, naming the fix and where to make it, as
+ * Table's and Roster's empty states do.
+ */
+const NO_LENGTH_MESSAGE =
+	'No segments yet. Set Segments in the layout.';
+
+/**
+ * The card's name, where the layout shows it. One drawing for both cards that
+ * have one — a drawn run and a card with no length — so a change to the label
+ * cannot reach one and miss the other.
+ */
+function renderLabel(
+	into: HTMLElement,
+	config: TrackConfig,
+	context: Pick<RenderContext, 'parentShowsLabel'>,
+): void {
+	if (!showsOwnLabel(config, context)) return;
+	// The shared rank (docs/UI.md §9); this component's own class carries only
+	// the narrow-card tracking, which needs a container to ask about.
+	into.createDiv({
+		cls: 'sheetsmith-component-label sheetsmith-track-label',
+		text: config.label,
+	});
 }
 
 /**
@@ -1011,10 +1054,10 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 	],
 
 	/*
-	 * What the component picker draws for a bare Track, whose empty config is a
-	 * configuration error. Five segments rather than Checkbox's one, so the bare
-	 * type is shown as the row of boxes it is and never borrows an entry's config.
-	 * Never inserted, which is why the picker labels it.
+	 * What the component picker draws for a bare Track, whose empty config draws
+	 * an empty-state line and no run. Five segments rather than Checkbox's one, so
+	 * the bare type is shown as the row of boxes it is and never borrows an
+	 * entry's config. Never inserted, which is why the picker labels it.
 	 */
 	example: { count: 5 },
 
@@ -1043,8 +1086,10 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 	sample(config): string {
 		// A card that cannot be drawn is not filled: `render` reports the
 		// configuration instead, and a body under a key this card refuses would
-		// be a second thing wrong on it. Card's own rule, one component over.
-		if (configError(config) !== null) return '';
+		// be a second thing wrong on it. Card's own rule, one component over. A
+		// card with no length is not filled either: it has no run to fill, and
+		// `render` draws its empty state whatever the section holds.
+		if (configError(config) !== null || awaitsLength(config)) return '';
 		const marks = markSize(config);
 		const flag = isFlagCard(config);
 		const updates = new Map<string, string>();
@@ -1510,6 +1555,16 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			return;
 		}
 
+		if (awaitsLength(config)) {
+			// No run, no control and no breakdown: there is no length for any
+			// of them to be about. The label is still drawn, so the card says
+			// which component the line is about. A stored value is left alone —
+			// `read` never asks this question, so it is kept and written as is.
+			renderLabel(card, config, context);
+			card.createDiv({ cls: 'sheetsmith-table-empty', text: NO_LENGTH_MESSAGE });
+			return;
+		}
+
 		/**
 		 * The name this card's own `count` publishes under, or absent where it
 		 * publishes none.
@@ -1592,13 +1647,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 		 * child of the card — so nothing about the common Track moves.
 		 */
 		const heading = cardPushed === null ? null : card.createDiv('sheetsmith-track-heading');
-		if (showsOwnLabel(config, context)) {
-			const label = (heading ?? card).createDiv();
-			// The shared rank (docs/UI.md §9); this component's own class carries only
-			// the narrow-card tracking, which needs a container to ask about.
-			label.classList.add('sheetsmith-component-label', 'sheetsmith-track-label');
-			label.textContent = config.label;
-		}
+		renderLabel(heading ?? card, config, context);
 		if (heading !== null && cardPushed !== null) {
 			/*
 			 * **The door to the breakdown, and it is deliberately not the run.**

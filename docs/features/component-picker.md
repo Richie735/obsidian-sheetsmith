@@ -201,11 +201,12 @@ PNGs, under
 | Roster | `shots/bare-roster-frame.png` | "No stats yet. Add one to this component in the layout." | **Nothing**: an empty-state message. Example |
 | Table | `shots/bare-table-frame.png` | "No rows yet. Rows come from the layout…" | **Nothing**: an empty-state message. Example |
 | Tab set | `shots/bare-tab-set-frame.png` | The heading and nothing else | Container (§2) |
-| Track | `shots/bare-track-frame.png` | "This track needs a number of segments, named levels, or rows." | **Nothing, and an error.** Example |
+| Track | `shots/bare-track-frame.png` | "This track needs a number of segments, named levels, or rows." | **Nothing, and an error.** Example. *Now an empty-state message instead (§ Amendment)* |
 
 **The threshold, stated so the next type is judged by it:** a type gains an
-`example` where its empty-config drawing is blank, is an empty-state message, or
-is a configuration error. A drawing that is incomplete but recognisable, like
+`example` where its empty-config drawing is blank or is an empty-state message.
+A configuration error is no longer on the list, because a bare type's empty
+config may not draw one (§ Amendment). A drawing that is incomplete but recognisable, like
 Passport without its tag line, keeps the honest drawing of what the insert
 produces.
 
@@ -353,9 +354,11 @@ pictures that go stale whenever a component's look changes.
   placeholders, a tag reading **Example** sits at the preview's top-left corner,
   in the muted small type Obsidian uses for a flair. The option's accessible
   description gains the sentence "The preview is an example. It is added empty."
-  The label is required because the drawing is not what **Add** produces, and a
-  Track inserted after an example preview arrives showing its configuration
-  error. The label is what makes that error expected rather than a betrayal.
+  The label is required because the drawing is not what **Add** produces: a
+  Track inserted after an example preview arrives empty, as a Table or a Roster
+  does. *Amended:* this bullet once said the Track arrived showing its
+  configuration error and the label made that expected. It did not, which is
+  what § Amendment fixes.
 - **One live render at a time, created on activation and discarded on the next.**
   Gutenberg 35719 measured about ten seconds to open an inserter that parsed
   thousands of entries eagerly. At 20 entries eager rendering would be cheap,
@@ -485,7 +488,8 @@ it is laid out as a list, not as columns.
   the canvas does, since it is the canvas's render path. The contract test
   makes this unreachable for any declared sample or example, so it remains only
   for a component that has neither and whose empty section will not read. No
-  such component exists today: Track was the one, and it now has an example.
+  such component exists today: Track was the one, and its empty config is now
+  an empty state (§ Amendment).
 - **A layout with no container:** no destination dropdown, as today.
 - **Every type and entry always exists,** since the catalog is code, so there is
   no empty catalog state.
@@ -869,6 +873,188 @@ Named clause by clause, because finding them again is the expensive part.
 - **The bare Track insert error.** A bare Track's empty config is a
   configuration error whatever the add control is, and it predates the picker.
   Nothing is added to Track in this branch beyond its `example`; it is a separate
-  short task after this lands.
+  short task after this lands. *That task is § Amendment below.*
 - **Rewriting other config field descriptions** to the budget. It governs the
   picker line only.
+
+## Amendment: a bare Track inserts empty, not broken
+
+Status: shipped
+Board card: Choosing the bare Track type in the component picker inserts a
+Track that draws a configuration error, while its preview showed a working run.
+
+*This section amends the shipped feature above rather than opening a doc of its
+own, at the owner's request. The route is **Standard**. The `Status:` line at
+the top of this file is left as `shipped`. This section carries its own.*
+
+### Model question
+
+**None in §13. The decision is about Track, and it grows no contract member.**
+A bare Track inserts `config: {}`, and `configError` in `src/components/track.ts`
+refuses that config with "This track needs a number of segments, named levels,
+or rows." The preview draws the `example` (`count: 5`) under the **Example**
+tag, so the preview shows a working run and the insert lands broken. §5 of this
+doc accepted that on purpose. The shipped picker shows it off, and it does not
+ship in 0.4.0.
+
+Three fixes were weighed.
+
+1. **Insert a minimal valid config.** Either a new definition member holding an
+   insert config, or `example` reused as the insert. Reusing `example` collapses
+   the example/insert split §4.1 drew on purpose. Done for every type, it writes
+   `Entry 1`, `Stat 1` and `Row 1` into real layouts. Done for Track alone, it
+   needs a flag to say so, which is a new member anyway. A new member passes
+   §4.1's rule (the alternative is the editor knowing Track needs a count), but
+   it would be a third config-shaped member next to `palette` and `example`,
+   declared by one component. And it invites the question "why not for Table?",
+   whose answer would put filler into layouts. **It lost** because it grows the
+   contract to fix what is really one component's opinion of its own empty
+   config.
+2. **Draw a default run when `count`, `levels` and `rows` are all absent.** This
+   changes what a layout file means. An absent key starts to mean a length that
+   the file never states. The form's **Segments** field would be blank while the
+   card draws five, and `<id>.count` would publish a number no formula can trace
+   to the layout. No default is neutral, either. `marks` can default to 1
+   because 1 is its identity. A `count` of 1 is a flag, and a flag stores `yes`
+   or `no`, so a count-less Track storing `yes` would change spelling the moment
+   an author typed 5. **It lost** because it costs the file model (§3.2, §4.2)
+   and a new §13 line to spare the author one keystroke, and it hides a
+   hand-edited layout's missing key under a run that looks deliberate.
+3. **Keep the insert empty, and draw the empty config as an empty state.**
+   **Chosen.** `configError`'s own doc comment already draws the line: it is for
+   "configuration that makes the card undrawable rather than merely empty". A
+   Track with no length is merely empty in exactly the way a Table with no rows
+   and a Roster with no stats are. The layout has not said yet what the
+   component holds. Both of those draw a muted message naming the fix, and Track
+   should too. That makes §5's accessible sentence, "It is added empty.", true
+   for Track, where today it is false. It changes nothing stored, nothing
+   published, and no member of the contract.
+
+**What the rest of Track already does with no count, and keeps doing:**
+`read` never consults `configError`, so a note holding a value under a
+count-less Track reads, keeps and writes it as before (Constraints 3 and 4 are
+not reached). `scopeValues` publishes nothing where `count` does not resolve,
+and a reset reports "it has no segments to fill." Only `render` and `sample`
+read the `count === undefined` branch, so they are the only two places this
+decision changes.
+
+### Smallest version
+
+Track stops calling a config with no `count`, `levels` or `rows` an error.
+`render` draws the label and an empty-state message instead, `sample` still
+returns `''`, and `picker-after-add` shows the result. It gives up a guard
+that stops the next type landing broken the same way.
+
+**The agreed version is the full one without the class rename.** It adds a pane
+test that inserts every bare type through the picker and fails on any
+configuration error. Track borrows `.sheetsmith-table-empty` as it stands. The
+rename that its third consumer calls for (`docs/PATTERNS.md` §1) is deferred to
+a `docs/BACKLOG.md` row (§ Deliberately not doing).
+
+### Design
+
+- **The empty state.** It draws the label (through `showsOwnLabel`, as a drawn
+  run does) and, under it, one muted line: **No segments yet. Set Segments in
+  the layout.** Like Table's and Roster's messages, it names the fix and says
+  where to make it. It names **Segments** alone, by the label the form gives
+  it, because that is the field the insert opens on: the longer sentence
+  naming level names and rows as well broke to eleven lines at the two-column
+  insert size. It draws no
+  run, no control and no breakdown button, and it takes no focus.
+- **In the editor**, the insert already selects the new Track. So its
+  configuration opens with **Segments** as its first field, which is the fix the
+  message names. No new gesture is needed.
+- **On a character's sheet**, a hand-written layout with a count-less Track shows
+  the same line to the reader. That matches what a row-less Table already shows.
+- **The error state is unchanged** for the configs that really cannot be drawn:
+  a bad `marks`, a blank, repeated or colon-bearing row key, and a checkbox with
+  open rows.
+- **Vocabulary.** The line carries `.sheetsmith-table-empty`, the class Table's
+  and Roster's empty states already use, so it looks like theirs. One
+  Track-scoped rule, `.sheetsmith-view .sheetsmith-track > .sheetsmith-table-empty`
+  in `src/styles/sheet.css`, sets it at `--font-ui-smaller` and drops the
+  cell's horizontal padding: in a card the line would otherwise draw at body
+  size under the card's label and be inset a second time. Table and Roster do
+  not move.
+
+**Roster and Table do not change.** Their empty configs are valid and
+empty, which is the state Track moves into. They keep their examples and their
+**Example** tags. **Track keeps its `example`** as well: its empty drawing is now
+an empty-state message, which the threshold still covers, so the tag stays true.
+
+**The threshold rule** (§1) drops "or is a configuration error": a bare type's
+empty config may not draw one, and the pane test below holds every type to
+that. **The accessible sentence**, "The preview is an example. It is added
+empty.", stays word for word. It is now true for all six tagged lines.
+
+**Comments that name the old behaviour** get corrected in the same change:
+`example` in `track.ts` ("whose empty config is a configuration error"),
+`example?` in `src/types.ts` ("or a configuration error"), and the note on the
+accessible sentence in `src/editor/component-picker.ts` (near line 388: "a Track
+inserted after its example arrives showing its configuration error").
+
+### Config fields
+
+None change. **Segments** (`count`) keeps its description.
+
+### Data and file model
+
+Nothing is stored and nothing changes on disk. The insert still writes
+`config: {}`. A layout with a count-less Track reads as before and round-trips
+byte for byte. A note's value under one is read, kept and written as before.
+
+### Acceptance criteria
+
+- [x] `src/components/track.test.ts`: `draws a card with no count, levels or
+      rows as an empty state, not an error`. It shows the label and the message,
+      has no `.sheetsmith-error`, and draws no run
+- [x] `src/components/track.test.ts`: `keeps a stored value under a card with no
+      count`. The note reads, and an untouched body writes back byte for byte
+- [x] `src/components/track.test.ts`: the existing configuration errors (marks,
+      row keys, checkbox with open rows) still draw `.sheetsmith-error`
+- [x] `src/editor/layout-editor.test.ts`: `inserts every bare type without a
+      configuration error`. The test walks the registry through the picker, so
+      it names no type, and after each **Add** the canvas holds no
+      `.sheetsmith-error`
+- [x] The contract test's sample sweeps still pass. `sample({})` for Track is
+      `''`
+- [x] `picker-after-add` (already in `harness/shot.mjs`) shows the new bare Track
+      on the canvas with its label and the empty-state line, and no error
+- [x] `picker-example` still shows the picker's Track line with five boxes under
+      the **Example** tag
+- [x] `grep -rn "needs a number of segments" src` finds nothing
+- [x] `npm run lint`, `npm test`, `npm run build` pass
+
+### Commit boundaries
+
+A plan for `/land-it`, applied once at the end.
+
+1. **`fix: Draw a Track with no length as empty rather than broken`**: the
+   `track.ts` change, its tests, the pane test, and the three corrected
+   comments, with the Track-scoped rule in `src/styles/sheet.css` and the
+   `styles.css` the build regenerates from it.
+2. **`docs: Record that a bare Track inserts empty`**: this amendment, the
+   `docs/BACKLOG.md` row, and the `docs/SPEC.md` clause below.
+
+**What `/land-it` changes in `docs/SPEC.md`:** §4.1's `example` bullet lists "a
+blank body, an empty-state message, or a configuration error". It drops the
+third case, because no bare type's empty config may be an error. §13's
+copy-budget paragraph needs no change: "only where that drawing shows nothing
+useful does the type declare an optional `example`" still holds as written.
+
+### Deliberately not doing
+
+- **An insert config, or `example` inserted.** Rejected above (option 1).
+- **A default run length.** Rejected above (option 2).
+- **Renaming `.sheetsmith-table-empty` to a shared `.sheetsmith-empty`**, and
+  the `docs/UI.md` §9 row that would name it. Track is its third consumer, so
+  `docs/PATTERNS.md` §1 calls for the rename, but the owner kept it out of this
+  fix. It is the `docs/BACKLOG.md` § Patterns row "An empty-state line three
+  components draw is named for one of them".
+- **A button in the empty state** that jumps to **Segments**. A component
+  cannot reach the editor, and the insert already selects it.
+- **The modifier-rules half** of §13's copy-budget entry.
+- **§13's question on whether a container's preview is composed by the editor
+  or declared by the container.**
+- **Every `docs/BACKLOG.md` row**, including the Track row-name pitch and the
+  contrast rows in § UI.
