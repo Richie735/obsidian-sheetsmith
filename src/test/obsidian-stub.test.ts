@@ -5,6 +5,7 @@ import {
 	AbstractInputSuggest,
 	App,
 	FileView,
+	Menu,
 	Notice,
 	Plugin,
 	PluginSettingTab,
@@ -1310,5 +1311,82 @@ describe('the file lifecycle doubles', () => {
 		plugin.unload();
 		expect(app.viewRegistry.getTypeByExtension('x')).toBeUndefined();
 		expect(app.viewRegistry.viewByType.v).toBeUndefined();
+	});
+});
+
+describe('the menu double', () => {
+	/*
+	 * Two options the layout editor's tree leans on, driven here because a
+	 * double that ignored either would let the tree's tests go green on a menu
+	 * the app would never behave like: a refused move that still wrote, and a
+	 * menu that stayed on screen after its item ran.
+	 */
+	function shown(): Menu {
+		document.body.replaceChildren();
+		const menu = new Menu();
+		menu.addItem((item) => item.setTitle('Live').setIcon('arrow-up'));
+		menu.addSeparator();
+		menu.addItem((item) => item.setTitle('Refused').setDisabled(true));
+		menu.addItem((item) => item.setTitle('Remove').setWarning(true));
+		menu.showAtPosition({ x: 10, y: 20 });
+		return menu;
+	}
+
+	function item(title: string): HTMLElement {
+		for (const el of Array.from(document.body.querySelectorAll('.menu-item'))) {
+			if (el.querySelector('.menu-item-title')?.textContent === title) {
+				return el as HTMLElement;
+			}
+		}
+		throw new Error(`no menu item "${title}"`);
+	}
+
+	it("draws the app's own markup on the body, at the point it was shown", () => {
+		shown();
+		const menu = document.body.querySelector('.menu');
+		expect(menu?.parentElement).toBe(document.body);
+		expect(menu?.querySelector('.menu-scroll > .menu-separator')).not.toBeNull();
+		expect(item('Live').querySelector('.menu-item-icon svg')).not.toBeNull();
+		expect(item('Refused').classList.contains('is-disabled')).toBe(true);
+		expect(item('Remove').classList.contains('is-warning')).toBe(true);
+		expect((menu as HTMLElement).style.left).toBe('10px');
+		expect((menu as HTMLElement).style.top).toBe('20px');
+	});
+
+	it("does not run a disabled item's click, and leaves the menu open", () => {
+		const menu = shown();
+		let ran = false;
+		menu.items[1]?.onClick(() => {
+			ran = true;
+		});
+		item('Refused').click();
+		expect(ran).toBe(false);
+		expect(document.body.querySelector('.menu')).not.toBeNull();
+	});
+
+	it('hides the menu on a click on an item, then runs the item', () => {
+		const menu = shown();
+		let hidden = false;
+		let open: Element | null = null;
+		menu.onHide(() => {
+			hidden = true;
+		});
+		menu.items[0]?.onClick(() => {
+			open = document.body.querySelector('.menu');
+		});
+		item('Live').click();
+		expect(hidden).toBe(true);
+		expect(open).toBeNull();
+		expect(Menu.open).toBeNull();
+	});
+
+	it('hides the previous menu when another is shown, as the app does', () => {
+		const first = shown();
+		const second = new Menu();
+		second.addItem((one) => one.setTitle('Second'));
+		second.showAtPosition({ x: 0, y: 0 });
+		expect(first.dom.isConnected).toBe(false);
+		expect(document.body.querySelectorAll('.menu')).toHaveLength(1);
+		second.hide();
 	});
 });
