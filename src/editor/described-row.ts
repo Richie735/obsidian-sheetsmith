@@ -30,7 +30,10 @@
  * container, so a module literal there is safe and readable. A modal can be
  * opened, closed and opened again, so its id is generated per instance or two
  * live elements carry the same one. That difference is the caller's, and it is
- * the only one.
+ * the only one. The third consumer, the pane's **Layout file** row
+ * (`docs/features/visible-layout-files.md`), mints one per render for the
+ * modal's reason: two panes open on one layout is a supported state, so a
+ * literal would be carried by two live rows at once.
  */
 
 import { Setting } from 'obsidian';

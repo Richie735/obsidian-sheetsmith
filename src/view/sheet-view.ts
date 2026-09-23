@@ -1,4 +1,5 @@
 import {
+	App,
 	getLinkpath,
 	HoverPopover,
 	Keymap,
@@ -82,6 +83,25 @@ export const VIEW_TYPE_SHEET = 'sheetsmith-sheet';
  */
 export function sheetViewState(path: string): ViewState {
 	return { type: VIEW_TYPE_SHEET, state: { file: path } };
+}
+
+/**
+ * The sheets currently on screen, in every leaf of this view type.
+ *
+ * One `getLeavesOfType` and one `instanceof`, named because two modules walk
+ * them now: the layout editor pane after it writes a layout, and
+ * `layout-file-events.ts` after a layout file is created, renamed or deleted
+ * anywhere. **The `instanceof` is the load-bearing half** — a leaf of this type
+ * can hold a deferred view, which is not a `SheetView` and has none of its
+ * methods — and a copy that dropped it would throw on the first restored
+ * workspace.
+ */
+export function openSheetViews(app: App): SheetView[] {
+	const sheets: SheetView[] = [];
+	for (const leaf of app.workspace.getLeavesOfType(VIEW_TYPE_SHEET)) {
+		if (leaf.view instanceof SheetView) sheets.push(leaf.view);
+	}
+	return sheets;
 }
 
 /**
