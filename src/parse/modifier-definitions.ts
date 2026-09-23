@@ -36,6 +36,7 @@ import {
 } from '../formula/modifier-targets';
 import { Layout } from './layout';
 import { unspellableName } from './modifier-cell';
+import { spelled } from './spelled';
 import {
 	MODIFIER_CHANGE_KEYS,
 	ModifierChangeView,
@@ -78,13 +79,6 @@ type RawDefinition = Record<string, unknown>;
 function text(raw: RawDefinition, key: string): string {
 	const value = raw[key];
 	return typeof value === 'string' ? value.trim() : '';
-}
-
-/** Quote a list of keys as an English series: `"a"`, `"a" and "b"`, `"a", "b" and "c"`. */
-function spelled(keys: readonly string[]): string {
-	const quoted = keys.map((key) => `"${key}"`);
-	if (quoted.length <= 1) return quoted.join('');
-	return `${quoted.slice(0, -1).join(', ')} and ${quoted[quoted.length - 1]}`;
 }
 
 /**

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { canReparent, reparent } from './reparent';
 import { ComponentConfig } from '../types';
-import { Layout } from '../parse/layout';
+import { Layout, mayHoldChildren } from '../parse/layout';
 
 function pos(overrides: Partial<ComponentConfig['position']> = {}) {
 	return { col: 1, row: 1, width: 2, height: 1, ...overrides };
@@ -70,15 +70,65 @@ describe('canReparent', () => {
 		expect('error' in result).toBe(true);
 	});
 
-	it('refuses a container onto a target that would push it past the depth cap', () => {
+	it('refuses a container whose inner container would land too deep, naming that container', () => {
 		const layout = fixture();
 		const outer = layout.components[0]!; // holds inner, which holds leaf
 		const empty = layout.components[1]!; // depth 0, may hold children
-		// Moving `outer` (which itself holds `inner`, a container) into `empty`
-		// would land `inner` at depth 2, where a container may not hold
-		// children (`leaf` would need depth 3).
+		// Moving `outer` into `empty` lands `outer` one level in, which it may
+		// be, but lands `inner` inside two containers, where a container may
+		// not hold children — and `inner` holds `leaf`. The sentence names
+		// `inner`, the one that is actually too deep, and not `outer`.
 		const result = canReparent(layout, outer, empty);
-		expect('error' in result).toBe(true);
+		expect(result).toEqual({
+			error: '"Outer" holds "Inner", which holds components, and moving "Outer" here would put "Inner" inside two containers, where it could hold nothing. Move the components out of "Inner" first.',
+		});
+	});
+
+	it('names every inner container that would land too deep, not only the first', () => {
+		// `outer` holds two containers, each holding a Card. A sentence naming
+		// only the first would be refused again, naming the second, once its
+		// fix was followed.
+		const layout = fixture();
+		const outer = layout.components[0]!;
+		const empty = layout.components[1]!;
+		outer.children!.push({
+			id: 'second',
+			type: 'group',
+			label: 'Second',
+			position: pos(),
+			children: [{ id: 'other', type: 'card', label: 'Other', position: pos() }],
+		});
+		expect(canReparent(layout, outer, empty)).toEqual({
+			error: '"Outer" holds "Inner" and "Second", which hold components, and moving "Outer" here would put them inside two containers, where they could hold nothing. Move the components out of "Inner" and "Second" first.',
+		});
+	});
+
+	it('says "two containers" only while two is where a container stops holding anything', () => {
+		// The depth refusals spell the cap as a word, and `parse/layout.ts`
+		// owns the number. Change the cap and this goes red, rather than
+		// every sentence above quietly going false.
+		expect(mayHoldChildren(1)).toBe(true);
+		expect(mayHoldChildren(2)).toBe(false);
+	});
+
+	it('refuses a container holding only cards onto a target already one level in, saying so', () => {
+		// The other way into the same branch: `inner` holds a Card, no
+		// container, so "a container of its own" would be false. Moving it
+		// into `nested`, which sits one level in, puts `inner` itself inside
+		// two containers, where it could hold nothing.
+		const layout = fixture();
+		const outer = layout.components[0]!;
+		const inner = outer.children![0]!;
+		const nested: ComponentConfig = {
+			id: 'nested',
+			type: 'group',
+			label: 'Nested',
+			position: pos(),
+		};
+		outer.children!.push(nested);
+		expect(canReparent(layout, inner, nested)).toEqual({
+			error: '"Inner" holds components, and moving it here would put it inside two containers, where it could hold nothing. Move its components out first.',
+		});
 	});
 
 	it('accepts the identical container at the same target once it holds no children', () => {

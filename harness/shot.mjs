@@ -1880,8 +1880,9 @@ const DEFAULTS = [
 	},
 	{
 		// A chord the row cannot take: `Tools` into `Weapons`, which would put
-		// Tools' own cards past the depth cap. The refusal line under the row,
-		// in `canReparent`'s own sentence.
+		// Tools, a Group holding components, inside two containers, where it may
+		// hold nothing. The refusal line under the row, in `canReparent`'s own
+		// sentence: Tools holds components, and says to move them out first.
 		name: 'editor-tree-key-refused',
 		query: 'surface=editor&theme=light&treeKey=tools%3AArrowRight',
 		size: EDITOR_FRAME,

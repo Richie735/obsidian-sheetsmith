@@ -3124,11 +3124,12 @@ describe('reparenting a tree row', () => {
 		 * The trivial cases above never reach the interesting refusal the drag
 		 * path has its own dedicated test for (`refuses a drop that would push a
 		 * container past the depth cap, with no write`, against `deep()`): a
-		 * container that itself holds a container of its own, moved into a
-		 * sibling that is already one level in. `zone` holds two depth-1
-		 * children — `holder`, empty, and `nested`, which holds `leaf` — so
-		 * moving `nested` into its previous sibling `holder` would land `leaf`
-		 * three containers deep.
+		 * container that holds components, moved into a sibling that is
+		 * already one level in. `zone` holds two depth-1 children — `holder`,
+		 * empty, and `nested`, which holds the Card `leaf` — so moving `nested`
+		 * into its previous sibling `holder` would put `nested` inside two
+		 * containers, where it may hold nothing. `deep()` is the other case,
+		 * where the container too deep is one inside the one dragged.
 		 */
 		harness = await open(depthCapped());
 		openRowMenu(harness, 'nested');
@@ -3149,7 +3150,12 @@ describe('reparenting a tree row', () => {
 		const message = treeRow(harness, 'edit-nested').querySelector(
 			'.sheetsmith-field-error',
 		);
-		expect(message?.textContent).toContain('more than one level deep');
+		// Exact, not a fragment: `nested` holds a Card rather than a container,
+		// and an assertion on the shared tail passed on a sentence that said
+		// it held "a container of its own".
+		expect(message?.textContent).toBe(
+			'"Nested" holds components, and moving it here would put it inside two containers, where it could hold nothing. Move its components out first.',
+		);
 		expect(message?.getAttribute('role')).toBe('alert');
 	});
 
