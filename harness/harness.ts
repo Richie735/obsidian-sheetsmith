@@ -43,6 +43,7 @@ import {
 	drivePicker,
 	driveResize,
 	driveSuggest,
+	driveTree,
 	renderEditorPane,
 } from './editor-pane';
 import {
@@ -495,6 +496,7 @@ async function ensureEditor(): Promise<HTMLElement> {
 			suggest: params.get('suggest') ?? undefined,
 			treeHover: params.get('treeHover') ?? undefined,
 			treeDrop: params.get('treeDrop') ?? undefined,
+			collapse: params.get('collapse') ?? undefined,
 		},
 	);
 	return pane;
@@ -628,6 +630,12 @@ document
  * destination, and `&pickerAdd` presses **Add** once the rest is done. And
  * `&samples=off` presses the pane's **Sample values** toggle off, which is the
  * only way to photograph the empty canvas now that a pane opens filled.
+ *
+ * Three for the tree (`docs/features/layout-editor-tree.md` §9): `&collapse=<id>,…`
+ * presses each container's chevron in order, `&menu=<id>` opens that row's menu
+ * and leaves it open, and `&treeKey=<id>:<ArrowUp|ArrowDown|ArrowRight|ArrowLeft>`
+ * focuses that row's name and presses the Alt chord, which shows a completed
+ * move or a refused one's line under the row.
  *
  * And one for what the layout *folder* holds: `&layout=none` for a vault with no
  * layouts in it, `&layout=broken` for one whose file will not parse, and
@@ -906,6 +914,12 @@ function applyQuery(): void {
 				pickerActive: params.get('pickerActive') ?? undefined,
 				pickerInto: params.get('pickerInto') ?? undefined,
 				pickerAdd: params.has('pickerAdd') ? true : undefined,
+			});
+		}
+		if (editorPane) {
+			await driveTree(editorPane, {
+				menu: params.get('menu') ?? undefined,
+				treeKey: params.get('treeKey') ?? undefined,
 			});
 		}
 		if (resize !== null && editorPane) {

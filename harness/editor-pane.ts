@@ -90,6 +90,27 @@ export interface PaneView {
 	 * nothing else here exercises a released, valid drop.
 	 */
 	treeDrop?: string;
+	/**
+	 * `<id>[,<id>…]` — press each container's chevron in the tree, in order
+	 * (`docs/features/layout-editor-tree.md` §9). A press rather than a state
+	 * handed to the view, so the shot exercises the same write to view state a
+	 * reader's press makes; a restore from saved state is a test's to cover.
+	 */
+	collapse?: string;
+	/**
+	 * `<id>` — press that row's menu button and leave the app's menu open.
+	 * Pressed as Enter presses it, which places the menu under the button rather
+	 * than at a pointer a still has none of — and that reads the button's real
+	 * box, so it is driven once the pane is on screen, by `driveTree`.
+	 */
+	menu?: string;
+	/**
+	 * `<id>:<key>` — focus that row's name button and press Alt with the key, one
+	 * of `ArrowUp`, `ArrowDown`, `ArrowRight`, `ArrowLeft`. A completed move and a
+	 * refused one's line under the row are both photographable this way. Driven
+	 * by `driveTree` too, because a detached button cannot take focus.
+	 */
+	treeKey?: string;
 }
 
 export interface PaneHost {
@@ -139,11 +160,51 @@ export async function renderEditorPane(
 	// it reads zero. `driveResize` below is `harness.ts`'s to call once its
 	// own `draw()` has appended the pane, which `select` never needed because a synthetic `click`/`change` dispatches
 	// correctly whether or not the element is on screen.
+	if (view.collapse !== undefined) {
+		for (const id of view.collapse.split(',')) {
+			const chevron = await control(pane.contentEl, `tree-disclosure-${id.trim()}`);
+			if (chevron === null) {
+				console.warn(`No container "${id}" in the tree to collapse.`);
+				continue;
+			}
+			chevron.click();
+		}
+	}
 	if (view.treeHover !== undefined) {
 		await dragTreeRow(pane.contentEl, view.treeHover, false);
 	}
 	if (view.treeDrop !== undefined) {
 		await dragTreeRow(pane.contentEl, view.treeDrop, true);
+	}
+}
+
+/**
+ * Drive `view.menu` and `view.treeKey` against an already-attached pane.
+ *
+ * The menu is opened the way Enter on the button opens it — a click whose
+ * `detail` is 0 — so it lands under the button, where a keyboard reader meets
+ * it, rather than at a pointer position a still has no way to choose.
+ */
+export async function driveTree(pane: HTMLElement, view: PaneView): Promise<void> {
+	if (view.menu !== undefined) {
+		const button = await control(pane, `tree-menu-${view.menu}`);
+		if (button === null) {
+			console.warn(`No "${view.menu}" row in the tree to open a menu on.`);
+		} else {
+			button.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }));
+		}
+	}
+	if (view.treeKey !== undefined) {
+		const [id, key] = view.treeKey.split(':');
+		const name = await control(pane, `edit-${id ?? ''}`);
+		if (name === null || key === undefined) {
+			console.warn(`Bad treeKey "${view.treeKey}"; want "<id>:<ArrowUp|ArrowDown|ArrowRight|ArrowLeft>".`);
+			return;
+		}
+		name.focus();
+		name.dispatchEvent(
+			new KeyboardEvent('keydown', { key, altKey: true, bubbles: true, cancelable: true }),
+		);
 	}
 }
 
