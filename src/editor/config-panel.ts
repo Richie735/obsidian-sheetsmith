@@ -72,11 +72,12 @@
  * in charge of state the render loop one level up is the only thing that can
  * apply.
  *
- * **Not here: the outline.** The picker and its file operations, the tree and its
- * rows, the add row, the schematics and their paint, and the walk that finds what
- * is selected all stay in `layout-editor.ts`. Nor the arithmetic, nor the
- * gestures: `preview-grid.ts` and `schematic-gestures.ts` were the first two cuts
- * of the same file and this is the third.
+ * **Not here: the outline.** The tree and its rows, the add row, the schematics
+ * and their paint, and the walk that finds what is selected all stay in
+ * `layout-editor.ts`, and the picker and its file operations are
+ * `layout-file-row.ts`'s. Nor the arithmetic, nor the gestures: `preview-grid.ts`
+ * and `schematic-gestures.ts` were the first two cuts of the same file and this
+ * is the third.
  */
 
 import { Setting } from 'obsidian';
