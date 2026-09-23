@@ -32,8 +32,8 @@ import { innerPlacement } from '../view/grid-cells';
  * The top level, wherever something has to be named that is not a component.
  *
  * Defined here rather than in `layout-editor.ts`, which re-exports it: two
- * jobs share one spelling — the **Add component** row's destination for "on
- * the sheet", and what the selection holds while the panel configures the
+ * jobs share one spelling — the component picker's destination for "on the
+ * sheet", and what the selection holds while the panel configures the
  * layout itself — and `layout-editor.ts` already imports `renderTree` from
  * here, so declaring the constant there and importing it back would be a
  * cycle of two runtime values rather than one type-only edge.
@@ -302,7 +302,7 @@ function renderRow(
 	// a third flex child appended after the controls — `.sheetsmith-wrapping-row`
 	// is what lets that line wrap onto its own row instead of squeezing the
 	// name and the icon controls sideways (docs/UI.md §9), the same
-	// treatment the Add component row already gets for its own extra line.
+	// treatment `describedRow` gives a row's own extra line.
 	row.settingEl.addClass('sheetsmith-wrapping-row', 'sheetsmith-tree-row');
 	// One class for the row and for the canvas overlay, so the two paints
 	// cannot disagree about what is selected.

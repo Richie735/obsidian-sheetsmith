@@ -12,12 +12,12 @@
  *
  * **Why the files are files and not fenced blocks in the feature doc.** Three
  * reasons, in the order they decide it. The layout is addressed by *filename* —
- * `sheet-layout` names `<folder>/<that name>.json` (`src/layouts.ts`) — so
- * `Modifier variations.json` is part of the fixture and a fence cannot carry it. The
- * owner copies two files rather than transcribing two blocks, which is the whole
- * point. And a doc holding no copy has nothing to drift from: extracting content
- * back out of prose would make the fence the source of truth and the extraction
- * a second parser to maintain. `docs/PATTERNS.md` §2 already names `src/test/`
+ * `sheet-layout` names `<folder>/<that name>.sheetsmith` (`src/layouts.ts`) — so
+ * `Modifier variations.sheetsmith` is part of the fixture and a fence cannot
+ * carry it. The owner copies two files rather than transcribing two blocks,
+ * which is the whole point. And a doc holding no copy has nothing to drift
+ * from: extracting content back out of prose would make the fence the source
+ * of truth and the extraction a second parser to maintain. `docs/PATTERNS.md` §2 already names `src/test/`
  * as the home of "the fixtures", so this needs no new folder policy.
  *
  * **What this file cannot check, and does not pretend to.** Every press step in
@@ -75,7 +75,7 @@ import { parseLayout, serialiseLayout } from '../parse/layout';
 import { cellParts } from '../parse/modifier-cell';
 import { parseModifierDefinitions } from '../parse/modifier-definitions';
 import { walkComponents } from '../parse/layout-walk';
-import { isContainer } from '../types';
+import { isContainer, ModifierOutcome } from '../types';
 
 /**
  * Where the two files sit, and the constants the feature doc's paths have to
@@ -83,7 +83,7 @@ import { isContainer } from '../types';
  * would not notice the folder moving under one of them.
  */
 const FIXTURE_DIR = new URL('../test/fixtures/modifiers/', import.meta.url);
-const LAYOUT_FILE = 'Modifier variations.json';
+const LAYOUT_FILE = 'Modifier variations.sheetsmith';
 const NOTE_FILE = 'Ilona.md';
 
 const LAYOUT_TEXT = readFileSync(new URL(LAYOUT_FILE, FIXTURE_DIR), 'utf8');
@@ -91,7 +91,7 @@ const NOTE_TEXT = readFileSync(new URL(NOTE_FILE, FIXTURE_DIR), 'utf8');
 
 /** The Record set fixture, on the same terms and in a folder of its own. */
 const RECORDS_DIR = new URL('../test/fixtures/records/', import.meta.url);
-const RECORDS_LAYOUT_FILE = 'Record variations.json';
+const RECORDS_LAYOUT_FILE = 'Record variations.sheetsmith';
 const RECORDS_NOTE_FILE = 'Records.md';
 
 const RECORDS_LAYOUT_TEXT = readFileSync(
@@ -105,7 +105,7 @@ const RECORDS_NOTE_TEXT = readFileSync(
 
 /** The Track fixture, on the same terms and in a folder of its own. */
 const TRACKS_DIR = new URL('../test/fixtures/tracks/', import.meta.url);
-const TRACKS_LAYOUT_FILE = 'Track variations.json';
+const TRACKS_LAYOUT_FILE = 'Track variations.sheetsmith';
 const TRACKS_NOTE_FILE = 'Tracks.md';
 
 const TRACKS_LAYOUT_TEXT = readFileSync(
@@ -230,16 +230,16 @@ describe('the layout file the fixture recipe names', () => {
 	const { layout, problems } = sheetFrom(LAYOUT_TEXT, NOTE_TEXT);
 
 	it('is accepted by the real layout parser', () => {
-		expect(layout.name).toBe(LAYOUT_FILE.replace(/\.json$/, ''));
+		expect(layout.name).toBe(LAYOUT_FILE.replace(/\.sheetsmith$/, ''));
 		// Six columns, not the plugin's default twelve: every layout in the
 		// throwaway vault is `"columns": 6`, and a fixture laying out on a
 		// different grid from its siblings looks different for a reason that has
 		// nothing to do with what it tests.
 		expect(layout.columns).toBe(6);
 		expect(problems).toEqual([]);
-		// Not a vacuous pass: six components, and every one of them a type the
+		// Not a vacuous pass: seven components, and every one of them a type the
 		// registry actually has.
-		expect(layout.components).toHaveLength(6);
+		expect(layout.components).toHaveLength(7);
 		for (const config of layout.components) {
 			expect(getComponent(config.type), config.type).toBeDefined();
 		}
@@ -253,6 +253,7 @@ describe('the layout file the fixture recipe names', () => {
 			'abilities',
 			'armour_class',
 			'passive_perception',
+			'saving_throws',
 			'skills',
 			'magic_items',
 			'worn_items',
@@ -323,7 +324,7 @@ describe('the layout file the fixture recipe names', () => {
 		 * glyphs on a row that filled both. The key is plural because it is what the
 		 * cell's accessible name reads: `Modifiers: 2 applying`.
 		 */
-		expect((layout.components[4] as TableConfig).columns).toEqual([
+		expect((layout.components[5] as TableConfig).columns).toEqual([
 			{ key: 'Modifiers', type: 'modifier', hideHeading: true },
 			{ key: 'Worn', type: 'toggle' },
 			{ key: 'Notes', type: 'text' },
@@ -331,7 +332,7 @@ describe('the layout file the fixture recipe names', () => {
 		// The second table exists so the qualified breakdown form is on the sheet
 		// rather than something the reader has to build — and so that the same
 		// definition is enrolled in from two places.
-		expect((layout.components[5] as TableConfig).columns).toEqual([
+		expect((layout.components[6] as TableConfig).columns).toEqual([
 			{ key: 'Modifiers', type: 'modifier', hideHeading: true },
 		]);
 	});
@@ -376,7 +377,7 @@ describe('the character note the fixture recipe names', () => {
 	const { note } = sheetFrom(LAYOUT_TEXT, NOTE_TEXT);
 
 	it('names the layout by its filename, which is how a note finds one', () => {
-		expect(note.layoutName).toBe(LAYOUT_FILE.replace(/\.json$/, ''));
+		expect(note.layoutName).toBe(LAYOUT_FILE.replace(/\.sheetsmith$/, ''));
 	});
 
 	it('holds a section for each component that stores anything', () => {
@@ -606,6 +607,52 @@ describe('the arithmetic the fixture\'s press steps promise', () => {
 		expect(built.sheet('mod.armour_class')).toBe(4);
 	});
 
+	it('moves two numbers off one enrolment, and names the modifier in both breakdowns', () => {
+		/*
+		 * **The acceptance case for `docs/features/multi-change-definitions.md`.**
+		 * `Ring of Protection` is one definition naming two values — 1 to armour
+		 * class and 1 to saving throws — and the two rows that enrol in it name it
+		 * once each, exactly as they did when it moved one. Nothing in either note
+		 * changed; what changed is how many slots one enrolment pushes at.
+		 */
+		const saves = built.modifiers.breakdown('saving_throws');
+		// Two rows name it — a magic item and a worn item — so two lines land here,
+		// one of which is suppressed by the other, because two item bonuses of the
+		// same size contest exactly as they do at armour class.
+		expect(saves.lines.map((line) => line.definition)).toEqual([
+			'Ring of Protection',
+			'Ring of Protection',
+		]);
+		expect(saves.total).toBe(1);
+		// CON 13 gives +1, and the ring adds another.
+		expect(built.derivedFor('saving_throws')).toBe(2);
+		// And the armour class half is untouched: it is one of the four that make
+		// 22 above, still named by the same word.
+		expect(
+			built.modifiers
+				.breakdown('armour_class')
+				.lines.map((line) => line.definition),
+		).toContain('Ring of Protection');
+	});
+
+	it('reads the nine flat definitions and the one nested one as the same shape', () => {
+		// The two spellings side by side in one layout, which is what the fixture is
+		// for: nothing downstream of the parser can tell which one a definition was
+		// written in, and this is the assertion that says so.
+		const byName = new Map(
+			built.modifiers.definitions.map((one) => [one.name, one]),
+		);
+		expect(byName.get('Ring of Protection')?.changes.map((one) => one.target)).toEqual(
+			['armour_class', 'saving_throws'],
+		);
+		expect(byName.get('Plate armour')?.changes.map((one) => one.target)).toEqual([
+			'armour_class',
+		]);
+		expect(
+			[...byName.values()].filter((one) => one.changes.length > 1),
+		).toHaveLength(1);
+	});
+
 	it('contests a typed override with a named one on exactly equal terms', () => {
 		/*
 		 * **A push carries no tier and neither does the arithmetic.** `Barkskin` is
@@ -731,7 +778,7 @@ describe('the arithmetic the fixture\'s press steps promise', () => {
 	it('offers every declared modifier and every accepting target to the form', () => {
 		// A definition is the layout's, so which ones a row may pick has nothing to
 		// do with which table the row is on — and the accepting set is what the
-		// form's **Changes** select offers, which is the sheet's own half of
+		// form's **Value** select offers, which is the sheet's own half of
 		// dnd5e#3900's check now that a target can be typed on a row.
 		expect(built.modifiers.definitions).toHaveLength(10);
 		expect(built.modifiers.targets.map((one) => one.name)).toEqual([
@@ -743,6 +790,7 @@ describe('the arithmetic the fixture\'s press steps promise', () => {
 			'abilities.CHA',
 			'armour_class',
 			'skills.perception',
+			'saving_throws',
 		]);
 		// `passive_perception` is published and reads no modifier, so it is not
 		// offered — and it still has a *label*, which is what keeps an identifier
@@ -786,12 +834,13 @@ describe('what a modifier cell says about its own row', () => {
 	function applied(label: string, cell: string) {
 		const values = row(label).row;
 		return rowModifiers(cellParts(cell), (stored) =>
-			built.modifiers.outcome(stored, values),
+			built.modifiers.outcomes(stored, values),
 		);
 	}
 
+	/** The one outcome a part naming a one-change definition comes to. */
 	const outcomeFor = (part: string, label: string) =>
-		built.modifiers.outcome(part, row(label).row);
+		built.modifiers.outcomes(part, row(label).row)[0] as ModifierOutcome;
 
 	it('says what one row is doing when its cell names two, at both depths', () => {
 		/*
@@ -822,14 +871,18 @@ describe('what a modifier cell says about its own row', () => {
 			'Bracers of Warding +2',
 			'Ring of Protection; armour_class += 2 as item when Worn',
 		);
+		// Three lines from two parts, because `Ring of Protection` names two
+		// values: the count is of *changes*, which is what a reader standing on the
+		// row can actually see moving.
 		expect(modifierRowText(said)).toBe(
 			[
 				'Armour class — item +1 (changes nothing)',
+				'Saving throws — item +1',
 				'Armour class — item +2',
 			].join('\n'),
 		);
 		expect(modifierRowName('Modifiers', said)).toBe(
-			'Modifiers: 1 applying, 1 changing nothing',
+			'Modifiers: 2 applying, 1 changing nothing',
 		);
 	});
 
@@ -1170,8 +1223,10 @@ describe('the press steps that change the layout', () => {
 		expect(stripped).not.toBe(LAYOUT_TEXT);
 		const after = sheetFrom(stripped, NOTE_TEXT);
 		// Every definition is now reported, because nothing on the layout reads a
-		// modifier at all.
-		expect(after.definitions.problems).toHaveLength(10);
+		// modifier at all — and eleven rather than ten, because `Ring of
+		// Protection` names two values and each of them is reported on its own
+		// line. A definition naming several is several things that can be wrong.
+		expect(after.definitions.problems).toHaveLength(11);
 		// And every number that was modified falls back to its unmodified self,
 		// override included — which is what the bound on the override step buys.
 		expect(after.sheet('abilities.STR')).toBe(2);
@@ -1328,7 +1383,7 @@ describe('the Record set fixture the recipe names', () => {
 	}
 
 	it('is accepted by the real layout parser, on the vault\'s own grid', () => {
-		expect(built.layout.name).toBe(RECORDS_LAYOUT_FILE.replace(/\.json$/, ''));
+		expect(built.layout.name).toBe(RECORDS_LAYOUT_FILE.replace(/\.sheetsmith$/, ''));
 		// Six columns, like every other layout in the throwaway vault: a fixture
 		// laying out on a different grid looks different for a reason that has
 		// nothing to do with what it tests.
@@ -1342,7 +1397,7 @@ describe('the Record set fixture the recipe names', () => {
 
 	it('names the layout the note names, so neither can be renamed alone', () => {
 		expect(built.note.layoutName).toBe(
-			RECORDS_LAYOUT_FILE.replace(/\.json$/, ''),
+			RECORDS_LAYOUT_FILE.replace(/\.sheetsmith$/, ''),
 		);
 	});
 
@@ -1593,10 +1648,10 @@ describe('the Track fixture the recipe names', () => {
 	}
 
 	it('is accepted by the real layout parser, on the vault\'s own grid', () => {
-		expect(built.layout.name).toBe(TRACKS_LAYOUT_FILE.replace(/\.json$/, ''));
+		expect(built.layout.name).toBe(TRACKS_LAYOUT_FILE.replace(/\.sheetsmith$/, ''));
 		expect(built.layout.columns).toBe(6);
 		expect(built.problems).toEqual([]);
-		expect(built.layout.components).toHaveLength(4);
+		expect(built.layout.components).toHaveLength(6);
 		for (const config of built.layout.components) {
 			expect(getComponent(config.type), config.type).toBeDefined();
 		}
@@ -1620,11 +1675,45 @@ describe('the Track fixture the recipe names', () => {
 		const hitDice = trackDataOf('hit_dice');
 		// One d10, four d6 (one already spent), and two die types this
 		// character has not added at all — the exact motivating case, on one
-		// layout neither forks.
+		// layout neither forks. Plus the one row the character invented, which
+		// the layout never declared and which sits after all four.
 		expect(hitDice.values).toEqual({
 			d6: '1 / 4',
 			d10: '0 / 1',
+			'Homebrew d4': '1 / 2',
 		});
+		expect(hitDice.own).toEqual(['Homebrew d4']);
+	});
+
+	it('reads a card with nothing declared as entirely the character\'s', () => {
+		const kills = trackDataOf('kills');
+		expect(kills.values).toEqual({
+			Goblins: '6 / 10',
+			Dragons: '3 / 5',
+		});
+		// In the note's own order, which is the only order the file states.
+		expect(kills.own).toEqual(['Goblins', 'Dragons']);
+		const clocks = trackDataOf('clocks');
+		expect(clocks.own).toEqual(['Rescue the miners']);
+	});
+
+	it('publishes nothing at all for a row the character named', () => {
+		const scope = built.env.sheet;
+		// Inert to formulas, under every spelling and both suffixes — the
+		// accepted cost of identity by typed name, and the reason a value
+		// another card reads belongs in a declared row.
+		for (const name of [
+			'kills',
+			'kills.Goblins',
+			'kills.goblins',
+			'kills.Goblins.left',
+			'hit_dice.Homebrew d4',
+			'clocks.Rescue the miners',
+		]) {
+			expect(scope(name), name).toBeUndefined();
+		}
+		// And the declared rows beside it publish what they always did.
+		expect(scope('hit_dice.d6.left')).toBe(3);
 	});
 
 	it('publishes each die type\'s own remainder from its own stored length', () => {
@@ -1657,6 +1746,9 @@ describe('the Track fixture the recipe names', () => {
 		// untouched.
 		expect(values.d6).toBe('4 / 4');
 		expect(values.d10).toBe('1 / 1');
+		// The character's own row is reached on identical terms: inert to
+		// formulas, and deliberately not inert to triggers.
+		expect(values['Homebrew d4']).toBe('2 / 2');
 		// Skipped, not failed, and nothing written for either — not even a
 		// zero, which is a value the reader never asked for.
 		expect(values.d8).toBeUndefined();

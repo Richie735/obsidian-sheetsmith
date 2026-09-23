@@ -539,6 +539,7 @@ function amountControl(options: AmountControlOptions): HTMLElement {
 
 export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 	type: 'pool',
+	description: 'A current value against a maximum, stepped up and down, with an optional buffer.',
 	storage: 'fenced',
 	// `reset.*.to` rather than `reset.to`: the bindings are a list, so each
 	// one's expression lives at its own index. The sheet hands `applyReset` the

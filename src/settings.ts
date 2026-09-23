@@ -4,6 +4,7 @@ import {
 	Setting,
 	SettingDefinitionItem,
 } from 'obsidian';
+import { LAYOUT_EXTENSION } from './layouts';
 import SheetsmithPlugin from './main';
 import { LAYOUT_KEY } from './types';
 import { openLayoutEditor } from './view/layout-editor-view';
@@ -137,7 +138,13 @@ export class SheetsmithSettingTab extends PluginSettingTab {
 					// this folder only, so moving the folder without moving the
 					// layouts leaves every character reporting a layout it can no
 					// longer find.
-					'Layouts are found here by name. A character naming one that is not in this folder reports it as missing instead of rendering.',
+					// The extension is said here because this row is where a reader
+					// looks for where layouts live, and a `.sheetsmith` file is the
+					// thing they will then look for. What Obsidian Sync does with
+					// one is deliberately not said yet: it is written from what the
+					// owner observes in the app, not from the docs
+					// (`docs/features/visible-layout-files.md`, Documentation).
+					`Layouts are found here by name. A character naming one that is not in this folder reports it as missing instead of rendering. Layout files end in .${LAYOUT_EXTENSION}.`,
 				render: (setting) => {
 					setting.addText((text) => {
 						text

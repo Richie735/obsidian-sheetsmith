@@ -49,8 +49,11 @@ mkdirSync(outDir, { recursive: true });
  * **All three sheet frames are one number in three places and go stale together.**
  * `sheet-narrow` and `sheet-large-text` were left behind when this one was raised
  * for the Image row, and each then cropped the feature it was supposed to show.
- * Measure all three when the sample grows: load the harness at the view's width
- * and read `document.scrollingElement.scrollHeight`. Last raised when the modifier
+ * Measure all three when the sample grows: load the harness through the view's own
+ * query and read **`document.body.scrollHeight`**, never
+ * `document.scrollingElement.scrollHeight` — the paragraph below says why, and
+ * this line said the wrong one of the two for long enough to mislead somebody who
+ * read it. Last raised when the modifier
  * tables gained a `Worn` column and a row, at which point the default measured
  * 3810, the narrow one 7000 and the large-text one 3800 — which is why only two of
  * the three moved.
@@ -144,8 +147,58 @@ mkdirSync(outDir, { recursive: true });
  * against 7300, 8437 at `text=24` against 8000 — all four over, each measured
  * through its own query with the harness built first. 6400 to **6700**, 13200
  * to **14300**, 7300 to **7700**, 8000 to **8500**.
+ *
+ * **And over again, one feature later, which is why this paragraph keeps
+ * growing rather than being replaced.** Two Track cards were added to
+ * `samples.ts` and every full-sheet frame went stale in the same pass:
+ * measured `document.body.scrollHeight` of **7137** here against 6700,
+ * 15213 at 380 against 14700, 8449 at 520 against 7850, 9009 at
+ * `text=24` against 8500. What that cost is the part worth recording: the
+ * new cards were the *last* two on the sheet, so they fell outside every
+ * standard capture, and a real defect in them — a run collapsed to 0.58px
+ * at a 520px container — was invisible to the whole run and findable only
+ * by shooting an explicit frame. **A frame that is too short does not look
+ * wrong**, which is what makes this the one number here that has to be
+ * re-measured whenever `samples.ts` gains a row. 6700 to **7200**, 14700
+ * to **15500**, 7850 to **8600**, 8500 to **9100**.
+ *
+ * The 380 number is the one that had to be taken twice. 15300 was measured
+ * against the tree *before* the run-floor fix below, and once a narrow card
+ * wrapped differently the content came to 15295 — five pixels of headroom,
+ * which is a frame that fits today and clips on the next row anybody adds. So
+ * it is 15500, and the lesson is the order: **measure after the CSS settles,
+ * not before.**
+ * **Raised again for the granted-segment runs**
+ * (`docs/features/modifier-granted-track-segments.md`), which add one full grid
+ * row of Tracks under the modifier tables. Measured after the CSS settled, as
+ * the paragraph above asks: 7133 against 7200, 8967 against 9100 and 15431
+ * against 15500 — all three still fitting, and all three inside 135px of their
+ * frame, which is the state this comment's own history says goes stale on the
+ * next addition. 7200 to **7500**, 9100 to **9300**, 15500 to **15800**.
+ *
+ * **And again in the same wave**, when a design review asked for the states the
+ * first pass had left unphotographed: five Track cards over two grid rows rather
+ * than two over one. 7500 to **7800**, 9300 to **9600**, 15800 to **16100**.
+ *
+ * **Both of those raises were justified by a number that could not have detected
+ * staleness, and the paragraph above had already said so.** They were taken from
+ * `document.scrollingElement.scrollHeight`, which returns the greater of the
+ * content and the viewport — so at a frame of 7500 it reported 7413, at 7800 it
+ * reported 7713, and it would have reported "87px of headroom" against any frame
+ * whatsoever. The instruction at the top of this comment said to read exactly that
+ * property, which is the whole of how it happened: the correction was written down
+ * and the instruction was not updated to match it. Both are fixed now.
+ *
+ * Re-measured honestly, through each view's own query and off `document.body`:
+ * **7117** here, **8912** at `text=24`, **15709** at `&width=380` (the heading row
+ * a modified Track grows costs about 12px in each). So the frames
+ * stand — the narrow one genuinely needed the first raise, since 15500 was 174px
+ * *under* today's content — but the slack is now 695, 699 and 426 rather than the
+ * tight margin this file usually runs. **Measure before raising again rather than
+ * following the pattern**, because two of these three did not need the second
+ * raise at all.
  */
-const SHEET_FRAME = '1400,6700';
+const SHEET_FRAME = '1400,7800';
 
 /**
  * The editor pane's frame, tall because the tree is the whole layout.
@@ -194,6 +247,37 @@ const OPEN_MIXED_GLYPH =
 	"press=.sheetsmith-table-modifier-button%5Btitle*%3D'item%20%2B1%20%28changes%20nothing%29'%5D";
 const OPEN_MIXED_FORM = `${OPEN_MIXED_GLYPH}&press=.sheetsmith-panel-line%5Bdata-sheetsmith-part%3D'typed'%5D`;
 
+/**
+ * The `Bear charm` row's glyph, and then its one line.
+ *
+ * Named by the count in its accessible name, which is the one thing only a row
+ * whose modifier moves several values says — a fixture growing a row above it
+ * cannot move that, where an `:nth-child` would. `*=` rather than `=` because the
+ * count is the stable half and the label before it is the column's, which
+ * `hideHeading` leaves the shot unable to assert.
+ */
+const OPEN_MULTI_FORM =
+	"press=.sheetsmith-table-modifier-button%5Baria-label*%3D'0%20applying%2C%202%20changing%20nothing'%5D&press=.sheetsmith-panel-line";
+
+
+/*
+ * A Track that lets the character add rows, and the three states only a press
+ * reaches (`docs/features/character-added-track-rows.md`).
+ *
+ * Registered rather than shot by hand, which is this file's own standard and
+ * the thing this feature shipped without: the modifier form has six views and
+ * a Track's **Add** form had none, so its panel, its refusals and its armed
+ * row were reviewed by whoever remembered to open them. A state nothing
+ * registers is a state the next full run silently stops covering.
+ *
+ * The triggers are named by `aria-label`, which is the one string on them that
+ * says which card they belong to, so a fixture growing a card above cannot
+ * move them.
+ */
+const TRACK_ADD_TRIGGER =
+	"press=%5Baria-label%3D'Add%20to%20Open%20hit%20dice'%5D";
+const TRACK_REMOVE_TRIGGER =
+	"press=%5Baria-label%3D'Remove%20from%20Open%20hit%20dice'%5D";
 const DEFAULTS = [
 	{ name: 'sheet-light', query: 'surface=sheet&theme=light', size: SHEET_FRAME },
 	{ name: 'sheet-dark', query: 'surface=sheet&theme=dark', size: SHEET_FRAME },
@@ -225,9 +309,13 @@ const DEFAULTS = [
 		//
 		// **Measure it rather than guessing.** Eyeballing a shot is what let it
 		// go stale twice, because a cropped shot looks like a finished sheet. In
-		// a browser on the harness page: `document.scrollingElement.scrollHeight`
-		// at the width this view uses. A test cannot hold it — that needs a real
-		// browser, and this file opens with the reason it does not drive one.
+		// a browser on the harness page: `document.body.scrollHeight`, through
+		// this view's own query rather than merely at its width. **Not
+		// `document.scrollingElement.scrollHeight`**, which returns the greater of
+		// the content and the viewport and so reports whatever frame it is given
+		// — this line named that one and somebody raised all three frames on it.
+		// A test cannot hold it — that needs a real browser, and this file opens
+		// with the reason it does not drive one.
 		//
 		// Found stale and fixed to 8700 in a separate pass just before this one
 		// (it was cropping Rituals and everything below it, for reasons this
@@ -256,7 +344,7 @@ const DEFAULTS = [
 		// has taken. 14300 to **14700**.
 		name: 'sheet-narrow',
 		query: 'surface=sheet&theme=dark&width=380',
-		size: '520,14700',
+		size: '520,16100',
 	},
 	{
 		/*
@@ -298,7 +386,7 @@ const DEFAULTS = [
 		// 7700 to **7850**.
 		name: 'sheet-list-narrow',
 		query: 'surface=sheet&theme=light&width=520',
-		size: '620,7850',
+		size: '620,8600',
 	},
 	{
 		// UI.md §5 puts the card's headline number in `em` rather than pixels
@@ -330,7 +418,7 @@ const DEFAULTS = [
 		//
 		// Raised again with SHEET_FRAME for the fit rows: measured 8437 against
 		// 8000, through `text=24` as this comment asks.
-		size: '1400,8500',
+		size: '1400,9600',
 	},
 	{
 		// The first view to photograph a focus ring at all. A still cannot press
@@ -439,6 +527,82 @@ const DEFAULTS = [
 	},
 	{
 		/*
+		 * **The third door onto one builder, and the first on a control whose own
+		 * press is taken.** A Card opens its breakdown from the number and a
+		 * computed cell from the cell; a Track cannot, because a press on the run
+		 * sets the value — so the affordance is a glyph button beside the card's
+		 * name, and this is the only view in which it is open.
+		 *
+		 * It is also the only way this surface can be looked at at all. The
+		 * content was reachable before it, through the run's `title` and its
+		 * `.sheetsmith-sr-only` twin, and neither appears in a screenshot — a
+		 * native tooltip is the host's and a twin is 1px of clipped text. So the
+		 * bubble here is the whole of what a sighted reader ever sees of it.
+		 *
+		 * What to look at: that the mark reads beside an uppercase name a rank
+		 * quieter than it, that it measures the same as the two picker glyphs
+		 * under the runs, and that the bubble's lines read as a list the way
+		 * `sheet-breakdown`'s do. The glyph is `info` and deliberately not the
+		 * `zap` a modifier cell draws — that one opens a control that edits and
+		 * this opens an account that does not (`docs/UI.md` §9).
+		 */
+		name: 'sheet-breakdown-track',
+		query:
+			"surface=sheet&theme=light&bar=off&press=%5Baria-label%3D'Modifiers%20on%20Endurance'%5D",
+		size: SHEET_FRAME,
+	},
+	{
+		// The same, in forced colors, because this is a *fourth* figure on a
+		// component that already draws three — a plain square, a granted ring and
+		// a blocked slash — and the mode that strips every fill is where a fourth
+		// one would collide with the other three if it were going to. It is a
+		// circle where those are rounded squares, on the label's row rather than
+		// in the run, and at a smaller size: three ways of not being one of them.
+		name: 'sheet-breakdown-track-forced-colors',
+		query:
+			"surface=sheet&theme=light&bar=off&press=%5Baria-label%3D'Modifiers%20on%20Endurance'%5D",
+		size: SHEET_FRAME,
+		flags: ['--force-high-contrast'],
+	},
+	{
+		/*
+		 * **The same door in the dark theme**, which this surface had never been
+		 * seen in on a Track: the bubble is the host's own popover chrome and the
+		 * bolt is `--text-muted`, and both are palette-dependent.
+		 */
+		name: 'sheet-breakdown-track-dark',
+		query:
+			"surface=sheet&theme=dark&bar=off&press=%5Baria-label%3D'Modifiers%20on%20Endurance'%5D",
+		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * **Anchored at the right edge of the grid**, which is the case a
+		 * viewport clamp exists for. Unmade sits at columns 9 to 12, so its bolt
+		 * is within a bubble's width of the pane's edge — the arithmetic says it
+		 * fits at 1400 and `docs/UI.md` §11 is precisely the rule that arithmetic
+		 * does not settle where a picture can. It is also the `?` card, so this
+		 * is the one view holding the sentence the popover now carries.
+		 */
+		name: 'sheet-breakdown-track-right',
+		query:
+			"surface=sheet&theme=light&bar=off&press=%5Baria-label%3D'Modifiers%20on%20Unmade'%5D",
+		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * **And at 380px of container**, where a bubble anchored near the edge has
+		 * the least room to be clamped into and the lines wrap hardest. The
+		 * narrowest true viewport a still can hold is 520 (`docs/BACKLOG.md`), so
+		 * this is the floor rather than a phone.
+		 */
+		name: 'sheet-breakdown-track-narrow',
+		query:
+			"surface=sheet&theme=dark&width=380&bar=off&press=%5Baria-label%3D'Modifiers%20on%20Endurance'%5D",
+		size: '520,16100',
+	},
+	{
+		/*
 		 * **The form, which is the one surface of this feature a still cannot
 		 * otherwise reach**: it is behind a press, and `docs/UI.md` §11 is the
 		 * standing argument against reviewing a surface by reading its code.
@@ -537,6 +701,58 @@ const DEFAULTS = [
 		query:
 			"surface=sheet&theme=dark&bar=off&press=.sheetsmith-table-modifier-button%5Btitle%3D'Armour%20class%20%E2%80%94%20sets%20to%2018'%5D&press=.sheetsmith-panel-line",
 		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * **A part naming a modifier that moves two values**, which is three strings
+		 * no other view can reach (`docs/features/multi-change-definitions.md`): the
+		 * line's indented continuation under one name, each change's own second line,
+		 * and — once the line is open — the fields block's `changes 2 values`
+		 * sentence and the `(2 values)` the **Modifier** picker's chosen option hangs
+		 * on the name — beside it rather than after the outcome, which is where a
+		 * `<select>`'s clipping starts from.
+		 *
+		 * **The row it presses moves no number**, which is what let it be added at
+		 * all. `Blessing of the Bear` carries `when: 'Worn'` and the `Bear charm`
+		 * row leaves Worn off, so every arithmetic assertion and every measured
+		 * comment about this sheet is untouched while the panel still draws the
+		 * whole shape. The row exists for this and nothing else, which is
+		 * `sheet-modifier-form-repeat`'s own arrangement one state over.
+		 *
+		 * Named by its accessible name rather than by an `:nth-child`: the count is
+		 * the one thing only a multi-change row says, so a fixture growing a row
+		 * above it cannot move the selector.
+		 */
+		name: 'sheet-modifier-form-multi',
+		query: `surface=sheet&theme=light&bar=off&${OPEN_MULTI_FORM}`,
+		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * The same state at a phone's *container* width, in the dark palette.
+		 *
+		 * **And it does not narrow the panel, which is worth saying rather than
+		 * hoping otherwise.** It was added to catch an indented hanging block
+		 * wrapping under its own indent, and it cannot: the panel hangs off
+		 * `document.body` and is capped at `min(500px, …)` of *viewport*, so it
+		 * draws at the same 390px here as at 1400 — which `docs/UI.md` §12 already
+		 * records twice, once for the panel not following the reader's text size
+		 * and once for headless Chrome refusing a viewport under 500px. What this
+		 * does photograph is the two-line part in the other palette against a narrow
+		 * sheet.
+		 *
+		 * **Driving the wrap needs `Emulation.setDeviceMetricsOverride` over the
+		 * DevTools protocol, not `--window-size`**, which is the same instrument
+		 * three backlog rows already wait on — the sub-500px floor,
+		 * `prefers-contrast: more`, and the bad-drag border that exists only during
+		 * a drag. So it joins that queue rather than being a gap of its own, and the
+		 * expectation this view was added under was wrong about the mechanism as
+		 * well as about the outcome.
+		 */
+		name: 'sheet-modifier-form-multi-narrow',
+		query: `surface=sheet&theme=dark&width=380&bar=off&${OPEN_MULTI_FORM}`,
+		// Kept equal to `sheet-modifier-form-narrow`'s own frame, for its reason.
+		size: '520,11800',
 	},
 	{
 		/*
@@ -705,10 +921,35 @@ const DEFAULTS = [
 		 * Scrolled rather than re-cut: the clipping is the component honouring its
 		 * placement, and shaping the sample so these landed above the fold would
 		 * be shaping the subject to the photograph.
+		 *
+		 * **Pointed at `traits` by its field count, not by document order.** The
+		 * selector used to be `.sheetsmith-record-set-list .sheetsmith-record`
+		 * and took the first match on the page, which is the Spellbook's
+		 * `known_spells` — a list that does not scroll — so the shot scrolled
+		 * nothing and no PNG held the states this comment names. `-fields-5` is
+		 * `traits` alone among the lists with a strip, and is also what makes this
+		 * the picture of the sticky strip (`docs/features/record-set-heading-strip.md`):
+		 * scrolled to the last record, the strip is at the top edge, opaque, with a
+		 * hairline under it and no record text above or through it.
 		 */
 		name: 'sheet-record-ceilings',
 		query:
-			'surface=sheet&theme=light&scroll=.sheetsmith-record-set-list%20.sheetsmith-record%3Alast-of-type',
+			'surface=sheet&theme=light&scroll=.sheetsmith-record-set-fields-5%20.sheetsmith-record%3Alast-of-type',
+		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * **A control the scrolled list has put under the strip, focused.** A still
+		 * cannot press Tab, and a programmatic focus scrolls its control into view by
+		 * the same algorithm — honouring `scroll-padding-top`, which is what keeps it
+		 * from being obscured (WCAG 2.4.11). So: scrolled to the last record, then
+		 * the *first* record's ring focused, which brings it back up to sit directly
+		 * under the strip and never behind it. The sheet styles `:focus`, so what
+		 * paints is what a Tab press paints (`docs/UI.md` §11).
+		 */
+		name: 'sheet-record-strip-focus',
+		query:
+			'surface=sheet&theme=light&scroll=.sheetsmith-record-set-fields-5%20.sheetsmith-record%3Alast-of-type&focus=.sheetsmith-record-set-fields-5%20.sheetsmith-record%3Afirst-of-type%20.sheetsmith-record-field-toggle%20.sheetsmith-level-ring',
 		size: SHEET_FRAME,
 	},
 	{
@@ -817,7 +1058,14 @@ const DEFAULTS = [
 		 */
 		name: 'editor-record-fields',
 		query: 'surface=editor&theme=light&open=traits',
-		size: EDITOR_FRAME,
+		// **Wider than `EDITOR_FRAME`, because the canvas preview is the subject
+		// and it has to be wide enough for the strip.** At 1500 the Traits preview
+		// is 467px against the 712px a five-field list needs, so the setting read
+		// ON over a preview that drew nothing — correct, and indistinguishable from
+		// a fault (`docs/features/record-set-heading-strip.md`, Layout editor). At
+		// 2000 it is 759px and the strip draws. The threshold is not lowered to fit
+		// a frame.
+		size: '2000,8600',
 	},
 	{
 		/*
@@ -1152,12 +1400,40 @@ const DEFAULTS = [
 		 * split each definition's detail across two rows: ten definitions, each a
 		 * row plus a six-control detail line over two lines, and **the problem
 		 * report under them is the whole point of the view** — it is the only thing
-		 * explaining why one `Changes` select shows a bare `passive_perception`
-		 * where the other nine show reader-facing labels. Measured at 2941; 3000
-		 * clears it with a small margin rather than cutting `10 modifiers defined.`
-		 * the way 2600 now does.
+		 * explaining why one **Value** select shows a bare `passive_perception`
+		 * where the others show reader-facing labels.
+		 *
+		 * **Raised again for the Promoted fields list, and the re-measurement found
+		 * the old number already stale.** Measured as the panel's own bottom in
+		 * page coordinates, which is the quantity a frame has to clear: 3206
+		 * *without* that list, against the 2941 recorded here — so 3000 had been
+		 * cropping the report this view exists to show, for some earlier growth
+		 * nobody re-measured. With the list it is 3484: a header, a six-sentence
+		 * description, four rows, one problem and a count. 3550 clears it with the
+		 * same small margin.
+		 *
+		 * Worth recording because it is exactly what this comment's instruction is
+		 * for. A frame that is too short crops the bottom of the panel, which looks
+		 * identical to a panel that ends there — so the number goes stale silently
+		 * and the only way to notice is to measure rather than to look.
+		 *
+		 * **Raised again for a definition's Changes list**
+		 * (`docs/features/multi-change-definitions.md`), and this one is the largest
+		 * single jump the number has taken: every definition gained an **Add change**
+		 * footer and moved **Only when** onto a line of its own, and the list gained
+		 * an eleventh entry — the one spelled with a `changes` list, which is the
+		 * state this view now exists to show. Measured the way this comment asks: the
+		 * panel's own bottom in page coordinates is 4718 against the 3484 recorded
+		 * above; 4910 once each list gained its own **Changes** heading; **4980**
+		 * once the list gained a closing rule and the field's description grew a
+		 * sentence about a modifier moving several values. 5080 clears it with the
+		 * same small margin.
+		 *
+		 * Three re-measurements in one feature is the number worth noticing, and
+		 * every one of them was a line of chrome per entry across eleven entries.
+		 * The instruction above is the whole defence: measure, never estimate.
 		 */
-		size: '1400,3000',
+		size: '1400,5080',
 	},
 	{
 		/*
@@ -1178,7 +1454,7 @@ const DEFAULTS = [
 		// page and reflows nothing, so the two frames move together whenever the
 		// panel's content does — as they did not for a while, which is why this one
 		// used to carry the finding the other view's frame was too short to show.
-		size: '1400,3000',
+		size: '1400,5080',
 		flags: ['--force-high-contrast'],
 	},
 	{
@@ -1209,11 +1485,19 @@ const DEFAULTS = [
 		 */
 		name: 'editor-layout-threshold',
 		query: 'surface=editor&theme=light&open=::sheet::',
-		// Measured at 2975, close to `editor-layout`'s own 2941: the forced break
-		// makes every detail line two rows regardless of width, so the panel is
-		// only slightly taller narrow than wide rather than a different shape.
-		// 3000 clears both with the same small margin.
-		size: '1210,3000',
+		// Re-measured the same way as `editor-layout`, the panel's bottom in page
+		// coordinates: 3530 here against its 3484, where before the Promoted
+		// fields list the pair was 3253 against 3206. The relationship holds —
+		// the forced break makes every detail line two rows regardless of width,
+		// and the new list is a two-field row that does not wrap either — so the
+		// panel is only slightly taller narrow than wide rather than a different
+		// shape. 3600 clears both with the same small margin.
+		//
+		// Re-measured again for a definition's Changes list, and again after its
+		// closing rule: 4996 here against the wide view's 4980, so the relationship
+		// still holds and 5080 clears both
+		// (`docs/features/multi-change-definitions.md`).
+		size: '1210,5080',
 	},
 	{
 		// The narrowest split there is, bounded. 1210 of window is 1184 of pane —
@@ -1273,6 +1557,47 @@ const DEFAULTS = [
 		size: '1000,700',
 	},
 	{
+		// A valid layout opened from outside the layout folder
+		// (`docs/features/visible-layout-files.md`): the header carries the
+		// file's basename, the dropdown carries the file as an extra first
+		// option labelled with its vault path, and a line under the row says no
+		// character can use it from there. Light, because the line is in the
+		// muted description style and light is where muted text is faintest.
+		name: 'editor-outside-folder-light',
+		query: 'surface=editor&theme=light&layout=outside',
+		size: '1400,900',
+	},
+	{
+		// The same state dark, which `docs/UI.md` §11 asks of every error and
+		// empty state: the line is muted description text, and dark is the other
+		// half of where muted text can fade.
+		name: 'editor-outside-folder-dark',
+		query: 'surface=editor&theme=dark&layout=outside',
+		size: '1400,900',
+	},
+	{
+		// The same state in a 380px pane, because the dropdown's selected label
+		// is now a whole vault path. **`&width=380` rather than a 380-wide
+		// window**, which is `sheet-narrow`'s own spelling and for its reason:
+		// headless Chrome floors the viewport at 500 (`docs/BACKLOG.md` § UI), so
+		// a `380,…` frame is a 500px render cropped to 380 — and it drew this
+		// row's description as cut off mid-sentence at the frame's edge, which
+		// looks exactly like a line that fails to wrap. Measured in a true 380px
+		// pane the row is 354 wide, the controls and the description 322 each,
+		// with nothing past the row's edge.
+		name: 'editor-outside-folder-narrow',
+		query: 'surface=editor&theme=light&layout=outside&width=380',
+		size: '520,1400',
+	},
+	{
+		// Layouts in the folder and none open: a pane whose file was deleted from
+		// outside, or a restored workspace naming a layout that is gone. The row
+		// with nothing selected, and the row's own line saying what to do.
+		name: 'editor-no-file',
+		query: 'surface=editor&theme=light&layout=no-file',
+		size: '1400,400',
+	},
+	{
 		// A layout file that will not parse. The order is the load-bearing part:
 		// the picker first, because it is how an author leaves a layout they
 		// cannot edit, then the message where the tree would be — and no panel, so
@@ -1280,6 +1605,129 @@ const DEFAULTS = [
 		name: 'editor-broken',
 		query: 'surface=editor&theme=dark&layout=broken',
 		size: '1400,420',
+	},
+	/*
+	 * The component picker (`docs/features/component-picker.md`), every state
+	 * its Look criteria name. On `layout=canvas-demo` unless a view says
+	 * otherwise: its canvas is a few hundred pixels tall where the harness
+	 * layout's is four thousand, so the picker, which sits under the canvas,
+	 * is on screen rather than below a frame nobody would open. It also holds a
+	 * Group, so the destination dropdown is on the bar as it is on most real
+	 * layouts. The frames are the open picker's own height at the view's width
+	 * plus the tree under it, measured rather than inherited.
+	 */
+	{
+		// The **Choose** row where the three old controls were.
+		name: 'picker-closed',
+		query: 'surface=editor&theme=light&layout=canvas-demo',
+		size: '1500,1400',
+	},
+	{
+		// Open, Card active: the bare type draws itself from an empty config.
+		name: 'picker-open-light',
+		query: 'surface=editor&theme=light&layout=canvas-demo&picker=open',
+		size: '1500,2600',
+	},
+	{
+		name: 'picker-open-dark',
+		query: 'surface=editor&theme=dark&layout=canvas-demo&picker=open',
+		size: '1500,2600',
+	},
+	{
+		// A bare Track draws from its `example` — five boxes — under the tag,
+		// never from Checkbox's config.
+		name: 'picker-example',
+		query: 'surface=editor&theme=light&layout=canvas-demo&pickerActive=track',
+		size: '1500,2600',
+	},
+	{
+		// An entry draws its own config, which is what it inserts: no tag.
+		name: 'picker-entry',
+		query: 'surface=editor&theme=light&layout=canvas-demo&pickerActive=track:0',
+		size: '1500,2600',
+	},
+	{
+		// A container draws the two placeholder children the picker supplies,
+		// as two tabs, under the tag.
+		name: 'picker-container',
+		query: 'surface=editor&theme=light&layout=canvas-demo&pickerActive=tab-set',
+		size: '1500,2800',
+	},
+	{
+		// Image declares no sample: its empty frame is the component.
+		name: 'picker-image',
+		query: 'surface=editor&theme=light&layout=canvas-demo&pickerActive=image',
+		size: '1500,2800',
+	},
+	{
+		// A shape word finds Track's whole block.
+		name: 'picker-search',
+		query: 'surface=editor&theme=light&layout=canvas-demo&pickerQuery=box',
+		size: '1500,1600',
+	},
+	{
+		// A job word finds nothing, and the line says what does work.
+		name: 'picker-no-match',
+		query: 'surface=editor&theme=light&layout=canvas-demo&pickerQuery=stress',
+		size: '1500,1400',
+	},
+	{
+		// The harness layout, whose containers fill the destination dropdown,
+		// with one chosen. Framed to the picker's bar, not to the pane: the
+		// harness canvas is about 4000px, the picker ends near 8350, and the
+		// tree under it is cut on purpose, as `editor-layout` cuts it.
+		name: 'picker-destination',
+		query: 'surface=editor&theme=light&picker=open&pickerInto=weapons',
+		size: '1500,10400',
+	},
+	{
+		// After **Add**: still open, the report on the bar, the new Track on
+		// the canvas above and selected in the panel beside it.
+		name: 'picker-after-add',
+		query: 'surface=editor&theme=light&layout=canvas-demo&pickerActive=track&pickerAdd',
+		size: '1500,2800',
+	},
+	{
+		// The leaf at a laptop's height, with the list running past it: the bar
+		// stays pinned at the leaf's foot, so **Add** is in reach.
+		name: 'picker-bounded',
+		query: 'surface=editor&theme=light&layout=canvas-demo&picker=open&bounded',
+		size: '1400,900',
+	},
+	{
+		// The single-column regime: the picker takes the pane's width, still
+		// under **Choose** and above the tree, the panel after both.
+		name: 'picker-stacked',
+		query: 'surface=editor&theme=light&layout=canvas-demo&picker=open',
+		size: '1190,3600',
+	},
+	{
+		// Below the pane's missing narrow regime (`docs/BACKLOG.md` § UI).
+		// `&width=` rather than a narrow window, `editor-outside-folder-narrow`'s
+		// spelling and for its reason: headless Chrome floors the viewport at 500.
+		name: 'picker-narrow-480',
+		query: 'surface=editor&theme=light&layout=canvas-demo&picker=open&width=480',
+		size: '520,4600',
+	},
+	{
+		name: 'picker-narrow-380',
+		query: 'surface=editor&theme=light&layout=canvas-demo&picker=open&width=380',
+		size: '520,5200',
+	},
+	{
+		name: 'picker-large-text',
+		query: 'surface=editor&theme=light&layout=canvas-demo&picker=open&text=24',
+		size: '1500,3600',
+	},
+	{
+		// Forced colors: the active line takes the system selection, and the
+		// list's focus ring is an outline, so both survive. The list is focused
+		// after the page draws, which a detached pane cannot be.
+		name: 'picker-forced-colors',
+		query:
+			'surface=editor&theme=light&layout=canvas-demo&pickerActive=pool&focus=.sheetsmith-picker-list',
+		size: '1500,2600',
+		flags: ['--force-high-contrast'],
 	},
 	{
 		// The grid canvas's own layout (`docs/features/grid-canvas.md`):
@@ -1588,6 +2036,81 @@ const DEFAULTS = [
 		query:
 			'surface=sheet&theme=light&type=.sheetsmith-passport-name-input%7C%5B%5BThora%5D%5D',
 		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * The **Add** form, open under the one declared row still on offer, so
+		 * the rule between the list and the form is in a shot and so is the
+		 * form's own shape: two labelled fields and one button, in the panel's
+		 * clothes rather than a second surface inside it.
+		 */
+		name: 'sheet-track-add-form',
+		query: `surface=sheet&theme=light&${TRACK_ADD_TRIGGER}`,
+		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * The same form in the dark palette, on `sheet-modifier-form-dark`'s own
+		 * argument: the panel is this plugin's own surface, so what a reviewer
+		 * checks is its palette in each theme rather than borrowed chrome.
+		 */
+		name: 'sheet-track-add-form-dark',
+		query: `surface=sheet&theme=dark&${TRACK_ADD_TRIGGER}`,
+		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * **A rename refused at the commit**, which is a class of surface no
+		 * stored body can hold: the sentence exists only after somebody types a
+		 * name that is already taken and looks away, so `&type=` is the only
+		 * route to it (`docs/UI.md` §11). Typing `d6` over the character's own
+		 * row collides with the declared `d6` one column up.
+		 *
+		 * What to look at is that the message is *drawn* at all: it was
+		 * announced and not drawn, so the card showed two rows reading `d6`
+		 * with nothing on screen saying why the second was not taken.
+		 */
+		name: 'sheet-track-rename-refused',
+		query:
+			'surface=sheet&theme=light&type=.sheetsmith-track-row-name-input%7Cd6',
+		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * A row armed for removal, **on the mixed card rather than the one that
+		 * is all the character's**. Clocks would arm just as well and says less:
+		 * the picker's whole job here is that it lists two kinds of row in one
+		 * list — the declared character-owned ones first, then the ones the
+		 * character named — and what is worth photographing is an armed line
+		 * against its unarmed neighbours of the *other* kind. It is also the one
+		 * delete in this plugin whose target does not come back, so what to
+		 * check is that the armed line reads as heavier than the lines around it
+		 * without having become a second gesture.
+		 */
+		name: 'sheet-track-remove-armed',
+		query: `surface=sheet&theme=light&${TRACK_REMOVE_TRIGGER}&press=.sheetsmith-panel-line`,
+		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * **The refused rename in forced colors, because that is where its
+		 * treatment was decided.** The message drops `.sheetsmith-error`'s box
+		 * and keeps a leading border, on the argument that the border is the
+		 * one channel that survives this mode — every foreground repaints to
+		 * one system colour, so the red says nothing here and the bar is the
+		 * whole of what marks the line as a refusal.
+		 *
+		 * That argument rested on a rendering nothing rendered: the view was
+		 * shot into a scratch directory to check it and then thrown away, which
+		 * is the situation `docs/UI.md` §11 keeps being rewritten about. **An
+		 * argument that rests on a rendering owes a registered picture of it**,
+		 * or the next person to touch the rule has only the comment.
+		 */
+		name: 'sheet-track-rename-refused-forced-colors',
+		query:
+			'surface=sheet&theme=light&type=.sheetsmith-track-row-name-input%7Cd6',
+		size: SHEET_FRAME,
+		flags: ['--force-high-contrast'],
 	},
 ];
 

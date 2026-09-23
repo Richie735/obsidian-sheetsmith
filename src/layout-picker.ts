@@ -70,7 +70,9 @@ class LayoutModal extends SuggestModal<TFile> {
 
 	onChooseSuggestion(file: TFile): void {
 		// The basename, which is the name `loadLayout` resolves inside the
-		// folder and the name a note's `sheet-layout` holds. Never the path.
+		// folder and the name a note's `sheet-layout` holds. Never the path, and
+		// never the extension: `.sheetsmith` and `.json` resolve through the one
+		// name (`layouts.ts`'s `layoutFileFor`).
 		this.onChoose(file.basename);
 	}
 }

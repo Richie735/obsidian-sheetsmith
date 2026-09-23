@@ -69,6 +69,7 @@
 					"maxSource": "character"
 				}
 			],
+			"openRows": true,
 			"reset": [
 				{
 					"trigger": "Long rest",
@@ -108,6 +109,31 @@
 				"row": 2,
 				"width": 2,
 				"height": 2
+			}
+		},
+		{
+			"id": "kills",
+			"type": "track",
+			"label": "Kills",
+			"openRows": true,
+			"position": {
+				"col": 1,
+				"row": 4,
+				"width": 3,
+				"height": 1
+			}
+		},
+		{
+			"id": "clocks",
+			"type": "track",
+			"label": "Clocks",
+			"count": 6,
+			"openRows": true,
+			"position": {
+				"col": 4,
+				"row": 4,
+				"width": 3,
+				"height": 1
 			}
 		}
 	]

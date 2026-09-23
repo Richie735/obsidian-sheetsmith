@@ -1,6 +1,7 @@
 import { MarkdownView, Notice } from 'obsidian';
 import type SheetsmithPlugin from './main';
 import { chooseLayoutForNewCharacter } from './characters';
+import { convertJsonLayouts } from './layout-conversion';
 import { chooseStarterLayout } from './starters/picker';
 import { LAYOUT_KEY } from './types';
 import { LayoutEditorView, openLayoutEditor } from './view/layout-editor-view';
@@ -49,6 +50,15 @@ export function registerCommands(plugin: SheetsmithPlugin): void {
 		id: 'create-character',
 		name: 'Create a character',
 		callback: () => chooseLayoutForNewCharacter(plugin),
+	});
+
+	// A plain `callback` for the reason the two above give: an empty folder is
+	// answered with a sentence rather than a hidden command, and the command is
+	// one of only two doors to the conversion (`layout-conversion.ts`).
+	plugin.addCommand({
+		id: 'convert-json-layouts',
+		name: 'Convert JSON layout files',
+		callback: () => void convertJsonLayouts(plugin),
 	});
 
 	plugin.addCommand({

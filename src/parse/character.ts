@@ -8,7 +8,13 @@
  */
 
 import { LAYOUT_KEY } from '../types';
-import { lineText, renameHeadingLine, splitLines } from './lines';
+import { isPlainScalar } from './frontmatter';
+import {
+	isFrontmatterDelimiter,
+	lineText,
+	renameHeadingLine,
+	splitLines,
+} from './lines';
 
 export class CharacterParseError extends Error {
 	constructor(message: string) {
@@ -95,10 +101,10 @@ function splitFrontmatter(
 ): { frontmatter: string; rest: string } | null {
 	const lines = splitLines(source);
 	const first = lines[0];
-	if (first === undefined || !/^---\r?\n$/.test(first)) return null;
+	if (first === undefined || !isFrontmatterDelimiter(first)) return null;
 	for (let i = 1; i < lines.length; i++) {
 		const line = lines[i] as string;
-		if (/^---(\r?\n)?$/.test(line)) {
+		if (isFrontmatterDelimiter(line)) {
 			const end = i + 1;
 			return {
 				frontmatter: lines.slice(0, end).join(''),
@@ -128,39 +134,27 @@ function extractLayoutName(frontmatter: string): string {
 }
 
 /**
- * Whether `name` can be the layout value with no quotes around it.
- *
- * The reader directly above is one of *two* that have to agree about this line:
- * `extractLayoutName` takes the rest of the line, trims it, and strips one
- * surrounding pair of quotes, while `view/auto-open.ts` and the **Open as
- * sheet** command read the same key through Obsidian's own YAML in
- * `metadataCache`. A value the two read differently is a note that opens as a
- * sheet and then cannot find its layout, so the predicate is deliberately
- * narrow: plain only where plain means the same thing to both.
- *
- * Plain needs a letter or a digit first, which rules out every YAML indicator
- * (`- ? : , [ ] { } # & * ! | > ' " % @` and a backtick) in one condition rather
- * than a list, and no `:` or `#` anywhere, which are the two characters that
- * turn the rest of a plain scalar into a mapping or a comment. It also needs no
- * trailing space: a plain value is trimmed by both readers, so a name ending in
- * one would come back a different name, where a quoted one comes back whole.
- */
-function isPlainLayoutValue(name: string): boolean {
-	return /^[\p{L}\p{N}][^:#]*$/u.test(name) && !/[ \t]$/.test(name);
-}
-
-/**
  * The `sheet-layout` line's text, with no line ending.
  *
- * Double quotes need no escaping, and that is not luck: `"` and `\` are both in
- * Obsidian's forbidden set for file names, and a layout's name *is* its
- * filename's basename — `createLayout` writes `<name>.json` — so no name that
+ * **Whether the value may go unquoted is `parse/frontmatter.ts`'s question**,
+ * and this was the second reader of it: the predicate lived here while this key
+ * was the only one the plugin wrote, and a promoted property (SPEC §9) needs
+ * exactly the same rule for exactly the same reason — a value the plugin's own
+ * reader and Obsidian's YAML disagree about. Moving it there also closed the gap
+ * `docs/BACKLOG.md` § Patterns recorded against the version that lived here: it
+ * wrote `12`, `No` and `null` unquoted, and real YAML gives those back as a
+ * number, a boolean and nothing at all.
+ *
+ * Double quotes need no escaping here, and that is not luck: `"` and `\` are
+ * both in Obsidian's forbidden set for file names, and a layout's name *is* its
+ * filename's basename — `createLayout` writes `<name>.sheetsmith` — so no name that
  * can exist in the layout folder holds either character. Recorded because the
- * next reader will otherwise add escaping, and escaping would *break* the round
- * trip: `extractLayoutName` strips quotes and does not unescape.
+ * next reader will otherwise reach for `yamlScalar`, which does escape, and
+ * escaping would *break* the round trip: `extractLayoutName` strips quotes and
+ * does not unescape.
  */
 function layoutKeyLine(name: string): string {
-	return `${LAYOUT_KEY}: ${isPlainLayoutValue(name) ? name : `"${name}"`}`;
+	return `${LAYOUT_KEY}: ${isPlainScalar(name) ? name : `"${name}"`}`;
 }
 
 /**

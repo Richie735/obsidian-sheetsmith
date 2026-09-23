@@ -4,6 +4,9 @@ import './obsidian-stub';
 import {
 	AbstractInputSuggest,
 	App,
+	FileView,
+	Notice,
+	Plugin,
 	PluginSettingTab,
 	Setting,
 	SettingDefinition,
@@ -11,6 +14,7 @@ import {
 	TFile,
 	normalizePath,
 } from './obsidian-stub';
+import { openView } from './workspace';
 
 /*
  * The element helpers the double installs, driven option by option.
@@ -415,10 +419,13 @@ describe('the metadata cache double', () => {
 		 * The double's own boundary, asserted so it reads as a limit rather
 		 * than as a claim: this models `extractLayoutName` — trim, strip one
 		 * pair of quotes — and real YAML would hand back the number 12 and
-		 * the boolean false. `isPlainLayoutValue` lets the plugin write both
-		 * unquoted, so the two readers genuinely can disagree here and no
-		 * test in this repository can catch it (`docs/BACKLOG.md` §
-		 * Patterns). Every caller is written to be correct either way.
+		 * the boolean false.
+		 *
+		 * **The plugin's own writer can no longer produce either line**, since
+		 * `parse/frontmatter.ts`'s `isPlainScalar` quotes a number spelling and
+		 * a boolean word. So what this models is a *hand-edited* note, which is
+		 * the one way the disagreement is still reachable, and every caller is
+		 * written to be correct either way.
 		 */
 		const app = new App();
 		const file = await app.vault.create(
@@ -1069,5 +1076,239 @@ describe('the text file view double', () => {
 		await view.onUnloadFile(file);
 
 		expect(await app.vault.read(file)).toBe('first');
+	});
+});
+
+/*
+ * `Notice`, whose members are the double's answer to two different questions.
+ *
+ * Driven here because the *second* question went unmodelled and cost a shipped
+ * defect: `messageEl` and `hide` did not exist, so `view/sheet-view.ts`'s
+ * `offerUndo` threw the moment a test reached it, the whole undo gesture was
+ * undrivable, and the ordering bug in it went green through every gate
+ * (`docs/BACKLOG.md` § Patterns). A member that is declared and not honoured
+ * fails silently; a member that is *absent* fails loudly and then gets routed
+ * around, which is worse.
+ */
+describe('Notice', () => {
+	beforeEach(() => {
+		Notice.messages = [];
+		Notice.instances = [];
+	});
+
+	it('records a string message, which is what almost every case asks', () => {
+		new Notice('Undone.');
+		expect(Notice.messages).toEqual(['Undone.']);
+	});
+
+	it('records a fragment as an empty string rather than as an object', () => {
+		// `warn()` builds a `DocumentFragment`, which has no string form. The
+		// empty string is honest about that; pushing the object would put a value
+		// in `messages` that no assertion in this repository compares against.
+		new Notice(document.createDocumentFragment());
+		expect(Notice.messages).toEqual(['']);
+	});
+
+	it('hands out an element a notice’s own controls can be built into', () => {
+		// The undo is a link rather than a sentence, so what a test presses is in
+		// here and nothing about it is in `messages`.
+		const notice = new Notice('');
+		notice.messageEl.createEl('a', { text: 'Undo' });
+		expect(notice.messageEl.querySelector('a')?.textContent).toBe('Undo');
+	});
+
+	it('records every instance in order, beside the messages', () => {
+		// Sentence case on two throwaway fixtures, because
+		// `obsidianmd/ui/sentence-case` reads any string handed to `Notice` as
+		// user-facing copy and cannot tell a fixture from one — and it is right
+		// not to try. This case asserts ordering and identity, so the text is
+		// free.
+		new Notice('First');
+		const second = new Notice('Second');
+		expect(Notice.instances).toHaveLength(2);
+		expect(Notice.instances.at(-1)).toBe(second);
+	});
+
+	it('reports having been hidden, which is what pressing the link does', () => {
+		const notice = new Notice('');
+		expect(notice.hidden).toBe(false);
+		notice.hide();
+		expect(notice.hidden).toBe(true);
+	});
+
+	it('costs no DOM to construct, which a node-environment test needs', () => {
+		/*
+		 * `messageEl` was a field initialiser calling `document.createElement`,
+		 * so `new Notice('x')` threw `ReferenceError: document is not defined`
+		 * in every node-environment file — and the message named neither the
+		 * notice nor the environment. Asserted here in a happy-dom file, where
+		 * it cannot fail; what holds the real claim is that the element is built
+		 * on read, one line below.
+		 */
+		const notice = new Notice('Undone.');
+		expect(
+			Object.prototype.hasOwnProperty.call(notice, 'messageEl'),
+		).toBe(false);
+		expect(notice.messageEl).toBeInstanceOf(HTMLElement);
+		// And the same element every time, so a caller can build into it and
+		// then read what it built.
+		expect(notice.messageEl).toBe(notice.messageEl);
+	});
+
+	it('accepts a timeout and ignores it', () => {
+		// Faithful for what a test can see: the app's own timer removes an element
+		// this double never attaches, so there is nothing for a timer to observe.
+		expect(() => new Notice('', 12000)).not.toThrow();
+	});
+});
+
+/*
+ * The members `docs/features/visible-layout-files.md` added: file events, a
+ * rename that keeps its object, a rename that carries links, a `FileView`, a
+ * leaf that reuses a view of the same type, and a registry that refuses. Each
+ * is a place where the app's behaviour is what a plugin leans on, and a double
+ * ignoring it would pass a case the app fails.
+ */
+describe('the file lifecycle doubles', () => {
+	it('fires each file event once the vault has changed, with the old path on a rename', async () => {
+		const app = new App();
+		const seen: string[] = [];
+		for (const name of ['create', 'modify', 'rename', 'delete']) {
+			app.vault.on(name, (file, oldPath) => {
+				if (!(file instanceof TFile)) return;
+				const held = app.vault.getAbstractFileByPath(file.path) !== null;
+				const from = typeof oldPath === 'string' ? `<${oldPath}` : '';
+				seen.push(`${name}:${file.path}${from}:${held}`);
+			});
+		}
+		const file = await app.vault.create('A.md', 'one');
+		await app.vault.modify(file, 'two');
+		await app.vault.rename(file, 'B.md');
+		await app.vault.delete(file);
+
+		expect(seen).toEqual([
+			'create:A.md:true',
+			'modify:A.md:true',
+			'rename:B.md<A.md:true',
+			'delete:B.md:false',
+		]);
+	});
+
+	it('renames in place and refuses a destination that is taken', async () => {
+		const app = new App();
+		const file = await app.vault.create('A.md', 'one');
+		await app.vault.create('B.md', 'two');
+
+		await expect(app.vault.rename(file, 'B.md')).rejects.toThrow(
+			'Destination file already exists!',
+		);
+		await app.vault.rename(file, 'C.md');
+		expect(app.vault.getFileByPath('C.md')).toBe(file);
+		expect(app.vault.getFileByPath('A.md')).toBeNull();
+		expect(await app.vault.read(file)).toBe('one');
+	});
+
+	it('carries a wikilink along with a renamed file, by name or by path', async () => {
+		const app = new App();
+		await app.vault.createFolder('Layouts');
+		const file = await app.vault.create('Layouts/X.json', '{}');
+		const note = await app.vault.create(
+			'Note.md',
+			'[[X.json]] [[Layouts/X.json#top|alias]] ![[X.json]] [[X]] [[Other.json]]',
+		);
+
+		await app.fileManager.renameFile(file, 'Layouts/X.sheetsmith');
+
+		expect(await app.vault.read(note)).toBe(
+			'[[X.sheetsmith]] [[Layouts/X.sheetsmith#top|alias]] ![[X.sheetsmith]] [[X]] [[Other.json]]',
+		);
+	});
+
+	it('loads a file through setState, and a leaf of the same type keeps its view', async () => {
+		class Viewer extends FileView {
+			events: string[] = [];
+			getViewType(): string {
+				return 'viewer';
+			}
+			async onLoadFile(file: TFile): Promise<void> {
+				this.events.push(`load:${file.path}`);
+			}
+			async onUnloadFile(file: TFile): Promise<void> {
+				this.events.push(`unload:${file.path}`);
+			}
+		}
+		const app = new App();
+		await app.vault.create('A.md', '');
+		await app.vault.create('B.md', '');
+		const view = await openView(app, document.body, Viewer);
+
+		await view.leaf.setViewState({ type: 'viewer', state: { file: 'A.md' } });
+		await view.leaf.setViewState({ type: 'viewer', state: { file: 'B.md' } });
+
+		expect(view.leaf.view).toBe(view);
+		expect(view.events).toEqual(['load:A.md', 'unload:A.md', 'load:B.md']);
+		expect(view.getState()).toEqual({ file: 'B.md' });
+		expect(view.titleEl.textContent).toBe('B');
+	});
+
+	it('lets go of a deleted file where the view allows none', async () => {
+		class Viewer extends FileView {
+			allowNoFile = true;
+			getViewType(): string {
+				return 'viewer';
+			}
+		}
+		const app = new App();
+		const file = await app.vault.create('A.md', '');
+		const view = await openView(app, document.body, Viewer);
+		await view.setState({ file: 'A.md' }, {});
+
+		await app.vault.delete(file);
+		await new Promise((resolve) => window.setTimeout(resolve, 0));
+
+		expect(view.file).toBeNull();
+	});
+
+	it('answers the active view only where it is of the class asked for', async () => {
+		class Viewer extends FileView {
+			getViewType(): string {
+				return 'viewer';
+			}
+		}
+		class Other extends FileView {}
+		const app = new App();
+		expect(app.workspace.getActiveViewOfType(Viewer)).toBeNull();
+
+		const view = await openView(app, document.body, Viewer);
+		await app.workspace.revealLeaf(view.leaf);
+
+		expect(app.workspace.getActiveViewOfType(Viewer)).toBe(view);
+		expect(app.workspace.getActiveViewOfType(FileView)).toBe(view);
+		expect(app.workspace.getActiveViewOfType(Other)).toBeNull();
+	});
+
+	it('refuses a taken extension before registering any of a call’s', () => {
+		const app = new App();
+		app.viewRegistry.registerExtensions(['b'], 'theirs');
+
+		expect(() => app.viewRegistry.registerExtensions(['a', 'b'], 'ours')).toThrow(
+			'Attempting to register an existing file extension "b"',
+		);
+		expect(app.viewRegistry.getTypeByExtension('a')).toBeUndefined();
+	});
+
+	it('records each plugin registration, and undoes the registry\'s on unload', () => {
+		const app = new App();
+		const plugin = new Plugin(app, { id: 'p', name: 'P', version: '0' });
+		plugin.load();
+		plugin.registerView('v', () => {
+			throw new Error('not constructed here');
+		});
+		plugin.registerExtensions(['x'], 'v');
+
+		expect(plugin.registrations).toEqual(['registerView:v', 'registerExtensions:x']);
+		plugin.unload();
+		expect(app.viewRegistry.getTypeByExtension('x')).toBeUndefined();
+		expect(app.viewRegistry.viewByType.v).toBeUndefined();
 	});
 });

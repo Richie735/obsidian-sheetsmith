@@ -5,23 +5,27 @@ import {
 	Setting,
 	TFile,
 } from 'obsidian';
-import { acceptsChildren } from './accepts-children';
 import {
 	RenameIntent,
 	reportComponentRename,
 } from '../component-rename-migration';
-import { describedRow } from './described-row';
-import { getComponent, listComponentTypes, paletteEntries } from '../components';
+import { getComponent } from '../components';
 import { Canvas } from './canvas';
-import { componentDisplayName } from './component-name';
+import { ComponentPicker } from './component-picker';
 import { ConfigPanel } from './config-panel';
+import {
+	LayoutFileRowHost,
+	promptForNewLayout,
+	renderLayoutFileRow,
+} from './layout-file-row';
 import { showFieldError } from './field-error';
 import { attachFormulaSuggest, FormulaSuggest } from './formula-suggest';
 import { focusToken } from './focus-token';
 import { ConfirmModal } from '../ui/confirm-modal';
-import { NEW_LAYOUT_LABEL, promptNewLayout } from './new-layout';
-import { listLayouts } from '../layouts';
+import { NEW_LAYOUT_LABEL } from './new-layout';
+import { isResolvedLayout, listLayouts } from '../layouts';
 import { ListContext } from './list-fields';
+import { PickerChoice } from './picker-catalog';
 import type SheetsmithPlugin from '../main';
 import { Layout, parseLayout, serialiseLayout } from '../parse/layout';
 import { WalkEntry, walkComponents } from '../parse/layout-walk';
@@ -32,16 +36,14 @@ import { ComponentConfig } from '../types';
 import { UndoStack } from './undo-stack';
 import { childIsPlaced } from '../view/grid-cells';
 
-/** Ties the add menu to the description under it, for a screen reader. */
-const ADD_DESCRIPTION_ID = 'sheetsmith-add-description';
-
 /**
  * The top level, wherever something has to be named that is not a component.
  *
  * Defined in `tree.ts` and re-exported here: the tree needs it to draw and
  * select the layout's own row, and this module needs it for the same
- * question one level up (the **Add component** row's destination, and what
- * the panel configures when nothing else is selected) — declaring it in
+ * question one level up (what the panel configures when nothing else is
+ * selected; the component picker's destination imports it from `tree.ts`
+ * too) — declaring it in
  * whichever of the two imports the other would make a cycle of two runtime
  * values, where this file already imports `renderTree` from `tree.ts`.
  */
@@ -54,27 +56,39 @@ const FLASH_HOLD = 900;
  * What the editor needs from the pane hosting it.
  *
  * The two pieces of state are the *author's posture* rather than the layout's
- * content — which layout they have open, and what they are looking at — so both
- * belong to the view, which is where a workspace remembers posture at all
+ * content — which layout file they have open, and what they are looking at — so
+ * both belong to the view, which is where a workspace remembers posture at all
  * (`View.getState` for one, `View.setEphemeralState` for the other). The editor
  * reads them at render time and asks for a change; it never keeps a copy,
  * because a copy is a second answer to "what is selected" and the two would
  * disagree the first time a pane was restored.
  *
- * The setters do not redraw. A render that has to correct one of these — a
- * selection naming a component the layout no longer holds — would otherwise
- * redraw from inside a render, and the caller that wants both says so in two
- * lines instead.
+ * **The open layout is a file, and the editor can only ask for another one**
+ * (`docs/features/visible-layout-files.md`). It used to be a basename the editor
+ * set for itself and resolved out of `listLayouts`, which made "which file is
+ * open" a thing the editor could change behind the view's back. The pane is a
+ * `FileView` now and the file is its binding, so the editor is handed the file
+ * and asks the host to open a different one — and the host does that the way
+ * Obsidian opens any file, in the same leaf.
+ *
+ * `setSelection` does not redraw. A render that has to correct the selection —
+ * one naming a component the layout no longer holds — would otherwise redraw
+ * from inside a render, and the caller that wants both says so in two lines
+ * instead.
  *
  * `refreshSheets` is here for a different reason: a write to the layout file has
  * to reach every sheet rendering it, and reaching into a view is the view
  * layer's hop to make rather than this one's (`docs/PATTERNS.md` §2).
  */
 export interface LayoutEditorHost {
-	/** The layout file the pane has open, by basename, or null before one is. */
-	readonly layoutName: string | null;
-	/** Remember which layout is open. Does not redraw. */
-	setLayoutName(name: string | null): void;
+	/** The layout file the pane has open, or null where it has none. */
+	readonly layoutFile: TFile | null;
+	/**
+	 * Open another layout file in this pane. The host lets go of the one it
+	 * had — which is where a pending edit is written and the undo history is
+	 * cleared — and draws the new one.
+	 */
+	openLayoutFile(file: TFile): void;
 	/**
 	 * What the panel configures: a component id, or `SHEET_DESTINATION` for the
 	 * layout itself.
@@ -126,7 +140,8 @@ interface Regions {
  * It still owns the *render*, which is why the class is not named for the
  * outline alone: it loads the file, draws both regions, and applies the pending
  * focus and flash afterwards. What it no longer holds is the configuration of
- * whatever is selected (`docs/PATTERNS.md` §11).
+ * whatever is selected (`docs/PATTERNS.md` §11), nor the **Layout file** row and
+ * its file operations, which `layout-file-row.ts` draws.
  *
  * Text fields commit on change (blur or Enter), never per keystroke, and
  * invalid input shows an inline error instead of being silently ignored.
@@ -160,6 +175,12 @@ export class LayoutEditorSection {
 	/** The layout's live render and its gestures (`docs/features/grid-canvas.md`). */
 	private canvas: Canvas;
 	/**
+	 * What **Add component** opens (`docs/features/component-picker.md`). Built
+	 * once, like the canvas, because it holds posture a redraw must keep: open,
+	 * the query, the active line, the destination and its last report.
+	 */
+	private picker = new ComponentPicker();
+	/**
 	 * Inline errors, by the focus token of the field showing them. A redraw
 	 * tears down the DOM they live in, so an error on one field would vanish
 	 * because an unrelated field was corrected — the message goes with the
@@ -182,6 +203,8 @@ export class LayoutEditorSection {
 	private renderId = 0;
 	/** The panel drawing whatever is selected, and the fields it holds. */
 	private panel: ConfigPanel;
+	/** What the **Layout file** row reads and asks for, built once like the panel. */
+	private fileRow: LayoutFileRowHost;
 	/**
 	 * The layout's bytes as this session last knew them on disk: what the
 	 * initial read produced, or what the last successful `persist` wrote.
@@ -216,8 +239,24 @@ export class LayoutEditorSection {
 	private undoStack = new UndoStack();
 	private redoStack = new UndoStack();
 
-	/** Debounced persist, used only by rapid-fire paths (keyboard nudging). */
-	private persistSoon = debounce(() => void this.persist(), 500, true);
+	/**
+	 * Debounced persist, used only by rapid-fire paths (keyboard nudging).
+	 *
+	 * `nudgePending` says whether it is holding a write, which the debouncer
+	 * cannot: Obsidian's `Debouncer` offers `run` and `cancel` and no way to ask.
+	 * The one reader is an outside change to the file, which drops a pending
+	 * edit rather than writing it and has to know whether there was one to say
+	 * so (`discardPending`).
+	 */
+	private persistSoon = debounce(
+		() => {
+			this.nudgePending = false;
+			void this.persist();
+		},
+		500,
+		true,
+	);
+	private nudgePending = false;
 
 	constructor(plugin: SheetsmithPlugin, host: LayoutEditorHost) {
 		this.plugin = plugin;
@@ -253,7 +292,10 @@ export class LayoutEditorSection {
 		// mapping rather than a mix of two kinds.
 		this.canvas = new Canvas({
 			persist: () => void this.persist(),
-			persistSoon: () => this.persistSoon(),
+			persistSoon: () => {
+				this.nudgePending = true;
+				this.persistSoon();
+			},
 			// Delegated rather than answered here: those four fields are the
 			// panel's own, minted under the panel's own token, so finding them
 			// again from out here would be this half querying for controls the
@@ -287,6 +329,21 @@ export class LayoutEditorSection {
 			listContext: () => this.listContext(),
 			suggestNames: (input, owner) => this.suggestNames(input, owner),
 		});
+		// The row's host, and the same mapping again. `redraw` is the wrapped one
+		// above rather than the host's, for the flush and the focus it adds, and
+		// the two getters stay live because the trash reads them after a confirm
+		// modal rather than when the row was drawn.
+		this.fileRow = {
+			app: plugin.app,
+			get folder(): string {
+				return plugin.settings.layoutFolder;
+			},
+			get layoutFile(): TFile | null {
+				return host.layoutFile;
+			},
+			openLayoutFile: (file) => host.openLayoutFile(file),
+			redraw: () => this.redraw(),
+		};
 	}
 
 	/**
@@ -350,26 +407,84 @@ export class LayoutEditorSection {
 	 * Flushes first, and that order is the whole point of the method: a
 	 * pending edit belongs to the layout being released, and `persist` writes
 	 * `this.layout` to `this.file`. Clear those first and the commit lands on
-	 * an object nothing will ever write, silently. The redraw these callers go
-	 * on to make flushes too, but by then it is too late — which is exactly
-	 * the kind of ordering that should not be left to each call site to
-	 * remember.
+	 * an object nothing will ever write, silently.
 	 *
-	 * Every caller of this method is a real change of which layout is open —
-	 * the picker, deleting the open one, creating a new one, or `render`
-	 * correcting a name that no longer exists — so this is also where the
-	 * undo history is scoped per layout (`docs/features/editor-undo.md`): an
-	 * author's undo posture belongs to the file they were editing, and Mod+Z
-	 * reaching across a switch to rewrite a *different* layout would be a
-	 * worse surprise than an empty stack.
+	 * **`write` is false for a file that is gone**, and only then: a pending
+	 * edit has nowhere to land when the file was deleted underneath the pane,
+	 * and writing it would put the file back. The pane's own `onUnloadFile` is
+	 * the caller and the one that knows which case it is in.
+	 *
+	 * The pane calls this on every real change of which file is open — the
+	 * dropdown, **New layout**, the trash, a file opened from anywhere Obsidian
+	 * opens one, a delete from outside — so this is also where the undo history
+	 * is scoped per layout (`docs/features/editor-undo.md`): an author's undo
+	 * posture belongs to the file they were editing, and Mod+Z reaching across
+	 * a switch to rewrite a *different* layout would be a worse surprise than an
+	 * empty stack. A rename is not a change of file and does not come here.
 	 */
-	private releaseLayout(): void {
-		this.flush();
+	release(write = true): void {
+		if (write) this.flush();
+		else this.discardPending();
+		this.forget();
 		this.file = null;
+	}
+
+	/**
+	 * Take the file's new contents rather than what this pane holds, because
+	 * something else wrote it (`docs/features/visible-layout-files.md`).
+	 *
+	 * **A pending edit is dropped, not written.** Writing it would overwrite the
+	 * very change the pane has just been told about, which is the lost update
+	 * this exists to prevent; so what the reader had not yet committed goes, and
+	 * the return value says whether there was any, for the one sentence the pane
+	 * shows about it. **Both stacks go too**: a step recorded against the old
+	 * contents would restore text nobody on disk ever had.
+	 *
+	 * The file stays bound, so the next render reads it again.
+	 */
+	reload(): boolean {
+		const dropped = this.discardPending();
+		this.forget();
+		return dropped;
+	}
+
+	/**
+	 * Whether `text` is what this pane last wrote or loaded — the test for a
+	 * `modify` that is the pane's own write coming back rather than somebody
+	 * else's. By content rather than by a "saving" flag, because a flag cannot
+	 * tell two quick writes of this pane's apart from one outside write between
+	 * them, and content can.
+	 */
+	holds(text: string): boolean {
+		return this.onDisk !== null && text === this.onDisk;
+	}
+
+	/** Drop the loaded layout and its history, keeping which file it is. */
+	private forget(): void {
 		this.layout = null;
 		this.onDisk = null;
 		this.undoStack.clear();
 		this.redoStack.clear();
+		// Closed and cleared where the undo history is, which is the same moment:
+		// the picker's posture belongs to the layout it was adding to.
+		this.picker.reset();
+	}
+
+	/**
+	 * Throw away whatever edit is still waiting to be written, and say whether
+	 * there was one.
+	 *
+	 * The panel's textareas are read through `commitPending`, which folds what
+	 * was typed into `this.layout` — about to be dropped by every caller — so
+	 * reading them is how "was anything typed" gets answered without a second
+	 * copy of which fields those are.
+	 */
+	private discardPending(): boolean {
+		const typed = this.layout !== null && this.panel.commitPending();
+		const nudged = this.nudgePending;
+		this.persistSoon.cancel();
+		this.nudgePending = false;
+		return typed || nudged;
 	}
 
 	/**
@@ -405,24 +520,25 @@ export class LayoutEditorSection {
 		// query its own width.
 		container.addClass('sheetsmith-layout-editor-pane');
 
-		const files = listLayouts(
-			this.plugin.app,
-			this.plugin.settings.layoutFolder,
-		);
+		const folder = this.plugin.settings.layoutFolder;
+		const files = listLayouts(this.plugin.app, folder);
+		const open = this.host.layoutFile;
 
-		if (files.length === 0) {
+		// Only where there is nothing to show at all. A pane open on a file
+		// outside the folder has something to show even when the folder is
+		// empty, so it draws the picker with that one file in it.
+		if (open === null && files.length === 0) {
 			this.renderVacant(container);
 			return;
 		}
 
-		// The open layout, corrected where it names a file that is gone. Set
-		// without redrawing, because this is already inside a render.
-		if (
-			this.host.layoutName === null ||
-			!files.some((file) => file.basename === this.host.layoutName)
-		) {
-			this.host.setLayoutName(files[0]?.basename ?? null);
-			this.releaseLayout();
+		// The file the pane is bound to, taken as given. Nothing here resolves
+		// or corrects it: which file is open is the view's, and a different one
+		// is only ever asked for (`LayoutEditorHost`). What this does is notice
+		// that the host has moved on, which is also how a first render loads.
+		if (this.file !== open) {
+			this.forget();
+			this.file = open;
 		}
 
 		const grid = container.createDiv('sheetsmith-layout-editor');
@@ -436,42 +552,43 @@ export class LayoutEditorSection {
 		const outline = grid.createDiv('sheetsmith-editor-outline');
 		this.regions = null;
 
-		this.renderSelectionRow(outline, files);
+		renderLayoutFileRow(outline, files, this.fileRow);
+		if (open === null) return;
 
-		const selectedFile = files.find(
-			(file) => file.basename === this.host.layoutName,
-		);
-		if (!selectedFile) return;
-		if (this.file?.path !== selectedFile.path || this.layout === null) {
+		if (this.layout === null) {
 			const run = ++this.renderId;
-			this.file = selectedFile;
 			let source: string;
 			try {
-				source = await this.plugin.app.vault.read(selectedFile);
+				source = await this.plugin.app.vault.read(open);
 			} catch (error) {
-				this.layout = null;
-				if (run !== this.renderId) return;
+				if (run !== this.renderId || this.file !== open) return;
 				// Where the tree would be, under the picker rather than over it.
 				// The order is load bearing: the picker is how an author leaves a
 				// layout they cannot edit, so a message that displaced it would
 				// trap them on the broken one.
 				outline.createDiv('sheetsmith-error', (el) =>
 					el.setText(
-						`This layout cannot be read: ${error instanceof Error ? error.message : String(error)}`,
+						`"${open.basename}" cannot be read: ${error instanceof Error ? error.message : String(error)}`,
 					),
 				);
 				return;
 			}
-			// A redraw may have rebuilt the pane while the read was in flight;
-			// only the newest run may append.
-			if (run !== this.renderId) return;
+			// A redraw may have rebuilt the pane while the read was in flight,
+			// or the pane moved to another file; only the newest run, still on
+			// the file it read, may append.
+			if (run !== this.renderId || this.file !== open) return;
 			try {
 				this.layout = parseLayout(source);
 			} catch (error) {
 				this.layout = null;
+				// Named, because the pane now opens on whatever file the reader
+				// clicked, from anywhere Obsidian opens one — so "this layout"
+				// could be a file they did not know was one. Nothing is written
+				// in this state: `persist` returns without a parsed layout, and
+				// what recovers the pane is the view's reload on an outside fix.
 				outline.createDiv('sheetsmith-error', (el) =>
 					el.setText(
-						`This layout cannot be edited until its file is fixed: ${error instanceof Error ? error.message : String(error)}`,
+						`"${open.basename}" cannot be edited until its file is fixed: ${error instanceof Error ? error.message : String(error)}`,
 					),
 				);
 				return;
@@ -513,7 +630,13 @@ export class LayoutEditorSection {
 		this.canvas.draw(outline.createDiv(), layout);
 		// Above the tree it adds into, not below it: a layout with a long
 		// component list otherwise buries the one row that can grow it.
-		this.renderAddRow(outline, layout);
+		this.picker.render(outline, layout, {
+			insert: (choice, into) => this.insert(layout, choice, into),
+			focusAfterRedraw: (token) => {
+				this.pendingFocus = token;
+			},
+			redraw: () => this.redraw(),
+		});
 		renderTree(outline, layout, {
 			persist: () => void this.persist(),
 			redraw: () => this.redraw(),
@@ -564,7 +687,7 @@ export class LayoutEditorSection {
 				// row, because here it is the only thing on screen.
 				.setButtonText(NEW_LAYOUT_LABEL)
 				.setCta()
-				.onClick(() => this.promptForNewLayout());
+				.onClick(() => promptForNewLayout(this.fileRow));
 		});
 	}
 
@@ -649,198 +772,6 @@ export class LayoutEditorSection {
 			});
 	}
 
-	private renderSelectionRow(container: HTMLElement, files: TFile[]): void {
-		new Setting(container)
-			// "Layout file", not "Layout", because the tree's first row is the
-			// layout and this is the file it lives in. Two adjacent rows both
-			// named Layout — one choosing which one is open, one configuring the
-			// one that is — would be a reader's problem, not a naming quibble.
-			.setName('Layout file')
-			.addDropdown((dropdown) => {
-				for (const file of files) {
-					dropdown.addOption(file.basename, file.basename);
-				}
-				// **Nouns only.** Creating a layout used to be two options in
-				// here — `New layout…` and `Import a layout…` — and the row rule
-				// that put them there is genuine but does not reach them: the
-				// dropdown answers *which layout is open* and the row's buttons
-				// *act on* the one that is, and create does neither. It acts on
-				// the **folder**, which is a third kind of thing, and it was
-				// filed here by a side effect ("it ends with a different layout
-				// open") rather than by what it is. Delete is the tell that the
-				// partition was already leaking: it ends with a different layout
-				// open too, and it is correctly a button
-				// (`docs/features/starting-a-new-layout.md`).
-				dropdown.setValue(this.host.layoutName ?? '');
-				dropdown.selectEl.dataset.sheetsmithFocus = 'layout-picker';
-				dropdown.onChange((value) => this.openLayout(value));
-			})
-			.addButton((button) =>
-				button
-					// Not a CTA: creating a layout is not this pane's primary
-					// action. A plain button on a row of dropdowns is the **Add
-					// component** row's own precedent, and it goes before the
-					// two icon buttons so the irreversible one stays last.
-					.setButtonText(NEW_LAYOUT_LABEL)
-					.onClick(() => this.promptForNewLayout()),
-			)
-			.addExtraButton((button) =>
-				button
-					// Before the trash rather than after it, so the one
-					// irreversible control on the row stays last: a press that
-					// lands one control off its mark then hits the harmless one.
-					.setIcon('copy')
-					.setTooltip('Copy layout JSON')
-					.onClick(() => void this.copyLayoutJson(container, files)),
-			)
-			.addExtraButton((button) =>
-				button
-					.setIcon('trash')
-					.setTooltip('Delete layout')
-					.onClick(() => {
-						const file = files.find(
-							(candidate) => candidate.basename === this.host.layoutName,
-						);
-						if (!file) return;
-						new ConfirmModal(
-							this.plugin.app,
-							`Delete the layout "${file.basename}"? Character notes are not touched, but the layout's components and formulas are gone.`,
-							'Delete layout',
-							() => void this.deleteLayout(file),
-						).open();
-					}),
-			);
-	}
-
-	/**
-	 * Put the open layout's own bytes on the clipboard
-	 * (`docs/features/layout-import-export.md`).
-	 *
-	 * **The file's bytes, not a re-serialisation of them.** A layout carrying a
-	 * key this version's parser does not know would have it silently dropped by
-	 * a parse-then-serialise round trip, which is the one thing a share must not
-	 * do — and a layout that will not parse at all is exportable on purpose,
-	 * since handing the broken file to somebody who can read it is a reasonable
-	 * thing to want. Nothing is written anywhere, so there is no writer here for
-	 * the one-writer-one-spelling rule to be about.
-	 *
-	 * **It guards rather than disabling.** With no layout selected — a vault
-	 * whose folder holds none — this returns silently, which is `deleteLayout`'s
-	 * existing spelling one control to the right. Disabling it would look
-	 * identical to a live control (`setDisabled` reaches no paint for a
-	 * `.clickable-icon`) and would make this the fifth member of a
-	 * `docs/BACKLOG.md` row waiting on one decision about four.
-	 *
-	 * The clipboard comes off the container's own window rather than the global
-	 * one, which is `docs/PATTERNS.md` §5: a pane may be rendered into a popout.
-	 */
-	private async copyLayoutJson(
-		container: HTMLElement,
-		files: TFile[],
-	): Promise<void> {
-		const file = files.find(
-			(candidate) => candidate.basename === this.host.layoutName,
-		);
-		if (!file) return;
-		let text: string;
-		try {
-			text = await this.plugin.app.vault.read(file);
-		} catch (error) {
-			// The vault's own reason: the file was trashed or renamed under a
-			// pane that has not redrawn yet.
-			new Notice(error instanceof Error ? error.message : String(error));
-			return;
-		}
-		try {
-			await container.win.navigator.clipboard.writeText(text);
-		} catch {
-			/*
-			 * Deliberately the same words `src/editor/copyable-name.ts` gives,
-			 * and deliberately not the same code. The argument is here rather
-			 * than cited, because that file's header does not make it: it argues
-			 * only why the module exists at all, and says nothing about the
-			 * clipboard write or about this sentence.
-			 *
-			 * `copyableName` exports a builder for a `<code>` control with the
-			 * copy bound inside it, so a settings-row button cannot reach the
-			 * write without splitting the function in two — which is a change to
-			 * a shipped control for the benefit of one caller.
-			 *
-			 * And only half of what such a module would hold is actually common:
-			 * this failure sentence is shared, while the success sentences are
-			 * not — a chip says `Copied "x"` about a name, and this says
-			 * `Copied "x" to the clipboard.` about a file. So the shared thing is
-			 * one short sentence rather than the gesture, which `docs/PATTERNS.md`
-			 * §1's one-step tier would extract on a second consumer if the
-			 * *whole* policy were shared. **A third caller is where that gets
-			 * revisited**, and it is the honest cost of two copies until then.
-			 */
-			new Notice('Could not copy to the clipboard.');
-			return;
-		}
-		// The layout is named because the row can only show one at a time and a
-		// bare "Copied." leaves a reader wondering which; "to the clipboard" is
-		// the half that says where, in the failure sentence's own words.
-		new Notice(`Copied "${file.basename}" to the clipboard.`);
-	}
-
-	private async deleteLayout(file: TFile): Promise<void> {
-		await this.plugin.app.fileManager.trashFile(file);
-		this.releaseLayout();
-		this.host.setLayoutName(null);
-		this.redraw();
-	}
-
-	/**
-	 * Ask what a new layout starts from, and open whatever lands.
-	 *
-	 * **No cancel arm**, which is the whole of what moving this off the dropdown
-	 * bought: a sentinel option left the `<select>` showing the wrong value, so
-	 * both prompts used to take an `onCancel` that redrew the pane purely to
-	 * snap it back. A button press changes no `<select>` value, so cancelling
-	 * now leaves the pane exactly as it was.
-	 *
-	 * The pane hands over the layout it has open, which is what **Layout to
-	 * copy** prefills to, and a basename rather than the layout it holds in
-	 * memory: `startLayout` reads the source's file, so a copy cannot differ
-	 * from what is on disk (`docs/features/starting-a-new-layout.md`).
-	 */
-	// Named apart from the module function it calls: a method and an import
-	// spelled the same read as recursion at a glance.
-	private promptForNewLayout(): void {
-		promptNewLayout(
-			this.plugin.app,
-			this.plugin.settings.layoutFolder,
-			this.host.layoutName,
-			(name) => this.openLayout(name),
-		);
-	}
-
-	/**
-	 * Open a layout in this pane, by name.
-	 *
-	 * Three calls in one order, shared rather than spelled three times:
-	 * `docs/PATTERNS.md` §1's one-step tier is why this is a name rather than a
-	 * copy, since the only thing a guard test over the copies could assert is
-	 * that they still call the three in the same order — while what they were
-	 * free to drift about is whether a pane keeps open a layout it no longer
-	 * has.
-	 *
-	 * It arrived as `openLanded` over two callers, both of which had *just
-	 * written* a file, and the third caller is why the name moved: the dropdown
-	 * opens a layout that has been there all along, and a reader meeting
-	 * `openLanded(value)` there would look for the write. §1 asks that a shared
-	 * thing be named for the behaviour, and the behaviour is opening one.
-	 *
-	 * `deleteLayout` deliberately does not call it: it names *no* layout, and a
-	 * helper taking `string | null` would be one name over two different jobs.
-	 */
-	private openLayout(name: string): void {
-		this.releaseLayout();
-		this.host.setLayoutName(name);
-		this.redraw();
-	}
-
 	/**
 	 * Mark a region the last interaction rebuilt, and let the mark fade.
 	 * Colour only, so there is nothing here for reduced motion to strip.
@@ -854,136 +785,66 @@ export class LayoutEditorSection {
 		el.win.setTimeout(() => el.removeClass('sheetsmith-flash'), FLASH_HOLD);
 	}
 
-	private renderAddRow(container: HTMLElement, layout: Layout): void {
-		const choices = addChoices();
-		let chosen = choices[0]?.value ?? 'card-set';
-		// Every container that may still take a child. A container already two
-		// deep is left out, so the depth the parser refuses is never something
-		// the editor can walk into.
-		const destinations = walkComponents(layout.components).filter((entry) =>
-			acceptsChildren(entry.config, entry.depth),
-		);
-		let into: ComponentConfig | null = null;
-
-		const row = new Setting(container).setName('Add component');
-		/*
-		 * The entry's own description, below the menu it was chosen from
-		 * (`docs/UI.md` §9, `editor/described-row.ts`, which holds why it sits
-		 * there and what the treatment is). A dropdown line is one or two words,
-		 * and SPEC §13's warning about the palette is that a menu nobody can
-		 * read is worse than the type list it replaced — so what a prefill is
-		 * *for* has to be on screen, not only in the code. A bare type has none
-		 * and the line is empty, which is the truth: a type's name is all this
-		 * editor has ever offered for one.
-		 *
-		 * **A module literal is safe for the id here**, and it is the reason the
-		 * shared module takes one rather than generating it: this row is drawn
-		 * once per render and `redraw` replaces the container's children, so
-		 * only one element ever carries it.
-		 */
-		const described = describedRow(
-			row,
-			ADD_DESCRIPTION_ID,
-			(value) =>
-				choices.find((choice) => choice.value === value)?.description ?? '',
-		);
-		row.addDropdown((dropdown) => {
-			for (const choice of choices) {
-				// An entry sits one level under the type it prefills. It is what
-				// keeps the menu readable as the entries multiply — the list gets
-				// longer, and its structure stays the catalog with each block's
-				// own prefills beneath it.
-				dropdown.addOption(
-					choice.value,
-					`${indent(choice.entry ? 1 : 0)}${choice.name}`,
-				);
-			}
-			dropdown.setValue(chosen);
-			dropdown.selectEl.dataset.sheetsmithFocus = 'add-choice';
-			described.describes(dropdown.selectEl);
-			dropdown.onChange((value) => {
-				chosen = value;
-				described.describe(value);
-			});
+	/**
+	 * Put the component a picker line describes into the layout, select it and
+	 * persist; the picker redraws once it has written its report. Returns the
+	 * label the component was given.
+	 *
+	 * Moved out of the old **Add** button without changing what it writes
+	 * (`docs/features/component-picker.md` §7): a bare type writes `config: {}`
+	 * and never its `example`, which is why the picker labels an example.
+	 */
+	private insert(
+		layout: Layout,
+		choice: PickerChoice,
+		parent: ComponentConfig | null,
+	): string {
+		// `children` is shared config the editor owns, so this is where a
+		// container becomes one: a component holds the key only once something
+		// has been put in it.
+		const list = parent === null ? layout.components : (parent.children ??= []);
+		// Checked against the whole sheet, not this list: a label keys a note
+		// section and an id is what a formula writes, and containment scopes
+		// neither.
+		const all = this.allComponents();
+		// The line's own name, so an author who chose "Checkbox" has a component
+		// called Checkbox until they rename it.
+		const label = uniqueLabel(choice.name, all);
+		// A tab has no placement, so the numbers written here are not read by
+		// anything — but they are still in the file, and a hand-editor reading
+		// `row: 4` on a tab would reasonably conclude it sits somewhere. The
+		// container's own size is the honest thing to write: it is the box the
+		// tab actually fills. `parsePosition` requires all four, which is why this
+		// is a sensible value rather than no key.
+		//
+		// It goes stale the moment the container is resized, and nothing keeps it
+		// in step on purpose: every drawing asks `innerPlacement` for the live box
+		// instead. Do not add a sync — reading this number was the bug, not
+		// writing it.
+		list.push({
+			// The prefill first, so nothing an entry carries can displace what the
+			// editor owns. The type forbids those keys outright; this is the spread
+			// order that makes the refusal true at runtime as well.
+			...choice.config,
+			id: uniqueId(label, all),
+			type: choice.type,
+			label,
+			position: childIsPlaced(parent)
+				? {
+						col: 1,
+						row: nextFreeRow(list),
+						// Never wider than the grid it lands on. A child spanning
+						// past its container's last column would open an implicit
+						// column and take the alignment with it.
+						width: Math.min(2, parent?.position.width ?? 2),
+						height: 1,
+					}
+				: { ...(parent as ComponentConfig).position, col: 1, row: 1 },
 		});
-		described.describe(chosen);
-
-		// Only where there is somewhere else to put one. A dropdown offering the
-		// sheet and nothing else says a layout has containers when it has none.
-		if (destinations.length > 0) {
-			row.addDropdown((dropdown) => {
-				dropdown.addOption(SHEET_DESTINATION, 'On the sheet');
-				for (const { config, depth } of destinations) {
-					dropdown.addOption(config.id, `${indent(depth)}In ${config.label}`);
-				}
-				dropdown.setValue(SHEET_DESTINATION);
-				dropdown.selectEl.dataset.sheetsmithFocus = 'add-destination';
-				dropdown.onChange((value) => {
-					into =
-						destinations.find((entry) => entry.config.id === value)?.config ??
-						null;
-				});
-			});
-		}
-
-		row.addButton((button) =>
-			button.setButtonText('Add').onClick(() => {
-				const parent = into;
-				// `children` is shared config the editor owns, so this is where a
-				// container becomes one: a component holds the key only once
-				// something has been put in it.
-				const list =
-					parent === null ? layout.components : (parent.children ??= []);
-				// Checked against the whole sheet, not this list: a label keys a
-				// note section and an id is what a formula writes, and containment
-				// scopes neither.
-				const all = this.allComponents();
-				const choice =
-					choices.find((candidate) => candidate.value === chosen) ??
-					choices[0];
-				const type = choice?.type ?? chosen;
-				// The entry's own name, so an author who chose "Checkbox" has a
-				// component called Checkbox until they rename it.
-				const label = uniqueLabel(choice?.name ?? componentDisplayName(type), all);
-				// A tab has no placement, so the numbers written here are not read
-				// by anything — but they are still in the file, and a hand-editor
-				// reading `row: 4` on a tab would reasonably conclude it sits
-				// somewhere. The container's own size is the honest thing to write:
-				// it is the box the tab actually fills. `parsePosition` requires all
-				// four, which is why this is a sensible value rather than no key.
-				//
-				// It goes stale the moment the container is resized, and nothing
-				// keeps it in step on purpose: every drawing asks
-				// `innerPlacement` for the live box instead. Do not add a sync —
-				// reading this number was the bug, not writing it.
-				list.push({
-					// The prefill first, so nothing an entry carries can displace
-					// what the editor owns. The type forbids those keys outright;
-					// this is the spread order that makes the refusal true at
-					// runtime as well.
-					...(choice?.config ?? {}),
-					id: uniqueId(label, all),
-					type,
-					label,
-					position: childIsPlaced(parent)
-						? {
-								col: 1,
-								row: nextFreeRow(list),
-								// Never wider than the grid it lands on. A child
-								// spanning past its container's last column would
-								// open an implicit column and take the alignment
-								// with it.
-								width: Math.min(2, parent?.position.width ?? 2),
-								height: 1,
-							}
-						: { ...(parent as ComponentConfig).position, col: 1, row: 1 },
-				});
-				const added = list[list.length - 1]?.id;
-				if (added !== undefined) this.host.setSelection(added);
-				void this.persist();
-				this.redraw();
-			}),
-		);
+		const added = list[list.length - 1]?.id;
+		if (added !== undefined) this.host.setSelection(added);
+		void this.persist();
+		return label;
 	}
 
 	/** Select a component, or the layout itself, and rebuild both regions. */
@@ -1052,13 +913,22 @@ export class LayoutEditorSection {
 	 * one rename gesture is one scan, because every commit here is on `change`
 	 * and never per keystroke (`field-commit.ts`).
 	 *
-	 * `layoutName` cannot be null here while `this.file` is set: the file is
-	 * only ever assigned from the picker's own `files.find` on that name, and
-	 * `persist` returns above without one. The guard is the type's, not a
-	 * reachable state, so a rename is never silently dropped by it.
+	 * **A rename migrates only where the file is the one its name resolves
+	 * to.** The notes a migration rewrites are the notes naming this file's
+	 * basename, and those notes read *this* file only where the folder's lookup
+	 * lands on it. A file opened from outside the folder, or a `.json` a
+	 * `.sheetsmith` of the same name shadows, shares its basename with a
+	 * different layout or with none — so migrating from it would rewrite
+	 * characters built on some other file, which is Constraint 4 broken by an
+	 * edit to a file those characters never read. The layout still saves; the
+	 * notes are left alone, as they are for any edit to a file nobody uses.
 	 */
 	private async persist(record = true, rename?: RenameIntent): Promise<void> {
-		if (!this.file || !this.layout) return;
+		// Taken once, before the write is awaited: the pane may be on another
+		// file by the time it resolves, and the migration below belongs to the
+		// file this write went to.
+		const file = this.file;
+		if (!file || !this.layout) return;
 		let serialised: string;
 		try {
 			serialised = serialiseLayout(this.layout);
@@ -1097,14 +967,21 @@ export class LayoutEditorSection {
 		 * behaviour of this method and not something this guard changes.
 		 */
 		try {
-			await this.plugin.app.vault.modify(this.file, serialised);
+			await this.plugin.app.vault.modify(file, serialised);
 		} catch (error) {
 			new Notice(
 				`Sheetsmith could not save this layout: ${error instanceof Error ? error.message : String(error)}`,
 			);
 			return;
 		}
-		if (rename !== undefined && this.host.layoutName !== null) {
+		if (
+			rename !== undefined &&
+			isResolvedLayout(
+				this.plugin.app,
+				this.plugin.settings.layoutFolder,
+				file,
+			)
+		) {
 			/*
 			 * **The scan is bracketed by the open sheets, and both halves are
 			 * corrections rather than care.** A sheet's own edits reach disk
@@ -1125,11 +1002,7 @@ export class LayoutEditorSection {
 			 * that sheet, or closing it, wrote the migration back out.
 			 */
 			await this.host.flushSheets();
-			await reportComponentRename(
-				this.plugin.app,
-				this.host.layoutName,
-				rename,
-			);
+			await reportComponentRename(this.plugin.app, file.basename, rename);
 			await this.host.reloadSheets();
 			return;
 		}
@@ -1179,86 +1052,6 @@ export class LayoutEditorSection {
 		this.restoreSnapshot(snapshot);
 		return true;
 	}
-}
-
-/**
- * Leading space for a dropdown option that sits under another, by how many
- * levels in it is.
- *
- * A figure space, because it is the one space character with a width that does
- * not collapse and does not vary with the digits around it. Both dropdowns on
- * the **Add component** row use it — an entry under its type, a container under
- * its parent — for the same reason: a `<select>` has no other way to say that
- * one option sits under another.
- *
- * One function because the bound is the whole of it, and the two callers sit in
- * one row of the pane. Spelled twice they agreed only by accident: one
- * multiplied by depth and the other hard-coded a flat two, so widening the
- * indent in either place would have indented the two dropdowns beside each other
- * differently. Taking the depth rather than a character count is also what lets a
- * caller say "one level in" instead of restating the arithmetic (PATTERNS §1).
- */
-function indent(depth: number): string {
-	return '\u2007'.repeat(depth * 2);
-}
-
-/**
- * One line of the add menu: a bare type, or a type with its config prefilled.
- *
- * Flattened here rather than in the registry because this is the only thing that
- * draws a palette today, and PATTERNS §1 is explicit that one consumer earns no
- * module. M4's grid canvas is the second and it moves then; what the registry
- * owns is which entries exist, not how a menu spells them.
- */
-interface AddChoice {
-	/** Stable option value. A type on its own, or the type and the entry's index. */
-	value: string;
-	type: string;
-	/** The menu line, and the label the new component starts with. */
-	name: string;
-	description: string;
-	/** Whether it is a prefill of the type above it, which is what indents it. */
-	entry: boolean;
-	config: Readonly<Partial<ComponentConfig>>;
-}
-
-/**
- * Every type, each followed by its own prefills.
- *
- * Types stay, and not for completeness: an author who wants a plain Track has to
- * be able to ask for one, and an entry is a starting point they then edit rather
- * than a variant with capabilities of its own. A menu of entries alone would hide
- * the generic block behind a job name, which is the failure SPEC §2 records twice
- * — nobody building an inventory looks for a skill card.
- */
-function addChoices(): AddChoice[] {
-	return listComponentTypes().flatMap((type) => [
-		{
-			value: type,
-			type,
-			name: componentDisplayName(type),
-			description: '',
-			entry: false,
-			config: {},
-		},
-		// The index rather than a machine id on the entry itself: the value only
-		// has to tell one option from another inside one dropdown, and a member
-		// for it would be a member every future entry has to invent a value for.
-		//
-		// A colon rather than a hash, because the harness addresses this menu by
-		// query string and `#` is the one character that cannot survive one — it
-		// starts a fragment, so `choice=track#0` arrives as `choice=track` and
-		// selects the bare type instead. A type id is lower-case and hyphenated,
-		// so a colon parses unambiguously.
-		...paletteEntries(type).map((entry, index) => ({
-			value: `${type}:${index}`,
-			type,
-			name: entry.name,
-			description: entry.description,
-			entry: true,
-			config: entry.config,
-		})),
-	]);
 }
 
 function uniqueLabel(base: string, components: ComponentConfig[]): string {

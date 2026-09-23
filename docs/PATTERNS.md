@@ -195,9 +195,22 @@ with one import, in one spelling.
 ```
 src/
   main.ts          plugin lifecycle only, nothing else
-  commands.ts
-  settings.ts
+  commands.ts      the command palette's entries, each delegating elsewhere
+  settings.ts      the preferences and the settings tab that edits them
   types.ts         the component contract
+  layouts.ts       the layout folder: which files are layouts, the name each
+                   one resolves to, and every write into the folder
+  layout-conversion.ts
+                   offering and running the .json → .sheetsmith conversion,
+                   and the two sentences a reader is shown about it
+  layout-notes.ts  which character notes name a layout, the scan two callers
+                   share
+  layout-picker.ts the modal that chooses one of the vault's layouts, shared
+                   by two callers in two folders
+  characters.ts    creating a character note: its path, its bytes, and the
+                   gesture that opens it
+  component-rename-migration.ts
+                   carrying a component rename across every note on the layout
   parse/           note and layout parsing, and the ordered walk over a parsed
                    layout. Imports nothing from obsidian [checked]
   formula/         expression parsing and evaluation. Same rule [checked]
@@ -209,7 +222,8 @@ src/
                    about a leaf: it renders into an element it is handed
   styles/          the stylesheet, split by area; styles.css is assembled
                    from these at build time and is not edited directly
-  view/            sheet view, layout editor pane, auto-open, reset flow
+  view/            sheet view, layout editor pane, auto-open, reset flow,
+                   and what a layout file's registration and file events do
   ui/              generic building blocks that know nothing of components
   starters/        the layouts the plugin ships and the flow that installs one.
                    The sources are real layout files, inlined into main.js at
@@ -289,7 +303,13 @@ record of it. **A one-consumer sibling arrives with the atomicity argument or it
 not arrive**, which is the sentence a reader of this file alone needs, because
 "shared" would admit the next one with no argument at all.
 
-`table.ts` takes `setIcon`, and that is the one import of its kind. The
+`setIcon` is the one import of its kind, and **four components take it now** —
+`table.ts`, `record-set.ts`, `passport.ts` and `track.ts`. This sentence said
+"`table.ts` takes `setIcon`" while three more had reached for it, which is the
+drift this tier is most prone to: the *rule* is that the allowlist stays one
+name long, and it has, so nothing was violated and nothing reported. A count of
+files is not that rule and goes stale silently; `components/isolation.test.ts`
+holds the name, and no check holds this sentence. The
 argument for it: the plugin's other three delete controls are Obsidian's trash
 icon, drawing an icon touches no vault, and taking the app's icon rather than a
 copy of it is what keeps it following the app's icon set. The cost is real and was
@@ -378,9 +398,10 @@ Every component follows the same order. A reader who knows one knows them all.
 6. **Private helpers**: validation, formatting, storage spelling.
 7. **`export const x: ComponentDefinition<XConfig, XData>`**, members in this
    order [judgement]:
-   `type`, `storage`, `showsOneChild`, `formulaFields`, `configFields`, `palette`,
-   `configName`, `sample`, `read`, `scopeValues`, `scopeRows`, `scopeModifiers`,
-   `write`, `hasBuffer`, `resetColumns`, `applyReset`, `render`.
+   `type`, `description`, `storage`, `showsOneChild`, `formulaFields`,
+   `configFields`, `palette`, `configName`, `example`, `sample`, `read`,
+   `scopeValues`, `scopeRows`, `scopeModifiers`, `write`, `hasBuffer`,
+   `resetColumns`, `applyReset`, `render`.
    Contract first, then the data path in the order it runs, then rendering last
    because it is the longest. `showsOneChild` sits beside `storage` because it is
    the same kind of fact: what this component is structurally, before anything
@@ -388,9 +409,12 @@ Every component follows the same order. A reader who knows one knows them all.
    reads in that order — here are the settings, and here is one of them filled in
    for a job; `configName` follows `palette` because it is the same job read the
    other way, one offering a configuration under a name and the other naming a
-   configuration. `sample` sits directly before `read` because it is the
-   body `read` is handed: the data path's own first step, in the one context
-   where there is no note. `scopeRows` sits beside `scopeValues` because it
+   configuration. `description` sits directly after `type`, where the name and
+   its gloss read together. `example` sits directly before `sample` because it
+   is the configuration `sample` is asked about, so it comes before the body it
+   produces (`docs/features/component-picker.md`). `sample` sits directly
+   before `read` because it is the body `read` is handed: the data path's own
+   first step, in the one context where there is no note. `scopeRows` sits beside `scopeValues` because it
    is the same job read the other way: one publishes the component's names, the
    other the rows that have none. `scopeModifiers` sits beside both because it is
    the same job read a third way — the changes this component declares against
@@ -653,6 +677,28 @@ A component inventing its own is the failure mode to watch for.
   for two-state marks; `aria-label` composed from the label and the state name
   the layout author chose. Announce commits and restores where the change is not
   visible on its own.
+- **An unnamed two-state control lets `aria-pressed` say its state, and says no
+  word beside it** [checked: `contract.test.ts`]. `SPEC` §13's ruling, and the
+  rule two components had each written down as an aside: two states is a toggle
+  button and ARIA has a word for exactly that, which every screen reader already
+  reads, so a "Yes" or a "No" in the name is a *second* name for one state —
+  announced after the platform had already announced it. **More than two states
+  is not a toggle button**, and those carry the state in the name instead, which
+  is the other half of the same rule. Where the states have names of their own a
+  named level says itself, which is the whole point of naming it.
+
+  What makes it [checked] is not the sentence but the population: one module
+  wires every ring on a sheet (`components/ring-control.ts`), and a component
+  setting `'aria-pressed'` for itself is reported by name. The rule was held in
+  four files' comments before that, and the drift was the kind a comment cannot
+  stop — three of the four computed a reading for an unnamed flag and discarded
+  it, because no branch that could have shown it was reachable.
+
+  The cost is stated rather than discovered: "Yes" and "No" left
+  `stored-flag.ts` with the member that computed them, so a later surface
+  needing a *word* for a stored flag — a printed sheet, an export, a formula
+  reading one into text — reopens the question there. That is a reading for a stored value, which is a different
+  question from what a control announces to a listener standing on it.
 - **Arithmetic uses the formula parser, never `eval`** [checked]. `amountOf`
   and `settleEntry` in `editable.ts` are the shared entry points.
 
@@ -821,8 +867,8 @@ decided.
   `components/column-types.ts` and `components/stored-flag.ts` are the second,
   and they hold nothing but the policy §1's one-step tier extracted: which column
   types exist, which is the default, which can be totalled and which published;
-  which spellings of a flag a note may hold, what one is written as, and what a
-  two-state control is called. A file of its own could assert little past a
+  which spellings of a flag a note may hold, and what one is written as.
+  A file of its own could assert little past a
   constant equalling itself, which is §1's own reason the copies were merged —
   the only thing such a test could check is that they still agree, and that is
   what one name says for free. What holds them is three consumer test files:
@@ -832,8 +878,14 @@ decided.
   through the editor field that offers it. Each spelling is written out literally
   rather than iterated from an exported set: a test walking `SET` passes after a
   member is deleted from it, because the deletion takes the iteration with it,
-  which is the vacuous pass this section forbids above. One member of
-  `stored-flag.ts` does not meet the condition below, and §11 holds it.
+  which is the vacuous pass this section forbids above. **Every member of
+  `stored-flag.ts` now meets the condition below**, which it did not when this
+  paragraph was written: it held a third policy, what a two-state control is
+  called, whose every caller computed it and threw it away — so the one thing
+  the exception rests on, that what the module owns is actually driven
+  somewhere, was false of it. `SPEC` §13 ruled that `aria-pressed` says an
+  unnamed flag's state, and the member went with the ruling rather than gaining
+  a test.
   **A note-format primitive is tested through the round trip it is part of.**
   `parse/lines.ts`, `parse/layout-walk.ts` and `parse/markdown-body.ts` are the
   third, and this clause is written because the two above did not describe them —

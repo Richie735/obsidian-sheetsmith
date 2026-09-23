@@ -243,8 +243,9 @@ Inside the box, one **summary line** per record:
 ```
 
 A summary line is: the disclosure chevron, the record's name, then its fields in the
-order the layout declared them. **There is no heading strip over the fields**, and
-that is a decision rather than an omission. Two reasons. A heading row would claim a
+order the layout declared them. **There is no heading strip over the fields by default**, and
+that is a decision rather than an omission (amended: a layout may opt in with `fieldHeadings`, see
+`docs/features/record-set-heading-strip.md`). Two reasons. A heading row would claim a
 tabular reading of a thing that is deliberately not a table, which is the one
 confusion this component's model question exists to end. And a record's fields are few
 by design — anything wordy is body — so a name per field is cheaper than a header that

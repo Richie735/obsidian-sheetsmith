@@ -72,6 +72,7 @@ export interface CardSetData {
 
 export const cardSet: ComponentDefinition<CardSetConfig, CardSetData> = {
 	type: 'card-set',
+	description: 'A row of cards, one per named value, under one heading and one shared formula.',
 	storage: 'fenced',
 	formulaFields: ['derived', 'effective'],
 	configFields: [
@@ -189,8 +190,7 @@ export const cardSet: ComponentDefinition<CardSetConfig, CardSetData> = {
 	palette: [
 		{
 			name: 'Currency',
-			description:
-				'Coins as five cards in a row, one per denomination: CP, SP, EP, GP, PP. A Card set, so the note stores one entry per denomination and each publishes a name a formula can read. Rename or drop the ones your game does not use.',
+			description: 'Coins as one card per denomination, each a value a formula can read.',
 			config: {
 				entries: [
 					{ key: 'CP', name: 'Copper' },
@@ -202,6 +202,17 @@ export const cardSet: ComponentDefinition<CardSetConfig, CardSetData> = {
 			},
 		},
 	],
+
+	/*
+	 * What the component picker draws for a bare Card set, whose empty config
+	 * holds no entries and so draws its heading over nothing. Filler keys rather
+	 * than a game's — `STR` here would put a D&D sheet in the catalog — and three
+	 * of them, so the strip reads as a row of cards. Never inserted: choosing the
+	 * type still writes an empty config, which is why the picker labels this.
+	 */
+	example: {
+		entries: [{ key: 'Entry 1' }, { key: 'Entry 2' }, { key: 'Entry 3' }],
+	},
 
 	/*
 	 * One number per declared entry, under the layout's own keys, each different

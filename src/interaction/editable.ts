@@ -90,6 +90,15 @@ export interface EditableOptions {
 	 * inside `onCommit` rather than a refusal to write, so an option here would
 	 * have one consumer and that consumer would be the wrong one (§1). It states
 	 * its own departure instead, at `record-set.ts`'s `drawName`.
+	 *
+	 * **That "one consumer" is out of date and the conclusion is now only
+	 * half-held.** A Track row the character named departs the same way
+	 * (`components/track.ts`), so the option would have two — which is the
+	 * exemption-whose-reason-expires failure `docs/PATTERNS.md` §5 keeps as its
+	 * own worked example, arriving one module over. What has been taken out of
+	 * the duplication is the *sentence*, below, on §1's one-step tier; what is
+	 * still spelled twice is the mechanism, and `docs/BACKLOG.md` § Patterns
+	 * holds that row rather than this comment.
 	 */
 	refuse?: (next: string) => string | null;
 	/**
@@ -101,6 +110,33 @@ export interface EditableOptions {
 	 */
 	onRefusal?: (message: string | null) => void;
 	onCommit: (next: string) => void;
+}
+
+/**
+ * What a field says when a blank commit put the stored value back.
+ *
+ * **A sentence, so it extracts on the second consumer** — `docs/PATTERNS.md`
+ * §1's one-step tier, and `components/fenced-link.ts`'s own entry is the
+ * precedent this follows by name: the sentence is the whole of what the reader
+ * is told, and two copies of it are one design pass away from saying two
+ * things. The two-consumer rung that would have allowed the duplication is not
+ * available, for the reason it usually is not — each component's suite drives
+ * its own copy, and to different standards at that: Record set asserted the
+ * substring "needs a name" while Track asserted the whole line, so a rewording
+ * of one would have gone green.
+ *
+ * **Here rather than in a sibling module**, which is the one judgement in it:
+ * `interaction/arm-to-confirm.ts` already holds three sentences beside the
+ * gesture they are spoken around, this one is spoken around *this* binding's
+ * own departure, and a new file under `components/` would need a name added to
+ * §2's sibling allowlist — a decision reserved for something that earns it,
+ * which one sentence does not.
+ *
+ * The noun arrives as an argument so this knows that neither a record nor a
+ * Track row exists, which is `linked-text.ts`'s arrangement.
+ */
+export function keptRatherThanBlank(noun: string, kept: string): string {
+	return `A ${noun} needs a name, so "${kept}" was kept.`;
 }
 
 /**

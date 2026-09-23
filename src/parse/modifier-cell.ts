@@ -143,7 +143,7 @@ export function unspellableName(name: string): string | null {
 		return `"${chosen}" cannot be a name, because a row separates the modifiers it applies with a semicolon. Rename it without one.`;
 	}
 	if (readsAsAssignment(chosen)) {
-		return `"${chosen}" cannot be a name, because a row spells its own modifiers that way. Rename it, or write it as a modifier's Changes and Amount instead.`;
+		return `"${chosen}" cannot be a name, because a row spells its own modifiers that way. Rename it, or write it as a modifier's Value and Amount instead.`;
 	}
 	return null;
 }

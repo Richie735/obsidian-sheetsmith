@@ -56,6 +56,24 @@ export interface ModifierTargetSource {
 	values: ScopeValues;
 	/** Every expression this component's configuration holds. */
 	formulas?: readonly string[];
+	/**
+	 * True where the registry has no entry for this component's `type`.
+	 *
+	 * **The difference between publishing no names and publishing none *yet*.**
+	 * Everything else here is the same either way — an unknown type yields no
+	 * `scopeValues` and no formulas, exactly as a container does — and for the
+	 * accepting set that is the right answer, since nothing can be pushed at a
+	 * name nothing publishes. It is the wrong answer for anything that acts on a
+	 * name's *absence*: a layout shared from a newer plugin version, or a
+	 * hand-edited `type` typo, is a component still declared and still holding its
+	 * data whose value this version cannot reach. `view/grid-cells.ts` frames it in
+	 * the words this member exists to carry — "the layout is broken, not the
+	 * sheet".
+	 *
+	 * Set by `modifierTargetSource` alone, which is the one place the registry
+	 * lookup's failure is visible.
+	 */
+	unknownType?: boolean;
 }
 
 /**
@@ -202,6 +220,43 @@ export function publishedEntries(
 	}
 	return found;
 }
+
+/**
+ * A suffix a published name answers to, beyond the bare name itself.
+ *
+ * A union rather than a list of strings, so a surface that has to say something
+ * about each one can declare a `Record` over it and not compile until a third
+ * suffix has a word there — `components/column-types.ts`'s trick, and a check
+ * nobody has to remember to run.
+ */
+export type PublishedSuffix = 'value' | 'left';
+
+/**
+ * The suffix forms one entry answers to, in the order a reader meets them.
+ *
+ * `value` wherever there is an entry at all, because every entry stores one;
+ * `left` only where the entry sets one, which is SPEC §5's rule that `.left` is
+ * published only by an entry with a ceiling to count against.
+ *
+ * **Exported because this is the fourth site of one policy.**
+ * `formula/sheet.ts` registers `${name}.value` and conditionally
+ * `${name}.left`, `formula/vocabulary.ts` decided the same pair for the
+ * suggester, `editor/published-names.ts` decided it again for the panel's chips,
+ * and the promoted-field picker wanted it a fourth time — which is
+ * `docs/PATTERNS.md` §1's one-step tier exactly: the shared thing is a *set*, so
+ * the only thing a guard test over the copies could assert is that they still
+ * agree.
+ *
+ * **Only the suffixes move, not the words.** The suggester's secondary text
+ * ("Stored value", "Remaining"), the inventory's chip text (`.value`, `.left`)
+ * and the picker's label suffix are three strings for three surfaces, and each
+ * keeps its own.
+ */
+export function publishedSuffixes(
+	entry: ScopeEntry,
+): readonly PublishedSuffix[] {
+	return entry.left === undefined ? ['value'] : ['value', 'left'];
+}
 /**
  * What one component contributes to the accepting set.
  *
@@ -236,5 +291,8 @@ export function modifierTargetSource(
 		label: config.label,
 		values: definition?.scopeValues?.(null, config) ?? {},
 		formulas: definition ? formulaTexts(definition, config) : [],
+		// Absent rather than `false` for a type the registry has, so a source
+		// built by hand in a test reads the same as one built here.
+		...(definition === undefined ? { unknownType: true } : {}),
 	};
 }

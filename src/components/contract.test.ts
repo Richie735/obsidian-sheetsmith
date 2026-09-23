@@ -10,11 +10,13 @@ import {
 	unknownComponentMessage,
 } from './index';
 import { COLUMN_TYPES } from './column-types';
+import { conditionMet } from '../editor/config-fields';
 import {
 	ColumnOptionsSpec,
 	ComponentConfig,
 	EDITOR_OWNED_KEYS,
 	isContainer,
+	MODIFIER_CHANGE_KEYS,
 	placesChildren,
 	ScopeEntry,
 } from '../types';
@@ -77,6 +79,8 @@ const KINDS = [
  */
 const MEMBER_ORDER = [
 	'type',
+	// Directly after `type`, where the name and its gloss read together.
+	'description',
 	'storage',
 	// Beside `storage` because it is the same kind of fact: what this component
 	// is structurally, before anything about its data or its drawing.
@@ -89,6 +93,9 @@ const MEMBER_ORDER = [
 	// Beside `palette` because it is the same job read the other way: one
 	// offers a configuration under a name, the other names a configuration.
 	'configName',
+	// Directly before `sample`, because it is the configuration `sample` is
+	// asked about, and so it comes before the body it produces.
+	'example',
 	// Directly before `read`, because it is the body `read` is handed: the data
 	// path's own first step, in the one context where there is no note.
 	'sample',
@@ -110,6 +117,21 @@ const MEMBER_ORDER = [
 ];
 
 const types = listComponentTypes();
+
+/**
+ * The picker line's budget, in characters and in words
+ * (`docs/features/component-picker.md` § Model question, decision 3).
+ */
+const DESCRIPTION_BUDGET = 90;
+const NAME_BUDGET = 3;
+
+/**
+ * One sentence: it ends in a full stop, and nothing before that ends one — no
+ * `.`, `!` or `?` followed by a space. A decimal point is not followed by one.
+ */
+function isOneSentence(text: string): boolean {
+	return text.endsWith('.') && !/[.!?]\s/.test(text.slice(0, -1));
+}
 
 /** A child to place inside another component, for the containment checks. */
 function child(): ComponentConfig {
@@ -352,23 +374,29 @@ describe('component registry', () => {
 		expect(declared).not.toContain('definition:');
 	});
 
-	it('declares a typed effect as a definition minus its name, and no more', () => {
+	it('declares a typed effect as a change plus a condition, and no more', () => {
 		/*
-		 * **The field list, held once.** `TypedEffect` and `ModifierDefinition` are
-		 * deliberately two interfaces of the same shape rather than one expressed as
-		 * `Omit<ModifierDefinition, 'name'>` — because §7's edge is precisely that
-		 * being *nameable* is what separates them, and naming one in terms of the
-		 * other invites the next feature to give a typed effect a name in place.
+		 * **The field list, held once, across three interfaces now.**
+		 * `ModifierChange`, `TypedEffect` and `ModifierDefinition` are deliberately
+		 * three of nearly one shape rather than any of them expressed in terms of
+		 * another — because §7's edge is precisely that being *nameable* is what
+		 * separates a definition from an effect, and `TypedEffect = ModifierChange &
+		 * { when?: string }` would make a typed effect "one change of a definition
+		 * with no name yet", which is the promotion-in-place §7 forbids.
 		 *
-		 * The cost of that decision is that the two can drift, and this is what
-		 * stops them: a member added to one and not the other fails here rather than
-		 * as a modifier that behaves differently depending on which file it came out
-		 * of.
+		 * The cost of that decision is that they can drift, and this is what stops
+		 * them: a member added to one and not the others fails here rather than as a
+		 * modifier that behaves differently depending on which file it came out of.
+		 *
+		 * `changes` is the one member that is a definition's alone, because it is
+		 * what *holds* the others — a change with changes of its own is not a shape
+		 * this model has.
 		 */
 		const members = (name: string) =>
 			[...declaration(TYPES, name).matchAll(/^\t(\w+)\??:/gm)].map(
 				(match) => match[1],
 			);
+		const change = members('ModifierChange');
 		const typed = members('TypedEffect');
 		/*
 		 * **The floor first**, because without it this case passes on two empty
@@ -385,9 +413,23 @@ describe('component registry', () => {
 			'applies',
 			'when',
 		]);
-		expect(typed).toEqual(
-			members('ModifierDefinition').filter((one) => one !== 'name'),
-		);
+		// A change is the effect minus the condition, which is the one thing a
+		// definition holds once for every change it names.
+		expect(change).toEqual(typed.filter((one) => one !== 'when'));
+		/*
+		 * **And the walkable copy of that list is held to the interface**, which is
+		 * what stops the parser and the layout editor drifting apart about which
+		 * members the flat spelling carries: one reports them as ignored beside a
+		 * `changes` list and the other moves and deletes them on **Add change**, so a
+		 * sixth member reaching the interface and not this list strands a key in one
+		 * surface and reports it in the other.
+		 */
+		expect([...MODIFIER_CHANGE_KEYS]).toEqual(change);
+		expect(
+			members('ModifierDefinition').filter(
+				(one) => one !== 'name' && one !== 'changes',
+			),
+		).toEqual(typed);
 	});
 
 	/*
@@ -486,6 +528,123 @@ describe('component registry', () => {
 		}
 	});
 
+	it('gives every type a description of one sentence within 90 characters', () => {
+		/*
+		 * The line the component picker shows under a type's name, and the only
+		 * explanation of the type an author is given
+		 * (`docs/features/component-picker.md` § Copy). The budget is the picker's:
+		 * a line that wraps to three rows under every option makes the list a wall.
+		 */
+		for (const type of types) {
+			const description = getComponent(type)?.description ?? '';
+			expect(description, `${type} has no description`).not.toBe('');
+			expect(description.length, `${type}: "${description}"`).toBeLessThanOrEqual(
+				DESCRIPTION_BUDGET,
+			);
+			expect(isOneSentence(description), `${type}: "${description}"`).toBe(true);
+		}
+	});
+
+	it('keeps every palette entry description to one sentence within 90 characters', () => {
+		// The same budget as a type's, because the two are the same line in the
+		// picker. A consequence for the note belongs in the description of the
+		// config field it concerns, which is where the rewrite sent each one.
+		const entries = types.flatMap((type) => [...paletteEntries(type)]);
+		expect(entries.length).toBeGreaterThan(0);
+		for (const entry of entries) {
+			expect(entry.description.length, `${entry.name}: "${entry.description}"`)
+				.toBeLessThanOrEqual(DESCRIPTION_BUDGET);
+			expect(isOneSentence(entry.description), `${entry.name}: "${entry.description}"`)
+				.toBe(true);
+		}
+	});
+
+	it('tells one sentence from two, so the budget checks mean something', () => {
+		// Driven over what it refuses, since a predicate that had stopped
+		// refusing anything would pass every description above.
+		expect(isOneSentence('A row of boxes, marked in order.')).toBe(true);
+		expect(isOneSentence('A value of 2.5 on a card.')).toBe(true);
+		expect(isOneSentence('A row of boxes. Marked in order.')).toBe(false);
+		expect(isOneSentence('A row of boxes! Marked in order.')).toBe(false);
+		expect(isOneSentence('A row of boxes? Marked in order.')).toBe(false);
+		expect(isOneSentence('A row of boxes')).toBe(false);
+	});
+
+	it('names every type and palette entry in at most three words', () => {
+		// A type's name in the picker is its id with the hyphens spaced out
+		// (`editor/component-name.ts`), so its words are its id's parts.
+		for (const type of types) {
+			expect(type.split('-').length, type).toBeLessThanOrEqual(NAME_BUDGET);
+		}
+		for (const entry of types.flatMap((type) => [...paletteEntries(type)])) {
+			expect(entry.name.trim().split(/\s+/).length, entry.name).toBeLessThanOrEqual(
+				NAME_BUDGET,
+			);
+		}
+	});
+
+	it('declares an example only beside a sample, and never on a container', () => {
+		// It is drawn through `sample`, so without one it would draw nothing; a
+		// container declares no sample, and what a container draws depends on
+		// `children`, which an example may not set.
+		for (const type of types) {
+			const component = getComponent(type);
+			if (component?.example === undefined) continue;
+			expect(typeof component.sample, `${type} has an example and no sample`).toBe('function');
+			expect(isContainer(component), `${type} is a container`).toBe(false);
+		}
+	});
+
+	it('sets no editor-owned key in an example', () => {
+		// The type forbids them, and the registry holds definitions typed without
+		// their config, so the `Omit` widens: this asks again at runtime.
+		for (const type of types) {
+			for (const key of Object.keys(getComponent(type)?.example ?? {})) {
+				expect(EDITOR_OWNED_KEYS, `${type} example sets ${key}`).not.toContain(key);
+			}
+		}
+	});
+
+	it('declares every example key as a config field it also renders', () => {
+		// An example is a configuration an author could reach through the form,
+		// never one they could not — or the preview shows a thing no insert can
+		// become. So each key is a declared field, and one the form actually
+		// draws under the example's own config: a field whose `visibleWhen` the
+		// example does not meet is declared and never on screen.
+		for (const type of types) {
+			const component = getComponent(type);
+			const fields = component?.configFields ?? [];
+			const example = (component?.example ?? {}) as Record<string, unknown>;
+			for (const key of Object.keys(example)) {
+				const field = fields.find((candidate) => candidate.key === key);
+				expect(field, `${type} example sets ${key}`).toBeDefined();
+				if (field?.visibleWhen === undefined) continue;
+				expect(
+					conditionMet(field.visibleWhen, fields, example),
+					`${type} example sets ${key}, which its form hides`,
+				).toBe(true);
+			}
+		}
+	});
+
+	it('never declares an empty example', () => {
+		// `{}` is what the bare type already draws.
+		for (const type of types) {
+			const example = getComponent(type)?.example;
+			if (example === undefined) continue;
+			expect(Object.keys(example).length, type).toBeGreaterThan(0);
+		}
+	});
+
+	it('names the types that declare an example, so a fifth is a decision', () => {
+		// `docs/features/component-picker.md` §1's threshold: an example where the
+		// empty config draws a blank, an empty-state message, or an error. Adding
+		// one means updating that table with its photograph.
+		expect(
+			types.filter((type) => getComponent(type)?.example !== undefined),
+		).toEqual(['card-set', 'roster', 'table', 'track']);
+	});
+
 	it('names the types a layout may use when one is unknown', () => {
 		// A stale layout file is the one place a user meets a type id they
 		// have to fix by hand, so the message carries the vocabulary rather
@@ -539,33 +698,162 @@ describe('a component that draws a label asks whether it should', () => {
 		expect(forgetful).toEqual([]);
 	});
 
-	it('draws every two-state control through the shared ring painter', () => {
+	/**
+	 * A quoted `aria-pressed`, which is what an attribute is actually set with.
+	 *
+	 * Narrow on purpose, and the narrowness is the point: `track.ts` names the
+	 * attribute in a comment explaining why a flag is one, and
+	 * `modifier-breakdown.ts` in a comment about what one already announces, so a
+	 * predicate matching the bare word would fail the build on the sentences
+	 * explaining the rule. That is `NATIVE_CHECKBOX`'s own lesson below — a guard
+	 * whose false positive is the prose about the guard is a guard somebody
+	 * deletes.
+	 */
+	const QUOTED_PRESSED = "'aria-pressed'";
+
+	/** The class every ring on a sheet wears, as a caller spells it. */
+	const RING_CLASS = "'sheetsmith-level-ring'";
+
+	it('leaves a two-state ring\'s ARIA to the one control module', () => {
 		/*
-		 * `docs/UI.md` §9: when a card and a cell do the same job they share the
-		 * painter, "precisely so one flag cannot measure differently from the
-		 * other under the same finger". A `toggle` column and a Track's flag are
-		 * that case, and the way it would drift is somebody giving the second one
-		 * a lookalike — a native checkbox, or its own class with its own
-		 * measurements — which reads perfectly well in the file it is written in.
+		 * `docs/UI.md` §9 and `docs/PATTERNS.md` §6: what a two-state mark
+		 * announces is one rule, and four components drew one. Each spelled the
+		 * ARIA, the tooltip, the touch route and the presses for itself, and
+		 * nothing reported it when they disagreed — which they did, in both
+		 * directions, until `ring-control.ts`.
 		 *
 		 * `aria-pressed` is the marker because it is the one thing a two-state
-		 * control cannot be written without: ARIA has a word for two states, and
-		 * a control declaring it is declaring itself to be one.
+		 * control cannot be written without: ARIA has a word for two states, and a
+		 * control declaring it is declaring itself to be one. So a component
+		 * setting it is a component that has started wiring its own ring.
 		 */
-		const lookalikes = componentFiles()
-			.filter(({ source }) => source.includes('aria-pressed'))
-			.filter(({ source }) => !source.includes('paintLevelRing'))
+		const hand = componentFiles()
+			.filter(({ source }) => source.includes(QUOTED_PRESSED))
 			.map(({ name }) => name);
-		expect(lookalikes).toEqual([]);
+		expect(hand).toEqual([]);
+	});
+
+	it('reports a ring that is drawn without being wired', () => {
+		/*
+		 * The half the check above cannot see. A copy that forgot `aria-pressed`
+		 * altogether passes it perfectly, and that is exactly the disagreement
+		 * worth catching: a ring measuring the same as every other under one
+		 * finger and saying nothing at all to a listener.
+		 */
+		const unwired = componentFiles()
+			.filter(({ source }) => source.includes(RING_CLASS))
+			.filter(({ source }) => !source.includes('bindRingControl'))
+			.map(({ name }) => name);
+		expect(unwired).toEqual([]);
+	});
+
+	it('catches a hand-wired ring however it is spelled, so the scans mean something', () => {
+		/*
+		 * **Both scans above assert an empty list, and neither population can
+		 * contain the marker's own proof.** `ring-control.ts` declares no
+		 * `ComponentDefinition`, so it is outside `componentFiles()` — and now
+		 * that the four callers have handed their ARIA over, it is the only
+		 * non-test file in this folder that spells `'aria-pressed'` at all. So
+		 * both markers match nothing in the set they are run against, and a
+		 * mistyped constant reads exactly like a rule nothing violates.
+		 *
+		 * `NATIVE_CHECKBOX` below is the model and the one this file already
+		 * had: prove the marker against the spellings it must catch and the
+		 * prose it must not, asserted against the constant itself rather than
+		 * against a filtered list. The narrowness argument was written without
+		 * it (`docs/PATTERNS.md` §10, and the open BACKLOG row about a scan
+		 * tested in one direction).
+		 */
+		for (const spelling of [
+			"button.setAttribute('aria-pressed', String(level > 0));",
+			"el.setAttribute('aria-pressed', String(on));",
+		]) {
+			expect(spelling).toContain(QUOTED_PRESSED);
+		}
+		// The prose that exists today, which the backtick spelling keeps out.
+		expect(
+			'A `<button aria-pressed>` because that is the word ARIA has',
+		).not.toContain(QUOTED_PRESSED);
+		// And the limit, pinned rather than claimed: a comment that *quotes* the
+		// attribute is reported. Nothing in `components/` writes one, and the
+		// alternative — a predicate that reads code position — is the shared
+		// source reader the BACKLOG row above already waits on.
+		expect("// the word is 'aria-pressed'").toContain(QUOTED_PRESSED);
+
+		for (const spelling of [
+			"element('button', 'sheetsmith-level-ring', td);",
+			"td.createEl('button', { cls: 'sheetsmith-level-ring' });",
+			"el.classList.add('sheetsmith-level-ring', 'sheetsmith-track-flag');",
+		]) {
+			expect(spelling).toContain(RING_CLASS);
+		}
+		// The painter's own state class is not a ring being drawn, and neither is
+		// a comment naming the selector.
+		expect(
+			"ring.classList.toggle('sheetsmith-level-ring-on', level > 0);",
+		).not.toContain(RING_CLASS);
+		expect('Named for the mark, the way `.sheetsmith-level-ring` is').not.toContain(
+			RING_CLASS,
+		);
+
+		// Anchored to real repository text as well as to literals here: the one
+		// file that does spell the attribute is the one the four handed it to, so
+		// a marker that stopped matching the code fails here too.
+		expect(readFileSync(join(HERE, 'ring-control.ts'), 'utf8')).toContain(
+			QUOTED_PRESSED,
+		);
 	});
 
 	it('finds the two-state controls it is meant to be checking', () => {
-		// A marker that stopped matching would pass the check above by iterating
-		// nothing, and the rule it holds is about the *second* implementor.
-		const pressing = componentFiles().filter(({ source }) =>
+		// Both checks above are absence assertions, which an empty walk satisfies
+		// perfectly (§10). The population they are about is the four components
+		// that draw a ring, so that is what is asserted rather than the markers:
+		// a marker that stopped matching fails here instead of iterating nothing.
+		const wired = componentFiles()
+			.filter(({ source }) => source.includes('bindRingControl'))
+			.map(({ name }) => name);
+		expect(wired.sort()).toEqual([
+			'record-set.ts',
+			'roster.ts',
+			'table.ts',
+			'track.ts',
+		]);
+	});
+
+	it('does not report the prose that explains the rule', () => {
+		/*
+		 * §10's other direction, which the backlog asks of every scan claiming to
+		 * be narrow: a case for the spellings it must **not** report, so the claim
+		 * is tested both ways rather than only by staying green.
+		 *
+		 * **What is asserted here is the one near-miss that is real repository
+		 * text**: `track.ts` explains in a comment why a flag is a
+		 * `<button aria-pressed>`, so the scan runs over a file naming the
+		 * attribute and reports nothing. The marker's other direction — the
+		 * spellings it must catch, and the limit it has — is the case above,
+		 * against the constant itself.
+		 *
+		 * Two things this case used to assert and no longer does, because each
+		 * held under every implementation and so measured nothing. That
+		 * `componentFiles()` excludes `modifier-breakdown.ts` is already held by
+		 * `finds every component file`, and is a fact about the filter rather than
+		 * about this predicate. And Track's run carrying `role="slider"` and
+		 * `'aria-valuenow'` was checked by filtering `['track.ts']` out of a set
+		 * already shown to contain no match — a subset of a proof, which proves
+		 * nothing further. Both remain true and are recorded here rather than
+		 * asserted: a run is a different control with ARIA of its own, and
+		 * `src/editor/list-fields.ts` draws rings whose two states are a fact
+		 * about the *layout* an author is writing rather than about a character's
+		 * level, outside the file set by construction and named so the next reader
+		 * does not widen the scan to catch it.
+		 */
+		const prose = componentFiles().filter(({ source }) =>
 			source.includes('aria-pressed'),
 		);
-		expect(pressing.length).toBeGreaterThan(1);
+		expect(prose.map(({ name }) => name)).toEqual(['track.ts']);
+		expect(
+			prose.filter(({ source }) => source.includes(QUOTED_PRESSED)),
+		).toEqual([]);
 	});
 
 	/*
@@ -638,12 +926,16 @@ describe('a component that says what a sample of itself looks like', () => {
 	 * thing it exists not to do.
 	 */
 	function configsFor(type: string): ComponentConfig[] {
+		const example = getComponent(type)?.example;
 		return [
 			bareConfig(type),
 			...paletteEntries(type).map((entry) => ({
 				...bareConfig(type),
 				...entry.config,
 			})),
+			// The picker draws a declared example through `sample`, so it is one
+			// more configuration the sweep holds to every rule below.
+			...(example === undefined ? [] : [{ ...bareConfig(type), ...example }]),
 		];
 	}
 
@@ -666,7 +958,11 @@ describe('a component that says what a sample of itself looks like', () => {
 				out.push({
 					type,
 					where:
-						index === 0 ? `${type} bare` : `${type} ${entries[index - 1]?.name ?? ''}`,
+						index === 0
+							? `${type} bare`
+							: index > entries.length
+								? `${type} example`
+								: `${type} ${entries[index - 1]?.name ?? ''}`,
 					config,
 					body: component.sample?.(config) ?? '',
 				});
@@ -700,6 +996,7 @@ describe('a component that says what a sample of itself looks like', () => {
 		'card Dropdown',
 		'card-set bare',
 		'card-set Currency',
+		'card-set example',
 		'passport bare',
 		'passport Header',
 		'pool bare',
@@ -708,11 +1005,14 @@ describe('a component that says what a sample of itself looks like', () => {
 		'record-set Features',
 		'rich-text bare',
 		'roster bare',
+		'roster example',
 		'table bare',
 		'table Inventory',
 		'table Conditions',
+		'table example',
 		'track bare',
 		'track Checkbox',
+		'track example',
 	];
 
 	/**
@@ -746,8 +1046,16 @@ describe('a component that says what a sample of itself looks like', () => {
 		// The member order is checked per component below; what it cannot say is
 		// *where* this one belongs, since a component that declares it in the
 		// wrong place is only caught if `MEMBER_ORDER` holds the right place.
-		expect(MEMBER_ORDER.indexOf('sample')).toBe(
+		// `example` sits between the two: the configuration `sample` is asked
+		// about, directly before the body it produces.
+		expect(MEMBER_ORDER.indexOf('example')).toBe(
 			MEMBER_ORDER.indexOf('configName') + 1,
+		);
+		expect(MEMBER_ORDER.indexOf('sample')).toBe(
+			MEMBER_ORDER.indexOf('example') + 1,
+		);
+		expect(MEMBER_ORDER.indexOf('description')).toBe(
+			MEMBER_ORDER.indexOf('type') + 1,
 		);
 		expect(MEMBER_ORDER.indexOf('read')).toBe(MEMBER_ORDER.indexOf('sample') + 1);
 		// And the rule applied to something that breaks it, so an order check
@@ -871,11 +1179,13 @@ describe('a component that says what a sample of itself looks like', () => {
 		}
 	});
 
-	it('is called from the canvas and nowhere else', () => {
+	it('is called from the editor\'s sample reader and nowhere else', () => {
 		/*
 		 * A sample is filler, so a path that reached a character note with one in
 		 * it would be writing invented data into a file somebody owns. The one
-		 * caller is the layout editor's canvas, where there is no note at all.
+		 * caller is `editor/sample-read.ts`, which the layout editor's canvas and
+		 * the component picker's preview both read through, and neither has a note
+		 * at all.
 		 *
 		 * A source scan because there is no seam to assert this at: `read` takes a
 		 * body from wherever its caller got one, and every other caller gets one
@@ -926,7 +1236,7 @@ describe('a component that says what a sample of itself looks like', () => {
 		// this file moving one folder down would scan `components/` alone and go
 		// on reporting green over the editor it exists to watch.
 		expect(files).toBeGreaterThan(60);
-		expect(found).toEqual([join('editor', 'canvas.ts')]);
+		expect(found).toEqual([join('editor', 'sample-read.ts')]);
 	});
 });
 

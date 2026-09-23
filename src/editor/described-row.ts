@@ -25,12 +25,19 @@
  * `src/test/described-row.ts`, which is what a second copy of the treatment used
  * to be checked by.
  *
- * **The id is a parameter, because the two consumers cannot share one.** The
- * pane's row is drawn once per render and a redraw replaces the whole
- * container, so a module literal there is safe and readable. A modal can be
- * opened, closed and opened again, so its id is generated per instance or two
- * live elements carry the same one. That difference is the caller's, and it is
- * the only one.
+ * **The id is a parameter, because the consumers cannot share one.** A modal
+ * can be opened, closed and opened again, so its id is generated per instance or
+ * two live elements carry the same one. The pane's **Layout file** row
+ * (`docs/features/visible-layout-files.md`) mints one per render for the same
+ * reason: two panes open on one layout is a supported state, so a literal would
+ * be carried by two live rows at once.
+ *
+ * **Two consumers remain**, New layout's **Start from** and the **Layout file**
+ * row. The first was the pane's **Add component** row, whose dropdown the
+ * component picker replaced (`docs/features/component-picker.md`); the picker
+ * describes every line in its list itself, so it has no row to move a
+ * description under. The measurements below were taken on that row and stay as
+ * the record of why the treatment exists.
  */
 
 import { Setting } from 'obsidian';
@@ -75,7 +82,7 @@ export function describedRow(
 	 * chosen, and a settings row is a centred flex line: the info column widens,
 	 * the control column wraps, and the control the author is reaching for moves
 	 * while they are still choosing what to press it for — measured at about
-	 * 35px on the **Add component** row.
+	 * 35px on the pane's old **Add component** row.
 	 *
 	 * Moved rather than reserved. Reserving a line of height shows an empty one
 	 * for every choice whose copy happens to be empty, and only fits the
@@ -86,9 +93,9 @@ export function describedRow(
 	 *
 	 * **What this fixes is the row's own first line, and how much more depends
 	 * on what follows the row.** The control being operated stays put whatever
-	 * is chosen, which is the whole of it — and on the pane's **Add component**
-	 * row the copy then grows into space nothing is placed in, so the
-	 * destination dropdown and **Add** beside it stop moving too. In a modal
+	 * is chosen, which is the whole of it — and on the pane's old **Add
+	 * component** row the copy grew into space nothing was placed in, so the
+	 * destination dropdown and **Add** beside it stopped moving too. In a modal
 	 * three rows follow, so a switch still moves everything below: growing the
 	 * copy by a line pushes **Name** and **Create** down, and revealing a source
 	 * row pushes them further. The treatment does not claim to fix that, and a

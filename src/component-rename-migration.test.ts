@@ -334,14 +334,19 @@ describe('migrateComponentRename', () => {
 	});
 
 	/*
-	 * The frontmatter value the real cache hands back is YAML, and the plugin
-	 * writes a plain scalar wherever `isPlainLayoutValue` allows one — so a
-	 * layout named `12`, `No` or `null` is written unquoted and parsed back as
-	 * a number, a boolean and nothing at all. Spied rather than modelled in the
-	 * stub's own `MetadataCache`: what the real cache does with a typed scalar
-	 * is a claim about Obsidian this repository has no probe for
-	 * (`docs/BACKLOG.md` § Patterns), and this module's job is only to be
-	 * right either way.
+	 * The frontmatter value the real cache hands back is YAML, so a note whose
+	 * `sheet-layout` reads `12`, `No` or `null` is parsed back as a number, a
+	 * boolean and nothing at all.
+	 *
+	 * **The plugin's own writer no longer produces any of the three**:
+	 * `parse/frontmatter.ts`'s `isPlainScalar` quotes a number spelling, a
+	 * boolean word and a null word, which is what closed `docs/BACKLOG.md`'s row
+	 * against the predicate. These cases are therefore about a *hand-edited*
+	 * note, which is the one way such a line still reaches this scan — and the
+	 * reason to keep them is unchanged: this module's job is to be right either
+	 * way. Spied rather than modelled in the stub's own `MetadataCache`, since
+	 * what the real cache does with a typed scalar is a claim about Obsidian this
+	 * repository has no probe for (`docs/BACKLOG.md` § Patterns).
 	 */
 	function cacheReports(value: unknown): void {
 		vi.spyOn(app.metadataCache, 'getFileCache').mockImplementation(
@@ -369,9 +374,9 @@ describe('migrateComponentRename', () => {
 	});
 
 	it('still migrates a layout named null, which the cache answers as nothing at all', async () => {
-		// `isPlainLayoutValue('null')` passes, so the plugin writes this
-		// unquoted and a real cache hands back `null` — the third coercion the
-		// guard's own comment names, and the one a bare null check excluded.
+		// A real cache hands `sheet-layout: null` back as `null` — the third
+		// coercion the guard's own comment names, and the one a bare null check
+		// excluded. Hand-written now: `isPlainScalar('null')` is false.
 		const named = '---\nsheet-layout: null\n---\n\n## Abilities\n```sheet\nDEX: 16\n```\n';
 		await app.vault.create('Aramil.md', named);
 		cacheReports(null);

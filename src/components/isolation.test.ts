@@ -133,6 +133,15 @@ const ALLOWED = [
 	// which is the half §1 says drifts (`roundSum`).
 	"import { renderPictureFrame } from './picture-frame';",
 	"import { renderPictureFrame } from '../components/picture-frame';",
+	// A painted level ring, made into a control: its ARIA, its tooltip, its touch
+	// route and its presses. Added deliberately, and at four consumers rather
+	// than two — Table, Track, Record set and Roster — which is one past where
+	// §1's ladder stops arguing. The painter stays beside it rather than absorbing
+	// this, because it has a consumer whose two states are a fact about the
+	// *layout* — the editor's sample says whether a level shows a mark — where
+	// every state here is a fact about a character's level.
+	"import { bindRingControl } from './ring-control';",
+	"import { bindRingControl } from '../components/ring-control';",
 	"import { MODIFIED_CLASS } from '../components/modifier-breakdown';",
 	"import { paintLinkedText } from '../components/linked-text';",
 	"import { paintLevelRing } from '../components/level-ring';",
@@ -280,7 +289,7 @@ describe('a cell part is parsed in one place, on the formula side of the seam', 
 	 * **Two readings of one part's text is the one way this design could have the
 	 * form and the number disagree**, so the rule is that a component *spells* a
 	 * part and never *reads* one: `spellTypedEffect` because Table writes the cell,
-	 * and every field the form draws off `ModifierContext.outcome`, which the
+	 * and every field the form draws off `ModifierContext.outcomes`, which the
 	 * formula layer has already resolved.
 	 *
 	 * A scan and not an eslint case, for the `Menu` check's reason one paragraph up:

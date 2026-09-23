@@ -98,9 +98,34 @@ export function joinBounded(entry: BoundedEntry): string {
 	return entry.value + entry.separator + entry.ceiling;
 }
 
-/** The same entry with a new value, keeping whatever ceiling it carries. */
+/**
+ * The same entry with a new value, keeping whatever ceiling it carries.
+ *
+ * **A separator that only ever sat against an empty value half is not a
+ * spelling the reader chose, so the first real value canonicalises it.** This
+ * is the third rule above read at the one case it did not cover. An entry
+ * composed with no marks yet is ` / 4`; a fence writes that as
+ * `Wolves:  / 4`, and `parse/fenced.ts`'s own `ENTRY` then takes the leading
+ * space into the *colon's* separator and trims what is left — so the value
+ * half comes back as `/ 4`, with a separator of `/ ` that nothing in the file
+ * ever spelled. Without this, the first press joined `3/ 4` and every later
+ * read kept it: the canonical form was reached exactly once and then lost, in
+ * the one flow the canonical form exists for.
+ *
+ * Narrow on purpose. It fires only where the value half is empty *and* a real
+ * value is arriving, so a note spelling `2/3` or `2 /3` by hand keeps its own
+ * spelling for ever — those have a value half, which is what makes their
+ * spacing something a reader can see and therefore something they chose.
+ */
 export function withValue(raw: string, value: string): string {
-	return joinBounded({ ...splitBounded(raw), value });
+	const held = splitBounded(raw);
+	const unspelled =
+		held.ceiling !== null && held.value.trim() === '' && value.trim() !== '';
+	return joinBounded({
+		...held,
+		value,
+		separator: unspelled ? CANONICAL_SEPARATOR : held.separator,
+	});
 }
 
 /**

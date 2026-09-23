@@ -270,6 +270,22 @@ export default defineConfig(
 								 * for, which is `arm-to-confirm.ts`'s entry verbatim.
 								 */
 								'!./picture-frame',
+								/*
+								 * **A painted level ring, made into a control**: its ARIA, its
+								 * tooltip, its touch route and its presses. In no registry,
+								 * declaring no `ComponentDefinition`, importing nothing from
+								 * `obsidian` and touching no file. On the list for *reuse* on
+								 * `effective-value.ts`'s terms and at four consumers rather
+								 * than two — Table, Track, Record set and Roster — which is
+								 * one past the rung PATTERNS §1 stops arguing at. What was
+								 * drifting is not hypothetical: one of the four bound its
+								 * touch route under a predicate the others did not have, and
+								 * three computed a word for an unnamed flag that no branch
+								 * could reach. Beside `level-ring.ts` rather than inside it,
+								 * because the painter has a consumer whose two states are
+								 * about the layout rather than about a character.
+								 */
+								'!./ring-control',
 								'!../components/column-types',
 								'!../components/level-ring',
 								'!../components/card-face',
@@ -283,6 +299,7 @@ export default defineConfig(
 								'!../components/embed-rule',
 								'!../components/fenced-link',
 								'!../components/picture-frame',
+								'!../components/ring-control',
 							],
 							message:
 								'A component must not import another component. Move the shared behaviour into a module named for what it does — a sibling painter, or src/interaction/ — and import that from both.',

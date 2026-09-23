@@ -366,6 +366,20 @@ const ICONS: Readonly<Record<string, readonly IconShape[]>> = {
 			},
 		],
 	],
+	/*
+	 * The read-only account of a modifier, which is deliberately *not* the bolt
+	 * beside it: `zap` marks a control that edits which modifiers a row declares,
+	 * and this marks one that only explains (`docs/UI.md` §9).
+	 *
+	 * `h.01` is Lucide's own spelling of the dot — a zero-length stroke with a
+	 * round cap — rather than a fourth circle, and it is copied as written for
+	 * the reason this table exists at all.
+	 */
+	info: [
+		['circle', { cx: '12', cy: '12', r: '10' }],
+		['path', { d: 'M12 16v-4' }],
+		['path', { d: 'M12 8h.01' }],
+	],
 	'zap-off': [
 		['path', { d: 'M10.513 4.856 13.12 2.17a.5.5 0 0 1 .86.46l-1.377 4.317' }],
 		['path', { d: 'M15.656 10H20a1 1 0 0 1 .78 1.63l-1.72 1.773' }],
@@ -418,8 +432,62 @@ export function setIcon(el: HTMLElement, icon: string): void {
 
 export class Notice {
 	static messages: string[] = [];
-	constructor(message: string) {
-		Notice.messages.push(message);
+	/**
+	 * Every notice raised, in order, beside the messages.
+	 *
+	 * `messages` answers "what was the reader told", which is what almost every
+	 * case wants. This answers "which notice", and exists for the one notice that
+	 * is a control rather than a sentence: a test pressing the reset's **Undo**
+	 * has to reach the element the link was built into, and the string says
+	 * nothing about it. Reset by the same `beforeEach` that resets `messages`;
+	 * a case that leaves it standing only leaks a detached div.
+	 */
+	static instances: Notice[] = [];
+	/** Built on first read. See `messageEl`. */
+	private element: HTMLElement | null = null;
+	/**
+	 * The element the notice's own content goes in.
+	 *
+	 * Modelled because one notice in this plugin is a *control* rather than a
+	 * sentence: the reset trigger's undo builds a span and an `<a>` into it
+	 * (`view/sheet-view.ts`'s `offerUndo`), and until this existed any test that
+	 * reached that line threw on an undefined property — so the whole undo
+	 * gesture was undrivable and a real defect in it shipped.
+	 *
+	 * **A getter, because a field initialiser made `new Notice(...)` require a
+	 * DOM.** `document.createElement` in the initialiser threw
+	 * `ReferenceError: document is not defined` in every node-environment file —
+	 * `reset-flow.test.ts`, `worked-examples.test.ts`, `contract.test.ts` — and
+	 * the message named neither the notice nor the environment. `PATTERNS.md`
+	 * §2's recorded trap one step over: the question is not what a layer needs
+	 * in order to be *imported* but what it needs in order to be
+	 * *constructed*, and a notice that is only a string in a node test has to
+	 * cost nothing. Reading this still wants a DOM, which is honest — a caller
+	 * reading it is asking for an element.
+	 *
+	 * Detached, which is the one thing about it that is *not* the app: Obsidian
+	 * appends the notice to a container on `document.body`. Detached is enough
+	 * for everything a test can ask — the markup, the listeners, and pressing
+	 * the link — and attaching it would put a live element on the body that no
+	 * `hide` in a failing case ever takes down.
+	 */
+	get messageEl(): HTMLElement {
+		this.element ??= document.createElement('div');
+		return this.element;
+	}
+	/** Whether `hide()` has been called, which is what a press of the link does. */
+	hidden = false;
+	/**
+	 * `timeout` is accepted and ignored, which is faithful for what a test can
+	 * see: the app's own timer removes the element, and nothing here observes an
+	 * element that was never attached.
+	 */
+	constructor(message: string | DocumentFragment, _timeout?: number) {
+		Notice.messages.push(typeof message === 'string' ? message : '');
+		Notice.instances.push(this);
+	}
+	hide(): void {
+		this.hidden = true;
 	}
 }
 
@@ -750,7 +818,7 @@ export class Setting {
  * An in-memory vault, because the layout editor lists, reads, creates and
  * modifies layout files and none of that works against nothing. Paths are
  * plain strings and folders are derived from them, which is enough for the one
- * shape this plugin uses: a single configured folder holding `.json` files.
+ * shape this plugin uses: a single configured folder holding layout files.
  * ------------------------------------------------------------------------ */
 
 /** The folder segment of a path, or '' for a path at the root. */
@@ -804,6 +872,20 @@ export class TFolder extends TAbstractFile {
 export class Vault {
 	private files = new Map<string, { file: TFile; content: string }>();
 	private folders = new Map<string, TFolder>();
+	/**
+	 * Who is listening for which file event.
+	 *
+	 * **Fired synchronously, from inside the write that caused it**, which is
+	 * the one timing this double can promise honestly: the app fires `create`,
+	 * `modify`, `delete` and `rename` once its own map has changed and before the
+	 * awaited call returns to the writer, so a listener sees the vault as it is
+	 * after the write — never before it. What is not modelled is everything the
+	 * app fires on its own: an edit made in another program, a sync landing, or
+	 * the `create` storm the app raises for every file while the vault first
+	 * loads (which is why a plugin registers its `create` listener from
+	 * `onLayoutReady`). A test drives those by calling `trigger` itself.
+	 */
+	private listeners = new Map<string, Set<(...args: unknown[]) => unknown>>();
 	/**
 	 * The vault root, whose path is `/`.
 	 *
@@ -860,6 +942,33 @@ export class Vault {
 	 */
 	getFileByPath(path: string): TFile | null {
 		return this.files.get(path)?.file ?? null;
+	}
+
+	/**
+	 * The file or folder at exactly this path, or null — `getFileByPath` and
+	 * `getFolderByPath` in one lookup, which is what `FileView.setState` asks
+	 * with a path it was handed and has not yet looked at.
+	 */
+	getAbstractFileByPath(path: string): TAbstractFile | null {
+		return this.getFileByPath(path) ?? this.getFolderByPath(path);
+	}
+
+	/** Listen for a file event, the app's four: create, modify, delete, rename. */
+	on(name: string, callback: (...args: unknown[]) => unknown): EventRef {
+		const set = this.listeners.get(name) ?? new Set();
+		set.add(callback);
+		this.listeners.set(name, set);
+		return { off: () => set.delete(callback) };
+	}
+
+	/**
+	 * Fire a file event, which is also how a test says "another program wrote
+	 * this" — the case the double cannot produce from any of its own writes.
+	 */
+	trigger(name: string, ...args: unknown[]): void {
+		for (const callback of [...(this.listeners.get(name) ?? [])]) {
+			callback(...args);
+		}
 	}
 
 	getFolderByPath(path: string): TFolder | null {
@@ -958,6 +1067,7 @@ export class Vault {
 		}
 		const folder = new TFolder(at, this);
 		this.folders.set(at, folder);
+		this.trigger('create', folder);
 		return folder;
 	}
 
@@ -986,6 +1096,7 @@ export class Vault {
 		}
 		const file = new TFile(at, this);
 		this.files.set(at, { file, content });
+		this.trigger('create', file);
 		return file;
 	}
 
@@ -995,6 +1106,40 @@ export class Vault {
 
 	async modify(file: TFile, content: string): Promise<void> {
 		this.files.set(file.path, { file, content });
+		this.trigger('modify', file);
+	}
+
+	/**
+	 * Move a file, keeping the **same `TFile` object** with its `path` changed,
+	 * and refuse a destination that is taken.
+	 *
+	 * Both are the app's and both are load bearing. A `FileView` holds the object
+	 * rather than the path, which is how a view follows a rename made anywhere —
+	 * a double that minted a new `TFile` would leave every open view on an
+	 * orphan. The refusal is `FileSystemAdapter.rename`'s own, verbatim from
+	 * 1.13.7: `throw new Error("Destination file already exists!")`, checked
+	 * before anything moves.
+	 *
+	 * Normalised the way `create` is, and the event carries the old path as its
+	 * second argument, as the app's `rename` event does.
+	 */
+	async rename(file: TAbstractFile, newPath: string): Promise<void> {
+		const at = normalizePath(newPath);
+		const from = file.path;
+		if (at === from) return;
+		if (this.files.has(at) || this.folders.has(at)) {
+			throw new Error('Destination file already exists!');
+		}
+		const entry = this.files.get(from);
+		if (entry === undefined) {
+			// A folder, or a file this vault no longer holds. Folder moves are
+			// not modelled: nothing in this plugin renames one.
+			throw new Error(`obsidian-stub: no file at "${from}" to rename`);
+		}
+		this.files.delete(from);
+		entry.file.path = at;
+		this.files.set(at, entry);
+		this.trigger('rename', entry.file, from);
 	}
 
 	/**
@@ -1014,7 +1159,8 @@ export class Vault {
 	}
 
 	async delete(file: TAbstractFile): Promise<void> {
-		this.files.delete(file.path);
+		const held = this.files.delete(file.path);
+		if (held) this.trigger('delete', file);
 	}
 
 	/**
@@ -1075,6 +1221,56 @@ export class FileManager {
 
 	async trashFile(file: TAbstractFile): Promise<void> {
 		await file.vault.delete(file);
+	}
+
+	/**
+	 * Rename a file and carry every wikilink to it along, which is the whole of
+	 * what separates this from `Vault.rename`.
+	 *
+	 * The app's is `runAsyncLinkUpdate(() => vault.rename(file, newPath))`: the
+	 * rename, then a pass over every reference the metadata cache resolved to
+	 * the file, each rewritten to the new path. **What this models is the one
+	 * shape a caller here can observe**: a `[[target]]` or `[[target|alias]]` or
+	 * `[[target#heading]]` in a markdown body, embeds included, whose target is
+	 * the file's old *name* or old *path* — with the extension for a file that
+	 * is not a note, without it for one that is, which is how a reader writes
+	 * each — rewritten in the same form to the new name or path.
+	 *
+	 * **What is not modelled, named rather than assumed** (`docs/PATTERNS.md`
+	 * §2): markdown-style `[text](path)` links, links in frontmatter, relative
+	 * paths, a short link the rename makes ambiguous, the app's **New link
+	 * format** preference, and **Automatically update internal links** being off
+	 * — the app skips the whole rewrite then, and this always runs it. The
+	 * resolution is by text rather than through the cache, so a link the app
+	 * would have resolved to a *different* file of the same name is rewritten
+	 * here too; no case in this repository holds two such files.
+	 */
+	async renameFile(file: TAbstractFile, newPath: string): Promise<void> {
+		const oldPath = file.path;
+		await this.vault.rename(file, newPath);
+		if (!(file instanceof TFile)) return;
+		const note = file.extension.toLowerCase() === 'md';
+		const spell = (path: string): string[] => {
+			const bare = note ? path.replace(/\.md$/i, '') : path;
+			const name = bare.split('/').pop() ?? bare;
+			return name === bare ? [bare] : [bare, name];
+		};
+		const [oldFull, oldShort] = spell(oldPath);
+		const [newFull, newShort] = spell(file.path);
+		const rewrites = new Map<string, string>([[oldFull ?? '', newFull ?? '']]);
+		if (oldShort !== undefined) rewrites.set(oldShort, newShort ?? newFull ?? '');
+		for (const candidate of this.vault.getMarkdownFiles()) {
+			if (candidate === file) continue;
+			const text = await this.vault.read(candidate);
+			const next = text.replace(
+				/\[\[([^\]|#]+)([^\]]*)\]\]/g,
+				(whole, target: string, rest: string) => {
+					const to = rewrites.get(target);
+					return to === undefined ? whole : `[[${to}${rest}]]`;
+				},
+			);
+			if (next !== text) await this.vault.modify(candidate, next);
+		}
 	}
 
 	/**
@@ -1141,10 +1337,11 @@ export class FileManager {
  * out, so `getLeavesOfType` has something to look through and the refresh hop a
  * view makes into other views is drivable rather than stubbed to nothing.
  *
- * What is deliberately *not* here: a `file`, and a vault fixture to load one
- * from. That is what a rendered `SheetView` needs beyond this
- * (`docs/PATTERNS.md` §11), and it is a piece of work of its own rather than
- * something to half-build here.
+ * **A view bound to a file is here too**: `FileView`, transcribed from the app
+ * below, with the vault's file events it listens to. A leaf still constructs
+ * no view of its own — `setViewState` of a *different* type is recorded, not
+ * acted on — because that needs the plugin's registered creators, and a test
+ * opens a view through `src/test/workspace.ts` instead.
  * ------------------------------------------------------------------------ */
 
 /** What `Workspace.on` hands back, and what `registerEvent` detaches. */
@@ -1346,6 +1543,123 @@ export class View extends Component {
 export class ItemView extends View {}
 
 /**
+ * A view bound to one file, and the half of the app's own lifecycle that a
+ * subclass can observe.
+ *
+ * **Transcribed from Obsidian 1.13.7's `app.js`, not designed.** The members,
+ * deminified:
+ *
+ * ```js
+ * onload()   { super.onload(); this.registerEvent(vault.on('rename', this.onRename));
+ *                              this.registerEvent(vault.on('delete', this.onDelete)) }
+ * getState() { const s = super.getState(); if (this.file) s.file = this.file.path; return s }
+ * setState(state, result) {
+ *   if ('file' in state) { const f = vault.getAbstractFileByPath(state.file);
+ *                          await this.loadFile(f instanceof TFile ? f : null) }
+ *   if (!this.file && !this.allowNoFile) result.close = true; ... }
+ * onClose()  { this.contentEl.empty(); await this.loadFile(null) }
+ * loadFile(f) { if (this.file === f) return false;
+ *               if (this.file) await this.onUnloadFile(this.file);
+ *               this.file = null; if (f) { this.file = f; await this.onLoadFile(f) }
+ *               this.titleEl.setText(this.getDisplayText()); ... }
+ * onRename(f) { if (f === this.file) this.titleEl.setText(f.basename) ... }
+ * onDelete(f) { if (f !== this.file) return;
+ *               if (this.allowNoFile) await this.loadFile(null) else <history back, or close> }
+ * canAcceptExtension() { return false }
+ * ```
+ *
+ * `loadFile` and `onDelete` are the app's own internals and absent from
+ * `obsidian.d.ts`, so a plugin cannot call or override either; they are here
+ * because every public member above routes through them. **What is not
+ * modelled**: the breadcrumbs, `syncState` across a linked group, a failed
+ * `onLoadFile` becoming a notice, and `onDelete`'s arm for a view that allows no
+ * file, which walks the leaf's history back — there is no history here, so this
+ * detaches the leaf instead, and nothing in this repository deletes a file under
+ * such a view.
+ */
+export class FileView extends ItemView {
+	allowNoFile = false;
+	file: TFile | null = null;
+	navigation = true;
+
+	onload(): void {
+		super.onload();
+		const vault = this.app.vault;
+		this.registerEvent(
+			vault.on('rename', (file) => {
+				if (file instanceof TFile) void this.onRename(file);
+			}),
+		);
+		this.registerEvent(
+			vault.on('delete', (file) => void this.onDelete(file as TAbstractFile)),
+		);
+	}
+
+	getDisplayText(): string {
+		return this.file?.basename ?? 'No file';
+	}
+
+	getState(): Record<string, unknown> {
+		const state = super.getState();
+		if (this.file) state.file = this.file.path;
+		return state;
+	}
+
+	async setState(state: unknown, result: unknown): Promise<void> {
+		const given = (state ?? {}) as Record<string, unknown>;
+		if (Object.prototype.hasOwnProperty.call(given, 'file')) {
+			const found =
+				typeof given.file === 'string'
+					? this.app.vault.getAbstractFileByPath(given.file)
+					: null;
+			await this.loadFile(found instanceof TFile ? found : null);
+		}
+		if (!this.file && !this.allowNoFile && result && typeof result === 'object') {
+			(result as { close?: boolean }).close = true;
+		}
+		await super.setState(state, result);
+	}
+
+	async onClose(): Promise<void> {
+		this.contentEl.empty();
+		await this.loadFile(null);
+	}
+
+	/** The app's own, and not a plugin's to call: see the class comment. */
+	async loadFile(file: TFile | null): Promise<boolean> {
+		const current = this.file;
+		if (current === file) return false;
+		if (current) await this.onUnloadFile(current);
+		this.file = null;
+		if (file) {
+			this.file = file;
+			await this.onLoadFile(file);
+		}
+		this.titleEl.textContent = this.getDisplayText();
+		return true;
+	}
+
+	async onLoadFile(_file: TFile): Promise<void> {}
+
+	async onUnloadFile(_file: TFile): Promise<void> {}
+
+	async onRename(file: TFile): Promise<void> {
+		if (file === this.file) this.titleEl.textContent = file.basename;
+	}
+
+	/** The app's own, and not a plugin's to override: see the class comment. */
+	async onDelete(file: TAbstractFile): Promise<void> {
+		if (file !== this.file) return;
+		if (this.allowNoFile) await this.loadFile(null);
+		else await this.leaf.detach();
+	}
+
+	canAcceptExtension(_extension: string): boolean {
+		return false;
+	}
+}
+
+/**
  * Only ever extended, never constructed by anything the harness renders.
  *
  * **The save half is modelled, not stubbed away**, because the two facts a
@@ -1366,10 +1680,8 @@ export class ItemView extends View {}
  * so a subclass adding a flush of its own — `SheetView.flushSave` does — is
  * overriding nothing here.
  */
-export class TextFileView extends ItemView {
+export class TextFileView extends FileView {
 	data = '';
-	/** The file this view is showing, which `onLoadFile` sets. */
-	file: TFile | null = null;
 	/**
 	 * How many debounced saves are outstanding — Obsidian's 2-second window,
 	 * counted rather than flagged so a test can say the view asked twice.
@@ -1481,14 +1793,23 @@ export class WorkspaceLeaf {
 	}
 
 	/**
-	 * What the app was asked to show here, recorded rather than acted on.
+	 * What the app was asked to show here, recorded — and acted on only where
+	 * the view already here is of the type asked for.
 	 *
-	 * The real call swaps the view in this leaf, which means constructing a view
-	 * of an arbitrary registered type — the plugin's own sheet view among them —
-	 * and nothing here holds that registry. What a caller can be held to is the
-	 * request: the view type, and the file it named. So this pushes and
-	 * `viewStates` is what a test reads, which is the same bargain
-	 * `FileManager.getNewFileParent` above makes.
+	 * The real call swaps the view in this leaf where the type differs, which
+	 * means constructing a view of an arbitrary registered type — the plugin's
+	 * own sheet view among them — and nothing here constructs one. What a caller
+	 * can be held to there is the request: the view type, and the file it named.
+	 * So every call pushes, and `viewStates` is what a test reads, which is the
+	 * same bargain `FileManager.getNewFileParent` above makes.
+	 *
+	 * **The same type keeps its view and hands it the state**, and that half is
+	 * modelled because a plugin relies on it: 1.13.7's `setViewState` reads
+	 * `o = e.type !== i` and creates a view only `if (o || r)`, then
+	 * `await n.setState(c, s)` on whichever view it has — so a pane opening
+	 * another file in its own leaf keeps its own instance, and a `FileView`
+	 * loads the file through `setState`. A double that only recorded would make
+	 * "the pane opens the chosen layout in the same leaf" unassertable.
 	 */
 	viewStates: { type: string; state?: Record<string, unknown> }[] = [];
 
@@ -1497,6 +1818,13 @@ export class WorkspaceLeaf {
 		_eState?: unknown,
 	): Promise<void> {
 		this.viewStates.push(viewState);
+		const view = this.view;
+		if (view === null || view.getViewType() !== viewState.type) return;
+		await view.setState(viewState.state ?? {}, {
+			history: false,
+			layout: false,
+			close: false,
+		});
 	}
 
 	/** Close whatever is showing, unloading it as the app does. */
@@ -1552,6 +1880,26 @@ export class Workspace {
 		return this.leaves.filter((leaf) => leaf.view?.getViewType() === type);
 	}
 
+	/**
+	 * The active leaf's view where it is of this class, the app's own one-liner:
+	 * `var t = this.activeLeaf; if (!t) return null; var n = t.view; return n
+	 * instanceof e ? n : null`. "Active" is `revealLeaf`'s here (above).
+	 */
+	getActiveViewOfType<T>(type: abstract new (...args: never[]) => T): T | null {
+		const view = this.activeLeaf?.view;
+		return view instanceof type ? view : null;
+	}
+
+	/**
+	 * Run `callback` once the workspace is ready — at once, since this double
+	 * has no saved layout to restore and so is always ready. The app's own:
+	 * `null === this.onLayoutReadyCallbacks ? e() : <queue it>`, and the queue
+	 * is `null` from the moment the layout is ready.
+	 */
+	onLayoutReady(callback: () => unknown): void {
+		void callback();
+	}
+
 	async revealLeaf(leaf: WorkspaceLeaf): Promise<void> {
 		this.activeLeaf = leaf;
 	}
@@ -1590,16 +1938,21 @@ const FRONTMATTER_LINE = /^([^:]+):[ \t]*(.*)$/;
  * **What this deliberately cannot show.** A value is never coerced past a
  * trimmed string and one layer of surrounding quotes, which is
  * `parse/character.ts`'s own `extractLayoutName` rule — so this models the
- * *plugin's* reader, not the app's. `isPlainLayoutValue` exists precisely
- * because those two have to agree about one line, and a double that
- * implements the second as a copy of the first can never fail when they
- * disagree: real YAML gives a typed scalar back for `sheet-layout: 12`,
- * `: No` or `: null`, all three of which this plugin writes unquoted and this
- * double answers as the strings `'12'`, `'No'` and `'null'`. Nothing here is
- * a claim that Obsidian agrees. Every caller is therefore written to be
- * correct either way — `component-rename-migration.ts` treats a non-string as
- * undecidable and lets the note's own text settle it — and the missing probe
- * is `docs/BACKLOG.md` § Patterns, where the typed-scalar case is named.
+ * *plugin's* reader, not the app's. `parse/frontmatter.ts`'s `isPlainScalar`
+ * exists precisely because those two have to agree about one line, and a double
+ * that implements the second as a copy of the first can never fail when they
+ * disagree: real YAML gives a typed scalar back for `sheet-layout: 12`, `: No`
+ * or `: null`, and this double answers all three as the strings `'12'`, `'No'`
+ * and `'null'`. Nothing here is a claim that Obsidian agrees.
+ *
+ * **The plugin no longer writes any of those three unquoted**, which is what
+ * closed the backlog row this paragraph used to end on: the predicate quotes
+ * what a bool or a number resolver would take, so a note this plugin wrote
+ * cannot reach the disagreement. What a *hand-edited* note can, and every caller
+ * is still written to be correct either way —
+ * `component-rename-migration.ts` treats a non-string as undecidable and lets
+ * the note's own text settle it. The wider missing probe, which would hold every
+ * comment here about the app to the app, is `docs/BACKLOG.md` § Patterns.
  */
 export class MetadataCache {
 	constructor(private readonly vault: Vault) {}
@@ -1627,13 +1980,148 @@ export class MetadataCache {
 	}
 }
 
+/**
+ * The app's registry of view types and the file extensions they open.
+ *
+ * **Not in `obsidian.d.ts`**, so nothing in the plugin may name its type; a
+ * plugin reaches it through `Plugin.registerView` and
+ * `Plugin.registerExtensions`, and reads it back — where it reads it at all —
+ * through a narrow interface of its own. Here because both of those are the
+ * app's writes into it, and the refusal is the part a plugin has to survive:
+ * 1.13.7's `registerExtensions` checks every extension first and **throws before
+ * registering any**, `'Attempting to register an existing file extension "' + o
+ * + '"'`, so a taken extension leaves the whole call unregistered.
+ */
+export class ViewRegistry {
+	viewByType: Record<string, (leaf: WorkspaceLeaf) => View> = {};
+	typeByExtension: Record<string, string> = {};
+
+	registerView(type: string, creator: (leaf: WorkspaceLeaf) => View): void {
+		if (Object.prototype.hasOwnProperty.call(this.viewByType, type)) {
+			throw new Error(`Attempting to register an existing view type "${type}"`);
+		}
+		this.viewByType[type] = creator;
+	}
+
+	unregisterView(type: string): void {
+		delete this.viewByType[type];
+	}
+
+	registerExtensions(extensions: string[], type: string): void {
+		for (const extension of extensions) {
+			if (Object.prototype.hasOwnProperty.call(this.typeByExtension, extension)) {
+				throw new Error(
+					`Attempting to register an existing file extension "${extension}"`,
+				);
+			}
+		}
+		for (const extension of extensions) this.typeByExtension[extension] = type;
+	}
+
+	unregisterExtensions(extensions: string[]): void {
+		for (const extension of extensions) delete this.typeByExtension[extension];
+	}
+
+	getTypeByExtension(extension: string): string | undefined {
+		return this.typeByExtension[extension];
+	}
+}
+
 export class App {
+	viewRegistry = new ViewRegistry();
 	vault = new Vault();
 	workspace = new Workspace(this);
 	// After `vault`, which it needs in order to hand out a folder in it. Field
 	// initialisers run in declaration order, so the order here is load bearing.
 	fileManager = new FileManager(this.vault);
 	metadataCache = new MetadataCache(this.vault);
+}
+
+/** A plugin's manifest, the members a plugin here reads. */
+export interface PluginManifest {
+	id: string;
+	name: string;
+	version: string;
+}
+
+/**
+ * A command as `addCommand` receives it: an id, a name, and one of the two
+ * ways the app asks it to run.
+ */
+export interface Command {
+	id: string;
+	name: string;
+	callback?: () => unknown;
+	checkCallback?: (checking: boolean) => boolean | void;
+}
+
+/**
+ * Obsidian's `Plugin`, enough of it for `onload` to run against.
+ *
+ * **Each registration is recorded and, where the app keeps a registry, written
+ * into it** — views and extensions into `app.viewRegistry`, torn down again on
+ * unload as the app's `register` callbacks do — so a test can ask what a plugin
+ * registered, in what order, and whether a refusal from one registration left
+ * the rest in place. `registrations` is that order, one entry per call, named
+ * by the member and its first argument.
+ *
+ * **Not modelled**: `loadData` reading a file (it answers what `data` holds),
+ * the ribbon, the status bar, and every `register*` this plugin does not call.
+ */
+export class Plugin extends Component {
+	/** What `loadData` answers and `saveData` last wrote. */
+	data: unknown = null;
+	/** Every registration, in call order: `'<member>:<first argument>'`. */
+	registrations: string[] = [];
+	commands: Command[] = [];
+	settingTabs: PluginSettingTab[] = [];
+
+	constructor(
+		public app: App,
+		public manifest: PluginManifest,
+	) {
+		super();
+	}
+
+	async loadData(): Promise<unknown> {
+		return this.data;
+	}
+
+	async saveData(data: unknown): Promise<void> {
+		this.data = data;
+	}
+
+	addSettingTab(tab: PluginSettingTab): void {
+		this.registrations.push('addSettingTab');
+		this.settingTabs.push(tab);
+	}
+
+	registerView(type: string, creator: (leaf: WorkspaceLeaf) => View): void {
+		this.registrations.push(`registerView:${type}`);
+		this.app.viewRegistry.registerView(type, creator);
+		this.register(() => this.app.viewRegistry.unregisterView(type));
+	}
+
+	/**
+	 * The app's own two lines: register, then undo it on unload. The recording
+	 * comes first, so a call that throws is still on the record — which is what
+	 * a test asserting the attempt needs.
+	 */
+	registerExtensions(extensions: string[], type: string): void {
+		this.registrations.push(`registerExtensions:${extensions.join(',')}`);
+		this.app.viewRegistry.registerExtensions(extensions, type);
+		this.register(() => this.app.viewRegistry.unregisterExtensions(extensions));
+	}
+
+	registerHoverLinkSource(id: string, _info: unknown): void {
+		this.registrations.push(`registerHoverLinkSource:${id}`);
+	}
+
+	addCommand(command: Command): Command {
+		this.registrations.push(`addCommand:${command.id}`);
+		this.commands.push(command);
+		return command;
+	}
 }
 
 export class Modal {

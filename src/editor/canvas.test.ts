@@ -413,8 +413,8 @@ describe('the canvas filled with sample values', () => {
 		 * would break while every rendered comparison still passed, because a
 		 * component's own filler renders perfectly well.
 		 *
-		 * Spied on the registry's own definitions, since `readForCanvas` is
-		 * private and the body it passes is visible nowhere else.
+		 * Spied on the registry's own definitions, since the body
+		 * `sample-read.ts` passes is visible nowhere else.
 		 */
 		const components = listComponentTypes().map((type, index) =>
 			component({

@@ -48,3 +48,25 @@ export async function openView<T extends object, A extends unknown[]>(
 	await new Promise((resolve) => window.setTimeout(resolve, 0));
 	return opened;
 }
+
+/**
+ * Open a file in a view's own leaf, the way the app does when a file of a
+ * registered extension is opened into a leaf already showing that view type.
+ *
+ * `setViewState` with the view's own type rather than calling the view: the
+ * leaf keeps the view and hands it `{ file }`, which a `FileView` loads —
+ * unload of the previous file first — so a test goes through exactly the path a
+ * click in the file explorer takes, and the pane under test cannot tell the
+ * difference. One turn of the loop afterwards, for `openView`'s reason: the
+ * render that load starts reads the vault and is not awaited.
+ */
+export async function showFile(
+	view: { leaf: unknown; getViewType(): string },
+	path: string,
+): Promise<void> {
+	await (view.leaf as WorkspaceLeaf).setViewState({
+		type: view.getViewType(),
+		state: { file: path },
+	});
+	await new Promise((resolve) => window.setTimeout(resolve, 0));
+}

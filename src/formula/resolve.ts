@@ -21,6 +21,7 @@ import {
 	FieldResolver,
 	ResolvedValues,
 	RowsSource,
+	ScopeEntry,
 } from '../types';
 import {
 	EMPTY_SCOPE,
@@ -269,7 +270,7 @@ function fieldReaders(
 		 * asks the walk a question the formula did not already ask it, so *this*
 		 * step leaves the two cycle guards the shares of a ring they had before the
 		 * feature. The widening the finding describes is real and comes from
-		 * somewhere else — `ModifierContext.outcome`, which a modifier cell asks for
+		 * somewhere else — `ModifierContext.outcomes`, which a modifier cell asks for
 		 * every filled cell it draws, bounded by the accepting set and by nothing
 		 * narrower, and which running at render can be the first entry into the walk
 		 * in a render (`formula/sheet.ts`).
@@ -509,18 +510,117 @@ export function makeFieldExplainer(
 }
 
 /**
+ * Which published name each of the component's formula fields *becomes*
+ * (SPEC §5), for the callers that evaluate a field without a name in hand.
+ *
+ * **The mapping is already declared; nothing here is new.** `scopeValues` says
+ * "the name `<id>.count` is what the field `count` comes to", and this reads that
+ * sentence in the other direction. So no contract member was added, and a
+ * component that publishes a field under a name says so once.
+ *
+ * **Why it is needed at all.** `FieldResolver`'s own doc comment predicted this:
+ * a formula evaluated without its published name reads `mod.self` as 0 and
+ * nothing reports it. `resolveFormulaFields` below evaluated every field that
+ * way, so a Track drew a run of three while `<id>.count` published five, and a
+ * Pool drew a bar against 10 while `hp.max` published 14 — one layout, one
+ * modifier, two ceilings, the second of which every other formula on the sheet
+ * read. Card, Card set, Roster and Table never had the split because they pass
+ * their own name at their own call sites.
+ *
+ * **The guard is the entry's own evaluation, not a count of names.** A name
+ * belongs to *this* evaluation only where the caller reproduces what
+ * `formula/sheet.ts` does for the name table — `resolve(display.field,
+ * display.scope, name, false, display.rows)` — and the callers here supply an
+ * empty scope and no rows. So an entry whose `display` wants an internal scope
+ * or its own band is not this evaluation and is passed over: Card's entry is
+ * `{ field: 'derived', scope: { value: … } }`, Card set's and Roster's are one
+ * such entry per name, and all three keep exactly the behaviour they had. A
+ * count of names would not do it — a one-entry Card set would pass, and its
+ * `derived` would then be evaluated without the `value` it is about.
+ *
+ * **Two entries naming one field yield neither.** There is then no single name
+ * the field becomes, and picking the first would make the answer depend on key
+ * order in an object.
+ *
+ * **Data is not read**, on `modifierTargetSource`'s own terms: which name a field
+ * publishes is a fact about the layout, so `null` is the right argument and
+ * keeps this pure (Constraint 5).
+ *
+ * Here rather than in `formula/modifier-targets.ts`, which owns the other walk
+ * over `ScopeValues`: that module imports `formulaTexts` from this one, so the
+ * obvious home is a cycle.
+ */
+export function publishedFieldNames(
+	component: Pick<ComponentDefinition, 'scopeValues'>,
+	config: ComponentConfig,
+): ReadonlyMap<string, string> {
+	const values = component.scopeValues?.(null, config) ?? {};
+	const entries: [string, ScopeEntry][] = [];
+	if (values.self !== undefined) entries.push([config.id, values.self]);
+	for (const [key, entry] of Object.entries(values.named ?? {})) {
+		entries.push([`${config.id}.${key}`, entry]);
+	}
+	/** The name, or null where this field has one the caller may not take. */
+	const byField = new Map<string, string | null>();
+	for (const [name, entry] of entries) {
+		const { display } = entry;
+		if (display === undefined) continue;
+		if (byField.has(display.field)) {
+			byField.set(display.field, null);
+			continue;
+		}
+		const ours =
+			Object.keys(display.scope).length === 0 && display.rows === undefined;
+		byField.set(display.field, ours ? name : null);
+	}
+	const found = new Map<string, string>();
+	for (const [field, name] of byField) {
+		if (name !== null) found.set(field, name);
+	}
+	return found;
+}
+
+/**
+ * The three formula members every `renderGrid` host hands a component: what its
+ * fields resolved to, a resolver for its per-scope fields, and why one failed.
+ *
+ * One function because four hosts built this triple by hand — the sheet view,
+ * the layout editor's canvas, the component picker's preview and the harness —
+ * and a host that dropped or rewired one of the three would draw a component
+ * the others do not (`docs/PATTERNS.md` §1: three consumers, extract). Spread
+ * into the host's own context, which adds what differs per host.
+ */
+export function formulaContext(
+	component: Pick<ComponentDefinition, 'formulaFields' | 'scopeValues'>,
+	config: ComponentConfig,
+	data: unknown,
+	env: FormulaEnv = NO_ENV,
+): { resolved: ResolvedValues; resolveField: FieldResolver; explainField: FieldExplainer } {
+	return {
+		resolved: resolveFormulaFields(component, config, data, env),
+		resolveField: makeFieldResolver(component, config, data, env),
+		explainField: makeFieldExplainer(component, config, data, env),
+	};
+}
+
+/**
  * Evaluate each of the component's formula fields against the data scope
  * alone. Literals pass through, and a field that fails to evaluate resolves
  * to null so the component can show a placeholder without taking the sheet
  * down.
+ *
+ * A field that becomes a published name is evaluated *as* that name, so what a
+ * component draws and what the rest of the sheet reads are one number rather
+ * than two. See `publishedFieldNames` above for which fields those are.
  */
 export function resolveFormulaFields(
-	component: Pick<ComponentDefinition, 'formulaFields'>,
+	component: Pick<ComponentDefinition, 'formulaFields' | 'scopeValues'>,
 	config: ComponentConfig,
 	data: unknown,
 	env: FormulaEnv = NO_ENV,
 ): ResolvedValues {
 	const resolve = makeFieldResolver(component, config, data, env);
+	const published = publishedFieldNames(component, config);
 	const record = config as unknown as Record<string, unknown>;
 	const resolved: Record<string, Value | null> = {};
 	for (const field of component.formulaFields) {
@@ -531,7 +631,7 @@ export function resolveFormulaFields(
 		if (field.includes('*')) continue;
 		if (record[field] === undefined || record[field] === null) continue;
 		if (typeof record[field] === 'object') continue;
-		resolved[field] = resolve(field, {});
+		resolved[field] = resolve(field, {}, published.get(field));
 	}
 	return resolved;
 }

@@ -1,11 +1,17 @@
 // @vitest-environment happy-dom
 import { describe, expect, it, vi } from 'vitest';
-import { recordSet, RecordSetConfig, RecordSetData } from './record-set';
+import {
+	MAX_TABULATED_FIELDS,
+	recordSet,
+	RecordSetConfig,
+	RecordSetData,
+} from './record-set';
+import { outcomeView } from '../test/modifier-views';
 import { card, CardConfig } from './card';
 import { buildSheet, ReadComponent } from '../formula/sheet';
 import { evaluate } from '../formula/expression';
 import { callsFrom, makeFieldResolver, NO_ENV } from '../formula/resolve';
-import { Layout } from '../parse/layout';
+import { Layout, serialiseLayout } from '../parse/layout';
 import { COLUMN_TYPES } from './column-types';
 import { RenderContext } from '../types';
 import { sampleOf } from '../test/sample';
@@ -96,30 +102,49 @@ function readData(body: string, from: RecordSetConfig = config): RecordSetData {
 const records = (el: HTMLElement) =>
 	Array.from(el.querySelectorAll<HTMLElement>('.sheetsmith-record'));
 const chevrons = (el: HTMLElement) =>
-	Array.from(el.querySelectorAll<HTMLButtonElement>('.sheetsmith-record-disclosure'));
+	Array.from(
+		el.querySelectorAll<HTMLButtonElement>('.sheetsmith-record-disclosure'),
+	);
 const bodies = (el: HTMLElement) =>
 	Array.from(el.querySelectorAll<HTMLElement>('.sheetsmith-record-body'));
 const nameFields = (el: HTMLElement) =>
-	Array.from(el.querySelectorAll<HTMLInputElement>('.sheetsmith-record-name-input'));
+	Array.from(
+		el.querySelectorAll<HTMLInputElement>('.sheetsmith-record-name-input'),
+	);
 const bodyFields = (el: HTMLElement) =>
-	Array.from(el.querySelectorAll<HTMLTextAreaElement>('.sheetsmith-record-body-input'));
+	Array.from(
+		el.querySelectorAll<HTMLTextAreaElement>(
+			'.sheetsmith-record-body-input',
+		),
+	);
 const errors = (el: HTMLElement) =>
 	Array.from(el.querySelectorAll<HTMLElement>('.sheetsmith-error'));
 const addButton = (el: HTMLElement) =>
-	el.querySelector<HTMLButtonElement>('.sheetsmith-record-add') as HTMLButtonElement;
+	el.querySelector<HTMLButtonElement>(
+		'.sheetsmith-record-add',
+	) as HTMLButtonElement;
 const removeButtons = (el: HTMLElement) =>
-	Array.from(el.querySelectorAll<HTMLButtonElement>('.sheetsmith-record-remove'));
+	Array.from(
+		el.querySelectorAll<HTMLButtonElement>('.sheetsmith-record-remove'),
+	);
 
 /** One labelled control inside the anchored form, by the word over it. */
 function field(
 	panel: HTMLElement,
 	label: string,
 ): HTMLSelectElement | HTMLInputElement | null {
-	for (const row of Array.from(panel.querySelectorAll('.sheetsmith-panel-field'))) {
-		if (row.querySelector('.sheetsmith-panel-field-label')?.textContent !== label) {
+	for (const row of Array.from(
+		panel.querySelectorAll('.sheetsmith-panel-field'),
+	)) {
+		if (
+			row.querySelector('.sheetsmith-panel-field-label')?.textContent !==
+			label
+		) {
 			continue;
 		}
-		return row.querySelector<HTMLSelectElement | HTMLInputElement>('select, input');
+		return row.querySelector<HTMLSelectElement | HTMLInputElement>(
+			'select, input',
+		);
 	}
 	return null;
 }
@@ -137,7 +162,9 @@ function typeInto(
 }
 
 /** A sheet whose only published name takes a modifier, which is all the form needs. */
-function modifierContext(): NonNullable<RenderContext<RecordSetData>['modifiers']> {
+function modifierContext(): NonNullable<
+	RenderContext<RecordSetData>['modifiers']
+> {
 	const target = { name: 'armour_class', label: 'Armour class' };
 	return {
 		definitions: [],
@@ -147,21 +174,24 @@ function modifierContext(): NonNullable<RenderContext<RecordSetData>['modifiers'
 		// Parsed the way the sheet parses it, rather than handing the whole part
 		// back as an amount: the form fills its fields from `typed`, so a stub that
 		// lied about them would drive the form over values no sheet produces.
-		outcome: (part) => {
+		outcomes: (part: string) => {
 			const parsed = parseModifierPart(part);
-			return {
-				definition: null,
-				typed:
-					parsed.kind === 'typed'
-						? parsed.effect
-						: { target: 'armour_class', operator: 'add' as const, amount: '' },
-				target: 'armour_class',
-				targetLabel: 'Armour class',
-				applies: true,
-				amount: 1,
-				condition: null,
-				suppressed: null,
-			};
+			return [
+				outcomeView({
+					typed:
+						parsed.kind === 'typed'
+							? parsed.effect
+							: {
+									target: 'armour_class',
+									operator: 'add' as const,
+									amount: '',
+								},
+					target: 'armour_class',
+					targetLabel: 'Armour class',
+					applies: true,
+					amount: 1,
+				}),
+			];
 		},
 		breakdown: () => ({ lines: [], override: null, total: 0 }),
 		promote: () => Promise.resolve({ ok: true as const }),
@@ -178,7 +208,7 @@ describe('recordSet.read', () => {
 		expect(held[2]?.name).toBe('Lucky');
 	});
 
-	it('takes each record\'s fence as its fields and everything after it as its body', () => {
+	it("takes each record's fence as its fields and everything after it as its body", () => {
 		const held = readData(BODY).records;
 		expect(held[0]?.fields).toEqual({ Uses: '1', Attuned: 'no' });
 		expect(held[0]?.body).toBe(
@@ -187,7 +217,9 @@ describe('recordSet.read', () => {
 		expect(held[1]?.fields?.Modifiers).toBe(
 			'armour_class += 1 as item when Attuned',
 		);
-		expect(held[1]?.body).toBe('A gift from the temple at [[Neverwinter]].');
+		expect(held[1]?.body).toBe(
+			'A gift from the temple at [[Neverwinter]].',
+		);
 	});
 
 	it('reads a record with no fence as a record with no fields', () => {
@@ -202,8 +234,16 @@ describe('recordSet.read', () => {
 	it('reads a section holding no records as nothing stored yet', () => {
 		// Not an error: a new character's list is its add control and nothing
 		// else, which is what `data: null` already means everywhere.
-		for (const body of ['', '\n', '   \n\t\n', '\nA preamble and no records.\n']) {
-			expect(recordSet.read(body, config)).toEqual({ ok: true, data: null });
+		for (const body of [
+			'',
+			'\n',
+			'   \n\t\n',
+			'\nA preamble and no records.\n',
+		]) {
+			expect(recordSet.read(body, config)).toEqual({
+				ok: true,
+				data: null,
+			});
 		}
 	});
 
@@ -214,7 +254,9 @@ describe('recordSet.read', () => {
 		expect(held[0]?.error).toBeNull();
 		expect(held[1]?.error).toContain('not an entry');
 		// And it names the action rather than only the fault (PATTERNS §4).
-		expect(held[1]?.error).toContain('every other one on this list still works');
+		expect(held[1]?.error).toContain(
+			'every other one on this list still works',
+		);
 	});
 
 	it('reports a fence that never closes, and keeps the record', () => {
@@ -224,7 +266,9 @@ describe('recordSet.read', () => {
 	});
 
 	it('does not treat "#### " as a record, which is what the refusal names', () => {
-		const data = readData('\n### One\n\n#### Not a record\n\nStill prose.\n');
+		const data = readData(
+			'\n### One\n\n#### Not a record\n\nStill prose.\n',
+		);
 		expect(Object.keys(data.records)).toEqual(['0']);
 		expect(data.records[0]?.body).toContain('#### Not a record');
 	});
@@ -238,8 +282,14 @@ describe('recordSet round trip', () => {
 	 */
 	const SPELLINGS: [string, string][] = [
 		['no preamble', '### A\n```sheet\nUses: 1\n```\nProse.\n'],
-		['a preamble', '\nSome prose above the list.\n\n### A\n```sheet\nUses: 1\n```\nProse.\n'],
-		['blank lines between records', '\n### A\n\n```sheet\nUses: 1\n```\n\nProse.\n\n\n### B\n\nMore.\n'],
+		[
+			'a preamble',
+			'\nSome prose above the list.\n\n### A\n```sheet\nUses: 1\n```\nProse.\n',
+		],
+		[
+			'blank lines between records',
+			'\n### A\n\n```sheet\nUses: 1\n```\n\nProse.\n\n\n### B\n\nMore.\n',
+		],
 		['no blank line between records', '\n### A\nProse.\n### B\nMore.\n'],
 		['CRLF', '\r\n### A\r\n```sheet\r\nUses: 1\r\n```\r\nProse.\r\n'],
 		['a record with no fence', '\n### A\n\nJust prose.\n'],
@@ -295,7 +345,9 @@ describe('recordSet round trip', () => {
 		// whatever the mode: gating it on `maxSource` would turn every stored
 		// composite into text the day a field was switched back.
 		for (const from of [config, owned]) {
-			expect(recordSet.write(readData(body, from), body, from)).toBe(body);
+			expect(recordSet.write(readData(body, from), body, from)).toBe(
+				body,
+			);
 		}
 	});
 
@@ -303,7 +355,7 @@ describe('recordSet round trip', () => {
 		expect(COMPOSITES).toHaveLength(10);
 	});
 
-	it('keeps the reader\'s own spelling of the slash when the value is edited', () => {
+	it("keeps the reader's own spelling of the slash when the value is edited", () => {
 		const owned: RecordSetConfig = {
 			...config,
 			fields: [{ key: 'Uses', type: 'number', maxSource: 'record' }],
@@ -330,7 +382,9 @@ describe('recordSet round trip', () => {
 		 * test would have supplied its own answer.
 		 */
 		const changes: RecordSetData[] = [];
-		const el = render(owned, odd, { onChange: (data) => changes.push(data) });
+		const el = render(owned, odd, {
+			onChange: (data) => changes.push(data),
+		});
 		const value = records(el)[0]?.querySelector<HTMLInputElement>(
 			'.sheetsmith-record-input',
 		) as HTMLInputElement;
@@ -340,13 +394,17 @@ describe('recordSet round trip', () => {
 		// The join put the reader's own bare slash back rather than the canonical
 		// form, which is the whole claim.
 		expect(changes[0]?.records[0]?.fields).toEqual({ Uses: '1/3' });
-		const written = recordSet.write(changes[0] as RecordSetData, odd, owned);
+		const written = recordSet.write(
+			changes[0] as RecordSetData,
+			odd,
+			owned,
+		);
 		// The reader's spelling of the slash *and* of the colon, and the
 		// neighbour's odd spacing of both, all survive.
 		expect(written).toBe(odd.replace('Uses: 2/3', 'Uses: 1/3'));
 	});
 
-	it('rewrites one record\'s fence line and leaves every other byte alone', () => {
+	it("rewrites one record's fence line and leaves every other byte alone", () => {
 		const odd = [
 			'',
 			'### A',
@@ -384,7 +442,9 @@ describe('recordSet round trip', () => {
 			body,
 			config,
 		);
-		expect(written).toBe('\n### A\n\n```sheet\nUses: 2\n```\n\nJust prose.\n');
+		expect(written).toBe(
+			'\n### A\n\n```sheet\nUses: 2\n```\n\nJust prose.\n',
+		);
 	});
 
 	it('leaves an entry the layout no longer declares exactly where it is', () => {
@@ -408,7 +468,11 @@ describe('recordSet round trip', () => {
 		const body = '\n### Broken\n```sheet\nnot an entry\n```\nProse.\n';
 		expect(
 			recordSet.write(
-				{ records: { 0: { fields: { Uses: '2' }, body: 'Replaced.' } } },
+				{
+					records: {
+						0: { fields: { Uses: '2' }, body: 'Replaced.' },
+					},
+				},
 				body,
 				config,
 			),
@@ -421,16 +485,18 @@ describe('recordSet round trip', () => {
 			BODY,
 			config,
 		);
-		expect(written).toBe(BODY.replace('### Blessed Armour', '### Blessed Plate'));
+		expect(written).toBe(
+			BODY.replace('### Blessed Armour', '### Blessed Plate'),
+		);
 	});
 
 	it('never writes a heading with no name after it', () => {
 		// `### ` with nothing after it is not a heading, so a blank name would
 		// drop the record on the next read and hand its body to the record above
 		// it. Refused at the control and again here (Constraint 4).
-		expect(recordSet.write({ records: { 0: { name: '   ' } } }, BODY, config)).toBe(
-			BODY,
-		);
+		expect(
+			recordSet.write({ records: { 0: { name: '   ' } } }, BODY, config),
+		).toBe(BODY);
 	});
 
 	it('appends a record after a blank line, and removes one by position', () => {
@@ -442,14 +508,24 @@ describe('recordSet round trip', () => {
 		expect(added).toBe(`${BODY}\n### Feature\n`);
 		expect(readData(added).records[3]?.name).toBe('Feature');
 
-		const removed = recordSet.write({ records: {}, removed: [1] }, BODY, config);
-		const names = Object.values(readData(removed).records).map((one) => one.name);
+		const removed = recordSet.write(
+			{ records: {}, removed: [1] },
+			BODY,
+			config,
+		);
+		const names = Object.values(readData(removed).records).map(
+			(one) => one.name,
+		);
 		expect(names).toEqual(['Second Wind', 'Lucky']);
 	});
 
 	it('writes the first record into a section that has none', () => {
 		expect(
-			recordSet.write({ records: {}, added: [{ name: 'Feature' }] }, null, config),
+			recordSet.write(
+				{ records: {}, added: [{ name: 'Feature' }] },
+				null,
+				config,
+			),
 		).toBe('\n### Feature\n');
 	});
 });
@@ -464,7 +540,7 @@ describe('recordSet configuration', () => {
 
 	it('refuses a text field and names the body as the place for words', () => {
 		const message = refuses([{ key: 'Notes', type: 'text' }]);
-		expect(message).toContain('prose belongs in the feature\'s body');
+		expect(message).toContain("prose belongs in the feature's body");
 	});
 
 	it('refuses every offered field type that cannot hold a value in a fence', () => {
@@ -510,15 +586,15 @@ describe('recordSet configuration', () => {
 	});
 
 	it('refuses a total, a publish, a bad level list and an inverted bound', () => {
-		expect(refuses([{ key: 'Uses', type: 'number', total: true }])).toContain(
-			'sum(features, Uses)',
-		);
-		expect(refuses([{ key: 'Uses', type: 'number', publish: true }])).toContain(
-			'count(features, <expression>)',
-		);
-		expect(refuses([{ key: 'Rank', type: 'level', levels: ['None'] }])).toContain(
-			'at least two level names',
-		);
+		expect(
+			refuses([{ key: 'Uses', type: 'number', total: true }]),
+		).toContain('sum(features, Uses)');
+		expect(
+			refuses([{ key: 'Uses', type: 'number', publish: true }]),
+		).toContain('count(features, <expression>)');
+		expect(
+			refuses([{ key: 'Rank', type: 'level', levels: ['None'] }]),
+		).toContain('at least two level names');
 		expect(
 			refuses([{ key: 'Rank', type: 'level', levels: ['None', ':*'] }]),
 		).toContain('a mark but no name');
@@ -528,7 +604,10 @@ describe('recordSet configuration', () => {
 	});
 
 	it('fails read, publishes nothing and pushes nothing while it is refused', () => {
-		const broken = { ...config, fields: [{ key: 'Notes', type: 'text' as const }] };
+		const broken = {
+			...config,
+			fields: [{ key: 'Notes', type: 'text' as const }],
+		};
 		expect(recordSet.read(BODY, broken).ok).toBe(false);
 		expect(recordSet.scopeRows?.(null, broken)).toBeUndefined();
 		expect(recordSet.scopeModifiers?.(null, broken)).toBeUndefined();
@@ -551,12 +630,18 @@ describe('recordSet rendering', () => {
 		 */
 		for (const openRecords of [[], [1], [0, 1, 2]]) {
 			const el = render({}, BODY, { openRecords });
-			const block = el.querySelector('.sheetsmith-record-set') as HTMLElement;
+			const block = el.querySelector(
+				'.sheetsmith-record-set',
+			) as HTMLElement;
 			expect(block.classList.contains('sheetsmith-placed')).toBe(true);
 			expect(block.style.getPropertyValue('--sheetsmith-rows')).toBe('3');
-			const box = el.querySelector('.sheetsmith-record-set-box') as HTMLElement;
+			const box = el.querySelector(
+				'.sheetsmith-record-set-box',
+			) as HTMLElement;
 			expect(box.classList.contains('sheetsmith-placed-box')).toBe(true);
-			expect(box.querySelector('.sheetsmith-record-set-list')).not.toBeNull();
+			expect(
+				box.querySelector('.sheetsmith-record-set-list'),
+			).not.toBeNull();
 			// And nothing anywhere sets a height per record, which is the other way
 			// the box could come to be sized by what is open.
 			for (const record of records(el)) {
@@ -579,18 +664,18 @@ describe('recordSet rendering', () => {
 		expect(records(el)).toHaveLength(0);
 		expect(addButton(el).textContent).toBe('Add feature');
 		expect(errors(el)).toHaveLength(0);
-		expect(el.querySelector('.sheetsmith-component-label')?.textContent).toBe(
-			'Features',
-		);
+		expect(
+			el.querySelector('.sheetsmith-component-label')?.textContent,
+		).toBe('Features');
 	});
 
-	it('names the add control from the layout\'s own word', () => {
-		expect(addButton(render({ recordName: 'Spell' }, null)).textContent).toBe(
-			'Add spell',
-		);
-		expect(addButton(render({ recordName: undefined }, null)).textContent).toBe(
-			'Add record',
-		);
+	it("names the add control from the layout's own word", () => {
+		expect(
+			addButton(render({ recordName: 'Spell' }, null)).textContent,
+		).toBe('Add spell');
+		expect(
+			addButton(render({ recordName: undefined }, null)).textContent,
+		).toBe('Add record');
 	});
 
 	it('draws a record with a problem line and keeps every other one editable', () => {
@@ -604,7 +689,9 @@ describe('recordSet rendering', () => {
 		expect(broken.textContent).toContain('Broken');
 		expect(broken.textContent).toContain('Also here.');
 		expect(broken.querySelector('.sheetsmith-error')).not.toBeNull();
-		expect(broken.querySelector('.sheetsmith-record-name-input')).toBeNull();
+		expect(
+			broken.querySelector('.sheetsmith-record-name-input'),
+		).toBeNull();
 		expect(broken.querySelector('.sheetsmith-record-input')).toBeNull();
 		// The neighbours keep everything.
 		expect(nameFields(el).map((field) => field.value)).toEqual([
@@ -620,10 +707,14 @@ describe('recordSet rendering', () => {
 		expect(
 			first.querySelector('.sheetsmith-card-abbreviation')?.textContent,
 		).toBe('Uses');
-		const number = first.querySelector<HTMLInputElement>('.sheetsmith-record-input');
+		const number = first.querySelector<HTMLInputElement>(
+			'.sheetsmith-record-input',
+		);
 		expect(number?.value).toBe('1');
 		expect(number?.getAttribute('aria-label')).toBe('Second Wind Uses');
-		const ring = first.querySelector('.sheetsmith-level-ring') as HTMLElement;
+		const ring = first.querySelector(
+			'.sheetsmith-level-ring',
+		) as HTMLElement;
 		expect(ring.getAttribute('aria-pressed')).toBe('false');
 		expect(
 			(records(el)[1] as HTMLElement)
@@ -644,12 +735,16 @@ describe('recordSet rendering', () => {
 		 */
 		const el = render();
 		const first = records(el)[0] as HTMLElement;
-		const ceiling = first.querySelector('.sheetsmith-pool-ceiling') as HTMLElement;
+		const ceiling = first.querySelector(
+			'.sheetsmith-pool-ceiling',
+		) as HTMLElement;
 		expect(ceiling.textContent).toBe('/3');
 		expect(
 			ceiling.querySelector('.sheetsmith-pool-separator')?.textContent,
 		).toBe('/');
-		expect(ceiling.querySelector('.sheetsmith-pool-max')?.textContent).toBe('3');
+		expect(ceiling.querySelector('.sheetsmith-pool-max')?.textContent).toBe(
+			'3',
+		);
 		// A read-only span and not a second field, so nothing invites a reader to
 		// edit a number the layout owns.
 		expect(ceiling.querySelector('input')).toBeNull();
@@ -667,11 +762,12 @@ describe('recordSet rendering', () => {
 		});
 		expect(bare.querySelector('.sheetsmith-pool-ceiling')).toBeNull();
 		expect(
-			bare.querySelector<HTMLInputElement>('.sheetsmith-record-input')?.value,
+			bare.querySelector<HTMLInputElement>('.sheetsmith-record-input')
+				?.value,
 		).toBe('1');
 	});
 
-	it('says the ceiling aloud where it draws one, on the pool\'s own spelling', () => {
+	it("says the ceiling aloud where it draws one, on the pool's own spelling", () => {
 		// The slash is read "of", and a bare span is `role=generic` — which
 		// prohibits naming — so the live region is what carries the ceiling to a
 		// reader who cannot see it.
@@ -724,9 +820,9 @@ describe('recordSet rendering', () => {
 		vi.useFakeTimers();
 		try {
 			hold(held, LONG_PRESS + 10, { pointerType: 'touch' });
-			expect(document.querySelector('.sheetsmith-popover')?.textContent).toBe(
-				'Second Wind Attuned',
-			);
+			expect(
+				document.querySelector('.sheetsmith-popover')?.textContent,
+			).toBe('Second Wind Attuned');
 			held.click();
 			expect(changes).toEqual([]);
 			closePopover();
@@ -737,19 +833,27 @@ describe('recordSet rendering', () => {
 		// A named level adds its own word to the field's name.
 		const named: RecordSetConfig = {
 			...config,
-			fields: [{ key: 'Rank', type: 'level', levels: ['Untrained', 'Trained:', 'Expert:★'] }],
+			fields: [
+				{
+					key: 'Rank',
+					type: 'level',
+					levels: ['Untrained', 'Trained:', 'Expert:★'],
+				},
+			],
 		};
 		const graded = render(
 			named,
 			'\n### A\n```sheet\nRank: 2\n```\nProse.\n',
 		);
-		const ring = graded.querySelector('.sheetsmith-level-ring') as HTMLElement;
+		const ring = graded.querySelector(
+			'.sheetsmith-level-ring',
+		) as HTMLElement;
 		expect(ring.getAttribute('title')).toBe('A Rank: Expert');
 		expect(ring.getAttribute('aria-label')).toBe('A Rank: Expert');
 		expect(ring.hasAttribute('aria-pressed')).toBe(false);
 	});
 
-	it('holds a typed number to the field\'s bounds', () => {
+	it("holds a typed number to the field's bounds", () => {
 		const changes: RecordSetData[] = [];
 		const el = render({}, BODY, { onChange: (data) => changes.push(data) });
 		const number = records(el)[0]?.querySelector<HTMLInputElement>(
@@ -768,7 +872,9 @@ describe('recordSet rendering', () => {
 			'.sheetsmith-level-ring',
 		) as HTMLElement;
 		ring.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-		expect(changes[0]).toEqual({ records: { 0: { fields: { Attuned: 'yes' } } } });
+		expect(changes[0]).toEqual({
+			records: { 0: { fields: { Attuned: 'yes' } } },
+		});
 		// And the write puts it in the note without touching anything else.
 		expect(recordSet.write(changes[0] as RecordSetData, BODY, config)).toBe(
 			BODY.replace('Attuned: no', 'Attuned: yes'),
@@ -865,15 +971,20 @@ describe('a ceiling each record sets for itself', () => {
 			) as HTMLElement;
 			// Pool's classes, borrowed rather than copied under a `record` name.
 			expect(
-				ceiling.querySelector('.sheetsmith-pool-separator')?.textContent,
+				ceiling.querySelector('.sheetsmith-pool-separator')
+					?.textContent,
 			).toBe('/');
 			const field = ceilingField(record);
 			// The record's *own* field chrome plus the pool's reading, which is the
 			// one place Pool's classes are deliberately not both taken: two fields
 			// on one summary line must not answer a hover two different ways.
-			expect(field.classList.contains('sheetsmith-record-input')).toBe(true);
+			expect(field.classList.contains('sheetsmith-record-input')).toBe(
+				true,
+			);
 			expect(field.classList.contains('sheetsmith-pool-max')).toBe(true);
-			expect(field.classList.contains('sheetsmith-pool-max-input')).toBe(false);
+			expect(field.classList.contains('sheetsmith-pool-max-input')).toBe(
+				false,
+			);
 			expect(field.placeholder).toBe('—');
 		}
 		expect(shown.map((record) => ceilingField(record).value)).toEqual([
@@ -894,7 +1005,9 @@ describe('a ceiling each record sets for itself', () => {
 		// An input is nameable, and both channels are kept rather than traded.
 		const el = render(owned, OWN_BODY);
 		const field = ceilingField(records(el)[0] as HTMLElement);
-		expect(field.getAttribute('aria-label')).toBe('Second Wind Uses maximum');
+		expect(field.getAttribute('aria-label')).toBe(
+			'Second Wind Uses maximum',
+		);
 		expect(field.getAttribute('title')).toBe(
 			'Maximum Uses, held by this feature.',
 		);
@@ -905,10 +1018,12 @@ describe('a ceiling each record sets for itself', () => {
 		// does not, and a `min` alone changes neither.
 		const declared = render({}, BODY);
 		const first = records(declared)[0] as HTMLElement;
-		expect(first.querySelector('.sheetsmith-pool-ceiling input')).toBeNull();
 		expect(
-			first.querySelector('.sheetsmith-pool-max')?.textContent,
-		).toBe('3');
+			first.querySelector('.sheetsmith-pool-ceiling input'),
+		).toBeNull();
+		expect(first.querySelector('.sheetsmith-pool-max')?.textContent).toBe(
+			'3',
+		);
 		const floored = render(
 			{ fields: [{ key: 'Uses', type: 'number', min: 0 }] },
 			BODY,
@@ -947,9 +1062,9 @@ describe('a ceiling each record sets for itself', () => {
 		});
 		commit(ceilingField(records(spelled)[1] as HTMLElement), '4');
 		expect(changes[2]?.records[1]?.fields).toEqual({ Uses: '1/4' });
-		expect(recordSet.write(changes[2] as RecordSetData, OWN_BODY, owned)).toBe(
-			OWN_BODY.replace('Uses: 1/1', 'Uses: 1/4'),
-		);
+		expect(
+			recordSet.write(changes[2] as RecordSetData, OWN_BODY, owned),
+		).toBe(OWN_BODY.replace('Uses: 1/1', 'Uses: 1/4'));
 		// Cleared, the entry goes back to a bare number rather than to `2 /`.
 		const set = render(
 			owned,
@@ -999,7 +1114,7 @@ describe('a ceiling each record sets for itself', () => {
 		expect(changes[3]?.records[0]?.fields).toEqual({ Uses: '1 / 5' });
 	});
 
-	it('holds a value to the record\'s own ceiling and says what it was held to', () => {
+	it("holds a value to the record's own ceiling and says what it was held to", () => {
 		const changes: RecordSetData[] = [];
 		const el = render(owned, OWN_BODY, {
 			onChange: (data) => changes.push(data),
@@ -1032,25 +1147,31 @@ describe('a ceiling each record sets for itself', () => {
 		// treatment is added — the reading is what says it.
 		const changes: RecordSetData[] = [];
 		const body = '\n### A\n```sheet\nUses: 5 / 9\n```\nProse.\n';
-		const el = render(owned, body, { onChange: (data) => changes.push(data) });
+		const el = render(owned, body, {
+			onChange: (data) => changes.push(data),
+		});
 		commit(ceilingField(records(el)[0] as HTMLElement), '3');
 		expect(changes[0]?.records[0]?.fields).toEqual({ Uses: '5 / 3' });
-		const written = recordSet.write(changes[0] as RecordSetData, body, owned);
+		const written = recordSet.write(
+			changes[0] as RecordSetData,
+			body,
+			owned,
+		);
 		const after = render(owned, written);
 		const record = records(after)[0] as HTMLElement;
 		expect(valueField(record).value).toBe('5');
 		expect(ceilingField(record).value).toBe('3');
 		expect(errors(after)).toEqual([]);
-		expect(
-			record.querySelector('.sheetsmith-modified'),
-		).toBeNull();
+		expect(record.querySelector('.sheetsmith-modified')).toBeNull();
 	});
 
-	it('steps the ceiling with the arrows, holds it to the field\'s min, and settles no arithmetic', () => {
+	it("steps the ceiling with the arrows, holds it to the field's min, and settles no arithmetic", () => {
 		const changes: RecordSetData[] = [];
 		const bounded: RecordSetConfig = {
 			...config,
-			fields: [{ key: 'Uses', type: 'number', min: 2, maxSource: 'record' }],
+			fields: [
+				{ key: 'Uses', type: 'number', min: 2, maxSource: 'record' },
+			],
 		};
 		const body = '\n### A\n```sheet\nUses: 2 / 3\n```\nProse.\n';
 		const el = render(bounded, body, {
@@ -1182,14 +1303,18 @@ describe('a ceiling each record sets for itself', () => {
 			commit(field, '1/2');
 			expect(changes, which).toEqual([]);
 			expect(field.value, which).toBe('1/2');
-			expect(errors(el)[0]?.textContent, which).toContain('A slash separates');
+			expect(errors(el)[0]?.textContent, which).toContain(
+				'A slash separates',
+			);
 			// Refused rather than repaired: nothing replaces what was typed.
 			expect(recordSet.write({ records: {} }, body, owned)).toBe(body);
 		}
 		// And a value that is merely not a number is still stored as typed, which
 		// is `boundedText`'s standing rule and not what this refuses.
 		const changes: RecordSetData[] = [];
-		const fine = render(owned, body, { onChange: (data) => changes.push(data) });
+		const fine = render(owned, body, {
+			onChange: (data) => changes.push(data),
+		});
 		commit(valueField(records(fine)[0] as HTMLElement), 'frog');
 		expect(changes[0]?.records[0]?.fields).toEqual({ Uses: 'frog / 3' });
 	});
@@ -1221,7 +1346,13 @@ describe('a ceiling each record sets for itself', () => {
 			{ ...config, fields: [{ key: 'Uses', type: 'number' }] },
 			{
 				...config,
-				fields: [{ key: 'Uses', type: 'number', maxSource: 'field' as const }],
+				fields: [
+					{
+						key: 'Uses',
+						type: 'number',
+						maxSource: 'field' as const,
+					},
+				],
 			},
 		] as RecordSetConfig[]) {
 			const rows = recordSet.scopeRows?.(readData(body, from), from);
@@ -1254,7 +1385,9 @@ describe('a ceiling each record sets for itself', () => {
 			'',
 		].join('\n');
 		const rows = recordSet.scopeRows?.(readData(body, owned), owned);
-		const values = (rows?.(() => null) ?? []).map((one) => one.values['Uses']);
+		const values = (rows?.(() => null) ?? []).map(
+			(one) => one.values['Uses'],
+		);
 		// A blank value half is a blank value, which is zero to a formula; text
 		// that is neither is kept exactly as it is; and a non-numeric ceiling
 		// leaves the value beside it a number.
@@ -1293,7 +1426,13 @@ describe('a ceiling each record sets for itself', () => {
 		const both: RecordSetConfig = {
 			...config,
 			fields: [
-				{ key: 'Uses', type: 'number', min: 5, max: 3, maxSource: 'record' },
+				{
+					key: 'Uses',
+					type: 'number',
+					min: 5,
+					max: 3,
+					maxSource: 'record',
+				},
 			],
 		};
 		const el = render(both, OWN_BODY);
@@ -1326,7 +1465,12 @@ describe('a ceiling each record sets for itself', () => {
 					levels: ['None', 'Trained'],
 					maxSource: 'record',
 				},
-				{ key: 'Left', type: 'computed', formula: '1', maxSource: 'record' },
+				{
+					key: 'Left',
+					type: 'computed',
+					formula: '1',
+					maxSource: 'record',
+				},
 				{ key: 'Modifiers', type: 'modifier', maxSource: 'record' },
 			],
 		};
@@ -1347,7 +1491,9 @@ describe('a ceiling each record sets for itself', () => {
 		expect(el.querySelector('.sheetsmith-pool-ceiling')).toBeNull();
 		// And the key survives the round trip, because a hand-edited layout may
 		// carry it.
-		expect(recordSet.write(readData(body, others), body, others)).toBe(body);
+		expect(recordSet.write(readData(body, others), body, others)).toBe(
+			body,
+		);
 	});
 
 	it('leaves every stored ceiling alone when the field is switched back', () => {
@@ -1369,10 +1515,12 @@ describe('a ceiling each record sets for itself', () => {
 		};
 		const el = render(declared, body);
 		const record = records(el)[0] as HTMLElement;
-		expect(record.querySelector('.sheetsmith-pool-ceiling input')).toBeNull();
 		expect(
-			record.querySelector('.sheetsmith-pool-max')?.textContent,
-		).toBe('3');
+			record.querySelector('.sheetsmith-pool-ceiling input'),
+		).toBeNull();
+		expect(record.querySelector('.sheetsmith-pool-max')?.textContent).toBe(
+			'3',
+		);
 		// The one honest cost: the note says `2 / 5` while the sheet draws `2 / 3`.
 		const changes: RecordSetData[] = [];
 		const live = render(declared, body, {
@@ -1380,19 +1528,28 @@ describe('a ceiling each record sets for itself', () => {
 		});
 		commit(valueField(records(live)[0] as HTMLElement), '9');
 		expect(changes[0]?.records[0]?.fields).toEqual({ Uses: '3 / 5' });
-		const written = recordSet.write(changes[0] as RecordSetData, body, declared);
+		const written = recordSet.write(
+			changes[0] as RecordSetData,
+			body,
+			declared,
+		);
 		expect(written).toContain('Uses: 3 / 5');
 		// And switching back finds the ceiling still there.
 		expect(
-			ceilingField(records(render(owned, written))[0] as HTMLElement).value,
+			ceilingField(records(render(owned, written))[0] as HTMLElement)
+				.value,
 		).toBe('5');
 	});
 });
 
-describe('a record\'s name and its links', () => {
-	const linked = '\n### [[Sunblade|sword]]\n\nProse.\n\n### [[Nowhere]]\n\nMore.\n';
+describe("a record's name and its links", () => {
+	const linked =
+		'\n### [[Sunblade|sword]]\n\nProse.\n\n### [[Nowhere]]\n\nMore.\n';
 
-	function withVault(exists: readonly string[], extra: Partial<RenderContext<RecordSetData>> = {}) {
+	function withVault(
+		exists: readonly string[],
+		extra: Partial<RenderContext<RecordSetData>> = {},
+	) {
 		return render({}, linked, {
 			link: {
 				resolves: (target) => exists.includes(target),
@@ -1436,21 +1593,23 @@ describe('a record\'s name and its links', () => {
 
 	it('names a record by what a reader sees, never by what the file spells', () => {
 		const el = withVault(['Sunblade']);
-		expect(removeButtons(el)[0]?.getAttribute('aria-label')).toBe('Delete sword');
+		expect(removeButtons(el)[0]?.getAttribute('aria-label')).toBe(
+			'Delete sword',
+		);
 	});
 });
 
 describe('the disclosure', () => {
 	it('opens nothing on first render, and wires the chevron to its body', () => {
 		const el = render();
-		expect(chevrons(el).map((one) => one.getAttribute('aria-expanded'))).toEqual([
-			'false',
-			'false',
-			'false',
-		]);
+		expect(
+			chevrons(el).map((one) => one.getAttribute('aria-expanded')),
+		).toEqual(['false', 'false', 'false']);
 		for (const [at, body] of bodies(el).entries()) {
 			expect(body.getAttribute('hidden')).toBe('until-found');
-			expect(chevrons(el)[at]?.getAttribute('aria-controls')).toBe(body.id);
+			expect(chevrons(el)[at]?.getAttribute('aria-controls')).toBe(
+				body.id,
+			);
 			expect(body.id).not.toBe('');
 		}
 	});
@@ -1527,14 +1686,15 @@ describe('the disclosure', () => {
 	});
 });
 
-describe('a record\'s body', () => {
+describe("a record's body", () => {
 	it('draws the prose over a field holding the same text', () => {
 		const el = render({}, BODY, { openRecords: [0] });
 		expect(bodyFields(el)[0]?.value).toBe(
 			'Once per short rest, regain 1d10 hit points as a bonus action.',
 		);
 		expect(
-			bodies(el)[0]?.querySelector('.sheetsmith-record-body-rendered')?.textContent,
+			bodies(el)[0]?.querySelector('.sheetsmith-record-body-rendered')
+				?.textContent,
 		).toContain('Once per short rest');
 	});
 
@@ -1544,7 +1704,9 @@ describe('a record\'s body', () => {
 		const field = bodyFields(el)[2] as HTMLTextAreaElement;
 		field.value = 'Four rerolls a day.';
 		field.dispatchEvent(new Event('blur'));
-		expect(changes[0]).toEqual({ records: { 2: { body: 'Four rerolls a day.' } } });
+		expect(changes[0]).toEqual({
+			records: { 2: { body: 'Four rerolls a day.' } },
+		});
 		expect(recordSet.write(changes[0] as RecordSetData, BODY, config)).toBe(
 			BODY.replace('Three rerolls a day.', 'Four rerolls a day.'),
 		);
@@ -1553,35 +1715,43 @@ describe('a record\'s body', () => {
 	it.each([
 		['## ', '## A section', 'a new section in this note'],
 		['### ', '### A record', 'a new feature in this list'],
-	])('declines a body holding %s at the start of a line', (_mark, line, said) => {
-		const changes: RecordSetData[] = [];
-		const el = render({}, BODY, { onChange: (data) => changes.push(data) });
-		const field = bodyFields(el)[0] as HTMLTextAreaElement;
-		const draft = `Some prose.\n\n${line}\n\nMore prose.`;
-		field.value = draft;
-		field.dispatchEvent(new Event('blur'));
-		// Nothing reaches the note, the field keeps the draft, and the message
-		// names the line and the fix.
-		expect(changes).toEqual([]);
-		expect(field.value).toBe(draft);
-		const message = errors(el)[0]?.textContent ?? '';
-		expect(message).toContain(line);
-		expect(message).toContain(said);
-		expect(message).toContain('#### ');
-		// And the draft is what is on screen while it is refused.
-		expect(
-			bodies(el)[0]?.classList.contains('sheetsmith-record-body-refused'),
-		).toBe(true);
-	});
+	])(
+		'declines a body holding %s at the start of a line',
+		(_mark, line, said) => {
+			const changes: RecordSetData[] = [];
+			const el = render({}, BODY, {
+				onChange: (data) => changes.push(data),
+			});
+			const field = bodyFields(el)[0] as HTMLTextAreaElement;
+			const draft = `Some prose.\n\n${line}\n\nMore prose.`;
+			field.value = draft;
+			field.dispatchEvent(new Event('blur'));
+			// Nothing reaches the note, the field keeps the draft, and the message
+			// names the line and the fix.
+			expect(changes).toEqual([]);
+			expect(field.value).toBe(draft);
+			const message = errors(el)[0]?.textContent ?? '';
+			expect(message).toContain(line);
+			expect(message).toContain(said);
+			expect(message).toContain('#### ');
+			// And the draft is what is on screen while it is refused.
+			expect(
+				bodies(el)[0]?.classList.contains(
+					'sheetsmith-record-body-refused',
+				),
+			).toBe(true);
+		},
+	);
 
-	it('draws the app\'s markdown where there is a renderer, and paragraphs where there is not', () => {
+	it("draws the app's markdown where there is a renderer, and paragraphs where there is not", () => {
 		const renderMarkdown = vi.fn((markdown: string, into: HTMLElement) => {
 			into.textContent = `rendered: ${markdown}`;
 		});
 		const el = render({}, BODY, { renderMarkdown });
 		expect(renderMarkdown).toHaveBeenCalledTimes(3);
 		expect(
-			bodies(el)[0]?.querySelector('.sheetsmith-record-body-rendered')?.textContent,
+			bodies(el)[0]?.querySelector('.sheetsmith-record-body-rendered')
+				?.textContent,
 		).toContain('rendered: Once per short rest');
 		// And the fallback again where the renderer rejected.
 		const failing = render({}, BODY, {
@@ -1598,13 +1768,22 @@ describe('adding and deleting a record', () => {
 		const changes: RecordSetData[] = [];
 		const el = render({}, BODY, { onChange: (data) => changes.push(data) });
 		addButton(el).dispatchEvent(new MouseEvent('click', { bubbles: true }));
-		expect(changes[0]).toEqual({ records: {}, added: [{ name: 'Feature' }] });
+		expect(changes[0]).toEqual({
+			records: {},
+			added: [{ name: 'Feature' }],
+		});
 		// The next render is the one that lands focus, because the record does not
 		// exist until the note has it.
-		const written = recordSet.write(changes[0] as RecordSetData, BODY, config);
+		const written = recordSet.write(
+			changes[0] as RecordSetData,
+			BODY,
+			config,
+		);
 		const after = render({}, written);
 		const fields = nameFields(after);
-		expect(after.ownerDocument.activeElement).toBe(fields[fields.length - 1]);
+		expect(after.ownerDocument.activeElement).toBe(
+			fields[fields.length - 1],
+		);
 		expect(fields[fields.length - 1]?.value).toBe('Feature');
 	});
 
@@ -1619,7 +1798,9 @@ describe('adding and deleting a record', () => {
 		const second = render({ id: 'spells', label: 'Spells' }, BODY, {
 			onChange: () => undefined,
 		});
-		addButton(second).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		addButton(second).dispatchEvent(
+			new MouseEvent('click', { bubbles: true }),
+		);
 		// The other list renders first, exactly as the grid would draw it.
 		const first = render({ id: 'features' }, BODY);
 		expect(first.ownerDocument.activeElement).not.toBe(
@@ -1633,7 +1814,9 @@ describe('adding and deleting a record', () => {
 		);
 		const again = render({ id: 'spells', label: 'Spells' }, grown);
 		const fields = nameFields(again);
-		expect(again.ownerDocument.activeElement).toBe(fields[fields.length - 1]);
+		expect(again.ownerDocument.activeElement).toBe(
+			fields[fields.length - 1],
+		);
 	});
 
 	it('lands nothing where the write never grew the list', () => {
@@ -1654,7 +1837,9 @@ describe('adding and deleting a record', () => {
 		const remove = removeButtons(el)[1] as HTMLButtonElement;
 		remove.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 		expect(changes).toEqual([]);
-		expect(remove.classList.contains('sheetsmith-record-remove-armed')).toBe(true);
+		expect(
+			remove.classList.contains('sheetsmith-record-remove-armed'),
+		).toBe(true);
 		expect(remove.getAttribute('aria-label')).toContain('Blessed Armour');
 		expect(remove.getAttribute('aria-label')).toContain('Select again');
 		remove.dispatchEvent(new MouseEvent('click', { bubbles: true }));
@@ -1664,8 +1849,10 @@ describe('adding and deleting a record', () => {
 	it('stands down on Escape, on a press elsewhere, and on focus leaving', () => {
 		const el = render();
 		const remove = removeButtons(el)[0] as HTMLButtonElement;
-		const arm = () => remove.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-		const armed = () => remove.classList.contains('sheetsmith-record-remove-armed');
+		const arm = () =>
+			remove.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		const armed = () =>
+			remove.classList.contains('sheetsmith-record-remove-armed');
 
 		arm();
 		remove.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
@@ -1682,11 +1869,18 @@ describe('adding and deleting a record', () => {
 
 	it('arms one control at a time', () => {
 		const el = render();
-		const [first, second] = removeButtons(el) as [HTMLButtonElement, HTMLButtonElement];
+		const [first, second] = removeButtons(el) as [
+			HTMLButtonElement,
+			HTMLButtonElement,
+		];
 		first.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 		second.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-		expect(first.classList.contains('sheetsmith-record-remove-armed')).toBe(false);
-		expect(second.classList.contains('sheetsmith-record-remove-armed')).toBe(true);
+		expect(first.classList.contains('sheetsmith-record-remove-armed')).toBe(
+			false,
+		);
+		expect(
+			second.classList.contains('sheetsmith-record-remove-armed'),
+		).toBe(true);
 	});
 });
 
@@ -1708,7 +1902,8 @@ describe('what a record set publishes', () => {
 
 	it('walks every record as a row whose names are its fields', () => {
 		const { data, source } = envFor(BODY);
-		const rows = source?.(makeFieldResolver(recordSet, config, data, NO_ENV)) ?? [];
+		const rows =
+			source?.(makeFieldResolver(recordSet, config, data, NO_ENV)) ?? [];
 		expect(rows.map((row) => row.label)).toEqual([
 			'Second Wind',
 			'Blessed Armour',
@@ -1733,8 +1928,12 @@ describe('what a record set publishes', () => {
 		];
 		expect(source).toBeDefined();
 		const { env } = buildSheet(layout, prepared);
-		expect(evaluate('count(features, Attuned)', env.sheet, callsFrom(env))).toBe(1);
-		expect(evaluate('sum(features, Uses)', env.sheet, callsFrom(env))).toBe(4);
+		expect(
+			evaluate('count(features, Attuned)', env.sheet, callsFrom(env)),
+		).toBe(1);
+		expect(evaluate('sum(features, Uses)', env.sheet, callsFrom(env))).toBe(
+			4,
+		);
 		expect(evaluate('count(features)', env.sheet, callsFrom(env))).toBe(3);
 	});
 
@@ -1743,8 +1942,12 @@ describe('what a record set publishes', () => {
 		const { env } = buildSheet(layout, [
 			{ config, component: recordSet, data: null, error: null },
 		]);
-		expect(evaluate('count(features, Attuned)', env.sheet, callsFrom(env))).toBe(0);
-		expect(evaluate('sum(features, Uses)', env.sheet, callsFrom(env))).toBe(0);
+		expect(
+			evaluate('count(features, Attuned)', env.sheet, callsFrom(env)),
+		).toBe(0);
+		expect(evaluate('sum(features, Uses)', env.sheet, callsFrom(env))).toBe(
+			0,
+		);
 	});
 
 	it('fails a name reaching for one record, whatever its capitalisation', () => {
@@ -1752,12 +1955,16 @@ describe('what a record set publishes', () => {
 		const { env } = buildSheet(layout, [
 			{ config, component: recordSet, data: readData(BODY), error: null },
 		]);
-		for (const name of ['features.Lucky', 'features.lucky', 'features.LUCKY']) {
+		for (const name of [
+			'features.Lucky',
+			'features.lucky',
+			'features.LUCKY',
+		]) {
 			expect(() => evaluate(name, env.sheet, callsFrom(env))).toThrow();
 		}
 	});
 
-	it('opens a computed field\'s formula on a press as well as a hover', () => {
+	it("opens a computed field's formula on a press as well as a hover", () => {
 		/*
 		 * A `title` is a pointer's route and not a finger's, so without a press a
 		 * record's computed formula — and its *failure explanation*, which is the
@@ -1777,8 +1984,12 @@ describe('what a record set publishes', () => {
 		const el = render(computed, body, {
 			resolveField: () => 2,
 		});
-		const value = el.querySelector('.sheetsmith-record-value') as HTMLElement;
-		expect(value.classList.contains('sheetsmith-record-askable')).toBe(true);
+		const value = el.querySelector(
+			'.sheetsmith-record-value',
+		) as HTMLElement;
+		expect(value.classList.contains('sheetsmith-record-askable')).toBe(
+			true,
+		);
 		expect(value.getAttribute('title')).toBe('3 - Uses');
 		value.dispatchEvent(new MouseEvent('click', { bubbles: true }));
 		expect(document.querySelector('.sheetsmith-popover')?.textContent).toBe(
@@ -1801,7 +2012,7 @@ describe('what a record set publishes', () => {
 		);
 	});
 
-	it('reads a computed field in the record\'s own scope', () => {
+	it("reads a computed field in the record's own scope", () => {
 		const computed: RecordSetConfig = {
 			...config,
 			fields: [
@@ -1812,9 +2023,10 @@ describe('what a record set publishes', () => {
 		const body = '\n### A\n```sheet\nUses: 1\n```\nProse.\n';
 		const data = readData(body, computed);
 		const rows =
-			recordSet.scopeRows?.(data, computed)?.(
-				makeFieldResolver(recordSet, computed, data, NO_ENV),
-			) ?? [];
+			recordSet.scopeRows?.(
+				data,
+				computed,
+			)?.(makeFieldResolver(recordSet, computed, data, NO_ENV)) ?? [];
 		expect(rows[0]?.values.Left).toBe(2);
 		// And a computed field stores nothing, so it never reaches the note.
 		expect(recordSet.write(data, body, computed)).toBe(body);
@@ -1852,7 +2064,7 @@ describe('the modifiers a record pushes', () => {
 		).toBe(10);
 	});
 
-	it('names the record and the component in the card\'s breakdown', () => {
+	it("names the record and the component in the card's breakdown", () => {
 		const { modifiers } = sheetFor(BODY);
 		const breakdown = modifiers.breakdown('armour_class');
 		expect(breakdown.total).toBe(1);
@@ -1865,9 +2077,10 @@ describe('the modifiers a record pushes', () => {
 	it('pushes one part per enrolment, and nothing from a blank field', () => {
 		const data = readData(BODY);
 		const pushes =
-			recordSet.scopeModifiers?.(data, config)?.(
-				makeFieldResolver(recordSet, config, data, NO_ENV),
-			) ?? [];
+			recordSet.scopeModifiers?.(
+				data,
+				config,
+			)?.(makeFieldResolver(recordSet, config, data, NO_ENV)) ?? [];
 		expect(pushes).toHaveLength(1);
 		expect(pushes[0]?.part).toBe('armour_class += 1 as item when Attuned');
 		expect(pushes[0]?.source).toBe('Features');
@@ -1875,8 +2088,13 @@ describe('the modifiers a record pushes', () => {
 	});
 
 	it('declares no source where no field is a modifier field', () => {
-		const plain = { ...config, fields: [{ key: 'Uses', type: 'number' as const }] };
-		expect(recordSet.scopeModifiers?.(readData(BODY, plain), plain)).toBeUndefined();
+		const plain = {
+			...config,
+			fields: [{ key: 'Uses', type: 'number' as const }],
+		};
+		expect(
+			recordSet.scopeModifiers?.(readData(BODY, plain), plain),
+		).toBeUndefined();
 	});
 
 	it('refuses a note reference in a committed modifier part', () => {
@@ -1906,15 +2124,18 @@ describe('the modifiers a record pushes', () => {
 			'.sheetsmith-record-modifier',
 		) as HTMLButtonElement;
 		glyph.click();
-		const panel = document.querySelector('.sheetsmith-panel') as HTMLElement;
+		const panel = document.querySelector(
+			'.sheetsmith-panel',
+		) as HTMLElement;
 		expect(panel).not.toBeNull();
-		typeInto(field(panel, 'Changes'), 'armour_class');
+		typeInto(field(panel, 'Value'), 'armour_class');
 		expect(changes).toHaveLength(1);
 		typeInto(field(panel, 'Amount'), '[[Ring of Protection]]');
 		// Nothing new reached the note, and the record says why.
 		expect(changes).toHaveLength(1);
 		const said =
-			records(el)[0]?.querySelector('.sheetsmith-error')?.textContent ?? '';
+			records(el)[0]?.querySelector('.sheetsmith-error')?.textContent ??
+			'';
 		expect(said).toContain('code block');
 		expect(said).toContain("feature's name or its body");
 		expect(el.querySelector('.sheetsmith-sr-only')?.textContent).toContain(
@@ -1947,8 +2168,12 @@ describe('the modifiers a record pushes', () => {
 			'.sheetsmith-record-modifier',
 		) as HTMLButtonElement;
 		glyph.click();
-		const panel = document.querySelector('.sheetsmith-panel') as HTMLElement;
-		const line = panel.querySelector<HTMLButtonElement>('.sheetsmith-panel-line');
+		const panel = document.querySelector(
+			'.sheetsmith-panel',
+		) as HTMLElement;
+		const line = panel.querySelector<HTMLButtonElement>(
+			'.sheetsmith-panel-line',
+		);
 		expect(line, 'no part to open').not.toBeNull();
 		line?.click();
 		const name = panel.querySelector<HTMLInputElement>(
@@ -1972,7 +2197,8 @@ describe('the modifiers a record pushes', () => {
 		// And the reader is told where they are typing rather than under the record,
 		// because the form draws its own problem line beside the name field.
 		expect(
-			document.querySelector('.sheetsmith-panel-problem')?.textContent ?? '',
+			document.querySelector('.sheetsmith-panel-problem')?.textContent ??
+				'',
 		).toContain('code block');
 
 		// Not vacuous: the same control with a spellable name does reach the layout,
@@ -1983,7 +2209,9 @@ describe('the modifiers a record pushes', () => {
 		if (again === null) throw new Error('no promote field');
 		again.value = 'Ring of Protection';
 		again.dispatchEvent(new Event('input'));
-		document.querySelector<HTMLButtonElement>('.sheetsmith-panel-save')?.click();
+		document
+			.querySelector<HTMLButtonElement>('.sheetsmith-panel-save')
+			?.click();
 		expect(promoted).toEqual(['Ring of Protection']);
 	});
 
@@ -2009,13 +2237,17 @@ describe('the modifiers a record pushes', () => {
 		// The record renders, carries both parts, and reports nothing: rendered,
 		// not corrected.
 		expect(records(el)[1]?.querySelector('.sheetsmith-error')).toBeNull();
-		expect(readData(body).records[1]?.fields?.Modifiers).toContain('[[Ring');
+		expect(readData(body).records[1]?.fields?.Modifiers).toContain(
+			'[[Ring',
+		);
 
 		const glyph = records(el)[1]?.querySelector(
 			'.sheetsmith-record-modifier',
 		) as HTMLButtonElement;
 		glyph.click();
-		const panel = document.querySelector('.sheetsmith-panel') as HTMLElement;
+		const panel = document.querySelector(
+			'.sheetsmith-panel',
+		) as HTMLElement;
 		const lines = Array.from(
 			panel.querySelectorAll<HTMLButtonElement>('.sheetsmith-panel-line'),
 		);
@@ -2030,14 +2262,18 @@ describe('the modifiers a record pushes', () => {
 		expect(changes.length, 'nothing committed').toBeGreaterThan(0);
 		expect(changes[0]).toEqual({
 			records: {
-				1: { fields: { Modifiers: 'armour_class += 2; [[Ring of Protection]]' } },
+				1: {
+					fields: {
+						Modifiers: 'armour_class += 2; [[Ring of Protection]]',
+					},
+				},
 			},
 		});
 		expect(records(el)[1]?.querySelector('.sheetsmith-error')).toBeNull();
 		// And the byte the reader did not touch comes back as its own text.
-		expect(recordSet.write(changes[0] as RecordSetData, body, config)).toContain(
-			'armour_class += 2; [[Ring of Protection]]',
-		);
+		expect(
+			recordSet.write(changes[0] as RecordSetData, body, config),
+		).toContain('armour_class += 2; [[Ring of Protection]]');
 	});
 
 	it('quotes the part it refused rather than the whole cell', () => {
@@ -2055,12 +2291,17 @@ describe('the modifiers a record pushes', () => {
 			'.sheetsmith-record-modifier',
 		) as HTMLButtonElement;
 		glyph.click();
-		const panel = document.querySelector('.sheetsmith-panel') as HTMLElement;
-		panel.querySelector<HTMLButtonElement>('.sheetsmith-panel-line')?.click();
+		const panel = document.querySelector(
+			'.sheetsmith-panel',
+		) as HTMLElement;
+		panel
+			.querySelector<HTMLButtonElement>('.sheetsmith-panel-line')
+			?.click();
 		typeInto(field(document.body, 'Amount'), '[[Ring]]');
 		expect(changes).toEqual([]);
 		const said =
-			records(el)[1]?.querySelector('.sheetsmith-error')?.textContent ?? '';
+			records(el)[1]?.querySelector('.sheetsmith-error')?.textContent ??
+			'';
 		// The offending part, not the joined cell: the other half is untouched and
 		// naming it would send the reader to the wrong place.
 		expect(said).toContain('armour_class += [[Ring]]');
@@ -2078,10 +2319,14 @@ describe('the modifiers a record pushes', () => {
 			'.sheetsmith-record-modifier',
 		) as HTMLButtonElement;
 		glyph.click();
-		const panel = document.querySelector('.sheetsmith-panel') as HTMLElement;
-		typeInto(field(panel, 'Changes'), 'armour_class');
+		const panel = document.querySelector(
+			'.sheetsmith-panel',
+		) as HTMLElement;
+		typeInto(field(panel, 'Value'), 'armour_class');
 		typeInto(field(panel, 'Amount'), '[[Ring]]');
-		expect(records(el)[0]?.querySelector('.sheetsmith-error')).not.toBeNull();
+		expect(
+			records(el)[0]?.querySelector('.sheetsmith-error'),
+		).not.toBeNull();
 		typeInto(field(panel, 'Amount'), '2');
 		expect(records(el)[0]?.querySelector('.sheetsmith-error')).toBeNull();
 		expect(changes[changes.length - 1]).toEqual({
@@ -2096,21 +2341,20 @@ describe('the modifiers a record pushes', () => {
 				targets: [{ name: 'armour_class', label: 'Armour class' }],
 				published: [{ name: 'armour_class', label: 'Armour class' }],
 				bonusTypes: ['item'],
-				outcome: () => ({
-					definition: null,
-					typed: {
+				outcomes: () => [
+					outcomeView({
+						typed: {
+							target: 'armour_class',
+							operator: 'add' as const,
+							amount: '1',
+							bonusType: 'item',
+						},
 						target: 'armour_class',
-						operator: 'add',
-						amount: '1',
-						bonusType: 'item',
-					},
-					target: 'armour_class',
-					targetLabel: 'Armour class',
-					applies: true,
-					amount: 1,
-					condition: null,
-					suppressed: null,
-				}),
+						targetLabel: 'Armour class',
+						applies: true,
+						amount: 1,
+					}),
+				],
 				breakdown: () => ({ lines: [], override: null, total: 0 }),
 				promote: () => Promise.resolve({ ok: true as const }),
 			},
@@ -2121,7 +2365,9 @@ describe('the modifiers a record pushes', () => {
 		expect(glyph.getAttribute('aria-haspopup')).toBe('dialog');
 		expect(glyph.getAttribute('aria-expanded')).toBe('false');
 		glyph.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-		const panel = document.querySelector('.sheetsmith-panel') as HTMLElement;
+		const panel = document.querySelector(
+			'.sheetsmith-panel',
+		) as HTMLElement;
 		expect(panel).not.toBeNull();
 		expect(panel.getAttribute('aria-label')).toContain('Blessed Armour');
 		expect(panel.querySelector('.sheetsmith-panel-line')).not.toBeNull();
@@ -2146,11 +2392,9 @@ describe('recordSet.applyReset', () => {
 		if (!result?.ok) return;
 		const written = recordSet.write(result.data, BODY, config);
 		const after = readData(written);
-		expect(Object.values(after.records).map((one) => one.fields?.Uses)).toEqual([
-			'3',
-			'3',
-			'3',
-		]);
+		expect(
+			Object.values(after.records).map((one) => one.fields?.Uses),
+		).toEqual(['3', '3', '3']);
 		expect(after.records[0]?.fields?.Attuned).toBe('yes');
 	});
 
@@ -2164,11 +2408,9 @@ describe('recordSet.applyReset', () => {
 		);
 		if (!result?.ok) throw new Error('expected a reset');
 		const after = readData(recordSet.write(result.data, BODY, config));
-		expect(Object.values(after.records).map((one) => one.fields?.Uses)).toEqual([
-			'0',
-			'0',
-			'0',
-		]);
+		expect(
+			Object.values(after.records).map((one) => one.fields?.Uses),
+		).toEqual(['0', '0', '0']);
 		expect(after.records[1]?.fields?.Attuned).toBe('no');
 	});
 
@@ -2223,7 +2465,9 @@ describe('recordSet.applyReset', () => {
 		if (!result?.ok) return;
 		const written = recordSet.write(result.data, body, owned);
 		const after = readData(written, owned);
-		expect(Object.values(after.records).map((one) => one.fields?.Uses)).toEqual([
+		expect(
+			Object.values(after.records).map((one) => one.fields?.Uses),
+		).toEqual([
 			'3 / 3',
 			'1/1',
 			// **Left exactly as it was, and never written as 0.** `full` means
@@ -2256,7 +2500,7 @@ describe('recordSet.applyReset', () => {
 		);
 	});
 
-	it('holds a formula reset to each record\'s own ceiling', () => {
+	it("holds a formula reset to each record's own ceiling", () => {
 		const owned: RecordSetConfig = {
 			...config,
 			fields: [{ key: 'Uses', type: 'number', maxSource: 'record' }],
@@ -2283,15 +2527,17 @@ describe('recordSet.applyReset', () => {
 			{ resolve: () => 3, explain: () => null },
 		);
 		if (!result?.ok) throw new Error('expected a reset');
-		const after = readData(recordSet.write(result.data, body, owned), owned);
+		const after = readData(
+			recordSet.write(result.data, body, owned),
+			owned,
+		);
 		// `to: '3'` on a record whose ceiling is 2 writes 2.
-		expect(Object.values(after.records).map((one) => one.fields?.Uses)).toEqual([
-			'2 / 2',
-			'3 / 9',
-		]);
+		expect(
+			Object.values(after.records).map((one) => one.fields?.Uses),
+		).toEqual(['2 / 2', '3 / 9']);
 	});
 
-	it('still fails naming a field whose own ceiling is the layout\'s and missing', () => {
+	it("still fails naming a field whose own ceiling is the layout's and missing", () => {
 		// Unchanged where the ceiling is the field's, and the narrowing above must
 		// not reach it: the layout stated one ceiling for every record, so a
 		// missing one is a configuration nobody can act on from the sheet.
@@ -2347,7 +2593,7 @@ describe('recordSet.applyReset', () => {
 		expect(recordSet.write({ records: {} }, BODY, uncapped)).toBe(BODY);
 	});
 
-	it('writes a formula\'s number into every counter, and derives the flag', () => {
+	it("writes a formula's number into every counter, and derives the flag", () => {
 		/*
 		 * **The flag is derived rather than set**, which is `track.ts`'s rule for
 		 * a flag card. Set unconditionally, `to: '0'` wrote zero into every counter
@@ -2376,13 +2622,13 @@ describe('recordSet.applyReset', () => {
 		);
 		if (!two?.ok) throw new Error('expected a reset');
 		const filled = readData(recordSet.write(two.data, BODY, config));
-		expect(Object.values(filled.records).map((one) => one.fields?.Uses)).toEqual(
-			['2', '2', '2'],
-		);
+		expect(
+			Object.values(filled.records).map((one) => one.fields?.Uses),
+		).toEqual(['2', '2', '2']);
 		expect(filled.records[0]?.fields?.Attuned).toBe('yes');
 	});
 
-	it('holds a formula\'s number to each field\'s own bounds', () => {
+	it("holds a formula's number to each field's own bounds", () => {
 		// The ceiling is the field's, not the expression's: a trigger that wrote
 		// past it would leave a counter the card immediately corrects.
 		const result = recordSet.applyReset?.(
@@ -2429,7 +2675,10 @@ describe('recordSet.applyReset', () => {
 			readData(BODY),
 			config,
 			{ trigger: 'Long rest', action: 'formula', to: 'con' },
-			{ resolve: () => null, explain: () => "con is not defined on this sheet" },
+			{
+				resolve: () => null,
+				explain: () => 'con is not defined on this sheet',
+			},
 		);
 		expect(result?.ok).toBe(false);
 		if (result?.ok === false) {
@@ -2448,7 +2697,11 @@ describe('recordSet.applyReset', () => {
 			...config,
 			fields: [
 				{ key: 'Uses', type: 'number', max: 3 },
-				{ key: 'Rank', type: 'level', levels: ['Untrained', 'Trained:', 'Expert:★'] },
+				{
+					key: 'Rank',
+					type: 'level',
+					levels: ['Untrained', 'Trained:', 'Expert:★'],
+				},
 			],
 		};
 		const body = '\n### A\n```sheet\nUses: 1\nRank: 2\n```\nProse.\n';
@@ -2462,9 +2715,9 @@ describe('recordSet.applyReset', () => {
 			if (!result?.ok) throw new Error(`expected a ${action} reset`);
 			// Not in the delta at all, so the note's own entry is never rewritten.
 			expect(result.data.records[0]?.fields).not.toHaveProperty('Rank');
-			expect(
-				recordSet.write(result.data, body, graded),
-			).toContain('Rank: 2');
+			expect(recordSet.write(result.data, body, graded)).toContain(
+				'Rank: 2',
+			);
 		}
 	});
 
@@ -2486,7 +2739,7 @@ describe('recordSet.applyReset', () => {
 });
 
 describe('recordSet.sample', () => {
-	it('names its records from the layout\'s own word and says it is filler', () => {
+	it("names its records from the layout's own word and says it is filler", () => {
 		const body = sampleOf(recordSet, { ...config, recordName: 'Spell' });
 		expect(body).toContain('### Spell 1');
 		expect(body).toContain('### Spell 2');
@@ -2541,8 +2794,8 @@ describe('recordSet.sample', () => {
 		};
 		const body = sampleOf(recordSet, owned);
 		const shown = readData(body, owned).records;
-		const ceilings = Object.values(shown).map(
-			(one) => (one.fields?.Uses ?? '').split('/')[1]?.trim(),
+		const ceilings = Object.values(shown).map((one) =>
+			(one.fields?.Uses ?? '').split('/')[1]?.trim(),
 		);
 		expect(ceilings[0]).not.toBe(ceilings[1]);
 		for (const one of Object.values(shown)) {
@@ -2565,5 +2818,337 @@ describe('recordSet.sample', () => {
 		const el = render({}, sampleOf(recordSet, config));
 		expect(records(el)).toHaveLength(2);
 		expect(bodyFields(el)[0]?.value).toContain('Sample text');
+	});
+});
+
+describe('a strip of field names over the list', () => {
+	/*
+	 * `fieldHeadings`, off by default (`docs/features/record-set-heading-strip.md`).
+	 * happy-dom lays nothing out, so what is held here is the DOM the stylesheet
+	 * is handed and the accessibility of it; whether a heading is centred over
+	 * its control, whether the strip stays put under a scroll and where the
+	 * threshold falls are look criteria, and the thresholds are `styles.test.ts`'s.
+	 */
+	const HEADED: RecordSetConfig = {
+		...config,
+		fieldHeadings: true,
+		fields: [
+			{ key: 'Uses', type: 'number', maxSource: 'record' },
+			{ key: 'Attuned', type: 'toggle' },
+			{
+				key: 'Rank',
+				name: 'Skill rank',
+				type: 'level',
+				levels: ['Untrained', 'Trained:', 'Expert:★'],
+			},
+			{ key: 'Left', type: 'computed', formula: '3 - Uses' },
+			{ key: 'Modifiers', type: 'modifier' },
+		],
+	};
+
+	const HEADED_BODY = [
+		'',
+		'### Second Wind',
+		'```sheet',
+		'Uses: 1 / 3',
+		'Attuned: no',
+		'Rank: 1',
+		'```',
+		'Prose.',
+		'',
+		'### Lucky',
+		'```sheet',
+		'Uses: 3',
+		'Attuned: yes',
+		'```',
+		'Prose.',
+		'',
+	].join('\n');
+
+	const list = (el: HTMLElement) =>
+		el.querySelector('.sheetsmith-record-set-list') as HTMLElement;
+	const strip = (el: HTMLElement) =>
+		el.querySelector<HTMLElement>('.sheetsmith-record-strip');
+	const block = (el: HTMLElement) =>
+		el.querySelector('.sheetsmith-record-set') as HTMLElement;
+
+	it('declares one boolean in Appearance, off by default', () => {
+		const declared = recordSet.configFields.find(
+			(one) => one.key === 'fieldHeadings',
+		);
+		expect(declared).toMatchObject({
+			kind: 'boolean',
+			group: 'Appearance',
+			default: false,
+		});
+		expect(declared?.description.length).toBeGreaterThan(0);
+	});
+
+	it('draws the list it always drew where the key is absent or false', () => {
+		const bare = render({ ...HEADED, fieldHeadings: undefined }, HEADED_BODY);
+		const off = render({ ...HEADED, fieldHeadings: false }, HEADED_BODY);
+		for (const el of [bare, off]) {
+			expect(strip(el)).toBeNull();
+			expect(el.querySelector('.sheetsmith-record-set-records')).toBeNull();
+			expect(
+				block(el).className.includes('sheetsmith-record-set-headed'),
+			).toBe(false);
+			expect(block(el).className).not.toContain('-fields-');
+			expect(
+				block(el).style.getPropertyValue('--sheetsmith-record-fields'),
+			).toBe('');
+		}
+		// And the tree is the same one the key's absence draws, byte for byte.
+		expect(bare.innerHTML).toBe(off.innerHTML);
+	});
+
+	it('draws one strip as the list\'s first child, one heading per field in declared order', () => {
+		const el = render(HEADED, HEADED_BODY);
+		const drawn = strip(el) as HTMLElement;
+		expect(list(el).firstElementChild).toBe(drawn);
+		expect(list(el).querySelectorAll('.sheetsmith-record-strip')).toHaveLength(
+			1,
+		);
+		// The field's `name`, else its `key`: the word its own accessible name uses.
+		expect(Array.from(drawn.children).map((one) => one.textContent)).toEqual([
+			'Uses',
+			'Attuned',
+			'Skill rank',
+			'Left',
+			'Modifiers',
+		]);
+		// In the secondary type a Card set's abbreviation wears, borrowed rather
+		// than written again.
+		for (const heading of Array.from(drawn.children)) {
+			expect(heading.classList.contains('sheetsmith-card-abbreviation')).toBe(
+				true,
+			);
+		}
+		// The records and the add control moved into the strip's second row.
+		const wrapper = list(el).children[1] as HTMLElement;
+		expect(wrapper.classList.contains('sheetsmith-record-set-records')).toBe(
+			true,
+		);
+		expect(list(el).children).toHaveLength(2);
+		expect(wrapper.querySelectorAll('.sheetsmith-record')).toHaveLength(2);
+		expect(wrapper.lastElementChild).toBe(addButton(el));
+	});
+
+	it('stamps the true count, and a class clamped to the table the stylesheet holds', () => {
+		const few = render(HEADED, HEADED_BODY);
+		expect(
+			block(few).style.getPropertyValue('--sheetsmith-record-fields'),
+		).toBe('5');
+		expect(
+			block(few).classList.contains('sheetsmith-record-set-headed'),
+		).toBe(true);
+		expect(
+			block(few).classList.contains('sheetsmith-record-set-fields-5'),
+		).toBe(true);
+
+		const many: RecordSetConfig = {
+			...HEADED,
+			fields: Array.from({ length: 10 }, (_, at) => ({
+				key: `N${at}`,
+				type: 'number' as const,
+			})),
+		};
+		const wide = render(many, HEADED_BODY);
+		// Ten fields take the last threshold, and the property still says ten.
+		expect(
+			block(wide).style.getPropertyValue('--sheetsmith-record-fields'),
+		).toBe('10');
+		expect(
+			block(wide).classList.contains(
+				`sheetsmith-record-set-fields-${MAX_TABULATED_FIELDS}`,
+			),
+		).toBe(true);
+		expect(block(wide).className).not.toContain('fields-10');
+
+		const one = render({ ...HEADED, fields: [HEADED.fields![0]!] }, HEADED_BODY);
+		expect(
+			block(one).classList.contains('sheetsmith-record-set-fields-1'),
+		).toBe(true);
+	});
+
+	it('is hidden from assistive tech and carries no table role', () => {
+		const el = render(HEADED, HEADED_BODY);
+		const drawn = strip(el) as HTMLElement;
+		expect(drawn.getAttribute('aria-hidden')).toBe('true');
+		// Not a control: nothing in it takes focus or a press.
+		expect(
+			drawn.querySelectorAll(
+				'a, button, input, select, textarea, [tabindex]',
+			),
+		).toHaveLength(0);
+		// And no tabular reading anywhere in the list, which is the reading this
+		// component declines.
+		for (const tag of ['th', 'table', 'tr', 'td']) {
+			expect(el.querySelector(tag)).toBeNull();
+		}
+		expect(
+			el.querySelector(
+				'[role="table"], [role="row"], [role="columnheader"], [role="cell"], [role="grid"]',
+			),
+		).toBeNull();
+	});
+
+	it('names each control with the word over it, for every field type', () => {
+		/*
+		 * Label in Name (WCAG 2.5.3): voice control says the word on screen, so the
+		 * word has to be in the accessible name of the control beneath it. The
+		 * strip is aria-hidden, which is safe only while this holds.
+		 */
+		const el = render(HEADED, HEADED_BODY);
+		const headings = Array.from(
+			(strip(el) as HTMLElement).children,
+		).map((one) => one.textContent ?? '');
+		for (const record of records(el)) {
+			const cells = Array.from(
+				record.querySelectorAll<HTMLElement>(
+					'.sheetsmith-record-fields > .sheetsmith-record-field',
+				),
+			);
+			expect(cells).toHaveLength(headings.length);
+			cells.forEach((cell, at) => {
+				const control = cell.querySelector<HTMLElement>(
+					'button, select, input:not(.sheetsmith-pool-max)',
+				);
+				const said =
+					control?.getAttribute('aria-label') ??
+					cell.querySelector('.sheetsmith-sr-only')?.textContent ??
+					'';
+				expect(said, `${headings[at]}`).toContain(headings[at]);
+			});
+		}
+		// All five kinds were among them, so this is not a check over one.
+		expect(
+			new Set(
+				Array.from(
+					el.querySelectorAll('.sheetsmith-record:first-child .sheetsmith-record-field'),
+				).map((cell) => cell.className.match(/field-(\w+)/)?.[1]),
+			),
+		).toEqual(new Set(['number', 'toggle', 'level', 'computed', 'modifier']));
+	});
+
+	it('draws no strip until there is a record that read, and drops it with the last', () => {
+		// No records.
+		const empty = render(HEADED, null);
+		expect(strip(empty)).toBeNull();
+		expect(
+			block(empty).classList.contains('sheetsmith-record-set-headed'),
+		).toBe(false);
+		expect(empty.querySelector('.sheetsmith-record-set-records')).toBeNull();
+
+		// Only records whose fence will not read.
+		const broken = render(
+			HEADED,
+			'\n### Broken\n```sheet\nUses: 1\nUses: 2\n```\nProse.\n',
+		);
+		expect(errors(broken).length).toBeGreaterThan(0);
+		expect(strip(broken)).toBeNull();
+
+		// One that reads among one that does not still draws it.
+		const mixed = render(
+			HEADED,
+			`${HEADED_BODY}\n### Broken\n\`\`\`sheet\nUses: 1\nUses: 2\n\`\`\`\nProse.\n`,
+		);
+		expect(strip(mixed)).not.toBeNull();
+
+		// No fields to name.
+		const bare = render({ ...HEADED, fields: [] }, HEADED_BODY);
+		expect(strip(bare)).toBeNull();
+
+		// A refused configuration draws its error and no list, so no strip.
+		// Rendered without `read`, which would refuse it first.
+		const refused = document.createElement('div');
+		recordSet.render(
+			refused,
+			{ ...HEADED, fields: [{ key: 'Uses', type: 'text' }] },
+			readData(HEADED_BODY, HEADED),
+			context,
+		);
+		expect(errors(refused).length).toBeGreaterThan(0);
+		expect(strip(refused)).toBeNull();
+		expect(refused.querySelector('.sheetsmith-record-set-list')).toBeNull();
+
+		// It appears with the first record and goes with the last: the same
+		// component drawn from each note the write would leave behind.
+		expect(strip(render(HEADED, HEADED_BODY))).not.toBeNull();
+		expect(strip(render(HEADED, null))).toBeNull();
+	});
+
+	it('ignores a field\'s hideHeading and secondary, and keeps both in the layout', () => {
+		const hand: RecordSetConfig = {
+			...HEADED,
+			fields: [
+				{ key: 'Uses', type: 'number', hideHeading: true, secondary: true },
+				{ key: 'Attuned', type: 'toggle', hideHeading: true },
+			],
+		};
+		const el = render(hand, HEADED_BODY);
+		expect(
+			Array.from((strip(el) as HTMLElement).children).map(
+				(one) => one.textContent,
+			),
+		).toEqual(['Uses', 'Attuned']);
+		// The keys survive the round trip, as a hand-edited layout expects.
+		const layout = JSON.parse(
+			serialiseLayout({
+				name: 'L',
+				components: [hand],
+				triggers: [],
+			}),
+		) as { components: RecordSetConfig[] };
+		expect(layout.components[0]?.fields?.[0]).toMatchObject({
+			hideHeading: true,
+			secondary: true,
+		});
+		expect(layout.components[0]?.fields?.[1]).toMatchObject({
+			hideHeading: true,
+		});
+	});
+
+	it("keeps a ring's tooltip and long press, and a number's own name in the DOM", () => {
+		/*
+		 * The strip is width-dependent and only the stylesheet knows the width, so
+		 * the same DOM serves the wide regime and the narrow one: the tooltip and
+		 * the touch route to it stay (`nameOnScreen` is false, and this is why),
+		 * and the number's name stays for the stylesheet to hide in the wide regime
+		 * and to return in the narrow.
+		 */
+		closePopover();
+		const held: RecordSetData[] = [];
+		const el = render(HEADED, HEADED_BODY, {
+			onChange: (data) => held.push(data),
+		});
+		const toggle = records(el)[0]?.querySelector(
+			'.sheetsmith-record-field-toggle .sheetsmith-level-ring',
+		) as HTMLElement;
+		expect(toggle.getAttribute('title')).toBe('Second Wind Attuned');
+		const graded = records(el)[0]?.querySelector(
+			'.sheetsmith-record-field-level .sheetsmith-level-ring',
+		) as HTMLElement;
+		expect(graded.getAttribute('title')).toBe('Second Wind Skill rank: Trained');
+		vi.useFakeTimers();
+		try {
+			hold(toggle, LONG_PRESS + 10, { pointerType: 'touch' });
+			expect(
+				document.querySelector('.sheetsmith-popover')?.textContent,
+			).toBe('Second Wind Attuned');
+			toggle.click();
+			expect(held).toEqual([]);
+			closePopover();
+		} finally {
+			vi.useRealTimers();
+		}
+		const inline = records(el)[0]?.querySelector(
+			'.sheetsmith-record-field-number .sheetsmith-card-abbreviation',
+		);
+		expect(inline?.textContent).toBe('Uses');
+		// Its ceiling is still drawn beside the value.
+		expect(
+			records(el)[0]?.querySelector('.sheetsmith-pool-max'),
+		).not.toBeNull();
 	});
 });

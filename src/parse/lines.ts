@@ -20,6 +20,34 @@ export function lineText(line: string): string {
 			: line;
 }
 
+/**
+ * Whether this line is a frontmatter delimiter — the `---` that opens a block
+ * and the one that closes it.
+ *
+ * **One name on `docs/PATTERNS.md` §1's one-step tier**, because it was spelled
+ * three times in two modules and the spellings did not agree.
+ * `parse/character.ts` had `/^---\r?\n$/` for the opening and
+ * `/^---(\r?\n)?$/` for the closing, both against the raw line;
+ * `parse/frontmatter.ts` had `/^---[ \t]*$/` against the line's text, which
+ * accepted a trailing space the other two refuse. The tolerance was unreachable
+ * only because the writer sees blocks the parser has already accepted, and that
+ * is exactly the shape §1 warns about — a predicate whose copies can only be
+ * tested for still agreeing, in the one module whose claim is that it accounts
+ * for every line of a block.
+ *
+ * **The strict rule, not the tolerant one.** Adopting the tolerant spelling
+ * would have made `--- ` open a frontmatter block where `parseCharacter` refuses
+ * one today, which is a change to what counts as a character note rather than a
+ * deduplication.
+ *
+ * Takes a line with or without its ending, which is what lets the two callers
+ * pass what each has in hand: the closing delimiter may sit at EOF with no
+ * ending at all.
+ */
+export function isFrontmatterDelimiter(line: string): boolean {
+	return lineText(line) === '---';
+}
+
 /** A heading line's own prefix, its text, and its trailing whitespace run. */
 const HEADING_PARTS = /^(#+[ \t]+)(.*?)([ \t]*)$/;
 

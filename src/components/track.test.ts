@@ -14,12 +14,21 @@ import {
 	TrackConfig,
 	TrackData,
 } from './track';
-import { buildSheetScope } from '../formula/sheet';
-import { makeFieldResolver } from '../formula/resolve';
+import { buildSheet, buildSheetScope, ReadComponent } from '../formula/sheet';
+import {
+	makeFieldExplainer,
+	makeFieldResolver,
+	resolveFormulaFields,
+} from '../formula/resolve';
+import { table, TableConfig } from './table';
+import { Layout } from '../parse/layout';
 import { RenderContext } from '../types';
 import { sampleOf } from '../test/sample';
+import { expectSpokenChildrenLast } from '../test/spoken-order';
 import { closeAnchoredPanel } from '../ui/anchored-panel';
-import { armedName } from '../interaction/arm-to-confirm';
+import { closePopover, LONG_PRESS } from '../ui/popover';
+import { armedName, STOOD_DOWN } from '../interaction/arm-to-confirm';
+import { hold, pressDown, release } from '../test/pointer';
 
 const config: TrackConfig = {
 	id: 'exhaustion',
@@ -235,10 +244,11 @@ describe('track config errors', () => {
 		expect(configError(slots)).toBeNull();
 	});
 
-	it('needs a count, names, or rows', () => {
-		expect(configError({ ...config, count: undefined })).toContain(
-			'number of segments',
-		);
+	it('does not refuse a card with no count, names or rows, which is empty rather than broken', () => {
+		// What a bare Track inserted from the component picker is: the layout
+		// has not said yet how long the run is, which is Table-with-no-rows
+		// empty, not undrawable (docs/features/component-picker.md § Amendment).
+		expect(configError({ ...config, count: undefined })).toBeNull();
 	});
 
 	it('refuses rows and levels together', () => {
@@ -276,9 +286,59 @@ describe('track config errors', () => {
 	});
 
 	it('renders the error on this component alone', () => {
-		const el = render({ count: undefined });
-		expect(parts(el).error?.textContent).toContain('number of segments');
+		const el = render({ marks: 0 });
+		expect(parts(el).error?.textContent).toContain('1 or more');
 		expect(parts(el).segments).toHaveLength(0);
+	});
+
+	it('still draws every configuration a card cannot be drawn under as an error', () => {
+		// The empty state below takes over only a card with no length; the
+		// refusals that really are undrawable keep drawing the error.
+		const refused: Partial<TrackConfig>[] = [
+			{ marks: 0 },
+			{ ...slots, rows: [{ key: '' }] },
+			{ ...slots, rows: [{ key: 'L1' }, { key: 'L1' }] },
+			{ ...slots, rows: [{ key: 'a:b' }] },
+			{ count: 1, rows: [{ key: 'blessed' }], openRows: true },
+		];
+		for (const overrides of refused) {
+			const el = render(overrides, null);
+			expect(parts(el).error, JSON.stringify(overrides)).not.toBeNull();
+			expect(el.querySelector('.sheetsmith-table-empty')).toBeNull();
+			expect(parts(el).segments).toHaveLength(0);
+		}
+	});
+});
+
+describe('a track with no count, levels or rows', () => {
+	const bare: Partial<TrackConfig> = { count: undefined };
+
+	it('draws a card with no count, levels or rows as an empty state, not an error', () => {
+		const el = render(bare);
+		expect(parts(el).error).toBeNull();
+		expect(parts(el).label?.textContent).toBe('Exhaustion');
+		const empty = el.querySelector('.sheetsmith-table-empty');
+		expect(empty?.textContent).toBe(
+			'No segments yet. Set Segments in the layout.',
+		);
+		// No run, no control, no breakdown door, and nothing to focus.
+		expect(parts(el).runs).toHaveLength(0);
+		expect(parts(el).segments).toHaveLength(0);
+		expect(el.querySelector('button, input, [tabindex]')).toBeNull();
+	});
+
+	it('leaves the label off where the layout hides it, and keeps the line', () => {
+		const el = render({ ...bare, hideLabel: true });
+		expect(parts(el).label).toBeNull();
+		expect(el.querySelector('.sheetsmith-table-empty')).not.toBeNull();
+	});
+
+	it('keeps a stored value under a card with no count', () => {
+		const empty = { ...config, ...bare };
+		const read = track.read(BODY, empty);
+		expect(read).toEqual({ ok: true, data: { values: { value: '3' } } });
+		if (!read.ok || !read.data) throw new Error('expected data');
+		expect(track.write(read.data, BODY, empty)).toBe(BODY);
 	});
 });
 
@@ -724,6 +784,10 @@ describe('track.sample', () => {
 	it('fills nothing for a card that cannot be drawn', () => {
 		// `render` reports the configuration instead, and a body under a key
 		// this card refuses would be a second fault on one card.
+		expect(sampleOf(track, { ...config, marks: 0 })).toBe('');
+	});
+
+	it('fills nothing for a card with no length, which has no run to fill', () => {
 		expect(sampleOf(track, { ...config, count: undefined })).toBe('');
 	});
 });
@@ -1571,6 +1635,1001 @@ describe('a row whose length the character owns', () => {
 	});
 });
 
+/*
+ * Rows a character adds to a Track
+ * (`docs/features/character-added-track-rows.md`).
+ *
+ * The identity is the character's typed name and it *is* the fence key, so
+ * most of what is asserted below is about bytes: which line an entry maps to,
+ * which line a rename rewrites, and that a note nobody touched comes back the
+ * way it went in. Every delta is carried through this component's own `write`
+ * and the resulting section text asserted, rather than the delta itself —
+ * `docs/BACKLOG.md`'s own row, since a delta says what was sent and only the
+ * write says what the note now holds.
+ */
+
+/** A card the character may add rows to, declaring none of its own. */
+const kills: TrackConfig = {
+	id: 'kills',
+	type: 'track',
+	label: 'Kills',
+	position: { col: 1, row: 1, width: 2, height: 1 },
+	openRows: true,
+};
+
+/** The same with a segment count, which is what seeds the **Length** field. */
+const clocks: TrackConfig = {
+	...kills,
+	id: 'clocks',
+	label: 'Clocks',
+	count: 6,
+};
+
+/** The hit-dice set, opened to rows of the character's own beside its four. */
+const openDice: TrackConfig = { ...diceRows, openRows: true };
+
+const KILLS_BODY = '\n```sheet\nGoblins: 6 / 10\nDragons: 3 / 5\n```\n';
+
+/** What this component reads out of a body, or a failure the case can see. */
+const dataFrom = (body: string, cfg: TrackConfig): TrackData => {
+	const read = track.read(body, cfg);
+	if (!read.ok) throw new Error(`expected a read: ${read.error}`);
+	if (read.data === null) throw new Error('expected data');
+	return read.data;
+};
+
+/** Render a card from the body a note would hold, as the view does. */
+const renderBody = (
+	cfg: TrackConfig,
+	body: string,
+	ctx: Partial<RenderContext> = {},
+) => {
+	const el = document.createElement('div');
+	document.body.appendChild(el);
+	track.render(el, cfg, dataFrom(body, cfg), { ...context, ...ctx });
+	return el;
+};
+
+/** Render a card with no fence at all: the state a new character is in. */
+const renderEmpty = (cfg: TrackConfig, ctx: Partial<RenderContext> = {}) => {
+	const el = document.createElement('div');
+	document.body.appendChild(el);
+	track.render(el, cfg, null, { ...context, ...ctx });
+	return el;
+};
+
+/** Every name drawn on the card, declared or typed, in draw order. */
+const drawnNames = (el: HTMLElement): string[] =>
+	Array.from(
+		el.querySelectorAll<HTMLElement>('.sheetsmith-track-row-name'),
+	).map((name) =>
+		name instanceof HTMLInputElement ? name.value : (name.textContent ?? ''),
+	);
+
+/** The name fields, which only a row the character named draws. */
+const nameFields = (el: HTMLElement): HTMLInputElement[] =>
+	Array.from(
+		el.querySelectorAll<HTMLInputElement>('.sheetsmith-track-row-name-input'),
+	);
+
+/** Open the **Add** picker and hand back its lines and the form below them. */
+const openAddForm = (el: HTMLElement) => {
+	const lines = openPicker(el, 'Add to');
+	const form = document.querySelector<HTMLElement>('.sheetsmith-track-add-form');
+	if (!form) throw new Error('expected the add form');
+	const inputs = Array.from(
+		form.querySelectorAll<HTMLInputElement>('.sheetsmith-panel-input'),
+	);
+	const problems = Array.from(
+		form.querySelectorAll<HTMLElement>('.sheetsmith-panel-problem'),
+	);
+	const submit = form.querySelector<HTMLButtonElement>('.sheetsmith-panel-save');
+	if (!submit) throw new Error('expected an Add button');
+	return {
+		form,
+		lines,
+		name: inputs[0] as HTMLInputElement,
+		length: inputs[1] as HTMLInputElement,
+		nameProblem: problems[0] as HTMLElement,
+		lengthProblem: problems[1] as HTMLElement,
+		submit,
+	};
+};
+
+/** Type a name and a length into the **Add** form and press it. */
+const addRow = (el: HTMLElement, name: string, length = '') => {
+	const form = openAddForm(el);
+	form.name.value = name;
+	form.length.value = length;
+	form.submit.click();
+	return form;
+};
+
+/** Commit a field the way a reader leaving it does. */
+const commitField = (field: HTMLInputElement, next: string): void => {
+	field.value = next;
+	field.dispatchEvent(new Event('blur'));
+};
+
+describe('a Track the character may add rows to', () => {
+	afterEach(() => closeAnchoredPanel());
+
+	describe('with the toggle off, nothing about this component changes', () => {
+		const shut: TrackConfig = { ...slots, openRows: false };
+		const body = '\n```sheet\nL1: 2\nL2: 1\nL3: 0\nInvented: 4\n```\n';
+
+		it('drops an entry no declared row maps to, and never draws it', () => {
+			const data = dataFrom(body, shut);
+			expect(data.values).toEqual({ L1: '2', L2: '1', L3: '0' });
+			expect(data.own).toBeUndefined();
+			expect(drawnNames(renderBody(shut, body))).toEqual(['1st', '2nd', '3rd']);
+		});
+
+		it('leaves the dropped entry in the note, byte for byte', () => {
+			// The re-cut guarantee: `write` touches only the entries it was
+			// given, so the line stays exactly where the hand that wrote it
+			// put it.
+			expect(track.write(dataFrom(body, shut), body, shut)).toBe(body);
+		});
+
+		it('publishes and resets exactly what it did', () => {
+			const data = dataFrom(body, shut);
+			const published = track.scopeValues?.(data, shut);
+			expect(Object.keys(published?.named ?? {})).toEqual(['L1', 'L2', 'L3']);
+			const reset = track.applyReset?.(
+				data,
+				shut,
+				{ trigger: 'Long rest', action: 'empty' },
+				{ resolve: () => null, explain: () => null },
+			);
+			expect(reset?.ok).toBe(true);
+			if (reset?.ok !== true) return;
+			expect(reset.data.values).toEqual({
+				L1: '0',
+				L2: '0',
+				L3: '0',
+			});
+		});
+	});
+
+	describe('what the configuration refuses', () => {
+		it('refuses named levels beside it, naming the control the author set', () => {
+			// The toggle alone makes a card a row set, so the refusal reached
+			// by turning it on has to name *it* and not `rows` — an author who
+			// declared no rows cannot act on a sentence about rows.
+			const said = configError({ ...kills, levels: ['Clear', 'One', 'Two'] });
+			expect(said).toContain('Characters may add rows');
+			expect(said).toContain('Clear the level names');
+			expect(said).not.toContain('either named levels or rows');
+		});
+
+		it('keeps the rows-and-levels sentence where rows really are declared', () => {
+			const said = configError({
+				...kills,
+				rows: [{ key: 'a' }, { key: 'b' }],
+				levels: ['Clear', 'One', 'Two'],
+			});
+			expect(said).toContain('either named levels or rows');
+			// And with the toggle off entirely, which is the sentence that was
+			// there before this feature and must not have moved.
+			expect(
+				configError({ ...slots, levels: ['Clear', 'One', 'Two'] }),
+			).toContain('either named levels or rows');
+		});
+
+		it('refuses a card every one of whose declared runs is one segment', () => {
+			const flags: TrackConfig = {
+				...config,
+				count: 1,
+				rows: [{ key: 'blessed' }, { key: 'cursed' }],
+			};
+			expect(configError(flags)).toBeNull();
+			const problem = configError({ ...flags, openRows: true });
+			expect(problem).toContain('Raise the segment count');
+			expect(problem).toContain('Characters may add rows');
+		});
+
+		it('leaves a plain count beside named levels exactly as it was', () => {
+			expect(
+				configError({ ...config, count: 1, levels: ['Fine', 'Hurt'] }),
+			).toBeNull();
+		});
+
+		it('needs no count, levels or rows of its own', () => {
+			// A card with the toggle on and nothing declared is an empty list a
+			// reader can fill, which is the ordinary state of a new character.
+			expect(configError(kills)).toBeNull();
+			// And it is not the empty state a card with no length draws: the
+			// toggle is what the layout said, so the card offers its **Add**.
+			const el = document.createElement('div');
+			document.body.appendChild(el);
+			track.render(el, kills, null, context);
+			expect(el.querySelector('.sheetsmith-table-empty')).toBeNull();
+		});
+	});
+
+	describe('it makes the card a row set, always', () => {
+		it('is a row set with no declared rows, so no value run is synthesised', () => {
+			expect(isRowSet(kills)).toBe(true);
+			expect(runsOf(kills)).toEqual([]);
+			expect(runsOf({ ...kills, openRows: false })).toEqual([{ key: 'value' }]);
+		});
+
+		it('publishes no bare id and no count', () => {
+			const published = track.scopeValues?.({ values: {} }, kills);
+			expect(published?.self).toBeUndefined();
+			expect(published?.named).toEqual({});
+		});
+
+		it('is not a flag card on an empty run list', () => {
+			// `every` over `[]` is vacuously true, and `runsOf` can return one
+			// for the first time.
+			expect(isFlagCard({ ...kills, count: 1 })).toBe(false);
+			expect(isFlagCard({ ...kills, count: 1, openRows: false })).toBe(true);
+		});
+
+		it('draws a label and one Add trigger with nothing in it', () => {
+			const el = renderEmpty(kills);
+			expect(el.querySelector('.sheetsmith-track-label')?.textContent).toBe(
+				'Kills',
+			);
+			expect(el.querySelector('.sheetsmith-error')).toBeNull();
+			expect(el.querySelectorAll('.sheetsmith-track-row')).toHaveLength(0);
+			const triggers = Array.from(
+				el.querySelectorAll<HTMLButtonElement>('.sheetsmith-track-action-button'),
+			).map((b) => b.getAttribute('aria-label'));
+			expect(triggers).toEqual(['Add to Kills']);
+		});
+	});
+
+	describe('identity is the typed name, and the fence is exact', () => {
+		it('reads an entry no declared row spells as the character\'s', () => {
+			expect(track.read(KILLS_BODY, kills)).toEqual({
+				ok: true,
+				data: {
+					values: { Goblins: '6 / 10', Dragons: '3 / 5' },
+					own: ['Goblins', 'Dragons'],
+				},
+			});
+		});
+
+		it('draws it filled 6 of 10, and round-trips the note untouched', () => {
+			const el = renderBody(kills, KILLS_BODY);
+			expect(drawnNames(el)).toEqual(['Goblins', 'Dragons']);
+			expect(runSegments(el, 0)).toHaveLength(10);
+			expect(parts(el).runs[0]?.getAttribute('aria-valuenow')).toBe('6');
+			expect(track.write(dataFrom(KILLS_BODY, kills), KILLS_BODY, kills)).toBe(
+				KILLS_BODY,
+			);
+		});
+
+		it('round-trips every spelling of a composite under a typed key', () => {
+			for (const body of [
+				'\n```sheet\nGoblins: 6/10\n```\n',
+				'\n```sheet\nGoblins: 6 /10\n```\n',
+				'\n```sheet\nGoblins:\t6\t/\t10\n```\n',
+				'\n```sheet\nGoblins: 6\n```\n',
+				'\n```sheet\nGoblins:\n```\n',
+				'\n```sheet\nGoblins: 6 / lots\n```\n',
+			]) {
+				expect(track.write(dataFrom(body, kills), body, kills)).toBe(body);
+			}
+		});
+
+		it('keeps two names differing only in case as two rows', () => {
+			// Neither is folded into the other, neither is lost, and neither
+			// spelling is rewritten: the fence is exact and only the input's
+			// guard is lenient.
+			const body = '\n```sheet\nPriority: 1 / 3\npriority: 2 / 4\n```\n';
+			const data = dataFrom(body, kills);
+			expect(data.own).toEqual(['Priority', 'priority']);
+			expect(drawnNames(renderBody(kills, body))).toEqual([
+				'Priority',
+				'priority',
+			]);
+			expect(track.write(data, body, kills)).toBe(body);
+		});
+
+		it('draws an empty declared d6 beside a character-added D6', () => {
+			const body = '\n```sheet\nD6: 2 / 3\n```\n';
+			const data = dataFrom(body, openDice);
+			// The declared row claims nothing — a map lookup, case-sensitive —
+			// so what the note holds is the character's, and it is visible
+			// rather than silently folded.
+			expect(data.values.d6).toBeUndefined();
+			expect(data.own).toEqual(['D6']);
+			expect(drawnNames(renderBody(openDice, body))).toEqual(['D6']);
+		});
+
+		it('holds a key that must not inherit from Object.prototype', () => {
+			// A hand-edited note is text, so these are keys like any other. On
+			// a plain object literal the first sets a prototype instead of an
+			// entry and the second reads back as a function, and the card
+			// would draw a row it could neither fill nor write.
+			const body = '\n```sheet\n__proto__: 1 / 2\ntoString: 3 / 4\n```\n';
+			const data = dataFrom(body, kills);
+			expect(data.own).toEqual(['__proto__', 'toString']);
+			expect(Object.keys(data.values)).toEqual(['__proto__', 'toString']);
+			const el = renderBody(kills, body);
+			expect(drawnNames(el)).toEqual(['__proto__', 'toString']);
+			expect(runSegments(el, 0)).toHaveLength(2);
+			expect(track.write(data, body, kills)).toBe(body);
+		});
+
+		it('reports a duplicate key on this card alone and touches nothing', () => {
+			const body = '\n```sheet\nGoblins: 1\nGoblins: 2\n```\n';
+			const read = track.read(body, kills);
+			expect(read).toEqual({
+				ok: false,
+				error: 'Duplicate key "Goblins" in sheet block.',
+			});
+		});
+
+		it('is a malformed section where a value half is not marks', () => {
+			expect(track.read('\n```sheet\nGoblins: frog\n```\n', kills)).toEqual({
+				ok: false,
+				error: '"frog" is not a number of marks.',
+			});
+		});
+
+		it('draws no run and no "?" where the length half is not a number', () => {
+			const el = renderBody(kills, '\n```sheet\nGoblins: 2 / lots\n```\n');
+			expect(parts(el).runs).toHaveLength(0);
+			expect(parts(el).unresolved).toHaveLength(0);
+			expect(
+				el.querySelector<HTMLInputElement>('.sheetsmith-track-row-length-input')
+					?.placeholder,
+			).toBe('—');
+		});
+	});
+
+	describe('the order is the note\'s own', () => {
+		it('draws and writes a numeric-looking name in the order the file states', () => {
+			// A plain object puts `10` before `Goblins` however the note spells
+			// them, which is why nothing reads an order off `values`.
+			const body = '\n```sheet\n10: 1 / 2\nGoblins: 3 / 4\n```\n';
+			const data = dataFrom(body, kills);
+			expect(data.own).toEqual(['10', 'Goblins']);
+			expect(Object.keys(data.values)[0]).toBe('10');
+			expect(drawnNames(renderBody(kills, body))).toEqual(['10', 'Goblins']);
+			expect(track.write(data, body, kills)).toBe(body);
+		});
+
+		it('draws the declared rows first and the character\'s after', () => {
+			const body = '\n```sheet\nBloodied: 1 / 2\nd6: 0 / 4\n```\n';
+			expect(drawnNames(renderBody(openDice, body))).toEqual([
+				'd6',
+				'Bloodied',
+			]);
+		});
+	});
+
+	describe('the Add form', () => {
+		it('is the whole panel where no declared row is left to offer', () => {
+			const form = openAddForm(renderEmpty(kills));
+			expect(form.lines).toHaveLength(0);
+			expect(form.name).toBeDefined();
+			expect(form.submit.textContent).toBe('Add');
+		});
+
+		it('sits under the declared rows a card still has to offer', () => {
+			const form = openAddForm(renderEmpty(openDice));
+			expect(form.lines.map(lineLabel)).toEqual(['d10', 'd6']);
+			expect(form.form.previousElementSibling).toBe(form.lines[1]);
+		});
+
+		it('names each field with the word that is on screen', () => {
+			// WCAG 2.5.3: a control's visible label has to *be* its accessible
+			// name or be contained in it, or voice control has nothing to match
+			// when the reader says "Length". The label wraps the control, so
+			// the word on screen is the name outright and no `aria-label`
+			// competes with it (`docs/UI.md` §6).
+			closeAnchoredPanel();
+			const form = openAddForm(renderEmpty(kills));
+			for (const [input, word] of [
+				[form.name, 'Name'],
+				[form.length, 'Length'],
+			] as const) {
+				expect(input.hasAttribute('aria-label')).toBe(false);
+				const label = input.closest('label');
+				expect(
+					label?.querySelector('.sheetsmith-panel-field-label')?.textContent,
+					word,
+				).toBe(word);
+			}
+		});
+
+		it('writes one entry and touches no other line', () => {
+			const changed = vi.fn();
+			const el = renderBody(kills, KILLS_BODY, { onChange: changed });
+			addRow(el, 'Wolves', '4');
+			expect(changed).toHaveBeenCalledWith({ values: { Wolves: ' / 4' } });
+			// And what the note then holds, which is the half a delta cannot say.
+			expect(track.write({ values: { Wolves: ' / 4' } }, KILLS_BODY, kills)).toBe(
+				'\n```sheet\nGoblins: 6 / 10\nDragons: 3 / 5\nWolves:  / 4\n```\n',
+			);
+		});
+
+		it('writes a bare entry where the length is cleared', () => {
+			const changed = vi.fn();
+			const el = renderEmpty(kills, { onChange: changed });
+			addRow(el, 'Wolves', '');
+			expect(changed).toHaveBeenCalledWith({ values: { Wolves: '' } });
+			expect(track.write({ values: { Wolves: '' } }, null, kills)).toBe(
+				'\n```sheet\nWolves: \n```\n',
+			);
+		});
+
+		it('keeps the canonical separator once the first marks arrive', () => {
+			/*
+			 * The form composes ` / 4`, a fence writes `Wolves:  / 4`, and
+			 * `ENTRY` reads that back as `/ 4` — its leading space having gone
+			 * into the colon's own separator. Joined verbatim the first press
+			 * wrote `3/ 4`, so the canonical form was reached exactly once, at
+			 * creation, and lost on the very next write.
+			 */
+			const body = '\n```sheet\nWolves:  / 4\n```\n';
+			const changed = vi.fn();
+			const el = renderBody(kills, body, { onChange: changed });
+			const run = parts(el).runs[0];
+			run?.dispatchEvent(
+				new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true }),
+			);
+			run?.dispatchEvent(new Event('blur'));
+			expect(changed).toHaveBeenCalledWith({ values: { Wolves: '1 / 4' } });
+			// And what the note then holds, which is the half a delta cannot say.
+			expect(track.write({ values: { Wolves: '1 / 4' } }, body, kills)).toBe(
+				'\n```sheet\nWolves:  1 / 4\n```\n',
+			);
+		});
+
+		it('draws a row added with no length as "—" and no run', () => {
+			const el = renderBody(kills, '\n```sheet\nWolves:\n```\n');
+			expect(drawnNames(el)).toEqual(['Wolves']);
+			expect(parts(el).runs).toHaveLength(0);
+		});
+
+		it('lands focus in the new row\'s length field on the next render', () => {
+			const el = renderEmpty(kills);
+			addRow(el, 'Wolves', '4');
+			// The render the write would cause on a real sheet.
+			track.render(el, kills, dataFrom('\n```sheet\nWolves:  / 4\n```\n', kills), context);
+			expect(document.activeElement).toBe(
+				el.querySelector('.sheetsmith-track-row-length-input'),
+			);
+		});
+
+		it('seeds the length from the card\'s own count, and only at the add', () => {
+			const seeded = openAddForm(renderEmpty(clocks));
+			expect(seeded.length.value).toBe('6');
+			closeAnchoredPanel();
+			// What is stored is whatever the field held when it was pressed,
+			// and the count is never consulted for that row again.
+			const changed = vi.fn();
+			const el = renderEmpty(clocks, { onChange: changed });
+			addRow(el, 'Escape', '8');
+			expect(changed).toHaveBeenCalledWith({ values: { Escape: ' / 8' } });
+			const drawn = renderBody(clocks, '\n```sheet\nEscape:  / 8\n```\n');
+			expect(runSegments(drawn, 0)).toHaveLength(8);
+		});
+
+		it('seeds nothing where the card sets no count, or where it will not resolve', () => {
+			const bare = openAddForm(renderEmpty(kills));
+			expect(bare.length.value).toBe('');
+			// And no placeholder standing in for the value. On a card the `—`
+			// is a *reading* — this row has no ceiling — while in an empty form
+			// field it reads as something already there to be cleared, and the
+			// field is optional.
+			expect(bare.length.hasAttribute('placeholder')).toBe(false);
+			closeAnchoredPanel();
+			expect(
+				openAddForm(renderEmpty(clocks, { resolved: {} })).length.value,
+			).toBe('');
+		});
+
+		it('submits on Enter in either field', () => {
+			for (const which of ['name', 'length'] as const) {
+				const changed = vi.fn();
+				const el = renderEmpty(kills, { onChange: changed });
+				const form = openAddForm(el);
+				form.name.value = 'Wolves';
+				form.length.value = '4';
+				form[which].dispatchEvent(
+					new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }),
+				);
+				expect(changed).toHaveBeenCalledWith({ values: { Wolves: ' / 4' } });
+				closeAnchoredPanel();
+			}
+		});
+	});
+
+	describe('what the name field refuses, in the Add form', () => {
+		const refusal = (name: string, cfg: TrackConfig = kills, body = KILLS_BODY) => {
+			// One refusal per opening: a second press on the same trigger is
+			// the close half of aria-expanded, not a second panel.
+			closeAnchoredPanel();
+			const changed = vi.fn();
+			const el = renderBody(cfg, body, { onChange: changed });
+			const form = addRow(el, name, '4');
+			expect(changed, `"${name}" was written`).not.toHaveBeenCalled();
+			// The draft is kept, so the reader can see what they typed.
+			expect(form.name.value).toBe(name);
+			expect(form.nameProblem.hidden).toBe(false);
+			return form.nameProblem.textContent ?? '';
+		};
+
+		it('refuses a blank name', () => {
+			expect(refusal('   ')).toBe('A row needs a name.');
+		});
+
+		it('refuses a colon, in the clause the shared rule states', () => {
+			// The colon is the half of that clause a reader can reach from
+			// here: an `input` sanitises a line break out of its own value,
+			// pasted or typed, so the other half is unreachable from a
+			// single-line field and is refused for the hand-edited layout the
+			// shared clause is also read at.
+			expect(refusal('Armor: class')).toContain(
+				'cannot contain a colon or a line break',
+			);
+		});
+
+		it('refuses a note reference, naming where a link belongs instead', () => {
+			const said = refusal('[[Goblin]]');
+			expect(said).toContain('Obsidian indexes no link inside one');
+			expect(said).toContain('Rich text block');
+		});
+
+		it('refuses "value", which a single run stores under', () => {
+			expect(refusal('value')).toContain('a row cannot be called that');
+			// Lenient in the refusing direction, as every comparison here is.
+			expect(refusal('Value')).toContain('a row cannot be called that');
+		});
+
+		it('refuses a name a declared row already spells', () => {
+			expect(refusal('d6', openDice, '\n```sheet\nd6: 1 / 4\n```\n')).toContain(
+				'"d6" is already a row here',
+			);
+		});
+
+		it('refuses a name this character\'s fence already holds', () => {
+			expect(refusal('Goblins')).toContain('"Goblins" is already a row here');
+		});
+
+		it('refuses one differing only in case, naming the spelling already there', () => {
+			const said = refusal('goblins');
+			expect(said).toContain('"Goblins"');
+			expect(said).not.toContain('"goblins"');
+		});
+
+		it('announces a refusal and ties it to the field it is about', () => {
+			// Drawn is not enough: the press leaves focus on the **Add**
+			// button, so a message tied only to the field says nothing until
+			// the reader goes back there — and the rename field's identical
+			// refusal already routes to the card's live region, so one feature
+			// would otherwise answer one refusal two ways.
+			closeAnchoredPanel();
+			const el = renderBody(kills, KILLS_BODY);
+			const form = addRow(el, 'Goblins', '4');
+			expect(el.querySelector('.sheetsmith-sr-only')?.textContent).toContain(
+				'"Goblins" is already a row here',
+			);
+			expect(form.name.getAttribute('aria-invalid')).toBe('true');
+			expect(form.name.getAttribute('aria-describedby')).toBe(
+				form.nameProblem.id,
+			);
+			// A description on a hidden element is not exposed, so the wiring
+			// has to come off with the message when the refusal is corrected.
+			expect(form.lengthProblem.hidden).toBe(true);
+			expect(form.length.hasAttribute('aria-describedby')).toBe(false);
+			form.name.value = 'Wolves';
+			form.submit.click();
+			expect(form.name.hasAttribute('aria-describedby')).toBe(false);
+			expect(form.name.hasAttribute('aria-invalid')).toBe(false);
+		});
+
+		it('refuses a length that would be read back as two numbers', () => {
+			const changed = vi.fn();
+			const el = renderBody(kills, KILLS_BODY, { onChange: changed });
+			const form = addRow(el, 'Wolves', '4/2');
+			expect(changed).not.toHaveBeenCalled();
+			expect(form.lengthProblem.hidden).toBe(false);
+			expect(form.lengthProblem.textContent).toContain('A slash separates');
+		});
+
+		it('lets a refused form be corrected and submitted', () => {
+			const changed = vi.fn();
+			const el = renderBody(kills, KILLS_BODY, { onChange: changed });
+			const form = addRow(el, 'Goblins', '4');
+			expect(changed).not.toHaveBeenCalled();
+			form.name.value = 'Wolves';
+			form.submit.click();
+			expect(changed).toHaveBeenCalledWith({ values: { Wolves: ' / 4' } });
+		});
+	});
+
+	describe('renaming a row the character named', () => {
+		it('draws a declared row\'s name as static text and only its own as a field', () => {
+			const el = renderBody(openDice, '\n```sheet\nd6: 1 / 4\nBloodied: 2 / 3\n```\n');
+			expect(drawnNames(el)).toEqual(['d6', 'Bloodied']);
+			expect(nameFields(el).map((f) => f.value)).toEqual(['Bloodied']);
+		});
+
+		it('commits on blur, and rewrites only that line\'s key token', () => {
+			const changed = vi.fn();
+			const el = renderBody(kills, KILLS_BODY, { onChange: changed });
+			commitField(nameFields(el)[0] as HTMLInputElement, 'Goblinoids');
+			expect(changed).toHaveBeenCalledWith({
+				values: {},
+				rename: { from: 'Goblins', to: 'Goblinoids' },
+			});
+			// The marks, the length, the separator spelling, the surrounding
+			// whitespace and the line's position in the fence, all unchanged.
+			expect(
+				track.write(
+					{ values: {}, rename: { from: 'Goblins', to: 'Goblinoids' } },
+					'\n```sheet\nGoblins:\t6 /10\nDragons: 3 / 5\n```\n',
+					kills,
+				),
+			).toBe('\n```sheet\nGoblinoids:\t6 /10\nDragons: 3 / 5\n```\n');
+		});
+
+		it('commits on Enter', () => {
+			const changed = vi.fn();
+			const el = renderBody(kills, KILLS_BODY, { onChange: changed });
+			const field = nameFields(el)[0] as HTMLInputElement;
+			field.value = 'Goblinoids';
+			field.dispatchEvent(
+				new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }),
+			);
+			expect(changed).toHaveBeenCalledWith({
+				values: {},
+				rename: { from: 'Goblins', to: 'Goblinoids' },
+			});
+		});
+
+		it('restores on Escape and writes nothing', () => {
+			const changed = vi.fn();
+			const el = renderBody(kills, KILLS_BODY, { onChange: changed });
+			const field = nameFields(el)[0] as HTMLInputElement;
+			field.value = 'Goblinoids';
+			field.dispatchEvent(
+				new KeyboardEvent('keydown', { key: 'Escape', cancelable: true }),
+			);
+			expect(field.value).toBe('Goblins');
+			expect(changed).not.toHaveBeenCalled();
+		});
+
+		it('keeps the draft, writes nothing, and both says and shows why', () => {
+			const changed = vi.fn();
+			const el = renderBody(kills, KILLS_BODY, { onChange: changed });
+			const field = nameFields(el)[0] as HTMLInputElement;
+			commitField(field, 'Dragons');
+			expect(changed).not.toHaveBeenCalled();
+			expect(field.value).toBe('Dragons');
+			// Announced, for a reader who cannot see the card…
+			expect(
+				el.querySelector('.sheetsmith-sr-only')?.textContent,
+			).toContain('"Dragons" is already a row here');
+			// …and drawn, for one who can. Without this the card showed two
+			// rows both reading `Dragons` and nothing saying why the second
+			// had not been taken, while the Add panel drew that very sentence.
+			const shown = el.querySelector('.sheetsmith-track-row-problem');
+			expect(shown?.textContent).toContain('"Dragons" is already a row here');
+			// One message, two channels: they cannot say different things.
+			expect(shown?.textContent).toBe(
+				el.querySelector('.sheetsmith-sr-only')?.textContent,
+			);
+			// And it goes when the draft is corrected.
+			commitField(field, 'Wolves');
+			expect(el.querySelector('.sheetsmith-track-row-problem')).toBeNull();
+			expect(changed).toHaveBeenCalledWith({
+				values: {},
+				rename: { from: 'Goblins', to: 'Wolves' },
+			});
+		});
+
+		it('lets a row keep its own spelling', () => {
+			const changed = vi.fn();
+			const el = renderBody(kills, KILLS_BODY, { onChange: changed });
+			commitField(nameFields(el)[0] as HTMLInputElement, 'Goblins');
+			expect(changed).not.toHaveBeenCalled();
+		});
+
+		it('puts the stored name back on a blank, and says so', () => {
+			const changed = vi.fn();
+			const el = renderBody(kills, KILLS_BODY, { onChange: changed });
+			const field = nameFields(el)[0] as HTMLInputElement;
+			commitField(field, '');
+			expect(changed).not.toHaveBeenCalled();
+			expect(field.value).toBe('Goblins');
+			expect(el.querySelector('.sheetsmith-sr-only')?.textContent).toBe(
+				'A row needs a name, so "Goblins" was kept.',
+			);
+		});
+
+		it('leaves the note alone where a collision reaches the write', () => {
+			// The guard already excluded it; this is the defensive half, which
+			// declines rather than half-applying.
+			expect(
+				track.write(
+					{ values: {}, rename: { from: 'Goblins', to: 'Dragons' } },
+					KILLS_BODY,
+					kills,
+				),
+			).toBe(KILLS_BODY);
+		});
+	});
+
+	describe('removing a row the character named', () => {
+		const mixed = '\n```sheet\nd6: 1 / 4\nWolves: 2 / 3\nGoblins: 6 / 10\n```\n';
+
+		it('lists the character\'s rows after the declared ones, in note order', () => {
+			const el = renderBody(openDice, mixed);
+			expect(openPicker(el, 'Remove from').map(lineLabel)).toEqual([
+				'd6',
+				'Wolves',
+				'Goblins',
+			]);
+		});
+
+		it('arms on the first press and deletes the whole entry on the second', () => {
+			const changed = vi.fn();
+			const el = renderBody(kills, KILLS_BODY, { onChange: changed });
+			const lines = openPicker(el, 'Remove from');
+			const goblins = lines.find((line) => lineLabel(line) === 'Goblins');
+			if (!goblins) throw new Error('expected a Goblins line');
+			goblins.click();
+			expect(lineLabel(goblins)).toBe(armedName('Goblins'));
+			expect(changed).not.toHaveBeenCalled();
+			goblins.click();
+			expect(changed).toHaveBeenCalledWith({ values: { Goblins: null } });
+			// Marks and length together, and every other line untouched.
+			expect(track.write({ values: { Goblins: null } }, KILLS_BODY, kills)).toBe(
+				'\n```sheet\nDragons: 3 / 5\n```\n',
+			);
+		});
+
+		it('disarms the first where a different line is picked', () => {
+			const el = renderBody(kills, KILLS_BODY);
+			const lines = openPicker(el, 'Remove from');
+			lines[0]?.click();
+			lines[1]?.click();
+			expect(lineLabel(lines[0] as HTMLElement)).toBe('Goblins');
+			expect(lineLabel(lines[1] as HTMLElement)).toBe(armedName('Dragons'));
+		});
+
+		it('stands the armed row down when the panel is dismissed', () => {
+			const el = renderBody(kills, KILLS_BODY);
+			openPicker(el, 'Remove from')[0]?.click();
+			closeAnchoredPanel();
+			expect(el.querySelector('.sheetsmith-sr-only')?.textContent).toBe(
+				STOOD_DOWN,
+			);
+		});
+
+		it('does not offer a removed row back in the Add panel', () => {
+			// Unlike a declared row, which goes back on the list it came from.
+			const el = renderBody(kills, '\n```sheet\nDragons: 3 / 5\n```\n');
+			expect(openPicker(el, 'Add to').map(lineLabel)).toEqual([]);
+			closeAnchoredPanel();
+			const dice = renderBody(openDice, '\n```sheet\nd6: 1 / 4\n```\n');
+			expect(openPicker(dice, 'Add to').map(lineLabel)).toEqual([
+				'd10',
+			]);
+		});
+	});
+
+	describe('a reset reaches a row the character named', () => {
+		// `Goblins` is spelled ragged on purpose: a reset writes through the
+		// join, so the note's own separator has to survive one. A delta cannot
+		// show that — `values.Goblins` is `'0/10'` either way — which is why
+		// the `empty` case below carries it through `write` and asserts the
+		// section text (`docs/BACKLOG.md` § Patterns).
+		const body = '\n```sheet\nGoblins: 6/10\nDragons: 3 / 5\nNothing:\n```\n';
+		const reset = (action: 'empty' | 'full' | 'formula', to: number | null = null) =>
+			track.applyReset?.(
+				dataFrom(body, kills),
+				kills,
+				{ trigger: 'Long rest', action },
+				{ resolve: () => to, explain: () => null },
+			);
+
+		it('empties through the join, keeping each length', () => {
+			const result = reset('empty');
+			expect(result?.ok).toBe(true);
+			if (result?.ok !== true) return;
+			expect(result.data.values).toEqual({
+				Goblins: '0/10',
+				Dragons: '0 / 5',
+				Nothing: '0',
+			});
+			// And what the note then holds. The delta above cannot say whether
+			// each row kept the spelling its own line was written in, and a
+			// reset that reformatted a note nobody hand-edited is exactly what
+			// Constraint 3 is about.
+			expect(track.write(result.data, body, kills)).toBe(
+				'\n```sheet\nGoblins: 0/10\nDragons: 0 / 5\nNothing:0\n```\n',
+			);
+		});
+
+		it('fills each row to its own length, skipping the one with none', () => {
+			const result = reset('full');
+			expect(result?.ok).toBe(true);
+			if (result?.ok !== true) return;
+			const values = result.data.values;
+			expect(values.Goblins).toBe('10/10');
+			expect(values.Dragons).toBe('5 / 5');
+			// Skipped rather than failing the rest of the reset, and nothing
+			// written for it — not even a zero.
+			expect(values.Nothing).toBeUndefined();
+		});
+
+		it('applies one resolved count to every row, through the join', () => {
+			const result = reset('formula', 2);
+			expect(result?.ok).toBe(true);
+			if (result?.ok !== true) return;
+			expect(result.data.values).toEqual({
+				Goblins: '2/10',
+				Dragons: '2 / 5',
+				Nothing: '2',
+			});
+		});
+
+		it('creates no row and removes none', () => {
+			for (const action of ['empty', 'full', 'formula'] as const) {
+				const result = reset(action, 1);
+				if (result?.ok !== true) throw new Error(`${action} failed`);
+				const written = Object.keys(result.data.values);
+				expect(written.every((key) => body.includes(`${key}:`))).toBe(true);
+			}
+		});
+	});
+
+	describe('a row the character named publishes nothing', () => {
+		it('answers no name, under any spelling, and no .left either', () => {
+			const data = dataFrom(KILLS_BODY, kills);
+			const published = track.scopeValues?.(data, kills);
+			if (!published) throw new Error('expected scope values');
+			const scope = buildSheetScope([{ id: kills.id, values: published }]);
+			for (const name of [
+				'kills',
+				'kills.Goblins',
+				'kills.goblins',
+				'kills.Goblins.value',
+				'kills.Goblins.left',
+			]) {
+				expect(scope(name), name).toBeUndefined();
+			}
+		});
+
+		it('leaves the declared rows publishing exactly what they did', () => {
+			const body = '\n```sheet\nd6: 1 / 4\nGoblins: 6 / 10\n```\n';
+			const data = dataFrom(body, openDice);
+			const published = track.scopeValues?.(data, openDice);
+			expect(Object.keys(published?.named ?? {})).toEqual(['d10', 'd6']);
+			if (!published) throw new Error('expected scope values');
+			const scope = buildSheetScope([
+				{
+					id: openDice.id,
+					values: published,
+					resolver: (env) => makeFieldResolver(track, openDice, data, env),
+				},
+			]);
+			expect(scope('hit_dice.d6')).toBe(1);
+			expect(scope('hit_dice.d6.left')).toBe(3);
+		});
+
+		it('declares no scopeRows, so nothing can aggregate over it', () => {
+			expect(track).not.toHaveProperty('scopeRows');
+		});
+	});
+
+	describe('a layout change that arrives after the data', () => {
+		const body = '\n```sheet\nGoblins: 6 / 10\n```\n';
+
+		it('lets a newly declared row claim what is already there', () => {
+			const declared: TrackConfig = {
+				...kills,
+				rows: [{ key: 'Goblins', name: 'Goblins', maxSource: 'character' }],
+			};
+			const data = dataFrom(body, declared);
+			// The marks survive whole, nothing duplicates, and the row is the
+			// layout's now: a static name and no place on the Remove list.
+			expect(data.values).toEqual({ Goblins: '6 / 10' });
+			expect(data.own).toBeUndefined();
+			const el = renderBody(declared, body);
+			expect(nameFields(el)).toHaveLength(0);
+			expect(openPicker(el, 'Remove from').map(lineLabel)).toEqual(['Goblins']);
+			expect(track.write(data, body, declared)).toBe(body);
+		});
+
+		it('reads the length from the layout where the row is calculated', () => {
+			const declared: TrackConfig = {
+				...kills,
+				rows: [{ key: 'Goblins', name: 'Goblins', count: 4 }],
+			};
+			const el = renderBody(declared, body, { resolveField: () => 4 });
+			// The layout's formula supplies the length; the `/ 10` sits in the
+			// file, unread and untouched.
+			expect(runSegments(el, 0)).toHaveLength(4);
+			expect(track.write(dataFrom(body, declared), body, declared)).toBe(body);
+		});
+
+		it('draws a dropped declared row\'s leftover entry as the character\'s', () => {
+			const dropped: TrackConfig = { ...kills, rows: [] };
+			const el = renderBody(dropped, body);
+			expect(nameFields(el).map((f) => f.value)).toEqual(['Goblins']);
+			expect(track.write(dataFrom(body, dropped), body, dropped)).toBe(body);
+		});
+
+		it('hides every one of them with the toggle off, and deletes none', () => {
+			const shut: TrackConfig = { ...kills, openRows: false, count: 6 };
+			const el = renderBody(shut, KILLS_BODY);
+			expect(drawnNames(el)).toEqual([]);
+			expect(track.write(dataFrom(KILLS_BODY, shut), KILLS_BODY, shut)).toBe(
+				KILLS_BODY,
+			);
+			// And back on, in the same order.
+			expect(drawnNames(renderBody(kills, KILLS_BODY))).toEqual([
+				'Goblins',
+				'Dragons',
+			]);
+		});
+	});
+
+	describe('the sample', () => {
+		it('writes one row named from the label, and reads it back', () => {
+			const body = sampleOf(track, clocks);
+			expect(body).toContain('Clocks 1:');
+			const data = dataFrom(body, clocks);
+			expect(data.own).toEqual(['Clocks 1']);
+			expect(track.write(data, body, clocks)).toBe(body);
+		});
+
+		it('draws the character\'s row after the declared ones', () => {
+			const body = sampleOf(track, openDice);
+			// The last character-owned declared row is left un-added by the
+			// sample on purpose, so an author's first preview already shows the
+			// **Add** control rather than a set that looks permanently full.
+			expect(drawnNames(renderBody(openDice, body))).toEqual([
+				'd10',
+				'Hit dice 1',
+			]);
+		});
+
+		it('composes no key from a label the fence could not hold', () => {
+			// The label is author free text, and composing a name from it is
+			// the one place in this component where text nobody checked
+			// becomes a fence key. Obsidian indexes no link inside a fence
+			// (CLAUDE.md 2), so a label holding one composes no row at all.
+			// `contract.test.ts`'s own wikilink sweep cannot see this: every
+			// configuration it reaches is labelled in plain words, so it
+			// passes over this path vacuously.
+			for (const label of ['[[Goblin]] kills', 'Armor: class']) {
+				const cfg = { ...openDice, label };
+				const body = sampleOf(track, cfg);
+				expect(body, label).not.toContain('[[');
+				expect(body, label).not.toContain(label);
+				const data = dataFrom(body, cfg);
+				expect(data.own, label).toBeUndefined();
+				expect(track.write(data, body, cfg), label).toBe(body);
+			}
+		});
+
+		it('skips it where the composed name is already a declared key', () => {
+			const clash: TrackConfig = {
+				...kills,
+				label: 'Kills',
+				rows: [{ key: 'Kills 1', name: 'Kills 1', count: 3 }],
+			};
+			const body = sampleOf(track, clash);
+			const data = dataFrom(body, clash);
+			expect(data.own).toBeUndefined();
+			expect(track.write(data, body, clash)).toBe(body);
+		});
+	});
+});
+
 describe('track keyboard', () => {
 	const pressKey = (el: HTMLElement, key: string, shiftKey = false) =>
 		parts(el).run?.dispatchEvent(
@@ -2339,6 +3398,47 @@ describe('a flag track', () => {
 			expect(rings(drawFlag())[0]?.getAttribute('title')).toBeNull();
 		});
 
+		it('reaches a named step\'s word by touch, and opens nothing without one', () => {
+			/*
+			 * `docs/UI.md` §7: `title` is a pointer's route and a finger has no
+			 * hover, so a held press is the only way to the word a glyph stands
+			 * for. Asserted here rather than left to the module because this is
+			 * the call site whose touch route **changed shape**: the binding used
+			 * to be made only where the steps are named, and is now made on every
+			 * ring with a provider that answers `null` where there is no tooltip.
+			 * "The same behaviour with one fewer branch" is a claim about this
+			 * component, so it is checked in this component.
+			 */
+			vi.useFakeTimers();
+			try {
+				const named = drawFlag(
+					{ count: undefined, levels: ['Fine', 'Bloodied:!'] },
+					{ values: { value: 'yes' } },
+				);
+				hold(rings(named)[0], LONG_PRESS + 10, { pointerType: 'touch' });
+				expect(
+					document.querySelector('.sheetsmith-popover')?.textContent,
+				).toBe('Bloodied');
+				closePopover();
+
+				// And the branch that used to be missing rather than empty: a flag
+				// with no word has no `title`, so the hold opens nothing and the
+				// press that ends it still flips the card.
+				// `unknown`, because `RenderContext.onChange` is untyped at this
+				// boundary and `drawFlag` hands the context straight through.
+				const seen: unknown[] = [];
+				const plain = drawFlag({}, { values: { value: 'no' } }, {
+					onChange: (delta) => seen.push(delta),
+				});
+				hold(rings(plain)[0], LONG_PRESS + 10, { pointerType: 'touch' });
+				expect(document.querySelector('.sheetsmith-popover')).toBeNull();
+				rings(plain)[0]?.click();
+				expect(seen).toEqual([{ values: { value: 'yes' } }]);
+			} finally {
+				vi.useRealTimers();
+			}
+		});
+
 		it('draws no step line: a flag\'s one step is already on the ring', () => {
 			const el = drawFlag(
 				{ count: undefined, levels: ['Fine', 'Bloodied:!'] },
@@ -2436,10 +3536,15 @@ describe('a flag track', () => {
 			 * A flag has no blur listener, because it writes on the press and so
 			 * has nothing to defer; dispatching one here reached no code at all
 			 * and the assertion held under every implementation, including one
-			 * that spelled `sent` wrong. Right arrow on a ring already set is the
-			 * route that does reach it: `setMarks` returns early and `commit`
-			 * runs anyway, with the note's own spelling as the only thing it can
-			 * compare against.
+			 * that spelled `sent` wrong.
+			 *
+			 * **What this route reaches is now one step earlier**, and the case
+			 * kept its assertions across the change rather than being rewritten to
+			 * fit it. It used to reach `commit`, which compared the note's own
+			 * spelling and declined; `ring-control.ts` reports a level only when it
+			 * moved, so an arrow that asks for the level the ring is already at now
+			 * writes nothing by never reaching `commit` at all. The case below
+			 * drives the comparison this one no longer does.
 			 */
 			const card = changes();
 			const el = card.render({}, { values: { value: '1' } });
@@ -2450,6 +3555,29 @@ describe('a flag track', () => {
 			// And the ring still reads the note, rather than having been reset
 			// along the way.
 			expect(rings(el)[0]?.getAttribute('aria-pressed')).toBe('true');
+		});
+
+		it('leaves a row nobody pressed out of the write the sweep collects', () => {
+			/*
+			 * `commit` sweeps *every* run on the card, so a row stored as `1`
+			 * before the fold is compared against "yes" on a press somewhere else
+			 * entirely. What keeps it out of the change is that `sent` is spelled
+			 * through `spelledMarks` at construction rather than taken from the
+			 * note's raw text — spell it wrong and pressing `lucky` rewrites
+			 * `alert` as well, having changed nothing the reader asked to change.
+			 *
+			 * Here rather than folded into the case above, because the two now
+			 * reach different code: that one stops at the ring and never calls
+			 * `commit`, and this is the only route left that drives the sweep over
+			 * a run the reader did not touch.
+			 */
+			const card = changes();
+			const el = card.render(
+				{ rows: [{ key: 'alert' }, { key: 'lucky' }] },
+				{ values: { alert: '1', lucky: 'no' } },
+			);
+			rings(el)[1]?.click();
+			expect(card.seen).toEqual([{ values: { lucky: 'yes' } }]);
 		});
 
 		it('sets with right, clears with left, and moves rows with up and down', () => {
@@ -2473,5 +3601,688 @@ describe('a flag track', () => {
 			key(0, 'ArrowDown');
 			expect(rings(el).map((r) => r.tabIndex)).toEqual([-1, 0]);
 		});
+	});
+});
+
+/*
+ * **A modifier that lengthens a run** (`docs/features/modifier-granted-track-segments.md`).
+ *
+ * Driven through a real sheet rather than a stubbed `resolved`, because the
+ * whole defect was a number that two halves of the plugin disagreed about: a
+ * fixture that states the count cannot show the run and the published name
+ * arriving at the same one. Every case below asserts both sides where it can.
+ */
+describe('a modifier granting segments', () => {
+	const run: TrackConfig = {
+		id: 'exhaustion',
+		type: 'track',
+		label: 'Exhaustion',
+		position: { col: 1, row: 1, width: 1, height: 1 },
+		count: '3 + mod.self',
+	};
+	const gear: TableConfig = {
+		id: 'worn',
+		type: 'table',
+		label: 'Worn items',
+		position: { col: 2, row: 1, width: 4, height: 2 },
+		rowHeader: 'Item',
+		rows: [{ label: 'Talisman' }],
+		columns: [{ key: 'Modifiers', type: 'modifier' }],
+	};
+
+	/**
+	 * The whole sheet: a run whose length reads its own slot, and a push at it.
+	 *
+	 * `amount` of null is the talisman off the character — an empty cell rather
+	 * than a second layout — which is how the removal cases are driven.
+	 */
+	const sheetOf = (
+		amount: string | null = '+= 2',
+		trackConfig: TrackConfig = run,
+		body = '\n```sheet\nvalue: 1\n```\n',
+	) => {
+		const gearBody = [
+			'| Item | Modifiers |',
+			'| --- | --- |',
+			amount === null
+				? '| Talisman | |'
+				: `| Talisman | exhaustion.count ${amount} as item |`,
+		].join('\n');
+		const trackRead = track.read(body, trackConfig);
+		const gearRead = table.read(gearBody, gear);
+		if (!trackRead.ok || !gearRead.ok) throw new Error('read failed');
+		const layout: Layout = { name: 'Test', components: [trackConfig, gear] };
+		const prepared: ReadComponent[] = [
+			{ config: trackConfig, component: track, data: trackRead.data, error: null },
+			{ config: gear, component: table, data: gearRead.data, error: null },
+		];
+		const { env, modifiers } = buildSheet(layout, prepared);
+		const data = trackRead.data;
+		const el = document.createElement('div');
+		document.body.appendChild(el);
+		track.render(el, trackConfig, data, {
+			resolved: resolveFormulaFields(track, trackConfig, data, env),
+			resolveField: makeFieldResolver(track, trackConfig, data, env),
+			explainField: makeFieldExplainer(track, trackConfig, data, env),
+			onChange: () => undefined,
+			modifiers,
+		});
+		return { el, env, data };
+	};
+
+	it('draws the run the sheet publishes, not the one the layout wrote', () => {
+		const { el, env } = sheetOf();
+		// Both halves in one case, deliberately: they used to be 3 and 5, and a
+		// case asserting either alone would have passed throughout.
+		expect(parts(el).segments).toHaveLength(5);
+		expect(parts(el).run?.getAttribute('aria-valuemax')).toBe('5');
+		expect(env.sheet('exhaustion.count')).toBe(5);
+	});
+
+	it('marks the granted segments and only those', () => {
+		const { el } = sheetOf();
+		const marked = parts(el).segments.map((s) =>
+			s.classList.contains('sheetsmith-track-segment-granted'),
+		);
+		// The far end, because a run fills from the near one: putting the grant
+		// first would refill a different pair of segments from the same note.
+		expect(marked).toEqual([false, false, false, true, true]);
+	});
+
+	it('reads "1 of 5", so the ceiling a reader hears is the one drawn', () => {
+		const { el } = sheetOf();
+		expect(parts(el).run?.getAttribute('aria-valuetext')).toBe('1 of 5');
+		expect(parts(el).run?.getAttribute('aria-label')).toBe('Exhaustion, 1 of 5');
+	});
+
+	/*
+	 * The absolute spelling reaches the ceiling through the accepting set's
+	 * *second* rule — a `mod.<name>` written anywhere on the layout — so the run
+	 * genuinely gets longer while the component's own formula can say nothing
+	 * about how much of its length came from a push. A uniform run is the honest
+	 * drawing, and it needs no text scan to arrive at: only `mod.self` resolves
+	 * differently with and without the published name.
+	 */
+	it('lengthens without marking where the count names the slot absolutely', () => {
+		const { el, env } = sheetOf('+= 2', {
+			...run,
+			count: '3 + mod.exhaustion.count',
+		});
+		expect(parts(el).segments).toHaveLength(5);
+		expect(env.sheet('exhaustion.count')).toBe(5);
+		expect(
+			parts(el).segments.filter((s) =>
+				s.classList.contains('sheetsmith-track-segment-granted'),
+			),
+		).toHaveLength(0);
+	});
+
+	it('grants every segment where the whole count is the slot', () => {
+		const { el } = sheetOf('+= 2', { ...run, count: 'mod.self' });
+		expect(
+			parts(el).segments.map((s) =>
+				s.classList.contains('sheetsmith-track-segment-granted'),
+			),
+		).toEqual([true, true]);
+	});
+
+	it('grants what the formula made of the push, not the push', () => {
+		// floor((3 + 2) / 2) is 2 against a base of 1: a slot total of +2 and one
+		// segment granted. Reading the total would have said two.
+		const { el } = sheetOf('+= 2', {
+			...run,
+			count: 'floor((3 + mod.self) / 2)',
+		});
+		expect(
+			parts(el).segments.map((s) =>
+				s.classList.contains('sheetsmith-track-segment-granted'),
+			),
+		).toEqual([false, true]);
+	});
+
+	/*
+	 * **A penalty leaves its slots on the card, blocked.** The owner's rule, and
+	 * the reversal of what this feature first shipped: "those slots should still
+	 * be there, instead of just disappearing". A run of three with a −1 draws
+	 * three, not two.
+	 */
+	it('keeps the slots a penalty took, drawn and blocked', () => {
+		const { el } = sheetOf('+= -1');
+		expect(parts(el).segments).toHaveLength(3);
+		const marked = parts(el).segments.map((s) => ({
+			blocked: s.classList.contains('sheetsmith-track-segment-blocked'),
+			granted: s.classList.contains('sheetsmith-track-segment-granted'),
+		}));
+		expect(marked).toEqual([
+			{ blocked: false, granted: false },
+			{ blocked: false, granted: false },
+			{ blocked: true, granted: false },
+		]);
+	});
+
+	it('holds the ceiling to the live run and says the rest in words', () => {
+		/*
+		 * A slider is one value between two bounds, and a blocked slot is not a
+		 * value this control can take — so `aria-valuemax` is the *live* run and
+		 * the drawn boxes deliberately outnumber it. `aria-valuetext` is the only
+		 * sanctioned place to explain that, which is what it is for.
+		 */
+		const { el } = sheetOf('+= -1');
+		expect(parts(el).run?.getAttribute('aria-valuemax')).toBe('2');
+		expect(parts(el).run?.getAttribute('aria-valuetext')).toBe('1 of 2, 1 blocked');
+		expect(parts(el).run?.getAttribute('aria-label')).toBe(
+			'Exhaustion, 1 of 2, 1 blocked',
+		);
+	});
+
+	it('cannot be pressed into the blocked region', () => {
+		/*
+		 * Not a guard that refuses a press — a run that never had those
+		 * positions. The hit test is handed the live segments' rectangles only,
+		 * so a press out in the blocked tail lands past the end and fills the
+		 * live run, which is what a press past the end of any run already does.
+		 */
+		const { el } = sheetOf('+= -1');
+		const runEl = parts(el).run;
+		parts(el).segments.forEach((segment, i) => {
+			segment.getBoundingClientRect = () =>
+				({ left: i * 20, right: i * 20 + 10, top: 0, bottom: 10 }) as DOMRect;
+		});
+		if (runEl === null) throw new Error('no run');
+		runEl.getBoundingClientRect = () =>
+			({ left: 0, right: 60, top: 0, bottom: 10 }) as DOMRect;
+		runEl.setPointerCapture = () => undefined;
+		runEl.releasePointerCapture = () => undefined;
+		// Dead centre of the third box, which is the blocked one.
+		pressDown(runEl, { clientX: 45, clientY: 5 });
+		release(runEl, { clientX: 45, clientY: 5 });
+		expect(runEl.getAttribute('aria-valuenow')).toBe('2');
+		expect(runEl.getAttribute('aria-valuetext')).toBe('2 of 2, 1 blocked');
+	});
+
+	it('never fills a blocked slot, whatever the note holds', () => {
+		/*
+		 * The case Ilona reaches by filling a run and then wearing the shackles.
+		 * SPEC §4.2's "rendered, not corrected" governs the *note*; the drawing
+		 * has always clamped to the run, and the run is now the live part of it.
+		 */
+		const { el, data } = sheetOf('+= -1', run, '\n```sheet\nvalue: 3\n```\n');
+		// Three drawn, two filled: the blocked one is on screen and empty, which
+		// is the whole claim. A stored 3 would have filled it.
+		expect(fills(el)).toEqual([1, 1, 0]);
+		expect(parts(el).run?.getAttribute('aria-valuetext')).toBe('2 of 2, 1 blocked');
+		if (data === null) throw new Error('expected data');
+		expect(data.values['value']).toBe('3');
+	});
+
+	it('draws a run a penalty took whole as blocked rather than as "?"', () => {
+		// `?` is reserved for a count that did not resolve (SPEC §5). This one
+		// resolved perfectly well, to nothing, and the slots are still the
+		// layout's — so the honest drawing is the run, entirely shut.
+		const { el } = sheetOf('+= -5', { ...run, count: '2 + mod.self' });
+		expect(parts(el).unresolved).toHaveLength(0);
+		expect(parts(el).segments).toHaveLength(2);
+		expect(
+			parts(el).segments.every((s) =>
+				s.classList.contains('sheetsmith-track-segment-blocked'),
+			),
+		).toBe(true);
+		expect(parts(el).run?.getAttribute('aria-valuemax')).toBe('0');
+		expect(parts(el).run?.getAttribute('aria-valuetext')).toBe('0 of 0, 2 blocked');
+	});
+
+	/*
+	 * SPEC §4.2: a stored value outside the run is rendered, not corrected. The
+	 * removal path inherits it whole, so taking the talisman off is not a
+	 * destructive act — which is the same rule a level-down and a hand-edited
+	 * note already get.
+	 */
+	it('keeps marks past a shrunken run in the note, and reports the run', () => {
+		const body = '\n```sheet\nvalue: 5\n```\n';
+		const { el, data } = sheetOf(null, run, body);
+		expect(parts(el).segments).toHaveLength(3);
+		expect(parts(el).run?.getAttribute('aria-valuetext')).toBe('3 of 3');
+		// Every one of them filled, which is the half "3 of 3" does not state.
+		expect(fills(el)).toEqual([1, 1, 1]);
+		/*
+		 * **Constraint 3, through the data `read` actually produced.** An empty
+		 * delta round-trips whatever the caller hands it and would pass on a
+		 * `write` that had stopped preserving anything at all, which is exactly
+		 * the vacuous pass `PATTERNS.md` §10 forbids on the one assertion
+		 * guarding a hard constraint. What has to survive is the stored `5` a
+		 * three-segment run cannot draw.
+		 */
+		if (data === null) throw new Error('expected data');
+		expect(track.write({ values: data.values }, body, run)).toBe(body);
+		expect(data.values['value']).toBe('5');
+	});
+
+	it('says what a run that works out to nothing is, rather than blaming the formula', () => {
+		/*
+		 * The floor, which is now narrower than it was: a run with slots of its
+		 * own draws them blocked, so "?" is left for a run that has none to draw
+		 * either. `count: "mod.self"` is that case — the unmodified length is
+		 * nothing, so there is no base run to hold open.
+		 */
+		const { el } = sheetOf('+= -2', { ...run, count: 'mod.self' });
+		expect(parts(el).segments).toHaveLength(0);
+		const said = parts(el).unresolved[0]?.getAttribute('title') ?? '';
+		expect(said).toContain('This run works out to -2 segments.');
+		expect(said).not.toContain('did not resolve');
+		// And the breakdown beside it, so the -2 is findable rather than
+		// merely reported.
+		expect(said).toContain('Talisman');
+	});
+
+	it('puts the sentence behind the door too, on the one card with no run', () => {
+		/*
+		 * **The popover carries what the reader cannot otherwise see.** On a
+		 * drawn run the reading is the segments, so the bubble holds the
+		 * breakdown alone; on a `?` there is no run and no `aria-valuetext`, so
+		 * the sentence is said nowhere else and the bubble is its only door —
+		 * which matters most here, because this is the card with least else on
+		 * it. The glyph's own `title` takes the same string.
+		 */
+		const { el } = sheetOf('+= -2', { ...run, count: 'mod.self' });
+		doorOf(el)?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		const said = document.querySelector('.sheetsmith-popover')?.textContent ?? '';
+		expect(said).toContain('This run works out to -2 segments.');
+		expect(said).toContain('Talisman');
+		expect(said).toBe(parts(el).unresolved[0]?.getAttribute('title'));
+		closePopover();
+	});
+
+	it('leaves the sentence off the door where a run is drawn', () => {
+		// A blocked run *is* the reading, so saying "works out to -3" over it
+		// would be a second account of a picture the reader already has.
+		const { el } = sheetOf('+= -5', { ...run, count: '2 + mod.self' });
+		doorOf(el)?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		const said = document.querySelector('.sheetsmith-popover')?.textContent ?? '';
+		expect(said).not.toContain('works out to');
+		expect(said).toContain('Talisman');
+		closePopover();
+	});
+
+	it('says it where there is no pointer too, which is this state\'s own gap', () => {
+		// A "?" is not focusable and carries no name, so a `title` alone left
+		// the one state this feature added a sentence for with one channel.
+		const { el } = sheetOf('+= -2', { ...run, count: 'mod.self' });
+		const mark = parts(el).unresolved[0];
+		const twin = mark?.parentElement?.querySelector('.sheetsmith-sr-only');
+		expect(twin?.textContent).toBe(mark?.getAttribute('title'));
+		// And the glyph itself is still the one character it draws.
+		expect(mark?.textContent).toBe('?');
+		// After the glyph, for the reason above: the mark, then the news.
+		expectSpokenChildrenLast(mark?.parentElement, 1);
+		expect(twin?.textContent).toContain('This run works out to -2 segments.');
+	});
+
+	it('still says a broken formula did not resolve', () => {
+		const { el } = sheetOf('+= 2', { ...run, count: '3 + nowhere' });
+		const said = parts(el).unresolved[0]?.getAttribute('title') ?? '';
+		expect(said).not.toContain('works out to');
+	});
+
+	/** The door beside the card's name, where a modifier is doing something. */
+	const doorOf = (el: HTMLElement) =>
+		el.querySelector<HTMLButtonElement>('.sheetsmith-track-modifier-button');
+
+	it('says the same thing to a pointer and to a screen reader', () => {
+		const { el } = sheetOf();
+		const run_ = parts(el).run;
+		const described = run_?.getAttribute('aria-describedby');
+		expect(described).not.toBeNull();
+		const twin = described ? el.querySelector(`#${described}`) : null;
+		// One string and one builder, whatever the carrier: the twin a screen
+		// reader is handed and the popover the button opens are the same text.
+		expect(twin?.textContent).toContain('Talisman — item +2');
+		doorOf(el)?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		const bubble = document.querySelector('.sheetsmith-popover');
+		expect(bubble?.textContent).toBe(twin?.textContent);
+		closePopover();
+		/*
+		 * And it is drawn after the run and the step line, which is the one
+		 * claim about it no shot and no visible-order assertion can see: an
+		 * invisible element's position *is* reading order, so a reader meets
+		 * the control and then the news about it. `src/test/spoken-order.ts`
+		 * exists because exactly this rule was broken and shipped once.
+		 */
+		expectSpokenChildrenLast(
+			el.querySelector('.sheetsmith-track-row'),
+			1,
+		);
+	});
+
+	/*
+	 * **The affordance, which is the half a `title` never had.** The content was
+	 * already right and reachable from the keyboard and from a screen reader; a
+	 * native tooltip is slow, unstyled, truncating, and a finger never sees one.
+	 * This is Card's door, on a component whose own press is taken.
+	 */
+	it('grows a door beside the name where a modifier is doing something', () => {
+		const { el } = sheetOf();
+		const door = doorOf(el);
+		expect(door?.tagName).toBe('BUTTON');
+		expect(door?.getAttribute('aria-label')).toBe('Modifiers on Exhaustion');
+		// Beside the name rather than in the run: everything in the run's own
+		// row is a target or something a drag passes over.
+		expect(door?.parentElement?.classList.contains('sheetsmith-track-heading')).toBe(
+			true,
+		);
+		expect(door?.closest('.sheetsmith-track-run')).toBeNull();
+	});
+
+	it('opens the breakdown on a press, and on Enter without a second path', () => {
+		const { el } = sheetOf();
+		const door = doorOf(el);
+		if (!door) throw new Error('no door');
+		door.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		expect(document.querySelector('.sheetsmith-popover')?.textContent).toContain(
+			'Talisman — item +2',
+		);
+		closePopover();
+		// A `<button>`'s Enter arrives as a click, which is the one route in
+		// (`docs/PATTERNS.md` §6). Nothing here handles a key.
+		door.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+		door.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		expect(document.querySelector('.sheetsmith-popover')).not.toBeNull();
+		closePopover();
+	});
+
+	/*
+	 * **The component prefix is the builder's drop rule and not a caller's, and
+	 * this case is what makes the one-vocabulary claim checkable rather than
+	 * asserted.**
+	 *
+	 * A design review read Track's bubble as saying less than Card's — `Talisman
+	 * of Endurance — +2` against `Worn items · Ring of Protection — +1` — and
+	 * read that as Track dropping a token Card keeps. It is not: `sources.size >
+	 * 1` decides it, so a Card with one contributor from one table prints no
+	 * prefix either, and the sample's armour class prints one only because two
+	 * modifier tables push at it. The rule is `docs/UI.md` §9's — a token that is
+	 * the same on every line carries no information — and the case below is the
+	 * one where it stops being the same on every line.
+	 */
+	it('names the component on every line once two of them push at the run', () => {
+		const gearBody = [
+			'| Item | Modifiers |',
+			'| --- | --- |',
+			'| Talisman | exhaustion.count += 2 as item |',
+		].join('\n');
+		const second: TableConfig = {
+			...gear,
+			id: 'packed',
+			label: 'Packed items',
+			rows: [{ label: 'Charm' }],
+		};
+		const packedBody = [
+			'| Item | Modifiers |',
+			'| --- | --- |',
+			'| Charm | exhaustion.count += 1 as luck |',
+		].join('\n');
+		const trackRead = track.read('\n```sheet\nvalue: 1\n```\n', run);
+		const gearRead = table.read(gearBody, gear);
+		const packedRead = table.read(packedBody, second);
+		if (!trackRead.ok || !gearRead.ok || !packedRead.ok) throw new Error('read');
+		const layout: Layout = { name: 'Test', components: [run, gear, second] };
+		const prepared: ReadComponent[] = [
+			{ config: run, component: track, data: trackRead.data, error: null },
+			{ config: gear, component: table, data: gearRead.data, error: null },
+			{ config: second, component: table, data: packedRead.data, error: null },
+		];
+		const { env, modifiers } = buildSheet(layout, prepared);
+		const el = document.createElement('div');
+		document.body.appendChild(el);
+		track.render(el, run, trackRead.data, {
+			resolved: resolveFormulaFields(track, run, trackRead.data, env),
+			resolveField: makeFieldResolver(track, run, trackRead.data, env),
+			onChange: () => undefined,
+			modifiers,
+		});
+		doorOf(el)?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		const said = document.querySelector('.sheetsmith-popover')?.textContent ?? '';
+		expect(said).toContain('Worn items · Talisman — item +2');
+		expect(said).toContain('Packed items · Charm — luck +1');
+		closePopover();
+	});
+
+	it('never draws the breakdown button and the row pickers on one card', () => {
+		/*
+		 * **A CSS decision rests on this**: the modifier button's ink is a rank
+		 * smaller than the row pickers', while the two share a rule holding their
+		 * *targets* equal. That is only safe because the pair cannot be seen side
+		 * by side — the pickers belong to a row set, and a row set publishes no
+		 * ceiling, so it gets no breakdown and no button. Asserted rather than
+		 * left to a comment, because the comment is what would go stale.
+		 */
+		const set: TrackConfig = {
+			...run,
+			id: 'slots',
+			count: undefined,
+			openRows: true,
+			rows: [{ key: 'L1', name: '1st', count: 2 }],
+		};
+		const el = document.createElement('div');
+		document.body.appendChild(el);
+		track.render(el, set, { values: { L1: '1' } }, {
+			resolved: {},
+			resolveField: () => null,
+			onChange: () => undefined,
+		});
+		// The pickers are there, and the door is not.
+		expect(
+			el.querySelectorAll('.sheetsmith-track-action-button').length,
+		).toBeGreaterThan(0);
+		expect(doorOf(el)).toBeNull();
+		// And the other way round, on the card that does have a door.
+		const modified = sheetOf().el;
+		expect(doorOf(modified)).not.toBeNull();
+		expect(modified.querySelectorAll('.sheetsmith-track-action-button')).toHaveLength(
+			0,
+		);
+	});
+
+	it('grows nothing on a run nothing is pushed at', () => {
+		const { el } = sheetOf(null, { ...run, count: 6 });
+		expect(doorOf(el)).toBeNull();
+		expect(el.querySelector('.sheetsmith-track-heading')).toBeNull();
+		// And the label is still a direct child of the card, which is what keeps
+		// every unmodified Track the DOM and the pixels it always had.
+		expect(
+			el.querySelector('.sheetsmith-track-label')?.parentElement?.classList.contains(
+				'sheetsmith-track',
+			),
+		).toBe(true);
+	});
+
+	it('follows the wide set, so an absolute spelling gets the door and no dashes', () => {
+		const { el } = sheetOf('+= 2', { ...run, count: '3 + mod.exhaustion.count' });
+		expect(doorOf(el)).not.toBeNull();
+		expect(
+			parts(el).segments.filter((s) =>
+				s.classList.contains('sheetsmith-track-segment-granted'),
+			),
+		).toHaveLength(0);
+	});
+
+	it('leaves the run\'s own title to the reading', () => {
+		// The breakdown left it when the button arrived: two doors to one room,
+		// and the tooltip was the worse of the two.
+		const { el } = sheetOf();
+		expect(parts(el).run?.hasAttribute('title')).toBe(false);
+		const named = sheetOf('+= 2', {
+			...run,
+			levels: ['Rested', 'Tired', 'Weary'],
+		});
+		expect(parts(named.el).run?.title).toBe('Tired');
+	});
+
+	it('leaves an unmodified run with no title and no description', () => {
+		const { el } = sheetOf(null, { ...run, count: 6 });
+		expect(parts(el).run?.hasAttribute('title')).toBe(false);
+		expect(parts(el).run?.hasAttribute('aria-describedby')).toBe(false);
+	});
+
+	/*
+	 * The boundary, asserted rather than assumed. `rows.*.count` is a pattern
+	 * field, so the pre-resolve pass skips it by construction, and a row set
+	 * publishes no name for a ceiling to sit at (SPEC §13) — so `mod.self` there
+	 * is legitimately 0 and the row draws the length the layout declared.
+	 */
+	it('leaves a row set alone', () => {
+		const set: TrackConfig = {
+			...run,
+			id: 'slots',
+			count: undefined,
+			rows: [{ key: 'L1', name: '1st', count: '2 + mod.self' }],
+		};
+		const gearBody = [
+			'| Item | Modifiers |',
+			'| --- | --- |',
+			'| Talisman | slots.L1 += 2 as item |',
+		].join('\n');
+		const trackRead = track.read('\n```sheet\nL1: 1\n```\n', set);
+		const gearRead = table.read(gearBody, gear);
+		if (!trackRead.ok || !gearRead.ok) throw new Error('read failed');
+		const layout: Layout = { name: 'Test', components: [set, gear] };
+		const prepared: ReadComponent[] = [
+			{ config: set, component: track, data: trackRead.data, error: null },
+			{ config: gear, component: table, data: gearRead.data, error: null },
+		];
+		const { env, modifiers } = buildSheet(layout, prepared);
+		const el = document.createElement('div');
+		document.body.appendChild(el);
+		track.render(el, set, trackRead.data, {
+			resolved: resolveFormulaFields(track, set, trackRead.data, env),
+			resolveField: makeFieldResolver(track, set, trackRead.data, env),
+			onChange: () => undefined,
+			modifiers,
+		});
+		expect(parts(el).error).toBeNull();
+		expect(parts(el).segments).toHaveLength(2);
+		expect(
+			parts(el).segments.filter((s) =>
+				s.classList.contains('sheetsmith-track-segment-granted'),
+			),
+		).toHaveLength(0);
+	});
+
+	it('leaves named levels and a flag alone', () => {
+		const levels = sheetOf('+= 2', {
+			...run,
+			count: '3 + mod.self',
+			levels: ['Rested', 'Tired', 'Weary'],
+		});
+		expect(parts(levels.el).segments).toHaveLength(2);
+		expect(levels.env.sheet('exhaustion.count')).toBe(2);
+
+		const flag = sheetOf('+= 2', { ...run, count: 1 }, '\n```sheet\nvalue: yes\n```\n');
+		expect(
+			flag.el.querySelectorAll('.sheetsmith-track-flag'),
+		).toHaveLength(1);
+		expect(flag.env.sheet('exhaustion.count')).toBe(1);
+	});
+
+	/*
+	 * **The gesture, driven, and against a run of the same length with no
+	 * grant** — because "the same as" is the whole criterion and a single run
+	 * cannot state it.
+	 *
+	 * `measured` is `track pointer`'s own device: happy-dom lays nothing out, so
+	 * every gesture case in this file models the geometry it presses against.
+	 * What this one models is the join — the granted segments start 10px further
+	 * right than an even run's would — so the rectangles the run hit-tests with
+	 * are the shape the margin actually produces, and pressing the *fourth
+	 * segment* of each run is a different `x` in each. The claim is that it
+	 * reaches the same mark anyway.
+	 */
+	const measured = (el: HTMLElement, joinAt: number): HTMLElement => {
+		parts(el).runs.forEach((runEl) => {
+			const segments = Array.from(
+				runEl.querySelectorAll<HTMLElement>('.sheetsmith-track-segment'),
+			);
+			segments.forEach((segment, i) => {
+				const left = i * 20 + (i >= joinAt ? 10 : 0);
+				segment.getBoundingClientRect = () =>
+					({ left, right: left + 10, top: 0, bottom: 10 }) as DOMRect;
+			});
+			runEl.getBoundingClientRect = () =>
+				({ left: 0, right: 200, top: 0, bottom: 10 }) as DOMRect;
+			runEl.setPointerCapture = () => undefined;
+			runEl.releasePointerCapture = () => undefined;
+		});
+		return el;
+	};
+
+	/** The rectangles the run itself hit-tests with. */
+	const boxesOf = (el: HTMLElement): SegmentBox[] =>
+		parts(el).segments.map((segment) => {
+			const box = segment.getBoundingClientRect();
+			return { left: box.left, right: box.right, top: box.top, bottom: box.bottom };
+		});
+
+	/** The centre of one segment, in that run's own geometry. */
+	const centreOf = (el: HTMLElement, index: number): number => {
+		const box = parts(el).segments[index]?.getBoundingClientRect();
+		if (box === undefined) throw new Error(`no segment ${index}`);
+		return box.left + (box.right - box.left) / 2;
+	};
+
+	/** A five-segment run whose last two are granted, and a plain five. */
+	const pair = () => ({
+		granted: measured(sheetOf().el, 3),
+		plain: measured(sheetOf(null, { ...run, count: 5 }).el, 5),
+	});
+
+	it('reaches the same mark on a press as a plain run of the same length', () => {
+		const { granted, plain } = pair();
+		expect(parts(granted).segments).toHaveLength(5);
+		expect(parts(plain).segments).toHaveLength(5);
+		// The premise, asserted rather than assumed: the two runs are not the
+		// same geometry, so "the same mark" is a claim about the hit test and
+		// not about two identical presses. 75 against 65.
+		expect(centreOf(granted, 3)).not.toBe(centreOf(plain, 3));
+		// And the join must not read as a wrap — a segment starting no further
+		// right than the one before it begins a new line, which is the one way
+		// a wider gap could have changed what a point inside it means.
+		expect(marksAtPoint(boxesOf(granted), centreOf(granted, 0) - 30, 5, 1)).toBe(0);
+		expect(marksAtPoint(boxesOf(granted), centreOf(granted, 4) + 30, 5, 1)).toBe(5);
+		for (const el of [granted, plain]) {
+			pressDown(parts(el).run, { clientX: centreOf(el, 3), clientY: 5 });
+			release(parts(el).run, { clientX: centreOf(el, 3), clientY: 5 });
+		}
+		expect(parts(granted).run?.getAttribute('aria-valuetext')).toBe('4 of 5');
+		expect(parts(plain).run?.getAttribute('aria-valuetext')).toBe('4 of 5');
+	});
+
+	it('reaches the same mark on a drag across the join', () => {
+		const { granted, plain } = pair();
+		for (const el of [granted, plain]) {
+			const runEl = parts(el).run;
+			pressDown(runEl, { clientX: centreOf(el, 0), clientY: 5 });
+			runEl?.dispatchEvent(
+				new PointerEvent('pointermove', {
+					pointerId: 1,
+					clientX: centreOf(el, 4),
+					clientY: 5,
+				}),
+			);
+			release(runEl, { clientX: centreOf(el, 4), clientY: 5 });
+		}
+		expect(parts(granted).run?.getAttribute('aria-valuetext')).toBe('5 of 5');
+		expect(parts(plain).run?.getAttribute('aria-valuetext')).toBe('5 of 5');
+	});
+
+	it('steps to the same mark on the arrow keys', () => {
+		// Geometry-free by construction, which is the point of asserting it: a
+		// granted tail must not have made the run a different control.
+		const { granted, plain } = pair();
+		for (const el of [granted, plain]) {
+			parts(el).run?.dispatchEvent(
+				new KeyboardEvent('keydown', { key: 'ArrowRight', cancelable: true }),
+			);
+		}
+		expect(parts(granted).run?.getAttribute('aria-valuetext')).toBe('2 of 5');
+		expect(parts(plain).run?.getAttribute('aria-valuetext')).toBe('2 of 5');
 	});
 });

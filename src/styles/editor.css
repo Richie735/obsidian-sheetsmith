@@ -603,7 +603,18 @@
 	width: 100%;
 }
 
-.sheetsmith-entry-row > button.clickable-icon {
+/* **Two destructive controls on one entry, one treatment.** The nested list's
+   own trash is not a child of `.sheetsmith-entry-row`, so it was taking none of
+   this reset — identical in both themes, because Obsidian's `.clickable-icon`
+   paints no visible chrome there, and *not* identical under
+   `forced-colors: active`, which repaints the app's own button surface into a
+   rounded box. So a definition's trash drew as a bare glyph and the trash 270px
+   to its left on the same entry drew in a box, in the one mode where shape is all
+   a reader has. The selector joins the rule rather than copying it: the two are
+   the same control in two positions, and `docs/UI.md` §9's delete glyph is one
+   measurement shared, not two rules kept in step. */
+.sheetsmith-entry-row > button.clickable-icon,
+.sheetsmith-nested-controls > button.clickable-icon {
 	background: transparent;
 	border: none;
 	box-shadow: none;
@@ -637,6 +648,100 @@
 	padding: var(--size-2-2);
 	color: var(--text-muted);
 	font-size: var(--font-ui-small);
+}
+
+/* A list inside one row of another list: a definition's changes, and whatever
+   `editor/nested-list-field.ts` is asked for next.
+
+   **Indented, and by geometry rather than by a background or a tint**, so the
+   nesting survives `forced-colors: active`, where an author background is
+   repainted one system colour and a `box-shadow` is discarded outright
+   (`docs/UI.md` §6). `--size-4-2` is 8px: enough that the lines read as held by
+   the row above and the line below, little enough that a one-change definition is
+   still the form that shipped rather than a new kind of thing.
+
+   No border of its own. The entry already has one, a rule between the nested
+   lines and the condition under them would be the second edge in 8px, and
+   `docs/UI.md` §9's opening sentence is about exactly that: a fourth kind of
+   panel reads as loose chrome. */
+.sheetsmith-nested-list {
+	/* `margin` rather than `padding`, so the closing rule below starts where the
+	   lines start and reads as this list's own floor rather than the entry's. */
+	margin-left: var(--size-4-2);
+	/* **Closed as well as opened, and the pair is what does the work.** The list
+	   reads as a bounded region because it is *bracketed* — the label above, this
+	   rule below — not because of the 8px inset, which carries almost none of it:
+	   8px against 13px type, and at Text 24 the labels grow to ~19px while the
+	   inset does not move. Both halves of the bracket are geometry, so both
+	   survive `forced-colors: active`.
+
+	   The label above says a list begins; without
+	   this nothing said it ended, and the field under it — `Only when`, whose
+	   whole meaning is that it governs the *definition* rather than any one change
+	   — sat 7px outdented from the change lines with **Add change** between them
+	   at the inner indent, pulling the eye the wrong way. Measured left-edge ink:
+	   `Only when` 791, `Changes` 795, `Value` 798. A 7px outdent is not a
+	   boundary. The rule is the device this list already uses between its own
+	   lines, spent once more at the foot, which is also what makes the indent's
+	   claim true at a raised text setting, where 8px stays 8px while the type
+	   grows. */
+	margin-bottom: var(--size-2-2);
+	border-bottom: 1px solid var(--background-modifier-border);
+}
+
+/* The nested list's own name, over the lines it holds. Takes the detail line's
+   own label rank rather than a rank of its own, because that is what every other
+   label in this region is and a heading for a group of two is not a louder thing
+   than a heading for one control. Block, so the lines start under it rather than
+   beside it. */
+.sheetsmith-nested-label {
+	display: block;
+	padding-bottom: var(--size-2-1);
+	font-size: var(--font-smallest);
+	color: var(--text-muted);
+}
+
+/* **A hairline between one line and the next, and a gap alone will not do it.**
+   The outer list's own rule is that a card needs "a gap to the next card that
+   clearly beats the gap between the two lines inside it" — and inside a nested
+   line that gap is already large, because the forced break puts every line's six
+   controls on two rows with a label over each. Measured off `editor-layout`,
+   control top to control top: **63px between the two rows *within* one change
+   against 56px between one change and the next** — so spacing alone said the
+   opposite of the grouping, and a reader had to count fields to find where a
+   change began. The gap cannot be raised out of that: 4px of padding leaves 60
+   and 12 would leave 64, which is one pixel of argument for eight of height on
+   every extra change, and it would make a two-change definition twice the object
+   a one-change one is — the thing this list may not do. A rule is a difference in
+   *kind* rather than in quantity, it is what the panel's own **Add** form already
+   uses to separate a form from the list above it, and it costs a pixel.
+
+   Not on the first line, so a definition with one change draws exactly what it
+   drew before this list existed. */
+.sheetsmith-nested-line + .sheetsmith-nested-line {
+	padding-top: var(--size-2-2);
+	border-top: 1px solid var(--background-modifier-border);
+}
+
+/* The trailing control track on a change line. `end` rather than `center`,
+   because every field beside it is a label stacked over a control and a trash
+   centred on the pair sits above the controls it is in line with. */
+.sheetsmith-nested-controls {
+	display: flex;
+	flex: 0 0 auto;
+	align-items: end;
+	gap: var(--size-2-2);
+}
+
+/* **Reserved rather than removed on the only line there is**, which is
+   `.sheetsmith-detail-field-reserved`'s argument one element over: a control that
+   is simply not created gives its width back to the line's grow, so a list
+   holding one-change and two-change definitions would read as two different forms
+   down the pane. `visibility: hidden` keeps the box at exactly the width the
+   lines above it use and takes the button out of the tab order and out of the
+   accessibility tree. */
+.sheetsmith-nested-controls-reserved {
+	visibility: hidden;
 }
 
 /* Buttons here sit side by side ("Add row", "Add row value"), and two
@@ -1124,16 +1229,18 @@
    which is how selecting a palette entry used to move the **Add** button
    35px down while the menu it was chosen from stayed put.
 
-   Shared rather than declared per row: the Add component row's own
-   description and the tree's refused-drop message are two rows with the
+   Shared rather than declared per row: a described row's own description
+   (`editor/described-row.ts`) and the tree's refused-drop message are two rows with the
    same growing-copy problem, and docs/UI.md §9 already says the second one
    reuses this rather than inventing its own. */
 .sheetsmith-wrapping-row {
 	flex-wrap: wrap;
 }
 
-/* The Add component row, whose description is a second line rather than copy
-   beside the name (docs/UI.md §12).
+/* A described row, whose description is a second line rather than copy beside
+   the name (docs/UI.md §9). Named for the pane's old Add component row, where it
+   was first needed; New layout's Start from and the Layout file row wear it now,
+   and the class keeps its name because the name is the rule's address.
 
    The description element is moved out of the info column and appended after
    the controls, so it is a flex child of the row itself; `flex-basis: 100%`
@@ -1154,6 +1261,175 @@
    the reserved line this layout exists to avoid, arrived at by accident. */
 .sheetsmith-add-row > .setting-item-description:empty {
 	display: none;
+}
+
+/* ------------------------------------------------------------------------ *
+ * The component picker: what **Add component** opens
+ * (docs/features/component-picker.md).
+ * ------------------------------------------------------------------------ */
+
+/* A disclosure in the pane's own flow, clothed like the pane's other blocks —
+   the list fields' border, radius and secondary surface — so it reads as part
+   of the pane rather than as a fifth kind of panel (docs/UI.md §9). Padded on
+   three sides only: the action bar at its foot is pinned, and carries its own. */
+.sheetsmith-picker {
+	margin: 0 0 var(--size-4-4);
+	padding: var(--size-4-2) var(--size-4-2) 0;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background-color: var(--background-secondary);
+}
+
+/* Two classes, because Obsidian styles `input[type='search']` at (0,1,1) and a
+   bare class at (0,1,0) would lose its width to it (docs/UI.md §2). */
+.sheetsmith-picker .sheetsmith-picker-search {
+	width: 100%;
+}
+
+/* What scrolling the search field or the active line into view keeps clear of:
+   the pinned bar, whose height `component-picker.ts` publishes when it scrolls,
+   because `block: 'nearest'` would otherwise land either one under it. A gap's
+   worth more, so the line does not sit flush against the bar's rule. */
+.sheetsmith-picker .sheetsmith-picker-search,
+.sheetsmith-picker-option {
+	scroll-margin-bottom: calc(var(--sheetsmith-picker-bar, 0px) + var(--size-4-2));
+}
+
+.sheetsmith-picker-list {
+	margin-top: var(--size-4-2);
+}
+
+/* The list takes focus so a press can drop a phone's keyboard, and its focus is
+   shown on the active line rather than around the whole list: that is where
+   the arrows act, which is the listbox pattern's own visual focus. */
+.sheetsmith-picker-list:focus {
+	outline: none;
+}
+
+.sheetsmith-picker-group + .sheetsmith-picker-group {
+	margin-top: var(--size-2-2);
+}
+
+/* The whole line is the target, two lines of text with padding, which clears
+   the 44px a coarse pointer asks for. Hover is the app's own hover surface and
+   changes nothing else; a press activates and never inserts. */
+.sheetsmith-picker-option {
+	padding: var(--size-4-2) var(--size-4-3);
+	border-radius: var(--radius-s);
+	cursor: pointer;
+}
+
+.sheetsmith-picker-option:hover {
+	background-color: var(--background-modifier-hover);
+}
+
+.sheetsmith-picker-option.is-active {
+	background-color: var(--background-modifier-hover);
+}
+
+/* The focus ring while the list itself has focus, as an outline so it survives
+   forced colors, where a box-shadow is discarded (docs/UI.md §6). */
+.sheetsmith-picker-list:focus .sheetsmith-picker-option.is-active {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: -2px;
+}
+
+/* Indented by padding rather than by figure spaces, which is what the dropdown
+   had to do: an entry is a prefill of the type above it. */
+.sheetsmith-picker-option.sheetsmith-picker-entry {
+	padding-left: calc(var(--size-4-3) + var(--size-4-6));
+}
+
+.sheetsmith-picker-name {
+	color: var(--text-normal);
+	font-size: var(--font-ui-small);
+}
+
+.sheetsmith-picker-description {
+	margin-top: var(--size-2-1);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+/* The active line's drawing of itself, framed so it reads as a picture on the
+   page rather than as part of the list, on the page background the component
+   is drawn against on a sheet. **Solid, and one step darker than the ordinary
+   border**: the ordinary one is the active line's own fill to within one level
+   (228 against 229 light, 53 against 54 dark), so a dashed edge in it read as a
+   perforated rendering fault rather than a frame. */
+.sheetsmith-picker-preview {
+	margin-top: var(--size-4-2);
+	border: 1px solid var(--background-modifier-border-hover);
+	border-radius: var(--radius-m);
+	background-color: var(--background-primary);
+	cursor: default;
+}
+
+.sheetsmith-picker-preview > .sheetsmith-view {
+	padding: var(--size-4-2) var(--size-4-3) var(--size-4-3);
+	overflow: visible;
+}
+
+/* Where the drawing is not what **Add** writes: the quiet flair type, at the
+   frame's top-left corner, above the drawing rather than over it so it never
+   covers the component's own label. */
+.sheetsmith-picker-example {
+	display: inline-block;
+	margin: var(--size-4-2) 0 0 var(--size-4-3);
+	padding: 0 var(--size-4-1);
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-s);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+}
+
+.sheetsmith-picker-empty {
+	padding: var(--size-4-3);
+	color: var(--text-muted);
+	font-size: var(--font-ui-small);
+}
+
+/* Pinned to the foot of whichever box scrolls the pane, so **Add** is in reach
+   while the list runs past the viewport, and sits at the picker's own foot
+   once its end is on screen. Stretched to the picker's edges against its
+   padding, with the picker's own surface so the list passes under it. */
+.sheetsmith-picker-bar {
+	position: sticky;
+	bottom: 0;
+	z-index: 1;
+	margin: var(--size-4-2) calc(-1 * var(--size-4-2)) 0;
+	padding: var(--size-4-2);
+	border-top: 1px solid var(--background-modifier-border);
+	border-radius: 0 0 var(--radius-m) var(--radius-m);
+	background-color: var(--background-secondary);
+}
+
+.sheetsmith-picker-controls {
+	display: flex;
+	flex-wrap: wrap;
+	gap: var(--size-4-2);
+	align-items: center;
+	justify-content: flex-end;
+}
+
+.sheetsmith-picker-status {
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	text-align: end;
+}
+
+.sheetsmith-picker-status:not(:empty) {
+	margin-top: var(--size-2-3);
+}
+
+/* Forced colors repaints both surfaces one system colour, so the active line
+   takes the system's own selection instead: the one mark there that says which
+   line **Add** acts on. */
+@media (forced-colors: active) {
+	.sheetsmith-picker-option.is-active {
+		outline: 2px solid SelectedItem;
+		outline-offset: -2px;
+	}
 }
 
 /* A component sitting inside a container, one level of disclosure in the list.
@@ -1698,6 +1974,41 @@
 	--sheetsmith-list-fields: 1;
 }
 
+/* A row carrying an inline message aligns to the top instead of the middle.
+   A message is a third child of the `.sheetsmith-field` it belongs to, so that
+   cell grows while the other cells do not — and `align-items: center` on the
+   row then recentres them against the taller one, measured at 16px, which drops
+   the Property input, the drag handle and the trash below the Value select they
+   belong to. Top alignment puts the whole row's controls back on one baseline
+   and lines the trash up with the control it acts on rather than with the
+   sentence underneath it.
+
+   Scoped to this list rather than to `.sheetsmith-entry-row` pane-wide: the
+   other three lists have the same geometry and the same latent shift, and
+   moving every marked row in the pane is a wider visual change than this is —
+   `docs/BACKLOG.md` § UI holds it. The class is set by
+   `promoted-fields-field.ts`, recomputed from what the row holds, because a
+   `:has()` on the row is what `field-error.ts` already argues against. Column
+   tracks are untouched, so the 2:1 ratio below is unaffected. */
+.sheetsmith-list-promoted-fields .sheetsmith-entry-row-marked {
+	align-items: start;
+}
+
+/* The promoted-field list has two fields on its entry row and no detail line,
+   and they do not split it evenly: the Value picker carries authored labels —
+   `Abilities · DEX · stored`, as long as a component's own name plus two words
+   — where the Property beside it is a short frontmatter key somebody typed.
+   An even split is what the shared rule above would give, so the tracks are
+   written out here rather than through --sheetsmith-list-fields, which can only
+   say how many there are. Below that rule in the cascade, which is load bearing:
+   the two selectors are equal weight. */
+.sheetsmith-list-promoted-fields .sheetsmith-entry-columns,
+.sheetsmith-list-promoted-fields .sheetsmith-entry-row {
+	grid-template-columns:
+		minmax(0, 2fr) minmax(0, 1fr)
+		repeat(3, min-content);
+}
+
 .sheetsmith-entry-row > select {
 	width: 100%;
 }
@@ -1723,6 +2034,51 @@
 
 .sheetsmith-list-entry:last-child {
 	margin-bottom: 0;
+}
+
+/* **The entry's own edge, for the mode where its background is not an edge.**
+   The card above groups by *surface* — `--background-primary` against the list's
+   own — and `forced-colors: active` repaints every author background into one
+   system colour, so the boundary between two entries vanishes entirely. That was
+   survivable while nothing inside an entry drew a line; a definition's Changes
+   list now draws a hairline between its rows, so the strongest line on screen
+   marked the *weaker* boundary and a two-change definition read as two entries
+   while two definitions read as one run. The rule that ranks them is the one the
+   nested list already uses, one level out.
+
+   It also separates the two add controls, which is the same defect read as a
+   press rather than as a reading: **Add change** and **Add modifier** are 68px
+   apart with the same chrome and the same height, and without the entry's surface
+   there is nothing but their words to say that one is inside a definition and the
+   other is after all of them. A border puts one in the box and one outside it.
+
+   **The ranking is by *form*, not by weight, which is what makes it survive this
+   mode at all.** Measured: the entry edge and the inner hairline are the same
+   mark — 1px, the one system colour, spanning the same x 781→1386. What ranks
+   them is that the entry is a *closed rectangle with vertical sides* and the
+   hairlines are *open horizontals* inside it. So the verticals are load-bearing:
+   an inset or an overflow that removes them takes the whole ranking with it,
+   which is the thing to check before changing either.
+
+   **Scoped to the Modifiers list, and that is the cause rather than a
+   convenience.** It was written unscoped and met two markup shapes it had never
+   been checked against. `list-fields.ts` builds `.sheetsmith-list-entry` for
+   *columns* only, inside `.sheetsmith-list-scroll` — a 20em scrollport — so a
+   bordered entry past the fold showed 28px of side and no bottom rule at all,
+   with **Add column** below the scroller reading as though it were inside the
+   unclosed box; and the *rows* editor builds no entry element at all, so its list
+   drew one box around its header, its entry, both add controls and its footnote
+   together. Neither list has a rule inside an entry, so neither had the defect
+   this answers — the fix belongs where the nested list is. Not a `:last-child`
+   exception, which would have papered over both.
+
+   Only in this mode: a border in an ordinary theme would be a second edge beside
+   a surface that already carries one. */
+@media (forced-colors: active) {
+	.sheetsmith-list-modifiers .sheetsmith-list-entry {
+		border: 1px solid;
+		border-radius: var(--radius-s);
+	}
 }
 
 /* Fields that belong to one kind of column only — a formula, a pair of

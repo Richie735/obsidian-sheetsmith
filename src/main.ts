@@ -6,11 +6,14 @@ import {
 	SheetsmithSettings,
 	SheetsmithSettingTab,
 } from './settings';
+import { registerConversionOffer } from './layout-conversion';
 import { registerAutoOpen } from './view/auto-open';
 import {
 	LayoutEditorView,
 	VIEW_TYPE_LAYOUT_EDITOR,
 } from './view/layout-editor-view';
+import { registerLayoutExtension } from './view/layout-extension';
+import { registerLayoutFileEvents } from './view/layout-file-events';
 import { SheetView, VIEW_TYPE_SHEET } from './view/sheet-view';
 
 export default class SheetsmithPlugin extends Plugin {
@@ -44,6 +47,11 @@ export default class SheetsmithPlugin extends Plugin {
 		});
 		registerCommands(this);
 		registerAutoOpen(this);
+		registerLayoutFileEvents(this);
+		registerConversionOffer(this);
+		// Last, and caught inside: the app throws where another plugin already
+		// holds the extension, and nothing above may be skipped because of it.
+		registerLayoutExtension(this);
 	}
 
 	onunload() {

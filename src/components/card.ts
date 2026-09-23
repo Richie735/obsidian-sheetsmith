@@ -169,6 +169,7 @@ function drawableCard(
 
 export const card: ComponentDefinition<CardConfig, CardData> = {
 	type: 'card',
+	description: 'One labelled value on a card, with an optional derived number and a note line.',
 	storage: 'fenced',
 	formulaFields: ['derived', 'effective'],
 	configFields: [
@@ -239,7 +240,8 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 			group: 'Appearance',
 			kind: 'boolean',
 			label: 'Hide note',
-			description: 'Leave the note line off the card. Stored text is kept.',
+			description:
+				'Leave the note line off the card. Stored text is kept. On a dropdown, the note line holds the detail a choice cannot carry.',
 			default: false,
 		},
 		{
@@ -271,8 +273,7 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 	palette: [
 		{
 			name: 'Dropdown',
-			description:
-				'A value chosen from a closed list: race, alignment, heritage. The note stores the chosen option\'s value, so a choice can carry arithmetic — 2 shown as "Expertise" — and nothing is chosen until the reader chooses it. Edit the options below; the note line under the value stays for the detail a choice cannot carry.',
+			description: 'A value chosen from a closed list of options.',
 			config: {
 				options: [{ value: 'First choice' }, { value: 'Second choice' }],
 			},

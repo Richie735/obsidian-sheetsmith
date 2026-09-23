@@ -62,13 +62,13 @@
  */
 
 import { setIcon } from 'obsidian';
-import { bindEditable, bindMultiline } from '../interaction/editable';
-import { armRegister, bindArmToConfirm } from '../interaction/arm-to-confirm';
 import {
-	splitBounded,
-	withCeiling,
-	withValue,
-} from '../parse/bounded-entry';
+	bindEditable,
+	bindMultiline,
+	keptRatherThanBlank,
+} from '../interaction/editable';
+import { armRegister, bindArmToConfirm } from '../interaction/arm-to-confirm';
+import { splitBounded, withCeiling, withValue } from '../parse/bounded-entry';
 import { fencedKeyProblem, readFenced, writeFenced } from '../parse/fenced';
 import { bodyText, writeBodyText } from '../parse/markdown-body';
 import { cellParts, spellParts, storedParts } from '../parse/modifier-cell';
@@ -108,13 +108,7 @@ import {
 	RowValues,
 	showsOwnLabel,
 } from '../types';
-import {
-	levelCount,
-	levelName,
-	levelOf,
-	paintLevelRing,
-	parseLevel,
-} from './level-ring';
+import { levelCount, levelName, levelOf, parseLevel } from './level-ring';
 import { adoptRenderedLinks, paintLinkedText } from './linked-text';
 import {
 	ModifierFormState,
@@ -122,10 +116,12 @@ import {
 	renderModifierForm,
 } from './modifier-form';
 import {
+	applying,
 	modifierRowName,
 	modifierRowText,
 	rowModifiers,
 } from './modifier-breakdown';
+import { bindRingControl } from './ring-control';
 import {
 	sampleFlag,
 	sampleNumber,
@@ -142,7 +138,7 @@ import {
 	showAnchoredPanel,
 } from '../ui/anchored-panel';
 import { element } from '../ui/element';
-import { bindLongPress, showPopover } from '../ui/popover';
+import { showPopover } from '../ui/popover';
 import { flagWhileFocused } from '../interaction/field-focus-flag';
 import { spellcheckWhileFocused } from '../ui/spellcheck';
 import { revealWhenTruncated } from '../ui/truncation';
@@ -159,6 +155,18 @@ const OPEN_ICON = 'chevron-down';
 
 /** The delete control's mark, which is Table's and the layout editor's. */
 const REMOVE_ICON = 'trash';
+
+/**
+ * The largest field count the stylesheet tabulates a strip threshold for.
+ *
+ * A list with more fields than this takes the last entry, which is a residue
+ * and not a case: a record with nine fields already wraps at any width today.
+ *
+ * Exported so `styles.test.ts` can hold the stylesheet's table to it: raising
+ * this alone stamps a class no threshold rule answers, and the strip then never
+ * draws for that count with nothing red to say so.
+ */
+export const MAX_TABULATED_FIELDS = 8;
 
 /** A blank line, which is what separates one paragraph from the next. */
 const PARAGRAPH_BREAK = /(?:\r?\n[ \t]*)+\r?\n/;
@@ -269,9 +277,11 @@ export interface RecordField {
 	 */
 	secondary?: boolean;
 	/**
-	 * Ignored: there is no heading strip over a record's fields for one to be
-	 * hidden from. Declared for `secondary`'s reason — a hand-edited layout may
-	 * carry it, and the key must survive the round trip.
+	 * Ignored, and **not** honoured now that a strip exists: the strip is the
+	 * component's and not the field's, and a hole in it over a ring would leave
+	 * exactly the unnamed ring the strip is there to name. Declared for
+	 * `secondary`'s reason — a hand-edited layout may carry a Table's, and the
+	 * key must survive the round trip.
 	 */
 	hideHeading?: boolean;
 	/**
@@ -292,6 +302,12 @@ export interface RecordSetConfig extends ComponentConfig {
 	recordName?: string;
 	fields?: RecordField[];
 	hideLabel?: boolean;
+	/**
+	 * Off unless asked for, and drawn only where there is something to name: a
+	 * strip over an empty list would label nothing, so the list is exactly the
+	 * unheaded one until it holds a record that read.
+	 */
+	fieldHeadings?: boolean;
 }
 
 /** One record, as the note holds it. */
@@ -353,7 +369,9 @@ function fieldLabel(field: RecordField): string {
 
 /** Whether this field's ceiling belongs to each record rather than to the field. */
 function recordsOwnMax(field: RecordField): boolean {
-	return fieldType(field) === 'number' && field.maxSource === HOLDER_MAX_SOURCE;
+	return (
+		fieldType(field) === 'number' && field.maxSource === HOLDER_MAX_SOURCE
+	);
 }
 
 /**
@@ -549,7 +567,10 @@ function recordValues(
 		// The value half, never the whole entry: a record's `Uses` name is worth
 		// `2` when the entry says `2 / 3`, which is what `sum(features, Uses)`
 		// added up before this feature and what it must go on adding up.
-		stored[field.key] = typedValue(field, storedValue(field, record.fields[field.key]));
+		stored[field.key] = typedValue(
+			field,
+			storedValue(field, record.fields[field.key]),
+		);
 	}
 	const values: Record<string, FieldValue> = { ...stored };
 	(config.fields ?? []).forEach((field, at) => {
@@ -621,7 +642,9 @@ function sampleField(
 			// A level is a flag with a ladder in it, so it answers both rules at
 			// once: alternate records carry a level at all, and the level they
 			// carry is partway up rather than at the top.
-			return String(sampleFlag(record) ? samplePart(levelCount(field)) : 0);
+			return String(
+				sampleFlag(record) ? samplePart(levelCount(field)) : 0,
+			);
 		// A modifier field is left empty, and that is the one rule here about
 		// something other than looking plausible: a name in it enrols the record
 		// in one of the *layout's* definitions, and a layout the author is still
@@ -669,7 +692,9 @@ function resetWrite(
 		// is right there.
 		if (value === null) {
 			return {
-				error: context.explain('reset.to', {}) ?? 'its reset formula is empty.',
+				error:
+					context.explain('reset.to', {}) ??
+					'its reset formula is empty.',
 			};
 		}
 		const number = Number(value);
@@ -778,6 +803,7 @@ function applyDelta(
 
 export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 	type: 'record-set',
+	description: 'A list of named entries, each with a few typed fields and a paragraph of prose.',
 	storage: 'markdown',
 	// `*` stands for one path segment: every field's formula. `reset.*.to` is the
 	// reset expression, at the index of the binding being applied.
@@ -813,9 +839,9 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				// uses is the record's rather than the layout's. Table does not ask
 				// for it, which is what keeps this feature out of Table.
 				holderMax: true,
-				// There is no heading strip over a record's fields, so a control that
-				// hides one is a control that does nothing. The *key* is still read
-				// and still round-trips.
+				// The strip is the component's, and a per-field hide would leave a
+				// ring unnamed, which is what the strip is for. The *key* is still
+				// read and still round-trips.
 				hideHeading: false,
 				// The editor's own words, so the one panel where an author reads about
 				// their Record set does not describe it as cells and rows — which is
@@ -825,8 +851,8 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				// Where the value sits, which for a record *is* the field: Table needs
 				// both words, since its entry is a column and its value is in a cell.
 				cell: 'field',
-				// What that column actually sets here: not a heading, since none is
-				// drawn, but the field's own name beside its value.
+				// What that column actually sets here: the word shown beside a
+				// number when there is no strip, and over the field when there is.
 				heading: 'Name',
 			},
 			// Unlike Table's and Roster's own `columns`, this one addresses a
@@ -836,7 +862,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			// `docs/features/component-rename-migration.md`).
 			addressesEntry: { fence: 'record' },
 			description:
-				'The typed values every record holds, each an entry in that record\'s block in the note. Renaming a key moves that entry in every record, in every note on this layout. Text is not offered: words a reader reads belong in the record\'s body, where they may hold links. A number field with a maximum is a uses counter: the field draws that maximum beside its value, and a reset trigger restores it to that maximum. A number field\'s maximum may belong to the field, so every record shares it, or to each record, so a reader types it on the sheet — and a reset restores each record to whichever one applies.',
+				"The typed values every record holds, each an entry in that record's block in the note. Renaming a key moves that entry in every record, in every note on this layout. Text is not offered: words a reader reads belong in the record's body, where they may hold links. A number field with a maximum is a uses counter: the field draws that maximum beside its value, and a reset trigger restores it to that maximum. A number field's maximum may belong to the field, so every record shares it, or to each record, so a reader types it on the sheet — and a reset restores each record to whichever one applies.",
 		},
 		{
 			key: 'hideLabel',
@@ -845,6 +871,15 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			label: 'Hide the heading',
 			description:
 				'Draws the list with no name over it, for a list whose surroundings already say what it is. The records keep their own names either way.',
+			default: false,
+		},
+		{
+			key: 'fieldHeadings',
+			group: 'Appearance',
+			kind: 'boolean',
+			label: 'Field names over the list',
+			description:
+				'Names every field on screen, so a ring or toggle is not named only by its tooltip. Left out where the list is too narrow, so a narrow placement looks the same either way. A long field name widens its column; shorten it in the list above.',
 			default: false,
 		},
 	],
@@ -866,8 +901,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 	palette: [
 		{
 			name: 'Spellbook',
-			description:
-				'A list of spells the character adds, each with its level, whether it is prepared, and its description under it. A Record set, so a spell is a heading in the note with its own paragraph, and a spell named as a wikilink keeps a working link.',
+			description: 'Spells the character adds, each with a level, a prepared flag and its text.',
 			config: {
 				recordName: 'Spell',
 				fields: [
@@ -878,8 +912,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		},
 		{
 			name: 'Features',
-			description:
-				'A list of features, traits or moves the character adds, each with a uses counter, the modifiers it applies while it is switched on, and its full text under it. A Record set, because a feature\'s text is a paragraph and a table cell is one line.',
+			description: 'Features the character adds, each with uses, modifiers and its full text.',
 			config: {
 				recordName: 'Feature',
 				fields: [
@@ -919,7 +952,11 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			parts.push(`### ${sampleText(noun, which)}\n`);
 			const entries: string[] = [];
 			fields.forEach((field, at) => {
-				const value = sampleField(field, which, seed + which * fields.length + at);
+				const value = sampleField(
+					field,
+					which,
+					seed + which * fields.length + at,
+				);
 				if (value !== null) entries.push(`${field.key}: ${value}`);
 			});
 			if (entries.length > 0) {
@@ -949,10 +986,9 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			// The whole block rather than its fence alone, so a second fence and an
 			// unclosed one are both reported rather than silently drawn as prose.
 			const parsed = readFenced(block.head + block.rest);
-			const fields: Record<string, string> = Object.create(null) as Record<
-				string,
-				string
-			>;
+			const fields: Record<string, string> = Object.create(
+				null,
+			) as Record<string, string>;
 			if (parsed.ok && parsed.values !== null) {
 				for (const [key, value] of parsed.values) fields[key] = value;
 			}
@@ -1022,7 +1058,9 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				/** Built once per record, however many fields on it enrol. */
 				let row: RowValues | null = null;
 				for (const field of enrolling) {
-					for (const part of cellParts(record.fields[field.key] ?? '')) {
+					for (const part of cellParts(
+						record.fields[field.key] ?? '',
+					)) {
 						row ??= recordValues(config, record, resolve);
 						pushes.push({
 							part,
@@ -1043,7 +1081,10 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		const section = splitRecords(body ?? '');
 		const records = [...section.records];
 		const known = new Map(
-			storedFields(config).map((field) => [field.key.toLowerCase(), field.key]),
+			storedFields(config).map((field) => [
+				field.key.toLowerCase(),
+				field.key,
+			]),
 		);
 
 		for (const [position, delta] of Object.entries(data.records ?? {})) {
@@ -1159,15 +1200,42 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			awaitingAdd?.id === config.id && records.length > awaitingAdd.held;
 		if (landing) awaitingAdd = null;
 
+		/**
+		 * Whether this list draws the strip, and so whether it is a headed list at
+		 * all.
+		 *
+		 * **The stamps below follow the strip and not the flag**, so a list with
+		 * nothing to name is the unheaded list to the byte: no wrapper, no class,
+		 * no custom property. The strip appears with the first record that read
+		 * and goes with the last, which is what a label over nothing would not do.
+		 */
+		const headed =
+			config.fieldHeadings === true &&
+			fields.length > 0 &&
+			records.some((record) => record.error === null);
+
 		const block = element(
 			'div',
-			'sheetsmith-placed sheetsmith-record-set',
+			headed
+				? `sheetsmith-placed sheetsmith-record-set sheetsmith-record-set-headed sheetsmith-record-set-fields-${Math.min(fields.length, MAX_TABULATED_FIELDS)}`
+				: 'sheetsmith-placed sheetsmith-record-set',
 			container,
 		);
+		// The true count, for the shared tracks; the class above is only the
+		// clamped one the threshold table is keyed on.
+		if (headed) {
+			block.style.setProperty(
+				'--sheetsmith-record-fields',
+				String(fields.length),
+			);
+		}
 		// The placement, handed to CSS as the box's own floor: the box is `height`
 		// grid rows tall whatever is in it and the list scrolls inside it, so
 		// opening a record moves nothing on the sheet (SPEC §8).
-		block.style.setProperty('--sheetsmith-rows', String(config.position.height));
+		block.style.setProperty(
+			'--sheetsmith-rows',
+			String(config.position.height),
+		);
 
 		if (showsOwnLabel(config, context)) {
 			element(
@@ -1186,6 +1254,37 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		// Out of flow, so nothing inside contributes intrinsic height and the box
 		// cannot be grown past its placement by a long list or a long body.
 		const list = element('div', 'sheetsmith-record-set-list', box);
+		if (headed) {
+			/*
+			 * **Aria-hidden, and no table role anywhere.** Every control already
+			 * announces its record and its field, so a strip read aloud would be a
+			 * second sighting of names each control says, with no relationship to
+			 * say which record it belongs to — and a `columnheader` would hand
+			 * assistive tech the tabular reading this component declines.
+			 */
+			const strip = element('div', 'sheetsmith-record-strip', list);
+			strip.setAttribute('aria-hidden', 'true');
+			for (const field of fields) {
+				element(
+					'span',
+					'sheetsmith-card-abbreviation',
+					strip,
+					fieldLabel(field),
+				);
+			}
+		}
+		/**
+		 * Where the records and the add control go: the list itself, or on a headed
+		 * list a wrapper of their own.
+		 *
+		 * **The wrapper is the strip's second row.** A sticky item is confined to
+		 * its grid area, so the strip can only follow the scroll if its area is the
+		 * whole list; that leaves the records needing an area of their own beneath
+		 * the strip's reserved height. It draws nothing outside the wide regime.
+		 */
+		const host = headed
+			? element('div', 'sheetsmith-record-set-records', list)
+			: list;
 
 		// Announces once per commit. Built before the records so it is in the
 		// document by the time any of them speaks; a live region has to be attached
@@ -1361,7 +1460,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		// The add control sits in the last position of the list, so it reads as the
 		// next record rather than as chrome beside it — `.sheetsmith-table-add`'s
 		// own vocabulary, one storage over.
-		const add = element('button', 'sheetsmith-record-add', list);
+		const add = element('button', 'sheetsmith-record-add', host);
 		add.type = 'button';
 		element(
 			'span',
@@ -1395,7 +1494,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		/** One record: its summary line, its body, and the controls on both. */
 		function drawRecord(record: RecordEntry, at: number): void {
 			const named = recordLabel(record.name, noun);
-			const row = element('div', 'sheetsmith-record', list);
+			const row = element('div', 'sheetsmith-record', host);
 			const summary = element('div', 'sheetsmith-record-summary', row);
 
 			/*
@@ -1409,7 +1508,11 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			const bodyEl = element('div', 'sheetsmith-record-body', row);
 			bodyEl.id = `sheetsmith-record-${config.id}-${at}`;
 
-			const chevron = element('button', 'sheetsmith-record-disclosure', summary);
+			const chevron = element(
+				'button',
+				'sheetsmith-record-disclosure',
+				summary,
+			);
 			chevron.type = 'button';
 			chevron.setAttribute('aria-controls', bodyEl.id);
 
@@ -1444,7 +1547,11 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 
 			drawName(summary, record, at, named);
 
-			const fieldRow = element('div', 'sheetsmith-record-fields', summary);
+			const fieldRow = element(
+				'div',
+				'sheetsmith-record-fields',
+				summary,
+			);
 			if (record.error === null) {
 				fields.forEach((field, index) => {
 					drawField(fieldRow, row, field, index, record, at, named);
@@ -1523,7 +1630,10 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 						 * departure be stated somewhere.
 						 */
 						handle.sync(record.name);
-						status.textContent = `A ${noun.toLowerCase()} needs a name, so "${named}" was kept.`;
+						status.textContent = keptRatherThanBlank(
+							noun.toLowerCase(),
+							named,
+						);
 						return;
 					}
 					context.onChange({ records: { [at]: { name: next } } });
@@ -1542,7 +1652,11 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				return element('input', 'sheetsmith-record-name-input', cell);
 			}
 			const stack = element('div', 'sheetsmith-record-linked', cell);
-			const input = element('input', 'sheetsmith-record-name-input', stack);
+			const input = element(
+				'input',
+				'sheetsmith-record-name-input',
+				stack,
+			);
 			// This branch is the stacked one: unfocused, the field's text is
 			// transparent under the link layer, and its spelling marks would not be.
 			spellcheckWhileFocused(input);
@@ -1592,14 +1706,21 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				return;
 			}
 			if (type === 'level' || type === 'toggle') {
-				drawRing(cell, field, raw, type === 'level', accessible, commit);
+				drawRing(
+					cell,
+					field,
+					raw,
+					type === 'level',
+					accessible,
+					commit,
+				);
 				return;
 			}
 
 			// A number, whose entry may carry its ceiling beside its value. Its name
-			// is drawn beside it in the shared secondary clothes, because there is
-			// no heading strip over a record's fields and a number with no word
-			// beside it says nothing.
+			// is drawn beside it in the shared secondary clothes, always: the
+			// stylesheet hides it only where a strip is over it, so the one query
+			// decides both and a number can never have neither.
 			element('span', 'sheetsmith-card-abbreviation', cell, name);
 			const ownMax = recordsOwnMax(field);
 			const entry = splitBounded(raw);
@@ -1669,7 +1790,11 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 
 			let ceilingInput: HTMLInputElement | null = null;
 			if (ownMax || field.max !== undefined) {
-				const ceiling = element('span', 'sheetsmith-pool-ceiling', cell);
+				const ceiling = element(
+					'span',
+					'sheetsmith-pool-ceiling',
+					cell,
+				);
 				element('span', 'sheetsmith-pool-separator', ceiling, '/');
 				if (ownMax) {
 					// `maxInput`, which is Pool's own name for the same control — and
@@ -1688,11 +1813,19 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 					// bare span prohibits naming, so the read-only ceiling reaches a
 					// screen reader only through the field's announcement; an input is
 					// nameable, and both channels are kept rather than traded.
-					maxInput.setAttribute('aria-label', `${accessible} maximum`);
+					maxInput.setAttribute(
+						'aria-label',
+						`${accessible} maximum`,
+					);
 					maxInput.title = `Maximum ${name}, held by this ${noun.toLowerCase()}.`;
 					ceilingInput = maxInput;
 				} else {
-					element('span', 'sheetsmith-pool-max', ceiling, String(field.max));
+					element(
+						'span',
+						'sheetsmith-pool-max',
+						ceiling,
+						String(field.max),
+					);
 				}
 			}
 
@@ -1820,7 +1953,10 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				refuse: refuseNumber,
 				onRefusal: showCeilingRefusal,
 				onCommit: (next) => {
-					const settled = boundedText(next, { type: 'number', min: field.min });
+					const settled = boundedText(next, {
+						type: 'number',
+						min: field.min,
+					});
 					if (settled !== next) {
 						ceilingInput.value = settled;
 						status.textContent = `${ceilingName} held to ${settled}`;
@@ -1885,8 +2021,10 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				// because that is the one the reader can go and define.
 				const said =
 					resolved === null
-						? (context.explainField?.(`fields.${index}.formula`, scope) ??
-							'The formula did not resolve.')
+						? (context.explainField?.(
+								`fields.${index}.formula`,
+								scope,
+							) ?? 'The formula did not resolve.')
 						: field.formula;
 				value.setAttribute('title', said);
 				/*
@@ -1907,7 +2045,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			element('span', 'sheetsmith-sr-only', cell, accessible);
 		}
 
-		/** A level or a toggle, through the one painter both share. */
+		/** A level or a toggle, through the one control every ring on a sheet is. */
 		function drawRing(
 			cell: HTMLElement,
 			field: RecordField,
@@ -1917,118 +2055,76 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			commit: (next: string) => void,
 		): void {
 			const count = graded ? levelCount(field) : 1;
-			let current = graded ? levelOf(field, raw) : isFlagSet(raw) ? 1 : 0;
+			const initial = graded
+				? levelOf(field, raw)
+				: isFlagSet(raw)
+					? 1
+					: 0;
 			const stateOf = (level: number): string =>
 				graded ? String(level) : flagText(level > 0);
 
 			if (graded && field.input === 'select') {
-				const select = element('select', 'sheetsmith-record-select', cell);
+				const select = element(
+					'select',
+					'sheetsmith-record-select',
+					cell,
+				);
 				for (let level = 0; level <= count; level++) {
-					const option = element('option', '', select, levelName(field, level));
+					const option = element(
+						'option',
+						'',
+						select,
+						levelName(field, level),
+					);
 					option.value = String(level);
 				}
-				select.value = String(current);
+				select.value = String(initial);
 				select.setAttribute('aria-label', accessible);
 				select.addEventListener('change', () => {
-					current = Number(select.value);
-					commit(stateOf(current));
+					commit(stateOf(Number(select.value)));
 				});
 				return;
 			}
 
 			const button = element('button', 'sheetsmith-level-ring', cell);
 			button.type = 'button';
-			// Two states is a toggle button and ARIA has a word for it; more than
-			// two is not, so those carry their state in the name instead.
-			const pressed = count === 1;
-			const show = (): void => {
-				// Everything a reader sees comes from the shared painter, so a ring on
-				// a record and the same ring in a cell cannot measure differently
-				// under one finger. What stays here is the naming.
-				const name = levelName(field, current);
-				paintLevelRing(button, field, current, graded);
-				if (pressed) {
-					button.setAttribute('aria-pressed', String(current > 0));
-					button.setAttribute('aria-label', accessible);
-				} else {
-					button.setAttribute('aria-label', `${accessible}: ${name}`);
-				}
-				/*
-				 * **Only a named level earns a tooltip**, which is Table's and
-				 * Track's rule and was the one place this third copy diverged: it
-				 * set `title` unconditionally to the accessible name, so a toggle in
-				 * a table row had no tooltip and the identical toggle in a record set
-				 * had one repeating what a reader could already hear. A tooltip that
-				 * repeats what is legible is noise fired at every pass, as the card's
-				 * label learned — and every named level *is* an abbreviation, an
-				 * initial or a mark of the layout's own, where an unnamed one shows
-				 * the number that is already the whole answer.
-				 */
-				/*
-				 * **What the tooltip carries is not what Table's carries, and the
-				 * difference is the heading strip.** Table and Track set a `title`
-				 * only for a *named level*, on the argument that a tooltip repeating
-				 * legible text is noise — and in a cell that is right, because the
-				 * field's own name is already in a `<th>` over the column and only the
-				 * level's word is missing. A record has no `<th>`. Here the missing
-				 * word is the *field's own name*, and it is missing on a `toggle` as
-				 * much as on a `level`: a reader sees `Fireball · Level 3 · ●` and
-				 * nothing on screen says the dot is "Prepared".
-				 *
-				 * So the tooltip is the accessible name, always, and a *named* level
-				 * adds its own word to it. Which is a change from the copy that
-				 * shipped in two ways: it is set on a toggle as well, and it names the
-				 * field rather than only the level.
-				 */
-				button.setAttribute(
-					'title',
-					graded && field.levels !== undefined
-						? `${accessible}: ${name}`
-						: accessible,
-				);
-			};
-			const setLevel = (next: number): void => {
-				if (next === current) return;
-				current = next;
-				show();
-				commit(stateOf(current));
-			};
 			/*
-			 * **The touch route to the word the ring is not showing**, and it is bound
-			 * on every ring this component draws rather than on Table's named-level
-			 * predicate. `title` is a pointer's route and UI §7 forbids a hover-only
-			 * affordance: what a reader of a record sees is `Fireball · Level 3 · ●`,
-			 * and the only thing that says the dot is "Prepared" is the tooltip. Table
-			 * guards this on a *named level* because a cell's field is already named by
-			 * its `<th>`; a record has none, so the guard that is right there would
-			 * leave the shipping case — every ring on the sample sheet is a toggle —
-			 * with no route at all. It is the shape the `computed` field already has:
-			 * hover reveals, a tap opens the same text.
+			 * **What the tooltip carries is not what Table's carries, and the
+			 * difference is the heading strip.** Table and Track set a `title` only
+			 * for a *named level*, on the argument that a tooltip repeating legible
+			 * text is noise — and in a cell that is right, because the field's own
+			 * name is already in a `<th>` over the column and only the level's word
+			 * is missing. **A record has no `<th>`.** Here the missing word is the
+			 * *field's own name*, and it is missing on a `toggle` as much as on a
+			 * `level`: a reader sees `Fireball · Level 3 · ●` and nothing on screen
+			 * says the dot is "Prepared".
+			 *
+			 * So this is the one caller that says its name is *not* on screen, and
+			 * that is the whole of the divergence: `ring-control.ts` decides what to
+			 * do about it, including the touch route to the same words, which UI §7
+			 * requires because `title` is a pointer's route and every ring that ships
+			 * on the sample sheet is a toggle.
+			 *
+			 * **A strip does not change the answer, and the reason is that the fact
+			 * is not knowable here.** Whether one is showing depends on the list's
+			 * width, which only the stylesheet sees, and the same DOM serves both
+			 * regimes; answering `true` would take the tooltip and the long press
+			 * away in the narrow regime, which is exactly where no name is on screen.
+			 * Table derives the fact from `hideHeading` because its heading is there
+			 * at every width. What a wide headed list costs is a tooltip restating
+			 * the heading — and it reads `Shield Prepared`, so it names the record as
+			 * well, which no heading can.
 			 */
-			const longPressed = bindLongPress(
+			bindRingControl({
 				button,
-				() => button.getAttribute('title'),
-			);
-			// Clicking cycles and wraps, so one control reaches every level and
-			// returns to none; the arrows step without wrapping.
-			button.addEventListener('click', () => {
-				// The press that opened the bubble ends in a click, and it did not
-				// mean "change the level".
-				if (longPressed()) return;
-				setLevel(current === count ? 0 : current + 1);
+				column: field,
+				count,
+				graded,
+				level: initial,
+				name: accessible,
+				nameOnScreen: false,
+				onSet: (level) => commit(stateOf(level)),
 			});
-			button.addEventListener('keydown', (event) => {
-				const step =
-					event.key === 'ArrowRight' || event.key === 'ArrowUp'
-						? 1
-						: event.key === 'ArrowLeft' || event.key === 'ArrowDown'
-							? -1
-							: 0;
-				if (step === 0) return;
-				event.preventDefault();
-				setLevel(Math.max(0, Math.min(count, current + step)));
-			});
-			show();
 		}
 
 		/**
@@ -2051,9 +2147,17 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			commit: (next: string) => void,
 		): void {
 			const raw = record.fields[field.key] ?? '';
-			const button = element('button', 'sheetsmith-record-modifier', cell);
+			const button = element(
+				'button',
+				'sheetsmith-record-modifier',
+				cell,
+			);
 			button.type = 'button';
-			const glyph = element('span', 'sheetsmith-record-modifier-glyph', button);
+			const glyph = element(
+				'span',
+				'sheetsmith-record-modifier-glyph',
+				button,
+			);
 			glyph.setAttribute('aria-hidden', 'true');
 
 			// The stored list is what the form addresses, so every index is an index
@@ -2064,13 +2168,20 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			/** Built once per record, however many parts the field holds. */
 			let values: RowValues | null = null;
 			const ask = (part: string) =>
-				context.modifiers?.outcome(
+				context.modifiers?.outcomes(
 					part,
-					(values ??= recordValues(config, record, context.resolveField)),
-				) ?? null;
+					(values ??= recordValues(
+						config,
+						record,
+						context.resolveField,
+					)),
+				) ?? [];
 			const applied = rowModifiers(enrolled, ask);
-			const applying = applied.filter((one) => one.outcome?.applies === true)
-				.length;
+			// Through the shared predicate: see `modifier-breakdown.ts` for why one
+			// name rather than four copies.
+			const applyingParts = applied.filter((one) =>
+				applying(one.outcomes),
+			).length;
 			if (enrolled.length === 0) {
 				cell.classList.add('sheetsmith-record-modifier-empty');
 			}
@@ -2079,7 +2190,11 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			// `zap` where any part applies, `zap-off` where none does.
 			setIcon(
 				glyph,
-				enrolled.length === 0 ? 'plus' : applying > 0 ? 'zap' : 'zap-off',
+				enrolled.length === 0
+					? 'plus'
+					: applyingParts > 0
+						? 'zap'
+						: 'zap-off',
 			);
 			button.setAttribute(
 				'aria-label',
@@ -2126,7 +2241,8 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				const offending = parts.find(
 					(part) => !held.has(part) && refuseLink(part) !== null,
 				);
-				const said = offending === undefined ? null : refusal(offending);
+				const said =
+					offending === undefined ? null : refusal(offending);
 				// Called on every attempt including the ones that succeed, so the last
 				// message clears without this tracking when to.
 				showRefusal(said);
@@ -2140,7 +2256,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 					// The stored list, never the collapsed one: the form's indices are
 					// indices into the note.
 					parts: stored,
-					outcome: ask,
+					outcomes: ask,
 					definitions: context.modifiers?.definitions ?? [],
 					targets: context.modifiers?.targets ?? [],
 					published: context.modifiers?.published ?? [],
@@ -2193,7 +2309,10 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			// a glyph opened in *this* render would find a null handle and close
 			// nothing, which is a control carrying `aria-expanded` that only answers
 			// the attribute after a commit has rebuilt it.
-			let standing = reanchorAnchoredPanel<ModifierFormState>(panelKey, button);
+			let standing = reanchorAnchoredPanel<ModifierFormState>(
+				panelKey,
+				button,
+			);
 			if (standing !== null) {
 				button.setAttribute('aria-expanded', 'true');
 				fill(standing);
@@ -2221,7 +2340,8 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				// Focus moves to the first control on open, which is the platform's
 				// own contract for a dialog — unless the form has already placed it,
 				// which it does on a record with no parts.
-				if (!panel.body.contains(doc.activeElement)) focusFirstControl(panel);
+				if (!panel.body.contains(doc.activeElement))
+					focusFirstControl(panel);
 			});
 		}
 
@@ -2248,12 +2368,20 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				// A record whose fence will not read still shows what it holds, and
 				// shows it read-only: every write into it is refused at the file
 				// boundary, so a field would be a gesture that does nothing.
-				const shown = element('div', 'sheetsmith-record-body-rendered', into);
+				const shown = element(
+					'div',
+					'sheetsmith-record-body-rendered',
+					into,
+				);
 				paintProse(shown, text);
 				return;
 			}
 
-			const input = element('textarea', 'sheetsmith-record-body-input', into);
+			const input = element(
+				'textarea',
+				'sheetsmith-record-body-input',
+				into,
+			);
 			input.value = text;
 			// The start, chosen, rather than the end, inherited: assigning `value`
 			// moves the cursor to the end of the control and focusing scrolls it into
@@ -2268,9 +2396,17 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			// than `:has(.sheetsmith-record-body-input:focus)`. Flagged on `into`,
 			// which is what holds the rendered layer below, so the pair cannot be
 			// separated by a wrapper appearing between them.
-			flagWhileFocused(into, input, 'sheetsmith-record-body-field-focused');
+			flagWhileFocused(
+				into,
+				input,
+				'sheetsmith-record-body-field-focused',
+			);
 
-			const rendered = element('div', 'sheetsmith-record-body-rendered', into);
+			const rendered = element(
+				'div',
+				'sheetsmith-record-body-rendered',
+				into,
+			);
 			// The links the app draws, given this plugin's behaviour. Bound to the
 			// layer once, before anything is painted into it: the fallback painter
 			// wires each anchor as it makes it, and the app's renderer makes its own.
@@ -2279,7 +2415,9 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				if (context.renderMarkdown !== undefined) {
 					// And the fallback again where the app's renderer rejected, which is
 					// not something the reader caused or can fix.
-					context.renderMarkdown(text, rendered, () => paintProse(rendered, text));
+					context.renderMarkdown(text, rendered, () =>
+						paintProse(rendered, text),
+					);
 				} else {
 					paintProse(rendered, text);
 				}
@@ -2291,7 +2429,8 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			// behind it. A link owns its own press, as everywhere else on the sheet.
 			rendered.addEventListener('click', (event) => {
 				const target = event.target;
-				if (target instanceof HTMLElement && target.closest('a[href]')) return;
+				if (target instanceof HTMLElement && target.closest('a[href]'))
+					return;
 				event.preventDefault();
 				// A drag that selected text is not a request to edit.
 				const selection = doc.getSelection();
@@ -2330,7 +2469,10 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				 * invisible. The class swaps that round, as Rich text's does.
 				 */
 				onRefusal: (message) => {
-					into.classList.toggle('sheetsmith-record-body-refused', message !== null);
+					into.classList.toggle(
+						'sheetsmith-record-body-refused',
+						message !== null,
+					);
 					// Under the body rather than inside it: the body is a two-layer
 					// stack in one grid cell, so a third child there would sit on top
 					// of the prose the message is about — which is why the host is the
@@ -2340,7 +2482,8 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				// The label and the outcome, never the prose: reading a record's text
 				// back at its author is not feedback.
 				announceCommit: (next) => {
-					status.textContent = next === '' ? `${named} cleared` : `${named} saved`;
+					status.textContent =
+						next === '' ? `${named} cleared` : `${named} saved`;
 				},
 				announceRestore: () => {
 					status.textContent = `${named} restored`;

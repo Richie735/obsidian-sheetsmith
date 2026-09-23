@@ -67,7 +67,28 @@ export function harnessLayout(samples: readonly Sample[] = SAMPLES): Layout {
 		 *   definition here to be *reported* in the editor rather than to work;
 		 * - **a second bonus at `armour_class` of a third type**, which exists so
 		 *   one row's cell can name two modifiers that both apply, to two
-		 *   different values — one glyph, two numbers moving.
+		 *   different values — one glyph, two numbers moving;
+		 * - **one definition naming two changes**, which is the only state the
+		 *   editor's Modifiers list could not draw before
+		 *   (`docs/features/multi-change-definitions.md`).
+		 *
+		 * **The nested one sits directly under `Ring of Protection`, deliberately**,
+		 * so a reviewer reads a one-change definition and a two-change one against
+		 * each other rather than scrolling between them — and so it is inside the
+		 * frame `editor-layout` captures, which the foot of an eleven-entry list is
+		 * not.
+		 *
+		 * **And it is enrolled in by no row, also deliberately.** What it is here
+		 * for is the *editor*: `editor-layout` has to show a nested Changes list
+		 * beside nine flat ones, and a one-change definition and a two-change one
+		 * have to read as one form. Putting it in a cell would move two numbers on
+		 * the sheet and rewrite the arithmetic every comment in this file and every
+		 * sheet shot is measured against, to show something the vault fixture
+		 * already shows end to end (`src/test/fixtures/modifiers/`). It still
+		 * reaches the sheet where it costs nothing: the modifier form's **Modifier**
+		 * picker lists it, with `(2 values)` qualifying the *name* — beside it
+		 * rather than after the outcome, because a `<select>` clips from the end and
+		 * the outcome is the long half.
 		 */
 		modifiers: [
 			{
@@ -93,6 +114,30 @@ export function harnessLayout(samples: readonly Sample[] = SAMPLES): Layout {
 				target: 'armour_class',
 				amount: '1',
 				bonusType: 'item',
+			},
+			{
+				/*
+				 * The one definition here spelled with a `changes` list. Two values,
+				 * one name, one condition governing both.
+				 *
+				 * **The two changes carry different bonus types and different
+				 * phases**, which is what the shot is for: each change is a full
+				 * independent contributor, and a list whose every line read the same
+				 * type and the same phase would look like a definition-level field
+				 * drawn twice. `morale` is the one type nothing else on this layout
+				 * uses, so the pair is visibly not a copy.
+				 */
+				name: 'Blessing of the Bear',
+				when: 'Worn',
+				changes: [
+					{ target: 'abilities.STR', amount: '1', bonusType: 'morale' },
+					{
+						target: 'armour_class',
+						amount: '1',
+						bonusType: 'status',
+						applies: 'result',
+					},
+				],
 			},
 			{
 				// **The `+1` in the name is deliberate**: a name carrying arithmetic,
@@ -135,6 +180,34 @@ export function harnessLayout(samples: readonly Sample[] = SAMPLES): Layout {
 				amount: '2',
 				bonusType: 'item',
 			},
+		],
+		/*
+		 * The values this layout copies into a character's frontmatter (SPEC §9).
+		 *
+		 * Four, one per state the **Promoted fields** list has to be looked at in,
+		 * because none of them is visible in code (UI.md §11):
+		 *
+		 * - **a bare name**, which is the derived reading a card shows;
+		 * - **a `.value` form**, so a label carrying a suffix is on screen at the
+		 *   width the picker actually gets — `Abilities · STR · stored` is the
+		 *   longest thing this control ever holds, and the clipped-value `title`
+		 *   is the only recovery it has;
+		 * - **a table's column total**, so a published name that is not a card's
+		 *   is in the list;
+		 * - **a row pointed at a name this layout does not publish**, which is the
+		 *   one row here to be *marked* rather than to work: the field carries the
+		 *   parser's own clause and the report under the list says it in full, and
+		 *   both are on screen together.
+		 *
+		 * It has no effect on the sheet side of the harness, which writes no note
+		 * — `docs/BACKLOG.md` § UI already records that the harness sheet has no
+		 * note to write into — so what this state is for is the editor's own pane.
+		 */
+		promotedFields: [
+			{ name: 'armour_class', property: 'ac' },
+			{ name: 'abilities.STR.value', property: 'strength' },
+			{ name: 'inventory.Weight', property: 'carried' },
+			{ name: 'armor_class', property: 'ac_old' },
 		],
 	};
 }
@@ -197,9 +270,23 @@ export function canvasDemoLayout(): Layout {
  * ordinary way a layout is wrong — it is a thing people hand-edit and
  * share. `'canvas-demo'` is `canvasDemoLayout` above, addressed by name for
  * the same reason the other two are: `harness.ts`'s `&layout=` query has no
- * way to hand over a whole object.
+ * way to hand over a whole object. `'outside'` is the harness layout filed
+ * somewhere a character cannot reach it — another folder — which is the one
+ * state of a *valid* layout the pane draws differently
+ * (`docs/features/visible-layout-files.md`). `'no-file'` is the harness layout
+ * in the folder with the pane opened on nothing, which is what a pane shows
+ * after its file is deleted from outside.
  */
-export type LayoutSource = Layout | 'none' | 'broken' | 'canvas-demo';
+export type LayoutSource =
+	| Layout
+	| 'none'
+	| 'broken'
+	| 'canvas-demo'
+	| 'outside'
+	| 'no-file';
+
+/** Where the outside-the-folder layout is filed. */
+const OUTSIDE_FOLDER = 'Elsewhere';
 
 /** A truncated file, which is what a hand edit interrupted actually leaves. */
 const UNPARSEABLE = '{\n\t"name": "Harness sheet",\n\t"components": [\n';
@@ -210,7 +297,9 @@ const UNPARSEABLE = '{\n\t"name": "Harness sheet",\n\t"components": [\n';
  *
  * The folder is created either way, including for `'none'`: an author who has
  * set a layout folder and put nothing in it has a folder, and the editor's empty
- * state is about having no layouts rather than no folder.
+ * state is about having no layouts rather than no folder. It answers the path
+ * the pane is to be opened on, because the pane is bound to a file — or null
+ * for `'none'` and `'no-file'`, which open it on nothing.
  *
  * The plugin object itself is `src/test/plugin.ts`'s, shared with the tests. Two
  * calls at each surface rather than one function doing both, because writing a
@@ -220,15 +309,33 @@ const UNPARSEABLE = '{\n\t"name": "Harness sheet",\n\t"components": [\n';
 export async function plantLayout(
 	app: App,
 	layout: LayoutSource,
-): Promise<void> {
+): Promise<string | null> {
 	await app.vault.createFolder(LAYOUT_FOLDER);
-	if (layout === 'none') return;
-	await app.vault.create(
-		`${LAYOUT_FOLDER}/${LAYOUT_NAME}.json`,
+	if (layout === 'none') return null;
+	// A `.sheetsmith` file, which is what the plugin writes and what a pane is
+	// opened on from the file explorer.
+	if (layout === 'outside') {
+		await app.vault.createFolder(OUTSIDE_FOLDER);
+		const file = await app.vault.create(
+			`${OUTSIDE_FOLDER}/${LAYOUT_NAME}.sheetsmith`,
+			serialiseLayout(harnessLayout()),
+		);
+		return file.path;
+	}
+	if (layout === 'no-file') {
+		await app.vault.create(
+			`${LAYOUT_FOLDER}/${LAYOUT_NAME}.sheetsmith`,
+			serialiseLayout(harnessLayout()),
+		);
+		return null;
+	}
+	const file = await app.vault.create(
+		`${LAYOUT_FOLDER}/${LAYOUT_NAME}.sheetsmith`,
 		layout === 'broken'
 			? UNPARSEABLE
 			: serialiseLayout(layout === 'canvas-demo' ? canvasDemoLayout() : layout),
 	);
+	return file.path;
 }
 
 /**
