@@ -1096,11 +1096,13 @@ describe('a component that says what a sample of itself looks like', () => {
 		}
 	});
 
-	it('is called from the canvas and nowhere else', () => {
+	it('is called from the editor\'s sample reader and nowhere else', () => {
 		/*
 		 * A sample is filler, so a path that reached a character note with one in
 		 * it would be writing invented data into a file somebody owns. The one
-		 * caller is the layout editor's canvas, where there is no note at all.
+		 * caller is `editor/sample-read.ts`, which the layout editor's canvas and
+		 * the component picker's preview both read through, and neither has a note
+		 * at all.
 		 *
 		 * A source scan because there is no seam to assert this at: `read` takes a
 		 * body from wherever its caller got one, and every other caller gets one
@@ -1151,7 +1153,7 @@ describe('a component that says what a sample of itself looks like', () => {
 		// this file moving one folder down would scan `components/` alone and go
 		// on reporting green over the editor it exists to watch.
 		expect(files).toBeGreaterThan(60);
-		expect(found).toEqual([join('editor', 'canvas.ts')]);
+		expect(found).toEqual([join('editor', 'sample-read.ts')]);
 	});
 });
 

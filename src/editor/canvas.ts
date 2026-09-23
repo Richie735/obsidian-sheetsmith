@@ -47,6 +47,7 @@ import { ComponentConfig, isContainer, placesChildren } from '../types';
 import { getComponent } from '../components';
 import { innerPlacement, renderGrid } from '../view/grid-cells';
 import { focusToken } from './focus-token';
+import { readSample } from './sample-read';
 import { describeCell, findOverlaps } from './preview-grid';
 import { Schematic, SchematicGestures, SchematicHost } from './schematic-gestures';
 
@@ -134,8 +135,11 @@ export class Canvas {
 		const walk = walkComponents(layout.components);
 		this.ensureSelectionVisible(walk, this.host.selection);
 
+		// `sample-read.ts` holds what a component reads with no character behind
+		// it, shared with the component picker's preview so the two cannot draw
+		// one component two ways.
 		const prepared: ReadComponent[] = walk.map(({ config }) =>
-			this.readForCanvas(config),
+			readSample(config, this.host.sampleValues),
 		);
 		const { library } = parseFunctions(layout.functions ?? []);
 		const { env } = buildSheet(layout, prepared, library);
@@ -180,38 +184,6 @@ export class Canvas {
 	/** Redraw from the layout last drawn. A no-op before the first `draw`. */
 	redraw(): void {
 		if (this.root && this.layout) this.draw(this.root, this.layout);
-	}
-
-	/**
-	 * What a component reads with no character behind it: the body it says a
-	 * section of itself would hold, or an empty section — exactly as a fresh
-	 * note's is (`docs/PATTERNS.md` §4) — when the pane is showing what a new
-	 * character sees. A config error — a Table's duplicate column key — is not a
-	 * data question and surfaces from the same call either way, since a
-	 * component's own `read` checks its config before it ever looks at a body.
-	 *
-	 * **This is the whole of the render-path change sample values make**
-	 * (`docs/features/preview-sample-values.md` §5): the body goes through the
-	 * component's own `read`, so what the canvas draws is exactly what a note
-	 * holding that text would draw, and everything downstream — `renderGrid`,
-	 * `buildSheet`, `resolveFormulaFields`, the overlays, `markInert` — is handed
-	 * the same shapes it was handed before. A component with no sample of its own
-	 * (Image) draws identically in both states, which is visible mixed-ness and
-	 * the honest reading of a component that needs a vault.
-	 */
-	private readForCanvas(config: ComponentConfig): ReadComponent {
-		const component = getComponent(config.type);
-		if (!component || isContainer(component)) {
-			return { config, component, data: null, error: null };
-		}
-		const body = this.host.sampleValues ? (component.sample?.(config) ?? '') : '';
-		const result = component.read(body, config);
-		return {
-			config,
-			component,
-			data: result.ok ? result.data : null,
-			error: result.ok ? null : result.error,
-		};
 	}
 
 	/**
