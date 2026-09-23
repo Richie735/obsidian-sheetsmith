@@ -7278,6 +7278,28 @@ a.sheetsmith-undo {
 	color: var(--text-accent);
 }
 
+/* The focused mark, which the reset above had taken away: Obsidian draws a
+   button's focus ring as a `box-shadow`, and `box-shadow: none` is one of the
+   declarations that strip its chrome, so a name reached by Tab showed nothing
+   at all — found photographing the tree's focus state. An outline around the
+   name alone, 2px, so it cannot be mistaken for the selected row's 1px accent
+   edge around the whole card, and an outline rather than a shadow so forced
+   colors keeps it (docs/UI.md §6). */
+.sheetsmith-tree-row .sheetsmith-tree-name:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 1px;
+	border-radius: var(--radius-s);
+}
+
+/* Room for that ring inside the name's own box, which the app clips
+   (`overflow: hidden` for its ellipsis) — so a ring drawn outside the button
+   showed as one stray right-hand edge. Padding the box by the ring's reach and
+   pulling it back by the same margin moves no text. */
+.sheetsmith-tree-row .setting-item-name {
+	padding: var(--size-2-2);
+	margin: calc(-1 * var(--size-2-2));
+}
+
 /* The whole row, not just the name, answers a press (`docs/PATTERNS.md` §6).
    No hover fill where a drag is over the row already claims one
    (`.sheetsmith-tree-drop-valid`, immediately below) or where the row is
@@ -7290,6 +7312,109 @@ a.sheetsmith-undo {
 
 .sheetsmith-tree-row:hover:not(.sheetsmith-tree-drop-valid):not(.sheetsmith-preview-editing) {
 	background-color: var(--background-modifier-hover);
+}
+
+/* The slot before a component row's name (`docs/features/layout-editor-tree.md`
+   §1): a container's chevron, or a spacer of the same width on every other row,
+   so names at one depth start in one column whether or not the row is a
+   container. The layout's own row has none, which is what starts its name where
+   a top-level chevron sits: it is the root rather than a sibling.
+
+   `--size-4-6` wide, and the guide below is placed from the same token, so the
+   line a container's children hang from runs under the centre of the chevron
+   that folds them. */
+.sheetsmith-tree-slot {
+	display: flex;
+	flex: 0 0 var(--size-4-6);
+	align-items: center;
+	justify-content: center;
+	height: var(--size-4-6);
+	/* The chevron's centre on the name's first line rather than 3px above it:
+	   the row aligns its children to the top, and a 24px slot is taller than
+	   the name's line box. Measured, and 2px of the 3 is what a token gives. */
+	margin-block-start: var(--size-2-1);
+}
+
+/* The slot is the row's first child, which the app's own
+   `.setting-item > *:first-child` gives the info column's 16px trailing margin.
+   That margin separates a name from its controls; beside a chevron it read as a
+   hole, so the slot takes a gap of its own, at the same (0,2,0) and later in the
+   cascade. Zero columns of gap on every tree row: the app declares a row gap on
+   a setting row and no column gap, and the harness's fallback card rule adds a
+   16px one under it, so saying it here keeps the harness drawing what the app
+   draws. */
+.sheetsmith-tree-row > .sheetsmith-tree-slot {
+	margin-inline-end: var(--size-2-3);
+}
+
+.sheetsmith-tree-row {
+	gap: var(--size-4-3) 0;
+}
+
+/* And the name keeps the trailing margin the app meant for it, which it lost by
+   no longer being the first child. */
+.sheetsmith-tree-row > .sheetsmith-tree-slot + .setting-item-info {
+	margin-inline-end: var(--size-4-4);
+}
+
+/* The chevron: a glyph `<button>` with the app's button chrome taken off,
+   Record set's disclosure one surface over — the same icon pair, the same
+   `aria-expanded`, and muted rather than faint for the same measured reason:
+   `--text-faint` is under 3:1 on both themes, and a chevron at that ratio is a
+   smudge. Scoped under the row at (0,2,0), which is what beats the app's
+   `button:not(.clickable-icon)` at (0,1,1) (docs/UI.md §2). No transition on
+   the glyph swap, so nothing here for reduced motion to strip. */
+.sheetsmith-tree-row .sheetsmith-tree-disclosure {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: var(--size-4-6);
+	height: var(--size-4-6);
+	padding: 0;
+	margin: 0;
+	border: none;
+	border-radius: var(--radius-s);
+	background: none;
+	box-shadow: none;
+	color: var(--text-muted);
+	cursor: pointer;
+}
+
+.sheetsmith-tree-row .sheetsmith-tree-disclosure .svg-icon {
+	width: var(--icon-s);
+	height: var(--icon-s);
+}
+
+.sheetsmith-tree-row .sheetsmith-tree-disclosure:hover {
+	background-color: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+/* An outline rather than a shadow, since forced colors discards a shadow and
+   the reset above removes the app's own ring with it (docs/UI.md §6). */
+.sheetsmith-tree-row .sheetsmith-tree-disclosure:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 1px;
+}
+
+/* What a container holds, nested the way the layout nests
+   (`docs/features/layout-editor-tree.md` §2). **The card steps in, not its
+   text**: every row is a card of its own, so a text offset inside one draws
+   depth 1 and depth 2 as identical boxes — the defect this replaced. Indented
+   so the rule down its leading edge falls under the centre of the container's
+   chevron: the card's own padding, then half the slot.
+
+   **The guide is this wrapper's own border**, so it runs the full height of
+   everything the container holds, gaps between cards included, where a rule
+   drawn on each row was cut into row-height pieces. Two containers deep is two
+   wrappers and so two guides, which is the depth drawn rather than inferred.
+   `--background-modifier-border-hover` rather than the card's own border colour,
+   so it reads as structure and not as one more card edge, and a border rather
+   than a background, so forced colors repaints it rather than dropping it. */
+.sheetsmith-tree-children {
+	margin-inline-start: calc(var(--size-4-4) + var(--size-4-6) / 2);
+	padding-inline-start: var(--size-2-3);
+	border-inline-start: 1px solid var(--background-modifier-border-hover);
 }
 
 /* A tree row a drag is currently over, and the drop would succeed
@@ -8900,6 +9025,17 @@ a.sheetsmith-undo {
 	.sheetsmith-preview-editing {
 		outline: 2px solid SelectedItem;
 		outline-offset: 1px;
+	}
+
+	/* A tree row draws the same ring *inside* its card, as the picker's active
+	   line does. The row fills the outline column edge to edge, and the column
+	   scrolls (`overflow-y: auto`, which clips the other axis too), so a ring
+	   offset outward lost both side edges on a top-level row — measured with no
+	   ring pixels at all at mid-height — and its right edge at every depth. A
+	   tree row has no border for an inward ring to sit on, which is the block's
+	   whole reason for going outward. */
+	.sheetsmith-tree-row.sheetsmith-preview-editing {
+		outline-offset: -2px;
 	}
 }
 

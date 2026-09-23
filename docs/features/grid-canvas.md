@@ -77,6 +77,10 @@ tree beside the canvas, onto the row of the container it should join; the
 tree also gains up/down and indent/outdent controls so the same move is
 reachable without a pointer.
 
+*Superseded by `docs/features/layout-editor-tree.md`: the four controls left
+the row for a menu and four Alt+arrow chords, which reach the same moves.
+Left standing as history.*
+
 ## Design
 
 ### §1. The canvas renders the real component, with its own interaction turned off
@@ -532,7 +536,9 @@ trusting the mechanism by inspection.
       sibling container or out to the grandparent, disabled exactly where
       the drag equivalent would be refused. A test drives at least one
       reparent via the keyboard-operable controls with no pointer event
-      dispatched.
+      dispatched. *Superseded by `docs/features/layout-editor-tree.md`: the
+      same moves are now a row menu and four chords, and the tests drive
+      those.*
 - [x] A reparent is undone and redone as one step: a test performs a
       tree-drag reparent at depth 2, calls `undo()`, and asserts the
       layout's bytes exactly match the pre-drag snapshot; a second test

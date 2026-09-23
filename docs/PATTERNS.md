@@ -129,12 +129,16 @@ listener survives being orphaned by a rebuild, and the control stands itself dow
 before the write rather than leaving a listener alive on a row that is going. Its two
 *sentences* have a third consumer, the modifier form's **Remove**, whose armed state
 is the panel's and so cannot take the gesture;
+`ui/undo-notice.ts` holds the notice that says what just happened and offers to
+take it back, on the strength of the sheet's reset and the tree's **Remove**,
+because what is shared is a timing and a markup the notice's stylesheet rule reads;
 and `components/linked-text.ts` holds the anchor policy on the strength of Table
 and Rich text, because what is shared is a *set* — `internal-link`,
 `is-unresolved`, both `href` and `data-href`, `title` and never `aria-label`, and
 that a link paints as resolved where there is no vault — and a guard test over two
-copies of it could only assert they still spell the same thing. All seven say so in
-their headers, which is what a deliberate departure owes.
+copies of it could only assert they still spell the same thing. All of them say so
+in their headers, which is what a deliberate departure owes — a count here went
+stale the first time an entry was added without it.
 
 That last one also shows what does **not** climb with the policy. Table clips its
 text and Rich text wraps, so clipping stayed with the callers: the painter takes
@@ -262,9 +266,20 @@ would have had to import `Menu` — which a component may not, since inheriting 
 nothing about modifiers because the domain text arrived as arguments. **Then the
 surface became a form**, `Menu` turned out to host no controls at all, and
 `ui/anchored-panel.ts` replaced it as plain DOM — so the import left `src/`
-entirely, and `components/isolation.test.ts` scans for it. Both times the boundary
-produced the right shape rather than merely permitting one: a `ui/` module that
-knows nothing about what it holds, with the domain text as arguments.
+entirely, and `components/isolation.test.ts` scans for it. Both times the
+boundary produced the right shape rather than merely permitting one: a `ui/`
+module that knows nothing about what it holds, with the domain text as arguments.
+
+*That was the sheet's side of the boundary, and the import has since come back on
+the other side.* The layout editor's tree opens the app's menu from each row
+(`docs/features/layout-editor-tree.md` §5), which is the job the menu is for — a
+list of commands with nothing to fill in — and it lives in
+`editor/tree-moves.ts`, holding its own domain text, rather than behind a `ui/`
+wrapper. Nothing restricts `editor/` the way a component is restricted, so the
+argument that sent the modifier cell's import to `ui/` does not reach it, and a
+wrapper taking the item titles as arguments for one caller is the generalisation
+ahead of evidence §1 refuses. The scan names that one file rather than being
+dropped, so a second import is still a decision made there.
 
 The allowlist has since gained no name, and the sibling list has gained three:
 `components/modifier-form.ts`, the markup of that form; `components/effective-value.ts`;

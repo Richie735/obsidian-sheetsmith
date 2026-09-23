@@ -225,6 +225,15 @@ const CHROME = [
 	 * plugin draws except inside that popup.
 	 */
 	/^\.suggestion/,
+	/*
+	 * The app's own context menu, which the layout editor's tree opens from each
+	 * row's menu button (`docs/features/layout-editor-tree.md` §5). The plugin
+	 * writes no rule for it, so the shot of an open menu is only a review of the
+	 * app's menu if the app's rules come along: `.menu`, `.menu-item` with its
+	 * `is-disabled` and `is-warning` states, `.menu-item-icon`, `.menu-item-title`
+	 * and `.menu-separator`, all under one prefix.
+	 */
+	/^\.menu/,
 	// The workspace pane the layout editor is a view in. A settings tab and a
 	// leaf are two different frames, and the editor now sits in the second: the
 	// leaf's own box, its header, and the scrolling content area a view builds

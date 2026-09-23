@@ -181,6 +181,18 @@ making the operation recoverable, not by adding a dialog — which was the
 actual property the existing dialogs exist to provide, and undo provides it
 more generally.
 
+**Amended by `docs/features/layout-editor-tree.md`: removing a component from
+the tree lost its confirm.** The decision above holds for every other dialog.
+This one went because the tree's **Remove** moved into a row menu, and the
+reasons the confirm stayed no longer outweighed a modal on every removal. What
+the confirm said is not lost: a removal answers with a `Notice` saying what went
+and where its children moved — `Removed "Defences". The 2 components inside it
+moved to the bottom of the sheet.` — and carrying an **Undo** link, which is
+what makes undo one press away even though, since 0.1.1, the undo command has no
+default hotkey. The link undoes only while the layout still holds the bytes the
+removal wrote, and says **Sheetsmith did not undo: this layout has changed
+since.** otherwise, which is the sheet's own reset-undo guard read for a layout.
+
 ## Config fields
 
 None. No `configFields`, no `ComponentDefinition` change — this is a pane

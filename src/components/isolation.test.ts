@@ -247,9 +247,19 @@ function scan(
 	return { files, hits };
 }
 
-describe('the app\'s own menu is imported nowhere in src', () => {
+describe('the app\'s own menu is imported in one file in src', () => {
 	/*
-	 * **The `Menu` import is gone from `src/` entirely**, and this is what says so.
+	 * **The `Menu` import was gone from `src/` entirely, and it is back in exactly
+	 * one file**, which this is what says. The layout editor's tree opens the
+	 * app's own menu from each row (`docs/features/layout-editor-tree.md` §5), and
+	 * that is the job the menu is for: a list of commands, each a title, an icon
+	 * and a click, with nothing to fill in. What the paragraph below rules out is
+	 * a *form* in a menu, and the tree's is not one. So the scan names the one
+	 * file admitted rather than dropping the check: a second import is still a
+	 * decision somebody has to make here, and the next floating form on a sheet
+	 * still goes red.
+	 *
+	 * **What it said before the tree, which still governs everything else.**
 	 * It lived in `ui/check-menu.ts`, which was the only shape available while the
 	 * modifier cell's popup was Obsidian's own menu: `Menu` closes on selection and
 	 * `MenuItem` takes a title, an icon and a click, so it hosts no controls at all
@@ -262,7 +272,7 @@ describe('the app\'s own menu is imported nowhere in src', () => {
 	 * purpose. This is the check that would go red if the next floating surface
 	 * reached for the menu again.
 	 */
-	it('imports Menu and MenuItem in no file under src', () => {
+	it('imports Menu and MenuItem in no file under src but the tree\'s row moves', () => {
 		// The import statement, never the word: `Menu` appears in prose in several
 		// headers arguing why it is *not* used, and a scan that matched those could
 		// never go green.
@@ -280,7 +290,7 @@ describe('the app\'s own menu is imported nowhere in src', () => {
 		// a walk that read a subtree instead would fail here rather than reporting
 		// green over whatever it stopped reading.
 		expect(files).toBeGreaterThan(100);
-		expect(hits).toEqual([]);
+		expect(hits).toEqual(['tree-moves.ts']);
 	});
 });
 

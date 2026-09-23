@@ -1,7 +1,7 @@
 /*
  * Whether a component in a layout may take a child where it sits.
  *
- * One predicate, and a module of its own for the reason its own comment already
+ * Two predicates, `holdsChildren` and `acceptsChildren`, and a module of its own for the reason its own comment already
  * gave: it is asked in three regions of the pane and in both polarities, and two
  * of those regions are now two files. `docs/PATTERNS.md` §1's ladder puts a
  * predicate on the one-step tier — a guard test over two copies could only
@@ -43,5 +43,20 @@ export function acceptsChildren(
 	config: ComponentConfig,
 	depth: number,
 ): boolean {
-	return isContainer(getComponent(config.type)) && mayHoldChildren(depth);
+	return holdsChildren(config) && mayHoldChildren(depth);
+}
+
+/**
+ * Whether this component is a container at all, asked of a placed config.
+ *
+ * `isContainer` applied to a config, with the registry lookup inside, on
+ * `childIsPlaced`'s precedent (`docs/PATTERNS.md` §1, "share the application,
+ * not just the fact"). The layout editor's tree asks it of every row, of a
+ * drop target and of a menu move's destination, and those were six spellings
+ * of `isContainer(getComponent(x.type))` a clause added to the rule would have
+ * had to find one by one. Beside `acceptsChildren` because that is the other
+ * half of the same question, and it now reads through this.
+ */
+export function holdsChildren(config: ComponentConfig): boolean {
+	return isContainer(getComponent(config.type));
 }

@@ -15,6 +15,7 @@ import {
 	dropDetachedAnchoredPanel,
 } from '../ui/anchored-panel';
 import { ConfirmModal } from '../ui/confirm-modal';
+import { offerUndo } from '../ui/undo-notice';
 import {
 	appendModifierDefinition,
 	hasLayouts,
@@ -103,13 +104,6 @@ export function openSheetViews(app: App): SheetView[] {
 	}
 	return sheets;
 }
-
-/**
- * How long the undo stays offered after a trigger. Long enough to notice a
- * rest was the wrong one, short enough that it is not still sitting there
- * when the note has moved on.
- */
-const UNDO_TIMEOUT = 12000;
 
 /**
  * A warning naming the components it affected, one per line.
@@ -1009,16 +1003,7 @@ export class SheetView extends TextFileView {
 		before: string,
 		after: { text: string },
 	): void {
-		const notice = new Notice('', UNDO_TIMEOUT);
-		notice.messageEl.createSpan({ text: `${name} applied. ` });
-		const undo = notice.messageEl.createEl('a', {
-			text: 'Undo',
-			cls: 'sheetsmith-undo',
-		});
-		undo.addEventListener('click', () => {
-			notice.hide();
-			this.restoreDocument(before, after);
-		});
+		offerUndo(`${name} applied.`, () => this.restoreDocument(before, after));
 	}
 
 	/**

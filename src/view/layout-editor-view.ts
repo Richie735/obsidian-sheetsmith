@@ -78,6 +78,12 @@ export class LayoutEditorView extends FileView implements LayoutEditorHost {
 	private closing = false;
 	/** What the panel is configuring. Ephemeral state. */
 	private selected: string = SHEET_DESTINATION;
+	/**
+	 * The containers the tree draws shut. State rather than ephemeral state,
+	 * unlike the selection, because a restored workspace should come back folded
+	 * the way the author left it (`docs/features/layout-editor-tree.md` §4).
+	 */
+	private folded = new Set<string>();
 
 	/*
 	 * `navigation` is left at `FileView`'s own `true`, which is a decision with a
@@ -280,6 +286,27 @@ export class LayoutEditorView extends FileView implements LayoutEditorHost {
 		this.selected = id;
 	}
 
+	get collapsed(): ReadonlySet<string> {
+		return this.folded;
+	}
+
+	/**
+	 * Remember which containers are shut, and ask the workspace to save.
+	 *
+	 * The save is asked for here rather than left to the next layout change,
+	 * because a fold is the whole of what changed: nothing else about the
+	 * workspace moves when a chevron is pressed, so without the request a fold
+	 * made just before quitting would not come back. Only where the set actually
+	 * changed, since the tree also calls this from inside a render to drop an id
+	 * the layout no longer holds, and a render is not an edit to the workspace.
+	 */
+	setCollapsed(ids: Iterable<string>): void {
+		const next = new Set(ids);
+		if (sameIds(next, this.folded)) return;
+		this.folded = next;
+		this.app.workspace.requestSaveLayout();
+	}
+
 	/**
 	 * Refresh every open sheet view, after the editor has written the layout.
 	 *
@@ -368,12 +395,22 @@ export class LayoutEditorView extends FileView implements LayoutEditorHost {
 
 	/* --- Posture the workspace remembers ------------------------------- */
 
-	/*
-	 * `getState` is `FileView`'s own, `{ file: <path> }`: which file is open and
-	 * nothing else, which is the one piece of posture that reopening on a
-	 * different layout would read as a bug. What is *selected* is deliberately
-	 * not in it: see `getEphemeralState`.
+	/**
+	 * `FileView`'s own, `{ file: <path> }`, plus the containers the tree draws
+	 * shut: the two pieces of posture that reopening without would read as a
+	 * bug. What is *selected* is deliberately not in it: see
+	 * `getEphemeralState`.
+	 *
+	 * `collapsed` is sorted, so a workspace file does not churn with the order the
+	 * chevrons happened to be pressed in, and left out when nothing is shut, so a
+	 * pane that never folded anything saves exactly what it saved before this
+	 * existed.
 	 */
+	getState(): Record<string, unknown> {
+		const state = super.getState();
+		if (this.folded.size > 0) state.collapsed = [...this.folded].sort();
+		return state;
+	}
 
 	/**
 	 * `FileView`'s own, after one translation: the shape an earlier version
@@ -395,10 +432,47 @@ export class LayoutEditorView extends FileView implements LayoutEditorHost {
 				this.plugin.settings.layoutFolder,
 				legacy,
 			);
-			await super.setState({ ...given, file: file?.path ?? null }, result);
+			const translated = { ...given, file: file?.path ?? null };
+			this.takeCollapsed(translated);
+			await super.setState(translated, result);
 			return;
 		}
+		this.takeCollapsed(given);
 		await super.setState(state, result);
+	}
+
+	/**
+	 * Adopt the folds a state carries, **before** the base class loads the file
+	 * it names, since loading draws and the first draw has to read them.
+	 *
+	 * **Per file**, which is the decision here: a state naming a different file
+	 * from the one open replaces the set with whatever it carries, and that is
+	 * nothing when it carries no key — the dropdown's own `{ file }` among them.
+	 * An id like `abilities` means a different container in a different layout,
+	 * which is the undo stack's reason for clearing at the same moment. Anything
+	 * but an array of strings is ignored, as a malformed workspace file should be.
+	 *
+	 * A state for the file already open adopts a well-formed set and redraws, and
+	 * leaves the folds alone otherwise: that is what revealing the pane sends.
+	 */
+	private takeCollapsed(given: Record<string, unknown>): void {
+		const raw = given.collapsed;
+		const carried =
+			Array.isArray(raw) && raw.every((id) => typeof id === 'string')
+				? raw
+				: null;
+		const names = 'file' in given;
+		const path = typeof given.file === 'string' ? given.file : null;
+		const another = names && path !== (this.file?.path ?? null);
+		if (another) {
+			this.folded = new Set(carried ?? []);
+			return;
+		}
+		if (carried === null) return;
+		const next = new Set(carried);
+		if (sameIds(next, this.folded)) return;
+		this.folded = next;
+		if (this.root !== null) this.redraw();
 	}
 
 	/**
@@ -453,6 +527,11 @@ export class LayoutEditorView extends FileView implements LayoutEditorHost {
 			if (el) el.scrollTop = panel;
 		}
 	}
+}
+
+/** Whether two sets of ids hold the same ids. */
+function sameIds(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+	return a.size === b.size && [...a].every((id) => b.has(id));
 }
 
 /**

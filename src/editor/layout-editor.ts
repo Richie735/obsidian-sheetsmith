@@ -22,6 +22,7 @@ import { showFieldError } from './field-error';
 import { attachFormulaSuggest, FormulaSuggest } from './formula-suggest';
 import { focusToken } from './focus-token';
 import { ConfirmModal } from '../ui/confirm-modal';
+import { offerUndo } from '../ui/undo-notice';
 import { NEW_LAYOUT_LABEL } from './new-layout';
 import { isResolvedLayout, listLayouts } from '../layouts';
 import { ListContext } from './list-fields';
@@ -96,6 +97,19 @@ export interface LayoutEditorHost {
 	readonly selection: string;
 	/** Remember what is selected. Does not redraw. */
 	setSelection(id: string): void;
+	/**
+	 * The containers the tree draws shut, by component id
+	 * (`docs/features/layout-editor-tree.md` §4). Posture for the reason the
+	 * selection is: it changes nothing in the layout and belongs to the pane, so
+	 * the tree reads it at render time and never keeps a copy.
+	 */
+	readonly collapsed: ReadonlySet<string>;
+	/**
+	 * Remember which containers are shut. Does not redraw, like `setSelection`,
+	 * and a set equal to the one held changes nothing — the tree calls this on
+	 * every render, and only a real change is worth asking the workspace to save.
+	 */
+	setCollapsed(ids: Iterable<string>): void;
 	/** Rebuild both regions from the layout as it now stands. */
 	redraw(): void;
 	/** Refresh every open sheet view, after a write to the layout file. */
@@ -637,6 +651,7 @@ export class LayoutEditorSection {
 			},
 			redraw: () => this.redraw(),
 		});
+		const host = this.host;
 		renderTree(outline, layout, {
 			persist: () => void this.persist(),
 			redraw: () => this.redraw(),
@@ -646,8 +661,16 @@ export class LayoutEditorSection {
 			// selected mark) or a later command with nothing to do with
 			// selection, so there is no stale copy for a getter to avoid.
 			selection: this.host.selection,
-			confirm: (message, cta, onConfirm) =>
-				new ConfirmModal(this.plugin.app, message, cta, onConfirm).open(),
+			focusAfterRedraw: (token) => {
+				this.pendingFocus = token;
+			},
+			// Live, unlike the selection: the render writes a corrected set back
+			// before it draws, and the rows drawn after that read the correction.
+			get collapsed(): ReadonlySet<string> {
+				return host.collapsed;
+			},
+			setCollapsed: (ids) => host.setCollapsed(ids),
+			persistRemoval: (sentence) => this.persistRemoval(sentence),
 			drag: this.treeDrag,
 		});
 
@@ -845,6 +868,37 @@ export class LayoutEditorSection {
 		if (added !== undefined) this.host.setSelection(added);
 		void this.persist();
 		return label;
+	}
+
+	/**
+	 * Write a removal from the tree, then say what it did and offer to take it
+	 * back (`docs/features/layout-editor-tree.md` §5).
+	 *
+	 * **The undo is guarded by the bytes the removal left**, which is
+	 * `SheetView.restoreDocument`'s guard read for a layout: an author who
+	 * removed, then edited, then pressed a stale **Undo** would otherwise have
+	 * the edit undone and not the removal. So the press undoes only while this
+	 * pane still holds that file and that text, and says why it did nothing
+	 * otherwise — a different layout opened in between is the same refusal,
+	 * since the removal is not in its history.
+	 *
+	 * `persist` sets `onDisk` before it awaits the write, so the bytes are known
+	 * here synchronously. Where the layout would not serialise, `persist` said
+	 * so and wrote nothing, and there is nothing to offer an undo of.
+	 */
+	private persistRemoval(sentence: string): void {
+		const before = this.onDisk;
+		void this.persist();
+		const file = this.file;
+		const removed = this.onDisk;
+		if (removed === before) return;
+		offerUndo(sentence, () => {
+			if (this.file !== file || this.onDisk !== removed) {
+				new Notice('Sheetsmith did not undo: this layout has changed since.');
+				return;
+			}
+			this.undo();
+		});
 	}
 
 	/** Select a component, or the layout itself, and rebuild both regions. */

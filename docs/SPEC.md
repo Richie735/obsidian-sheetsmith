@@ -723,11 +723,11 @@ This is the only place the sheet performs an action rather than holding values.
 
 ## 7. Layout editor
 
-A workspace pane of its own hosts the editor, **bound to one layout file** (`docs/features/visible-layout-files.md`): it is a `FileView`, so a layout file opened from anywhere Obsidian opens one lands in it, its title is the file's basename, and it follows the file through a rename or a move and reloads on a write made anywhere else. In it an author creates layouts, adds and removes components, edits each component's shared and declared config fields, declares the layout's reset triggers, and writes its function library. **The pane is a tree of everything the layout holds beside a panel configuring whichever one is selected**, and the tree's first row is the layout itself — selecting it puts the grid's column count, the function library and the trigger list in that panel, so there is one selection rather than two and the panel needs no chrome of its own. The two columns become one below a threshold derived from the panel's own working width, and the canvas then sits above the tree with the panel under it. Settings keeps three preferences and a button that opens the pane, and **the tab describes itself to Obsidian rather than drawing itself** — each row is a setting definition, so the app indexes it for settings search, with a `display()` fallback that keeps the tab rendering on the versions below 1.13 the manifest still admits (`docs/features/declarative-settings.md`). A component that can act on a reset, meaning one implementing `applyReset` (§4.1), gains a binding of its own: which trigger restores it, which of §6's three actions it takes, and the expression where that action is `formula`. Components that hold no state are never offered one, so the field appears exactly where it means something. It renders forms from `configFields`, so it grows automatically as components are added. **Its component picker offers palette entries beside the bare types** (`docs/features/component-picker.md`): an inline list under **Add component**, grouped with each entry under the type it prefills, searchable by name and description, each line a name and one sentence. The active line draws a live preview of itself from `sample`, and where a bare type draws from its `example` the preview is labelled as one. The picker stays open across inserts, and adding a line writes an ordinary component the author then edits. Types stay on the list: an entry is a starting point rather than a variant with capabilities of its own, and an author who wants a plain Track has to be able to ask for one. The editor is a workspace view rather than a settings tab because an authoring tool needs width, undo scope, and a sheet beside it. **All three have now arrived with the pane** (`docs/features/editor-undo.md`): every mutation still writes immediately, but **Undo layout edit** and **Redo layout edit** (Mod+Z / Mod+Shift+Z) step back and forward through a per-pane stack of the layout file's own text — one snapshot per `persist()` that actually changed a byte, capped at 100 and cleared when the open layout changes.
+A workspace pane of its own hosts the editor, **bound to one layout file** (`docs/features/visible-layout-files.md`): it is a `FileView`, so a layout file opened from anywhere Obsidian opens one lands in it, its title is the file's basename, and it follows the file through a rename or a move and reloads on a write made anywhere else. In it an author creates layouts, adds and removes components, edits each component's shared and declared config fields, declares the layout's reset triggers, and writes its function library. **The pane is a tree of everything the layout holds beside a panel configuring whichever one is selected**, and the tree's first row is the layout itself — selecting it puts the grid's column count, the function library and the trigger list in that panel, so there is one selection rather than two and the panel needs no chrome of its own. The two columns become one below a threshold derived from the panel's own working width, and the canvas then sits above the tree with the panel under it. Settings keeps three preferences and a button that opens the pane, and **the tab describes itself to Obsidian rather than drawing itself** — each row is a setting definition, so the app indexes it for settings search, with a `display()` fallback that keeps the tab rendering on the versions below 1.13 the manifest still admits (`docs/features/declarative-settings.md`). A component that can act on a reset, meaning one implementing `applyReset` (§4.1), gains a binding of its own: which trigger restores it, which of §6's three actions it takes, and the expression where that action is `formula`. Components that hold no state are never offered one, so the field appears exactly where it means something. It renders forms from `configFields`, so it grows automatically as components are added. **Its component picker offers palette entries beside the bare types** (`docs/features/component-picker.md`): an inline list under **Add component**, grouped with each entry under the type it prefills, searchable by name and description, each line a name and one sentence. The active line draws a live preview of itself from `sample`, and where a bare type draws from its `example` the preview is labelled as one. The picker stays open across inserts, and adding a line writes an ordinary component the author then edits. Types stay on the list: an entry is a starting point rather than a variant with capabilities of its own, and an author who wants a plain Track has to be able to ask for one. The editor is a workspace view rather than a settings tab because an authoring tool needs width, undo scope, and a sheet beside it. **All three have now arrived with the pane** (`docs/features/editor-undo.md`): every mutation still writes immediately, but **Undo layout edit** and **Redo layout edit** step back and forward through a per-pane stack of the layout file's own text — one snapshot per `persist()` that actually changed a byte, capped at 100 and cleared when the open layout changes. Neither has a default hotkey (both were dropped in 0.1.1): they are reached through the command palette, or a hotkey the author binds in **Settings → Hotkeys**.
 
 **The canvas renders the layout's own components, live, on the sheet's own grid** (`docs/features/grid-canvas.md`), in place of an earlier abstract-block schematic: a Table on the canvas is a real `<table>` with its declared rows, a Card set a real strip of cards, each read through the component's own `read` exactly as a character's sheet would be — from that component's own `sample` body, or from an empty one, which is what a fresh character's sheet holds and what the **Preview** item below turns off to. Every rendered component is `inert` — there is nothing here for it to edit — and a sibling overlay button per cell is the control: drag it to move within its own container's grid, drag its corner to resize, press to open the configuration panel, and arrow keys and shift+arrows for the same two gestures from the keyboard. `col` and `row` anchor the top left while `width` and `height` grow right and down, which is why one corner is enough. A cell cannot be pushed or grown past the last column of the grid it sits on, and the panel's own `col`/`width` fields hold to the same bound as the drag and the arrow keys — a typed number that would cross it is held at the edge instead, with an inline note saying why, since a typed value gives none of the felt stop a gesture does. One already out there, from a hand-authored file or a `columns` reduced under it, is left where it is rather than snapped back. Every grid-placing container's own grid renders at once, live, so a selection always sits on a grid that is already on screen; selecting a component inside a Tab set's inactive tab switches that tab active so its overlay is reachable, and a selected component whose overlay is covered by a later sibling's is raised above it.
 
-**Moving a component between containers is done in the tree, not on the canvas** (`docs/features/grid-canvas.md` §5): dragging a row onto a container row that accepts children moves it there; dragging a row onto a sibling reorders it; and every row carries indent and outdent controls reaching the same two operations from the keyboard, disabled exactly where the drag equivalent would be refused. A drop that would push a container past the two-deep cap, or land a row on itself or on its own descendant, is refused with an inline message naming the fix rather than silently ignored, and a reparent undoes and redoes as one step.
+**Moving a component between containers is done in the tree, not on the canvas** (`docs/features/grid-canvas.md` §5): dragging a row onto a container row that accepts children moves it there; dragging a row onto a sibling reorders it; and every row carries a menu — **Move up**, **Move down**, a move into the container above it, a move out to the level above, and **Remove** — whose four moves are also Alt+arrow chords on the row's name, each disabled or refused exactly where the drag equivalent would be refused (`docs/features/layout-editor-tree.md`). The tree nests the way the layout does, each container's rows indented under a guide line, and a container row folds shut behind a chevron, saying how many components it hides; which containers are shut is the pane's view state, and the tree never hides the selection. **Remove** asks nothing and answers with a notice carrying an **Undo**. A drop that would push a container past the two-deep cap, or land a row on itself or on its own descendant, is refused with an inline message naming the fix rather than silently ignored, and a reparent undoes and redoes as one step.
 
 The full editor:
 
@@ -1263,3 +1263,93 @@ Resolved: **the plugin's own extension, `.sheetsmith`, and a pane bound to the f
   format rather than to the layout file's, touching every note and the reader
   that parses the key, so it is a feature of its own and not a side effect of
   this one.
+
+- **Whether the layout editor's tree may collapse a container, and move its
+  reorder controls off the row.** Both halves reverse something recorded.
+  `renderTree` says "No disclosure control: a container's children are always
+  listed, and the indent and the rule down its left say what holds what", and
+  `docs/features/layout-editor-pane.md` argued the same when the pane shipped.
+  `docs/features/grid-canvas.md` § "What it does" and its acceptance criteria
+  give every row up/down and indent/outdent buttons, which §7 above names as the
+  keyboard route to a reparent. On a long layout both cost more than they buy. A
+  tree of forty rows cannot be folded down to the part being worked on. Every
+  row carries seven controls, of which the author uses one or two in a session.
+  And depth reads badly, because each row is its own card and the indent moves
+  the text inside it rather than the card, so a row directly in a Group and a row
+  two containers in differ by 16px of text offset. **The question is not
+  whether this is untidy. It is whether collapse and a row menu keep every
+  promise the controls on the row were there to make**: a reparent reachable
+  without a pointer, refused exactly where the drag is refused, and a selection
+  that can always be seen.
+
+  **The controls go into a menu, and the keyboard keeps a direct route.** One
+  menu button per component row opens Obsidian's own `Menu` with **Move up**,
+  **Move down**, a move into and a move out of, and **Remove**. **Items name
+  what they act on**: "Move into Abilities" and "Move out of Abilities", never
+  "Move into previous". It is the rule the list fields' naming row in
+  `docs/BACKLOG.md` is waiting on, and it is one rule for both: *a control
+  names every party that its context does not already announce.* A list
+  field's icon buttons are announced with no row name, so they name their
+  subject ("Move Strength up"). A menu is reached through a button already
+  named for its row, so its items name only the other party, the destination.
+  **A move `canReparent` refuses is a disabled item**, and every route to a
+  move still asks `canReparent` before it writes. Four shortcuts fire only
+  while a row's name button has focus: Alt+Up and Alt+Down reorder, Alt+Right
+  moves in and Alt+Left moves out. They are declared in `aria-keyshortcuts`
+  and named in the button's tooltip. **Checked against Obsidian 1.13.7's own
+  defaults, and they do not collide.** Its root-scope command hotkeys that
+  use Alt are Alt+Enter and Mod+Alt+Left/Right (navigate back and forward).
+  Its only bare Alt+Up/Down is registered on a properties suggester's own
+  scope, live only while that suggester is open. CodeMirror's Alt+Up/Down
+  applies only inside an editor. The Electron menu carries no Alt+arrow
+  accelerator, and a focused button has no browser or OS default for these
+  chords on either platform. The one collision possible is a hotkey the
+  author bound themselves: Obsidian's keymap listens on the window in the
+  capture phase, so their binding wins, which is theirs to choose. **Remove
+  goes last, as a warning item, and asks nothing**, because the undo stack
+  restores the whole file, promoted children included
+  (`docs/features/editor-undo.md`). That reverses the confirm-vs-undo decision
+  recorded there for this one dialog, and it rests on undo being reachable,
+  which it is only through the palette since both default hotkeys were
+  dropped. So the removal answers with a `Notice` carrying an **Undo** link,
+  `SheetView.offerUndo`'s shape, and the confirm's own sentence about children
+  and notes (`docs/features/layout-editor-tree.md`). The resting row becomes a
+  drag handle, a name and a menu. **Rejected: controls shown only on the
+  selected row.** A row's height would shift with the selection, and moving a
+  component would force a selection, and so a panel swap, as a side effect.
+  **Rejected: a full `role="tree"` with a roving tabindex.** It replaces every
+  tab stop in the tree and fights the `data-sheetsmith-focus` tokens a rebuild
+  restores focus by. That is a large redesign for a task the author does
+  rarely.
+
+  **Collapse is posture, so it lives in the pane's view state**, beside the open
+  file (`View.getState`/`setState`). This is `layout-editor.ts`'s own rule for
+  what the author is looking at. It is keyed by container `id`, everything is
+  expanded by default, and an id the layout no longer holds is dropped on
+  restore. The known cost is that the state is lost when a container's `id`
+  changes, and only then: a label rename keeps it, since sections key on the
+  label but identity is the `id`. **Rejected: plugin data per layout path.**
+  Its entries go stale on every rename and delete, and it would be a second
+  store for posture. **Rejected, and firmly: the layout file.** The file is
+  shared data that every sheet reads, so a toggle would become a write, an
+  undo step and a sheet refresh. One author's posture would ship to everyone
+  sharing the layout. And the sheet would carry a key it must ignore. That
+  last cost is how the collapsible Group heading died (the nesting entry
+  above: a collapse is a component ceasing to fill its placement), and it is
+  why collapse stays in the editor and away from the sheet.
+
+  **The tree never hides the selection.** Selecting a component inside a
+  collapsed container, from the canvas or anywhere else, expands its collapsed
+  ancestors. This mirrors `docs/features/grid-canvas.md` §2, where selection
+  drives tab activation. Collapsing a container that holds the selection moves
+  the selection to the container: the author collapsed it on purpose, so the
+  panel swap follows from their own act. A drop onto a collapsed container
+  still moves the row in, the container stays collapsed, and its row shows a
+  count of what it holds so the drop can be seen. There is no spring-loaded
+  expand on drag hover: it is timing-dependent and has no keyboard
+  equivalent. A menu or keyboard move into or out of a collapsed container
+  expands it, so focus can follow the moved row through its focus token. A
+  collapsed container drags with its children. **Direction taken with the
+  owner, pending the build** (`docs/features/layout-editor-tree.md`).
+
+Resolved: **built as directed** (`docs/features/layout-editor-tree.md`). A component row rests at a drag handle, its name and a menu button; the menu holds **Move up**, **Move down**, a move into the previous sibling container, a move out to the level above, and **Remove**, and the four moves are also Alt+arrow chords on the row's name button, decided once in `editor/tree-moves.ts` for both routes. A refused move is a disabled item from the menu and an inline line under the row from a chord. **Remove asks nothing**: it answers with a `Notice` saying what went and where its children moved, carrying an **Undo** that works only while the layout still holds the bytes the removal wrote, through `ui/undo-notice.ts`, which the sheet's reset undo now shares. The tree's DOM nests the way the layout does — each container's rows inside a `role="group"` wrapper whose leading border is the guide, under the centre of the container's chevron — and a container folds shut behind that chevron, its description counting what it hides; the set of shut containers is the pane's view state, per file, sorted, dropped where the layout no longer holds an id, and corrected at render so the selection is never hidden. Two things settled in the build rather than in the direction: `Menu` is imported in exactly one file in `src/`, which `components/isolation.test.ts` now names rather than forbidding outright, and the name button's focus ring had to be rebuilt, since the chrome reset had been drawing none. **Deferred, not fixed:** `canReparent`'s subtree-depth refusal says a container "holds a container of its own" when what it holds is cards, which a refused chord now shows in place; `reparent.ts` was out of this feature's scope. **Left as is by decision:** the guide line's contrast, 1.40:1 in the light theme.

@@ -231,7 +231,20 @@ const SHEET_FRAME = '1400,7800';
  * exactly what this comment keeps being rewritten about — the instrument is only
  * as good as the last time somebody measured it (`docs/UI.md` §11).
  */
-const EDITOR_FRAME = '1500,8600';
+/*
+ * **Re-measured a fourth time for the tree's nesting**
+ * (`docs/features/layout-editor-tree.md`), and the number is not the tree's:
+ * the leaf ends at **16629** at 1500 through `open=weapons`, byte for byte the
+ * same on the tree before that feature and after it, since the nested wrappers
+ * change no row's height and the two controls a row lost did not set it. So
+ * this frame was cutting about 8000px — the whole bottom half of the tree,
+ * every container in it included — off every editor shot, and had been since
+ * some earlier addition to `samples.ts` nobody measured the pane for. Found
+ * because the tree shots exist to show the tree whole. 8600 to **16800**, off
+ * `.workspace-leaf`'s own bottom rather than `document.body`, which reports
+ * the taller of the page and the window and so cannot see staleness at all.
+ */
+const EDITOR_FRAME = '1500,16800';
 
 /**
  * The presses that open the panel on the sample's *mixed* row, and then its typed
@@ -1262,8 +1275,9 @@ const DEFAULTS = [
 		// split by about 400px, for the reason above, and 5700 was cutting the
 		// panel this view exists to put under the tree. Re-measured with sample
 		// values on, on EDITOR_FRAME's own third measurement: 8680 at this width,
-		// so 7800 was cutting the bottom of the tree here too.
-		size: '1190,8800',
+		// so 7800 was cutting the bottom of the tree here too. And again with
+		// EDITOR_FRAME's fourth measurement: the leaf ends at 16709 here.
+		size: '1190,16900',
 	},
 	{
 		// Forced colors, which the system palette repaints the whole page in and
@@ -1785,6 +1799,97 @@ const DEFAULTS = [
 		name: 'canvas-drag-grid',
 		query: 'surface=editor&theme=dark&layout=canvas-demo&drag=front%3A180%2C120',
 		size: '1400,1400',
+	},
+	/*
+	 * **The tree** (`docs/features/layout-editor-tree.md`): nesting drawn as a
+	 * narrower card and a guide per enclosing container, the fold, the row menu
+	 * and a refused chord. The default layout already holds every shape these
+	 * need — `Proficiencies › Weapons › Attack bonus` two containers deep, the tab
+	 * set `Pages`, and `Ability checks` with its three groups — so no fixture of
+	 * their own. On EDITOR_FRAME, because the tree is the whole left column.
+	 */
+	{
+		// Everything expanded: a reviewer should be able to say each row's depth
+		// without counting pixels.
+		name: 'editor-tree',
+		query: 'surface=editor&theme=light',
+		size: EDITOR_FRAME,
+	},
+	{
+		name: 'editor-tree-dark',
+		query: 'surface=editor&theme=dark',
+		size: EDITOR_FRAME,
+	},
+	{
+		// Two containers shut: the closed chevron, the count, nothing of theirs
+		// listed, and the gap to the next row the same as between two top-level
+		// rows.
+		name: 'editor-tree-collapsed',
+		query: 'surface=editor&theme=light&collapse=proficiencies,pages',
+		size: EDITOR_FRAME,
+	},
+	{
+		name: 'editor-tree-collapsed-dark',
+		query: 'surface=editor&theme=dark&collapse=proficiencies,pages',
+		size: EDITOR_FRAME,
+	},
+	{
+		// The ring on a depth-1 container row, with its guide running down
+		// through what it holds.
+		name: 'editor-tree-selected',
+		query: 'surface=editor&theme=light&open=weapons',
+		size: EDITOR_FRAME,
+	},
+	{
+		name: 'editor-tree-selected-dark',
+		query: 'surface=editor&theme=dark&open=weapons',
+		size: EDITOR_FRAME,
+	},
+	{
+		// A depth-2 row's name focused, beside a selected row in the same shot, so
+		// the two rings can be told apart where they sit together.
+		name: 'editor-tree-focus',
+		query:
+			'surface=editor&theme=light&open=weapons&focus=%5Bdata-sheetsmith-focus%3D%22edit-weapon_bonus%22%5D',
+		size: EDITOR_FRAME,
+	},
+	{
+		name: 'editor-tree-focus-dark',
+		query:
+			'surface=editor&theme=dark&open=weapons&focus=%5Bdata-sheetsmith-focus%3D%22edit-weapon_bonus%22%5D',
+		size: EDITOR_FRAME,
+	},
+	{
+		// The split at its narrowest, grown rather than bounded so the tree is in
+		// the picture: `editor-threshold` is the same width held to the window,
+		// which shows the panel and none of the tree. A two-deep card here is
+		// the narrowest the tree draws one — measured 514px wide at 1210 — and it
+		// has to hold its name and its two controls. 17200 against a leaf that
+		// ends at 17022.
+		name: 'editor-tree-threshold',
+		query: 'surface=editor&theme=light&open=weapons',
+		size: '1210,17200',
+	},
+	{
+		// The app's own menu, painted by the calibrated `.menu` rules: a disabled
+		// item visibly disabled, and **Remove** in the warning colour. Light only,
+		// since the menu is the app's chrome and not the plugin's.
+		name: 'editor-tree-menu',
+		query: 'surface=editor&theme=light&menu=weapon_bonus',
+		size: EDITOR_FRAME,
+	},
+	{
+		// A chord the row cannot take: `Tools` into `Weapons`, which would put
+		// Tools' own cards past the depth cap. The refusal line under the row,
+		// in `canReparent`'s own sentence.
+		name: 'editor-tree-key-refused',
+		query: 'surface=editor&theme=light&treeKey=tools%3AArrowRight',
+		size: EDITOR_FRAME,
+	},
+	{
+		name: 'editor-tree-key-refused-dark',
+		query: 'surface=editor&theme=dark&treeKey=tools%3AArrowRight',
+		size: EDITOR_FRAME,
 	},
 	{
 		// A valid drop, hovering: `Front` dragged onto `Gear`, a container
