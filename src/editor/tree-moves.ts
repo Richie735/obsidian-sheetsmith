@@ -123,7 +123,18 @@ export function rowMoves(
 	const focusMoved = (): void => host.focusAfterRedraw(`edit-${config.id}`);
 	const context = treeListContext(host);
 
+	/*
+	 * A move into or out of a shut container opens it first
+	 * (`docs/features/layout-editor-tree.md` §7, rule 4), before the write, so the
+	 * row the focus follows is on screen when the redraw looks for it. Both ends
+	 * are opened, though only "into" can be shut in practice — a row inside a shut
+	 * container is not on screen to move — so the code carries no special case.
+	 */
 	const reparentTo = (target: WalkEntry['config'] | null): void => {
+		const shut = new Set(host.collapsed);
+		if (target !== null) shut.delete(target.id);
+		if (parent !== null) shut.delete(parent.id);
+		host.setCollapsed(shut);
 		focusMoved();
 		reparent(layout, config, target);
 		host.persist();

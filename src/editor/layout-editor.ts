@@ -97,6 +97,19 @@ export interface LayoutEditorHost {
 	readonly selection: string;
 	/** Remember what is selected. Does not redraw. */
 	setSelection(id: string): void;
+	/**
+	 * The containers the tree draws shut, by component id
+	 * (`docs/features/layout-editor-tree.md` §4). Posture for the reason the
+	 * selection is: it changes nothing in the layout and belongs to the pane, so
+	 * the tree reads it at render time and never keeps a copy.
+	 */
+	readonly collapsed: ReadonlySet<string>;
+	/**
+	 * Remember which containers are shut. Does not redraw, like `setSelection`,
+	 * and a set equal to the one held changes nothing — the tree calls this on
+	 * every render, and only a real change is worth asking the workspace to save.
+	 */
+	setCollapsed(ids: Iterable<string>): void;
 	/** Rebuild both regions from the layout as it now stands. */
 	redraw(): void;
 	/** Refresh every open sheet view, after a write to the layout file. */
@@ -638,6 +651,7 @@ export class LayoutEditorSection {
 			},
 			redraw: () => this.redraw(),
 		});
+		const host = this.host;
 		renderTree(outline, layout, {
 			persist: () => void this.persist(),
 			redraw: () => this.redraw(),
@@ -650,6 +664,12 @@ export class LayoutEditorSection {
 			focusAfterRedraw: (token) => {
 				this.pendingFocus = token;
 			},
+			// Live, unlike the selection: the render writes a corrected set back
+			// before it draws, and the rows drawn after that read the correction.
+			get collapsed(): ReadonlySet<string> {
+				return host.collapsed;
+			},
+			setCollapsed: (ids) => host.setCollapsed(ids),
 			persistRemoval: (sentence) => this.persistRemoval(sentence),
 			drag: this.treeDrag,
 		});

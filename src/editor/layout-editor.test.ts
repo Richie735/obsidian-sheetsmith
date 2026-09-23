@@ -2807,12 +2807,15 @@ describe('the tree', () => {
 
 	it('does not select a row for a press on its own icon buttons', async () => {
 		// Real controls own their own presses (PATTERNS §6): opening the menu on
-		// `Abilities`, a row that is not selected, must not also select it as a
-		// side effect of the click bubbling to the row.
+		// `Abilities`, a row that is not selected, and collapsing `Defences` must
+		// not also select either as a side effect of the click bubbling to the row.
 		expect(has(harness, 'cfg-abilities-direction')).toBe(false);
 		openRowMenu(harness, 'abilities');
 		await settle(harness.pane);
+		expect(has(harness, 'cfg-abilities-direction')).toBe(false);
 		document.body.querySelector('.menu')?.remove();
+		control(harness, 'tree-disclosure-defences').click();
+		await settle(harness.pane);
 
 		expect(has(harness, 'cfg-abilities-direction')).toBe(false);
 		expect(
@@ -3235,6 +3238,7 @@ describe('reparenting a tree row', () => {
 		for (const token of ['tree-handle-armour', 'tree-menu-armour']) {
 			chord(harness, token, 'ArrowLeft');
 		}
+		chord(harness, 'tree-disclosure-defences', 'ArrowDown');
 		// Plain arrows are not a chord, on the name button either.
 		control(harness, 'edit-armour').dispatchEvent(
 			new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }),
@@ -3326,6 +3330,27 @@ describe('a tree row at rest', () => {
 		expect(control(harness, 'tree-menu-melee').getAttribute('aria-label')).toBe(
 			'More options for "Melee"',
 		);
+	});
+
+	it('gives a container a disclosure and every other row a spacer in its place', async () => {
+		harness = await open(deep());
+		const chevron = control(harness, 'tree-disclosure-melee');
+		expect(chevron.getAttribute('aria-expanded')).toBe('true');
+		expect(chevron.getAttribute('aria-controls')).toBe('sheetsmith-tree-children-melee');
+		expect(harness.container.querySelector('#sheetsmith-tree-children-melee')).not.toBeNull();
+		expect(chevron.getAttribute('aria-label')).toBe('Collapse "Melee"');
+		// An empty container is still a container, and still folds — but open, it
+		// discloses no region, so it names none.
+		expect(has(harness, 'tree-disclosure-spellbook')).toBe(true);
+		expect(
+			control(harness, 'tree-disclosure-spellbook').hasAttribute('aria-controls'),
+		).toBe(false);
+		// A leaf has the slot and nothing in it; the layout's row has neither.
+		const leafSlot = treeRow(harness, 'edit-armour').querySelector('.sheetsmith-tree-slot');
+		expect(leafSlot?.childElementCount).toBe(0);
+		expect(
+			treeRow(harness, `edit-${SHEET_DESTINATION}`).querySelector('.sheetsmith-tree-slot'),
+		).toBeNull();
 	});
 
 	it('nests two containers deep as two wrappers', async () => {
@@ -3424,6 +3449,147 @@ describe('removing from the tree', () => {
 		await settle(harness.pane);
 		expect(panelHeading(harness)).toBe('Layout');
 		expect(document.activeElement).toBe(control(harness, `edit-${SHEET_DESTINATION}`));
+	});
+});
+
+describe('collapsing a container in the tree', () => {
+	/** Press a container's chevron. */
+	async function fold(harness: Harness, id: string): Promise<void> {
+		control(harness, `tree-disclosure-${id}`).click();
+		await settle(harness.pane);
+	}
+
+	/** A component row's description line. */
+	function description(harness: Harness, id: string): string | null | undefined {
+		return treeRow(harness, `edit-${id}`).querySelector('.setting-item-description')
+			?.textContent;
+	}
+
+	it('stops listing what it holds, at every depth, and writes nothing', async () => {
+		harness = await open(deep());
+		const before = await harness.raw();
+		const wrote = writes(harness);
+		await fold(harness, 'defences');
+
+		expect(has(harness, 'edit-melee')).toBe(false);
+		expect(has(harness, 'edit-armour')).toBe(false);
+		expect(has(harness, 'edit-spellbook')).toBe(true);
+		expect(harness.container.querySelector('#sheetsmith-tree-children-defences')).toBeNull();
+		const chevron = control(harness, 'tree-disclosure-defences');
+		expect(chevron.getAttribute('aria-expanded')).toBe('false');
+		expect(chevron.getAttribute('aria-label')).toBe('Expand "Defences"');
+		expect(await harness.raw()).toBe(before);
+		expect(wrote()).toBe(0);
+		// Not an edit, so nothing for undo to take back.
+		expect(harness.pane.undo()).toBe(false);
+		// And the chevron keeps the focus across the redraw.
+		expect(document.activeElement).toBe(chevron);
+	});
+
+	it('counts every component it hides, and says when it hides none', async () => {
+		harness = await open(deep());
+		expect(description(harness, 'defences')).toBe('Group');
+		await fold(harness, 'defences');
+		expect(description(harness, 'defences')).toBe('Group · 2 inside');
+		await fold(harness, 'spellbook');
+		expect(description(harness, 'spellbook')).toBe('Group · empty');
+		await fold(harness, 'defences');
+		expect(description(harness, 'defences')).toBe('Group');
+		expect(has(harness, 'edit-armour')).toBe(true);
+	});
+
+	it('asks the workspace to remember the fold', async () => {
+		harness = await open(deep());
+		const asked = harness.app.workspace.layoutSavesRequested;
+		await fold(harness, 'defences');
+		expect(harness.app.workspace.layoutSavesRequested).toBe(asked + 1);
+		expect(harness.pane.getState().collapsed).toEqual(['defences']);
+	});
+
+	it('selects the container when the selection is inside it', async () => {
+		harness = await open(deep());
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		await fold(harness, 'defences');
+		expect(panelHeading(harness)).toBe('Defences');
+		expect(has(harness, 'edit-armour')).toBe(false);
+	});
+
+	it('opens every shut ancestor of a selection made on the canvas', async () => {
+		harness = await open(deep());
+		await fold(harness, 'melee');
+		await fold(harness, 'defences');
+		control(harness, 'preview-armour').click();
+		await settle(harness.pane);
+		expect(has(harness, 'edit-armour')).toBe(true);
+		expect(harness.pane.collapsed.size).toBe(0);
+	});
+
+	it('opens a shut container the picker inserts into', async () => {
+		harness = await open(deep());
+		await fold(harness, 'spellbook');
+		pick(harness, 'card');
+		chooseDestination(harness, 'spellbook');
+		pressAdd(harness);
+		await settle(harness.pane);
+		const added = (await harness.stored()).components.find((c) => c.id === 'spellbook')
+			?.children?.[0];
+		expect(added).toBeDefined();
+		expect(has(harness, `edit-${added?.id ?? ''}`)).toBe(true);
+		expect(harness.pane.collapsed.has('spellbook')).toBe(false);
+	});
+
+	it('takes a drop and stays shut, counting one more', async () => {
+		harness = await open(deep());
+		await fold(harness, 'defences');
+		dragRow(harness, 'spellbook', 'defences');
+		await settle(harness.pane);
+		expect(description(harness, 'defences')).toBe('Group · 3 inside');
+		expect(has(harness, 'edit-spellbook')).toBe(false);
+	});
+
+	it('opens for a drop of the selected row, which it would otherwise hide', async () => {
+		harness = await open(deep());
+		control(harness, 'edit-spellbook').click();
+		await settle(harness.pane);
+		await fold(harness, 'defences');
+		dragRow(harness, 'spellbook', 'defences');
+		await settle(harness.pane);
+		expect(has(harness, 'edit-spellbook')).toBe(true);
+		expect(harness.pane.collapsed.has('defences')).toBe(false);
+	});
+
+	it('opens for a menu move into it', async () => {
+		harness = await open(nested());
+		await fold(harness, 'defences');
+		pressMenu(harness, 'hit_points', 'Move into "Defences"');
+		await settle(harness.pane);
+		expect(has(harness, 'edit-hit_points')).toBe(true);
+		expect(harness.pane.collapsed.has('defences')).toBe(false);
+		expect(document.activeElement).toBe(control(harness, 'edit-hit_points'));
+	});
+
+	it('drags with everything it holds', async () => {
+		harness = await open(deep());
+		await fold(harness, 'melee');
+		dragRow(harness, 'melee', 'spellbook');
+		await settle(harness.pane);
+		const stored = await harness.stored();
+		const spellbook = stored.components.find((c) => c.id === 'spellbook');
+		expect(spellbook?.children?.map((c) => c.id)).toEqual(['melee']);
+		expect(spellbook?.children?.[0]?.children?.map((c) => c.id)).toEqual(['armour']);
+		expect(stored.components.find((c) => c.id === 'defences')?.children).toEqual([]);
+	});
+
+	it('reads the rows in the order it always did, expanded', async () => {
+		harness = await open(furnished());
+		// After the picker's three rows, and before the panel's own.
+		expect(labels(harness).slice(3, 7)).toEqual([
+			'Layout',
+			'Defences',
+			'Armour class',
+			'Abilities',
+		]);
 	});
 });
 

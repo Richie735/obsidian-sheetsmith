@@ -227,6 +227,89 @@
 	background-color: var(--background-modifier-hover);
 }
 
+/* The slot before a component row's name (`docs/features/layout-editor-tree.md`
+   §1): a container's chevron, or a spacer of the same width on every other row,
+   so names at one depth start in one column whether or not the row is a
+   container. The layout's own row has none, which is what starts its name where
+   a top-level chevron sits: it is the root rather than a sibling.
+
+   `--size-4-6` wide, and the guide below is placed from the same token, so the
+   line a container's children hang from runs under the centre of the chevron
+   that folds them. */
+.sheetsmith-tree-slot {
+	display: flex;
+	flex: 0 0 var(--size-4-6);
+	align-items: center;
+	justify-content: center;
+	height: var(--size-4-6);
+	/* The chevron's centre on the name's first line rather than 3px above it:
+	   the row aligns its children to the top, and a 24px slot is taller than
+	   the name's line box. Measured, and 2px of the 3 is what a token gives. */
+	margin-block-start: var(--size-2-1);
+}
+
+/* The slot is the row's first child, which the app's own
+   `.setting-item > *:first-child` gives the info column's 16px trailing margin.
+   That margin separates a name from its controls; beside a chevron it read as a
+   hole, so the slot takes a gap of its own, at the same (0,2,0) and later in the
+   cascade. Zero columns of gap on every tree row: the app declares a row gap on
+   a setting row and no column gap, and the harness's fallback card rule adds a
+   16px one under it, so saying it here keeps the harness drawing what the app
+   draws. */
+.sheetsmith-tree-row > .sheetsmith-tree-slot {
+	margin-inline-end: var(--size-2-3);
+}
+
+.sheetsmith-tree-row {
+	gap: var(--size-4-3) 0;
+}
+
+/* And the name keeps the trailing margin the app meant for it, which it lost by
+   no longer being the first child. */
+.sheetsmith-tree-row > .sheetsmith-tree-slot + .setting-item-info {
+	margin-inline-end: var(--size-4-4);
+}
+
+/* The chevron: a glyph `<button>` with the app's button chrome taken off,
+   Record set's disclosure one surface over — the same icon pair, the same
+   `aria-expanded`, and muted rather than faint for the same measured reason:
+   `--text-faint` is under 3:1 on both themes, and a chevron at that ratio is a
+   smudge. Scoped under the row at (0,2,0), which is what beats the app's
+   `button:not(.clickable-icon)` at (0,1,1) (docs/UI.md §2). No transition on
+   the glyph swap, so nothing here for reduced motion to strip. */
+.sheetsmith-tree-row .sheetsmith-tree-disclosure {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: var(--size-4-6);
+	height: var(--size-4-6);
+	padding: 0;
+	margin: 0;
+	border: none;
+	border-radius: var(--radius-s);
+	background: none;
+	box-shadow: none;
+	color: var(--text-muted);
+	cursor: pointer;
+}
+
+.sheetsmith-tree-row .sheetsmith-tree-disclosure .svg-icon {
+	width: var(--icon-s);
+	height: var(--icon-s);
+}
+
+.sheetsmith-tree-row .sheetsmith-tree-disclosure:hover {
+	background-color: var(--background-modifier-hover);
+	color: var(--text-normal);
+}
+
+/* An outline rather than a shadow, since forced colors discards a shadow and
+   the reset above removes the app's own ring with it (docs/UI.md §6). */
+.sheetsmith-tree-row .sheetsmith-tree-disclosure:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 1px;
+}
+
 /* What a container holds, nested the way the layout nests
    (`docs/features/layout-editor-tree.md` §2). **The card steps in, not its
    text**: every row is a card of its own, so a text offset inside one draws

@@ -980,3 +980,144 @@ describe('opening the pane cold', () => {
 		]);
 	});
 });
+
+describe('which containers the tree draws shut', () => {
+	/*
+	 * The fold is posture, like the open file, and it goes in state rather than
+	 * ephemeral state so a restored workspace comes back folded
+	 * (`docs/features/layout-editor-tree.md` §4). The editor's own tests press the
+	 * chevrons; what is here is the pane's half — what it saves, what it takes
+	 * back, and when it lets the set go.
+	 */
+	function containers(name: string): Layout {
+		return {
+			name,
+			columns: 12,
+			components: [
+				{
+					id: 'defences',
+					type: 'group',
+					label: 'Defences',
+					position: { col: 1, row: 1, width: 6, height: 2 },
+					children: [
+						{
+							id: 'armour',
+							type: 'card',
+							label: 'Armour class',
+							position: { col: 1, row: 1, width: 2, height: 1 },
+						},
+					],
+				},
+				{
+					id: 'actions',
+					type: 'group',
+					label: 'Actions',
+					position: { col: 7, row: 1, width: 6, height: 2 },
+					children: [
+						{
+							id: 'attack',
+							type: 'card',
+							label: 'Attack',
+							position: { col: 1, row: 1, width: 2, height: 1 },
+						},
+					],
+				},
+			],
+			triggers: [],
+		};
+	}
+
+	async function folders(): Promise<App> {
+		const app = new App();
+		await app.vault.createFolder(LAYOUT_FOLDER);
+		for (const name of ['Alpha', 'Beta']) {
+			await app.vault.create(pathOf(name), serialiseLayout(containers(name)));
+		}
+		return app;
+	}
+
+	function listed(pane: LayoutEditorView, id: string): boolean {
+		return pane.contentEl.querySelector(`[data-sheetsmith-focus="edit-${id}"]`) !== null;
+	}
+
+	it('saves the shut ones sorted, and nothing when none are shut', async () => {
+		const pane = await paneOn(await folders());
+		expect(pane.getState()).toEqual({ file: pathOf('Alpha') });
+
+		control(pane, 'tree-disclosure-defences').click();
+		await tick();
+		control(pane, 'tree-disclosure-actions').click();
+		await tick();
+		expect(pane.getState()).toEqual({
+			file: pathOf('Alpha'),
+			collapsed: ['actions', 'defences'],
+		});
+	});
+
+	it('asks the workspace to save on a fold, and not on a render', async () => {
+		const app = await folders();
+		const pane = await paneOn(app);
+		const before = app.workspace.layoutSavesRequested;
+		pane.redraw();
+		await tick();
+		expect(app.workspace.layoutSavesRequested).toBe(before);
+		control(pane, 'tree-disclosure-defences').click();
+		await tick();
+		expect(app.workspace.layoutSavesRequested).toBe(before + 1);
+	});
+
+	it('draws a restored state shut', async () => {
+		const app = await folders();
+		const pane = await openView(app, document.body, LayoutEditorView, fakePlugin(app));
+		await pane.setState(
+			{ file: pathOf('Alpha'), collapsed: ['defences'] },
+			{ history: false },
+		);
+		await tick();
+		expect(listed(pane, 'armour')).toBe(false);
+		expect(listed(pane, 'attack')).toBe(true);
+	});
+
+	it('drops an id the layout does not hold, or one that is not a container, at render', async () => {
+		const app = await folders();
+		const pane = await openView(app, document.body, LayoutEditorView, fakePlugin(app));
+		await pane.setState(
+			{ file: pathOf('Alpha'), collapsed: ['defences', 'gone', 'armour'] },
+			{ history: false },
+		);
+		await tick();
+		expect([...pane.collapsed]).toEqual(['defences']);
+	});
+
+	it('ignores a value that is not a list of names', async () => {
+		const app = await folders();
+		const pane = await openView(app, document.body, LayoutEditorView, fakePlugin(app));
+		await pane.setState(
+			{ file: pathOf('Alpha'), collapsed: ['defences', 3] },
+			{ history: false },
+		);
+		await tick();
+		expect(pane.collapsed.size).toBe(0);
+	});
+
+	it('lets the set go when another file opens, since an id means another container there', async () => {
+		const pane = await paneOn(await folders());
+		control(pane, 'tree-disclosure-defences').click();
+		await tick();
+		const picker = control<HTMLSelectElement>(pane, 'layout-picker');
+		picker.value = pathOf('Beta');
+		picker.dispatchEvent(new Event('change'));
+		await tick();
+		expect(pane.getState()).toEqual({ file: pathOf('Beta') });
+		expect(listed(pane, 'armour')).toBe(true);
+	});
+
+	it('passes the set through the legacy state an earlier version saved', async () => {
+		const app = await folders();
+		const pane = await openView(app, document.body, LayoutEditorView, fakePlugin(app));
+		await pane.setState({ layout: 'Beta', collapsed: ['actions'] }, { history: false });
+		await tick();
+		expect(pane.getState()).toEqual({ file: pathOf('Beta'), collapsed: ['actions'] });
+		expect(listed(pane, 'attack')).toBe(false);
+	});
+});
