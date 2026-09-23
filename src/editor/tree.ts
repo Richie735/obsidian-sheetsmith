@@ -65,8 +65,15 @@ export interface TreeHost {
 	readonly selection: string;
 	/** Focus this token once the next redraw has happened. */
 	focusAfterRedraw(token: string): void;
-	/** Ask before something irreversible, then do it if confirmed. */
-	confirm(message: string, cta: string, onConfirm: () => void): void;
+	/**
+	 * Write a removal, then say what it did with an offer to take it back.
+	 *
+	 * One member rather than `persist` and a notice, because whether the offer
+	 * may be made depends on the write: only the host knows the bytes the
+	 * removal left on disk, and an undo pressed after something else changed
+	 * them would take that change with it.
+	 */
+	persistRemoval(sentence: string): void;
 	/**
 	 * The component id mid-drag, shared across every row so a drag started on
 	 * one row is read by whichever row the pointer is over, not only the one
@@ -75,17 +82,26 @@ export interface TreeHost {
 	drag: { id: string | null };
 }
 
-/** What removing a component takes with it. */
-function removalMessage(config: ComponentConfig, held: number): string {
-	const kept = `character notes keep their "${config.label}" sections`;
-	if (held === 0) {
-		return `Remove "${config.label}" from the layout? Its configuration and formulas are lost, but ${kept}.`;
+/**
+ * What a removal did, said after the fact (`docs/features/layout-editor-tree.md`
+ * §5), which is where the confirmation it replaces used to say it before.
+ *
+ * **The section sentence only where there is a section.** A container stores
+ * nothing in a note (`storage: 'none'`), so a removed container has no section
+ * for character notes to keep, and saying they keep one would be the one false
+ * sentence in the notice. What a container's removal does say is where its
+ * children went, which is the half an author is most likely to go looking for.
+ */
+function removalSentence(config: ComponentConfig, held: number): string {
+	const removed = `Removed "${config.label}".`;
+	if (held === 1) {
+		return `${removed} The component inside it moved to the bottom of the sheet.`;
 	}
-	const inside =
-		held === 1
-			? 'The component inside it moves'
-			: `The ${held} components inside it move`;
-	return `Remove "${config.label}" from the layout? Its own configuration is lost. ${inside} to the bottom of the sheet, keeping their own configuration, and ${kept}.`;
+	if (held > 1) {
+		return `${removed} The ${held} components inside it moved to the bottom of the sheet.`;
+	}
+	if (holdsChildren(config)) return removed;
+	return `${removed} Character notes keep its section.`;
 }
 
 /**
@@ -247,36 +263,42 @@ function renderComponentRow(
 }
 
 /**
- * Remove a component, keeping what it held, once the author has confirmed.
+ * Remove a component, keeping what it held, and say so after rather than
+ * asking before (`docs/features/layout-editor-tree.md` §5). The notice carries
+ * an **Undo** the host guards against a stale press, and undo also reaches
+ * this one step through the palette.
+ *
+ * Focus goes to the layout's own row, which is where the selection goes: the
+ * row that was focused, and the menu that ran this, are both gone, and a
+ * keyboard reader left on the body would have to find the tree again.
  */
 function removeComponent(entry: WalkEntry, tree: TreeRender): void {
 	const { layout, host } = tree;
 	const { config, siblings } = entry;
 	const held = config.children ?? [];
-	host.confirm(removalMessage(config, held.length), 'Remove component', () => {
-		siblings.splice(siblings.indexOf(config), 1);
-		// Children move out rather than going with it, the same promise a
-		// reparent keeps (Constraint 4).
-		for (const child of held) {
-			// A child of a container that shows one at a time (a tab) was never
-			// sized by its own stored width/height — `innerPlacement` drew it at
-			// the container's own size instead, so its stored numbers were free
-			// to go stale while nested (`view/grid-cells.ts`'s own comment on
-			// `innerPlacement`). Promoting the child makes its own position
-			// authoritative again, so it has to inherit the size it was actually
-			// drawn at first, or its own children — never touched by this loop —
-			// land outside the box that now governs them.
-			const { width, height } = innerPlacement(child, config);
-			child.position.width = width;
-			child.position.height = height;
-			child.position.col = 1;
-			child.position.row = nextFreeRow(layout.components);
-			layout.components.push(child);
-		}
-		host.select(SHEET_DESTINATION);
-		host.persist();
-		host.redraw();
-	});
+	siblings.splice(siblings.indexOf(config), 1);
+	// Children move out rather than going with it, the same promise a reparent
+	// keeps (Constraint 4).
+	for (const child of held) {
+		// A child of a container that shows one at a time (a tab) was never sized
+		// by its own stored width/height — `innerPlacement` drew it at the
+		// container's own size instead, so its stored numbers were free to go
+		// stale while nested (`view/grid-cells.ts`'s own comment on
+		// `innerPlacement`). Promoting the child makes its own position
+		// authoritative again, so it has to inherit the size it was actually drawn
+		// at first, or its own children — never touched by this loop — land
+		// outside the box that now governs them.
+		const { width, height } = innerPlacement(child, config);
+		child.position.width = width;
+		child.position.height = height;
+		child.position.col = 1;
+		child.position.row = nextFreeRow(layout.components);
+		layout.components.push(child);
+	}
+	host.persistRemoval(removalSentence(config, held.length));
+	host.focusAfterRedraw(`edit-${SHEET_DESTINATION}`);
+	if (host.selection !== SHEET_DESTINATION) host.select(SHEET_DESTINATION);
+	else host.redraw();
 }
 
 /**

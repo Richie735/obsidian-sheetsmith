@@ -22,6 +22,7 @@ import { showFieldError } from './field-error';
 import { attachFormulaSuggest, FormulaSuggest } from './formula-suggest';
 import { focusToken } from './focus-token';
 import { ConfirmModal } from '../ui/confirm-modal';
+import { offerUndo } from '../ui/undo-notice';
 import { NEW_LAYOUT_LABEL } from './new-layout';
 import { isResolvedLayout, listLayouts } from '../layouts';
 import { ListContext } from './list-fields';
@@ -649,8 +650,7 @@ export class LayoutEditorSection {
 			focusAfterRedraw: (token) => {
 				this.pendingFocus = token;
 			},
-			confirm: (message, cta, onConfirm) =>
-				new ConfirmModal(this.plugin.app, message, cta, onConfirm).open(),
+			persistRemoval: (sentence) => this.persistRemoval(sentence),
 			drag: this.treeDrag,
 		});
 
@@ -848,6 +848,37 @@ export class LayoutEditorSection {
 		if (added !== undefined) this.host.setSelection(added);
 		void this.persist();
 		return label;
+	}
+
+	/**
+	 * Write a removal from the tree, then say what it did and offer to take it
+	 * back (`docs/features/layout-editor-tree.md` §5).
+	 *
+	 * **The undo is guarded by the bytes the removal left**, which is
+	 * `SheetView.restoreDocument`'s guard read for a layout: an author who
+	 * removed, then edited, then pressed a stale **Undo** would otherwise have
+	 * the edit undone and not the removal. So the press undoes only while this
+	 * pane still holds that file and that text, and says why it did nothing
+	 * otherwise — a different layout opened in between is the same refusal,
+	 * since the removal is not in its history.
+	 *
+	 * `persist` sets `onDisk` before it awaits the write, so the bytes are known
+	 * here synchronously. Where the layout would not serialise, `persist` said
+	 * so and wrote nothing, and there is nothing to offer an undo of.
+	 */
+	private persistRemoval(sentence: string): void {
+		const before = this.onDisk;
+		void this.persist();
+		const file = this.file;
+		const removed = this.onDisk;
+		if (removed === before) return;
+		offerUndo(sentence, () => {
+			if (this.file !== file || this.onDisk !== removed) {
+				new Notice('Sheetsmith did not undo: this layout has changed since.');
+				return;
+			}
+			this.undo();
+		});
 	}
 
 	/** Select a component, or the layout itself, and rebuild both regions. */

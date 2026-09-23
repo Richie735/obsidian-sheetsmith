@@ -286,7 +286,7 @@ function pressMenu(harness: Harness, id: string, title: string): void {
 	menuItem(title).click();
 }
 
-/** Press **Remove** on a component's tree row menu, which then asks first. */
+/** Remove a component from its tree row's menu, which asks nothing. */
 function removeRow(harness: Harness, id: string): void {
 	pressMenu(harness, id, 'Remove');
 }
@@ -585,11 +585,11 @@ describe('adding and removing a component', () => {
 		expect(labelled).toContain('Checkbox 2');
 	});
 
-	it('removes nothing until the confirmation is taken', async () => {
+	it('removes from the row menu with no confirmation to take', async () => {
+		// The confirmation moved to after the fact (`docs/features/layout-editor-tree.md`
+		// §5): a notice saying what went, with an undo. So nothing is open to take.
 		removeRow(harness, 'armour');
-		expect((await harness.stored()).components).toHaveLength(2);
-
-		confirmAction();
+		expect(document.body.querySelector('.modal-container')).toBeNull();
 		await settle(harness.pane);
 		expect((await harness.stored()).components.map((c) => c.id)).toEqual([
 			'hit_points',
@@ -1631,10 +1631,13 @@ describe('removing a container', () => {
 		harness = await open(nested());
 	});
 
-	it('says what happens to the components inside it', () => {
+	it('says what happened to the components inside it, after the fact', async () => {
+		Notice.instances = [];
 		removeRow(harness, 'defences');
-		const modal = document.body.querySelector('.modal-container');
-		expect(modal?.textContent).toContain('The component inside it moves');
+		await settle(harness.pane);
+		expect(Notice.instances.at(-1)?.messageEl.textContent).toBe(
+			'Removed "Defences". The component inside it moved to the bottom of the sheet. Undo',
+		);
 	});
 
 	it('keeps its children, at the top level', async () => {
@@ -1642,7 +1645,6 @@ describe('removing a container', () => {
 		// formulas to one click is the same failure in miniature — and the modal
 		// only ever promised that the notes survived.
 		removeRow(harness, 'defences');
-		confirmAction();
 		await settle(harness.pane);
 
 		const stored = await harness.stored();
@@ -1656,7 +1658,6 @@ describe('removing a container', () => {
 
 	it('removes a child without touching its container', async () => {
 		removeRow(harness, 'armour');
-		confirmAction();
 		await settle(harness.pane);
 
 		const stored = await harness.stored();
@@ -1673,7 +1674,6 @@ describe('removing a container', () => {
 		// child once pushed — this is the case that would show it if it did not.
 		harness = await open(containerWithTwoChildren());
 		removeRow(harness, 'defences');
-		confirmAction();
 		await settle(harness.pane);
 
 		const stored = await harness.stored();
@@ -1689,7 +1689,6 @@ describe('removing a container', () => {
 	it('promotes a container holding a container, keeping the grandchild subtree intact', async () => {
 		harness = await open(deep());
 		removeRow(harness, 'defences');
-		confirmAction();
 		await settle(harness.pane);
 
 		const stored = await harness.stored();
@@ -1726,7 +1725,6 @@ describe('removing a container', () => {
 		 */
 		harness = await open(staleTabSheet());
 		removeRow(harness, 'pages');
-		confirmAction();
 		await settle(harness.pane);
 
 		const stored = await harness.stored();
@@ -3320,6 +3318,92 @@ describe('a tree row at rest', () => {
 
 });
 
+describe('removing from the tree', () => {
+	beforeEach(() => {
+		Notice.instances = [];
+		Notice.messages = [];
+	});
+
+	/** The last notice raised, as its reader reads it. */
+	function lastNotice(): string | null | undefined {
+		return Notice.instances.at(-1)?.messageEl.textContent;
+	}
+
+	/** Press the last notice's Undo link. */
+	function pressUndo(): void {
+		const link = Notice.instances.at(-1)?.messageEl.querySelector('a.sheetsmith-undo');
+		if (!link) throw new Error('no undo in the last notice');
+		(link as HTMLElement).click();
+	}
+
+	it('names a leaf and says its section stays', async () => {
+		harness = await open();
+		removeRow(harness, 'armour');
+		await settle(harness.pane);
+		expect(lastNotice()).toBe(
+			'Removed "Armour class". Character notes keep its section. Undo',
+		);
+	});
+
+	it('counts what a container held, and says nothing about a section it never had', async () => {
+		harness = await open(containerWithTwoChildren());
+		removeRow(harness, 'defences');
+		await settle(harness.pane);
+		expect(lastNotice()).toBe(
+			'Removed "Defences". The 2 components inside it moved to the bottom of the sheet. Undo',
+		);
+
+		harness = await open(deep());
+		removeRow(harness, 'spellbook');
+		await settle(harness.pane);
+		expect(lastNotice()).toBe('Removed "Spellbook". Undo');
+	});
+
+	it('puts the pre-removal bytes back from the notice', async () => {
+		harness = await open(nested());
+		const before = await harness.raw();
+		removeRow(harness, 'defences');
+		await settle(harness.pane);
+		expect(await harness.raw()).not.toBe(before);
+
+		pressUndo();
+		await settle(harness.pane);
+		expect(await harness.raw()).toBe(before);
+		expect(Notice.instances.at(-1)?.hidden).toBe(true);
+	});
+
+	it('refuses a stale undo after an intervening edit, and writes nothing', async () => {
+		harness = await open(nested());
+		removeRow(harness, 'armour');
+		await settle(harness.pane);
+		const undo = Notice.instances.at(-1);
+		control(harness, 'edit-hit_points').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'label-hit_points'), 'Health');
+		await settle(harness.pane);
+		const edited = await harness.raw();
+		const wrote = writes(harness);
+
+		(undo?.messageEl.querySelector('a.sheetsmith-undo') as HTMLElement).click();
+		await settle(harness.pane);
+		expect(await harness.raw()).toBe(edited);
+		expect(wrote()).toBe(0);
+		expect(Notice.messages).toContain(
+			'Sheetsmith did not undo: this layout has changed since.',
+		);
+	});
+
+	it('lands the selection and the focus on the layout\'s own row', async () => {
+		harness = await open(nested());
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		removeRow(harness, 'armour');
+		await settle(harness.pane);
+		expect(panelHeading(harness)).toBe('Layout');
+		expect(document.activeElement).toBe(control(harness, `edit-${SHEET_DESTINATION}`));
+	});
+});
+
 describe('a selection the layout cannot honour', () => {
 	it('falls back to the layout, never to the first component', async () => {
 		// Landing an author in a form nobody chose is the failure the reset
@@ -3330,7 +3414,6 @@ describe('a selection the layout cannot honour', () => {
 
 		treeRow(harness, 'edit-abilities');
 		removeRow(harness, 'abilities');
-		confirmAction();
 		await settle(harness.pane);
 
 		expect(
@@ -5503,7 +5586,6 @@ describe('undo and redo', () => {
 			harness = await open(nested());
 			const before = await harness.raw();
 			removeRow(harness, 'defences');
-			confirmAction();
 			await settle(harness.pane);
 			expect((await harness.stored()).components.map((c) => c.id)).toEqual([
 				'hit_points',
@@ -5762,7 +5844,6 @@ describe('undo and redo', () => {
 			control(harness, 'edit-armour').click();
 			await settle(harness.pane);
 			removeRow(harness, 'armour');
-			confirmAction();
 			await settle(harness.pane);
 			// Already the ordinary fallback `render` has always had: the
 			// removal itself dropped the selection it held.

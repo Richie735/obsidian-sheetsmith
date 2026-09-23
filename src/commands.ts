@@ -10,9 +10,10 @@ import { SheetView, sheetViewState } from './view/sheet-view';
 /**
  * How long the undo/redo confirmation stays on screen.
  *
- * Explicit and short, on purpose, and a different call from `sheet-view.ts`'s
- * own `UNDO_TIMEOUT`: that one keeps a clickable "Undo" link alive long enough
- * to press, where this is a passive ping with nothing to press. A run of
+ * Explicit and short, on purpose, and a different call from the undo notice's
+ * own `UNDO_TIMEOUT` (`ui/undo-notice.ts`): that one keeps a clickable "Undo"
+ * link alive long enough to press, where this is a passive ping with nothing
+ * to press. A run of
  * undos — holding Mod+Z, or several taps in a few seconds — is the ordinary
  * way this stack gets used, and Obsidian stacks concurrent notices as
  * separate toasts rather than replacing one another, so the default ~5s
