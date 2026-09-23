@@ -6,6 +6,7 @@ import {
 	SheetsmithSettings,
 	SheetsmithSettingTab,
 } from './settings';
+import { registerConversionOffer } from './layout-conversion';
 import { registerAutoOpen } from './view/auto-open';
 import {
 	LayoutEditorView,
@@ -44,6 +45,7 @@ export default class SheetsmithPlugin extends Plugin {
 		});
 		registerCommands(this);
 		registerAutoOpen(this);
+		registerConversionOffer(this);
 	}
 
 	onunload() {
