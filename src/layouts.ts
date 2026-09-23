@@ -4,6 +4,126 @@ import { unspellableName } from './parse/modifier-cell';
 import { ModifierDefinition, PromoteResult } from './types';
 
 /**
+ * The extension every layout file this plugin writes carries.
+ *
+ * The plugin's own rather than `json`, which is `docs/features/visible-layout-files.md`'s
+ * ruling: Obsidian shows a file in its explorer only where some view opens its
+ * extension, and claiming `json` would claim every data file in the vault and
+ * throw on any vault where a JSON viewer already holds it. The bytes inside are
+ * the same JSON `parseLayout` has always read.
+ */
+export const LAYOUT_EXTENSION = 'sheetsmith';
+
+/**
+ * The extension a layout was read from before this plugin had its own.
+ *
+ * Exported for the sentences that name it, which say `.json` to the reader in
+ * three modules: the copy interpolates this rather than spelling it, so the
+ * words and the files they describe cannot drift apart.
+ */
+export const LEGACY_EXTENSION = 'json';
+
+/**
+ * Every extension a layout file is read from, **in order of precedence**.
+ *
+ * `json` is the extension every layout carried before this one, read for one
+ * cycle so nothing a reader already has goes missing, and never written by a
+ * new file. The order is the tie rule: where `X.sheetsmith` and `X.json` both
+ * sit in the folder, the first wins and the second is listed nowhere and
+ * resolved by no lookup — so writing `X.sheetsmith` can never be silently
+ * outvoted by a stale `X.json`.
+ *
+ * One set, here and nowhere else, on `docs/PATTERNS.md` §1's one-step tier: a
+ * set spelled twice is two answers to "is this a layout", and the view's own
+ * `canAcceptExtension` asks exactly that.
+ */
+export const LAYOUT_EXTENSIONS: readonly string[] = [
+	LAYOUT_EXTENSION,
+	LEGACY_EXTENSION,
+];
+
+/** Whether a file with this extension can be a layout at all. */
+export function isLayoutExtension(extension: string): boolean {
+	return LAYOUT_EXTENSIONS.includes(extension);
+}
+
+/**
+ * Whether a file at this path is a layout in the folder: directly in it — a
+ * subfolder is outside, because lookup is by name in the one folder — and with
+ * a layout extension.
+ *
+ * **Asked of a path rather than a file**, because one consumer has no file to
+ * ask about: the old side of a rename, where nothing sits any more. One
+ * predicate for every reader of "is this in the layout folder" — the listing,
+ * the rename report and the pane's own line — on `docs/PATTERNS.md` §1's
+ * one-step tier: three spellings of it could only be tested for still agreeing,
+ * and what they would drift about is whether a subfolder counts.
+ */
+export function isLayoutPath(path: string, folder: string): boolean {
+	const cut = path.lastIndexOf('/');
+	const parent = cut === -1 ? '/' : path.slice(0, cut);
+	const name = path.slice(cut + 1);
+	const dot = name.lastIndexOf('.');
+	return (
+		parent === normalizePath(folder) &&
+		dot > 0 &&
+		isLayoutExtension(name.slice(dot + 1))
+	);
+}
+
+/**
+ * Whether this is the file a note naming its basename resolves to.
+ *
+ * Two conditions, and both are what "a character can use it" means: it sits
+ * directly in the layout folder — a subfolder is outside, because lookup is by
+ * name in that one folder — and it is the file the precedence picks for its
+ * name, which a `.json` shadowed by a `.sheetsmith` of the same name is not.
+ */
+export function isResolvedLayout(app: App, folder: string, file: TFile): boolean {
+	return layoutFileFor(app, folder, file.basename) === file;
+}
+
+/**
+ * The layout file a name resolves to in the folder, or null.
+ *
+ * **The one resolver**, which every lookup by name goes through — a character's
+ * sheet, a copy, a promotion — so the precedence is applied in one place and a
+ * name means the same file wherever it is looked up.
+ */
+export function layoutFileFor(
+	app: App,
+	folder: string,
+	name: string,
+): TFile | null {
+	for (const extension of LAYOUT_EXTENSIONS) {
+		const file = app.vault.getFileByPath(
+			normalizePath(`${folder}/${name}.${extension}`),
+		);
+		if (file) return file;
+	}
+	return null;
+}
+
+/**
+ * Whether the folder holds this name under any layout extension.
+ *
+ * **Not `layoutFileFor(...) !== null`, though it answers the same today**, and
+ * the difference is the reason it has its own name: this asks whether a *file*
+ * is in the way, which is a question about every extension, while the resolver
+ * asks which one wins. A writer refusing a name has to refuse where either file
+ * exists — writing `X.sheetsmith` beside a reader's own `X.json` would shadow
+ * their file with a new one, which is Constraint 4 broken by a gesture that only
+ * looked like it added something.
+ */
+function nameTaken(app: App, folder: string, name: string): boolean {
+	return LAYOUT_EXTENSIONS.some(
+		(extension) =>
+			app.vault.getFileByPath(normalizePath(`${folder}/${name}.${extension}`)) !==
+			null,
+	);
+}
+
+/**
  * Load a layout by name from the configured layout folder.
  * Returns null when no such file exists; throws LayoutParseError when the
  * file exists but is invalid.
@@ -13,8 +133,7 @@ export async function loadLayout(
 	folder: string,
 	name: string,
 ): Promise<Layout | null> {
-	const path = normalizePath(`${folder}/${name}.json`);
-	const file = app.vault.getFileByPath(path);
+	const file = layoutFileFor(app, folder, name);
 	if (!file) return null;
 	return parseLayout(await app.vault.read(file));
 }
@@ -52,13 +171,112 @@ function layoutNotFound(name: string, folder: string): string {
 	return `Layout "${name}" was not found in "${folder}".`;
 }
 
-/** All layout files in the folder, sorted by name. */
+/**
+ * All layout files in the folder, one per name, sorted by name.
+ *
+ * One per name because a name is what a character holds: where `X.sheetsmith`
+ * and `X.json` both exist the list carries the file `layoutFileFor` resolves,
+ * so no surface reading this — the picker, **Create a character**, the pane's
+ * dropdown, a copy's source list — can offer the one a note would never reach.
+ */
 export function listLayouts(app: App, folder: string): TFile[] {
 	const parent = app.vault.getFolderByPath(normalizePath(folder));
 	if (!parent) return [];
-	return parent.children
-		.filter((child): child is TFile => child instanceof TFile && child.extension === 'json')
-		.sort((a, b) => a.basename.localeCompare(b.basename));
+	const byName = new Map<string, TFile>();
+	for (const child of parent.children) {
+		if (!(child instanceof TFile) || !isLayoutPath(child.path, folder)) continue;
+		const held = byName.get(child.basename);
+		if (
+			held === undefined ||
+			LAYOUT_EXTENSIONS.indexOf(child.extension) <
+				LAYOUT_EXTENSIONS.indexOf(held.extension)
+		) {
+			byName.set(child.basename, child);
+		}
+	}
+	return [...byName.values()].sort((a, b) =>
+		a.basename.localeCompare(b.basename),
+	);
+}
+
+/**
+ * The layouts still stored as `.json`, and only those a conversion may rename.
+ *
+ * A `.json` shadowed by a `.sheetsmith` of the same name is not one of them: it
+ * is the file no lookup reaches, and renaming it would collide with the one
+ * that does. It is reported beside the conversion rather than acted on.
+ */
+export function legacyLayouts(app: App, folder: string): TFile[] {
+	return listLayouts(app, folder).filter(
+		(file) => file.extension === LEGACY_EXTENSION,
+	);
+}
+
+/** The `.json` layouts a `.sheetsmith` of the same name outvotes. */
+function shadowedLayouts(app: App, folder: string): TFile[] {
+	const parent = app.vault.getFolderByPath(normalizePath(folder));
+	if (!parent) return [];
+	return parent.children.filter(
+		(child): child is TFile =>
+			child instanceof TFile &&
+			child.extension === LEGACY_EXTENSION &&
+			layoutFileFor(app, folder, child.basename) !== child,
+	);
+}
+
+/**
+ * What a conversion did.
+ *
+ * Failure is a value (`docs/PATTERNS.md` §4): a file the vault would not rename
+ * is something a reader can meet, and the caller reports it rather than
+ * catching it. Three outcomes because the reader is told each differently.
+ */
+export interface ConversionResult {
+	converted: number;
+	/** `.json` files left as they are because the name is held as `.sheetsmith`. */
+	skipped: number;
+	/** The vault's own reason for each file it would not rename, in order. */
+	failed: string[];
+}
+
+/**
+ * Rename every unshadowed `.json` layout in the folder to `.sheetsmith`.
+ *
+ * **Through `fileManager.renameFile`, not `vault.rename`**, because the file
+ * manager carries every link to the file along with it — a note linking
+ * `[[X.json]]` links `[[X.sheetsmith]]` afterwards, as it would after a rename
+ * in the file explorer. `sheet-layout` is a plain string rather than a link, so
+ * no character note is touched either way, and the bytes of the layout are not
+ * read or written: a rename is the whole conversion (Constraint 3).
+ *
+ * The name is checked again at the rename rather than trusted from the list,
+ * because a `.sheetsmith` may land between the two; that one is skipped too.
+ */
+export async function convertLegacyLayouts(
+	app: App,
+	folder: string,
+): Promise<ConversionResult> {
+	const result: ConversionResult = {
+		converted: 0,
+		skipped: shadowedLayouts(app, folder).length,
+		failed: [],
+	};
+	for (const file of legacyLayouts(app, folder)) {
+		const target = normalizePath(
+			`${folder}/${file.basename}.${LAYOUT_EXTENSION}`,
+		);
+		if (app.vault.getFileByPath(target) !== null) {
+			result.skipped += 1;
+			continue;
+		}
+		try {
+			await app.fileManager.renameFile(file, target);
+			result.converted += 1;
+		} catch (error) {
+			result.failed.push(reason(error));
+		}
+	}
+	return result;
 }
 
 /**
@@ -158,10 +376,12 @@ export async function createLayout(
 	if (!app.vault.getFolderByPath(dir)) {
 		await app.vault.createFolder(dir);
 	}
-	const path = normalizePath(`${dir}/${name}.json`);
-	if (app.vault.getFileByPath(path)) {
+	// Refused under either extension, not only the one written: see
+	// `nameTaken`, and the precedence it protects.
+	if (nameTaken(app, dir, name)) {
 		throw new Error(`A layout named "${name}" already exists.`);
 	}
+	const path = normalizePath(`${dir}/${name}.${LAYOUT_EXTENSION}`);
 	return app.vault.create(path, serialiseLayout(layout));
 }
 
@@ -347,7 +567,7 @@ export function nameRequiredFor(source: LayoutSource): boolean {
  * name inside the JSON", which is `installLayoutSource`'s rule and stated in
  * its header — so the paste arm goes straight there with the box untrimmed. For
  * the other two there is no other source of a name, and `createLayout` handed a
- * blank one would write `<folder>/.json`. That is a hole nothing else closes,
+ * blank one would write `<folder>/.sheetsmith`. That is a hole nothing else closes,
  * and it is why this refusal is a writer-side guarantee rather than a second
  * copy of the surface's disabled button: the two happen to agree about which
  * arms they cover, which is what makes the disabled control honest rather than
@@ -378,8 +598,7 @@ export async function startLayout(
 	}
 
 	if ('copyOf' in source) {
-		const path = normalizePath(`${folder}/${source.copyOf}.json`);
-		const file = app.vault.getFileByPath(path);
+		const file = layoutFileFor(app, folder, source.copyOf);
 		if (file === null) return { error: layoutNotFound(source.copyOf, folder) };
 		let text: string;
 		try {
@@ -467,8 +686,7 @@ export async function appendModifierDefinition(
 	const unspellable = unspellableName(chosen);
 	if (unspellable !== null) return { error: unspellable };
 
-	const path = normalizePath(`${folder}/${layoutName}.json`);
-	const file = app.vault.getFileByPath(path);
+	const file = layoutFileFor(app, folder, layoutName);
 	if (file === null) {
 		return { error: layoutNotFound(layoutName, folder) };
 	}
@@ -487,12 +705,15 @@ export async function appendModifierDefinition(
 		// here are derived from the bytes read: the two-step spelling leaves a
 		// window in which a write landing between them is overwritten by a layout
 		// parsed before it existed. That closes one direction of the promise the
-		// paragraph above makes and not both. The other direction is still open:
+		// paragraph above makes. The other direction is the layout editor's:
 		// `layout-editor.ts` writes a whole-file snapshot of what its pane holds
-		// in memory, taking no lock and reading nothing, and nothing in `src/`
-		// listens for a vault `modify`. So a promotion landing while a pane is
-		// open on that layout is dropped by that pane's next save, and no
-		// spelling of this call site can prevent it.
+		// in memory, taking no lock and reading nothing, so it is the pane that
+		// has to notice this write. It does — `view/layout-editor-view.ts`
+		// listens for `modify` on its own file and reloads on a write it did not
+		// make (`docs/features/visible-layout-files.md`) — so a pane open on this
+		// layout picks the promotion up rather than dropping it on its next save.
+		// What it gives up in exchange is an edit still pending in that pane,
+		// which it drops and says so.
 		//
 		// The refusal throws, which is the only way a synchronous callback can
 		// decline to write. It is caught by this function's own `catch` and
