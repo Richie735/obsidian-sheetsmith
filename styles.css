@@ -7278,6 +7278,28 @@ a.sheetsmith-undo {
 	color: var(--text-accent);
 }
 
+/* The focused mark, which the reset above had taken away: Obsidian draws a
+   button's focus ring as a `box-shadow`, and `box-shadow: none` is one of the
+   declarations that strip its chrome, so a name reached by Tab showed nothing
+   at all — found photographing the tree's focus state. An outline around the
+   name alone, 2px, so it cannot be mistaken for the selected row's 1px accent
+   edge around the whole card, and an outline rather than a shadow so forced
+   colors keeps it (docs/UI.md §6). */
+.sheetsmith-tree-row .sheetsmith-tree-name:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: 1px;
+	border-radius: var(--radius-s);
+}
+
+/* Room for that ring inside the name's own box, which the app clips
+   (`overflow: hidden` for its ellipsis) — so a ring drawn outside the button
+   showed as one stray right-hand edge. Padding the box by the ring's reach and
+   pulling it back by the same margin moves no text. */
+.sheetsmith-tree-row .setting-item-name {
+	padding: var(--size-2-2);
+	margin: calc(-1 * var(--size-2-2));
+}
+
 /* The whole row, not just the name, answers a press (`docs/PATTERNS.md` §6).
    No hover fill where a drag is over the row already claims one
    (`.sheetsmith-tree-drop-valid`, immediately below) or where the row is

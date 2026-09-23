@@ -646,6 +646,9 @@ export class LayoutEditorSection {
 			// selected mark) or a later command with nothing to do with
 			// selection, so there is no stale copy for a getter to avoid.
 			selection: this.host.selection,
+			focusAfterRedraw: (token) => {
+				this.pendingFocus = token;
+			},
 			confirm: (message, cta, onConfirm) =>
 				new ConfirmModal(this.plugin.app, message, cta, onConfirm).open(),
 			drag: this.treeDrag,

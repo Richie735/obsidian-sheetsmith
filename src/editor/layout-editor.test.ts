@@ -248,6 +248,62 @@ function confirmAction(): void {
 }
 
 /**
+ * Open a tree row's menu the way a press on its menu button does.
+ *
+ * The app's menu draws onto `document.body`, outside the pane, so what it holds
+ * is read from there. A press with `detail` of 1 is a pointer's, which is the
+ * route that shows the menu at the pointer rather than under the button.
+ */
+function openRowMenu(harness: Harness, id: string): void {
+	control(harness, `tree-menu-${id}`).dispatchEvent(
+		new MouseEvent('click', { bubbles: true, detail: 1 }),
+	);
+}
+
+/** The open menu's lines, items and separators alike, in order. */
+function menuLines(): string[] {
+	return Array.from(document.body.querySelectorAll('.menu .menu-scroll > *')).map(
+		(el) =>
+			el.classList.contains('menu-separator')
+				? '---'
+				: (el.querySelector('.menu-item-title')?.textContent ?? ''),
+	);
+}
+
+/** The open menu's item with this title. */
+function menuItem(title: string): HTMLElement {
+	for (const el of Array.from(document.body.querySelectorAll('.menu .menu-item'))) {
+		if (el.querySelector('.menu-item-title')?.textContent === title) {
+			return el as HTMLElement;
+		}
+	}
+	throw new Error(`no menu item "${title}" among ${JSON.stringify(menuLines())}`);
+}
+
+/** Open a row's menu and press one of its items, by title. */
+function pressMenu(harness: Harness, id: string, title: string): void {
+	openRowMenu(harness, id);
+	menuItem(title).click();
+}
+
+/** Press **Remove** on a component's tree row menu, which then asks first. */
+function removeRow(harness: Harness, id: string): void {
+	pressMenu(harness, id, 'Remove');
+}
+
+/** Press one of the tree's Alt+arrow chords on the control this token names. */
+function chord(harness: Harness, token: string, key: string): KeyboardEvent {
+	const event = new KeyboardEvent('keydown', {
+		key,
+		altKey: true,
+		bubbles: true,
+		cancelable: true,
+	});
+	control(harness, token).dispatchEvent(event);
+	return event;
+}
+
+/**
  * How many times the layout file has been written since this was installed.
  *
  * Counted rather than compared. Asserting the bytes are unchanged passes just as
@@ -530,7 +586,7 @@ describe('adding and removing a component', () => {
 	});
 
 	it('removes nothing until the confirmation is taken', async () => {
-		control(harness, 'remove-armour').click();
+		removeRow(harness, 'armour');
 		expect((await harness.stored()).components).toHaveLength(2);
 
 		confirmAction();
@@ -1432,9 +1488,9 @@ describe('the component list', () => {
 		expect([...positions].sort((a, b) => a - b)).toEqual(positions);
 	});
 
-	it('gives a child its own edit and remove controls', () => {
+	it('gives a child its own name and menu', () => {
 		expect(has(harness, 'edit-armour')).toBe(true);
-		expect(has(harness, 'remove-armour')).toBe(true);
+		expect(has(harness, 'tree-menu-armour')).toBe(true);
 	});
 
 	it('draws both the container and what it holds, live', () => {
@@ -1576,7 +1632,7 @@ describe('removing a container', () => {
 	});
 
 	it('says what happens to the components inside it', () => {
-		control(harness, 'remove-defences').click();
+		removeRow(harness, 'defences');
 		const modal = document.body.querySelector('.modal-container');
 		expect(modal?.textContent).toContain('The component inside it moves');
 	});
@@ -1585,7 +1641,7 @@ describe('removing a container', () => {
 		// A component config is not character data, but losing six components'
 		// formulas to one click is the same failure in miniature — and the modal
 		// only ever promised that the notes survived.
-		control(harness, 'remove-defences').click();
+		removeRow(harness, 'defences');
 		confirmAction();
 		await settle(harness.pane);
 
@@ -1599,7 +1655,7 @@ describe('removing a container', () => {
 	});
 
 	it('removes a child without touching its container', async () => {
-		control(harness, 'remove-armour').click();
+		removeRow(harness, 'armour');
 		confirmAction();
 		await settle(harness.pane);
 
@@ -1616,7 +1672,7 @@ describe('removing a container', () => {
 		// iteration of the promotion loop, so it already sees the previous
 		// child once pushed — this is the case that would show it if it did not.
 		harness = await open(containerWithTwoChildren());
-		control(harness, 'remove-defences').click();
+		removeRow(harness, 'defences');
 		confirmAction();
 		await settle(harness.pane);
 
@@ -1632,7 +1688,7 @@ describe('removing a container', () => {
 
 	it('promotes a container holding a container, keeping the grandchild subtree intact', async () => {
 		harness = await open(deep());
-		control(harness, 'remove-defences').click();
+		removeRow(harness, 'defences');
 		confirmAction();
 		await settle(harness.pane);
 
@@ -1669,7 +1725,7 @@ describe('removing a container', () => {
 		 * another component is not "kept".
 		 */
 		harness = await open(staleTabSheet());
-		control(harness, 'remove-pages').click();
+		removeRow(harness, 'pages');
 		confirmAction();
 		await settle(harness.pane);
 
@@ -2742,12 +2798,13 @@ describe('the tree', () => {
 	});
 
 	it('does not select a row for a press on its own icon buttons', async () => {
-		// Real controls own their own presses (PATTERNS §6): reordering
-		// `Abilities` from a row that is not selected must not also select it
-		// as a side effect of the button's click bubbling to the row.
+		// Real controls own their own presses (PATTERNS §6): opening the menu on
+		// `Abilities`, a row that is not selected, must not also select it as a
+		// side effect of the click bubbling to the row.
 		expect(has(harness, 'cfg-abilities-direction')).toBe(false);
-		control(harness, 'tree-down-abilities').click();
+		openRowMenu(harness, 'abilities');
 		await settle(harness.pane);
+		document.body.querySelector('.menu')?.remove();
 
 		expect(has(harness, 'cfg-abilities-direction')).toBe(false);
 		expect(
@@ -2809,6 +2866,49 @@ function dragRow(harness: Harness, fromId: string, toId: string): void {
 	to.dispatchEvent(new Event('dragover', { bubbles: true, cancelable: true }));
 	to.dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }));
 	from.dispatchEvent(new Event('dragend', { bubbles: true }));
+}
+
+/**
+ * A container holding two containers, the second of which holds a leaf — the
+ * one shape where moving a row into its previous sibling pushes a subtree past
+ * the depth cap.
+ */
+function depthCapped(): Layout {
+	return {
+		name: 'Depth-capped sheet',
+		columns: 12,
+		components: [
+			{
+				id: 'zone',
+				type: 'group',
+				label: 'Zone',
+				position: { col: 1, row: 1, width: 6, height: 3 },
+				children: [
+					{
+						id: 'holder',
+						type: 'group',
+						label: 'Holder',
+						position: { col: 1, row: 1, width: 3, height: 1 },
+					},
+					{
+						id: 'nested',
+						type: 'group',
+						label: 'Nested',
+						position: { col: 1, row: 2, width: 3, height: 1 },
+						children: [
+							{
+								id: 'leaf',
+								type: 'card',
+								label: 'Leaf',
+								position: { col: 1, row: 1, width: 2, height: 1 },
+							},
+						],
+					},
+				],
+			},
+		],
+		triggers: [],
+	};
 }
 
 describe('reparenting a tree row', () => {
@@ -2900,12 +3000,12 @@ describe('reparenting a tree row', () => {
 		expect(message).toContain('is not a container');
 	});
 
-	it('reparents with the indent button, no pointer event dispatched', async () => {
+	it('reparents from the menu into the previous sibling, no pointer event dispatched', async () => {
 		// The keyboard-operable equivalent of dropping a row onto the row
 		// before it: `hit_points` moves into `defences`, its only earlier
-		// sibling, with nothing but a click on the control.
+		// sibling, with nothing but a press on the menu item.
 		harness = await open(nested());
-		control(harness, 'tree-indent-hit_points').click();
+		pressMenu(harness, 'hit_points', 'Move into "Defences"');
 		await settle(harness.pane);
 
 		const stored = await harness.stored();
@@ -2916,9 +3016,9 @@ describe('reparenting a tree row', () => {
 		).toEqual(['armour', 'hit_points']);
 	});
 
-	it('reparents with the outdent button, no pointer event dispatched', async () => {
+	it('reparents from the menu out to the level above', async () => {
 		harness = await open(nested());
-		control(harness, 'tree-outdent-armour').click();
+		pressMenu(harness, 'armour', 'Move out of "Defences"');
 		await settle(harness.pane);
 
 		const stored = await harness.stored();
@@ -2930,15 +3030,12 @@ describe('reparenting a tree row', () => {
 		expect(stored.components[0]?.children).toEqual([]);
 	});
 
-	it('reorders with the up and down buttons, no pointer event dispatched', async () => {
-		// The keyboard-operable equivalent of dragging a row onto a sibling
-		// within its own current parent — `list-fields.ts`'s own `moveItem`
-		// semantics, reused rather than reinvented, exactly as the drag-based
-		// reorder test above already proves for the pointer (`tree.ts`'s own
-		// header names both as new in this slice; only the drag half had a
-		// test).
+	it('reorders from the menu, moving up and down among siblings', async () => {
+		// `list-fields.ts`'s own `moveItem` semantics, reused rather than
+		// reinvented, exactly as the drag-based reorder test above already
+		// proves for the pointer.
 		harness = await open(threeLeaves());
-		control(harness, 'tree-down-a').click();
+		pressMenu(harness, 'a', 'Move down');
 		await settle(harness.pane);
 		expect((await harness.stored()).components.map((c) => c.id)).toEqual([
 			'b',
@@ -2946,7 +3043,7 @@ describe('reparenting a tree row', () => {
 			'c',
 		]);
 
-		control(harness, 'tree-up-c').click();
+		pressMenu(harness, 'c', 'Move up');
 		await settle(harness.pane);
 		expect((await harness.stored()).components.map((c) => c.id)).toEqual([
 			'b',
@@ -2955,75 +3052,211 @@ describe('reparenting a tree row', () => {
 		]);
 	});
 
-	it('disables indent and outdent exactly where the drag equivalent would be refused', async () => {
+	it('lists the five items in order, with two separators and Remove warned', async () => {
+		harness = await open(deep());
+		openRowMenu(harness, 'melee');
+		expect(menuLines()).toEqual([
+			'Move up',
+			'Move down',
+			'---',
+			'Move into a container',
+			'Move out of "Defences"',
+			'---',
+			'Remove',
+		]);
+		expect(menuItem('Remove').classList.contains('is-warning')).toBe(true);
+	});
+
+	it('names the previous sibling and the parent, and falls back to a generic item', async () => {
 		harness = await open(nested());
-		// `defences` is the first row among its own siblings, so there is no
-		// earlier sibling to move into.
-		expect(control(harness, 'tree-indent-defences').hasAttribute('disabled')).toBe(
-			true,
-		);
-		// `defences` is already at the top level.
-		expect(
-			control(harness, 'tree-outdent-defences').hasAttribute('disabled'),
-		).toBe(true);
-		// `armour` is inside `defences` already, so outdent is live.
-		expect(control(harness, 'tree-outdent-armour').hasAttribute('disabled')).toBe(
+		openRowMenu(harness, 'hit_points');
+		// The other party only: the menu is reached through a button already
+		// named for its row, so the row itself is not named again.
+		expect(menuItem('Move into "Defences"').classList.contains('is-disabled')).toBe(
 			false,
 		);
+		// At the top level there is no parent to leave.
+		expect(
+			menuItem('Move out of a container').classList.contains('is-disabled'),
+		).toBe(true);
+
+		openRowMenu(harness, 'defences');
+		// First among its siblings, so nothing above it to move into.
+		expect(
+			menuItem('Move into a container').classList.contains('is-disabled'),
+		).toBe(true);
+		expect(menuItem('Move up').classList.contains('is-disabled')).toBe(true);
+		expect(menuItem('Move down').classList.contains('is-disabled')).toBe(false);
 	});
 
-	it('disables indent exactly where it would push a subtree past the depth cap', async () => {
-		/*
-		 * The trivial cases above (`disables indent and outdent exactly
-		 * where...`) never reach the interesting refusal the drag path has
-		 * its own dedicated test for (`refuses a drop that would push a
-		 * container past the depth cap, with no write`, against `deep()`):
-		 * a container that itself holds a container of its own, indented
-		 * into a sibling that is already one level in. `zone` holds two
-		 * depth-1 children — `holder`, empty, and `nested`, which holds
-		 * `leaf` — so indenting `nested` into its previous sibling `holder`
-		 * would land `leaf` three containers deep.
-		 */
-		const withDepthCap: Layout = {
-			name: 'Depth-capped sheet',
-			columns: 12,
-			components: [
-				{
-					id: 'zone',
-					type: 'group',
-					label: 'Zone',
-					position: { col: 1, row: 1, width: 6, height: 3 },
-					children: [
-						{
-							id: 'holder',
-							type: 'group',
-							label: 'Holder',
-							position: { col: 1, row: 1, width: 3, height: 1 },
-						},
-						{
-							id: 'nested',
-							type: 'group',
-							label: 'Nested',
-							position: { col: 1, row: 2, width: 3, height: 1 },
-							children: [
-								{
-									id: 'leaf',
-									type: 'card',
-									label: 'Leaf',
-									position: { col: 1, row: 1, width: 2, height: 1 },
-								},
-							],
-						},
-					],
-				},
-			],
-			triggers: [],
-		};
-		harness = await open(withDepthCap);
+	it('writes nothing for a disabled item pressed anyway', async () => {
+		harness = await open(nested());
+		const before = await harness.raw();
+		const wrote = writes(harness);
+		for (const title of ['Move up', 'Move into a container', 'Move out of a container']) {
+			pressMenu(harness, 'defences', title);
+			await settle(harness.pane);
+		}
+		// Last among the top level, so nothing below it to swap with.
+		openRowMenu(harness, 'hit_points');
+		expect(menuItem('Move down').classList.contains('is-disabled')).toBe(true);
+		menuItem('Move down').click();
+		await settle(harness.pane);
+		expect(await harness.raw()).toBe(before);
+		expect(wrote()).toBe(0);
+	});
 
-		expect(control(harness, 'tree-indent-nested').hasAttribute('disabled')).toBe(
+	it('disables the move into exactly where it would push a subtree past the depth cap', async () => {
+		/*
+		 * The trivial cases above never reach the interesting refusal the drag
+		 * path has its own dedicated test for (`refuses a drop that would push a
+		 * container past the depth cap, with no write`, against `deep()`): a
+		 * container that itself holds a container of its own, moved into a
+		 * sibling that is already one level in. `zone` holds two depth-1
+		 * children — `holder`, empty, and `nested`, which holds `leaf` — so
+		 * moving `nested` into its previous sibling `holder` would land `leaf`
+		 * three containers deep.
+		 */
+		harness = await open(depthCapped());
+		openRowMenu(harness, 'nested');
+		expect(menuItem('Move into "Holder"').classList.contains('is-disabled')).toBe(
 			true,
 		);
+	});
+
+	it('refuses the same move from its chord, saying why under the row and writing nothing', async () => {
+		harness = await open(depthCapped());
+		const before = await harness.raw();
+		const wrote = writes(harness);
+		chord(harness, 'edit-nested', 'ArrowRight');
+		await settle(harness.pane);
+
+		expect(await harness.raw()).toBe(before);
+		expect(wrote()).toBe(0);
+		const message = treeRow(harness, 'edit-nested').querySelector(
+			'.sheetsmith-field-error',
+		);
+		expect(message?.textContent).toContain('more than one level deep');
+		expect(message?.getAttribute('role')).toBe('alert');
+	});
+
+	it('refuses each chord where its menu item is disabled, in its own words', async () => {
+		harness = await open(nested());
+		const before = await harness.raw();
+		const wrote = writes(harness);
+		const said = (key: string): string | null | undefined => {
+			chord(harness, 'edit-defences', key);
+			return treeRow(harness, 'edit-defences').querySelector(
+				'.sheetsmith-field-error',
+			)?.textContent;
+		};
+		expect(said('ArrowUp')).toBe('Already first.');
+		expect(said('ArrowRight')).toBe('No container above to move into.');
+		expect(said('ArrowLeft')).toBe('Already at the top level.');
+		// Hit points is last among the top level.
+		chord(harness, 'edit-hit_points', 'ArrowDown');
+		expect(
+			treeRow(harness, 'edit-hit_points').querySelector('.sheetsmith-field-error')
+				?.textContent,
+		).toBe('Already last.');
+		await settle(harness.pane);
+		expect(await harness.raw()).toBe(before);
+		expect(wrote()).toBe(0);
+	});
+
+	it('reparents from a chord with no pointer event, as one undo step', async () => {
+		harness = await open(nested());
+		const before = await harness.raw();
+		const event = chord(harness, 'edit-hit_points', 'ArrowRight');
+		expect(event.defaultPrevented).toBe(true);
+		await settle(harness.pane);
+		const moved = await harness.raw();
+		expect(
+			(await harness.stored()).components
+				.find((c) => c.id === 'defences')
+				?.children?.map((c) => c.id),
+		).toEqual(['armour', 'hit_points']);
+
+		expect(await undo(harness)).toBe(true);
+		await settle(harness.pane);
+		expect(await harness.raw()).toBe(before);
+		expect(await redo(harness)).toBe(true);
+		await settle(harness.pane);
+		expect(await harness.raw()).toBe(moved);
+	});
+
+	it('reorders and moves out from the other three chords', async () => {
+		harness = await open(threeLeaves());
+		chord(harness, 'edit-a', 'ArrowDown');
+		await settle(harness.pane);
+		chord(harness, 'edit-c', 'ArrowUp');
+		await settle(harness.pane);
+		expect((await harness.stored()).components.map((c) => c.id)).toEqual([
+			'b',
+			'c',
+			'a',
+		]);
+
+		harness = await open(nested());
+		chord(harness, 'edit-armour', 'ArrowLeft');
+		await settle(harness.pane);
+		expect((await harness.stored()).components.map((c) => c.id)).toEqual([
+			'defences',
+			'hit_points',
+			'armour',
+		]);
+	});
+
+	it('moves focus to the moved row\'s name, from the menu and from a chord', async () => {
+		harness = await open(nested());
+		pressMenu(harness, 'hit_points', 'Move into "Defences"');
+		await settle(harness.pane);
+		expect(document.activeElement).toBe(control(harness, 'edit-hit_points'));
+
+		chord(harness, 'edit-hit_points', 'ArrowLeft');
+		await settle(harness.pane);
+		expect(document.activeElement).toBe(control(harness, 'edit-hit_points'));
+	});
+
+	it('answers the chords on the name button and nowhere else on the row', async () => {
+		harness = await open(nested());
+		const before = await harness.raw();
+		const wrote = writes(harness);
+		for (const token of ['tree-handle-armour', 'tree-menu-armour']) {
+			chord(harness, token, 'ArrowLeft');
+		}
+		// Plain arrows are not a chord, on the name button either.
+		control(harness, 'edit-armour').dispatchEvent(
+			new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true }),
+		);
+		// Nor Alt with a second modifier, which is somebody else's chord.
+		for (const second of ['shiftKey', 'ctrlKey', 'metaKey'] as const) {
+			control(harness, 'edit-armour').dispatchEvent(
+				new KeyboardEvent('keydown', {
+					key: 'ArrowLeft',
+					altKey: true,
+					[second]: true,
+					bubbles: true,
+				}),
+			);
+		}
+		await settle(harness.pane);
+		expect(await harness.raw()).toBe(before);
+		expect(wrote()).toBe(0);
+	});
+
+	it('declares the chords on the name button, and says them after the name', async () => {
+		harness = await open(nested());
+		const name = control(harness, 'edit-armour');
+		expect(name.getAttribute('aria-keyshortcuts')).toBe(
+			'Alt+ArrowUp Alt+ArrowDown Alt+ArrowRight Alt+ArrowLeft',
+		);
+		expect(name.getAttribute('title')?.startsWith('Armour class')).toBe(true);
+		expect(name.getAttribute('title')).toContain('Alt+↑ ↓ reorder');
+		// The layout's own row cannot move, so it declares nothing.
+		expect(
+			control(harness, `edit-${SHEET_DESTINATION}`).hasAttribute('aria-keyshortcuts'),
+		).toBe(false);
 	});
 
 	it('undoes a reparent at depth as one step', async () => {
@@ -3065,6 +3298,28 @@ describe('reparenting a tree row', () => {
 	});
 });
 
+describe('a tree row at rest', () => {
+	it('carries a drag handle and a menu button, and none of the old controls', async () => {
+		harness = await open(deep());
+		for (const id of ['defences', 'melee', 'armour', 'spellbook']) {
+			const controls = Array.from(
+				treeRow(harness, `edit-${id}`).querySelectorAll('.setting-item-control > *'),
+			).map((el) => (el as HTMLElement).dataset.sheetsmithFocus);
+			expect(controls).toEqual([`tree-handle-${id}`, `tree-menu-${id}`]);
+		}
+		for (const prefix of ['tree-up-', 'tree-down-', 'tree-indent-', 'tree-outdent-', 'remove-']) {
+			expect(
+				harness.container.querySelector(`[data-sheetsmith-focus^="${prefix}"]`),
+				prefix,
+			).toBeNull();
+		}
+		expect(control(harness, 'tree-menu-melee').getAttribute('aria-label')).toBe(
+			'More options for "Melee"',
+		);
+	});
+
+});
+
 describe('a selection the layout cannot honour', () => {
 	it('falls back to the layout, never to the first component', async () => {
 		// Landing an author in a form nobody chose is the failure the reset
@@ -3074,7 +3329,7 @@ describe('a selection the layout cannot honour', () => {
 		await settle(harness.pane);
 
 		treeRow(harness, 'edit-abilities');
-		control(harness, 'remove-abilities').click();
+		removeRow(harness, 'abilities');
 		confirmAction();
 		await settle(harness.pane);
 
@@ -5247,7 +5502,7 @@ describe('undo and redo', () => {
 		it('undoes removing a component whose children move to the sheet', async () => {
 			harness = await open(nested());
 			const before = await harness.raw();
-			control(harness, 'remove-defences').click();
+			removeRow(harness, 'defences');
 			confirmAction();
 			await settle(harness.pane);
 			expect((await harness.stored()).components.map((c) => c.id)).toEqual([
@@ -5506,7 +5761,7 @@ describe('undo and redo', () => {
 			harness = await open();
 			control(harness, 'edit-armour').click();
 			await settle(harness.pane);
-			control(harness, 'remove-armour').click();
+			removeRow(harness, 'armour');
 			confirmAction();
 			await settle(harness.pane);
 			// Already the ordinary fallback `render` has always had: the
