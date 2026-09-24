@@ -642,8 +642,9 @@ implementation and every round of findings.
 
 ## Deliberately not doing
 
-- **Copying and pasting a component or its config.** The next feature. The
-  menu leaves room (§5) and nothing here builds toward it.
+- **Copying and pasting a component or its config.** The next feature, built as
+  `docs/features/component-copy-paste.md`: a third menu section between the
+  moves and **Remove**, and Mod+C and Mod+V on a row's name.
 - **The canvas's drag and resize gestures**, and anything about the canvas
   overlay.
 - **`reparent.ts`'s rules.** `canReparent` and `reparent` are called, not
