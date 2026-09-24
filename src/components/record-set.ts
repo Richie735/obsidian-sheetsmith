@@ -85,7 +85,13 @@ import {
 import { startsSection } from '../parse/character';
 import { displayText, hasLink } from '../parse/wikilink';
 import { fencedLinkRefusal } from './fenced-link';
-import { ColumnType, HOLDER_MAX_SOURCE, MaxSource } from './column-types';
+import {
+	BODY_PLACEMENT,
+	ColumnType,
+	HOLDER_MAX_SOURCE,
+	MaxSource,
+	Placement,
+} from './column-types';
 import {
 	boundedText,
 	formatComputed,
@@ -260,6 +266,19 @@ export interface RecordField {
 	 */
 	maxSource?: MaxSource;
 	/**
+	 * Where the field is drawn: on the record's summary line, or inside the
+	 * opened record, in a block above its prose, for a value read once and
+	 * changed rarely. Absent means the summary line, so every layout written
+	 * before this reads as it did.
+	 *
+	 * **Display only.** The fence, the formulas, the resets and the modifiers do
+	 * not know it exists: a body field is the same control drawn by the same
+	 * `drawField`, only attached to the body, and a closed record simply does not
+	 * show it. Any value but `BODY_PLACEMENT` reads as the summary line with no
+	 * configuration error, on `maxSource`'s precedent, and is carried untouched.
+	 */
+	placement?: Placement;
+	/**
 	 * Names for a level field's states, from none upwards. Naming them settles
 	 * how many there are. A name may say what its ring shows after a colon; see
 	 * level-ring.ts, which owns that rule.
@@ -360,6 +379,11 @@ function storedFields(config: RecordSetConfig): RecordField[] {
 	return (config.fields ?? []).filter(
 		(field) => fieldType(field) !== 'computed',
 	);
+}
+
+/** Whether this field draws inside the opened record rather than on its summary line. */
+function inBody(field: RecordField): boolean {
+	return field.placement === BODY_PLACEMENT;
 }
 
 /** What a record's field is called on the sheet. */
@@ -839,6 +863,9 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				// uses is the record's rather than the layout's. Table does not ask
 				// for it, which is what keeps this feature out of Table.
 				holderMax: true,
+				// A body to move a field into is the other thing this component has
+				// that a Table does not, so the same opt-in holds it out of Table.
+				placement: true,
 				// The strip is the component's, and a per-field hide would leave a
 				// ring unnamed, which is what the strip is for. The *key* is still
 				// read and still round-trips.
@@ -862,7 +889,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			// `docs/features/component-rename-migration.md`).
 			addressesEntry: { fence: 'record' },
 			description:
-				"The typed values every record holds, each an entry in that record's block in the note. Renaming a key moves that entry in every record, in every note on this layout. Text is not offered: words a reader reads belong in the record's body, where they may hold links. A number field with a maximum is a uses counter: the field draws that maximum beside its value, and a reset trigger restores it to that maximum. A number field's maximum may belong to the field, so every record shares it, or to each record, so a reader types it on the sheet — and a reset restores each record to whichever one applies.",
+				"The typed values every record holds, each an entry in that record's block in the note. Renaming a key moves that entry in every record, in every note on this layout. Text is not offered: words a reader reads belong in the record's body, where they may hold links. A number field with a maximum is a uses counter: the field draws that maximum beside its value, and a reset trigger restores it to that maximum. A number field's maximum may belong to the field, so every record shares it, or to each record, so a reader types it on the sheet — and a reset restores each record to whichever one applies. Tick \"Inside the opened record\" for a value read once and changed rarely: it draws above the record's prose and is not shown while the record is closed. A field used every turn belongs on the summary line.",
 		},
 		{
 			key: 'hideLabel',
@@ -1187,6 +1214,12 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 
 		const noun = recordNoun(config);
 		const fields = config.fields ?? [];
+		/**
+		 * The fields the summary line draws, and so the only ones the strip names
+		 * and the subgrid gives a track: a body field has no column, so counting it
+		 * would put a heading over nothing or a hole in every record's line.
+		 */
+		const summaryFields = fields.filter((field) => !inBody(field));
 		const records = recordViews(data);
 
 		/**
@@ -1211,13 +1244,13 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		 */
 		const headed =
 			config.fieldHeadings === true &&
-			fields.length > 0 &&
+			summaryFields.length > 0 &&
 			records.some((record) => record.error === null);
 
 		const block = element(
 			'div',
 			headed
-				? `sheetsmith-placed sheetsmith-record-set sheetsmith-record-set-headed sheetsmith-record-set-fields-${Math.min(fields.length, MAX_TABULATED_FIELDS)}`
+				? `sheetsmith-placed sheetsmith-record-set sheetsmith-record-set-headed sheetsmith-record-set-fields-${Math.min(summaryFields.length, MAX_TABULATED_FIELDS)}`
 				: 'sheetsmith-placed sheetsmith-record-set',
 			container,
 		);
@@ -1226,7 +1259,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		if (headed) {
 			block.style.setProperty(
 				'--sheetsmith-record-fields',
-				String(fields.length),
+				String(summaryFields.length),
 			);
 		}
 		// The placement, handed to CSS as the box's own floor: the box is `height`
@@ -1264,7 +1297,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			 */
 			const strip = element('div', 'sheetsmith-record-strip', list);
 			strip.setAttribute('aria-hidden', 'true');
-			for (const field of fields) {
+			for (const field of summaryFields) {
 				element(
 					'span',
 					'sheetsmith-card-abbreviation',
@@ -1552,9 +1585,21 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				'sheetsmith-record-fields',
 				summary,
 			);
+			/*
+			 * **Partitioned once, and each field keeps its declared index.** A
+			 * computed field resolves `fields.<index>.formula`, which is its position
+			 * in `config.fields` and in neither half — so iterating a filtered array
+			 * with its own indices would resolve a computed field declared after a
+			 * body field against its neighbour's formula.
+			 */
+			const inBlock: { field: RecordField; index: number }[] = [];
 			if (record.error === null) {
 				fields.forEach((field, index) => {
-					drawField(fieldRow, row, field, index, record, at, named);
+					if (inBody(field)) {
+						inBlock.push({ field, index });
+						return;
+					}
+					drawField(fieldRow, row, field, index, record, at, named, false);
 				});
 			}
 
@@ -1562,6 +1607,29 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 
 			if (record.error !== null) {
 				element('div', 'sheetsmith-error', row, record.error);
+			}
+
+			/*
+			 * **The body's first child, and drawn only where there is something in
+			 * it**, so a layout with no body field draws the tree it always drew: no
+			 * block, no class, no second grid row. The prose layers after it are
+			 * unchanged and stay stacked in one cell, one row down.
+			 *
+			 * In the DOM whether the record is open or closed, as the prose field
+			 * already is: `hidden="until-found"` on the body hides the block with it,
+			 * the view's focus restoration counts the same controls either way, and
+			 * find-in-page has the names to reach.
+			 */
+			if (inBlock.length > 0) {
+				bodyEl.classList.add('sheetsmith-record-body-has-fields');
+				const block = element(
+					'div',
+					'sheetsmith-record-body-fields',
+					bodyEl,
+				);
+				for (const { field, index } of inBlock) {
+					drawField(block, row, field, index, record, at, named, true);
+				}
 			}
 
 			drawBody(bodyEl, row, record, at, named);
@@ -1681,6 +1749,15 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			record: RecordEntry,
 			at: number,
 			named: string,
+			/**
+			 * Whether this control is drawn inside the opened record. The one
+			 * argument that differs between the two placements, and it does two
+			 * things only: the field's name is drawn beside every type, since no
+			 * strip ever names a body field, and a ring is told its name is on
+			 * screen. Everything else — the commit, the delta, the refusals — is the
+			 * same code with the same arguments.
+			 */
+			body: boolean,
 		): void {
 			const type = fieldType(field);
 			const raw = record.fields[field.key] ?? '';
@@ -1691,6 +1768,14 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				`sheetsmith-record-field sheetsmith-record-field-${type}`,
 				into,
 			);
+			// A number's name is drawn beside it in the shared secondary clothes,
+			// always: the stylesheet hides it only where a strip is over it, so the
+			// one query decides both and a number can never have neither. In the
+			// body every type draws it, and no rule hides it there — the strip's
+			// rules are scoped to the summary line.
+			if (body || type === 'number') {
+				element('span', 'sheetsmith-card-abbreviation', cell, name);
+			}
 			const commit = (next: string): void => {
 				context.onChange({
 					records: { [at]: { fields: { [field.key]: next } } },
@@ -1712,16 +1797,13 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 					raw,
 					type === 'level',
 					accessible,
+					body,
 					commit,
 				);
 				return;
 			}
 
-			// A number, whose entry may carry its ceiling beside its value. Its name
-			// is drawn beside it in the shared secondary clothes, always: the
-			// stylesheet hides it only where a strip is over it, so the one query
-			// decides both and a number can never have neither.
-			element('span', 'sheetsmith-card-abbreviation', cell, name);
+			// A number, whose entry may carry its ceiling beside its value.
 			const ownMax = recordsOwnMax(field);
 			const entry = splitBounded(raw);
 			const input = element('input', 'sheetsmith-record-input', cell);
@@ -1729,6 +1811,16 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			input.inputMode = 'numeric';
 			input.value = entry.value;
 			input.setAttribute('aria-label', accessible);
+			/*
+			 * **An empty body number says it is empty; a summary one does not need
+			 * to.** On the summary line a blank value sits in a line of values, under
+			 * a heading or beside its neighbours, and the slot reads as a slot. In the
+			 * body a name followed by nothing reads as missing content, or as a
+			 * subheading over the prose, so the field takes Pool's own `—`, the one a
+			 * record-owned ceiling already shows. Body only, so the summary line — and
+			 * every layout without a body field — draws exactly what it drew.
+			 */
+			if (body) input.placeholder = '—';
 			/*
 			 * **A ceiling is drawn beside the value, in Pool's own vocabulary
 			 * rather than a second spelling of it.**
@@ -2052,6 +2144,8 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			raw: string,
 			graded: boolean,
 			accessible: string,
+			/** Drawn in the body, where its name span sits beside it at every width. */
+			body: boolean,
 			commit: (next: string) => void,
 		): void {
 			const count = graded ? levelCount(field) : 1;
@@ -2114,6 +2208,13 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			 * at every width. What a wide headed list costs is a tooltip restating
 			 * the heading — and it reads `Shield Prepared`, so it names the record as
 			 * well, which no heading can.
+			 *
+			 * **In the body the fact is knowable, and it is true.** A body field draws
+			 * its own name beside its control at every width and no strip or query
+			 * touches it, so a body ring answers `true` — Table's position, where the
+			 * heading is there at every width: no tooltip and no long press repeating
+			 * a name the reader can see, and a named level still gets its level's
+			 * word, which the glyph cannot draw.
 			 */
 			bindRingControl({
 				button,
@@ -2122,7 +2223,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				graded,
 				level: initial,
 				name: accessible,
-				nameOnScreen: false,
+				nameOnScreen: body,
 				onSet: (level) => commit(stateOf(level)),
 			});
 		}

@@ -2606,13 +2606,75 @@ describe("a Record set's strip of field names", () => {
 			/sheetsmith-record-field/.test(rule.selector),
 		);
 		expect(shifts.map((rule) => rule.selector)).toEqual([
-			'.sheetsmith-record-field-number',
+			'.sheetsmith-record-summary .sheetsmith-record-field-number',
 		]);
 		expect(shifts[0]?.context).toEqual([GATE, STYLE_QUERY]);
 		expect(shifts[0]?.body).toMatch(/translateX\(-0\.4em\)/);
 		// Nothing in the gate changes a number field's width, which would move the
 		// tracks the measured formula rests on.
 		expect(shifts[0]?.body).not.toMatch(/width|padding|margin/);
+	});
+
+	it("scopes every rule naming a field to the summary line, so none reaches a body field", () => {
+		/*
+		 * A body field is drawn by the same code as a summary field and wears the
+		 * same class, so a strip rule written against the bare class would reach
+		 * it: centred in a track it does not have, shifted off its own name, and —
+		 * the one that matters — its name hidden on a wide headed list, where
+		 * nothing else names it (`docs/features/record-set-body-fields.md`). The
+		 * 320px stacking rule is held the same way.
+		 */
+		const naming = (rule: Rule) =>
+			/\.sheetsmith-record-field(?![s\w-])|\.sheetsmith-record-field-/.test(
+				rule.selector,
+			);
+		const strip = all.filter(
+			(rule) => rule.context[1] === STYLE_QUERY && naming(rule),
+		);
+		const narrow = all.filter(
+			(rule) =>
+				rule.context[0] === '@container (max-width: 320px)' && naming(rule),
+		);
+		// It found the rules it is about: the centring, the offset and the hide.
+		expect(strip.length).toBeGreaterThanOrEqual(3);
+		const unscoped = [...strip, ...narrow]
+			.filter((rule) =>
+				rule.selector
+					.split(',')
+					.some(
+						(one) =>
+							naming({ ...rule, selector: one }) &&
+							!one.includes('.sheetsmith-record-summary'),
+					),
+			)
+			.map((rule) => rule.selector);
+		expect(unscoped).toEqual([]);
+	});
+
+	it('gives a body its second row only under the class that says it has a block', () => {
+		const second = all.filter(
+			(rule) =>
+				/sheetsmith-record-body/.test(rule.selector) &&
+				/grid-area:\s*2|row-gap/.test(rule.body),
+		);
+		// The row gap and the prose layers' row, at least.
+		expect(second.length).toBeGreaterThanOrEqual(2);
+		const outside = second
+			.filter(
+				(rule) =>
+					!rule.selector.startsWith('.sheetsmith-record-body-has-fields'),
+			)
+			.map((rule) => rule.selector);
+		expect(outside).toEqual([]);
+		// And the block itself takes the first row under that same class.
+		expect(
+			all.some(
+				(rule) =>
+					rule.selector ===
+						'.sheetsmith-record-body-has-fields > .sheetsmith-record-body-fields' &&
+					/grid-area:\s*1\s*\/\s*1/.test(rule.body),
+			),
+		).toBe(true);
 	});
 
 	it('paints no colour of its own', () => {

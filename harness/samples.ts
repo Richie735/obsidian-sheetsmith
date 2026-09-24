@@ -1547,6 +1547,25 @@ export const SAMPLES: Sample[] = [
 				// columns field offers and this component ignores; neither is set
 				// here, because a record's fields draw their own names.
 				{ key: 'Modifiers', type: 'modifier' },
+				/*
+				 * **Two fields inside the opened record**
+				 * (`docs/features/record-set-body-fields.md`): a reference value
+				 * read once and changed rarely, which is what the placement is for.
+				 * A select and a number, so the block holds both a menu and a field
+				 * beside its own name. Declared last, so the strip above still names
+				 * the same five fields over the same tracks — the body fields add no
+				 * column. Ring of Protection (open) holds both, Torch of Revealing
+				 * (open) neither, and Second Wind (closed) a Recharge nothing on its
+				 * summary line mentions.
+				 */
+				{
+					key: 'Recharge',
+					type: 'level',
+					input: 'select',
+					levels: ['None', 'Short rest', 'Long rest'],
+					placement: 'body',
+				},
+				{ key: 'DC', name: 'Save DC', type: 'number', placement: 'body' },
 			],
 		} as ComponentConfig,
 		body: [
@@ -1558,6 +1577,7 @@ export const SAMPLES: Sample[] = [
 			'Uses: 1 / 3',
 			'Attuned: no',
 			'Rank: 1',
+			'Recharge: 1',
 			'```',
 			'Once per short rest, you can use a bonus action to regain hit points equal to 1d10 + your fighter level. This one is deliberately the longest body on the sheet, so it is longer than the box that holds it and has to scroll inside the list rather than growing it. A second paragraph follows, because the space between two of them is part of what an open record has to get right.',
 			'',
@@ -1573,6 +1593,8 @@ export const SAMPLES: Sample[] = [
 			// true state and the wrong one to sample here: what this record is for
 			// is the glyph that says a record *is* changing something.
 			'Modifiers: armour_class += 1 when Attuned',
+			'Recharge: 2',
+			'DC: 15',
 			'```',
 			'A resolved wikilink as a name, and a typed effect that is applying: the armour class card above moves by one while Attuned is set.',
 			'',

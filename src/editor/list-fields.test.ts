@@ -1766,6 +1766,109 @@ describe('the columns editor over a component that holds fewer types', () => {
 		expect(withheld).not.toContain('Hide heading');
 	});
 
+	describe('where a field is drawn inside its holder', () => {
+		/*
+		 * `columnOptions.placement`, opt-in on `holderMax`'s precedent: only a
+		 * component that draws a body has somewhere to move an entry to
+		 * (`docs/features/record-set-body-fields.md`).
+		 */
+		const PLACED = { ...OFFERS, placement: true, unit: 'field', holder: 'record' };
+		const LABEL = 'Inside the opened record';
+		const labels = (el: HTMLElement) =>
+			Array.from(el.querySelectorAll('.sheetsmith-entry-detail label')).map(
+				(one) => one.textContent,
+			);
+		const box = (el: HTMLElement, at = 0) => {
+			const found = Array.from(
+				el.querySelectorAll<HTMLLabelElement>('.sheetsmith-entry-detail label'),
+			).filter((one) => one.textContent === LABEL)[at];
+			if (!found) throw new Error('no placement checkbox');
+			return found.querySelector('input') as HTMLInputElement;
+		};
+
+		it('is offered where the list asks for it, on every type it holds, and on no Table column', () => {
+			const table = columnsEditor({
+				columns: [
+					{ key: 'Qty', type: 'number' },
+					{ key: 'Worn', type: 'toggle' },
+				],
+			});
+			expect(table.textContent).not.toContain('Inside the opened');
+
+			const columns = OFFERS.types.map((type) => ({ key: `F_${type}`, type }));
+			const el = columnsEditor({ columns }, 0, PLACED);
+			expect(
+				Array.from(el.querySelectorAll('.sheetsmith-entry-detail')).map(
+					(detail) =>
+						Array.from(detail.querySelectorAll('label')).some(
+							(one) => one.textContent === LABEL,
+						),
+				),
+			).toEqual(OFFERS.types.map(() => true));
+		});
+
+		it("sits last on the detail line, after Maximum from, in the holder's own word", () => {
+			const el = columnsEditor(
+				{ columns: [{ key: 'Uses', type: 'number' }] },
+				0,
+				{ ...PLACED, holderMax: true },
+			);
+			const detail = el.querySelector('.sheetsmith-entry-detail') as HTMLElement;
+			expect(detail.lastElementChild?.textContent).toBe(LABEL);
+			const children = Array.from(detail.children).map(
+				(one) => one.textContent ?? '',
+			);
+			expect(children.findIndex((one) => one.startsWith('Maximum from'))).toBe(
+				children.length - 2,
+			);
+			// Composed from `holder`, so another component would say its own word.
+			const other = columnsEditor(
+				{ columns: [{ key: 'Uses', type: 'number' }] },
+				0,
+				{ ...OFFERS, placement: true, holder: 'card' },
+			);
+			expect(labels(other)).toContain('Inside the opened card');
+		});
+
+		it('writes the body id on a tick and deletes the key on an untick', () => {
+			const column: Record<string, unknown> = { key: 'Recharge', type: 'level' };
+			const el = columnsEditor({ columns: [column] }, 0, PLACED);
+			const input = box(el);
+			expect(input.checked).toBe(false);
+			input.checked = true;
+			input.dispatchEvent(new Event('change'));
+			expect(column.placement).toBe('body');
+			expect(recorded.persists).toBe(1);
+
+			const again = box(columnsEditor({ columns: [column] }, 0, PLACED));
+			expect(again.checked).toBe(true);
+			again.checked = false;
+			again.dispatchEvent(new Event('change'));
+			// The default is written as absence, never as 'summary'.
+			expect('placement' in column).toBe(false);
+		});
+
+		it('shows a hand-written summary unticked and leaves it until the box is pressed', () => {
+			const column: Record<string, unknown> = {
+				key: 'Uses',
+				type: 'number',
+				placement: 'summary',
+			};
+			const odd: Record<string, unknown> = {
+				key: 'Rank',
+				type: 'level',
+				placement: 'Body',
+			};
+			const el = columnsEditor({ columns: [column, odd] }, 0, PLACED);
+			expect(box(el, 0).checked).toBe(false);
+			expect(box(el, 1).checked).toBe(false);
+			// Nothing was written by drawing it.
+			expect(recorded.persists).toBe(0);
+			expect(column.placement).toBe('summary');
+			expect(odd.placement).toBe('Body');
+		});
+	});
+
 	it('falls back to every type where the declaration names none that exist', () => {
 		// A hand-edited component naming nothing real must not empty the select,
 		// which would leave a column's type unchangeable.
