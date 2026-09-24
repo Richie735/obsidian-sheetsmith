@@ -4630,6 +4630,146 @@ describe('dragging a block around the schematic', () => {
 		harness = await open(schematic());
 	});
 
+	it('leaves a pressed block focused, so the arrow keys reach it', async () => {
+		/*
+		 * The press cancels its own pointerdown, which is what stops the text
+		 * selection and the native button drag — and, in a browser, the focus the
+		 * press would have given the overlay. So after a click the focus sat on
+		 * the body, and the arrow keys `nudge` listens for on the overlay
+		 * scrolled the pane instead. happy-dom focuses nothing on a synthetic
+		 * press either, which is what lets this case stand for the browser.
+		 */
+		sheetGrid(harness);
+		const cell = control(harness, 'preview-left');
+		pressDown(cell, { cancelable: true, ...at(1, 1) });
+		release(cell);
+		cell.click();
+		await settle(harness.pane);
+
+		// Selecting rebuilt the canvas, so the overlay is read again by token.
+		const pressed = control(harness, 'preview-left');
+		expect(document.activeElement).toBe(pressed);
+		pressed.dispatchEvent(
+			new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }),
+		);
+		await settle(harness.pane);
+		expect((await position(harness, 'left')).col).toBe(2);
+	});
+
+	it('leaves a block focused after a press on its resize corner, so shift+arrows reach it', async () => {
+		sheetGrid(harness);
+		const handle = control(harness, 'preview-left').querySelector('.sheetsmith-preview-resize');
+		if (!handle?.instanceOf(HTMLElement)) throw new Error('left has no resize corner');
+		pressDown(handle, at(2, 1));
+		release(control(harness, 'preview-left'));
+		// The corner's click is the block's: it bubbles to the overlay.
+		handle.click();
+		await settle(harness.pane);
+
+		const pressed = control(harness, 'preview-left');
+		expect(document.activeElement).toBe(pressed);
+		pressed.dispatchEvent(
+			new KeyboardEvent('keydown', {
+				key: 'ArrowRight',
+				shiftKey: true,
+				bubbles: true,
+				cancelable: true,
+			}),
+		);
+		await settle(harness.pane);
+		expect((await position(harness, 'left')).width).toBe(3);
+	});
+
+	/*
+	 * A browser fires a typed field's `change` inside its blur, so moving the
+	 * focus while the author is standing in a position field commits it then and
+	 * there, and that commit redraws the canvas. Moved during the press, it tore
+	 * down the block holding the pointer capture before the drag began. happy-dom
+	 * fires no change on a blur, so the field is given the browser's behaviour.
+	 */
+	function typeUncommitted(token: string, value: string): HTMLInputElement {
+		const field = control<HTMLInputElement>(harness, token);
+		field.focus();
+		field.value = value;
+		field.addEventListener('blur', () => field.dispatchEvent(new Event('change')));
+		return field;
+	}
+
+	it('drags, and then focuses the block, with a typed position field left behind', async () => {
+		control(harness, 'preview-left').click();
+		await settle(harness.pane);
+		// Measured after the selection's rebuild, which draws a fresh grid.
+		sheetGrid(harness);
+		typeUncommitted('pos-left-row', '3');
+
+		const cell = control(harness, 'preview-left');
+		pressDown(cell, at(1, 1));
+		// Still the block the press landed on: nothing rebuilt it mid-press.
+		expect(harness.container.contains(cell)).toBe(true);
+		expect(cell.hasPointerCapture(1)).toBe(true);
+		dragTo(cell, 2, 1);
+		release(cell);
+		cell.click();
+		await settle(harness.pane);
+
+		// The drag wins, since it wrote its place into the form before the
+		// field's pending text was committed.
+		expect(await position(harness, 'left')).toEqual({ col: 2, row: 1, width: 2, height: 1 });
+		expect(document.activeElement).toBe(control(harness, 'preview-left'));
+	});
+
+	it('focuses the block after a press or a drag whose commit rebuilds the whole pane', async () => {
+		/*
+		 * A label commit redraws the pane, not only the canvas, and the canvas
+		 * then draws into a fresh root: the block has to be found where it is
+		 * after the commit, not where the canvas was before it.
+		 */
+		control(harness, 'preview-left').click();
+		await settle(harness.pane);
+		sheetGrid(harness);
+		typeUncommitted('label-left', 'Lefty');
+		let cell = control(harness, 'preview-left');
+		pressDown(cell, at(1, 1));
+		release(cell);
+		cell.click();
+		await settle(harness.pane);
+		expect(document.activeElement).toBe(control(harness, 'preview-left'));
+
+		sheetGrid(harness);
+		typeUncommitted('label-left', 'Leftmost');
+		cell = control(harness, 'preview-left');
+		pressDown(cell, at(1, 1));
+		dragTo(cell, 2, 1);
+		release(cell);
+		cell.click();
+		await settle(harness.pane);
+		expect((await position(harness, 'left')).col).toBe(2);
+		expect(document.activeElement).toBe(control(harness, 'preview-left'));
+	});
+
+	it('commits a typed position field and focuses the block on a press that only selects', async () => {
+		control(harness, 'preview-left').click();
+		await settle(harness.pane);
+		// Measured after the selection's rebuild, which draws a fresh grid.
+		sheetGrid(harness);
+		typeUncommitted('pos-left-row', '3');
+
+		const cell = control(harness, 'preview-left');
+		pressDown(cell, at(1, 1));
+		release(cell);
+		cell.click();
+		await settle(harness.pane);
+
+		expect((await position(harness, 'left')).row).toBe(3);
+		const block = control(harness, 'preview-left');
+		expect(document.activeElement).toBe(block);
+		block.dispatchEvent(
+			new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true, cancelable: true }),
+		);
+		await settle(harness.pane);
+		expect((await position(harness, 'left')).col).toBe(2);
+	});
+
 	it('starts nothing on a grid it cannot measure, or a press that is not the primary button', () => {
 		/*
 		 * Both of `beginDrag`'s refusals, and between them the vacuity guard for
@@ -4673,9 +4813,10 @@ describe('dragging a block around the schematic', () => {
 		const cell = control(harness, 'preview-left');
 
 		// Read off the event rather than asserted about the browser: the press
-		// suppresses the text selection and the native button drag, and it is
-		// also what suppresses the focus change — which is why `redraw` commits
-		// the function library rather than trusting a blur.
+		// suppresses the text selection and the native button drag. It would also
+		// suppress the focus change, so the block is focused once the gesture
+		// ends (`focusBlock`), and a field left behind is blurred then; `redraw`
+		// still commits the function library rather than trusting that blur.
 		let down: Event | undefined;
 		cell.addEventListener('pointerdown', (event) => {
 			down = event;
@@ -6007,20 +6148,22 @@ describe('the sample values row', () => {
 		 * an ordinary Tuesday, and a token that did not survive it would land them
 		 * on the body.
 		 */
+		// Something to take back: an undo rebuilds the whole pane and moves no
+		// focus of its own.
+		type(control<HTMLInputElement>(harness, 'layout-columns'), '10');
+		await settle(harness.pane);
 		const row = control(harness, 'sample-values');
 		row.focus();
 		expect(document.activeElement).toBe(row);
 
-		// A selection from the canvas, which rebuilds both regions without moving
-		// focus — the canvas's own pointerdown suppresses it — so the toggle's own
-		// element is gone by the time this resolves, and what comes back is a
-		// fresh one carrying the same token. A tree row's press used to stand in
-		// for this and no longer can: a press on a row puts focus on that row's
-		// name, which is the point of pressing it.
-		control(harness, 'preview-armour').click();
+		// So the toggle's own element is gone by the time this resolves, and what
+		// comes back is a fresh one carrying the same token. Neither press can
+		// stand in for this any more: a press on a tree row puts focus on that
+		// row's name, and a press on a canvas block puts it on the block, which is
+		// the point of pressing either.
+		expect(await undo(harness)).toBe(true);
 		await settle(harness.pane);
 
-		expect(panelHeading(harness)).toBe('Armour class');
 		expect(document.activeElement).toBe(control(harness, 'sample-values'));
 		expect(document.activeElement).not.toBe(row);
 	});

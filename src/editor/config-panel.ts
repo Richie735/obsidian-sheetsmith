@@ -318,7 +318,10 @@ export class ConfigPanel {
 	 * Asked for by a schematic gesture, through the editor, which is why it is
 	 * public where the rest of the drawing is private. It writes rather than
 	 * redraws because the author may be standing in one of these fields while a
-	 * block is dragged, and a rebuild would take the field down with it.
+	 * block is dragged — the press leaves the focus where it was — and a rebuild
+	 * would take the field down with it. What it writes is also what that field
+	 * commits when the block takes the focus at the gesture's end, so the drag's
+	 * result is the one kept rather than whatever was typed before it.
 	 */
 	syncPositionFields(config: ComponentConfig): void {
 		const container = this.panelEl;
