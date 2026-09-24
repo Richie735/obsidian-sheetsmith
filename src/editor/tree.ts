@@ -10,9 +10,11 @@
  * **What a row carries** (`docs/features/layout-editor-tree.md`): a disclosure
  * slot, its name, a drag handle and a menu. Dragging a row onto a container row
  * moves the dragged component into it (`docs/features/grid-canvas.md` §5), and
- * dragging it onto a sibling within its own current parent reorders it there.
- * The menu holds the keyboard-operable equivalents of both — up and down,
- * into the previous sibling container and out to the grandparent — plus
+ * dragging it onto a sibling within its own current parent reorders it there,
+ * where that level is not a placed grid; on a placed grid the order is the
+ * grid's, so the drop is refused toward the canvas. The menu holds the
+ * keyboard-operable equivalents of both — up and down where a level has them,
+ * into the container drawn above and out to the grandparent — plus
  * **Remove**, and the same four moves are Alt+arrow chords on the row's name
  * button. `tree-moves.ts` decides all four, once, for both routes, and asks
  * `reparent.ts`'s `canReparent` before any of them writes; a refusal is shown
@@ -49,11 +51,12 @@ import {
 	MOVE_SHORTCUTS,
 	moveHint,
 	openRowMenu,
+	placedReorderRefusal,
 	rowMoves,
 	treeListContext,
 } from './tree-moves';
 import { Layout } from '../parse/layout';
-import { WalkEntry, walkComponents } from '../parse/layout-walk';
+import { componentsInside, WalkEntry, walkComponents } from '../parse/layout-walk';
 import { ComponentConfig } from '../types';
 import { innerPlacement } from '../view/grid-cells';
 
@@ -390,6 +393,7 @@ function renderComponentRow(
 	const moves = rowMoves(
 		layout,
 		entry,
+		componentsInside(tree.walk, entry.parent),
 		(of) => tree.byConfig.get(of),
 		host,
 	);
@@ -679,7 +683,9 @@ type DropResolution =
  * A container row that can hold `dragged` means "move into me"; any other
  * row that shares `dragged`'s own current parent means "reorder beside me" —
  * `list-fields.ts`'s `moveItem` semantics, since both are already in the
- * same list and nothing about containment changes. Anything else is refused
+ * same list and nothing about containment changes — unless that parent places
+ * its children, where the grid decides the order and the drop is refused with
+ * the chord's own sentence. Anything else is refused
  * and says why (`reparent.ts`'s own message, or a plain one for a row that
  * is neither).
  */
@@ -704,7 +710,15 @@ function resolveDrop(
 	const walk = walkComponents(layout.components);
 	const draggedParent = walk.find((entry) => entry.config === dragged)?.parent;
 	const targetParent = walk.find((entry) => entry.config === target)?.parent;
-	if (draggedParent === targetParent) return { kind: 'reorder' };
+	if (draggedParent === targetParent && draggedParent !== undefined) {
+		// A placed level reads by position, so a reorder there would change
+		// nothing on screen; it is refused toward the canvas by the same decision,
+		// and in the same words, as the chord (`placedReorderRefusal`).
+		const refusal = placedReorderRefusal(draggedParent);
+		return refusal !== null
+			? { kind: 'refused', error: refusal }
+			: { kind: 'reorder' };
+	}
 	return {
 		kind: 'refused',
 		error:

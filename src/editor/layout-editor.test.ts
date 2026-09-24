@@ -2853,18 +2853,56 @@ describe('the tree', () => {
 	});
 });
 
-/** Three plain leaves at the top level, for a reorder that involves no container. */
-function threeLeaves(): Layout {
+/**
+ * Three plain tabs in one Tab set, for a reorder that involves no container.
+ *
+ * A Tab set because its children are not placed, so its strip reads the file's
+ * order and a reorder changes it. Every tab ties at row 1, so the tree draws that
+ * order too; `untiedTabs()` below is the case where it does not. It was three leaves on the top level once, at
+ * columns 1, 3 and 5, where a reorder wrote the file and changed nothing the
+ * tree or the sheet drew — and the cases asserted only the file, so they passed.
+ */
+function threeTabs(): Layout {
+	const tab = (id: string, label: string): ComponentConfig => ({
+		id,
+		type: 'card',
+		label,
+		position: { col: 1, row: 1, width: 6, height: 3 },
+	});
 	return {
-		name: 'Three leaves',
+		name: 'Three tabs',
 		columns: 12,
 		components: [
-			{ id: 'a', type: 'card', label: 'A', position: { col: 1, row: 1, width: 2, height: 1 } },
-			{ id: 'b', type: 'card', label: 'B', position: { col: 3, row: 1, width: 2, height: 1 } },
-			{ id: 'c', type: 'card', label: 'C', position: { col: 5, row: 1, width: 2, height: 1 } },
+			{
+				id: 'pages',
+				type: 'tab-set',
+				label: 'Pages',
+				position: { col: 1, row: 1, width: 6, height: 3 },
+				children: [tab('a', 'A'), tab('b', 'B'), tab('c', 'C')],
+			},
 		],
 		triggers: [],
 	};
+}
+
+/**
+ * `threeTabs()` with the tie broken: each tab carries a stored row of its own,
+ * C's first, which is what a tab moved in through the tree is given
+ * (`reparent.ts` places it at the destination's next free row). The strip reads
+ * the file's order, A B C, and `walkComponents` sorts by row, C A B.
+ */
+function untiedTabs(): Layout {
+	const layout = threeTabs();
+	const rows: Record<string, number> = { a: 2, b: 3, c: 1 };
+	for (const tab of layout.components[0]?.children ?? []) {
+		tab.position.row = rows[tab.id] ?? 1;
+	}
+	return layout;
+}
+
+/** The tabs' ids as the file holds them. */
+async function storedTabs(harness: Harness): Promise<string[] | undefined> {
+	return (await harness.stored()).components[0]?.children?.map((c) => c.id);
 }
 
 /**
@@ -2926,6 +2964,175 @@ function depthCapped(): Layout {
 	};
 }
 
+/**
+ * Four top-level components whose file order is not their grid order: the file
+ * holds G, A, C, B, and the grid reads A, B, G, C down one column, so the tree
+ * draws them in that reading order (`walkComponents`, SPEC §8). G is a Group,
+ * drawn directly above C and first in the file, so a move "into" decided by the
+ * file names a container the tree does not draw above the row.
+ */
+function shuffledGrid(): Layout {
+	return {
+		name: 'Shuffled grid',
+		columns: 12,
+		components: [
+			{ id: 'g', type: 'group', label: 'G', position: { col: 1, row: 3, width: 4, height: 1 } },
+			{ id: 'a', type: 'card', label: 'A', position: { col: 1, row: 1, width: 2, height: 1 } },
+			{ id: 'c', type: 'card', label: 'C', position: { col: 1, row: 4, width: 2, height: 1 } },
+			{ id: 'b', type: 'card', label: 'B', position: { col: 1, row: 2, width: 2, height: 1 } },
+		],
+		triggers: [],
+	};
+}
+
+/** Every component row as the tree draws it, top to bottom, by id. */
+function treeOrder(harness: Harness): string[] {
+	return Array.from(
+		harness.container.querySelectorAll<HTMLElement>('[data-sheetsmith-focus^="edit-"]'),
+	)
+		.map((el) => (el.dataset.sheetsmithFocus ?? '').slice('edit-'.length))
+		.filter((id) => id !== SHEET_DESTINATION);
+}
+
+/** The refusal line under a row, or undefined where it shows none. */
+function refusalUnder(harness: Harness, id: string): string | undefined {
+	return (
+		treeRow(harness, `edit-${id}`).querySelector('.sheetsmith-field-error')
+			?.textContent ?? undefined
+	);
+}
+
+/** What a reorder on a placed grid says: `tree-moves.ts`'s own sentence. */
+const PLACED_LINE =
+	'Placed on the grid. Move it on the canvas, by dragging it or with the arrow keys.';
+
+describe('tree moves on a placed grid act on the rows the tree draws', () => {
+	beforeEach(async () => {
+		harness = await open(shuffledGrid());
+	});
+
+	it('draws the grid reading order, not the file order', () => {
+		expect(treeOrder(harness)).toEqual(['a', 'b', 'g', 'c']);
+	});
+
+	it('leaves Move up and Move down out of the menu, on every row', () => {
+		// Out rather than disabled: nearly every level is placed, so two
+		// disabled items would sit on almost every row for good.
+		for (const id of ['a', 'b', 'g', 'c']) {
+			openRowMenu(harness, id);
+			expect(menuLines(), id).toEqual([
+				expect.stringMatching(/^Move into /),
+				'Move out of a container',
+				'---',
+				'Copy',
+				'Paste',
+				'Paste configuration',
+				'---',
+				'Remove',
+			]);
+			document.body.querySelector('.menu')?.remove();
+		}
+	});
+
+	it('refuses Alt+Up and Alt+Down toward the canvas, writing nothing and moving nothing', async () => {
+		const before = await harness.raw();
+		const wrote = writes(harness);
+		// The rows drawn first and last included: a file-order bound would have
+		// let the first row move up and the last move down.
+		for (const id of ['a', 'b', 'g', 'c']) {
+			for (const key of ['ArrowUp', 'ArrowDown']) {
+				const event = chord(harness, `edit-${id}`, key);
+				expect(event.defaultPrevented).toBe(true);
+				expect(refusalUnder(harness, id), `${id} ${key}`).toBe(PLACED_LINE);
+			}
+		}
+		await settle(harness.pane);
+		expect(await harness.raw()).toBe(before);
+		expect(wrote()).toBe(0);
+		expect(treeOrder(harness)).toEqual(['a', 'b', 'g', 'c']);
+	});
+
+	it('refuses a drop beside a sibling toward the canvas, writing nothing and moving nothing', async () => {
+		const before = await harness.raw();
+		const wrote = writes(harness);
+		dragRow(harness, 'c', 'a');
+		await settle(harness.pane);
+
+		expect(refusalUnder(harness, 'a')).toBe(PLACED_LINE);
+		expect(await harness.raw()).toBe(before);
+		expect(wrote()).toBe(0);
+		expect(treeOrder(harness)).toEqual(['a', 'b', 'g', 'c']);
+	});
+
+	it('names no container for a row with none drawn above it, whatever the file holds before it', () => {
+		// First in the tree, second in the file, behind G.
+		openRowMenu(harness, 'a');
+		expect(menuItem('Move into a container').classList.contains('is-disabled')).toBe(
+			true,
+		);
+		expect(menuLines()).not.toContain('Move into "G"');
+		document.body.querySelector('.menu')?.remove();
+		expect(chord(harness, 'edit-a', 'ArrowRight').defaultPrevented).toBe(true);
+		expect(refusalUnder(harness, 'a')).toBe('No container above to move into.');
+	});
+
+	it('names and moves into the container drawn directly above', async () => {
+		// C follows A in the file, and G in the tree.
+		openRowMenu(harness, 'c');
+		expect(menuItem('Move into "G"').classList.contains('is-disabled')).toBe(false);
+		menuItem('Move into "G"').click();
+		await settle(harness.pane);
+
+		const stored = await harness.stored();
+		expect(stored.components.map((c) => c.id)).toEqual(['g', 'a', 'b']);
+		expect(stored.components[0]?.children?.map((c) => c.id)).toEqual(['c']);
+		// Drawn inside G now: the first row of the wrapper after G's own row.
+		const child = treeRow(harness, 'edit-c');
+		expect(treeRow(harness, 'edit-g').nextElementSibling).toBe(child.parentElement);
+	});
+});
+
+describe('tree moves on a level that is not placed keep the file order', () => {
+	beforeEach(async () => {
+		harness = await open(threeTabs());
+	});
+
+	it('offers Move up and Move down, disabled only at the ends the tree draws', () => {
+		openRowMenu(harness, 'a');
+		expect(menuLines().slice(0, 3)).toEqual(['Move up', 'Move down', '---']);
+		expect(menuItem('Move up').classList.contains('is-disabled')).toBe(true);
+		expect(menuItem('Move down').classList.contains('is-disabled')).toBe(false);
+		document.body.querySelector('.menu')?.remove();
+
+		openRowMenu(harness, 'c');
+		expect(menuItem('Move up').classList.contains('is-disabled')).toBe(false);
+		expect(menuItem('Move down').classList.contains('is-disabled')).toBe(true);
+	});
+
+	/*
+	 * A known gap, deferred as its own bug: the tree sorts a Tab set's tabs by
+	 * stored row while the strip reads the file, so once the tie breaks the two
+	 * disagree, and a Move up changes the strip while the tree stays put. Fixing
+	 * it touches `walkComponents`' sort or `reparent.ts`, both out of this
+	 * branch. `it.fails` so the case runs and turns red the day the gap closes,
+	 * rather than asserting the wrong order as correct.
+	 */
+	it.fails('draws untied tabs in the order the strip shows them', async () => {
+		harness = await open(untiedTabs());
+		expect(treeOrder(harness)).toEqual(['pages', 'a', 'b', 'c']);
+	});
+
+	it('refuses the chords at the ends in their own words', async () => {
+		const before = await harness.raw();
+		chord(harness, 'edit-a', 'ArrowUp');
+		expect(refusalUnder(harness, 'a')).toBe('Already first.');
+		chord(harness, 'edit-c', 'ArrowDown');
+		expect(refusalUnder(harness, 'c')).toBe('Already last.');
+		await settle(harness.pane);
+		expect(await harness.raw()).toBe(before);
+	});
+});
+
 describe('reparenting a tree row', () => {
 	it('drops onto a container row and appends the dragged component as its last child', async () => {
 		harness = await open(nested());
@@ -2943,15 +3150,12 @@ describe('reparenting a tree row', () => {
 	});
 
 	it('drops onto a sibling within its own current parent and reorders it there', async () => {
-		harness = await open(threeLeaves());
+		harness = await open(threeTabs());
 		dragRow(harness, 'a', 'c');
 		await settle(harness.pane);
 
-		expect((await harness.stored()).components.map((c) => c.id)).toEqual([
-			'b',
-			'c',
-			'a',
-		]);
+		expect(await storedTabs(harness)).toEqual(['b', 'c', 'a']);
+		expect(treeOrder(harness)).toEqual(['pages', 'b', 'c', 'a']);
 	});
 
 	it('refuses a drop that would push a container past the depth cap, with no write', async () => {
@@ -3049,31 +3253,40 @@ describe('reparenting a tree row', () => {
 		// `list-fields.ts`'s own `moveItem` semantics, reused rather than
 		// reinvented, exactly as the drag-based reorder test above already
 		// proves for the pointer.
-		harness = await open(threeLeaves());
+		harness = await open(threeTabs());
 		pressMenu(harness, 'a', 'Move down');
 		await settle(harness.pane);
-		expect((await harness.stored()).components.map((c) => c.id)).toEqual([
-			'b',
-			'a',
-			'c',
-		]);
+		expect(await storedTabs(harness)).toEqual(['b', 'a', 'c']);
+		expect(treeOrder(harness)).toEqual(['pages', 'b', 'a', 'c']);
 
 		pressMenu(harness, 'c', 'Move up');
 		await settle(harness.pane);
-		expect((await harness.stored()).components.map((c) => c.id)).toEqual([
-			'b',
-			'c',
-			'a',
-		]);
+		expect(await storedTabs(harness)).toEqual(['b', 'c', 'a']);
+		expect(treeOrder(harness)).toEqual(['pages', 'b', 'c', 'a']);
 	});
 
-	it('lists the eight items in order, with three separators and Remove warned', async () => {
-		harness = await open(deep());
-		openRowMenu(harness, 'melee');
+	it('lists the items in order, with their separators and Remove warned', async () => {
+		harness = await open(threeTabs());
+		openRowMenu(harness, 'b');
 		expect(menuLines()).toEqual([
 			'Move up',
 			'Move down',
 			'---',
+			'Move into a container',
+			'Move out of "Pages"',
+			'---',
+			'Copy',
+			'Paste',
+			'Paste configuration',
+			'---',
+			'Remove',
+		]);
+		document.body.querySelector('.menu')?.remove();
+
+		// On a placed grid there is no up and down, and no separator after them.
+		harness = await open(deep());
+		openRowMenu(harness, 'melee');
+		expect(menuLines()).toEqual([
 			'Move into a container',
 			'Move out of "Defences"',
 			'---',
@@ -3104,25 +3317,32 @@ describe('reparenting a tree row', () => {
 		expect(
 			menuItem('Move into a container').classList.contains('is-disabled'),
 		).toBe(true);
-		expect(menuItem('Move up').classList.contains('is-disabled')).toBe(true);
-		expect(menuItem('Move down').classList.contains('is-disabled')).toBe(false);
+		// The top level is a placed grid, so there is no reorder to offer.
+		expect(menuLines()).not.toContain('Move up');
+		expect(menuLines()).not.toContain('Move down');
 	});
 
 	it('writes nothing for a disabled item pressed anyway', async () => {
 		harness = await open(nested());
 		const before = await harness.raw();
 		const wrote = writes(harness);
-		for (const title of ['Move up', 'Move into a container', 'Move out of a container']) {
+		for (const title of ['Move into a container', 'Move out of a container']) {
 			pressMenu(harness, 'defences', title);
 			await settle(harness.pane);
 		}
-		// Last among the top level, so nothing below it to swap with.
-		openRowMenu(harness, 'hit_points');
+		expect(await harness.raw()).toBe(before);
+		expect(wrote()).toBe(0);
+
+		// Last among the tabs, so nothing below it to swap with.
+		harness = await open(threeTabs());
+		const tabs = await harness.raw();
+		const tabWrites = writes(harness);
+		openRowMenu(harness, 'c');
 		expect(menuItem('Move down').classList.contains('is-disabled')).toBe(true);
 		menuItem('Move down').click();
 		await settle(harness.pane);
-		expect(await harness.raw()).toBe(before);
-		expect(wrote()).toBe(0);
+		expect(await harness.raw()).toBe(tabs);
+		expect(tabWrites()).toBe(0);
 	});
 
 	it('disables the move into exactly where it would push a subtree past the depth cap', async () => {
@@ -3201,7 +3421,7 @@ describe('reparenting a tree row', () => {
 		expect(holder?.children?.map((c) => c.id)).toEqual(['nested']);
 	});
 
-	it('refuses each chord where its menu item is disabled, in its own words', async () => {
+	it('refuses each chord that cannot be made, in its own words', async () => {
 		harness = await open(nested());
 		const before = await harness.raw();
 		const wrote = writes(harness);
@@ -3211,15 +3431,12 @@ describe('reparenting a tree row', () => {
 				'.sheetsmith-field-error',
 			)?.textContent;
 		};
-		expect(said('ArrowUp')).toBe('Already first.');
+		// The top level is placed, so up and down are refused toward the canvas;
+		// their first and last refusals are a Tab set's, in the block above.
+		expect(said('ArrowUp')).toBe(PLACED_LINE);
+		expect(said('ArrowDown')).toBe(PLACED_LINE);
 		expect(said('ArrowRight')).toBe('No container above to move into.');
 		expect(said('ArrowLeft')).toBe('Already at the top level.');
-		// Hit points is last among the top level.
-		chord(harness, 'edit-hit_points', 'ArrowDown');
-		expect(
-			treeRow(harness, 'edit-hit_points').querySelector('.sheetsmith-field-error')
-				?.textContent,
-		).toBe('Already last.');
 		await settle(harness.pane);
 		expect(await harness.raw()).toBe(before);
 		expect(wrote()).toBe(0);
@@ -3247,16 +3464,13 @@ describe('reparenting a tree row', () => {
 	});
 
 	it('reorders and moves out from the other three chords', async () => {
-		harness = await open(threeLeaves());
+		harness = await open(threeTabs());
 		chord(harness, 'edit-a', 'ArrowDown');
 		await settle(harness.pane);
 		chord(harness, 'edit-c', 'ArrowUp');
 		await settle(harness.pane);
-		expect((await harness.stored()).components.map((c) => c.id)).toEqual([
-			'b',
-			'c',
-			'a',
-		]);
+		expect(await storedTabs(harness)).toEqual(['b', 'c', 'a']);
+		expect(treeOrder(harness)).toEqual(['pages', 'b', 'c', 'a']);
 
 		harness = await open(nested());
 		chord(harness, 'edit-armour', 'ArrowLeft');
