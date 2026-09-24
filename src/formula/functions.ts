@@ -41,11 +41,19 @@ export interface FunctionProblem {
 export interface ParsedFunctions {
 	library: FunctionLibrary;
 	problems: readonly FunctionProblem[];
+	/**
+	 * Each definition in `library`, by name, as its line was written (trimmed).
+	 * The source of the one that stands, where a name is defined twice or an
+	 * earlier line failed to read — which is what a paste compares two layouts'
+	 * definitions by (`editor/paste-dependencies.ts`).
+	 */
+	lines: ReadonlyMap<string, string>;
 }
 
 export const NO_PARSED_FUNCTIONS: ParsedFunctions = {
 	library: new Map(),
 	problems: [],
+	lines: new Map(),
 };
 
 const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
@@ -105,6 +113,7 @@ export function parseFunctions(
 
 	const library = new Map<string, FunctionDefinition>();
 	const problems: FunctionProblem[] = [];
+	const lines = new Map<string, string>();
 
 	source.forEach((raw, index) => {
 		const trimmed = raw.trim();
@@ -126,7 +135,8 @@ export function parseFunctions(
 			return;
 		}
 		library.set(definition.name, definition);
+		lines.set(definition.name, trimmed);
 	});
 
-	return { library, problems };
+	return { library, problems, lines };
 }
