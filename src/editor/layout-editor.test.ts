@@ -2911,14 +2911,49 @@ async function storedTabs(harness: Harness): Promise<string[] | undefined> {
  * `bindDragSource`'s drag source is the handle alone, the same split
  * `list-fields.ts` already draws, so a real drag never begins from the name
  * button or the up/down/indent/outdent/trash controls.
+ *
+ * **A drop is dispatched only where the dragover was accepted**, which is what
+ * a browser does. This used to drop unconditionally, so the refusal line these
+ * cases read was drawn by a `drop` no browser ever sends on a refused row, and
+ * in the app the line never appeared.
  */
 function dragRow(harness: Harness, fromId: string, toId: string): void {
+	const drag = hoverRow(harness, fromId, toId);
+	if (drag.accepted) {
+		treeRow(harness, `edit-${toId}`).dispatchEvent(
+			new Event('drop', { bubbles: true, cancelable: true }),
+		);
+	}
+	drag.end();
+}
+
+/**
+ * Start a drag of `fromId`'s row and hold it over `toId`'s, the way a pointer
+ * resting there does: a dragstart, then a dragover, and nothing dropped.
+ * `accepted` is whether the row took the dragover, which is the one thing a
+ * browser asks before it will fire a drop. `leave` and `end` finish it the two
+ * ways a refused drag finishes, and `over` repeats the dragover a resting
+ * pointer keeps firing.
+ */
+function hoverRow(
+	harness: Harness,
+	fromId: string,
+	toId: string,
+): { accepted: boolean; over: () => void; leave: () => void; end: () => void } {
 	const from = control(harness, `tree-handle-${fromId}`);
 	const to = treeRow(harness, `edit-${toId}`);
 	from.dispatchEvent(new Event('dragstart', { bubbles: true }));
-	to.dispatchEvent(new Event('dragover', { bubbles: true, cancelable: true }));
-	to.dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }));
-	from.dispatchEvent(new Event('dragend', { bubbles: true }));
+	const over = (): boolean => {
+		const event = new Event('dragover', { bubbles: true, cancelable: true });
+		to.dispatchEvent(event);
+		return event.defaultPrevented;
+	};
+	return {
+		accepted: over(),
+		over: () => void over(),
+		leave: () => to.dispatchEvent(new Event('dragleave', { bubbles: true })),
+		end: () => from.dispatchEvent(new Event('dragend', { bubbles: true })),
+	};
 }
 
 /**
@@ -3055,10 +3090,16 @@ describe('tree moves on a placed grid act on the rows the tree draws', () => {
 	it('refuses a drop beside a sibling toward the canvas, writing nothing and moving nothing', async () => {
 		const before = await harness.raw();
 		const wrote = writes(harness);
-		dragRow(harness, 'c', 'a');
+		const drag = hoverRow(harness, 'c', 'a');
+
+		// Said while the pointer is over the row, since no drop will come.
+		expect(drag.accepted).toBe(false);
+		expect(refusalUnder(harness, 'a')).toBe(PLACED_LINE);
+		drag.leave();
+		expect(refusalUnder(harness, 'a')).toBeUndefined();
+		drag.end();
 		await settle(harness.pane);
 
-		expect(refusalUnder(harness, 'a')).toBe(PLACED_LINE);
 		expect(await harness.raw()).toBe(before);
 		expect(wrote()).toBe(0);
 		expect(treeOrder(harness)).toEqual(['a', 'b', 'g', 'c']);
@@ -3190,6 +3231,13 @@ describe('reparenting a tree row', () => {
 		const before = await harness.raw();
 		const wrote = writes(harness);
 
+		// And says nothing: every drag starts over its own row, so a line
+		// there would flash at the start of every drag.
+		const own = hoverRow(harness, 'defences', 'defences');
+		expect(own.accepted).toBe(false);
+		expect(refusalUnder(harness, 'defences')).toBeUndefined();
+		own.end();
+
 		dragRow(harness, 'defences', 'defences');
 		await settle(harness.pane);
 
@@ -3209,14 +3257,66 @@ describe('reparenting a tree row', () => {
 		expect(wrote()).toBe(0);
 	});
 
-	it('shows a refused drop inline, naming the fix, rather than ignoring it silently', async () => {
+	it('shows a refused drop inline while the pointer is over the row, naming the fix', async () => {
 		harness = await open(nested());
-		dragRow(harness, 'hit_points', 'armour');
-		await settle(harness.pane);
+		const drag = hoverRow(harness, 'hit_points', 'armour');
+		expect(drag.accepted).toBe(false);
+		expect(refusalUnder(harness, 'armour')).toContain('is not a container');
+		// Released over the row: no drop comes, and the end takes it down.
+		drag.end();
+		expect(refusalUnder(harness, 'armour')).toBeUndefined();
+	});
 
-		const row = treeRow(harness, 'edit-armour');
-		const message = row.querySelector('.sheetsmith-field-error')?.textContent;
-		expect(message).toContain('is not a container');
+	it('says the depth cap while a refused drag is over the row, and clears it when the drag ends', async () => {
+		harness = await open(deep());
+		const before = await harness.raw();
+		const drag = hoverRow(harness, 'defences', 'spellbook');
+		expect(drag.accepted).toBe(false);
+		expect(refusalUnder(harness, 'spellbook')).toBe(
+			'"Defences" holds "Melee", which holds components, and moving "Defences" here would put "Melee" inside two containers, where it could hold nothing. Move the components out of "Melee" first.',
+		);
+		drag.end();
+		expect(refusalUnder(harness, 'spellbook')).toBeUndefined();
+		await settle(harness.pane);
+		expect(await harness.raw()).toBe(before);
+	});
+
+	it('draws the line once for a pointer resting on the row, not once per dragover', async () => {
+		harness = await open(nested());
+		const drag = hoverRow(harness, 'hit_points', 'armour');
+		const line = treeRow(harness, 'edit-armour').querySelector('.sheetsmith-field-error');
+		drag.over();
+		drag.over();
+		expect(treeRow(harness, 'edit-armour').querySelector('.sheetsmith-field-error')).toBe(
+			line,
+		);
+		drag.end();
+	});
+
+	it('moves the line with the pointer, leaving none on the row it left', async () => {
+		harness = await open(shuffledGrid());
+		const onA = hoverRow(harness, 'c', 'a');
+		onA.leave();
+		const onB = treeRow(harness, 'edit-b');
+		onB.dispatchEvent(new Event('dragover', { bubbles: true, cancelable: true }));
+		expect(refusalUnder(harness, 'a')).toBeUndefined();
+		expect(refusalUnder(harness, 'b')).toBe(PLACED_LINE);
+		onA.end();
+		expect(refusalUnder(harness, 'b')).toBeUndefined();
+	});
+
+	it('leaves a chord\'s refusal on another row alone when a drag ends', async () => {
+		// A chord's line stays until something replaces it; a drag's end takes
+		// down only what the drag put up.
+		harness = await open(nested());
+		chord(harness, 'edit-armour', 'ArrowRight');
+		const said = refusalUnder(harness, 'armour');
+		expect(said).toBe('No container above to move into.');
+		const drag = hoverRow(harness, 'defences', 'hit_points');
+		expect(refusalUnder(harness, 'hit_points')).toBe(PLACED_LINE);
+		drag.end();
+		expect(refusalUnder(harness, 'hit_points')).toBeUndefined();
+		expect(refusalUnder(harness, 'armour')).toBe(said);
 	});
 
 	it('reparents from the menu into the previous sibling, no pointer event dispatched', async () => {

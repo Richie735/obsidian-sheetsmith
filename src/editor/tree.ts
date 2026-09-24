@@ -664,7 +664,30 @@ function bindDragSource(
 	});
 	handle.addEventListener('dragend', () => {
 		host.drag.id = null;
+		// Wherever the drag ended — on a refused row, which never receives a
+		// drop, or outside the tree — no refusal it showed on the way outlives
+		// it. Read off the document rather than the tree, since a valid drop
+		// has redrawn the tree and detached this handle from it.
+		for (const el of Array.from(
+			handle.ownerDocument.querySelectorAll(`.${DROP_REFUSED}`),
+		)) {
+			if (el.instanceOf(HTMLElement)) clearDropRefusal(el);
+		}
 	});
+}
+
+/**
+ * Marks a row showing a refused drop's reason while a drag is over it, so the
+ * line can be told from a chord's, which stays until something else replaces
+ * it, and cleared when the pointer leaves or the drag ends.
+ */
+const DROP_REFUSED = 'sheetsmith-tree-drop-refused';
+
+/** Take a hovering drag's refusal off this row, if it shows one. */
+function clearDropRefusal(rowEl: HTMLElement): void {
+	if (!rowEl.classList.contains(DROP_REFUSED)) return;
+	rowEl.classList.remove(DROP_REFUSED);
+	rowEl.querySelector('.sheetsmith-field-error')?.remove();
 }
 
 /**
@@ -732,6 +755,14 @@ function resolveDrop(
  * A row is a drop target whatever it names — a component, or the layout
  * itself for the top level.
  *
+ * **A refused drop says why while the pointer is over the row**, not on the
+ * drop: a browser fires `drop` only on a target whose `dragover` was accepted,
+ * so a refusal decided there and shown on `drop` was never seen outside a
+ * test. The line goes up on the first `dragover` and is left alone on the
+ * rest, which fire every few milliseconds, so it neither flickers nor
+ * re-announces; it comes down when the pointer leaves the row — not merely
+ * crosses onto one of its own children — or when the drag ends anywhere.
+ *
  * **A drop onto a shut container leaves it shut** (§7, rule 3): the count in
  * its description changes, which is the drop made visible. Nothing here opens
  * it, and nothing here needs to for the one exception — a dropped row that is
@@ -749,12 +780,31 @@ function bindDropTarget(
 		if (draggedId === null) return;
 		const dragged = findComponent(layout, draggedId);
 		if (!dragged) return;
-		if (resolveDrop(layout, dragged, target).kind === 'refused') return;
+		const resolution = resolveDrop(layout, dragged, target);
+		// The row being dragged is under the pointer the instant any drag
+		// starts, so its own refusal would flash on every drag; it is refused
+		// without a word, since nobody meant to drop a row on itself.
+		if (resolution.kind === 'refused' && target === dragged) return;
+		if (resolution.kind === 'refused') {
+			const shown = row.settingEl.querySelector('.sheetsmith-field-error');
+			if (shown?.textContent !== resolution.error) {
+				showMoveError(row, resolution.error);
+			}
+			row.settingEl.addClass(DROP_REFUSED);
+			return;
+		}
 		event.preventDefault();
 		row.settingEl.addClass('sheetsmith-tree-drop-valid');
 	});
-	row.settingEl.addEventListener('dragleave', () => {
+	row.settingEl.addEventListener('dragleave', (event) => {
+		// Crossing from the row onto its own name or buttons is a leave too;
+		// only a pointer that has left the row entirely takes the marks down.
+		// Not `instanceof Node`, which is false for a node of a popout's realm
+		// (`docs/PATTERNS.md` §5): a leave's related target is an element or null.
+		const into = event.relatedTarget as Node | null;
+		if (into !== null && row.settingEl.contains(into)) return;
 		row.settingEl.removeClass('sheetsmith-tree-drop-valid');
+		clearDropRefusal(row.settingEl);
 	});
 	row.settingEl.addEventListener('drop', (event) => {
 		event.preventDefault();
@@ -765,10 +815,9 @@ function bindDropTarget(
 		const dragged = findComponent(layout, draggedId);
 		if (!dragged) return;
 		const resolution = resolveDrop(layout, dragged, target);
-		if (resolution.kind === 'refused') {
-			showMoveError(row, resolution.error);
-			return;
-		}
+		// A browser never drops on a refused row, since its dragover was not
+		// accepted; the reason is already on screen from the dragover above.
+		if (resolution.kind === 'refused') return;
 		showMoveError(row, null);
 		if (resolution.kind === 'into') {
 			reparent(layout, dragged, target);
