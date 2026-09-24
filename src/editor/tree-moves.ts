@@ -26,14 +26,31 @@
  * the layout; this is only where the menu lists them, and they are never
  * disabled, because whether there is anything to paste is only known by reading.
  *
- * What it does not decide: *which* container "into" means is unchanged from the
- * indent button it replaces — the row's previous sibling in its own list — and
- * `reparent.ts`'s rules are called, never changed.
+ * **Every move reads the level as the tree draws it**, which is the grid
+ * reading order `walkComponents` sorts into, not the file's own array. The two
+ * differ on a placed grid, and a move decided by file index there acted on rows
+ * the tree does not draw beside it. So "into" means the row drawn directly
+ * above, and first and last are the rows drawn first and last.
+ *
+ * **On a placed grid there is no up and down to make.** The sheet reads a placed
+ * level by position (SPEC §8), so reordering its file array changes nothing a
+ * reader sees; where a component sits there is the canvas's business, by drag or
+ * by its arrow keys. The menu leaves both items out, since nearly every level is
+ * placed and two disabled items would sit on almost every row for good, and the
+ * chord says where to go instead. Up and down stay where a level's children are
+ * not placed — a Tab set's tabs — whose strip reads the file's order. The tree
+ * draws that order only while the tabs' stored rows tie; a tab moved in through
+ * the tree breaks the tie, a known gap deferred as its own bug
+ * (`docs/features/layout-editor-tree.md` §5).
+ *
+ * What it does not decide: `reparent.ts`'s rules, which are called, never
+ * changed.
  */
 
 import { Menu, Platform } from 'obsidian';
 import { Layout } from '../parse/layout';
 import { WalkEntry } from '../parse/layout-walk';
+import { childIsPlaced } from '../view/grid-cells';
 import { holdsChildren } from './accepts-children';
 import { ListContext, moveItem } from './list-fields';
 import { canReparent, reparent } from './reparent';
@@ -51,6 +68,32 @@ export interface RowMove {
 	refusal: string | null;
 	/** Make the move and redraw. Never called while `refusal` is set. */
 	run: () => void;
+	/**
+	 * Whether the menu lists it. False only for up and down on a placed grid,
+	 * where the move does not exist rather than being refused for now; its chord
+	 * still answers, with `refusal`.
+	 */
+	listed: boolean;
+}
+
+/**
+ * What a reorder on a placed grid says instead of reordering: where a component
+ * is moved on its grid, by either route the canvas has.
+ */
+const PLACED_REORDER_REFUSAL =
+	'Placed on the grid. Move it on the canvas, by dragging it or with the arrow keys.';
+
+/**
+ * Why a reorder among `parent`'s children is refused, or null where the level
+ * reorders. The one application of the rule: the chords, the menu's omission
+ * and a drop beside a sibling all ask this, so they cannot disagree about
+ * *when* a level refuses, which sharing the sentence alone did not prevent
+ * (`docs/PATTERNS.md` §1, share the application, not just the fact).
+ */
+export function placedReorderRefusal(
+	parent: WalkEntry['config'] | null,
+): string | null {
+	return childIsPlaced(parent) ? PLACED_REORDER_REFUSAL : null;
 }
 
 /** The four moves, one per chord, in the order the menu lists them. */
@@ -145,16 +188,20 @@ export function treeListContext(host: TreeHost): ListContext {
  * it stands.
  *
  * `parentOf` answers the walk entry of a container, which is how the move out
- * finds the level above without walking the layout a second time.
+ * finds the level above without walking the layout a second time. `drawn` is
+ * the row's level as the tree draws it (`componentsInside`), which every
+ * neighbour below is read from; `siblings` is only where a reorder writes.
  */
 export function rowMoves(
 	layout: Layout,
 	entry: WalkEntry,
+	drawn: readonly WalkEntry['config'][],
 	parentOf: (config: WalkEntry['config']) => WalkEntry | undefined,
 	host: TreeHost,
 ): RowMoves {
 	const { config, siblings, parent } = entry;
-	const index = siblings.indexOf(config);
+	const index = drawn.indexOf(config);
+	const placedRefusal = placedReorderRefusal(parent);
 	const focusMoved = (): void => host.focusAfterRedraw(`edit-${config.id}`);
 	const context = treeListContext(host);
 
@@ -176,26 +223,32 @@ export function rowMoves(
 		host.redraw();
 	};
 
-	const up: RowMove = {
-		title: 'Move up',
-		icon: 'arrow-up',
-		refusal: index <= 0 ? 'Already first.' : null,
+	/*
+	 * A reorder moves the row to where its drawn neighbour sits in the file. On a
+	 * level that is not placed the two orders are one, so this is the file's own
+	 * next or previous slot; spelling it through the neighbour keeps the move
+	 * about the row the reader sees even if they ever differ.
+	 */
+	const reorder = (
+		title: string,
+		icon: string,
+		neighbour: WalkEntry['config'] | undefined,
+		edge: string,
+	): RowMove => ({
+		title,
+		icon,
+		refusal: placedRefusal ?? (neighbour === undefined ? edge : null),
 		run: () => {
+			if (neighbour === undefined) return;
 			focusMoved();
-			moveItem(siblings, index, index - 1, context);
+			moveItem(siblings, siblings.indexOf(config), siblings.indexOf(neighbour), context);
 		},
-	};
-	const down: RowMove = {
-		title: 'Move down',
-		icon: 'arrow-down',
-		refusal: index === siblings.length - 1 ? 'Already last.' : null,
-		run: () => {
-			focusMoved();
-			moveItem(siblings, index, index + 1, context);
-		},
-	};
+		listed: placedRefusal === null,
+	});
+	const up = reorder('Move up', 'arrow-up', drawn[index - 1], 'Already first.');
+	const down = reorder('Move down', 'arrow-down', drawn[index + 1], 'Already last.');
 
-	const previous = index > 0 ? (siblings[index - 1] ?? null) : null;
+	const previous = index > 0 ? (drawn[index - 1] ?? null) : null;
 	const previousHolds =
 		previous !== null && holdsChildren(previous);
 	const intoCheck =
@@ -203,8 +256,8 @@ export function rowMoves(
 			? canReparent(layout, config, previous)
 			: { error: 'No container above to move into.' };
 	const into: RowMove = {
-		// The menu keeps its shape: the fourth item is always the out move, so
-		// the third is always this one, named for its container where it has one.
+		// The into and out items keep their shape: this one is always there,
+		// before the out move, named for its container where it has one.
 		title:
 			previous !== null && previousHolds
 				? `Move into "${previous.label}"`
@@ -212,6 +265,7 @@ export function rowMoves(
 		icon: 'chevron-right',
 		refusal: 'error' in intoCheck ? intoCheck.error : null,
 		run: () => reparentTo(previous),
+		listed: true,
 	};
 
 	const grandparent =
@@ -225,6 +279,7 @@ export function rowMoves(
 		icon: 'chevron-left',
 		refusal: 'error' in outCheck ? outCheck.error : null,
 		run: () => reparentTo(grandparent ?? null),
+		listed: true,
 	};
 
 	return { up, down, into, out };
@@ -250,7 +305,9 @@ export function chordMove(event: KeyboardEvent, moves: RowMoves): RowMove | null
  * At the pointer for a press, and under the button for a keyboard activation —
  * `event.detail` is 0 for a click Enter or Space produced, where a pointer
  * position would be wherever the pointer last happened to rest. Items in the
- * order the design lists them: the two reorders, the two moves across a level,
+ * order the design lists them: the two reorders where the level has them (a
+ * placed grid does not, and the menu then opens on the moves across a level),
+ * the two moves across a level,
  * the clipboard's three, then **Remove**, apart from the rest and warned, since
  * it is the one item that takes something away. The clipboard's items name no
  * one: the menu is reached through a button already named for its row, and the
@@ -267,6 +324,7 @@ export function openRowMenu(
 ): void {
 	const menu = new Menu();
 	const add = (move: RowMove): void => {
+		if (!move.listed) return;
 		menu.addItem((item) =>
 			item
 				.setTitle(move.title)
@@ -279,7 +337,7 @@ export function openRowMenu(
 	};
 	add(moves.up);
 	add(moves.down);
-	menu.addSeparator();
+	if (moves.up.listed || moves.down.listed) menu.addSeparator();
 	add(moves.into);
 	add(moves.out);
 	menu.addSeparator();

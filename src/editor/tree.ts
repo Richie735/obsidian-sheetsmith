@@ -10,9 +10,11 @@
  * **What a row carries** (`docs/features/layout-editor-tree.md`): a disclosure
  * slot, its name, a drag handle and a menu. Dragging a row onto a container row
  * moves the dragged component into it (`docs/features/grid-canvas.md` §5), and
- * dragging it onto a sibling within its own current parent reorders it there.
- * The menu holds the keyboard-operable equivalents of both — up and down,
- * into the previous sibling container and out to the grandparent — plus
+ * dragging it onto a sibling within its own current parent reorders it there,
+ * where that level is not a placed grid; on a placed grid the order is the
+ * grid's, so the drop is refused toward the canvas. The menu holds the
+ * keyboard-operable equivalents of both — up and down where a level has them,
+ * into the container drawn above and out to the grandparent — plus
  * **Remove**, and the same four moves are Alt+arrow chords on the row's name
  * button. `tree-moves.ts` decides all four, once, for both routes, and asks
  * `reparent.ts`'s `canReparent` before any of them writes; a refusal is shown
@@ -49,11 +51,12 @@ import {
 	MOVE_SHORTCUTS,
 	moveHint,
 	openRowMenu,
+	placedReorderRefusal,
 	rowMoves,
 	treeListContext,
 } from './tree-moves';
 import { Layout } from '../parse/layout';
-import { WalkEntry, walkComponents } from '../parse/layout-walk';
+import { componentsInside, WalkEntry, walkComponents } from '../parse/layout-walk';
 import { ComponentConfig } from '../types';
 import { innerPlacement } from '../view/grid-cells';
 
@@ -390,6 +393,7 @@ function renderComponentRow(
 	const moves = rowMoves(
 		layout,
 		entry,
+		componentsInside(tree.walk, entry.parent),
 		(of) => tree.byConfig.get(of),
 		host,
 	);
@@ -660,7 +664,30 @@ function bindDragSource(
 	});
 	handle.addEventListener('dragend', () => {
 		host.drag.id = null;
+		// Wherever the drag ended — on a refused row, which never receives a
+		// drop, or outside the tree — no refusal it showed on the way outlives
+		// it. Read off the document rather than the tree, since a valid drop
+		// has redrawn the tree and detached this handle from it.
+		for (const el of Array.from(
+			handle.ownerDocument.querySelectorAll(`.${DROP_REFUSED}`),
+		)) {
+			if (el.instanceOf(HTMLElement)) clearDropRefusal(el);
+		}
 	});
+}
+
+/**
+ * Marks a row showing a refused drop's reason while a drag is over it, so the
+ * line can be told from a chord's, which stays until something else replaces
+ * it, and cleared when the pointer leaves or the drag ends.
+ */
+const DROP_REFUSED = 'sheetsmith-tree-drop-refused';
+
+/** Take a hovering drag's refusal off this row, if it shows one. */
+function clearDropRefusal(rowEl: HTMLElement): void {
+	if (!rowEl.classList.contains(DROP_REFUSED)) return;
+	rowEl.classList.remove(DROP_REFUSED);
+	rowEl.querySelector('.sheetsmith-field-error')?.remove();
 }
 
 /**
@@ -679,7 +706,9 @@ type DropResolution =
  * A container row that can hold `dragged` means "move into me"; any other
  * row that shares `dragged`'s own current parent means "reorder beside me" —
  * `list-fields.ts`'s `moveItem` semantics, since both are already in the
- * same list and nothing about containment changes. Anything else is refused
+ * same list and nothing about containment changes — unless that parent places
+ * its children, where the grid decides the order and the drop is refused with
+ * the chord's own sentence. Anything else is refused
  * and says why (`reparent.ts`'s own message, or a plain one for a row that
  * is neither).
  */
@@ -704,7 +733,15 @@ function resolveDrop(
 	const walk = walkComponents(layout.components);
 	const draggedParent = walk.find((entry) => entry.config === dragged)?.parent;
 	const targetParent = walk.find((entry) => entry.config === target)?.parent;
-	if (draggedParent === targetParent) return { kind: 'reorder' };
+	if (draggedParent === targetParent && draggedParent !== undefined) {
+		// A placed level reads by position, so a reorder there would change
+		// nothing on screen; it is refused toward the canvas by the same decision,
+		// and in the same words, as the chord (`placedReorderRefusal`).
+		const refusal = placedReorderRefusal(draggedParent);
+		return refusal !== null
+			? { kind: 'refused', error: refusal }
+			: { kind: 'reorder' };
+	}
 	return {
 		kind: 'refused',
 		error:
@@ -717,6 +754,14 @@ function resolveDrop(
 /**
  * A row is a drop target whatever it names — a component, or the layout
  * itself for the top level.
+ *
+ * **A refused drop says why while the pointer is over the row**, not on the
+ * drop: a browser fires `drop` only on a target whose `dragover` was accepted,
+ * so a refusal decided there and shown on `drop` was never seen outside a
+ * test. The line goes up on the first `dragover` and is left alone on the
+ * rest, which fire every few milliseconds, so it neither flickers nor
+ * re-announces; it comes down when the pointer leaves the row — not merely
+ * crosses onto one of its own children — or when the drag ends anywhere.
  *
  * **A drop onto a shut container leaves it shut** (§7, rule 3): the count in
  * its description changes, which is the drop made visible. Nothing here opens
@@ -735,12 +780,31 @@ function bindDropTarget(
 		if (draggedId === null) return;
 		const dragged = findComponent(layout, draggedId);
 		if (!dragged) return;
-		if (resolveDrop(layout, dragged, target).kind === 'refused') return;
+		const resolution = resolveDrop(layout, dragged, target);
+		// The row being dragged is under the pointer the instant any drag
+		// starts, so its own refusal would flash on every drag; it is refused
+		// without a word, since nobody meant to drop a row on itself.
+		if (resolution.kind === 'refused' && target === dragged) return;
+		if (resolution.kind === 'refused') {
+			const shown = row.settingEl.querySelector('.sheetsmith-field-error');
+			if (shown?.textContent !== resolution.error) {
+				showMoveError(row, resolution.error);
+			}
+			row.settingEl.addClass(DROP_REFUSED);
+			return;
+		}
 		event.preventDefault();
 		row.settingEl.addClass('sheetsmith-tree-drop-valid');
 	});
-	row.settingEl.addEventListener('dragleave', () => {
+	row.settingEl.addEventListener('dragleave', (event) => {
+		// Crossing from the row onto its own name or buttons is a leave too;
+		// only a pointer that has left the row entirely takes the marks down.
+		// Not `instanceof Node`, which is false for a node of a popout's realm
+		// (`docs/PATTERNS.md` §5): a leave's related target is an element or null.
+		const into = event.relatedTarget as Node | null;
+		if (into !== null && row.settingEl.contains(into)) return;
 		row.settingEl.removeClass('sheetsmith-tree-drop-valid');
+		clearDropRefusal(row.settingEl);
 	});
 	row.settingEl.addEventListener('drop', (event) => {
 		event.preventDefault();
@@ -751,10 +815,9 @@ function bindDropTarget(
 		const dragged = findComponent(layout, draggedId);
 		if (!dragged) return;
 		const resolution = resolveDrop(layout, dragged, target);
-		if (resolution.kind === 'refused') {
-			showMoveError(row, resolution.error);
-			return;
-		}
+		// A browser never drops on a refused row, since its dragover was not
+		// accepted; the reason is already on screen from the dragover above.
+		if (resolution.kind === 'refused') return;
 		showMoveError(row, null);
 		if (resolution.kind === 'into') {
 			reparent(layout, dragged, target);

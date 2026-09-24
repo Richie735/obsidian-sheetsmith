@@ -20,7 +20,7 @@ import {
  */
 
 function move(title: string): RowMove {
-	return { title, icon: '', refusal: null, run: () => undefined };
+	return { title, icon: '', refusal: null, run: () => undefined, listed: true };
 }
 
 const moves: RowMoves = {

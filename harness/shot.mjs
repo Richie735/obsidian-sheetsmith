@@ -1962,9 +1962,11 @@ const DEFAULTS = [
 		size: '1400,1400',
 	},
 	{
-		// A refused drop, completed: `Front` onto `Inventory`, a Table
-		// rather than a container, which shows the inline message in place
-		// rather than the drag being silently ignored.
+		// A refused drop: `Front` over `Inventory`, a Table rather than a
+		// container, which shows the inline message in place rather than the
+		// drag being silently ignored. Held over the row rather than released,
+		// since a browser fires no drop there and the message shows while the
+		// pointer rests on the row.
 		name: 'canvas-tree-drag-refused',
 		query: 'surface=editor&theme=light&layout=canvas-demo&treeDrop=front%3Ainventory',
 		size: '1400,1400',

@@ -267,21 +267,39 @@ rect for a keyboard press, where `event.detail === 0`). Items, in order:
 
 | Item | Icon | Disabled when | Does |
 | --- | --- | --- | --- |
-| **Move up** | `arrow-up` | first among its siblings | `moveItem(siblings, i, i - 1)` |
-| **Move down** | `arrow-down` | last among its siblings | `moveItem(siblings, i, i + 1)` |
-| *separator* | | | |
-| **Move into "<previous sibling>"** | `chevron-right` | `canReparent` refuses | `reparent(layout, config, previousSibling)` |
+| **Move up** | `arrow-up` | drawn first in its level; *left out* on a placed grid | moves it to the file slot of the row drawn above |
+| **Move down** | `arrow-down` | drawn last in its level; *left out* on a placed grid | moves it to the file slot of the row drawn below |
+| *separator* | | | *left out with the two above* |
+| **Move into "<row drawn above>"** | `chevron-right` | `canReparent` refuses | `reparent(layout, config, rowDrawnAbove)` |
 | **Move out of "<parent>"** | `chevron-left` | `canReparent` refuses | `reparent(layout, config, grandparent)` |
 | *separator* | | | |
 | **Remove** | `trash-2` | never | removes, `setWarning(true)` |
 
-- **Which container "into" means is unchanged**: the previous sibling, as the
-  indent button did, since that is where an outliner's indent goes. Where
-  there is no previous sibling, or it is not a container, the item reads
-  **Move into a container** and is disabled. At the top level, the out item
-  reads **Move out of a container** and is disabled. **The menu keeps its
-  shape** rather than dropping items, so the fourth item is always the out
-  move. Quotation marks around a label follow `removalMessage`'s and the
+- **Every move reads its level as the tree draws it**, which is the grid
+  reading order `walkComponents` sorts into, not the file's array. The two
+  differ on a placed grid, where a move decided by file index once acted on
+  rows the tree did not draw beside it (`SPEC` §13, "What Move up and Move down
+  mean on a placed grid"). **In a Tab set they agree only while the tabs'
+  stored positions tie**, since the strip reads the file and the tree sorts by
+  row. An insert and a paste give a tab column 1, row 1, which ties; a tab
+  moved in through the tree is given the set's next free row (`reparent.ts`),
+  which breaks the tie, and from then on a Move up changes the strip and not
+  the tree. **That case is a known gap, deferred as its own bug**, since its fix
+  is in the walk's sort or in `reparent.ts`; `layout-editor.test.ts` carries it
+  as an `it.fails` case.
+- **On a placed grid there are no Move up and Move down**, since the sheet reads
+  that level by position and a reorder of the file would change nothing on
+  screen. They are left out, with the separator after them, rather than drawn
+  disabled: nearly every level is placed, so disabled items would sit on almost
+  every row for good. Where a component sits there is the canvas's, by drag or
+  its arrow keys. They stay on a level whose children are not placed
+  (`childIsPlaced`), a Tab set's tabs, whose strip reads the file's order.
+- **"Into" means the row drawn directly above**, which is where an outliner's
+  indent goes. Where there is no row above, or it is not a container, the item
+  reads **Move into a container** and is disabled. At the top level, the out item
+  reads **Move out of a container** and is disabled. **The into and out items
+  keep their shape** rather than dropping out, so the out move always follows
+  the into move. Quotation marks around a label follow `removalMessage`'s and the
   handle's own spelling.
 - **Naming follows one rule**, stated in the §13 entry: a control names every
   party its context does not already announce. The menu is reached through a
@@ -325,7 +343,7 @@ A `keydown` listener on each component row's name button, and nowhere else:
 | --- | --- | --- |
 | Alt+ArrowUp | move up | **Move up** |
 | Alt+ArrowDown | move down | **Move down** |
-| Alt+ArrowRight | move into the previous sibling | **Move into …** |
+| Alt+ArrowRight | move into the row drawn above | **Move into …** |
 | Alt+ArrowLeft | move out to the grandparent | **Move out of …** |
 
 - Matched on `event.altKey` with no Ctrl, Meta or Shift, and `event.key`. A
@@ -335,7 +353,8 @@ A `keydown` listener on each component row's name button, and nowhere else:
   and writes only when allowed.
 - **A refused chord writes nothing and says why in place**: `showDropError`'s
   line under the row, with `canReparent`'s own sentence, or **Already first.** /
-  **Already last.** / **Already at the top level.** / **No container above to
+  **Already last.** / **Placed on the grid. Move it on the canvas, by dragging
+  it or with the arrow keys.** / **Already at the top level.** / **No container above to
   move into.** A key press with no visible effect has to produce one (`UI.md`
   §6, "announce what is not visible"). The line is inside the row, so the
   reason is also on screen for a sighted author.
@@ -486,8 +505,12 @@ extracted modules, which this does not resolve. View-state cases go in
       `tree-outdent-` or `remove-` token.
 - [x] The menu lists **Move up**, **Move down**, a move into, a move out of and
       **Remove**, in that order with two separators. **Remove** is a warning
-      item.
-- [x] The move-into item names the previous sibling (`Move into "Weapons"`)
+      item. *Since narrowed: that is the menu on a level whose children are not
+      placed, a Tab set's tabs, with copy and paste's third section before
+      **Remove**. On a placed grid, since `fix/tree-moves-grid-order`, **Move
+      up**, **Move down** and the separator after them are left out, so the
+      menu opens on the move into (§5).*
+- [x] The move-into item names the row drawn above it (`Move into "Weapons"`)
       and the move-out item names the parent (`Move out of "Proficiencies"`).
       Where no such container exists, the generic item is present and
       disabled.

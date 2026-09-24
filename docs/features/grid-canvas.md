@@ -358,6 +358,15 @@ reimplementing it. `nextFreeRow` is asked over the destination list —
 container — with `dragged` not yet spliced into it, so a component is never
 placed below itself.
 
+**A reorder in the tree never moves a component on its grid, and on a placed
+grid the tree does not reorder at all.** The sheet reads a placed level by
+position (`SPEC` §8), so a drop beside a sibling there would rewrite the file's
+array and change nothing on screen; it is refused, in the same sentence as the
+Alt+Up and Alt+Down chords, pointing to this canvas's own drag and arrow keys.
+A drop beside a sibling reorders only where a parent's children are not placed,
+a Tab set's tabs, whose strip reads the file's order (with one known gap,
+`docs/features/layout-editor-tree.md` §5).
+
 **A reparent that does not change the component's parent leaves `col`/`row`
 alone.** `resolveDrop` (`tree.ts`) treats a container row as "move into me"
 unconditionally, even when that container is already the row's own current
@@ -516,7 +525,10 @@ trusting the mechanism by inspection.
       resulting `children` array.
 - [x] Dragging a tree row to a new position within its own current parent's
       list reorders it, matching `list-fields.ts`'s existing `moveItem`
-      semantics for the same operation.
+      semantics for the same operation. *Narrowed since, to a parent whose
+      children are not placed (a Tab set): on a placed grid the drop is
+      refused toward the canvas, since a reorder of the file there changes
+      nothing drawn (§5, `SPEC` §13).*
 - [x] A drop is refused, with no write to the layout and no change to
       `this.layout` in memory, in each of: (a) dropping a container onto a
       target that would push it past the depth-2 cap; (b) dropping onto a
@@ -550,7 +562,10 @@ trusting the mechanism by inspection.
       inline, naming the fix, never a silently ignored drag — matching
       PATTERNS §4's "error text names the fix, not the fault," e.g. "This
       would sit inside three containers; a container may hold containers
-      only one level deep."
+      only one level deep." *Shown on the drop until `fix/tree-moves-grid-order`,
+      where no browser fires one on a refused row, so the message was never seen
+      outside a test; it is now shown while the drag is over the row, and a row
+      held over itself says nothing.*
 
 **Whole feature**
 

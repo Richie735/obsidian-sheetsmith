@@ -84,8 +84,9 @@ export interface PaneView {
 	 */
 	treeHover?: string;
 	/**
-	 * `<fromId>:<toId>` — the same drag, completed. For a refused pair this
-	 * is what leaves the inline message on screen; for a valid one it is
+	 * `<fromId>:<toId>` — the same drag, completed where a browser would
+	 * complete it. A refused pair gets no drop, as in a browser, and is left
+	 * hovering, which is where its inline message is shown; for a valid one it is
 	 * what `shot.mjs`'s `canvas-tree-drag-complete` drives to show the
 	 * component actually landed at its new container's first free row —
 	 * nothing else here exercises a released, valid drop.
@@ -580,8 +581,13 @@ async function dragTreeRow(
 	}
 	const toRow = to.closest('.setting-item') ?? to;
 	from.dispatchEvent(new Event('dragstart', { bubbles: true }));
-	toRow.dispatchEvent(new Event('dragover', { bubbles: true, cancelable: true }));
-	if (complete) {
+	const over = new Event('dragover', { bubbles: true, cancelable: true });
+	toRow.dispatchEvent(over);
+	// A browser drops only on a row that accepted the dragover, and a refused
+	// row says why while the pointer rests on it, so a refused "complete" drag
+	// is left resting there: releasing it would end the drag and take the
+	// message down with it.
+	if (complete && over.defaultPrevented) {
 		toRow.dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }));
 		from.dispatchEvent(new Event('dragend', { bubbles: true }));
 	}
