@@ -519,6 +519,13 @@ async function ensureSurface(): Promise<void> {
 
 /** One column per surface the choice asks for, in the order they are named. */
 function draw(): void {
+	// The editor pane is detached and re-attached below, and a detached element
+	// loses focus — so every layout write, which calls this, used to drop the
+	// author's focus on the body. The app never re-parents the pane on a save,
+	// so the harness puts the focus back rather than photographing a loss the
+	// plugin does not have: without it the canvas's arrow keys stop after the
+	// first write, here and nowhere else.
+	const focused = document.activeElement;
 	stage.replaceChildren();
 
 	const column = (build: (into: HTMLElement) => void): void => {
@@ -532,6 +539,13 @@ function draw(): void {
 	}
 	if (surface === 'settings' && settingsPane) {
 		column((into) => into.appendChild(settingsPane as HTMLElement));
+	}
+	if (
+		focused instanceof HTMLElement &&
+		focused.isConnected &&
+		document.activeElement !== focused
+	) {
+		focused.focus({ preventScroll: true });
 	}
 }
 
