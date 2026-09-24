@@ -11,7 +11,18 @@
  * components deep.
  *
  * `docs/features/grid-canvas.md` §5 is the design this implements; the tree
- * drag and the indent/outdent controls in `tree.ts` are its only callers.
+ * drag and the indent/outdent controls in `tree.ts` are the only callers of
+ * `canReparent` and `reparent`.
+ *
+ * It also owns what an edit that takes a child away leaves behind: no empty
+ * `children` key, which `parseChildren` would refuse two containers deep.
+ * `forgetEmptyChildren` is exported for the tree's remove, the one other edit
+ * that empties a container, and lives here on purpose rather than in a file of
+ * its own: the rule is the other half of `canReparent`'s depth check, and two
+ * consumers is below `docs/PATTERNS.md` §1's rung for extracting. The remove
+ * needs only that half — its promoted children only rise, and rising never
+ * makes an empty list illegal — so `dropIllegalEmptyChildren` stays private to
+ * the move.
  *
  * The dependency runs both ways: `reparent()` also draws on `tree.ts`'s own
  * `nextFreeRow` for the destination row a cross-container move lands on,
@@ -201,4 +212,45 @@ export function reparent(
 
 	const at = index === undefined ? into.length : Math.min(index, into.length);
 	into.splice(at, 0, dragged);
+
+	forgetEmptyChildren(entry.parent);
+	const landingDepth =
+		target === null
+			? 0
+			: (walk.find((candidate) => candidate.config === target)?.depth ?? 0) + 1;
+	dropIllegalEmptyChildren(dragged, landingDepth);
+}
+
+/**
+ * Drop `container`'s `children` key where an edit has just left it empty.
+ *
+ * An empty list and no key mean the same thing to everything that reads a
+ * layout except `parseChildren`, which refuses *any* `children` key two
+ * containers deep — so a container emptied by the editor, then moved there as
+ * `canReparent` allows, was drawn but never saved. Dropping the key at the
+ * edit rather than at `serialiseLayout` keeps both rules as they are and
+ * leaves a hand-written `children: []` untouched until something edits that
+ * container (Constraint 3). `reparent` and the tree's remove are the two
+ * edits that take a child away; `null`, the top level, has no key to drop.
+ */
+export function forgetEmptyChildren(container: ComponentConfig | null): void {
+	if (container?.children?.length === 0) delete container.children;
+}
+
+/**
+ * The same agreement for a subtree that carries a hand-written `children: []`
+ * of its own to a depth where no `children` key may sit: `tooDeepHolders`
+ * reads it as holding nothing, so the move is allowed, and the key has to go
+ * with it or the parser refuses the result. Only where it would be illegal —
+ * an empty list at a depth that may hold one is the author's spelling, and
+ * this move did not touch it.
+ */
+function dropIllegalEmptyChildren(config: ComponentConfig, depth: number): void {
+	const children = config.children;
+	if (!children) return;
+	if (children.length === 0) {
+		if (!mayHoldChildren(depth)) delete config.children;
+		return;
+	}
+	for (const child of children) dropIllegalEmptyChildren(child, depth + 1);
 }

@@ -831,6 +831,15 @@ describe('parseLayout: components inside components', () => {
 			],
 		});
 
+	it('keeps a hand-written empty children list through a round trip', () => {
+		// The editor drops an emptied container's `children` key at the edit
+		// (`editor/reparent.ts`), not here: normalising it at serialise time
+		// would rewrite a file nobody edited.
+		const source = serialiseLayout(parseLayout(withChildren([])));
+		expect(serialiseLayout(parseLayout(source))).toBe(source);
+		expect(parseLayout(source).components[0]?.children).toEqual([]);
+	});
+
 	const leaf = (id: string, row = 1) => ({
 		id,
 		type: 'card',

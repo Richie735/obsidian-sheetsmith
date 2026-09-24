@@ -33,7 +33,7 @@ import { Setting, setIcon } from 'obsidian';
 import { holdsChildren } from './accepts-children';
 import { moveItem } from './list-fields';
 import { placedComponentName } from './component-name';
-import { canReparent, reparent } from './reparent';
+import { canReparent, forgetEmptyChildren, reparent } from './reparent';
 import {
 	chordMove,
 	MOVE_SHORTCUTS,
@@ -456,6 +456,9 @@ function removeComponent(entry: WalkEntry, tree: TreeRender): void {
 	const { config, siblings } = entry;
 	const held = config.children ?? [];
 	siblings.splice(siblings.indexOf(config), 1);
+	// Its last child gone, a container keeps no `children: []` behind, which
+	// the parser would refuse once the container moves two deep (`reparent.ts`).
+	forgetEmptyChildren(entry.parent);
 	// Children move out rather than going with it, the same promise a reparent
 	// keeps (Constraint 4).
 	for (const child of held) {
