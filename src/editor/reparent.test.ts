@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { canReparent, reparent } from './reparent';
 import { ComponentConfig } from '../types';
-import { Layout, mayHoldChildren } from '../parse/layout';
+import {
+	Layout,
+	mayHoldChildren,
+	parseLayout,
+	serialiseLayout,
+} from '../parse/layout';
+import { walkComponents } from '../parse/layout-walk';
 
 function pos(overrides: Partial<ComponentConfig['position']> = {}) {
 	return { col: 1, row: 1, width: 2, height: 1, ...overrides };
@@ -187,7 +193,7 @@ describe('reparent', () => {
 
 		reparent(layout, leaf, empty);
 
-		expect(inner.children).toEqual([]);
+		expect(inner).not.toHaveProperty('children');
 		expect(empty.children).toEqual([leaf]);
 		// `empty` held nothing, so the first free row is row 1 — the same
 		// answer an empty top level would give.
@@ -202,7 +208,7 @@ describe('reparent', () => {
 		// (`pos()`'s defaults), so the top level's first free row is row 2.
 		reparent(layout, inner, null);
 
-		expect(outer.children).toEqual([]);
+		expect(outer).not.toHaveProperty('children');
 		expect(layout.components).toContain(inner);
 		expect(inner.position).toMatchObject({ col: 1, row: 2 });
 	});
@@ -364,5 +370,120 @@ describe('reparenting a tab out of its tab set', () => {
 		reparent(layout, combat, null);
 
 		expect(combat.position).toMatchObject({ col: 1, row: 6 });
+	});
+});
+
+/*
+ * `canReparent` and `parseChildren` are two statements of one depth rule, and
+ * they disagreed about an empty `children` list: the editor read it as holding
+ * nothing, the parser as a key two containers deep may not carry. So a move
+ * the tree allowed was drawn and never saved. This walks every move the check
+ * allows, over layouts that carry an emptied or hand-written `children: []`
+ * at each depth that matters, and requires the result to parse — the
+ * agreement itself, rather than the one repro that exposed its absence.
+ */
+describe('every move canReparent allows saves', () => {
+	/**
+	 * `zone` holds two depth-1 containers; `nested` carries `children: []`
+	 * where a container emptied by an earlier edit used to, and `wrapper`
+	 * holds `hollow`, which carries a hand-written one, so moving `wrapper`
+	 * into `zone` lands `hollow` two deep.
+	 */
+	function withEmptyLists(): Layout {
+		return {
+			name: 'Empty lists',
+			components: [
+				{
+					id: 'zone',
+					type: 'group',
+					label: 'Zone',
+					position: pos({ width: 6, height: 3 }),
+					children: [
+						{ id: 'holder', type: 'group', label: 'Holder', position: pos() },
+						{
+							id: 'nested',
+							type: 'group',
+							label: 'Nested',
+							position: pos({ row: 2 }),
+							children: [],
+						},
+					],
+				},
+				{
+					id: 'wrapper',
+					type: 'group',
+					label: 'Wrapper',
+					position: pos({ row: 4 }),
+					children: [
+						{
+							id: 'hollow',
+							type: 'group',
+							label: 'Hollow',
+							position: pos(),
+							children: [],
+						},
+					],
+				},
+				{ id: 'stat', type: 'card', label: 'Stat', position: pos({ row: 5 }) },
+			],
+		};
+	}
+
+	function allowedMoves(make: () => Layout): Array<[string, string | null]> {
+		const layout = make();
+		const configs = walkComponents(layout.components).map((entry) => entry.config);
+		const moves: Array<[string, string | null]> = [];
+		for (const dragged of configs) {
+			for (const target of [null, ...configs]) {
+				if ('ok' in canReparent(layout, dragged, target)) {
+					moves.push([dragged.id, target?.id ?? null]);
+				}
+			}
+		}
+		return moves;
+	}
+
+	for (const [name, make] of [
+		['a layout holding empty lists', withEmptyLists],
+		['the two-deep fixture', fixture],
+		['the tab set fixture', tabbedFixture],
+	] as const) {
+		it(`over ${name}`, () => {
+			const moves = allowedMoves(make);
+			// Not vacuous: the case this exists for is among them.
+			if (make === withEmptyLists) {
+				expect(moves).toContainEqual(['nested', 'holder']);
+				expect(moves).toContainEqual(['wrapper', 'zone']);
+			}
+			expect(moves.length).toBeGreaterThan(3);
+			for (const [draggedId, targetId] of moves) {
+				const layout = make();
+				const byId = new Map(
+					walkComponents(layout.components).map((entry) => [
+						entry.config.id,
+						entry.config,
+					]),
+				);
+				reparent(layout, byId.get(draggedId)!, targetId === null ? null : byId.get(targetId)!);
+				expect(
+					() => parseLayout(serialiseLayout(layout)),
+					`${draggedId} into ${targetId ?? 'the top level'}`,
+				).not.toThrow();
+			}
+		});
+	}
+
+	it('keeps an empty list where it is still legal, since the move did not touch it', () => {
+		const layout = withEmptyLists();
+		const wrapper = layout.components[1]!;
+		reparent(layout, wrapper, layout.components[0]!);
+		// One level in, `hollow` lands two deep: its empty list had to go.
+		expect(wrapper.children![0]).not.toHaveProperty('children');
+
+		const other = withEmptyLists();
+		const stat = other.components[2]!;
+		reparent(other, stat, other.components[1]!);
+		// `hollow` did not move and stays one deep: its list is the author's.
+		expect(other.components[1]!.children![0]!.children).toEqual([]);
 	});
 });

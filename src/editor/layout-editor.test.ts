@@ -1675,7 +1675,7 @@ describe('removing a container', () => {
 			'defences',
 			'hit_points',
 		]);
-		expect(stored.components[0]?.children).toEqual([]);
+		expect(stored.components[0]?.children).toBeUndefined();
 	});
 
 	it('stacks two promoted children without overlapping each other or a sibling', async () => {
@@ -3040,7 +3040,7 @@ describe('reparenting a tree row', () => {
 			'hit_points',
 			'armour',
 		]);
-		expect(stored.components[0]?.children).toEqual([]);
+		expect(stored.components[0]?.children).toBeUndefined();
 	});
 
 	it('reorders from the menu, moving up and down among siblings', async () => {
@@ -3157,6 +3157,42 @@ describe('reparenting a tree row', () => {
 			'"Nested" holds components, and moving it here would put it inside two containers, where it could hold nothing. Move its components out first.',
 		);
 		expect(message?.getAttribute('role')).toBe('alert');
+	});
+
+	/*
+	 * The refusal above names its fix: "Move its components out first." These
+	 * two follow it, by each route that empties a container, and then make the
+	 * move it refused. Emptying used to leave `children: []`, which
+	 * `canReparent` read as holding nothing and `parseChildren` refuses two
+	 * containers deep, so the move was allowed, drawn, and never saved.
+	 */
+	it('saves the refused move once its components are moved out, as the refusal says', async () => {
+		harness = await open(depthCapped());
+		chord(harness, 'edit-leaf', 'ArrowLeft');
+		await settle(harness.pane);
+		const emptied = await harness.raw();
+		chord(harness, 'edit-nested', 'ArrowRight');
+		await settle(harness.pane);
+
+		expect(await harness.raw()).not.toBe(emptied);
+		const zone = (await harness.stored()).components.find((c) => c.id === 'zone');
+		const holder = zone?.children?.find((c) => c.id === 'holder');
+		expect(holder?.children?.map((c) => c.id)).toEqual(['nested']);
+		expect(holder?.children?.[0]).not.toHaveProperty('children');
+	});
+
+	it('saves the refused move once its last component is removed', async () => {
+		harness = await open(depthCapped());
+		removeRow(harness, 'leaf');
+		await settle(harness.pane);
+		const emptied = await harness.raw();
+		chord(harness, 'edit-nested', 'ArrowRight');
+		await settle(harness.pane);
+
+		expect(await harness.raw()).not.toBe(emptied);
+		const zone = (await harness.stored()).components.find((c) => c.id === 'zone');
+		const holder = zone?.children?.find((c) => c.id === 'holder');
+		expect(holder?.children?.map((c) => c.id)).toEqual(['nested']);
 	});
 
 	it('refuses each chord where its menu item is disabled, in its own words', async () => {
@@ -3584,7 +3620,7 @@ describe('collapsing a container in the tree', () => {
 		const spellbook = stored.components.find((c) => c.id === 'spellbook');
 		expect(spellbook?.children?.map((c) => c.id)).toEqual(['melee']);
 		expect(spellbook?.children?.[0]?.children?.map((c) => c.id)).toEqual(['armour']);
-		expect(stored.components.find((c) => c.id === 'defences')?.children).toEqual([]);
+		expect(stored.components.find((c) => c.id === 'defences')?.children).toBeUndefined();
 	});
 
 	it('reads the rows in the order it always did, expanded', async () => {
