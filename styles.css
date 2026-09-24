@@ -6401,6 +6401,85 @@ a.sheetsmith-undo {
 	min-height: 0;
 }
 
+/* ---------------------------------------------------------------------------
+   A field inside the opened record (`docs/features/record-set-body-fields.md`).
+
+   **The body gains a row only when it has the block.** The rule above stacks
+   every child in one cell, which is the two-layer prose arrangement, so a block
+   dropped in beside them would sit under the prose. The body carries
+   `-has-fields` when the component draws the block: the block takes row 1 and
+   the prose layers row 2, still stacked in one cell. Without the class there is
+   no block and no second row, so a layout with no body field draws what it drew.
+
+   One `--size-2-2` step above the prose and no rule between them: the type
+   already separates the two, and a hairline would read as a second disclosure
+   boundary inside a record that is already one disclosure deep.
+   --------------------------------------------------------------------------- */
+.sheetsmith-record-body-has-fields {
+	row-gap: var(--size-2-2);
+}
+
+.sheetsmith-record-body-has-fields > * {
+	grid-area: 2 / 1;
+}
+
+.sheetsmith-record-body-has-fields > .sheetsmith-record-body-fields {
+	grid-area: 1 / 1;
+}
+
+/* The pairs wrap and a pair never splits: each field is the summary line's own
+   `.sheetsmith-record-field` inline-flex, which keeps a name with its control,
+   at the summary's own clearance between two controls. The padding puts the
+   first name's ink under the record name's ink rather than under its field's
+   box, which is the narrow rule's "the ink, not the column" one block over. Both
+   sides rather than the leading one alone, because the prose under the block is
+   padded by the same step on both: a pair then wraps where the prose's own lines
+   wrap, and never runs past the right edge the paragraph below it keeps. */
+.sheetsmith-record-body-fields {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	/* **Rows closer than columns**, so a wrapped block reads as one block and
+	   not as a line of fields followed by a caption over the prose. The column
+	   gap is the summary's clearance between two controls, unchanged. The row
+	   gap is the ring's own vertical reach instead: `.sheetsmith-level-ring::after`
+	   extends `--size-2-2` above and below the ring in both pointer modes (the
+	   coarse pointer grows the ring, not the reach), so two rings on consecutive
+	   rows meet at 8px; 12px leaves a 4px margin between their targets. */
+	gap: var(--size-4-3) var(--size-4-5);
+	/* **More room above the block than inside it or below it**, so it reads as
+	   the head of the body rather than as another summary line. Measured on the
+	   harness, box to box, on Ring of Protection: at a 280px list 18px from the
+	   summary's last field to the block, 12px between the block's two wrapped
+	   rows and 7px from the block to the prose's first line; at 1400px 23px and
+	   7px. At `--size-4-2` the first two were 10px and 12px at a 280px
+	   list, so a wrapped Recharge sat nearer the summary's bolt above it than the
+	   Save DC under it, and at 1400px the block was 8px under the summary and 7px
+	   over the prose — the head of the body by indentation alone. */
+	margin-top: var(--size-4-4);
+	padding-inline: var(--size-2-2);
+}
+
+/* Pool's empty `—`, in the faint an empty em dash takes everywhere else on a
+   sheet, and only on a body field's value: a ceiling field has its own. */
+.sheetsmith-view
+	.sheetsmith-record-body-fields
+	.sheetsmith-record-input:not(.sheetsmith-pool-max)::placeholder {
+	color: var(--text-faint);
+	opacity: 1;
+}
+
+/* A pair may be wider than a narrow body, so it may shrink, and a menu shrinks
+   inside its own `max-width` rather than widening the box. */
+.sheetsmith-record-body-fields > .sheetsmith-record-field {
+	min-width: 0;
+	max-width: 100%;
+}
+
+.sheetsmith-view .sheetsmith-record-body-fields .sheetsmith-record-select {
+	min-width: 0;
+}
+
 /* The field carries the view scope for the reason §2 of docs/UI.md gives, and it
    is not hypothetical: Obsidian styles bare `textarea` with a background, a
    border, a font size and a `resize`, so every declaration below that takes
@@ -6861,7 +6940,11 @@ a.sheetsmith-undo {
 			align-items: center;
 		}
 
-		.sheetsmith-record-field {
+		/* Scoped to the summary line, as every rule below that names a field is:
+		   a body field sits in a flex block of its own and has no track, so a
+		   centring margin or a paint offset meant for a column would only move it
+		   off its own name. */
+		.sheetsmith-record-summary .sheetsmith-record-field {
 			justify-self: center;
 			margin-inline: calc((var(--size-4-5) - var(--size-2-2)) / 2);
 		}
@@ -6879,7 +6962,7 @@ a.sheetsmith-undo {
 		   leaves the ink within about 1.6px of its heading for one to three digits
 		   in either half, where the box alone was off by up to 6.4. No static offset
 		   can do better than the spread, which is the digits' own. */
-		.sheetsmith-record-field-number {
+		.sheetsmith-record-summary .sheetsmith-record-field-number {
 			transform: translateX(-0.4em);
 		}
 
@@ -6899,8 +6982,15 @@ a.sheetsmith-undo {
 		   be a second sighting of one label.** Hidden here rather than left out of
 		   the DOM, so the one query that shows the strip is the one that hides it
 		   and a number can never have neither. The input keeps its own
-		   `aria-label`, so nothing goes from assistive tech. */
-		.sheetsmith-view .sheetsmith-record-field .sheetsmith-card-abbreviation {
+		   `aria-label`, so nothing goes from assistive tech.
+
+		   **The summary line's number only.** No strip ever names a body field,
+		   so its name is the only one it gets; hidden there, a body number on a
+		   wide headed list would be named by nothing at all. */
+		.sheetsmith-view
+			.sheetsmith-record-summary
+			.sheetsmith-record-field
+			.sheetsmith-card-abbreviation {
 			display: none;
 		}
 	}

@@ -437,3 +437,48 @@ describe('a component takes only what it is allowed from obsidian', () => {
 		expect(await lintAsComponent(source)).not.toEqual([]);
 	});
 });
+
+describe("a field's placement is spelled in one place", () => {
+	/*
+	 * `components/column-types.ts`'s fifth policy: the editor writes the id and a
+	 * Record set reads it, neither can import the other's copy, and the default
+	 * is written as absence on both sides — so a literal on either would drift in
+	 * silence and move a field without a word
+	 * (`docs/features/record-set-body-fields.md`). Tests are outside the scan,
+	 * since a fixture spelling `placement: 'body'` is a note an author wrote.
+	 */
+	/**
+	 * A field's `placement` compared with, or assigned, a quoted literal.
+	 *
+	 * **Narrow on purpose: the member access, never the word.** "Placement" is also
+	 * a component's grid position throughout `types.ts` and the sheet, so a scan on
+	 * the bare word would fail the build on a `placement: 'below'` option or a doc
+	 * comment for a reason that has nothing to do with this vocabulary. What it
+	 * does not reach is a literal passed as an argument — the editor's
+	 * `checkField(…, BODY_PLACEMENT)` — which the import case below holds instead.
+	 */
+	const comparesLiteral = (source: string) =>
+		/\.placement\s*(===|!==|=(?!=))\s*['"]|['"]\s*(===|!==)\s*[\w.]*\.placement\b/.test(
+			source,
+		);
+
+	it('reports a literal compared with or written into a field placement, and nothing else', () => {
+		// The spellings it exists for, so a green scan below is a scan that could
+		// have gone red.
+		expect(comparesLiteral("return field.placement === 'body';")).toBe(true);
+		expect(comparesLiteral("if (field.placement !== 'summary') {")).toBe(true);
+		expect(comparesLiteral("column.placement = 'body';")).toBe(true);
+		expect(comparesLiteral("if ('body' === field.placement) {")).toBe(true);
+		// And the ones it must leave alone: the shared name, and the other meaning
+		// of the word.
+		expect(comparesLiteral('return field.placement === BODY_PLACEMENT;')).toBe(false);
+		expect(comparesLiteral("showPanel({ placement: 'below' });")).toBe(false);
+		expect(comparesLiteral(' * a placement: "grid rows tall" whatever is in it')).toBe(false);
+	});
+
+	it('compares or writes no placement literal outside the vocabulary', () => {
+		const { files, hits } = scan(SRC, comparesLiteral, true);
+		expect(files).toBeGreaterThan(60);
+		expect(hits).toEqual([]);
+	});
+});

@@ -11,7 +11,7 @@ import { card, CardConfig } from './card';
 import { buildSheet, ReadComponent } from '../formula/sheet';
 import { evaluate } from '../formula/expression';
 import { callsFrom, makeFieldResolver, NO_ENV } from '../formula/resolve';
-import { Layout, serialiseLayout } from '../parse/layout';
+import { Layout, parseLayout, serialiseLayout } from '../parse/layout';
 import { COLUMN_TYPES } from './column-types';
 import { RenderContext } from '../types';
 import { sampleOf } from '../test/sample';
@@ -3150,5 +3150,617 @@ describe('a strip of field names over the list', () => {
 		expect(
 			records(el)[0]?.querySelector('.sheetsmith-pool-max'),
 		).not.toBeNull();
+	});
+});
+
+describe('a field inside the opened record', () => {
+	/*
+	 * `placement: 'body'` (`docs/features/record-set-body-fields.md`). Display
+	 * only: the same control, drawn by the same `drawField`, on the same commit
+	 * path, attached to the body instead of the summary line. happy-dom lays
+	 * nothing out, so what is held here is the tree, the commits and the
+	 * accessibility; where a pair wraps and whether its name lines up under the
+	 * record's is the harness's.
+	 */
+	const BODIED: RecordSetConfig = {
+		...config,
+		fieldHeadings: true,
+		fields: [
+			{ key: 'Uses', type: 'number', max: 3 },
+			{
+				key: 'Recharge',
+				type: 'level',
+				input: 'select',
+				levels: ['None', 'Short rest', 'Long rest'],
+				placement: 'body',
+			},
+			{ key: 'DC', name: 'Save DC', type: 'number', placement: 'body' },
+			{ key: 'Attuned', type: 'toggle', placement: 'body' },
+			{
+				key: 'Rank',
+				type: 'level',
+				levels: ['Untrained', 'Trained:', 'Expert:★'],
+				placement: 'body',
+			},
+			// Declared *before* the summary computed field below, so a partition
+			// that renumbered its halves would resolve one against the other.
+			{
+				key: 'Bonus',
+				type: 'computed',
+				formula: 'Uses + 100',
+				placement: 'body',
+			},
+			{ key: 'Left', type: 'computed', formula: 'Uses + 1' },
+			{ key: 'Modifiers', type: 'modifier', placement: 'body' },
+		],
+	};
+
+	const BODIED_BODY = [
+		'',
+		'### Second Wind',
+		'```sheet',
+		'Uses: 1',
+		'Recharge: 1',
+		'DC: 15',
+		'Attuned: no',
+		'Rank: 1',
+		'Modifiers: armour_class += 1 when Attuned',
+		'```',
+		'Prose.',
+		'',
+		'### Lucky',
+		'```sheet',
+		'Uses: 3',
+		'Attuned: yes',
+		'```',
+		'',
+	].join('\n');
+
+	/** The same configuration with every field on the summary line. */
+	const summaryOnly = (from: RecordSetConfig): RecordSetConfig => ({
+		...from,
+		fields: (from.fields ?? []).map((one) => {
+			const copy = { ...one };
+			delete copy.placement;
+			return copy;
+		}),
+	});
+
+	const resolveWith = (from: RecordSetConfig, body: string) => {
+		const data = readData(body, from);
+		return makeFieldResolver(recordSet, from, data, NO_ENV);
+	};
+
+	const renderBodied = (
+		from: RecordSetConfig = BODIED,
+		body: string = BODIED_BODY,
+		ctx: Partial<RenderContext<RecordSetData>> = {},
+	) =>
+		render(from, body, {
+			resolveField: resolveWith(from, body),
+			...ctx,
+		});
+
+	const blockOf = (record: HTMLElement) =>
+		record.querySelector<HTMLElement>('.sheetsmith-record-body-fields');
+	const summaryCells = (record: HTMLElement) =>
+		Array.from(
+			record.querySelectorAll<HTMLElement>(
+				'.sheetsmith-record-summary .sheetsmith-record-field',
+			),
+		);
+	const bodyCells = (record: HTMLElement) =>
+		Array.from(
+			record.querySelectorAll<HTMLElement>(
+				'.sheetsmith-record-body-fields > .sheetsmith-record-field',
+			),
+		);
+
+	it("draws no body block where no field carries a placement, and reads 'summary' as absence", () => {
+		/*
+		 * The harness's three lists as their configurations stand: a headed list of
+		 * every field kind, the unheaded control with a select, and a narrow headed
+		 * one. A placement of `'summary'` spelled out is the same list.
+		 *
+		 * **What this does not prove is "identical to the code before the
+		 * feature"**, since nothing here holds that code's output. That was checked
+		 * once, in the build, by rendering the harness's own three configs with the
+		 * base commit's `recordSet` and with this one — byte-identical — and is
+		 * recorded in the feature doc rather than stored as a snapshot, which this
+		 * repository does not keep and which would fail on every later legitimate
+		 * change to this component's markup.
+		 */
+		const TRAITS: RecordSetConfig = {
+			...config,
+			fieldHeadings: true,
+			fields: [
+				{ key: 'Uses', type: 'number', maxSource: 'record' },
+				{ key: 'Attuned', type: 'toggle' },
+				{ key: 'Rank', type: 'level', levels: ['Untrained', 'Trained:', 'Expert:★'] },
+				{ key: 'Left', type: 'computed', formula: '3 - Uses' },
+				{ key: 'Modifiers', type: 'modifier' },
+			],
+		};
+		const SPELLS: RecordSetConfig = {
+			...config,
+			fields: [
+				{ key: 'Level', type: 'number', max: 9 },
+				{ key: 'Prepared', type: 'toggle' },
+				{
+					key: 'School',
+					type: 'level',
+					input: 'select',
+					levels: ['None', 'Evocation', 'Abjuration'],
+				},
+			],
+		};
+		const KNOWN: RecordSetConfig = {
+			...config,
+			fieldHeadings: true,
+			fields: [
+				{ key: 'Level', type: 'number' },
+				{ key: 'Prepared', type: 'toggle' },
+			],
+		};
+		for (const each of [TRAITS, SPELLS, KNOWN]) {
+			const bare = render(each, BODY);
+			expect(bare.querySelector('.sheetsmith-record-body-fields')).toBeNull();
+			expect(
+				bare.querySelector('.sheetsmith-record-body-has-fields'),
+			).toBeNull();
+			// Every body is the two prose layers it always was.
+			for (const body of bodies(bare)) {
+				expect(body.className).toBe('sheetsmith-record-body');
+			}
+			const spelled = render(
+				{
+					...each,
+					fields: (each.fields ?? []).map((one) => ({
+						...one,
+						placement: 'summary' as const,
+					})),
+				},
+				BODY,
+			);
+			expect(spelled.innerHTML).toBe(bare.innerHTML);
+		}
+	});
+
+	it("draws a body field in a block that is its body's first child, in declared order", () => {
+		const el = renderBodied();
+		const first = records(el)[0] as HTMLElement;
+		const body = bodies(el)[0] as HTMLElement;
+		const block = blockOf(first) as HTMLElement;
+		expect(body.firstElementChild).toBe(block);
+		expect(body.classList.contains('sheetsmith-record-body-has-fields')).toBe(
+			true,
+		);
+		// The prose layers come after it, unchanged.
+		expect(block.nextElementSibling?.classList.contains(
+			'sheetsmith-record-body-input',
+		)).toBe(true);
+		expect(
+			bodyCells(first).map(
+				(cell) => cell.querySelector('.sheetsmith-card-abbreviation')?.textContent,
+			),
+		).toEqual(['Recharge', 'Save DC', 'Attuned', 'Rank', 'Bonus', 'Modifiers']);
+		// And none of them on the summary line.
+		expect(
+			summaryCells(first).map((cell) => cell.className.match(/field-(\w+)/)?.[1]),
+		).toEqual(['number', 'computed']);
+	});
+
+	it('keeps body fields in the DOM while their record is closed', () => {
+		const el = renderBodied();
+		for (const record of records(el)) {
+			const body = record.querySelector('.sheetsmith-record-body') as HTMLElement;
+			expect(body.getAttribute('hidden')).toBe('until-found');
+			expect(body.contains(blockOf(record))).toBe(true);
+			expect(bodyCells(record)).toHaveLength(6);
+		}
+	});
+
+	/**
+	 * One edit made through the control drawn in each placement: the classes and
+	 * the accessible name it carries, the delta it reports, and the note the
+	 * delta writes.
+	 */
+	function bothWays(
+		fields: RecordSetConfig['fields'],
+		body: string,
+		pick: (record: HTMLElement) => HTMLElement,
+		act: (control: HTMLElement) => void,
+		ctx: Partial<RenderContext<RecordSetData>> = {},
+	) {
+		const out = (['summary', 'body'] as const).map((placement) => {
+			const placed: RecordSetConfig = {
+				...config,
+				fields: (fields ?? []).map((one) => ({ ...one, placement })),
+			};
+			const changes: RecordSetData[] = [];
+			closeAnchoredPanel();
+			const el = render(placed, body, {
+				...ctx,
+				onChange: (data) => changes.push(data),
+			});
+			const control = pick(records(el)[0] as HTMLElement);
+			const seen = {
+				className: control.className,
+				label: control.getAttribute('aria-label'),
+			};
+			act(control);
+			const last = changes[changes.length - 1];
+			return {
+				seen,
+				delta: last,
+				note: last === undefined ? null : recordSet.write(last, body, placed),
+			};
+		});
+		const [summary, inBody] = out as [(typeof out)[0], (typeof out)[0]];
+		expect(inBody.seen).toEqual(summary.seen);
+		expect(summary.delta).toBeDefined();
+		expect(inBody.delta).toEqual(summary.delta);
+		expect(inBody.note).toBe(summary.note);
+		return summary;
+	}
+
+	const blur = (value: string) => (control: HTMLElement) => {
+		const input = control as HTMLInputElement;
+		input.value = value;
+		input.dispatchEvent(new Event('input'));
+		input.dispatchEvent(new Event('blur'));
+	};
+
+	it('commits a number through the same control with the same delta and bytes, in both ceiling modes', () => {
+		const body = '\n### A\n```sheet\nUses: 1 / 4\n```\nProse.\n';
+		const value = (record: HTMLElement) =>
+			record.querySelector(
+				'.sheetsmith-record-input:not(.sheetsmith-pool-max)',
+			) as HTMLElement;
+		const declared = bothWays(
+			[{ key: 'Uses', type: 'number', max: 3 }],
+			body,
+			value,
+			blur('2'),
+		);
+		expect(declared.delta).toEqual({
+			records: { 0: { fields: { Uses: '2 / 4' } } },
+		});
+		const owned = bothWays(
+			[{ key: 'Uses', type: 'number', maxSource: 'record' }],
+			body,
+			(record) =>
+				record.querySelector('.sheetsmith-record-input.sheetsmith-pool-max') as HTMLElement,
+			blur('6'),
+		);
+		expect(owned.note).toContain('Uses: 1 / 6');
+	});
+
+	it('commits a toggle, a cycled level and a selected level the same way', () => {
+		const body = '\n### A\n```sheet\nAttuned: no\nRank: 1\nRecharge: 0\n```\nProse.\n';
+		const click = (control: HTMLElement) =>
+			control.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		const toggle = bothWays(
+			[{ key: 'Attuned', type: 'toggle' }],
+			body,
+			(record) => record.querySelector('.sheetsmith-level-ring') as HTMLElement,
+			click,
+		);
+		expect(toggle.note).toContain('Attuned: yes');
+		const cycled = bothWays(
+			[{ key: 'Rank', type: 'level', levels: ['Untrained', 'Trained', 'Expert'] }],
+			body,
+			(record) => record.querySelector('.sheetsmith-level-ring') as HTMLElement,
+			click,
+		);
+		expect(cycled.note).toContain('Rank: 2');
+		const selected = bothWays(
+			[
+				{
+					key: 'Recharge',
+					type: 'level',
+					input: 'select',
+					levels: ['None', 'Short rest', 'Long rest'],
+				},
+			],
+			body,
+			(record) => record.querySelector('.sheetsmith-record-select') as HTMLElement,
+			(control) => {
+				const select = control as HTMLSelectElement;
+				select.value = '2';
+				select.dispatchEvent(new Event('change'));
+			},
+		);
+		expect(selected.note).toContain('Recharge: 2');
+	});
+
+	it('commits a modifier through the same shared form the same way', () => {
+		const body = '\n### A\n```sheet\nUses: 1\n```\nProse.\n';
+		const committed = bothWays(
+			[{ key: 'Modifiers', type: 'modifier' }],
+			body,
+			(record) => record.querySelector('.sheetsmith-record-modifier') as HTMLElement,
+			(control) => {
+				control.click();
+				const panel = document.querySelector('.sheetsmith-panel') as HTMLElement;
+				typeInto(field(panel, 'Value'), 'armour_class');
+				typeInto(field(panel, 'Amount'), '2');
+			},
+			{ modifiers: modifierContext() },
+		);
+		expect(committed.note).toContain('Modifiers: armour_class += 2');
+		closeAnchoredPanel();
+	});
+
+	it('names and counts only summary fields in the strip', () => {
+		const el = renderBodied();
+		const block = el.querySelector('.sheetsmith-record-set') as HTMLElement;
+		expect(
+			Array.from(
+				el.querySelectorAll('.sheetsmith-record-strip > *'),
+			).map((one) => one.textContent),
+		).toEqual(['Uses', 'Left']);
+		expect(block.classList.contains('sheetsmith-record-set-fields-2')).toBe(true);
+		expect(block.style.getPropertyValue('--sheetsmith-record-fields')).toBe('2');
+
+		// Every field in the body: a headed list with nothing to head.
+		const allBody: RecordSetConfig = {
+			...BODIED,
+			fields: (BODIED.fields ?? []).map((one) => ({
+				...one,
+				placement: 'body' as const,
+			})),
+		};
+		const none = renderBodied(allBody);
+		const noneBlock = none.querySelector('.sheetsmith-record-set') as HTMLElement;
+		expect(none.querySelector('.sheetsmith-record-strip')).toBeNull();
+		expect(none.querySelector('.sheetsmith-record-set-records')).toBeNull();
+		expect(noneBlock.className).toBe('sheetsmith-placed sheetsmith-record-set');
+		expect(noneBlock.style.getPropertyValue('--sheetsmith-record-fields')).toBe('');
+	});
+
+	it('draws the summary line of an all-body list as a list with no fields draws it', () => {
+		const allBody: RecordSetConfig = {
+			...BODIED,
+			fields: (BODIED.fields ?? []).map((one) => ({
+				...one,
+				placement: 'body' as const,
+			})),
+		};
+		const moved = renderBodied(allBody);
+		const empty = render({ ...BODIED, fields: [] }, BODIED_BODY);
+		const summaries = (el: HTMLElement) =>
+			Array.from(el.querySelectorAll('.sheetsmith-record-summary')).map(
+				(one) => one.outerHTML,
+			);
+		expect(summaries(moved)).toEqual(summaries(empty));
+		expect(summaries(moved)).toHaveLength(2);
+	});
+
+	it('resolves a computed field by its declared index, in either placement and while closed', () => {
+		const paths: string[] = [];
+		const real = resolveWith(BODIED, BODIED_BODY);
+		const el = renderBodied(BODIED, BODIED_BODY, {
+			resolveField: (path, scope) => {
+				paths.push(path);
+				return real(path, scope);
+			},
+		});
+		const first = records(el)[0] as HTMLElement;
+		// Closed, and still resolved.
+		expect(
+			first.querySelector('.sheetsmith-record-body')?.getAttribute('hidden'),
+		).toBe('until-found');
+		const bodyValue = first.querySelector(
+			'.sheetsmith-record-body-fields .sheetsmith-record-value',
+		);
+		const summaryValue = first.querySelector(
+			'.sheetsmith-record-summary .sheetsmith-record-value',
+		);
+		expect(bodyValue?.textContent).toBe('101');
+		expect(summaryValue?.textContent).toBe('2');
+		expect(paths).toContain('fields.5.formula');
+		expect(paths).toContain('fields.6.formula');
+
+		// And the same two answers with every field on the summary line.
+		const flat = renderBodied(summaryOnly(BODIED));
+		expect(
+			Array.from(
+				(records(flat)[0] as HTMLElement).querySelectorAll('.sheetsmith-record-value'),
+			).map((one) => one.textContent),
+		).toEqual(['101', '2']);
+	});
+
+	it('is counted, summed, reset and pushed exactly as a summary field is', () => {
+		const data = readData(BODIED_BODY, BODIED);
+		const armourClass: CardConfig = {
+			id: 'armour_class',
+			type: 'card',
+			label: 'Armour class',
+			position: { col: 1, row: 4, width: 2, height: 1 },
+			derived: '10 + mod.self',
+		};
+		const sheet = (from: RecordSetConfig, body: string) =>
+			buildSheet({ name: 'L', components: [armourClass, from] }, [
+				{ config: armourClass, component: card, data: null, error: null },
+				{ config: from, component: recordSet, data: readData(body, from), error: null },
+			]).env;
+		const env = sheet(BODIED, BODIED_BODY);
+		expect(evaluate('count(features, Attuned)', env.sheet, callsFrom(env))).toBe(1);
+		expect(evaluate('sum(features, DC)', env.sheet, callsFrom(env))).toBe(15);
+		// The modifier sits in the body of a record nobody has opened, and its
+		// `when` is false until Attuned is set: it pushes once it is.
+		expect(env.sheet('armour_class')).toBe(10);
+		const attuned = BODIED_BODY.replace('Attuned: no', 'Attuned: yes');
+		expect(sheet(BODIED, attuned).sheet('armour_class')).toBe(11);
+		expect(sheet(summaryOnly(BODIED), attuned).sheet('armour_class')).toBe(11);
+
+		const reset = { resolve: () => 5, explain: () => null };
+		for (const action of ['empty', 'formula'] as const) {
+			const results = [BODIED, summaryOnly(BODIED)].map((from) => {
+				const result = recordSet.applyReset?.(
+					data,
+					from,
+					{ trigger: 'Long rest', action, to: '5' },
+					reset,
+				);
+				if (!result?.ok) throw new Error('expected a reset');
+				return recordSet.write(result.data, BODIED_BODY, from);
+			});
+			expect(results[0]).toBe(results[1]);
+			expect(results[0]).toContain(action === 'empty' ? 'DC: 0' : 'DC: 5');
+			expect(results[0]).toContain(
+				action === 'empty' ? 'Attuned: no' : 'Attuned: yes',
+			);
+		}
+		// `full` writes a body counter's ceiling as it writes a summary one's.
+		const bounded: RecordSetConfig = {
+			...BODIED,
+			fields: [
+				{ key: 'Uses', type: 'number', max: 3, placement: 'body' },
+				{ key: 'Attuned', type: 'toggle', placement: 'body' },
+			],
+		};
+		const full = recordSet.applyReset?.(
+			readData(BODIED_BODY, bounded),
+			bounded,
+			{ trigger: 'Long rest', action: 'full' },
+			reset,
+		);
+		if (!full?.ok) throw new Error('expected a reset');
+		expect(recordSet.write(full.data, BODIED_BODY, bounded)).toContain(
+			'Uses: 3\nRecharge',
+		);
+	});
+
+	it('draws a visible name beside every body field, contained in its accessible name', () => {
+		const el = renderBodied(BODIED, BODIED_BODY, {
+			modifiers: modifierContext(),
+		});
+		const first = records(el)[0] as HTMLElement;
+		const cells = bodyCells(first);
+		const kinds = new Set<string>();
+		for (const cell of cells) {
+			const shown = cell.querySelector(
+				':scope > .sheetsmith-card-abbreviation',
+			)?.textContent;
+			expect(shown, cell.className).toBeTruthy();
+			const control = cell.querySelector<HTMLElement>(
+				'button, select, input:not(.sheetsmith-pool-max)',
+			);
+			const said =
+				control?.getAttribute('aria-label') ??
+				cell.querySelector('.sheetsmith-sr-only')?.textContent ??
+				'';
+			expect(said, shown ?? '').toContain(shown);
+			kinds.add(cell.className.match(/field-(\w+)/)?.[1] ?? '');
+		}
+		expect(kinds).toEqual(
+			new Set(['number', 'toggle', 'level', 'computed', 'modifier']),
+		);
+		// Not hidden from a screen reader, which would skip a word a sighted reader sees.
+		expect(
+			first.querySelector(
+				'.sheetsmith-record-body-fields [aria-hidden="true"].sheetsmith-card-abbreviation',
+			),
+		).toBeNull();
+	});
+
+	it('tells a body ring its name is on screen, and leaves a summary ring as it was', () => {
+		const el = renderBodied();
+		const first = records(el)[0] as HTMLElement;
+		const rings = Array.from(
+			first.querySelectorAll<HTMLElement>(
+				'.sheetsmith-record-body-fields .sheetsmith-level-ring',
+			),
+		);
+		const [toggle, graded] = rings as [HTMLElement, HTMLElement];
+		expect(toggle.hasAttribute('title')).toBe(false);
+		// A named level's word, which the glyph cannot draw — and nothing else.
+		expect(graded.getAttribute('title')).toBe('Trained');
+
+		const flat = renderBodied(summaryOnly(BODIED));
+		const summaryRings = Array.from(
+			(records(flat)[0] as HTMLElement).querySelectorAll<HTMLElement>(
+				'.sheetsmith-level-ring',
+			),
+		);
+		expect(summaryRings.map((ring) => ring.getAttribute('title'))).toEqual([
+			'Second Wind Attuned',
+			'Second Wind Rank: Trained',
+		]);
+	});
+
+	it('draws no block for an unreadable fence, and the empty body field under one with no prose', () => {
+		const broken = renderBodied(
+			BODIED,
+			'\n### Broken\n```sheet\nUses: 1\nUses: 2\n```\nProse.\n',
+		);
+		expect(broken.querySelector('.sheetsmith-record-body-fields')).toBeNull();
+		expect(errors(broken).length).toBeGreaterThan(0);
+
+		const el = renderBodied();
+		const lucky = records(el)[1] as HTMLElement;
+		const block = blockOf(lucky) as HTMLElement;
+		expect(block).not.toBeNull();
+		const prose = block.nextElementSibling as HTMLTextAreaElement;
+		expect(prose.classList.contains('sheetsmith-record-body-input')).toBe(true);
+		expect(prose.value).toBe('');
+		expect(prose.placeholder).toBe('Write anything about this feature.');
+		// An unstored body number says it is empty, where a summary one is blank:
+		// a name followed by nothing reads as missing content in the body.
+		const dc = bodyCells(lucky)[1]?.querySelector<HTMLInputElement>(
+			'.sheetsmith-record-input',
+		);
+		expect(dc?.value).toBe('');
+		expect(dc?.placeholder).toBe('—');
+		const summaryUses = lucky.querySelector<HTMLInputElement>(
+			'.sheetsmith-record-summary .sheetsmith-record-input',
+		);
+		expect(summaryUses?.placeholder).toBe('');
+	});
+
+	it('reads an unknown placement as the summary line, with no error, and keeps it in the layout', () => {
+		const odd: RecordSetConfig = {
+			...config,
+			fields: [
+				{ key: 'Uses', type: 'number', placement: 'Body' as never },
+				{ key: 'Attuned', type: 'toggle', placement: 'header' as never },
+				{ key: 'Rank', type: 'level', secondary: true, hideHeading: true },
+			],
+		};
+		expect(recordSet.read(BODY, odd).ok).toBe(true);
+		const el = render(odd, BODY);
+		expect(el.querySelector('.sheetsmith-record-body-fields')).toBeNull();
+		expect(summaryCells(records(el)[0] as HTMLElement)).toHaveLength(3);
+		const layout = { name: 'L', components: [odd], triggers: [] };
+		const text = serialiseLayout(layout);
+		expect(text).toContain('"placement": "Body"');
+		expect(text).toContain('"placement": "header"');
+		expect(serialiseLayout(parseLayout(text))).toBe(text);
+	});
+
+	it('round-trips a layout carrying a body placement, and never writes the default', () => {
+		const layout = { name: 'L', components: [BODIED], triggers: [] };
+		const text = serialiseLayout(layout);
+		expect(text).toContain('"placement": "body"');
+		expect(text).not.toContain('"placement": "summary"');
+		expect(serialiseLayout(parseLayout(text))).toBe(text);
+	});
+
+	it('gives the block no role, no aria-hidden and no control of its own', () => {
+		const el = renderBodied(BODIED, BODIED_BODY, { modifiers: modifierContext() });
+		const block = blockOf(records(el)[0] as HTMLElement) as HTMLElement;
+		expect(block.hasAttribute('role')).toBe(false);
+		expect(block.hasAttribute('aria-hidden')).toBe(false);
+		// Every button in it belongs to a field.
+		for (const button of Array.from(block.querySelectorAll('button'))) {
+			expect(button.closest('.sheetsmith-record-field')).not.toBeNull();
+		}
+		expect(
+			Array.from(block.children).every((one) =>
+				one.classList.contains('sheetsmith-record-field'),
+			),
+		).toBe(true);
 	});
 });
