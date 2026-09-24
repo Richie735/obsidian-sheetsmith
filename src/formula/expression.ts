@@ -139,6 +139,14 @@ const AGGREGATES: ReadonlyMap<string, Aggregate> = new Map<string, Aggregate>([
 export const AGGREGATE_NAMES: readonly string[] = [...AGGREGATES.keys()];
 
 /**
+ * The two literals, which tokenize as names and name nothing: the parser reads
+ * them before it looks any name up. One list for the three readers — the
+ * reserved names below, the parser, and a paste's reading of which names are
+ * component ids (`rename-names.ts`).
+ */
+export const LITERAL_NAMES: readonly string[] = ['true', 'false'];
+
+/**
  * Names a layout function may not take, since a formula reading `floor` must
  * mean the one thing everywhere (SPEC §5).
  *
@@ -159,8 +167,7 @@ export const RESERVED_NAMES: readonly string[] = [
 	// about which calls exist — the same derivation `BUILTINS` gets above.
 	...AGGREGATE_NAMES,
 	// Literals the parser reads before it looks any name up.
-	'true',
-	'false',
+	...LITERAL_NAMES,
 ];
 
 /**
@@ -255,7 +262,13 @@ export class FormulaError extends Error {
 
 type Token =
 	| { kind: 'number'; value: number }
-	| { kind: 'name'; value: string }
+	| {
+			kind: 'name';
+			value: string;
+			/** Where the name sits in the source, for `nameSpans`; the parser reads neither. */
+			start: number;
+			end: number;
+	  }
 	| { kind: 'op'; value: string }
 	| { kind: 'end' };
 
@@ -302,7 +315,13 @@ function tokenize(source: string): Token[] {
 		}
 		const name = NAME.exec(rest);
 		if (name) {
-			tokens.push({ kind: 'name', value: name[0] });
+			const start = source.length - rest.length;
+			tokens.push({
+				kind: 'name',
+				value: name[0],
+				start,
+				end: start + name[0].length,
+			});
 			rest = rest.slice(name[0].length);
 			continue;
 		}
@@ -813,6 +832,53 @@ export function referencesName(source: string, name: string): boolean {
 		// Unparseable input references nothing; the evaluator reports it.
 		return false;
 	}
+}
+
+/** One name token in an expression's text, and where it sits. */
+export interface NameSpan {
+	/** The whole token, dotted path included: `abilities.DEX.value`. */
+	text: string;
+	/** Offset of its first character in the source. */
+	start: number;
+	/** Offset one past its last character. */
+	end: number;
+	/** Whether a `(` follows it, which makes it a call rather than a read. */
+	call: boolean;
+}
+
+/**
+ * Every name token in `source`, in order, or `null` where the text does not
+ * tokenize (`docs/features/component-copy-paste.md`, decision 2).
+ *
+ * The one reader that hands back positions, so a caller rewriting a name can
+ * keep every other byte of the expression as the author wrote it — which a
+ * text replace cannot, since `hp` is also the start of `hp_max`. The tokenizer
+ * already knows each offset when it pushes a name; this only returns it.
+ *
+ * Tokenizes and does not parse, like `referencesName`: a formula with a
+ * misplaced bracket still names what it names, and refusing it would leave a
+ * pasted copy reading the original's components for no reason the author
+ * could see.
+ */
+export function nameSpans(source: string): NameSpan[] | null {
+	let tokens: Token[];
+	try {
+		tokens = tokenize(source);
+	} catch {
+		return null;
+	}
+	const spans: NameSpan[] = [];
+	tokens.forEach((token, index) => {
+		if (token.kind !== 'name') return;
+		const next = tokens[index + 1];
+		spans.push({
+			text: token.value,
+			start: token.start,
+			end: token.end,
+			call: next?.kind === 'op' && next.value === '(',
+		});
+	});
+	return spans;
 }
 
 /** Parse an expression without evaluating it. Throws FormulaError. */
