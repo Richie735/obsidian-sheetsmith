@@ -18,6 +18,14 @@
  * holds to: a list of commands, each a title, an icon and a click, which is the
  * job that menu is for and the job a form in one is not.
  *
+ * **It also holds the menu's third section**, the clipboard's **Copy**,
+ * **Paste** and **Paste configuration** (`docs/features/component-copy-paste.md`
+ * §1), between the moves and **Remove**, and the declaration of the two chords
+ * that go with them, Mod+C and Mod+V. Those items are decided by the pane's
+ * host rather than here, since what they do is read and write the clipboard and
+ * the layout; this is only where the menu lists them, and they are never
+ * disabled, because whether there is anything to paste is only known by reading.
+ *
  * What it does not decide: *which* container "into" means is unchanged from the
  * indent button it replaces — the row's previous sibling in its own list — and
  * `reparent.ts`'s rules are called, never changed.
@@ -73,6 +81,33 @@ const CHORD_KEYS: Readonly<Record<string, keyof RowMoves>> = {
 export const MOVE_SHORTCUTS = Object.keys(CHORD_KEYS)
 	.map((key) => `Alt+${key}`)
 	.join(' ');
+
+/**
+ * The clipboard's two chords, declared beside the moves in the name button's
+ * `aria-keyshortcuts` (`docs/features/component-copy-paste.md` §2) — Meta on a
+ * Mac and Control elsewhere, since this attribute spells the key the platform
+ * presses. Paste configuration has none: every plausible chord is taken.
+ *
+ * Not added to the `title` hint: Mod+C and Mod+V are the one pair nobody needs
+ * telling.
+ */
+export function clipboardShortcuts(): string {
+	const key = Platform.isMacOS ? 'Meta' : 'Control';
+	return `${key}+C ${key}+V`;
+}
+
+/**
+ * The third section of a row's menu: what the clipboard can do with this row
+ * (`docs/features/component-copy-paste.md` §1). **Never disabled**: whether
+ * there is anything to paste is only known by reading the clipboard, which
+ * opening a menu must not do — the read is async, may prompt, and may fail — so
+ * a press that finds nothing usable says so under the row instead.
+ */
+export interface RowClipboard {
+	copy: () => void;
+	paste: () => void;
+	pasteConfiguration: () => void;
+}
 
 /**
  * The hint the name button's `title` carries after the row's name.
@@ -216,14 +251,18 @@ export function chordMove(event: KeyboardEvent, moves: RowMoves): RowMove | null
  * `event.detail` is 0 for a click Enter or Space produced, where a pointer
  * position would be wherever the pointer last happened to rest. Items in the
  * order the design lists them: the two reorders, the two moves across a level,
- * then **Remove**, apart from the moves and warned, since it is the one item
- * that takes something away. A refused move is a disabled item; the menu cannot
+ * the clipboard's three, then **Remove**, apart from the rest and warned, since
+ * it is the one item that takes something away. The clipboard's items name no
+ * one: the menu is reached through a button already named for its row, and the
+ * other party — what the clipboard holds — cannot be known without the read the
+ * menu must not make (`docs/UI.md` §6). A refused move is a disabled item; the menu cannot
  * say why (`MenuItem` has no description), and the chord and a drag both can.
  */
 export function openRowMenu(
 	button: HTMLElement,
 	event: MouseEvent,
 	moves: RowMoves,
+	clipboard: RowClipboard,
 	remove: () => void,
 ): void {
 	const menu = new Menu();
@@ -243,6 +282,21 @@ export function openRowMenu(
 	menu.addSeparator();
 	add(moves.into);
 	add(moves.out);
+	menu.addSeparator();
+	menu.addItem((item) =>
+		item.setTitle('Copy').setIcon('copy').onClick(clipboard.copy),
+	);
+	menu.addItem((item) =>
+		item.setTitle('Paste').setIcon('clipboard-paste').onClick(clipboard.paste),
+	);
+	// The format painter, which is Office's and Gutenberg's own metaphor for
+	// turning one thing into another's twin.
+	menu.addItem((item) =>
+		item
+			.setTitle('Paste configuration')
+			.setIcon('paintbrush')
+			.onClick(clipboard.pasteConfiguration),
+	);
 	menu.addSeparator();
 	menu.addItem((item) =>
 		item.setTitle('Remove').setIcon('trash-2').setWarning(true).onClick(remove),

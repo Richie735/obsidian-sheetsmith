@@ -5,7 +5,9 @@ import { LayoutEditorView } from '../view/layout-editor-view';
 import { Layout, parseLayout, serialiseLayout } from '../parse/layout';
 import { walkComponents } from '../parse/layout-walk';
 import { renderGrid } from '../view/grid-cells';
-import { openModal, pressModalButton } from '../test/modal';
+import { modalButton, modalIsOpen, openModal, pressModalButton } from '../test/modal';
+import { encodeComponentCopy, layoutFingerprint } from '../parse/component-clipboard';
+import { cardSet, CardSetConfig } from '../components/card-set';
 import { App, Notice } from '../test/obsidian-stub';
 import { fakePlugin, LAYOUT_FOLDER } from '../test/plugin';
 import { cancel, pressDown, release } from '../test/pointer';
@@ -3065,7 +3067,7 @@ describe('reparenting a tree row', () => {
 		]);
 	});
 
-	it('lists the five items in order, with two separators and Remove warned', async () => {
+	it('lists the eight items in order, with three separators and Remove warned', async () => {
 		harness = await open(deep());
 		openRowMenu(harness, 'melee');
 		expect(menuLines()).toEqual([
@@ -3074,6 +3076,10 @@ describe('reparenting a tree row', () => {
 			'---',
 			'Move into a container',
 			'Move out of "Defences"',
+			'---',
+			'Copy',
+			'Paste',
+			'Paste configuration',
 			'---',
 			'Remove',
 		]);
@@ -3304,8 +3310,10 @@ describe('reparenting a tree row', () => {
 	it('declares the chords on the name button, and says them after the name', async () => {
 		harness = await open(nested());
 		const name = control(harness, 'edit-armour');
+		// The four moves, then the clipboard's two chords
+		// (`docs/features/component-copy-paste.md` §2), Control away from a Mac.
 		expect(name.getAttribute('aria-keyshortcuts')).toBe(
-			'Alt+ArrowUp Alt+ArrowDown Alt+ArrowRight Alt+ArrowLeft',
+			'Alt+ArrowUp Alt+ArrowDown Alt+ArrowRight Alt+ArrowLeft Control+C Control+V',
 		);
 		expect(name.getAttribute('title')?.startsWith('Armour class')).toBe(true);
 		expect(name.getAttribute('title')).toContain('Alt+↑ ↓ reorder');
@@ -5689,10 +5697,13 @@ describe('the sample values row', () => {
 		row.focus();
 		expect(document.activeElement).toBe(row);
 
-		// A selection, which rebuilds both regions — the toggle's own element is
-		// gone by the time this resolves, so what comes back is a fresh one
-		// carrying the same token.
-		control(harness, 'edit-armour').click();
+		// A selection from the canvas, which rebuilds both regions without moving
+		// focus — the canvas's own pointerdown suppresses it — so the toggle's own
+		// element is gone by the time this resolves, and what comes back is a
+		// fresh one carrying the same token. A tree row's press used to stand in
+		// for this and no longer can: a press on a row puts focus on that row's
+		// name, which is the point of pressing it.
+		control(harness, 'preview-armour').click();
 		await settle(harness.pane);
 
 		expect(panelHeading(harness)).toBe('Armour class');
@@ -7421,5 +7432,536 @@ describe('a layout with promoted fields', () => {
 		expect((await harness.stored()).promotedFields).toEqual([
 			{ name: 'armour_class', property: 'ac' },
 		]);
+	});
+});
+
+describe('copying and pasting a component from the tree', () => {
+	/** What the fake clipboard was handed, in order. */
+	let written: string[];
+	/** What `readText` does: resolve with this, reject, or not exist at all. */
+	let reading: { text: string } | 'reject' | 'absent';
+	/** How many times `readText` was asked, for the claim that a menu makes no read. */
+	let reads: number;
+	let refuseWrite: boolean;
+
+	/**
+	 * A clipboard the test owns, shadowing happy-dom's prototype getter; the
+	 * pane reads it off its own window, which under happy-dom is this one.
+	 */
+	beforeEach(() => {
+		written = [];
+		reading = 'absent';
+		reads = 0;
+		refuseWrite = false;
+		const clipboard: Record<string, unknown> = {
+			writeText: async (text: string): Promise<void> => {
+				if (refuseWrite) throw new Error('The user said no.');
+				written.push(text);
+			},
+		};
+		Object.defineProperty(clipboard, 'readText', {
+			enumerable: true,
+			get: () =>
+				reading === 'absent'
+					? undefined
+					: async (): Promise<string> => {
+							reads++;
+							if (reading === 'reject') throw new Error('Not allowed.');
+							return (reading as { text: string }).text;
+						},
+		});
+		Object.defineProperty(navigator, 'clipboard', { configurable: true, value: clipboard });
+		Notice.messages = [];
+		Notice.instances = [];
+		for (const el of Array.from(document.body.querySelectorAll('.modal-container'))) {
+			el.remove();
+		}
+	});
+
+	afterEach(() => {
+		delete (navigator as unknown as { clipboard?: unknown }).clipboard;
+	});
+
+	/** The last notice, as its reader reads it. */
+	function lastNotice(): string | null | undefined {
+		return Notice.instances.at(-1)?.messageEl.textContent;
+	}
+
+	/** Press the last notice's Undo link. */
+	function pressUndo(): void {
+		const link = Notice.instances.at(-1)?.messageEl.querySelector('a.sheetsmith-undo');
+		if (!link) throw new Error('no undo in the last notice');
+		(link as HTMLElement).click();
+	}
+
+	/** Let a clipboard read, the paste it feeds and the write it makes settle. */
+	async function landed(from: Harness): Promise<void> {
+		await tick();
+		await settle(from.pane);
+		await tick();
+	}
+
+	/** The refusal line under a tree row, or null. */
+	function refusal(from: Harness, id: string): string | null {
+		return treeRow(from, `edit-${id}`).querySelector('.sheetsmith-field-error')?.textContent ?? null;
+	}
+
+	/** Copy a row from its menu, and hand back what the clipboard now holds. */
+	async function copyRow(from: Harness, id: string): Promise<string> {
+		pressMenu(from, id, 'Copy');
+		await tick();
+		const text = written.at(-1);
+		if (text === undefined) throw new Error('nothing was copied');
+		return text;
+	}
+
+	/** A `copy` or `paste` event on the document, as Mod+C and Mod+V send one. */
+	function clipboardEvent(type: 'copy' | 'paste', text?: string): Event {
+		const event = new Event(type, { bubbles: true, cancelable: true });
+		Object.defineProperty(event, 'clipboardData', {
+			value: { getData: (kind: string) => (kind === 'text/plain' ? (text ?? '') : '') },
+		});
+		document.body.dispatchEvent(event);
+		return event;
+	}
+
+	/** A layout with a group of two cards, one reading the other. */
+	function sheet(): Layout {
+		return {
+			name: 'Paste sheet',
+			columns: 12,
+			components: [
+				{
+					id: 'level',
+					type: 'card',
+					label: 'Level',
+					position: { col: 1, row: 1, width: 2, height: 1 },
+				},
+				{
+					id: 'defences',
+					type: 'group',
+					label: 'Defences',
+					position: { col: 3, row: 1, width: 6, height: 2 },
+					children: [
+						{
+							id: 'armour',
+							type: 'card',
+							label: 'Armour class',
+							position: { col: 1, row: 1, width: 3, height: 1 },
+							derived: '10 + level',
+						},
+						{
+							id: 'ward',
+							type: 'card',
+							label: 'Ward',
+							position: { col: 4, row: 1, width: 3, height: 1 },
+							derived: 'armour + 1',
+						},
+					],
+				},
+				{
+					id: 'abilities',
+					type: 'card-set',
+					label: 'Abilities',
+					position: { col: 1, row: 3, width: 6, height: 1 },
+					entries: [{ key: 'STR' }, { key: 'DEX' }],
+				},
+				{
+					id: 'saves',
+					type: 'card-set',
+					label: 'Saves',
+					position: { col: 7, row: 3, width: 6, height: 1 },
+					entries: [{ key: 'STR' }, { key: 'DEX' }, { key: 'CON' }],
+				},
+				{
+					id: 'hit_points',
+					type: 'pool',
+					label: 'Hit points',
+					position: { col: 1, row: 4, width: 4, height: 1 },
+					max: '10',
+				},
+			] as unknown as Layout['components'],
+			triggers: ['Long rest'],
+		};
+	}
+
+	it('offers the three items, never disabled, and opening the menu reads nothing', async () => {
+		harness = await open(sheet());
+		reading = { text: 'anything' };
+		openRowMenu(harness, 'level');
+		for (const title of ['Copy', 'Paste', 'Paste configuration']) {
+			expect(menuItem(title).classList.contains('is-disabled'), title).toBe(false);
+		}
+		expect(reads).toBe(0);
+	});
+
+	it('copies the wrapper, names the component, and says nothing about the vault or the folder', async () => {
+		harness = await open(sheet());
+		const text = await copyRow(harness, 'defences');
+		const wrapper = JSON.parse(text) as Record<string, unknown>;
+		expect(wrapper.sheetsmith).toBe('component');
+		expect(wrapper.version).toBe(1);
+		expect(wrapper.from).toEqual({
+			layout: 'Paste sheet',
+			fingerprint: layoutFingerprint('Test vault', `${LAYOUT_FOLDER}/Paste sheet.sheetsmith`),
+		});
+		expect((wrapper.component as ComponentConfig).children).toHaveLength(2);
+		expect(wrapper.context).toEqual({ functions: {}, definitions: [] });
+		expect(Notice.messages).toEqual(['Copied "Defences" to the clipboard.']);
+		expect(text).not.toContain('Test vault');
+		expect(text).not.toContain(LAYOUT_FOLDER);
+	});
+
+	it('says so when the clipboard refuses a copy, and writes nothing to the layout', async () => {
+		harness = await open(sheet());
+		refuseWrite = true;
+		const wrote = writes(harness);
+		pressMenu(harness, 'level', 'Copy');
+		await landed(harness);
+		expect(Notice.messages).toEqual(['Could not copy to the clipboard.']);
+		expect(wrote()).toBe(0);
+	});
+
+	it('pastes a group into its own layout as a working copy, selected and focused', async () => {
+		harness = await open(sheet());
+		reading = { text: await copyRow(harness, 'defences') };
+		pressMenu(harness, 'defences', 'Paste');
+		await landed(harness);
+
+		const stored = await harness.stored();
+		const copy = stored.components.find((one) => one.id === 'defences_2');
+		expect(copy?.label).toBe('Defences 2');
+		expect(
+			copy?.children?.map((one) => [
+				one.id,
+				one.label,
+				(one as unknown as Record<string, unknown>).derived,
+			]),
+		).toEqual([
+			['armour_2', 'Armour class 2', '10 + level'],
+			['ward_2', 'Ward 2', 'armour_2 + 1'],
+		]);
+		// Spliced after its row in the file, and placed at the foot of the grid.
+		expect(stored.components.map((one) => one.id).slice(0, 3)).toEqual([
+			'level',
+			'defences',
+			'defences_2',
+		]);
+		expect(copy?.position).toEqual({ col: 1, row: 5, width: 6, height: 2 });
+		expect(panelHeading(harness)).toContain('Defences 2');
+		expect(document.activeElement).toBe(control(harness, 'edit-defences_2'));
+		expect(treeRow(harness, 'edit-defences_2').classList.contains('sheetsmith-flash')).toBe(true);
+		// Within one layout, one sentence and nothing to check.
+		expect(lastNotice()).toBe('Pasted "Defences 2" with the 2 components inside it. Undo');
+	});
+
+	it('is one undo step, from the notice or the pane, and a stale undo is refused', async () => {
+		harness = await open(sheet());
+		const before = await harness.raw();
+		reading = { text: await copyRow(harness, 'level') };
+		pressMenu(harness, 'level', 'Paste');
+		await landed(harness);
+		expect(await harness.raw()).not.toBe(before);
+		pressUndo();
+		await landed(harness);
+		expect(await harness.raw()).toBe(before);
+
+		pressMenu(harness, 'level', 'Paste');
+		await landed(harness);
+		const undoOffer = Notice.instances.at(-1);
+		expect(await undo(harness)).toBe(true);
+		await settle(harness.pane);
+		expect(await harness.raw()).toBe(before);
+
+		pressMenu(harness, 'level', 'Paste');
+		await landed(harness);
+		const stale = Notice.instances.at(-1);
+		control(harness, 'edit-hit_points').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'label-hit_points'), 'Health');
+		await settle(harness.pane);
+		const edited = await harness.raw();
+		(stale?.messageEl.querySelector('a.sheetsmith-undo') as HTMLElement).click();
+		await settle(harness.pane);
+		expect(await harness.raw()).toBe(edited);
+		expect(Notice.messages).toContain('Sheetsmith did not undo: this layout has changed since.');
+		expect(undoOffer).not.toBe(stale);
+	});
+
+	it('names what to check when the copy came from another layout', async () => {
+		harness = await open(sheet());
+		const copy = encodeComponentCopy({
+			from: { layout: '5e 2014', fingerprint: 'elsewhere' },
+			component: {
+				id: 'hit_dice',
+				type: 'track',
+				label: 'Hit dice',
+				position: { col: 1, row: 1, width: 4, height: 1 },
+				count: 'level + mod(con) + prof',
+				reset: [{ trigger: 'long rest', action: 'formula', to: 'floor(level / 2)' }],
+			} as unknown as ComponentConfig,
+			context: { functions: { mod: 'mod(score) = floor((score - 10) / 2)' }, definitions: [] },
+		});
+		reading = { text: copy };
+		pressMenu(harness, 'level', 'Paste');
+		await landed(harness);
+		const stored = await harness.stored();
+		expect(stored.components.some((one) => one.id === 'hit_dice')).toBe(true);
+		expect(lastNotice()).toBe(
+			'Pasted "Hit dice" from "5e 2014". Check what these mean here: the "long rest" reset, mod(), level, con, prof. Undo',
+		);
+	});
+
+	it('reads a copy from the same file renamed as one from another layout', async () => {
+		harness = await open(sheet());
+		reading = { text: await copyRow(harness, 'level') };
+		const file = harness.app.vault.getFileByPath(`${LAYOUT_FOLDER}/Paste sheet.sheetsmith`);
+		if (!file) throw new Error('no layout file');
+		await harness.app.fileManager.renameFile(file, `${LAYOUT_FOLDER}/Renamed sheet.sheetsmith`);
+		await tick();
+		pressMenu(harness, 'level', 'Paste');
+		await landed(harness);
+		// Cross-layout, so it says where it came from; the names are still right.
+		expect(lastNotice()).toBe('Pasted "Level 2" from "Paste sheet". Undo');
+	});
+
+	it('refuses what is not a copied component under the row, and writes nothing', async () => {
+		harness = await open(sheet());
+		const before = await harness.raw();
+		const wrote = writes(harness);
+		for (const [text, sentence] of [
+			['', "The clipboard holds no Sheetsmith component. Copy one from a row's menu first."],
+			[
+				'{"sheetsmith": "component", "version": 9}',
+				'This component was copied from a newer version of Sheetsmith. Update the plugin to paste it.',
+			],
+			[
+				'{"sheetsmith": "component", "version": 1, "component": {"id": "x", "type": "card", "label": "X"}}',
+				'The copied component cannot be pasted: Component 1 ("X") needs a "position" object.',
+			],
+		] as const) {
+			reading = { text };
+			pressMenu(harness, 'level', 'Paste');
+			await landed(harness);
+			expect(refusal(harness, 'level')).toBe(sentence);
+		}
+		expect(await harness.raw()).toBe(before);
+		expect(wrote()).toBe(0);
+	});
+
+	it('refuses a paste over a layout that does not save, naming the fix, and throws nothing', async () => {
+		harness = await open(sheet());
+		// An unsaved duplicate label: `persist` refuses it and keeps it held, which
+		// is its contract for a field edit.
+		control(harness, 'edit-level').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'label-level'), 'Ward');
+		await settle(harness.pane);
+		const before = await harness.raw();
+		reading = {
+			text: encodeComponentCopy({
+				from: { layout: 'Elsewhere', fingerprint: 'x' },
+				component: { id: 'speed', type: 'card', label: 'Speed', position: { col: 1, row: 1, width: 2, height: 1 } },
+				context: { functions: {}, definitions: [] },
+			}),
+		};
+		pressMenu(harness, 'hit_points', 'Paste');
+		await landed(harness);
+		expect(refusal(harness, 'hit_points')).toBe(
+			'Nothing was pasted, because this layout does not save as it stands. Fix this first: Duplicate component label "Ward". Labels key note sections, so they must be unique.',
+		);
+		expect(await harness.raw()).toBe(before);
+	});
+
+	it('writes a pending edit only once a paste is accepted, and never for a refused one', async () => {
+		harness = await open(sheet());
+		control(harness, `edit-${SHEET_DESTINATION}`).click();
+		await settle(harness.pane);
+		// Typed and not yet committed: the library commits on change, not input.
+		const library = control<HTMLTextAreaElement>(harness, 'function-library');
+		library.value = 'half(x) = x / 2';
+		library.dispatchEvent(new Event('input'));
+		const wrote = writes(harness);
+
+		reading = { text: '' };
+		pressMenu(harness, 'level', 'Paste');
+		await tick();
+		await tick();
+		expect(refusal(harness, 'level')).toBe(
+			"The clipboard holds no Sheetsmith component. Copy one from a row's menu first.",
+		);
+		expect(wrote()).toBe(0);
+
+		reading = {
+			text: encodeComponentCopy({
+				from: { layout: 'Elsewhere', fingerprint: 'x' },
+				component: { id: 'speed', type: 'card', label: 'Speed', position: { col: 1, row: 1, width: 2, height: 1 } },
+				context: { functions: {}, definitions: [] },
+			}),
+		};
+		pressMenu(harness, 'level', 'Paste');
+		await landed(harness);
+		const stored = await harness.stored();
+		expect(stored.functions).toEqual(['half(x) = x / 2']);
+		expect(stored.components.some((one) => one.id === 'speed')).toBe(true);
+	});
+
+	it('refuses a paste canReparent refuses, in its words, and pushes no undo step', async () => {
+		harness = await open(sheet());
+		const before = await harness.raw();
+		// A group holding a group with children cannot sit inside Defences.
+		reading = {
+			text: encodeComponentCopy({
+				from: { layout: 'Elsewhere', fingerprint: 'x' },
+				component: {
+					id: 'outer',
+					type: 'group',
+					label: 'Outer',
+					position: { col: 1, row: 1, width: 4, height: 2 },
+					children: [
+						{
+							id: 'inner',
+							type: 'group',
+							label: 'Inner',
+							position: { col: 1, row: 1, width: 4, height: 1 },
+							children: [
+								{ id: 'leaf', type: 'card', label: 'Leaf', position: { col: 1, row: 1, width: 1, height: 1 } },
+							],
+						},
+					],
+				},
+				context: { functions: {}, definitions: [] },
+			}),
+		};
+		pressMenu(harness, 'armour', 'Paste');
+		await landed(harness);
+		expect(refusal(harness, 'armour')).toBe(
+			'"Outer" holds "Inner", which holds components, and moving "Outer" here would put "Inner" inside two containers, where it could hold nothing. Move the components out of "Inner" first.',
+		);
+		expect(await harness.raw()).toBe(before);
+		expect(await undo(harness)).toBe(false);
+	});
+
+	it('opens the paste box where the clipboard cannot be read, and pastes through it', async () => {
+		for (const state of ['absent', 'reject'] as const) {
+			harness = await open(sheet());
+			const text = await copyRow(harness, 'level');
+			reading = state;
+			pressMenu(harness, 'level', 'Paste');
+			await landed(harness);
+			const box = openModal();
+			expect(box.querySelector('.modal-title')?.textContent).toBe('Paste a component');
+			const area = box.querySelector('textarea') as HTMLTextAreaElement;
+			expect(Number(area.rows)).toBe(6);
+			expect(modalButton('Paste').disabled).toBe(true);
+
+			// A refusal stays in the box, under the textarea, with the text kept.
+			area.value = 'not a component';
+			area.dispatchEvent(new Event('input'));
+			pressModalButton('Paste');
+			expect(box.querySelector('.sheetsmith-field-error')?.textContent).toBe(
+				"The clipboard holds no Sheetsmith component. Copy one from a row's menu first.",
+			);
+			expect(area.value).toBe('not a component');
+
+			area.value = text;
+			area.dispatchEvent(new Event('input'));
+			pressModalButton('Paste');
+			await landed(harness);
+			expect(modalIsOpen()).toBe(false);
+			expect((await harness.stored()).components.some((one) => one.id === 'level_2')).toBe(true);
+			for (const el of Array.from(document.body.querySelectorAll('.modal-container'))) {
+				el.remove();
+			}
+		}
+	});
+
+	it('copies and pastes with Mod+C and Mod+V on a clicked name, and only there', async () => {
+		harness = await open(sheet());
+		const other = await open(fixture());
+		// `openView` replaces what the body holds, so the first pane is put back
+		// beside the second: two panes on one document, as in a split.
+		const first = harness.container.closest('.workspace-leaf');
+		if (first) document.body.prepend(first);
+		const otherBefore = await other.raw();
+
+		// Clicked, not focused by hand: the owner's probe found the click was
+		// what left focus on the body, where neither event could find a row.
+		control(harness, 'edit-level').click();
+		await settle(harness.pane);
+		const copied = clipboardEvent('copy');
+		await tick();
+		expect(copied.defaultPrevented).toBe(true);
+		const text = written.at(-1) ?? '';
+		expect(JSON.parse(text)).toMatchObject({ sheetsmith: 'component' });
+
+		const pasted = clipboardEvent('paste', text);
+		await landed(harness);
+		expect(pasted.defaultPrevented).toBe(true);
+		expect((await harness.stored()).components.some((one) => one.id === 'level_2')).toBe(true);
+		// The event's own text, with no read of the clipboard and so no box.
+		expect(reads).toBe(0);
+		expect(await other.raw()).toBe(otherBefore);
+
+		// Elsewhere in the pane, and on the layout's own row, the browser keeps it.
+		const count = (await harness.stored()).components.length;
+		for (const token of ['tree-menu-level', `edit-${SHEET_DESTINATION}`]) {
+			control(harness, token).focus();
+			expect(clipboardEvent('paste', text).defaultPrevented, token).toBe(false);
+			expect(clipboardEvent('copy').defaultPrevented, token).toBe(false);
+		}
+		await landed(harness);
+		expect((await harness.stored()).components).toHaveLength(count);
+		expect(control(harness, `edit-${SHEET_DESTINATION}`).hasAttribute('aria-keyshortcuts')).toBe(false);
+		expect(control(harness, 'edit-level').getAttribute('aria-keyshortcuts')).toContain(
+			'Control+C Control+V',
+		);
+	});
+
+	it('refuses a configuration of another type, naming both, and one already held', async () => {
+		harness = await open(sheet());
+		reading = { text: await copyRow(harness, 'hit_points') };
+		pressMenu(harness, 'level', 'Paste configuration');
+		await landed(harness);
+		expect(refusal(harness, 'level')).toBe(
+			'The clipboard holds a Pool, and "Level" is a Card. Paste configuration only goes onto a component of the same type.',
+		);
+
+		reading = { text: await copyRow(harness, 'level') };
+		pressMenu(harness, 'level', 'Paste configuration');
+		await landed(harness);
+		expect(refusal(harness, 'level')).toBe('"Level" already has this configuration.');
+	});
+
+	it('names the entry keys a configuration takes away, and Undo brings their values back', async () => {
+		harness = await open(sheet());
+		reading = { text: await copyRow(harness, 'abilities') };
+		pressMenu(harness, 'saves', 'Paste configuration');
+		await landed(harness);
+		expect(lastNotice()).toBe(
+			'Pasted the configuration of "Abilities" onto "Saves". Character notes keep any values stored under "CON", which no longer show. Undo brings them back. Undo',
+		);
+		// Marked where it landed, as a paste is (§6 step 5, §4 step 8).
+		expect(treeRow(harness, 'edit-saves').classList.contains('sheetsmith-flash')).toBe(true);
+
+		/** What a real Card set draws for a note holding all three values. */
+		const drawn = async (): Promise<string[]> => {
+			const config = (await harness.stored()).components.find(
+				(one) => one.id === 'saves',
+			) as CardSetConfig;
+			const read = cardSet.read('\n```sheet\nSTR: 8\nDEX: 14\nCON: 12\n```\n', config);
+			if (!read.ok || read.data === null) throw new Error('no data');
+			const el = document.createElement('div');
+			cardSet.render(el, config, read.data, {
+				resolved: {},
+				resolveField: () => null,
+				onChange: () => undefined,
+			});
+			return Array.from(el.querySelectorAll('.sheetsmith-card-input'), (node) => (node as HTMLInputElement).value);
+		};
+		expect(await drawn()).toEqual(['8', '14']);
+		pressUndo();
+		await landed(harness);
+		expect(await drawn()).toEqual(['8', '14', '12']);
 	});
 });

@@ -18,6 +18,15 @@
  * `reparent.ts`'s `canReparent` before any of them writes; a refusal is shown
  * in place rather than the gesture being silently ignored.
  *
+ * **The menu's third section is the clipboard** (`docs/features/component-copy-paste.md`):
+ * **Copy**, **Paste** and **Paste configuration**, and Mod+C and Mod+V on the
+ * name button. The chords arrive as `copy` and `paste` events on the pane's
+ * document rather than on the row, so this module keeps a map from each name
+ * button to its row's two gestures (`clipboardRow`) for the listener to ask.
+ * All of them call the host, which reads and writes the clipboard; a refusal is
+ * drawn under the row the same way a refused move is. A press on a row puts
+ * focus on its name, which is what the chords need to find it.
+ *
  * **The DOM nests the way the layout does.** A container's children render
  * into a `role="group"` wrapper directly after its row, indented as a whole and
  * ruled down its leading edge, so depth reads as a narrower card and one guide
@@ -36,6 +45,7 @@ import { placedComponentName } from './component-name';
 import { canReparent, forgetEmptyChildren, reparent } from './reparent';
 import {
 	chordMove,
+	clipboardShortcuts,
 	MOVE_SHORTCUTS,
 	moveHint,
 	openRowMenu,
@@ -87,14 +97,32 @@ export interface TreeHost {
 	 */
 	setCollapsed(ids: Iterable<string>): void;
 	/**
-	 * Write a removal, then say what it did with an offer to take it back.
+	 * Write an edit, then say what it did with an offer to take it back — a
+	 * removal, and a paste.
 	 *
 	 * One member rather than `persist` and a notice, because whether the offer
-	 * may be made depends on the write: only the host knows the bytes the
-	 * removal left on disk, and an undo pressed after something else changed
-	 * them would take that change with it.
+	 * may be made depends on the write: only the host knows the bytes the edit
+	 * left on disk, and an undo pressed after something else changed them would
+	 * take that change with it. It was `persistRemoval` while a removal was its
+	 * one caller; what it does, a guarded undo offer, was never about removing.
 	 */
-	persistRemoval(sentence: string): void;
+	persistUndoable(sentence: string): void;
+	/**
+	 * Put this row's component, and everything inside it, on the clipboard
+	 * (`docs/features/component-copy-paste.md` §3). Writes nothing to the layout.
+	 */
+	copy(entry: WalkEntry): void;
+	/**
+	 * Paste what the clipboard holds as the sibling after this row (§4).
+	 *
+	 * `text` is what a `paste` event already handed over, or null for the menu,
+	 * which reads the clipboard itself — the one difference between the two
+	 * routes in, so the chord and the item cannot disagree about what a paste
+	 * does. `refuse` draws a refusal under the row, which is the tree's to draw.
+	 */
+	paste(entry: WalkEntry, text: string | null, refuse: (message: string) => void): void;
+	/** Put the clipboard's configuration onto this row's component (§6). */
+	pasteConfiguration(entry: WalkEntry, refuse: (message: string) => void): void;
 	/**
 	 * The component id mid-drag, shared across every row so a drag started on
 	 * one row is read by whichever row the pointer is over, not only the one
@@ -174,6 +202,35 @@ function showMoveError(row: Setting, message: string | null): void {
 		{ cls: 'sheetsmith-field-error', attr: { role: 'alert' } },
 		(el) => el.setText(message),
 	);
+}
+
+/** What the clipboard's keyboard route can do with one row. */
+export interface ClipboardRow {
+	copy: () => void;
+	paste: (text: string) => void;
+}
+
+/**
+ * The clipboard gestures of each component row, by its name button.
+ *
+ * **How the keyboard route finds a row** (`docs/features/component-copy-paste.md`
+ * §2). Mod+C and Mod+V on a focused `<button>` with no selection send their
+ * `copy` and `paste` events to the document's body, not to the button, so the
+ * listener cannot be on the row: it is on the pane's document, and it asks this
+ * which row the focused element names. A `WeakMap` rather than a data attribute
+ * and a walk, so the row's own closures — its entry and the line a refusal is
+ * drawn under — come with it, and a button a redraw threw away is collected
+ * with its entry.
+ */
+const clipboardRows = new WeakMap<Element, ClipboardRow>();
+
+/**
+ * The clipboard gestures of the row whose name button this is, or null for any
+ * other element — the Layout row's name included, which takes neither chord,
+ * matching its having no menu.
+ */
+export function clipboardRow(focused: Element | null): ClipboardRow | null {
+	return focused === null ? null : (clipboardRows.get(focused) ?? null);
 }
 
 /** The id of the wrapper a container's children render into. */
@@ -329,6 +386,7 @@ function renderComponentRow(
 	bindDragSource(row, config, host);
 	bindDropTarget(row, layout, config, host);
 
+	const refuse = (message: string): void => showMoveError(row, message);
 	const moves = rowMoves(
 		layout,
 		entry,
@@ -341,7 +399,7 @@ function renderComponentRow(
 		// Declared twice (`docs/features/layout-editor-tree.md` §6): the attribute
 		// for assistive tech, and the `title` for a pointer, which adds the hint
 		// to the visible name rather than replacing it (`docs/UI.md` §6).
-		name.setAttribute('aria-keyshortcuts', MOVE_SHORTCUTS);
+		name.setAttribute('aria-keyshortcuts', `${MOVE_SHORTCUTS} ${clipboardShortcuts()}`);
 		name.setAttribute('title', `${config.label}\n${moveHint()}`);
 		// On the name button and nowhere else: the handle, the chevron and the
 		// menu button each have arrow keys of their own, or the menu's.
@@ -355,6 +413,10 @@ function renderComponentRow(
 			}
 			move.run();
 		});
+		clipboardRows.set(name, {
+			copy: () => host.copy(entry),
+			paste: (text) => host.paste(entry, text, refuse),
+		});
 	}
 
 	const menuButton = row.controlEl.createEl('button', {
@@ -367,7 +429,17 @@ function renderComponentRow(
 	setIcon(menuButton, 'ellipsis-vertical');
 	menuButton.dataset.sheetsmithFocus = `tree-menu-${config.id}`;
 	menuButton.addEventListener('click', (event) => {
-		openRowMenu(menuButton, event, moves, () => removeComponent(entry, tree));
+		openRowMenu(
+			menuButton,
+			event,
+			moves,
+			{
+				copy: () => host.copy(entry),
+				paste: () => host.paste(entry, null, refuse),
+				pasteConfiguration: () => host.pasteConfiguration(entry, refuse),
+			},
+			() => removeComponent(entry, tree),
+		);
 	});
 }
 
@@ -477,7 +549,7 @@ function removeComponent(entry: WalkEntry, tree: TreeRender): void {
 		child.position.row = nextFreeRow(layout.components);
 		layout.components.push(child);
 	}
-	host.persistRemoval(removalSentence(config, held.length));
+	host.persistUndoable(removalSentence(config, held.length));
 	host.focusAfterRedraw(`edit-${SHEET_DESTINATION}`);
 	if (host.selection !== SHEET_DESTINATION) host.select(SHEET_DESTINATION);
 	else host.redraw();
@@ -522,12 +594,29 @@ function renderRow(
 		text: name,
 	});
 	button.dataset.sheetsmithFocus = `edit-${id}`;
+	// What a paste marks once it lands (`docs/features/component-copy-paste.md`
+	// §4 step 8): the pane's own flash, read over the whole pane.
+	row.settingEl.dataset.sheetsmithFlash = `tree-${id}`;
 	if (selected) button.setAttribute('aria-current', 'true');
-	button.addEventListener('click', () => host.select(id));
+	/*
+	 * **A press on a row lands focus on its name**, wherever on the row it was.
+	 * A click does not focus a `<button>` in Chromium on macOS or in WebKit, so
+	 * the redraw that selecting makes had no focused control to restore and
+	 * dropped focus to the body — where the row's Mod+C and Mod+V, and its
+	 * Alt+arrow moves, answer nothing (`docs/features/component-copy-paste.md`
+	 * §2, the vault check). Focused before the select, so the redraw's own
+	 * restore carries it to the rebuilt button, and so a press on a row already
+	 * selected, which redraws nothing, lands it too.
+	 */
+	const choose = (): void => {
+		button.focus({ preventScroll: true });
+		host.select(id);
+	};
+	button.addEventListener('click', choose);
 	row.settingEl.addEventListener('click', (event) => {
 		const target = event.target as HTMLElement | null;
 		if (target?.closest('button, input, select, textarea') !== null) return;
-		host.select(id);
+		choose();
 	});
 	return row;
 }

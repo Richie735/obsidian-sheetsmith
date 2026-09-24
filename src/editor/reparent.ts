@@ -21,8 +21,10 @@
  * its own: the rule is the other half of `canReparent`'s depth check, and two
  * consumers is below `docs/PATTERNS.md` §1's rung for extracting. The remove
  * needs only that half — its promoted children only rise, and rising never
- * makes an empty list illegal — so `dropIllegalEmptyChildren` stays private to
- * the move.
+ * makes an empty list illegal. `dropIllegalEmptyChildren` is exported for a
+ * paste (`docs/features/component-copy-paste.md`), which lands a subtree that
+ * may carry a hand-written `children: []` two deep exactly as a move does, and
+ * calls the rule rather than restating it.
  *
  * The dependency runs both ways: `reparent()` also draws on `tree.ts`'s own
  * `nextFreeRow` for the destination row a cross-container move lands on,
@@ -245,7 +247,10 @@ export function forgetEmptyChildren(container: ComponentConfig | null): void {
  * an empty list at a depth that may hold one is the author's spelling, and
  * this move did not touch it.
  */
-function dropIllegalEmptyChildren(config: ComponentConfig, depth: number): void {
+export function dropIllegalEmptyChildren(
+	config: ComponentConfig,
+	depth: number,
+): void {
 	const children = config.children;
 	if (!children) return;
 	if (children.length === 0) {

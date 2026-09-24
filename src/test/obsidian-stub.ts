@@ -360,6 +360,32 @@ const ICONS: Readonly<Record<string, readonly IconShape[]>> = {
 		['rect', { width: '14', height: '14', x: '8', y: '8', rx: '2', ry: '2' }],
 		['path', { d: 'M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2' }],
 	],
+	// A tree row's **Paste** and **Paste configuration**
+	// (`docs/features/component-copy-paste.md` §1), copied out of Obsidian
+	// 1.13.7's own icon table rather than from Lucide's site, so the glyph a
+	// shot draws is the one the app draws. The rect is `[x, y, w, h, rx]` there.
+	'clipboard-paste': [
+		['path', { d: 'M11 14h10' }],
+		['path', { d: 'M16 4h2a2 2 0 0 1 2 2v1.344' }],
+		['path', { d: 'm17 18 4-4-4-4' }],
+		['path', { d: 'M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 1.793-1.113' }],
+		['rect', { x: '8', y: '2', width: '8', height: '4', rx: '1' }],
+	],
+	paintbrush: [
+		['path', { d: 'm14.622 17.897-10.68-2.913' }],
+		[
+			'path',
+			{
+				d: 'M18.376 2.622a1 1 0 1 1 3.002 3.002L17.36 9.643a.5.5 0 0 0 0 .707l.944.944a2.41 2.41 0 0 1 0 3.408l-.944.944a.5.5 0 0 1-.707 0L8.354 7.348a.5.5 0 0 1 0-.707l.944-.944a2.41 2.41 0 0 1 3.408 0l.944.944a.5.5 0 0 0 .707 0z',
+			},
+		],
+		[
+			'path',
+			{
+				d: 'M9 8c-1.804 2.71-3.97 3.46-6.583 3.948a.507.507 0 0 0-.302.819l7.32 8.883a1 1 0 0 0 1.185.204C12.735 20.405 16 16.792 16 15',
+			},
+		],
+	],
 	// An empty modifier cell, which is the entry point for adding one: `plus`
 	// rather than a fainter `zap`, because "none" against "applying" would then be
 	// a difference of fill strength alone (`docs/UI.md` §6).
@@ -1012,6 +1038,12 @@ export class TFolder extends TAbstractFile {
 
 export class Vault {
 	private files = new Map<string, { file: TFile; content: string }>();
+	/**
+	 * The vault's name, which the app takes from its folder. Settable, because
+	 * the one reader (a copied component's fingerprint,
+	 * `parse/component-clipboard.ts`) is about telling two vaults apart.
+	 */
+	name = 'Test vault';
 	private folders = new Map<string, TFolder>();
 	/**
 	 * Who is listening for which file event.
@@ -1038,6 +1070,10 @@ export class Vault {
 	 * and call it green.
 	 */
 	private root = new TFolder('/', this);
+
+	getName(): string {
+		return this.name;
+	}
 
 	/**
 	 * The root is in the folder map, because in the app it is a map entry.

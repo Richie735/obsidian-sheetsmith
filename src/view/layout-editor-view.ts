@@ -137,6 +137,13 @@ export class LayoutEditorView extends FileView implements LayoutEditorHost {
 		this.registerEvent(
 			this.app.vault.on('modify', (file) => void this.onModify(file)),
 		);
+		// Mod+C and Mod+V on a tree row (`docs/features/component-copy-paste.md`
+		// §2). On the document, because a focused button with no selection sends
+		// both there rather than to itself; the editor answers only for its own
+		// rows. Through `registerDomEvent`, so closing the pane takes them down.
+		const doc = this.containerEl.ownerDocument;
+		this.registerDomEvent(doc, 'copy', (event) => this.editor.clipboardEvent(event));
+		this.registerDomEvent(doc, 'paste', (event) => this.editor.clipboardEvent(event));
 	}
 
 	getIcon(): string {
