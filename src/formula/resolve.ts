@@ -150,17 +150,49 @@ function readPath(record: Record<string, unknown>, field: string): unknown {
 }
 
 /**
- * Every expression this component's configuration holds, in declaration order.
+ * Every expression a component's configuration holds, handed to `visit` in
+ * declaration order with a way to replace it — expanding a `*` in a declaration
+ * over whatever the config has there, through objects and arrays alike.
  *
- * The counterpart to `readPath`: that answers *one* field for the resolver, and
- * this answers the whole family, expanding a `*` in a declaration over whatever
- * the config has there. Two walkers rather than one because they answer two
- * questions — a resolver is handed a concrete field and must not guess, and this
- * is handed a pattern and has nothing else to do — and the second cannot be
- * written in terms of the first, since expanding `*` means reading the array
- * lengths the first is never given.
+ * **The one walk from a `formulaFields` pattern to the strings it names**, read
+ * by `formulaTexts` below and written by a paste's rewrite
+ * (`editor/paste.ts`). It was spelled twice, once each way, and two copies of
+ * "what does `columns.*.formula` reach" could only be tested for still agreeing
+ * — `docs/PATTERNS.md` §1's "share the application, not the number". `readPath`
+ * above stays separate: it is handed one concrete field and must not guess.
+ */
+export function visitFormulaFields(
+	component: Pick<ComponentDefinition, 'formulaFields'>,
+	config: ComponentConfig,
+	visit: (text: string, replace: (next: string) => void) => void,
+): void {
+	const walk = (current: unknown, segments: readonly string[]): void => {
+		const [head, ...rest] = segments;
+		if (head === undefined || typeof current !== 'object' || current === null) return;
+		const holder = current as Record<string, unknown>;
+		const keys =
+			head === '*' ? Object.keys(holder) : Object.hasOwn(holder, head) ? [head] : [];
+		for (const key of keys) {
+			if (rest.length > 0) {
+				walk(holder[key], rest);
+				continue;
+			}
+			const value = holder[key];
+			if (typeof value === 'string') {
+				visit(value, (next) => {
+					holder[key] = next;
+				});
+			}
+		}
+	};
+	for (const pattern of component.formulaFields) walk(config, pattern.split('.'));
+}
+
+/**
+ * Every non-blank expression this component's configuration holds, in
+ * declaration order.
  *
- * Its one consumer today is the modifier accepting set (SPEC §5), which asks
+ * Its first consumer is the modifier accepting set (SPEC §5), which asks
  * whether any formula on a component mentions `mod.self`. Held per expression
  * rather than joined into one string: `referencesName` tokenises, and one
  * unparseable definition joined to the rest would report the whole component as
@@ -171,28 +203,9 @@ export function formulaTexts(
 	config: ComponentConfig,
 ): readonly string[] {
 	const found: string[] = [];
-	const collect = (current: unknown, segments: readonly string[]): void => {
-		const [head, ...rest] = segments;
-		if (head === undefined) {
-			if (typeof current === 'string' && current.trim() !== '') found.push(current);
-			return;
-		}
-		if (typeof current !== 'object' || current === null) return;
-		if (head === '*') {
-			for (const value of Object.values(current)) collect(value, rest);
-			return;
-		}
-		if (Array.isArray(current)) {
-			const index = Number(head);
-			if (!Number.isInteger(index) || index < 0) return;
-			collect(current[index], rest);
-			return;
-		}
-		collect((current as Record<string, unknown>)[head], rest);
-	};
-	for (const pattern of component.formulaFields) {
-		collect(config, pattern.split('.'));
-	}
+	visitFormulaFields(component, config, (text) => {
+		if (text.trim() !== '') found.push(text);
+	});
 	return found;
 }
 
