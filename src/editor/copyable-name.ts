@@ -9,6 +9,7 @@
  */
 
 import { Notice } from 'obsidian';
+import { writeClipboard } from '../ui/clipboard';
 
 /**
  * A name in code type that copies itself when pressed.
@@ -54,17 +55,16 @@ export function copyableName(
 	code.setAttribute('role', 'button');
 	code.setAttribute('aria-label', `Copy "${named}" to the clipboard`);
 	if (options?.title !== undefined) code.setAttribute('title', options.title);
-	const copy = () => {
-		void navigator.clipboard.writeText(text).then(
-			() => new Notice(`Copied "${text}"`),
-			() => new Notice('Could not copy to the clipboard.'),
-		);
+	// The chip's own window, where it used to reach for the global one
+	// (`docs/PATTERNS.md` §5); the same window in every pane that is not a popout.
+	const copy = async (): Promise<void> => {
+		if (await writeClipboard(code.win, text)) new Notice(`Copied "${text}"`);
 	};
-	code.addEventListener('click', copy);
+	code.addEventListener('click', () => void copy());
 	code.addEventListener('keydown', (event) => {
 		if (event.key !== 'Enter' && event.key !== ' ') return;
 		event.preventDefault();
-		copy();
+		void copy();
 	});
 	return code;
 }
