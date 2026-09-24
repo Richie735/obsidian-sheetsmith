@@ -382,6 +382,12 @@ function parseChildren(
 		throw new LayoutParseError(`${where} "children" must be an array.`);
 	}
 	if (!mayHoldChildren(depth)) {
+		// An empty list holds nothing to move up, so it names the key instead.
+		if (value.length === 0) {
+			throw new LayoutParseError(
+				`${where} cannot have a "children" list: it already sits inside ${MAX_CONTAINER_DEPTH} containers, and a container may hold containers only one level deep. Remove its empty "children" list.`,
+			);
+		}
 		throw new LayoutParseError(
 			`${where} cannot hold components: it already sits inside ${MAX_CONTAINER_DEPTH} containers, and a container may hold containers only one level deep. Move these components up a level.`,
 		);

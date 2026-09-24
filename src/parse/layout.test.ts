@@ -907,6 +907,24 @@ describe('parseLayout: components inside components', () => {
 		expect(() => parseLayout(source)).toThrow(LayoutParseError);
 		expect(() => parseLayout(source)).toThrow(/"DEEP"/);
 		expect(() => parseLayout(source)).toThrow(/one level deep/);
+		expect(() => parseLayout(source)).toThrow(/Move these components up a level\.$/);
+	});
+
+	it('refuses an empty list there too, naming the key rather than components it lacks', () => {
+		// Still refused, since the rule is the key and not what it holds; but
+		// "move these components up" named a fix with nothing to act on.
+		const source = withChildren([
+			{
+				id: 'inner',
+				type: 'group',
+				label: 'Inner',
+				position: at(1),
+				children: [{ ...leaf('deep'), children: [] }],
+			},
+		]);
+		expect(() => parseLayout(source)).toThrow(
+			'Component 1 ("Outer") component 1 ("Inner") component 1 ("DEEP") cannot have a "children" list: it already sits inside 2 containers, and a container may hold containers only one level deep. Remove its empty "children" list.',
+		);
 	});
 
 	it('refuses it whatever type the component is', () => {
