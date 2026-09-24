@@ -16,6 +16,7 @@ import { LayoutEditorView } from '../src/view/layout-editor-view';
 import { Layout } from '../src/parse/layout';
 import { fakePlugin } from '../src/test/plugin';
 import { LayoutSource, plantLayout, watchLayoutFile } from './stub-app';
+import { CLIPBOARD_FIXTURES } from './samples';
 
 /** Which of the pane's own controls a view wants driven. */
 export interface PaneView {
@@ -111,6 +112,21 @@ export interface PaneView {
 	 * by `driveTree` too, because a detached button cannot take focus.
 	 */
 	treeKey?: string;
+	/**
+	 * `<id>:<fixture>[:config]` — paste onto that tree row
+	 * (`docs/features/component-copy-paste.md` §10). `<fixture>` names one of
+	 * `CLIPBOARD_FIXTURES`, copies made in another layout, or is `self`, which
+	 * has the pane copy that same row first through its own Mod+C.
+	 *
+	 * The paste goes the keyboard's way: the row's name focused and a `paste`
+	 * event dispatched with the text in a `DataTransfer`, which is what the app
+	 * delivers for Mod+V and needs no clipboard permission. `:config` presses the
+	 * row's **Paste configuration** instead, through its menu, which reads the
+	 * clipboard — so the page's clipboard is replaced by one that answers with
+	 * the fixture, for that read and for the copy `self` makes through the pane's
+	 * own `copy` event.
+	 */
+	paste?: string;
 }
 
 export interface PaneHost {
@@ -206,6 +222,71 @@ export async function driveTree(pane: HTMLElement, view: PaneView): Promise<void
 			new KeyboardEvent('keydown', { key, altKey: true, bubbles: true, cancelable: true }),
 		);
 	}
+	if (view.paste !== undefined) await drivePaste(pane, view.paste);
+}
+
+/**
+ * A clipboard the page owns, in place of the browser's: headless Chrome grants
+ * neither a read nor a write, and a shot must not depend on a permission. The
+ * pane reads it off its own window, which is this one.
+ */
+function fakeClipboard(): { text: string } {
+	const held = { text: '' };
+	Object.defineProperty(navigator, 'clipboard', {
+		configurable: true,
+		value: {
+			writeText: async (text: string): Promise<void> => {
+				held.text = text;
+			},
+			readText: async (): Promise<string> => held.text,
+		},
+	});
+	return held;
+}
+
+/** Drive `view.paste`, in `<id>:<fixture>[:config]` form. */
+async function drivePaste(pane: HTMLElement, spec: string): Promise<void> {
+	const [id, fixture, mode] = spec.split(':');
+	const name = await control(pane, `edit-${id ?? ''}`);
+	if (name === null || fixture === undefined) {
+		console.warn(`Bad paste "${spec}"; want "<id>:<fixture>[:config]".`);
+		return;
+	}
+	const clipboard = fakeClipboard();
+	if (fixture === 'self') {
+		name.focus();
+		document.body.dispatchEvent(new ClipboardEvent('copy', { bubbles: true, cancelable: true }));
+		// The copy's write resolves on the next turn.
+		await new Promise((resolve) => window.setTimeout(resolve, 0));
+	} else {
+		const make = CLIPBOARD_FIXTURES[fixture];
+		if (make === undefined) {
+			console.warn(`No clipboard fixture "${fixture}". Try ${Object.keys(CLIPBOARD_FIXTURES).join(', ')} or self.`);
+			return;
+		}
+		clipboard.text = make();
+	}
+	if (mode === 'config') {
+		const button = await control(pane, `tree-menu-${id ?? ''}`);
+		button?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }));
+		const item = Array.from(document.body.querySelectorAll('.menu .menu-item')).find(
+			(el) => el.querySelector('.menu-item-title')?.textContent === 'Paste configuration',
+		);
+		if (!(item instanceof HTMLElement)) {
+			console.warn('No Paste configuration item on the menu.');
+			return;
+		}
+		item.click();
+		return;
+	}
+	// Mod+V as the app delivers it: a `paste` event on the document, carrying
+	// the text, with the row's name focused.
+	const data = new DataTransfer();
+	data.setData('text/plain', clipboard.text);
+	name.focus();
+	document.body.dispatchEvent(
+		new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }),
+	);
 }
 
 /**

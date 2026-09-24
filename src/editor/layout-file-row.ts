@@ -45,6 +45,7 @@
  */
 
 import { App, Notice, Setting, TFile } from 'obsidian';
+import { writeClipboard } from '../ui/clipboard';
 import { describedRow } from './described-row';
 import { ConfirmModal } from '../ui/confirm-modal';
 import { NEW_LAYOUT_LABEL, promptNewLayout } from './new-layout';
@@ -249,33 +250,9 @@ async function copyLayoutJson(
 		new Notice(error instanceof Error ? error.message : String(error));
 		return;
 	}
-	try {
-		await container.win.navigator.clipboard.writeText(text);
-	} catch {
-		/*
-		 * Deliberately the same words `src/editor/copyable-name.ts` gives,
-		 * and deliberately not the same code. The argument is here rather
-		 * than cited, because that file's header does not make it: it argues
-		 * only why the module exists at all, and says nothing about the
-		 * clipboard write or about this sentence.
-		 *
-		 * `copyableName` exports a builder for a `<code>` control with the
-		 * copy bound inside it, so a settings-row button cannot reach the
-		 * write without splitting the function in two — which is a change to
-		 * a shipped control for the benefit of one caller.
-		 *
-		 * And only half of what such a module would hold is actually common:
-		 * this failure sentence is shared, while the success sentences are
-		 * not — a chip says `Copied "x"` about a name, and this says
-		 * `Copied "x" to the clipboard.` about a file. So the shared thing is
-		 * one short sentence rather than the gesture, which `docs/PATTERNS.md`
-		 * §1's one-step tier would extract on a second consumer if the
-		 * *whole* policy were shared. **A third caller is where that gets
-		 * revisited**, and it is the honest cost of two copies until then.
-		 */
-		new Notice('Could not copy to the clipboard.');
-		return;
-	}
+	// The write and its failure sentence are shared with the two other copy
+	// gestures (`ui/clipboard.ts`); the success sentence is this row's own.
+	if (!(await writeClipboard(container.win, text))) return;
 	// The layout is named because the row can only show one at a time and a
 	// bare "Copied." leaves a reader wondering which; "to the clipboard" is
 	// the half that says where, in the failure sentence's own words.

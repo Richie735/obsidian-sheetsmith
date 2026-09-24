@@ -318,3 +318,18 @@ describe('reserved names and builtins agree', () => {
 		);
 	});
 });
+
+describe('the line each definition was written as', () => {
+	it('is the line of the definition that stands, trimmed', () => {
+		const parsed = parseFunctions([
+			'  half(x) = x / 2  ',
+			'mod(score) = floor((',
+			'mod(score) = floor((score - 10) / 2)',
+			'mod(score) = 0',
+		]);
+		expect([...parsed.lines]).toEqual([
+			['half', 'half(x) = x / 2'],
+			['mod', 'mod(score) = floor((score - 10) / 2)'],
+		]);
+	});
+});

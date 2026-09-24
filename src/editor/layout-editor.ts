@@ -23,6 +23,7 @@ import { attachFormulaSuggest, FormulaSuggest } from './formula-suggest';
 import { focusToken } from './focus-token';
 import { ConfirmModal } from '../ui/confirm-modal';
 import { offerUndo } from '../ui/undo-notice';
+import { writeClipboard } from '../ui/clipboard';
 import { NEW_LAYOUT_LABEL } from './new-layout';
 import { isResolvedLayout, listLayouts } from '../layouts';
 import { ListContext } from './list-fields';
@@ -32,9 +33,19 @@ import { Layout, parseLayout, serialiseLayout } from '../parse/layout';
 import { WalkEntry, walkComponents } from '../parse/layout-walk';
 import { parseFunctions } from '../formula/functions';
 import { Vocabulary, vocabularySource } from '../formula/vocabulary';
-import { nextFreeRow, renderTree, SHEET_DESTINATION } from './tree';
+import { clipboardRow, nextFreeRow, renderTree, SHEET_DESTINATION } from './tree';
 import { ComponentConfig } from '../types';
 import { UndoStack } from './undo-stack';
+import { uniqueId, uniqueLabel } from './unique-names';
+import {
+	encodeComponentCopy,
+	layoutFingerprint,
+	readComponentCopy,
+} from '../parse/component-clipboard';
+import { copiedComponent, pasteComponent, pasteConfiguration } from './paste';
+import { copyContext } from './paste-dependencies';
+import { configurationSentence, pasteSentence } from './paste-notice';
+import { PasteBoxModal } from './paste-box';
 import { childIsPlaced } from '../view/grid-cells';
 
 /**
@@ -670,7 +681,14 @@ export class LayoutEditorSection {
 				return host.collapsed;
 			},
 			setCollapsed: (ids) => host.setCollapsed(ids),
-			persistRemoval: (sentence) => this.persistRemoval(sentence),
+			persistUndoable: (sentence) => this.persistUndoable(sentence),
+			copy: (entry) => this.copyComponent(entry),
+			paste: (entry, text, refuse) =>
+				this.pasteFrom(text, refuse, (value) => this.pasteText(entry.config.id, value)),
+			pasteConfiguration: (entry, refuse) =>
+				this.pasteFrom(null, refuse, (value) =>
+					this.pasteConfigurationText(entry.config.id, value),
+				),
 			drag: this.treeDrag,
 		});
 
@@ -679,7 +697,9 @@ export class LayoutEditorSection {
 		this.restoreFieldErrors(container);
 
 		if (this.pendingFlash !== null) {
-			this.flash(panel, this.pendingFlash);
+			// Over the whole pane rather than the panel alone, since a paste
+			// marks the tree row it landed at.
+			this.flash(container, this.pendingFlash);
 			this.pendingFlash = null;
 		}
 
@@ -871,34 +891,242 @@ export class LayoutEditorSection {
 	}
 
 	/**
-	 * Write a removal from the tree, then say what it did and offer to take it
-	 * back (`docs/features/layout-editor-tree.md` §5).
+	 * Write an edit from the tree — a removal or a paste — then say what it did
+	 * and offer to take it back (`docs/features/layout-editor-tree.md` §5,
+	 * `docs/features/component-copy-paste.md` §4).
 	 *
-	 * **The undo is guarded by the bytes the removal left**, which is
+	 * **The undo is guarded by the bytes the edit left**, which is
 	 * `SheetView.restoreDocument`'s guard read for a layout: an author who
 	 * removed, then edited, then pressed a stale **Undo** would otherwise have
 	 * the edit undone and not the removal. So the press undoes only while this
 	 * pane still holds that file and that text, and says why it did nothing
 	 * otherwise — a different layout opened in between is the same refusal,
-	 * since the removal is not in its history.
+	 * since the edit is not in its history.
 	 *
 	 * `persist` sets `onDisk` before it awaits the write, so the bytes are known
 	 * here synchronously. Where the layout would not serialise, `persist` said
 	 * so and wrote nothing, and there is nothing to offer an undo of.
 	 */
-	private persistRemoval(sentence: string): void {
+	private persistUndoable(sentence: string): void {
 		const before = this.onDisk;
 		void this.persist();
 		const file = this.file;
-		const removed = this.onDisk;
-		if (removed === before) return;
+		const written = this.onDisk;
+		if (written === before) return;
 		offerUndo(sentence, () => {
-			if (this.file !== file || this.onDisk !== removed) {
+			if (this.file !== file || this.onDisk !== written) {
 				new Notice('Sheetsmith did not undo: this layout has changed since.');
 				return;
 			}
 			this.undo();
 		});
+	}
+
+	/**
+	 * Which layout file this is, as a copy's `from` records it and a paste
+	 * compares it (`parse/component-clipboard.ts`): the vault's name and the
+	 * file's path, hashed so neither is readable in the clipboard text.
+	 */
+	private fingerprint(file: TFile): string {
+		return layoutFingerprint(this.plugin.app.vault.getName(), file.path);
+	}
+
+	/**
+	 * Put a tree row's component on the clipboard
+	 * (`docs/features/component-copy-paste.md` §3): the component and what it
+	 * holds, and the little of this layout a paste elsewhere needs to say what
+	 * the copy depends on. Writes nothing to the layout, so no undo step.
+	 */
+	private copyComponent(entry: WalkEntry): void {
+		const layout = this.layout;
+		const file = this.file;
+		const root = this.rootEl;
+		if (layout === null || file === null || root === null) return;
+		const component = copiedComponent(entry);
+		const text = encodeComponentCopy({
+			from: { layout: file.basename, fingerprint: this.fingerprint(file) },
+			component,
+			context: copyContext(layout, component),
+		});
+		const label = entry.config.label;
+		void writeClipboard(root.win, text).then((written) => {
+			if (written) new Notice(`Copied "${label}" to the clipboard.`);
+		});
+	}
+
+	/**
+	 * Run a paste on text a `paste` event handed over, or on the clipboard read
+	 * here for the menu — and where that read is missing or refused, open the box
+	 * the text can be pasted into instead (§7). `apply` answers a refusal to
+	 * draw, or null where the paste landed.
+	 *
+	 * **The box opens because the read failed, never because of the platform**,
+	 * so a device whose read works never sees it, and Mod+V never needs it.
+	 */
+	private pasteFrom(
+		text: string | null,
+		refuse: (message: string) => void,
+		apply: (text: string) => string | null,
+	): void {
+		if (text !== null) {
+			const refusal = apply(text);
+			if (refusal !== null) refuse(refusal);
+			return;
+		}
+		void this.readClipboard().then((read) => {
+			if (read === null) {
+				new PasteBoxModal(this.plugin.app, apply).open();
+				return;
+			}
+			const refusal = apply(read);
+			if (refusal !== null) refuse(refusal);
+		});
+	}
+
+	/**
+	 * The clipboard's text, read through the pane's own window, or null where
+	 * this device offers no read or refuses it. A read that returns text —
+	 * any text, the empty string included — is a read, and the paste says what
+	 * it found there.
+	 */
+	private async readClipboard(): Promise<string | null> {
+		const clipboard = this.rootEl?.win.navigator.clipboard as
+			| Partial<Clipboard>
+			| undefined;
+		if (typeof clipboard?.readText !== 'function') return null;
+		try {
+			return await clipboard.readText();
+		} catch {
+			return null;
+		}
+	}
+
+	/** Whether a copy came from the file this pane has open. */
+	private sameLayout(fingerprint: string, file: TFile): boolean {
+		return fingerprint === this.fingerprint(file);
+	}
+
+	/**
+	 * Decide a paste, writing nothing unless it is accepted
+	 * (`docs/features/component-copy-paste.md` §8: nothing is written on a
+	 * refusal).
+	 *
+	 * **Decided once before anything pending is written, and again after**,
+	 * because a field still holding a typed edit — the function library, the
+	 * triggers, the bonus types, or a nudge in its debounce — belongs on the
+	 * layout the paste is made over, and writing it is a write. So a refused
+	 * paste leaves that edit exactly as pending as it was; an accepted one lands
+	 * it first, as its own step, and the paste is decided again over the layout
+	 * that now carries it. Nothing a pending edit holds bears on where a paste
+	 * lands or whether it is refused, so the second decision refuses only what
+	 * the first would have.
+	 */
+	private decided<T extends object>(decide: () => T | { error: string }): T | { error: string } {
+		const first = decide();
+		if ('error' in first) return first;
+		const typed = this.panel.commitPending();
+		if (!typed && !this.nudgePending) return first;
+		if (typed) void this.persist();
+		this.persistSoon.run();
+		return decide();
+	}
+
+	/**
+	 * Paste clipboard text as the sibling after `after` (§4), or answer why not.
+	 *
+	 * The edit is decided on a clone by `paste.ts` and adopted only once it is
+	 * whole, so a refusal leaves the pane's layout exactly as it was. The paste
+	 * lands selected, marked, and with focus on its name, and is one undo step
+	 * with a notice offering to take it back.
+	 */
+	private pasteText(after: string, text: string): string | null {
+		const file = this.file;
+		if (this.layout === null || file === null) return null;
+		const read = readComponentCopy(text);
+		if ('error' in read) return read.error;
+		const same = this.sameLayout(read.copy.from.fingerprint, file);
+		const pasted = this.decided(() =>
+			this.layout === null
+				? { error: '' }
+				: pasteComponent(this.layout, after, read.copy, same),
+		);
+		if ('error' in pasted) return pasted.error;
+		this.layout = pasted.layout;
+		const id = pasted.root.id;
+		this.host.setSelection(id);
+		this.pendingFocus = `edit-${id}`;
+		this.pendingFlash = `tree-${id}`;
+		this.persistUndoable(
+			pasteSentence(pasted.root, pasted.dependencies, same ? undefined : read.copy.from.layout),
+		);
+		this.redraw();
+		return null;
+	}
+
+	/**
+	 * Paste clipboard text's configuration onto `onto` (§6), or answer why not.
+	 * The component keeps its place, its name and its selection.
+	 */
+	private pasteConfigurationText(onto: string, text: string): string | null {
+		const file = this.file;
+		if (this.layout === null || file === null) return null;
+		const read = readComponentCopy(text);
+		if ('error' in read) return read.error;
+		const same = this.sameLayout(read.copy.from.fingerprint, file);
+		const pasted = this.decided(() =>
+			this.layout === null
+				? { error: '' }
+				: pasteConfiguration(this.layout, onto, read.copy, same),
+		);
+		if ('error' in pasted) return pasted.error;
+		this.layout = pasted.layout;
+		this.host.setSelection(pasted.target.id);
+		this.pendingFocus = `edit-${pasted.target.id}`;
+		this.pendingFlash = `tree-${pasted.target.id}`;
+		this.persistUndoable(
+			configurationSentence(
+				read.copy.component.label,
+				pasted.target.label,
+				pasted.keysLeft,
+				pasted.dependencies,
+			),
+		);
+		this.redraw();
+		return null;
+	}
+
+	/**
+	 * A `copy` or `paste` event on the pane's document: Mod+C or Mod+V on a tree
+	 * row (`docs/features/component-copy-paste.md` §2, branch A).
+	 *
+	 * **On the document, because that is where the event goes.** With a
+	 * `<button>` focused and no selection, the browser dispatches both to the
+	 * body rather than to the button, so the view registers this on its own
+	 * document and this answers only when that document's focus is one of *this*
+	 * pane's tree name buttons — anything else, another pane's included, is left
+	 * to whoever it belongs to. `preventDefault` then keeps the browser's own copy
+	 * and paste out of it.
+	 *
+	 * **A paste event hands its text over synchronously and without asking**, on
+	 * every platform, which makes the keyboard the most reliable read this
+	 * feature has. A copy goes through the same write the menu's does.
+	 *
+	 * **Both events reach the document in the app**, which the vault check
+	 * confirmed on macOS once a click on a row left focus on its name. It did
+	 * not at first — the click dropped focus to the body, this returned before
+	 * doing anything, and the first reading of that was that no `paste` event
+	 * arrived. `tree.ts`'s row press now lands focus on the name.
+	 */
+	clipboardEvent(event: ClipboardEvent): void {
+		const root = this.rootEl;
+		if (root === null) return;
+		const focused = root.ownerDocument.activeElement;
+		if (focused === null || !root.contains(focused)) return;
+		const row = clipboardRow(focused);
+		if (row === null) return;
+		event.preventDefault();
+		if (event.type === 'copy') row.copy();
+		else row.paste(event.clipboardData?.getData('text/plain') ?? '');
 	}
 
 	/** Select a component, or the layout itself, and rebuild both regions. */
@@ -1107,34 +1335,3 @@ export class LayoutEditorSection {
 		return true;
 	}
 }
-
-function uniqueLabel(base: string, components: ComponentConfig[]): string {
-	const taken = new Set(components.map((c) => c.label));
-	let label = base;
-	let counter = 2;
-	while (taken.has(label)) label = `${base} ${counter++}`;
-	return label;
-}
-
-/**
- * The id is what formulas reference, so it has to be a name the expression
- * parser accepts: underscores rather than hyphens, since a hyphen would read
- * as subtraction, and never a leading digit. Kept in step with COMPONENT_ID
- * in parse/layout.ts, which migrates anything this could not have produced —
- * including the hyphenated ids this function itself emitted before the clash
- * with the parser was understood.
- */
-function uniqueId(label: string, components: ComponentConfig[]): string {
-	const taken = new Set(components.map((c) => c.id));
-	let base =
-		label
-			.toLowerCase()
-			.replace(/[^a-z0-9]+/g, '_')
-			.replace(/^_+|_+$/g, '') || 'component';
-	if (/^[0-9]/.test(base)) base = `_${base}`;
-	let id = base;
-	let counter = 2;
-	while (taken.has(id)) id = `${base}_${counter++}`;
-	return id;
-}
-

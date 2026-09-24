@@ -246,6 +246,18 @@ const SHEET_FRAME = '1400,7800';
  */
 const EDITOR_FRAME = '1500,16800';
 
+/*
+ * **The three paste views grow the tree, so they get a frame of their own**
+ * (`docs/features/component-copy-paste.md`, Look criteria). Measured off the
+ * last row that is not page background, at 1500: the same-layout paste of
+ * `Proficiencies` ends at **17744**, the cross-layout Track at 16829 — already
+ * past `EDITOR_FRAME` — and the refused paste at 16704. 18000 leaves the others'
+ * margin, and its bottom row is page background where 16800's was inside the
+ * leaf. A frame of their own rather than a taller `EDITOR_FRAME`, because
+ * raising that would re-shoot every editor view taller for three that grew.
+ */
+const PASTE_FRAME = '1500,18000';
+
 /**
  * The presses that open the panel on the sample's *mixed* row, and then its typed
  * part's own fields.
@@ -1877,6 +1889,43 @@ const DEFAULTS = [
 		name: 'editor-tree-menu',
 		query: 'surface=editor&theme=light&menu=weapon_bonus',
 		size: EDITOR_FRAME,
+	},
+	{
+		// A same-layout paste of a container (`docs/features/component-copy-paste.md`
+		// §4): the pane copies `Proficiencies` through its own Mod+C and pastes it
+		// back by Mod+V. "Proficiencies 2" lands selected at the foot of the top
+		// level with every child suffixed, and the panel on it. Light only: the
+		// tree's rows and the panel are shot in both themes elsewhere.
+		name: 'editor-paste-landed',
+		query: 'surface=editor&theme=light&paste=proficiencies%3Aself',
+		size: PASTE_FRAME,
+	},
+	{
+		// A hit-dice Track copied from another layout, pasted after `Death saves`.
+		// Its ids are kept where they are free, it sits at the foot of its level,
+		// and the panel shows its `long rest` binding exactly as it came. The
+		// notice naming what to check is not drawn by the harness, so its words
+		// are asserted in `layout-editor.test.ts`.
+		name: 'editor-paste-cross',
+		query: 'surface=editor&theme=light&paste=death_saves%3Ahit-dice',
+		size: PASTE_FRAME,
+	},
+	{
+		name: 'editor-paste-cross-dark',
+		query: 'surface=editor&theme=dark&paste=death_saves%3Ahit-dice',
+		size: PASTE_FRAME,
+	},
+	{
+		// Paste configuration of a Pool onto a Track, refused in place: the line
+		// under `Death saves` names both types.
+		name: 'editor-paste-refused',
+		query: 'surface=editor&theme=light&paste=death_saves%3Apool%3Aconfig',
+		size: PASTE_FRAME,
+	},
+	{
+		name: 'editor-paste-refused-dark',
+		query: 'surface=editor&theme=dark&paste=death_saves%3Apool%3Aconfig',
+		size: PASTE_FRAME,
 	},
 	{
 		// A chord the row cannot take: `Tools` into `Weapons`, which would put

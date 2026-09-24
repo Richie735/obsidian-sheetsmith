@@ -10,6 +10,7 @@
  */
 
 import { paletteEntries } from '../src/components';
+import { encodeComponentCopy } from '../src/parse/component-clipboard';
 import type { ComponentConfig } from '../src/types';
 
 /**
@@ -3068,3 +3069,78 @@ export function brokenSamples(): Sample[] {
 		return { config, body, children: sample.children };
 	});
 }
+
+/*
+ * What the clipboard holds for the pane's `paste=` option
+ * (`docs/features/component-copy-paste.md` §10): copies made in *another*
+ * layout, as a reader would paste one in from elsewhere. A copy from this
+ * layout is not a fixture — `paste=<id>:self` has the pane make it, through its
+ * own Mod+C, so what is pasted is exactly what a copy writes.
+ *
+ * The fingerprint names no file on purpose: anything that is not this pane's
+ * own is another layout, which is the case these exist to show.
+ */
+const ELSEWHERE = { layout: '5e 2014', fingerprint: 'harness0' };
+
+/**
+ * A hit-dice Track from a 2014 layout, built to give the five-thing notice. Its
+ * id and label are ones this layout does not hold, so the paste keeps them. Its
+ * `long rest` binding recovers half by formula; it reads `hit_points`, which
+ * this layout publishes for something else, and `con_mod`, which it does not;
+ * it calls `mod`, which this layout defines differently; and a modifier
+ * definition in its source changes it.
+ */
+function hitDiceCopy(): string {
+	return encodeComponentCopy({
+		from: ELSEWHERE,
+		component: {
+			id: 'recovery_dice',
+			type: 'track',
+			label: 'Recovery dice',
+			position: { col: 1, row: 1, width: 4, height: 1 },
+			count: 'max(1, floor(hit_points / 8) + mod(con_mod))',
+			reset: [{ trigger: 'long rest', action: 'formula', to: 'floor(recovery_dice / 2)' }],
+		} as unknown as ComponentConfig,
+		context: {
+			functions: { mod: 'mod(score) = floor(score / 2) - 5' },
+			definitions: [{ name: 'Ring of resilience', targets: ['Recovery dice'] }],
+		},
+	});
+}
+
+/** A leaf reading more than five names nothing here has: the count form. */
+function manyCopy(): string {
+	return encodeComponentCopy({
+		from: ELSEWHERE,
+		component: {
+			id: 'carrying',
+			type: 'card',
+			label: 'Carrying capacity',
+			position: { col: 1, row: 1, width: 2, height: 1 },
+			derived: 'str_score * 15 + size_bonus + pack_bonus + belt_bonus + mule_bonus + lift_bonus',
+		} as unknown as ComponentConfig,
+		context: { functions: {}, definitions: [] },
+	});
+}
+
+/** A Pool from elsewhere, for Paste configuration onto a Track: the refusal. */
+function poolCopy(): string {
+	return encodeComponentCopy({
+		from: ELSEWHERE,
+		component: {
+			id: 'stamina',
+			type: 'pool',
+			label: 'Stamina',
+			position: { col: 1, row: 1, width: 4, height: 1 },
+			max: '10',
+		} as unknown as ComponentConfig,
+		context: { functions: {}, definitions: [] },
+	});
+}
+
+/** The fixtures `paste=<id>:<fixture>` names, as the clipboard text itself. */
+export const CLIPBOARD_FIXTURES: Readonly<Record<string, () => string>> = {
+	'hit-dice': hitDiceCopy,
+	many: manyCopy,
+	pool: poolCopy,
+};

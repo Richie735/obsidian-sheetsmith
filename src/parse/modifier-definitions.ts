@@ -93,6 +93,28 @@ function parses(source: string): boolean {
 }
 
 /**
+ * The changes one definition as written makes, each a raw member bag.
+ *
+ * **The two spellings, reduced to one here and nowhere else**: a definition
+ * with a `changes` list is read through the list alone — flat members beside it
+ * are ignored, which the parser reports — and one without is its own single
+ * change. A non-object entry becomes a blank change rather than vanishing, and
+ * `changes: []` is one blank change, which is what a definition naming no value
+ * already is.
+ *
+ * Exported for the second reader of a definition's targets — what a pasted
+ * component depends on (`editor/paste-dependencies.ts`) — so that reader cannot
+ * disagree with the sheet about which values a definition changes.
+ */
+export function changesOf(raw: Readonly<Record<string, unknown>>): readonly RawDefinition[] {
+	if (!Array.isArray(raw.changes)) return [raw];
+	const listed = (raw.changes as readonly unknown[]).map((entry) =>
+		typeof entry === 'object' && entry !== null ? (entry as RawDefinition) : {},
+	);
+	return listed.length === 0 ? [{}] : listed;
+}
+
+/**
  * Read a layout's modifier definitions and report what cannot be used.
  *
  * Takes the whole layout rather than the list, on `parseTriggers`' shape, so a
@@ -186,24 +208,9 @@ export function parseModifierDefinitions(
 
 		const when = text(raw, 'when');
 
-		/*
-		 * **The two spellings, reduced to one here and nowhere else.** A definition
-		 * with a `changes` list names as many values as it holds; one without reads
-		 * the five flat members off itself, which is what every definition written
-		 * before this existed is and what one still round-trips as.
-		 *
-		 * A non-object entry in the list becomes a blank change rather than being
-		 * dropped, so it earns the two problems a definition naming no value already
-		 * earns instead of vanishing from a count the author is reading.
-		 */
-		const listed = Array.isArray(raw.changes)
-			? (raw.changes as readonly unknown[]).map((entry) =>
-					typeof entry === 'object' && entry !== null
-						? (entry as RawDefinition)
-						: {},
-				)
-			: null;
-		if (listed !== null) {
+		// The two spellings are reduced to one in `changesOf`; what is left here is
+		// telling the author which half of a definition carrying both is read.
+		if (Array.isArray(raw.changes)) {
 			/*
 			 * **Reported as ignored rather than deleted**, which is SPEC §10's
 			 * "rendered, not corrected" applied to a hand-edited layout: the author's
@@ -219,15 +226,9 @@ export function parseModifierDefinitions(
 				});
 			}
 		}
-		/*
-		 * `changes: []` reads as a definition that names no value, which is what one
-		 * with a blank target already is — so it becomes a single blank change and
-		 * earns that definition's existing two problems. It also keeps the list
-		 * non-empty for everything downstream, which is what lets one part always
-		 * resolve to at least one enrolment.
-		 */
-		const spelt: readonly RawDefinition[] =
-			listed === null ? [raw] : listed.length === 0 ? [{}] : listed;
+		// Never empty, which is what lets one part always resolve to at least one
+		// enrolment (`changesOf`).
+		const spelt = changesOf(raw);
 		/** Whether a message has to say *which* change it is about. */
 		const several = spelt.length > 1;
 

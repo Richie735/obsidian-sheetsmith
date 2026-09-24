@@ -1,7 +1,14 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it } from 'vitest';
 import { Platform } from '../test/obsidian-stub';
-import { chordMove, MOVE_SHORTCUTS, moveHint, RowMove, RowMoves } from './tree-moves';
+import {
+	chordMove,
+	clipboardShortcuts,
+	MOVE_SHORTCUTS,
+	moveHint,
+	RowMove,
+	RowMoves,
+} from './tree-moves';
 
 /*
  * The half of the tree's moves that needs no pane: which key press is which
@@ -71,3 +78,19 @@ describe('the hint after a row name', () => {
 		expect(moveHint()).toBe('Option+↑ ↓ reorder, Option+→ ← move in or out');
 	});
 });
+
+describe('the clipboard chords the name button declares', () => {
+	afterEach(() => {
+		Platform.isMacOS = false;
+	});
+
+	it('spells Control away from a Mac', () => {
+		expect(clipboardShortcuts()).toBe('Control+C Control+V');
+	});
+
+	it('spells Meta on a Mac, which is the key the platform presses', () => {
+		Platform.isMacOS = true;
+		expect(clipboardShortcuts()).toBe('Meta+C Meta+V');
+	});
+});
+
