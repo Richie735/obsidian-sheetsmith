@@ -36,12 +36,12 @@
  * and it is stated at the call site: the row is how an author leaves a layout
  * they cannot edit, and a message displacing it would trap them there.
  *
- * **Its cases stayed where they were**, in `layout-editor.test.ts` and
- * `view/layout-editor-view.test.ts`, although an entry point and a reportable
- * output are what `docs/PATTERNS.md` §10 says earn a module a file of its own:
- * both drive the row through a real pane, and the harness the first one builds
- * that pane with is a test file's own rather than scaffolding a sibling can
- * import (§2), which is the same reason `config-panel.ts`'s cases stay there.
+ * **Its cases live in `layout-file-row.test.ts`**, driven through a real pane by
+ * `src/test/layout-editor-pane.ts` rather than over a stub host, and
+ * `view/layout-editor-view.test.ts` holds the pane's own half. Two blocks
+ * stayed in `layout-editor.test.ts`, since what they assert is the render's
+ * rule above rather than the row's: a layout that cannot be read keeps the row
+ * and reports under it, and a folder with no layouts draws no row at all.
  */
 
 import { App, Notice, Setting, TFile } from 'obsidian';

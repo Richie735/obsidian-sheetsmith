@@ -15,7 +15,7 @@ import { ComponentConfig, ResetBinding } from '../types';
  * the last binding. None of it needs a vault, so none of it belongs in a test
  * that opens one.
  *
- * The two pane cases stay where they are. What they assert is that the editor
+ * The two pane cases are `config-panel.test.ts`'s. What they assert is that the editor
  * asks the *component* whether it can act on a reset, and that question does not
  * exist from here: this file hands in a config and a layout directly.
  */

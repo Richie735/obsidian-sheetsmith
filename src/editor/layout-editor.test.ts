@@ -52,7 +52,6 @@ import {
 	panelHeading,
 } from '../test/layout-editor-pane';
 
-
 /*
  * The layout editor, driven through its own DOM.
  *
@@ -78,26 +77,38 @@ import {
  * lands as which key, what is left out, and what is never touched. How it
  * looks is `docs/UI.md`'s business and the harness's.
  *
- * **Half the code these drive now lives in `config-panel.ts`, and the cases
- * stayed.** That is the same departure from §10 the gesture block below records,
- * and by now a different reason: `src/test/workspace.ts` and `src/test/plugin.ts`
- * exist, so a sibling file *can* open a real pane — `layout-editor-view.test.ts`
- * does. What it cannot import is the harness above, which is a test file's own
- * and not scaffolding (§2), and the panel has no entry point of its own anyway:
- * every case below reaches a form by pressing a tree row or a schematic block,
- * both of which are the outline's. Several make one claim about both regions at
- * once on purpose — a container that may hold nothing gets no grid *and* a
- * sentence saying why; a tab set draws no schematic *and* lists its tabs — and
- * splitting those means rewriting them, which is the one thing a movement may
- * not do.
+ * **The harness is `src/test/layout-editor-pane.ts`**, and four regions cut out
+ * of this editor keep their cases beside them now, each opening the same real
+ * pane through it: `tree.test.ts`, `schematic-gestures.test.ts`,
+ * `layout-file-row.test.ts` and `config-panel.test.ts`. Whole blocks moved and
+ * not one assertion changed; each file's header names what it took.
  *
- * **The extraction itself left them untouched:** not one assertion changed and no
- * import either. Three were added *after* it, and the boundary matters because
- * commits are split against these records: `reads a typed definition back`,
- * `reads both fields back`, and `keeps an inline error on a field the rebuild
- * draws again`. Each is coverage the new seam owed — `commitPending` and the
- * errors map are the two members of `ConfigPanelHost` that carry state across a
- * rebuild, and nothing here could tell either of them from a no-op.
+ * **What stayed is what makes one claim about more than one region, or about
+ * this module itself**, since splitting such a block means rewriting it, which
+ * is the one thing a movement may not do:
+ *
+ * - `the tree`: a row and its schematic block are one selection seen twice,
+ *   and the order it asserts starts with the picker's rows.
+ * - `the component list`: `draws both the container and what it holds, live`
+ *   asserts the canvas's overlays beside the rows the tree lists.
+ * - `a selection the layout cannot honour` and `the layout is not written for
+ *   having been looked at`: the selection is the pane's, and looking is every
+ *   region's.
+ * - `removing from the tree` and `copying and pasting a component from the
+ *   tree`: the tree is the route in, but the undo guard is this module's
+ *   `persistUndoable`, and the clipboard is `copyComponent` and `pasteFrom`.
+ * - `nudging a block`: `stops where the drag stops` holds the arrow keys, the
+ *   drag and the panel's typed position to one bound on purpose, and the
+ *   typed-position message is the panel's.
+ * - `a control that redraws the pane`: restoring focus and replaying field
+ *   errors across a rebuild is the editor's job, not the panel's. It holds
+ *   `keeps an inline error on a field the rebuild draws again`, the third of
+ *   the cases added after the panel moved out.
+ * - `a layout file the editor cannot read` and `a vault with no layouts in it`:
+ *   the render's rule about the **Layout file** row, stated where it draws it.
+ * - Every block about the picker, a container, a list or field module drawn in
+ *   the panel, undo, sample values, suggestions, the rename migration and the
+ *   promoted fields: the subject is not one of the four regions alone.
  */
 
 let harness: Harness;
@@ -2490,33 +2501,18 @@ describe('a layout with modifier definitions', () => {
 });
 
 /*
- * The schematic's pointer gestures: dragging a block, dragging its corner, and
- * the arrow keys.
+ * The schematic's arrow keys, which move and resize a block from the keyboard.
  *
- * **The layer these drive now lives in `schematic-gestures.ts`, and these cases
- * stayed.** That is a departure from §10's one test file per module, and the
- * reason is the harness above rather than the cases below: every one of them is
- * driven through a real pane — `open` writes a layout file into a stub vault and
- * renders `LayoutEditorView` — because the pane's answers to what is open and
- * what is selected are the ones that ship. A sibling test file cannot import
- * that harness: §2 keeps `src/test/` for scaffolding and a test file is not
- * scaffolding, so moving these means designing the workspace fixture §11's third
- * row prices as its own piece of work. The cheaper alternative — a
- * `SchematicGestures` built over a fake host and a hand-made cell — would
- * rewrite every assertion here to test the seam instead of the gesture.
- *
- * So the cases did not move when the code did, and this comment is the record of
- * why rather than an oversight. **The extraction itself left them untouched:** not
- * one assertion changed and no import either, which is the strongest thing that
- * can be said for a pure movement.
- *
- * One assertion has been added *since*, and the boundary matters because commits
- * are split against these records. `follows the pointer on the cell itself` now
- * counts the drag's write after a bare `tick()` as well as after `settle`. That
- * is coverage the new seam owed rather than fallout from the move: `persist` and
- * `persistSoon` became two members of `SchematicHost` precisely because which one
- * a gesture uses is its own policy, and counting only after the flush could not
- * tell them apart.
+ * **The only gesture block left here**; dragging a block and the grid drawn
+ * behind a drag are `schematic-gestures.test.ts`'s, beside the module that
+ * drives them. This one stays because it makes one claim about two regions on
+ * purpose: `stops where the drag stops` holds the arrows, the drag and the
+ * panel's typed position to one bound — the typed number is the one route that
+ * shares no argument list with the other three — and `says why a typed position
+ * came back lower than what was typed` is the panel's field alone. Splitting the
+ * block would mean rewriting it, which a movement may not do. Its fixtures and
+ * the grid measurement are `src/test/layout-editor-pane.ts`'s, shared with that
+ * file.
  */
 
 /**

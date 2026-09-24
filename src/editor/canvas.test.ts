@@ -11,10 +11,10 @@ import { ComponentConfig, isContainer } from '../types';
  * `Canvas` needs only a `CanvasHost` and an element — it knows nothing about
  * the tree, the panel or which layout file is open — so a case here does not
  * have to open a whole `LayoutEditorSection` to exercise the render loop
- * itself. `layout-editor.test.ts` still drives the drag, resize and nudge
- * gestures through the rendered pane, since those already existed there and
- * the fixtures and helpers (`sheetGrid`, `dragTo`, `pressKey`) are built for
- * it; this file covers what is new here specifically — live rendering,
+ * itself. The drag and resize gestures are driven through the rendered pane in
+ * `schematic-gestures.test.ts` and the nudge in `layout-editor.test.ts`, on
+ * the fixtures and helpers `src/test/layout-editor-pane.ts` builds for it
+ * (`sheetGrid`, `dragTo`); this file covers what is new here specifically — live rendering,
  * `inert`, the overlay's own shape, and the two hazard fixes.
  */
 

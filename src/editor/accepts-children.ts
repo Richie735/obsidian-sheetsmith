@@ -11,7 +11,10 @@
  * Named for its export, the way `copyable-name.ts` and `field-commit.ts` are,
  * rather than shelved in a module about something else. It has no test file of
  * its own for the same reason those do not: every caller is a region of the
- * pane, and `layout-editor.test.ts` drives all three through the rendered pane.
+ * pane, and each is driven through the rendered pane — the picker's and the
+ * panel's in `layout-editor.test.ts` (`a container that may hold nothing`), the
+ * tree's in `tree.test.ts` (the moves and the disclosures) and in
+ * `layout-editor.test.ts`'s `removing from the tree` (the removal sentence).
  */
 
 import { getComponent } from '../components';

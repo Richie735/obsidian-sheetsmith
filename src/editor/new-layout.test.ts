@@ -18,7 +18,7 @@
  * by pressing something the editor drew, and what it reports is a file in the
  * vault and a sentence. The two cases that are the *pane's* — that the row's
  * button opens this, and that a successful create leaves the pane on the
- * layout that landed — stay in `layout-editor.test.ts` with the pane harness.
+ * layout that landed — are `layout-file-row.test.ts`'s, on the pane harness.
  *
  * **The writer's own arms are not here either.** `startLayout`'s refusals, its
  * missing-source arm and its blank-name guard are `src/layouts.test.ts`'s,
@@ -108,7 +108,8 @@ function open(folder = LAYOUT_FOLDER, openLayout: string | null = null): void {
  * deliberately sets none of: that attribute is the pane's focus-restoration
  * vocabulary and a modal never rebuilds, so a token here would be a test
  * selector in shipped markup. The name is the label a reader picks the field by,
- * which is `layout-editor.test.ts`'s own `checkbox(harness, name)` route.
+ * which is the pane harness's own `checkbox(harness, name)` route
+ * (`src/test/layout-editor-pane.ts`).
  */
 function field<T extends HTMLElement = HTMLElement>(name: string): T {
 	for (const item of Array.from(openModal().querySelectorAll('.setting-item'))) {
