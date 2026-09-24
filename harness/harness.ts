@@ -631,11 +631,13 @@ document
  * `&samples=off` presses the pane's **Sample values** toggle off, which is the
  * only way to photograph the empty canvas now that a pane opens filled.
  *
- * Three for the tree (`docs/features/layout-editor-tree.md` §9): `&collapse=<id>,…`
+ * Four for the tree (`docs/features/layout-editor-tree.md` §9): `&collapse=<id>,…`
  * presses each container's chevron in order, `&menu=<id>` opens that row's menu
  * and leaves it open, and `&treeKey=<id>:<ArrowUp|ArrowDown|ArrowRight|ArrowLeft>`
  * focuses that row's name and presses the Alt chord, which shows a completed
- * move or a refused one's line under the row.
+ * move or a refused one's line under the row. `&paste=<id>:<fixture>[:config]`
+ * pastes onto that row — a copy from `CLIPBOARD_FIXTURES`, or `self` for a copy
+ * of the row itself — by Mod+V, or by **Paste configuration** with `:config`.
  *
  * And one for what the layout *folder* holds: `&layout=none` for a vault with no
  * layouts in it, `&layout=broken` for one whose file will not parse, and
@@ -920,6 +922,7 @@ function applyQuery(): void {
 			await driveTree(editorPane, {
 				menu: params.get('menu') ?? undefined,
 				treeKey: params.get('treeKey') ?? undefined,
+				paste: params.get('paste') ?? undefined,
 			});
 		}
 		if (resize !== null && editorPane) {
