@@ -142,8 +142,14 @@ export interface Layout {
  * at. That is exactly why the rewrite is safe: sections key on the label,
  * and no formula can have depended on the old form. Layout files carry no
  * byte-identical promise, so the new id persists on the next save.
+ *
+ * **Exported for a pasted copy** (`docs/features/component-copy-paste.md`,
+ * decision 2), which needs exactly this shape for a different reason: an id
+ * that is already a name comes back exactly as written, and only a taken one
+ * is suffixed `_2`, `_3`. The layout editor's own `uniqueId` builds an id from
+ * a *label* and would turn a free `STR` into `str`.
  */
-function migrateId(raw: string, taken: ReadonlySet<string>): string {
+export function migrateId(raw: string, taken: ReadonlySet<string>): string {
 	let base = raw.replace(/[^A-Za-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
 	if (base === '' || /^[0-9]/.test(base)) base = `_${base}`;
 	let id = base;
