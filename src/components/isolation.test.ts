@@ -481,4 +481,13 @@ describe("a field's placement is spelled in one place", () => {
 		expect(files).toBeGreaterThan(60);
 		expect(hits).toEqual([]);
 	});
+
+	it('is imported by the component that reads it and the field that writes it', () => {
+		const importsBody = (source: string) =>
+			/import\s*\{[^}]*\bBODY_PLACEMENT\b[^}]*\}\s*from\s*'[./]*(components\/)?column-types'/.test(
+				source,
+			);
+		const { hits } = scan(SRC, importsBody, true);
+		expect(hits.sort()).toEqual(['list-fields.ts', 'record-set.ts']);
+	});
 });

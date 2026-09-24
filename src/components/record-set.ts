@@ -863,6 +863,9 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				// uses is the record's rather than the layout's. Table does not ask
 				// for it, which is what keeps this feature out of Table.
 				holderMax: true,
+				// A body to move a field into is the other thing this component has
+				// that a Table does not, so the same opt-in holds it out of Table.
+				placement: true,
 				// The strip is the component's, and a per-field hide would leave a
 				// ring unnamed, which is what the strip is for. The *key* is still
 				// read and still round-trips.
@@ -886,7 +889,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			// `docs/features/component-rename-migration.md`).
 			addressesEntry: { fence: 'record' },
 			description:
-				"The typed values every record holds, each an entry in that record's block in the note. Renaming a key moves that entry in every record, in every note on this layout. Text is not offered: words a reader reads belong in the record's body, where they may hold links. A number field with a maximum is a uses counter: the field draws that maximum beside its value, and a reset trigger restores it to that maximum. A number field's maximum may belong to the field, so every record shares it, or to each record, so a reader types it on the sheet — and a reset restores each record to whichever one applies.",
+				"The typed values every record holds, each an entry in that record's block in the note. Renaming a key moves that entry in every record, in every note on this layout. Text is not offered: words a reader reads belong in the record's body, where they may hold links. A number field with a maximum is a uses counter: the field draws that maximum beside its value, and a reset trigger restores it to that maximum. A number field's maximum may belong to the field, so every record shares it, or to each record, so a reader types it on the sheet — and a reset restores each record to whichever one applies. Tick \"Inside the opened record\" for a value read once and changed rarely: it draws above the record's prose and is not shown while the record is closed. A field used every turn belongs on the summary line.",
 		},
 		{
 			key: 'hideLabel',

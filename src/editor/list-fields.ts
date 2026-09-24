@@ -25,6 +25,7 @@ import {
 	parseLevel,
 } from '../components/level-ring';
 import {
+	BODY_PLACEMENT,
 	COLUMN_TYPES,
 	ColumnType,
 	DEFAULT_COLUMN_TYPE,
@@ -730,6 +731,7 @@ interface ColumnEntry extends Record<string, unknown> {
 	min?: number;
 	max?: number;
 	maxSource?: string;
+	placement?: string;
 	levels?: string[];
 	input?: string;
 	signed?: boolean;
@@ -781,8 +783,8 @@ export function labelled(detail: HTMLElement, text: string): HTMLElement {
  * twice the width.
  *
  * A fourth copy of this pattern is what earned it a function (PATTERNS §1);
- * every one of them writes `true` or deletes the key, so a column carrying its
- * default reads as a column that never set it.
+ * every one of them writes its "on" value or deletes the key, so a column
+ * carrying its default reads as a column that never set it.
  */
 function checkField(
 	detail: HTMLElement,
@@ -797,14 +799,20 @@ function checkField(
 	 * the entry carrying it, which is most of them.
 	 */
 	rebuild?: { token: string },
+	/**
+	 * What a ticked box writes, for a flag whose "on" is a string id rather than
+	 * `true` — a field's `placement`. Anything else the key holds reads as
+	 * unticked and survives untouched until the box is pressed.
+	 */
+	on: unknown = true,
 ): void {
 	const label = detail.createEl('label', { cls: 'sheetsmith-entry-check' });
 	const input = label.createEl('input', { type: 'checkbox' });
-	input.checked = target[key] === true;
+	input.checked = target[key] === on;
 	if (rebuild) input.dataset.sheetsmithFocus = rebuild.token;
 	label.createSpan({ text });
 	input.addEventListener('change', () => {
-		if (input.checked) target[key] = true;
+		if (input.checked) target[key] = on;
 		else delete target[key];
 		context.persist();
 		if (!rebuild) return;
@@ -1476,6 +1484,26 @@ export function renderColumnsEditor(
 		// to hide, in which case it is a control that does nothing.
 		if (offers?.hideHeading !== false) {
 			checkField(detail, 'Hide heading', column, 'hideHeading', context);
+		}
+
+		/*
+		 * **Last on the line, after everything about the value**, because it is
+		 * about the entry as a whole: where its holder draws it. Opt-in on
+		 * `holderMax`'s precedent — only a component that draws a body has
+		 * somewhere to move an entry to — and offered on every type the list
+		 * holds. The label is the holder's own word; the id it writes is the
+		 * shared vocabulary's, and unticking writes the default as absence.
+		 */
+		if (offers?.placement === true) {
+			checkField(
+				detail,
+				`Inside the opened ${holder}`,
+				column,
+				'placement',
+				context,
+				undefined,
+				BODY_PLACEMENT,
+			);
 		}
 	});
 

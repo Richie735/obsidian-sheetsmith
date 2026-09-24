@@ -548,6 +548,18 @@ export interface ColumnOptionsSpec {
 	 */
 	holderMax?: boolean;
 	/**
+	 * Whether an entry may be drawn inside its holder once opened rather than on
+	 * the holder's own line. Defaults to false.
+	 *
+	 * **Opt-in on `holderMax`'s precedent**, since a list whose component draws
+	 * no body has nowhere for an entry to move to: Record set asks and Table does
+	 * not. The control's label is composed from `holder` below, so it names the
+	 * component's own word; the id it writes is `components/column-types.ts`'s
+	 * `BODY_PLACEMENT`, which both sides import, and unticking writes the default
+	 * as absence rather than as a second id.
+	 */
+	placement?: boolean;
+	/**
 	 * What one entry of this list is called, and what holds one — "column" and
 	 * "row" by default, "field" and "record" for a Record set.
 	 *

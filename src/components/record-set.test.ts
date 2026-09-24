@@ -3256,6 +3256,12 @@ describe('a field inside the opened record', () => {
 			),
 		);
 
+	it('declares the placement offer on its fields list, which Table does not', () => {
+		const declared = recordSet.configFields.find((one) => one.key === 'fields');
+		expect(declared?.columnOptions?.placement).toBe(true);
+		expect(declared?.description).toContain('Inside the opened record');
+	});
+
 	it("draws no body block where no field carries a placement, and reads 'summary' as absence", () => {
 		/*
 		 * The harness's three lists as their configurations stand: a headed list of
