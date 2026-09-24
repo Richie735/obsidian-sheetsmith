@@ -109,6 +109,7 @@ export class Canvas {
 			syncPositionFields: (config) => this.host.syncPositionFields(config),
 			redrawSchematics: () => this.redraw(),
 			select: (id) => this.host.select(id),
+			focusBlock: (id) => this.focusBlock(id),
 		};
 		this.gestures = new SchematicGestures(hostForGestures);
 	}
@@ -173,6 +174,39 @@ export class Canvas {
 		this.markInert(grid);
 
 		if (pendingFocus) focusToken(el, pendingFocus);
+	}
+
+	/**
+	 * Focus a block's overlay, after the gesture on it has ended.
+	 *
+	 * **Not during the press**, which cancels its pointerdown and so leaves the
+	 * focus where it was: moving it there would blur a field the author was
+	 * typing in, and a browser fires that field's `change` synchronously inside
+	 * the blur. A position field's commit redraws the canvas, so the block
+	 * holding the pointer capture would be torn down mid-press and the drag
+	 * would end before it began. Once the gesture is over a rebuild costs
+	 * nothing, and the field's pending value is harmless by then: a drag has
+	 * already written its result into the form (`syncPositionFields`).
+	 *
+	 * **Blurred first, then looked up by token**, because focusing the overlay
+	 * directly would run that same commit inside the `focus()` call, rebuild
+	 * the canvas, and leave the element being focused detached. Clicking a
+	 * button does not focus it in Chromium on macOS in any case, so without
+	 * this the arrow keys never reached a block pressed with a pointer.
+	 */
+	private focusBlock(id: string): void {
+		if (!this.root) return;
+		const active = this.root.ownerDocument.activeElement;
+		const token = `preview-${id}`;
+		if (active?.instanceOf(HTMLElement)) {
+			if (active.dataset.sheetsmithFocus === token && this.root.contains(active)) {
+				return;
+			}
+			active.blur();
+		}
+		// Read again after the blur, not before: a commit that redraws the whole
+		// pane draws the canvas into a fresh root, and the old one is detached.
+		if (this.root) focusToken(this.root, token);
 	}
 
 	/** Redraw from the layout last drawn. A no-op before the first `draw`. */

@@ -288,12 +288,13 @@ export class LayoutEditorSection {
 		this.host = host;
 		// A redraw tears the pane down and builds the function library back from
 		// the layout, so anything typed into it has to be read out first or it
-		// is gone. Blur is not enough on its own: a pointerdown on the grid
-		// calls preventDefault, which suppresses the focus change and with it
-		// the textarea's change event, so clicking a block after typing a
-		// definition would discard it. Wrapped here rather than guarded at each
-		// call site — there are a dozen, and the one that gets missed is the
-		// one that loses a library.
+		// is gone. Blur is not enough on its own: a press on a canvas block
+		// cancels its pointerdown, so the textarea keeps the focus through the
+		// press, and the redraw its selection causes runs before the block takes
+		// the focus at the end of the gesture — by then the textarea being
+		// blurred is a fresh one, and the typed definition would be gone.
+		// Wrapped here rather than guarded at each call site — there are a
+		// dozen, and the one that gets missed is the one that loses a library.
 		this.redraw = () => {
 			this.flush();
 			// The control the author is standing in, so the rebuild does not drop
