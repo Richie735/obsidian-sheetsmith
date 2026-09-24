@@ -260,7 +260,7 @@ describe('startLayout from a blank grid', () => {
 		 * of paths, so it accepts every spelling the real adapter's `fs` write
 		 * would reject — `docs/BACKLOG.md` carries the row, and modelling
 		 * `ENOENT` there is priced across 81 test files. Injecting is
-		 * `layout-editor.test.ts`'s own technique for the unreadable file one
+		 * `layout-file-row.test.ts`'s own technique for the unreadable file one
 		 * control over. The message is Obsidian's own so that what a reader sees
 		 * is what this case shows, and what is actually asserted is the
 		 * *pass-through*: whatever the vault said, verbatim, and nothing

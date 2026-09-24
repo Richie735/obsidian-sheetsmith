@@ -17,8 +17,10 @@ import { openView, showFile } from '../test/workspace';
  * The pane, as distinct from the editor inside it.
  *
  * What the pane owns is *posture*: which layout is open, and what is selected.
- * Everything the editor draws is driven in `editor/layout-editor.test.ts` — and
- * driven through this pane, because this is the host that ships. What is left
+ * Everything the editor draws is driven in `editor/layout-editor.test.ts` and
+ * the four region files beside it (`tree`, `schematic-gestures`,
+ * `layout-file-row`, `config-panel`) — and driven through this pane, by
+ * `src/test/layout-editor-pane.ts`, because this is the host that ships. What is left
  * here is the two homes Obsidian gives posture and the difference between them,
  * which is the whole reason the pane uses both rather than one.
  */

@@ -14,8 +14,8 @@ import {
  * The half of the tree's moves that needs no pane: which key press is which
  * move, what the chords are declared as, and what the hint says on each
  * platform. `rowMoves` and `openRowMenu` read a layout and write through the
- * host, so they are driven through the rendered pane in `layout-editor.test.ts`
- * with the rest of the tree, where a move's write, its refusal line and the
+ * host, so they are driven through the rendered pane in `tree.test.ts` with
+ * the rest of the tree, where a move's write, its refusal line and the
  * focus it leaves are all observable (`docs/PATTERNS.md` §10).
  */
 
