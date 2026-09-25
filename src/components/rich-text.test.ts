@@ -882,7 +882,7 @@ describe('richText.render — the editing gesture', () => {
 	});
 });
 
-describe('richText.render — brackets close as the reader types', () => {
+describe('richText.render — brackets close and lists continue as the reader types', () => {
 	/*
 	 * `interaction/markdown-typing.ts` has no test file of its own (PATTERNS
 	 * §10): this block is where everything it owns is driven. Every event is a
@@ -1245,6 +1245,91 @@ describe('richText.render — brackets close as the reader types', () => {
 		t.done();
 	});
 
+	it.each([
+		['- a', '- a\n- '],
+		['* a', '* a\n* '],
+		['+ a', '+ a\n+ '],
+		['3. a', '3. a\n4. '],
+		['- [x] a', '- [x] a\n- [ ] '],
+		['\t- a', '\t- a\n\t- '],
+		['  * a', '  * a\n  * '],
+		['\t+ a', '\t+ a\n\t+ '],
+		['  3. a', '  3. a\n  4. '],
+		['\t- [x] a', '\t- [x] a\n\t- [ ] '],
+	])('continues %j on Enter at the end of the item', (line, after) => {
+		const t = typing(line);
+		expect(press(t, 'insertLineBreak').defaultPrevented).toBe(true);
+		expect(state(t)).toEqual([after, after.length, after.length]);
+		t.done();
+	});
+
+	it('continues a list from insertParagraph as well as insertLineBreak', () => {
+		const t = typing('first\n- a');
+		press(t, 'insertParagraph');
+		expect(t.input.value).toBe('first\n- a\n- ');
+		t.done();
+	});
+
+	it('continues from the end of a line with more text below it', () => {
+		const t = typing('- a\nafter', 3);
+		press(t, 'insertLineBreak');
+		expect(state(t)).toEqual(['- a\n- \nafter', 6, 6]);
+		t.done();
+	});
+
+	it.each([['- '], ['3. '], ['- [ ] ']])(
+		'clears the empty unindented item %j and adds no line',
+		(line) => {
+			const t = typing(`above\n${line}`);
+			expect(press(t, 'insertLineBreak').defaultPrevented).toBe(true);
+			expect(state(t)).toEqual(['above\n', 6, 6]);
+			t.done();
+		},
+	);
+
+	it.each([
+		['\t\t- ', '\t- '],
+		['      - ', '  - '],
+		['  - ', '- '],
+		['\t3. ', '3. '],
+	])('steps the empty indented item %j out one level', (line, after) => {
+		const t = typing(line);
+		press(t, 'insertLineBreak');
+		expect(state(t)).toEqual([after, after.length, after.length]);
+		t.done();
+	});
+
+	it('walks an empty nested item to the margin, then ends the list', () => {
+		const t = typing('\t- ');
+		press(t, 'insertLineBreak');
+		expect(t.input.value).toBe('- ');
+		press(t, 'insertLineBreak');
+		expect(state(t)).toEqual(['', 0, 0]);
+		t.done();
+	});
+
+	it('leaves a mid-line Enter to the browser as a plain newline', () => {
+		const t = typing('- ab', 3);
+		expect(press(t, 'insertLineBreak').defaultPrevented).toBe(false);
+		expect(state(t)).toEqual(['- a\nb', 4, 4]);
+		t.done();
+	});
+
+	it('leaves Enter on a line that is not a list item to the browser', () => {
+		const t = typing('Just prose');
+		expect(press(t, 'insertLineBreak').defaultPrevented).toBe(false);
+		expect(t.input.value).toBe('Just prose\n');
+		t.done();
+	});
+
+	it('leaves Enter with a selection to the browser', () => {
+		const t = typing('- abc');
+		moveTo(t, 3, 5);
+		expect(press(t, 'insertLineBreak').defaultPrevented).toBe(false);
+		expect(t.input.value).toBe('- a\n');
+		t.done();
+	});
+
 	it('leaves an IME composing text alone', () => {
 		const t = typing('');
 		const event = press(t, 'insertText', '[', { isComposing: true });
@@ -1301,11 +1386,15 @@ describe('richText.render — brackets close as the reader types', () => {
 		// test can hold is that nothing took the route that empties it.
 		const t = typing('');
 		type(t, '[[Name]]');
+		press(t, 'insertLineBreak');
+		type(t, '- a');
+		press(t, 'insertLineBreak');
+		press(t, 'insertLineBreak');
 		type(t, '(');
 		press(t, 'deleteContentBackward');
 		moveTo(t, 2, 6);
 		press(t, 'insertText', '*');
-		expect(t.input.value).toBe('[[*Name*]]');
+		expect(t.input.value).toBe('[[*Name*]]\n- a\n');
 		expect(t.shim!.calls.length).toBeGreaterThan(0);
 		for (const call of t.shim!.calls) {
 			expect(call.command).toBe('insertText');

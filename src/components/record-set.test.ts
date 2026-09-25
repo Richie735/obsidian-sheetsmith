@@ -1795,6 +1795,27 @@ describe("a record's body", () => {
 		);
 	});
 
+	it('continues a list in the body, and a body holding ### still refuses on blur', () => {
+		const changes: RecordSetData[] = [];
+		const el = render({}, BODY, {
+			openRecords: [0],
+			onChange: (data) => changes.push(data),
+		});
+		const { field } = attached(el);
+		field.value = '### A record\n\n- a';
+		field.focus();
+		field.setSelectionRange(field.value.length, field.value.length);
+		typeInto(field, 'insertLineBreak');
+		expect(field.value).toBe('### A record\n\n- a\n- ');
+		// Continuation writes a marker, never a `#`, so the refusal is the one
+		// the existing text earns and no new one: its message is unchanged.
+		field.blur();
+		expect(changes).toEqual([]);
+		const message = errors(el)[0]?.textContent ?? '';
+		expect(message).toContain('### A record');
+		expect(message).toContain('a new feature in this list');
+	});
+
 	it("draws the app's markdown where there is a renderer, and paragraphs where there is not", () => {
 		const renderMarkdown = vi.fn((markdown: string, into: HTMLElement) => {
 			into.textContent = `rendered: ${markdown}`;

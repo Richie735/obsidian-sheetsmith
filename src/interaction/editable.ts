@@ -363,7 +363,7 @@ export interface MultilineOptions {
  *   `read` stores, and untouched in between.
  *
  * **What a keystroke does to the draft is `markdown-typing.ts`'s**, which closes
- * brackets; it owns none of the policy here and commits
+ * brackets and continues lists; it owns none of the policy here and commits
  * nothing, so this binding reads exactly as it did before it arrived.
  *
  * **Three of the field's members are deliberately absent**, on one rule —

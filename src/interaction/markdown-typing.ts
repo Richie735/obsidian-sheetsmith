@@ -2,8 +2,9 @@
  * Turn a keystroke in a markdown textarea into the edit an editor would make of
  * it (docs/features/prose-field-editing.md).
  *
- * Brackets that close as they are typed: a keystroke over a string and nothing
- * taken from the app. `bindMultiline` calls this on its textarea, so a Rich text block and a
+ * Two affordances, both keystrokes over a string and nothing taken from the
+ * app: brackets that close as they are typed, and a list that continues on
+ * Enter. `bindMultiline` calls this on its textarea, so a Rich text block and a
  * record body both have it and neither component knows it exists. Nothing here
  * commits, restores, trims or refuses — that is `editable.ts`'s policy, and
  * keeping the two apart is what leaves that policy exactly as it was.
@@ -12,7 +13,9 @@
  * is the second attempt.** The first keyed on physical keys, and a keyboard
  * layout that composes `[` with Option never reached it: every unit test passed
  * and the app did nothing. `beforeinput` carries the character actually going
- * in, whatever produced it.
+ * in, whatever produced it. The cost is stated rather than recovered: the event
+ * carries no modifiers, so Shift-Enter continues a list where Obsidian's own
+ * editor inserts a bare indented line.
  *
  * **Every edit goes through `execCommand('insertText')`**, deprecated and still
  * the only write that joins a textarea's native undo stack. A probe in Chromium
@@ -36,6 +39,8 @@
  * - Quotes are not paired: an apostrophe in prose is not an opener.
  * - `*`, `_` and a backtick wrap a selection and are never paired on a bare
  *   caret, since `**` typed by hand would become `****`. No triple backtick.
+ * - Mid-line Enter is a plain newline rather than a split item, and `1)`
+ *   markers and `>` blockquotes do not continue.
  * - Tab is not taken. It is the keyboard's route off the field (UI §6).
  */
 
@@ -58,6 +63,16 @@ const PAIRS_BEFORE = new Set([')', ']', '}', ':', ';', '>']);
  * is the case worth answering; a bare caret gets the character alone.
  */
 const WRAPS_ONLY = new Set(['*', '_', '`']);
+
+/**
+ * A list item, as Obsidian's `newlineAndIndentContinueMarkdownList` reads one,
+ * blockquotes and `)` markers aside: indent, a bullet or a number with a dot, a
+ * space, an optional task box, and the item's text.
+ */
+const LIST_ITEM = /^([ \t]*)([*+-]|(\d+)\.) (\[.\] )?(.*)$/;
+
+/** How many spaces one level of indent is, where the indent is spaces. */
+const SPACES_PER_LEVEL = 4;
 
 /** A pair this binding inserted, as offsets of its two characters. */
 interface TrackedPair {
@@ -219,6 +234,37 @@ export function bindMarkdownTyping(textarea: HTMLTextAreaElement): void {
 		return replace(start - 1, start + 1, '', start - 1);
 	};
 
+	const onEnter = (start: number, end: number): boolean => {
+		const value = textarea.value;
+		if (start !== end) return false;
+		if (start < value.length && value[start] !== '\n') return false;
+		const lineStart = value.lastIndexOf('\n', start - 1) + 1;
+		const item = LIST_ITEM.exec(value.slice(lineStart, start));
+		if (item === null) return false;
+		const [, indent = '', marker = '', number, task, text = ''] = item;
+		if (text.trim() === '') {
+			if (indent === '') {
+				// At the margin an empty item ends the list: the marker goes and
+				// the caret stays on the now-blank line.
+				return replace(lineStart, start, '', lineStart);
+			}
+			// Indented, it steps out one level and keeps its marker, so repeated
+			// Enter walks a nested item to the margin and then ends the list.
+			const trailing = indent.length - indent.replace(/ +$/, '').length;
+			const removed = indent.endsWith('\t')
+				? 1
+				: Math.min(SPACES_PER_LEVEL, trailing);
+			const cut = lineStart + indent.length - removed;
+			return replace(cut, cut + removed, '', start - removed);
+		}
+		const nextMarker =
+			number === undefined ? marker : `${Number(number) + 1}.`;
+		// A checked task continues unchecked, as Obsidian's does.
+		const box = task === undefined ? '' : '[ ] ';
+		const insert = `\n${indent}${nextMarker} ${box}`;
+		return replace(start, start, insert, start + insert.length);
+	};
+
 	textarea.addEventListener('beforeinput', (event: InputEvent) => {
 		// An IME composing text owns its keystrokes.
 		if (event.isComposing) return;
@@ -227,6 +273,10 @@ export function bindMarkdownTyping(textarea: HTMLTextAreaElement): void {
 		switch (event.inputType) {
 			case 'insertText':
 				handled = onText(event.data ?? '', start, end);
+				break;
+			case 'insertLineBreak':
+			case 'insertParagraph':
+				handled = onEnter(start, end);
 				break;
 			case 'deleteContentBackward':
 				handled = onBackspace(start, end);
