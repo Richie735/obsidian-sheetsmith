@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { spelled } from './spelled';
+import { spelled, tooManyToName } from './spelled';
+
+describe('tooManyToName', () => {
+	it('names five and counts six', () => {
+		expect(tooManyToName(['a', 'b', 'c', 'd', 'e'])).toBe(false);
+		expect(tooManyToName(['a', 'b', 'c', 'd', 'e', 'f'])).toBe(true);
+	});
+});
 
 describe('spelled', () => {
 	it('quotes a series the way a sentence reads one', () => {
