@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
 	MAX_TABULATED_FIELDS,
 	recordSet,
@@ -19,6 +19,8 @@ import { closeAnchoredPanel } from '../ui/anchored-panel';
 import { closePopover, LONG_PRESS } from '../ui/popover';
 import { parseModifierPart } from '../parse/modifier-cell';
 import { hold } from '../test/pointer';
+import { installExecCommand } from '../test/exec-command';
+import { beforeinput } from '../test/beforeinput';
 
 /*
  * Record set, and with it `parse/records.ts`.
@@ -1742,6 +1744,77 @@ describe("a record's body", () => {
 			).toBe(true);
 		},
 	);
+
+	/*
+	 * The second consumer of `interaction/markdown-typing.ts`: the body is bound
+	 * by the same `bindMultiline` as a Rich text block, so it closes brackets
+	 * and continues lists with nothing in this component knowing. The full set
+	 * of cases is `rich-text.test.ts`'s; these prove the body has it.
+	 */
+	/**
+	 * Undone after each case, passed or not, so a failing assertion cannot
+	 * leave the shim on the shared document or the list attached to it.
+	 */
+	const cleanups: (() => void)[] = [];
+	afterEach(() => {
+		for (const cleanup of cleanups.splice(0)) cleanup();
+	});
+
+	/** Attach the rendered list and install the shim, both undone after the case. */
+	const attached = (el: HTMLElement) => {
+		document.body.appendChild(el);
+		const field = bodyFields(el)[0] as HTMLTextAreaElement;
+		const shim = installExecCommand(field.ownerDocument);
+		cleanups.push(() => {
+			shim.restore();
+			el.remove();
+		});
+		return { field, shim };
+	};
+
+	const typeInto = (field: HTMLTextAreaElement, inputType: string, data: string | null = null) => {
+		const event = beforeinput(field, inputType, data);
+		field.dispatchEvent(event);
+		expect(event.defaultPrevented).toBe(true);
+	};
+
+	it('closes brackets as they are typed in the body', () => {
+		const el = render({}, BODY, { openRecords: [0] });
+		const { field, shim } = attached(el);
+		field.value = 'See ';
+		field.focus();
+		field.setSelectionRange(4, 4);
+		typeInto(field, 'insertText', '[');
+		typeInto(field, 'insertText', '[');
+		expect(field.value).toBe('See [[]]');
+		typeInto(field, 'insertText', ']');
+		typeInto(field, 'insertText', ']');
+		expect([field.value, field.selectionStart]).toEqual(['See [[]]', 8]);
+		expect(shim.calls.every((call) => call.doc === field.ownerDocument)).toBe(
+			true,
+		);
+	});
+
+	it('continues a list in the body, and a body holding ### still refuses on blur', () => {
+		const changes: RecordSetData[] = [];
+		const el = render({}, BODY, {
+			openRecords: [0],
+			onChange: (data) => changes.push(data),
+		});
+		const { field } = attached(el);
+		field.value = '### A record\n\n- a';
+		field.focus();
+		field.setSelectionRange(field.value.length, field.value.length);
+		typeInto(field, 'insertLineBreak');
+		expect(field.value).toBe('### A record\n\n- a\n- ');
+		// Continuation writes a marker, never a `#`, so the refusal is the one
+		// the existing text earns and no new one: its message is unchanged.
+		field.blur();
+		expect(changes).toEqual([]);
+		const message = errors(el)[0]?.textContent ?? '';
+		expect(message).toContain('### A record');
+		expect(message).toContain('a new feature in this list');
+	});
 
 	it("draws the app's markdown where there is a renderer, and paragraphs where there is not", () => {
 		const renderMarkdown = vi.fn((markdown: string, into: HTMLElement) => {

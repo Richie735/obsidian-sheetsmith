@@ -350,6 +350,21 @@ export default defineConfig(
 		},
 	},
 	{
+		// `execCommand('insertText')` is deprecated with no replacement, and it
+		// is the only write that keeps a textarea's native undo stack: a probe
+		// in Chromium showed one `setRangeText` leaves undo able to do nothing
+		// at all (docs/features/prose-field-editing.md). A prose field is where
+		// a reader expects Cmd-Z to work, so the deprecated call is the right
+		// one here. One file and one rule, argued here rather than inline, and
+		// one sanctioned call: `ownerDocument.execCommand('insertText', ...)` in
+		// `replace`. Any other deprecated member reaching this file is not
+		// covered by this argument and should be argued on its own.
+		files: ['src/interaction/markdown-typing.ts'],
+		rules: {
+			'@typescript-eslint/no-deprecated': 'off',
+		},
+	},
+	{
 		// Test scaffolding. The obsidian stub exists precisely to implement
 		// the helpers these rules ask code to use, so telling it to use them
 		// is circular; tests build fixtures with the standard API for the
