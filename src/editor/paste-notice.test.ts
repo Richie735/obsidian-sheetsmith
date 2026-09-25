@@ -46,6 +46,18 @@ describe('pasteSentence', () => {
 		expect(pasteSentence(leaf('Hit dice'), [], null)).toBe('Pasted "Hit dice".');
 	});
 
+	it('puts a kept section after what was pasted and before what to check', () => {
+		// A note's data outranks a formula to check.
+		const kept = 'Kept sentence.';
+		expect(pasteSentence(leaf('Portrait'), things('prof'), 'Image variations', kept)).toBe(
+			'Pasted "Portrait" from "Image variations". Kept sentence. Check what these mean here: prof.',
+		);
+		expect(pasteSentence(leaf('Portrait'), [], undefined, kept)).toBe(
+			'Pasted "Portrait". Kept sentence.',
+		);
+		expect(pasteSentence(leaf('Portrait'), [], undefined, null)).toBe('Pasted "Portrait".');
+	});
+
 	it('names up to five things, in order, and counts past five', () => {
 		expect(
 			pasteSentence(leaf('Hit dice'), things('the "long rest" reset', 'mod()', 'prof'), '5e 2014'),

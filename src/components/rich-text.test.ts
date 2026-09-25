@@ -68,19 +68,22 @@ describe('richText.read', () => {
 		});
 	});
 
-	it('never fails, whatever the body holds', () => {
+	it('never fails on a body without a sheet block, whatever else it holds', () => {
 		/*
-		 * Not a sample of likely bodies: this is the whole claim. Every body is
-		 * legal text, so this component has no read error state at all — which is
-		 * why it declares no config guard and never draws `.sheetsmith-error`.
-		 * A fence, a table and a heading are here because each is reserved syntax
-		 * to some other component and content to this one.
+		 * Not a sample of likely bodies: this is the whole claim. Every body but
+		 * one holding a `sheet` block is legal text, which is why this component
+		 * declares no config guard. A table, a heading and a code fence of any
+		 * other name are here because each is reserved syntax to some other
+		 * component, or looks like it, and content to this one.
 		 */
 		const bodies = [
 			'',
 			'\n',
 			'   \t\n \n',
-			'\n```sheet\nvalue: 3\n```\n',
+			'\n```js\nvalue: 3\n```\n',
+			// Indented, so `readFenced` would not open a block on it either.
+			'\n  ```sheet\nvalue: 3\n```\n',
+			'\n```sheets\nvalue: 3\n```\n',
 			'\n| Item | Qty |\n| --- | --- |\n| Rope | 1 |\n',
 			'\n# A heading\n\nAnd a paragraph.\n',
 			// `##` specifically, because it is the file model's own section marker:
@@ -93,6 +96,26 @@ describe('richText.read', () => {
 		];
 		for (const body of bodies) {
 			expect(richText.read(body, config).ok).toBe(true);
+		}
+	});
+
+	it('fails on a body holding a sheet block, which is another component’s data', () => {
+		/*
+		 * `docs/features/new-component-adopts-retained-section.md`: a section a note
+		 * kept after a Card was removed, now under this block's label. Read as prose
+		 * it was shown as the block's own text, and replacing it deleted the Card's
+		 * value. Prose around the block does not make it prose.
+		 */
+		const message =
+			"This section holds a sheet block, which is a component's data rather than text. Move it out of this section in the note, or rename this component in the layout.";
+		for (const body of [
+			'```sheet\nvalue: 15\nnote: chain mail\n```\n',
+			'\nSome prose first.\n\n```sheet\nvalue: 15\n```\n\nAnd after.\n',
+			'\r\n```sheet \r\nvalue: 15\r\n```\r\n',
+			// Unclosed is still a block opening, and still not this block's text.
+			'\n```sheet\nvalue: 15\n',
+		]) {
+			expect(richText.read(body, config)).toEqual({ ok: false, error: message });
 		}
 	});
 
@@ -1679,6 +1702,37 @@ describe('richText — the one line of markdown a block cannot hold', () => {
 					?.classList.contains('sheetsmith-rich-text-refused'),
 			).toBe(false);
 			expect(status(el)?.textContent).toBe('Backstory saved');
+		} finally {
+			el.remove();
+		}
+	});
+
+	it('refuses a draft that opens a sheet block, because the block could not read it back', () => {
+		// The read refusal's other half: without it, typing a fence would lock the
+		// reader out of their own block on the next render.
+		const commits: RichTextData[] = [];
+		const el = render({}, { text: 'Before the fire.' }, {
+			onChange: (d) => commits.push(d),
+		});
+		document.body.appendChild(el);
+		try {
+			const input = field(el);
+			input.focus();
+			input.value = 'Before the fire.\n\n```sheet\nvalue: 3\n```';
+			input.dispatchEvent(new Event('blur'));
+
+			expect(commits).toEqual([]);
+			expect(el.querySelector('.sheetsmith-error')?.textContent).toBe(
+				'Not saved. "```sheet" would start a block of sheet data in this note — name the code block something else.',
+			);
+			expect(input.value).toContain('```sheet');
+
+			// The reader takes the advice.
+			input.focus();
+			input.value = 'Before the fire.\n\n```text\nvalue: 3\n```';
+			input.dispatchEvent(new Event('blur'));
+			expect(commits).toEqual([{ text: 'Before the fire.\n\n```text\nvalue: 3\n```' }]);
+			expect(el.querySelector('.sheetsmith-error')).toBeNull();
 		} finally {
 			el.remove();
 		}

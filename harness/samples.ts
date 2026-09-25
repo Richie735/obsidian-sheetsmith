@@ -3039,6 +3039,23 @@ export function brokenSamples(): Sample[] {
 		 */
 		if (config.id === 'symbol') body = '\n![[https://example.com/portrait.png]]\n';
 		/*
+		 * The two refusals a component makes of a section another one left
+		 * (`docs/features/new-component-adopts-retained-section.md` §1): a Rich text
+		 * section holding a Card's fence, and an Image section holding more than one
+		 * line. Both replace the whole cell, so the message stands in place of the
+		 * component, prefixed with its label and with no heading or box drawn, as
+		 * every failed read is (`docs/UI.md` §10), and both are two sentences long — the second being the route out
+		 * — which is what has to wrap inside the cell rather than be trusted to.
+		 *
+		 * On `appearance` and `sigil` because neither is carrying a state nothing
+		 * else shows here: `backstory` beside the first is the working prose block
+		 * and `crest` and `symbol` beside the second are the sizing pair. `sigil` is
+		 * the tighter of the two, two columns by three rows, so the longer message
+		 * lands in the narrower box.
+		 */
+		if (config.id === 'appearance') body = '```sheet\nvalue: 15\nnote: chain mail\n```\n';
+		if (config.id === 'sigil') body = '\n| Name | Qty |\n|---|---|\n| [[Rope]] | 1 |\n';
+		/*
 		 * A passport's own error state, which is the one thing neither Image nor a
 		 * fenced card can show: **two halves, two rules, and never both at once**.
 		 * The picture is refused in the frame — Image's rule, since the picture is

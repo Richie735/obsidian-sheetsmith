@@ -5036,4 +5036,256 @@ describe('copying and pasting a component from the tree', () => {
 		await landed(harness);
 		expect(await drawn()).toEqual(['8', '14', '12']);
 	});
+
+	/*
+	 * A paste landing on a label character notes kept a section under
+	 * (`docs/features/new-component-adopts-retained-section.md` §2.2): the
+	 * sentence goes inside the paste's own notice, after what was pasted and
+	 * before what to check, and **Undo** there still undoes the paste.
+	 */
+	describe('onto a label notes kept a section under', () => {
+		/** A copy from another layout of a Card called Portrait, reading `prof`. */
+		function portrait(): string {
+			return encodeComponentCopy({
+				from: { layout: 'Image variations', fingerprint: 'elsewhere' },
+				component: {
+					id: 'portrait',
+					type: 'card',
+					label: 'Portrait',
+					position: { col: 1, row: 1, width: 2, height: 1 },
+					derived: 'prof',
+				} as unknown as ComponentConfig,
+				context: { functions: {}, definitions: [] },
+			});
+		}
+
+		it('says so inside the paste’s own notice, and Undo still undoes the paste', async () => {
+			harness = await open(sheet());
+			await harness.app.vault.create(
+				'Aramil.md',
+				'---\nsheet-layout: Paste sheet\n---\n\n## Portrait\n![[a.png]]\n',
+			);
+			const before = await harness.raw();
+			reading = { text: portrait() };
+			pressMenu(harness, 'level', 'Paste');
+			await landed(harness);
+			expect(lastNotice()).toBe(
+				'Pasted "Portrait" from "Image variations". 1 character note already has a section called "Portrait", and the pasted component now shows it. Rename it if that section belongs to something else. Check what these mean here: prof. Undo',
+			);
+			pressUndo();
+			await landed(harness);
+			expect(await harness.raw()).toBe(before);
+			// The note is the note it was: nothing here writes one.
+			expect(
+				await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!),
+			).toBe('---\nsheet-layout: Paste sheet\n---\n\n## Portrait\n![[a.png]]\n');
+		});
+
+		it('names each label a pasted container brings, and counts notes rather than sections', async () => {
+			harness = await open(sheet());
+			const text = await copyRow(harness, 'defences');
+			await harness.app.vault.create(
+				'Aramil.md',
+				'---\nsheet-layout: Paste sheet\n---\n\n## Armour class 2\n```sheet\nvalue: 14\n```\n\n## Ward 2\n```sheet\nvalue: 1\n```\n\n## Defences 2\n```sheet\nvalue: 1\n```\n',
+			);
+			await harness.app.vault.create(
+				'Thora.md',
+				'---\nsheet-layout: Paste sheet\n---\n\n## Ward 2\n```sheet\nvalue: 2\n```\n',
+			);
+			reading = { text };
+			pressMenu(harness, 'defences', 'Paste');
+			await landed(harness);
+			// The group has no section, so its own kept one is not named.
+			expect(lastNotice()).toBe(
+				'Pasted "Defences 2" with the 2 components inside it. 2 character notes already have sections called "Armour class 2" and "Ward 2", and the pasted components now show them. Rename any whose section belongs to something else. Undo',
+			);
+		});
+
+		it('says nothing about a kept section when the layout write fails', async () => {
+			harness = await open(sheet());
+			await harness.app.vault.create(
+				'Aramil.md',
+				'---\nsheet-layout: Paste sheet\n---\n\n## Portrait\n![[a.png]]\n',
+			);
+			const modify = harness.app.vault.modify.bind(harness.app.vault);
+			harness.app.vault.modify = async (file, content) => {
+				if (file.path.startsWith(LAYOUT_FOLDER)) throw new Error('disk full');
+				return modify(file, content);
+			};
+			reading = { text: portrait() };
+			pressMenu(harness, 'level', 'Paste');
+			await landed(harness);
+			expect(Notice.messages.some((message) => message.includes('already'))).toBe(false);
+			expect(
+				Notice.instances.some((notice) =>
+					(notice.messageEl.textContent ?? '').includes('already'),
+				),
+			).toBe(false);
+		});
+
+		it('writes no character note', async () => {
+			harness = await open(sheet());
+			await harness.app.vault.create(
+				'Aramil.md',
+				'---\nsheet-layout: Paste sheet\n---\n\n## Portrait\n![[a.png]]\n',
+			);
+			const notes: string[] = [];
+			const modify = harness.app.vault.modify.bind(harness.app.vault);
+			harness.app.vault.modify = async (file, content) => {
+				if (file.path.endsWith('.md')) notes.push(file.path);
+				return modify(file, content);
+			};
+			const process = vi.spyOn(harness.app.vault, 'process');
+			reading = { text: portrait() };
+			pressMenu(harness, 'level', 'Paste');
+			await landed(harness);
+			expect(notes).toEqual([]);
+			expect(process).not.toHaveBeenCalled();
+		});
+	});
+});
+
+/*
+ * An insert or a label commit landing on a label character notes kept a section
+ * under (`docs/features/new-component-adopts-retained-section.md` §2). The
+ * module's own cases — blank sections, other layouts, an undecidable name, an
+ * unreadable note — are `section-adoption.test.ts`'s; these are that the
+ * editor's own gestures reach it, at the right moment and behind the right gates.
+ */
+describe('a component landing on a section notes kept', () => {
+	const ADOPTED =
+		'1 character note already has a section called "Card", and this component now shows it. Rename the component if that section belongs to something else.';
+
+	/** A note on the fixture layout holding each section given. */
+	async function character(path: string, ...sections: readonly [string, string][]): Promise<void> {
+		await harness.app.vault.create(
+			path,
+			[
+				'---',
+				'sheet-layout: Test sheet',
+				'---',
+				'',
+				...sections.map(([label, body]) => `## ${label}\n${body}`),
+			].join('\n'),
+		);
+	}
+
+	/** Insert a bare component of this type from the picker, and let it land. */
+	async function insert(value: string): Promise<void> {
+		pick(harness, value);
+		pressAdd(harness);
+		await settle(harness.pane);
+		await tick();
+	}
+
+	beforeEach(async () => {
+		harness = await open();
+		Notice.messages = [];
+	});
+
+	it('says so when an inserted component’s label heads a kept section in one note', async () => {
+		await character('Aramil.md', ['Card', '```sheet\nvalue: 5\n```\n']);
+		await insert('card');
+		expect(Notice.messages).toEqual([ADOPTED]);
+	});
+
+	it('counts several notes in one notice', async () => {
+		for (const name of ['Aramil', 'Thora', 'Kell']) {
+			await character(`${name}.md`, ['Card', '```sheet\nvalue: 5\n```\n']);
+		}
+		await insert('card');
+		expect(Notice.messages).toEqual([
+			'3 character notes already have a section called "Card", and this component now shows them. Rename the component if those sections belong to something else.',
+		]);
+	});
+
+	it('says nothing where the kept section is blank, or where no note holds one', async () => {
+		await character('Aramil.md', ['Track', '\n\n']);
+		await insert('track');
+		await insert('card');
+		expect(Notice.messages).toEqual([]);
+	});
+
+	it('says nothing for an inserted container, whatever the notes hold', async () => {
+		await character('Aramil.md', ['Group', '```sheet\nvalue: 5\n```\n']);
+		await insert('group');
+		expect(Notice.messages).toEqual([]);
+	});
+
+	it('says nothing when the layout write fails, since nothing was adopted', async () => {
+		await character('Aramil.md', ['Card', '```sheet\nvalue: 5\n```\n']);
+		const modify = harness.app.vault.modify.bind(harness.app.vault);
+		harness.app.vault.modify = async (file, content) => {
+			if (file.path.startsWith(LAYOUT_FOLDER)) throw new Error('disk full');
+			return modify(file, content);
+		};
+		await insert('card');
+		expect(Notice.messages.filter((message) => message.includes('already'))).toEqual([]);
+	});
+
+	it('writes no character note on an insert', async () => {
+		await character('Aramil.md', ['Card', '```sheet\nvalue: 5\n```\n']);
+		const notes: string[] = [];
+		const modify = harness.app.vault.modify.bind(harness.app.vault);
+		harness.app.vault.modify = async (file, content) => {
+			if (file.path.endsWith('.md')) notes.push(file.path);
+			return modify(file, content);
+		};
+		await insert('card');
+		expect(Notice.messages).toEqual([ADOPTED]);
+		expect(notes).toEqual([]);
+	});
+
+	it('puts the migration’s sentence and the adoption’s in one notice on a label commit', async () => {
+		// One note migrates; the other already holds the new label and not the old.
+		await character('Aramil.md', ['Armour class', '```sheet\nvalue: 14\n```\n']);
+		await character('Thora.md', ['Defence', '```sheet\nvalue: 18\n```\n']);
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'label-armour'), 'Defence');
+		await settle(harness.pane);
+		expect(Notice.messages).toEqual([
+			'Renamed "Armour class" to "Defence" in 1 character note. 1 character note already has a section called "Defence", and this component now shows it. Rename the component if that section belongs to something else.',
+		]);
+	});
+
+	it('says nothing about a kept section when a label commit’s layout write fails', async () => {
+		await character('Thora.md', ['Defence', '```sheet\nvalue: 18\n```\n']);
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		const modify = harness.app.vault.modify.bind(harness.app.vault);
+		harness.app.vault.modify = async (file, content) => {
+			if (file.path.startsWith(LAYOUT_FOLDER)) throw new Error('disk full');
+			return modify(file, content);
+		};
+		type(control<HTMLInputElement>(harness, 'label-armour'), 'Defence');
+		await settle(harness.pane);
+		expect(Notice.messages).toEqual(['Sheetsmith could not save this layout: disk full']);
+	});
+
+	it('leaves a note holding both labels to the migration’s collision clause', async () => {
+		await character(
+			'Aramil.md',
+			['Armour class', '```sheet\nvalue: 14\n```\n'],
+			['Defence', '```sheet\nvalue: 18\n```\n'],
+		);
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'label-armour'), 'Defence');
+		await settle(harness.pane);
+		expect(Notice.messages).toHaveLength(1);
+		expect(Notice.messages[0]).not.toContain('this component now shows');
+		expect(Notice.messages[0]).toContain('Nothing was renamed');
+	});
+
+	it('says only the adoption where the migration has nothing to say', async () => {
+		await character('Thora.md', ['Defence', '```sheet\nvalue: 18\n```\n']);
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'label-armour'), 'Defence');
+		await settle(harness.pane);
+		expect(Notice.messages).toEqual([
+			'1 character note already has a section called "Defence", and this component now shows it. Rename the component if that section belongs to something else.',
+		]);
+	});
 });

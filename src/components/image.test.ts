@@ -112,6 +112,37 @@ describe('image.read', () => {
 		}
 	});
 
+	it('fails on a body holding more than one line, which its own field cannot write', () => {
+		/*
+		 * `docs/features/new-component-adopts-retained-section.md`: another
+		 * component's section under this label — a Card's fence, a Table, prose —
+		 * read as a source, then replaced whole on the reader's next commit. A
+		 * single-line field cannot produce one, so the failure is never the reader's
+		 * own typing, which is the condition the refusals above had to meet.
+		 */
+		const message =
+			'This section holds more than one line, and a picture is one embed. Move the rest out of this section in the note, or rename this component in the layout.';
+		for (const body of [
+			'```sheet\nvalue: 15\nnote: chain mail\n```\n',
+			'\n| Name | Qty |\n|---|---|\n| [[Rope]] | 1 |\n',
+			'\nRaised in [[Waterdeep]].\n\nBy the harbourmaster.\n',
+			'\n![[Portrait.png]]\n![[Other.png]]\n',
+			'\r\n![[Portrait.png]]\r\nA caption.\r\n',
+		]) {
+			expect(image.read(body, config)).toEqual({ ok: false, error: message });
+		}
+	});
+
+	it('still reads one line of prose, as the residue its own typing can reach', () => {
+		// Pinned as residue, not as a guarantee: a one-line body that is not an
+		// embed is still read and its reason drawn in the frame, so an adopted
+		// one-line prose section is still replaced by the next commit.
+		expect(image.read('\nRaised in [[Waterdeep]].\n', config)).toEqual({
+			ok: true,
+			data: { source: 'Raised in [[Waterdeep]].' },
+		});
+	});
+
 	it('still treats an empty body as the editable empty state', () => {
 		// Unchanged, and the one body that is `data: null` rather than a value.
 		expect(image.read('  \n\t\n ', config)).toEqual({ ok: true, data: null });

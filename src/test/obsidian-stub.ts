@@ -1281,6 +1281,16 @@ export class Vault {
 		return this.files.get(file.path)?.content ?? '';
 	}
 
+	/**
+	 * The app's cached read, which differs from `read` only in where the text
+	 * comes from: a cache the app invalidates on every write. This double keeps
+	 * no cache to go stale, so the two answer the same text — which is the
+	 * app's answer too, for a file nothing is writing at that moment.
+	 */
+	async cachedRead(file: TFile): Promise<string> {
+		return this.read(file);
+	}
+
 	async modify(file: TFile, content: string): Promise<void> {
 		this.files.set(file.path, { file, content });
 		this.trigger('modify', file);
