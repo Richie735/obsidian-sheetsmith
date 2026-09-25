@@ -20,6 +20,7 @@ import { getSection, parseCharacter } from '../parse/character';
 import { parseLayout } from '../parse/layout';
 import { walkComponents } from '../parse/layout-walk';
 import { ComponentConfig, isContainer } from '../types';
+import { entryConfig } from '../test/palette-entry';
 
 const LAYOUT = JSON.stringify({
 	name: 'DnD 5e Standard',
@@ -626,5 +627,77 @@ describe('a card whose value is chosen from a list', () => {
 		// plausible bonus nobody chose.
 		expect(unset.sheet('training')).toBeUndefined();
 		expect(unset.resolvedFor('stealth').derived).toBeNull();
+	});
+});
+
+/*
+ * The Computed entry on Card, over the Currency entry on Card set: a coin purse
+ * and a read-only number worked out from it, which is the job §4.2's withdrawn
+ * Computed component was for (`docs/features/computed-palette-entry.md`).
+ *
+ * **Both configs come from the registry's own entries**, not retyped, so this is
+ * the prefill an author gets out of the picker. Retyped, a renamed key in either
+ * entry would leave this case green over a layout nobody can build.
+ *
+ * The second case pins the correction SPEC §13 records: its Currency paragraph
+ * spelled the sum `coins.gp + coins.sp / 10`, and published names are
+ * case-sensitive while the Currency entry prefills `GP` and `SP`.
+ */
+const purseLayout = (derived: string) =>
+	JSON.stringify({
+		name: 'Coin purse',
+		columns: 6,
+		components: [
+			{
+				...entryConfig('card-set', 'Currency'),
+				id: 'coins',
+				type: 'card-set',
+				label: 'Coins',
+				position: { col: 1, row: 1, width: 4, height: 1 },
+			},
+			{
+				...entryConfig('card', 'Computed'),
+				id: 'gold_value',
+				type: 'card',
+				label: 'Gold value',
+				derived,
+				position: { col: 5, row: 1, width: 2, height: 1 },
+			},
+		],
+	});
+
+const PURSE = `---
+sheet-layout: Coin purse
+---
+
+## Coins
+\`\`\`sheet
+GP: 12
+SP: 35
+\`\`\`
+`;
+
+describe('a computed card reading the coin purse', () => {
+	it('works the gold value out from the coins, storing nothing of its own', () => {
+		const { resolvedFor, sheet } = sheetFrom(
+			purseLayout('coins.GP + coins.SP / 10'),
+			PURSE,
+		);
+		expect(resolvedFor('gold_value').derived).toBe(15.5);
+		// Published under its bare id, so the rest of the sheet can read it.
+		expect(sheet('gold_value')).toBe(15.5);
+		// A hidden value over a derived that reads none writes nothing: the note
+		// has no section for it before the sheet is built, and building it
+		// writes none.
+		expect(getSection(parseCharacter(PURSE), 'Gold value')).toBeUndefined();
+	});
+
+	it('does not resolve the lowercase spelling, because names are case-sensitive', () => {
+		const { resolvedFor, explainFor } = sheetFrom(
+			purseLayout('coins.gp + coins.sp / 10'),
+			PURSE,
+		);
+		expect(resolvedFor('gold_value').derived).toBeNull();
+		expect(explainFor('gold_value', 'derived')).toBe('Unknown name "coins.gp".');
 	});
 });
