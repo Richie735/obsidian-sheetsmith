@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { fenceLines, readFenced, renameFencedEntry, writeFenced } from './fenced';
+import {
+	fenceLines,
+	opensSheetBlock,
+	readFenced,
+	renameFencedEntry,
+	writeFenced,
+} from './fenced';
 
 const BODY = '\n```sheet\nSTR: 8\nDEX: 16\nWIS: 12\n```\n';
 
@@ -182,6 +188,32 @@ describe('renameFencedEntry', () => {
 			kind: 'renamed',
 			body: '\n```sheet\nDexterity: 16\n```\n\n```sheet\nDEX: 9\n```\n',
 		});
+	});
+});
+
+describe('opensSheetBlock', () => {
+	it('answers the first line that opens a sheet block, as written', () => {
+		expect(opensSheetBlock(BODY)).toBe('```sheet');
+		expect(opensSheetBlock('Prose.\n\n```sheet \t\r\nvalue: 1\r\n```\r\n')).toBe(
+			'```sheet \t',
+		);
+		// Unclosed is still an opening, which `readFenced` refuses rather than
+		// reading as prose.
+		expect(opensSheetBlock('\n```sheet\nvalue: 1\n')).toBe('```sheet');
+	});
+
+	it('answers null where readFenced would open no block', () => {
+		for (const body of [
+			'',
+			'Prose with ```sheet inline.',
+			'  ```sheet\nvalue: 1\n```',
+			'```sheets\nvalue: 1\n```',
+			'```js\nvalue: 1\n```',
+		]) {
+			expect(opensSheetBlock(body)).toBeNull();
+			const read = readFenced(body);
+			expect(read.ok && read.values === null).toBe(true);
+		}
 	});
 });
 
