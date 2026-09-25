@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Canvas, CanvasHost } from './canvas';
 import { getComponent, listComponentTypes } from '../components';
+import { entryConfig } from '../test/palette-entry';
 import { Layout } from '../parse/layout';
 import { ComponentConfig, isContainer } from '../types';
 
@@ -278,6 +279,43 @@ describe('the canvas filled with sample values', () => {
 		// a blank, which is the whole of what a preview is for: the derived
 		// number on the canvas is one more than what the card beside it holds.
 		expect(el.textContent).toContain(String(value + 1));
+	});
+
+	it('works a computed card out from the sampled coin purse beside it', () => {
+		/*
+		 * The Computed entry over the Currency entry, both straight from the
+		 * registry (`docs/features/computed-palette-entry.md`). The two coin
+		 * numbers are read off the strip rather than written here, because
+		 * sample numbers are seeded by id and a hardcoded 15.5 would be a claim
+		 * about the seed rather than about the arithmetic.
+		 */
+		const coins = component({
+			...entryConfig('card-set', 'Currency'),
+			id: 'coins',
+			type: 'card-set',
+			label: 'Coins',
+			position: { col: 1, row: 1, width: 4, height: 1 },
+		});
+		const gold = component({
+			...entryConfig('card', 'Computed'),
+			id: 'gold_value',
+			label: 'Gold value',
+			derived: 'coins.GP + coins.SP / 10',
+			position: { col: 5, row: 1, width: 2, height: 1 },
+		});
+		const el = document.createElement('div');
+		new Canvas(fakeHost('', true)).draw(el, layoutOf(coins, gold));
+
+		const coin = (name: string) =>
+			Number(el.querySelector<HTMLInputElement>(`input[aria-label="${name}"]`)?.value);
+		const gp = coin('Gold');
+		const sp = coin('Silver');
+		expect(gp).toBeGreaterThan(1);
+		expect(sp).toBeGreaterThan(1);
+		const shown = el.querySelector(
+			'[data-sheetsmith-focus="preview-gold_value"] ~ * .sheetsmith-card-derived',
+		)?.textContent;
+		expect(Number(shown)).toBeCloseTo(gp + sp / 10, 10);
 	});
 
 	it('does not draw one number repeated down a column of cards', () => {

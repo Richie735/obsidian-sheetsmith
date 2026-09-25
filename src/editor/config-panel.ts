@@ -743,6 +743,19 @@ export class ConfigPanel {
 
 		if (!definition) return;
 		const record = config as unknown as Record<string, unknown>;
+		/*
+		 * What the pane called this component when the form was drawn, so a
+		 * commit can tell whether it moved the name. A config field can: a Card
+		 * whose value is hidden behind a derived is a Computed, so **Hide value**
+		 * and **Derived** each decide it. Which fields do is the component's to
+		 * know and never this module's, so a commit compares rather than asks.
+		 * Where the name moved, the tree row carries it one column over, and a
+		 * redraw is what a Label commit already asks for on the same ground.
+		 * Only on a change: most commits leave the name alone, and a redraw
+		 * tears the whole tab down.
+		 */
+		const drawnAs = placedComponentName(config);
+		const renamed = () => placedComponentName(config) !== drawnAs;
 
 		// Only components that can act on a reset are offered one, and
 		// implementing `applyReset` is what says so. Why the field is rendered
@@ -963,7 +976,7 @@ export class ConfigPanel {
 							record[field.key] = value;
 						}
 						this.host.persist();
-						if (controls) this.host.redraw();
+						if (controls || renamed()) this.host.redraw();
 					});
 				});
 				continue;
@@ -1032,6 +1045,7 @@ export class ConfigPanel {
 								address?.whenBlank ?? '',
 							),
 						);
+						if (renamed()) this.host.redraw();
 						return;
 					}
 					/*
@@ -1086,6 +1100,7 @@ export class ConfigPanel {
 					this.host.persist(
 						keyRename(address, config.label, previous, trimmed),
 					);
+					if (renamed()) this.host.redraw();
 				});
 			});
 		}

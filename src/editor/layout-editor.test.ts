@@ -122,6 +122,17 @@ function pickerLines(harness: Harness): string[] {
 }
 
 /**
+ * The type word a component list row shows under its label: "Card",
+ * "Dropdown", "Computed". The one spelling of that query, which three cases had
+ * written three ways.
+ */
+function rowName(harness: Harness, label: string): string | null | undefined {
+	return Array.from(harness.container.querySelectorAll('.setting-item'))
+		.find((item) => item.querySelector('.setting-item-name')?.textContent === label)
+		?.querySelector('.setting-item-description')?.textContent;
+}
+
+/**
  * Whose grid each container schematic draws, in the order they are stacked.
  *
  * The sheet's own schematic carries no id and is not in this list, so what comes
@@ -1807,17 +1818,10 @@ describe('a list field naming its own columns', () => {
 		 * asking whether a config has options would be this module knowing what
 		 * a Card is.
 		 */
-		const named = (label: string) =>
-			Array.from(harness.container.querySelectorAll('.setting-item'))
-				.find(
-					(item) =>
-						item.querySelector('.setting-item-name')?.textContent === label,
-				)
-				?.querySelector('.setting-item-description')?.textContent;
-		expect(named('Race')).toBe('Dropdown');
-		expect(named('Level')).toBe('Card');
+		expect(rowName(harness, 'Race')).toBe('Dropdown');
+		expect(rowName(harness, 'Level')).toBe('Card');
 		// Nothing about the type changed, so a set is still a set.
-		expect(named('Abilities')).toBe('Card set');
+		expect(rowName(harness, 'Abilities')).toBe('Card set');
 	});
 
 	it('goes back to calling it a Card when the last option is removed', async () => {
@@ -1834,14 +1838,7 @@ describe('a list field naming its own columns', () => {
 			await settle(harness.pane);
 		}
 
-		const row = Array.from(
-			harness.container.querySelectorAll('.setting-item'),
-		).find(
-			(item) => item.querySelector('.setting-item-name')?.textContent === 'Race',
-		);
-		expect(row?.querySelector('.setting-item-description')?.textContent).toBe(
-			'Card',
-		);
+		expect(rowName(harness, 'Race')).toBe('Card');
 	});
 
 	it('gives a list whose first column holds a word the width for it', async () => {
@@ -1985,6 +1982,99 @@ describe('the Dropdown entry on Card', () => {
 		// Declaring options is the only thing that makes the card a dropdown,
 		// so an entry that prefilled none would have produced a text card.
 		expect(added).not.toHaveProperty('input');
+	});
+});
+
+describe('the Computed entry on Card', () => {
+	beforeEach(async () => {
+		harness = await open();
+	});
+
+	it('sits under Card after Dropdown in the picker', () => {
+		const lines = pickerLines(harness);
+		expect(
+			harness.container
+				.querySelector('[data-sheetsmith-choice="card:1"] .sheetsmith-picker-name')
+				?.textContent,
+		).toBe('Computed');
+		expect(lines.indexOf('card:1')).toBe(lines.indexOf('card:0') + 1);
+	});
+
+	it('adds a card holding exactly the prefill, labelled Computed, and names its row so', async () => {
+		pick(harness, 'card:1');
+		pressAdd(harness);
+		await settle(harness.pane);
+
+		const added = (await harness.stored()).components.at(-1) as unknown as Record<
+			string,
+			unknown
+		>;
+		const { id: _id, position: _position, ...rest } = added;
+		expect(rest).toEqual({
+			type: 'card',
+			label: 'Computed',
+			derived: '0',
+			hideValue: true,
+			hideNote: true,
+			signed: false,
+		});
+		expect(rowName(harness, 'Computed')).toBe('Computed');
+	});
+
+	it('goes back to calling it a Card when its Derived field is cleared', async () => {
+		// Clearing the formula deletes the key, which brings the value back on
+		// the card — so the name follows what the card now draws.
+		pick(harness, 'card:1');
+		pressAdd(harness);
+		await settle(harness.pane);
+		const id = String((await harness.stored()).components.at(-1)?.id);
+
+		control(harness, `edit-${id}`).click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, `cfg-${id}-derived`), '');
+		await settle(harness.pane);
+
+		expect((await harness.stored()).components.at(-1)).not.toHaveProperty('derived');
+		expect(rowName(harness, 'Computed')).toBe('Card');
+	});
+
+	it('calls it Computed again once a formula is typed back into Derived', async () => {
+		// The non-blank commit's route: Hide value is still ticked, so writing a
+		// derived hides the value again and the name has to follow.
+		pick(harness, 'card:1');
+		pressAdd(harness);
+		await settle(harness.pane);
+		const id = String((await harness.stored()).components.at(-1)?.id);
+
+		control(harness, `edit-${id}`).click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, `cfg-${id}-derived`), '');
+		await settle(harness.pane);
+		expect(rowName(harness, 'Computed')).toBe('Card');
+
+		type(control<HTMLInputElement>(harness, `cfg-${id}-derived`), '10 + 2');
+		await settle(harness.pane);
+		expect((await harness.stored()).components.at(-1)).toMatchObject({
+			derived: '10 + 2',
+			hideValue: true,
+		});
+		expect(rowName(harness, 'Computed')).toBe('Computed');
+	});
+
+	it('goes back to calling it a Card when Hide value is unticked', async () => {
+		// The checkbox's route, which redraws on no dependent field of its own:
+		// the name moving is what asks for the redraw.
+		pick(harness, 'card:1');
+		pressAdd(harness);
+		await settle(harness.pane);
+		const id = String((await harness.stored()).components.at(-1)?.id);
+
+		control(harness, `edit-${id}`).click();
+		await settle(harness.pane);
+		toggle(checkbox(harness, 'Hide value'), false);
+		await settle(harness.pane);
+
+		expect(rowName(harness, 'Computed')).toBe('Card');
 	});
 });
 

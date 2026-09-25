@@ -1673,6 +1673,13 @@ const DEFAULTS = [
 		size: '1500,2600',
 	},
 	{
+		// Card's Computed entry: a label over a single `0`, which is its
+		// placeholder formula resolving, with no pill and no note line.
+		name: 'picker-computed',
+		query: 'surface=editor&theme=light&layout=canvas-demo&pickerActive=card:1',
+		size: '1500,2600',
+	},
+	{
 		// A container draws the two placeholder children the picker supplies,
 		// as two tabs, under the tag.
 		name: 'picker-container',

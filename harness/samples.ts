@@ -9,32 +9,9 @@
  * Adding a component means adding it here too, or the harness will not show it.
  */
 
-import { paletteEntries } from '../src/components';
 import { encodeComponentCopy } from '../src/parse/component-clipboard';
 import type { ComponentConfig } from '../src/types';
-
-/**
- * One palette entry's prefill, taken from the registry rather than retyped.
- *
- * A sample of an entry has to be the entry. `docs/PATTERNS.md` §1's policy tier
- * is the argument: a prefill is a *set* of keys, so the only thing a guard could
- * assert about a second copy is that it still agrees with the first — and the
- * harness is the review surface, so the copy that drifts is the one somebody is
- * looking at while deciding the entry is fine.
- *
- * It throws rather than falling back, on `effectiveSamples`' own reason further
- * down: an entry renamed would otherwise spread nothing, and the sample would go
- * on being photographed as a bare table of that type with nothing saying so.
- */
-function entryConfig(type: string, name: string): Partial<ComponentConfig> {
-	const entry = paletteEntries(type).find((one) => one.name === name);
-	if (entry === undefined) {
-		throw new Error(
-			`No "${name}" entry on ${type}. It was renamed or removed; fix the name here, or this sample is a bare ${type}.`,
-		);
-	}
-	return entry.config;
-}
+import { entryConfig } from '../src/test/palette-entry';
 
 export interface Sample {
 	config: ComponentConfig;
@@ -750,13 +727,14 @@ export const SAMPLES: Sample[] = [
 		} as ComponentConfig,
 		body: null,
 	},
-	/* Two of the three palette prefills whose *rendering* nothing else here
+	/* Three of the four palette prefills whose *rendering* nothing else here
 	   reaches, which is the whole reason they are in the sample rather than only
-	   in the vault. The third is Conditions, further down beside the modifier
-	   tables, because what it has to be read against is a glyph rather than a
-	   card. Inventory is the one entry with no sample of its own: the `inventory`
-	   card above is already that entry's config with three extras on top, so a
-	   fourth open table would be a longer sheet showing nothing new. */
+	   in the vault: Currency, the Computed card reading it, and Features. The
+	   fourth is Conditions, further down beside the modifier tables, because what
+	   it has to be read against is a glyph rather than a card. Inventory is the
+	   one entry with no sample of its own: the `inventory` card above is already
+	   that entry's config with three extras on top, so a fourth open table would
+	   be a longer sheet showing nothing new. */
 	{
 		config: {
 			id: 'currency',
@@ -779,6 +757,32 @@ export const SAMPLES: Sample[] = [
 		// EP left out on purpose: a denomination the note has never held renders
 		// beside four that have.
 		body: '```sheet\nCP: 42\nSP: 18\nGP: 7\nPP: 1\n```',
+	},
+	{
+		/*
+		 * The **Computed** entry on Card, reading the purse beside it: `GP: 7` and
+		 * `SP: 18` make 8.8. Its config is the entry's own, spread rather than
+		 * retyped, with only the formula the author would write in place of the
+		 * entry's `0`. Beside Currency rather than anywhere else because the two
+		 * cells it takes are the ones that row leaves free, and because the
+		 * number is only checkable against the coins it is made of.
+		 *
+		 * `Inspired bonus` above draws the same face — a label over one number,
+		 * no pill, no note line — from a hand-built config; this one is what the
+		 * picker actually writes, which is the thing under review.
+		 *
+		 * **No section in the body**, and the null is the claim: a hidden value
+		 * over a formula that reads none stores nothing.
+		 */
+		config: {
+			id: 'gold_value',
+			type: 'card',
+			label: 'Gold value',
+			position: { col: 6, row: 16, width: 2, height: 1 },
+			...entryConfig('card', 'Computed'),
+			derived: 'currency.GP + currency.SP / 10',
+		} as ComponentConfig,
+		body: null,
 	},
 	{
 		config: {
@@ -1145,9 +1149,10 @@ export const SAMPLES: Sample[] = [
 		body: '\n![[Sildar Hallwinter.png]]\n',
 	},
 	/*
-	 * The **Conditions** palette entry, rendered (SPEC §4.2), and the third of the
-	 * three prefills here for that reason — the other two are Currency and
-	 * Features, below the flag row: the *rendering* of an entry is a thing a
+	 * The **Conditions** palette entry, rendered (SPEC §4.2), and the fourth of the
+	 * four prefills here for that reason — the other three are Currency, the
+	 * Computed card beside it, and Features, below the flag row: the *rendering*
+	 * of an entry is a thing a
 	 * reviewer has to be able to look at, and this one nothing else on the sheet
 	 * reaches.
 	 *
