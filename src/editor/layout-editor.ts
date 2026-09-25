@@ -1336,7 +1336,25 @@ export class LayoutEditorSection {
 			 * that sheet, or closing it, wrote the migration back out.
 			 */
 			await this.host.flushSheets();
-			await reportComponentRename(this.plugin.app, file.basename, rename);
+			/*
+			 * **Between the flush and the migration, and it has to be.** After the
+			 * migration a renamed note holds the new label too and cannot be told
+			 * from one that already held it; before the flush, a value typed a
+			 * moment ago is not on disk to be counted. A note holding the old
+			 * label as well is the migration's collision, counted there, so it is
+			 * passed over here (`section-adoption.ts`).
+			 */
+			const adoption =
+				rename.kind === 'label'
+					? await adoptionReport(
+							this.plugin.app,
+							file.basename,
+							[rename.to],
+							'component',
+							rename.from,
+						)
+					: null;
+			await reportComponentRename(this.plugin.app, file.basename, rename, adoption);
 			await this.host.reloadSheets();
 			return true;
 		}

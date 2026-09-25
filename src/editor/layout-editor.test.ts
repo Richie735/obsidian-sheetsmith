@@ -5235,4 +5235,57 @@ describe('a component landing on a section notes kept', () => {
 		expect(Notice.messages).toEqual([ADOPTED]);
 		expect(notes).toEqual([]);
 	});
+
+	it('puts the migration’s sentence and the adoption’s in one notice on a label commit', async () => {
+		// One note migrates; the other already holds the new label and not the old.
+		await character('Aramil.md', ['Armour class', '```sheet\nvalue: 14\n```\n']);
+		await character('Thora.md', ['Defence', '```sheet\nvalue: 18\n```\n']);
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'label-armour'), 'Defence');
+		await settle(harness.pane);
+		expect(Notice.messages).toEqual([
+			'Renamed "Armour class" to "Defence" in 1 character note. 1 character note already has a section called "Defence", and this component now shows it. Rename the component if that section belongs to something else.',
+		]);
+	});
+
+	it('says nothing about a kept section when a label commit’s layout write fails', async () => {
+		await character('Thora.md', ['Defence', '```sheet\nvalue: 18\n```\n']);
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		const modify = harness.app.vault.modify.bind(harness.app.vault);
+		harness.app.vault.modify = async (file, content) => {
+			if (file.path.startsWith(LAYOUT_FOLDER)) throw new Error('disk full');
+			return modify(file, content);
+		};
+		type(control<HTMLInputElement>(harness, 'label-armour'), 'Defence');
+		await settle(harness.pane);
+		expect(Notice.messages).toEqual(['Sheetsmith could not save this layout: disk full']);
+	});
+
+	it('leaves a note holding both labels to the migration’s collision clause', async () => {
+		await character(
+			'Aramil.md',
+			['Armour class', '```sheet\nvalue: 14\n```\n'],
+			['Defence', '```sheet\nvalue: 18\n```\n'],
+		);
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'label-armour'), 'Defence');
+		await settle(harness.pane);
+		expect(Notice.messages).toHaveLength(1);
+		expect(Notice.messages[0]).not.toContain('this component now shows');
+		expect(Notice.messages[0]).toContain('Nothing was renamed');
+	});
+
+	it('says only the adoption where the migration has nothing to say', async () => {
+		await character('Thora.md', ['Defence', '```sheet\nvalue: 18\n```\n']);
+		control(harness, 'edit-armour').click();
+		await settle(harness.pane);
+		type(control<HTMLInputElement>(harness, 'label-armour'), 'Defence');
+		await settle(harness.pane);
+		expect(Notice.messages).toEqual([
+			'1 character note already has a section called "Defence", and this component now shows it. Rename the component if that section belongs to something else.',
+		]);
+	});
 });

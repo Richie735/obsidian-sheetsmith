@@ -422,6 +422,11 @@ export function migrationMessage(
  * Migrate every character note this layout reaches, and report the outcome
  * through one `Notice` — fired once, and only where something happened.
  *
+ * `trailing` is a sentence the caller has to say about the same gesture, and it
+ * goes into the same `Notice` after the migration's own: a label commit that
+ * also lands on a section notes already hold (`section-adoption.ts`). One
+ * gesture, one notice, and the migration's wording is untouched by it.
+ *
  * The one entry point `editor/layout-editor.ts`'s `persist()` calls, after
  * the layout file's own write has resolved: this module never runs ahead of
  * that write, so a layout write that fails leaves every character note
@@ -431,8 +436,11 @@ export async function reportComponentRename(
 	app: App,
 	layoutName: string,
 	intent: RenameIntent,
+	trailing: string | null = null,
 ): Promise<void> {
 	const summary = await migrateComponentRename(app, layoutName, intent);
-	const message = migrationMessage(intent, summary);
-	if (message !== null) new Notice(message);
+	const message = [migrationMessage(intent, summary), trailing]
+		.filter((part): part is string => part !== null)
+		.join(' ');
+	if (message !== '') new Notice(message);
 }
