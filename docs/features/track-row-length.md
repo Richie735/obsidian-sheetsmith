@@ -732,6 +732,8 @@ Carried from the first pass, unchanged:
 - **Publishing a row's own length under a name of its own.** Only `.left` is
   reachable, added row or not.
 - **A warning treatment for marks stored above a row's own length.**
+  **Amended by `track-stored-value-past-shortened-run.md`**: those marks are now drawn, past the
+  row's length as over segments, though as no warning.
 - **Anything about `marks` beyond letting it keep meaning what it means.**
 - **A "restored what it could" channel on `ResetResult`.**
 
