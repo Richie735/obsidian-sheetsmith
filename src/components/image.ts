@@ -89,6 +89,18 @@ import {
 } from '../types';
 import { renderPictureFrame } from './picture-frame';
 
+/**
+ * Why a section holding more than one line draws no frame. Names both routes
+ * out, as Rich text's sheet-block refusal does: the rest of the section may be
+ * worth keeping under another heading, or it may belong to a component the
+ * layout should be showing under this label instead.
+ *
+ * Independent of Rich text's sentence on purpose, and its comment says why: the
+ * routes match, but what has to move differs, and that is the part worded here.
+ */
+const MORE_THAN_ONE_LINE =
+	'This section holds more than one line, and a picture is one embed. Move the rest out of this section in the note, or rename this component in the layout.';
+
 export interface ImageConfig extends ComponentConfig {
 	type: 'image';
 	hideLabel?: boolean;
@@ -137,8 +149,17 @@ export const image: ComponentDefinition<ImageConfig, ImageData> = {
 	],
 
 	/*
-	 * **`read` cannot fail, and that is a correction rather than a simplification.**
-	 * It used to refuse a body that is not a usable embed, and a failed `read` never
+	 * **`read` fails on one body only: one holding more than one line.** That is
+	 * a body this component's own field cannot produce — it is a single-line input
+	 * — and `write` replaces the whole text, so reading one would put another
+	 * component's section (a Card's fence, a Table, prose: one a note kept after
+	 * its component was removed, or a hand edit) in a field whose next commit
+	 * deletes it (`docs/features/new-component-adopts-retained-section.md`). It is
+	 * the condition the rest of this comment sets for when a read may fail: never
+	 * a state the reader's own typing reaches.
+	 *
+	 * **Every other body reads, and that is a correction rather than a
+	 * simplification.** It used to refuse a body that is not a usable embed, and a failed `read` never
 	 * reaches `render`: `view/grid-cells.ts` replaces the whole cell, so there is no
 	 * frame, no label row and **no field**.
 	 *
@@ -162,6 +183,7 @@ export const image: ComponentDefinition<ImageConfig, ImageData> = {
 		// No section, an empty one, or one holding only blank lines: an editable
 		// empty frame, not an error (PATTERNS §4). The first commit writes it.
 		if (source === '') return { ok: true, data: null };
+		if (/[\r\n]/.test(source)) return { ok: false, error: MORE_THAN_ONE_LINE };
 		return { ok: true, data: { source } };
 	},
 
