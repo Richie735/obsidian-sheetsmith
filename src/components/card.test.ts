@@ -1035,8 +1035,8 @@ describe('card.render: an options list that cannot be a menu', () => {
 });
 
 describe('card palette', () => {
-	it('offers a dropdown, because nobody looks for one under Card', () => {
-		expect(card.palette?.map((entry) => entry.name)).toEqual(['Dropdown']);
+	it('offers a dropdown and a computed card, because nobody looks for either under Card', () => {
+		expect(card.palette?.map((entry) => entry.name)).toEqual(['Dropdown', 'Computed']);
 	});
 
 	it('prefills options, which is the only thing that makes it a dropdown', () => {
@@ -1050,6 +1050,54 @@ describe('card palette', () => {
 		// Not `hideNote`: a heritage is a closed choice plus a written detail,
 		// and the line is the half the choice cannot carry.
 		expect(entry?.config).not.toHaveProperty('hideNote');
+	});
+
+	it('prefills a computed card as a hidden value over a formula that reads none', () => {
+		const entry = card.palette?.find((candidate) => candidate.name === 'Computed');
+		expect(entry?.description).toBe(
+			'A read-only number worked out by a formula from values elsewhere on the sheet.',
+		);
+		// Key order too: the editor writes the prefill as it is spelled here.
+		expect(Object.entries(entry?.config ?? {})).toEqual([
+			['derived', '0'],
+			['hideValue', true],
+			['hideNote', true],
+			['signed', false],
+		]);
+	});
+
+	it('draws the computed prefill as a plain 0 with no control on the card', () => {
+		const entry = card.palette?.find((candidate) => candidate.name === 'Computed');
+		const el = render({ ...entry?.config }, null, { resolveField: () => 0 });
+		expect(el.querySelector('.sheetsmith-card-derived')?.textContent).toBe('0');
+		expect(el.querySelector('input, select, textarea')).toBeNull();
+	});
+
+	it('names a card with options and its value shown a dropdown', () => {
+		expect(card.configName?.({ ...config, options: [{ value: 'Elf' }] })).toBe('Dropdown');
+	});
+
+	it('names a plain card nothing, so the editor calls it a Card', () => {
+		expect(card.configName?.({ ...config })).toBeNull();
+	});
+
+	it('names a card whose value is hidden behind a derived a computed card', () => {
+		expect(card.configName?.({ ...config, hideValue: true, derived: '0' })).toBe('Computed');
+	});
+
+	it('names it computed over dropdown, since a hidden value hides the menu with it', () => {
+		expect(
+			card.configName?.({
+				...config,
+				options: [{ value: 'Elf' }],
+				hideValue: true,
+				derived: '0',
+			}),
+		).toBe('Computed');
+	});
+
+	it('does not name a hidden value with no derived computed, since the card then shows it', () => {
+		expect(card.configName?.({ ...config, hideValue: true })).toBeNull();
 	});
 });
 

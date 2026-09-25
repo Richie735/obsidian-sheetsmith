@@ -994,6 +994,7 @@ describe('a component that says what a sample of itself looks like', () => {
 	const SWEPT = [
 		'card bare',
 		'card Dropdown',
+		'card Computed',
 		'card-set bare',
 		'card-set Currency',
 		'card-set example',
