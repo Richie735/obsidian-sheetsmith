@@ -846,8 +846,12 @@ decided.
 - **A test that could pass vacuously must assert it is testing something.**
   `styles.test.ts` checks it matched more than 8 rules before checking they are
   all scoped.
-- **A shared test helper is checked to be the only spelling of what it owns**
-  [checked]. `pointer-gestures.test.ts` scans every `*.test.ts` for a bare
+- **A shared test helper is the only spelling of what it owns** [judgement],
+  **and only `src/test/pointer.ts` has a scan behind it** [checked]. The other
+  helpers in `src/test/`, `exec-command.ts` and `beforeinput.ts` among them, are
+  held by review; a scan waits for a second instance of the same class of drift,
+  as `BACKLOG` refuses one at a single instance. `pointer-gestures.test.ts`
+  scans every `*.test.ts` for a bare
   `new PointerEvent('pointerdown'|'pointerup', …)` that carries `pointerId` or
   `button` and no coordinates — which is exactly what `src/test/pointer.ts`
   already says — and fails naming the file and line. It exists because
@@ -876,7 +880,11 @@ decided.
   driven through a control, so a file of its own would have to build a fake card
   before it could press anything — and `pool.test.ts`, `track.test.ts` and the
   component tests already are that card. A second one is the duplication §1
-  forbids.
+  forbids. `markdown-typing.ts` is the same case: `components/rich-text.test.ts`
+  drives every keystroke it owns through a Rich text field, and
+  `components/record-set.test.ts` proves the record body has it. Both install
+  `src/test/exec-command.ts`, the one spelling of the `execCommand` the test DOM
+  lacks.
 
   **A shared-vocabulary module is tested through the consumers that speak it.**
   `components/column-types.ts` and `components/stored-flag.ts` are the second,
