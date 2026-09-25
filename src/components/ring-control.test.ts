@@ -160,6 +160,47 @@ describe('a name that is not on screen', () => {
 	});
 });
 
+/*
+ * **What a caller adds to the title** (`note`). Track's flag is the caller, with
+ * a stored count above one it has no spelling for
+ * (`docs/features/track-stored-value-past-shortened-run.md`); a cell passes
+ * none. Here rather than only through Track because Track's flag is unnamed, so
+ * it reaches the note-alone arm and never the joined one.
+ */
+describe('a note beside the title', () => {
+	const said = 'Holds 3 marks from a longer run';
+
+	it('joins the level\'s word on a worded ring', () => {
+		const { button } = ring({
+			column: { levels: ['Fine', 'Blessed:✦'] },
+			graded: true,
+			level: 1,
+			note: () => said,
+		});
+		expect(button.getAttribute('title')).toBe(`Blessed\n${said}`);
+	});
+
+	it('is the whole title where the ring has no word of its own', () => {
+		expect(ring({ level: 1, note: () => said }).button.getAttribute('title')).toBe(said);
+	});
+
+	it('drops at level 0, whatever the caller answers', () => {
+		const { button } = ring({ level: 1, note: () => said });
+		button.click();
+		expect(button.hasAttribute('title')).toBe(false);
+	});
+
+	it('leaves the title as it was where the caller answers null', () => {
+		const { button } = ring({
+			column: { levels: ['Fine', 'Blessed:✦'] },
+			graded: true,
+			level: 1,
+			note: () => null,
+		});
+		expect(button.getAttribute('title')).toBe('Blessed');
+	});
+});
+
 describe('what a ring does', () => {
 	it('cycles on a press and wraps at the top', () => {
 		// One control reaches every level and returns to none without a second

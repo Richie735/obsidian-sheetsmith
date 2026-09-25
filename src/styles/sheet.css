@@ -3863,8 +3863,18 @@ a.sheetsmith-undo {
    mode is where a mark most has to survive. The bar is longer than the box and
    the segment's own `overflow: hidden` clips it to the padding box, which is
    what makes it a clean corner-to-corner diagonal rather than a line with ends
-   hanging out past the corners. */
-.sheetsmith-track-segment-blocked::after {
+   hanging out past the corners.
+
+   **An over segment takes this same slash, by this selector list and not by a
+   copy**: a slot past the live run that still holds marks is one figure with a
+   slot past it that holds none, and the fill under it is the whole of the
+   difference — the same difference a lit base segment has from an unlit one.
+   The owner's condition for drawing the over part at all
+   (`docs/features/track-stored-value-past-shortened-run.md`): no new figure, no
+   new line style, no new colour. The slash paints after the fill because a
+   positioned `::after` follows its element's other positioned children. */
+.sheetsmith-track-segment-blocked::after,
+.sheetsmith-track-segment-over::after {
 	content: '';
 	position: absolute;
 	right: -6px;
@@ -3876,6 +3886,63 @@ a.sheetsmith-undo {
 	/* The run owns every press; a blocked slot is not a target and its mark
 	   must not become one. */
 	pointer-events: none;
+}
+
+/* The over part of a run too long to draw, as one box holding its count in
+   marks (`+147`), after the live segments. A segment's corner, and the lit
+   segment's accent border and fill so it reads as held marks; no slash, since a
+   slash across digits costs the count its legibility. Its width is its text's,
+   tabular so the box holds still while a burst of presses steps through it.
+   Unlit at `+0`, which only a burst of presses reaches before its write lands.
+
+   **A segment's height, taken from the segment's own font rather than this
+   box's.** A segment is `1.15em` at `--font-ui-small`; written as `1.15em` here
+   it resolved against the smaller digits and drew the box a pixel short of the
+   segments beside it (14 against 15, 18 against 19.5 under a coarse pointer).
+
+   **The border is an overlay, and forced colors is why.** That mode paints a
+   backplate behind text, sized by the font's own ascent and descent rather than
+   by `line-height`, and at this height the backplate is taller than the box's
+   content: it painted over the box's top border (bottom too, while the line box
+   was `line-height: 1`), so in forced colors the count sat in a box with no
+   top. Holding the line box to the content box fixed the bottom and not the top,
+   measured. A positioned `::after` paints after the text and its backplate — the
+   granted ring's own overlay argument, for a different reason — so the edge is
+   drawn on top in every mode, at the same footprint: the border's width becomes
+   padding. */
+.sheetsmith-track-over-count {
+	--sheetsmith-track-over-height: calc(1.15 * var(--font-ui-small));
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	box-sizing: border-box;
+	height: var(--sheetsmith-track-over-height);
+	padding: 1.5px calc(var(--size-2-2) + 1.5px);
+	border-radius: var(--radius-s);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-semibold);
+	font-variant-numeric: tabular-nums;
+	line-height: calc(var(--sheetsmith-track-over-height) - 3px);
+}
+
+.sheetsmith-track-over-count::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	border: 1.5px solid var(--text-faint);
+	border-radius: var(--radius-s);
+	/* The run owns every press; the edge must not become a target. */
+	pointer-events: none;
+}
+
+.sheetsmith-track-over-count.sheetsmith-track-segment-on {
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.sheetsmith-track-over-count.sheetsmith-track-segment-on::after {
+	border-color: var(--interactive-accent);
 }
 
 /* The glyph sits above both fills, so a segment the layout lettered stays
@@ -4029,6 +4096,10 @@ a.sheetsmith-undo {
 .sheetsmith-track-segment {
 		width: var(--sheetsmith-track-segment-width, 1.5em);
 		height: 1.5em;
+	}
+
+.sheetsmith-track-over-count {
+		--sheetsmith-track-over-height: calc(1.5 * var(--font-ui-small));
 	}
 
 /* A finger needs the room most on the run whose marks it is aiming

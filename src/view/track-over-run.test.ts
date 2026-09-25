@@ -21,54 +21,11 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { SheetView } from './sheet-view';
-import { App, TextFileView } from '../test/obsidian-stub';
-import { fakePlugin, LAYOUT_FOLDER } from '../test/plugin';
-import { openView } from '../test/workspace';
 import { pressDown, release } from '../test/pointer';
-
-/** One turn of the loop, which a render started and not awaited needs. */
-const settle = () => new Promise((resolve) => window.setTimeout(resolve, 0));
-
-/** Longer than `GESTURE_COMMIT` (700 ms), which a Track step waits out before writing. */
-const gestureCommit = () => new Promise((resolve) => window.setTimeout(resolve, 900));
-
-/** A note on layout `L` holding each `## label` section with its body, in order. */
-function note(...sections: readonly [label: string, body: string][]): string {
-	return [
-		'---',
-		'sheet-layout: L',
-		'---',
-		'',
-		...sections.map(([label, body]) => `## ${label}\n${body}`),
-	].join('\n');
-}
+import { gestureCommit, note, settle, sheetOn } from '../test/sheet-on-note';
 
 /** A fence holding one entry per line. */
 const fence = (...lines: string[]): string => ['```sheet', ...lines, '```', ''].join('\n');
-
-/** Open a sheet on `text`, whose layout holds the components given, one above the next. */
-async function sheetOn(
-	components: readonly Record<string, unknown>[],
-	text: string,
-): Promise<SheetView> {
-	const app = new App();
-	await app.vault.createFolder(LAYOUT_FOLDER);
-	await app.vault.create(
-		`${LAYOUT_FOLDER}/L.json`,
-		JSON.stringify({
-			name: 'L',
-			components: components.map((component, index) => ({
-				position: { col: 1, row: 1 + index * 3, width: 6, height: 3 },
-				...component,
-			})),
-		}),
-	);
-	const file = await app.vault.create('Character.md', text);
-	const view = await openView(app, document.body, SheetView, fakePlugin(app));
-	await (view as unknown as TextFileView).onLoadFile(file);
-	await settle();
-	return view;
-}
 
 /** The Track's run on the sheet, found afresh, since a write rebuilds the view. */
 function runOf(view: SheetView): HTMLElement {
@@ -148,8 +105,6 @@ interface Instance {
 	entry: (n: number) => string;
 	/** The marks the note holds. */
 	stored: number;
-	/** The marks the live run can take: today's ceiling. */
-	live: number;
 	/** Anything the reader does before the step: case 4's length commit. */
 	before?: (view: SheetView) => Promise<void>;
 }
@@ -188,7 +143,6 @@ const INSTANCES: readonly Instance[] = [
 		text: note(['Stress', fence('value: 5')]),
 		entry: (n) => `value: ${n}`,
 		stored: 5,
-		live: 3,
 	},
 	{
 		name: '2. a formula count resolving lower: count "level" at level 3, over value 5',
@@ -199,7 +153,6 @@ const INSTANCES: readonly Instance[] = [
 		text: note(['Level', fence('value: 3')], ['Stress', fence('value: 5')]),
 		entry: (n) => `value: ${n}`,
 		stored: 5,
-		live: 3,
 	},
 	{
 		name: '3a. a grant removed: 3 + mod.self with nothing pushed, over value 5',
@@ -207,7 +160,6 @@ const INSTANCES: readonly Instance[] = [
 		text: note(['Stress', fence('value: 5')], ['Worn items', gearBody('')]),
 		entry: (n) => `value: ${n}`,
 		stored: 5,
-		live: 3,
 	},
 	{
 		name: '3b. a penalty over held marks: 6 + mod.self with a -2, over value 6',
@@ -218,7 +170,6 @@ const INSTANCES: readonly Instance[] = [
 		),
 		entry: (n) => `value: ${n}`,
 		stored: 6,
-		live: 4,
 	},
 	{
 		name: '4. a character-owned row shortened: d6 at 5 / 6, its length committed to 3',
@@ -226,18 +177,17 @@ const INSTANCES: readonly Instance[] = [
 		text: note(['Stress', fence('d6: 5 / 6')]),
 		entry: (n) => `d6: ${n} / 3`,
 		stored: 5,
-		live: 3,
 		before: async (view) => commitLength(view, '3'),
 	},
 ];
 
 for (const instance of INSTANCES) {
 	describe(instance.name, () => {
-		const { stored, live, entry } = instance;
+		const { stored, entry } = instance;
 
 		/** The sheet, after anything the instance does first, and the note it then holds. */
 		const open = async (): Promise<{ view: SheetView; start: string }> => {
-			const view = await sheetOn(instance.components, instance.text);
+			const { view } = await sheetOn(instance.components, instance.text);
 			await instance.before?.(view);
 			const start = view.getViewData();
 			expect(start).toContain(entry(stored));
@@ -248,30 +198,36 @@ for (const instance of INSTANCES) {
 		const holding = (start: string, n: number): string =>
 			start.replace(entry(stored), entry(n));
 
-		it('today: draws the run clamped to its live ceiling', async () => {
+		it('draws the marks past the run, so the step starts from a value on screen', async () => {
 			const { view } = await open();
-			expect(runOf(view).getAttribute('aria-valuenow')).toBe(String(live));
-			expect(runOf(view).getAttribute('aria-valuemax')).toBe(String(live));
+			expect(runOf(view).getAttribute('aria-valuenow')).toBe(String(stored));
+			expect(runOf(view).getAttribute('aria-valuemax')).toBe(String(stored));
 		});
 
-		for (const name of ['ArrowRight', 'ArrowLeft', 'Space', 'End']) {
-			it(`today: ${name} writes the live ceiling, losing the marks past it`, async () => {
+		for (const name of ['ArrowRight', 'Space', 'End']) {
+			it(`${name} writes nothing, since nothing steps up past the stored value`, async () => {
 				const { view, start } = await open();
 				await key(view, name === 'Space' ? ' ' : name);
-				expect(view.getViewData()).toBe(holding(start, live));
+				expect(view.getViewData()).toBe(start);
 			});
 		}
 
-		it('today: a drag past the end writes the live ceiling', async () => {
+		it('a drag past the end writes nothing', async () => {
 			const { view, start } = await open();
 			await dragPastEnd(view);
-			expect(view.getViewData()).toBe(holding(start, live));
+			expect(view.getViewData()).toBe(start);
 		});
 
-		it('today: a tap on the last lit segment writes the live ceiling', async () => {
+		it('ArrowLeft steps down one mark from the stored value', async () => {
+			const { view, start } = await open();
+			await key(view, 'ArrowLeft');
+			expect(view.getViewData()).toBe(holding(start, stored - 1));
+		});
+
+		it('a tap on the last lit segment clears one mark', async () => {
 			const { view, start } = await open();
 			await tapLastLit(view);
-			expect(view.getViewData()).toBe(holding(start, live));
+			expect(view.getViewData()).toBe(holding(start, stored - 1));
 		});
 
 		it('a tap on a live segment writes that segment, chosen with the whole value shown', async () => {
@@ -298,7 +254,7 @@ for (const instance of INSTANCES) {
 describe('4. the length commit itself', () => {
 	it('writes 5 / 3 and keeps the marks', async () => {
 		const text = note(['Stress', fence('d6: 5 / 6')]);
-		const view = await sheetOn(
+		const { view } = await sheetOn(
 			[{ ...TRACK, rows: [{ key: 'd6', maxSource: 'character' }] }],
 			text,
 		);

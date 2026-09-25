@@ -33,58 +33,7 @@
  */
 import { afterEach, describe, expect, it } from 'vitest';
 import { SheetView } from './sheet-view';
-import { App, TextFileView } from '../test/obsidian-stub';
-import { fakePlugin, LAYOUT_FOLDER } from '../test/plugin';
-import { openView } from '../test/workspace';
-
-/** One turn of the loop, which a render started and not awaited needs. */
-const settle = () => new Promise((resolve) => window.setTimeout(resolve, 0));
-
-/** Longer than `GESTURE_COMMIT`, which a Track step waits out before writing. */
-const gestureCommit = () => new Promise((resolve) => window.setTimeout(resolve, 900));
-
-/** A note on layout `L` holding each `## label` section with its body, in order. */
-function note(...sections: readonly [label: string, body: string][]): string {
-	return [
-		'---',
-		'sheet-layout: L',
-		'---',
-		'',
-		...sections.map(([label, body]) => `## ${label}\n${body}`),
-	].join('\n');
-}
-
-/**
- * Open a sheet on `text`, whose layout holds the components given, one above
- * the next. `layout` carries anything else the layout declares.
- */
-async function sheetOn(
-	components: Record<string, unknown> | readonly Record<string, unknown>[],
-	text: string,
-	layout: Record<string, unknown> = {},
-): Promise<{ view: SheetView; cell: HTMLElement }> {
-	const list: readonly Record<string, unknown>[] = Array.isArray(components)
-		? (components as readonly Record<string, unknown>[])
-		: [components as Record<string, unknown>];
-	const app = new App();
-	await app.vault.createFolder(LAYOUT_FOLDER);
-	await app.vault.create(
-		`${LAYOUT_FOLDER}/L.json`,
-		JSON.stringify({
-			name: 'L',
-			components: list.map((component, index) => ({
-				position: { col: 1, row: 1 + index * 3, width: 6, height: 3 },
-				...component,
-			})),
-			...layout,
-		}),
-	);
-	const file = await app.vault.create('Character.md', text);
-	const view = await openView(app, document.body, SheetView, fakePlugin(app));
-	await (view as unknown as TextFileView).onLoadFile(file);
-	await settle();
-	return { view, cell: view.containerEl };
-}
+import { gestureCommit, note, settle, sheetOn } from '../test/sheet-on-note';
 
 /** The error a cell drew in place of its component, or null. */
 const errorOf = (cell: HTMLElement): string | null =>
@@ -456,19 +405,22 @@ describe('residue: a Track adopting another Track’s section, with a different 
 	// The removed Track ran to 6 and stood at 5; the new one runs to 3.
 	const TRACK = { id: 'stress', type: 'track', label: 'Hit dice', count: 3 };
 
-	it('shows the old value as its own, clamped to its own count, with nothing said', async () => {
-		// The stored 5 draws as a full run of 3, which is the Track's ordinary
-		// rule for a value above its run.
+	it('shows the old value as its own, drawn past its own count, with nothing said', async () => {
+		// The stored 5 draws as a run of 3 with the two marks past it drawn
+		// over, which is the Track's ordinary rule for a value above its run
+		// (`docs/features/track-stored-value-past-shortened-run.md`).
 		const { cell } = await sheetOn(TRACK, note(['Hit dice', TRACK_BODY]));
 		expect(errorOf(cell)).toBeNull();
 		const run = cell.querySelector<HTMLElement>('.sheetsmith-track-run');
-		expect(run?.getAttribute('aria-valuenow')).toBe('3');
-		expect(run?.getAttribute('aria-valuemax')).toBe('3');
+		expect(run?.getAttribute('aria-valuenow')).toBe('5');
+		expect(run?.getAttribute('aria-valuemax')).toBe('5');
 	});
 
 	it('rewrites the `value` line on the first step and nothing else', async () => {
-		// Losing the 5 here is also a Track lowered below its stored value with
-		// no adoption at all, which the feature doc defers as its own defect.
+		// The step now starts from the 5 on screen, so Left writes 4 rather than
+		// the old clamp to the new count — the fix is its own feature,
+		// `docs/features/track-stored-value-past-shortened-run.md`. What this
+		// pins is the adoption residue: the one line moves and nothing else.
 		const { view, cell } = await sheetOn(TRACK, note(['Hit dice', TRACK_BODY]));
 		const run = cell.querySelector<HTMLElement>('.sheetsmith-track-run')!;
 		run.dispatchEvent(
