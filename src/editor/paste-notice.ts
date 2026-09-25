@@ -15,12 +15,9 @@
  * not at a list, since none is drawn.
  */
 
-import { spelled } from '../parse/spelled';
+import { spelled, tooManyToName } from '../parse/spelled';
 import { ComponentConfig } from '../types';
 import { Dependency } from './paste-dependencies';
-
-/** How many things the `Notice` names before it counts them instead. */
-export const NAMED_AT_MOST = 5;
 
 /**
  * ` from "5e 2014"` on a cross-layout paste, and nothing on a same-layout one —
@@ -36,7 +33,7 @@ function fromLayout(from: string | null | undefined): string {
 /** What to check, or nothing where the list is empty. */
 function checkSentence(dependencies: readonly Dependency[]): string {
 	if (dependencies.length === 0) return '';
-	if (dependencies.length > NAMED_AT_MOST) {
+	if (tooManyToName(dependencies)) {
 		return ` ${dependencies.length} things it depends on may differ here, so check its formulas and resets.`;
 	}
 	const things = dependencies.map((one) => one.spelled).join(', ');
@@ -52,11 +49,19 @@ function inside(config: ComponentConfig): number {
  * The sentence after a paste. `from` is absent for a copy from this layout, and
  * the source layout's name — null where the copy named none — for one from
  * another.
+ *
+ * `adoption` is `section-adoption.ts`'s sentence where the paste landed on
+ * labels character notes already hold sections under, or null. **It goes
+ * between what was pasted and what to check**, because a note's data outranks
+ * a formula to check: the second is a meaning that may differ, the first is a
+ * reader's values now shown under a component that did not write them
+ * (`docs/features/new-component-adopts-retained-section.md`).
  */
 export function pasteSentence(
 	root: ComponentConfig,
 	dependencies: readonly Dependency[],
 	from?: string | null,
+	adoption: string | null = null,
 ): string {
 	const held = inside(root);
 	const contents =
@@ -65,7 +70,8 @@ export function pasteSentence(
 			: held === 1
 				? ' with the component inside it'
 				: ` with the ${held} components inside it`;
-	return `Pasted "${root.label}"${fromLayout(from)}${contents}.${checkSentence(dependencies)}`;
+	const kept = adoption === null ? '' : ` ${adoption}`;
+	return `Pasted "${root.label}"${fromLayout(from)}${contents}.${kept}${checkSentence(dependencies)}`;
 }
 
 /**
@@ -85,7 +91,7 @@ export function configurationSentence(
 	// Where it came from is not in this sentence: §6 step 5 spells it without,
 	// and the cross-layout half is the sentence naming what to check.
 	let sentence = `Pasted the configuration of "${source}" onto "${target}".`;
-	if (keysLeft.length > NAMED_AT_MOST) {
+	if (tooManyToName(keysLeft)) {
 		sentence += ` Character notes keep any values stored under the ${keysLeft.length} keys that changed, which no longer show. Undo brings them back.`;
 	} else if (keysLeft.length > 0) {
 		sentence += ` Character notes keep any values stored under ${spelled(keysLeft)}, which no longer show. Undo brings them back.`;

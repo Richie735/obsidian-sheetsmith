@@ -47,6 +47,7 @@ import { copyContext } from './paste-dependencies';
 import { configurationSentence, pasteSentence } from './paste-notice';
 import { PasteBoxModal } from './paste-box';
 import { childIsPlaced } from '../view/grid-cells';
+import { adoptionReport, reportAdoption, sectionLabels } from '../section-adoption';
 
 /**
  * The top level, wherever something has to be named that is not a component.
@@ -885,10 +886,29 @@ export class LayoutEditorSection {
 					}
 				: { ...(parent as ComponentConfig).position, col: 1, row: 1 },
 		});
-		const added = list[list.length - 1]?.id;
-		if (added !== undefined) this.host.setSelection(added);
-		void this.persist();
+		const added = list[list.length - 1];
+		if (added !== undefined) this.host.setSelection(added.id);
+		const file = this.file;
+		void this.persist().then((saved) => {
+			// A layout that did not save has adopted nothing; the picker's status
+			// line keeps saying what was added, and this is a notice beside it.
+			if (!saved || added === undefined || !this.mayAdopt(file)) return;
+			return reportAdoption(this.plugin.app, file.basename, sectionLabels(added));
+		});
 		return label;
+	}
+
+	/**
+	 * Whether a component landing on a label in `file` may be showing a section
+	 * some note kept (`docs/features/new-component-adopts-retained-section.md`):
+	 * only where the file is the layout its name resolves to, since a note names
+	 * a layout by that name. The rename migration's own gate, for its reason.
+	 */
+	private mayAdopt(file: TFile | null): file is TFile {
+		return (
+			file !== null &&
+			isResolvedLayout(this.plugin.app, this.plugin.settings.layoutFolder, file)
+		);
 	}
 
 	/**
@@ -907,19 +927,43 @@ export class LayoutEditorSection {
 	 * `persist` sets `onDisk` before it awaits the write, so the bytes are known
 	 * here synchronously. Where the layout would not serialise, `persist` said
 	 * so and wrote nothing, and there is nothing to offer an undo of.
+	 *
+	 * **A paste's sentence waits for a scan**, and the guard does not: `sentence`
+	 * as a function is handed what `section-adoption.ts` found under `labels` —
+	 * the sections character notes already hold under the pasted names — once the
+	 * write has resolved, so the notice appears a moment later than it would, and
+	 * its **Undo** is still guarded by the bytes taken here, before anything was
+	 * awaited. A write that failed, or a file that is not its name's layout, is
+	 * handed null and scans nothing.
 	 */
-	private persistUndoable(sentence: string): void {
+	private persistUndoable(
+		sentence: string | ((adoption: string | null) => string),
+		labels: readonly string[] = [],
+	): void {
 		const before = this.onDisk;
-		void this.persist();
+		const saving = this.persist();
 		const file = this.file;
 		const written = this.onDisk;
 		if (written === before) return;
-		offerUndo(sentence, () => {
-			if (this.file !== file || this.onDisk !== written) {
-				new Notice('Sheetsmith did not undo: this layout has changed since.');
-				return;
-			}
-			this.undo();
+		const offer = (text: string): void => {
+			offerUndo(text, () => {
+				if (this.file !== file || this.onDisk !== written) {
+					new Notice('Sheetsmith did not undo: this layout has changed since.');
+					return;
+				}
+				this.undo();
+			});
+		};
+		if (typeof sentence === 'string') {
+			offer(sentence);
+			return;
+		}
+		void saving.then(async (saved) => {
+			const adoption =
+				saved && labels.length > 0 && this.mayAdopt(file)
+					? await adoptionReport(this.plugin.app, file.basename, labels, 'pasted')
+					: null;
+			offer(sentence(adoption));
 		});
 	}
 
@@ -1058,7 +1102,14 @@ export class LayoutEditorSection {
 		this.pendingFocus = `edit-${id}`;
 		this.pendingFlash = `tree-${id}`;
 		this.persistUndoable(
-			pasteSentence(pasted.root, pasted.dependencies, same ? undefined : read.copy.from.layout),
+			(adoption) =>
+				pasteSentence(
+					pasted.root,
+					pasted.dependencies,
+					same ? undefined : read.copy.from.layout,
+					adoption,
+				),
+			sectionLabels(pasted.root),
 		);
 		this.redraw();
 		return null;
@@ -1206,19 +1257,19 @@ export class LayoutEditorSection {
 	 * edit to a file those characters never read. The layout still saves; the
 	 * notes are left alone, as they are for any edit to a file nobody uses.
 	 */
-	private async persist(record = true, rename?: RenameIntent): Promise<void> {
+	private async persist(record = true, rename?: RenameIntent): Promise<boolean> {
 		// Taken once, before the write is awaited: the pane may be on another
 		// file by the time it resolves, and the migration below belongs to the
 		// file this write went to.
 		const file = this.file;
-		if (!file || !this.layout) return;
+		if (!file || !this.layout) return false;
 		let serialised: string;
 		try {
 			serialised = serialiseLayout(this.layout);
 			parseLayout(serialised);
 		} catch (error) {
 			new Notice(error instanceof Error ? error.message : String(error));
-			return;
+			return false;
 		}
 		if (record && serialised !== this.onDisk) {
 			if (this.onDisk !== null) this.undoStack.push(this.onDisk);
@@ -1255,7 +1306,7 @@ export class LayoutEditorSection {
 			new Notice(
 				`Sheetsmith could not save this layout: ${error instanceof Error ? error.message : String(error)}`,
 			);
-			return;
+			return false;
 		}
 		if (
 			rename !== undefined &&
@@ -1287,9 +1338,10 @@ export class LayoutEditorSection {
 			await this.host.flushSheets();
 			await reportComponentRename(this.plugin.app, file.basename, rename);
 			await this.host.reloadSheets();
-			return;
+			return true;
 		}
 		this.host.refreshSheets();
+		return true;
 	}
 
 	/**
