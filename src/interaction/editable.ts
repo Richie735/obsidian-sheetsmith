@@ -16,6 +16,7 @@
  */
 
 import { EMPTY_SCOPE, evaluate } from '../formula/expression';
+import { bindMarkdownTyping } from './markdown-typing';
 
 /**
  * How long a draft may fail to resolve before a computed display says so. A
@@ -361,6 +362,10 @@ export interface MultilineOptions {
  * - **The value is not flattened.** It is trimmed at each end, which is what
  *   `read` stores, and untouched in between.
  *
+ * **What a keystroke does to the draft is `markdown-typing.ts`'s**, which closes
+ * brackets; it owns none of the policy here and commits
+ * nothing, so this binding reads exactly as it did before it arrived.
+ *
  * **Three of the field's members are deliberately absent**, on one rule —
  * PATTERNS §1's "do not generalise ahead of evidence" — and the third of them was
  * declared here and caught in review, which is why they are listed rather than
@@ -383,6 +388,7 @@ export function bindMultiline(
 	options: MultilineOptions,
 ): void {
 	let committed = options.initial;
+	bindMarkdownTyping(textarea);
 
 	const commitIfChanged = () => {
 		// Trimmed at each end and nowhere else, because that is what `read`

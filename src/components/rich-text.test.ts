@@ -1,10 +1,12 @@
 // @vitest-environment happy-dom
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { richText, RichTextConfig, RichTextData } from './rich-text';
 import { parseCharacter, serialiseCharacter } from '../parse/character';
 import { FOCUSABLE } from '../view/cell-focus';
 import { RenderContext } from '../types';
 import { sampleOf } from '../test/sample';
+import { installExecCommand } from '../test/exec-command';
+import { beforeinput } from '../test/beforeinput';
 
 const config: RichTextConfig = {
 	id: 'backstory',
@@ -877,6 +879,440 @@ describe('richText.render — the editing gesture', () => {
 		input.blur();
 		expect(links(el)[0]).toBe(before);
 		done();
+	});
+});
+
+describe('richText.render — brackets close as the reader types', () => {
+	/*
+	 * `interaction/markdown-typing.ts` has no test file of its own (PATTERNS
+	 * §10): this block is where everything it owns is driven. Every event is a
+	 * `beforeinput`, never a `keydown`, because that is what the module keys on
+	 * and the reason it exists (docs/features/prose-field-editing.md).
+	 */
+
+	/**
+	 * Every field `typing` opened and not yet closed. Emptied after each case
+	 * whether it passed or not, so an assertion that throws before `done()`
+	 * cannot leave the shim installed on the shared document for the next case.
+	 */
+	const opened = new Set<() => void>();
+	afterEach(() => {
+		for (const done of [...opened]) done();
+	});
+
+	/**
+	 * A focused field holding `text` with the caret at `caret`, an
+	 * `execCommand` shim on its own document, and a watch on every write to
+	 * its `value` that neither the shim nor the simulated browser made.
+	 */
+	function typing(
+		text: string,
+		caret = text.length,
+		options: { shim?: 'none' | 'refuses' | 'throws' } = {},
+	) {
+		const el = render({}, null);
+		document.body.appendChild(el);
+		const input = field(el);
+		const doc = input.ownerDocument;
+		input.value = text;
+		// Focus resets what the binding has seen, so it starts from `text`.
+		input.focus();
+		input.setSelectionRange(caret, caret);
+
+		// Every `value` write outside `allowed` is one the module made.
+		let allowed = 0;
+		const stray: string[] = [];
+		let proto: object | null = Object.getPrototypeOf(input) as object;
+		let descriptor: PropertyDescriptor | undefined;
+		while (proto !== null && descriptor === undefined) {
+			descriptor = Object.getOwnPropertyDescriptor(proto, 'value');
+			proto = Object.getPrototypeOf(proto) as object | null;
+		}
+		const native = descriptor!;
+		Object.defineProperty(input, 'value', {
+			configurable: true,
+			get(this: HTMLTextAreaElement) {
+				return native.get!.call(this) as string;
+			},
+			set(this: HTMLTextAreaElement, value: string) {
+				if (allowed === 0 && shim?.writing !== true) stray.push(value);
+				native.set!.call(this, value);
+			},
+		});
+		const allow = <T>(write: () => T): T => {
+			allowed++;
+			try {
+				return write();
+			} finally {
+				allowed--;
+			}
+		};
+
+		const shim =
+			options.shim === 'none'
+				? null
+				: installExecCommand(doc, {
+						result: options.shim !== 'refuses',
+						throws: options.shim === 'throws',
+					});
+
+		const done = () => {
+			if (!opened.delete(done)) return;
+			shim?.restore();
+			el.remove();
+		};
+		opened.add(done);
+		return { el, input, doc, shim, stray, allow, done };
+	}
+	type Typing = ReturnType<typeof typing>;
+
+	/**
+	 * Dispatch one `beforeinput` built from the field's own window, and where
+	 * nothing prevented it, make the edit the browser would have made.
+	 */
+	function press(
+		t: Typing,
+		inputType: string,
+		data: string | null = null,
+		init: { isComposing?: boolean } = {},
+	): InputEvent {
+		const view = t.doc.defaultView!;
+		const event = beforeinput(t.input, inputType, data, init);
+		t.input.dispatchEvent(event);
+		if (event.defaultPrevented || init.isComposing) return event;
+		const { input } = t;
+		let start = input.selectionStart;
+		const end = input.selectionEnd;
+		let text = '';
+		if (inputType === 'insertText') text = data ?? '';
+		else if (inputType === 'insertLineBreak') text = '\n';
+		else if (inputType === 'deleteContentBackward') {
+			if (start === end && start > 0) start--;
+		} else return event;
+		t.allow(() => {
+			input.value = input.value.slice(0, start) + text + input.value.slice(end);
+		});
+		input.setSelectionRange(start + text.length, start + text.length);
+		input.dispatchEvent(
+			new view.InputEvent('input', { inputType, data, bubbles: true }),
+		);
+		return event;
+	}
+
+	/** Type each character of `text` as its own `insertText`. */
+	const type = (t: Typing, text: string) => {
+		for (const char of text) press(t, 'insertText', char);
+	};
+
+	/** Move the caret, and say so the way the browser does. */
+	const moveTo = (t: Typing, start: number, end = start) => {
+		t.input.setSelectionRange(start, end);
+		t.input.dispatchEvent(new Event('selectionchange'));
+	};
+
+	const state = (t: Typing) => [
+		t.input.value,
+		t.input.selectionStart,
+		t.input.selectionEnd,
+	];
+
+	it('closes a bracket typed as insertText with no keydown at all — the revert\'s regression guard', () => {
+		// What an Option-composed `[` looks like to a handler: no key event it
+		// could have matched. The first attempt keyed on `keydown` and did
+		// nothing here while every one of its tests passed.
+		const t = typing('');
+		expect(press(t, 'insertText', '[').defaultPrevented).toBe(true);
+		expect(state(t)).toEqual(['[]', 1, 1]);
+		t.done();
+	});
+
+	it('closes an Option-composed bracket whose keydown named a different key', () => {
+		// Portuguese macOS: Option+8 types `[`. The keydown carries the physical
+		// key, and the character only arrives on `beforeinput`.
+		const t = typing('');
+		t.input.dispatchEvent(
+			new KeyboardEvent('keydown', {
+				key: '8',
+				code: 'Digit8',
+				altKey: true,
+				bubbles: true,
+				cancelable: true,
+			}),
+		);
+		press(t, 'insertText', '[');
+		expect(state(t)).toEqual(['[]', 1, 1]);
+		t.done();
+	});
+
+	it('pairs each opener at the end of the text, with the caret between', () => {
+		const round = typing('');
+		press(round, 'insertText', '(');
+		expect(state(round)).toEqual(['()', 1, 1]);
+		round.done();
+
+		const square = typing('');
+		press(square, 'insertText', '[');
+		expect(state(square)).toEqual(['[]', 1, 1]);
+		square.done();
+
+		const curly = typing('');
+		press(curly, 'insertText', '{');
+		expect(state(curly)).toEqual(['{}', 1, 1]);
+		curly.done();
+	});
+
+	it('pairs an opener before whitespace or a closer, and not before a word', () => {
+		const space = typing('a b', 1);
+		press(space, 'insertText', '(');
+		expect(state(space)).toEqual(['a() b', 2, 2]);
+		space.done();
+
+		const closer = typing('()', 1);
+		press(closer, 'insertText', '[');
+		expect(state(closer)).toEqual(['([])', 2, 2]);
+		closer.done();
+
+		const colon = typing(':', 0);
+		press(colon, 'insertText', '{');
+		expect(state(colon)).toEqual(['{}:', 1, 1]);
+		colon.done();
+
+		const word = typing('word', 0);
+		expect(press(word, 'insertText', '[').defaultPrevented).toBe(false);
+		expect(state(word)).toEqual(['[word', 1, 1]);
+		word.done();
+	});
+
+	it('gives [[]] for two openers, and steps over both closers', () => {
+		const t = typing('');
+		type(t, '[[');
+		expect(state(t)).toEqual(['[[]]', 2, 2]);
+		type(t, ']]');
+		expect(state(t)).toEqual(['[[]]', 4, 4]);
+		t.done();
+	});
+
+	it('keeps stepping over the closers after a name is typed between them', () => {
+		const t = typing('');
+		type(t, '[[Neverwinter]]');
+		expect(state(t)).toEqual(['[[Neverwinter]]', 15, 15]);
+		t.done();
+	});
+
+	it('shifts an outer tracked closer with an edit inside an inner pair', () => {
+		const t = typing('');
+		type(t, '([a])');
+		expect(state(t)).toEqual(['([a])', 5, 5]);
+		t.done();
+	});
+
+	it('forgets a pair when an edit covers its opener', () => {
+		const t = typing('x');
+		type(t, '(');
+		expect(t.input.value).toBe('x()');
+		// Select `x(` and type over it: the closer is still there, and no
+		// longer the binding's. Selected with no `selectionchange`, which the
+		// browser queues rather than sends at once: dispatching it would drop the
+		// pair by the caret rule and leave the edit rule undriven.
+		t.input.setSelectionRange(0, 2);
+		press(t, 'insertText', 'y');
+		expect(state(t)).toEqual(['y)', 1, 1]);
+		press(t, 'insertText', ')');
+		expect(state(t)).toEqual(['y))', 2, 2]);
+		t.done();
+	});
+
+	it('forgets a pair when an edit covers its closer', () => {
+		const t = typing('');
+		type(t, '(');
+		// Type a `)` over the tracked `)`: a replacement, not an overtype, so
+		// the new closer is the reader's. Selected silently, as above.
+		t.input.setSelectionRange(1, 2);
+		press(t, 'insertText', ')');
+		expect(state(t)).toEqual(['()', 2, 2]);
+		moveTo(t, 1);
+		press(t, 'insertText', ')');
+		expect(state(t)).toEqual(['())', 2, 2]);
+		t.done();
+	});
+
+	it('keeps a pair across an undo that arrives with a selection over it', () => {
+		// `historyUndo` replaces what the history holds, not the selection, so
+		// a selection spanning the pair is no edit covering it.
+		const t = typing('');
+		type(t, '(');
+		t.input.setSelectionRange(0, 2);
+		expect(press(t, 'historyUndo').defaultPrevented).toBe(false);
+		t.input.setSelectionRange(1, 1);
+		press(t, 'insertText', ')');
+		expect(state(t)).toEqual(['()', 2, 2]);
+		t.done();
+	});
+
+	it('forgets a pair once the caret leaves it, even if it comes back', () => {
+		const t = typing('');
+		type(t, '(');
+		moveTo(t, 0);
+		moveTo(t, 1);
+		press(t, 'insertText', ')');
+		expect(state(t)).toEqual(['())', 2, 2]);
+		t.done();
+	});
+
+	it('forgets every pair on blur', () => {
+		const t = typing('');
+		type(t, '(');
+		t.input.blur();
+		t.input.focus();
+		t.input.setSelectionRange(1, 1);
+		press(t, 'insertText', ')');
+		expect(state(t)).toEqual(['())', 2, 2]);
+		t.done();
+	});
+
+	it('types a closer normally before one the reader typed themselves', () => {
+		const t = typing('()', 1);
+		expect(press(t, 'insertText', ')').defaultPrevented).toBe(false);
+		expect(state(t)).toEqual(['())', 2, 2]);
+		t.done();
+	});
+
+	it('removes an adjacent pair on Backspace, whoever typed it', () => {
+		const round = typing('()', 1);
+		expect(press(round, 'deleteContentBackward').defaultPrevented).toBe(true);
+		expect(state(round)).toEqual(['', 0, 0]);
+		round.done();
+
+		const square = typing('a []', 3);
+		press(square, 'deleteContentBackward');
+		expect(state(square)).toEqual(['a ', 2, 2]);
+		square.done();
+
+		const curly = typing('{}', 1);
+		press(curly, 'deleteContentBackward');
+		expect(state(curly)).toEqual(['', 0, 0]);
+		curly.done();
+
+		const typed = typing('');
+		type(typed, '(');
+		press(typed, 'deleteContentBackward');
+		expect(state(typed)).toEqual(['', 0, 0]);
+		typed.done();
+	});
+
+	it('leaves Backspace alone outside an empty pair', () => {
+		const t = typing('(a)', 2);
+		expect(press(t, 'deleteContentBackward').defaultPrevented).toBe(false);
+		expect(state(t)).toEqual(['()', 1, 1]);
+		t.done();
+	});
+
+	it('wraps a selection in an opener and keeps the selection on the text', () => {
+		const t = typing('a word b');
+		moveTo(t, 2, 6);
+		press(t, 'insertText', '[');
+		expect(state(t)).toEqual(['a [word] b', 3, 7]);
+		t.done();
+	});
+
+	it('wraps a selection in *, _ or a backtick, and twice gives a double', () => {
+		const star = typing('word');
+		moveTo(star, 0, 4);
+		press(star, 'insertText', '*');
+		press(star, 'insertText', '*');
+		expect(state(star)).toEqual(['**word**', 2, 6]);
+		star.done();
+
+		const under = typing('word');
+		moveTo(under, 0, 4);
+		press(under, 'insertText', '_');
+		expect(state(under)).toEqual(['_word_', 1, 5]);
+		under.done();
+
+		const tick = typing('word');
+		moveTo(tick, 0, 4);
+		press(tick, 'insertText', '`');
+		expect(state(tick)).toEqual(['`word`', 1, 5]);
+		tick.done();
+	});
+
+	it('inserts a lone *, _ or backtick on a collapsed caret', () => {
+		const t = typing('');
+		expect(press(t, 'insertText', '*').defaultPrevented).toBe(false);
+		expect(press(t, 'insertText', '_').defaultPrevented).toBe(false);
+		expect(press(t, 'insertText', '`').defaultPrevented).toBe(false);
+		expect(state(t)).toEqual(['*_`', 3, 3]);
+		t.done();
+	});
+
+	it('leaves an IME composing text alone', () => {
+		const t = typing('');
+		const event = press(t, 'insertText', '[', { isComposing: true });
+		expect(event.defaultPrevented).toBe(false);
+		expect(state(t)).toEqual(['', 0, 0]);
+		expect(t.shim!.calls).toEqual([]);
+		t.done();
+	});
+
+	it('lets the keystroke through where the document has no execCommand', () => {
+		const t = typing('', 0, { shim: 'none' });
+		expect(press(t, 'insertText', '[').defaultPrevented).toBe(false);
+		expect(state(t)).toEqual(['[', 1, 1]);
+		t.done();
+	});
+
+	it('lets the keystroke through where execCommand refuses, selection intact', () => {
+		// Dispatched by hand rather than through `press`, which would make the
+		// browser's edit and hide whether the selection was put back.
+		const refused = typing('a word b', 0, { shim: 'refuses' });
+		moveTo(refused, 2, 6);
+		const dispatched = beforeinput(refused.input, 'insertText', '(');
+		refused.input.dispatchEvent(dispatched);
+		expect(dispatched.defaultPrevented).toBe(false);
+		expect(refused.shim!.calls).toHaveLength(1);
+		expect(state(refused)).toEqual(['a word b', 2, 6]);
+		refused.done();
+	});
+
+	it('lets the keystroke through where execCommand throws, selection intact', () => {
+		const t = typing('a word b', 0, { shim: 'throws' });
+		t.input.setSelectionRange(2, 6);
+		const event = beforeinput(t.input, 'insertText', '(');
+		t.input.dispatchEvent(event);
+		expect(event.defaultPrevented).toBe(false);
+		expect(t.shim!.calls).toHaveLength(1);
+		expect(state(t)).toEqual(['a word b', 2, 6]);
+		t.done();
+	});
+
+	it('leaves an insertText of more than one character to the browser', () => {
+		// A dictation, a text-replacement or an autocorrect arrives as one
+		// `insertText` carrying a string; only a typed character is a keystroke
+		// to answer.
+		const t = typing('');
+		expect(press(t, 'insertText', '[[').defaultPrevented).toBe(false);
+		expect(state(t)).toEqual(['[[', 2, 2]);
+		expect(t.shim!.calls).toEqual([]);
+		t.done();
+	});
+
+	it('writes every edit through insertText on the field\'s own document, never through value', () => {
+		// The native undo stack itself is the Chrome probe's to show; what a
+		// test can hold is that nothing took the route that empties it.
+		const t = typing('');
+		type(t, '[[Name]]');
+		type(t, '(');
+		press(t, 'deleteContentBackward');
+		moveTo(t, 2, 6);
+		press(t, 'insertText', '*');
+		expect(t.input.value).toBe('[[*Name*]]');
+		expect(t.shim!.calls.length).toBeGreaterThan(0);
+		for (const call of t.shim!.calls) {
+			expect(call.command).toBe('insertText');
+			expect(call.doc).toBe(t.input.ownerDocument);
+		}
+		expect(t.stray).toEqual([]);
+		t.done();
 	});
 });
 
