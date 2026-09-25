@@ -288,7 +288,9 @@ type EntryKeyOf<TConfig extends ComponentConfig, K> = K extends keyof TConfig
 
 /**
  * One `configFields` entry of a component whose config type is `TConfig`: the
- * field spec with both of its key types filled in from the key it names.
+ * field spec with its first two key types filled in from the key it names, and
+ * its third, the key a `visibleWhen` reads, with every declarable key — a
+ * condition names a sibling, which the entry's own key says nothing about.
  *
  * A union over the declarable keys rather than one instantiation, because the
  * two halves have to agree *within one entry* — `entryColumns` names properties
@@ -297,23 +299,28 @@ type EntryKeyOf<TConfig extends ComponentConfig, K> = K extends keyof TConfig
  * discriminates the union and a typo matches no member.
  */
 type ConfigFieldOf<TConfig extends ComponentConfig> = {
-	[K in DeclarableKey<TConfig>]: ConfigFieldSpec<K, EntryKeyOf<TConfig, K>>;
+	[K in DeclarableKey<TConfig>]: ConfigFieldSpec<
+		K,
+		EntryKeyOf<TConfig, K>,
+		DeclarableKey<TConfig>
+	>;
 }[DeclarableKey<TConfig>];
 
 /**
  * A config field the layout editor renders for a component.
  *
- * **Parameterised over the two key sets rather than over the component's own
- * config**, so that both parameters are plainly covariant: `keyof TConfig` is
- * contravariant in `TConfig`, and a field type carrying it could not be read
+ * **Parameterised over the three key sets rather than over the component's
+ * own config**, so that every parameter is plainly covariant: `keyof TConfig`
+ * is contravariant in `TConfig`, and a field type carrying it could not be read
  * back off the registry at all — the argument is at `ComponentDefinition`'s
  * `TField`, which is where it bites. `ConfigFieldOf` above is where a config
- * type becomes these two, and bare this is exactly the type the editor read
- * before either existed.
+ * type becomes these three, and bare this is exactly the type the editor read
+ * before any of them existed.
  */
 export interface ConfigFieldSpec<
 	TKey extends string = string,
 	TEntryKey extends string = string,
+	TSiblingKey extends string = string,
 > {
 	/** Key in the component's config object. */
 	key: TKey;
@@ -360,8 +367,14 @@ export interface ConfigFieldSpec<
 	 * config, so a condition naming that default is satisfied by its absence.
 	 * That is what lets a field be visible in the ordinary mode and hidden in
 	 * the exceptional one, rather than only the other way round.
+	 *
+	 * `key` is checked against the component's own declarable keys; a typo
+	 * would otherwise find no controlling field, and `conditionMet` would hide
+	 * this one for good without a word. `equals` stays `unknown`: its type is a
+	 * function of the config, not of a key set, and this spec never sees the
+	 * config (see the note on the parameters above).
 	 */
-	visibleWhen?: { key: string; equals: unknown };
+	visibleWhen?: { key: TSiblingKey; equals: unknown };
 	/** Default for boolean fields; the key is omitted when it matches. */
 	default?: boolean;
 	/** Choices for 'select' fields. The first is the default and is omitted. */

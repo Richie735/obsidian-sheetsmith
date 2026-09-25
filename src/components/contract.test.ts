@@ -627,6 +627,42 @@ describe('component registry', () => {
 		}
 	});
 
+	it('names a declared sibling field in every visibleWhen', () => {
+		/*
+		 * `conditionMet` reads an unset controlling key through the field that
+		 * declares it, and finds none for a key no other field declares, so the
+		 * condition is never met and the field never renders — with no error, in
+		 * the ordinary case of a config that leaves the key at its default.
+		 *
+		 * The compiler holds only part of this. `ConfigFieldOf` checks
+		 * `visibleWhen.key` against `DeclarableKey<TConfig>`, which is a config
+		 * *property* and not a declared *field*, and which widens to `string` for
+		 * the same annotations that switch off the key check below: a component
+		 * typed bare `ComponentDefinition`, as `register` accepts it, or
+		 * `ConfigFieldSpec` passed as `ComponentDefinition`'s third argument.
+		 * This runs off the live registry however a component was annotated.
+		 *
+		 * A field may not name itself either: hidden, it could never be set to
+		 * the value that would show it.
+		 */
+		let conditions = 0;
+		for (const type of types) {
+			const fields = getComponent(type)?.configFields ?? [];
+			for (const field of fields) {
+				if (field.visibleWhen === undefined) continue;
+				conditions++;
+				const { key } = field.visibleWhen;
+				expect(key, `${type} ${field.key} is shown by itself`).not.toBe(field.key);
+				expect(
+					fields.some((other) => other.key === key),
+					`${type} ${field.key} is shown by ${key}, which no field declares`,
+				).toBe(true);
+			}
+		}
+		// Two today, Card set's and Pool's; none would pass this vacuously.
+		expect(conditions).toBeGreaterThan(0);
+	});
+
 	it('never declares an empty example', () => {
 		// `{}` is what the bare type already draws.
 		for (const type of types) {
@@ -1678,8 +1714,10 @@ describe.each(types)('component "%s"', (type) => {
 		 * `DeclarableKey` widens to `string` on its erased branch, so the type
 		 * asks nothing at all of a component annotated `ComponentDefinition`
 		 * with no arguments, which is exactly the type `register` accepts in
-		 * `components/index.ts`. Measured: that annotation, and a hand-passed
-		 * third argument of `ConfigFieldSpec`, both compile with `key: 'label'`.
+		 * `components/index.ts`. Measured: that annotation, and `ConfigFieldSpec`
+		 * passed as `ComponentDefinition`'s third argument, both compile with
+		 * `key: 'label'` — and both switch off the `visibleWhen.key` check too,
+		 * which is why that one has a registry twin as well.
 		 *
 		 * So the compile-time half is conditional on a file-shape convention —
 		 * PATTERNS §3.7's `ComponentDefinition<XConfig, XData>`, prose with no
