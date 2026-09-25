@@ -1369,7 +1369,7 @@ export const SAMPLES: Sample[] = [
 			// rows rather than five, each naming several targets, because one
 			// item lengthening three runs is also the shape a reader meets.
 			'| Talisman of Endurance | endurance.count += 2; endurance_low.count += 2; all_granted.count += 2 |',
-			'| Shackles | vigour.count += -2; cursed_run.count += -5; unmade.count += -1 |',
+			'| Shackles | vigour.count += -2; cursed_run.count += -5; unmade.count += -1; overfull_shackled.count += -2 |',
 		].join('\n'),
 	},
 	/*
@@ -1406,11 +1406,14 @@ export const SAMPLES: Sample[] = [
 	 *   centre, so the first segment of a run is exempt from it and this is the
 	 *   card that shows the exemption working.
 	 * - **Cursed vigour** is the whole run taken: `2 + mod.self` with a −5, so both
-	 *   its slots draw blocked and `aria-valuemax` is 0. It used to draw `?`, and
-	 *   the change is what returns `?` to meaning what `SPEC` §5 reserves it for —
-	 *   a count that did not *resolve*, where this one resolved perfectly well to
-	 *   nothing. It is also the only card here where a run is drawn and no part of
-	 *   it can be pressed.
+	 *   its slots are shut. It used to draw `?`, and the change is what returns
+	 *   `?` to meaning what `SPEC` §5 reserves it for — a count that did not
+	 *   *resolve*, where this one resolved perfectly well to nothing. Its note
+	 *   holds one mark, so its first slot draws **over** — shut and still holding
+	 *   the mark, the slash on a filled box — and its second blocked and empty;
+	 *   `aria-valuemax` is 1, and the one press it answers steps that mark down
+	 *   (`docs/features/track-stored-value-past-shortened-run.md`). The block of
+	 *   **Overfull** cards at the foot of the sheet is the rest of that feature.
 	 * - **Unmade** is where `?` still lives, and it is here because the card above
 	 *   took its old job: `count: "mod.self"` with a penalty has no unmodified run
 	 *   to hold open either, so there are no slots to block and nothing to draw.
@@ -2638,6 +2641,108 @@ export const SAMPLES: Sample[] = [
 			position: { col: 5, row: 73, width: 4, height: 2 },
 		} as unknown as ComponentConfig,
 		body: '```sheet\nRescue the miners: 2 / 8\nHeat: 4\n```',
+	},
+	/*
+	 * **Tracks holding more than their run**
+	 * (`docs/features/track-stored-value-past-shortened-run.md`). The part of a
+	 * stored value past the live run is drawn, so no step starts from a value the
+	 * reader cannot see: an **over** segment is the blocked slash on a filled box,
+	 * reached by the blocked rule's own selector list, and what has to be read is
+	 * that it differs from a lit base segment, from an empty blocked slot and from
+	 * a granted ring. Cursed vigour, up in the modifier block, is the whole run
+	 * taken over one held mark.
+	 *
+	 * - **Overfull** is a count lowered under its note: three live, two over.
+	 * - **Overfull (named)** is a named `harm` run past its last name: no glyph on
+	 *   the over segments, the grade held at the worst end, and a step line
+	 *   reading `Lost, 2 over`.
+	 * - **Overfull (marks)** is a half-filled over segment, two marks to one.
+	 * - **Overfull (shackled)** is the comparison the figure has to survive: the
+	 *   Shackles row takes two of six, the note holds five, so one shut slot is
+	 *   over and one blocked and empty, side by side.
+	 * - **Overfull (far)** is past `MAX_SEGMENTS`, where the over part is one box
+	 *   holding its count in marks, `+147`.
+	 * - **Overfull (row)** is a character's row shortened under its marks,
+	 *   `d6: 5 / 3`, beside a row that is not.
+	 * - **Overfull (long)** is six live and twenty-four over, under the
+	 *   `MAX_SEGMENTS` bound and so drawn segment by segment: long enough to wrap
+	 *   in a one-column card, which is what `sheet-narrow` has to show — the over
+	 *   part carried onto a second line.
+	 */
+	{
+		config: {
+			id: 'overfull',
+			type: 'track',
+			label: 'Overfull',
+			position: { col: 1, row: 75, width: 4, height: 1 },
+			count: 3,
+		} as ComponentConfig,
+		body: '```sheet\nvalue: 5\n```',
+	},
+	{
+		config: {
+			id: 'overfull_named',
+			type: 'track',
+			label: 'Overfull (named)',
+			position: { col: 5, row: 75, width: 4, height: 1 },
+			levels: ['Clear', 'Touched', 'Marked', 'Lost:☠'],
+			sense: 'harm',
+		} as ComponentConfig,
+		body: '```sheet\nvalue: 5\n```',
+	},
+	{
+		config: {
+			id: 'overfull_marks',
+			type: 'track',
+			label: 'Overfull (marks)',
+			position: { col: 9, row: 75, width: 4, height: 1 },
+			count: 3,
+			marks: 2,
+		} as ComponentConfig,
+		body: '```sheet\nvalue: 7\n```',
+	},
+	{
+		config: {
+			id: 'overfull_shackled',
+			type: 'track',
+			label: 'Overfull (shackled)',
+			position: { col: 1, row: 76, width: 4, height: 1 },
+			count: '6 + mod.self',
+		} as ComponentConfig,
+		body: '```sheet\nvalue: 5\n```',
+	},
+	{
+		config: {
+			id: 'overfull_far',
+			type: 'track',
+			label: 'Overfull (far)',
+			position: { col: 5, row: 76, width: 4, height: 1 },
+			count: 3,
+		} as ComponentConfig,
+		body: '```sheet\nvalue: 150\n```',
+	},
+	{
+		config: {
+			id: 'overfull_row',
+			type: 'track',
+			label: 'Overfull (row)',
+			position: { col: 9, row: 76, width: 4, height: 1 },
+			rows: [
+				{ key: 'd6', name: 'd6', maxSource: 'character' },
+				{ key: 'd8', name: 'd8', maxSource: 'character' },
+			],
+		} as unknown as ComponentConfig,
+		body: '```sheet\nd6: 5 / 3\nd8: 2 / 3\n```',
+	},
+	{
+		config: {
+			id: 'overfull_long',
+			type: 'track',
+			label: 'Overfull (long)',
+			position: { col: 1, row: 77, width: 4, height: 1 },
+			count: 6,
+		} as ComponentConfig,
+		body: '```sheet\nvalue: 30\n```',
 	},
 ];
 

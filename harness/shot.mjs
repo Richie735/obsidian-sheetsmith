@@ -367,9 +367,15 @@ const DEFAULTS = [
 		// the one reflow that is not true of: at one column it becomes a
 		// full-width row of its own, the same shape every addition to this frame
 		// has taken. 14300 to **14700**.
+		//
+		// Raised again for the Overfull block (`docs/features/
+		// track-stored-value-past-shortened-run.md`): seven cards at the foot of
+		// the sheet, each a full-width row at one column, and the last of them the
+		// wrapping sample this view exists to show. Measured 16326 against 16100,
+		// so that sample was the one cropped. 16100 to **16600**.
 		name: 'sheet-narrow',
 		query: 'surface=sheet&theme=dark&width=380',
-		size: '520,16100',
+		size: '520,16600',
 	},
 	{
 		/*

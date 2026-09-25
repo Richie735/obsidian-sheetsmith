@@ -29,6 +29,12 @@ through a real `SheetView` read, edit and serialise, answers the one fact the
 | **Track (count 3) ← Track at 5** | draws 3 of 3, one step writes `value: 3` | **yes** |
 | **Rich text ← Card fence, text replaced** | the fence is shown as prose and replaced | **yes** |
 
+**Amended by `track-stored-value-past-shortened-run.md`**, on case d (the
+**Track (count 3) ← Track at 5** row): it now draws the 5, the two marks past the
+run drawn over, and a step starts from it — Left writes `value: 4`, Right writes
+nothing. The adoption residue the row is about stands: the Track still reads the
+old body as its own.
+
 Not one adoption was reported as malformed. Two rules explain the whole table:
 
 1. **A different storage kind never loses data.** `writeFenced` appends a fence
@@ -488,6 +494,8 @@ implementation and every round of findings.
 - **A Track whose count is lowered below its stored value** loses that value on
   its next step, with no adoption involved (case d without the second Track).
   A separate defect, deferred; case d here pins only the adoption half.
+  **Fixed by `track-stored-value-past-shortened-run.md`**, which draws the stored value past the run
+  so no step writes it away.
 - **Refusing or suffixing the label.** Model question: it closes the recovery
   route.
 - **Telling coinciding keys apart.** Nothing in a note says which component
