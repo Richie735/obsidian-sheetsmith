@@ -1730,6 +1730,24 @@ export function renderColumnsEditor(
 			);
 		}
 	}
+	/*
+	 * **A condition on a list that cannot honour one, reported and never
+	 * refused**, on the second modifier column's precedent above. The component
+	 * draws the column on every holder and carries the key untouched; refusing
+	 * would blank it and withdraw every modifier its rows push, which is
+	 * `table.ts`'s own "worst trade available here". Composed from this list's
+	 * own words, so it names neither a table nor a roster.
+	 */
+	if (!conditioned) {
+		for (const column of columns) {
+			if (heldCondition(column.visibleWhen) === null) continue;
+			listEl.createDiv('sheetsmith-field-error', (el) =>
+				el.setText(
+					`"${column.key}" has a condition, and every ${unit} here is drawn on every ${holder}, so the condition does nothing. Remove it, or move this ${unit} to a Record set to show it only on some ${holder}s.`,
+				),
+			);
+		}
+	}
 	add.addEventListener('click', () => {
 		const taken = new Set(columns.map((column) => column.key));
 		let next = `New ${unit}`;

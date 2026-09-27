@@ -9,7 +9,8 @@ import {
 import { ColumnOptionsSpec, EntryColumnSpec } from '../types';
 import { COLUMN_TYPES } from '../components/column-types';
 import { MAX_LEVELS } from '../components/level-ring';
-import { getComponent } from '../components';
+import { getComponent, listComponentTypes, paletteEntries } from '../components';
+import { makeFieldResolver, NO_ENV } from '../formula/resolve';
 
 /*
  * The layout editor's list fields, which had no coverage until the obsidian
@@ -2408,4 +2409,145 @@ describe('a condition on a column', () => {
 			]);
 		});
 	});
+
+	describe('on a list that cannot honour one', () => {
+		it('reports a Table column carrying one, naming it, and leaves the key alone', () => {
+			const record = {
+				columns: [
+					{ key: 'Qty', type: 'number' },
+					{ key: 'Weight', type: 'number', visibleWhen: 'Qty > 0' },
+					{ key: 'Notes', type: 'text', visibleWhen: '' },
+					// Not text and not an answer, so no condition at all (`heldCondition`).
+					{ key: 'Worn', type: 'toggle', visibleWhen: 3 },
+				],
+			};
+			const before = JSON.stringify(record);
+			const el = columnsEditor(record);
+			const said = Array.from(el.querySelectorAll(':scope > .sheetsmith-field-error')).map(
+				(one) => one.textContent,
+			);
+			expect(said).toEqual([
+				'"Weight" has a condition, and every column here is drawn on every row, so the condition does nothing. Remove it, or move this column to a Record set to show it only on some rows.',
+			]);
+			expect(JSON.stringify(record)).toBe(before);
+		});
+
+		it("reports a Roster column in the Roster's own words", () => {
+			const offers = getComponent('roster')?.configFields.find((one) => one.key === 'columns')
+				?.columnOptions;
+			const el = columnsEditor(
+				{ columns: [{ key: 'Bonus', type: 'number', visibleWhen: 'Bonus > 0' }] },
+				0,
+				offers,
+			);
+			const unit = offers?.unit ?? 'column';
+			const holder = offers?.holder ?? 'row';
+			expect(Array.from(el.querySelectorAll(':scope > .sheetsmith-field-error')).map((one) => one.textContent)).toEqual([
+				`"Bonus" has a condition, and every ${unit} here is drawn on every ${holder}, so the condition does nothing. Remove it, or move this ${unit} to a Record set to show it only on some ${holder}s.`,
+			]);
+		});
+	});
+});
+
+describe('a condition on a columns field, over the registry', () => {
+	/*
+	 * The registry contract's two branches, driven through the editor and the
+	 * sheet because the node-environment contract file can draw neither. A
+	 * component that asks for **Shown when** has to hide what it names; one that
+	 * does not has to have its list report a condition written by hand.
+	 */
+	const columnsFields = listComponentTypes().flatMap((type) =>
+		(getComponent(type)?.configFields ?? [])
+			.filter((field) => field.kind === 'columns')
+			.map((field) => ({ type, field })),
+	);
+	const honouring = columnsFields.filter(({ field }) => field.columnOptions?.visibleWhen === true);
+	const reporting = columnsFields.filter(({ field }) => field.columnOptions?.visibleWhen !== true);
+
+	it('finds a component on each branch', () => {
+		expect(honouring.length).toBeGreaterThan(0);
+		expect(reporting.length).toBeGreaterThan(0);
+	});
+
+	it.each(honouring.map(({ type, field }) => [type, field.key]))(
+		'%s hides the entry its example says is never shown',
+		(type, key) => {
+			const component = getComponent(type);
+			if (component?.sample === undefined) throw new Error(`${type} draws no sample`);
+			const prefill = component.example ?? paletteEntries(type)[0]?.config ?? {};
+			const base = {
+				id: 'sample',
+				type,
+				label: 'Sample',
+				position: { col: 1, row: 1, width: 6, height: 3 },
+				...prefill,
+			} as Record<string, unknown>;
+			const entries = (base[key] as Record<string, unknown>[] | undefined) ?? [];
+			expect(entries.length, `${type} has no ${key} to condition`).toBeGreaterThan(0);
+			const drawn = (visibleWhen?: string): HTMLElement => {
+				const config = {
+					...base,
+					[key]: entries.map((entry, at) =>
+						at === 0 && visibleWhen !== undefined ? { ...entry, visibleWhen } : entry,
+					),
+				} as never;
+				const body = component.sample?.(config) ?? '';
+				const read = component.read(body, config);
+				if (!read.ok) throw new Error(read.error);
+				const el = host();
+				component.render(el, config, read.data, {
+					resolved: {},
+					resolveField: makeFieldResolver(component, config, read.data, NO_ENV),
+					onChange: () => undefined,
+				});
+				return el;
+			};
+			const hiddenIn = (el: HTMLElement) =>
+				Array.from(el.querySelectorAll<HTMLElement>('[hidden]:not([hidden="until-found"])'));
+			const plain = drawn();
+			expect(hiddenIn(plain)).toHaveLength(0);
+			const conditioned = drawn('false');
+			const hidden = hiddenIn(conditioned);
+			expect(hidden.length).toBeGreaterThan(0);
+			/*
+			 * **Exactly the first entry's own elements, and nothing else changed.**
+			 * Each hidden element names the first entry and no other, and taking the
+			 * attribute off gives back the tree the unconditioned render drew — so
+			 * the condition hid that entry's element in place and touched nothing
+			 * beside it.
+			 */
+			const keys = entries.map((entry) => String(entry.key));
+			for (const one of hidden) {
+				expect(one.outerHTML, `${type} hid something not "${keys[0]}"`).toContain(keys[0]);
+				for (const other of keys.slice(1)) {
+					expect(one.outerHTML, `${type} hid "${other}" with "${keys[0]}"`).not.toContain(other);
+				}
+			}
+			for (const one of hidden) one.removeAttribute('hidden');
+			expect(conditioned.innerHTML).toBe(plain.innerHTML);
+		},
+	);
+
+	it.each(reporting.map(({ type, field }) => [type, field.key]))(
+		"%s's list reports a condition written on one of its entries",
+		(type, key) => {
+			const offers = getComponent(type)?.configFields.find((one) => one.key === key)?.columnOptions;
+			const el = host();
+			renderColumnsEditor(
+				el,
+				{ [key]: [{ key: 'Weight', type: offers?.types[0] ?? 'number', visibleWhen: 'Qty > 0' }] },
+				key,
+				'x',
+				context,
+				0,
+				offers,
+			);
+			expect(el.querySelector('input[aria-label$=" shown when"]')).toBeNull();
+			expect(
+				Array.from(el.querySelectorAll('.sheetsmith-field-error')).some((one) =>
+					(one.textContent ?? '').startsWith('"Weight" has a condition,'),
+				),
+			).toBe(true);
+		},
+	);
 });
