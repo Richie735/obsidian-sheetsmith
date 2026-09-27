@@ -55,6 +55,9 @@ describe('every expression a component declares is a field the editor checks', (
 	const COVERED = [
 		'columns.*.formula',
 		'fields.*.formula',
+		// A Record set field's condition, checked under its **Shown when**
+		// (`docs/features/conditional-field-visibility.md`).
+		'fields.*.visibleWhen',
 		'rows.*.values.*',
 		'rows.*.count',
 		'reset.*.to',
@@ -85,7 +88,7 @@ describe('every expression a component declares is a field the editor checks', (
 		// covered, and counting declarations would let four of the five go
 		// unasked about while the floor still passed.
 		//
-		// **The floor is exactly tight — five declared against five covered,
+		// **The floor is exactly tight — six declared against six covered,
 		// no slack — and that is the guard working rather than a fragility.**
 		// It goes red the moment `COVERED` names a path no component declares,
 		// which is the other way this list can be wrong: a check claiming to

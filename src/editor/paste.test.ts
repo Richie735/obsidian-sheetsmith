@@ -121,6 +121,38 @@ describe('pasting a copy into the layout it came from', () => {
 	});
 });
 
+describe("pasting a Record set whose field's condition reads a copied sibling", () => {
+	it('rewrites the id the condition reads, through the declared pattern', () => {
+		// `docs/features/conditional-field-visibility.md`: a condition is a
+		// formula field, so the paste's one walk reaches it with nothing else
+		// changed.
+		const group: ComponentConfig = {
+			id: 'powers',
+			type: 'group',
+			label: 'Powers',
+			position: at(1, 2, 6, 2),
+			children: [
+				card('tier', 'Tier', { position: at(1, 1) }),
+				{
+					id: 'features',
+					type: 'record-set',
+					label: 'Features',
+					position: at(3, 1, 4, 2),
+					fields: [
+						{ key: 'Recharges', type: 'level', levels: ['None', 'Rest'] },
+						{ key: 'Uses', type: 'number', visibleWhen: 'tier > 1 && Recharges == 1' },
+					],
+				} as unknown as ComponentConfig,
+			],
+		};
+		const layout: Layout = { name: 'L', components: [group] };
+		const pasted = landed(pasteComponent(layout, 'powers', copyOf(group), true));
+		const copied = (pasted.root.children ?? []).find((child) => child.id === 'features_2');
+		const fields = own(copied, 'fields') as { visibleWhen?: string }[];
+		expect(fields[1]?.visibleWhen).toBe('tier_2 > 1 && Recharges == 1');
+	});
+});
+
 /** Build one expression at a declared path: `*` is a list, or a map where it is last. */
 function plant(record: Record<string, unknown>, segments: string[]): void {
 	const [head, ...rest] = segments;
@@ -139,7 +171,13 @@ function plant(record: Record<string, unknown>, segments: string[]): void {
 			record[head] = { k: 'src + mod.src' };
 			return;
 		}
-		const item: Record<string, unknown> = {};
+		// Into the one item a sibling pattern already planted, so two patterns
+		// under one list — a field's formula and its condition — both land.
+		const existing = record[head];
+		const item: Record<string, unknown> =
+			Array.isArray(existing) && typeof existing[0] === 'object' && existing[0] !== null
+				? (existing[0] as Record<string, unknown>)
+				: {};
 		plant(item, tail);
 		record[head] = [item];
 		return;

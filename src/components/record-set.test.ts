@@ -10,7 +10,14 @@ import { outcomeView } from '../test/modifier-views';
 import { card, CardConfig } from './card';
 import { buildSheet, ReadComponent } from '../formula/sheet';
 import { evaluate } from '../formula/expression';
-import { callsFrom, makeFieldResolver, NO_ENV } from '../formula/resolve';
+import {
+	callsFrom,
+	makeFieldExplainer,
+	makeFieldResolver,
+	NO_ENV,
+} from '../formula/resolve';
+import { FOCUSABLE } from '../view/cell-focus';
+import { SAMPLES } from '../../harness/samples';
 import { Layout, parseLayout, serialiseLayout } from '../parse/layout';
 import { COLUMN_TYPES } from './column-types';
 import { RenderContext } from '../types';
@@ -70,6 +77,26 @@ const BODY = [
 	'Three rerolls a day.',
 	'',
 ].join('\n');
+
+/**
+ * One of the harness's own Record sets and its body, top level or inside a
+ * container, so a case about "the lists the harness draws" reads the lists the
+ * harness draws rather than a copy of them.
+ */
+function harnessRecordSet(id: string): { config: RecordSetConfig; body: string } {
+	for (const sample of SAMPLES) {
+		if (sample.config.id === id && sample.body !== null) {
+			return { config: sample.config as RecordSetConfig, body: sample.body };
+		}
+		const children = (sample.config as { children?: RecordSetConfig[] }).children ?? [];
+		const child = children.find((one) => one.id === id);
+		const body = sample.children?.[id];
+		if (child !== undefined && typeof body === 'string') {
+			return { config: child, body };
+		}
+	}
+	throw new Error(`no harness record set called "${id}"`);
+}
 
 const context: RenderContext<RecordSetData> = {
 	resolved: {},
@@ -3841,5 +3868,657 @@ describe('a field inside the opened record', () => {
 				one.classList.contains('sheetsmith-record-field'),
 			),
 		).toBe(true);
+	});
+});
+
+describe('a field shown only where its condition holds', () => {
+	/*
+	 * `docs/features/conditional-field-visibility.md`. A field's `visibleWhen` is
+	 * a boolean formula in the record's own scope; false hides the field in place,
+	 * anything that cannot be worked out shows it and says so once above the
+	 * records, and nothing but `render` ever evaluates one.
+	 */
+	const RECHARGING: RecordSetConfig = {
+		id: 'recharging',
+		type: 'record-set',
+		label: 'Recharging features',
+		position: { col: 1, row: 1, width: 7, height: 4 },
+		recordName: 'Feature',
+		fields: [
+			{
+				key: 'Recharges',
+				type: 'level',
+				input: 'select',
+				levels: ['None', 'Short rest', 'Long rest', 'Always-on'],
+			},
+			{
+				key: 'Uses',
+				type: 'number',
+				maxSource: 'record',
+				visibleWhen: 'Recharges == 1 || Recharges == 2',
+			},
+			{ key: 'Active', type: 'toggle', visibleWhen: 'Recharges == 3' },
+			{
+				key: 'DC',
+				name: 'Save DC',
+				type: 'number',
+				placement: 'body',
+				visibleWhen: 'Recharges != 0',
+			},
+			{ key: 'Modifiers', type: 'modifier' },
+		],
+	};
+
+	/** One record per stored level, 0 to 3, in order. */
+	const LEVELS_BODY = [
+		'',
+		'### Darkvision',
+		'```sheet',
+		'Recharges: 0',
+		'Uses: 2 / 2',
+		'Active: yes',
+		'DC: 12',
+		'```',
+		'Prose.',
+		'',
+		'### Second Wind',
+		'```sheet',
+		'Recharges: 1',
+		'Uses: 1 / 1',
+		'DC: 13',
+		'```',
+		'Prose.',
+		'',
+		'### Rage',
+		'```sheet',
+		'Recharges: 2',
+		'Uses: 0 / 3',
+		'Active: yes',
+		'```',
+		'Prose.',
+		'',
+		'### Aura of Protection',
+		'```sheet',
+		'Recharges: 3',
+		'Active: yes',
+		'Uses: 2 / 2',
+		'Modifiers: armour_class += 1 when Active',
+		'```',
+		'Prose.',
+		'',
+	].join('\n');
+
+	/** A render with the real resolver and explainer over the note's own data. */
+	function renderWith(
+		from: RecordSetConfig = RECHARGING,
+		body: string = LEVELS_BODY,
+		ctx: Partial<RenderContext<RecordSetData>> = {},
+	) {
+		const data = readData(body, from);
+		return render(from, body, {
+			resolveField: makeFieldResolver(recordSet, from, data, NO_ENV),
+			explainField: makeFieldExplainer(recordSet, from, data, NO_ENV),
+			...ctx,
+		});
+	}
+
+	/** A record's cell for one field, by its name on the sheet. */
+	const cellOf = (record: HTMLElement, name: string): HTMLElement | null => {
+		for (const cell of Array.from(
+			record.querySelectorAll<HTMLElement>('.sheetsmith-record-field'),
+		)) {
+			// A control's name, or a computed value's hidden twin, which is how a
+			// read-only field names itself.
+			const label =
+				cell.querySelector('[aria-label]')?.getAttribute('aria-label') ??
+				cell.querySelector('.sheetsmith-sr-only')?.textContent ??
+				'';
+			if (label.endsWith(` ${name}`) || label.startsWith(`${name}`)) {
+				return cell;
+			}
+		}
+		return null;
+	};
+
+	/** Which of the named fields each record shows, as `hidden` says. */
+	const shownOn = (el: HTMLElement, names: string[]): string[][] =>
+		records(el).map((record) =>
+			names.filter((name) => {
+				const cell = cellOf(record, name);
+				if (cell === null) throw new Error(`no ${name} cell`);
+				return !cell.hasAttribute('hidden');
+			}),
+		);
+
+	const noConditions = (from: RecordSetConfig): RecordSetConfig => ({
+		...from,
+		fields: (from.fields ?? []).map((one) => {
+			const copy = { ...one };
+			delete copy.visibleWhen;
+			return copy;
+		}),
+	});
+
+	it("draws exactly the board card's case at every stored level", () => {
+		const el = renderWith();
+		expect(shownOn(el, ['Uses', 'Active'])).toEqual([
+			[],
+			['Uses'],
+			['Uses'],
+			['Active'],
+		]);
+		// The controlling field is never hidden.
+		expect(shownOn(el, ['Recharges'])).toEqual([
+			['Recharges'],
+			['Recharges'],
+			['Recharges'],
+			['Recharges'],
+		]);
+	});
+
+	it('keeps a hidden field in the DOM, on the summary line and in the body', () => {
+		const el = renderWith();
+		const darkvision = records(el)[0] as HTMLElement;
+		const uses = cellOf(darkvision, 'Uses') as HTMLElement;
+		const dc = cellOf(darkvision, 'Save DC') as HTMLElement;
+		expect(uses.getAttribute('hidden')).toBe('');
+		expect(uses.closest('.sheetsmith-record-summary')).not.toBeNull();
+		expect(dc.getAttribute('hidden')).toBe('');
+		expect(dc.closest('.sheetsmith-record-body-fields')).not.toBeNull();
+		// Plain `hidden`, never `until-found`, and never `aria-hidden`.
+		expect(el.querySelectorAll('.sheetsmith-record-field[hidden="until-found"]')).toHaveLength(0);
+		expect(el.querySelectorAll('.sheetsmith-record-field[aria-hidden]')).toHaveLength(0);
+		const secondWind = records(el)[1] as HTMLElement;
+		expect(cellOf(secondWind, 'Uses')?.hasAttribute('hidden')).toBe(false);
+		expect(cellOf(secondWind, 'Save DC')?.hasAttribute('hidden')).toBe(false);
+	});
+
+	it('keeps every control, so the view restores focus to the same index either way', () => {
+		const body = LEVELS_BODY;
+		const shown = renderWith(RECHARGING, body);
+		const flipped = renderWith(
+			{
+				...RECHARGING,
+				fields: (RECHARGING.fields ?? []).map((one) =>
+					one.visibleWhen === undefined
+						? one
+						: { ...one, visibleWhen: `!(${String(one.visibleWhen)})` },
+				),
+			},
+			body,
+		);
+		const count = (el: HTMLElement) =>
+			records(el).map((record) => record.querySelectorAll(FOCUSABLE).length);
+		expect(count(flipped)).toEqual(count(shown));
+		expect(shownOn(flipped, ['Uses', 'Active'])).toEqual([
+			['Uses', 'Active'],
+			['Active'],
+			['Active'],
+			['Uses'],
+		]);
+	});
+
+	it('draws no hidden field on the harness lists, which carry no condition', () => {
+		for (const id of ['traits', 'spells', 'known_spells']) {
+			const sample = harnessRecordSet(id);
+			const el = render(
+				sample.config,
+				sample.body,
+				{ resolveField: makeFieldResolver(recordSet, sample.config, readData(sample.body, sample.config), NO_ENV) },
+			);
+			expect(el.querySelectorAll('.sheetsmith-record-field').length, id).toBeGreaterThan(0);
+			expect(el.querySelectorAll('.sheetsmith-record-field[hidden]'), id).toHaveLength(0);
+			expect(el.querySelectorAll('.sheetsmith-record-body-fields[hidden]'), id).toHaveLength(0);
+		}
+	});
+
+	it('draws a blank condition exactly as the key being absent', () => {
+		const bare = noConditions(RECHARGING);
+		const blank: RecordSetConfig = {
+			...bare,
+			fields: (bare.fields ?? []).map((one) => ({ ...one, visibleWhen: '  ' })),
+		};
+		expect(renderWith(blank).innerHTML).toBe(renderWith(bare).innerHTML);
+	});
+
+	it('takes a hand-written true or false as its own answer', () => {
+		const literal = (value: boolean): RecordSetConfig => ({
+			...RECHARGING,
+			fields: (RECHARGING.fields ?? []).map((one) =>
+				one.key === 'Uses' ? { ...one, visibleWhen: value } : one,
+			),
+		});
+		expect(shownOn(renderWith(literal(false)), ['Uses'])).toEqual([[], [], [], []]);
+		expect(shownOn(renderWith(literal(true)), ['Uses'])).toEqual([
+			['Uses'],
+			['Uses'],
+			['Uses'],
+			['Uses'],
+		]);
+	});
+
+	it("reads its own condition by the field's declared index", () => {
+		/*
+		 * A conditioned field declared after a body field and after a computed
+		 * one: a filtered half with its own indices would resolve its neighbour's
+		 * condition. The last field reads a stored sibling and is shown only where
+		 * it holds; the one before it reads a computed sibling, which is not in
+		 * the stored layer, so it fails as unknown and is shown.
+		 */
+		const ordered: RecordSetConfig = {
+			...RECHARGING,
+			fields: [
+				{ key: 'Uses', type: 'number', visibleWhen: 'Uses_max > 99' },
+				{ key: 'DC', type: 'number', placement: 'body', visibleWhen: 'true' },
+				{ key: 'Left', type: 'computed', formula: '3 - Uses', visibleWhen: 'false' },
+				{ key: 'Uses_max', type: 'number', visibleWhen: 'Left > 0' },
+				{ key: 'Active', type: 'toggle', visibleWhen: 'Uses_max == 2' },
+			],
+		};
+		const body = [
+			'',
+			'### A',
+			'```sheet',
+			'Uses: 1',
+			'Uses_max: 2',
+			'```',
+			'',
+			'### B',
+			'```sheet',
+			'Uses: 1',
+			'Uses_max: 3',
+			'```',
+			'',
+		].join('\n');
+		const el = renderWith(ordered, body);
+		expect(shownOn(el, ['Uses', 'DC', 'Left', 'Uses_max', 'Active'])).toEqual([
+			['DC', 'Uses_max', 'Active'],
+			['DC', 'Uses_max'],
+		]);
+		// `Left` is computed, so `Uses_max`'s condition fails naming it.
+		const line = el.querySelector('.sheetsmith-record-set-list > .sheetsmith-error');
+		expect(line?.textContent).toContain('"Uses_max" is shown on every feature');
+		expect(line?.textContent).toContain('Unknown name "Left".');
+	});
+
+	describe('a condition naming its own field', () => {
+		const selfNamed = (condition: string): RecordSetConfig => ({
+			...RECHARGING,
+			fields: (RECHARGING.fields ?? []).map((one) =>
+				one.key === 'Uses' ? { ...one, visibleWhen: condition } : one,
+			),
+		});
+		const ZERO = LEVELS_BODY.replace('Uses: 1 / 1', 'Uses: 0 / 1');
+
+		it.each(['Uses > 0', 'Uses == 0 || Recharges == 1'])(
+			'is refused: %s shows the field on every record and is never evaluated',
+			(condition) => {
+				const from = selfNamed(condition);
+				const data = readData(ZERO, from);
+				const real = makeFieldResolver(recordSet, from, data, NO_ENV);
+				const resolveField = vi.fn(real);
+				const el = render(from, ZERO, { resolveField });
+				expect(shownOn(el, ['Uses'])).toEqual([['Uses'], ['Uses'], ['Uses'], ['Uses']]);
+				expect(
+					resolveField.mock.calls.filter(([path]) => path === 'fields.1.visibleWhen'),
+				).toHaveLength(0);
+				// No problem line: it is a layout error, reported in the editor.
+				expect(el.querySelectorAll('.sheetsmith-record-set-list > .sheetsmith-error')).toHaveLength(0);
+				expect(recordSet.read(ZERO, from).ok).toBe(true);
+			},
+		);
+
+		it('is not refused where the name is dotted, which is somebody else on the sheet', () => {
+			const from = selfNamed('abilities.Uses > 0');
+			const data = readData(ZERO, from);
+			const resolveField = vi.fn(makeFieldResolver(recordSet, from, data, NO_ENV));
+			render(from, ZERO, { resolveField });
+			expect(
+				resolveField.mock.calls.filter(([path]) => path === 'fields.1.visibleWhen').length,
+			).toBeGreaterThan(0);
+		});
+	});
+
+	describe('a hidden field still counts everywhere', () => {
+		const armourClass: CardConfig = {
+			id: 'armour_class',
+			type: 'card',
+			label: 'Armour class',
+			position: { col: 1, row: 5, width: 2, height: 1 },
+			derived: '10 + mod.self',
+		};
+
+		function sheetFor(from: RecordSetConfig, body: string) {
+			const data = readData(body, from);
+			const layout: Layout = { name: 'L', components: [armourClass, from] };
+			return buildSheet(layout, [
+				{ config: armourClass, component: card, data: null, error: null },
+				{ config: from, component: recordSet, data, error: null },
+			]);
+		}
+
+		it('is added up by an aggregate, and left out only by the aggregate saying so', () => {
+			const { env } = sheetFor(RECHARGING, LEVELS_BODY);
+			// Darkvision's hidden 2 and Aura's hidden 2 are counted.
+			expect(evaluate('sum(recharging, Uses)', env.sheet, callsFrom(env))).toBe(5);
+			expect(
+				evaluate(
+					'sum(recharging, Uses, Recharges == 1 || Recharges == 2)',
+					env.sheet,
+					callsFrom(env),
+				),
+			).toBe(1);
+		});
+
+		it('applies a when clause reading a hidden toggle', () => {
+			// Aura of Protection's Active is shown; switch it to a short rest and
+			// Active is hidden, still stored yes, and the push still applies.
+			const switched = LEVELS_BODY.replace(
+				'Recharges: 3\nActive: yes',
+				'Recharges: 1\nActive: yes',
+			);
+			expect(sheetFor(RECHARGING, switched).env.sheet('armour_class')).toBe(11);
+			const el = renderWith(RECHARGING, switched);
+			expect(cellOf(records(el)[3] as HTMLElement, 'Active')?.hasAttribute('hidden')).toBe(true);
+		});
+
+		it('pushes from a modifier field hidden on a closed record', () => {
+			const hiddenModifiers: RecordSetConfig = {
+				...RECHARGING,
+				fields: (RECHARGING.fields ?? []).map((one) =>
+					one.key === 'Modifiers' ? { ...one, visibleWhen: 'false' } : one,
+				),
+			};
+			expect(sheetFor(hiddenModifiers, LEVELS_BODY).env.sheet('armour_class')).toBe(11);
+		});
+
+		it.each(['empty', 'full', 'formula'] as const)(
+			'is written by a %s reset exactly as a shown one is',
+			(action) => {
+				const reset = { trigger: 'Long rest', action, to: '1' };
+				const resetContext = {
+					resolve: () => 1,
+					explain: () => null,
+				};
+				// A ceiling on the one field whose ceiling is the layout's, so `full`
+				// has something to restore every number to.
+				const from: RecordSetConfig = {
+					...RECHARGING,
+					fields: (RECHARGING.fields ?? []).map((one) =>
+						one.key === 'DC' ? { ...one, max: 20 } : one,
+					),
+				};
+				const withConditions = recordSet.applyReset?.(
+					readData(LEVELS_BODY, from),
+					from,
+					reset,
+					resetContext,
+				);
+				const without = recordSet.applyReset?.(
+					readData(LEVELS_BODY, noConditions(from)),
+					noConditions(from),
+					reset,
+					resetContext,
+				);
+				expect(withConditions?.ok).toBe(true);
+				expect(withConditions).toEqual(without);
+				if (!withConditions?.ok) return;
+				// Darkvision's hidden Uses and hidden Active are both written.
+				expect(withConditions.data.records[0]?.fields?.Uses).toBeDefined();
+				expect(withConditions.data.records[0]?.fields?.Active).toBeDefined();
+			},
+		);
+
+		it('is never evaluated by what the sheet reads', () => {
+			const data = readData(LEVELS_BODY, RECHARGING);
+			const resolve = vi.fn(makeFieldResolver(recordSet, RECHARGING, data, NO_ENV));
+			recordSet.scopeRows?.(data, RECHARGING)?.(resolve);
+			recordSet.scopeModifiers?.(data, RECHARGING)?.(resolve);
+			for (const action of ['empty', 'full', 'formula'] as const) {
+				recordSet.applyReset?.(
+					data,
+					RECHARGING,
+					{ trigger: 'Long rest', action, to: '1' },
+					{
+						resolve: (field, extra) => resolve(field, extra),
+						explain: () => null,
+					},
+				);
+			}
+			expect(resolve.mock.calls.length).toBeGreaterThan(0);
+			expect(
+				resolve.mock.calls.filter(([path]) => path.endsWith('.visibleWhen')),
+			).toEqual([]);
+		});
+	});
+
+	it('leaves a hidden value untouched when a sibling commit hides it', () => {
+		const changes: RecordSetData[] = [];
+		const el = renderWith(RECHARGING, LEVELS_BODY, {
+			onChange: (data) => changes.push(data),
+		});
+		// Second Wind, from a short rest to always-on: Uses goes, Active comes.
+		const select = records(el)[1]?.querySelector('select') as HTMLSelectElement;
+		select.value = '3';
+		select.dispatchEvent(new Event('change'));
+		expect(changes).toEqual([{ records: { 1: { fields: { Recharges: '3' } } } }]);
+		const written = recordSet.write(changes[0] as RecordSetData, LEVELS_BODY, RECHARGING);
+		const before = LEVELS_BODY.split('\n');
+		const after = written.split('\n');
+		expect(after).toHaveLength(before.length);
+		const changed = after.filter((line, at) => line !== before[at]);
+		expect(changed).toEqual(['Recharges: 3']);
+		expect(written).toContain('Uses: 1 / 1');
+		// And on the rebuild, Uses is hidden with its value intact.
+		const rebuilt = renderWith(RECHARGING, written);
+		const uses = cellOf(records(rebuilt)[1] as HTMLElement, 'Uses') as HTMLElement;
+		expect(uses.hasAttribute('hidden')).toBe(true);
+		expect(uses.querySelector('input')?.value).toBe('1');
+	});
+
+	it('announces a commit that flips a sibling exactly as it would with no conditions', () => {
+		// Active shown while Uses is above zero, so spending the last use hides it.
+		const counted: RecordSetConfig = {
+			...RECHARGING,
+			fields: (RECHARGING.fields ?? []).map((one) =>
+				one.key === 'Active'
+					? { ...one, visibleWhen: 'Uses > 0' }
+					: one.key === 'Uses'
+						? { ...one, visibleWhen: undefined }
+						: one,
+			),
+		};
+		const said = (from: RecordSetConfig) => {
+			const el = renderWith(from, LEVELS_BODY, { onChange: () => undefined });
+			const input = cellOf(records(el)[1] as HTMLElement, 'Uses')?.querySelector(
+				'input',
+			) as HTMLInputElement;
+			input.focus();
+			input.value = '0';
+			input.dispatchEvent(new Event('input'));
+			input.dispatchEvent(new Event('blur'));
+			return el.querySelector('[aria-live]')?.textContent;
+		};
+		const withConditions = said(counted);
+		// It said something, so the comparison is about a sentence.
+		expect(withConditions).toBeTruthy();
+		expect(withConditions).toBe(said(noConditions(counted)));
+	});
+
+	describe('a condition that cannot be worked out', () => {
+		const failing = (condition: string): RecordSetConfig => ({
+			...RECHARGING,
+			fields: (RECHARGING.fields ?? []).map((one) =>
+				one.key === 'Uses' ? { ...one, visibleWhen: condition } : one,
+			),
+		});
+
+		it.each([
+			['names an unknown key', 'Recharge == 1', 'Unknown name "Recharge".'],
+			['comes to a number', 'Recharges + 1', 'which is not true or false'],
+			['will not parse', 'Recharges ==', ''],
+		])('shows the field where it %s, and says so once above the records', (_, condition, why) => {
+			const from = failing(condition);
+			const el = renderWith(from);
+			expect(shownOn(el, ['Uses'])).toEqual([['Uses'], ['Uses'], ['Uses'], ['Uses']]);
+			const list = el.querySelector('.sheetsmith-record-set-list') as HTMLElement;
+			const lines = Array.from(list.querySelectorAll(':scope > .sheetsmith-error'));
+			expect(lines).toHaveLength(1);
+			expect(list.firstElementChild).toBe(lines[0]);
+			const text = lines[0]?.textContent ?? '';
+			expect(text).toMatch(/^"Uses" is shown on every feature because its condition could not be worked out: /);
+			expect(text).toContain(why);
+			expect(text).toMatch(/Fix the condition under Shown when in the layout editor\.$/);
+			const data = readData(LEVELS_BODY, from);
+			const explained = makeFieldExplainer(recordSet, from, data, NO_ENV)(
+				'fields.1.visibleWhen',
+				{ Recharges: 0 },
+			);
+			if (explained !== null) expect(text).toContain(explained);
+			expect(recordSet.read(LEVELS_BODY, from).ok).toBe(true);
+			// Every other field still works: Active is still conditioned.
+			expect(shownOn(el, ['Active'])).toEqual([[], [], [], ['Active']]);
+		});
+
+		it('counts the records it failed on where only some did', () => {
+			const from: RecordSetConfig = {
+				...RECHARGING,
+				fields: [
+					{ key: 'Uses', type: 'number' },
+					{ key: 'Active', type: 'toggle', visibleWhen: 'Uses > 0' },
+				],
+			};
+			const body = ['A', 'B', 'C', 'D', 'E']
+				.map((name, at) =>
+					[`### ${name}`, '```sheet', `Uses: ${at < 2 ? 'lots' : '1'}`, '```', ''].join('\n'),
+				)
+				.join('\n');
+			const el = renderWith(from, `\n${body}`);
+			const lines = el.querySelectorAll('.sheetsmith-record-set-list > .sheetsmith-error');
+			expect(lines).toHaveLength(1);
+			expect(lines[0]?.textContent).toMatch(/^"Active" is shown on 2 features because/);
+			expect(shownOn(el, ['Active'])).toEqual([['Active'], ['Active'], ['Active'], ['Active'], ['Active']]);
+		});
+
+		it('puts the line in the records wrapper on a headed list, under the strip', () => {
+			const el = renderWith({ ...failing('Recharge == 1'), fieldHeadings: true });
+			const wrapper = el.querySelector('.sheetsmith-record-set-records') as HTMLElement;
+			expect(wrapper.firstElementChild?.classList.contains('sheetsmith-error')).toBe(true);
+			expect(el.querySelectorAll('.sheetsmith-record-set-list .sheetsmith-error:not(.sheetsmith-record > *)')).toHaveLength(1);
+		});
+	});
+
+	describe('under the strip', () => {
+		const tracksOf = (record: HTMLElement) =>
+			Array.from(
+				record.querySelectorAll<HTMLElement>(
+					'.sheetsmith-record-summary .sheetsmith-record-field',
+				),
+			).map((cell) => cell.style.getPropertyValue('--sheetsmith-record-track'));
+
+		it('puts each summary field of a headed list in its own track, in declared order', () => {
+			const traits = harnessRecordSet('traits');
+			const el = render(traits.config, traits.body, {
+				resolveField: makeFieldResolver(recordSet, traits.config, readData(traits.body, traits.config), NO_ENV),
+			});
+			for (const record of records(el).filter((one) => one.querySelector('.sheetsmith-record-fields')?.children.length)) {
+				expect(tracksOf(record)).toEqual(['1', '2', '3', '4', '5']);
+			}
+			const strip = el.querySelector('.sheetsmith-record-strip') as HTMLElement;
+			expect(strip.children).toHaveLength(5);
+			const block = el.querySelector('.sheetsmith-record-set') as HTMLElement;
+			expect(block.classList.contains('sheetsmith-record-set-fields-5')).toBe(true);
+			expect(block.style.getPropertyValue('--sheetsmith-record-fields')).toBe('5');
+			for (const cell of Array.from(
+				el.querySelectorAll<HTMLElement>('.sheetsmith-record-body-fields .sheetsmith-record-field'),
+			)) {
+				expect(cell.style.getPropertyValue('--sheetsmith-record-track')).toBe('');
+			}
+		});
+
+		it('stamps no track on an unheaded list', () => {
+			const el = renderWith();
+			expect(
+				Array.from(el.querySelectorAll<HTMLElement>('.sheetsmith-record-field')).filter(
+					(cell) => cell.style.getPropertyValue('--sheetsmith-record-track') !== '',
+				),
+			).toEqual([]);
+		});
+
+		it('keeps every summary field in its own track whether hidden or not', () => {
+			const headed = { ...RECHARGING, fieldHeadings: true };
+			const el = renderWith(headed);
+			for (const record of records(el)) {
+				expect(tracksOf(record)).toEqual(['1', '2', '3', '4']);
+			}
+			const block = el.querySelector('.sheetsmith-record-set') as HTMLElement;
+			const plain = renderWith(noConditions(headed)).querySelector('.sheetsmith-record-set') as HTMLElement;
+			expect(block.className).toBe(plain.className);
+			expect(block.className).toContain('sheetsmith-record-set-fields-4');
+			expect(block.style.getPropertyValue('--sheetsmith-record-fields')).toBe('4');
+		});
+	});
+
+	describe('the body block', () => {
+		const blockOf = (record: HTMLElement) =>
+			record.querySelector<HTMLElement>('.sheetsmith-record-body-fields');
+		const bodyOf = (record: HTMLElement) =>
+			record.querySelector<HTMLElement>('.sheetsmith-record-body');
+
+		it('is hidden with the class taken away where every body field is hidden', () => {
+			const el = renderWith();
+			const darkvision = records(el)[0] as HTMLElement;
+			expect(blockOf(darkvision)?.getAttribute('hidden')).toBe('');
+			expect(bodyOf(darkvision)?.classList.contains('sheetsmith-record-body-has-fields')).toBe(false);
+			const secondWind = records(el)[1] as HTMLElement;
+			expect(blockOf(secondWind)?.hasAttribute('hidden')).toBe(false);
+			expect(bodyOf(secondWind)?.classList.contains('sheetsmith-record-body-has-fields')).toBe(true);
+		});
+
+		it('comes back with one shown body field', () => {
+			const two: RecordSetConfig = {
+				...RECHARGING,
+				fields: [
+					...(RECHARGING.fields ?? []),
+					{ key: 'Range', type: 'number', placement: 'body' },
+				],
+			};
+			const darkvision = records(renderWith(two))[0] as HTMLElement;
+			expect(blockOf(darkvision)?.hasAttribute('hidden')).toBe(false);
+			expect(bodyOf(darkvision)?.classList.contains('sheetsmith-record-body-has-fields')).toBe(true);
+			expect(cellOf(darkvision, 'Save DC')?.hasAttribute('hidden')).toBe(true);
+		});
+	});
+
+	it('round-trips a layout carrying conditions on Record set fields and a Table column', () => {
+		const table = {
+			id: 'inventory',
+			type: 'table',
+			label: 'Inventory',
+			position: { col: 1, row: 6, width: 6, height: 2 },
+			columns: [
+				{ key: 'Qty', type: 'number' },
+				{ key: 'Weight', type: 'number', visibleWhen: 'Qty > 0' },
+			],
+		};
+		const layout = {
+			name: 'L',
+			components: [
+				{
+					...RECHARGING,
+					fields: [
+						...(RECHARGING.fields ?? []),
+						{ key: 'Spare', type: 'toggle' as const, visibleWhen: false },
+					],
+				},
+				table,
+			],
+			triggers: [],
+		} as unknown as Layout;
+		const text = serialiseLayout(layout);
+		expect(text).toContain('"visibleWhen": "Recharges == 1 || Recharges == 2"');
+		expect(text).toContain('"visibleWhen": "Qty > 0"');
+		expect(text).toContain('"visibleWhen": false');
+		expect(serialiseLayout(parseLayout(text))).toBe(text);
 	});
 });
