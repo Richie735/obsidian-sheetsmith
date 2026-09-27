@@ -41,6 +41,7 @@ import { showFieldError } from './field-error';
 import { reasonMessage } from './field-reason';
 import { formulaProblem } from './field-formula';
 import { isName } from '../formula/expression';
+import { conditionReads, heldCondition } from '../formula/field-condition';
 import { fencedKeyProblem } from '../parse/fenced';
 import { ColumnOptionsSpec, EntryAddress, EntryColumnSpec } from '../types';
 
@@ -732,6 +733,7 @@ interface ColumnEntry extends Record<string, unknown> {
 	max?: number;
 	maxSource?: string;
 	placement?: string;
+	visibleWhen?: string | boolean;
 	levels?: string[];
 	input?: string;
 	signed?: boolean;
@@ -962,6 +964,12 @@ export function renderColumnsEditor(
 		if (stored !== null) return `A key ${stored}`;
 		return null;
 	};
+
+	/**
+	 * Whether this list's entries may carry a condition, which only a component
+	 * drawing each entry per holder can honour (`types.ts`, `visibleWhen`).
+	 */
+	const conditioned = offers?.visibleWhen === true;
 
 	columns.forEach((column, index) => {
 		// A column is two lines — its row, and the options belonging to it —
@@ -1504,6 +1512,102 @@ export function renderColumnsEditor(
 				undefined,
 				BODY_PLACEMENT,
 			);
+		}
+
+		/*
+		 * **Shown when, last on the line**, after where the entry is drawn, since
+		 * both are about the entry as a whole and this one carries an error and a
+		 * legend under it. Opt-in on `placement`'s precedent, offered on every type
+		 * the list holds (`docs/features/conditional-field-visibility.md`).
+		 */
+		if (conditioned) {
+			const shownWhen = labelled(detail, 'Shown when');
+			/*
+			 * **A row of its own only while it holds something**, which `refresh`
+			 * decides. With a condition, an error or a legend, it is as long as its
+			 * author makes it and taller than its neighbours, so inline it clipped
+			 * the condition and dropped the fields beside it. Empty, reading
+			 * `Always`, it is one short input, and a full row on every field grew
+			 * each entry by half again for nothing — so it stays inline and last on
+			 * the line. The first commit moves it to its row; the input is the same
+			 * element, and a rebuild restores focus to it by its token.
+			 */
+			const condition = shownWhen.createEl('input', {
+				type: 'text',
+				attr: {
+					placeholder: 'Always',
+					'aria-label': `${column.key} shown when`,
+				},
+			});
+			condition.value =
+				column.visibleWhen === undefined ? '' : String(column.visibleWhen);
+			condition.dataset.sheetsmithFocus = `${prefix}-col-${column.key}-visiblewhen`;
+			// Evaluated per holder, so this component's own keys come first, as a
+			// computed entry's formula has them.
+			context.suggestNames?.(condition, ownerId);
+
+			let legend: HTMLElement[] = [];
+			/**
+			 * The field's two reports and its legend, from the stored value, on
+			 * render and on commit alike, so the two are provably about one string.
+			 */
+			const refresh = (): void => {
+				const text =
+					typeof column.visibleWhen === 'string' ? column.visibleWhen : undefined;
+				/*
+				 * **The parse error first**, since text that does not parse names
+				 * nothing to be refused for; then the refusal of a condition naming
+				 * its own entry, which is the component's own predicate
+				 * (`formula/field-condition.ts`). Stored either way, as every formula
+				 * field's text is: the component shows the entry and does not use it.
+				 */
+				const selfNamed =
+					text !== undefined && conditionReads(text, column.key)
+						? `"${column.key}" is shown when its own value says so, and a ${unit} that can hide itself vanishes under the cursor and can only be brought back by a reset. This condition is not used, so "${column.key}" is always shown. Base it on another ${unit}.`
+						: null;
+				fieldError(condition, formulaProblem(text) ?? selfNamed);
+				// Redrawn after the error, so the error stays directly under the
+				// input it is about and the legend under that.
+				for (const line of legend) line.remove();
+				legend = text === undefined ? [] : positionLegend(text, column.key);
+				const holds =
+					heldCondition(column.visibleWhen) !== null ||
+					condition.classList.contains('sheetsmith-input-invalid') ||
+					legend.length > 0;
+				shownWhen.toggleClass('sheetsmith-detail-field-row', holds);
+				shownWhen.toggleClass('sheetsmith-detail-field-wide', !holds);
+			};
+			/**
+			 * One line per level entry the condition names: what each position is
+			 * called, since a condition names a level by number. The mitigation of
+			 * that number at the one place it is written, and the standing record of
+			 * the mapping once a reorder's notice has gone.
+			 */
+			const positionLegend = (text: string, own: string): HTMLElement[] =>
+				columns
+					.filter(
+						(other) =>
+							other.key !== own &&
+							(other.type ?? fallback) === 'level' &&
+							conditionReads(text, other.key),
+					)
+					.map((other) => {
+						const positions =
+							other.levels === undefined
+								? `0 … ${levelCount(other)}`
+								: other.levels
+										.map((entry, at) => `${at} ${parseLevel(entry).name}`)
+										.join(' · ');
+						return shownWhen.createDiv('sheetsmith-entry-footnote', (el) =>
+							el.setText(`${other.key}: ${positions}`),
+						);
+					});
+			refresh();
+			condition.addEventListener('change', () => {
+				setOptional(column, 'visibleWhen', condition.value);
+				context.persist();
+				refresh();
+			});
 		}
 	});
 

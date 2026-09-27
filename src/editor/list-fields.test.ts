@@ -9,6 +9,7 @@ import {
 import { ColumnOptionsSpec, EntryColumnSpec } from '../types';
 import { COLUMN_TYPES } from '../components/column-types';
 import { MAX_LEVELS } from '../components/level-ring';
+import { getComponent } from '../components';
 
 /*
  * The layout editor's list fields, which had no coverage until the obsidian
@@ -2175,5 +2176,236 @@ describe('a formula cell that will not parse', () => {
 		expect([...context.errors.values()]).toContain(
 			'Expected a value in formula.',
 		);
+	});
+});
+
+describe('a condition on a column', () => {
+	/*
+	 * `docs/features/conditional-field-visibility.md`. **Shown when** is offered
+	 * only where the component asks for it (`columnOptions.visibleWhen`, Record
+	 * set's), and a condition written by hand on a list that cannot honour one is
+	 * reported rather than refused.
+	 */
+	/**
+	 * Record set's own offer, taken from the registry rather than restated, so a
+	 * type the component adds is a type these cases ask about.
+	 */
+	const FIELDS = ((): ColumnOptionsSpec => {
+		const offered = getComponent('record-set')?.configFields.find(
+			(one) => one.key === 'fields',
+		)?.columnOptions;
+		if (offered === undefined) throw new Error('Record set offers no fields list');
+		return offered;
+	})();
+	const LEVELS = ['None', 'Short rest', 'Long rest', 'Always-on'];
+
+	/** The Shown when input on one entry's detail line, by its key. */
+	const shownWhen = (el: HTMLElement, key: string) =>
+		el.querySelector<HTMLInputElement>(`input[aria-label="${key} shown when"]`);
+	/** What is drawn under that input: its error and its legend. */
+	const under = (el: HTMLElement, key: string, cls: string) =>
+		Array.from(
+			shownWhen(el, key)?.parentElement?.querySelectorAll(`.${cls}`) ?? [],
+		).map((one) => one.textContent);
+
+	const recharging = () => ({
+		id: 'recharging',
+		columns: [
+			{ key: 'Recharges', type: 'level', input: 'select', levels: [...LEVELS] },
+			{
+				key: 'Uses',
+				type: 'number',
+				visibleWhen: 'Recharges == 1 || Recharges == 2',
+			},
+			{ key: 'Active', type: 'toggle', visibleWhen: 'Recharges == 3' },
+		] as Record<string, unknown>[],
+	});
+
+	it('is offered on every field type a Record set holds, last on the line', () => {
+		expect(FIELDS.visibleWhen).toBe(true);
+		expect(FIELDS.types.length).toBeGreaterThan(0);
+		const columns = FIELDS.types.map((type) => ({ key: `F_${type}`, type }));
+		const el = columnsEditor({ columns }, 0, FIELDS);
+		for (const column of columns) {
+			const input = shownWhen(el, column.key);
+			expect(input, column.type).not.toBeNull();
+			expect(input?.placeholder).toBe('Always');
+			const detail = input?.closest('.sheetsmith-entry-detail');
+			// Last on the line, after "Inside the opened record".
+			expect(detail?.lastElementChild).toBe(input?.parentElement);
+			expect(input?.parentElement?.querySelector('.sheetsmith-position-label')?.textContent).toBe(
+				'Shown when',
+			);
+		}
+	});
+
+	it('stays inline while empty, and takes a row of its own once it holds a condition', () => {
+		// A full row on every field grew each entry by half again for a field
+		// reading `Always`; a condition, an error or a legend needs the row.
+		const record = {
+			id: 'features',
+			columns: [
+				{ key: 'Recharges', type: 'level', levels: ['None', 'Rest'] },
+				{ key: 'Uses', type: 'number' },
+				{ key: 'Active', type: 'toggle', visibleWhen: 'Recharges == 1' },
+				{ key: 'Spare', type: 'number', visibleWhen: 'Spare >' },
+				{ key: 'Blank', type: 'number', visibleWhen: '  ' },
+			] as Record<string, unknown>[],
+		};
+		const el = columnsEditor(record, 0, FIELDS);
+		const fieldOf = (key: string) => shownWhen(el, key)?.parentElement as HTMLElement;
+		const onRow = (key: string) => fieldOf(key).classList.contains('sheetsmith-detail-field-row');
+		const inline = (key: string) => fieldOf(key).classList.contains('sheetsmith-detail-field-wide');
+		for (const key of ['Recharges', 'Uses', 'Blank']) {
+			expect(onRow(key), key).toBe(false);
+			expect(inline(key), key).toBe(true);
+			// Still last on the line.
+			expect(fieldOf(key).parentElement?.lastElementChild).toBe(fieldOf(key));
+		}
+		// A condition with a legend, and one with only an error.
+		for (const key of ['Active', 'Spare']) {
+			expect(onRow(key), key).toBe(true);
+			expect(inline(key), key).toBe(false);
+		}
+		// The first commit moves it to its row, and the input keeps its token, so
+		// a rebuild of the pane puts focus back on it.
+		const input = shownWhen(el, 'Uses') as HTMLInputElement;
+		input.value = 'Recharges == 1';
+		input.dispatchEvent(new Event('change'));
+		expect(onRow('Uses')).toBe(true);
+		expect(input.dataset.sheetsmithFocus).toBe('skills-col-Uses-visiblewhen');
+		expect(shownWhen(columnsEditor(record, 0, FIELDS), 'Uses')?.dataset.sheetsmithFocus).toBe(
+			'skills-col-Uses-visiblewhen',
+		);
+		// And blanking it puts it back inline.
+		const again = columnsEditor(record, 0, FIELDS);
+		const back = shownWhen(again, 'Uses') as HTMLInputElement;
+		back.value = '';
+		back.dispatchEvent(new Event('change'));
+		expect(back.parentElement?.classList.contains('sheetsmith-detail-field-wide')).toBe(true);
+	});
+
+	it('is offered on no Table or Roster column', () => {
+		const table = columnsEditor({
+			columns: [
+				{ key: 'Qty', type: 'number' },
+				{ key: 'Worn', type: 'toggle' },
+			],
+		});
+		expect(table.querySelector('input[aria-label$=" shown when"]')).toBeNull();
+		const roster = columnsEditor(
+			{ columns: [{ key: 'Bonus', type: 'number' }] },
+			0,
+			getComponent('roster')?.configFields.find((one) => one.key === 'columns')
+				?.columnOptions,
+		);
+		expect(roster.querySelector('input[aria-label$=" shown when"]')).toBeNull();
+	});
+
+	it('writes what is typed, and deletes the key when it is blanked', () => {
+		const record = { id: 'features', columns: [{ key: 'Uses', type: 'number' }] as Record<string, unknown>[] };
+		const el = columnsEditor(record, 0, FIELDS);
+		const input = shownWhen(el, 'Uses') as HTMLInputElement;
+		input.value = ' Recharges == 1 ';
+		input.dispatchEvent(new Event('change'));
+		expect(record.columns[0]?.visibleWhen).toBe('Recharges == 1');
+		expect(recorded.persists).toBe(1);
+		input.value = '   ';
+		input.dispatchEvent(new Event('change'));
+		expect('visibleWhen' in (record.columns[0] ?? {})).toBe(false);
+	});
+
+	it('reports a condition that will not parse, on render and on commit, and stores it anyway', () => {
+		const record = {
+			id: 'features',
+			columns: [{ key: 'Uses', type: 'number', visibleWhen: 'Recharges ==' }] as Record<string, unknown>[],
+		};
+		const el = columnsEditor(record, 0, FIELDS);
+		expect(under(el, 'Uses', 'sheetsmith-field-error')).toEqual(['Expected a value in formula.']);
+		const input = shownWhen(el, 'Uses') as HTMLInputElement;
+		input.value = 'Recharges == 1';
+		input.dispatchEvent(new Event('change'));
+		expect(under(el, 'Uses', 'sheetsmith-field-error')).toEqual([]);
+		input.value = '(Recharges';
+		input.dispatchEvent(new Event('change'));
+		expect(record.columns[0]?.visibleWhen).toBe('(Recharges');
+		expect(under(el, 'Uses', 'sheetsmith-field-error')).toHaveLength(1);
+	});
+
+	it('binds the suggester with this component as the owner', () => {
+		const bound: [string, string | undefined][] = [];
+		context.suggestNames = (input, owner) => {
+			bound.push([input.getAttribute('aria-label') ?? '', owner]);
+		};
+		columnsEditor(recharging(), 0, FIELDS);
+		expect(bound).toContainEqual(['Uses shown when', 'recharging']);
+		expect(bound).toContainEqual(['Active shown when', 'recharging']);
+	});
+
+	it('refuses a condition naming its own field, naming it, and stores the text', () => {
+		const record = {
+			id: 'features',
+			columns: [
+				{ key: 'Uses', type: 'number', visibleWhen: 'Uses > 0' },
+				{ key: 'Spare', type: 'number', visibleWhen: 'abilities.Spare > 0' },
+			] as Record<string, unknown>[],
+		};
+		const el = columnsEditor(record, 0, FIELDS);
+		const said = under(el, 'Uses', 'sheetsmith-field-error');
+		expect(said).toEqual([
+			'"Uses" is shown when its own value says so, and a field that can hide itself vanishes under the cursor and can only be brought back by a reset. This condition is not used, so "Uses" is always shown. Base it on another field.',
+		]);
+		// A dotted name is somebody else's.
+		expect(under(el, 'Spare', 'sheetsmith-field-error')).toEqual([]);
+		const input = shownWhen(el, 'Uses') as HTMLInputElement;
+		input.value = 'Uses == 0 || Recharges == 1';
+		input.dispatchEvent(new Event('change'));
+		expect(record.columns[0]?.visibleWhen).toBe('Uses == 0 || Recharges == 1');
+		expect(under(el, 'Uses', 'sheetsmith-field-error')).toHaveLength(1);
+	});
+
+	describe('the position legend', () => {
+		it("says what each named level's position is called", () => {
+			const el = columnsEditor(recharging(), 0, FIELDS);
+			expect(under(el, 'Uses', 'sheetsmith-entry-footnote')).toEqual([
+				'Recharges: 0 None · 1 Short rest · 2 Long rest · 3 Always-on',
+			]);
+			expect(under(el, 'Active', 'sheetsmith-entry-footnote')).toEqual([
+				'Recharges: 0 None · 1 Short rest · 2 Long rest · 3 Always-on',
+			]);
+			// And it sits under the error, not between it and the input.
+			const input = shownWhen(el, 'Uses') as HTMLInputElement;
+			expect(input.nextElementSibling?.classList.contains('sheetsmith-entry-footnote')).toBe(true);
+		});
+
+		it('counts an unnamed level, and draws nothing for a condition naming no level', () => {
+			const el = columnsEditor(
+				{
+					id: 'x',
+					columns: [
+						{ key: 'Tier', type: 'level', max: 3 },
+						{ key: 'Uses', type: 'number', visibleWhen: 'Tier > 1' },
+						{ key: 'Spare', type: 'number', visibleWhen: 'Uses > 0' },
+					],
+				},
+				0,
+				FIELDS,
+			);
+			expect(under(el, 'Uses', 'sheetsmith-entry-footnote')).toEqual(['Tier: 0 … 3']);
+			expect(under(el, 'Spare', 'sheetsmith-entry-footnote')).toEqual([]);
+		});
+
+		it('reads the new positions after a reorder', () => {
+			const record = recharging();
+			const el = columnsEditor(record, 0, FIELDS);
+			const names = el.querySelector<HTMLInputElement>('input[aria-label="Recharges level names"]') as HTMLInputElement;
+			names.value = 'None, Long rest, Short rest, Always-on';
+			names.dispatchEvent(new Event('change'));
+			// The commit redraws the pane; drawn again from the layout it wrote.
+			const again = columnsEditor(record, 0, FIELDS);
+			expect(under(again, 'Uses', 'sheetsmith-entry-footnote')).toEqual([
+				'Recharges: 0 None · 1 Long rest · 2 Short rest · 3 Always-on',
+			]);
+		});
 	});
 });
