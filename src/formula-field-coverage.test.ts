@@ -40,7 +40,7 @@ import { getComponent, listComponentTypes } from './components';
 describe('every expression a component declares is a field the editor checks', () => {
 	/**
 	 * The list paths whose cell an editor checks as it draws it: the three list
-	 * editors, and `reset-field.ts` for the fourth.
+	 * editors, and `reset-field.ts` for the two reset paths.
 	 *
 	 * **`reset.*.to` was exempted here and no longer is.** It was
 	 * `formula-field-errors.md`'s stated cut, skipped by a filter and a
@@ -61,6 +61,9 @@ describe('every expression a component declares is a field the editor checks', (
 		'rows.*.values.*',
 		'rows.*.count',
 		'reset.*.to',
+		// A reset's condition, checked under its **Only where**
+		// (`docs/features/record-set-reset-scope.md`).
+		'reset.*.where',
 	];
 
 	/** Every dotted path the registry declares. */
@@ -88,7 +91,7 @@ describe('every expression a component declares is a field the editor checks', (
 		// covered, and counting declarations would let four of the five go
 		// unasked about while the floor still passed.
 		//
-		// **The floor is exactly tight — six declared against six covered,
+		// **The floor is exactly tight — seven declared against seven covered,
 		// no slack — and that is the guard working rather than a fragility.**
 		// It goes red the moment `COVERED` names a path no component declares,
 		// which is the other way this list can be wrong: a check claiming to

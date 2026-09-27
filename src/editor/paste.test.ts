@@ -153,12 +153,49 @@ describe("pasting a Record set whose field's condition reads a copied sibling", 
 	});
 });
 
+describe("pasting a Record set whose reset's condition reads a copied sibling", () => {
+	it('rewrites the id the condition reads, through the declared pattern', () => {
+		// `docs/features/record-set-reset-scope.md`: `reset.*.where` is declared,
+		// so the paste's one walk reaches it with nothing else changed.
+		const group: ComponentConfig = {
+			id: 'powers',
+			type: 'group',
+			label: 'Powers',
+			position: at(1, 2, 6, 2),
+			children: [
+				card('tier', 'Tier', { position: at(1, 1) }),
+				{
+					id: 'features',
+					type: 'record-set',
+					label: 'Features',
+					position: at(3, 1, 4, 2),
+					fields: [{ key: 'Recharges', type: 'level', levels: ['None', 'Rest'] }],
+					reset: [
+						{ trigger: 'Rest', action: 'full', where: 'tier > 1 && Recharges == 1' },
+					],
+				} as unknown as ComponentConfig,
+			],
+		};
+		const layout: Layout = { name: 'L', components: [group] };
+		const pasted = landed(pasteComponent(layout, 'powers', copyOf(group), true));
+		const copied = (pasted.root.children ?? []).find((child) => child.id === 'features_2');
+		expect(copied?.reset?.[0]?.where).toBe('tier_2 > 1 && Recharges == 1');
+	});
+});
+
 /** Build one expression at a declared path: `*` is a list, or a map where it is last. */
 function plant(record: Record<string, unknown>, segments: string[]): void {
 	const [head, ...rest] = segments;
 	if (head === undefined) return;
 	if (head === 'reset') {
-		record.reset = [{ trigger: 'Rest', action: 'formula', to: 'src + mod.src' }];
+		// One binding, carrying every reset key the component declares — `to`,
+		// and `where` where it can check one — so each pattern finds its text.
+		const key = rest[rest.length - 1] ?? 'to';
+		const held = (record.reset as Record<string, unknown>[] | undefined)?.[0] ?? {
+			trigger: 'Rest',
+			action: 'formula',
+		};
+		record.reset = [{ ...held, [key]: 'src + mod.src' }];
 		return;
 	}
 	if (rest.length === 0) {

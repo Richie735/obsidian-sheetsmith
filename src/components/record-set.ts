@@ -108,8 +108,10 @@ import {
 	ModifierPush,
 	ModifierSource,
 	ReadResult,
+	RESET_CONDITION_FIELD,
 	ResetBinding,
 	ResetContext,
+	ResetReach,
 	ResetResult,
 	RowsSource,
 	RowValues,
@@ -613,6 +615,31 @@ function recordViews(data: RecordSetData | null): RecordEntry[] {
 }
 
 /**
+ * One record's stored names: every stored field by its key, never a computed
+ * one — what a computed field, a condition and a reset's `where` all read.
+ *
+ * **One spelling for three readers**, because what is shared is the scope a
+ * formula on a record sees, and two of those disagreeing is a condition that
+ * admits a record on the sheet and not at the press. The value half, never the
+ * whole entry: a record's `Uses` name is worth `2` when the entry says `2 / 3`,
+ * which is what `sum(features, Uses)` added up before the ceiling was the
+ * record's and what it must go on adding up.
+ */
+function storedLayer(
+	config: RecordSetConfig,
+	record: RecordEntry,
+): Record<string, FieldValue> {
+	const stored: Record<string, FieldValue> = {};
+	for (const field of storedFields(config)) {
+		stored[field.key] = typedValue(
+			field,
+			storedValue(field, record.fields[field.key]),
+		);
+	}
+	return stored;
+}
+
+/**
  * One record's names as a formula reads them: every stored field by its key,
  * then the computed fields over the top.
  *
@@ -626,17 +653,7 @@ function recordValues(
 	record: RecordEntry,
 	resolve: FieldResolver,
 ): RowValues {
-	const stored: Record<string, FieldValue> = {};
-	for (const field of config.fields ?? []) {
-		if (fieldType(field) === 'computed') continue;
-		// The value half, never the whole entry: a record's `Uses` name is worth
-		// `2` when the entry says `2 / 3`, which is what `sum(features, Uses)`
-		// added up before this feature and what it must go on adding up.
-		stored[field.key] = typedValue(
-			field,
-			storedValue(field, record.fields[field.key]),
-		);
-	}
+	const stored = storedLayer(config, record);
 	const values: Record<string, FieldValue> = { ...stored };
 	(config.fields ?? []).forEach((field, at) => {
 		if (fieldType(field) !== 'computed') return;
@@ -825,6 +842,97 @@ function resetWrite(
 	};
 }
 
+/**
+ * How many records something happened on, in the words a list's problem lines
+ * use: `every feature` where it was all of the readable ones, else `1 feature`
+ * or `2 features`.
+ *
+ * One spelling for the `visibleWhen` problem line and a reset's refusal, which
+ * both count failed records against the readable ones (`docs/PATTERNS.md` §1's
+ * one-step tier: two copies of a count's wording can only drift).
+ */
+function recordCount(count: number, readable: number, noun: string): string {
+	const lower = noun.toLowerCase();
+	if (count >= readable) return `every ${lower}`;
+	return `${count} ${lower}${count === 1 ? '' : 's'}`;
+}
+
+/**
+ * Which records a binding's `where` admits, or why that could not be told
+ * (`docs/features/record-set-reset-scope.md`).
+ *
+ * **Null where the binding holds no condition**: every readable record, and no
+ * reach, so the confirmation stays the bare label rather than gaining "7 of 7".
+ *
+ * **Evaluated once per record in that record's own scope**, which is the grammar
+ * `visibleWhen` fixed — the stored layer, then the sheet, never a computed field
+ * — and the answer has to be true or false. **It fails closed, and whole**: one
+ * record whose condition cannot be worked out, whether the name is unknown, the
+ * text will not parse or it came to a number, and the binding writes nothing on
+ * this list. That is the opposite of `visibleWhen`'s fail-open on purpose: on a
+ * sheet the worse way to be wrong is a hidden value, and at a rest it is writing
+ * records the author excluded, while writing nothing and saying so is the
+ * direction a reader can recover from. A partial rest would leave them
+ * reconciling record by record; the sentence names the first record instead, so
+ * the fix is one field away.
+ *
+ * **An unreadable record is never evaluated**: it is left byte-identical, as
+ * every reset leaves it, and counts in `of` because the reader sees it.
+ */
+function admittedRecords(
+	config: RecordSetConfig,
+	records: readonly RecordEntry[],
+	reset: ResetBinding,
+	context: ResetContext,
+): { error: string } | { admitted: ReadonlySet<number>; reach: ResetReach } | null {
+	const condition = heldCondition(reset.where);
+	if (typeof condition !== 'string') return null;
+	const noun = recordNoun(config).toLowerCase();
+	const admitted = new Set<number>();
+	let readable = 0;
+	let failed = 0;
+	let first: { name: string; why: string } | null = null;
+	for (const [at, record] of records.entries()) {
+		if (record.error !== null) continue;
+		readable += 1;
+		const scope = storedLayer(config, record);
+		const value = context.resolve('reset.where', scope);
+		if (typeof value === 'boolean') {
+			if (value) admitted.add(at);
+			continue;
+		}
+		failed += 1;
+		first ??= {
+			name: recordLabel(record.name, noun),
+			why:
+				value === null
+					? (context.explain('reset.where', scope) ??
+						'the condition did not resolve.')
+					: `it came to "${String(value)}", which is not true or false.`,
+		};
+	}
+	if (first !== null) {
+		const { name, why } = first;
+		/*
+		 * `every feature`, `"Rage"`, `2 features, starting with "Rage"`. The count
+		 * is `recordCount`, which the list's own `visibleWhen` problem line reads
+		 * too; what this adds is the first record's name wherever not every record
+		 * failed, because a reset refuses the whole list and the reader has to know
+		 * which record to go and fix, where a shown field is already on screen.
+		 */
+		const every = failed >= readable;
+		const on = every
+			? recordCount(failed, readable, noun)
+			: failed === 1
+				? `"${name}"`
+				: `${recordCount(failed, readable, noun)}, starting with "${name}"`;
+		return {
+			error: `its condition under Only where could not be worked out on ${on}, so it resets none: ${why} Fix it under Only where in the layout editor.`,
+		};
+	}
+	return { admitted, reach: { reached: admitted.size, of: records.length } };
+}
+
 /** One record's stored pieces, with the delta applied and nothing else touched. */
 function applyDelta(
 	block: RecordBlock,
@@ -873,8 +981,16 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 	// `*` stands for one path segment: every field's formula, and every field's
 	// condition — declared so a paste rewrites an id a condition reads and the
 	// resolver reaches it by the field's declared index. `reset.*.to` is the
-	// reset expression, at the index of the binding being applied.
-	formulaFields: ['fields.*.formula', 'fields.*.visibleWhen', 'reset.*.to'],
+	// reset expression, at the index of the binding being applied, and
+	// `reset.*.where` the condition choosing which records it reaches: declaring
+	// it is what says this component can check one, so the sheet hands it a
+	// binding carrying one and the editor draws **Only where**.
+	formulaFields: [
+		'fields.*.formula',
+		'fields.*.visibleWhen',
+		'reset.*.to',
+		RESET_CONDITION_FIELD,
+	],
 	configFields: [
 		{
 			key: 'recordName',
@@ -1209,16 +1325,36 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 	 * names `full` and `empty` for a number and a two-state flag, and a graded
 	 * level's "full" is a ladder position rather than a ceiling the layout stated.
 	 * A record whose fence will not read is left alone too, for `write`'s reason.
+	 *
+	 * **A binding's `where` narrows which records are reached, and nothing else**
+	 * (`docs/features/record-set-reset-scope.md`): `admittedRecords` argues how it
+	 * is evaluated and how it fails, and the reach it counts rides back on the
+	 * result so the confirmation shows the number this evaluation produced. `to`
+	 * is still resolved once, in sheet scope — a per-record amount waits for a
+	 * binding that names the field it writes, since every `number` field of a
+	 * reached record is written and `Uses + 1` would land in a DC beside it.
 	 */
 	applyReset(data, config, reset, context): ResetResult<RecordSetData> {
 		const next: RecordSetData = { records: {} };
 		// A binding about the buffer alone, and this component declares none, so
 		// there is nothing to do and nothing went wrong.
 		if (reset.action === undefined) return { ok: true, data: next };
+		// `to` first, once and in sheet scope, before any record is looked at: it
+		// fails exactly as it failed before a binding could carry a condition.
 		const write = resetWrite(config, reset, context);
 		if ('error' in write) return { ok: false, error: write.error };
-		recordViews(data).forEach((record, at) => {
+		const records = recordViews(data);
+		const scope = admittedRecords(config, records, reset, context);
+		if (scope !== null && 'error' in scope) {
+			return { ok: false, error: scope.error };
+		}
+		records.forEach((record, at) => {
 			if (record.error !== null) return;
+			// A record the condition excludes is not in the delta at all, so its
+			// bytes are identical after the press. **Records, and not fields**:
+			// within a reached record every `number` field is still written, which
+			// is the follow-up that names the field a binding writes.
+			if (scope !== null && !scope.admitted.has(at)) return;
 			const fields: Record<string, string> = {};
 			for (const field of storedFields(config)) {
 				const type = fieldType(field);
@@ -1244,7 +1380,9 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			}
 			if (Object.keys(fields).length > 0) next.records[at] = { fields };
 		});
-		return { ok: true, data: next };
+		return scope === null
+			? { ok: true, data: next }
+			: { ok: true, data: next, reach: scope.reach };
 	},
 
 	render(container, config, data, context): void {
@@ -1563,10 +1701,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			.sort(([left], [right]) => left - right)
 			.map(([index, failed]) => {
 				const field = fields[index] as RecordField;
-				const where =
-					failed.count >= readable
-						? `every ${noun.toLowerCase()}`
-						: `${failed.count} ${noun.toLowerCase()}${failed.count === 1 ? '' : 's'}`;
+				const where = recordCount(failed.count, readable, noun);
 				// Appended, then moved to the front with the rest below.
 				return element(
 					'div',
@@ -1765,17 +1900,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		 * stored field's value half, never a computed one.
 		 */
 		function storedScope(record: RecordEntry): Record<string, FieldValue> {
-			const scope: Record<string, FieldValue> = {};
-			for (const other of fields) {
-				if (fieldType(other) === 'computed') continue;
-				// The value half, as `recordValues` does: `3 - Uses` reads `2` from an
-				// entry that says `2 / 3`.
-				scope[other.key] = typedValue(
-					other,
-					storedValue(other, record.fields[other.key]),
-				);
-			}
-			return scope;
+			return storedLayer(config, record);
 		}
 
 		/**
