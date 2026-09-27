@@ -80,4 +80,39 @@ describe('levelReorderNotice', () => {
 			levelReorderNotice('Recharges', { levels: RECHARGES }, { levels: [...RECHARGES].reverse() }, []),
 		).toBeNull();
 	});
+
+	/*
+	 * A reset's **Only where** reads a level by position too
+	 * (`docs/features/record-set-reset-scope.md`).
+	 */
+	const MOVED = { levels: ['None', 'Short rest', 'Always-on', 'Long rest'] };
+
+	it('adds a clause for the resets reading the key, beside the fields', () => {
+		expect(
+			levelReorderNotice('Recharges', { levels: RECHARGES }, MOVED, ['Active'], ['Short rest']),
+		).toBe(
+			'"Recharges" levels moved: "Long rest" was 2 and is now 3; "Always-on" was 3 and is now 2. The condition on "Active" reads Recharges by position, so it now means something else. Check it under Shown when. The Short rest reset reads it by position too, so what it resets has changed. Check it under Only where.',
+		);
+	});
+
+	it('leaves the field clause out where only resets read it', () => {
+		expect(
+			levelReorderNotice('Recharges', { levels: RECHARGES }, MOVED, [], ['Short rest', 'Long rest']),
+		).toBe(
+			'"Recharges" levels moved: "Long rest" was 2 and is now 3; "Always-on" was 3 and is now 2. The Short rest and Long rest resets read Recharges by position, so what they reset has changed. Check them under Only where.',
+		);
+	});
+
+	it('says nothing for a reset where a level is renamed in place', () => {
+		expect(
+			levelReorderNotice(
+				'Recharges',
+				{ levels: RECHARGES },
+				{ levels: ['None', 'Short rest', 'Long rest', 'Permanent'] },
+				[],
+				['Short rest'],
+			),
+		).toBeNull();
+	});
 });
+

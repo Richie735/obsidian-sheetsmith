@@ -7,26 +7,25 @@
  * This proves they compose into the thing a user actually does — declare a
  * long rest, bind a pool to it, press the button, and find the note changed.
  *
- * It mirrors the wiring in SheetView.applyTrigger, which cannot be tested
- * directly without a workspace around it; if the two ever disagree, this file
- * is the copy that is wrong.
+ * **The trigger itself is the view's own `planTrigger`**, not a copy of it: this
+ * file used to mirror `SheetView.applyTrigger`'s loop, and a mirror's divergence
+ * is only ever visible on a case the mirror does not have. What is still spelled
+ * here is the read before it and the write after it — the view's `applyEdits`
+ * is a method on a class that needs a workspace — and those are the half
+ * `docs/BACKLOG.md`'s five-mirrors row is about.
  */
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getComponent } from '../components';
 import { parseFunctions } from '../formula/functions';
-import {
-	FormulaEnv,
-	makeFieldExplainer,
-	makeFieldResolver,
-	publishedFieldNames,
-} from '../formula/resolve';
+import { FormulaEnv } from '../formula/resolve';
 import { buildSheet } from '../formula/sheet';
 import { applySectionWrites, getSection, parseCharacter } from '../parse/character';
 import { parseLayout } from '../parse/layout';
 import { walkComponents } from '../parse/layout-walk';
 import { parseTriggers } from '../parse/triggers';
 import { ComponentDefinition, isContainer } from '../types';
+import { boundTo, planTrigger, TriggerPlan, UNCHECKED_CONDITION } from './reset-plan';
 
 /** The fixture's own shape, written out so a variant can be typed against it. */
 interface FixtureComponent {
@@ -43,9 +42,13 @@ interface FixtureComponent {
 	openRows?: boolean;
 	rows?: { label: string }[];
 	columns?: { key: string; type?: string; min?: number; max?: number }[];
+	count?: number;
+	recordName?: string;
+	fields?: Record<string, unknown>[];
 	reset?: {
 		trigger: string;
 		column?: string;
+		where?: string;
 		action?: 'full' | 'empty' | 'formula';
 		to?: string;
 		buffer?: 'clear';
@@ -147,7 +150,7 @@ function applyTrigger(
 	source: string,
 	layoutSource: string,
 	trigger: string,
-): { text: string; failed: string[]; bound: string[] } {
+): { text: string; failed: string[]; bound: string[]; plan: TriggerPlan } {
 	const layout = parseLayout(layoutSource);
 	const note = parseCharacter(source);
 	const { library } = parseFunctions(layout.functions);
@@ -179,65 +182,20 @@ function applyTrigger(
 	const { env }: { env: FormulaEnv } = buildSheet(layout, prepared, library);
 
 	/*
-	 * What the trigger reaches, which is `SheetView.renderTriggers`' filter: a
-	 * component that read, that can act on a reset, and that binds to this
-	 * trigger. Nothing about where it sits, deliberately.
-	 *
-	 * One list, computed once, because two is what let this file drift from the
-	 * view. The write loop below used to walk every prepared component while
-	 * only the returned `bound` filtered on `error === null`, so a component
-	 * whose section failed to read was reset from `null` and written back — and
-	 * the view never does that, because `renderTriggers` filters before it hands
-	 * anything to `applyTrigger`. Unobservable until this file had a fixture
-	 * whose read fails, which is why it survived: a mirror's divergence is only
-	 * ever visible on a case the mirror does not have.
+	 * What the trigger reaches, through the view's own `boundTo`: a component
+	 * that read, that can act on a reset, and that binds to this trigger. Nothing
+	 * about where it sits, deliberately. One list, and the same one the
+	 * confirmation is drawn from and the plan walks, which is what this file's
+	 * own copy of the filter once failed to be.
 	 */
-	const bound = prepared.filter(
-		(entry) =>
-			entry.error === null &&
-			entry.component.applyReset !== undefined &&
-			(entry.config.reset ?? []).some(
-				(binding) => binding.trigger === trigger,
-			),
-	);
-
-	const failed: string[] = [];
-	const writes = [];
-	for (const { config, component, data } of bound) {
-		if (!component.applyReset) continue;
-		const resolve = makeFieldResolver(component, config, data, env);
-		const explain = makeFieldExplainer(component, config, data, env);
-		// The view supplies each field's published name here, so a ceiling that
-		// is a formula resolves on this path exactly as it does at the render.
-		// Spelled rather than skipped for this file's own reason: a mirror's
-		// divergence is only ever visible on a case the mirror does not have.
-		const published = publishedFieldNames(component, config);
-		// **Every binding matching this trigger, not the first**, each with its
-		// own index — which is where its own `to` expression lives now that the
-		// bindings are a list. A binding may name a column, so one trigger can
-		// reach one component twice; the two writes carry one label and compose
-		// through `applySectionWrites`, the second reading the body the first
-		// produced.
-		for (const [index, reset] of (config.reset ?? []).entries()) {
-			if (reset.trigger !== trigger) continue;
-			const at = (field: string): string =>
-				field === 'reset.to' ? `reset.${index}.to` : field;
-			const result = component.applyReset(data, config, reset, {
-				resolve: (field, scope) =>
-					resolve(at(field), scope, published.get(at(field))),
-				explain: (field, scope) =>
-					explain(at(field), scope, published.get(at(field))),
-			});
-			if (!result.ok) {
-				failed.push(`${config.label}: ${result.error}`);
-				continue;
-			}
-			writes.push({
-				label: config.label,
-				write: (body: string | null) => component.write(result.data, body, config),
-			});
-		}
-	}
+	const bound = boundTo(trigger, prepared);
+	const plan = planTrigger(trigger, bound, env);
+	// Apply writes exactly the plan's edits, which is the whole of the claim.
+	const writes = plan.edits.map(({ component, config, data }) => ({
+		label: config.label,
+		write: (body: string | null) => component.write(data, body, config),
+	}));
+	const failed = plan.failed;
 
 	return {
 		text: applySectionWrites(source, writes).text,
@@ -245,6 +203,7 @@ function applyTrigger(
 		// The same list the writes came from, which is the whole point: what the
 		// confirmation names and what the reset touches cannot disagree.
 		bound: bound.map((entry) => entry.config.label),
+		plan,
 	};
 }
 
@@ -334,7 +293,7 @@ describe('a long rest against a maximum an aggregate produced', () => {
 		});
 		const { text, failed } = applyTrigger(PACKED, misspelled, 'Long rest');
 		expect(failed).toEqual([
-			'HP: There is no table called "inventroy" on this sheet. An aggregate names a component by its layout id, which is not the heading shown on its card.',
+			'HP — There is no table called "inventroy" on this sheet. An aggregate names a component by its layout id, which is not the heading shown on its card.',
 		]);
 		expect(fenced(text, 'HP', 'current')).toBe('4');
 	});
@@ -809,7 +768,7 @@ describe('a long rest reaching two columns of one table', () => {
 		const { text, failed, bound } = applyTrigger(LISTED, COLUMNLESS, 'Long rest');
 		expect(bound).toContain('Conditions');
 		expect(failed).toEqual([
-			'Conditions: this trigger does not say which column to act on. Give the binding a column, or remove it.',
+			'Conditions — this trigger does not say which column to act on. Give the binding a column, or remove it.',
 		]);
 		expect(table(text)).toBe(table(LISTED));
 	});
@@ -908,5 +867,200 @@ describe('a long rest against a maximum a modifier moved', () => {
 		// inventory, which is the whole of what a modifier is.
 		const { text } = applyTrigger(WORN(''), LAYOUT_WITH_ITEM, 'Long rest');
 		expect(text).toContain('current: 10');
+	});
+});
+
+/*
+ * A trigger planned before it is confirmed, and a condition only some components
+ * can check (`docs/features/record-set-reset-scope.md`).
+ *
+ * Driven through `planTrigger` itself, which is the point of the module: the
+ * confirmation, the harness and this file all read the one plan, and Apply
+ * writes exactly its edits.
+ */
+describe('a trigger planned before it is confirmed', () => {
+	const WITH_FEATURES = variant((shape) => {
+		shape.components.push({
+			id: 'rest_features',
+			type: 'record-set',
+			label: 'Rest features',
+			position: { col: 1, row: 3, width: 6, height: 3 },
+			recordName: 'Feature',
+			fields: [
+				{
+					key: 'Recharges',
+					type: 'level',
+					levels: ['None', 'Short rest', 'Long rest', 'Always-on'],
+				},
+				{ key: 'Uses', type: 'number', maxSource: 'record' },
+			],
+			reset: [
+				{ trigger: 'Long rest', action: 'empty' },
+				{ trigger: 'Short rest', action: 'full', where: 'Recharges == 1' },
+			],
+		});
+	});
+
+	const FEATURED = NOTE.replace(
+		'## Backstory',
+		[
+			'## Rest features',
+			'',
+			'### Second Wind',
+			'```sheet',
+			'Recharges: 1',
+			'Uses: 0 / 1',
+			'```',
+			'Regain hit points.',
+			'',
+			'### Rage',
+			'```sheet',
+			'Recharges: 2',
+			'Uses: 1 / 3',
+			'```',
+			'Advantage on Strength checks.',
+			'',
+			'## Backstory',
+		].join('\n'),
+	);
+
+	const section = (text: string, label: string): string =>
+		getSection(parseCharacter(text), label)?.body ?? '';
+
+	/** The same layout with a hand-written `where` on a component of each kind. */
+	const UNCHECKABLE = variant((shape) => {
+		shape.components.push(
+			{
+				id: 'rest_features',
+				type: 'record-set',
+				label: 'Rest features',
+				position: { col: 1, row: 3, width: 6, height: 3 },
+				recordName: 'Feature',
+				fields: [
+					{
+						key: 'Recharges',
+						type: 'level',
+						levels: ['None', 'Short rest', 'Long rest', 'Always-on'],
+					},
+					{ key: 'Uses', type: 'number', maxSource: 'record' },
+				],
+				reset: [{ trigger: 'Short rest', action: 'full', where: 'Recharges == 1' }],
+			},
+			{
+				id: 'slots',
+				type: 'track',
+				label: 'Slots',
+				position: { col: 1, row: 6, width: 2, height: 1 },
+				count: 3,
+				reset: [{ trigger: 'Short rest', action: 'empty', where: 'Recharges == 1' }],
+			},
+			{
+				id: 'charges',
+				type: 'table',
+				label: 'Charges',
+				position: { col: 3, row: 6, width: 4, height: 2 },
+				rowHeader: 'Item',
+				openRows: true,
+				columns: [{ key: 'Used', type: 'toggle' }],
+				reset: [
+					{ trigger: 'Short rest', column: 'Used', action: 'empty', where: 'true' },
+				],
+			},
+		);
+		componentIn(shape, 'ki').reset = [
+			{ trigger: 'Short rest', action: 'full', where: 'Recharges == 1' },
+		];
+	});
+
+	const UNCHECKED_NOTE = FEATURED.replace(
+		'## Backstory',
+		[
+			'## Slots',
+			'```sheet',
+			'marked: 2',
+			'```',
+			'',
+			'## Charges',
+			'',
+			'| Item | Used |',
+			'|---|---|',
+			'| Wand | yes |',
+			'',
+			'## Backstory',
+		].join('\n'),
+	);
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it('holds every binding the trigger matched, and Apply writes exactly its edits', () => {
+		const { plan, text } = applyTrigger(FEATURED, WITH_FEATURES, 'Short rest');
+		expect(
+			plan.components.map((one) => [one.config.label, one.bindings.length]),
+		).toEqual([
+			['Ki', 1],
+			['Rest features', 1],
+		]);
+		expect(plan.edits).toHaveLength(2);
+		expect(plan.failed).toEqual([]);
+		// Only Second Wind was reached, so only its counter moved.
+		expect(section(text, 'Rest features')).toContain('Uses: 1 / 1');
+		expect(section(text, 'Rest features')).toContain('Uses: 1 / 3');
+	});
+
+	it('carries the reach the component counted', () => {
+		const { plan } = applyTrigger(FEATURED, WITH_FEATURES, 'Short rest');
+		const features = plan.components.find(
+			(one) => one.config.label === 'Rest features',
+		);
+		const result = features?.bindings[0]?.result;
+		expect(result?.ok && result.reach).toEqual({ reached: 1, of: 2 });
+	});
+
+	it('hands the component its condition at the binding\'s own index', () => {
+		// The Short rest binding is the second in the list, so its condition lives
+		// at `reset.1.where` and the component asks for it as `reset.where`.
+		const spy = vi.spyOn(getComponent('record-set') as ComponentDefinition, 'applyReset');
+		applyTrigger(FEATURED, WITH_FEATURES, 'Short rest');
+		const context = spy.mock.calls[0]?.[3];
+		expect(context).toBeDefined();
+		// `true` at index 1 is the only reading consistent with the Second Wind
+		// scope; the first binding holds no condition at all.
+		expect(context?.resolve('reset.where', { Recharges: 1, Uses: 0 })).toBe(true);
+		expect(context?.resolve('reset.where', { Recharges: 2, Uses: 0 })).toBe(false);
+	});
+
+	it('raises no failure for a scoped rest that succeeds, so the report stays failures only', () => {
+		expect(applyTrigger(FEATURED, WITH_FEATURES, 'Short rest').failed).toEqual([]);
+	});
+
+	it('never hands a condition to a Pool, a Track or a Table, and names each', () => {
+		const spies = ['pool', 'track', 'table'].map((type) =>
+			vi.spyOn(getComponent(type) as ComponentDefinition, 'applyReset'),
+		);
+		const { failed, text } = applyTrigger(UNCHECKED_NOTE, UNCHECKABLE, 'Short rest');
+		for (const spy of spies) expect(spy).not.toHaveBeenCalled();
+		expect(failed).toEqual([
+			`Ki — ${UNCHECKED_CONDITION}`,
+			`Slots — ${UNCHECKED_CONDITION}`,
+			`Charges — ${UNCHECKED_CONDITION}`,
+		]);
+		for (const label of ['Ki', 'Slots', 'Charges']) {
+			expect(section(text, label)).toBe(section(UNCHECKED_NOTE, label));
+		}
+		// While the Record set on the same trigger applies.
+		expect(section(text, 'Rest features')).toContain('Uses: 1 / 1');
+	});
+
+	it('hands a blank condition to any component, since blank is absent', () => {
+		const blank = variant((shape) => {
+			componentIn(shape, 'ki').reset = [
+				{ trigger: 'Short rest', action: 'empty', where: '  ' },
+			];
+		});
+		const { failed, text } = applyTrigger(NOTE, blank, 'Short rest');
+		expect(failed).toEqual([]);
+		expect(fenced(text, 'Ki', 'current')).toBe('0');
 	});
 });

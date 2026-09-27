@@ -985,6 +985,30 @@ export function renderColumnsEditor(
 					.map((other) => other.key)
 			: [];
 
+	/**
+	 * The triggers whose reset bindings' `where` reads `key` by name
+	 * (`docs/features/record-set-reset-scope.md`), once each, in binding order.
+	 *
+	 * **Read off `record.reset`, which teaches this module nothing about any
+	 * component**: `reset` is shared config every component's record may carry,
+	 * and `where` is its key, so this is the same question `readersOf` asks of a
+	 * sibling's condition, one key over. Only `where`: a reset's `to` is resolved
+	 * in sheet scope and reads no record's field.
+	 */
+	const resetsReading = (key: string): string[] => {
+		const bindings = Array.isArray(record.reset)
+			? (record.reset as { trigger?: unknown; where?: unknown }[])
+			: [];
+		const triggers: string[] = [];
+		for (const binding of bindings) {
+			const where = heldCondition(binding.where);
+			if (typeof where !== 'string' || !conditionReads(where, key)) continue;
+			if (typeof binding.trigger !== 'string') continue;
+			if (!triggers.includes(binding.trigger)) triggers.push(binding.trigger);
+		}
+		return triggers;
+	};
+
 	/** A level list as it stands, copied so a later edit cannot reach it. */
 	const levelList = (column: ColumnEntry): LevelList => ({
 		levels: column.levels === undefined ? undefined : [...column.levels],
@@ -1003,6 +1027,7 @@ export function renderColumnsEditor(
 			before,
 			levelList(column),
 			readersOf(column.key),
+			resetsReading(column.key),
 		);
 		if (said !== null) new Notice(said);
 	};

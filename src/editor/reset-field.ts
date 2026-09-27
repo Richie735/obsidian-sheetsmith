@@ -21,9 +21,10 @@ import { onCommit } from './field-commit';
 import { showFieldError } from './field-error';
 import { formulaProblem } from './field-formula';
 import { groupHeading } from './form-group';
+import { heldCondition } from '../formula/field-condition';
 import { bindingKey, Layout } from '../parse/layout';
 import { parseTriggers } from '../parse/triggers';
-import { ComponentConfig, ResetBinding } from '../types';
+import { checksResetCondition, ComponentConfig, ResetBinding } from '../types';
 
 /** Dropdown sentinel for a binding that acts on the buffer only. */
 const NO_ACTION_OPTION = '::none::';
@@ -125,6 +126,36 @@ function resetToProblem(to: string | undefined): string | null {
 	return formulaProblem(trimmed);
 }
 
+/** Held as a constant because it is an expression, not prose to be cased. */
+const RESET_WHERE_EXAMPLE = 'Recharges == 1';
+
+/**
+ * What **Only where** says under a component that cannot check a condition
+ * (`docs/features/record-set-reset-scope.md`, Part 4).
+ *
+ * Its own sentence rather than the plan's `UNCHECKED_CONDITION`, because the two
+ * stand in different places: that one continues `<label> — ` in a confirmation
+ * and names this field from outside, while this one is on the field and so says
+ * what clearing *it* does.
+ */
+const UNCHECKED_WHERE =
+	'This component resets as a whole and cannot check a condition, so this trigger leaves it as it is. Clear this to reset all of it.';
+
+/**
+ * What is wrong with a reset's condition, or `null` where there is nothing to
+ * say.
+ *
+ * **Blank is the ordinary binding**, unlike **Resets to**'s blank, which the
+ * parser refuses: an absent `where` reaches everything. The check is parsing
+ * only — an unknown name is a claim about a character's data, and the
+ * confirmation is where that is reported, record by record.
+ */
+function resetWhereProblem(where: string | undefined, checks: boolean): string | null {
+	if (heldCondition(where) === null) return null;
+	if (!checks) return UNCHECKED_WHERE;
+	return formulaProblem((where ?? '').trim());
+}
+
 /** Held as a constant because the examples are the names of games. */
 const BUFFER_CLEAR_DESC =
 	'Which event empties the buffer is a rule of the system, so the layout says it here: a long rest in 5e, the end of an encounter in 4e, the next score in Blades.';
@@ -216,6 +247,8 @@ export function renderResetField(
 	const buffered = definition?.hasBuffer === true;
 	const usesColumns = definition?.resetColumns !== undefined;
 	const columns = definition?.resetColumns?.(config) ?? [];
+	/** Whether this component reads a binding's `where`, the plan's own gate. */
+	const checksCondition = checksResetCondition(definition);
 
 	/**
 	 * Whether another binding already holds this trigger-and-column pair.
@@ -486,6 +519,61 @@ export function renderResetField(
 				// form is what is left.
 				form.createDiv('sheetsmith-error', (el) => el.setText(problem));
 			}
+		}
+
+		/*
+		 * **Only where**: which records this binding reaches
+		 * (`docs/features/record-set-reset-scope.md`). After **Acts on** and before
+		 * **Resets to**, so scope reads before amount.
+		 *
+		 * **Drawn where the component declares it can check one — or where the
+		 * binding already holds one**, on the trigger dropdown's rule that opening
+		 * the form must not silently change the binding: a hand-written `where` on a
+		 * Pool is shown with the reason it does nothing but hold the trigger back,
+		 * and clearing it removes the key.
+		 */
+		if (checksCondition || reset.where !== undefined) {
+			detailRow(form)
+				.setName('Only where')
+				.setDesc(
+					// The example goes in a code element, as **Resets to**'s does: an
+					// expression is not a sentence.
+					createFragment((fragment) => {
+						fragment.appendText('Resets only where this condition holds, such as ');
+						fragment.createEl('code', { text: RESET_WHERE_EXAMPLE });
+						fragment.appendText(
+							', and leaves everything else exactly as it is. Blank resets all of it. A level is read by its position, from 0 for its first name.',
+						);
+					}),
+				)
+				.addText((text) => {
+					text.setPlaceholder('All of it');
+					text.setValue(reset.where ?? '');
+					text.inputEl.dataset.sheetsmithFocus = `reset-where-${config.id}-${index}`;
+					// Named for its binding, on **Acts on**'s argument: the row repeats
+					// per binding, and a field announcing only its text says nothing
+					// about which trigger it narrows.
+					text.inputEl.setAttribute(
+						'aria-label',
+						`${reset.trigger || 'This trigger'} only where`,
+					);
+					// With this component as owner, so the record's own field keys
+					// come first, as they do under **Shown when**.
+					context.suggestNames?.(text.inputEl, config.id);
+					fieldError(text.inputEl, resetWhereProblem(reset.where, checksCondition));
+					onCommit(text, (raw) => {
+						const trimmed = raw.trim();
+						// Stored whatever it says, as every formula field is (§7): an
+						// expression is invalid for most of the time it is being typed.
+						if (trimmed === '') delete reset.where;
+						else reset.where = trimmed;
+						fieldError(text.inputEl, resetWhereProblem(reset.where, checksCondition));
+						context.persist();
+						// On a component that cannot check one, a cleared condition
+						// takes its row with it, which only a redraw can do.
+						if (!checksCondition && reset.where === undefined) context.redraw();
+					});
+				});
 		}
 
 		setting.addExtraButton((button) =>

@@ -1868,6 +1868,109 @@ export const SAMPLES: Sample[] = [
 			},
 		];
 	})(),
+	/*
+	 * **A reset that reaches only some records**
+	 * (`docs/features/record-set-reset-scope.md`), in the first free rows after
+	 * the conditioned lists so every placement above keeps its row. Short rest
+	 * refills the features whose `Recharges` is 1, Long rest those at 1 or 2, and
+	 * `confirm=` opens the confirmation that counts them: `2 of 5` and `3 of 5`.
+	 *
+	 * **`Save DC` is here on purpose.** A Record set reset writes every `number`
+	 * field of each record it reaches, so a scoped `full` sets a reached record's
+	 * DC to 20 — today's behaviour, which naming the field a binding writes is
+	 * the follow-up to end. A sample holding one number field would show that
+	 * defect as though it were the design.
+	 *
+	 * Under `state=broken` the Short rest condition reads `Recharge`, which is the
+	 * rename trap. The pool beside it carries a hand-written `where` it cannot
+	 * check, which is the Part 4 refusal in the confirmation and in the editor.
+	 */
+	{
+		config: {
+			id: 'rest_features',
+			type: 'record-set',
+			label: 'Rest features',
+			position: { col: 1, row: 84, width: 7, height: 3 },
+			recordName: 'Feature',
+			fieldHeadings: true,
+			fields: [
+				{
+					key: 'Recharges',
+					type: 'level',
+					input: 'select',
+					levels: ['None', 'Short rest', 'Long rest', 'Always-on'],
+				},
+				{ key: 'Uses', type: 'number', maxSource: 'record' },
+				{
+					key: 'DC',
+					name: 'Save DC',
+					type: 'number',
+					max: 20,
+					placement: 'body',
+				},
+			],
+			reset: [
+				{ trigger: 'Short rest', action: 'full', where: 'Recharges == 1' },
+				{
+					trigger: 'Long rest',
+					action: 'full',
+					where: 'Recharges == 1 || Recharges == 2',
+				},
+			],
+		} as ComponentConfig,
+		body: [
+			'',
+			'### Second Wind',
+			'```sheet',
+			'Recharges: 1',
+			'Uses: 0 / 1',
+			'DC: 13',
+			'```',
+			'Regain hit points equal to 1d10 + your fighter level.',
+			'',
+			'### Action Surge',
+			'```sheet',
+			'Recharges: 1',
+			'Uses: 0 / 1',
+			'```',
+			'Take one additional action on your turn.',
+			'',
+			'### Rage',
+			'```sheet',
+			'Recharges: 2',
+			'Uses: 1 / 3',
+			'DC: 15',
+			'```',
+			'Advantage on Strength checks, and bonus damage while it lasts.',
+			'',
+			'### Darkvision',
+			'```sheet',
+			'Recharges: 0',
+			'```',
+			'You see in dim light within sixty feet as if it were bright light.',
+			'',
+			'### Aura of Protection',
+			'```sheet',
+			'Recharges: 3',
+			'DC: 15',
+			'```',
+			'Allies within ten feet add your Charisma modifier to their saving throws.',
+			'',
+		].join('\n'),
+	},
+	{
+		config: {
+			id: 'rest_pool',
+			type: 'pool',
+			label: 'Focus points',
+			position: { col: 8, row: 84, width: 4, height: 1 },
+			max: '4',
+			// Hand-written: a Pool resets as a whole and cannot check this, so the
+			// trigger leaves it alone and says why.
+			reset: [{ trigger: 'Short rest', action: 'full', where: 'Recharges == 1' }],
+		} as ComponentConfig,
+		body: '```sheet\ncurrent: 1\n```',
+	},
 	/* Beside the set rather than inside it, so a tab press has something to not
 	   move. Row 14 rather than 12: the Spellbook group above grew to hold its
 	   composite pattern and now spans rows 10-13 in this column, so this
@@ -3060,6 +3163,15 @@ export function brokenSamples(): Sample[] {
 		// containment work added had never been rendered anywhere. It wraps inside
 		// a three-column cell, which is the reason to look at it rather than trust
 		// it (`docs/UI.md` §11).
+		// The rename trap on a scoped reset: `Recharges` renamed and every note
+		// migrated, while the Short rest condition still reads the old key.
+		if (config.id === 'rest_features') {
+			config.reset = (config.reset ?? []).map((binding) =>
+				binding.trigger === 'Short rest'
+					? { ...binding, where: 'Recharge == 1' }
+					: binding,
+			);
+		}
 		if (config.id === 'worn_count') {
 			config.children = [
 				{

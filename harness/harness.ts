@@ -38,6 +38,9 @@ import {
 import { nameAlreadyDeclared } from '../src/layouts';
 import { dropDetachedAnchoredPanel } from '../src/ui/anchored-panel';
 import { renderGrid } from '../src/view/grid-cells';
+import { boundTo, planTrigger } from '../src/view/reset-plan';
+import { openResetConfirmation } from '../src/view/reset-confirmation';
+import { App } from '../src/test/obsidian-stub';
 import {
 	driveDrag,
 	drivePicker,
@@ -357,6 +360,9 @@ const openRecords = new Map<string, Set<number>>([
 	['recharging', new Set([0, 1])],
 	['recharging_plain', new Set([0, 1])],
 	['recharging_broken', new Set([0, 1])],
+	// Second Wind open, so its `Save DC` — which a scoped `full` writes to 20 —
+	// is on screen beside the counter the reset is for.
+	['rest_features', new Set([0])],
 ]);
 
 function renderSheet(into: HTMLElement): void {
@@ -442,6 +448,24 @@ function noteBodies(): HTMLElement {
 		});
 	}
 	return wrap;
+}
+
+/**
+ * `&confirm=<trigger>` — open the confirmation a press on that trigger would
+ * open (`docs/features/record-set-reset-scope.md`).
+ *
+ * **Through the view's own plan and the view's own words**: `boundTo` and
+ * `planTrigger` over the sheet this module holds, and the sheet's own
+ * `openResetConfirmation` against the stub `App`. So what is photographed is
+ * the count and the refusals a reader would be shown, not a copy of them, and
+ * Apply here does nothing, because there is no note to write into — the trigger
+ * bar and the notices after a press stay unphotographed (`docs/BACKLOG.md`).
+ */
+function openConfirmation(name: string): void {
+	const plan = planTrigger(name, boundTo(name, live), sheetEnv(live).env);
+	// The double's `App`, which a modal only holds; `never` is this
+	// repository's spelling for handing the double where the app is typed.
+	openResetConfirmation(new App() as never, name, plan, () => undefined);
 }
 
 /**
@@ -911,9 +935,12 @@ function applyQuery(): void {
 	 * real box, and every rect on an unattached element reads zero.
 	 */
 	const suggest = params.get('suggest');
+	const confirm = params.get('confirm');
 
 	void ensureSurface().then(async () => {
 		draw();
+		// Over the sheet it was planned from, once that sheet is drawn.
+		if (confirm !== null) openConfirmation(confirm);
 		// Before the presses, as it always was — unless the view also scrolls, in
 		// which case it goes after the scroll (below). A programmatic focus scrolls
 		// its control into view by the same algorithm a Tab press uses, honouring

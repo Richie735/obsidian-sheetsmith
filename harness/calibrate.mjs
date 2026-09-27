@@ -234,6 +234,19 @@ const CHROME = [
 	 * and `.menu-separator`, all under one prefix.
 	 */
 	/^\.menu/,
+	/*
+	 * The app's modal, which the sheet's reset confirmation is
+	 * (`docs/features/record-set-reset-scope.md`, `confirm=`). The plugin draws
+	 * its list inside it and nothing else, so without these the confirmation would
+	 * photograph as a bare paragraph at the foot of the page. The container, the
+	 * box, its content and its title all come along under one prefix; the app's
+	 * other modals' `mod-*` variants come too and match nothing drawn here.
+	 */
+	/^\.modal/,
+	// The confirmation's destructive button, which `ConfirmModal` marks with
+	// the class rather than `setDestructive` for 1.9. `button(?![.#\w-])` above
+	// refuses a class after the element on purpose, so this one is named.
+	/^button\.mod-warning/,
 	// The workspace pane the layout editor is a view in. A settings tab and a
 	// leaf are two different frames, and the editor now sits in the second: the
 	// leaf's own box, its header, and the scrolling content area a view builds

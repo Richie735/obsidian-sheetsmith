@@ -12,14 +12,18 @@ import {
 import { COLUMN_TYPES } from './column-types';
 import { conditionMet } from '../editor/config-fields';
 import {
+	checksResetCondition,
 	ColumnOptionsSpec,
 	ComponentConfig,
 	EDITOR_OWNED_KEYS,
 	isContainer,
 	MODIFIER_CHANGE_KEYS,
 	placesChildren,
+	ResetBinding,
 	ScopeEntry,
 } from '../types';
+import { NO_ENV } from '../formula/resolve';
+import { planTrigger } from '../view/reset-plan';
 import { buildSheet, ReadComponent } from '../formula/sheet';
 import { Layout } from '../parse/layout';
 
@@ -1419,6 +1423,40 @@ describe.each(types)('component "%s"', (type) => {
 		expect(component.formulaFields).toContain('reset.*.to');
 	});
 
+	it('honours a reset condition wherever it declares one', () => {
+		/*
+		 * `docs/features/record-set-reset-scope.md`: the declaration is what the
+		 * sheet reads to hand a component a binding carrying `where`, and what the
+		 * editor reads to draw **Only where**. Declaring it without honouring it is
+		 * the mis-scoped rest exactly — offered a condition, and resetting the
+		 * whole thing anyway. Driven over the component's own example with a
+		 * condition nothing can satisfy, through the real resolver, so it must
+		 * write nothing and say it reached nothing.
+		 */
+		if (!checksResetCondition(component)) return;
+		expect(typeof component?.applyReset).toBe('function');
+		const binding: ResetBinding = { trigger: 'Rest', action: 'empty', where: 'false' };
+		const config: ComponentConfig = {
+			...bareConfig(type),
+			...(component?.example ?? {}),
+			reset: [binding],
+		};
+		const body = component?.sample?.(config) ?? '';
+		const read = component?.read(body, config);
+		expect(read?.ok).toBe(true);
+		const data = read?.ok === true ? read.data : null;
+		// Through the sheet's own plan, so the rewrite to `reset.0.where` and the
+		// published names are the ones a press uses.
+		const plan = planTrigger('Rest', [{ config, component, error: null, data }], NO_ENV);
+		const result = plan.components[0]?.bindings[0]?.result;
+		expect(result?.ok).toBe(true);
+		if (!result?.ok) return;
+		expect(result.reach?.reached).toBe(0);
+		// Checked against something, or "reached nothing" says nothing.
+		expect(result.reach?.of).toBeGreaterThan(0);
+		expect(component?.write(result.data, body, config)).toBe(body);
+	});
+
 	it('declares formulaFields and configFields', () => {
 		expect(Array.isArray(component?.formulaFields)).toBe(true);
 		expect(Array.isArray(component?.configFields)).toBe(true);
@@ -1792,5 +1830,17 @@ describe.each(types)('component "%s"', (type) => {
 				if (segment.includes('*')) expect(segment).toBe('*');
 			}
 		}
+	});
+});
+
+describe('which components can check a reset condition', () => {
+	it('is some of the stateful ones and not all of them', () => {
+		// Both halves, so the case under each component cannot pass vacuously and
+		// the sheet's refusal for the rest has somebody to refuse.
+		const stateful = types
+			.map((type) => getComponent(type))
+			.filter((component) => component?.applyReset !== undefined);
+		expect(stateful.some((component) => checksResetCondition(component))).toBe(true);
+		expect(stateful.some((component) => !checksResetCondition(component))).toBe(true);
 	});
 });

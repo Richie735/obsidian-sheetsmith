@@ -109,6 +109,31 @@ export interface ResetBinding {
 	 */
 	column?: string;
 	/**
+	 * Which of the component's records this binding reaches: a boolean formula,
+	 * evaluated once per record in that record's own scope — its stored fields,
+	 * then the sheet — by a component that declares `reset.*.where` among its
+	 * `formulaFields`, and by nothing else
+	 * (`docs/features/record-set-reset-scope.md`). Absent, or blank, reaches every
+	 * record, which is the binding every layout written before this held.
+	 *
+	 * **Not `visibleWhen`**, although it is written in that key's grammar: a
+	 * reset's scope and a field's visibility share a language and nothing else, so
+	 * a hidden field resets exactly as a shown one does and `applyReset` never
+	 * asks what is shown. **Not `when`** either, which is the modifier part's
+	 * clause and already means "this change applies while".
+	 *
+	 * **Not half of the binding's identity**, unlike `column`: `bindingKey` stays
+	 * the trigger and the column, so two bindings on one trigger on a component
+	 * that names no column are still the duplicate `parseReset` refuses, whatever
+	 * their conditions say. Whether two conditions overlap depends on the data,
+	 * so no check on the file could tell a pair that is safe from one that is not.
+	 *
+	 * A component that does not declare the path cannot check it, and the sheet
+	 * leaves such a component alone at the press rather than resetting it whole —
+	 * which is `checksResetCondition` below, read the same way by the editor.
+	 */
+	where?: string;
+	/**
 	 * What resetting means for the component's own value. The states are named
 	 * rather than numbered because the same three cover a Toggle, where full
 	 * and empty are true and false, as readily as a Pool, where they are its
@@ -226,8 +251,33 @@ export interface ComponentConfig {
  * data object when it was handed null and has nothing to reset.
  */
 export type ResetResult<TData> =
-	| { ok: true; data: TData }
+	| { ok: true; data: TData; reach?: ResetReach }
 	| { ok: false; error: string };
+
+/**
+ * How much of a component one binding reaches, where it reaches only some
+ * (`docs/features/record-set-reset-scope.md`).
+ *
+ * **On the result rather than a contract member of its own**, and that is the
+ * decision: a `resetReach` beside `applyReset` would evaluate one condition twice,
+ * once for the confirmation and once for the write, and the day the two disagree
+ * the sheet announces one scope and acts on another. Carried here, the number a
+ * reader is shown and the parts the press writes come from one evaluation.
+ *
+ * Given only where the binding narrows what it reaches. A binding reaching the
+ * whole of a component gives none, so its confirmation line stays the bare label
+ * rather than gaining "7 of 7" on every rest.
+ */
+export interface ResetReach {
+	/**
+	 * The parts this binding reaches: its *scope*, not its writes, so a part
+	 * admitted and then left alone — a record with no ceiling for `full` to restore
+	 * to — still counts, and the number holds still whether or not it was full.
+	 */
+	reached: number;
+	/** The parts it was checked against, including any it could not read. */
+	of: number;
+}
 
 /**
  * Outcome of parsing a section body. An error affects that component only.
@@ -2162,6 +2212,12 @@ export interface ComponentDefinition<
 	 * Implementing it is what declares the component stateful: the editor
 	 * offers a reset binding only to components that have it, and a trigger
 	 * passes over the ones that do not.
+	 *
+	 * **Called when a trigger is planned, before its confirmation opens**, and
+	 * the edits Apply writes are exactly what it returned then
+	 * (`view/reset-plan.ts`). A component narrowing what a binding reaches says
+	 * how much in `reach`, which the confirmation shows. A binding carrying a
+	 * `where` is handed only to a component declaring `reset.*.where`.
 	 */
 	applyReset?(
 		data: TData | null,
@@ -2255,6 +2311,30 @@ export function isContainer(
 	component: ComponentDefinition | undefined,
 ): boolean {
 	return component?.storage === 'none';
+}
+
+/**
+ * The formula path a component declares when it can check a reset binding's
+ * `where` (`docs/features/record-set-reset-scope.md`).
+ */
+export const RESET_CONDITION_FIELD = 'reset.*.where';
+
+/**
+ * Whether this component can check a reset binding's `where`, so a trigger may
+ * hand it a binding carrying one.
+ *
+ * **Read off a declaration the component already owes, not a member of its
+ * own.** `reset.*.where` has to be in `formulaFields` anyway, for the paste
+ * rewrite, the id-rename rewrite and the name suggester, so a `hasBuffer`-style
+ * boolean beside it could only come to disagree with it — "one list, two readers",
+ * which is `resetColumns`' argument. The sheet's plan and the editor's **Only
+ * where** row are the two readers, and a predicate over a declaration is §1's
+ * one-step tier: two copies of it could only be tested for still agreeing.
+ */
+export function checksResetCondition(
+	component: Pick<ComponentDefinition, 'formulaFields'> | undefined,
+): boolean {
+	return component?.formulaFields.includes(RESET_CONDITION_FIELD) === true;
 }
 
 /**

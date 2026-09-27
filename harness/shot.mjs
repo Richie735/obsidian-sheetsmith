@@ -205,8 +205,18 @@ mkdirSync(outDir, { recursive: true });
  * against 16600, **9028** at 520 against 8600 and **9931** at `text=24` against
  * 9600 — all four over, so the new lists were the ones cropped. 7800 to
  * **8100**, 16600 to **17300**, 8600 to **9300**, 9600 to **10200**.
+ *
+ * **Raised again for the scoped reset** (`docs/features/record-set-reset-scope.md`):
+ * `rest_features` and its pool take rows 84–86 at the foot of the sheet. Measured
+ * off `document.body` over the DevTools Protocol, harness built first, through
+ * each view's own query and window — and HEAD measured by the same script first,
+ * which reproduced the four numbers above to the pixel, so the instrument is the
+ * one those were taken with. **8122** here against 8100, **17433** at `&width=380`
+ * against 17300, **9264** at 520 against 9300 and **10281** at `text=24` against
+ * 10200: three over, and the 520 one inside by 36px. 8100 to **8500**, 17300 to
+ * **17800**, 9300 to **9600**, 10200 to **10600**.
  */
-const SHEET_FRAME = '1400,8100';
+const SHEET_FRAME = '1400,8500';
 
 /**
  * The editor pane's frame, tall because the tree is the whole layout.
@@ -384,9 +394,12 @@ const DEFAULTS = [
 		//
 		// Raised again with SHEET_FRAME for the conditioned Record sets: measured
 		// 17048 against 16600. 16600 to **17300**.
+		//
+		// Raised again with SHEET_FRAME for the scoped reset: measured 17433
+		// against 17300. 17300 to **17800**.
 		name: 'sheet-narrow',
 		query: 'surface=sheet&theme=dark&width=380',
-		size: '520,17300',
+		size: '520,17800',
 	},
 	{
 		/*
@@ -429,9 +442,13 @@ const DEFAULTS = [
 		//
 		// Raised again with SHEET_FRAME for the conditioned Record sets: measured
 		// 9028 against 8600. 8600 to **9300**.
+		//
+		// Raised again with SHEET_FRAME for the scoped reset: measured 9264
+		// against 9300 — inside, by 36px, which is a frame that clips on the next
+		// row anybody adds. 9300 to **9600**.
 		name: 'sheet-list-narrow',
 		query: 'surface=sheet&theme=light&width=520',
-		size: '620,9300',
+		size: '620,9600',
 	},
 	{
 		// UI.md §5 puts the card's headline number in `em` rather than pixels
@@ -466,7 +483,10 @@ const DEFAULTS = [
 		//
 		// Raised again with SHEET_FRAME for the conditioned Record sets: measured
 		// 9931 against 9600. 9600 to **10200**.
-		size: '1400,10200',
+		//
+		// Raised again with SHEET_FRAME for the scoped reset: measured 10281
+		// against 10200. 10200 to **10600**.
+		size: '1400,10600',
 	},
 	{
 		/*
@@ -486,6 +506,59 @@ const DEFAULTS = [
 		name: 'sheet-recharging-open-dark',
 		query: "surface=sheet&theme=dark&press=%5Baria-label%3D'Open%20Darkvision'%5D&scroll=%5Baria-label%3D'Close%20Darkvision'%5D",
 		size: SHEET_FRAME,
+	},
+	/*
+	 * **What a trigger's confirmation says it will reset**
+	 * (`docs/features/record-set-reset-scope.md`). `confirm=` plans the trigger
+	 * over the sample sheet through the view's own `planTrigger` and opens the
+	 * real `ConfirmModal`, so the lines are the ones a reader is shown: `Rest
+	 * features — 2 of 5` beside the sheet's other Short rest components in their
+	 * existing words, and `Focus points`' refusal of a condition it cannot check.
+	 *
+	 * **A window-sized frame rather than `SHEET_FRAME`**, because the modal is
+	 * fixed to the viewport and centred in it: at 8100 tall it would sit four
+	 * thousand pixels down a mostly irrelevant sheet. 1000 is the height of a
+	 * laptop window, which is where a reader meets it.
+	 */
+	{
+		name: 'sheet-reset-confirm',
+		query: 'surface=sheet&theme=light&confirm=Short%20rest',
+		size: '1400,1000',
+	},
+	{
+		name: 'sheet-reset-confirm-dark',
+		query: 'surface=sheet&theme=dark&confirm=Short%20rest',
+		size: '1400,1000',
+	},
+	{
+		// The wider rest: `Recharges == 1 || Recharges == 2`, so `3 of 5`.
+		name: 'sheet-reset-confirm-long',
+		query: 'surface=sheet&theme=light&confirm=Long%20rest',
+		size: '1400,1000',
+	},
+	{
+		// The rename trap: the Short rest condition reads `Recharge`, so the list
+		// says it will not reset, naming every feature and the unknown name — the
+		// longest line this modal draws, and the one whose wrap is the review.
+		name: 'sheet-reset-confirm-broken',
+		query: 'surface=sheet&theme=light&state=broken&confirm=Short%20rest',
+		size: '1400,1000',
+	},
+	{
+		// The same list at a phone's width. **A 520px window, not 380**: headless
+		// Chrome floors a viewport at 500 (`docs/BACKLOG.md`), and the modal sizes
+		// against the viewport rather than the harness's own container, so a
+		// `width=380` query would photograph a 520px modal and call it 380.
+		name: 'sheet-reset-confirm-narrow',
+		query: 'surface=sheet&theme=light&confirm=Short%20rest',
+		size: '520,1000',
+	},
+	{
+		// And the broken state at that width, because its lines are the longest
+		// the modal draws and so the ones whose wrap is the review.
+		name: 'sheet-reset-confirm-narrow-broken',
+		query: 'surface=sheet&theme=light&state=broken&confirm=Short%20rest',
+		size: '520,1000',
 	},
 	{
 		// The first view to photograph a focus ring at all. A still cannot press
@@ -1160,6 +1233,35 @@ const DEFAULTS = [
 		query:
 			"surface=editor&theme=light&open=recharging_broken&scroll=input%5Baria-label%3D'Active%20shown%20when'%5D",
 		size: '2000,8600',
+	},
+	/*
+	 * **Only where** (`docs/features/record-set-reset-scope.md`): each binding of
+	 * `rest_features` as one block, trigger and action, then the condition. The
+	 * reset field is at the foot of the panel, so the frame is the pane's own.
+	 */
+	{
+		name: 'editor-reset-where',
+		query: 'surface=editor&theme=light&open=rest_features',
+		size: EDITOR_FRAME,
+	},
+	{
+		name: 'editor-reset-where-dark',
+		query: 'surface=editor&theme=dark&open=rest_features',
+		size: EDITOR_FRAME,
+	},
+	{
+		// A Pool carrying a hand-written condition it cannot check: **Only where**
+		// holds the stored text, with the refusal under it.
+		name: 'editor-reset-where-refused',
+		query: 'surface=editor&theme=light&state=broken&open=rest_pool',
+		size: EDITOR_FRAME,
+	},
+	{
+		// At `Text → 24`, where the row's description and its error have to share
+		// **Resets to**'s `--font-ui-small` rather than growing past it.
+		name: 'editor-reset-where-large-text',
+		query: 'surface=editor&theme=light&text=24&open=rest_features',
+		size: EDITOR_FRAME,
 	},
 	{
 		// A Table column carrying a condition by hand: no **Shown when** input, and

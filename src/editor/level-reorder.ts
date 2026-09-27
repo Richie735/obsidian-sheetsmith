@@ -28,7 +28,7 @@
  */
 
 import { levelCount, parseLevel } from '../components/level-ring';
-import { spelled } from '../parse/spelled';
+import { series, spelled } from '../parse/spelled';
 
 /** A level field's names, or its count where it has none, as the layout holds it. */
 export interface LevelList {
@@ -49,16 +49,21 @@ const NAMED_MOVES = 3;
  * The sentence a commit from `before` to `after` owes the conditions naming
  * `key`, or null where no condition's meaning changed.
  *
- * `readers` are the keys of the fields whose conditions read `key`; an empty
- * list is a list no condition reads, which says nothing.
+ * `readers` are the keys of the fields whose conditions read `key`, and
+ * `triggers` the triggers whose reset bindings' **Only where** reads it
+ * (`docs/features/record-set-reset-scope.md`); both empty is a list no
+ * condition reads, which says nothing. **Only `where`, never a reset's `to`**:
+ * `to` is resolved once in sheet scope and reads no record's field, so a
+ * reorder cannot change what it means.
  */
 export function levelReorderNotice(
 	key: string,
 	before: LevelList,
 	after: LevelList,
 	readers: readonly string[],
+	triggers: readonly string[] = [],
 ): string | null {
-	if (readers.length === 0) return null;
+	if (readers.length === 0 && triggers.length === 0) return null;
 
 	const names = (list: LevelList): string[] =>
 		(list.levels ?? []).map((entry) => parseLevel(entry).name);
@@ -95,8 +100,27 @@ export function levelReorderNotice(
 		);
 	}
 
-	const one = readers.length === 1;
-	const whose = spelled(readers);
-	return `"${key}" levels ${parts.join('; and ')}. The condition${one ? '' : 's'} on ${whose} read${one ? 's' : ''} ${key} by position, so ${one ? 'it now means' : 'they now mean'} something else. Check ${one ? 'it' : 'them'} under Shown when.`;
+	const sentences = [`"${key}" levels ${parts.join('; and ')}.`];
+	if (readers.length > 0) {
+		const one = readers.length === 1;
+		sentences.push(
+			`The condition${one ? '' : 's'} on ${spelled(readers)} read${one ? 's' : ''} ${key} by position, so ${one ? 'it now means' : 'they now mean'} something else. Check ${one ? 'it' : 'them'} under Shown when.`,
+		);
+	}
+	if (triggers.length > 0) {
+		/*
+		 * A reset's clause beside the fields' clause, rather than one sentence
+		 * for both: the two conditions are fixed in two places, so each clause
+		 * names the control its fix is under. Trigger names are the layout's own
+		 * words, so they go unquoted, the way the rest of the pane writes them.
+		 */
+		const one = triggers.length === 1;
+		// `it` where the field clause has already named the key.
+		const what = readers.length > 0 ? 'it' : key;
+		sentences.push(
+			`The ${series(triggers)} reset${one ? '' : 's'} read${one ? 's' : ''} ${what} by position${readers.length > 0 ? ' too' : ''}, so what ${one ? 'it resets has' : 'they reset has'} changed. Check ${one ? 'it' : 'them'} under Only where.`,
+		);
+	}
+	return sentences.join(' ');
 }
 
