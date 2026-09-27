@@ -30,7 +30,15 @@ export function tooManyToName(names: readonly unknown[]): boolean {
 
 /** Quote a list as an English series: `"a"`, `"a" and "b"`, `"a", "b" and "c"`; `''` for none. */
 export function spelled(names: readonly string[]): string {
-	const quoted = names.map((name) => `"${name}"`);
-	if (quoted.length <= 1) return quoted.join('');
-	return `${quoted.slice(0, -1).join(', ')} and ${quoted[quoted.length - 1]}`;
+	return series(names.map((name) => `"${name}"`));
+}
+
+/**
+ * The same series with no quotes, for names that are the layout's own words
+ * rather than keys — a trigger reads `The Short rest and Long rest resets`, the
+ * way the confirmation writes `Apply Short rest?`.
+ */
+export function series(names: readonly string[]): string {
+	if (names.length <= 1) return names.join('');
+	return `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }

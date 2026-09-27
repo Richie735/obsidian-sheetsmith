@@ -2491,6 +2491,78 @@ describe('a condition on a column', () => {
 			expect(Notice.messages).toEqual([]);
 		});
 
+		/*
+		 * A reset's **Only where** reads the level by position too
+		 * (`docs/features/record-set-reset-scope.md`), read off the record's own
+		 * `reset`, which is shared config.
+		 */
+		const unconditioned = () => ({
+			id: 'rest_features',
+			columns: [
+				{ key: 'Recharges', type: 'level', input: 'select', levels: [...LEVELS] },
+				{ key: 'Uses', type: 'number' },
+			] as Record<string, unknown>[],
+		});
+
+		it('names the reset whose condition reads the key, and Only where', () => {
+			const el = columnsEditor(
+				{
+					...unconditioned(),
+					reset: [
+						{ trigger: 'Short rest', action: 'full', where: 'Recharges == 1' },
+						{ trigger: 'Long rest', action: 'full' },
+					],
+				},
+				0,
+				FIELDS,
+			);
+			commitNames(el, 'Recharges', 'None, Long rest, Short rest, Always-on');
+			expect(Notice.messages).toEqual([
+				'"Recharges" levels moved: "Short rest" was 1 and is now 2; "Long rest" was 2 and is now 1. The Short rest reset reads Recharges by position, so what it resets has changed. Check it under Only where.',
+			]);
+		});
+
+		it('adds the reset clause to the fields clause, in one notice', () => {
+			const el = columnsEditor(
+				{
+					...recharging(),
+					reset: [{ trigger: 'Short rest', action: 'full', where: 'Recharges == 1' }],
+				},
+				0,
+				FIELDS,
+			);
+			commitNames(el, 'Recharges', 'None, Long rest, Short rest, Always-on');
+			expect(Notice.messages).toHaveLength(1);
+			expect(Notice.messages[0]).toContain('Check them under Shown when. The Short rest reset reads it by position too');
+		});
+
+		it('adds no reset clause for a reset whose to names the key', () => {
+			// `to` is resolved in sheet scope and reads no record's field.
+			const el = columnsEditor(
+				{
+					...unconditioned(),
+					reset: [{ trigger: 'Short rest', action: 'formula', to: 'Recharges + 1' }],
+				},
+				0,
+				FIELDS,
+			);
+			commitNames(el, 'Recharges', 'None, Long rest, Short rest, Always-on');
+			expect(Notice.messages).toEqual([]);
+		});
+
+		it('says nothing to a reset where a level is renamed in place', () => {
+			const el = columnsEditor(
+				{
+					...unconditioned(),
+					reset: [{ trigger: 'Short rest', action: 'full', where: 'Recharges == 1' }],
+				},
+				0,
+				FIELDS,
+			);
+			commitNames(el, 'Recharges', 'None, Short rest, Long rest, Permanent');
+			expect(Notice.messages).toEqual([]);
+		});
+
 		it('raises none on a key rename, and leaves the condition as written', () => {
 			const record = recharging();
 			const el = columnsEditor(record, 0, FIELDS);
