@@ -15,7 +15,7 @@
  * records, one row of inputs each, reorder and remove controls, and an add.
  */
 
-import { Platform, setIcon } from 'obsidian';
+import { Notice, Platform, setIcon } from 'obsidian';
 import { keyRename, RenameIntent } from '../component-rename-migration';
 import {
 	levelCount,
@@ -42,6 +42,7 @@ import { reasonMessage } from './field-reason';
 import { formulaProblem } from './field-formula';
 import { isName } from '../formula/expression';
 import { conditionReads, heldCondition } from '../formula/field-condition';
+import { levelReorderNotice, LevelList } from './level-reorder';
 import { fencedKeyProblem } from '../parse/fenced';
 import { ColumnOptionsSpec, EntryAddress, EntryColumnSpec } from '../types';
 
@@ -971,6 +972,41 @@ export function renderColumnsEditor(
 	 */
 	const conditioned = offers?.visibleWhen === true;
 
+	/** The keys of the other entries whose conditions read `key` by name. */
+	const readersOf = (key: string): string[] =>
+		conditioned
+			? columns
+					.filter(
+						(other) =>
+							other.key !== key &&
+							typeof other.visibleWhen === 'string' &&
+							conditionReads(other.visibleWhen, key),
+					)
+					.map((other) => other.key)
+			: [];
+
+	/** A level list as it stands, copied so a later edit cannot reach it. */
+	const levelList = (column: ColumnEntry): LevelList => ({
+		levels: column.levels === undefined ? undefined : [...column.levels],
+		max: column.max,
+	});
+
+	/**
+	 * Tell the author where a commit to a level list moved what a condition on
+	 * this list reads, since a level is read by its position
+	 * (`editor/level-reorder.ts`). After the fact, as the editor's other reports
+	 * are; nothing rewrites the condition.
+	 */
+	const reportReorder = (column: ColumnEntry, before: LevelList): void => {
+		const said = levelReorderNotice(
+			column.key,
+			before,
+			levelList(column),
+			readersOf(column.key),
+		);
+		if (said !== null) new Notice(said);
+	};
+
 	columns.forEach((column, index) => {
 		// A column is two lines — its row, and the options belonging to it —
 		// and with every line equally spaced nothing said which pairs went
@@ -1173,9 +1209,11 @@ export function renderColumnsEditor(
 					return;
 				}
 				fieldError(names, null);
+				const before = levelList(column);
 				if (candidate === undefined) delete column.levels;
 				else column.levels = candidate;
 				context.persist();
+				reportReorder(column, before);
 				context.redraw();
 			});
 
@@ -1205,11 +1243,13 @@ export function renderColumnsEditor(
 					const raw = input.value.trim();
 					if (raw === '') {
 						fieldError(input, null);
+						const before = levelList(column);
 						delete column.max;
 						// Cleared is a level count too — one — and the sample
 						// has to say so rather than keep showing the old ring.
 						drawSample();
 						context.persist();
+						reportReorder(column, before);
 						return;
 					}
 					const parsed = Number(raw);
@@ -1219,12 +1259,14 @@ export function renderColumnsEditor(
 						return;
 					}
 					fieldError(input, null);
+					const before = levelList(column);
 					column.max = parsed;
 					// A level more or less is a ring more or less. Repainted in
 					// place rather than through a redraw, so the count can be
 					// typed without the field being pulled out from under it.
 					drawSample();
 					context.persist();
+					reportReorder(column, before);
 				});
 			}
 

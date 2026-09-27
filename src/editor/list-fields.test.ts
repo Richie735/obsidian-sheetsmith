@@ -11,6 +11,7 @@ import { COLUMN_TYPES } from '../components/column-types';
 import { MAX_LEVELS } from '../components/level-ring';
 import { getComponent, listComponentTypes, paletteEntries } from '../components';
 import { makeFieldResolver, NO_ENV } from '../formula/resolve';
+import { Notice } from '../test/obsidian-stub';
 
 /*
  * The layout editor's list fields, which had no coverage until the obsidian
@@ -2200,6 +2201,10 @@ describe('a condition on a column', () => {
 	})();
 	const LEVELS = ['None', 'Short rest', 'Long rest', 'Always-on'];
 
+	beforeEach(() => {
+		Notice.messages = [];
+	});
+
 	/** The Shown when input on one entry's detail line, by its key. */
 	const shownWhen = (el: HTMLElement, key: string) =>
 		el.querySelector<HTMLInputElement>(`input[aria-label="${key} shown when"]`);
@@ -2407,6 +2412,94 @@ describe('a condition on a column', () => {
 			expect(under(again, 'Uses', 'sheetsmith-entry-footnote')).toEqual([
 				'Recharges: 0 None · 1 Long rest · 2 Short rest · 3 Always-on',
 			]);
+		});
+	});
+
+	describe('a reorder a condition reads through', () => {
+		const commitNames = (el: HTMLElement, key: string, text: string) => {
+			const names = el.querySelector<HTMLInputElement>(`input[aria-label="${key} level names"]`) as HTMLInputElement;
+			names.value = text;
+			names.dispatchEvent(new Event('change'));
+		};
+
+		it('raises one notice naming both moved levels and the field reading them', () => {
+			const el = columnsEditor(recharging(), 0, FIELDS);
+			commitNames(el, 'Recharges', 'None, Long rest, Short rest, Always-on');
+			expect(Notice.messages).toEqual([
+				// Every field whose condition reads the key, whichever positions it names.
+				'"Recharges" levels moved: "Short rest" was 1 and is now 2; "Long rest" was 2 and is now 1. The conditions on "Uses" and "Active" read Recharges by position, so they now mean something else. Check them under Shown when.',
+			]);
+		});
+
+		it('says nothing for a level renamed in place', () => {
+			const el = columnsEditor(recharging(), 0, FIELDS);
+			commitNames(el, 'Recharges', 'None, Short rest, Long rest, Permanent');
+			expect(Notice.messages).toEqual([]);
+		});
+
+		it('raises one for a shortened list, named or counted', () => {
+			const el = columnsEditor(recharging(), 0, FIELDS);
+			commitNames(el, 'Recharges', 'None, Short rest, Long rest');
+			expect(Notice.messages).toHaveLength(1);
+			expect(Notice.messages[0]).toContain('shortened: the highest is now 2, where it was 3');
+			expect(Notice.messages[0]).toContain('"Active"');
+
+			Notice.messages = [];
+			const counted = columnsEditor(
+				{
+					id: 'x',
+					columns: [
+						{ key: 'Tier', type: 'level', max: 3 },
+						{ key: 'Uses', type: 'number', visibleWhen: 'Tier > 1' },
+					],
+				},
+				0,
+				FIELDS,
+			);
+			const max = counted.querySelector<HTMLInputElement>('input[aria-label="Tier highest level"]') as HTMLInputElement;
+			max.value = '2';
+			max.dispatchEvent(new Event('change'));
+			expect(Notice.messages).toHaveLength(1);
+			expect(Notice.messages[0]).toContain('"Tier" levels shortened');
+		});
+
+		it('raises none for a list no condition reads', () => {
+			const el = columnsEditor(
+				{
+					id: 'x',
+					columns: [
+						{ key: 'Rank', type: 'level', levels: ['Untrained', 'Trained', 'Expert'] },
+						{ key: 'Uses', type: 'number', visibleWhen: 'Uses_max > 0' },
+					],
+				},
+				0,
+				FIELDS,
+			);
+			commitNames(el, 'Rank', 'Expert, Trained, Untrained');
+			expect(Notice.messages).toEqual([]);
+		});
+
+		it('raises none on a Table, whose columns carry no honoured condition', () => {
+			const el = columnsEditor({
+				id: 't',
+				columns: [
+					{ key: 'Rank', type: 'level', levels: ['A', 'B', 'C'] },
+					{ key: 'Bonus', type: 'number', visibleWhen: 'Rank == 1' },
+				],
+			});
+			commitNames(el, 'Rank', 'C, B, A');
+			expect(Notice.messages).toEqual([]);
+		});
+
+		it('raises none on a key rename, and leaves the condition as written', () => {
+			const record = recharging();
+			const el = columnsEditor(record, 0, FIELDS);
+			const key = el.querySelector<HTMLInputElement>('input[aria-label="Field key"]') as HTMLInputElement;
+			key.value = 'Recharge';
+			key.dispatchEvent(new Event('change'));
+			expect(record.columns[0]?.key).toBe('Recharge');
+			expect(Notice.messages).toEqual([]);
+			expect(record.columns[1]?.visibleWhen).toBe('Recharges == 1 || Recharges == 2');
 		});
 	});
 
