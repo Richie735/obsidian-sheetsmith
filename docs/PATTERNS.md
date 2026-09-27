@@ -763,6 +763,14 @@ A component inventing its own is the failure mode to watch for.
   declaring only the first offers an author a column to bind and then passes over
   the binding when the button is pressed — the rule above one step over, and the
   same dead control with nothing to say so.
+- **Declaring `reset.*.where` obliges honouring it in `applyReset`** [checked:
+  `contract.test.ts`]. The declaration is what the sheet reads to hand a component
+  a binding carrying a condition, and what the editor reads to draw **Only where**
+  (`types.ts`, `checksResetCondition`), so a component declaring it and resetting
+  every part anyway is the mis-scoped rest the key exists to prevent — offered a
+  condition, and ignoring it. The contract drives each declaring component's
+  `example` with a condition nothing satisfies and asserts it writes nothing and
+  says it reached nothing.
 - **Declaring `applyReset` on a component whose parts have names obliges
   `resetColumns`** [judgement]. Not checked, and the reason is what the tier is for:
   nothing outside a component can tell whether its parts have names, which is the
