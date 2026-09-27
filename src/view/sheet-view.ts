@@ -14,7 +14,6 @@ import {
 	closeAnchoredPanel,
 	dropDetachedAnchoredPanel,
 } from '../ui/anchored-panel';
-import { ConfirmModal } from '../ui/confirm-modal';
 import { offerUndo } from '../ui/undo-notice';
 import {
 	appendModifierDefinition,
@@ -41,9 +40,6 @@ import { modifierTargetSource } from '../formula/modifier-targets';
 import {
 	FormulaEnv,
 	formulaContext,
-	makeFieldExplainer,
-	makeFieldResolver,
-	publishedFieldNames,
 } from '../formula/resolve';
 import { parseFunctions } from '../formula/functions';
 import { buildSheet } from '../formula/sheet';
@@ -63,6 +59,8 @@ import { attachFileSuggest, FileSuggest } from './file-suggest';
 import { renderGrid } from './grid-cells';
 import { MarkdownPasses } from './markdown-pass';
 import { renderMissingLayout } from './missing-layout';
+import { openResetConfirmation } from './reset-confirmation';
+import { boundTo, planTrigger, TriggerPlan } from './reset-plan';
 
 export const VIEW_TYPE_SHEET = 'sheetsmith-sheet';
 
@@ -137,7 +135,8 @@ function warn(heading: string, items: readonly string[]): void {
  * it on, and every card renders exactly as it would have.
  *
  * Outside the class because it reads no view state, which is what lets it be
- * driven directly — the same reason `resetSummary` above is a function.
+ * driven directly — the same reason `resetSummary` in `reset-confirmation.ts` is
+ * a function.
  */
 export function promotedFieldMessage(refusal: PromotedFieldRefusal): string {
 	return refusal.property === undefined
@@ -151,44 +150,6 @@ interface PreparedComponent {
 	component: ComponentDefinition | undefined;
 	error: string | null;
 	data: unknown;
-}
-
-/**
- * What a trigger will touch on one component, for the confirmation.
- *
- * The component's label alone over-claims now that a binding can name a column:
- * a reader pressing **Long rest** was told "It resets: Spell list" and watched
- * one of three columns change, on a component whose other columns the feature
- * guarantees are left byte-identical. This is the one surface whose whole job is
- * to say what a press will touch, so it is the one place the difference has to
- * appear — the sheet itself draws no mark, because a binding is a fact about the
- * layout rather than a state of the data.
- *
- * **It teaches this file nothing about columns.** `binding.column` is shared
- * config the view already reads, and the label comes back from the component's
- * own `resetColumns`, so what is joined here is a string the component named. A
- * component that names no part of itself is unchanged, which is Pool, Track and
- * Record set.
- *
- * Outside the class because it reads no view state, which is the whole of why it
- * is here rather than beside its one caller: `SheetView` cannot be constructed
- * without a workspace, so a method could not be driven at all, and a function
- * over the two fields it actually reads can be.
- */
-export function resetSummary(
-	name: string,
-	entry: { config: ComponentConfig; component: ComponentDefinition | undefined },
-): string {
-	const named = (entry.config.reset ?? [])
-		.filter((binding) => binding.trigger === name)
-		.map((binding) => binding.column)
-		.filter((column): column is string => column !== undefined);
-	if (named.length === 0) return entry.config.label;
-	const offered = entry.component?.resetColumns?.(entry.config) ?? [];
-	const shown = named.map(
-		(key) => offered.find((column) => column.key === key)?.label ?? key,
-	);
-	return `${entry.config.label} — ${shown.join(', ')}`;
 }
 
 /**
@@ -278,7 +239,7 @@ export class SheetView extends TextFileView {
 	 * A box rather than the string `offerUndo` used to close over, because the
 	 * text a trigger leaves is **not** the text the note ends up holding: the
 	 * reset's own render writes the promoted properties the reset moved (SPEC §9),
-	 * and it does so a turn later, after `applyTrigger` has already finished
+	 * and it does so a turn later, after `applyPlan` has already finished
 	 * synchronously. Measured: `applyEdits` → `commit` → `void renderSheet()`
 	 * returns before the render awaits its layout, so the snapshot was always the
 	 * pre-promotion text, `restoreDocument`'s guard always failed, and **Undo**
@@ -858,19 +819,7 @@ export class SheetView extends TextFileView {
 		}
 
 		for (const name of names) {
-			// A component that failed to read has no data to reset and would
-			// be written from nothing, so it is not bound here either.
-			const bound = prepared.filter(
-				(entry) =>
-					entry.error === null &&
-					entry.component?.applyReset !== undefined &&
-					// Any of its bindings, not one: a component may answer to
-					// several triggers, which is how a system whose long rest
-					// includes its short rest gets said at all.
-					(entry.config.reset ?? []).some(
-						(binding) => binding.trigger === name,
-					),
-			);
+			const bound = boundTo(name, prepared);
 
 			const button = bar.createEl('button', {
 				text: name,
@@ -891,98 +840,37 @@ export class SheetView extends TextFileView {
 			}
 
 			button.addEventListener('click', () => {
-				new ConfirmModal(
-					this.app,
-					`Apply ${name}? This can be undone. It resets:`,
-					`Apply ${name}`,
-					() => this.applyTrigger(name, bound, env),
-					bound.map((entry) => resetSummary(name, entry)),
-				).open();
+				/*
+				 * **Planned at the press, written at Apply.** The confirmation is
+				 * drawn from the plan and Apply writes exactly its edits, so a count
+				 * a component reports — "2 of 5" — and the records the press writes
+				 * come from one evaluation. A plan that fails is listed as not
+				 * resetting while **Cancel** is still available, which is the whole
+				 * reason to plan before asking.
+				 */
+				const plan = planTrigger(name, bound, env);
+				openResetConfirmation(this.app, name, plan, () =>
+					this.applyPlan(name, plan),
+				);
 			});
 		}
 	}
 
 	/**
-	 * Reset every component bound to this trigger, in one write.
+	 * Write a planned trigger's edits, in one write.
 	 *
-	 * SPEC §6: what resolves is applied and what does not is named. A pool
-	 * whose max is broken must not stop the rest of a long rest, which is why
-	 * the failures are collected rather than thrown.
+	 * SPEC §6: what resolves is applied and what does not is named. The plan has
+	 * already collected both, so this is the write and the report and nothing
+	 * else — nothing here evaluates a formula a second time.
 	 */
-	private applyTrigger(
-		name: string,
-		bound: readonly PreparedComponent[],
-		env: FormulaEnv,
-	): void {
+	private applyPlan(name: string, plan: TriggerPlan): void {
 		const before = this.data;
-		const edits: {
-			component: ComponentDefinition;
-			config: ComponentConfig;
-			data: unknown;
-		}[] = [];
-		const failed: string[] = [];
-
-		for (const { component, config, data } of bound) {
-			if (!component?.applyReset) continue;
-			const resolve = makeFieldResolver(component, config, data, env);
-			const explain = makeFieldExplainer(component, config, data, env);
-			/*
-			 * The same mapping the pre-resolve pass uses, so a rest restores to the
-			 * ceiling the card is *drawing* rather than to the one it drew before a
-			 * modifier arrived. `max` and `count` are formulas that become published
-			 * names, so `mod.self` inside either has to mean the same thing on this
-			 * path as it does at the render — which is what `resolveFormulaFields`
-			 * now guarantees on the other side.
-			 *
-			 * Supplied here rather than spelled in each component, and that is the
-			 * point of it: a component restating which of its own fields publishes a
-			 * name would be a second copy of the conditions `scopeValues` already
-			 * decides — a Track's `count` carries a `display` only when it is
-			 * neither a row set, nor named levels, nor a flag — and a copy of that
-			 * predicate is what `PATTERNS.md` §1's one-step tier refuses.
-			 */
-			const published = publishedFieldNames(component, config);
-
-			/*
-			 * **Every binding this trigger matches, not the first.** This was a
-			 * `findIndex`, which was right while one component had at most one
-			 * binding per trigger; a binding may now name a column, so a long
-			 * rest that clears Conditions and refills Uses on one table is two
-			 * bindings the parser accepts and the button has to apply.
-			 *
-			 * Nothing merges component data: two edits carrying one label compose
-			 * through `applySectionWrites`, the second `write` reading the body
-			 * the first produced. So the sheet still knows nothing about any
-			 * component's shape, and §6's "applies what it can and names what it
-			 * could not" holds per column as well as per component.
-			 */
-			for (const [index, reset] of (config.reset ?? []).entries()) {
-				if (reset.trigger !== name) continue;
-				// The bindings are a list, so this one's expression lives at
-				// `reset.<index>.to`. The component asks for it by the one name
-				// it has — `reset.to` — and the sheet, which knows which binding
-				// is being applied, rewrites it. Without this a component would
-				// have to know its own position in its own config.
-				const at = (field: string): string =>
-					field === 'reset.to' ? `reset.${index}.to` : field;
-
-				const result = component.applyReset(data, config, reset, {
-					resolve: (field, scope) =>
-						resolve(at(field), scope, published.get(at(field))),
-					explain: (field, scope) =>
-						explain(at(field), scope, published.get(at(field))),
-				});
-				if (result.ok) edits.push({ component, config, data: result.data });
-				else failed.push(`${config.label} — ${result.error}`);
-			}
+		if (plan.failed.length > 0) {
+			warn(`${name} could not reset:`, plan.failed);
 		}
+		if (plan.edits.length === 0) return;
 
-		if (failed.length > 0) {
-			warn(`${name} could not reset:`, failed);
-		}
-		if (edits.length === 0) return;
-
-		this.applyEdits(edits);
+		this.applyEdits(plan.edits);
 		// Nothing moved, so there is nothing to offer taking back.
 		if (this.data === before) return;
 		// A box, because this render's own promoted-field write lands a turn from
