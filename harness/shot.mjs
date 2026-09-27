@@ -197,8 +197,16 @@ mkdirSync(outDir, { recursive: true });
  * tight margin this file usually runs. **Measure before raising again rather than
  * following the pattern**, because two of these three did not need the second
  * raise at all.
+ *
+ * **Raised again for the conditioned Record sets**
+ * (`docs/features/conditional-field-visibility.md`): two grid rows of them at the
+ * foot of the sheet. Measured off `document.body` through each view's own query,
+ * harness built first: **7886** here against 7800, **17048** at `&width=380`
+ * against 16600, **9028** at 520 against 8600 and **9931** at `text=24` against
+ * 9600 — all four over, so the new lists were the ones cropped. 7800 to
+ * **8100**, 16600 to **17300**, 8600 to **9300**, 9600 to **10200**.
  */
-const SHEET_FRAME = '1400,7800';
+const SHEET_FRAME = '1400,8100';
 
 /**
  * The editor pane's frame, tall because the tree is the whole layout.
@@ -373,9 +381,12 @@ const DEFAULTS = [
 		// the sheet, each a full-width row at one column, and the last of them the
 		// wrapping sample this view exists to show. Measured 16326 against 16100,
 		// so that sample was the one cropped. 16100 to **16600**.
+		//
+		// Raised again with SHEET_FRAME for the conditioned Record sets: measured
+		// 17048 against 16600. 16600 to **17300**.
 		name: 'sheet-narrow',
 		query: 'surface=sheet&theme=dark&width=380',
-		size: '520,16600',
+		size: '520,17300',
 	},
 	{
 		/*
@@ -415,9 +426,12 @@ const DEFAULTS = [
 		// threshold, so it stacks picture-over-text in the row it shares with
 		// the fit row's own stacked Passport, and the row grows to hold both.
 		// 7700 to **7850**.
+		//
+		// Raised again with SHEET_FRAME for the conditioned Record sets: measured
+		// 9028 against 8600. 8600 to **9300**.
 		name: 'sheet-list-narrow',
 		query: 'surface=sheet&theme=light&width=520',
-		size: '620,8600',
+		size: '620,9300',
 	},
 	{
 		// UI.md §5 puts the card's headline number in `em` rather than pixels
@@ -449,7 +463,29 @@ const DEFAULTS = [
 		//
 		// Raised again with SHEET_FRAME for the fit rows: measured 8437 against
 		// 8000, through `text=24` as this comment asks.
-		size: '1400,9600',
+		//
+		// Raised again with SHEET_FRAME for the conditioned Record sets: measured
+		// 9931 against 9600. 9600 to **10200**.
+		size: '1400,10200',
+	},
+	{
+		/*
+		 * **A record whose every body field is hidden, opened**
+		 * (`docs/features/conditional-field-visibility.md`): Darkvision holds no
+		 * rest, so its `Save DC` is hidden and the body block with it, and the prose
+		 * takes the first row with no empty step above it. The first Darkvision in
+		 * the tree is the headed `recharging` list's; the press opens it and the
+		 * scroll brings it into its own list's scrollport, since it is the third
+		 * record in a box showing two.
+		 */
+		name: 'sheet-recharging-open',
+		query: "surface=sheet&theme=light&press=%5Baria-label%3D'Open%20Darkvision'%5D&scroll=%5Baria-label%3D'Close%20Darkvision'%5D",
+		size: SHEET_FRAME,
+	},
+	{
+		name: 'sheet-recharging-open-dark',
+		query: "surface=sheet&theme=dark&press=%5Baria-label%3D'Open%20Darkvision'%5D&scroll=%5Baria-label%3D'Close%20Darkvision'%5D",
+		size: SHEET_FRAME,
 	},
 	{
 		// The first view to photograph a focus ring at all. A still cannot press
@@ -1087,8 +1123,16 @@ const DEFAULTS = [
 		 * field's own vocabulary, and the footnote saying a declared maximum is
 		 * kept are the whole of what an author meets.
 		 */
+		/*
+		 * **Now the conditioned list** (`docs/features/conditional-field-visibility.md`),
+		 * which still carries a per-record `Uses` maximum and so everything this
+		 * view was added for, and adds **Shown when** last on every detail line,
+		 * the position legend under `Uses`' and `Active`'s, and the amended
+		 * `Fields` description. `editor-record-fields-traits` below keeps the list
+		 * this view used to open, whose five field types are the other half.
+		 */
 		name: 'editor-record-fields',
-		query: 'surface=editor&theme=light&open=traits',
+		query: 'surface=editor&theme=light&open=recharging',
 		// **Wider than `EDITOR_FRAME`, because the canvas preview is the subject
 		// and it has to be wide enough for the strip.** At 1500 the Traits preview
 		// is 467px against the 712px a five-field list needs, so the setting read
@@ -1097,6 +1141,32 @@ const DEFAULTS = [
 		// 2000 it is 759px and the strip draws. The threshold is not lowered to fit
 		// a frame.
 		size: '2000,8600',
+	},
+	{
+		// The list `editor-record-fields` opened before conditions existed: five
+		// field types, a named level's sample and two body fields, each detail line
+		// now ending in an empty **Shown when**.
+		name: 'editor-record-fields-traits',
+		query: 'surface=editor&theme=light&open=traits',
+		size: '2000,8600',
+	},
+	{
+		// The broken copy: the self-naming refusal under `Active`'s **Shown when**,
+		// and `Uses`' rename-trap condition, which parses and so reports nothing
+		// here — the sheet's own line is where an unknown name is reported.
+		// Scrolled to `Active` inside the list's own scrollport, since the error
+		// under it is below that list's cap.
+		name: 'editor-record-fields-broken',
+		query:
+			"surface=editor&theme=light&open=recharging_broken&scroll=input%5Baria-label%3D'Active%20shown%20when'%5D",
+		size: '2000,8600',
+	},
+	{
+		// A Table column carrying a condition by hand: no **Shown when** input, and
+		// the report under the list that the condition does nothing on a table.
+		name: 'editor-table-condition',
+		query: 'surface=editor&theme=light&open=inventory',
+		size: EDITOR_FRAME,
 	},
 	{
 		/*

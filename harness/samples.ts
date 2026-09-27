@@ -179,7 +179,10 @@ export const SAMPLES: Sample[] = [
 			rows: [{ label: 'Adventurer\'s pack' }],
 			columns: [
 				{ key: 'Qty', type: 'number', min: 0 },
-				{ key: 'Weight', type: 'number', total: true },
+				// A condition written by hand on a Table column, which a Table does
+				// not honour: the column draws on every row and the editor reports it
+				// (`docs/features/conditional-field-visibility.md`).
+				{ key: 'Weight', type: 'number', total: true, visibleWhen: 'Qty > 0' },
 				{ key: 'Worn', type: 'toggle', hideHeading: true, total: true },
 				{ key: 'Notes', type: 'text' },
 			],
@@ -1743,6 +1746,128 @@ export const SAMPLES: Sample[] = [
 		} as ComponentConfig,
 		body: null,
 	},
+	/*
+	 * **Fields shown only for some values of another**
+	 * (`docs/features/conditional-field-visibility.md`), in three copies of one
+	 * body: headed, so a field after a hidden one has to stay under its heading;
+	 * unheaded, so a hidden field has to leave no gap; and broken, so the fail-open
+	 * line and the self-naming refusal are on screen. Placed at the foot of the
+	 * sheet, the first rows nothing else holds, so every placement above keeps
+	 * the row it had — `traits` above is the no-conditions control and must not
+	 * move by a pixel.
+	 *
+	 * `Recharges` is the board card's level: `Uses` shows for a short or long
+	 * rest, `Active` for always-on, and `Save DC` inside the opened record for
+	 * anything but none. Aura of Protection holds a stale `Uses` and Rage an
+	 * `Active` stored while hidden, which is the whole of Part 2: nothing is
+	 * cleared. Second Wind and Aura are open; Darkvision is closed, and a shot
+	 * opens it to show that a body whose every field is hidden has no block.
+	 */
+	...((): Sample[] => {
+		const fields = (broken: boolean) => [
+			{
+				key: 'Recharges',
+				type: 'level',
+				input: 'select',
+				levels: ['None', 'Short rest', 'Long rest', 'Always-on'],
+			},
+			{
+				key: 'Uses',
+				type: 'number',
+				maxSource: 'record',
+				// The rename trap: a key renamed in the editor, every note migrated,
+				// and the condition still reading the old one.
+				visibleWhen: broken ? 'Recharge == 1' : 'Recharges == 1 || Recharges == 2',
+			},
+			{
+				key: 'Active',
+				type: 'toggle',
+				// Self-naming, so refused: shown on every record, and no line.
+				visibleWhen: broken ? 'Active || Recharges == 3' : 'Recharges == 3',
+			},
+			{
+				key: 'DC',
+				name: 'Save DC',
+				type: 'number',
+				placement: 'body',
+				visibleWhen: 'Recharges != 0',
+			},
+			{ key: 'Modifiers', type: 'modifier' },
+		];
+		const body = [
+			'',
+			'### Second Wind',
+			'```sheet',
+			'Recharges: 1',
+			'Uses: 1 / 1',
+			'DC: 13',
+			'```',
+			'Once per short rest, regain hit points equal to 1d10 + your fighter level.',
+			'',
+			'### Aura of Protection',
+			'```sheet',
+			'Recharges: 3',
+			'Active: yes',
+			// Stale: kept from when this was a rest feature, and still counted.
+			'Uses: 2 / 2',
+			'DC: 15',
+			'```',
+			'Allies within ten feet add your Charisma modifier to their saving throws.',
+			'',
+			'### Darkvision',
+			'```sheet',
+			'Recharges: 0',
+			'```',
+			'You see in dim light within sixty feet as if it were bright light.',
+			'',
+			'### Rage',
+			'```sheet',
+			'Recharges: 2',
+			'Uses: 0 / 3',
+			// Stored while hidden, and still there when Rage becomes always-on.
+			'Active: yes',
+			'```',
+			'Advantage on Strength checks, and bonus damage while it lasts.',
+			'',
+		].join('\n');
+		return [
+			{
+				config: {
+					id: 'recharging',
+					type: 'record-set',
+					label: 'Recharging features',
+					position: { col: 1, row: 78, width: 7, height: 3 },
+					recordName: 'Feature',
+					fieldHeadings: true,
+					fields: fields(false),
+				} as ComponentConfig,
+				body,
+			},
+			{
+				config: {
+					id: 'recharging_plain',
+					type: 'record-set',
+					label: 'Recharging features, unheaded',
+					position: { col: 8, row: 78, width: 4, height: 3 },
+					recordName: 'Feature',
+					fields: fields(false),
+				} as ComponentConfig,
+				body,
+			},
+			{
+				config: {
+					id: 'recharging_broken',
+					type: 'record-set',
+					label: 'Recharging features, broken',
+					position: { col: 1, row: 81, width: 7, height: 3 },
+					recordName: 'Feature',
+					fieldHeadings: true,
+					fields: fields(true),
+				} as ComponentConfig,
+				body,
+			},
+		];
+	})(),
 	/* Beside the set rather than inside it, so a tab press has something to not
 	   move. Row 14 rather than 12: the Spellbook group above grew to hold its
 	   composite pattern and now spans rows 10-13 in this column, so this

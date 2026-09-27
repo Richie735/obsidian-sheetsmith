@@ -990,6 +990,25 @@
 	max-width: 22em;
 }
 
+/* **A field on a detail line that takes a row of its own**, still last on the
+   line. A Record set field's **Shown when** is the case
+   (`docs/features/conditional-field-visibility.md`): an expression is as long as
+   the author writes it, and in a share of the line it clipped
+   `Recharges == 1 || Recharges == 2` to exactly the half that says which rests.
+   It also carries a legend and an error under its input, so beside other
+   fields it was the tallest column and the line's `align-items: center`
+   dropped every neighbour against it — the Uses line's Minimum 18px under its
+   own input, a checkbox 40px under it on an errored one. On a row of its own it
+   is the only item on its flex line, so its height moves nothing, and the rest
+   of the line keeps the centring every other detail line has. `align-items:
+   start` on the whole line was the other answer and is worse: a bare checkbox
+   has no label above it, so it would rise to the labels' height on every detail
+   line in the pane. */
+.sheetsmith-detail-field-row {
+	flex-basis: 100%;
+	max-width: none;
+}
+
 /* **And the floor comes down here, because the premise it was written under is
    false on this line.** It exists "because this is the only flexible child of the
    detail line and so the only one squeezing lands on" — true of a column's line,

@@ -2376,6 +2376,47 @@ describe('the stylesheet wins on specificity, never on !important', () => {
 	});
 });
 
+/** The stylesheet with its comments blanked, which every rule walk reads. */
+const CSS_WITHOUT_COMMENTS = CSS.replace(/\/\*[\s\S]*?\*\//g, ' ');
+
+interface Rule {
+	/** Every at-rule prelude the rule sits inside, outermost first. */
+	context: string[];
+	selector: string;
+	body: string;
+}
+
+/** Every style rule in the file, with the at-rules around it. */
+function rules(text: string): Rule[] {
+	const found: Rule[] = [];
+	const walk = (from: number, to: number, context: string[]): void => {
+		let at = from;
+		while (at < to) {
+			const open = text.indexOf('{', at);
+			if (open === -1 || open >= to) return;
+			const prelude = text.slice(at, open).replace(/^[\s;}]+/, '').trim();
+			// The matching brace, counting nesting.
+			let depth = 1;
+			let close = open + 1;
+			while (depth > 0 && close < to) {
+				const char = text[close];
+				if (char === '{') depth += 1;
+				else if (char === '}') depth -= 1;
+				close += 1;
+			}
+			const inner = text.slice(open + 1, close - 1);
+			if (prelude.startsWith('@')) {
+				walk(open + 1, close - 1, [...context, prelude]);
+			} else {
+				found.push({ context, selector: prelude, body: inner.trim() });
+			}
+			at = close;
+		}
+	};
+	walk(0, text.length, []);
+	return found;
+}
+
 describe("a Record set's strip of field names", () => {
 	/*
 	 * `docs/features/record-set-heading-strip.md`. Two things are held here and
@@ -2387,47 +2428,7 @@ describe("a Record set's strip of field names", () => {
 	 * The scan reads rules with the at-rules they sit inside, which the flat
 	 * `selectors()` above cannot: the claim is about *where* a rule lives.
 	 */
-	const withoutComments = CSS.replace(/\/\*[\s\S]*?\*\//g, ' ');
-
-	interface Rule {
-		/** Every at-rule prelude the rule sits inside, outermost first. */
-		context: string[];
-		selector: string;
-		body: string;
-	}
-
-	/** Every style rule in the file, with the at-rules around it. */
-	function rules(text: string): Rule[] {
-		const found: Rule[] = [];
-		const walk = (from: number, to: number, context: string[]): void => {
-			let at = from;
-			while (at < to) {
-				const open = text.indexOf('{', at);
-				if (open === -1 || open >= to) return;
-				const prelude = text.slice(at, open).replace(/^[\s;}]+/, '').trim();
-				// The matching brace, counting nesting.
-				let depth = 1;
-				let close = open + 1;
-				while (depth > 0 && close < to) {
-					const char = text[close];
-					if (char === '{') depth += 1;
-					else if (char === '}') depth -= 1;
-					close += 1;
-				}
-				const inner = text.slice(open + 1, close - 1);
-				if (prelude.startsWith('@')) {
-					walk(open + 1, close - 1, [...context, prelude]);
-				} else {
-					found.push({ context, selector: prelude, body: inner.trim() });
-				}
-				at = close;
-			}
-		};
-		walk(0, text.length, []);
-		return found;
-	}
-
-	const all = rules(withoutComments);
+	const all = rules(CSS_WITHOUT_COMMENTS);
 	const GATE = '@supports (grid-template-columns: subgrid)';
 	const STYLE_QUERY = '@container style(--sheetsmith-record-strip: on)';
 	const inGate = (rule: Rule) => rule.context[0] === GATE;
@@ -2683,5 +2684,128 @@ describe("a Record set's strip of field names", () => {
 			/#[0-9a-f]{3,8}\b|\brgba?\(|\bhsla?\(/i.test(rule.body),
 		);
 		expect(literal).toEqual([]);
+	});
+});
+
+describe('a field its condition hid is hidden', () => {
+	/*
+	 * `docs/features/conditional-field-visibility.md`. The component sets
+	 * `hidden` on a Record set field's cell, and on a body block whose every
+	 * field is hidden, and the user-agent `[hidden] { display: none }` loses to
+	 * any author rule giving the element a `display`. That is `docs/PATTERNS.md`
+	 * §10's vacuous pass exactly: the attribute is set, the component's tests go
+	 * green, and every field still draws. happy-dom computes no style, so this
+	 * scan is the only instrument that can see it.
+	 */
+	const HIDEABLE = [
+		/\.sheetsmith-record-field(?![\w-])/,
+		/\.sheetsmith-record-body-fields(?![\w-])/,
+	];
+
+	/** (ids, classes and attributes and pseudo-classes, types) of one compound selector. */
+	function specificity(selector: string): [number, number, number] {
+		const bare = selector.replace(/::[\w-]+/g, ' ');
+		const ids = (bare.match(/#[\w-]+/g) ?? []).length;
+		const classes =
+			(bare.match(/\.[\w-]+/g) ?? []).length +
+			(bare.match(/\[[^\]]*\]/g) ?? []).length +
+			(bare.match(/:(?!:)[\w-]+/g) ?? []).length;
+		const types = bare
+			.replace(/\[[^\]]*\]/g, ' ')
+			.split(/[\s>+~]+/)
+			.filter((one) => /^[a-z]/i.test(one)).length;
+		return [ids, classes, types];
+	}
+
+	/** Whether `a` beats `b` on weight alone. */
+	const heavier = (a: [number, number, number], b: [number, number, number]) =>
+		a[0] !== b[0] ? a[0] > b[0] : a[1] !== b[1] ? a[1] > b[1] : a[2] > b[2];
+	const same = (a: [number, number, number], b: [number, number, number]) =>
+		a.join() === b.join();
+
+	/**
+	 * Every selector giving one of the hideable classes a `display` other than
+	 * none, with no answer after it or above it in weight — and how many it found,
+	 * so a class renamed out from under the scan cannot pass it over nothing.
+	 */
+	function unanswered(text: string): { found: number; open: string[] } {
+		const walked = rules(text);
+		const parts = walked.flatMap((rule, at) =>
+			rule.selector.split(',').map((one) => ({ rule, at, selector: one.trim() })),
+		);
+		const answers = parts.filter(
+			({ rule, selector }) =>
+				/\[hidden\]/.test(subjectOf(selector)) &&
+				/display:\s*none/.test(rule.body),
+		);
+		const displays = parts.filter(
+			({ rule, selector }) =>
+				HIDEABLE.some((cls) => cls.test(subjectOf(selector))) &&
+				!/\[hidden\]/.test(selector) &&
+				/(^|[;\s])display:\s*(?!none)/.test(rule.body),
+		);
+		const open = displays
+			.filter(({ at, selector }) => {
+				const cls = HIDEABLE.find((one) => one.test(subjectOf(selector)));
+				return !answers.some((answer) => {
+					if (cls === undefined || !cls.test(subjectOf(answer.selector))) return false;
+					const mine = specificity(answer.selector);
+					const theirs = specificity(selector);
+					// Heavier wins anywhere; equal wins only by coming later.
+					return heavier(mine, theirs) || (same(mine, theirs) && answer.at > at);
+				});
+			})
+			.map(({ selector }) => selector);
+		return { found: displays.length, open };
+	}
+
+	it('answers every display either class is given with a [hidden] rule that wins', () => {
+		const { found, open } = unanswered(CSS_WITHOUT_COMMENTS);
+		// The field's `inline-flex` and the block's `flex`, at least.
+		expect(found).toBeGreaterThanOrEqual(2);
+		expect(open).toEqual([]);
+	});
+
+	it('would catch a display the [hidden] rule does not outweigh', () => {
+		// The case above asserts an empty list, so it reads the same on a sheet
+		// with no answer at all. Driven over the shape it exists to reject: no
+		// answer, an answer too light, and an answer of equal weight placed above.
+		expect(
+			unanswered('.sheetsmith-record-field { display: inline-flex; }').open,
+		).toEqual(['.sheetsmith-record-field']);
+		expect(
+			unanswered(
+				'.sheetsmith-view .sheetsmith-record-summary .sheetsmith-record-field { display: grid; }\n' +
+					'.sheetsmith-record-field[hidden] { display: none; }',
+			).open,
+		).toHaveLength(1);
+		expect(
+			unanswered(
+				'.sheetsmith-view .sheetsmith-record-field[hidden] { display: none; }\n' +
+					'.sheetsmith-view .sheetsmith-record-field.x { display: flex; }',
+			).open,
+		).toHaveLength(1);
+		// And passes the answer this stylesheet actually gives.
+		expect(
+			unanswered(
+				'.sheetsmith-record-body-fields { display: flex; }\n' +
+					'.sheetsmith-view .sheetsmith-record-body-fields[hidden] { display: none; }',
+			),
+		).toEqual({ found: 1, open: [] });
+	});
+
+	it('places a headed summary field by its own track number, not by auto-placement', () => {
+		// Hidden is `display: none`, which takes a field out of placement, so an
+		// auto-placed field after it would slide one track left out from under its
+		// heading.
+		const placed = rules(CSS_WITHOUT_COMMENTS).filter(
+			(rule) =>
+				rule.selector === '.sheetsmith-record-summary .sheetsmith-record-field' &&
+				rule.context[1] === '@container style(--sheetsmith-record-strip: on)',
+		);
+		expect(placed).toHaveLength(1);
+		expect(placed[0]?.body).toMatch(
+			/grid-column:\s*var\(--sheetsmith-record-track\)/,
+		);
 	});
 });

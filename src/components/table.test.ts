@@ -6584,3 +6584,23 @@ describe('the Conditions palette entry', () => {
 		expect(modifiers(text)).toEqual(modifiers(NOTE));
 	});
 });
+
+describe('a condition written by hand on a column', () => {
+	it('is ignored: the column draws exactly as without it, and nothing is refused', () => {
+		// A Table draws every column on every row, so a `visibleWhen` here does
+		// nothing; the layout editor reports it (`docs/features/
+		// conditional-field-visibility.md`). Carried, not honoured, not refused.
+		const conditioned = {
+			...config,
+			columns: (config.columns ?? []).map((column) =>
+				column.key === 'Bonus' ? { ...column, visibleWhen: 'false' } : column,
+			),
+		} as TableConfig;
+		const read = table.read(BODY, conditioned);
+		expect(read.ok).toBe(true);
+		expect(read).toEqual(table.read(BODY, config));
+		const data = stored(BODY, conditioned);
+		expect(render(data, conditioned).innerHTML).toBe(render(stored(BODY), config).innerHTML);
+		expect(table.write(data, BODY, conditioned)).toBe(BODY);
+	});
+});

@@ -573,6 +573,18 @@ export interface ColumnOptionsSpec {
 	 */
 	placement?: boolean;
 	/**
+	 * Whether an entry may carry a condition, a formula in its holder's own
+	 * scope, and be drawn only on the holders where it holds. Defaults to false.
+	 *
+	 * **Opt-in on `placement`'s precedent**, since only a component that draws
+	 * each entry per holder can leave one out: Record set asks. A list whose
+	 * component draws every column on every row — Table, Roster — is offered no
+	 * input, and an entry there carrying the key by hand is *reported* under the
+	 * list rather than refused, because the component ignores it and still draws
+	 * (`docs/features/conditional-field-visibility.md`).
+	 */
+	visibleWhen?: boolean;
+	/**
 	 * What one entry of this list is called, and what holds one — "column" and
 	 * "row" by default, "field" and "record" for a Record set.
 	 *

@@ -83,6 +83,7 @@ import {
 	withRecordBody,
 } from '../parse/records';
 import { startsSection } from '../parse/character';
+import { conditionReads, heldCondition } from '../formula/field-condition';
 import { displayText, hasLink } from '../parse/wikilink';
 import { fencedLinkRefusal } from './fenced-link';
 import {
@@ -279,6 +280,29 @@ export interface RecordField {
 	 */
 	placement?: Placement;
 	/**
+	 * A boolean formula in the record's own scope, and where it is false on a
+	 * record the field is not drawn on that record
+	 * (`docs/features/conditional-field-visibility.md`). Absent or blank means
+	 * always shown; a hand-written `true` or `false` is its own answer.
+	 *
+	 * **Not `ConfigFieldSpec.visibleWhen`, and the shared word is all they
+	 * share.** That one is the plugin's own declaration over a closed set of
+	 * config keys, checked by `editor/config-fields.ts`'s `conditionMet`, and it
+	 * fails *closed*: a typo in the plugin's own declaration hides a control,
+	 * which is the safer way to be wrong. This one is an author's formula over
+	 * character data, evaluated by the formula engine, and it fails *open*: a
+	 * condition that cannot be worked out shows the field and says why, because
+	 * a hidden value still counting is the worse way to be wrong. Different
+	 * grammar, different evaluator, opposite failure — so do not unify them.
+	 *
+	 * **Display only, like `placement`.** A hidden field keeps its value in the
+	 * note and goes on counting in every aggregate, modifier and reset: no value
+	 * reads visibility, so the dependency graph cannot close through it. A
+	 * condition naming its own key is refused and the field shown, since a field
+	 * that can hide itself vanishes under the cursor.
+	 */
+	visibleWhen?: string | boolean;
+	/**
 	 * Names for a level field's states, from none upwards. Naming them settles
 	 * how many there are. A name may say what its ring shows after a colon; see
 	 * level-ring.ts, which owns that rule.
@@ -384,6 +408,23 @@ function storedFields(config: RecordSetConfig): RecordField[] {
 /** Whether this field draws inside the opened record rather than on its summary line. */
 function inBody(field: RecordField): boolean {
 	return field.placement === BODY_PLACEMENT;
+}
+
+/**
+ * The condition this component will evaluate for a field: its text, a
+ * hand-written answer, or null where the field is simply always shown.
+ *
+ * **Null for a condition naming the field's own key**, which is the refusal:
+ * a `Uses` shown when `Uses > 0` hits zero, vanishes under the cursor, and is
+ * reachable again only through a reset. The editor reports it under the field's
+ * **Shown when**; here it is not evaluated at, and it draws no problem line,
+ * because it is a layout error rather than a condition that failed. The
+ * predicate is `formula/field-condition.ts`'s, which the editor calls too.
+ */
+function honouredCondition(field: RecordField): string | boolean | null {
+	const held = heldCondition(field.visibleWhen);
+	if (typeof held === 'string' && conditionReads(held, field.key)) return null;
+	return held;
 }
 
 /** What a record's field is called on the sheet. */
@@ -829,9 +870,11 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 	type: 'record-set',
 	description: 'A list of named entries, each with a few typed fields and a paragraph of prose.',
 	storage: 'markdown',
-	// `*` stands for one path segment: every field's formula. `reset.*.to` is the
+	// `*` stands for one path segment: every field's formula, and every field's
+	// condition — declared so a paste rewrites an id a condition reads and the
+	// resolver reaches it by the field's declared index. `reset.*.to` is the
 	// reset expression, at the index of the binding being applied.
-	formulaFields: ['fields.*.formula', 'reset.*.to'],
+	formulaFields: ['fields.*.formula', 'fields.*.visibleWhen', 'reset.*.to'],
 	configFields: [
 		{
 			key: 'recordName',
@@ -866,6 +909,10 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				// A body to move a field into is the other thing this component has
 				// that a Table does not, so the same opt-in holds it out of Table.
 				placement: true,
+				// And a condition on a field, which only this component draws: a
+				// Table draws every column on every row, so the editor reports a
+				// condition there instead of offering the input.
+				visibleWhen: true,
 				// The strip is the component's, and a per-field hide would leave a
 				// ring unnamed, which is what the strip is for. The *key* is still
 				// read and still round-trips.
@@ -889,7 +936,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			// `docs/features/component-rename-migration.md`).
 			addressesEntry: { fence: 'record' },
 			description:
-				"The typed values every record holds, each an entry in that record's block in the note. Renaming a key moves that entry in every record, in every note on this layout. Text is not offered: words a reader reads belong in the record's body, where they may hold links. A number field with a maximum is a uses counter: the field draws that maximum beside its value, and a reset trigger restores it to that maximum. A number field's maximum may belong to the field, so every record shares it, or to each record, so a reader types it on the sheet — and a reset restores each record to whichever one applies. Tick \"Inside the opened record\" for a value read once and changed rarely: it draws above the record's prose and is not shown while the record is closed. A field used every turn belongs on the summary line.",
+				"The typed values every record holds, each an entry in that record's block in the note. Renaming a key moves that entry in every record, in every note on this layout. Text is not offered: words a reader reads belong in the record's body, where they may hold links. A number field with a maximum is a uses counter: the field draws that maximum beside its value, and a reset trigger restores it to that maximum. A number field's maximum may belong to the field, so every record shares it, or to each record, so a reader types it on the sheet — and a reset restores each record to whichever one applies. Tick \"Inside the opened record\" for a value read once and changed rarely: it draws above the record's prose and is not shown while the record is closed. A field used every turn belongs on the summary line. Write a condition in \"Shown when\", such as Recharges == 1 || Recharges == 2, to draw a field only on the records where it holds. A hidden field keeps its value and still counts in every formula, modifier and reset, so a when clause reading a hidden toggle still applies. A level is read by its position, from 0 for the first name, so reordering a level's names changes what a condition reading it means.",
 		},
 		{
 			key: 'hideLabel',
@@ -1486,9 +1533,49 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		/** The name fields drawn, so a landing after **Add** can reach the last. */
 		const nameFields: HTMLInputElement[] = [];
 
+		/**
+		 * Every conditioned field whose condition could not be worked out, by its
+		 * declared index: on how many records, and the first reason met, in file
+		 * order. Filled while the records draw, reported once per field above them.
+		 */
+		const failedConditions = new Map<number, { count: number; why: string }>();
+		/** Records a condition was evaluated on, which is every one that read. */
+		const readable = records.filter((record) => record.error === null).length;
+
 		records.forEach((record, at) => {
 			drawRecord(record, at);
 		});
+
+		/*
+		 * **One line per failing field, not per record, and above the records**,
+		 * inside the scrolling list so it never grows the placed box. The field is
+		 * drawn on every record it failed on, so what the line owes is the reason:
+		 * a rename that migrated every note while every condition reading the old
+		 * key stopped resolving would otherwise be every hidden field reappearing
+		 * with nobody told why.
+		 *
+		 * The first children of whatever holds the records — the list itself, or
+		 * on a headed list the records' own wrapper, which is `display: contents`
+		 * until the strip draws — so the line sits under the strip rather than in
+		 * a grid track meant for it.
+		 */
+		const lines = [...failedConditions.entries()]
+			.sort(([left], [right]) => left - right)
+			.map(([index, failed]) => {
+				const field = fields[index] as RecordField;
+				const where =
+					failed.count >= readable
+						? `every ${noun.toLowerCase()}`
+						: `${failed.count} ${noun.toLowerCase()}${failed.count === 1 ? '' : 's'}`;
+				// Appended, then moved to the front with the rest below.
+				return element(
+					'div',
+					'sheetsmith-error',
+					host,
+					`"${fieldLabel(field)}" is shown on ${where} because its condition could not be worked out: ${failed.why} Fix the condition under Shown when in the layout editor.`,
+				);
+			});
+		if (lines.length > 0) host.prepend(...lines);
 
 		// The add control sits in the last position of the list, so it reads as the
 		// next record rather than as chrome beside it — `.sheetsmith-table-add`'s
@@ -1592,14 +1679,35 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			 * with its own indices would resolve a computed field declared after a
 			 * body field against its neighbour's formula.
 			 */
-			const inBlock: { field: RecordField; index: number }[] = [];
+			const inBlock: {
+				field: RecordField;
+				index: number;
+				shown: boolean;
+			}[] = [];
+			/*
+			 * **The record's stored layer, built once and read by both**: every
+			 * computed field's formula and every field's condition, on the summary
+			 * line and in the body. A condition therefore reaches exactly what a
+			 * computed field reaches, and reads no other computed field (SPEC §5).
+			 * A record whose fence did not read draws no fields, so it evaluates
+			 * nothing.
+			 */
+			const scope = record.error === null ? storedScope(record) : {};
 			if (record.error === null) {
+				/** A summary field's own track under the strip, from 1. */
+				let track = 0;
 				fields.forEach((field, index) => {
+					const shown = isShown(field, index, scope);
 					if (inBody(field)) {
-						inBlock.push({ field, index });
+						inBlock.push({ field, index, shown });
 						return;
 					}
-					drawField(fieldRow, row, field, index, record, at, named, false);
+					track += 1;
+					drawField(fieldRow, row, field, index, record, at, named, false, {
+						shown,
+						track: headed ? track : null,
+						scope,
+					});
 				});
 			}
 
@@ -1620,20 +1728,94 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			 * the view's focus restoration counts the same controls either way, and
 			 * find-in-page has the names to reach.
 			 */
+			/*
+			 * **Where every body field on this record is hidden, the block is too**,
+			 * and the body loses the class that gives it a second row — so the prose
+			 * takes the first and no empty step is left above it. The block stays in
+			 * the DOM, hidden, for the same reason a hidden field does: the view
+			 * restores focus by a control's index in the cell, and removing controls
+			 * would renumber every one after them.
+			 */
 			if (inBlock.length > 0) {
-				bodyEl.classList.add('sheetsmith-record-body-has-fields');
+				const anyShown = inBlock.some((one) => one.shown);
+				if (anyShown) {
+					bodyEl.classList.add('sheetsmith-record-body-has-fields');
+				}
 				const block = element(
 					'div',
 					'sheetsmith-record-body-fields',
 					bodyEl,
 				);
-				for (const { field, index } of inBlock) {
-					drawField(block, row, field, index, record, at, named, true);
+				if (!anyShown) block.setAttribute('hidden', '');
+				for (const { field, index, shown } of inBlock) {
+					drawField(block, row, field, index, record, at, named, true, {
+						shown,
+						track: null,
+						scope,
+					});
 				}
 			}
 
 			drawBody(bodyEl, row, record, at, named);
 			paintDisclosure();
+		}
+
+		/**
+		 * One record's names as a computed field or a condition reads them: every
+		 * stored field's value half, never a computed one.
+		 */
+		function storedScope(record: RecordEntry): Record<string, FieldValue> {
+			const scope: Record<string, FieldValue> = {};
+			for (const other of fields) {
+				if (fieldType(other) === 'computed') continue;
+				// The value half, as `recordValues` does: `3 - Uses` reads `2` from an
+				// entry that says `2 / 3`.
+				scope[other.key] = typedValue(
+					other,
+					storedValue(other, record.fields[other.key]),
+				);
+			}
+			return scope;
+		}
+
+		/**
+		 * Whether this field is drawn on this record, and a failed condition noted
+		 * for the list's problem line.
+		 *
+		 * **Fail-open**, the opposite of the editor's own `conditionMet`: a
+		 * condition that does not resolve, or does not come to true or false,
+		 * shows the field. A hidden value is a counter the reader cannot see still
+		 * counting, which is the worse way to be wrong on a sheet.
+		 *
+		 * **Resolved by the field's declared index**, never by its place in a
+		 * filtered half: the partition into summary and body keeps each field's
+		 * index for exactly this, and a renumbered half reads a neighbour's
+		 * condition.
+		 *
+		 * **Evaluated here and nowhere else.** `scopeRows`, `scopeModifiers` and
+		 * `applyReset` never ask, which is what keeps visibility a sink: a
+		 * condition reads values and no value reads visibility.
+		 */
+		function isShown(
+			field: RecordField,
+			index: number,
+			scope: Record<string, FieldValue>,
+		): boolean {
+			const condition = honouredCondition(field);
+			if (condition === null) return true;
+			if (typeof condition === 'boolean') return condition;
+			const path = `fields.${index}.visibleWhen`;
+			const value = context.resolveField(path, scope);
+			if (typeof value === 'boolean') return value;
+			const why =
+				value === null
+					? (context.explainField?.(path, scope) ??
+						'The condition did not resolve.')
+					: `It came to "${String(value)}", which is not true or false.`;
+			const failed = failedConditions.get(index);
+			if (failed === undefined) failedConditions.set(index, { count: 1, why });
+			else failed.count += 1;
+			return true;
 		}
 
 		/**
@@ -1758,6 +1940,27 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			 * same code with the same arguments.
 			 */
 			body: boolean,
+			drawn: {
+				/**
+				 * Whether its condition holds on this record. A hidden field is the
+				 * same control on the same commit path with `hidden` on its cell,
+				 * which is `display: none`: out of layout, the accessibility tree,
+				 * the tab order and find-in-page, and still in the DOM, so every
+				 * control's index in the cell — which is what the view restores
+				 * focus by — is the same whatever the conditions say. Plain
+				 * `hidden`, never `until-found`: find-in-page revealing a field its
+				 * condition hid would be wrong.
+				 */
+				shown: boolean;
+				/**
+				 * Its track under the strip, from 1, on a headed list's summary line
+				 * only. Explicit rather than auto-placed, so a field after a hidden
+				 * one stays under its own heading instead of sliding one track left.
+				 */
+				track: number | null;
+				/** The record's stored layer, which a computed field reads. */
+				scope: Record<string, FieldValue>;
+			},
 		): void {
 			const type = fieldType(field);
 			const raw = record.fields[field.key] ?? '';
@@ -1768,6 +1971,13 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				`sheetsmith-record-field sheetsmith-record-field-${type}`,
 				into,
 			);
+			if (!drawn.shown) cell.setAttribute('hidden', '');
+			if (drawn.track !== null) {
+				cell.style.setProperty(
+					'--sheetsmith-record-track',
+					String(drawn.track),
+				);
+			}
 			// A number's name is drawn beside it in the shared secondary clothes,
 			// always: the stylesheet hides it only where a strip is over it, so the
 			// one query decides both and a number can never have neither. In the
@@ -1783,7 +1993,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			};
 
 			if (type === 'computed') {
-				drawComputed(cell, field, index, record, accessible);
+				drawComputed(cell, field, index, drawn.scope, accessible);
 				return;
 			}
 			if (type === 'modifier') {
@@ -2078,20 +2288,11 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			cell: HTMLElement,
 			field: RecordField,
 			index: number,
-			record: RecordEntry,
+			/** The record's stored layer, shared with its conditions. */
+			scope: Record<string, FieldValue>,
 			accessible: string,
 		): void {
 			const value = element('div', 'sheetsmith-record-value', cell);
-			const scope: Record<string, FieldValue> = {};
-			for (const other of fields) {
-				if (fieldType(other) === 'computed') continue;
-				// The value half, as `recordValues` does: `3 - Uses` reads `2` from an
-				// entry that says `2 / 3`.
-				scope[other.key] = typedValue(
-					other,
-					storedValue(other, record.fields[other.key]),
-				);
-			}
 			const resolved =
 				field.formula === undefined
 					? null

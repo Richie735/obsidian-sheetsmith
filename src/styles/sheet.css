@@ -5645,6 +5645,19 @@ a.sheetsmith-undo {
 	gap: var(--size-2-1);
 }
 
+/* **A field its condition hid, and the rule the attribute alone cannot be.**
+   The component sets `hidden` on the field's cell and on a body block whose
+   every field is hidden (`docs/features/conditional-field-visibility.md`), and
+   the user-agent `[hidden] { display: none }` loses to any author rule giving
+   the element a `display` — which both of these have. Without this the
+   attribute is set, every test goes green, and every field still draws.
+   `styles.test.ts` holds each `display` on either class to an answer here at
+   equal or higher specificity. */
+.sheetsmith-view .sheetsmith-record-field[hidden],
+.sheetsmith-view .sheetsmith-record-body-fields[hidden] {
+	display: none;
+}
+
 /* **One variable up from the shared abbreviation, and the job is why.** The
    clothes are `.sheetsmith-card-abbreviation`'s — a size down, tracked, quiet —
    and its colour is `--text-faint`, which a design review measured at **2.20:1**
@@ -6356,7 +6369,13 @@ a.sheetsmith-undo {
 		   a body field sits in a flex block of its own and has no track, so a
 		   centring margin or a paint offset meant for a column would only move it
 		   off its own name. */
+		/* **Each field in its own track by number, not by auto-placement.** A field
+		   its condition hid is `display: none`, which takes it out of placement, so
+		   auto-placed fields after it would slide one track left and out from under
+		   their headings. The component stamps each summary field's track, from 1,
+		   on a headed list only; hidden or not, a field lands where its heading is. */
 		.sheetsmith-record-summary .sheetsmith-record-field {
+			grid-column: var(--sheetsmith-record-track);
 			justify-self: center;
 			margin-inline: calc((var(--size-4-5) - var(--size-2-2)) / 2);
 		}
@@ -6383,9 +6402,11 @@ a.sheetsmith-undo {
 		}
 
 		/* An open body, a problem line and the add control span every track, so
-		   opening a record moves the records below it and never a column. */
+		   opening a record moves the records below it and never a column. The
+		   list's own line — a condition that could not be worked out — too. */
 		.sheetsmith-record-body,
 		.sheetsmith-view .sheetsmith-record > .sheetsmith-error,
+		.sheetsmith-view .sheetsmith-record-set-records > .sheetsmith-error,
 		.sheetsmith-view .sheetsmith-record-add {
 			grid-column: 1 / -1;
 		}

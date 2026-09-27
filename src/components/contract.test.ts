@@ -242,6 +242,16 @@ describe('component registry', () => {
 		expect(declaring.length).toBeGreaterThan(0);
 	});
 
+	it('has a columns field on each side of the condition branch', () => {
+		// The per-component case above skips every field that does not offer a
+		// condition, so it reads the same on a registry where none does.
+		const columns = types.flatMap((type) =>
+			(getComponent(type)?.configFields ?? []).filter((field) => field.kind === 'columns'),
+		);
+		expect(columns.filter((field) => field.columnOptions?.visibleWhen === true).length).toBeGreaterThan(0);
+		expect(columns.filter((field) => field.columnOptions?.visibleWhen !== true).length).toBeGreaterThan(0);
+	});
+
 	it('declares enough config fields for the per-field checks to mean anything', () => {
 		// Every config field rule below runs inside a per-component loop over
 		// `configFields`. A registry that stopped handing them out would pass
@@ -1543,6 +1553,26 @@ describe.each(types)('component "%s"', (type) => {
 				expect(COLUMN_TYPES, `${field.key} offers "${id}"`).toContain(id);
 			}
 			expect(new Set(offered.types).size).toBe(offered.types.length);
+		}
+	});
+
+	it('declares a condition on its entries a formula wherever its columns field offers one', () => {
+		/*
+		 * `columnOptions.visibleWhen` is the editor half of a condition on an entry
+		 * (`docs/features/conditional-field-visibility.md`); the pattern in
+		 * `formulaFields` is the half that makes a paste rewrite an id it reads and
+		 * lets the resolver reach it at all. Offering the input without the
+		 * pattern is a condition that never evaluates, which fails *open* and so
+		 * shows every entry with a problem line nobody could fix. The drawing half —
+		 * that such a component hides what its condition names, and that every
+		 * other columns list reports one — is driven in `list-fields.test.ts`,
+		 * since this file has no DOM.
+		 */
+		for (const field of component?.configFields ?? []) {
+			if (field.kind !== 'columns' || field.columnOptions?.visibleWhen !== true) continue;
+			expect(component?.formulaFields, `${field.key} offers a condition`).toContain(
+				`${field.key}.*.visibleWhen`,
+			);
 		}
 	});
 

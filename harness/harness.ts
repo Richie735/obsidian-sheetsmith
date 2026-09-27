@@ -349,7 +349,15 @@ const activeTab = new Map<string, number>();
  * which puts both dispositions in one shot. A reviewer clicking in the live
  * harness moves either.
  */
-const openRecords = new Map<string, Set<number>>([['traits', new Set([1, 2])]]);
+const openRecords = new Map<string, Set<number>>([
+	['traits', new Set([1, 2])],
+	// Second Wind and Aura of Protection open, Darkvision and Rage closed, on all
+	// three copies of the conditioned list, so an open body's `Save DC` and a
+	// closed record's hidden fields are in one shot.
+	['recharging', new Set([0, 1])],
+	['recharging_plain', new Set([0, 1])],
+	['recharging_broken', new Set([0, 1])],
+]);
 
 function renderSheet(into: HTMLElement): void {
 	const view = into.createDiv('sheetsmith-view');

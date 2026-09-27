@@ -15,7 +15,7 @@
  * records, one row of inputs each, reorder and remove controls, and an add.
  */
 
-import { Platform, setIcon } from 'obsidian';
+import { Notice, Platform, setIcon } from 'obsidian';
 import { keyRename, RenameIntent } from '../component-rename-migration';
 import {
 	levelCount,
@@ -41,6 +41,8 @@ import { showFieldError } from './field-error';
 import { reasonMessage } from './field-reason';
 import { formulaProblem } from './field-formula';
 import { isName } from '../formula/expression';
+import { conditionReads, heldCondition } from '../formula/field-condition';
+import { levelReorderNotice, LevelList } from './level-reorder';
 import { fencedKeyProblem } from '../parse/fenced';
 import { ColumnOptionsSpec, EntryAddress, EntryColumnSpec } from '../types';
 
@@ -732,6 +734,7 @@ interface ColumnEntry extends Record<string, unknown> {
 	max?: number;
 	maxSource?: string;
 	placement?: string;
+	visibleWhen?: string | boolean;
 	levels?: string[];
 	input?: string;
 	signed?: boolean;
@@ -963,6 +966,47 @@ export function renderColumnsEditor(
 		return null;
 	};
 
+	/**
+	 * Whether this list's entries may carry a condition, which only a component
+	 * drawing each entry per holder can honour (`types.ts`, `visibleWhen`).
+	 */
+	const conditioned = offers?.visibleWhen === true;
+
+	/** The keys of the other entries whose conditions read `key` by name. */
+	const readersOf = (key: string): string[] =>
+		conditioned
+			? columns
+					.filter(
+						(other) =>
+							other.key !== key &&
+							typeof other.visibleWhen === 'string' &&
+							conditionReads(other.visibleWhen, key),
+					)
+					.map((other) => other.key)
+			: [];
+
+	/** A level list as it stands, copied so a later edit cannot reach it. */
+	const levelList = (column: ColumnEntry): LevelList => ({
+		levels: column.levels === undefined ? undefined : [...column.levels],
+		max: column.max,
+	});
+
+	/**
+	 * Tell the author where a commit to a level list moved what a condition on
+	 * this list reads, since a level is read by its position
+	 * (`editor/level-reorder.ts`). After the fact, as the editor's other reports
+	 * are; nothing rewrites the condition.
+	 */
+	const reportReorder = (column: ColumnEntry, before: LevelList): void => {
+		const said = levelReorderNotice(
+			column.key,
+			before,
+			levelList(column),
+			readersOf(column.key),
+		);
+		if (said !== null) new Notice(said);
+	};
+
 	columns.forEach((column, index) => {
 		// A column is two lines — its row, and the options belonging to it —
 		// and with every line equally spaced nothing said which pairs went
@@ -1165,9 +1209,11 @@ export function renderColumnsEditor(
 					return;
 				}
 				fieldError(names, null);
+				const before = levelList(column);
 				if (candidate === undefined) delete column.levels;
 				else column.levels = candidate;
 				context.persist();
+				reportReorder(column, before);
 				context.redraw();
 			});
 
@@ -1197,11 +1243,13 @@ export function renderColumnsEditor(
 					const raw = input.value.trim();
 					if (raw === '') {
 						fieldError(input, null);
+						const before = levelList(column);
 						delete column.max;
 						// Cleared is a level count too — one — and the sample
 						// has to say so rather than keep showing the old ring.
 						drawSample();
 						context.persist();
+						reportReorder(column, before);
 						return;
 					}
 					const parsed = Number(raw);
@@ -1211,12 +1259,14 @@ export function renderColumnsEditor(
 						return;
 					}
 					fieldError(input, null);
+					const before = levelList(column);
 					column.max = parsed;
 					// A level more or less is a ring more or less. Repainted in
 					// place rather than through a redraw, so the count can be
 					// typed without the field being pulled out from under it.
 					drawSample();
 					context.persist();
+					reportReorder(column, before);
 				});
 			}
 
@@ -1505,6 +1555,102 @@ export function renderColumnsEditor(
 				BODY_PLACEMENT,
 			);
 		}
+
+		/*
+		 * **Shown when, last on the line**, after where the entry is drawn, since
+		 * both are about the entry as a whole and this one carries an error and a
+		 * legend under it. Opt-in on `placement`'s precedent, offered on every type
+		 * the list holds (`docs/features/conditional-field-visibility.md`).
+		 */
+		if (conditioned) {
+			const shownWhen = labelled(detail, 'Shown when');
+			/*
+			 * **A row of its own only while it holds something**, which `refresh`
+			 * decides. With a condition, an error or a legend, it is as long as its
+			 * author makes it and taller than its neighbours, so inline it clipped
+			 * the condition and dropped the fields beside it. Empty, reading
+			 * `Always`, it is one short input, and a full row on every field grew
+			 * each entry by half again for nothing — so it stays inline and last on
+			 * the line. The first commit moves it to its row; the input is the same
+			 * element, and a rebuild restores focus to it by its token.
+			 */
+			const condition = shownWhen.createEl('input', {
+				type: 'text',
+				attr: {
+					placeholder: 'Always',
+					'aria-label': `${column.key} shown when`,
+				},
+			});
+			condition.value =
+				column.visibleWhen === undefined ? '' : String(column.visibleWhen);
+			condition.dataset.sheetsmithFocus = `${prefix}-col-${column.key}-visiblewhen`;
+			// Evaluated per holder, so this component's own keys come first, as a
+			// computed entry's formula has them.
+			context.suggestNames?.(condition, ownerId);
+
+			let legend: HTMLElement[] = [];
+			/**
+			 * The field's two reports and its legend, from the stored value, on
+			 * render and on commit alike, so the two are provably about one string.
+			 */
+			const refresh = (): void => {
+				const text =
+					typeof column.visibleWhen === 'string' ? column.visibleWhen : undefined;
+				/*
+				 * **The parse error first**, since text that does not parse names
+				 * nothing to be refused for; then the refusal of a condition naming
+				 * its own entry, which is the component's own predicate
+				 * (`formula/field-condition.ts`). Stored either way, as every formula
+				 * field's text is: the component shows the entry and does not use it.
+				 */
+				const selfNamed =
+					text !== undefined && conditionReads(text, column.key)
+						? `"${column.key}" is shown when its own value says so, and a ${unit} that can hide itself vanishes under the cursor and can only be brought back by a reset. This condition is not used, so "${column.key}" is always shown. Base it on another ${unit}.`
+						: null;
+				fieldError(condition, formulaProblem(text) ?? selfNamed);
+				// Redrawn after the error, so the error stays directly under the
+				// input it is about and the legend under that.
+				for (const line of legend) line.remove();
+				legend = text === undefined ? [] : positionLegend(text, column.key);
+				const holds =
+					heldCondition(column.visibleWhen) !== null ||
+					condition.classList.contains('sheetsmith-input-invalid') ||
+					legend.length > 0;
+				shownWhen.toggleClass('sheetsmith-detail-field-row', holds);
+				shownWhen.toggleClass('sheetsmith-detail-field-wide', !holds);
+			};
+			/**
+			 * One line per level entry the condition names: what each position is
+			 * called, since a condition names a level by number. The mitigation of
+			 * that number at the one place it is written, and the standing record of
+			 * the mapping once a reorder's notice has gone.
+			 */
+			const positionLegend = (text: string, own: string): HTMLElement[] =>
+				columns
+					.filter(
+						(other) =>
+							other.key !== own &&
+							(other.type ?? fallback) === 'level' &&
+							conditionReads(text, other.key),
+					)
+					.map((other) => {
+						const positions =
+							other.levels === undefined
+								? `0 … ${levelCount(other)}`
+								: other.levels
+										.map((entry, at) => `${at} ${parseLevel(entry).name}`)
+										.join(' · ');
+						return shownWhen.createDiv('sheetsmith-entry-footnote', (el) =>
+							el.setText(`${other.key}: ${positions}`),
+						);
+					});
+			refresh();
+			condition.addEventListener('change', () => {
+				setOptional(column, 'visibleWhen', condition.value);
+				context.persist();
+				refresh();
+			});
+		}
 	});
 
 	const footer = listEl.createDiv('sheetsmith-entry-footer');
@@ -1622,6 +1768,24 @@ export function renderColumnsEditor(
 			listEl.createDiv('sheetsmith-field-error', (el) =>
 				el.setText(
 					`"${column.key}" is a second modifier ${unit}. A modifier ${cell} holds every modifier its ${holder} applies, so one modifier ${unit} is enough. Move this ${unit}'s modifiers into the first and remove it.`,
+				),
+			);
+		}
+	}
+	/*
+	 * **A condition on a list that cannot honour one, reported and never
+	 * refused**, on the second modifier column's precedent above. The component
+	 * draws the column on every holder and carries the key untouched; refusing
+	 * would blank it and withdraw every modifier its rows push, which is
+	 * `table.ts`'s own "worst trade available here". Composed from this list's
+	 * own words, so it names neither a table nor a roster.
+	 */
+	if (!conditioned) {
+		for (const column of columns) {
+			if (heldCondition(column.visibleWhen) === null) continue;
+			listEl.createDiv('sheetsmith-field-error', (el) =>
+				el.setText(
+					`"${column.key}" has a condition, and every ${unit} here is drawn on every ${holder}, so the condition does nothing. Remove it, or move this ${unit} to a Record set to show it only on some ${holder}s.`,
 				),
 			);
 		}

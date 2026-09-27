@@ -1229,3 +1229,29 @@ describe('contract shape', () => {
 		expect(roster.hasBuffer).toBeUndefined();
 	});
 });
+
+describe('a condition written by hand on a column', () => {
+	it('is ignored: the column draws exactly as without it, and nothing is refused', () => {
+		// A Roster draws every column on every row, so a `visibleWhen` here does
+		// nothing; the layout editor reports it (`docs/features/
+		// conditional-field-visibility.md`). Carried, not honoured, not refused.
+		const conditioned = {
+			...config,
+			columns: (config.columns ?? []).map((column) =>
+				column.key === 'Training' ? { ...column, visibleWhen: 'false' } : column,
+			),
+		} as RosterConfig;
+		const read = roster.read(BODY, conditioned);
+		const plain = roster.read(BODY, config);
+		expect(read.ok).toBe(true);
+		expect(read).toEqual(plain);
+		if (!read.ok || !plain.ok) return;
+		const drawn = (over: RosterConfig, data: RosterData | null) => {
+			const el = document.createElement('div');
+			roster.render(el, over, data, contextFor(data, over));
+			return el.innerHTML;
+		};
+		expect(drawn(conditioned, read.data)).toBe(drawn(config, plain.data));
+		expect(roster.write(read.data as RosterData, BODY, conditioned)).toBe(BODY);
+	});
+});
