@@ -234,6 +234,16 @@ function parseBinding(value: unknown, where: string): ResetBinding {
 	if (column !== undefined && column.trim() === '') {
 		throw new LayoutParseError(`${where} "column" cannot be blank.`);
 	}
+	// Which records the binding reaches, on a component that has records. Its
+	// shape is the file format's business and its text is contents: an
+	// expression that will not parse is reported in the editor and fails at the
+	// press, like every formula field. A blank one is carried and reads as absent,
+	// as every optional formula key does — unlike `column` above, where blank would
+	// collide with the binding that deliberately names none.
+	const condition = value.where;
+	if (condition !== undefined && typeof condition !== 'string') {
+		throw new LayoutParseError(`${where} "where" must be a string.`);
+	}
 	const action = value.action;
 	if (
 		action !== undefined &&
@@ -271,6 +281,7 @@ function parseBinding(value: unknown, where: string): ResetBinding {
 	return {
 		trigger,
 		...(column !== undefined ? { column } : {}),
+		...(condition !== undefined ? { where: condition } : {}),
 		...(action !== undefined ? { action } : {}),
 		...(to !== undefined ? { to } : {}),
 		...(buffer !== undefined ? { buffer } : {}),

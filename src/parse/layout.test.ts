@@ -394,6 +394,71 @@ describe('parseLayout: reset bindings', () => {
 		expect(parseLayout(serialiseLayout(layout))).toEqual(layout);
 	});
 
+	/*
+	 * `where` (`docs/features/record-set-reset-scope.md`): its shape is the file
+	 * format's, its text is contents, and it is not half of a binding's identity.
+	 */
+	it('carries a condition a binding holds', () => {
+		expect(
+			resetOf({ trigger: 'Short rest', action: 'full', where: 'Recharges == 1' }),
+		).toEqual([{ trigger: 'Short rest', where: 'Recharges == 1', action: 'full' }]);
+	});
+
+	it('refuses a condition that is not a string, naming the key', () => {
+		// Whether this component can check a condition at all is contents, and
+		// left to the press; a number where text belongs is the file's shape.
+		for (const where of [1, true, { is: 'Recharges == 1' }]) {
+			expect(() =>
+				parseLayout(withReset({ trigger: 'Short rest', action: 'full', where })),
+			).toThrow(/"where" must be a string\./);
+		}
+	});
+
+	it('carries a blank condition, which reads as absent at the press', () => {
+		// Unlike a blank `column`, which would collide with the binding naming
+		// none: an absent `where` is the ordinary binding, so a blank one is too.
+		expect(
+			resetOf({ trigger: 'Short rest', action: 'full', where: '  ' }),
+		).toEqual([{ trigger: 'Short rest', where: '  ', action: 'full' }]);
+	});
+
+	it('parses a binding without a condition to exactly the object it always did', () => {
+		expect(resetOf({ trigger: 'Short rest', action: 'full' })).toEqual([
+			{ trigger: 'Short rest', action: 'full' },
+		]);
+		expect(
+			Object.keys(resetOf({ trigger: 'Short rest', action: 'full' })?.[0] ?? {}),
+		).toEqual(['trigger', 'action']);
+	});
+
+	it('round-trips a layout carrying a condition byte for byte', () => {
+		// Carried between `column` and `action` in the object it rebuilds, so an
+		// editor-written layout reads back as the text it was written as.
+		const written = serialiseLayout(
+			parseLayout(
+				withReset([
+					{ trigger: 'Short rest', action: 'full', where: 'Recharges == 1' },
+					{ trigger: 'Long rest', column: 'Uses', action: 'empty', where: 'x' },
+				]),
+			),
+		);
+		expect(written).toContain('"where": "Recharges == 1"');
+		expect(serialiseLayout(parseLayout(written))).toBe(written);
+	});
+
+	it('still refuses two bindings on one trigger whatever their conditions say', () => {
+		// Overlap depends on the data, so no check on the file can tell a pair
+		// that is safe from one that is not; `bindingKey` stays trigger and column.
+		expect(() =>
+			parseLayout(
+				withReset([
+					{ trigger: 'Short rest', action: 'full', where: 'Recharges == 1' },
+					{ trigger: 'Short rest', action: 'empty', where: 'Recharges == 2' },
+				]),
+			),
+		).toThrow(/binds to "Short rest" more than once/);
+	});
+
 	it('refuses a bad binding anywhere in the list', () => {
 		expect(() =>
 			parseLayout(
