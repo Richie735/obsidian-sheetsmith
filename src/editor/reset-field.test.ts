@@ -733,3 +733,139 @@ describe('the column a binding acts on', () => {
 		expect(fieldError(form)).toBe('This component already resets on that trigger.');
 	});
 });
+
+/*
+ * **Only where** (`docs/features/record-set-reset-scope.md`): which records a
+ * binding reaches, drawn where the component declares it can check one.
+ */
+describe('the condition a binding reaches through', () => {
+	function features(reset?: ComponentConfig['reset']): ComponentConfig {
+		return {
+			id: 'rest_features',
+			type: 'record-set',
+			label: 'Rest features',
+			position: { col: 1, row: 1, width: 6, height: 3 },
+			fields: [
+				{ key: 'Recharges', type: 'level', levels: ['None', 'Short rest'] },
+				{ key: 'Uses', type: 'number' },
+			],
+			...(reset ? { reset } : {}),
+		} as ComponentConfig;
+	}
+
+	function table(reset?: ComponentConfig['reset']): ComponentConfig {
+		return {
+			id: 'charges',
+			type: 'table',
+			label: 'Charges',
+			position: { col: 1, row: 1, width: 4, height: 2 },
+			rowHeader: 'Item',
+			columns: [{ key: 'Used', type: 'toggle' }],
+			...(reset ? { reset } : {}),
+		} as ComponentConfig;
+	}
+
+	const where = (form: HTMLElement, id: string) =>
+		control<HTMLInputElement>(form, `reset-where-${id}-0`);
+
+	it('is drawn for a Record set binding, and for no Pool, Track or Table binding without the key', () => {
+		expect(has(render(features([{ trigger: 'Short rest', action: 'full' }])), 'reset-where-rest_features-0')).toBe(true);
+		expect(has(render(pool([{ trigger: 'Short rest', action: 'full' }])), 'reset-where-hit_points-0')).toBe(false);
+		expect(has(render(track([{ trigger: 'Short rest', action: 'full' }])), 'reset-where-clock-0')).toBe(false);
+		expect(
+			has(
+				render(table([{ trigger: 'Short rest', column: 'Used', action: 'empty' }])),
+				'reset-where-charges-0',
+			),
+		).toBe(false);
+	});
+
+	it('sits after the binding line and before Resets to, named for its trigger', () => {
+		const form = render(
+			features([{ trigger: 'Short rest', action: 'formula', to: '1', where: 'Recharges == 1' }]),
+		);
+		const input = where(form, 'rest_features');
+		expect(input.value).toBe('Recharges == 1');
+		expect(input.placeholder).toBe('All of it');
+		expect(input.getAttribute('aria-label')).toBe('Short rest only where');
+		const order = Array.from(
+			form.querySelectorAll<HTMLElement>('[data-sheetsmith-focus]'),
+		).map((el) => el.dataset.sheetsmithFocus);
+		expect(order.indexOf('reset-where-rest_features-0')).toBeLessThan(
+			order.indexOf('reset-to-rest_features-0'),
+		);
+		expect(order.indexOf('reset-where-rest_features-0')).toBeGreaterThan(
+			order.indexOf('reset-action-rest_features-0'),
+		);
+	});
+
+	it('writes a typed condition, trimmed, and deletes the key when blanked', () => {
+		const reset: ResetBinding[] = [{ trigger: 'Short rest', action: 'full' }];
+		const form = render(features(reset));
+		commit(where(form, 'rest_features'), '  Recharges == 1  ');
+		expect(reset[0]).toEqual({ trigger: 'Short rest', action: 'full', where: 'Recharges == 1' });
+		expect(recorded.persists).toBe(1);
+		commit(where(form, 'rest_features'), '   ');
+		expect(reset[0]).toEqual({ trigger: 'Short rest', action: 'full' });
+		expect('where' in (reset[0] ?? {})).toBe(false);
+		expect(recorded.persists).toBe(2);
+	});
+
+	it("marks a condition that will not parse with the parser's sentence, on render and on commit, and stores it anyway", () => {
+		const reset: ResetBinding[] = [
+			{ trigger: 'Short rest', action: 'full', where: 'Recharges ==' },
+		];
+		const form = render(features(reset));
+		expect(fieldError(form)).toBe('Expected a value in formula.');
+		commit(where(form, 'rest_features'), 'Recharges == 1');
+		expect(fieldError(form)).toBe(null);
+		commit(where(form, 'rest_features'), 'Recharges >');
+		expect(reset[0]?.where).toBe('Recharges >');
+		expect(fieldError(form)).toBe('Expected a value in formula.');
+		expect(context.errors.get('reset-where-rest_features-0')).toBe(
+			'Expected a value in formula.',
+		);
+	});
+
+	it('says nothing about a name it cannot see, which is the confirmation\'s to report', () => {
+		expect(
+			fieldError(render(features([{ trigger: 'Short rest', action: 'full', where: 'Recharge == 1' }]))),
+		).toBe(null);
+	});
+
+	it('binds the suggester with the component as owner, and Resets to without one', () => {
+		const bound: [string | undefined, string | undefined][] = [];
+		context.suggestNames = (input, owner) => {
+			bound.push([input.dataset.sheetsmithFocus, owner]);
+		};
+		render(features([{ trigger: 'Short rest', action: 'formula', to: '1' }]));
+		expect(bound).toEqual([
+			['reset-where-rest_features-0', 'rest_features'],
+			['reset-to-rest_features-0', undefined],
+		]);
+	});
+
+	it('draws a hand-written condition on a Pool with the reason it holds the trigger back', () => {
+		const reset: ResetBinding[] = [
+			{ trigger: 'Short rest', action: 'full', where: 'Recharges == 1' },
+		];
+		const form = render(pool(reset));
+		expect(where(form, 'hit_points').value).toBe('Recharges == 1');
+		expect(fieldError(form)).toBe(
+			'This component resets as a whole and cannot check a condition, so this trigger leaves it as it is. Clear this to reset all of it.',
+		);
+		// Opening the form writes nothing.
+		expect(recorded).toEqual({ persists: 0, redraws: 0 });
+		commit(where(form, 'hit_points'), '');
+		expect(reset[0]).toEqual({ trigger: 'Short rest', action: 'full' });
+		expect(fieldError(form)).toBe(null);
+		// And the row goes with the key, which only a redraw can do.
+		expect(recorded).toEqual({ persists: 1, redraws: 1 });
+	});
+
+	it('draws no error on a Pool whose condition is blank, since blank is absent', () => {
+		expect(
+			fieldError(render(pool([{ trigger: 'Short rest', action: 'full', where: '' }]))),
+		).toBe(null);
+	});
+});
