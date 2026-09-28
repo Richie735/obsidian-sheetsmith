@@ -1851,6 +1851,11 @@ export const SAMPLES: Sample[] = [
 					position: { col: 8, row: 78, width: 4, height: 3 },
 					recordName: 'Feature',
 					fields: fields(false),
+					// A binding naming no field, which is **Every field**: the one
+					// sample of what every Record set binding meant before one could
+					// name a field (`docs/features/record-set-reset-field-targeting.md`).
+					// `empty`, because this list's DC declares no maximum for `full`.
+					reset: [{ trigger: 'Long rest', action: 'empty' }],
 				} as ComponentConfig,
 				body,
 			},
@@ -1872,14 +1877,23 @@ export const SAMPLES: Sample[] = [
 	 * **A reset that reaches only some records**
 	 * (`docs/features/record-set-reset-scope.md`), in the first free rows after
 	 * the conditioned lists so every placement above keeps its row. Short rest
-	 * refills the features whose `Recharges` is 1, Long rest those at 1 or 2, and
-	 * `confirm=` opens the confirmation that counts them: `2 of 5` and `3 of 5`.
+	 * gives one `Uses` back to the features whose `Recharges` is 1 or 4, Long rest
+	 * refills those at 1, 2 or 4, and `confirm=` opens the confirmation that counts
+	 * them: `Uses 3 of 6` and `Uses 4 of 6`. Both bindings name the field they
+	 * write (`docs/features/record-set-reset-field-targeting.md`).
 	 *
-	 * **`Save DC` is here on purpose.** A Record set reset writes every `number`
-	 * field of each record it reaches, so a scoped `full` sets a reached record's
-	 * DC to 20 — today's behaviour, which naming the field a binding writes is
-	 * the follow-up to end. A sample holding one number field would show that
-	 * defect as though it were the design.
+	 * **`Save DC` is here on purpose, and it is what the write now leaves alone.**
+	 * A binding naming no field writes every `number` field of each record it
+	 * reaches, so a scoped `full` would set a reached record's DC to 20; naming
+	 * `Uses` is what keeps it. A sample holding one number field could not show
+	 * the difference.
+	 *
+	 * **Short rest is one binding, `Uses + 1` worked out on each record**, because
+	 * Second Wind and Action Surge each hold one use, so one back is a refill held
+	 * to the ceiling, and Channel Divinity gets exactly one of its two back. A
+	 * short-rest feature holding more than one use would need the mixed rest on
+	 * one field, which is deferred: two bindings on one trigger naming one field
+	 * are refused whatever their conditions say.
 	 *
 	 * Under `state=broken` the Short rest condition reads `Recharge`, which is the
 	 * rename trap. The pool beside it carries a hand-written `where` it cannot
@@ -1898,7 +1912,14 @@ export const SAMPLES: Sample[] = [
 					key: 'Recharges',
 					type: 'level',
 					input: 'select',
-					levels: ['None', 'Short rest', 'Long rest', 'Always-on'],
+					// The fifth is appended, so no stored position moves.
+					levels: [
+						'None',
+						'Short rest',
+						'Long rest',
+						'Always-on',
+						'One back',
+					],
 				},
 				{ key: 'Uses', type: 'number', maxSource: 'record' },
 				{
@@ -1910,11 +1931,18 @@ export const SAMPLES: Sample[] = [
 				},
 			],
 			reset: [
-				{ trigger: 'Short rest', action: 'full', where: 'Recharges == 1' },
+				{
+					trigger: 'Short rest',
+					column: 'Uses',
+					action: 'formula',
+					to: 'Uses + 1',
+					where: 'Recharges == 1 || Recharges == 4',
+				},
 				{
 					trigger: 'Long rest',
+					column: 'Uses',
 					action: 'full',
-					where: 'Recharges == 1 || Recharges == 2',
+					where: 'Recharges == 1 || Recharges == 2 || Recharges == 4',
 				},
 			],
 		} as ComponentConfig,
@@ -1955,6 +1983,14 @@ export const SAMPLES: Sample[] = [
 			'DC: 15',
 			'```',
 			'Allies within ten feet add your Charisma modifier to their saving throws.',
+			'',
+			'### Channel Divinity',
+			'```sheet',
+			'Recharges: 4',
+			'Uses: 0 / 2',
+			'DC: 14',
+			'```',
+			'Channel divine energy to turn the undead or fuel a sacred effect.',
 			'',
 		].join('\n'),
 	},
@@ -3168,7 +3204,7 @@ export function brokenSamples(): Sample[] {
 		if (config.id === 'rest_features') {
 			config.reset = (config.reset ?? []).map((binding) =>
 				binding.trigger === 'Short rest'
-					? { ...binding, where: 'Recharge == 1' }
+					? { ...binding, where: (binding.where ?? '').replaceAll('Recharges', 'Recharge') }
 					: binding,
 			);
 		}
