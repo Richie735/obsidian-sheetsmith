@@ -513,16 +513,16 @@ describe('the column a binding acts on', () => {
 		).toBe(true);
 		expect(has(render(pool(binding)), 'reset-column-hit_points-0')).toBe(false);
 		expect(has(render(track(binding)), 'reset-column-clock-0')).toBe(false);
-		// Record set is the third component implementing `applyReset` and the
-		// one this rule is least obvious for: it has fields, and it still binds
-		// as a whole because it declares no `resetColumns`.
+		// Record set declares `resetColumns` now, and `resetWhole` beside it, so
+		// its picker is drawn even with no field to name: the whole is on offer
+		// (`docs/features/record-set-reset-field-targeting.md`).
 		const records: ComponentConfig = {
 			...pool(binding),
 			id: 'features',
 			type: 'record-set',
 			label: 'Features',
 		};
-		expect(has(render(records), 'reset-column-features-0')).toBe(false);
+		expect(has(render(records), 'reset-column-features-0')).toBe(true);
 	});
 
 	it('offers the columns the component offers, by their own labels', () => {
@@ -591,7 +591,7 @@ describe('the column a binding acts on', () => {
 		// cannot tell a column that is gone from one it is not offered — which
 		// is the contract working, not a gap.
 		expect(fieldError(form)).toBe(
-			'This component does not offer "Fatigue" for a trigger to act on. Choose one of the columns it does, or this trigger resets nothing.',
+			'This component does not offer "Fatigue" for a trigger to act on. Choose one it does, or this trigger resets nothing.',
 		);
 		expect(config.reset?.[0]?.column).toBe('Fatigue');
 		expect(recorded.persists).toBe(0);
@@ -634,7 +634,7 @@ describe('the column a binding acts on', () => {
 		const form = render(table(reset));
 		choose(control<HTMLSelectElement>(form, 'reset-column-conditions-1'), 'Active');
 		expect(fieldError(form)).toBe(
-			'This component already resets that column on that trigger.',
+			'This component already resets "Active" on Long rest.',
 		);
 		expect(control<HTMLSelectElement>(form, 'reset-column-conditions-1').value).toBe(
 			'Uses',
@@ -684,7 +684,7 @@ describe('the column a binding acts on', () => {
 		const form = render(table(bound));
 		expect(button(form, 'Add reset').hasAttribute('disabled')).toBe(true);
 		expect(button(form, 'Add reset').getAttribute('aria-label')).toBe(
-			'This component already resets every column on every trigger.',
+			'This component already resets everything it offers on every trigger.',
 		);
 	});
 
@@ -714,7 +714,7 @@ describe('the column a binding acts on', () => {
 		const form = render(config);
 		expect(has(form, 'reset-column-conditions-0')).toBe(false);
 		expect(errors(form)).toEqual([
-			'There is nothing on this component for this trigger to act on, so it resets nothing. Add a column it can act on, or remove this binding.',
+			'There is nothing on this component for this trigger to act on, so it resets nothing. Give it a number or toggle to act on, or remove this binding.',
 		]);
 		// And nothing was written: opening the form is not an edit.
 		expect(config.reset?.[0]?.column).toBe('Active');
@@ -867,5 +867,274 @@ describe('the condition a binding reaches through', () => {
 		expect(
 			fieldError(render(pool([{ trigger: 'Short rest', action: 'full', where: '' }]))),
 		).toBe(null);
+	});
+});
+
+/*
+ * **Acts on** for a Record set (`docs/features/record-set-reset-field-targeting.md`):
+ * the fields a binding may name, and **Every field** first, which is what a
+ * binding naming none reads as on this component and not on a Table.
+ */
+describe('the field a Record set binding writes', () => {
+	function features(reset?: ComponentConfig['reset']): ComponentConfig {
+		return {
+			id: 'rest_features',
+			type: 'record-set',
+			label: 'Rest features',
+			position: { col: 1, row: 1, width: 6, height: 3 },
+			fields: [
+				{ key: 'Recharges', type: 'level', levels: ['None', 'Short rest'] },
+				{ key: 'Uses', type: 'number', maxSource: 'record' },
+				{ key: 'DC', name: 'Save DC', type: 'number', max: 20 },
+				{ key: 'Used', type: 'toggle' },
+			],
+			...(reset ? { reset } : {}),
+		} as ComponentConfig;
+	}
+
+	function conditions(reset?: ComponentConfig['reset']): ComponentConfig {
+		return {
+			id: 'conditions',
+			type: 'table',
+			label: 'Conditions',
+			position: { col: 1, row: 1, width: 4, height: 2 },
+			rowHeader: 'Condition',
+			columns: [{ key: 'Active', type: 'toggle' }],
+			...(reset ? { reset } : {}),
+		} as ComponentConfig;
+	}
+
+	const picker = (form: HTMLElement, at = 0) =>
+		control<HTMLSelectElement>(form, `reset-column-rest_features-${at}`);
+	const triggerOf = (form: HTMLElement, at: number) =>
+		control<HTMLSelectElement>(form, `reset-trigger-rest_features-${at}`);
+	/** The inline message under one control, or null. */
+	const errorUnder = (el: HTMLElement): string | null =>
+		el.parentElement?.querySelector('.sheetsmith-field-error')?.textContent ?? null;
+
+	it('offers Every field, then the fields it can restore, by their labels', () => {
+		const form = render(features([{ trigger: 'Short rest', column: 'Uses', action: 'full' }]));
+		expect(Array.from(picker(form).options).map((o) => o.textContent)).toEqual([
+			'Every field',
+			'Uses',
+			'Save DC',
+			'Used',
+		]);
+		expect(picker(form).value).toBe('Uses');
+		expect(fieldError(form)).toBe(null);
+	});
+
+	it('selects Every field for a binding naming none, with no error, and writes nothing', () => {
+		const config = features([{ trigger: 'Short rest', action: 'full' }]);
+		const form = render(config);
+		expect(picker(form).selectedOptions[0]?.textContent).toBe('Every field');
+		expect(fieldError(form)).toBe(null);
+		expect(config.reset?.[0]).not.toHaveProperty('column');
+		expect(recorded.persists).toBe(0);
+	});
+
+	it('writes a chosen field, and deletes the key for Every field', () => {
+		const reset: ResetBinding[] = [{ trigger: 'Short rest', action: 'full' }];
+		const form = render(features(reset));
+		choose(picker(form), 'Uses');
+		expect(reset[0]?.column).toBe('Uses');
+		const again = render(features(reset));
+		choose(picker(again), '::whole::');
+		expect(reset[0]).toEqual({ trigger: 'Short rest', action: 'full' });
+		expect(recorded.persists).toBe(2);
+	});
+
+	it('says what the row acts on in words that name no kind of part, on both components', () => {
+		const descOf = (form: HTMLElement, token: string) =>
+			control<HTMLElement>(form, token)
+				.closest('.setting-item')
+				?.querySelector('.setting-item-description')?.textContent ?? '';
+		const record = render(features([{ trigger: 'Short rest', column: 'Uses', action: 'full' }]));
+		const table = render(conditions([{ trigger: 'Long rest', column: 'Active', action: 'full' }]));
+		for (const said of [
+			descOf(record, 'reset-column-rest_features-0'),
+			descOf(table, 'reset-column-conditions-0'),
+		]) {
+			expect(said).toBe('What this trigger acts on. Everything else is left exactly as it is.');
+		}
+		// And every sentence the row can say, on either component.
+		const said = [
+			fieldError(render(features([{ trigger: 'Short rest', column: 'Gone', action: 'full' }]))),
+			fieldError(render(conditions([{ trigger: 'Long rest', column: 'Gone', action: 'full' }]))),
+			fieldError(render(conditions([{ trigger: 'Long rest', action: 'full' }]))),
+		];
+		for (const line of said) {
+			expect(line).not.toBeNull();
+			expect(line?.toLowerCase()).not.toContain('column');
+		}
+		expect(said[0]).toBe(
+			'This component does not offer "Gone" for a trigger to act on. Choose one it does, or this trigger resets nothing.',
+		);
+	});
+
+	it('still asks a Table binding naming no column for one', () => {
+		const form = render(conditions([{ trigger: 'Long rest', action: 'full' }]));
+		const select = control<HTMLSelectElement>(form, 'reset-column-conditions-0');
+		expect(select.value).toBe('::nothing::');
+		expect(Array.from(select.options).map((o) => o.textContent)).toEqual([
+			'Active',
+			'Nothing yet',
+		]);
+		expect(fieldError(form)).toBe('Choose what this trigger acts on, or it resets nothing.');
+	});
+
+	describe('refusing two bindings that would write one field', () => {
+		it('refuses a field another binding on the trigger names, and snaps back', () => {
+			const reset: ResetBinding[] = [
+				{ trigger: 'Short rest', column: 'Uses', action: 'full' },
+				{ trigger: 'Short rest', column: 'Used', action: 'empty' },
+			];
+			const form = render(features(reset));
+			choose(picker(form, 1), 'Uses');
+			expect(errorUnder(picker(form, 1))).toBe(
+				'This component already resets "Uses" on Short rest.',
+			);
+			expect(picker(form, 1).value).toBe('Used');
+			expect(reset[1]?.column).toBe('Used');
+			expect(recorded.persists).toBe(0);
+		});
+
+		it('refuses Every field beside a field, and snaps back', () => {
+			const reset: ResetBinding[] = [
+				{ trigger: 'Short rest', column: 'Uses', action: 'full' },
+				{ trigger: 'Short rest', column: 'Used', action: 'empty' },
+			];
+			const form = render(features(reset));
+			choose(picker(form, 1), '::whole::');
+			expect(errorUnder(picker(form, 1))).toBe(
+				'Another reset on Short rest names "Uses", which Every field includes.',
+			);
+			expect(picker(form, 1).value).toBe('Used');
+			expect(reset[1]?.column).toBe('Used');
+			expect(recorded.persists).toBe(0);
+		});
+
+		it('refuses a field beside Every field, through either control', () => {
+			const reset: ResetBinding[] = [
+				{ trigger: 'Short rest', action: 'full' },
+				{ trigger: 'Long rest', column: 'Uses', action: 'full' },
+			];
+			const form = render(features(reset));
+			choose(triggerOf(form, 1), 'Short rest');
+			expect(errorUnder(triggerOf(form, 1))).toBe(
+				'Another reset on Short rest covers Every field, which includes "Uses".',
+			);
+			expect(reset[1]?.trigger).toBe('Long rest');
+			// And the whole moved onto a trigger a field already holds.
+			choose(triggerOf(form, 0), 'Long rest');
+			expect(errorUnder(triggerOf(form, 0))).toBe(
+				'Another reset on Long rest names "Uses", which Every field includes.',
+			);
+			expect(reset[0]?.trigger).toBe('Short rest');
+			expect(recorded.persists).toBe(0);
+		});
+
+		it('lets one trigger reach two fields', () => {
+			const reset: ResetBinding[] = [
+				{ trigger: 'Short rest', column: 'Uses', action: 'full' },
+				{ trigger: 'Long rest', column: 'Used', action: 'empty' },
+			];
+			const form = render(features(reset));
+			choose(triggerOf(form, 1), 'Short rest');
+			expect(reset[1]?.trigger).toBe('Short rest');
+			expect(recorded.persists).toBe(1);
+		});
+
+		it('reports a hand-written pair on both pickers when the form opens, and writes nothing', () => {
+			const config = features([
+				{ trigger: 'Short rest', action: 'full' },
+				{ trigger: 'Short rest', column: 'Uses', action: 'formula', to: 'Uses + 1' },
+			]);
+			const form = render(config);
+			expect(errorUnder(picker(form, 0))).toBe(
+				'Another reset on Short rest names "Uses", which Every field includes, so neither applies when it is pressed. Point one of them at something else, or remove one.',
+			);
+			expect(errorUnder(picker(form, 1))).toBe(
+				'Another reset on Short rest covers Every field, which includes "Uses", so neither applies when it is pressed. Point one of them at something else, or remove one.',
+			);
+			expect(recorded).toEqual({ persists: 0, redraws: 0 });
+		});
+	});
+
+	describe('Add reset', () => {
+		it('gives the first field no binding on the trigger names', () => {
+			const config = features([{ trigger: 'Long rest', column: 'Uses', action: 'full' }]);
+			const form = render(config);
+			button(form, 'Add reset').click();
+			expect(config.reset?.[1]).toEqual({ trigger: 'Long rest', column: 'DC', action: 'full' });
+		});
+
+		it('offers no trigger Every field holds', () => {
+			const config = features([{ trigger: 'Long rest', action: 'empty' }]);
+			const form = render(config);
+			button(form, 'Add reset').click();
+			expect(config.reset?.[1]).toEqual({ trigger: 'Short rest', column: 'Uses', action: 'full' });
+		});
+
+		it('is unavailable once Every field holds every trigger', () => {
+			const form = render(
+				features([
+					{ trigger: 'Long rest', action: 'empty' },
+					{ trigger: 'Short rest', action: 'full' },
+				]),
+			);
+			expect(button(form, 'Add reset').hasAttribute('disabled')).toBe(true);
+			expect(button(form, 'Add reset').getAttribute('aria-label')).toBe(
+				'This component already resets everything it offers on every trigger.',
+			);
+		});
+
+		it('binds as a whole on a list with nothing to name', () => {
+			const config: ComponentConfig = {
+				...features(),
+				fields: [{ key: 'Recharges', type: 'level', levels: ['None', 'Short rest'] }],
+			} as ComponentConfig;
+			const form = render(config);
+			button(form, 'Add reset').click();
+			expect(config.reset).toEqual([{ trigger: 'Long rest', action: 'full' }]);
+			const drawn = render(config);
+			expect(Array.from(picker(drawn).options).map((o) => o.textContent)).toEqual([
+				'Every field',
+			]);
+			expect(fieldError(drawn)).toBe(null);
+		});
+	});
+
+	describe('Resets to', () => {
+		it("works out on each entry where the binding names a field, reading the entry's keys first", () => {
+			const bound: [string | undefined, string | undefined][] = [];
+			context.suggestNames = (input, owner) => {
+				bound.push([input.dataset.sheetsmithFocus, owner]);
+			};
+			const form = render(
+				features([{ trigger: 'Short rest', column: 'Uses', action: 'formula', to: 'Uses + 1' }]),
+			);
+			expect(bound).toContainEqual(['reset-to-rest_features-0', 'rest_features']);
+			const row = control<HTMLElement>(form, 'reset-to-rest_features-0').closest('.setting-item');
+			expect(row?.querySelector('.setting-item-description')?.textContent).toBe(
+				"Formula giving the value to restore, worked out separately for each entry this trigger reaches, reading that entry's own values first.For example: Uses + 1",
+			);
+			expect(row?.querySelector('code')?.textContent).toBe('Uses + 1');
+		});
+
+		it('is unchanged on a Table binding and on one naming no field', () => {
+			const bound: [string | undefined, string | undefined][] = [];
+			context.suggestNames = (input, owner) => {
+				bound.push([input.dataset.sheetsmithFocus, owner]);
+			};
+			const table = render(
+				conditions([{ trigger: 'Long rest', column: 'Active', action: 'formula', to: '1' }]),
+			);
+			render(features([{ trigger: 'Short rest', action: 'formula', to: '1' }]));
+			expect(bound).toContainEqual(['reset-to-conditions-0', undefined]);
+			expect(bound).toContainEqual(['reset-to-rest_features-0', undefined]);
+			const row = control<HTMLElement>(table, 'reset-to-conditions-0').closest('.setting-item');
+			expect(row?.querySelector('code')?.textContent).toBe('mod(abilities.CON) * level');
+		});
 	});
 });

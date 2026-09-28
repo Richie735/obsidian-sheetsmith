@@ -23,9 +23,10 @@
  * would have to build the same sheet before it could plan anything.
  *
  * **It learns nothing about any component's shape.** It reads shared config —
- * the bindings — and one declaration, `checksResetCondition`, which is the
- * component saying whether it reads a `where`. Everything else is the
- * component's own answer.
+ * the bindings — and the component's declarations: `checksResetCondition`,
+ * which is the component saying whether it reads a `where`, and `resetWhole`
+ * and `resetColumns`, which say what a binding naming no part covers and what
+ * each part is called. Everything else is the component's own answer.
  */
 
 import {
@@ -37,6 +38,7 @@ import {
 import { heldCondition } from '../formula/field-condition';
 import {
 	checksResetCondition,
+	claimsSamePart,
 	ComponentConfig,
 	ComponentDefinition,
 	FieldExplainer,
@@ -159,16 +161,27 @@ export function planTrigger(
 		 * one label compose through `applySectionWrites`, the second `write`
 		 * reading the body the first produced.
 		 */
-		for (const [index, binding] of (config.reset ?? []).entries()) {
-			if (binding.trigger !== name) continue;
+		const matched = [...(config.reset ?? []).entries()].filter(
+			([, binding]) => binding.trigger === name,
+		);
+		for (const [index, binding] of matched) {
+			const claimed = claimingSibling(
+				component,
+				config,
+				binding,
+				matched.map(([, other]) => other),
+			);
 			planned.bindings.push({
 				binding,
 				index,
-				result: planBinding(component, config, data, binding, index, {
-					resolve,
-					explain,
-					published,
-				}),
+				result:
+					claimed !== null
+						? { ok: false, error: claimed }
+						: planBinding(component, config, data, binding, index, {
+								resolve,
+								explain,
+								published,
+							}),
 			});
 		}
 
@@ -189,6 +202,56 @@ type Resetting = ComponentDefinition & {
 
 function resets(component: ComponentDefinition | undefined): component is Resetting {
 	return component?.applyReset !== undefined;
+}
+
+/**
+ * Why this binding cannot apply because another on the same trigger would write
+ * one of the same parts, or null where none would
+ * (`docs/features/record-set-reset-field-targeting.md`, Part 5).
+ *
+ * **Before either is handed to `applyReset`**, and whatever their `where`s say:
+ * a binding naming no part on a component declaring `resetWhole` covers every
+ * part, so beside one naming a part it is two bindings writing that part on one
+ * trigger — the same-part duplicate the parser refuses, reached by a route the
+ * parser cannot see. **Both fail**, each with its own sentence, because failing
+ * only the later one would make file order decide which applies. Recorded as a
+ * failure, as a condition a component cannot check is, so the confirmation
+ * names it while **Cancel** is still there.
+ *
+ * The sentence takes the whole's words from `resetWhole` and a part's from
+ * `resetColumns`, so it is composed without this module learning what a part is.
+ */
+function claimingSibling(
+	component: Resetting,
+	config: ComponentConfig,
+	binding: ResetBinding,
+	siblings: readonly ResetBinding[],
+): string | null {
+	/*
+	 * **Only the pair the parser's key cannot see**: one naming no part beside one
+	 * naming a part. A same-key pair is refused by `parseReset` before a layout
+	 * loads, so it never reaches the plan, and no sentence is written for it here.
+	 */
+	const other = siblings.find(
+		(sibling) =>
+			sibling !== binding &&
+			(sibling.column === undefined) !== (binding.column === undefined) &&
+			claimsSamePart(component, binding, sibling),
+	);
+	if (other === undefined) return null;
+	const offered = component.resetColumns?.(config) ?? [];
+	const shown = (key: string): string =>
+		offered.find((part) => part.key === key)?.label ?? key;
+	const whole = component.resetWhole ?? '';
+	/*
+	 * **No noun for a part**: this module names none, so the fix says "something
+	 * else" rather than "another field" — the component's own words arrive only as
+	 * `resetWhole` and a part's label.
+	 */
+	const fix = 'so neither applies. Point one of them at something else, or remove one.';
+	return binding.column === undefined
+		? `its ${whole} reset on this trigger includes "${shown(other.column ?? '')}", which another reset on this trigger names, ${fix}`
+		: `another reset on this trigger covers ${whole}, which includes "${shown(binding.column)}", ${fix}`;
 }
 
 /** One binding's outcome, or the refusal a component that cannot honour it gets. */

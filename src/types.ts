@@ -86,7 +86,14 @@ export interface ResetBinding {
 	trigger: string;
 	/**
 	 * Which part of the component the trigger acts on, for a component whose
-	 * parts have names: a Table column, and nothing else today.
+	 * parts have names: a Table's columns and a Record set's fields, each
+	 * offered through that component's own `resetColumns`.
+	 *
+	 * **Still `column` on a component whose parts are fields**, and the key was
+	 * kept on purpose rather than left over: it has shipped since 0.3.0, a
+	 * rename is a second spelling the parser would accept for ever, and a
+	 * Record set's field already is a column in every shared module that reads
+	 * one (`docs/features/record-set-reset-field-targeting.md`, Part 1).
 	 *
 	 * `buffer` below is the precedent — a key on the shared binding that only a
 	 * component declaring the matching contract member means anything by, gated
@@ -99,7 +106,9 @@ export interface ResetBinding {
 	 * different columns are legal and necessary — a long rest that clears
 	 * Conditions and refills Uses on one table — and two naming the same column,
 	 * or two on a component that names none, are the duplicate `parseReset`
-	 * refuses.
+	 * refuses. A pair the key cannot see — one naming no part beside one naming
+	 * a part, on a component that reads the first as the whole of itself — is
+	 * `claimsSamePart` below, which the editor and the sheet's plan read.
 	 *
 	 * The parser never asks whether the string names a column of anything, which
 	 * is the same split §6 already draws for the trigger name: whether `reset` is
@@ -123,9 +132,9 @@ export interface ResetBinding {
 	 * clause and already means "this change applies while".
 	 *
 	 * **Not half of the binding's identity**, unlike `column`: `bindingKey` stays
-	 * the trigger and the column, so two bindings on one trigger on a component
-	 * that names no column are still the duplicate `parseReset` refuses, whatever
-	 * their conditions say. Whether two conditions overlap depends on the data,
+	 * the trigger and the column, so two bindings on one trigger naming one part,
+	 * or none, are still the duplicate `parseReset` refuses, whatever their
+	 * conditions say. Whether two conditions overlap depends on the data,
 	 * so no check on the file could tell a pair that is safe from one that is not.
 	 *
 	 * A component that does not declare the path cannot check it, and the sheet
@@ -2196,6 +2205,21 @@ export interface ComponentDefinition<
 	 */
 	resetColumns?(config: TConfig): readonly ResetColumn[];
 	/**
+	 * What the **Acts on** picker calls a binding that names no part, on a
+	 * component that reads one as the whole of itself (SPEC §6). Absent: a
+	 * binding naming no part acts on nothing, and the editor asks for one.
+	 *
+	 * Optional under §4.1's rule. Two components declare `resetColumns` and read
+	 * a missing `column` in opposite ways — a Table as a mistake, a Record set as
+	 * every field — and the alternative to asking is `src/editor/` knowing which
+	 * is which. **A string rather than a flag**, because the words are the
+	 * component's: a flag would leave the editor to compose "Every field" or
+	 * "Every column", which is naming a component's kind, as a `ResetColumn`'s
+	 * `label` exists not to. Declaring it obliges `resetColumns`, which
+	 * `contract.test.ts` holds: without a picker there is nowhere to offer it.
+	 */
+	resetWhole?: string;
+	/**
 	 * Apply a reset trigger to this component's data (SPEC §6).
 	 *
 	 * Takes the binding rather than a finished value, because only the
@@ -2335,6 +2359,80 @@ export function checksResetCondition(
 	component: Pick<ComponentDefinition, 'formulaFields'> | undefined,
 ): boolean {
 	return component?.formulaFields.includes(RESET_CONDITION_FIELD) === true;
+}
+
+/**
+ * Whether a binding's `to` is worked out on each part it reaches, in that
+ * part's own scope, rather than once for the sheet
+ * (`docs/features/record-set-reset-field-targeting.md`, Part 4).
+ *
+ * **Both halves, and read off declarations already owed rather than a member of
+ * its own.** Declaring `reset.*.where` is the component saying it has per-part
+ * scopes to evaluate in; naming a part is the settled trigger for using one. A
+ * binding naming no part keeps its `to` in sheet scope, so every layout written
+ * before a binding could name a field means what it meant — and a Table, which
+ * declares no condition, keeps its column `to` once, in sheet scope.
+ *
+ * One spelling, on §1's one-step tier for a predicate: the editor's **Resets
+ * to** row reads it for its suggester and its description, and
+ * `contract.test.ts` holds each component declaring both halves to it.
+ */
+export function resolvesResetPerPart(
+	component: Pick<ComponentDefinition, 'formulaFields'> | undefined,
+	binding: Pick<ResetBinding, 'column'>,
+): boolean {
+	return binding.column !== undefined && checksResetCondition(component);
+}
+
+/**
+ * What identifies one reset binding: the trigger and the column together.
+ *
+ * Here rather than in `parse/layout.ts`, whose `parseReset` refuses a repeated
+ * key, because `claimsSamePart` below is its second reader and this file imports
+ * nothing — so the parser, the editor and the sheet's plan read one comparison,
+ * and nothing has to hold two copies of it in step. The failure a second copy
+ * would allow is the one this guard exists for: an editor that happily writes a
+ * layout the plugin then refuses to load. PATTERNS §1 puts a predicate on the
+ * one-step tier for exactly this.
+ *
+ * Keyed through `JSON.stringify` rather than by joining the two strings, because
+ * a column may hold whatever a table's header holds and any separator that is
+ * legal in a heading is one two different pairs could spell the same way.
+ */
+export function bindingKey(
+	binding: Pick<ResetBinding, 'trigger' | 'column'>,
+): string {
+	return JSON.stringify([binding.trigger, binding.column ?? null]);
+}
+
+/**
+ * Whether two bindings on this component would both write one part: the same
+ * `bindingKey`, or, on a component that reads a binding naming no part as the
+ * whole of itself, one naming no part beside one naming a part
+ * (`docs/features/record-set-reset-field-targeting.md`, Part 5).
+ *
+ * **Whatever their `where`s say**, for `bindingKey`'s own reason: whether two
+ * conditions overlap depends on the data, so nothing reading the layout could
+ * tell a safe pair from an unsafe one.
+ *
+ * **Not in the parser**, because only the component can say whether a missing
+ * `column` means the whole of it (`resetWhole`), and `src/parse/` imports no
+ * registry. A component-agnostic rule there would refuse a Table layout that
+ * has loaded since 0.3.0. So three readers ask this instead — the editor's
+ * duplicate guard, **Add reset**'s availability, and the sheet's plan at the
+ * press — and none of them is a place a layout that loads today stops loading.
+ */
+export function claimsSamePart(
+	component: Pick<ComponentDefinition, 'resetWhole'> | undefined,
+	a: Pick<ResetBinding, 'trigger' | 'column'>,
+	b: Pick<ResetBinding, 'trigger' | 'column'>,
+): boolean {
+	if (a.trigger !== b.trigger) return false;
+	if (bindingKey(a) === bindingKey(b)) return true;
+	return (
+		component?.resetWhole !== undefined &&
+		(a.column === undefined) !== (b.column === undefined)
+	);
 }
 
 /**
