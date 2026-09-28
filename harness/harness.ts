@@ -360,8 +360,8 @@ const openRecords = new Map<string, Set<number>>([
 	['recharging', new Set([0, 1])],
 	['recharging_plain', new Set([0, 1])],
 	['recharging_broken', new Set([0, 1])],
-	// Second Wind open, so its `Save DC` — which a scoped `full` writes to 20 —
-	// is on screen beside the counter the reset is for.
+	// Second Wind open, so its `Save DC` — which the list's bindings name `Uses`
+	// to leave alone — is on screen beside the counter the reset is for.
 	['rest_features', new Set([0])],
 ]);
 

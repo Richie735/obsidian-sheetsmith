@@ -93,10 +93,25 @@ export function resetSummary(
 		return `${config.label} — will not reset: ${failed.map(reason).join(' ')}`;
 	}
 
-	const columns = succeeded
-		.map(({ binding }) => binding.column)
-		.filter((column): column is string => column !== undefined)
-		.map(shown);
+	/*
+	 * **A part's count beside its label**
+	 * (`docs/features/record-set-reset-field-targeting.md`): `Uses 3 of 6` says
+	 * how much of the list this rest touches *and in which field*, and a trigger
+	 * holds one binding per part, so a count is that binding's own and nothing is
+	 * summed. A part with no reach is its bare label, as a Table column is. A
+	 * binding naming no part gives its bare count, as before — never relabelled
+	 * with the component's word for the whole, so every existing layout's
+	 * confirmation reads as it did.
+	 */
+	const moving = succeeded.flatMap(({ binding, result }) => {
+		const counted =
+			result.ok && result.reach !== undefined
+				? `${result.reach.reached} of ${result.reach.of}`
+				: undefined;
+		if (binding.column === undefined) return counted === undefined ? [] : [counted];
+		const label = shown(binding.column);
+		return [counted === undefined ? label : `${label} ${counted}`];
+	});
 	/*
 	 * **Some of a component's bindings failed and some did not**, which only a
 	 * component whose bindings name parts can reach — one trigger, two columns.
@@ -107,15 +122,9 @@ export function resetSummary(
 		const part = binding.column === undefined ? '' : `${shown(binding.column)} `;
 		return `${part}will not reset: ${result.ok ? '' : result.error}`;
 	});
-	const reach = succeeded.length === 1 ? succeeded[0]?.result : undefined;
-	const counted =
-		reach?.ok === true && reach.reach !== undefined
-			? `${reach.reach.reached} of ${reach.reach.of}`
-			: undefined;
 
 	const parts = [
-		...(columns.length > 0 ? [columns.join(', ')] : []),
-		...(counted !== undefined ? [counted] : []),
+		...(moving.length > 0 ? [moving.join(', ')] : []),
 		...refusals,
 	];
 	return parts.length === 0 ? config.label : `${config.label} — ${parts.join('; ')}`;

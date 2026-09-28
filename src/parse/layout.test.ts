@@ -459,6 +459,95 @@ describe('parseLayout: reset bindings', () => {
 		).toThrow(/binds to "Short rest" more than once/);
 	});
 
+	/*
+	 * A binding naming the field it writes
+	 * (`docs/features/record-set-reset-field-targeting.md`, Part 5): the parser is
+	 * unchanged. Naming a field makes its refusal per field, and the one pair its
+	 * key cannot see — Every field beside a field — is refused where the
+	 * component's declaration can be read, never here.
+	 */
+	describe('on a component whose parts are fields', () => {
+		const typed = (type: string, reset: unknown) =>
+			JSON.stringify(
+				{
+					name: 'L',
+					components: [
+						{
+							id: 'rest_features',
+							type,
+							label: 'Rest features',
+							position: { col: 1, row: 1, width: 6, height: 3 },
+							reset,
+						},
+					],
+				},
+				null,
+				'\t',
+			);
+
+		it('refuses one field twice on one trigger, whatever the conditions say', () => {
+			for (const [first, second] of [
+				[undefined, undefined],
+				['Recharges == 1', undefined],
+				['Recharges == 1', 'Recharges == 4'],
+			] as const) {
+				expect(() =>
+					parseLayout(
+						typed('record-set', [
+							{ trigger: 'Short rest', column: 'Uses', action: 'full', ...(first ? { where: first } : {}) },
+							{
+								trigger: 'Short rest',
+								column: 'Uses',
+								action: 'formula',
+								to: 'Uses + 1',
+								...(second ? { where: second } : {}),
+							},
+						]),
+					),
+				).toThrow(/binds "Uses" to "Short rest" more than once/);
+			}
+		});
+
+		it('carries two fields on one trigger', () => {
+			expect(
+				parseLayout(
+					typed('record-set', [
+						{ trigger: 'Long rest', column: 'Used', action: 'empty' },
+						{ trigger: 'Long rest', column: 'Uses', action: 'full' },
+					]),
+				).components[0]?.reset,
+			).toHaveLength(2);
+		});
+
+		it('carries a binding naming no field beside one naming a field, on a Record set and a Table alike', () => {
+			for (const type of ['record-set', 'table']) {
+				expect(
+					parseLayout(
+						typed(type, [
+							{ trigger: 'Short rest', action: 'full' },
+							{ trigger: 'Short rest', column: 'Uses', action: 'full' },
+						]),
+					).components[0]?.reset,
+				).toHaveLength(2);
+			}
+		});
+
+		it('round-trips a field-naming Record set binding byte for byte', () => {
+			const text = typed('record-set', [
+				{
+					trigger: 'Short rest',
+					column: 'Uses',
+					where: 'Recharges == 1 || Recharges == 4',
+					action: 'formula',
+					to: 'Uses + 1',
+				},
+			]);
+			const written = serialiseLayout(parseLayout(text));
+			expect(written).toContain('"column": "Uses"');
+			expect(serialiseLayout(parseLayout(written))).toBe(written);
+		});
+	});
+
 	it('refuses a bad binding anywhere in the list', () => {
 		expect(() =>
 			parseLayout(

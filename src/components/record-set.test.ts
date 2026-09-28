@@ -4530,11 +4530,12 @@ describe('a field shown only where its condition holds', () => {
  *
  * **On a list with two `number` fields**, `Uses` and a `DC` with `max: 20`, so no
  * case passes because the list avoids the layout where every-field writing
- * shows: `where` narrows *which records* are written, and within a reached record
- * every number field is still written. The DC assertions below pin that as
- * today's behaviour — **the follow-up that lets a binding name the field it
- * writes is what ends them**, and they should change with it rather than be
- * mistaken for the design.
+ * shows: `where` narrows *which records* are written, and a binding naming no
+ * field writes every number field of each reached record. The DC assertions
+ * below pin that as the reading of **Every field**, which is what every Record
+ * set binding meant before one could name a field — and a binding naming one is
+ * held to writing that field alone, further down
+ * (`docs/features/record-set-reset-field-targeting.md`).
  */
 describe('a reset that reaches only the records its condition admits', () => {
 	const SCOPED: RecordSetConfig = {
@@ -4676,9 +4677,9 @@ describe('a reset that reaches only the records its condition admits', () => {
 			expect(result.ok).toBe(true);
 			expect(fields['Second Wind']?.Uses).toBe('1 / 1');
 			expect(fields['Action Surge']?.Uses).toBe('1/1');
-			// Today's every-field write, within the records `where` reached: the DC
-			// is a number field with a ceiling, so `full` writes it too. Ends with
-			// the follow-up that names the field a binding writes.
+			// The every-field reading of a binding naming no field, within the
+			// records `where` reached: the DC is a number field with a ceiling, so
+			// `full` writes it too.
 			expect(fields['Second Wind']?.DC).toBe('20');
 			expect(fields['Action Surge']?.DC).toBe('20');
 			for (const other of ['Rage', 'Darkvision', 'Aura of Protection']) {
@@ -4696,7 +4697,7 @@ describe('a reset that reaches only the records its condition admits', () => {
 			expect(fields['Second Wind']?.Uses).toBe('0 / 1');
 			expect(fields['Second Wind']?.DC).toBe('0');
 			expect(fields['Action Surge']?.Uses).toBe('0/1');
-			// Today's every-field write: a DC the record never held is written too.
+			// The every-field reading: a DC the record never held is written too.
 			expect(fields['Action Surge']?.DC).toBe('0');
 			for (const other of ['Rage', 'Darkvision', 'Aura of Protection']) {
 				expect(block(written, other)).toBe(block(SCOPED_BODY, other));
@@ -4907,6 +4908,296 @@ describe('a reset that reaches only the records its condition admits', () => {
 			const unscoped = press({ trigger: 'Short rest', action: 'formula', to: 'wisdom' });
 			expect(result).toEqual(unscoped.result);
 			expect(calls.some(([path]) => path === 'reset.0.where')).toBe(false);
+		});
+	});
+
+	/*
+	 * **A binding that names a field**
+	 * (`docs/features/record-set-reset-field-targeting.md`): that field, and only
+	 * that field, of each record reached, with `to` worked out on each record. The
+	 * list gains a `Used` toggle, so a case naming `Uses` has a flag beside it to
+	 * leave alone as well as a DC.
+	 */
+	describe('naming the field it writes', () => {
+		const FIELDED: RecordSetConfig = {
+			...SCOPED,
+			fields: [...(SCOPED.fields ?? []), { key: 'Used', type: 'toggle' }],
+		};
+		const FIELDED_BODY = SCOPED_BODY.replace('DC: 13\n', 'DC: 13\nUsed: yes\n').replace(
+			'DC: 15\n```\nAdvantage',
+			'DC: 15\nUsed: no\n```\nAdvantage',
+		);
+
+		/**
+		 * Every line the press changed or added, which must all be the named
+		 * field's. Where lines may be added, they are compared as a multiset.
+		 */
+		const changedLines = (before: string, after: string, grows = false): string[] => {
+			const was = before.split('\n');
+			const now = after.split('\n');
+			if (!grows) {
+				expect(now).toHaveLength(was.length);
+				return now.filter((line, at) => line !== was[at]);
+			}
+			const left = [...was];
+			return now.filter((line) => {
+				const at = left.indexOf(line);
+				if (at === -1) return true;
+				left.splice(at, 1);
+				return false;
+			});
+		};
+
+		it('offers its number and toggle fields by label, and never a level, computed or modifier', () => {
+			const config: RecordSetConfig = {
+				...FIELDED,
+				fields: [
+					...(FIELDED.fields ?? []),
+					{ key: 'Left', type: 'computed', formula: 'Uses' },
+					{ key: 'Modifiers', type: 'modifier' },
+				],
+			};
+			expect(recordSet.resetColumns?.(config)).toEqual([
+				{ key: 'Uses' },
+				{ key: 'DC', label: 'Save DC' },
+				{ key: 'Used' },
+			]);
+			expect(recordSet.resetWhole).toBe('Every field');
+		});
+
+		it('refuses full on a field-owned number with no maximum, and nothing on a record-owned one', () => {
+			const noMax: RecordSetConfig = {
+				...FIELDED,
+				fields: (FIELDED.fields ?? []).map((one) =>
+					one.key === 'DC' ? { ...one, max: undefined } : one,
+				),
+			};
+			const offered = recordSet.resetColumns?.(noMax) ?? [];
+			expect(offered.find((one) => one.key === 'DC')?.refuses).toEqual({
+				full: 'the field "Save DC" has no maximum to restore to. Give it one, or set this trigger to empty.',
+			});
+			expect(offered.find((one) => one.key === 'Uses')?.refuses).toBeUndefined();
+		});
+
+		it.each([
+			['full', {}, { 'Second Wind': '1 / 1', 'Action Surge': '1/1', Rage: '3 / 3' }],
+			['empty', {}, { 'Second Wind': '0 / 1', 'Action Surge': '0/1', Rage: '0 / 3' }],
+			['formula', { to: '2' }, { 'Second Wind': '1 / 1', 'Action Surge': '1/1', Rage: '2 / 3' }],
+		] as const)('%s on Uses writes Uses alone, held to each ceiling', (action, extra, uses) => {
+			const { result, fields, written } = press(
+				{ trigger: 'Short rest', column: 'Uses', action, ...extra },
+				{ from: FIELDED, body: FIELDED_BODY },
+			);
+			expect(result.ok).toBe(true);
+			for (const [name, value] of Object.entries(uses)) {
+				expect(fields[name]?.Uses).toBe(value);
+			}
+			// Every other entry of every record — the DC, the flag, the level —
+			// keeps its bytes; a record that held no Uses may gain one, as it does
+			// under every field, since nothing here narrows which records.
+			const before = Object.values(readData(FIELDED_BODY, FIELDED).records);
+			const after = Object.values(readData(written, FIELDED).records);
+			expect(after.map((one) => one.name)).toEqual(before.map((one) => one.name));
+			after.forEach((one, at) => {
+				const { Uses: _now, ...rest } = one.fields ?? {};
+				const { Uses: _was, ...kept } = before[at]?.fields ?? {};
+				expect(rest).toEqual(kept);
+				expect(one.body).toBe(before[at]?.body);
+			});
+			for (const line of changedLines(FIELDED_BODY, written, true)) {
+				expect(line).toMatch(/^Uses: /);
+			}
+		});
+
+		it('leaves every record outside the reach byte-identical', () => {
+			const { written } = press(
+				{ trigger: 'Short rest', column: 'Uses', action: 'empty', where: SHORT_REST },
+				{ from: FIELDED, body: FIELDED_BODY },
+			);
+			for (const line of changedLines(FIELDED_BODY, written)) {
+				expect(line).toMatch(/^Uses: /);
+			}
+			for (const other of ['Rage', 'Darkvision', 'Aura of Protection']) {
+				expect(block(written, other)).toBe(block(FIELDED_BODY, other));
+			}
+		});
+
+		it.each([
+			['full', {}, 'yes'],
+			['empty', {}, 'no'],
+			['formula', { to: '0' }, 'no'],
+			['formula', { to: '2' }, 'yes'],
+		] as const)('%s on Used writes the flag alone', (action, extra, flag) => {
+			const { result, fields } = press(
+				{ trigger: 'Short rest', column: 'Used', action, ...extra, where: SHORT_REST },
+				{ from: FIELDED, body: FIELDED_BODY },
+			);
+			expect(result.ok).toBe(true);
+			expect(fields['Second Wind']?.Used).toBe(flag);
+			expect(fields['Action Surge']?.Used).toBe(flag);
+			// The counters and the DC beside it are untouched.
+			expect(fields['Second Wind']?.Uses).toBe('0 / 1');
+			expect(fields['Second Wind']?.DC).toBe('13');
+			expect(fields.Rage?.Used).toBe('no');
+		});
+
+		it('fails full only on the named field', () => {
+			const noMax: RecordSetConfig = {
+				...FIELDED,
+				fields: (FIELDED.fields ?? []).map((one) =>
+					one.key === 'DC' ? { ...one, max: undefined } : one,
+				),
+			};
+			const uses = press(
+				{ trigger: 'Short rest', column: 'Uses', action: 'full', where: SHORT_REST },
+				{ from: noMax, body: FIELDED_BODY },
+			);
+			expect(uses.result.ok).toBe(true);
+			expect(uses.fields['Second Wind']?.Uses).toBe('1 / 1');
+			const dc = press(
+				{ trigger: 'Short rest', column: 'DC', action: 'full' },
+				{ from: noMax, body: FIELDED_BODY },
+			);
+			expect(dc.result).toEqual({
+				ok: false,
+				error: 'the field "Save DC" has no maximum to restore to. Give it one, or set this trigger to empty.',
+			});
+			expect(dc.written).toBe(FIELDED_BODY);
+		});
+
+		it('fails on a field it does not offer, telling one it holds from one it lacks', () => {
+			const level = press(
+				{ trigger: 'Short rest', column: 'Recharges', action: 'full' },
+				{ from: FIELDED, body: FIELDED_BODY },
+			);
+			expect(level.result).toEqual({
+				ok: false,
+				error: 'the field "Recharges" holds no value a trigger can restore. Point this trigger at a number or toggle field instead.',
+			});
+			expect(level.written).toBe(FIELDED_BODY);
+			// A key renamed since, or a stray `column` written by hand.
+			const gone = press(
+				{ trigger: 'Short rest', column: 'Gone', action: 'empty' },
+				{ from: FIELDED, body: FIELDED_BODY },
+			);
+			expect(gone.result).toEqual({
+				ok: false,
+				error: 'this list has no field called "Gone". Point the trigger at one it has, or remove the binding.',
+			});
+			expect(gone.written).toBe(FIELDED_BODY);
+		});
+
+		it('reports how much of the list it reached, in the shape it always had', () => {
+			const { result } = press(
+				{ trigger: 'Short rest', column: 'Uses', action: 'full', where: SHORT_REST },
+				{ from: FIELDED, body: FIELDED_BODY },
+			);
+			expect(result.ok && result.reach).toEqual({ reached: 2, of: 5 });
+			const unscoped = press(
+				{ trigger: 'Short rest', column: 'Uses', action: 'full' },
+				{ from: FIELDED, body: FIELDED_BODY },
+			);
+			expect(unscoped.result.ok && unscoped.result.reach).toBeUndefined();
+		});
+
+		describe('working to out on each record', () => {
+			/** Second Wind full at `1 / 1`, Action Surge spent at `0 / 2`. */
+			const MIXED = FIELDED_BODY.replace('Uses: 0 / 1', 'Uses: 1 / 1').replace(
+				'Uses: 0/1',
+				'Uses: 0 / 2',
+			);
+
+			it("resolves to once per admitted record, in that record's stored layer", () => {
+				const { result, calls, fields } = press(
+					{
+						trigger: 'Short rest',
+						column: 'Uses',
+						action: 'formula',
+						to: 'Uses + 1',
+						where: SHORT_REST,
+					},
+					{ from: FIELDED, body: MIXED },
+				);
+				expect(result.ok).toBe(true);
+				const to = calls.filter(([path]) => path === 'reset.0.to');
+				expect(to).toHaveLength(2);
+				expect(to[0]?.[1]).toMatchObject({ Recharges: 1, Uses: 1, DC: 13, Used: true });
+				expect(to[1]?.[1]).toMatchObject({ Recharges: 1, Uses: 0 });
+				expect(to.some(([, scope]) => Object.keys(scope).length === 0)).toBe(false);
+				// One back, held to each record's own ceiling.
+				expect(fields['Action Surge']?.Uses).toBe('1 / 2');
+				expect(fields['Second Wind']?.Uses).toBe('1 / 1');
+			});
+
+			it('still resolves a binding naming no field once, in sheet scope', () => {
+				const { calls } = press(
+					{ trigger: 'Short rest', action: 'formula', to: '1', where: SHORT_REST },
+					{ from: FIELDED, body: MIXED },
+				);
+				expect(calls.filter(([path]) => path === 'reset.0.to')).toEqual([
+					['reset.0.to', {}],
+				]);
+			});
+
+			it('fails whole on a name no record holds, and writes nothing', () => {
+				const { result, written } = press(
+					{
+						trigger: 'Short rest',
+						column: 'Uses',
+						action: 'formula',
+						to: 'Charges + 1',
+						where: 'true',
+					},
+					{ from: FIELDED, body: FIELDED_BODY },
+				);
+				expect(result.ok).toBe(false);
+				if (result.ok) return;
+				expect(result.error).toMatch(
+					/^its reset formula could not be worked out on every feature, so it resets none: .*Charges.* Fix it under Resets to in the layout editor\.$/,
+				);
+				expect(written).toBe(FIELDED_BODY);
+			});
+
+			it('names the one record of five whose amount is not a number, and writes nothing', () => {
+				const cfg: RecordSetConfig = {
+					...FIELDED,
+					reset: [{ trigger: 'Short rest', column: 'Uses', action: 'formula', to: 'x' }],
+				};
+				const data = readData(FIELDED_BODY, cfg);
+				const result = recordSet.applyReset?.(
+					data,
+					cfg,
+					{ trigger: 'Short rest', column: 'Uses', action: 'formula', to: 'x' },
+					{
+						// Stubbed, because the language has no value that is not a
+						// number, a flag or nothing: this is the component's own
+						// guard against a resolver that hands one back.
+						resolve: (_path, scope) => (scope.Recharges === 2 ? 'lots' : 1),
+						explain: () => null,
+					},
+				);
+				expect(result).toEqual({
+					ok: false,
+					error: 'its reset formula could not be worked out on "Rage", so it resets none: it came to "lots", which is not a number. Fix it under Resets to in the layout editor.',
+				});
+			});
+
+			it('reports a broken condition before a broken amount', () => {
+				const { result, calls } = press(
+					{
+						trigger: 'Short rest',
+						column: 'Uses',
+						action: 'formula',
+						to: 'Charges + 1',
+						where: 'Recharge == 1',
+					},
+					{ from: FIELDED, body: FIELDED_BODY },
+				);
+				expect(result.ok).toBe(false);
+				if (result.ok) return;
+				expect(result.error).toMatch(/^its condition under Only where could not be worked out/);
+				expect(calls.some(([path]) => path === 'reset.0.to')).toBe(false);
+			});
 		});
 	});
 

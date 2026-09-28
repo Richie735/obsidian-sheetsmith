@@ -18,7 +18,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { getComponent } from '../components';
 import { parseFunctions } from '../formula/functions';
-import { FormulaEnv } from '../formula/resolve';
+import { FormulaEnv, NO_ENV } from '../formula/resolve';
 import { buildSheet } from '../formula/sheet';
 import { applySectionWrites, getSection, parseCharacter } from '../parse/character';
 import { parseLayout } from '../parse/layout';
@@ -26,6 +26,7 @@ import { walkComponents } from '../parse/layout-walk';
 import { parseTriggers } from '../parse/triggers';
 import { ComponentDefinition, isContainer } from '../types';
 import { boundTo, planTrigger, TriggerPlan, UNCHECKED_CONDITION } from './reset-plan';
+import { resetSummary } from './reset-confirmation';
 
 /** The fixture's own shape, written out so a variant can be typed against it. */
 interface FixtureComponent {
@@ -1062,5 +1063,222 @@ describe('a trigger planned before it is confirmed', () => {
 		const { failed, text } = applyTrigger(NOTE, blank, 'Short rest');
 		expect(failed).toEqual([]);
 		expect(fenced(text, 'Ki', 'current')).toBe('0');
+	});
+});
+
+/*
+ * **Every field beside a field, on one trigger**
+ * (`docs/features/record-set-reset-field-targeting.md`, Part 5): the pair the
+ * parser's key cannot see, refused whole at the press whatever the conditions
+ * say, and named in the plan the confirmation is drawn from.
+ */
+describe('a binding naming no field beside one naming a field', () => {
+	const FIELDS = [
+		{
+			key: 'Recharges',
+			type: 'level',
+			levels: ['None', 'Short rest', 'Long rest', 'Always-on', 'One back'],
+		},
+		{ key: 'Uses', type: 'number', maxSource: 'record' },
+		{ key: 'DC', name: 'Save DC', type: 'number', max: 20 },
+		{ key: 'Used', type: 'toggle' },
+	];
+
+	const withFeatures = (reset: NonNullable<FixtureComponent['reset']>) =>
+		variant((shape) => {
+			shape.components.push({
+				id: 'rest_features',
+				type: 'record-set',
+				label: 'Rest features',
+				position: { col: 1, row: 3, width: 6, height: 3 },
+				recordName: 'Feature',
+				fields: FIELDS,
+				reset,
+			});
+		});
+
+	const FEATURED = NOTE.replace(
+		'## Backstory',
+		[
+			'## Rest features',
+			'',
+			'### Second Wind',
+			'```sheet',
+			'Recharges: 1',
+			'Uses: 0 / 1',
+			'DC: 13',
+			'```',
+			'Regain hit points.',
+			'',
+			'### Channel Divinity',
+			'```sheet',
+			'Recharges: 4',
+			'Uses: 0 / 2',
+			'DC: 14',
+			'```',
+			'Turn the undead.',
+			'',
+			'## Backstory',
+		].join('\n'),
+	);
+
+	const section = (text: string, label: string): string =>
+		getSection(parseCharacter(text), label)?.body ?? '';
+
+	const WHOLE_SENTENCE =
+		'its Every field reset on this trigger includes "Uses", which another reset on this trigger names, so neither applies. Point one of them at something else, or remove one.';
+	const PART_SENTENCE =
+		'another reset on this trigger covers Every field, which includes "Uses", so neither applies. Point one of them at something else, or remove one.';
+
+	afterEach(() => {
+		vi.restoreAllMocks();
+	});
+
+	it.each([
+		['no condition on either', undefined, undefined],
+		['a condition on one', 'Recharges == 1', undefined],
+		['a condition on both', 'Recharges == 1', 'Recharges == 4'],
+	])('fails both whole with %s, and hands neither to the component', (_, first, second) => {
+		const layout = withFeatures([
+			{ trigger: 'Short rest', action: 'full', ...(first ? { where: first } : {}) },
+			{
+				trigger: 'Short rest',
+				column: 'Uses',
+				action: 'formula',
+				to: 'Uses + 1',
+				...(second ? { where: second } : {}),
+			},
+		]);
+		// The layout loads: the parser's key sees two different pairs.
+		expect(() => parseLayout(layout)).not.toThrow();
+		const spy = vi.spyOn(getComponent('record-set') as ComponentDefinition, 'applyReset');
+		const { plan, failed, text } = applyTrigger(FEATURED, layout, 'Short rest');
+		expect(spy).not.toHaveBeenCalled();
+		expect(failed).toEqual([
+			`Rest features — ${WHOLE_SENTENCE}`,
+			`Rest features — ${PART_SENTENCE}`,
+		]);
+		// Nothing from either binding is among the edits Apply writes.
+		expect(plan.edits.some((edit) => edit.config.label === 'Rest features')).toBe(false);
+		expect(section(text, 'Rest features')).toBe(section(FEATURED, 'Rest features'));
+	});
+
+	it('fails a third binding naming another field too, since the whole includes it', () => {
+		const layout = withFeatures([
+			{ trigger: 'Short rest', action: 'full' },
+			{ trigger: 'Short rest', column: 'Uses', action: 'full' },
+			{ trigger: 'Short rest', column: 'Used', action: 'empty' },
+		]);
+		const { failed, text } = applyTrigger(FEATURED, layout, 'Short rest');
+		expect(failed).toEqual([
+			`Rest features — ${WHOLE_SENTENCE}`,
+			`Rest features — ${PART_SENTENCE}`,
+			'Rest features — another reset on this trigger covers Every field, which includes "Used", so neither applies. Point one of them at something else, or remove one.',
+		]);
+		expect(section(text, 'Rest features')).toBe(section(FEATURED, 'Rest features'));
+	});
+
+	it('leaves a binding on another trigger to apply', () => {
+		const layout = withFeatures([
+			{ trigger: 'Short rest', action: 'full' },
+			{ trigger: 'Short rest', column: 'Uses', action: 'full' },
+			{ trigger: 'Long rest', column: 'Uses', action: 'full' },
+		]);
+		const { failed, text } = applyTrigger(FEATURED, layout, 'Long rest');
+		expect(failed).toEqual([]);
+		expect(section(text, 'Rest features')).toContain('Uses: 1 / 1');
+		expect(section(text, 'Rest features')).toContain('Uses: 2 / 2');
+		// And the DC beside it is never written by a binding naming Uses.
+		expect(section(text, 'Rest features')).toContain('DC: 13');
+		expect(section(text, 'Rest features')).toContain('DC: 14');
+	});
+
+	it('says so in the confirmation before Apply, and Apply holds nothing of it', () => {
+		const layout = withFeatures([
+			{ trigger: 'Short rest', action: 'full' },
+			{ trigger: 'Short rest', column: 'Uses', action: 'full', where: 'Recharges == 1' },
+		]);
+		const { plan } = applyTrigger(FEATURED, layout, 'Short rest');
+		const features = plan.components.find(
+			(one) => one.config.label === 'Rest features',
+		);
+		if (features === undefined) throw new Error('expected the list in the plan');
+		expect(resetSummary('Short rest', features)).toBe(
+			`Rest features — will not reset: ${WHOLE_SENTENCE} ${PART_SENTENCE}`,
+		);
+		// Apply writes only `plan.edits`, which hold nothing of this list; the
+		// modal's own Cancel is `reset-confirmation.test.ts`'s.
+		expect(plan.edits.some((edit) => edit.config.label === 'Rest features')).toBe(false);
+	});
+
+	it('works a field binding alone out on each record, and leaves the DC', () => {
+		const layout = withFeatures([
+			{
+				trigger: 'Short rest',
+				column: 'Uses',
+				action: 'formula',
+				to: 'Uses + 1',
+				where: 'Recharges == 1 || Recharges == 4',
+			},
+		]);
+		const { failed, plan, text } = applyTrigger(FEATURED, layout, 'Short rest');
+		expect(failed).toEqual([]);
+		const features = plan.components.find(
+			(one) => one.config.label === 'Rest features',
+		);
+		if (features === undefined) throw new Error('expected the list in the plan');
+		expect(resetSummary('Short rest', features)).toBe('Rest features — Uses 2 of 2');
+		expect(section(text, 'Rest features')).toContain('Uses: 1 / 1');
+		expect(section(text, 'Rest features')).toContain('Uses: 1 / 2');
+		expect(section(text, 'Rest features')).toContain('DC: 13');
+		expect(section(text, 'Rest features')).toContain('DC: 14');
+	});
+
+	it('writes no sentence of its own for a same-field pair, which only a caller skipping the parser can hold', () => {
+		// Part 5: a same-key pair never reaches the plan's check, so the plan has
+		// nothing to say about one; each binding is the component's to answer.
+		const config = {
+			id: 'rest_features',
+			type: 'record-set',
+			label: 'Rest features',
+			position: { col: 1, row: 1, width: 6, height: 3 },
+			fields: FIELDS,
+			reset: [
+				{ trigger: 'Short rest', column: 'Uses', action: 'full' as const },
+				{ trigger: 'Short rest', column: 'Uses', action: 'empty' as const },
+			],
+		};
+		const component = getComponent('record-set') as ComponentDefinition;
+		const spy = vi.spyOn(component, 'applyReset');
+		planTrigger('Short rest', [{ config, component, error: null, data: null }], NO_ENV);
+		expect(spy).toHaveBeenCalledTimes(2);
+	});
+
+	it('leaves a Table exactly as it was: its column-less binding fails alone', () => {
+		const layout = variant((shape) => {
+			shape.components.push({
+				id: 'conditions',
+				type: 'table',
+				label: 'Conditions',
+				position: { col: 1, row: 3, width: 4, height: 2 },
+				rowHeader: 'Condition',
+				openRows: true,
+				columns: [{ key: 'Active', type: 'toggle' }],
+				reset: [
+					{ trigger: 'Long rest', action: 'empty' },
+					{ trigger: 'Long rest', column: 'Active', action: 'empty' },
+				],
+			});
+		});
+		expect(() => parseLayout(layout)).not.toThrow();
+		const note = NOTE.replace(
+			'## Backstory',
+			['## Conditions', '', '| Condition | Active |', '|---|---|', '| Poisoned | yes |', '', '## Backstory'].join('\n'),
+		);
+		const { failed, text } = applyTrigger(note, layout, 'Long rest');
+		expect(failed).toEqual([
+			'Conditions — this trigger does not say which column to act on. Give the binding a column, or remove it.',
+		]);
+		expect(section(text, 'Conditions')).toContain('| Poisoned | no |');
 	});
 });

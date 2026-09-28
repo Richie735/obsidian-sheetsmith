@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { levelReorderNotice } from './level-reorder';
+import { levelReorderNotice, ResetReaders } from './level-reorder';
 
 const RECHARGES = ['None', 'Short rest', 'Long rest', 'Always-on'];
 
@@ -89,7 +89,7 @@ describe('levelReorderNotice', () => {
 
 	it('adds a clause for the resets reading the key, beside the fields', () => {
 		expect(
-			levelReorderNotice('Recharges', { levels: RECHARGES }, MOVED, ['Active'], ['Short rest']),
+			levelReorderNotice('Recharges', { levels: RECHARGES }, MOVED, ['Active'], whereOnly(['Short rest'])),
 		).toBe(
 			'"Recharges" levels moved: "Long rest" was 2 and is now 3; "Always-on" was 3 and is now 2. The condition on "Active" reads Recharges by position, so it now means something else. Check it under Shown when. The Short rest reset reads it by position too, so what it resets has changed. Check it under Only where.',
 		);
@@ -97,7 +97,7 @@ describe('levelReorderNotice', () => {
 
 	it('leaves the field clause out where only resets read it', () => {
 		expect(
-			levelReorderNotice('Recharges', { levels: RECHARGES }, MOVED, [], ['Short rest', 'Long rest']),
+			levelReorderNotice('Recharges', { levels: RECHARGES }, MOVED, [], whereOnly(['Short rest', 'Long rest'])),
 		).toBe(
 			'"Recharges" levels moved: "Long rest" was 2 and is now 3; "Always-on" was 3 and is now 2. The Short rest and Long rest resets read Recharges by position, so what they reset has changed. Check them under Only where.',
 		);
@@ -110,9 +110,34 @@ describe('levelReorderNotice', () => {
 				{ levels: RECHARGES },
 				{ levels: ['None', 'Short rest', 'Long rest', 'Permanent'] },
 				[],
-				['Short rest'],
+				whereOnly(['Short rest']),
 			),
 		).toBeNull();
 	});
+
+	/*
+	 * A reset's **Resets to** reads a level by position too, where it is worked
+	 * out on each entry (`docs/features/record-set-reset-field-targeting.md`,
+	 * Part 6), so the clause names the row the fix is under.
+	 */
+	it('names Resets to, or both rows, as the resets that read the key say', () => {
+		const to = levelReorderNotice('Recharges', { levels: RECHARGES }, MOVED, [], {
+			triggers: ['Short rest'],
+			where: false,
+			to: true,
+		});
+		expect(to).toContain('The Short rest reset reads Recharges by position, so what it resets has changed. Check it under Resets to.');
+		const both = levelReorderNotice('Recharges', { levels: RECHARGES }, MOVED, [], {
+			triggers: ['Short rest'],
+			where: true,
+			to: true,
+		});
+		expect(both).toContain('Check it under Only where and Resets to.');
+	});
 });
+
+/** Readers found through **Only where** alone, which is every reader before a `to` could read a record. */
+function whereOnly(triggers: string[]): ResetReaders {
+	return { triggers, where: true, to: false };
+}
 

@@ -110,6 +110,7 @@ import {
 	ReadResult,
 	RESET_CONDITION_FIELD,
 	ResetBinding,
+	ResetColumn,
 	ResetContext,
 	ResetReach,
 	ResetResult,
@@ -739,19 +740,16 @@ function sampleField(
 }
 
 /**
- * What a reset writes, or why it cannot.
- *
- * A shape rather than a number, because the three actions want different things
- * per field: `full` reads each number field's own ceiling, `empty` writes zero
- * everywhere, and `formula` writes one resolved value into every number field.
- * The flag is separate because a toggle has no ceiling to read.
+ * What a binding naming no field needs before any record is looked at, or why
+ * it cannot apply: `formula`'s one amount, resolved in sheet scope, and `full`'s
+ * check that every field-owned ceiling exists. What each field is then written as
+ * is `fieldWrite`'s, which the binding naming a field calls too.
  */
 type ResetWrite =
 	| { error: string }
 	| {
-			/** Null is "nothing to restore to on this record", which writes nothing. */
-			number: (field: RecordField, record: RecordEntry) => number | null;
-			flag: boolean;
+			/** The amount `formula` writes; absent for `full` and `empty`. */
+			amount?: number;
 	  };
 
 function resetWrite(
@@ -762,7 +760,7 @@ function resetWrite(
 	if (reset.action === 'empty') {
 		// Emptying needs nothing resolved: zero is zero whatever the ceiling is,
 		// and a list whose ceilings are broken can still be spent.
-		return { number: () => 0, flag: false };
+		return {};
 	}
 	if (reset.action === 'formula') {
 		const value = context.resolve('reset.to', {});
@@ -785,16 +783,7 @@ function resetWrite(
 				error: `its reset formula produced "${String(value)}", which is not a number.`,
 			};
 		}
-		/*
-		 * **The flag is derived from the number rather than set true**, which is
-		 * `track.ts`'s rule for a flag card and the correction this branch needed:
-		 * set unconditionally, `to: '0'` wrote zero into every counter *and turned
-		 * every toggle on* — a write the reader did not ask for, in the one action
-		 * whose whole job is to say what the value should be. Derived, `formula` is
-		 * a generalisation of the other two rather than a third rule: `to: '0'` is
-		 * `empty` and `to: '3'` is `full` on a field with that ceiling.
-		 */
-		return { number: () => number, flag: number >= 1 };
+		return { amount: number };
 	}
 	/*
 	 * `full`, and the whole of the work is here.
@@ -828,18 +817,58 @@ function resetWrite(
 			!recordsOwnMax(field) &&
 			field.max === undefined,
 	);
-	if (missing !== undefined) {
-		return {
-			error: `the field "${fieldLabel(missing)}" has no maximum to restore to. Give it one, or set this trigger to empty.`,
-		};
+	if (missing !== undefined) return { error: noMaximum(missing) };
+	return {};
+}
+
+/**
+ * What one field of one record is written as under an action, or null where
+ * nothing is written (`docs/features/record-set-reset-field-targeting.md`,
+ * Part 3).
+ *
+ * **One writer for the binding naming a field and the binding naming none**, on
+ * `docs/PATTERNS.md` §1's one-step tier: what `empty`, `full` and `formula` mean
+ * for a counter and a flag is a policy, and two copies of it could only drift —
+ * a flag set on at one amount under **Every field** and at another under
+ * **Acts on**. `amount` is `formula`'s, worked out by the caller in whichever
+ * scope its binding reads: once for the sheet, or once per record.
+ *
+ * - A `number` is written through the join, so the ceiling survives every
+ *   action: an emptied counter is `Uses: 0 / 3` and never `Uses: 0`, since a
+ *   reset that deleted the reader's own ceiling would be Constraint 4 broken by
+ *   the one control whose job is to restore. The number is held to whichever
+ *   ceiling applies, so a `formula` writing 3 into a record whose ceiling is 2
+ *   writes 2. Under `full`, a record with no ceiling of its own is null —
+ *   skipped, and never written as a zero, which `resetWrite` argues.
+ * - A `toggle`'s flag is **derived from the amount rather than set true** under
+ *   `formula`, which is `track.ts`'s rule for a flag card: set unconditionally,
+ *   `to: '0'` wrote zero into every counter *and turned every toggle on*.
+ *   Derived, `formula` generalises the other two rather than being a third
+ *   rule: `to: '0'` is `empty` and `to: '3'` is `full` on a field with that
+ *   ceiling.
+ * - Anything else — a `level` above all — is left alone by every action.
+ */
+function fieldWrite(
+	field: RecordField,
+	action: NonNullable<ResetBinding['action']>,
+	amount: number | undefined,
+	raw: string,
+): string | null {
+	const type = fieldType(field);
+	if (type === 'toggle') {
+		return flagText(action === 'formula' ? (amount ?? 0) >= 1 : action === 'full');
 	}
-	return {
-		number: (field, record) =>
-			recordsOwnMax(field)
-				? recordCeiling(field, record.fields[field.key])
-				: (field.max ?? null),
-		flag: true,
-	};
+	if (type !== 'number') return null;
+	const value =
+		action === 'empty'
+			? 0
+			: action === 'formula'
+				? (amount ?? null)
+				: recordsOwnMax(field)
+					? recordCeiling(field, raw)
+					: (field.max ?? null);
+	if (value === null) return null;
+	return withValue(raw, boundedText(String(value), fieldBounds(field, raw)));
 }
 
 /**
@@ -912,25 +941,198 @@ function admittedRecords(
 		};
 	}
 	if (first !== null) {
-		const { name, why } = first;
-		/*
-		 * `every feature`, `"Rage"`, `2 features, starting with "Rage"`. The count
-		 * is `recordCount`, which the list's own `visibleWhen` problem line reads
-		 * too; what this adds is the first record's name wherever not every record
-		 * failed, because a reset refuses the whole list and the reader has to know
-		 * which record to go and fix, where a shown field is already on screen.
-		 */
-		const every = failed >= readable;
-		const on = every
-			? recordCount(failed, readable, noun)
-			: failed === 1
-				? `"${name}"`
-				: `${recordCount(failed, readable, noun)}, starting with "${name}"`;
+		const on = failedOn(failed, readable, first.name, noun);
 		return {
-			error: `its condition under Only where could not be worked out on ${on}, so it resets none: ${why} Fix it under Only where in the layout editor.`,
+			error: `its condition under Only where could not be worked out on ${on}, so it resets none: ${first.why} Fix it under Only where in the layout editor.`,
 		};
 	}
 	return { admitted, reach: { reached: admitted.size, of: records.length } };
+}
+
+/**
+ * Which records a whole-binding failure happened on, for the sentence that says
+ * so: `every feature`, `"Rage"`, or `2 features, starting with "Rage"`.
+ *
+ * The count is `recordCount`, which the list's own `visibleWhen` problem line
+ * reads too; what this adds is the first record's name wherever not every record
+ * failed, because a reset refuses the whole list and the reader has to know
+ * which record to go and fix, where a shown field is already on screen.
+ *
+ * **One spelling for a condition that will not work out and an amount that will
+ * not** (`docs/features/record-set-reset-field-targeting.md`, Part 4), on §1's
+ * one-step tier: two copies of a count's wording could only drift.
+ */
+function failedOn(
+	failed: number,
+	readable: number,
+	first: string,
+	noun: string,
+): string {
+	if (failed >= readable) return recordCount(failed, readable, noun);
+	return failed === 1
+		? `"${first}"`
+		: `${recordCount(failed, readable, noun)}, starting with "${first}"`;
+}
+
+/** Whether a field stores a value a reset trigger can restore. */
+function restorable(field: RecordField): boolean {
+	const type = fieldType(field);
+	return type === 'number' || type === 'toggle';
+}
+
+/**
+ * Which fields a reset binding may name, and why one refuses an action
+ * (`docs/features/record-set-reset-field-targeting.md`, Part 1).
+ *
+ * **One list, two readers**, Table's own arrangement: the layout editor draws
+ * its **Acts on** picker from this and `applyReset` looks a binding up in it, so
+ * the two cannot disagree about which fields are eligible or about why one
+ * refuses an action.
+ *
+ * `number` and `toggle` only. A `computed` field stores nothing and a `modifier`
+ * field holds words; a `level` is left out on the ground the Table entry
+ * recorded — a rest restoring a graded level has no reading in any system anyone
+ * can name — and every action already leaves one alone.
+ *
+ * **Only a field-owned ceiling refuses `full`.** A field whose ceiling is each
+ * record's refuses nothing: a record with none is skipped at the press rather
+ * than failed, which `resetWrite` argues and which the editor cannot see.
+ */
+function resetColumnsOf(config: RecordSetConfig): ResetColumn[] {
+	return (
+		(config.fields ?? [])
+			// A field with no key is one `configError` refuses, but the editor
+			// does not run `read`, and an option valued `''` would persist
+			// `column: ""`, which `parseBinding` refuses outright.
+			.filter((field) => (field.key ?? '').trim() !== '')
+			.filter(restorable)
+			.map((field) => {
+				const uncapped =
+					fieldType(field) === 'number' &&
+					!recordsOwnMax(field) &&
+					field.max === undefined;
+				return {
+					key: field.key,
+					...(field.name !== undefined && field.name.trim() !== ''
+						? { label: field.name }
+						: {}),
+					...(uncapped ? { refuses: { full: noMaximum(field) } } : {}),
+				};
+			})
+	);
+}
+
+/**
+ * Why `full` cannot restore a field whose ceiling is the field's and missing.
+ * One sentence for the binding naming the field and the binding naming none,
+ * which both reach it.
+ */
+function noMaximum(field: RecordField): string {
+	return `the field "${fieldLabel(field)}" has no maximum to restore to. Give it one, or set this trigger to empty.`;
+}
+
+/**
+ * A binding that names a field: that field, and only that field, of each record
+ * the binding reaches (`docs/features/record-set-reset-field-targeting.md`,
+ * Parts 3 and 4).
+ *
+ * **Every other field is left out of the delta**, so a reached record's `Save DC`
+ * keeps its bytes when its `Uses` is refilled — the whole of what naming the field
+ * is for. The per-field rules are `resetWrite`'s, restricted to one field, and
+ * every write still goes through the join so a reader-set ceiling survives.
+ *
+ * **`full` fails only on the named field**: its refusal is the one `resetColumns`
+ * declares, so a DC with no maximum no longer blocks refilling `Uses`.
+ *
+ * **`to` is worked out on each reached record, in that record's own scope** —
+ * the stored layer, then the sheet, never a computed field — which is the grammar
+ * `where` already uses, and only after `where` has been worked out on every
+ * readable record, so a broken condition is the one reported. It fails closed and
+ * whole, as `where` does: one record whose amount cannot be worked out and the
+ * binding writes nothing on this list, with the sentence naming the first.
+ */
+function fieldReset(
+	config: RecordSetConfig,
+	records: readonly RecordEntry[],
+	reset: ResetBinding & { action: NonNullable<ResetBinding['action']> },
+	context: ResetContext,
+): ResetResult<RecordSetData> {
+	const named = resetColumnsOf(config).find(
+		(entry) => entry.key === reset.column,
+	);
+	const field = (config.fields ?? []).find(
+		(entry) => entry.key === named?.key,
+	);
+	if (named === undefined || field === undefined) {
+		// Two mistakes with two fixes, told apart as Table tells them apart: a
+		// field that is gone wants the trigger pointed elsewhere, and one that
+		// stores no restorable value wants a different field.
+		const declared = (config.fields ?? []).some(
+			(entry) => entry.key === reset.column,
+		);
+		return {
+			ok: false,
+			error: declared
+				? `the field "${reset.column ?? ''}" holds no value a trigger can restore. Point this trigger at a number or toggle field instead.`
+				: `this list has no field called "${reset.column ?? ''}". Point the trigger at one it has, or remove the binding.`,
+		};
+	}
+	const refusal = named.refuses?.[reset.action];
+	if (refusal !== undefined) return { ok: false, error: refusal };
+
+	const scope = admittedRecords(config, records, reset, context);
+	if (scope !== null && 'error' in scope) return { ok: false, error: scope.error };
+	const reached = [...records.entries()].filter(
+		([at, record]) =>
+			record.error === null && (scope === null || scope.admitted.has(at)),
+	);
+
+	const amounts = new Map<number, number>();
+	if (reset.action === 'formula') {
+		const noun = recordNoun(config).toLowerCase();
+		const readable = records.filter((record) => record.error === null).length;
+		let failed = 0;
+		let first: { name: string; why: string } | null = null;
+		for (const [at, record] of reached) {
+			const layer = storedLayer(config, record);
+			const value = context.resolve('reset.to', layer);
+			const number = value === null ? NaN : Number(value);
+			if (Number.isFinite(number)) {
+				amounts.set(at, number);
+				continue;
+			}
+			failed += 1;
+			first ??= {
+				name: recordLabel(record.name, noun),
+				why:
+					value === null
+						? (context.explain('reset.to', layer) ??
+							'its reset formula is empty.')
+						: `it came to "${String(value)}", which is not a number.`,
+			};
+		}
+		if (first !== null) {
+			const on = failedOn(failed, readable, first.name, noun);
+			return {
+				ok: false,
+				error: `its reset formula could not be worked out on ${on}, so it resets none: ${first.why} Fix it under Resets to in the layout editor.`,
+			};
+		}
+	}
+
+	const next: RecordSetData = { records: {} };
+	for (const [at, record] of reached) {
+		const written = fieldWrite(
+			field,
+			reset.action,
+			amounts.get(at),
+			record.fields[field.key] ?? '',
+		);
+		if (written !== null) next.records[at] = { fields: { [field.key]: written } };
+	}
+	return scope === null
+		? { ok: true, data: next }
+		: { ok: true, data: next, reach: scope.reach };
 }
 
 /** One record's stored pieces, with the delta applied and nothing else touched. */
@@ -1303,8 +1505,23 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		return joinRecords(next);
 	},
 
+	resetColumns(config): readonly ResetColumn[] {
+		return resetColumnsOf(config);
+	},
+
+	// A binding naming no field is every field, which is what every Record set
+	// binding meant before one could name a field, so every layout written then
+	// means what it meant (`docs/features/record-set-reset-field-targeting.md`,
+	// Part 2).
+	resetWhole: 'Every field',
+
 	/**
 	 * Restore every record's counters (SPEC §6).
+	 *
+	 * **Where the binding names a field, that field alone**: `fieldReset` above,
+	 * with `to` worked out on each record. What follows is the binding naming
+	 * none, **Every field**, unchanged — every `number` and `toggle` field of each
+	 * record reached, with `to` resolved once in sheet scope.
 	 *
 	 * **The counter is on the record and the reset reaches it through here**,
 	 * which is what a separate Track or Pool beside the list could never do: a
@@ -1329,16 +1546,21 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 	 * **A binding's `where` narrows which records are reached, and nothing else**
 	 * (`docs/features/record-set-reset-scope.md`): `admittedRecords` argues how it
 	 * is evaluated and how it fails, and the reach it counts rides back on the
-	 * result so the confirmation shows the number this evaluation produced. `to`
-	 * is still resolved once, in sheet scope — a per-record amount waits for a
-	 * binding that names the field it writes, since every `number` field of a
-	 * reached record is written and `Uses + 1` would land in a DC beside it.
+	 * result so the confirmation shows the number this evaluation produced.
+	 * Here `to` is resolved once, in sheet scope: every `number` field of a
+	 * reached record is written, so a per-record `Uses + 1` would land in a DC
+	 * beside it — which is why a per-record amount is a binding that names its
+	 * field.
 	 */
 	applyReset(data, config, reset, context): ResetResult<RecordSetData> {
 		const next: RecordSetData = { records: {} };
 		// A binding about the buffer alone, and this component declares none, so
 		// there is nothing to do and nothing went wrong.
-		if (reset.action === undefined) return { ok: true, data: next };
+		const { action } = reset;
+		if (action === undefined) return { ok: true, data: next };
+		if (reset.column !== undefined) {
+			return fieldReset(config, recordViews(data), { ...reset, action }, context);
+		}
 		// `to` first, once and in sheet scope, before any record is looked at: it
 		// fails exactly as it failed before a binding could carry a condition.
 		const write = resetWrite(config, reset, context);
@@ -1352,31 +1574,18 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			if (record.error !== null) return;
 			// A record the condition excludes is not in the delta at all, so its
 			// bytes are identical after the press. **Records, and not fields**:
-			// within a reached record every `number` field is still written, which
-			// is the follow-up that names the field a binding writes.
+			// within a reached record every `number` field is written, which is
+			// what a binding naming no field means.
 			if (scope !== null && !scope.admitted.has(at)) return;
 			const fields: Record<string, string> = {};
 			for (const field of storedFields(config)) {
-				const type = fieldType(field);
-				if (type === 'number') {
-					const raw = record.fields[field.key] ?? '';
-					const value = write.number(field, record);
-					// **Written through the join, so the ceiling survives every
-					// action.** An emptied counter is `Uses: 0 / 3` and never
-					// `Uses: 0`: a reset that deleted the reader's own ceiling would
-					// be Constraint 4 broken by the one control whose job is to
-					// restore. And the number is held to whichever ceiling applies,
-					// so a `formula` writing 3 into a record whose ceiling is 2
-					// writes 2.
-					if (value !== null) {
-						fields[field.key] = withValue(
-							raw,
-							boundedText(String(value), fieldBounds(field, raw)),
-						);
-					}
-				} else if (type === 'toggle') {
-					fields[field.key] = flagText(write.flag);
-				}
+				const written = fieldWrite(
+					field,
+					action,
+					write.amount,
+					record.fields[field.key] ?? '',
+				);
+				if (written !== null) fields[field.key] = written;
 			}
 			if (Object.keys(fields).length > 0) next.records[at] = { fields };
 		});

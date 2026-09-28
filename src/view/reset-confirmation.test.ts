@@ -253,6 +253,85 @@ describe('what the confirmation says a trigger will touch', () => {
 			).toBe('Conditions — Active; Uses left will not reset: it has no maximum.');
 		});
 	});
+
+	/*
+	 * A binding naming the field it writes
+	 * (`docs/features/record-set-reset-field-targeting.md`): the part's label,
+	 * then its own count, since a trigger holds one binding per part.
+	 */
+	describe('a part and its count', () => {
+		const features = (reset: ComponentConfig['reset']) => ({
+			config: {
+				id: 'rest_features',
+				type: 'record-set',
+				label: 'Rest features',
+				position: { col: 1, row: 1, width: 6, height: 3 },
+				fields: [
+					{ key: 'Recharges', type: 'level', levels: ['None', 'Short rest'] },
+					{ key: 'Uses', type: 'number', maxSource: 'record' },
+					{ key: 'Used', type: 'toggle' },
+				],
+				...(reset ? { reset } : {}),
+			} as ComponentConfig,
+			component: getComponent('record-set'),
+		});
+
+		it('puts a conditioned field binding\'s count beside the field', () => {
+			expect(
+				resetSummary(
+					'Short rest',
+					planned(
+						features([
+							{ trigger: 'Short rest', column: 'Uses', action: 'full', where: 'Recharges == 1' },
+						]),
+						{ 0: { ok: true, data: null, reach: { reached: 3, of: 6 } } },
+					),
+				),
+			).toBe('Rest features — Uses 3 of 6');
+		});
+
+		it('gives each field its own count', () => {
+			expect(
+				resetSummary(
+					'Short rest',
+					planned(
+						features([
+							{ trigger: 'Short rest', column: 'Used', action: 'empty', where: 'Recharges == 2' },
+							{ trigger: 'Short rest', column: 'Uses', action: 'full', where: 'Recharges == 1' },
+						]),
+						{
+							0: { ok: true, data: null, reach: { reached: 2, of: 6 } },
+							1: { ok: true, data: null, reach: { reached: 3, of: 6 } },
+						},
+					),
+				),
+			).toBe('Rest features — Used 2 of 6, Uses 3 of 6');
+		});
+
+		it('is the bare field for a field binding with no condition', () => {
+			expect(
+				resetSummary(
+					'Long rest',
+					planned(features([{ trigger: 'Long rest', column: 'Uses', action: 'full' }])),
+				),
+			).toBe('Rest features — Uses');
+		});
+
+		it('says the field that will not reset after the one that will', () => {
+			expect(
+				resetSummary(
+					'Short rest',
+					planned(
+						features([
+							{ trigger: 'Short rest', column: 'Used', action: 'empty' },
+							{ trigger: 'Short rest', column: 'Uses', action: 'full' },
+						]),
+						{ 1: { ok: false, error: 'it failed.' } },
+					),
+				),
+			).toBe('Rest features — Used; Uses will not reset: it failed.');
+		});
+	});
 });
 
 
@@ -283,5 +362,49 @@ describe('the confirmation a trigger opens', () => {
 		expect(buttons.map((button) => button.textContent)).toEqual(['Cancel', 'Apply Long rest']);
 		buttons[1]?.click();
 		expect(applied).toBe(1);
+	});
+
+	it('names every field beside a field before Apply, and Cancel applies nothing', () => {
+		// `docs/features/record-set-reset-field-targeting.md`, Part 5: the plan
+		// refused both bindings, and the reader is told while Cancel is there.
+		const whole =
+			'its Every field reset on this trigger includes "Uses", which another reset on this trigger names, so neither applies. Point one of them at something else, or remove one.';
+		const part =
+			'another reset on this trigger covers Every field, which includes "Uses", so neither applies. Point one of them at something else, or remove one.';
+		let applied = 0;
+		const plan = {
+			components: [
+				planned(
+					{
+						config: {
+							id: 'rest_features',
+							type: 'record-set',
+							label: 'Rest features',
+							position: { col: 1, row: 1, width: 6, height: 3 },
+							fields: [{ key: 'Uses', type: 'number' }],
+							reset: [
+								{ trigger: 'Short rest', action: 'full' },
+								{ trigger: 'Short rest', column: 'Uses', action: 'full' },
+							],
+						} as ComponentConfig,
+						component: getComponent('record-set'),
+					},
+					{ 0: { ok: false, error: whole }, 1: { ok: false, error: part } },
+				),
+			],
+		};
+		openResetConfirmation(new App() as never, 'Short rest', plan, () => {
+			applied += 1;
+		});
+		const modal = Array.from(document.body.querySelectorAll('.modal')).at(-1) as HTMLElement;
+		expect(
+			Array.from(modal.querySelectorAll('.sheetsmith-affected li')).map((li) => li.textContent),
+		).toEqual([`Rest features — will not reset: ${whole} ${part}`]);
+		const cancel = Array.from(modal.querySelectorAll('button')).find(
+			(button) => button.textContent === 'Cancel',
+		);
+		cancel?.click();
+		expect(cancel).toBeDefined();
+		expect(applied).toBe(0);
 	});
 });

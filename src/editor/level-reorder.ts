@@ -37,6 +37,20 @@ export interface LevelList {
 }
 
 /**
+ * The reset bindings reading a key by position: their triggers, once each, and
+ * which row of a binding reads it — **Only where**, **Resets to**, or both —
+ * so the clause names the row the fix is under
+ * (`docs/features/record-set-reset-field-targeting.md`, Part 6).
+ */
+export interface ResetReaders {
+	triggers: string[];
+	where: boolean;
+	to: boolean;
+}
+
+const NO_RESETS: ResetReaders = { triggers: [], where: false, to: false };
+
+/**
  * How many moved levels the sentence names before it counts the rest.
  *
  * **Not `parse/spelled.ts`'s bound**, which counts *names*: each move here is a
@@ -50,19 +64,20 @@ const NAMED_MOVES = 3;
  * `key`, or null where no condition's meaning changed.
  *
  * `readers` are the keys of the fields whose conditions read `key`, and
- * `triggers` the triggers whose reset bindings' **Only where** reads it
- * (`docs/features/record-set-reset-scope.md`); both empty is a list no
- * condition reads, which says nothing. **Only `where`, never a reset's `to`**:
- * `to` is resolved once in sheet scope and reads no record's field, so a
- * reorder cannot change what it means.
+ * `resets` the reset bindings that read it (`docs/features/record-set-reset-scope.md`);
+ * both empty is a list no condition reads, which says nothing. **A reset's `to`
+ * counts only where it is worked out on each entry**, which the caller decides:
+ * a `to` resolved once in sheet scope reads no record's field, so a reorder
+ * cannot change what it means.
  */
 export function levelReorderNotice(
 	key: string,
 	before: LevelList,
 	after: LevelList,
 	readers: readonly string[],
-	triggers: readonly string[] = [],
+	resets: ResetReaders = NO_RESETS,
 ): string | null {
+	const { triggers } = resets;
 	if (readers.length === 0 && triggers.length === 0) return null;
 
 	const names = (list: LevelList): string[] =>
@@ -117,8 +132,12 @@ export function levelReorderNotice(
 		const one = triggers.length === 1;
 		// `it` where the field clause has already named the key.
 		const what = readers.length > 0 ? 'it' : key;
+		const rows = [
+			...(resets.where ? ['Only where'] : []),
+			...(resets.to ? ['Resets to'] : []),
+		].join(' and ');
 		sentences.push(
-			`The ${series(triggers)} reset${one ? '' : 's'} read${one ? 's' : ''} ${what} by position${readers.length > 0 ? ' too' : ''}, so what ${one ? 'it resets has' : 'they reset has'} changed. Check ${one ? 'it' : 'them'} under Only where.`,
+			`The ${series(triggers)} reset${one ? '' : 's'} read${one ? 's' : ''} ${what} by position${readers.length > 0 ? ' too' : ''}, so what ${one ? 'it resets has' : 'they reset has'} changed. Check ${one ? 'it' : 'them'} under ${rows}.`,
 		);
 	}
 	return sentences.join(' ');

@@ -181,6 +181,43 @@ describe("pasting a Record set whose reset's condition reads a copied sibling", 
 		const copied = (pasted.root.children ?? []).find((child) => child.id === 'features_2');
 		expect(copied?.reset?.[0]?.where).toBe('tier_2 > 1 && Recharges == 1');
 	});
+
+	it("keeps a field-naming binding verbatim, where its amount reads the record's own key", () => {
+		// `docs/features/record-set-reset-field-targeting.md`: `Uses` in `Uses + 1`
+		// is the record's field, which `localNames` skips, so a copied sibling whose
+		// id is `Uses` is renamed without the reset's text being touched.
+		const group: ComponentConfig = {
+			id: 'powers',
+			type: 'group',
+			label: 'Powers',
+			position: at(1, 2, 6, 2),
+			children: [
+				card('Uses', 'Uses card', { position: at(1, 1) }),
+				{
+					id: 'features',
+					type: 'record-set',
+					label: 'Features',
+					position: at(3, 1, 4, 2),
+					fields: [{ key: 'Uses', type: 'number', maxSource: 'record' }],
+					reset: [
+						{ trigger: 'Rest', column: 'Uses', action: 'formula', to: 'Uses + 1' },
+					],
+				} as unknown as ComponentConfig,
+			],
+		};
+		const layout: Layout = { name: 'L', components: [group] };
+		const pasted = landed(pasteComponent(layout, 'powers', copyOf(group), true));
+		const children = pasted.root.children ?? [];
+		// Vacuity guard: the sibling whose id the text spells really was renamed.
+		expect(children.some((child) => child.id === 'Uses_2')).toBe(true);
+		const copied = children.find((child) => child.id === 'features_2');
+		expect(copied?.reset?.[0]).toEqual({
+			trigger: 'Rest',
+			column: 'Uses',
+			action: 'formula',
+			to: 'Uses + 1',
+		});
+	});
 });
 
 /** Build one expression at a declared path: `*` is a list, or a map where it is last. */

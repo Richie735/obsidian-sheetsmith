@@ -512,7 +512,7 @@ const DEFAULTS = [
 	 * (`docs/features/record-set-reset-scope.md`). `confirm=` plans the trigger
 	 * over the sample sheet through the view's own `planTrigger` and opens the
 	 * real `ConfirmModal`, so the lines are the ones a reader is shown: `Rest
-	 * features — 2 of 5` beside the sheet's other Short rest components in their
+	 * features — Uses 3 of 6` beside the sheet's other Short rest components in their
 	 * existing words, and `Focus points`' refusal of a condition it cannot check.
 	 *
 	 * **A window-sized frame rather than `SHEET_FRAME`**, because the modal is
@@ -531,7 +531,8 @@ const DEFAULTS = [
 		size: '1400,1000',
 	},
 	{
-		// The wider rest: `Recharges == 1 || Recharges == 2`, so `3 of 5`.
+		// The wider rest: `Recharges == 1 || Recharges == 2 || Recharges == 4`, so
+		// `Uses 4 of 6`, and `Recharging features, unheaded` as a bare label.
 		name: 'sheet-reset-confirm-long',
 		query: 'surface=sheet&theme=light&confirm=Long%20rest',
 		size: '1400,1000',
@@ -1236,8 +1237,10 @@ const DEFAULTS = [
 	},
 	/*
 	 * **Only where** (`docs/features/record-set-reset-scope.md`): each binding of
-	 * `rest_features` as one block, trigger and action, then the condition. The
-	 * reset field is at the foot of the panel, so the frame is the pane's own.
+	 * `rest_features` as one block, trigger and action, then **Acts on** showing
+	 * `Uses`, then the condition, then on Short rest **Resets to** with
+	 * `Uses + 1` (`docs/features/record-set-reset-field-targeting.md`). The reset
+	 * field is at the foot of the panel, so the frame is the pane's own.
 	 */
 	{
 		name: 'editor-reset-where',
@@ -1261,6 +1264,23 @@ const DEFAULTS = [
 		// **Resets to**'s `--font-ui-small` rather than growing past it.
 		name: 'editor-reset-where-large-text',
 		query: 'surface=editor&theme=light&text=24&open=rest_features',
+		size: EDITOR_FRAME,
+	},
+	{
+		/*
+		 * **A Record set binding that names no field**
+		 * (`docs/features/record-set-reset-field-targeting.md`): **Acts on** with
+		 * **Every field** selected and no error, which is what every Record set
+		 * binding meant before one could name a field. `rest_features` above is the
+		 * other half — a picker showing `Uses`, and **Resets to** reading the record.
+		 */
+		name: 'editor-reset-every-field',
+		query: 'surface=editor&theme=light&open=recharging_plain',
+		size: EDITOR_FRAME,
+	},
+	{
+		name: 'editor-reset-every-field-dark',
+		query: 'surface=editor&theme=dark&open=recharging_plain',
 		size: EDITOR_FRAME,
 	},
 	{

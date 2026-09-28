@@ -22,9 +22,15 @@ import { showFieldError } from './field-error';
 import { formulaProblem } from './field-formula';
 import { groupHeading } from './form-group';
 import { heldCondition } from '../formula/field-condition';
-import { bindingKey, Layout } from '../parse/layout';
+import { Layout } from '../parse/layout';
 import { parseTriggers } from '../parse/triggers';
-import { checksResetCondition, ComponentConfig, ResetBinding } from '../types';
+import {
+	checksResetCondition,
+	claimsSamePart,
+	ComponentConfig,
+	ResetBinding,
+	resolvesResetPerPart,
+} from '../types';
 
 /** Dropdown sentinel for a binding that acts on the buffer only. */
 const NO_ACTION_OPTION = '::none::';
@@ -42,6 +48,19 @@ const NO_ACTION_OPTION = '::none::';
 const NO_COLUMN_OPTION = '::nothing::';
 
 /**
+ * Dropdown value for a binding that names no part, on a component that reads one
+ * as the whole of itself (`resetWhole`).
+ *
+ * **A real choice, not a sentinel shown only where it is already the case**: on
+ * a list where every field is a counter, "refill all of it" is what the author
+ * means, and offering it only where it is already selected would make it a
+ * one-way door (`docs/features/record-set-reset-field-targeting.md`, Part 2).
+ * Its own value rather than `NO_COLUMN_OPTION`'s, because the two mean opposite
+ * things to the component that owns each.
+ */
+const WHOLE_OPTION = '::whole::';
+
+/**
  * The **Acts on** row's description.
  *
  * A constant rather than an inline string for the reason the two above it are:
@@ -49,7 +68,17 @@ const NO_COLUMN_OPTION = '::nothing::';
  * something a reader has to unpick before they can see what the row *is*.
  */
 const ACTS_ON_DESC =
-	'Which column this trigger acts on. Cells in every other column are left exactly as they are.';
+	'What this trigger acts on. Everything else is left exactly as it is.';
+
+/**
+ * What **Acts on** adds after a claim, under both bindings of a claiming pair
+ * already in the file, which only a hand edit can produce
+ * (`docs/features/record-set-reset-field-targeting.md`, Part 5): the editor
+ * refuses to make one, and the sheet refuses both at the press. No noun for a
+ * part, since the row serves components whose parts are called different things.
+ */
+const NEITHER_APPLIES =
+	'so neither applies when it is pressed. Point one of them at something else, or remove one.';
 
 /**
  * One of a binding's continuation rows: the buffer toggle, the column picker,
@@ -250,31 +279,69 @@ export function renderResetField(
 	/** Whether this component reads a binding's `where`, the plan's own gate. */
 	const checksCondition = checksResetCondition(definition);
 
+	/** What the component calls a binding naming no part, where it reads one as the whole. */
+	const whole = definition?.resetWhole;
+	/** What the reader calls a part, as the component labels it. */
+	const shown = (key: string): string =>
+		columns.find((entry) => entry.key === key)?.label ?? key;
+
 	/**
-	 * Whether another binding already holds this trigger-and-column pair.
+	 * Why moving `self` to this trigger-and-column would make it claim a part
+	 * another binding already claims, or null where it would not.
 	 *
-	 * The pair, because that is what `parseReset` refuses: two bindings on one
-	 * trigger naming different columns are ordinary on a component with columns,
-	 * and either control on the form can create the collision.
-	 *
-	 * Through the parser's own `bindingKey` rather than a comparison spelled
-	 * here, so the editor cannot come to disagree with the file format about
-	 * what a duplicate is and start writing layouts the plugin will not load.
+	 * Through `claimsSamePart`, the one spelling the sheet's plan reads too, so
+	 * the editor cannot come to disagree with the file format — or with the press
+	 * — about what a duplicate is. The sentence says which of the three shapes it
+	 * is: the same part twice, the whole beside a part, or a part beside the
+	 * whole.
 	 */
-	const taken = (
+	const collision = (
 		self: ResetBinding,
 		trigger: string,
 		column: string | undefined,
-	): boolean => {
-		const key = bindingKey({ trigger, column });
-		return bindings.some(
-			(other) => other !== self && bindingKey(other) === key,
+	): string | null => {
+		const moved = { trigger, column };
+		const other = bindings.find(
+			(one) => one !== self && claimsSamePart(definition, moved, one),
 		);
+		if (other === undefined) return null;
+		const claim = wholeBesidePart(trigger, column, other.column);
+		if (claim !== null) return `${claim}.`;
+		return !usesColumns || column === undefined
+			? 'This component already resets on that trigger.'
+			: `This component already resets "${shown(column)}" on ${trigger}.`;
 	};
 
-	const duplicate = usesColumns
-		? 'This component already resets that column on that trigger.'
-		: 'This component already resets on that trigger.';
+	/**
+	 * The clause naming a whole beside a part on one trigger, from whichever side
+	 * `column` is on, or null where the two are not that pair. One composition for
+	 * the refusal of an edit and the report of a pair already in the file, so the
+	 * two cannot describe one pair in two ways.
+	 */
+	const wholeBesidePart = (
+		trigger: string,
+		column: string | undefined,
+		otherColumn: string | undefined,
+	): string | null => {
+		if (whole === undefined) return null;
+		if (column === undefined && otherColumn !== undefined) {
+			return `Another reset on ${trigger} names "${shown(otherColumn)}", which ${whole} includes`;
+		}
+		if (column !== undefined && otherColumn === undefined) {
+			return `Another reset on ${trigger} covers ${whole}, which includes "${shown(column)}"`;
+		}
+		return null;
+	};
+
+	/** What a pair already in the file says under this binding, or null. */
+	const pairReport = (self: ResetBinding): string | null => {
+		for (const other of bindings) {
+			if (other === self || !claimsSamePart(definition, self, other)) continue;
+			const claim = wholeBesidePart(self.trigger, self.column, other.column);
+			if (claim !== null) return `${claim}, ${NEITHER_APPLIES}`;
+		}
+		return null;
+	};
 
 	groupHeading(
 		form,
@@ -302,8 +369,9 @@ export function renderResetField(
 				// Two bindings on one trigger-and-column pair have no sensible
 				// reading, and the parser refuses the file over it — so it is
 				// refused here, where it can still be corrected.
-				if (taken(reset, value, reset.column)) {
-					showFieldError(dropdown.selectEl, duplicate);
+				const refused = collision(reset, value, reset.column);
+				if (refused !== null) {
+					showFieldError(dropdown.selectEl, refused);
 					dropdown.setValue(reset.trigger);
 					return;
 				}
@@ -402,28 +470,41 @@ export function renderResetField(
 				reset.action === undefined
 					? undefined
 					: chosen?.refuses?.[reset.action];
+			/*
+			 * **None of these name a component's kind.** The row serves a Table's
+			 * columns and a Record set's fields, so "column" would be wrong on one
+			 * of them; "number or toggle" is the shared column-type vocabulary
+			 * (`column-types.ts`), not a component's noun.
+			 */
 			const problem =
-				columns.length === 0
+				whole === undefined && columns.length === 0
 					? // No picker is drawn, so neither line below can name a
-						// control the author can reach: the fix is on the
-						// component rather than on the binding. Named as a
-						// column and never as a table's column — the editor
-						// saying what kind of thing this component holds is the
-						// coupling `resetColumns` exists to avoid.
-						'There is nothing on this component for this trigger to act on, so it resets nothing. Add a column it can act on, or remove this binding.'
+						// control the author can reach: the fix is on the component
+						// rather than on the binding.
+						'There is nothing on this component for this trigger to act on, so it resets nothing. Give it a number or toggle to act on, or remove this binding.'
 					: reset.column === undefined
-						? 'Choose what this trigger acts on, or it resets nothing.'
+						? // Absent is the whole of it on a component declaring
+							// `resetWhole`, and a mistake on one that does not.
+							whole === undefined
+							? 'Choose what this trigger acts on, or it resets nothing.'
+							: pairReport(reset)
 						: chosen === undefined
-							? `This component does not offer "${reset.column}" for a trigger to act on. Choose one of the columns it does, or this trigger resets nothing.`
-							: refused === undefined
-								? null
-								: asOwnLine(refused);
+							? `This component does not offer "${reset.column}" for a trigger to act on. Choose one it does, or this trigger resets nothing.`
+							: refused !== undefined
+								? asOwnLine(refused)
+								: pairReport(reset);
 
-			if (columns.length > 0) {
+			// A component reading a missing part as its whole always has one
+			// thing to offer — the whole — so its picker is drawn even where it
+			// offers no part, and a binding naming none is not a problem there.
+			if (columns.length > 0 || whole !== undefined) {
 				detailRow(form)
 					.setName('Acts on')
 					.setDesc(ACTS_ON_DESC)
 					.addDropdown((dropdown) => {
+						// First, where the component declares it: the whole is the
+						// widest reading, and the parts follow it in their own order.
+						if (whole !== undefined) dropdown.addOption(WHOLE_OPTION, whole);
 						for (const entry of columns) {
 							dropdown.addOption(
 								entry.key,
@@ -433,9 +514,9 @@ export function renderResetField(
 						// A selected value the list does not hold is added to it, on
 						// the trigger dropdown's own rule: opening the form must not
 						// silently rebind the component.
-						if (reset.column === undefined) {
+						if (reset.column === undefined && whole === undefined) {
 							dropdown.addOption(NO_COLUMN_OPTION, 'Nothing yet');
-						} else if (chosen === undefined) {
+						} else if (reset.column !== undefined && chosen === undefined) {
 							/*
 							 * **Short, because a `<select>` clips with no ellipsis
 							 * and nothing to hover.** `ui/truncation.ts` cannot
@@ -460,7 +541,10 @@ export function renderResetField(
 							 */
 							dropdown.addOption(reset.column, `${reset.column} (missing)`);
 						}
-						dropdown.setValue(reset.column ?? NO_COLUMN_OPTION);
+						const selected =
+							reset.column ??
+							(whole !== undefined ? WHOLE_OPTION : NO_COLUMN_OPTION);
+						dropdown.setValue(selected);
 						dropdown.selectEl.dataset.sheetsmithFocus = `reset-column-${config.id}-${index}`;
 						/*
 						 * Obsidian's `Setting` draws its name as a sibling div
@@ -478,16 +562,19 @@ export function renderResetField(
 							`${reset.trigger || 'This trigger'} acts on`,
 						);
 						dropdown.onChange((value) => {
+							const column = value === WHOLE_OPTION ? undefined : value;
 							// The same guard the trigger dropdown runs, because
-							// either control can create the pair the parser refuses.
-							if (taken(reset, reset.trigger, value)) {
-								showFieldError(dropdown.selectEl, duplicate);
-								dropdown.setValue(
-									reset.column ?? NO_COLUMN_OPTION,
-								);
+							// either control can create a pair that claims one part.
+							const refusal = collision(reset, reset.trigger, column);
+							if (refusal !== null) {
+								showFieldError(dropdown.selectEl, refusal);
+								dropdown.setValue(selected);
 								return;
 							}
-							reset.column = value;
+							// Choosing the whole deletes the key, which is how the
+							// file already says it: no second spelling for it.
+							if (column === undefined) delete reset.column;
+							else reset.column = column;
 							context.persist();
 							context.redraw();
 						});
@@ -589,6 +676,7 @@ export function renderResetField(
 		);
 
 		if (reset.action === 'formula') {
+			const perPart = resolvesResetPerPart(definition, reset);
 			detailRow(form)
 				.setName('Resets to')
 				.setDesc(
@@ -596,21 +684,39 @@ export function renderResetField(
 					// as the function library's does: an expression is not a
 					// sentence, and sentence-casing it would change what it means.
 					createFragment((fragment) => {
-						fragment.appendText('Formula giving the value to restore.');
+						/*
+						 * **Worked out per entry, where the binding names a part
+						 * of a component that has per-part scopes**
+						 * (`docs/features/record-set-reset-field-targeting.md`,
+						 * Part 4), so the example reads the binding's own part:
+						 * `Uses + 1`. "Entry" because the editor must not say
+						 * "record" — the word is the component's.
+						 */
+						fragment.appendText(
+							perPart
+								? "Formula giving the value to restore, worked out separately for each entry this trigger reaches, reading that entry's own values first."
+								: 'Formula giving the value to restore.',
+						);
 						fragment.createEl('br');
 						// Framed, for `line-list-field.ts`'s reason. The fourth of the
 						// four call sites that drew a bare example, and the one the
 						// backlog row did not name.
 						fragment.appendText('For example: ');
-						fragment.createEl('code', { text: RESET_FORMULA_EXAMPLE });
+						fragment.createEl('code', {
+							text: perPart
+								? `${reset.column ?? ''} + 1`
+								: RESET_FORMULA_EXAMPLE,
+						});
 					}),
 				)
 				.addText((text) => {
 					text.setValue(reset.to ?? '');
 					text.inputEl.dataset.sheetsmithFocus = `reset-to-${config.id}-${index}`;
-					// A reset expression is evaluated against the sheet, like
-					// every formula field on the panel above it.
-					context.suggestNames?.(text.inputEl);
+					// Per part, with this component as owner, so the part's own
+					// keys come first, as they do under **Only where**; otherwise
+					// against the sheet, like every formula field above it.
+					if (perPart) context.suggestNames?.(text.inputEl, config.id);
+					else context.suggestNames?.(text.inputEl);
 					/*
 					 * Judged as it renders, against whatever the binding already
 					 * holds — the **Acts on** picker's rule above, on the field
@@ -644,12 +750,19 @@ export function renderResetField(
 		}
 	});
 
-	/** The first column this trigger has not been bound to yet, if any. */
+	/**
+	 * The first part this trigger has not been bound to yet, if any — and none at
+	 * all on a trigger a binding naming no part already holds, where that
+	 * component reads it as the whole of itself, since every part is then
+	 * claimed (`claimsSamePart`).
+	 */
 	const unbound = (trigger: string) =>
-		columns.find((entry) => {
-			const key = bindingKey({ trigger, column: entry.key });
-			return !bindings.some((reset) => bindingKey(reset) === key);
-		});
+		columns.find(
+			(entry) =>
+				!bindings.some((reset) =>
+					claimsSamePart(definition, { trigger, column: entry.key }, reset),
+				),
+		);
 
 	/*
 	 * Only triggers this component can still be bound to: offering one it
@@ -659,10 +772,17 @@ export function renderResetField(
 	 * unbound for it**, because the duplicate is the pair. One long rest
 	 * clearing Conditions and refilling Uses on the same table is two bindings,
 	 * so dropping the trigger from the list after the first would put the second
-	 * out of reach.
+	 * out of reach. **Add reset** always names a part where there are parts, so a
+	 * new binding on a component with a whole never lands as the whole beside a
+	 * part.
+	 *
+	 * **A component with a whole and no part to name binds as the whole**, as it
+	 * did before it could name one: the picker then offers the whole alone, and a
+	 * trigger is free while nothing holds it.
 	 */
+	const wholeOnly = whole !== undefined && columns.length === 0;
 	const available = names.filter((name) =>
-		usesColumns
+		usesColumns && !wholeOnly
 			? unbound(name) !== undefined
 			: !bindings.some((reset) => reset.trigger === name),
 	);
@@ -673,19 +793,20 @@ export function renderResetField(
 			.setTooltip(
 				names.length === 0
 					? 'Declare a trigger below first.'
-					: usesColumns && columns.length === 0
+					: usesColumns && columns.length === 0 && !wholeOnly
 						? 'There is nothing on this component for a trigger to act on.'
 						: available.length === 0
 							? usesColumns
-								? 'This component already resets every column on every trigger.'
+								? 'This component already resets everything it offers on every trigger.'
 								: 'This component already resets on every trigger.'
 							: 'Bind this component to another trigger.',
 			)
 			.onClick(() => {
 				const trigger = available[0];
 				if (trigger === undefined) return;
-				const column = usesColumns ? unbound(trigger) : undefined;
-				if (usesColumns && column === undefined) return;
+				const column =
+					usesColumns && !wholeOnly ? unbound(trigger) : undefined;
+				if (usesColumns && !wholeOnly && column === undefined) return;
 				// Restoring to full is what a reset means most of the time,
 				// and an action is required, so it is the one that gets to
 				// be assumed. The column is the first one still free for this

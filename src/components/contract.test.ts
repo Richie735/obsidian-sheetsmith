@@ -13,6 +13,7 @@ import { COLUMN_TYPES } from './column-types';
 import { conditionMet } from '../editor/config-fields';
 import {
 	checksResetCondition,
+	claimsSamePart,
 	ColumnOptionsSpec,
 	ComponentConfig,
 	EDITOR_OWNED_KEYS,
@@ -20,6 +21,7 @@ import {
 	MODIFIER_CHANGE_KEYS,
 	placesChildren,
 	ResetBinding,
+	resolvesResetPerPart,
 	ScopeEntry,
 } from '../types';
 import { NO_ENV } from '../formula/resolve';
@@ -116,6 +118,9 @@ const MEMBER_ORDER = [
 	// the layout editor reads to decide what a reset binding may say, and they
 	// come before the behaviour they condition.
 	'resetColumns',
+	// Directly after `resetColumns`, because it is what the same picker calls a
+	// binding naming none of those parts: one declaration read the other way.
+	'resetWhole',
 	'applyReset',
 	'render',
 ];
@@ -1412,6 +1417,59 @@ describe.each(types)('component "%s"', (type) => {
 		expect(typeof component.applyReset).toBe('function');
 	});
 
+	it('names the whole only where it names the parts', () => {
+		// `docs/features/record-set-reset-field-targeting.md`, Part 2: the whole
+		// is offered first in the **Acts on** picker, which is drawn from
+		// `resetColumns`, so a component declaring only `resetWhole` offers it
+		// nowhere and says it reads a missing part as the whole of nothing.
+		if (component?.resetWhole === undefined) return;
+		expect(typeof component.resetWhole).toBe('string');
+		expect(component.resetWhole.trim()).not.toBe('');
+		expect(typeof component.resetColumns).toBe('function');
+	});
+
+	it('works a part-naming reset amount out in that part\'s own scope', () => {
+		/*
+		 * `resolvesResetPerPart`: a component that checks a condition and names
+		 * its parts works a part-naming binding's `to` out on each part, and the
+		 * editor tells an author so. Held here rather than in each component,
+		 * because the editor reads the predicate and not the behaviour, so a
+		 * component declaring both halves and resolving `to` once would describe
+		 * one thing in the pane and do another at the press.
+		 *
+		 * Over the component's `example`, or its first palette entry where it has
+		 * none, since a bare config names no part; the case asserts it found one.
+		 */
+		if (!checksResetCondition(component) || component?.resetColumns === undefined) return;
+		const config: ComponentConfig = {
+			...bareConfig(type),
+			...(component.example ?? component.palette?.[0]?.config ?? {}),
+		};
+		const part = component.resetColumns(config)[0];
+		expect(part).toBeDefined();
+		if (part === undefined) return;
+		const binding: ResetBinding = {
+			trigger: 'Rest',
+			column: part.key,
+			action: 'formula',
+			to: part.key,
+		};
+		expect(resolvesResetPerPart(component, binding)).toBe(true);
+		const body = component.sample?.(config) ?? '';
+		const read = component.read(body, { ...config, reset: [binding] });
+		const data = read.ok ? read.data : null;
+		const scopes: Record<string, unknown>[] = [];
+		component.applyReset?.(data, { ...config, reset: [binding] }, binding, {
+			resolve: (field, scope) => {
+				if (field === 'reset.to') scopes.push(scope);
+				return 1;
+			},
+			explain: () => null,
+		});
+		expect(scopes.length).toBeGreaterThan(0);
+		for (const scope of scopes) expect(Object.keys(scope)).toContain(part.key);
+	});
+
 	it('declares reset.to as a formula field when it resets', () => {
 		// `reset` is shared config, so it is forbidden in configFields and
 		// each stateful component has to remember this string for itself —
@@ -1830,6 +1888,58 @@ describe.each(types)('component "%s"', (type) => {
 				if (segment.includes('*')) expect(segment).toBe('*');
 			}
 		}
+	});
+});
+
+describe('which components read a binding naming no part as the whole', () => {
+	it('is some of those naming parts and not all of them', () => {
+		// Both halves, so the rule under each component cannot pass vacuously and
+		// the editor's **Nothing yet** still has a component to draw it for.
+		const naming = types
+			.map((type) => getComponent(type))
+			.filter((component) => component?.resetColumns !== undefined);
+		expect(naming.some((component) => component?.resetWhole !== undefined)).toBe(true);
+		expect(naming.some((component) => component?.resetWhole === undefined)).toBe(true);
+	});
+});
+
+describe('two bindings claiming one part', () => {
+	const whole = { resetWhole: 'Every field' };
+	const PAIRS: [ResetBinding, ResetBinding][] = [
+		[{ trigger: 'Short rest', column: 'Uses' }, { trigger: 'Short rest', column: 'Uses' }],
+		[{ trigger: 'Short rest' }, { trigger: 'Short rest' }],
+		[{ trigger: 'Short rest', column: 'Uses' }, { trigger: 'Short rest', column: 'Used' }],
+		[{ trigger: 'Short rest', column: 'Uses' }, { trigger: 'Long rest', column: 'Uses' }],
+		[{ trigger: 'Short rest' }, { trigger: 'Short rest', column: 'Uses' }],
+		[{ trigger: 'Short rest', column: 'Uses', where: 'Recharges == 1' }, { trigger: 'Short rest', where: 'Recharges == 4' }],
+	];
+
+	it("is the parser's key wherever the key can see the pair", () => {
+		const [same, none, different, otherTrigger, wholeAndPart] = PAIRS.map(([a, b]) =>
+			claimsSamePart(undefined, a, b),
+		);
+		expect([same, none, different, otherTrigger, wholeAndPart]).toEqual([
+			true,
+			true,
+			false,
+			false,
+			false,
+		]);
+	});
+
+	it('adds the whole beside a part, whatever the conditions, only where the component reads one', () => {
+		const [, , different, otherTrigger, wholeAndPart, conditioned] = PAIRS.map(
+			([a, b]) => claimsSamePart(whole, a, b),
+		);
+		expect(wholeAndPart).toBe(true);
+		expect(conditioned).toBe(true);
+		expect(different).toBe(false);
+		expect(otherTrigger).toBe(false);
+		// A Table reads a missing part as a mistake, not as the whole of it.
+		const [a, b] = PAIRS[4] ?? [];
+		if (a === undefined || b === undefined) throw new Error('expected a pair');
+		expect(claimsSamePart(getComponent('table'), a, b)).toBe(false);
+		expect(claimsSamePart(getComponent('record-set'), a, b)).toBe(true);
 	});
 });
 

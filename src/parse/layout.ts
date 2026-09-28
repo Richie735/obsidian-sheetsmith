@@ -10,6 +10,7 @@ import { isName, SELF_KEYWORD } from '../formula/expression';
 import { MODIFIER_NAMESPACE } from '../formula/modifiers';
 import { walkComponents } from './layout-walk';
 import {
+	bindingKey,
 	ComponentConfig,
 	GRID_POSITION_KEYS,
 	GridPosition,
@@ -288,27 +289,6 @@ function parseBinding(value: unknown, where: string): ResetBinding {
 	};
 }
 
-/**
- * What identifies one reset binding: the trigger and the column together.
- *
- * Exported for the layout editor, on `mayHoldChildren`'s own reason one file
- * over — the rule lives here, and the alternative is the editor carrying its own
- * copy of the comparison and getting it the wrong way round once. The failure
- * that would follow is the one this guard exists for: an editor that happily
- * writes a layout the plugin then refuses to load. PATTERNS §1 puts a predicate
- * on the one-step tier for exactly this, since the only thing a guard test over
- * two copies could assert is that they still agree.
- *
- * Keyed through `JSON.stringify` rather than by joining the two strings, because
- * a column may hold whatever a table's header holds and any separator that is
- * legal in a heading is one two different pairs could spell the same way.
- */
-export function bindingKey(
-	binding: Pick<ResetBinding, 'trigger' | 'column'>,
-): string {
-	return JSON.stringify([binding.trigger, binding.column ?? null]);
-}
-
 function parseReset(value: unknown, where: string): ResetBinding[] | undefined {
 	if (value === undefined) return undefined;
 	const raw = Array.isArray(value) ? value : [value];
@@ -330,8 +310,8 @@ function parseReset(value: unknown, where: string): ResetBinding[] | undefined {
 	 * they always had — the button would apply both in file order and the
 	 * second would win unannounced.
 	 *
-	 * What counts as the same pair is `bindingKey`, which the layout editor
-	 * refuses on too.
+	 * What counts as the same pair is `bindingKey` (`types.ts`), which the
+	 * layout editor refuses on too, through `claimsSamePart`.
 	 */
 	const seen = new Set<string>();
 	for (const binding of bindings) {
