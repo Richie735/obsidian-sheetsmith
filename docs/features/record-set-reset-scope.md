@@ -88,15 +88,20 @@ Every write still goes through the join, so a reader-set ceiling survives (Tidy5
 **The Recharges case works with `full`**: `where: 'Recharges == 1'` on **Short
 rest**, and `where: 'Recharges == 1 || Recharges == 2'` on **Long rest**.
 
-**What `where` does not fix, stated so nobody reads it as fixed.** Within a reached
-record, every `number` field is written, as today. On a list whose records hold a
-`Uses` counter *and* a `Save DC` with `max: 20`, a scoped `full` refills `Uses` and
-also sets every reached record's DC to 20. `empty` writes the DC to 0. A `formula`
-writes its number into both. A DC field with no `max` makes `full` fail naming the
-field, as today. `where` narrows *which records* are written, and naming *which
-field* is the follow-up's (see **Deliberately not doing**). The harness sample and
-the vault fixture both hold that second field, so the defect is on screen rather
-than avoided.
+**What `where` alone does not fix, and no longer has to.** Within a reached
+record, a binding naming no field still writes every `number` field, as it did
+before this feature and as it means today under **Every field**. On a list whose
+records hold a `Uses` counter *and* a `Save DC` with `max: 20`, a scoped `full`
+naming no field still refills `Uses` and also sets every reached record's DC to
+20; `empty` writes the DC to 0; a `formula` writes its number into both. A DC
+field with no `max` makes `full` fail naming the field, as today. `where` narrows
+*which records* are written; naming *which field* is the follow-up's, and the
+follow-up is built: `docs/features/record-set-reset-field-targeting.md` lets a
+binding name `column: 'Uses'`, which is then the only field it writes and the
+only reading a per-record `to` needs to be safe. The harness sample and the vault
+fixture that once held the DC on every scoped binding to show this defect on
+screen now hold it on the binding that names no field only, and the field-naming
+bindings leave it alone.
 
 **Why the binding, and not the record or the trigger.** The prior art splits three
 ways:
@@ -808,21 +813,25 @@ repository. The recipe above is what is committed.
 ## Deliberately not doing
 
 - **A per-record amount, and naming which field a Record set reset writes:
-  deferred together, as one follow-up modelled on Table's `resetColumns`.** Record
-  set declares its fields as reset targets, and a binding names the field it
-  writes. **Record scope is tied to that target field**: a binding that names a
-  field evaluates `to` in that record's scope, and one that names none keeps sheet
-  scope, so existing layouts mean what they meant. Channel Divinity's one use back
-  (`Uses + 1`) arrives there. **Why together:** a per-record amount is not safe
-  until a binding can name the field it writes. A Record set reset writes every
-  `number` field of each reached record, so `Uses + 1` on a record that also holds
-  a DC writes `Uses + 1` into the DC, where today's sheet-scope `to: '0'` into
-  every field is at least coherent. **This feature does not defer the
-  every-field write by hiding it.** It is live today and stays live within the
-  records `where` reaches. The tests, the harness sample and the vault fixture each
-  hold a `Save DC` beside `Uses`, and the criteria assert what the write does to it.
-  The follow-up also owns the overlap question for two bindings naming one field
-  (Part 5).
+  deferred together, as one follow-up modelled on Table's `resetColumns` — and the
+  follow-up is built.** `docs/features/record-set-reset-field-targeting.md`
+  ships it: Record set declares its fields as reset targets, and a binding names
+  the field it writes. **Record scope is tied to that target field**: a binding
+  that names a field evaluates `to` in that record's scope, and one that names
+  none keeps sheet scope, so every layout written before it means what it meant.
+  Channel Divinity's one use back (`Uses + 1`) is the acceptance case there. **Why
+  together, which the every-field write within this feature already argued:** a
+  per-record amount was not safe until a binding could name the field it writes,
+  since a Record set reset wrote every `number` field of each reached record, so
+  `Uses + 1` on a record that also held a DC would have written `Uses + 1` into
+  the DC. **The every-field write was live within this feature and stays live as
+  a reading, not a defect with no way out**: it is what a binding naming no field
+  means today, under the component's own word for it, **Every field**
+  (`resetWhole`). The follow-up also settles the overlap question for two
+  bindings naming one field (Part 5), the smallest of the routes it considered:
+  same-field pairs stay refused, whatever their conditions say, and a binding
+  naming no field beside one naming a field is the same refusal reached by a
+  route `bindingKey` cannot see.
 - **A budget of choices on a rest.** Daggerheart's downtime offers the player a
   number of moves to choose between. It targets no record the layout can name, and
   this design does not imply it is covered.

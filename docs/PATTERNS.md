@@ -419,7 +419,7 @@ Every component follows the same order. A reader who knows one knows them all.
    `type`, `description`, `storage`, `showsOneChild`, `formulaFields`,
    `configFields`, `palette`, `configName`, `example`, `sample`, `read`,
    `scopeValues`, `scopeRows`, `scopeModifiers`, `write`, `hasBuffer`,
-   `resetColumns`, `applyReset`, `render`.
+   `resetColumns`, `resetWhole`, `applyReset`, `render`.
    Contract first, then the data path in the order it runs, then rendering last
    because it is the longest. `showsOneChild` sits beside `storage` because it is
    the same kind of fact: what this component is structurally, before anything
@@ -441,7 +441,10 @@ Every component follows the same order. A reader who knows one knows them all.
    to somebody else's number. `resetColumns` sits beside `hasBuffer` for the reason
    `hasBuffer` sits where it does: both are declarations the layout editor reads to
    decide what a reset binding may say, and a declaration comes before the
-   behaviour it conditions.
+   behaviour it conditions. `resetWhole` sits directly after `resetColumns`
+   because it answers the same picker read the other way: one names the parts a
+   binding may pick, the other names what the picker calls a binding that picks
+   none of them (`docs/features/record-set-reset-field-targeting.md`).
 
 Checked in `contract.test.ts`, along with the rule that a component declares
 nothing outside the contract. Otherwise a new member falls outside the order and
@@ -763,6 +766,11 @@ A component inventing its own is the failure mode to watch for.
   declaring only the first offers an author a column to bind and then passes over
   the binding when the button is pressed — the rule above one step over, and the
   same dead control with nothing to say so.
+- **Declaring `resetWhole` obliges `resetColumns`** [checked: `contract.test.ts`].
+  `resetWhole` is what the **Acts on** picker calls a binding naming none of a
+  component's parts, so without a picker there is nowhere to offer it — a string
+  with nothing for it to be the alternative to
+  (`docs/features/record-set-reset-field-targeting.md`).
 - **Declaring `reset.*.where` obliges honouring it in `applyReset`** [checked:
   `contract.test.ts`]. The declaration is what the sheet reads to hand a component
   a binding carrying a condition, and what the editor reads to draw **Only where**
@@ -771,14 +779,24 @@ A component inventing its own is the failure mode to watch for.
   condition, and ignoring it. The contract drives each declaring component's
   `example` with a condition nothing satisfies and asserts it writes nothing and
   says it reached nothing.
+- **A component declaring both `reset.*.where` and `resetColumns` works a
+  part-naming binding's `to` out in that part's own scope** [checked:
+  `contract.test.ts`, `resolvesResetPerPart`]. Both declarations are needed:
+  `reset.*.where` is the component saying it has per-part scopes to evaluate in,
+  and naming a part is the trigger for using one, so a binding naming no part
+  keeps its `to` in sheet scope on any component. The predicate is what the
+  editor's **Resets to** row reads for its suggester and its description, so the
+  row describing a per-entry `to` and the resolver evaluating one cannot
+  disagree about which bindings have one
+  (`docs/features/record-set-reset-field-targeting.md`).
 - **Declaring `applyReset` on a component whose parts have names obliges
   `resetColumns`** [judgement]. Not checked, and the reason is what the tier is for:
   nothing outside a component can tell whether its parts have names, which is the
-  whole reason the member exists. A component that resets as one value — a Pool, a
-  Track, a Record set — correctly declares neither, so the check would have to
-  distinguish the two cases by knowing the thing it exists to avoid knowing. What
-  goes wrong without it is quiet rather than loud: the binding acts on the whole
-  component where the author meant one part of it.
+  whole reason the member exists. A component that resets as one value — a Pool
+  or a Track — correctly declares neither, so the check would have to distinguish
+  the two cases by knowing the thing it exists to avoid knowing. What goes wrong
+  without it is quiet rather than loud: the binding acts on the whole component
+  where the author meant one part of it.
 
 ---
 
