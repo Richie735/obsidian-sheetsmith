@@ -2498,6 +2498,9 @@ describe('a condition on a column', () => {
 		 */
 		const unconditioned = () => ({
 			id: 'rest_features',
+			// The component is what says whether a reset's `to` is worked out per
+			// entry (`resolvesResetPerPart`), so the record names it.
+			type: 'record-set',
 			columns: [
 				{ key: 'Recharges', type: 'level', input: 'select', levels: [...LEVELS] },
 				{ key: 'Uses', type: 'number' },
@@ -2536,7 +2539,50 @@ describe('a condition on a column', () => {
 			expect(Notice.messages[0]).toContain('Check them under Shown when. The Short rest reset reads it by position too');
 		});
 
-		it('adds no reset clause for a reset whose to names the key', () => {
+		it('names the reset whose per-entry amount reads the key, and Resets to', () => {
+			// A binding naming a field works its `to` out on each record
+			// (`docs/features/record-set-reset-field-targeting.md`, Part 6), so a
+			// reorder changes what it reads, as it does a condition.
+			const el = columnsEditor(
+				{
+					...unconditioned(),
+					reset: [
+						{
+							trigger: 'Short rest',
+							column: 'Uses',
+							action: 'formula',
+							to: 'if(Recharges == 4, Uses + 1, 0)',
+						},
+					],
+				},
+				0,
+				FIELDS,
+			);
+			commitNames(el, 'Recharges', 'None, Long rest, Short rest, Always-on');
+			expect(Notice.messages).toEqual([
+				'"Recharges" levels moved: "Short rest" was 1 and is now 2; "Long rest" was 2 and is now 1. The Short rest reset reads Recharges by position, so what it resets has changed. Check it under Resets to.',
+			]);
+		});
+
+		it('adds no reset clause for a Table column reset whose to names the key', () => {
+			// A Table checks no condition, so its column `to` is resolved once in
+			// sheet scope and reads no row's cell.
+			const el = columnsEditor(
+				{
+					...unconditioned(),
+					type: 'table',
+					reset: [
+						{ trigger: 'Short rest', column: 'Uses', action: 'formula', to: 'Recharges + 1' },
+					],
+				},
+				0,
+				FIELDS,
+			);
+			commitNames(el, 'Recharges', 'None, Long rest, Short rest, Always-on');
+			expect(Notice.messages).toEqual([]);
+		});
+
+		it('adds no reset clause for a reset naming no field whose to names the key', () => {
 			// `to` is resolved in sheet scope and reads no record's field.
 			const el = columnsEditor(
 				{

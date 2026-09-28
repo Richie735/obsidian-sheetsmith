@@ -36,15 +36,21 @@ import {
 	PUBLISHABLE_TYPES,
 	TOTALLED_TYPES,
 } from '../components/column-types';
+import { getComponent } from '../components';
 import { copyableName } from './copyable-name';
 import { showFieldError } from './field-error';
 import { reasonMessage } from './field-reason';
 import { formulaProblem } from './field-formula';
 import { isName } from '../formula/expression';
 import { conditionReads, heldCondition } from '../formula/field-condition';
-import { levelReorderNotice, LevelList } from './level-reorder';
+import { levelReorderNotice, LevelList, ResetReaders } from './level-reorder';
 import { fencedKeyProblem } from '../parse/fenced';
-import { ColumnOptionsSpec, EntryAddress, EntryColumnSpec } from '../types';
+import {
+	ColumnOptionsSpec,
+	EntryAddress,
+	EntryColumnSpec,
+	resolvesResetPerPart,
+} from '../types';
 
 /** What a list editor needs from the editor around it. */
 export interface ListContext {
@@ -986,27 +992,58 @@ export function renderColumnsEditor(
 			: [];
 
 	/**
-	 * The triggers whose reset bindings' `where` reads `key` by name
-	 * (`docs/features/record-set-reset-scope.md`), once each, in binding order.
+	 * The triggers whose reset bindings read `key` by name, once each, in binding
+	 * order, and which of a binding's rows does the reading
+	 * (`docs/features/record-set-reset-scope.md`,
+	 * `docs/features/record-set-reset-field-targeting.md` Part 6).
 	 *
 	 * **Read off `record.reset`, which teaches this module nothing about any
 	 * component**: `reset` is shared config every component's record may carry,
 	 * and `where` is its key, so this is the same question `readersOf` asks of a
-	 * sibling's condition, one key over. Only `where`: a reset's `to` is resolved
-	 * in sheet scope and reads no record's field.
+	 * sibling's condition, one key over.
+	 *
+	 * **And `to`, wherever it is worked out on each entry**, which is
+	 * `resolvesResetPerPart` asked of the component this list belongs to — a
+	 * binding naming a part, on a component that checks conditions — so a Table's
+	 * column `to`, resolved once in sheet scope, adds no clause. A binding
+	 * resolving `to` once reads no record's field, so a reorder cannot change
+	 * what it reads. The predicate is the one the **Resets to** row reads, so the
+	 * row describing a per-entry `to` and this notice cannot disagree about which
+	 * bindings have one.
 	 */
-	const resetsReading = (key: string): string[] => {
+	/** The component this list belongs to, which is what says whether a `to` is per entry. */
+	const definition =
+		typeof record.type === 'string' ? getComponent(record.type) : undefined;
+	const resetsReading = (key: string): ResetReaders => {
 		const bindings = Array.isArray(record.reset)
-			? (record.reset as { trigger?: unknown; where?: unknown }[])
+			? (record.reset as {
+					trigger?: unknown;
+					where?: unknown;
+					column?: unknown;
+					action?: unknown;
+					to?: unknown;
+				}[])
 			: [];
-		const triggers: string[] = [];
+		const readers: ResetReaders = { triggers: [], where: false, to: false };
 		for (const binding of bindings) {
-			const where = heldCondition(binding.where);
-			if (typeof where !== 'string' || !conditionReads(where, key)) continue;
 			if (typeof binding.trigger !== 'string') continue;
-			if (!triggers.includes(binding.trigger)) triggers.push(binding.trigger);
+			const where = heldCondition(binding.where);
+			const byWhere = typeof where === 'string' && conditionReads(where, key);
+			const byTo =
+				binding.action === 'formula' &&
+				typeof binding.to === 'string' &&
+				resolvesResetPerPart(definition, {
+					column: typeof binding.column === 'string' ? binding.column : undefined,
+				}) &&
+				conditionReads(binding.to, key);
+			if (!byWhere && !byTo) continue;
+			readers.where ||= byWhere;
+			readers.to ||= byTo;
+			if (!readers.triggers.includes(binding.trigger)) {
+				readers.triggers.push(binding.trigger);
+			}
 		}
-		return triggers;
+		return readers;
 	};
 
 	/** A level list as it stands, copied so a later edit cannot reach it. */
