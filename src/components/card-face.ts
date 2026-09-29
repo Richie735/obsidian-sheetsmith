@@ -600,6 +600,10 @@ export function renderCardFace(
 		input.setAttribute('aria-label', `${options.title} note`);
 		controls.push(input);
 		noteInput = input;
+		// The note ellipsises where it does not fit the card, so its whole text
+		// is revealed on hover — the label's own arrangement above, and only
+		// while it actually clips.
+		revealWhenTruncated(input);
 
 		bindEditable(input, {
 			initial: options.note.current,

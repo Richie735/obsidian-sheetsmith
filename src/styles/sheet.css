@@ -875,6 +875,11 @@
 	background: transparent;
 	box-shadow: none;
 	text-align: center;
+	/* A note longer than the card ends in an ellipsis rather than mid-word,
+	   and `card-face.ts` reveals the whole of it on hover through
+	   `ui/truncation.ts`. A focused field scrolls natively, as every field
+	   does. */
+	text-overflow: ellipsis;
 	font-size: var(--font-ui-smaller);
 	color: var(--text-muted);
 }
