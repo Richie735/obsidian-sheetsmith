@@ -483,12 +483,18 @@
 	align-items: stretch;
 }
 
-/* The group's authored name, above its cards. A heading over a strip of
-   cards, so it must not wear the same clothes as the micro-label inside
-   each card: same rule as the settings form keeps between a group heading
-   and a field label. The cards own the uppercase-and-tracked treatment;
-   the heading is the one in sentence case at full contrast. */
-.sheetsmith-card-set-label {
+/* A component's authored name above a block of micro-labels: a Card set's
+   over its cards, a Table's over its thead. One role in one set of clothes,
+   so one rule. Each block's own labels are uppercase, tracked and muted (the
+   card labels there, the thead here), which is the same rule the settings form
+   keeps between a group heading and a field label: the heading is the one in
+   sentence case at full contrast, or the two read as the same rank.
+
+   A Table's is in this list rather than beside its own component's rules
+   because the two are one declaration set by design, and two copies of it are
+   what `styles.test.ts`'s duplicate-body scan exists to refuse. */
+.sheetsmith-card-set-label,
+.sheetsmith-table-label {
 	margin-bottom: var(--size-2-3);
 	font-size: var(--font-ui-small);
 	font-weight: var(--font-semibold);
@@ -1117,19 +1123,6 @@
 
 }
 
-/* The component's authored name, above its table — the same role the stat
-   group's label plays above its cards, so it wears the same clothes. Both sit
-   over a block whose own micro-labels are uppercase, tracked, and muted (the
-   thead here, the card labels there); the heading is the one in sentence case
-   at full contrast, or the two read as the same rank. */
-.sheetsmith-table-label {
-	margin-bottom: var(--size-2-3);
-	font-size: var(--font-ui-small);
-	font-weight: var(--font-semibold);
-	line-height: 1.3;
-	color: var(--text-normal);
-}
-
 /* A wide table scrolls inside its own box. The sheet is a grid, and one
    component growing a column must never make the whole page scroll
    sideways — least of all on a phone, where the reflow already stacks
@@ -1171,7 +1164,17 @@
 	vertical-align: middle;
 }
 
-.sheetsmith-view .sheetsmith-table thead th {
+/* The thead's quiet treatment, and the footer's "Total", which is a label on a
+   reading rather than a row name and so wears the same one. The Total cell stays
+   a th carrying the name column's class, or it slides out from under its own
+   column on a phone-width sheet while the numbers stay put.
+
+   Here rather than beside the foot's own border rule further down, and the move
+   changes nothing in the cascade. The foot selector is (0,3,1), which already
+   outweighs the name column's (0,3,0) font weight and colour below wherever it
+   sits, and no rule between here and the foot sets type on a table cell. */
+.sheetsmith-view .sheetsmith-table thead th,
+.sheetsmith-view .sheetsmith-table tfoot .sheetsmith-table-name {
 	font-size: var(--font-smallest);
 	font-weight: var(--font-medium);
 	letter-spacing: 0.04em;
@@ -1922,18 +1925,6 @@
 .sheetsmith-view .sheetsmith-table tfoot th,
 .sheetsmith-view .sheetsmith-table tfoot td {
 	border-bottom: none;
-}
-
-/* "Total" is a label on a reading, not a row name, so it wears the thead's
-   quiet treatment. It stays a th carrying the name column's class, or it slides
-   out from under its own column on a phone-width sheet while the numbers stay
-   put. */
-.sheetsmith-view .sheetsmith-table tfoot .sheetsmith-table-name {
-	font-size: var(--font-smallest);
-	font-weight: var(--font-medium);
-	letter-spacing: 0.04em;
-	text-transform: uppercase;
-	color: var(--text-muted);
 }
 
 /* A finger has no hover to find the target with and no pixel to aim at, so
@@ -5974,13 +5965,6 @@ a.sheetsmith-undo {
 .sheetsmith-view .sheetsmith-record-body-input::placeholder {
 	color: var(--text-faint);
 	opacity: 1;
-}
-
-.sheetsmith-view .sheetsmith-record-body-input:focus {
-	border-color: var(--interactive-accent);
-	background-color: var(--background-primary);
-	outline: 2px solid transparent;
-	outline-offset: 0;
 }
 
 /* The layer takes the pointer rather than `pointer-events: none`, because it is
