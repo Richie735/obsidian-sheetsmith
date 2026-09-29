@@ -3705,7 +3705,7 @@ a.sheetsmith-undo {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	segment-sizing: border-segment;
+	box-sizing: border-box;
 	width: var(--sheetsmith-track-segment-width, 1.15em);
 	height: 1.15em;
 	border: 1.5px solid var(--text-faint);
