@@ -17,6 +17,7 @@
  */
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { all as KNOWN_CSS_PROPERTIES } from 'known-css-properties';
 import { describe, expect, it } from 'vitest';
 import { PARTS, renderStyles } from '../styles.build.mjs';
 import { MAX_TABULATED_FIELDS } from './components/record-set';
@@ -2423,7 +2424,8 @@ function rules(text: string): Rule[] {
  *
  * A plain split on `;`, which is right for this stylesheet because no value in
  * it holds one: its one `url()` is percent-encoded. A value that ever does would
- * split into a fragment with no property of its own.
+ * split into a fragment with no property of its own, and the property scan below
+ * reports that as unreadable rather than reading past it.
  */
 function declarations(body: string): string[] {
 	return body
@@ -2649,6 +2651,89 @@ describe('no two rules declare the same body', () => {
 		expect(unshared('', shared)).toEqual(['planted']);
 		// And an exemption whose pair went is reported rather than kept.
 		expect(staleExemptions([])).toHaveLength(SAME_ON_PURPOSE.length);
+	});
+});
+
+describe('every declaration names a real CSS property', () => {
+	/*
+	 * `segment-sizing: border-segment` shipped in `.sheetsmith-track-segment`
+	 * and was found by hand. A browser drops a declaration it cannot parse
+	 * without a word, and the host's own reset hid the loss, so the rule looked
+	 * finished while one of its lines did nothing. A type check does not read
+	 * CSS, and a shot shows what the page draws, not what it was told.
+	 *
+	 * The list is `known-css-properties`, pinned to an exact version so a
+	 * release cannot move this check under an unchanged stylesheet. A property
+	 * the list is missing fails here, and the answer is a newer pin, not an
+	 * exemption. A custom property (`--*`) is exempt because any name is a real
+	 * one; `every custom property the plugin declares is its own` above holds
+	 * what those names may be.
+	 *
+	 * Declarations only, on the shared parse, so a rule inside an at-rule is
+	 * checked like any other. An at-rule's own prelude, such as the
+	 * `grid-template-columns: subgrid` a `@supports` tests, is not a declaration
+	 * and is not read.
+	 */
+	const KNOWN = new Set(KNOWN_CSS_PROPERTIES);
+
+	/** What was read: standard declarations checked, and custom ones passed over. */
+	function scan(text: string): {
+		unknown: string[];
+		checked: number;
+		custom: number;
+		nested: number;
+	} {
+		const unknown: string[] = [];
+		let checked = 0;
+		let custom = 0;
+		let nested = 0;
+		for (const rule of rules(text)) {
+			for (const one of declarations(rule.body)) {
+				const colon = one.indexOf(':');
+				const property = colon === -1 ? '' : one.slice(0, colon).trim().toLowerCase();
+				if (property.startsWith('--')) {
+					custom += 1;
+					continue;
+				}
+				checked += 1;
+				if (rule.context.length > 0) nested += 1;
+				if (!KNOWN.has(property)) {
+					unknown.push(`${selectorList(rule.selector).join(', ')} { ${one} }`);
+				}
+			}
+		}
+		return { unknown, checked, custom, nested };
+	}
+
+	it('finds the rules it is meant to be checking', () => {
+		// The list loaded, and is the list: an empty import would report every
+		// property, and a wrong one might report none.
+		expect(KNOWN.size).toBeGreaterThan(500);
+		expect(KNOWN.has('grid-template-columns')).toBe(true);
+		// The parse reached the stylesheet, inside at-rules as well as outside,
+		// and the exemption is exercised rather than merely written.
+		const { checked, custom, nested } = scan(CSS_WITHOUT_COMMENTS);
+		expect(checked).toBeGreaterThan(1500);
+		expect(nested).toBeGreaterThan(100);
+		expect(custom).toBeGreaterThan(20);
+	});
+
+	it('names only properties a browser knows', () => {
+		expect(scan(CSS_WITHOUT_COMMENTS).unknown).toEqual([]);
+	});
+
+	it('would catch the property that shipped', () => {
+		expect(
+			scan('.sheetsmith-track-segment { segment-sizing: border-segment; }').unknown,
+		).toEqual(['.sheetsmith-track-segment { segment-sizing: border-segment }']);
+		// And inside an at-rule, and a fragment that is no declaration at all.
+		expect(
+			scan('@media (pointer: coarse) { .a { colr: red; } }\n.b { color }').unknown,
+		).toEqual(['.a { colr: red }', '.b { color }']);
+		// While a real property, a prefixed one and a custom one pass.
+		expect(
+			scan('.a { color: red; -webkit-mask-image: none; --sheetsmith-x: 1; }').unknown,
+		).toEqual([]);
 	});
 });
 
