@@ -3897,11 +3897,18 @@ a.sheetsmith-undo {
 	align-items: center;
 }
 
-/* In the clothes the step name wears — a size down, tracked, and faint — for
-   the same reason: it names the run rather than being part of the reading. */
+/* In the clothes the step name wears — a size down and tracked — for the same
+   reason: it names the run rather than being part of the reading.
+
+   **Muted, not faint**, because a reader reads a name back, and one of them is
+   the character's own typed text. `--text-faint` measured 2.12:1 light and
+   2.57:1 dark on the card's `--background-secondary`, against the 4.5:1 small
+   text needs; `--text-muted` is 6.19:1 and 7.03:1. The rank below the
+   segments' `--text-normal` is carried by size, tracking and case, as the
+   card's own label's is (`docs/UI.md` §6). */
 .sheetsmith-track-row-name {
 	overflow: hidden;
-	color: var(--text-faint);
+	color: var(--text-muted);
 	font-size: calc(var(--font-ui-smaller) * 0.85);
 	letter-spacing: 0.06em;
 	text-align: right;
@@ -3996,7 +4003,7 @@ a.sheetsmith-undo {
 	border-radius: var(--radius-s);
 	background: transparent;
 	box-shadow: none;
-	color: var(--text-faint);
+	color: var(--text-muted);
 	font-size: calc(var(--font-ui-smaller) * 0.85);
 	font-weight: inherit;
 	letter-spacing: 0.06em;
@@ -4329,11 +4336,13 @@ a.sheetsmith-undo {
 
 /* A checklist's row name is the content, not a caption on it.
 
-   Every other row set draws its name faint, and rightly: on a card of spell
-   slots or death saves the segments are the reading and "Successes" says which
-   run they belong to. A flag has no reading — there is a dot and a word, and the
-   word is the only thing that says which flag it is, so drawn at --text-faint it
-   sat quieter than the table's own column headers while carrying more. The
+   Every other row set draws its name a rank below the reading, in
+   --text-muted, and rightly: on a card of spell slots or death saves the
+   segments are the reading and "Successes" says which run they belong to. A
+   flag has no reading — there is a dot and a word, and the word is the only
+   thing that says which flag it is, so drawn at the row rank (then
+   --text-faint) it sat quieter than the table's own column headers while
+   carrying more. The
    painter was shared so a flag could not measure differently on a card than in a
    cell (docs/UI.md §9); this is the label beside it, which was not.
 

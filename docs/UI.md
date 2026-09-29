@@ -280,6 +280,17 @@ sheet.
   comment says so: the ramp "costs nothing, because the glyph and the name were
   already carrying the exact answer." A new mark either has that second channel
   or the review says what a reader sees without it.
+- **Text a reader reads back meets 4.5:1 on the surface it sits on, and
+  `--text-faint` does not on a card** [judgement]. Measured on
+  `--background-secondary`, faint is **2.12:1** light and **2.57:1** dark against
+  `legibility.md` §3's 4.5:1 for small text, so a Track row's name column — the
+  declared name and the typed one alike, since one of them is the character's own
+  text — is `--text-muted`, at 6.19:1 and 7.03:1. The rank below the segments is
+  carried by size, tracking and case, as the card label's is, rather than by a
+  third grey. **Scoped to the name column on purpose**: the other 23
+  `--text-faint` text colours in `sheet.css` were not measured, and
+  `docs/BACKLOG.md` § UI holds them as one row
+  (`docs/features/track-row-legibility-and-clipped-fields.md`).
 
 The numbers these rules are judged against, and the way to measure them, are in
 `.claude/skills/design-review/reference/legibility.md`: contrast ratios by text
