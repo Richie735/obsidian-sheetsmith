@@ -653,6 +653,49 @@ describe('image.render — every failure is on screen (the prior art)', () => {
 	});
 });
 
+describe('image.render — the reference, named where the pointer rests', () => {
+	/*
+	 * The field is transparent and `pointer-events: none` at rest, so unfocused
+	 * the stored reference is legible nowhere, and the frame's `title` is what
+	 * says it — whatever its length, which is why this is not
+	 * `revealWhenTruncated` (`docs/features/track-row-legibility-and-clipped-fields.md`
+	 * §4b). Present on the two branches that draw no error, absent on the rest.
+	 */
+	it('names the reference verbatim over a picture', () => {
+		const el = render();
+		expect(picture(el)).not.toBeNull();
+		expect(frame(el).getAttribute('title')).toBe(SOURCE);
+	});
+
+	it('names it over an empty frame, where there is no vault to draw from', () => {
+		const el = render({}, { source: SOURCE }, { resource: undefined });
+		expect(picture(el)).toBeNull();
+		expect(frame(el).getAttribute('title')).toBe(SOURCE);
+	});
+
+	it('says nothing where nothing is stored, since the placeholder shows through', () => {
+		expect(frame(render({}, null)).hasAttribute('title')).toBe(false);
+		expect(frame(render({}, { source: '' })).hasAttribute('title')).toBe(false);
+	});
+
+	it('says nothing over an error, which already names the file', () => {
+		// A missing file, a body it cannot use, and a file the browser cannot draw:
+		// the three errors a frame can hold.
+		expect(
+			frame(render({}, { source: '![[Missing.png]]' })).hasAttribute('title'),
+		).toBe(false);
+		expect(
+			frame(render({}, { source: 'Sildar.png' })).hasAttribute('title'),
+		).toBe(false);
+
+		const el = render({}, { source: '![[Notes.md]]' });
+		expect(frame(el).getAttribute('title')).toBe('![[Notes.md]]');
+		picture(el)?.dispatchEvent(new Event('error'));
+		expect(error(el)).toBe('"Notes.md" is not a picture.');
+		expect(frame(el).hasAttribute('title')).toBe(false);
+	});
+});
+
 describe('image.render — the gesture', () => {
 	function driven(data: ImageData | null = { source: SOURCE }) {
 		const commits: ImageData[] = [];

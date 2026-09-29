@@ -36,8 +36,8 @@
  * **No test file of its own, on `card-face.ts`'s and `level-ring.ts`'s settled
  * practice rather than as an exception claimed here.** A painter has no entry
  * point: it is only ever reached by a component drawing one, and what it owns
- * becomes observable only in the component's own box. `image.test.ts` drives 68
- * cases through this code and `passport.test.ts` its own, so the five gesture
+ * becomes observable only in the component's own box. `image.test.ts` drives
+ * its cases through this code and `passport.test.ts` its own, so the five gesture
  * rules that had one driver before the extraction now have two — which is the
  * whole of what §1 was asking for, and what a third file would restate rather
  * than assert.
@@ -188,8 +188,31 @@ export function renderPictureFrame(
 	 */
 	const unusable = embedRefusal(options.source);
 
+	/**
+	 * The stored reference as the frame's tooltip, wherever the frame is drawing
+	 * a picture or an empty frame.
+	 *
+	 * **Whether or not the text would fit**, which is why this is not
+	 * `revealWhenTruncated`: the field is transparent and `pointer-events: none`
+	 * at rest, so unfocused the reference is legible nowhere, and the premise of
+	 * `docs/UI.md` §6's `title` rule — a value legible nowhere else — is met
+	 * whatever its length. The frame carries it because the frame is what the
+	 * pointer rests on. Absent for an empty source, where the placeholder already
+	 * shows through, and on every error, which already names the file. A touch
+	 * reader's route is the press, which hands over the field (§7), and a screen
+	 * reader already has the value as the field's own, so nothing here is ARIA.
+	 *
+	 * Sets and never clears: `paint` clears the `title` before either call.
+	 */
+	const nameReference = (): void => {
+		if (options.source.trim() !== '') frame.title = options.source;
+	};
+
 	const paint = (refused: string | null): void => {
 		frame.replaceChildren();
+		// Cleared on every pass and set only on the two branches that draw no
+		// error, so a refusal and its recovery both leave the tooltip right.
+		frame.removeAttribute('title');
 		const message = refused ?? unusable;
 		if (message !== null) {
 			showError(message);
@@ -199,7 +222,10 @@ export function renderPictureFrame(
 		// A target with no `resource` draws an empty frame and no error: the
 		// absence of a vault is not evidence that a file is missing, which is
 		// `LinkContext`'s own bargain read for a picture.
-		if (target === null || options.resource === undefined) return;
+		if (target === null || options.resource === undefined) {
+			nameReference();
+			return;
+		}
 		const url = options.resource(target);
 		if (url === null) {
 			// The commonest way a vault reference goes stale, and the one the prior
@@ -220,6 +246,7 @@ export function renderPictureFrame(
 		// default is left out" (PATTERNS §8) read one level down into the DOM.
 		if (options.fit === 'cover') picture.classList.add('sheetsmith-fit-cover');
 		else if (options.fit === 'stretch') picture.classList.add('sheetsmith-fit-stretch');
+		nameReference();
 		// Exactly what the app returned, with nothing prepended and no extension
 		// inspected on the way (SPEC §4.2).
 		picture.src = url;
@@ -230,6 +257,7 @@ export function renderPictureFrame(
 		// rendering inside one while working outside it.
 		picture.addEventListener('error', () => {
 			frame.replaceChildren();
+			frame.removeAttribute('title');
 			showError(`"${target}" is not a picture.`);
 		});
 	};

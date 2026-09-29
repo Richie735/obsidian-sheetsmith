@@ -266,6 +266,27 @@ describe('card.render', () => {
 		expect(edits).toEqual([]);
 	});
 
+	it('reveals a clipped note on hover, and only while it clips', () => {
+		/*
+		 * The note ellipsises in a narrow card — "chain mail, shield" is 101px of
+		 * text in a 73px field at a 620px container — so its whole value has to
+		 * stay reachable. The metrics are faked because happy-dom reports 0 for
+		 * both, which is `ui/truncation.ts`'s own reason for existing; what this
+		 * asserts is that the painter binds the note to it. Card and Card set both
+		 * draw the note through `card-face.ts`, so this holds for both.
+		 */
+		const el = render({}, { value: '15', note: 'chain mail, shield' });
+		const note = inputs(el).note as HTMLInputElement;
+		Object.defineProperty(note, 'scrollWidth', { value: 101, configurable: true });
+		Object.defineProperty(note, 'clientWidth', { value: 73, configurable: true });
+		note.dispatchEvent(new Event('pointerenter'));
+		expect(note.getAttribute('title')).toBe('chain mail, shield');
+
+		Object.defineProperty(note, 'clientWidth', { value: 200, configurable: true });
+		note.dispatchEvent(new Event('pointerenter'));
+		expect(note.hasAttribute('title')).toBe(false);
+	});
+
 	it('restores the note on Escape without reporting an edit', () => {
 		const edits: unknown[] = [];
 		const el = render({}, { value: '15', note: 'chain mail' }, {
