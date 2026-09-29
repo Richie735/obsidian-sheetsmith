@@ -1309,6 +1309,62 @@ describe('passport.render — the picture', () => {
 	});
 });
 
+describe('passport.render — the picture\'s reference, named where the pointer rests', () => {
+	/*
+	 * The same painter and the same invisible field as Image, so the same
+	 * tooltip, deliberately
+	 * (`docs/features/track-row-legibility-and-clipped-fields.md` §4b). What a
+	 * Passport adds is a refusal at the commit, so the tooltip also has to go
+	 * with a refusal and come back with its recovery.
+	 */
+	it('names the reference verbatim over a picture', () => {
+		const el = render();
+		expect(picture(el)).not.toBeNull();
+		expect(frame(el)?.getAttribute('title')).toBe(SOURCE);
+	});
+
+	it('names it over an empty frame, where there is no vault to draw from', () => {
+		const el = render({}, readData(BODY), { resource: undefined });
+		expect(picture(el)).toBeNull();
+		expect(frame(el)?.getAttribute('title')).toBe(SOURCE);
+	});
+
+	it('says nothing where nothing is stored', () => {
+		const el = render({}, readData('\n```sheet\nclass: Bard\n```\n'));
+		expect(pictureField(el)?.value).toBe('');
+		expect(frame(el)?.hasAttribute('title')).toBe(false);
+	});
+
+	it('says nothing over an error, which already names the file', () => {
+		expect(
+			frame(render({}, { source: '![[Portrait of Sera.png]]' }))?.hasAttribute(
+				'title',
+			),
+		).toBe(false);
+		expect(
+			frame(
+				render({}, readData('\n![](https://example.com/p.png)\n')),
+			)?.hasAttribute('title'),
+		).toBe(false);
+	});
+
+	it('drops the name under a refusal and puts it back on recovery', () => {
+		const el = render();
+		const field = pictureField(el) as HTMLInputElement;
+		field.focus();
+		field.value = 'Thora.png';
+		field.blur();
+		expect(error(el)).not.toBeNull();
+		expect(frame(el)?.hasAttribute('title')).toBe(false);
+
+		field.focus();
+		field.value = SOURCE;
+		field.blur();
+		expect(error(el)).toBeNull();
+		expect(frame(el)?.getAttribute('title')).toBe(SOURCE);
+	});
+});
+
 describe('passport.render — hidePicture', () => {
 	it('draws no frame and no picture field', () => {
 		const el = render({ hidePicture: true });
