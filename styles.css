@@ -3887,7 +3887,15 @@ a.sheetsmith-undo {
    what the repeated `justify-items: start` below is for.
 
    Verified by rendering both and diffing: pixel for pixel identical across all
-   80 shots. */
+   80 shots.
+
+   **The row's floor is the pointer minimum**, `--size-4-5` (20px), and the two
+   fields a row can hold take the same floor below, so a field is a 20x20
+   target and a card mixing declared and typed names keeps one pitch rather
+   than going ragged (`docs/UI.md` §7). Measured before: every row 18.9px on a
+   20.9px pitch, a typed name field 75.6x12 and a length field 16.1x16; after,
+   20px rows on a 22px pitch and fields of 75.6x20 and 20x20. `min-height`
+   rather than `height`, so a larger text size still grows the row. */
 .sheetsmith-track-set .sheetsmith-track-row {
 	display: grid;
 	grid-column: 1 / -1;
@@ -3895,6 +3903,7 @@ a.sheetsmith-undo {
 	justify-self: stretch;
 	justify-items: start;
 	align-items: center;
+	min-height: var(--size-4-5);
 }
 
 /* In the clothes the step name wears — a size down and tracked — for the same
@@ -3956,8 +3965,15 @@ a.sheetsmith-undo {
    nothing here is a card's centre-line number, so the field reads as part of
    the row rather than as a second reading competing with the run beside
    it. Scoped under `.sheetsmith-view` for the reason every bare input here
-   is: Obsidian styles `input[type='text']` at (0,1,1). */
+   is: Obsidian styles `input[type='text']` at (0,1,1).
+
+   The floor is the row's own, `--size-4-5` on both axes, so the field is a
+   20x20 target where it measured 16.1x16. The `min-width` is here rather than
+   on the pool's class, so Pool's max field does not move, and it sits below
+   that class's `@supports` block so it wins on order at equal weight. */
 .sheetsmith-view .sheetsmith-track-row-length-input {
+	min-width: var(--size-4-5);
+	min-height: var(--size-4-5);
 	font-size: var(--font-ui-small);
 }
 
@@ -3989,6 +4005,9 @@ a.sheetsmith-undo {
 	min-width: 0;
 	max-width: 100%;
 	height: auto;
+	/* The row's floor, so a typed name is a 20px-tall target where it measured
+	   12px (see `.sheetsmith-track-set .sheetsmith-track-row`). */
+	min-height: var(--size-4-5);
 	/* **No horizontal padding, so the two kinds of name share one left edge.**
 	   `0 var(--size-2-1)` staggered them 2px — measured leftmost ink at x=27
 	   for a declared `d6` against x=29 for a typed `Homebrew d4` — which reads

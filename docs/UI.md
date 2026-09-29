@@ -319,6 +319,17 @@ case obeys it.
   answers with silence. The measurement is the argument: a menu's box is as wide
   as the chosen option, so the same card gives a field 432x29 and a menu 28x29
   with nothing stored, and neither grows under a coarse pointer.
+- **A field inside a row is at least the pointer minimum on both axes, and the
+  row takes that as its floor** [judgement]. `--size-4-5`, 20px, which is
+  `legibility.md` §5's 20x20. The floor goes on the row as well as the field so
+  every row in a set keeps one pitch, and a card mixing rows that hold a field
+  with rows that do not is never ragged. `min-height` rather than `height`, so a
+  larger text size still grows the row. A Track row is the case: 18.9px rows on a
+  20.9px pitch became 20px on 22px, a typed name field went from 75.6x12 to
+  75.6x20 and a length field from 16.1x16 to 20x20, with the length field's
+  `min-width` scoped to Track so Pool's max field does not move
+  (`docs/features/track-row-legibility-and-clipped-fields.md`). A later touch pass
+  starts here.
 
 ---
 
