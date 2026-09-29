@@ -2417,6 +2417,241 @@ function rules(text: string): Rule[] {
 	return found;
 }
 
+/**
+ * A rule body's declarations, one `property: value` string each, with its
+ * whitespace collapsed so a value wrapped over lines reads as one that is not.
+ *
+ * A plain split on `;`, which is right for this stylesheet because no value in
+ * it holds one: its one `url()` is percent-encoded. A value that ever does would
+ * split into a fragment with no property of its own.
+ */
+function declarations(body: string): string[] {
+	return body
+		.split(';')
+		.map((one) => one.trim().replace(/\s+/g, ' '))
+		.filter((one) => one !== '');
+}
+
+/**
+ * A rule's selector list, one selector each, whitespace collapsed.
+ *
+ * Split on the commas outside parentheses only, because
+ * `:not(.sheetsmith-sr-only, .sheetsmith-card-note)` is one selector with a
+ * comma inside it, and the `selectors()` split at the top of this file would
+ * read it as two halves of nothing.
+ */
+function selectorList(selector: string): string[] {
+	const found: string[] = [];
+	let depth = 0;
+	let from = 0;
+	for (let at = 0; at <= selector.length; at++) {
+		const char = selector[at];
+		if (char === '(') depth += 1;
+		else if (char === ')') depth -= 1;
+		else if ((char === ',' && depth === 0) || at === selector.length) {
+			const one = selector.slice(from, at).trim().replace(/\s+/g, ' ');
+			if (one !== '') found.push(one);
+			from = at + 1;
+		}
+	}
+	return found;
+}
+
+describe('no two rules declare the same body', () => {
+	/*
+	 * `docs/UI.md` §9's focus row is the argument, and it is the argument twice
+	 * over. Five fields had the same four declarations written out before that
+	 * list existed, which is a policy shared and its application duplicated
+	 * (`docs/PATTERNS.md` §1): two copies of one treatment drift the first time
+	 * one of them is edited, and nothing in review shows two rules agreeing.
+	 * And the merge that collapsed them then lost them, because a scan that only
+	 * counts copies is satisfied by *deleting* a rule as readily as by merging
+	 * one. So this is two checks, and the second is what the first cannot be
+	 * without.
+	 *
+	 * **Four declarations or more.** Measured by this scan on the stylesheet it
+	 * was written against: 61, 25, 10, 4, 3 and 1 groups of identical bodies at
+	 * one to six declarations or more. Below four the matches are coincidence (`min-width: 0` beside `max-width: 100%`
+	 * is two properties, not a treatment); at four each one was a real copy of a
+	 * real treatment, and the owner ruled on all four — three merged or removed,
+	 * one kept below with its reason.
+	 *
+	 * **Keyed on the at-rules around a rule as well as its body**, deliberately.
+	 * The same declarations at the top level and inside `@media (pointer:
+	 * coarse)` are an override restating what it overrides, not a copy, and
+	 * merging them is impossible: they do not apply under the same conditions.
+	 * Two rules inside *separate* blocks with the same prelude do compare equal,
+	 * because they apply under the same condition and can be merged. The body is
+	 * split, trimmed, whitespace-collapsed and sorted, so declaration order and
+	 * line wrapping cannot hide a copy.
+	 */
+	const MIN_DECLARATIONS = 4;
+
+	/** Every group of rules sharing one body in one context, each rule by its selector list. */
+	function duplicateBodies(text: string): string[][] {
+		const byBody = new Map<string, string[]>();
+		for (const rule of rules(text)) {
+			const body = declarations(rule.body);
+			if (body.length < MIN_DECLARATIONS) continue;
+			const key = [...rule.context, body.sort().join('; ')].join('\n');
+			const selector = selectorList(rule.selector).join(', ');
+			byBody.set(key, [...(byBody.get(key) ?? []), selector]);
+		}
+		return [...byBody.values()]
+			.filter((group) => group.length > 1)
+			.map((group) => group.sort());
+	}
+
+	/**
+	 * Bodies merged into one selector list on a ruling, each held to that list.
+	 *
+	 * **This is what makes the scan unsatisfiable by deletion.** Dropping a
+	 * selector from one of these lists ends the duplicate as surely as merging
+	 * did, and takes a treatment off every element it named. Held here, the drop
+	 * fails exactly as a new copy would. A third consumer joining a list passes:
+	 * what is asserted is that every name below is still on one rule, not that
+	 * nothing else is.
+	 *
+	 * The record body's focus is not an entry, because it has a guard already.
+	 * Its standalone copy was deleted rather than merged, the list it joined is
+	 * `docs/UI.md` §9's focus roster, and "every field the sheet styles has a
+	 * focus indicator" above fails if `sheetsmith-record-body-input` loses it.
+	 */
+	const SHARED_BODIES: { name: string; selectors: string[] }[] = [
+		{
+			name: "a component's authored name over a block of micro-labels",
+			selectors: ['.sheetsmith-card-set-label', '.sheetsmith-table-label'],
+		},
+		{
+			name: "a table's quiet header, and the Total in its foot",
+			selectors: [
+				'.sheetsmith-view .sheetsmith-table thead th',
+				'.sheetsmith-view .sheetsmith-table tfoot .sheetsmith-table-name',
+			],
+		},
+	];
+
+	/** Each shared body whose selectors no longer all sit on one rule of that size. */
+	function unshared(
+		text: string,
+		shared: { name: string; selectors: string[] }[],
+	): string[] {
+		const all = rules(text).filter(
+			(rule) => declarations(rule.body).length >= MIN_DECLARATIONS,
+		);
+		return shared
+			.filter(
+				({ selectors }) =>
+					!all.some((rule) => {
+						const list = selectorList(rule.selector);
+						return selectors.every((one) => list.includes(one));
+					}),
+			)
+			.map(({ name }) => name);
+	}
+
+	/**
+	 * Duplicates kept on a ruling, each with the reason it stays, enumerated the
+	 * way `FOCUS_ELSEWHERE` is, because an exemption nobody states is a rule
+	 * that quietly stops applying.
+	 *
+	 * - **Track's glyph buttons and Passport's.** Both reset a bare `<button>`
+	 *   to a round glyph-only control, and the size policy is not in the copy:
+	 *   it is `--sheetsmith-inline-control`, one token every such control reads.
+	 *   What is duplicated is the reset, and the reset is a *family*. Table's
+	 *   delete glyph and Record set's three controls are members whose bodies
+	 *   differ (a `vertical-align`, a `flex`, a font size), so merging these two
+	 *   would stand one arbitrary pair in for the family, and ruling on the
+	 *   family is a pass of its own.
+	 */
+	const SAME_ON_PURPOSE: { rules: string[]; reason: string }[] = [
+		{
+			rules: [
+				'.sheetsmith-view .sheetsmith-passport-part-remove, .sheetsmith-view .sheetsmith-passport-add',
+				'.sheetsmith-view .sheetsmith-track-action-button, .sheetsmith-view .sheetsmith-track-modifier-button',
+			],
+			reason: 'a glyph-only reset whose family is unruled',
+		},
+	];
+
+	const exempted = (group: string[]) =>
+		SAME_ON_PURPOSE.some(
+			(entry) => JSON.stringify([...entry.rules].sort()) === JSON.stringify(group),
+		);
+
+	/** Each exemption that no longer names a duplicate this stylesheet holds. */
+	function staleExemptions(groups: string[][]): string[] {
+		return SAME_ON_PURPOSE.filter(
+			(entry) =>
+				!groups.some(
+					(group) => JSON.stringify([...entry.rules].sort()) === JSON.stringify(group),
+				),
+		).map(({ reason }) => reason);
+	}
+
+	it('finds the rules it is meant to be checking', () => {
+		// The floor, because both assertions below are absences: a parse that
+		// stopped reading bodies would report no duplicates and no drops.
+		const all = rules(CSS_WITHOUT_COMMENTS);
+		expect(all.length).toBeGreaterThan(600);
+		const sized = all.filter(
+			(rule) => declarations(rule.body).length >= MIN_DECLARATIONS,
+		);
+		expect(sized.length).toBeGreaterThan(150);
+		// Inside at-rules too, which is where a flat parse goes blind.
+		expect(sized.filter((rule) => rule.context.length > 0).length).toBeGreaterThan(
+			5,
+		);
+	});
+
+	it('has no two rules declaring one body, past the ones kept on purpose', () => {
+		expect(duplicateBodies(CSS_WITHOUT_COMMENTS).filter((g) => !exempted(g))).toEqual(
+			[],
+		);
+	});
+
+	it('keeps every merged body on one rule', () => {
+		expect(unshared(CSS_WITHOUT_COMMENTS, SHARED_BODIES)).toEqual([]);
+	});
+
+	it('holds each exemption to a duplicate that still exists', () => {
+		// An exemption whose pair stopped matching would sit here licensing
+		// whatever took its place, so a stale one fails rather than lingers.
+		expect(staleExemptions(duplicateBodies(CSS_WITHOUT_COMMENTS))).toEqual([]);
+	});
+
+	it('would catch a copy, and a merge undone by deletion', () => {
+		const body = 'color: red; margin: 0; padding: 0; border: none;';
+		// Reordered and rewrapped, the copy is still a copy.
+		expect(
+			duplicateBodies(
+				`.a { ${body} }\n.b {\n\tborder:   none;\n\tpadding: 0;\n\tmargin: 0;\n\tcolor: red;\n}`,
+			),
+		).toEqual([['.a', '.b']]);
+		// Under one condition twice it is a copy; against the top level it is
+		// an override.
+		expect(
+			duplicateBodies(
+				`@media (pointer: coarse) { .a { ${body} } }\n@media (pointer: coarse) { .b { ${body} } }`,
+			),
+		).toEqual([['.a', '.b']]);
+		expect(
+			duplicateBodies(`.a { ${body} }\n@media (pointer: coarse) { .b { ${body} } }`),
+		).toEqual([]);
+		// Three declarations is under the line.
+		expect(
+			duplicateBodies('.a { color: red; margin: 0; padding: 0; }\n.b { color: red; margin: 0; padding: 0; }'),
+		).toEqual([]);
+		// A merged list losing a selector, or losing the rule, is reported.
+		const shared = [{ name: 'planted', selectors: ['.a', '.b'] }];
+		expect(unshared(`.a, .b { ${body} }`, shared)).toEqual([]);
+		expect(unshared(`.a { ${body} }`, shared)).toEqual(['planted']);
+		expect(unshared('', shared)).toEqual(['planted']);
+		// And an exemption whose pair went is reported rather than kept.
+		expect(staleExemptions([])).toHaveLength(SAME_ON_PURPOSE.length);
+	});
+});
+
 describe("a Record set's strip of field names", () => {
 	/*
 	 * `docs/features/record-set-heading-strip.md`. Two things are held here and
