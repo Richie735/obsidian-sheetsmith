@@ -30,7 +30,7 @@ import { ListContext } from './list-fields';
 import { PickerChoice } from './picker-catalog';
 import type SheetsmithPlugin from '../main';
 import { Layout, parseLayout, serialiseLayout } from '../parse/layout';
-import { WalkEntry, walkComponents } from '../parse/layout-walk';
+import { WalkEntry } from '../parse/layout-walk';
 import { parseFunctions } from '../formula/functions';
 import { Vocabulary, vocabularySource } from '../formula/vocabulary';
 import { clipboardRow, nextFreeRow, renderTree, SHEET_DESTINATION } from './tree';
@@ -46,7 +46,7 @@ import { copiedComponent, pasteComponent, pasteConfiguration } from './paste';
 import { copyContext } from './paste-dependencies';
 import { configurationSentence, pasteSentence } from './paste-notice';
 import { PasteBoxModal } from './paste-box';
-import { childIsPlaced } from '../view/grid-cells';
+import { childIsPlaced, walkLayout } from '../view/grid-cells';
 import {
 	adoptionReport,
 	countAdoptions,
@@ -411,7 +411,7 @@ export class LayoutEditorSection {
 		const layout = this.layout;
 		if (layout === null) return { components: [], functions: new Map() };
 		return {
-			components: walkComponents(layout.components).map((entry) =>
+			components: walkLayout(layout.components).map((entry) =>
 				vocabularySource(entry.config, getComponent(entry.config.type)),
 			),
 			functions: parseFunctions(layout.functions).library,
@@ -530,7 +530,7 @@ export class LayoutEditorSection {
 	 * one has to look here rather than at a single level.
 	 */
 	private allComponents(): ComponentConfig[] {
-		return walkComponents(this.layout?.components ?? []).map(
+		return walkLayout(this.layout?.components ?? []).map(
 			(entry) => entry.config,
 		);
 	}
@@ -752,7 +752,7 @@ export class LayoutEditorSection {
 	private selectedEntry(layout: Layout): WalkEntry | null {
 		if (this.host.selection === SHEET_DESTINATION) return null;
 		return (
-			walkComponents(layout.components).find(
+			walkLayout(layout.components).find(
 				(entry) => entry.config.id === this.host.selection,
 			) ?? null
 		);

@@ -32,9 +32,9 @@ import {
 	parseLayout,
 	serialiseLayout,
 } from '../parse/layout';
-import { WalkEntry, walkComponents } from '../parse/layout-walk';
+import { WalkEntry } from '../parse/layout-walk';
 import { ComponentConfig, ConfigFieldSpec } from '../types';
-import { childIsPlaced, innerPlacement } from '../view/grid-cells';
+import { childIsPlaced, innerPlacement, walkLayout } from '../view/grid-cells';
 import { componentDisplayName } from './component-name';
 import {
 	Dependency,
@@ -164,7 +164,7 @@ export function pasteComponent(
 	const cloned = cloneOf(layout);
 	if ('error' in cloned) return cloned;
 	const candidate = cloned.clone;
-	const walk = walkComponents(candidate.components);
+	const walk = walkLayout(candidate.components);
 	const anchor = walk.find((entry) => entry.config.id === after);
 	if (anchor === undefined) return { error: 'That component is no longer in this layout.' };
 	const parentEntry =
@@ -273,7 +273,7 @@ export function pasteConfiguration(
 	const cloned = cloneOf(layout);
 	if ('error' in cloned) return cloned;
 	const candidate = cloned.clone;
-	const target = walkComponents(candidate.components).find(
+	const target = walkLayout(candidate.components).find(
 		(entry) => entry.config.id === onto,
 	)?.config;
 	if (target === undefined) return { error: 'That component is no longer in this layout.' };

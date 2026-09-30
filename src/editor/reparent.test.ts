@@ -7,7 +7,7 @@ import {
 	parseLayout,
 	serialiseLayout,
 } from '../parse/layout';
-import { walkComponents } from '../parse/layout-walk';
+import { walkLayout } from '../view/grid-cells';
 
 function pos(overrides: Partial<ComponentConfig['position']> = {}) {
 	return { col: 1, row: 1, width: 2, height: 1, ...overrides };
@@ -431,7 +431,7 @@ describe('every move canReparent allows saves', () => {
 
 	function allowedMoves(make: () => Layout): Array<[string, string | null]> {
 		const layout = make();
-		const configs = walkComponents(layout.components).map((entry) => entry.config);
+		const configs = walkLayout(layout.components).map((entry) => entry.config);
 		const moves: Array<[string, string | null]> = [];
 		for (const dragged of configs) {
 			for (const target of [null, ...configs]) {
@@ -459,7 +459,7 @@ describe('every move canReparent allows saves', () => {
 			for (const [draggedId, targetId] of moves) {
 				const layout = make();
 				const byId = new Map(
-					walkComponents(layout.components).map((entry) => [
+					walkLayout(layout.components).map((entry) => [
 						entry.config.id,
 						entry.config,
 					]),

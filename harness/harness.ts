@@ -27,7 +27,6 @@ import {
 } from '../src/formula/resolve';
 import { buildSheet } from '../src/formula/sheet';
 import { Layout } from '../src/parse/layout';
-import { walkComponents } from '../src/parse/layout-walk';
 import {
 	ComponentConfig,
 	ComponentDefinition,
@@ -37,7 +36,7 @@ import {
 } from '../src/types';
 import { nameAlreadyDeclared } from '../src/layouts';
 import { dropDetachedAnchoredPanel } from '../src/ui/anchored-panel';
-import { renderGrid } from '../src/view/grid-cells';
+import { renderGrid, walkLayout } from '../src/view/grid-cells';
 import { boundTo, planTrigger } from '../src/view/reset-plan';
 import { openResetConfirmation } from '../src/view/reset-confirmation';
 import { App } from '../src/test/obsidian-stub';
@@ -99,7 +98,7 @@ function loadState(name: StateName): void {
 	const samples = samplesFor(name);
 	bodies = new Map(
 		samples.flatMap((s) =>
-			walkComponents([s.config]).map((entry) => [
+			walkLayout([s.config]).map((entry) => [
 				entry.config.id,
 				entry.config === s.config ? s.body : (s.children?.[entry.config.id] ?? null),
 			] as [string, string | null]),
@@ -116,7 +115,7 @@ function loadState(name: StateName): void {
  * the closed group must not change what the sheet computes.
  */
 function prepare(): void {
-	live = walkComponents(layout.components).map(({ config }) => {
+	live = walkLayout(layout.components).map(({ config }) => {
 		const component = getComponent(config.type);
 		const body = bodies.get(config.id) ?? null;
 		if (!component) {
@@ -380,7 +379,7 @@ function renderSheet(into: HTMLElement): void {
 	// of the view's loop.
 	renderGrid(
 		grid,
-		walkComponents(layout.components),
+		walkLayout(layout.components),
 		live,
 		(entry) => {
 			const { config, component, data } = entry;

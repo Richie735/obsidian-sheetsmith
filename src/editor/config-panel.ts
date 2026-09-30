@@ -93,7 +93,7 @@ import {
 import { vocabularySource } from '../formula/vocabulary';
 import { fencedKeyProblem } from '../parse/fenced';
 import { parseModifierDefinitions } from '../parse/modifier-definitions';
-import { WalkEntry, walkComponents } from '../parse/layout-walk';
+import { WalkEntry } from '../parse/layout-walk';
 import { onCommit } from './field-commit';
 import { levelReorderNotice } from './level-reorder';
 import { renderPublishedNames } from './published-names';
@@ -134,7 +134,7 @@ import {
 	isContainer,
 	placesChildren,
 } from '../types';
-import { childIsPlaced, innerPlacement } from '../view/grid-cells';
+import { childIsPlaced, innerPlacement, walkLayout } from '../view/grid-cells';
 import { clamp, lastColumn } from './preview-grid';
 
 /**
@@ -370,7 +370,7 @@ export class ConfigPanel {
 	 * through the same function.
 	 */
 	private modifierSources(layout: Layout): ModifierTargetSource[] {
-		return walkComponents(layout.components).map((entry) =>
+		return walkLayout(layout.components).map((entry) =>
 			modifierTargetSource(entry.config, getComponent(entry.config.type)),
 		);
 	}
@@ -698,7 +698,7 @@ export class ConfigPanel {
 				? (layout.columns ?? DEFAULT_COLUMNS)
 				: innerPlacement(
 						parent,
-						walkComponents(layout.components).find(
+						walkLayout(layout.components).find(
 							(entry) => entry.config === parent,
 						)?.parent ?? null,
 					).width;

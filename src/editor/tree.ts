@@ -56,9 +56,9 @@ import {
 	treeListContext,
 } from './tree-moves';
 import { Layout } from '../parse/layout';
-import { componentsInside, WalkEntry, walkComponents } from '../parse/layout-walk';
+import { componentsInside, WalkEntry } from '../parse/layout-walk';
 import { ComponentConfig } from '../types';
-import { innerPlacement } from '../view/grid-cells';
+import { innerPlacement, walkLayout } from '../view/grid-cells';
 
 /**
  * The top level, wherever something has to be named that is not a component.
@@ -261,7 +261,7 @@ export function renderTree(
 	layout: Layout,
 	host: TreeHost,
 ): void {
-	const walk = walkComponents(layout.components);
+	const walk = walkLayout(layout.components);
 	const byConfig = new Map(walk.map((entry) => [entry.config, entry]));
 	const shut = settleCollapsed(walk, byConfig, host);
 	renderLayoutRow(outline, layout, host);
@@ -730,7 +730,7 @@ function resolveDrop(
 			? { kind: 'into' }
 			: { kind: 'refused', error: containerCheck.error };
 	}
-	const walk = walkComponents(layout.components);
+	const walk = walkLayout(layout.components);
 	const draggedParent = walk.find((entry) => entry.config === dragged)?.parent;
 	const targetParent = walk.find((entry) => entry.config === target)?.parent;
 	if (draggedParent === targetParent && draggedParent !== undefined) {
@@ -839,7 +839,7 @@ function reorderBeside(
 	target: ComponentConfig,
 	host: TreeHost,
 ): void {
-	const walk = walkComponents(layout.components);
+	const walk = walkLayout(layout.components);
 	const entry = walk.find((candidate) => candidate.config === dragged);
 	if (!entry) return;
 	const siblings = entry.siblings;
@@ -850,6 +850,6 @@ function reorderBeside(
 }
 
 function findComponent(layout: Layout, id: string): ComponentConfig | null {
-	return walkComponents(layout.components).find((entry) => entry.config.id === id)
+	return walkLayout(layout.components).find((entry) => entry.config.id === id)
 		?.config ?? null;
 }

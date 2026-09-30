@@ -28,7 +28,7 @@ import { vocabularySource } from '../formula/vocabulary';
 import { CopyContext } from '../parse/component-clipboard';
 import { Layout } from '../parse/layout';
 import { changesOf } from '../parse/modifier-definitions';
-import { walkComponents } from '../parse/layout-walk';
+import { walkLayout } from '../view/grid-cells';
 import { ComponentConfig, ResetBinding } from '../types';
 
 /** The six kinds of thing, in the order the `Notice` names them. */
@@ -90,7 +90,7 @@ export function localNames(config: ComponentConfig): ReadonlySet<string> {
 
 /** A component and everything inside it, in walk order. */
 export function subtree(root: ComponentConfig): ComponentConfig[] {
-	return walkComponents([root]).map((entry) => entry.config);
+	return walkLayout([root]).map((entry) => entry.config);
 }
 
 /** Every expression a component's configuration holds. */
@@ -223,7 +223,7 @@ export function pasteDependencies(
 	const copied = subtree(root);
 	const reads = readsOf(copied);
 	const here = new Map(
-		walkComponents(target.components).map((entry) => [entry.config.id, entry.config.label]),
+		walkLayout(target.components).map((entry) => [entry.config.id, entry.config.label]),
 	);
 	const lines = functionLines(target);
 	const found: Dependency[] = [];

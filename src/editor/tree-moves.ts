@@ -26,8 +26,9 @@
  * the layout; this is only where the menu lists them, and they are never
  * disabled, because whether there is anything to paste is only known by reading.
  *
- * **Every move reads the level as the tree draws it**, which is the grid
- * reading order `walkComponents` sorts into, not the file's own array. The two
+ * **Every move reads the level as the tree draws it**, which on a placed level
+ * is the grid reading order `walkComponents` sorts into, not the file's own
+ * array. The two
  * differ on a placed grid, and a move decided by file index there acted on rows
  * the tree does not draw beside it. So "into" means the row drawn directly
  * above, and first and last are the rows drawn first and last.
@@ -38,9 +39,9 @@
  * by its arrow keys. The menu leaves both items out, since nearly every level is
  * placed and two disabled items would sit on almost every row for good, and the
  * chord says where to go instead. Up and down stay where a level's children are
- * not placed — a Tab set's tabs — whose strip reads the file's order. The tree
- * draws that order only while the tabs' stored rows tie; a tab moved in through
- * the tree breaks the tie, a known gap deferred as its own bug
+ * not placed — a Tab set's tabs — whose strip reads the file's order, and so
+ * does the tree: `walkComponents` keeps the file's order on such a level, so a
+ * tab's stored row, which a move in through the tree sets, decides nothing
  * (`docs/features/layout-editor-tree.md` §5).
  *
  * What it does not decide: `reparent.ts`'s rules, which are called, never

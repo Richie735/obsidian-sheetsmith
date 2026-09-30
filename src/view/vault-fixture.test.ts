@@ -74,7 +74,7 @@ import { getSection, parseCharacter, serialiseCharacter } from '../parse/charact
 import { parseLayout, serialiseLayout } from '../parse/layout';
 import { cellParts } from '../parse/modifier-cell';
 import { parseModifierDefinitions } from '../parse/modifier-definitions';
-import { walkComponents } from '../parse/layout-walk';
+import { walkLayout } from './grid-cells';
 import { isContainer, ModifierOutcome } from '../types';
 
 /**
@@ -128,7 +128,7 @@ function sheetFrom(layoutSource: string, noteSource: string) {
 	const { library, problems } = parseFunctions(layout.functions);
 	const note = parseCharacter(noteSource);
 
-	const prepared = walkComponents(layout.components).map(({ config }) => {
+	const prepared = walkLayout(layout.components).map(({ config }) => {
 		const component = getComponent(config.type);
 		if (!component) throw new Error(`No component of type "${config.type}".`);
 		const section = isContainer(component)

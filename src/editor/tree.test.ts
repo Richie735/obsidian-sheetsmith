@@ -101,7 +101,8 @@ function threeTabs(): Layout {
  * `threeTabs()` with the tie broken: each tab carries a stored row of its own,
  * C's first, which is what a tab moved in through the tree is given
  * (`reparent.ts` places it at the destination's next free row). The strip reads
- * the file's order, A B C, and `walkComponents` sorts by row, C A B.
+ * the file's order, A B C, and a walk sorting by row would read C A B; the tree
+ * must draw the strip's.
  */
 function untiedTabs(): Layout {
 	const layout = threeTabs();
@@ -363,16 +364,26 @@ describe('tree moves on a level that is not placed keep the file order', () => {
 	});
 
 	/*
-	 * A known gap, deferred as its own bug: the tree sorts a Tab set's tabs by
-	 * stored row while the strip reads the file, so once the tie breaks the two
-	 * disagree, and a Move up changes the strip while the tree stays put. Fixing
-	 * it touches `walkComponents`' sort or `reparent.ts`, both out of this
-	 * branch. `it.fails` so the case runs and turns red the day the gap closes,
-	 * rather than asserting the wrong order as correct.
+	 * Once a known gap: the tree sorted a Tab set's tabs by stored row while the
+	 * strip reads the file, so once the tie broke the two disagreed, and a Move
+	 * up changed the strip while the tree stayed put. `walkComponents` now keeps
+	 * the file's order on a level whose children are not placed.
 	 */
-	it.fails('draws untied tabs in the order the strip shows them', async () => {
+	it('draws untied tabs in the order the strip shows them', async () => {
 		harness = await open(untiedTabs());
 		expect(treeOrder(harness)).toEqual(['pages', 'a', 'b', 'c']);
+	});
+
+	it('moves an untied tab up in the strip and the tree alike, and stops at the first', async () => {
+		harness = await open(untiedTabs());
+		openRowMenu(harness, 'a');
+		expect(menuItem('Move up').classList.contains('is-disabled')).toBe(true);
+		document.body.querySelector('.menu')?.remove();
+
+		chord(harness, 'edit-b', 'ArrowUp');
+		await settle(harness.pane);
+		expect(await storedTabs(harness)).toEqual(['b', 'a', 'c']);
+		expect(treeOrder(harness)).toEqual(['pages', 'b', 'a', 'c']);
 	});
 
 	it('refuses the chords at the ends in their own words', async () => {
