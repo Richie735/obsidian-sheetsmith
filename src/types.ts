@@ -86,7 +86,14 @@ export interface ResetBinding {
 	trigger: string;
 	/**
 	 * Which part of the component the trigger acts on, for a component whose
-	 * parts have names: a Table column, and nothing else today.
+	 * parts have names: a Table's columns and a Record set's fields, each
+	 * offered through that component's own `resetColumns`.
+	 *
+	 * **Still `column` on a component whose parts are fields**, and the key was
+	 * kept on purpose rather than left over: it has shipped since 0.3.0, a
+	 * rename is a second spelling the parser would accept for ever, and a
+	 * Record set's field already is a column in every shared module that reads
+	 * one (`docs/features/record-set-reset-field-targeting.md`, Part 1).
 	 *
 	 * `buffer` below is the precedent — a key on the shared binding that only a
 	 * component declaring the matching contract member means anything by, gated
@@ -99,7 +106,9 @@ export interface ResetBinding {
 	 * different columns are legal and necessary — a long rest that clears
 	 * Conditions and refills Uses on one table — and two naming the same column,
 	 * or two on a component that names none, are the duplicate `parseReset`
-	 * refuses.
+	 * refuses. A pair the key cannot see — one naming no part beside one naming
+	 * a part, on a component that reads the first as the whole of itself — is
+	 * `claimsSamePart` below, which the editor and the sheet's plan read.
 	 *
 	 * The parser never asks whether the string names a column of anything, which
 	 * is the same split §6 already draws for the trigger name: whether `reset` is
@@ -108,6 +117,31 @@ export interface ResetBinding {
 	 * rendering.
 	 */
 	column?: string;
+	/**
+	 * Which of the component's records this binding reaches: a boolean formula,
+	 * evaluated once per record in that record's own scope — its stored fields,
+	 * then the sheet — by a component that declares `reset.*.where` among its
+	 * `formulaFields`, and by nothing else
+	 * (`docs/features/record-set-reset-scope.md`). Absent, or blank, reaches every
+	 * record, which is the binding every layout written before this held.
+	 *
+	 * **Not `visibleWhen`**, although it is written in that key's grammar: a
+	 * reset's scope and a field's visibility share a language and nothing else, so
+	 * a hidden field resets exactly as a shown one does and `applyReset` never
+	 * asks what is shown. **Not `when`** either, which is the modifier part's
+	 * clause and already means "this change applies while".
+	 *
+	 * **Not half of the binding's identity**, unlike `column`: `bindingKey` stays
+	 * the trigger and the column, so two bindings on one trigger naming one part,
+	 * or none, are still the duplicate `parseReset` refuses, whatever their
+	 * conditions say. Whether two conditions overlap depends on the data,
+	 * so no check on the file could tell a pair that is safe from one that is not.
+	 *
+	 * A component that does not declare the path cannot check it, and the sheet
+	 * leaves such a component alone at the press rather than resetting it whole —
+	 * which is `checksResetCondition` below, read the same way by the editor.
+	 */
+	where?: string;
 	/**
 	 * What resetting means for the component's own value. The states are named
 	 * rather than numbered because the same three cover a Toggle, where full
@@ -226,8 +260,33 @@ export interface ComponentConfig {
  * data object when it was handed null and has nothing to reset.
  */
 export type ResetResult<TData> =
-	| { ok: true; data: TData }
+	| { ok: true; data: TData; reach?: ResetReach }
 	| { ok: false; error: string };
+
+/**
+ * How much of a component one binding reaches, where it reaches only some
+ * (`docs/features/record-set-reset-scope.md`).
+ *
+ * **On the result rather than a contract member of its own**, and that is the
+ * decision: a `resetReach` beside `applyReset` would evaluate one condition twice,
+ * once for the confirmation and once for the write, and the day the two disagree
+ * the sheet announces one scope and acts on another. Carried here, the number a
+ * reader is shown and the parts the press writes come from one evaluation.
+ *
+ * Given only where the binding narrows what it reaches. A binding reaching the
+ * whole of a component gives none, so its confirmation line stays the bare label
+ * rather than gaining "7 of 7" on every rest.
+ */
+export interface ResetReach {
+	/**
+	 * The parts this binding reaches: its *scope*, not its writes, so a part
+	 * admitted and then left alone — a record with no ceiling for `full` to restore
+	 * to — still counts, and the number holds still whether or not it was full.
+	 */
+	reached: number;
+	/** The parts it was checked against, including any it could not read. */
+	of: number;
+}
 
 /**
  * Outcome of parsing a section body. An error affects that component only.
@@ -288,7 +347,9 @@ type EntryKeyOf<TConfig extends ComponentConfig, K> = K extends keyof TConfig
 
 /**
  * One `configFields` entry of a component whose config type is `TConfig`: the
- * field spec with both of its key types filled in from the key it names.
+ * field spec with its first two key types filled in from the key it names, and
+ * its third, the key a `visibleWhen` reads, with every declarable key — a
+ * condition names a sibling, which the entry's own key says nothing about.
  *
  * A union over the declarable keys rather than one instantiation, because the
  * two halves have to agree *within one entry* — `entryColumns` names properties
@@ -297,23 +358,28 @@ type EntryKeyOf<TConfig extends ComponentConfig, K> = K extends keyof TConfig
  * discriminates the union and a typo matches no member.
  */
 type ConfigFieldOf<TConfig extends ComponentConfig> = {
-	[K in DeclarableKey<TConfig>]: ConfigFieldSpec<K, EntryKeyOf<TConfig, K>>;
+	[K in DeclarableKey<TConfig>]: ConfigFieldSpec<
+		K,
+		EntryKeyOf<TConfig, K>,
+		DeclarableKey<TConfig>
+	>;
 }[DeclarableKey<TConfig>];
 
 /**
  * A config field the layout editor renders for a component.
  *
- * **Parameterised over the two key sets rather than over the component's own
- * config**, so that both parameters are plainly covariant: `keyof TConfig` is
- * contravariant in `TConfig`, and a field type carrying it could not be read
+ * **Parameterised over the three key sets rather than over the component's
+ * own config**, so that every parameter is plainly covariant: `keyof TConfig`
+ * is contravariant in `TConfig`, and a field type carrying it could not be read
  * back off the registry at all — the argument is at `ComponentDefinition`'s
  * `TField`, which is where it bites. `ConfigFieldOf` above is where a config
- * type becomes these two, and bare this is exactly the type the editor read
- * before either existed.
+ * type becomes these three, and bare this is exactly the type the editor read
+ * before any of them existed.
  */
 export interface ConfigFieldSpec<
 	TKey extends string = string,
 	TEntryKey extends string = string,
+	TSiblingKey extends string = string,
 > {
 	/** Key in the component's config object. */
 	key: TKey;
@@ -322,7 +388,15 @@ export interface ConfigFieldSpec<
 	/**
 	 * Input kind. 'formula' is a text field holding an expression; 'text-list'
 	 * is an ordered list of plain strings, edited as one comma-separated field
-	 * and stored as an array; the last four are ordered lists the editor
+	 * and stored as an array, and **read as level names**: their position is
+	 * what a note stores, so the editor reports a commit that reorders or
+	 * shortens one (`docs/features/level-list-reorder-report.md`) — a list
+	 * whose order is not positional would need a flag declared first. The
+	 * report also assumes its one owner, a Track: the component's label is the
+	 * key it names, and no sibling condition or reset reads the list, so a
+	 * second owner with a condition or a per-part reset reading it has to pass
+	 * those readers in `config-panel.ts` or its notice drops their clauses. The
+	 * last four are ordered lists the editor
 	 * renders as a table of their own — 'entries' of the two columns the
 	 * field's own `entryColumns` names, 'track-rows' of those two plus a count
 	 * and a sense, 'rows' of { label, values? }, and 'columns' of typed column
@@ -360,8 +434,14 @@ export interface ConfigFieldSpec<
 	 * config, so a condition naming that default is satisfied by its absence.
 	 * That is what lets a field be visible in the ordinary mode and hidden in
 	 * the exceptional one, rather than only the other way round.
+	 *
+	 * `key` is checked against the component's own declarable keys; a typo
+	 * would otherwise find no controlling field, and `conditionMet` would hide
+	 * this one for good without a word. `equals` stays `unknown`: its type is a
+	 * function of the config, not of a key set, and this spec never sees the
+	 * config (see the note on the parameters above).
 	 */
-	visibleWhen?: { key: string; equals: unknown };
+	visibleWhen?: { key: TSiblingKey; equals: unknown };
 	/** Default for boolean fields; the key is omitted when it matches. */
 	default?: boolean;
 	/** Choices for 'select' fields. The first is the default and is omitted. */
@@ -547,6 +627,30 @@ export interface ColumnOptionsSpec {
 	 * control with nothing to attach to.
 	 */
 	holderMax?: boolean;
+	/**
+	 * Whether an entry may be drawn inside its holder once opened rather than on
+	 * the holder's own line. Defaults to false.
+	 *
+	 * **Opt-in on `holderMax`'s precedent**, since a list whose component draws
+	 * no body has nowhere for an entry to move to: Record set asks and Table does
+	 * not. The control's label is composed from `holder` below, so it names the
+	 * component's own word; the id it writes is `components/column-types.ts`'s
+	 * `BODY_PLACEMENT`, which both sides import, and unticking writes the default
+	 * as absence rather than as a second id.
+	 */
+	placement?: boolean;
+	/**
+	 * Whether an entry may carry a condition, a formula in its holder's own
+	 * scope, and be drawn only on the holders where it holds. Defaults to false.
+	 *
+	 * **Opt-in on `placement`'s precedent**, since only a component that draws
+	 * each entry per holder can leave one out: Record set asks. A list whose
+	 * component draws every column on every row — Table, Roster — is offered no
+	 * input, and an entry there carrying the key by hand is *reported* under the
+	 * list rather than refused, because the component ignores it and still draws
+	 * (`docs/features/conditional-field-visibility.md`).
+	 */
+	visibleWhen?: boolean;
 	/**
 	 * What one entry of this list is called, and what holds one — "column" and
 	 * "row" by default, "field" and "record" for a Record set.
@@ -2109,6 +2213,21 @@ export interface ComponentDefinition<
 	 */
 	resetColumns?(config: TConfig): readonly ResetColumn[];
 	/**
+	 * What the **Acts on** picker calls a binding that names no part, on a
+	 * component that reads one as the whole of itself (SPEC §6). Absent: a
+	 * binding naming no part acts on nothing, and the editor asks for one.
+	 *
+	 * Optional under §4.1's rule. Two components declare `resetColumns` and read
+	 * a missing `column` in opposite ways — a Table as a mistake, a Record set as
+	 * every field — and the alternative to asking is `src/editor/` knowing which
+	 * is which. **A string rather than a flag**, because the words are the
+	 * component's: a flag would leave the editor to compose "Every field" or
+	 * "Every column", which is naming a component's kind, as a `ResetColumn`'s
+	 * `label` exists not to. Declaring it obliges `resetColumns`, which
+	 * `contract.test.ts` holds: without a picker there is nowhere to offer it.
+	 */
+	resetWhole?: string;
+	/**
 	 * Apply a reset trigger to this component's data (SPEC §6).
 	 *
 	 * Takes the binding rather than a finished value, because only the
@@ -2125,6 +2244,12 @@ export interface ComponentDefinition<
 	 * Implementing it is what declares the component stateful: the editor
 	 * offers a reset binding only to components that have it, and a trigger
 	 * passes over the ones that do not.
+	 *
+	 * **Called when a trigger is planned, before its confirmation opens**, and
+	 * the edits Apply writes are exactly what it returned then
+	 * (`view/reset-plan.ts`). A component narrowing what a binding reaches says
+	 * how much in `reach`, which the confirmation shows. A binding carrying a
+	 * `where` is handed only to a component declaring `reset.*.where`.
 	 */
 	applyReset?(
 		data: TData | null,
@@ -2218,6 +2343,104 @@ export function isContainer(
 	component: ComponentDefinition | undefined,
 ): boolean {
 	return component?.storage === 'none';
+}
+
+/**
+ * The formula path a component declares when it can check a reset binding's
+ * `where` (`docs/features/record-set-reset-scope.md`).
+ */
+export const RESET_CONDITION_FIELD = 'reset.*.where';
+
+/**
+ * Whether this component can check a reset binding's `where`, so a trigger may
+ * hand it a binding carrying one.
+ *
+ * **Read off a declaration the component already owes, not a member of its
+ * own.** `reset.*.where` has to be in `formulaFields` anyway, for the paste
+ * rewrite, the id-rename rewrite and the name suggester, so a `hasBuffer`-style
+ * boolean beside it could only come to disagree with it — "one list, two readers",
+ * which is `resetColumns`' argument. The sheet's plan and the editor's **Only
+ * where** row are the two readers, and a predicate over a declaration is §1's
+ * one-step tier: two copies of it could only be tested for still agreeing.
+ */
+export function checksResetCondition(
+	component: Pick<ComponentDefinition, 'formulaFields'> | undefined,
+): boolean {
+	return component?.formulaFields.includes(RESET_CONDITION_FIELD) === true;
+}
+
+/**
+ * Whether a binding's `to` is worked out on each part it reaches, in that
+ * part's own scope, rather than once for the sheet
+ * (`docs/features/record-set-reset-field-targeting.md`, Part 4).
+ *
+ * **Both halves, and read off declarations already owed rather than a member of
+ * its own.** Declaring `reset.*.where` is the component saying it has per-part
+ * scopes to evaluate in; naming a part is the settled trigger for using one. A
+ * binding naming no part keeps its `to` in sheet scope, so every layout written
+ * before a binding could name a field means what it meant — and a Table, which
+ * declares no condition, keeps its column `to` once, in sheet scope.
+ *
+ * One spelling, on §1's one-step tier for a predicate: the editor's **Resets
+ * to** row reads it for its suggester and its description, and
+ * `contract.test.ts` holds each component declaring both halves to it.
+ */
+export function resolvesResetPerPart(
+	component: Pick<ComponentDefinition, 'formulaFields'> | undefined,
+	binding: Pick<ResetBinding, 'column'>,
+): boolean {
+	return binding.column !== undefined && checksResetCondition(component);
+}
+
+/**
+ * What identifies one reset binding: the trigger and the column together.
+ *
+ * Here rather than in `parse/layout.ts`, whose `parseReset` refuses a repeated
+ * key, because `claimsSamePart` below is its second reader and this file imports
+ * nothing — so the parser, the editor and the sheet's plan read one comparison,
+ * and nothing has to hold two copies of it in step. The failure a second copy
+ * would allow is the one this guard exists for: an editor that happily writes a
+ * layout the plugin then refuses to load. PATTERNS §1 puts a predicate on the
+ * one-step tier for exactly this.
+ *
+ * Keyed through `JSON.stringify` rather than by joining the two strings, because
+ * a column may hold whatever a table's header holds and any separator that is
+ * legal in a heading is one two different pairs could spell the same way.
+ */
+export function bindingKey(
+	binding: Pick<ResetBinding, 'trigger' | 'column'>,
+): string {
+	return JSON.stringify([binding.trigger, binding.column ?? null]);
+}
+
+/**
+ * Whether two bindings on this component would both write one part: the same
+ * `bindingKey`, or, on a component that reads a binding naming no part as the
+ * whole of itself, one naming no part beside one naming a part
+ * (`docs/features/record-set-reset-field-targeting.md`, Part 5).
+ *
+ * **Whatever their `where`s say**, for `bindingKey`'s own reason: whether two
+ * conditions overlap depends on the data, so nothing reading the layout could
+ * tell a safe pair from an unsafe one.
+ *
+ * **Not in the parser**, because only the component can say whether a missing
+ * `column` means the whole of it (`resetWhole`), and `src/parse/` imports no
+ * registry. A component-agnostic rule there would refuse a Table layout that
+ * has loaded since 0.3.0. So three readers ask this instead — the editor's
+ * duplicate guard, **Add reset**'s availability, and the sheet's plan at the
+ * press — and none of them is a place a layout that loads today stops loading.
+ */
+export function claimsSamePart(
+	component: Pick<ComponentDefinition, 'resetWhole'> | undefined,
+	a: Pick<ResetBinding, 'trigger' | 'column'>,
+	b: Pick<ResetBinding, 'trigger' | 'column'>,
+): boolean {
+	if (a.trigger !== b.trigger) return false;
+	if (bindingKey(a) === bindingKey(b)) return true;
+	return (
+		component?.resetWhole !== undefined &&
+		(a.column === undefined) !== (b.column === undefined)
+	);
 }
 
 /**

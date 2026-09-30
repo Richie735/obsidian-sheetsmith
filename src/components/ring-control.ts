@@ -82,6 +82,22 @@ export interface RingControlOptions {
 	 * "Prepared" (`docs/UI.md` §6).
 	 */
 	nameOnScreen: boolean;
+	/**
+	 * Something the ring's value stands for that nothing on screen says, read on
+	 * every paint and added to the `title` while the ring is not at none.
+	 *
+	 * **An option because the `title` is this module's**: `paint` rewrites it on
+	 * every repaint, and removes it outright on an unnamed flag whose name is on
+	 * screen, so a caller setting one of its own would lose it to the first
+	 * press. The long press reads the same attribute, so a finger reaches the
+	 * words by the route a glyph's word already takes. Track's flag is the one
+	 * caller — a stored count above one that the flag reads as ticked and has no
+	 * spelling for (`docs/features/track-stored-value-past-shortened-run.md`) —
+	 * and a cell passes none, so a cell is untouched. Dropped at level 0 here as
+	 * well as by the caller, because the paint for the untick runs before the
+	 * caller hears of it.
+	 */
+	note?: () => string | null;
 	/** Run when the level changes, and only then. */
 	onSet: (level: number) => void;
 	/**
@@ -135,8 +151,17 @@ export interface RingControl {
  * Paints once before returning, so a caller never has to remember to.
  */
 export function bindRingControl(options: RingControlOptions): RingControl {
-	const { button, column, count, graded, name, nameOnScreen, onSet, onVertical } =
-		options;
+	const {
+		button,
+		column,
+		count,
+		graded,
+		name,
+		nameOnScreen,
+		note,
+		onSet,
+		onVertical,
+	} = options;
 	let level = options.level;
 
 	/**
@@ -172,11 +197,14 @@ export function bindRingControl(options: RingControlOptions): RingControl {
 		// thing that can be missing is the level's word; where it is not, the
 		// name is the first thing missing and the word is added to it.
 		const shown = word();
-		const said = nameOnScreen
+		const named = nameOnScreen
 			? shown
 			: shown === null
 				? name
 				: `${name}: ${shown}`;
+		const extra = level > 0 ? (note?.() ?? null) : null;
+		const said =
+			extra === null ? named : named === null ? extra : `${named}\n${extra}`;
 		if (said === null) button.removeAttribute('title');
 		else button.setAttribute('title', said);
 	};

@@ -28,7 +28,7 @@ import { makeFieldResolver } from '../formula/resolve';
 import { appendModifierDefinition, nameAlreadyDeclared } from '../layouts';
 import { getSection, parseCharacter } from '../parse/character';
 import { Layout, parseLayout, serialiseLayout } from '../parse/layout';
-import { walkComponents } from '../parse/layout-walk';
+import { walkLayout } from './grid-cells';
 import { spellParts, spellTypedEffect } from '../parse/modifier-cell';
 import type { App as ObsidianApp } from 'obsidian';
 import { App } from '../test/obsidian-stub';
@@ -133,7 +133,7 @@ sheet-layout: ${LAYOUT_NAME}
  */
 function armourClass(layout: Layout, noteSource: string): unknown {
 	const note = parseCharacter(noteSource);
-	const prepared = walkComponents(layout.components).map(({ config }) => {
+	const prepared = walkLayout(layout.components).map(({ config }) => {
 		const component = getComponent(config.type);
 		if (!component) throw new Error(`No component of type "${config.type}".`);
 		const section = isContainer(component)

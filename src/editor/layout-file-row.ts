@@ -36,15 +36,17 @@
  * and it is stated at the call site: the row is how an author leaves a layout
  * they cannot edit, and a message displacing it would trap them there.
  *
- * **Its cases stayed where they were**, in `layout-editor.test.ts` and
- * `view/layout-editor-view.test.ts`, although an entry point and a reportable
- * output are what `docs/PATTERNS.md` §10 says earn a module a file of its own:
- * both drive the row through a real pane, and the harness the first one builds
- * that pane with is a test file's own rather than scaffolding a sibling can
- * import (§2), which is the same reason `config-panel.ts`'s cases stay there.
+ * **Its cases live in `layout-file-row.test.ts`**, driven through a real pane by
+ * `src/test/layout-editor-pane.ts` rather than over a stub host, and
+ * `view/layout-editor-view.test.ts` holds the pane's own half. Two blocks
+ * stayed in `layout-editor.test.ts`, since what they assert is the render's
+ * rule above rather than the row's: a layout that cannot be read keeps the row
+ * and reports under it, and a folder with no layouts draws no row at all.
  */
 
 import { App, Notice, Setting, TFile } from 'obsidian';
+import { writeClipboard } from '../ui/clipboard';
+import { copiedLayout } from './layout-copy';
 import { describedRow } from './described-row';
 import { ConfirmModal } from '../ui/confirm-modal';
 import { NEW_LAYOUT_LABEL, promptNewLayout } from './new-layout';
@@ -249,37 +251,13 @@ async function copyLayoutJson(
 		new Notice(error instanceof Error ? error.message : String(error));
 		return;
 	}
-	try {
-		await container.win.navigator.clipboard.writeText(text);
-	} catch {
-		/*
-		 * Deliberately the same words `src/editor/copyable-name.ts` gives,
-		 * and deliberately not the same code. The argument is here rather
-		 * than cited, because that file's header does not make it: it argues
-		 * only why the module exists at all, and says nothing about the
-		 * clipboard write or about this sentence.
-		 *
-		 * `copyableName` exports a builder for a `<code>` control with the
-		 * copy bound inside it, so a settings-row button cannot reach the
-		 * write without splitting the function in two — which is a change to
-		 * a shipped control for the benefit of one caller.
-		 *
-		 * And only half of what such a module would hold is actually common:
-		 * this failure sentence is shared, while the success sentences are
-		 * not — a chip says `Copied "x"` about a name, and this says
-		 * `Copied "x" to the clipboard.` about a file. So the shared thing is
-		 * one short sentence rather than the gesture, which `docs/PATTERNS.md`
-		 * §1's one-step tier would extract on a second consumer if the
-		 * *whole* policy were shared. **A third caller is where that gets
-		 * revisited**, and it is the honest cost of two copies until then.
-		 */
-		new Notice('Could not copy to the clipboard.');
-		return;
-	}
+	// The write and its failure sentence are shared with the two other copy
+	// gestures (`ui/clipboard.ts`); the success sentence is this row's own.
+	if (!(await writeClipboard(container.win, text))) return;
 	// The layout is named because the row can only show one at a time and a
 	// bare "Copied." leaves a reader wondering which; "to the clipboard" is
 	// the half that says where, in the failure sentence's own words.
-	new Notice(`Copied "${file.basename}" to the clipboard.`);
+	new Notice(copiedLayout(file.basename));
 }
 
 /**

@@ -25,6 +25,17 @@ inherited from `persist()`'s existing round-trip guarantee rather than a new
 claim. No character note is read or written by this feature; Constraint 4
 does not apply.
 
+**Amended by `docs/features/unsaveable-layout.md` §3.** "Only ever writes bytes
+the file has already legitimately held" is no longer quite true. One redo entry
+can be the pane's own serialisation of a layout it could not write, pushed by an
+undo out of the unsaved state, and a redo of it *tries* to write those bytes,
+exactly as the edits that produced it tried — as a recorded step, so where it
+lands the bytes it replaced go onto the undo stack, without clearing redo. Every
+other snapshot is still file bytes, and a step is now pushed when its write
+lands rather than when it is sent, so the stack holds nothing a file never
+held. From the unsaved state one undo goes back to the file's last saved bytes
+without writing, so everything since the last save is one step.
+
 ## What it does
 
 Every mutation in the layout editor pane — a field commit, a drag or resize,
@@ -181,6 +192,18 @@ making the operation recoverable, not by adding a dialog — which was the
 actual property the existing dialogs exist to provide, and undo provides it
 more generally.
 
+**Amended by `docs/features/layout-editor-tree.md`: removing a component from
+the tree lost its confirm.** The decision above holds for every other dialog.
+This one went because the tree's **Remove** moved into a row menu, and the
+reasons the confirm stayed no longer outweighed a modal on every removal. What
+the confirm said is not lost: a removal answers with a `Notice` saying what went
+and where its children moved — `Removed "Defences". The 2 components inside it
+moved to the bottom of the sheet.` — and carrying an **Undo** link, which is
+what makes undo one press away even though, since 0.1.1, the undo command has no
+default hotkey. The link undoes only while the layout still holds the bytes the
+removal wrote, and says **Sheetsmith did not undo: this layout has changed
+since.** otherwise, which is the sheet's own reset-undo guard read for a layout.
+
 ## Config fields
 
 None. No `configFields`, no `ComponentDefinition` change — this is a pane
@@ -196,6 +219,12 @@ the session — never a new shape, never a new key — so it inherits `persist()
 existing round-trip guarantee (Constraint 3) rather than adding a new claim to
 check. No character note is touched by any part of this feature (Constraint 4
 does not apply).
+
+**Amended by `docs/features/unsaveable-layout.md` §3**: the one exception is a
+redo entry marked as the unsaved step, the pane's own text of a layout it could
+not write. It may not parse, so restoring it takes a structural copy rather than
+`parseLayout`, and the next `persist` validates it as always; real snapshots
+still go through the parser.
 
 ## Acceptance criteria
 

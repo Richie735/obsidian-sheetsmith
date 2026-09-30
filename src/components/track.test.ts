@@ -816,10 +816,18 @@ describe('track.render', () => {
 		expect(fills(el).slice(0, 7)).toEqual([1, 1, 1, 1, 1, 0.5, 0]);
 	});
 
-	it('fills every segment for a value above the run, and leaves the note alone', () => {
+	it('draws a value above the run past its end, and leaves the note alone', () => {
+		// Under `MAX_SEGMENTS`, so the over part is drawn segment by segment:
+		// honest, and long on a narrow card, which is the approved bound's
+		// recorded consequence (`docs/features/track-stored-value-past-shortened-run.md`).
 		const changed = vi.fn();
 		const el = render({}, { values: { value: '99' } }, { onChange: changed });
-		expect(fills(el)).toEqual([1, 1, 1, 1, 1, 1]);
+		expect(fills(el)).toEqual(Array.from({ length: 99 }, () => 1));
+		expect(
+			parts(el).segments.filter((s) =>
+				s.classList.contains('sheetsmith-track-segment-over'),
+			),
+		).toHaveLength(93);
 		expect(changed).not.toHaveBeenCalled();
 	});
 
@@ -2550,8 +2558,13 @@ describe('a Track the character may add rows to', () => {
 			};
 			const el = renderBody(declared, body, { resolveField: () => 4 });
 			// The layout's formula supplies the length; the `/ 10` sits in the
-			// file, unread and untouched.
-			expect(runSegments(el, 0)).toHaveLength(4);
+			// file, unread and untouched. The six marks past a run of four are
+			// drawn past its end rather than lost to the first step.
+			const drawn = runSegments(el, 0);
+			expect(drawn).toHaveLength(6);
+			expect(
+				drawn.map((s) => s.classList.contains('sheetsmith-track-segment-over')),
+			).toEqual([false, false, false, false, true, true]);
 			expect(track.write(dataFrom(body, declared), body, declared)).toBe(body);
 		});
 
@@ -3800,17 +3813,23 @@ describe('a modifier granting segments', () => {
 		expect(runEl.getAttribute('aria-valuetext')).toBe('2 of 2, 1 blocked');
 	});
 
-	it('never fills a blocked slot, whatever the note holds', () => {
+	it('draws a blocked slot holding a mark as over, filled under the slash', () => {
 		/*
 		 * The case Ilona reaches by filling a run and then wearing the shackles.
-		 * SPEC §4.2's "rendered, not corrected" governs the *note*; the drawing
-		 * has always clamped to the run, and the run is now the live part of it.
+		 * SPEC §4.2's "rendered, not corrected" governs the *note*, and now the
+		 * drawing too: the shut slot still holds the third mark, so it is drawn
+		 * filled with the blocked slash over it rather than empty, and the
+		 * first step starts from a value on screen.
 		 */
 		const { el, data } = sheetOf('+= -1', run, '\n```sheet\nvalue: 3\n```\n');
-		// Three drawn, two filled: the blocked one is on screen and empty, which
-		// is the whole claim. A stored 3 would have filled it.
-		expect(fills(el)).toEqual([1, 1, 0]);
-		expect(parts(el).run?.getAttribute('aria-valuetext')).toBe('2 of 2, 1 blocked');
+		expect(fills(el)).toEqual([1, 1, 1]);
+		expect(
+			parts(el).segments.map((s) => s.classList.contains('sheetsmith-track-segment-over')),
+		).toEqual([false, false, true]);
+		expect(parts(el).segments[2]?.classList.contains('sheetsmith-track-segment-blocked')).toBe(
+			false,
+		);
+		expect(parts(el).run?.getAttribute('aria-valuetext')).toBe('3 of 2, 1 over');
 		if (data === null) throw new Error('expected data');
 		expect(data.values['value']).toBe('3');
 	});
@@ -3819,16 +3838,22 @@ describe('a modifier granting segments', () => {
 		// `?` is reserved for a count that did not resolve (SPEC §5). This one
 		// resolved perfectly well, to nothing, and the slots are still the
 		// layout's — so the honest drawing is the run, entirely shut.
+		// The default body holds one mark, so the first slot is over — shut
+		// and still holding it — and the second is shut and empty.
 		const { el } = sheetOf('+= -5', { ...run, count: '2 + mod.self' });
 		expect(parts(el).unresolved).toHaveLength(0);
 		expect(parts(el).segments).toHaveLength(2);
 		expect(
-			parts(el).segments.every((s) =>
-				s.classList.contains('sheetsmith-track-segment-blocked'),
-			),
-		).toBe(true);
-		expect(parts(el).run?.getAttribute('aria-valuemax')).toBe('0');
-		expect(parts(el).run?.getAttribute('aria-valuetext')).toBe('0 of 0, 2 blocked');
+			parts(el).segments.map((s) => ({
+				over: s.classList.contains('sheetsmith-track-segment-over'),
+				blocked: s.classList.contains('sheetsmith-track-segment-blocked'),
+			})),
+		).toEqual([
+			{ over: true, blocked: false },
+			{ over: false, blocked: true },
+		]);
+		expect(parts(el).run?.getAttribute('aria-valuemax')).toBe('1');
+		expect(parts(el).run?.getAttribute('aria-valuetext')).toBe('1 of 0, 1 over, 1 blocked');
 	});
 
 	/*
@@ -3840,10 +3865,10 @@ describe('a modifier granting segments', () => {
 	it('keeps marks past a shrunken run in the note, and reports the run', () => {
 		const body = '\n```sheet\nvalue: 5\n```\n';
 		const { el, data } = sheetOf(null, run, body);
-		expect(parts(el).segments).toHaveLength(3);
-		expect(parts(el).run?.getAttribute('aria-valuetext')).toBe('3 of 3');
-		// Every one of them filled, which is the half "3 of 3" does not state.
-		expect(fills(el)).toEqual([1, 1, 1]);
+		// The three live segments, then the two marks past them drawn over.
+		expect(parts(el).segments).toHaveLength(5);
+		expect(parts(el).run?.getAttribute('aria-valuetext')).toBe('5 of 3, 2 over');
+		expect(fills(el)).toEqual([1, 1, 1, 1, 1]);
 		/*
 		 * **Constraint 3, through the data `read` actually produced.** An empty
 		 * delta round-trips whatever the caller hands it and would pass on a
@@ -4284,5 +4309,258 @@ describe('a modifier granting segments', () => {
 		}
 		expect(parts(granted).run?.getAttribute('aria-valuetext')).toBe('2 of 5');
 		expect(parts(plain).run?.getAttribute('aria-valuetext')).toBe('2 of 5');
+	});
+
+	/*
+	 * **A stored value past the live run, reached through a modifier**
+	 * (`docs/features/track-stored-value-past-shortened-run.md`). A blocked slot
+	 * holding a mark is drawn over — the slash on a filled box — and counted once,
+	 * in the over clause; only the shut slots holding nothing are "blocked".
+	 */
+	const overOf = (el: HTMLElement) =>
+		parts(el).segments.map((s) =>
+			s.classList.contains('sheetsmith-track-segment-over')
+				? 'over'
+				: s.classList.contains('sheetsmith-track-segment-blocked')
+					? 'blocked'
+					: s.classList.contains('sheetsmith-track-segment-granted')
+						? 'granted'
+						: 'base',
+		);
+
+	it('draws a penalty over a held mark as live, over, then blocked', () => {
+		const { el } = sheetOf(
+			'+= -2',
+			{ ...run, count: '6 + mod.self' },
+			'\n```sheet\nvalue: 5\n```\n',
+		);
+		expect(overOf(el)).toEqual(['base', 'base', 'base', 'base', 'over', 'blocked']);
+		expect(fills(el)).toEqual([1, 1, 1, 1, 1, 0]);
+		expect(parts(el).run?.getAttribute('aria-valuemax')).toBe('5');
+		expect(parts(el).run?.getAttribute('aria-valuetext')).toBe('5 of 4, 1 over, 1 blocked');
+	});
+
+	it('counts no slot as blocked once every shut slot holds a mark', () => {
+		const { el } = sheetOf(
+			'+= -2',
+			{ ...run, count: '6 + mod.self' },
+			'\n```sheet\nvalue: 6\n```\n',
+		);
+		expect(overOf(el)).toEqual(['base', 'base', 'base', 'base', 'over', 'over']);
+		expect(parts(el).run?.getAttribute('aria-valuetext')).toBe('6 of 4, 2 over');
+	});
+
+	it('draws granted and over on one run', () => {
+		const { el } = sheetOf(
+			'+= 2',
+			{ ...run, count: '4 + mod.self' },
+			'\n```sheet\nvalue: 8\n```\n',
+		);
+		expect(overOf(el)).toEqual([
+			'base',
+			'base',
+			'base',
+			'base',
+			'granted',
+			'granted',
+			'over',
+			'over',
+		]);
+		expect(parts(el).run?.getAttribute('aria-valuetext')).toBe('8 of 6, 2 over');
+	});
+});
+
+/*
+ * **A stored value past the run, drawn** (`docs/features/track-stored-value-past-shortened-run.md`).
+ *
+ * The part of the value past the live run is drawn as over segments, so no step
+ * starts from a value the reader cannot see. The gestures themselves are pinned
+ * through a real sheet in `src/view/track-over-run.test.ts`; these are the
+ * drawing, the reading and the two shapes that are not a plain run.
+ */
+describe('a stored value past the run', () => {
+	const over = (el: HTMLElement, index = 0) =>
+		runSegments(el, index).map((s) =>
+			s.classList.contains('sheetsmith-track-segment-over'),
+		);
+	const valueOf = (value: string): TrackData => ({ values: { value } });
+	const three = { resolved: { count: 3 } };
+
+	it('draws the marks past a lowered count as over segments, filled', () => {
+		const el = render({ count: 3 }, valueOf('5'), three);
+		expect(over(el)).toEqual([false, false, false, true, true]);
+		expect(fills(el)).toEqual([1, 1, 1, 1, 1]);
+		const { run } = parts(el);
+		expect(run?.getAttribute('aria-valuemax')).toBe('5');
+		expect(run?.getAttribute('aria-valuenow')).toBe('5');
+		expect(run?.getAttribute('aria-valuetext')).toBe('5 of 3, 2 over');
+		expect(run?.getAttribute('aria-label')).toBe('Exhaustion, 5 of 3, 2 over');
+	});
+
+	it('titles an over run whether or not it is named, and a plain one not at all', () => {
+		expect(parts(render({ count: 3 }, valueOf('5'), three)).run?.getAttribute('title')).toBe(
+			'5 of 3, 2 over',
+		);
+		expect(parts(render()).run?.hasAttribute('title')).toBe(false);
+	});
+
+	it('draws a partly over segment partly filled, and counts the over part in marks', () => {
+		const el = render({ count: 3, marks: 2 }, valueOf('7'), three);
+		expect(over(el)).toEqual([false, false, false, true]);
+		expect(fills(el)).toEqual([1, 1, 1, 0.5]);
+		expect(parts(el).run?.getAttribute('aria-valuetext')).toBe('3 of 3, 1 mark over');
+		const ten = render({ count: 3, marks: 2 }, valueOf('10'), three);
+		expect(parts(ten).runs[0]?.getAttribute('aria-valuetext')).toBe('5 of 3, 4 marks over');
+	});
+
+	describe('on a named run', () => {
+		const levels = ['Clear', 'Touched', 'Marked', 'Lost:☠'];
+
+		it('letters no over segment, as it never has', () => {
+			const el = render({ count: undefined, levels }, valueOf('5'));
+			const lettered = runSegments(el).map(
+				(s) => s.querySelector('.sheetsmith-track-segment-glyph') !== null,
+			);
+			expect(lettered).toEqual([false, false, true, false, false]);
+		});
+
+		it('reads the top level and how far past it, on every carrier', () => {
+			vi.useFakeTimers();
+			const el = render({ count: undefined, levels }, valueOf('5'));
+			const { run, step } = parts(el);
+			if (run === null) throw new Error('no run');
+			expect(step?.textContent).toBe('Lost, 2 over');
+			expect(run.getAttribute('aria-valuetext')).toBe('Lost, 2 over');
+			expect(run.getAttribute('aria-label')).toBe('Exhaustion, Lost, 2 over');
+			expect(run.getAttribute('title')).toBe('Lost, 2 over');
+			// The bubble read the unclamped value on its own and said "5".
+			run.setPointerCapture = () => undefined;
+			run.releasePointerCapture = () => undefined;
+			hold(run, LONG_PRESS + 10, { pointerType: 'touch' });
+			expect(document.querySelector('.sheetsmith-popover')?.textContent).toBe('Lost, 2 over');
+			closePopover();
+		});
+
+		it('grades an over segment at the worst end of a harm run', () => {
+			const el = render({ count: undefined, levels, sense: 'harm' }, valueOf('5'));
+			const grades = runSegments(el).map((s) =>
+				s.style.getPropertyValue('--sheetsmith-track-grade'),
+			);
+			expect(grades.slice(3)).toEqual(['1', '1']);
+		});
+	});
+
+	describe('past MAX_SEGMENTS', () => {
+		const far = () => {
+			const changed = vi.fn();
+			const el = render({ count: 3 }, valueOf('150'), { ...three, onChange: changed });
+			const run = parts(el).run;
+			const box = el.querySelector<HTMLElement>('.sheetsmith-track-over-count');
+			if (run === null || box === null) throw new Error('no run or no box');
+			[...runSegments(el), box].forEach((one, at) => {
+				one.getBoundingClientRect = () =>
+					({ left: at * 20, right: at * 20 + 10, top: 0, bottom: 10 }) as DOMRect;
+			});
+			run.getBoundingClientRect = () =>
+				({ left: 0, right: 80, top: 0, bottom: 10 }) as DOMRect;
+			run.setPointerCapture = () => undefined;
+			run.releasePointerCapture = () => undefined;
+			return { el, run, box, changed };
+		};
+
+		it('draws the live segments and one box holding the count past them', () => {
+			const { el, run, box } = far();
+			expect(runSegments(el)).toHaveLength(3);
+			expect(box.textContent).toBe('+147');
+			expect(run.getAttribute('aria-valuetext')).toBe('150 of 3, 147 over');
+			expect(MAX_SEGMENTS).toBeLessThan(150);
+		});
+
+		it('clears one mark on a tap on the box, where the value stands', () => {
+			const { run, changed } = far();
+			pressDown(run, { clientX: 65, clientY: 5 });
+			release(run, { clientX: 65, clientY: 5 });
+			expect(changed).toHaveBeenCalledWith({ values: { value: '149' } });
+		});
+
+		it('writes nothing for a drag past the box', () => {
+			const { run, changed } = far();
+			pressDown(run, { clientX: 5, clientY: 5 });
+			run.dispatchEvent(
+				new PointerEvent('pointermove', { pointerId: 1, clientX: 900, clientY: 5 }),
+			);
+			release(run, { clientX: 900, clientY: 5 });
+			expect(changed).not.toHaveBeenCalled();
+		});
+
+		it('repaints the box on a step, before the write', () => {
+			const { run, box, changed } = far();
+			run.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', cancelable: true }));
+			expect(box.textContent).toBe('+146');
+			expect(changed).not.toHaveBeenCalled();
+		});
+	});
+
+	it('draws a character row past its own length on that row alone', () => {
+		const dice: TrackConfig = {
+			...config,
+			count: undefined,
+			rows: [
+				{ key: 'd6', maxSource: 'character' },
+				{ key: 'd8', maxSource: 'character' },
+			],
+		};
+		const el = render(dice, { values: { d6: '5 / 3', d8: '1 / 3' } });
+		expect(over(el, 0)).toEqual([false, false, false, true, true]);
+		expect(over(el, 1)).toEqual([false, false, false]);
+	});
+
+	describe('on a flag card', () => {
+		const checklist: TrackConfig = {
+			...config,
+			count: 1,
+			rows: [{ key: 'blessed' }, { key: 'cursed' }],
+		};
+		const rings = (el: HTMLElement) =>
+			Array.from(el.querySelectorAll<HTMLElement>('.sheetsmith-track-flag'));
+		const said = 'Holds 3 marks from a longer run';
+		const twinOf = (ring: HTMLElement | undefined) => {
+			const id = ring?.getAttribute('aria-describedby');
+			return id === null || id === undefined ? null : document.getElementById(id);
+		};
+
+		it('says a stored count in words, and keeps them through a repaint', () => {
+			const el = render(checklist, { values: { blessed: '3', cursed: 'no' } });
+			const [blessed, cursed] = rings(el);
+			expect(blessed?.getAttribute('aria-pressed')).toBe('true');
+			expect(blessed?.getAttribute('title')).toBe(said);
+			expect(twinOf(blessed)?.textContent).toBe(said);
+			// A press on the other row repaints every run on the card.
+			cursed?.click();
+			expect(blessed?.getAttribute('title')).toBe(said);
+			expect(cursed?.hasAttribute('title')).toBe(false);
+			expect(twinOf(cursed)).toBeNull();
+		});
+
+		it('says the same words under a finger', () => {
+			vi.useFakeTimers();
+			const el = render(checklist, { values: { blessed: '3', cursed: 'no' } });
+			hold(rings(el)[0], LONG_PRESS + 10, { pointerType: 'touch' });
+			expect(document.querySelector('.sheetsmith-popover')?.textContent).toBe(said);
+			closePopover();
+		});
+
+		it('writes no on an untick, and drops the words with the count', () => {
+			const changed = vi.fn();
+			const el = render(checklist, { values: { blessed: '3', cursed: 'no' } }, {
+				onChange: changed,
+			});
+			const blessed = rings(el)[0];
+			blessed?.click();
+			expect(changed).toHaveBeenCalledWith({ values: { blessed: 'no' } });
+			expect(blessed?.hasAttribute('title')).toBe(false);
+			expect(blessed?.hasAttribute('aria-describedby')).toBe(false);
+			expect(el.textContent).not.toContain(said);
+		});
 	});
 });

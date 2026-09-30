@@ -11,7 +11,20 @@
  * components deep.
  *
  * `docs/features/grid-canvas.md` §5 is the design this implements; the tree
- * drag and the indent/outdent controls in `tree.ts` are its only callers.
+ * drag and the indent/outdent controls in `tree.ts` are the only callers of
+ * `canReparent` and `reparent`.
+ *
+ * It also owns what an edit that takes a child away leaves behind: no empty
+ * `children` key, which `parseChildren` would refuse two containers deep.
+ * `forgetEmptyChildren` is exported for the tree's remove, the one other edit
+ * that empties a container, and lives here on purpose rather than in a file of
+ * its own: the rule is the other half of `canReparent`'s depth check, and two
+ * consumers is below `docs/PATTERNS.md` §1's rung for extracting. The remove
+ * needs only that half — its promoted children only rise, and rising never
+ * makes an empty list illegal. `dropIllegalEmptyChildren` is exported for a
+ * paste (`docs/features/component-copy-paste.md`), which lands a subtree that
+ * may carry a hand-written `children: []` two deep exactly as a move does, and
+ * calls the rule rather than restating it.
  *
  * The dependency runs both ways: `reparent()` also draws on `tree.ts`'s own
  * `nextFreeRow` for the destination row a cross-container move lands on,
@@ -23,9 +36,9 @@
 
 import { getComponent } from '../components';
 import { Layout, mayHoldChildren } from '../parse/layout';
-import { walkComponents } from '../parse/layout-walk';
+import { spelled } from '../parse/spelled';
 import { ComponentConfig, isContainer } from '../types';
-import { innerPlacement } from '../view/grid-cells';
+import { innerPlacement, walkLayout } from '../view/grid-cells';
 import { nextFreeRow } from './tree';
 
 export type ReparentCheck = { ok: true } | { error: string };
@@ -44,8 +57,9 @@ function containsDescendant(
 }
 
 /**
- * Whether every container in `config`'s own subtree could still legally hold
- * its children once `config` itself sits at `depth`.
+ * Every container in `config`'s own subtree — `config` itself included — that
+ * would hold children at a depth where a container may hold none, once
+ * `config` sits at `depth`; empty where the whole subtree still fits.
  *
  * The same rule `parse/layout.ts`'s `parseChildren` enforces while reading a
  * file, walked here before a write rather than discovered by `persist`
@@ -53,12 +67,20 @@ function containsDescendant(
  * levels deep already, with children of its own, cannot land anywhere but the
  * top level without pushing them past the cap — even though the identical
  * container with no children yet would be accepted at that same target.
+ *
+ * It returns the offenders rather than a yes or no so the refusal can name
+ * them: whether that is `config` itself or containers inside it is the
+ * difference between two sentences, and a fix that named only the first of
+ * several would be refused again on the next.
  */
-function subtreeFits(config: ComponentConfig, depth: number): boolean {
+function tooDeepHolders(
+	config: ComponentConfig,
+	depth: number,
+): ComponentConfig[] {
 	const children = config.children;
-	if (!children || children.length === 0) return true;
-	if (!mayHoldChildren(depth)) return false;
-	return children.every((child) => subtreeFits(child, depth + 1));
+	if (!children || children.length === 0) return [];
+	if (!mayHoldChildren(depth)) return [config];
+	return children.flatMap((child) => tooDeepHolders(child, depth + 1));
 }
 
 /**
@@ -67,8 +89,9 @@ function subtreeFits(config: ComponentConfig, depth: number): boolean {
  *
  * Every refusal names the fix, on `docs/PATTERNS.md` §4's rule: a target that
  * cannot hold anything says so and says what it is instead of a container; a
- * subtree too deep for where it is headed says how deep it would sit and what
- * the limit is; a row dropped on itself or on its own descendant says that
+ * subtree too deep for where it is headed names every container that would
+ * sit too deep — `dragged` itself or those inside it — and says to empty
+ * them first; a row dropped on itself or on its own descendant says that
  * plainly, since there is no configuration that would make either legal.
  */
 export function canReparent(
@@ -85,7 +108,7 @@ export function canReparent(
 		};
 	}
 
-	const walk = walkComponents(layout.components);
+	const walk = walkLayout(layout.components);
 	const targetEntry =
 		target === null ? null : walk.find((entry) => entry.config === target);
 	if (target !== null && !targetEntry) {
@@ -106,10 +129,27 @@ export function canReparent(
 		}
 	}
 
+	// The target already passed `mayHoldChildren`, so the landing depth is at
+	// most two, and every holder `tooDeepHolders` finds sits exactly two
+	// containers deep — which is why both sentences can say "two".
+	// `reparent.test.ts` ties that word to the cap, so a cap change goes red.
 	const landingDepth = target === null ? 0 : targetEntry!.depth + 1;
-	if (!subtreeFits(dragged, landingDepth)) {
+	const holders = tooDeepHolders(dragged, landingDepth);
+	if (holders[0] === dragged) {
 		return {
-			error: `"${dragged.label}" holds a container of its own, and moving it here would put that container more than one level deep. A container may hold containers only one level deep.`,
+			error: `"${dragged.label}" holds components, and moving it here would put it inside two containers, where it could hold nothing. Move its components out first.`,
+		};
+	}
+	if (holders.length === 1) {
+		const holder = holders[0]!;
+		return {
+			error: `"${dragged.label}" holds "${holder.label}", which holds components, and moving "${dragged.label}" here would put "${holder.label}" inside two containers, where it could hold nothing. Move the components out of "${holder.label}" first.`,
+		};
+	}
+	if (holders.length > 1) {
+		const names = spelled(holders.map((holder) => holder.label));
+		return {
+			error: `"${dragged.label}" holds ${names}, which hold components, and moving "${dragged.label}" here would put them inside two containers, where they could hold nothing. Move the components out of ${names} first.`,
 		};
 	}
 
@@ -130,7 +170,7 @@ export function reparent(
 	target: ComponentConfig | null,
 	index?: number,
 ): void {
-	const walk = walkComponents(layout.components);
+	const walk = walkLayout(layout.components);
 	const entry = walk.find((candidate) => candidate.config === dragged);
 	if (!entry) return;
 	const from = entry.siblings.indexOf(dragged);
@@ -165,7 +205,9 @@ export function reparent(
 	// already: `resolveDrop` sends a drop on your own parent's row through
 	// this same function as a same-container reorder, not a move across
 	// grids, and reassigning position there would visibly move a component
-	// the user only asked to reorder.
+	// the user only asked to reorder. Into a Tab set the row is written and
+	// read by nothing: a tab has no placement, and the walk keeps the file's
+	// order there rather than sorting on it.
 	if (target !== entry.parent) {
 		dragged.position.col = 1;
 		dragged.position.row = nextFreeRow(into);
@@ -173,4 +215,48 @@ export function reparent(
 
 	const at = index === undefined ? into.length : Math.min(index, into.length);
 	into.splice(at, 0, dragged);
+
+	forgetEmptyChildren(entry.parent);
+	const landingDepth =
+		target === null
+			? 0
+			: (walk.find((candidate) => candidate.config === target)?.depth ?? 0) + 1;
+	dropIllegalEmptyChildren(dragged, landingDepth);
+}
+
+/**
+ * Drop `container`'s `children` key where an edit has just left it empty.
+ *
+ * An empty list and no key mean the same thing to everything that reads a
+ * layout except `parseChildren`, which refuses *any* `children` key two
+ * containers deep — so a container emptied by the editor, then moved there as
+ * `canReparent` allows, was drawn but never saved. Dropping the key at the
+ * edit rather than at `serialiseLayout` keeps both rules as they are and
+ * leaves a hand-written `children: []` untouched until something edits that
+ * container (Constraint 3). `reparent` and the tree's remove are the two
+ * edits that take a child away; `null`, the top level, has no key to drop.
+ */
+export function forgetEmptyChildren(container: ComponentConfig | null): void {
+	if (container?.children?.length === 0) delete container.children;
+}
+
+/**
+ * The same agreement for a subtree that carries a hand-written `children: []`
+ * of its own to a depth where no `children` key may sit: `tooDeepHolders`
+ * reads it as holding nothing, so the move is allowed, and the key has to go
+ * with it or the parser refuses the result. Only where it would be illegal —
+ * an empty list at a depth that may hold one is the author's spelling, and
+ * this move did not touch it.
+ */
+export function dropIllegalEmptyChildren(
+	config: ComponentConfig,
+	depth: number,
+): void {
+	const children = config.children;
+	if (!children) return;
+	if (children.length === 0) {
+		if (!mayHoldChildren(depth)) delete config.children;
+		return;
+	}
+	for (const child of children) dropIllegalEmptyChildren(child, depth + 1);
 }

@@ -5,7 +5,7 @@
  * Record set's fields — and by the editor field that configures both, which is
  * the whole reason the file exists: the readers held the same policies as
  * copies, and a list of strings copied into two files drifts in silence. There
- * are four now, and each copy had its own failure:
+ * are five now, and each copy had its own failure:
  *
  * - **Which types can be totalled.** Add a sixth type whose cells are numeric,
  *   put it in one copy only, and either the editor offers a total the component
@@ -27,6 +27,9 @@
  *   effect — and it carries the third policy's defect too, since the editor
  *   omits the default from the file and the component reads a missing key as
  *   its own.
+ * - **Where an entry is drawn inside its holder.** The fifth, and the fourth's
+ *   argument read on a second key: a checkbox in the editor writes the id and a
+ *   Record set reads it, with the default written as absence on both sides.
  *
  * PATTERNS §1 names this case exactly: a policy value climbs the reuse ladder in
  * one step, because a guard test over two copies can only assert they are still
@@ -45,7 +48,8 @@
  * readers and the third by two, deliberately — and the fourth by two as well,
  * for a different reason rather than the same one: only one rendering component
  * has a per-holder maximum at all, and the editor field that configures it is
- * the second reader.
+ * the second reader. The fifth is two readers for the fourth's reason: only a
+ * Record set draws a body for an entry to move into.
  *
  * **The fourth is the one a *type* holds rather than a test**, which is §1's
  * stated preference where it is available: `list-fields.ts` builds its labels
@@ -138,6 +142,41 @@ export const DEFAULT_MAX_SOURCE: MaxSource = MAX_SOURCES[0];
  * editor branch on it, and a literal in each is the copy that drifts.
  */
 export const HOLDER_MAX_SOURCE: MaxSource = 'record';
+
+/**
+ * Where an entry is drawn inside its holder: on the holder's own line, or inside
+ * the holder once it is opened — a Record set's summary line against the block
+ * above its prose (`docs/features/record-set-body-fields.md`).
+ *
+ * **Here for `MAX_SOURCES`' reason exactly, and the fifth policy of this
+ * file's header.** The editor writes the id and the component reads it, neither
+ * can import the other's copy, and the editor omits the default from the file
+ * while the component reads a missing key as its own — so two spellings would
+ * drift in silence and the drift would move a field without a word.
+ *
+ * A string union rather than a boolean, on `maxSource`'s own argument: a third
+ * place can be added as a value rather than replacing a flag. Only
+ * `BODY_PLACEMENT` means anything to a caller; every other value, including a
+ * hand-written spelling this union does not name, reads as the default.
+ *
+ * **A type and not a list, unlike `MAX_SOURCES`**, because nothing iterates it:
+ * the editor draws a select's options from the sources, and a checkbox has no
+ * options to draw.
+ */
+export type Placement = 'summary' | 'body';
+
+/**
+ * The one a caller tests for, named so neither side holds a literal, and the only
+ * name either side imports.
+ *
+ * **No default constant beside it, unlike `DEFAULT_MAX_SOURCE`**, and the
+ * difference is the control. A source is a select, which has to be *set* to the
+ * default when a stored key is absent, so the editor reads that name; a placement
+ * is a checkbox, whose off state is the key's absence — so the default is never
+ * spelled on either side, and a constant for it would be an export nothing reads.
+ * `summary` is in the union only so it names both places.
+ */
+export const BODY_PLACEMENT: Placement = 'body';
 
 /**
  * Column types a total can be taken over: the ones whose cell is a number

@@ -15,8 +15,9 @@
  * records, one row of inputs each, reorder and remove controls, and an add.
  */
 
-import { Platform, setIcon } from 'obsidian';
+import { Notice, Platform, setIcon } from 'obsidian';
 import { keyRename, RenameIntent } from '../component-rename-migration';
+import { refusedRename } from './rename-refusal';
 import {
 	levelCount,
 	levelGlyph,
@@ -25,6 +26,7 @@ import {
 	parseLevel,
 } from '../components/level-ring';
 import {
+	BODY_PLACEMENT,
 	COLUMN_TYPES,
 	ColumnType,
 	DEFAULT_COLUMN_TYPE,
@@ -35,13 +37,21 @@ import {
 	PUBLISHABLE_TYPES,
 	TOTALLED_TYPES,
 } from '../components/column-types';
+import { getComponent } from '../components';
 import { copyableName } from './copyable-name';
 import { showFieldError } from './field-error';
 import { reasonMessage } from './field-reason';
 import { formulaProblem } from './field-formula';
 import { isName } from '../formula/expression';
+import { conditionReads, heldCondition } from '../formula/field-condition';
+import { levelReorderNotice, LevelList, ResetReaders } from './level-reorder';
 import { fencedKeyProblem } from '../parse/fenced';
-import { ColumnOptionsSpec, EntryAddress, EntryColumnSpec } from '../types';
+import {
+	ColumnOptionsSpec,
+	EntryAddress,
+	EntryColumnSpec,
+	resolvesResetPerPart,
+} from '../types';
 
 /** What a list editor needs from the editor around it. */
 export interface ListContext {
@@ -55,6 +65,12 @@ export interface ListContext {
 	 * this module omits it.
 	 */
 	persist: (rename?: RenameIntent) => void;
+	/**
+	 * Why a commit carrying a rename may not be written now, or null where it
+	 * may (`docs/features/unsaveable-layout.md` §2). Optional for
+	 * `suggestNames`' reason below: a context with no vault renames freely.
+	 */
+	renameRefusal?: () => string | null;
 	/** Rebuild the pane. */
 	redraw: () => void;
 	/** Focus this token once the redraw has happened. */
@@ -82,6 +98,21 @@ export interface ListContext {
 	 * the component whose own rows the expression is evaluated against.
 	 */
 	suggestNames?: (input: HTMLInputElement, owner?: string) => void;
+	/**
+	 * Write a commit to a level list, and raise what it rereads once the write
+	 * and the pane's count of the notes holding a section under `label` resolve
+	 * (`docs/features/level-list-reorder-report.md`). `sentence` is handed that
+	 * count, zero where the pane counted nothing, and says null where no level's
+	 * meaning moved.
+	 *
+	 * Optional for `suggestNames`' reason. Where it is absent a level list
+	 * commits through `persist` and says only what its conditions and resets
+	 * read, which is all a context with no vault can know.
+	 */
+	persistReorder?: (
+		label: string,
+		sentence: (notes: number) => string | null,
+	) => void;
 }
 
 export function moveItem<T>(
@@ -730,6 +761,8 @@ interface ColumnEntry extends Record<string, unknown> {
 	min?: number;
 	max?: number;
 	maxSource?: string;
+	placement?: string;
+	visibleWhen?: string | boolean;
 	levels?: string[];
 	input?: string;
 	signed?: boolean;
@@ -781,8 +814,8 @@ export function labelled(detail: HTMLElement, text: string): HTMLElement {
  * twice the width.
  *
  * A fourth copy of this pattern is what earned it a function (PATTERNS §1);
- * every one of them writes `true` or deletes the key, so a column carrying its
- * default reads as a column that never set it.
+ * every one of them writes its "on" value or deletes the key, so a column
+ * carrying its default reads as a column that never set it.
  */
 function checkField(
 	detail: HTMLElement,
@@ -797,14 +830,20 @@ function checkField(
 	 * the entry carrying it, which is most of them.
 	 */
 	rebuild?: { token: string },
+	/**
+	 * What a ticked box writes, for a flag whose "on" is a string id rather than
+	 * `true` — a field's `placement`. Anything else the key holds reads as
+	 * unticked and survives untouched until the box is pressed.
+	 */
+	on: unknown = true,
 ): void {
 	const label = detail.createEl('label', { cls: 'sheetsmith-entry-check' });
 	const input = label.createEl('input', { type: 'checkbox' });
-	input.checked = target[key] === true;
+	input.checked = target[key] === on;
 	if (rebuild) input.dataset.sheetsmithFocus = rebuild.token;
 	label.createSpan({ text });
 	input.addEventListener('change', () => {
-		if (input.checked) target[key] = true;
+		if (input.checked) target[key] = on;
 		else delete target[key];
 		context.persist();
 		if (!rebuild) return;
@@ -955,6 +994,122 @@ export function renderColumnsEditor(
 		return null;
 	};
 
+	/**
+	 * Whether this list's entries may carry a condition, which only a component
+	 * drawing each entry per holder can honour (`types.ts`, `visibleWhen`).
+	 */
+	const conditioned = offers?.visibleWhen === true;
+
+	/** The keys of the other entries whose conditions read `key` by name. */
+	const readersOf = (key: string): string[] =>
+		conditioned
+			? columns
+					.filter(
+						(other) =>
+							other.key !== key &&
+							typeof other.visibleWhen === 'string' &&
+							conditionReads(other.visibleWhen, key),
+					)
+					.map((other) => other.key)
+			: [];
+
+	/**
+	 * The triggers whose reset bindings read `key` by name, once each, in binding
+	 * order, and which of a binding's rows does the reading
+	 * (`docs/features/record-set-reset-scope.md`,
+	 * `docs/features/record-set-reset-field-targeting.md` Part 6).
+	 *
+	 * **Read off `record.reset`, which teaches this module nothing about any
+	 * component**: `reset` is shared config every component's record may carry,
+	 * and `where` is its key, so this is the same question `readersOf` asks of a
+	 * sibling's condition, one key over.
+	 *
+	 * **And `to`, wherever it is worked out on each entry**, which is
+	 * `resolvesResetPerPart` asked of the component this list belongs to — a
+	 * binding naming a part, on a component that checks conditions — so a Table's
+	 * column `to`, resolved once in sheet scope, adds no clause. A binding
+	 * resolving `to` once reads no record's field, so a reorder cannot change
+	 * what it reads. The predicate is the one the **Resets to** row reads, so the
+	 * row describing a per-entry `to` and this notice cannot disagree about which
+	 * bindings have one.
+	 */
+	/** The component this list belongs to, which is what says whether a `to` is per entry. */
+	const definition =
+		typeof record.type === 'string' ? getComponent(record.type) : undefined;
+	const resetsReading = (key: string): ResetReaders => {
+		const bindings = Array.isArray(record.reset)
+			? (record.reset as {
+					trigger?: unknown;
+					where?: unknown;
+					column?: unknown;
+					action?: unknown;
+					to?: unknown;
+				}[])
+			: [];
+		const readers: ResetReaders = { triggers: [], where: false, to: false };
+		for (const binding of bindings) {
+			if (typeof binding.trigger !== 'string') continue;
+			const where = heldCondition(binding.where);
+			const byWhere = typeof where === 'string' && conditionReads(where, key);
+			const byTo =
+				binding.action === 'formula' &&
+				typeof binding.to === 'string' &&
+				resolvesResetPerPart(definition, {
+					column: typeof binding.column === 'string' ? binding.column : undefined,
+				}) &&
+				conditionReads(binding.to, key);
+			if (!byWhere && !byTo) continue;
+			readers.where ||= byWhere;
+			readers.to ||= byTo;
+			if (!readers.triggers.includes(binding.trigger)) {
+				readers.triggers.push(binding.trigger);
+			}
+		}
+		return readers;
+	};
+
+	/** A level list as it stands, copied so a later edit cannot reach it. */
+	const levelList = (column: ColumnEntry): LevelList => ({
+		levels: column.levels === undefined ? undefined : [...column.levels],
+		max: column.max,
+	});
+
+	/** The label heading this component's section in a note, which the pane counts by. */
+	const sectionLabel = typeof record.label === 'string' ? record.label : '';
+
+	/**
+	 * Write a commit to a level list, and tell the author what it moved: the
+	 * conditions and resets on this list reading it, and the notes storing it,
+	 * since a level is read by its position (`editor/level-reorder.ts`). After
+	 * the fact, as the editor's other reports are; nothing rewrites either.
+	 *
+	 * The readers are taken now, at the commit, and closed over, so the
+	 * sentence the pane raises once its count resolves describes the list the
+	 * author committed rather than whatever the form holds by then.
+	 */
+	const commitLevels = (column: ColumnEntry, before: LevelList): void => {
+		const key = column.key;
+		const after = levelList(column);
+		const readers = readersOf(key);
+		const resets = resetsReading(key);
+		const sentence = (notes: number): string | null =>
+			levelReorderNotice(
+				key,
+				before,
+				after,
+				readers,
+				resets,
+				{ label: sectionLabel, notes },
+			);
+		if (context.persistReorder !== undefined) {
+			context.persistReorder(sectionLabel, sentence);
+			return;
+		}
+		context.persist();
+		const said = sentence(0);
+		if (said !== null) new Notice(said);
+	};
+
 	columns.forEach((column, index) => {
 		// A column is two lines — its row, and the options belonging to it —
 		// and with every line equally spaced nothing said which pairs went
@@ -984,17 +1139,17 @@ export function renderColumnsEditor(
 				fieldError(keyInput, `${reason}, so ${subject} was left as "${column.key}".`);
 				return;
 			}
-			fieldError(keyInput, null);
 			const stored = column.key;
-			column.key = next;
-			context.persist(
-				keyRename(
-					address,
-					typeof record.label === 'string' ? record.label : '',
-					stored,
-					next,
-				),
+			const intent = keyRename(
+				address,
+				typeof record.label === 'string' ? record.label : '',
+				stored,
+				next,
 			);
+			if (refusedRename(intent, context.renameRefusal, keyInput, stored, fieldError)) return;
+			fieldError(keyInput, null);
+			column.key = next;
+			context.persist(intent);
 			context.redraw();
 		});
 
@@ -1157,9 +1312,10 @@ export function renderColumnsEditor(
 					return;
 				}
 				fieldError(names, null);
+				const before = levelList(column);
 				if (candidate === undefined) delete column.levels;
 				else column.levels = candidate;
-				context.persist();
+				commitLevels(column, before);
 				context.redraw();
 			});
 
@@ -1189,11 +1345,12 @@ export function renderColumnsEditor(
 					const raw = input.value.trim();
 					if (raw === '') {
 						fieldError(input, null);
+						const before = levelList(column);
 						delete column.max;
 						// Cleared is a level count too — one — and the sample
 						// has to say so rather than keep showing the old ring.
 						drawSample();
-						context.persist();
+						commitLevels(column, before);
 						return;
 					}
 					const parsed = Number(raw);
@@ -1203,12 +1360,13 @@ export function renderColumnsEditor(
 						return;
 					}
 					fieldError(input, null);
+					const before = levelList(column);
 					column.max = parsed;
 					// A level more or less is a ring more or less. Repainted in
 					// place rather than through a redraw, so the count can be
 					// typed without the field being pulled out from under it.
 					drawSample();
-					context.persist();
+					commitLevels(column, before);
 				});
 			}
 
@@ -1477,6 +1635,122 @@ export function renderColumnsEditor(
 		if (offers?.hideHeading !== false) {
 			checkField(detail, 'Hide heading', column, 'hideHeading', context);
 		}
+
+		/*
+		 * **Last on the line, after everything about the value**, because it is
+		 * about the entry as a whole: where its holder draws it. Opt-in on
+		 * `holderMax`'s precedent — only a component that draws a body has
+		 * somewhere to move an entry to — and offered on every type the list
+		 * holds. The label is the holder's own word; the id it writes is the
+		 * shared vocabulary's, and unticking writes the default as absence.
+		 */
+		if (offers?.placement === true) {
+			checkField(
+				detail,
+				`Inside the opened ${holder}`,
+				column,
+				'placement',
+				context,
+				undefined,
+				BODY_PLACEMENT,
+			);
+		}
+
+		/*
+		 * **Shown when, last on the line**, after where the entry is drawn, since
+		 * both are about the entry as a whole and this one carries an error and a
+		 * legend under it. Opt-in on `placement`'s precedent, offered on every type
+		 * the list holds (`docs/features/conditional-field-visibility.md`).
+		 */
+		if (conditioned) {
+			const shownWhen = labelled(detail, 'Shown when');
+			/*
+			 * **A row of its own only while it holds something**, which `refresh`
+			 * decides. With a condition, an error or a legend, it is as long as its
+			 * author makes it and taller than its neighbours, so inline it clipped
+			 * the condition and dropped the fields beside it. Empty, reading
+			 * `Always`, it is one short input, and a full row on every field grew
+			 * each entry by half again for nothing — so it stays inline and last on
+			 * the line. The first commit moves it to its row; the input is the same
+			 * element, and a rebuild restores focus to it by its token.
+			 */
+			const condition = shownWhen.createEl('input', {
+				type: 'text',
+				attr: {
+					placeholder: 'Always',
+					'aria-label': `${column.key} shown when`,
+				},
+			});
+			condition.value =
+				column.visibleWhen === undefined ? '' : String(column.visibleWhen);
+			condition.dataset.sheetsmithFocus = `${prefix}-col-${column.key}-visiblewhen`;
+			// Evaluated per holder, so this component's own keys come first, as a
+			// computed entry's formula has them.
+			context.suggestNames?.(condition, ownerId);
+
+			let legend: HTMLElement[] = [];
+			/**
+			 * The field's two reports and its legend, from the stored value, on
+			 * render and on commit alike, so the two are provably about one string.
+			 */
+			const refresh = (): void => {
+				const text =
+					typeof column.visibleWhen === 'string' ? column.visibleWhen : undefined;
+				/*
+				 * **The parse error first**, since text that does not parse names
+				 * nothing to be refused for; then the refusal of a condition naming
+				 * its own entry, which is the component's own predicate
+				 * (`formula/field-condition.ts`). Stored either way, as every formula
+				 * field's text is: the component shows the entry and does not use it.
+				 */
+				const selfNamed =
+					text !== undefined && conditionReads(text, column.key)
+						? `"${column.key}" is shown when its own value says so, and a ${unit} that can hide itself vanishes under the cursor and can only be brought back by a reset. This condition is not used, so "${column.key}" is always shown. Base it on another ${unit}.`
+						: null;
+				fieldError(condition, formulaProblem(text) ?? selfNamed);
+				// Redrawn after the error, so the error stays directly under the
+				// input it is about and the legend under that.
+				for (const line of legend) line.remove();
+				legend = text === undefined ? [] : positionLegend(text, column.key);
+				const holds =
+					heldCondition(column.visibleWhen) !== null ||
+					condition.classList.contains('sheetsmith-input-invalid') ||
+					legend.length > 0;
+				shownWhen.toggleClass('sheetsmith-detail-field-row', holds);
+				shownWhen.toggleClass('sheetsmith-detail-field-wide', !holds);
+			};
+			/**
+			 * One line per level entry the condition names: what each position is
+			 * called, since a condition names a level by number. The mitigation of
+			 * that number at the one place it is written, and the standing record of
+			 * the mapping once a reorder's notice has gone.
+			 */
+			const positionLegend = (text: string, own: string): HTMLElement[] =>
+				columns
+					.filter(
+						(other) =>
+							other.key !== own &&
+							(other.type ?? fallback) === 'level' &&
+							conditionReads(text, other.key),
+					)
+					.map((other) => {
+						const positions =
+							other.levels === undefined
+								? `0 … ${levelCount(other)}`
+								: other.levels
+										.map((entry, at) => `${at} ${parseLevel(entry).name}`)
+										.join(' · ');
+						return shownWhen.createDiv('sheetsmith-entry-footnote', (el) =>
+							el.setText(`${other.key}: ${positions}`),
+						);
+					});
+			refresh();
+			condition.addEventListener('change', () => {
+				setOptional(column, 'visibleWhen', condition.value);
+				context.persist();
+				refresh();
+			});
+		}
 	});
 
 	const footer = listEl.createDiv('sheetsmith-entry-footer');
@@ -1594,6 +1868,24 @@ export function renderColumnsEditor(
 			listEl.createDiv('sheetsmith-field-error', (el) =>
 				el.setText(
 					`"${column.key}" is a second modifier ${unit}. A modifier ${cell} holds every modifier its ${holder} applies, so one modifier ${unit} is enough. Move this ${unit}'s modifiers into the first and remove it.`,
+				),
+			);
+		}
+	}
+	/*
+	 * **A condition on a list that cannot honour one, reported and never
+	 * refused**, on the second modifier column's precedent above. The component
+	 * draws the column on every holder and carries the key untouched; refusing
+	 * would blank it and withdraw every modifier its rows push, which is
+	 * `table.ts`'s own "worst trade available here". Composed from this list's
+	 * own words, so it names neither a table nor a roster.
+	 */
+	if (!conditioned) {
+		for (const column of columns) {
+			if (heldCondition(column.visibleWhen) === null) continue;
+			listEl.createDiv('sheetsmith-field-error', (el) =>
+				el.setText(
+					`"${column.key}" has a condition, and every ${unit} here is drawn on every ${holder}, so the condition does nothing. Remove it, or move this ${unit} to a Record set to show it only on some ${holder}s.`,
 				),
 			);
 		}
@@ -1877,21 +2169,23 @@ export function renderEntriesEditor(
 				);
 				return;
 			}
-			fieldError(primaryInput, null);
-			entry[primary.key] = next;
 			// Both values are already in hand at the moment of commit, which is
 			// what the migration asks of every trigger it hooks — an explicit
 			// rename, never one inferred later by diffing two saved configs.
 			// `stored` empty means there was no fence entry this could have
 			// addressed yet, so nothing is migrated from it.
-			context.persist(
-				keyRename(
-					address,
-					typeof record.label === 'string' ? record.label : '',
-					stored,
-					next,
-				),
+			const intent = keyRename(
+				address,
+				typeof record.label === 'string' ? record.label : '',
+				stored,
+				next,
 			);
+			if (refusedRename(intent, context.renameRefusal, primaryInput, stored, fieldError)) {
+				return;
+			}
+			fieldError(primaryInput, null);
+			entry[primary.key] = next;
+			context.persist(intent);
 			context.redraw();
 		});
 

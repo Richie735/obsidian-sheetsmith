@@ -26,14 +26,14 @@
  * structure: the body *is* the value, so Constraint 3 holds by construction
  * rather than by canonicalisation — the one spelling of it that survives
  * free-form prose. `read` hands back the body with the whitespace run at each
- * end removed and can never fail, since every body is legal text; `write` puts
+ * end removed, and fails on one body only (below); `write` puts
  * the new text back inside the runs the body already had, so a hand-written
  * section keeps its own spacing and an edit changes exactly the prose. Both
  * halves are `parse/markdown-body.ts`, shared with Image, which stores one embed
  * under the same rule.
  *
- * **Its one piece of reserved syntax is `## ` at the start of a line**, and it is
- * the note format's rather than this component's: SPEC §3.1 gives a character note
+ * **It reserves two lines, and both are the note format's rather than this
+ * component's.** The first is `## ` at the start of a line: SPEC §3.1 gives a character note
  * one `##` section per component, so a block holding such a line splits the note
  * there and shows only what was above it. Not escaped, because that would put a
  * plugin's syntax into a file the user owns, and `read` is not failed either,
@@ -44,6 +44,20 @@
  * — the field keeps it, and the message names the offending line and `### `. See
  * `refuse` in `render` for why byte survival was the wrong thing to guarantee.
  * Every other heading level is content, `#` and `###` included.
+ *
+ * The second is a line opening a `sheet` block, and it is the one body `read`
+ * does fail on (`docs/features/new-component-adopts-retained-section.md`). A
+ * `sheet` block is a component's data, never prose, so a body holding one is
+ * another component's section — one a note kept after that component was
+ * removed (SPEC §10), which this block now shares a label with, or a hand edit.
+ * Read as prose, it would be shown as this block's own text and the reader's
+ * next edit would replace it, which is the one way this component could delete
+ * data it never wrote. **The argument for a total read is kept, not dropped**:
+ * a failed read replaces the whole cell, so a reader must not be able to reach
+ * one by typing — and the draft refusal declines such a line exactly as it
+ * declines `## `, so this failure comes only from a hand edit or an adoption,
+ * never from this component's own gesture. That is Image's own condition for
+ * when a read may fail.
  *
  * **It publishes nothing.** No `scopeValues`, no `scopeRows`, no `applyReset`.
  * SPEC §4.1 names this case — "a heading, an image, a block of prose" — and
@@ -81,6 +95,7 @@ import { sampleText } from './sample-values';
 import { flagWhileFocused } from '../interaction/field-focus-flag';
 import { spellcheckWhileFocused } from '../ui/spellcheck';
 import { startsSection } from '../parse/character';
+import { opensSheetBlock } from '../parse/fenced';
 
 /**
  * Hint shown while the block is empty. Fixed rather than configured: SPEC §4.2
@@ -90,6 +105,22 @@ import { startsSection } from '../parse/character';
  * qualifier differs per card ("ft.", "armour worn"); prose does not.
  */
 const PLACEHOLDER = 'Write anything.';
+
+/**
+ * Why a section holding a `sheet` block draws no box. Names both routes out,
+ * because the reader standing here cannot tell which one is theirs: the data
+ * may be worth keeping in the note under another heading, or it may belong to
+ * a component the layout should be showing under this label instead.
+ *
+ * **Image's refusal ends on the same two routes, and the two are deliberately
+ * independent sentences** rather than one shared clause: each names what *this*
+ * component found and what has to move ("it", the block; Image's "the rest",
+ * every line past the embed), so a shared clause would take a knob per caller
+ * and the words it saves are the ones that differ. Nothing is computed from
+ * either, so a drift between them is a wording difference, not a behaviour one.
+ */
+const SHEET_BLOCK_HELD =
+	'This section holds a sheet block, which is a component\'s data rather than text. Move it out of this section in the note, or rename this component in the layout.';
 
 /**
  * A blank line, which is what separates one paragraph from the next.
@@ -198,11 +229,12 @@ export const richText: ComponentDefinition<RichTextConfig, RichTextData> = {
 	},
 
 	/*
-	 * Never `{ ok: false }`. Every body is legal text, so this component has no
-	 * read error state at all — which is worth saying rather than leaving a
-	 * reader to infer it from the absence of a branch.
+	 * `{ ok: false }` on one body only: one holding a `sheet` block, which is
+	 * another component's data (the header says why, and why this component's
+	 * own typing can never produce it). Every other body is legal text.
 	 */
 	read(body): ReadResult<RichTextData> {
+		if (opensSheetBlock(body) !== null) return { ok: false, error: SHEET_BLOCK_HELD };
 		const text = bodyText(body);
 		// Nothing but whitespace is an editable empty block, not an error and not
 		// a stored empty string: PATTERNS §4, and the first commit writes it.
@@ -405,11 +437,13 @@ export const richText: ComponentDefinition<RichTextConfig, RichTextData> = {
 		status.setAttribute('aria-live', 'polite');
 
 		/**
-		 * The refusal, and the only one this component has.
+		 * The refusal, which has two cases: a line starting a section, and a line
+		 * opening a `sheet` block. The second is the write half of `read`'s one
+		 * failure (the header), so nothing typed here can produce a body `read`
+		 * refuses; what follows is the argument for the first.
 		 *
-		 * `read` stays total — every body that reaches it is legal text, which is
-		 * what makes this component the one with no read error state — and what is
-		 * refused is the *write*. `## ` at the start of a line is the note's own
+		 * `read` stays total for it — a body holding `## ` is legal text — and what
+		 * is refused is the *write*. `## ` at the start of a line is the note's own
 		 * section delimiter, so committing one splits the note underneath the block
 		 * and the box comes back holding only what was above the heading.
 		 *
@@ -428,11 +462,19 @@ export const richText: ComponentDefinition<RichTextConfig, RichTextData> = {
 		 * here" is not a fix (PATTERNS §4).
 		 */
 		const refuse = (next: string): string | null => {
-			const heading = startsSection(next);
-			if (heading === null) return null;
 			// The outcome first, because "was it saved?" is the reader's question and
 			// the old behaviour answered it wrongly.
-			return `Not saved. "${heading.trim()}" would start a new section in this note — use "### " instead.`;
+			const heading = startsSection(next);
+			if (heading !== null) {
+				return `Not saved. "${heading.trim()}" would start a new section in this note — use "### " instead.`;
+			}
+			// The read refusal's other half: a block this component saved could
+			// never read back, so the reader would lock themselves out of it.
+			const sheetLine = opensSheetBlock(next);
+			if (sheetLine !== null) {
+				return `Not saved. "${sheetLine.trim()}" would start a block of sheet data in this note — name the code block something else.`;
+			}
+			return null;
 		};
 
 		/** The standing refusal, drawn under the box and cleared when it lifts. */

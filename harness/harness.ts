@@ -27,7 +27,6 @@ import {
 } from '../src/formula/resolve';
 import { buildSheet } from '../src/formula/sheet';
 import { Layout } from '../src/parse/layout';
-import { walkComponents } from '../src/parse/layout-walk';
 import {
 	ComponentConfig,
 	ComponentDefinition,
@@ -37,12 +36,16 @@ import {
 } from '../src/types';
 import { nameAlreadyDeclared } from '../src/layouts';
 import { dropDetachedAnchoredPanel } from '../src/ui/anchored-panel';
-import { renderGrid } from '../src/view/grid-cells';
+import { renderGrid, walkLayout } from '../src/view/grid-cells';
+import { boundTo, planTrigger } from '../src/view/reset-plan';
+import { openResetConfirmation } from '../src/view/reset-confirmation';
+import { App } from '../src/test/obsidian-stub';
 import {
 	driveDrag,
 	drivePicker,
 	driveResize,
 	driveSuggest,
+	driveTree,
 	renderEditorPane,
 } from './editor-pane';
 import {
@@ -95,7 +98,7 @@ function loadState(name: StateName): void {
 	const samples = samplesFor(name);
 	bodies = new Map(
 		samples.flatMap((s) =>
-			walkComponents([s.config]).map((entry) => [
+			walkLayout([s.config]).map((entry) => [
 				entry.config.id,
 				entry.config === s.config ? s.body : (s.children?.[entry.config.id] ?? null),
 			] as [string, string | null]),
@@ -112,7 +115,7 @@ function loadState(name: StateName): void {
  * the closed group must not change what the sheet computes.
  */
 function prepare(): void {
-	live = walkComponents(layout.components).map(({ config }) => {
+	live = walkLayout(layout.components).map(({ config }) => {
 		const component = getComponent(config.type);
 		const body = bodies.get(config.id) ?? null;
 		if (!component) {
@@ -348,7 +351,18 @@ const activeTab = new Map<string, number>();
  * which puts both dispositions in one shot. A reviewer clicking in the live
  * harness moves either.
  */
-const openRecords = new Map<string, Set<number>>([['traits', new Set([1, 2])]]);
+const openRecords = new Map<string, Set<number>>([
+	['traits', new Set([1, 2])],
+	// Second Wind and Aura of Protection open, Darkvision and Rage closed, on all
+	// three copies of the conditioned list, so an open body's `Save DC` and a
+	// closed record's hidden fields are in one shot.
+	['recharging', new Set([0, 1])],
+	['recharging_plain', new Set([0, 1])],
+	['recharging_broken', new Set([0, 1])],
+	// Second Wind open, so its `Save DC` — which the list's bindings name `Uses`
+	// to leave alone — is on screen beside the counter the reset is for.
+	['rest_features', new Set([0])],
+]);
 
 function renderSheet(into: HTMLElement): void {
 	const view = into.createDiv('sheetsmith-view');
@@ -365,7 +379,7 @@ function renderSheet(into: HTMLElement): void {
 	// of the view's loop.
 	renderGrid(
 		grid,
-		walkComponents(layout.components),
+		walkLayout(layout.components),
 		live,
 		(entry) => {
 			const { config, component, data } = entry;
@@ -436,6 +450,24 @@ function noteBodies(): HTMLElement {
 }
 
 /**
+ * `&confirm=<trigger>` — open the confirmation a press on that trigger would
+ * open (`docs/features/record-set-reset-scope.md`).
+ *
+ * **Through the view's own plan and the view's own words**: `boundTo` and
+ * `planTrigger` over the sheet this module holds, and the sheet's own
+ * `openResetConfirmation` against the stub `App`. So what is photographed is
+ * the count and the refusals a reader would be shown, not a copy of them, and
+ * Apply here does nothing, because there is no note to write into — the trigger
+ * bar and the notices after a press stay unphotographed (`docs/BACKLOG.md`).
+ */
+function openConfirmation(name: string): void {
+	const plan = planTrigger(name, boundTo(name, live), sheetEnv(live).env);
+	// The double's `App`, which a modal only holds; `never` is this
+	// repository's spelling for handing the double where the app is typed.
+	openResetConfirmation(new App() as never, name, plan, () => undefined);
+}
+
+/**
  * The editor pane is rendered once and kept, rather than rebuilt with the sheet.
  * It owns its own redraw — the editor rebuilds itself on every change and the
  * pane restores the scroll across that — and tearing it down from outside would
@@ -495,9 +527,16 @@ async function ensureEditor(): Promise<HTMLElement> {
 			suggest: params.get('suggest') ?? undefined,
 			treeHover: params.get('treeHover') ?? undefined,
 			treeDrop: params.get('treeDrop') ?? undefined,
+			collapse: params.get('collapse') ?? undefined,
+			unsaved: unsavedParam(params.get('unsaved')),
 		},
 	);
 	return pane;
+}
+
+/** `&unsaved=write|write-path|invalid`, or nothing for any other value (`PaneView.unsaved`). */
+function unsavedParam(value: string | null): 'write' | 'write-path' | 'invalid' | undefined {
+	return value === 'write' || value === 'write-path' || value === 'invalid' ? value : undefined;
 }
 
 async function ensureSettings(): Promise<HTMLElement> {
@@ -517,6 +556,13 @@ async function ensureSurface(): Promise<void> {
 
 /** One column per surface the choice asks for, in the order they are named. */
 function draw(): void {
+	// The editor pane is detached and re-attached below, and a detached element
+	// loses focus — so every layout write, which calls this, used to drop the
+	// author's focus on the body. The app never re-parents the pane on a save,
+	// so the harness puts the focus back rather than photographing a loss the
+	// plugin does not have: without it the canvas's arrow keys stop after the
+	// first write, here and nowhere else.
+	const focused = document.activeElement;
 	stage.replaceChildren();
 
 	const column = (build: (into: HTMLElement) => void): void => {
@@ -530,6 +576,13 @@ function draw(): void {
 	}
 	if (surface === 'settings' && settingsPane) {
 		column((into) => into.appendChild(settingsPane as HTMLElement));
+	}
+	if (
+		focused instanceof HTMLElement &&
+		focused.isConnected &&
+		document.activeElement !== focused
+	) {
+		focused.focus({ preventScroll: true });
 	}
 }
 
@@ -628,6 +681,14 @@ document
  * destination, and `&pickerAdd` presses **Add** once the rest is done. And
  * `&samples=off` presses the pane's **Sample values** toggle off, which is the
  * only way to photograph the empty canvas now that a pane opens filled.
+ *
+ * Four for the tree (`docs/features/layout-editor-tree.md` §9): `&collapse=<id>,…`
+ * presses each container's chevron in order, `&menu=<id>` opens that row's menu
+ * and leaves it open, and `&treeKey=<id>:<ArrowUp|ArrowDown|ArrowRight|ArrowLeft>`
+ * focuses that row's name and presses the Alt chord, which shows a completed
+ * move or a refused one's line under the row. `&paste=<id>:<fixture>[:config]`
+ * pastes onto that row — a copy from `CLIPBOARD_FIXTURES`, or `self` for a copy
+ * of the row itself — by Mod+V, or by **Paste configuration** with `:config`.
  *
  * And one for what the layout *folder* holds: `&layout=none` for a vault with no
  * layouts in it, `&layout=broken` for one whose file will not parse, and
@@ -879,9 +940,12 @@ function applyQuery(): void {
 	 * real box, and every rect on an unattached element reads zero.
 	 */
 	const suggest = params.get('suggest');
+	const confirm = params.get('confirm');
 
 	void ensureSurface().then(async () => {
 		draw();
+		// Over the sheet it was planned from, once that sheet is drawn.
+		if (confirm !== null) openConfirmation(confirm);
 		// Before the presses, as it always was — unless the view also scrolls, in
 		// which case it goes after the scroll (below). A programmatic focus scrolls
 		// its control into view by the same algorithm a Tab press uses, honouring
@@ -906,6 +970,13 @@ function applyQuery(): void {
 				pickerActive: params.get('pickerActive') ?? undefined,
 				pickerInto: params.get('pickerInto') ?? undefined,
 				pickerAdd: params.has('pickerAdd') ? true : undefined,
+			});
+		}
+		if (editorPane) {
+			await driveTree(editorPane, {
+				menu: params.get('menu') ?? undefined,
+				treeKey: params.get('treeKey') ?? undefined,
+				paste: params.get('paste') ?? undefined,
 			});
 		}
 		if (resize !== null && editorPane) {

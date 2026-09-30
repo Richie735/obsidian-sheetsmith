@@ -112,6 +112,37 @@ describe('image.read', () => {
 		}
 	});
 
+	it('fails on a body holding more than one line, which its own field cannot write', () => {
+		/*
+		 * `docs/features/new-component-adopts-retained-section.md`: another
+		 * component's section under this label — a Card's fence, a Table, prose —
+		 * read as a source, then replaced whole on the reader's next commit. A
+		 * single-line field cannot produce one, so the failure is never the reader's
+		 * own typing, which is the condition the refusals above had to meet.
+		 */
+		const message =
+			'This section holds more than one line, and a picture is one embed. Move the rest out of this section in the note, or rename this component in the layout.';
+		for (const body of [
+			'```sheet\nvalue: 15\nnote: chain mail\n```\n',
+			'\n| Name | Qty |\n|---|---|\n| [[Rope]] | 1 |\n',
+			'\nRaised in [[Waterdeep]].\n\nBy the harbourmaster.\n',
+			'\n![[Portrait.png]]\n![[Other.png]]\n',
+			'\r\n![[Portrait.png]]\r\nA caption.\r\n',
+		]) {
+			expect(image.read(body, config)).toEqual({ ok: false, error: message });
+		}
+	});
+
+	it('still reads one line of prose, as the residue its own typing can reach', () => {
+		// Pinned as residue, not as a guarantee: a one-line body that is not an
+		// embed is still read and its reason drawn in the frame, so an adopted
+		// one-line prose section is still replaced by the next commit.
+		expect(image.read('\nRaised in [[Waterdeep]].\n', config)).toEqual({
+			ok: true,
+			data: { source: 'Raised in [[Waterdeep]].' },
+		});
+	});
+
 	it('still treats an empty body as the editable empty state', () => {
 		// Unchanged, and the one body that is `data: null` rather than a value.
 		expect(image.read('  \n\t\n ', config)).toEqual({ ok: true, data: null });
@@ -619,6 +650,49 @@ describe('image.render — every failure is on screen (the prior art)', () => {
 		expect(error(el)).toBeNull();
 		expect(field(el).value).toBe('');
 		expect(field(el).placeholder).toBe('![[Portrait.png]]');
+	});
+});
+
+describe('image.render — the reference, named where the pointer rests', () => {
+	/*
+	 * The field is transparent and `pointer-events: none` at rest, so unfocused
+	 * the stored reference is legible nowhere, and the frame's `title` is what
+	 * says it — whatever its length, which is why this is not
+	 * `revealWhenTruncated` (`docs/features/track-row-legibility-and-clipped-fields.md`
+	 * §4b). Present on the two branches that draw no error, absent on the rest.
+	 */
+	it('names the reference verbatim over a picture', () => {
+		const el = render();
+		expect(picture(el)).not.toBeNull();
+		expect(frame(el).getAttribute('title')).toBe(SOURCE);
+	});
+
+	it('names it over an empty frame, where there is no vault to draw from', () => {
+		const el = render({}, { source: SOURCE }, { resource: undefined });
+		expect(picture(el)).toBeNull();
+		expect(frame(el).getAttribute('title')).toBe(SOURCE);
+	});
+
+	it('says nothing where nothing is stored, since the placeholder shows through', () => {
+		expect(frame(render({}, null)).hasAttribute('title')).toBe(false);
+		expect(frame(render({}, { source: '' })).hasAttribute('title')).toBe(false);
+	});
+
+	it('says nothing over an error, which already names the file', () => {
+		// A missing file, a body it cannot use, and a file the browser cannot draw:
+		// the three errors a frame can hold.
+		expect(
+			frame(render({}, { source: '![[Missing.png]]' })).hasAttribute('title'),
+		).toBe(false);
+		expect(
+			frame(render({}, { source: 'Sildar.png' })).hasAttribute('title'),
+		).toBe(false);
+
+		const el = render({}, { source: '![[Notes.md]]' });
+		expect(frame(el).getAttribute('title')).toBe('![[Notes.md]]');
+		picture(el)?.dispatchEvent(new Event('error'));
+		expect(error(el)).toBe('"Notes.md" is not a picture.');
+		expect(frame(el).hasAttribute('title')).toBe(false);
 	});
 });
 

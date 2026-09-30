@@ -167,6 +167,20 @@ function drawableCard(
 	return optionList(config);
 }
 
+/**
+ * Whether the card draws its stored value. Hiding the value only makes sense
+ * while a derived remains to show; otherwise the config would permit a card
+ * with nothing in it, so a hidden value with no derived is drawn anyway.
+ *
+ * One predicate with two readers — `render` draws by it and `configName` names
+ * by it — because a card the editor calls Computed while the sheet draws its
+ * value would be the name describing a card that is not on the page
+ * (PATTERNS §1: a predicate is extracted on its second consumer).
+ */
+function valueShown(config: CardConfig): boolean {
+	return config.hideValue !== true || config.derived === undefined;
+}
+
 export const card: ComponentDefinition<CardConfig, CardData> = {
 	type: 'card',
 	description: 'One labelled value on a card, with an optional derived number and a note line.',
@@ -269,6 +283,22 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 	 * two. It does not prefill `hideNote`: the note line is the Blades case —
 	 * a heritage is a closed choice plus a written detail — and hiding it is one
 	 * checkbox for the cards that do not want it.
+	 *
+	 * **Computed** is the same argument a second time: a read-only number fed
+	 * entirely by a formula is this component with its value hidden, and nobody
+	 * wanting a spell save DC looks for it behind **Hide value**, whose own
+	 * description only means something once the author knows a derived exists.
+	 * It was §4.2's Computed component, withdrawn because every part of it was a
+	 * Card (docs/features/computed-palette-entry.md).
+	 *
+	 * The formula is `0`, and it is the one prefill whose choice matters. It
+	 * reads no `value`, since a hidden value a formula reads draws `—` for ever
+	 * with nothing to type it into; it resolves on any layout, so the fresh card
+	 * and the picker's preview draw a number rather than `?`; and it names no
+	 * system's vocabulary and is no system's constant, where `10` or `8` would be
+	 * one game's rule. The note is hidden because it is the one control left that
+	 * writes, and `signed` is off because a DC or a coin total reads `15`, not
+	 * `+15` — a signed number is a modifier, which is a Card with its value shown.
 	 */
 	palette: [
 		{
@@ -277,6 +307,11 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 			config: {
 				options: [{ value: 'First choice' }, { value: 'Second choice' }],
 			},
+		},
+		{
+			name: 'Computed',
+			description: 'A read-only number worked out by a formula from values elsewhere on the sheet.',
+			config: { derived: '0', hideValue: true, hideNote: true, signed: false },
 		},
 	],
 
@@ -290,8 +325,17 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 	 * `scopeValues`, a note format and a card face, which is a copy rather than
 	 * a component (SPEC §13, PATTERNS §1) — what differs is the control and the
 	 * word for it, and this is the word.
+	 *
+	 * A card whose value is hidden behind a derived is a **Computed**, and
+	 * Computed wins where both hold: hiding the value hides the menu with it, so
+	 * a card with options and a hidden value draws no dropdown, and the name is
+	 * for what the card is on the page. Clear the **Derived** field and the value
+	 * comes back, and the name goes back with it. A hidden value over a derived
+	 * that reads `value` is still a Computed — the card reads `—`, which is the
+	 * configuration the author wrote.
 	 */
 	configName(config): string | null {
+		if (!valueShown(config)) return 'Computed';
 		return (config.options?.length ?? 0) > 0 ? 'Dropdown' : null;
 	},
 
@@ -423,9 +467,7 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 		const face = container.createDiv('sheetsmith-card-single');
 
 		const signed = config.signed !== false;
-		// Hiding the value only makes sense when a derived remains to show;
-		// otherwise the config would permit a card with nothing in it.
-		const showValue = config.hideValue !== true || config.derived === undefined;
+		const showValue = valueShown(config);
 		const value = data?.value ?? '';
 		// Only a formula that actually reads this card's own value has
 		// nothing to work with while the field is empty. One computed

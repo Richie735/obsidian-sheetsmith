@@ -83,6 +83,7 @@
 import { Setting } from 'obsidian';
 import { acceptsChildren } from './accepts-children';
 import { keyRename, RenameIntent } from '../component-rename-migration';
+import { refusedRename } from './rename-refusal';
 import { getComponent } from '../components';
 import { placedComponentName } from './component-name';
 import { conditionMet } from './config-fields';
@@ -93,8 +94,9 @@ import {
 import { vocabularySource } from '../formula/vocabulary';
 import { fencedKeyProblem } from '../parse/fenced';
 import { parseModifierDefinitions } from '../parse/modifier-definitions';
-import { WalkEntry, walkComponents } from '../parse/layout-walk';
+import { WalkEntry } from '../parse/layout-walk';
 import { onCommit } from './field-commit';
+import { levelReorderNotice } from './level-reorder';
 import { renderPublishedNames } from './published-names';
 import { showFieldError } from './field-error';
 import { formulaProblem } from './field-formula';
@@ -118,7 +120,7 @@ import {
 	ModifierTypesField,
 	renderModifierTypes,
 } from './modifier-types-field';
-import { DEFAULT_COLUMNS, Layout } from '../parse/layout';
+import { DEFAULT_COLUMNS, labelTaken, Layout } from '../parse/layout';
 
 import { renderResetField } from './reset-field';
 import {
@@ -133,7 +135,7 @@ import {
 	isContainer,
 	placesChildren,
 } from '../types';
-import { childIsPlaced, innerPlacement } from '../view/grid-cells';
+import { childIsPlaced, innerPlacement, walkLayout } from '../view/grid-cells';
 import { clamp, lastColumn } from './preview-grid';
 
 /**
@@ -145,6 +147,13 @@ import { clamp, lastColumn } from './preview-grid';
  */
 function positionToken(id: string, key: keyof GridPosition): string {
 	return `pos-${id}-${key}`;
+}
+
+/** A `text-list` value as the layout holds it, copied, with anything not a string left out. */
+function namesOf(value: unknown): string[] {
+	return Array.isArray(value)
+		? value.filter((entry): entry is string => typeof entry === 'string')
+		: [];
 }
 
 /**
@@ -171,6 +180,19 @@ export interface ConfigPanelHost {
 	 * caller omits it.
 	 */
 	persist(rename?: RenameIntent): void;
+	/**
+	 * Why a commit carrying a rename may not be written now, or null where it
+	 * may (`docs/features/unsaveable-layout.md` §2). Asked at the commit, so a
+	 * save that ends the pane's unsaved state lifts it with no rebuild.
+	 */
+	readonly renameRefusal: () => string | null;
+	/**
+	 * The **Set to a formula** choices still waiting for their expression, by
+	 * the action dropdown's focus token. Panel posture, like `errors`.
+	 */
+	readonly drafts: Set<string>;
+	/** Focus this token once the next redraw has happened. */
+	focusAfterRedraw(token: string): void;
 	/**
 	 * Rebuild both regions from the layout as it now stands.
 	 *
@@ -236,6 +258,16 @@ export interface ConfigPanelHost {
 	 * reads first, which is a computed column's **Formula** and nothing else.
 	 */
 	suggestNames(input: HTMLInputElement, owner?: string): void;
+	/**
+	 * Write a commit to a level list and raise what it rereads once the pane
+	 * has counted the notes holding a section under `label` — `ListContext`'s
+	 * member of the same name, which this panel's own level list, a Track's
+	 * `levels`, commits through too (`docs/features/level-list-reorder-report.md`).
+	 */
+	persistReorder(
+		label: string,
+		sentence: (notes: number) => string | null,
+	): void;
 }
 
 /**
@@ -318,7 +350,10 @@ export class ConfigPanel {
 	 * Asked for by a schematic gesture, through the editor, which is why it is
 	 * public where the rest of the drawing is private. It writes rather than
 	 * redraws because the author may be standing in one of these fields while a
-	 * block is dragged, and a rebuild would take the field down with it.
+	 * block is dragged — the press leaves the focus where it was — and a rebuild
+	 * would take the field down with it. What it writes is also what that field
+	 * commits when the block takes the focus at the gesture's end, so the drag's
+	 * result is the one kept rather than whatever was typed before it.
 	 */
 	syncPositionFields(config: ComponentConfig): void {
 		const container = this.panelEl;
@@ -349,7 +384,7 @@ export class ConfigPanel {
 	 * through the same function.
 	 */
 	private modifierSources(layout: Layout): ModifierTargetSource[] {
-		return walkComponents(layout.components).map((entry) =>
+		return walkLayout(layout.components).map((entry) =>
 			modifierTargetSource(entry.config, getComponent(entry.config.type)),
 		);
 	}
@@ -616,11 +651,10 @@ export class ConfigPanel {
 						this.fieldError(text.inputEl, 'A label is required.');
 						return;
 					}
-					if (
-						layout.components.some(
-							(other) => other !== config && other.label === label,
-						)
-					) {
+					// The parser's own rule, over every component at every depth:
+					// the top level alone passed a label a container's child held,
+					// which the parse then refused (`docs/features/unsaveable-layout.md`).
+					if (labelTaken(layout.components, label, config)) {
 						// Through the binding, like the branch above it. It was a
 						// bare `showFieldError` — the map argument is optional, so
 						// nothing compiled or linted differently, which is exactly
@@ -634,16 +668,23 @@ export class ConfigPanel {
 						);
 						return;
 					}
-					this.fieldError(text.inputEl, null);
 					const from = config.label;
-					config.label = label;
 					// Both values are already in hand at the moment of commit,
 					// which is what `docs/features/component-rename-migration.md`
 					// asks of every trigger it hooks — an explicit rename, never
 					// one inferred later by diffing two saved configs.
-					this.host.persist(
-						from === label ? undefined : { kind: 'label', from, to: label },
-					);
+					const intent: RenameIntent | undefined =
+						from === label ? undefined : { kind: 'label', from, to: label };
+					if (
+						refusedRename(intent, this.host.renameRefusal, text.inputEl, from, (input, message) =>
+							this.fieldError(input, message),
+						)
+					) {
+						return;
+					}
+					this.fieldError(text.inputEl, null);
+					config.label = label;
+					this.host.persist(intent);
 					this.host.redraw();
 				});
 			});
@@ -677,7 +718,7 @@ export class ConfigPanel {
 				? (layout.columns ?? DEFAULT_COLUMNS)
 				: innerPlacement(
 						parent,
-						walkComponents(layout.components).find(
+						walkLayout(layout.components).find(
 							(entry) => entry.config === parent,
 						)?.parent ?? null,
 					).width;
@@ -740,6 +781,19 @@ export class ConfigPanel {
 
 		if (!definition) return;
 		const record = config as unknown as Record<string, unknown>;
+		/*
+		 * What the pane called this component when the form was drawn, so a
+		 * commit can tell whether it moved the name. A config field can: a Card
+		 * whose value is hidden behind a derived is a Computed, so **Hide value**
+		 * and **Derived** each decide it. Which fields do is the component's to
+		 * know and never this module's, so a commit compares rather than asks.
+		 * Where the name moved, the tree row carries it one column over, and a
+		 * redraw is what a Label commit already asks for on the same ground.
+		 * Only on a change: most commits leave the name alone, and a redraw
+		 * tears the whole tab down.
+		 */
+		const drawnAs = placedComponentName(config);
+		const renamed = () => placedComponentName(config) !== drawnAs;
 
 		// Only components that can act on a reset are offered one, and
 		// implementing `applyReset` is what says so. Why the field is rendered
@@ -750,6 +804,8 @@ export class ConfigPanel {
 				redraw: () => this.host.redraw(),
 				errors: this.host.errors,
 				suggestNames: (input, owner) => this.host.suggestNames(input, owner),
+				drafts: this.host.drafts,
+				focusAfterRedraw: (token) => this.host.focusAfterRedraw(token),
 			});
 		}
 
@@ -884,12 +940,38 @@ export class ConfigPanel {
 							.map((entry) => entry.trim())
 							.filter((entry) => entry !== '');
 						this.fieldError(text.inputEl, null);
+						const before = namesOf(record[field.key]);
 						// Cleared is "this list is not set", which is a state
 						// the component reads — a track with no level names
 						// counts its marks instead.
 						if (parsed.length === 0) delete record[field.key];
 						else record[field.key] = parsed;
-						this.host.persist();
+						/*
+						 * The one `text-list` is a Track's level names, and a
+						 * note stores a position in them (`types.ts`, the kind),
+						 * so a commit moving one is reported as a level column's
+						 * is. **Names against names only**: with none on either
+						 * side the Track counts from its `count`, which may be a
+						 * formula this panel cannot read, so a clear or a first
+						 * naming has no level count to compare and says nothing.
+						 * A Track's key and label are one word, and it has no
+						 * sibling conditions and no reset condition to read it.
+						 */
+						const label = config.label;
+						if (before.length > 0 && parsed.length > 0) {
+							this.host.persistReorder(label, (notes) =>
+								levelReorderNotice(
+									label,
+									{ levels: before },
+									{ levels: parsed },
+									[],
+									undefined,
+									{ label, notes },
+								),
+							);
+						} else {
+							this.host.persist();
+						}
 						// The list may decide what another field means.
 						this.host.redraw();
 					});
@@ -960,7 +1042,7 @@ export class ConfigPanel {
 							record[field.key] = value;
 						}
 						this.host.persist();
-						if (controls) this.host.redraw();
+						if (controls || renamed()) this.host.redraw();
 					});
 				});
 				continue;
@@ -1018,17 +1100,23 @@ export class ConfigPanel {
 							? (record[field.key] as string)
 							: '';
 					const previous = stored !== '' ? stored : (address?.whenBlank ?? '');
+					/** `rename-refusal.ts`'s gate, bound to this field. */
+					const refused = (intent: RenameIntent | undefined): boolean =>
+						refusedRename(intent, this.host.renameRefusal, text.inputEl, stored, (input, message) =>
+							this.fieldError(input, message),
+						);
 					if (trimmed === '') {
+						const intent = keyRename(
+							address,
+							config.label,
+							stored,
+							address?.whenBlank ?? '',
+						);
+						if (refused(intent)) return;
 						this.fieldError(text.inputEl, null);
 						delete record[field.key];
-						this.host.persist(
-							keyRename(
-								address,
-								config.label,
-								stored,
-								address?.whenBlank ?? '',
-							),
-						);
+						this.host.persist(intent);
+						if (renamed()) this.host.redraw();
 						return;
 					}
 					/*
@@ -1060,6 +1148,8 @@ export class ConfigPanel {
 							return;
 						}
 					}
+					const intent = keyRename(address, config.label, previous, trimmed);
+					if (refused(intent)) return;
 					if (field.kind === 'number') {
 						const parsed = Number(trimmed);
 						if (Number.isNaN(parsed)) {
@@ -1080,9 +1170,8 @@ export class ConfigPanel {
 						);
 						record[field.key] = trimmed;
 					}
-					this.host.persist(
-						keyRename(address, config.label, previous, trimmed),
-					);
+					this.host.persist(intent);
+					if (renamed()) this.host.redraw();
 				});
 			});
 		}

@@ -190,6 +190,13 @@ export interface SchematicHost {
 	redrawSchematics(): void;
 	/** Select a component, which rebuilds both regions of the pane. */
 	select(id: string): void;
+	/**
+	 * Put the keyboard on a block once a press on it is over, wherever the
+	 * redraws that press caused have left it: the arrow keys `nudge` answers
+	 * listen on the block, so a press that leaves focus elsewhere leaves them
+	 * scrolling the pane.
+	 */
+	focusBlock(id: string): void;
 }
 
 export class SchematicGestures {
@@ -249,12 +256,14 @@ export class SchematicGestures {
 		});
 		cell.addEventListener('click', () => {
 			// A drag ends in a click on the same element; that click meant
-			// "put it here", not "select it".
+			// "put it here", not "select it". The drag's own end has already
+			// put the keyboard on the block.
 			if (this.dragged) return;
 			// Selects, never deselects. Pressing the selected block again
 			// would empty the panel, and nothing is the wrong thing to
 			// configure — the `Layout` row is how an author gets back out.
 			this.host.select(config.id);
+			this.host.focusBlock(config.id);
 		});
 		cell.addEventListener('keydown', (event) =>
 			this.nudge(event, config, schematic),
@@ -425,8 +434,17 @@ export class SchematicGestures {
 			cell.win.setTimeout(() => {
 				this.dragged = false;
 			}, 0);
-			this.host.persist();
+			// The form first, then the focus, then the write. Focusing the block
+			// blurs whatever field the author left, and a browser commits that
+			// field inside the blur: synced first, a position field commits the
+			// drag's own numbers rather than what was typed before it, and
+			// focused before the write, that commit's own save lands first and
+			// this one repeats it. The other way round, the drag's save and the
+			// field's are two different texts written back to back, and the
+			// first one coming back reads to the pane as somebody else's edit.
 			this.host.syncPositionFields(config);
+			this.host.focusBlock(config.id);
+			this.host.persist();
 			this.host.redrawSchematics();
 		};
 

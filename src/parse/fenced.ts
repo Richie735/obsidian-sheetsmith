@@ -96,6 +96,30 @@ export function readFenced(body: string): FencedResult {
 }
 
 /**
+ * The first line of `body` that opens a `sheet` block, or null where none does.
+ *
+ * For the component that stores free markdown and has to be able to *ask*
+ * (`docs/features/new-component-adopts-retained-section.md`): a `sheet` block
+ * is the plugin's own data, never prose, so a text body holding one is another
+ * component's section — adopted, or hand-edited — and replacing that body on an
+ * edit would delete the data. Rich text refuses such a body on read and a
+ * draft holding such a line on write, and both ask here.
+ *
+ * **The line, not a boolean**, on `startsSection`'s shape one module over: the
+ * refusal quotes it, because a backstory is long and "somewhere in here" is not
+ * a fix. **`FENCE_OPEN`'s own test, and only that**, so what counts as opening a
+ * block is what `readFenced` would open one on — an indented or a differently
+ * named fence is prose to both.
+ */
+export function opensSheetBlock(body: string): string | null {
+	for (const line of splitLines(body)) {
+		const text = lineText(line);
+		if (FENCE_OPEN.test(text)) return text;
+	}
+	return null;
+}
+
+/**
  * Which lines of a body the `sheet` fence occupies, or null where there is none.
  *
  * For the component whose section holds a fence **and** something else: it has to

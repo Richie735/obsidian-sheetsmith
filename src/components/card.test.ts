@@ -266,6 +266,27 @@ describe('card.render', () => {
 		expect(edits).toEqual([]);
 	});
 
+	it('reveals a clipped note on hover, and only while it clips', () => {
+		/*
+		 * The note ellipsises in a narrow card — "chain mail, shield" is 101px of
+		 * text in a 73px field at a 620px container — so its whole value has to
+		 * stay reachable. The metrics are faked because happy-dom reports 0 for
+		 * both, which is `ui/truncation.ts`'s own reason for existing; what this
+		 * asserts is that the painter binds the note to it. Card and Card set both
+		 * draw the note through `card-face.ts`, so this holds for both.
+		 */
+		const el = render({}, { value: '15', note: 'chain mail, shield' });
+		const note = inputs(el).note as HTMLInputElement;
+		Object.defineProperty(note, 'scrollWidth', { value: 101, configurable: true });
+		Object.defineProperty(note, 'clientWidth', { value: 73, configurable: true });
+		note.dispatchEvent(new Event('pointerenter'));
+		expect(note.getAttribute('title')).toBe('chain mail, shield');
+
+		Object.defineProperty(note, 'clientWidth', { value: 200, configurable: true });
+		note.dispatchEvent(new Event('pointerenter'));
+		expect(note.hasAttribute('title')).toBe(false);
+	});
+
 	it('restores the note on Escape without reporting an edit', () => {
 		const edits: unknown[] = [];
 		const el = render({}, { value: '15', note: 'chain mail' }, {
@@ -1035,8 +1056,8 @@ describe('card.render: an options list that cannot be a menu', () => {
 });
 
 describe('card palette', () => {
-	it('offers a dropdown, because nobody looks for one under Card', () => {
-		expect(card.palette?.map((entry) => entry.name)).toEqual(['Dropdown']);
+	it('offers a dropdown and a computed card, because nobody looks for either under Card', () => {
+		expect(card.palette?.map((entry) => entry.name)).toEqual(['Dropdown', 'Computed']);
 	});
 
 	it('prefills options, which is the only thing that makes it a dropdown', () => {
@@ -1050,6 +1071,54 @@ describe('card palette', () => {
 		// Not `hideNote`: a heritage is a closed choice plus a written detail,
 		// and the line is the half the choice cannot carry.
 		expect(entry?.config).not.toHaveProperty('hideNote');
+	});
+
+	it('prefills a computed card as a hidden value over a formula that reads none', () => {
+		const entry = card.palette?.find((candidate) => candidate.name === 'Computed');
+		expect(entry?.description).toBe(
+			'A read-only number worked out by a formula from values elsewhere on the sheet.',
+		);
+		// Key order too: the editor writes the prefill as it is spelled here.
+		expect(Object.entries(entry?.config ?? {})).toEqual([
+			['derived', '0'],
+			['hideValue', true],
+			['hideNote', true],
+			['signed', false],
+		]);
+	});
+
+	it('draws the computed prefill as a plain 0 with no control on the card', () => {
+		const entry = card.palette?.find((candidate) => candidate.name === 'Computed');
+		const el = render({ ...entry?.config }, null, { resolveField: () => 0 });
+		expect(el.querySelector('.sheetsmith-card-derived')?.textContent).toBe('0');
+		expect(el.querySelector('input, select, textarea')).toBeNull();
+	});
+
+	it('names a card with options and its value shown a dropdown', () => {
+		expect(card.configName?.({ ...config, options: [{ value: 'Elf' }] })).toBe('Dropdown');
+	});
+
+	it('names a plain card nothing, so the editor calls it a Card', () => {
+		expect(card.configName?.({ ...config })).toBeNull();
+	});
+
+	it('names a card whose value is hidden behind a derived a computed card', () => {
+		expect(card.configName?.({ ...config, hideValue: true, derived: '0' })).toBe('Computed');
+	});
+
+	it('names it computed over dropdown, since a hidden value hides the menu with it', () => {
+		expect(
+			card.configName?.({
+				...config,
+				options: [{ value: 'Elf' }],
+				hideValue: true,
+				derived: '0',
+			}),
+		).toBe('Computed');
+	});
+
+	it('does not name a hidden value with no derived computed, since the card then shows it', () => {
+		expect(card.configName?.({ ...config, hideValue: true })).toBeNull();
 	});
 });
 

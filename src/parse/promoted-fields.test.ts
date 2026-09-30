@@ -13,7 +13,8 @@ import {
 	publishedSuffixes,
 } from '../formula/modifier-targets';
 import { getComponent } from '../components';
-import { walkComponents } from './layout-walk';
+import { walkLayout } from '../view/grid-cells';
+
 import { FieldValue } from '../types';
 
 /*
@@ -71,7 +72,7 @@ const LAYOUT_SOURCE = JSON.stringify({
 
 /** The sources every caller of this module already has in hand. */
 function sourcesOf(layout: Layout): ModifierTargetSource[] {
-	return walkComponents(layout.components).map((entry) =>
+	return walkLayout(layout.components).map((entry) =>
 		modifierTargetSource(entry.config, getComponent(entry.config.type)),
 	);
 }

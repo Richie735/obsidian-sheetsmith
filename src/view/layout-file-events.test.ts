@@ -3,8 +3,12 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import { serialiseLayout } from '../parse/layout';
 import { App, Notice, TextFileView } from '../test/obsidian-stub';
 import { LAYOUT_FOLDER } from '../test/plugin';
-import { loadPlugin } from '../test/plugin-shell';
-import { openView } from '../test/workspace';
+import { loadPlugin, unloadPlugin } from '../test/plugin-shell';
+import { openView, showFile } from '../test/workspace';
+import { LayoutEditorView } from './layout-editor-view';
+import type SheetsmithPlugin from '../main';
+import { control } from '../test/layout-editor-pane';
+import { lastNotice } from '../test/notice';
 import { fallbackCountMessage, renameCountMessage } from './layout-file-events';
 import { SheetView } from './sheet-view';
 
@@ -225,5 +229,93 @@ describe('an open sheet whose layout file moves', () => {
 		await tick();
 
 		expect(sheet.contentEl.querySelector('.sheetsmith-grid')).not.toBeNull();
+	});
+});
+
+describe('a layout the editor kept unsaved', () => {
+	/*
+	 * The two hooks the plugin's store owes a kept layout
+	 * (`docs/features/unsaveable-layout.md` §4), driven through the plugin's own
+	 * `onload` for this file's reason, with a real pane on the same plugin so
+	 * the rename is followed all the way back into it.
+	 */
+	const ALPHA = `${LAYOUT_FOLDER}/Alpha.sheetsmith`;
+	const HELD = LAYOUT.replace('"AC"', '"Armour"');
+
+	async function keptBy(app: App): Promise<SheetsmithPlugin> {
+		const plugin = await loadPlugin(app);
+		plugin.unsavedLayouts.keep(ALPHA, {
+			reason: 'write',
+			message: 'disk full',
+			base: LAYOUT,
+			text: HELD,
+		});
+		Notice.messages = [];
+		Notice.instances = [];
+		return plugin;
+	}
+
+	it('follows a rename, out of the folder too, and comes back when the file is opened', async () => {
+		const app = await vault();
+		const plugin = await keptBy(app);
+		await app.vault.createFolder('Elsewhere');
+		await app.vault.rename(app.vault.getFileByPath(ALPHA)!, 'Elsewhere/Beta.sheetsmith');
+		await tick();
+		expect(plugin.unsavedLayouts.peek(ALPHA)).toBeUndefined();
+		expect(plugin.unsavedLayouts.peek('Elsewhere/Beta.sheetsmith')?.text).toBe(HELD);
+
+		const pane = await openView(app, document.body, LayoutEditorView, plugin);
+		await showFile(pane, 'Elsewhere/Beta.sheetsmith');
+		control({ container: pane.contentEl }, 'edit-armour');
+		expect(pane.contentEl.textContent).toContain('Armour');
+		expect(pane.contentEl.querySelector('.sheetsmith-editor-unsaved')?.textContent).toContain(
+			'Changes to "Beta" are not saved, because the file could not be written: disk full.',
+		);
+		expect(plugin.unsavedLayouts.peek('Elsewhere/Beta.sheetsmith')).toBeUndefined();
+	});
+
+	it('goes with a delete, and says so with the copy', async () => {
+		const app = await vault();
+		const plugin = await keptBy(app);
+		await app.vault.delete(app.vault.getFileByPath(ALPHA)!);
+		await tick();
+		expect(plugin.unsavedLayouts.peek(ALPHA)).toBeUndefined();
+		expect(lastNotice()).toBe(
+			'"Alpha" was deleted, so the changes not saved to it were dropped. Copy layout',
+		);
+	});
+
+	it('says once, per layout, that the plugin stopped with changes not saved', async () => {
+		const app = await vault();
+		const plugin = await keptBy(app);
+		await app.vault.create(`${LAYOUT_FOLDER}/Gamma.sheetsmith`, LAYOUT.replace('Alpha', 'Gamma'));
+		const pane = await openView(app, document.body, LayoutEditorView, plugin);
+		await showFile(pane, `${LAYOUT_FOLDER}/Gamma.sheetsmith`);
+		app.vault.modify = async () => {
+			throw new Error('disk full');
+		};
+		control({ container: pane.contentEl }, 'edit-armour').click();
+		await tick();
+		const label = control<HTMLInputElement>({ container: pane.contentEl }, 'label-armour');
+		label.value = 'Defence';
+		label.dispatchEvent(new Event('change'));
+		await tick();
+		expect(pane.contentEl.querySelector('.sheetsmith-editor-unsaved')).not.toBeNull();
+		Notice.instances = [];
+
+		unloadPlugin(plugin);
+		await tick();
+		const said = Notice.instances.map((notice) => notice.messageEl.textContent);
+		expect(said.sort()).toEqual([
+			'Sheetsmith stopped with changes to "Alpha" not saved. They are gone unless you copy them now. Copy layout',
+			'Sheetsmith stopped with changes to "Gamma" not saved. They are gone unless you copy them now. Copy layout',
+		]);
+
+		// A pane closing afterwards keeps nothing and says nothing more.
+		pane.leaf.detach();
+		await tick();
+		await tick();
+		expect(Notice.instances).toHaveLength(2);
+		expect(plugin.unsavedLayouts.peek(`${LAYOUT_FOLDER}/Gamma.sheetsmith`)).toBeUndefined();
 	});
 });

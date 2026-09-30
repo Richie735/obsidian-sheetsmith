@@ -2,6 +2,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Canvas, CanvasHost } from './canvas';
 import { getComponent, listComponentTypes } from '../components';
+import { entryConfig } from '../test/palette-entry';
 import { Layout } from '../parse/layout';
 import { ComponentConfig, isContainer } from '../types';
 
@@ -11,10 +12,10 @@ import { ComponentConfig, isContainer } from '../types';
  * `Canvas` needs only a `CanvasHost` and an element — it knows nothing about
  * the tree, the panel or which layout file is open — so a case here does not
  * have to open a whole `LayoutEditorSection` to exercise the render loop
- * itself. `layout-editor.test.ts` still drives the drag, resize and nudge
- * gestures through the rendered pane, since those already existed there and
- * the fixtures and helpers (`sheetGrid`, `dragTo`, `pressKey`) are built for
- * it; this file covers what is new here specifically — live rendering,
+ * itself. The drag and resize gestures are driven through the rendered pane in
+ * `schematic-gestures.test.ts` and the nudge in `layout-editor.test.ts`, on
+ * the fixtures and helpers `src/test/layout-editor-pane.ts` builds for it
+ * (`sheetGrid`, `dragTo`); this file covers what is new here specifically — live rendering,
  * `inert`, the overlay's own shape, and the two hazard fixes.
  */
 
@@ -278,6 +279,43 @@ describe('the canvas filled with sample values', () => {
 		// a blank, which is the whole of what a preview is for: the derived
 		// number on the canvas is one more than what the card beside it holds.
 		expect(el.textContent).toContain(String(value + 1));
+	});
+
+	it('works a computed card out from the sampled coin purse beside it', () => {
+		/*
+		 * The Computed entry over the Currency entry, both straight from the
+		 * registry (`docs/features/computed-palette-entry.md`). The two coin
+		 * numbers are read off the strip rather than written here, because
+		 * sample numbers are seeded by id and a hardcoded 15.5 would be a claim
+		 * about the seed rather than about the arithmetic.
+		 */
+		const coins = component({
+			...entryConfig('card-set', 'Currency'),
+			id: 'coins',
+			type: 'card-set',
+			label: 'Coins',
+			position: { col: 1, row: 1, width: 4, height: 1 },
+		});
+		const gold = component({
+			...entryConfig('card', 'Computed'),
+			id: 'gold_value',
+			label: 'Gold value',
+			derived: 'coins.GP + coins.SP / 10',
+			position: { col: 5, row: 1, width: 2, height: 1 },
+		});
+		const el = document.createElement('div');
+		new Canvas(fakeHost('', true)).draw(el, layoutOf(coins, gold));
+
+		const coin = (name: string) =>
+			Number(el.querySelector<HTMLInputElement>(`input[aria-label="${name}"]`)?.value);
+		const gp = coin('Gold');
+		const sp = coin('Silver');
+		expect(gp).toBeGreaterThan(1);
+		expect(sp).toBeGreaterThan(1);
+		const shown = el.querySelector(
+			'[data-sheetsmith-focus="preview-gold_value"] ~ * .sheetsmith-card-derived',
+		)?.textContent;
+		expect(Number(shown)).toBeCloseTo(gp + sp / 10, 10);
 	});
 
 	it('does not draw one number repeated down a column of cards', () => {
@@ -582,6 +620,33 @@ describe('selecting inside a Tab set', () => {
 		const overlay = el.querySelector('[data-sheetsmith-focus="preview-spells"]');
 		expect(overlay).not.toBeNull();
 		expect(overlay?.closest('[inert]')).toBeNull();
+	});
+
+	it('puts each tab\'s overlay in the panel its strip label names, whatever the stored rows say', () => {
+		// A tab has no placement (SPEC §4.1), so its stored row is a value
+		// nothing should read — but a tab moved in through the tree is given one
+		// (`reparent.ts`), and here the second tab's sorts first. The strip and
+		// the panels follow the file; the overlays must follow them.
+		const set = tabbed();
+		const [combat, spells] = set.children ?? [];
+		if (combat) combat.position.row = 2;
+		if (spells) spells.position.row = 1;
+		const el = document.createElement('div');
+		new Canvas(fakeHost('pages')).draw(el, layoutOf(set));
+
+		const pairs = Array.from(el.querySelectorAll('.sheetsmith-tabset-tab')).map(
+			(tab) => {
+				const panel = el.querySelector(`#${tab.getAttribute('aria-controls') ?? ''}`);
+				return [
+					tab.textContent,
+					panel?.querySelector('[data-sheetsmith-focus]')?.getAttribute('aria-label'),
+				];
+			},
+		);
+		expect(pairs).toEqual([
+			['Combat', 'Combat'],
+			['Spells', 'Spells'],
+		]);
 	});
 
 	it('leaves an inactive tab inert when nothing inside it is selected', () => {

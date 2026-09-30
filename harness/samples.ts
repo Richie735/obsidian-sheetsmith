@@ -9,31 +9,9 @@
  * Adding a component means adding it here too, or the harness will not show it.
  */
 
-import { paletteEntries } from '../src/components';
+import { encodeComponentCopy } from '../src/parse/component-clipboard';
 import type { ComponentConfig } from '../src/types';
-
-/**
- * One palette entry's prefill, taken from the registry rather than retyped.
- *
- * A sample of an entry has to be the entry. `docs/PATTERNS.md` §1's policy tier
- * is the argument: a prefill is a *set* of keys, so the only thing a guard could
- * assert about a second copy is that it still agrees with the first — and the
- * harness is the review surface, so the copy that drifts is the one somebody is
- * looking at while deciding the entry is fine.
- *
- * It throws rather than falling back, on `effectiveSamples`' own reason further
- * down: an entry renamed would otherwise spread nothing, and the sample would go
- * on being photographed as a bare table of that type with nothing saying so.
- */
-function entryConfig(type: string, name: string): Partial<ComponentConfig> {
-	const entry = paletteEntries(type).find((one) => one.name === name);
-	if (entry === undefined) {
-		throw new Error(
-			`No "${name}" entry on ${type}. It was renamed or removed; fix the name here, or this sample is a bare ${type}.`,
-		);
-	}
-	return entry.config;
-}
+import { entryConfig } from '../src/test/palette-entry';
 
 export interface Sample {
 	config: ComponentConfig;
@@ -201,7 +179,10 @@ export const SAMPLES: Sample[] = [
 			rows: [{ label: 'Adventurer\'s pack' }],
 			columns: [
 				{ key: 'Qty', type: 'number', min: 0 },
-				{ key: 'Weight', type: 'number', total: true },
+				// A condition written by hand on a Table column, which a Table does
+				// not honour: the column draws on every row and the editor reports it
+				// (`docs/features/conditional-field-visibility.md`).
+				{ key: 'Weight', type: 'number', total: true, visibleWhen: 'Qty > 0' },
 				{ key: 'Worn', type: 'toggle', hideHeading: true, total: true },
 				{ key: 'Notes', type: 'text' },
 			],
@@ -749,13 +730,14 @@ export const SAMPLES: Sample[] = [
 		} as ComponentConfig,
 		body: null,
 	},
-	/* Two of the three palette prefills whose *rendering* nothing else here
+	/* Three of the four palette prefills whose *rendering* nothing else here
 	   reaches, which is the whole reason they are in the sample rather than only
-	   in the vault. The third is Conditions, further down beside the modifier
-	   tables, because what it has to be read against is a glyph rather than a
-	   card. Inventory is the one entry with no sample of its own: the `inventory`
-	   card above is already that entry's config with three extras on top, so a
-	   fourth open table would be a longer sheet showing nothing new. */
+	   in the vault: Currency, the Computed card reading it, and Features. The
+	   fourth is Conditions, further down beside the modifier tables, because what
+	   it has to be read against is a glyph rather than a card. Inventory is the
+	   one entry with no sample of its own: the `inventory` card above is already
+	   that entry's config with three extras on top, so a fourth open table would
+	   be a longer sheet showing nothing new. */
 	{
 		config: {
 			id: 'currency',
@@ -778,6 +760,32 @@ export const SAMPLES: Sample[] = [
 		// EP left out on purpose: a denomination the note has never held renders
 		// beside four that have.
 		body: '```sheet\nCP: 42\nSP: 18\nGP: 7\nPP: 1\n```',
+	},
+	{
+		/*
+		 * The **Computed** entry on Card, reading the purse beside it: `GP: 7` and
+		 * `SP: 18` make 8.8. Its config is the entry's own, spread rather than
+		 * retyped, with only the formula the author would write in place of the
+		 * entry's `0`. Beside Currency rather than anywhere else because the two
+		 * cells it takes are the ones that row leaves free, and because the
+		 * number is only checkable against the coins it is made of.
+		 *
+		 * `Inspired bonus` above draws the same face — a label over one number,
+		 * no pill, no note line — from a hand-built config; this one is what the
+		 * picker actually writes, which is the thing under review.
+		 *
+		 * **No section in the body**, and the null is the claim: a hidden value
+		 * over a formula that reads none stores nothing.
+		 */
+		config: {
+			id: 'gold_value',
+			type: 'card',
+			label: 'Gold value',
+			position: { col: 6, row: 16, width: 2, height: 1 },
+			...entryConfig('card', 'Computed'),
+			derived: 'currency.GP + currency.SP / 10',
+		} as ComponentConfig,
+		body: null,
 	},
 	{
 		config: {
@@ -1144,9 +1152,10 @@ export const SAMPLES: Sample[] = [
 		body: '\n![[Sildar Hallwinter.png]]\n',
 	},
 	/*
-	 * The **Conditions** palette entry, rendered (SPEC §4.2), and the third of the
-	 * three prefills here for that reason — the other two are Currency and
-	 * Features, below the flag row: the *rendering* of an entry is a thing a
+	 * The **Conditions** palette entry, rendered (SPEC §4.2), and the fourth of the
+	 * four prefills here for that reason — the other three are Currency, the
+	 * Computed card beside it, and Features, below the flag row: the *rendering*
+	 * of an entry is a thing a
 	 * reviewer has to be able to look at, and this one nothing else on the sheet
 	 * reaches.
 	 *
@@ -1363,7 +1372,7 @@ export const SAMPLES: Sample[] = [
 			// rows rather than five, each naming several targets, because one
 			// item lengthening three runs is also the shape a reader meets.
 			'| Talisman of Endurance | endurance.count += 2; endurance_low.count += 2; all_granted.count += 2 |',
-			'| Shackles | vigour.count += -2; cursed_run.count += -5; unmade.count += -1 |',
+			'| Shackles | vigour.count += -2; cursed_run.count += -5; unmade.count += -1; overfull_shackled.count += -2 |',
 		].join('\n'),
 	},
 	/*
@@ -1400,11 +1409,14 @@ export const SAMPLES: Sample[] = [
 	 *   centre, so the first segment of a run is exempt from it and this is the
 	 *   card that shows the exemption working.
 	 * - **Cursed vigour** is the whole run taken: `2 + mod.self` with a −5, so both
-	 *   its slots draw blocked and `aria-valuemax` is 0. It used to draw `?`, and
-	 *   the change is what returns `?` to meaning what `SPEC` §5 reserves it for —
-	 *   a count that did not *resolve*, where this one resolved perfectly well to
-	 *   nothing. It is also the only card here where a run is drawn and no part of
-	 *   it can be pressed.
+	 *   its slots are shut. It used to draw `?`, and the change is what returns
+	 *   `?` to meaning what `SPEC` §5 reserves it for — a count that did not
+	 *   *resolve*, where this one resolved perfectly well to nothing. Its note
+	 *   holds one mark, so its first slot draws **over** — shut and still holding
+	 *   the mark, the slash on a filled box — and its second blocked and empty;
+	 *   `aria-valuemax` is 1, and the one press it answers steps that mark down
+	 *   (`docs/features/track-stored-value-past-shortened-run.md`). The block of
+	 *   **Overfull** cards at the foot of the sheet is the rest of that feature.
 	 * - **Unmade** is where `?` still lives, and it is here because the card above
 	 *   took its old job: `count: "mod.self"` with a penalty has no unmodified run
 	 *   to hold open either, so there are no slots to block and nothing to draw.
@@ -1546,6 +1558,25 @@ export const SAMPLES: Sample[] = [
 				// columns field offers and this component ignores; neither is set
 				// here, because a record's fields draw their own names.
 				{ key: 'Modifiers', type: 'modifier' },
+				/*
+				 * **Two fields inside the opened record**
+				 * (`docs/features/record-set-body-fields.md`): a reference value
+				 * read once and changed rarely, which is what the placement is for.
+				 * A select and a number, so the block holds both a menu and a field
+				 * beside its own name. Declared last, so the strip above still names
+				 * the same five fields over the same tracks — the body fields add no
+				 * column. Ring of Protection (open) holds both, Torch of Revealing
+				 * (open) neither, and Second Wind (closed) a Recharge nothing on its
+				 * summary line mentions.
+				 */
+				{
+					key: 'Recharge',
+					type: 'level',
+					input: 'select',
+					levels: ['None', 'Short rest', 'Long rest'],
+					placement: 'body',
+				},
+				{ key: 'DC', name: 'Save DC', type: 'number', placement: 'body' },
 			],
 		} as ComponentConfig,
 		body: [
@@ -1557,6 +1588,7 @@ export const SAMPLES: Sample[] = [
 			'Uses: 1 / 3',
 			'Attuned: no',
 			'Rank: 1',
+			'Recharge: 1',
 			'```',
 			'Once per short rest, you can use a bonus action to regain hit points equal to 1d10 + your fighter level. This one is deliberately the longest body on the sheet, so it is longer than the box that holds it and has to scroll inside the list rather than growing it. A second paragraph follows, because the space between two of them is part of what an open record has to get right.',
 			'',
@@ -1572,6 +1604,8 @@ export const SAMPLES: Sample[] = [
 			// true state and the wrong one to sample here: what this record is for
 			// is the glyph that says a record *is* changing something.
 			'Modifiers: armour_class += 1 when Attuned',
+			'Recharge: 2',
+			'DC: 15',
 			'```',
 			'A resolved wikilink as a name, and a typed effect that is applying: the armour class card above moves by one while Attuned is set.',
 			'',
@@ -1711,6 +1745,267 @@ export const SAMPLES: Sample[] = [
 			fields: [{ key: 'Level', type: 'number', max: 9 }],
 		} as ComponentConfig,
 		body: null,
+	},
+	/*
+	 * **Fields shown only for some values of another**
+	 * (`docs/features/conditional-field-visibility.md`), in three copies of one
+	 * body: headed, so a field after a hidden one has to stay under its heading;
+	 * unheaded, so a hidden field has to leave no gap; and broken, so the fail-open
+	 * line and the self-naming refusal are on screen. Placed at the foot of the
+	 * sheet, the first rows nothing else holds, so every placement above keeps
+	 * the row it had — `traits` above is the no-conditions control and must not
+	 * move by a pixel.
+	 *
+	 * `Recharges` is the board card's level: `Uses` shows for a short or long
+	 * rest, `Active` for always-on, and `Save DC` inside the opened record for
+	 * anything but none. Aura of Protection holds a stale `Uses` and Rage an
+	 * `Active` stored while hidden, which is the whole of Part 2: nothing is
+	 * cleared. Second Wind and Aura are open; Darkvision is closed, and a shot
+	 * opens it to show that a body whose every field is hidden has no block.
+	 */
+	...((): Sample[] => {
+		const fields = (broken: boolean) => [
+			{
+				key: 'Recharges',
+				type: 'level',
+				input: 'select',
+				levels: ['None', 'Short rest', 'Long rest', 'Always-on'],
+			},
+			{
+				key: 'Uses',
+				type: 'number',
+				maxSource: 'record',
+				// The rename trap: a key renamed in the editor, every note migrated,
+				// and the condition still reading the old one.
+				visibleWhen: broken ? 'Recharge == 1' : 'Recharges == 1 || Recharges == 2',
+			},
+			{
+				key: 'Active',
+				type: 'toggle',
+				// Self-naming, so refused: shown on every record, and no line.
+				visibleWhen: broken ? 'Active || Recharges == 3' : 'Recharges == 3',
+			},
+			{
+				key: 'DC',
+				name: 'Save DC',
+				type: 'number',
+				placement: 'body',
+				visibleWhen: 'Recharges != 0',
+			},
+			{ key: 'Modifiers', type: 'modifier' },
+		];
+		const body = [
+			'',
+			'### Second Wind',
+			'```sheet',
+			'Recharges: 1',
+			'Uses: 1 / 1',
+			'DC: 13',
+			'```',
+			'Once per short rest, regain hit points equal to 1d10 + your fighter level.',
+			'',
+			'### Aura of Protection',
+			'```sheet',
+			'Recharges: 3',
+			'Active: yes',
+			// Stale: kept from when this was a rest feature, and still counted.
+			'Uses: 2 / 2',
+			'DC: 15',
+			'```',
+			'Allies within ten feet add your Charisma modifier to their saving throws.',
+			'',
+			'### Darkvision',
+			'```sheet',
+			'Recharges: 0',
+			'```',
+			'You see in dim light within sixty feet as if it were bright light.',
+			'',
+			'### Rage',
+			'```sheet',
+			'Recharges: 2',
+			'Uses: 0 / 3',
+			// Stored while hidden, and still there when Rage becomes always-on.
+			'Active: yes',
+			'```',
+			'Advantage on Strength checks, and bonus damage while it lasts.',
+			'',
+		].join('\n');
+		return [
+			{
+				config: {
+					id: 'recharging',
+					type: 'record-set',
+					label: 'Recharging features',
+					position: { col: 1, row: 78, width: 7, height: 3 },
+					recordName: 'Feature',
+					fieldHeadings: true,
+					fields: fields(false),
+				} as ComponentConfig,
+				body,
+			},
+			{
+				config: {
+					id: 'recharging_plain',
+					type: 'record-set',
+					label: 'Recharging features, unheaded',
+					position: { col: 8, row: 78, width: 4, height: 3 },
+					recordName: 'Feature',
+					fields: fields(false),
+					// A binding naming no field, which is **Every field**: the one
+					// sample of what every Record set binding meant before one could
+					// name a field (`docs/features/record-set-reset-field-targeting.md`).
+					// `empty`, because this list's DC declares no maximum for `full`.
+					reset: [{ trigger: 'Long rest', action: 'empty' }],
+				} as ComponentConfig,
+				body,
+			},
+			{
+				config: {
+					id: 'recharging_broken',
+					type: 'record-set',
+					label: 'Recharging features, broken',
+					position: { col: 1, row: 81, width: 7, height: 3 },
+					recordName: 'Feature',
+					fieldHeadings: true,
+					fields: fields(true),
+				} as ComponentConfig,
+				body,
+			},
+		];
+	})(),
+	/*
+	 * **A reset that reaches only some records**
+	 * (`docs/features/record-set-reset-scope.md`), in the first free rows after
+	 * the conditioned lists so every placement above keeps its row. Short rest
+	 * gives one `Uses` back to the features whose `Recharges` is 1 or 4, Long rest
+	 * refills those at 1, 2 or 4, and `confirm=` opens the confirmation that counts
+	 * them: `Uses 3 of 6` and `Uses 4 of 6`. Both bindings name the field they
+	 * write (`docs/features/record-set-reset-field-targeting.md`).
+	 *
+	 * **`Save DC` is here on purpose, and it is what the write now leaves alone.**
+	 * A binding naming no field writes every `number` field of each record it
+	 * reaches, so a scoped `full` would set a reached record's DC to 20; naming
+	 * `Uses` is what keeps it. A sample holding one number field could not show
+	 * the difference.
+	 *
+	 * **Short rest is one binding, `Uses + 1` worked out on each record**, because
+	 * Second Wind and Action Surge each hold one use, so one back is a refill held
+	 * to the ceiling, and Channel Divinity gets exactly one of its two back. A
+	 * short-rest feature holding more than one use would need the mixed rest on
+	 * one field, which is deferred: two bindings on one trigger naming one field
+	 * are refused whatever their conditions say.
+	 *
+	 * Under `state=broken` the Short rest condition reads `Recharge`, which is the
+	 * rename trap. The pool beside it carries a hand-written `where` it cannot
+	 * check, which is the Part 4 refusal in the confirmation and in the editor.
+	 */
+	{
+		config: {
+			id: 'rest_features',
+			type: 'record-set',
+			label: 'Rest features',
+			position: { col: 1, row: 84, width: 7, height: 3 },
+			recordName: 'Feature',
+			fieldHeadings: true,
+			fields: [
+				{
+					key: 'Recharges',
+					type: 'level',
+					input: 'select',
+					// The fifth is appended, so no stored position moves.
+					levels: [
+						'None',
+						'Short rest',
+						'Long rest',
+						'Always-on',
+						'One back',
+					],
+				},
+				{ key: 'Uses', type: 'number', maxSource: 'record' },
+				{
+					key: 'DC',
+					name: 'Save DC',
+					type: 'number',
+					max: 20,
+					placement: 'body',
+				},
+			],
+			reset: [
+				{
+					trigger: 'Short rest',
+					column: 'Uses',
+					action: 'formula',
+					to: 'Uses + 1',
+					where: 'Recharges == 1 || Recharges == 4',
+				},
+				{
+					trigger: 'Long rest',
+					column: 'Uses',
+					action: 'full',
+					where: 'Recharges == 1 || Recharges == 2 || Recharges == 4',
+				},
+			],
+		} as ComponentConfig,
+		body: [
+			'',
+			'### Second Wind',
+			'```sheet',
+			'Recharges: 1',
+			'Uses: 0 / 1',
+			'DC: 13',
+			'```',
+			'Regain hit points equal to 1d10 + your fighter level.',
+			'',
+			'### Action Surge',
+			'```sheet',
+			'Recharges: 1',
+			'Uses: 0 / 1',
+			'```',
+			'Take one additional action on your turn.',
+			'',
+			'### Rage',
+			'```sheet',
+			'Recharges: 2',
+			'Uses: 1 / 3',
+			'DC: 15',
+			'```',
+			'Advantage on Strength checks, and bonus damage while it lasts.',
+			'',
+			'### Darkvision',
+			'```sheet',
+			'Recharges: 0',
+			'```',
+			'You see in dim light within sixty feet as if it were bright light.',
+			'',
+			'### Aura of Protection',
+			'```sheet',
+			'Recharges: 3',
+			'DC: 15',
+			'```',
+			'Allies within ten feet add your Charisma modifier to their saving throws.',
+			'',
+			'### Channel Divinity',
+			'```sheet',
+			'Recharges: 4',
+			'Uses: 0 / 2',
+			'DC: 14',
+			'```',
+			'Channel divine energy to turn the undead or fuel a sacred effect.',
+			'',
+		].join('\n'),
+	},
+	{
+		config: {
+			id: 'rest_pool',
+			type: 'pool',
+			label: 'Focus points',
+			position: { col: 8, row: 84, width: 4, height: 1 },
+			max: '4',
+			// Hand-written: a Pool resets as a whole and cannot check this, so the
+			// trigger leaves it alone and says why.
+			reset: [{ trigger: 'Short rest', action: 'full', where: 'Recharges == 1' }],
+		} as ComponentConfig,
+		body: '```sheet\ncurrent: 1\n```',
 	},
 	/* Beside the set rather than inside it, so a tab press has something to not
 	   move. Row 14 rather than 12: the Spellbook group above grew to hold its
@@ -2611,6 +2906,108 @@ export const SAMPLES: Sample[] = [
 		} as unknown as ComponentConfig,
 		body: '```sheet\nRescue the miners: 2 / 8\nHeat: 4\n```',
 	},
+	/*
+	 * **Tracks holding more than their run**
+	 * (`docs/features/track-stored-value-past-shortened-run.md`). The part of a
+	 * stored value past the live run is drawn, so no step starts from a value the
+	 * reader cannot see: an **over** segment is the blocked slash on a filled box,
+	 * reached by the blocked rule's own selector list, and what has to be read is
+	 * that it differs from a lit base segment, from an empty blocked slot and from
+	 * a granted ring. Cursed vigour, up in the modifier block, is the whole run
+	 * taken over one held mark.
+	 *
+	 * - **Overfull** is a count lowered under its note: three live, two over.
+	 * - **Overfull (named)** is a named `harm` run past its last name: no glyph on
+	 *   the over segments, the grade held at the worst end, and a step line
+	 *   reading `Lost, 2 over`.
+	 * - **Overfull (marks)** is a half-filled over segment, two marks to one.
+	 * - **Overfull (shackled)** is the comparison the figure has to survive: the
+	 *   Shackles row takes two of six, the note holds five, so one shut slot is
+	 *   over and one blocked and empty, side by side.
+	 * - **Overfull (far)** is past `MAX_SEGMENTS`, where the over part is one box
+	 *   holding its count in marks, `+147`.
+	 * - **Overfull (row)** is a character's row shortened under its marks,
+	 *   `d6: 5 / 3`, beside a row that is not.
+	 * - **Overfull (long)** is six live and twenty-four over, under the
+	 *   `MAX_SEGMENTS` bound and so drawn segment by segment: long enough to wrap
+	 *   in a one-column card, which is what `sheet-narrow` has to show — the over
+	 *   part carried onto a second line.
+	 */
+	{
+		config: {
+			id: 'overfull',
+			type: 'track',
+			label: 'Overfull',
+			position: { col: 1, row: 75, width: 4, height: 1 },
+			count: 3,
+		} as ComponentConfig,
+		body: '```sheet\nvalue: 5\n```',
+	},
+	{
+		config: {
+			id: 'overfull_named',
+			type: 'track',
+			label: 'Overfull (named)',
+			position: { col: 5, row: 75, width: 4, height: 1 },
+			levels: ['Clear', 'Touched', 'Marked', 'Lost:☠'],
+			sense: 'harm',
+		} as ComponentConfig,
+		body: '```sheet\nvalue: 5\n```',
+	},
+	{
+		config: {
+			id: 'overfull_marks',
+			type: 'track',
+			label: 'Overfull (marks)',
+			position: { col: 9, row: 75, width: 4, height: 1 },
+			count: 3,
+			marks: 2,
+		} as ComponentConfig,
+		body: '```sheet\nvalue: 7\n```',
+	},
+	{
+		config: {
+			id: 'overfull_shackled',
+			type: 'track',
+			label: 'Overfull (shackled)',
+			position: { col: 1, row: 76, width: 4, height: 1 },
+			count: '6 + mod.self',
+		} as ComponentConfig,
+		body: '```sheet\nvalue: 5\n```',
+	},
+	{
+		config: {
+			id: 'overfull_far',
+			type: 'track',
+			label: 'Overfull (far)',
+			position: { col: 5, row: 76, width: 4, height: 1 },
+			count: 3,
+		} as ComponentConfig,
+		body: '```sheet\nvalue: 150\n```',
+	},
+	{
+		config: {
+			id: 'overfull_row',
+			type: 'track',
+			label: 'Overfull (row)',
+			position: { col: 9, row: 76, width: 4, height: 1 },
+			rows: [
+				{ key: 'd6', name: 'd6', maxSource: 'character' },
+				{ key: 'd8', name: 'd8', maxSource: 'character' },
+			],
+		} as unknown as ComponentConfig,
+		body: '```sheet\nd6: 5 / 3\nd8: 2 / 3\n```',
+	},
+	{
+		config: {
+			id: 'overfull_long',
+			type: 'track',
+			label: 'Overfull (long)',
+			position: { col: 1, row: 77, width: 4, height: 1 },
+			count: 6,
+		} as ComponentConfig,
+		body: '```sheet\nvalue: 30\n```',
+	},
 ];
 
 /** The same layout with nothing stored: every component's empty state. */
@@ -2802,6 +3199,15 @@ export function brokenSamples(): Sample[] {
 		// containment work added had never been rendered anywhere. It wraps inside
 		// a three-column cell, which is the reason to look at it rather than trust
 		// it (`docs/UI.md` §11).
+		// The rename trap on a scoped reset: `Recharges` renamed and every note
+		// migrated, while the Short rest condition still reads the old key.
+		if (config.id === 'rest_features') {
+			config.reset = (config.reset ?? []).map((binding) =>
+				binding.trigger === 'Short rest'
+					? { ...binding, where: (binding.where ?? '').replaceAll('Recharges', 'Recharge') }
+					: binding,
+			);
+		}
 		if (config.id === 'worn_count') {
 			config.children = [
 				{
@@ -3011,6 +3417,23 @@ export function brokenSamples(): Sample[] {
 		 */
 		if (config.id === 'symbol') body = '\n![[https://example.com/portrait.png]]\n';
 		/*
+		 * The two refusals a component makes of a section another one left
+		 * (`docs/features/new-component-adopts-retained-section.md` §1): a Rich text
+		 * section holding a Card's fence, and an Image section holding more than one
+		 * line. Both replace the whole cell, so the message stands in place of the
+		 * component, prefixed with its label and with no heading or box drawn, as
+		 * every failed read is (`docs/UI.md` §10), and both are two sentences long — the second being the route out
+		 * — which is what has to wrap inside the cell rather than be trusted to.
+		 *
+		 * On `appearance` and `sigil` because neither is carrying a state nothing
+		 * else shows here: `backstory` beside the first is the working prose block
+		 * and `crest` and `symbol` beside the second are the sizing pair. `sigil` is
+		 * the tighter of the two, two columns by three rows, so the longer message
+		 * lands in the narrower box.
+		 */
+		if (config.id === 'appearance') body = '```sheet\nvalue: 15\nnote: chain mail\n```\n';
+		if (config.id === 'sigil') body = '\n| Name | Qty |\n|---|---|\n| [[Rope]] | 1 |\n';
+		/*
 		 * A passport's own error state, which is the one thing neither Image nor a
 		 * fenced card can show: **two halves, two rules, and never both at once**.
 		 * The picture is refused in the frame — Image's rule, since the picture is
@@ -3068,3 +3491,78 @@ export function brokenSamples(): Sample[] {
 		return { config, body, children: sample.children };
 	});
 }
+
+/*
+ * What the clipboard holds for the pane's `paste=` option
+ * (`docs/features/component-copy-paste.md` §10): copies made in *another*
+ * layout, as a reader would paste one in from elsewhere. A copy from this
+ * layout is not a fixture — `paste=<id>:self` has the pane make it, through its
+ * own Mod+C, so what is pasted is exactly what a copy writes.
+ *
+ * The fingerprint names no file on purpose: anything that is not this pane's
+ * own is another layout, which is the case these exist to show.
+ */
+const ELSEWHERE = { layout: '5e 2014', fingerprint: 'harness0' };
+
+/**
+ * A hit-dice Track from a 2014 layout, built to give the five-thing notice. Its
+ * id and label are ones this layout does not hold, so the paste keeps them. Its
+ * `long rest` binding recovers half by formula; it reads `hit_points`, which
+ * this layout publishes for something else, and `con_mod`, which it does not;
+ * it calls `mod`, which this layout defines differently; and a modifier
+ * definition in its source changes it.
+ */
+function hitDiceCopy(): string {
+	return encodeComponentCopy({
+		from: ELSEWHERE,
+		component: {
+			id: 'recovery_dice',
+			type: 'track',
+			label: 'Recovery dice',
+			position: { col: 1, row: 1, width: 4, height: 1 },
+			count: 'max(1, floor(hit_points / 8) + mod(con_mod))',
+			reset: [{ trigger: 'long rest', action: 'formula', to: 'floor(recovery_dice / 2)' }],
+		} as unknown as ComponentConfig,
+		context: {
+			functions: { mod: 'mod(score) = floor(score / 2) - 5' },
+			definitions: [{ name: 'Ring of resilience', targets: ['Recovery dice'] }],
+		},
+	});
+}
+
+/** A leaf reading more than five names nothing here has: the count form. */
+function manyCopy(): string {
+	return encodeComponentCopy({
+		from: ELSEWHERE,
+		component: {
+			id: 'carrying',
+			type: 'card',
+			label: 'Carrying capacity',
+			position: { col: 1, row: 1, width: 2, height: 1 },
+			derived: 'str_score * 15 + size_bonus + pack_bonus + belt_bonus + mule_bonus + lift_bonus',
+		} as unknown as ComponentConfig,
+		context: { functions: {}, definitions: [] },
+	});
+}
+
+/** A Pool from elsewhere, for Paste configuration onto a Track: the refusal. */
+function poolCopy(): string {
+	return encodeComponentCopy({
+		from: ELSEWHERE,
+		component: {
+			id: 'stamina',
+			type: 'pool',
+			label: 'Stamina',
+			position: { col: 1, row: 1, width: 4, height: 1 },
+			max: '10',
+		} as unknown as ComponentConfig,
+		context: { functions: {}, definitions: [] },
+	});
+}
+
+/** The fixtures `paste=<id>:<fixture>` names, as the clipboard text itself. */
+export const CLIPBOARD_FIXTURES: Readonly<Record<string, () => string>> = {
+	'hit-dice': hitDiceCopy,
+	many: manyCopy,
+	pool: poolCopy,
+};

@@ -1242,7 +1242,12 @@ follow while building.
   is that `keydown` is the wrong event to build them on: it keys on physical keys and
   modifiers, so a layout that composes `[` with Option never reaches the handler, and
   every unit test passes while the app does nothing. `beforeinput` keys on the character
-  actually being inserted. Tracked outside this document as its own piece of work.
+  actually being inserted.
+
+  **Amended: bracket closing and list continuation shipped** on `beforeinput`, in
+  `interaction/markdown-typing.ts`, which `bindMultiline` calls so a record body has
+  them too (`docs/features/prose-field-editing.md`). The `[[` suggester is still absent
+  and still waits on the seam.
 - **Interactive content inside a rendered embed.** Links work; a task checkbox in an
   embedded note does not.
 - **Pasting a file into a Rich text block or an Image field.** Obsidian's paste handler

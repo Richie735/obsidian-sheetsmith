@@ -447,6 +447,87 @@ export function stepLabel(
 	return `${segments} of ${of}`;
 }
 
+/**
+ * How much of a value sits past the live run: in marks, which is what the reading
+ * and the fallback box count, and in segments, which is what the run draws over
+ * and what an empty blocked slot is counted against.
+ *
+ * One helper because the drawing and the reading are two readings of one
+ * quantity, and two spellings of it could round a value like `5.5` differently —
+ * a run drawing two over segments while its reading counted a blocked slot that
+ * is not empty (`docs/PATTERNS.md` §1, a policy extracted in one step). Neither
+ * is below zero: a value inside the run has nothing over.
+ */
+function overOf(
+	value: number,
+	live: number,
+	marks: number,
+): { marks: number; segments: number } {
+	const held = Math.max(0, value);
+	return {
+		marks: Math.max(0, held - live * marks),
+		segments: Math.max(0, Math.ceil(held / marks) - live),
+	};
+}
+
+/**
+ * What a run says about its value, in full: the step against the live run, then
+ * how much of the value sits past it, then how many slots past it are shut and
+ * empty. The one reading every carrier takes — the step line, `aria-valuetext`,
+ * `aria-label`, the run's `title` and the long-press bubble — because two of
+ * them used to compose it for themselves and disagreed: the paint read a
+ * clamped value and the bubble an unclamped one, so an over named run said
+ * `Lost` on its step line and `5` under a finger
+ * (`docs/features/track-stored-value-past-shortened-run.md`).
+ *
+ * `stepLabel` stays clause-free for its other callers. A named step past the
+ * last name reads the last name, since `levelName` has no entry to give there
+ * and returns the bare number; the over clause is what says how far past it the
+ * value is.
+ *
+ * **The over clause counts marks**, the same quantity the fallback box prints,
+ * and names the unit only where a segment holds several, since at one mark a
+ * segment and a mark are the same thing. **The blocked clause counts the shut
+ * slots that hold nothing**: a slot a penalty shut that still holds a mark is
+ * over, and counted there rather than twice. Both are worked out from `value`
+ * rather than fixed per render, so a burst of presses stepping down through the
+ * over part reads what it has reached before the write lands.
+ */
+export function runReading(
+	config: TrackConfig,
+	value: number,
+	live: number,
+	marks: number,
+	blocked: number,
+): string {
+	const held = Math.max(0, value);
+	const filled = Math.floor(held / marks);
+	const named = config.levels !== undefined;
+	const clauses = [stepLabel(config, named ? Math.min(filled, live) : filled, live)];
+	const over = overOf(held, live, marks);
+	if (over.marks > 0) {
+		const unit = marks === 1 ? '' : over.marks === 1 ? ' mark' : ' marks';
+		clauses.push(`${over.marks}${unit} over`);
+	}
+	const empty = Math.max(0, blocked - over.segments);
+	if (empty > 0) clauses.push(`${empty} blocked`);
+	return clauses.join(', ');
+}
+
+/**
+ * What a flag card says about a stored count above one, which it reads as
+ * ticked and has no spelling to write back. Null where there is nothing to say.
+ *
+ * A flag draws no run to put the extra marks on, so it says them in words, and
+ * the untick that writes `no` is then an informed write made with the count
+ * stated (`docs/features/track-stored-value-past-shortened-run.md` § Flag
+ * cards). One builder for the two carriers, the ring's `title` and the card's
+ * `aria-describedby` twin, so they cannot say different things.
+ */
+function flagHolds(held: number): string | null {
+	return held > 1 ? `Holds ${held} marks from a longer run` : null;
+}
+
 /** A segment's rectangle, as the run measures it. */
 export interface SegmentBox {
 	left: number;
@@ -2148,6 +2229,29 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 				};
 
 				/*
+				 * A count above one said in words, where the card can: the ring's
+				 * `title` through `bindRingControl`'s own option, which its paint
+				 * reads — a `title` set here would be wiped on the first repaint —
+				 * and a `.sheetsmith-sr-only` twin for a reader with no pointer,
+				 * the run's own `aria-describedby` spelling. Both go once the ring
+				 * leaves the count behind, since a flag at `no` holds no marks and
+				 * one re-ticked holds one.
+				 */
+				const holds = (): string | null => flagHolds(run.value);
+				let twin: HTMLElement | null = null;
+				if (holds() !== null) {
+					twin = line.createDiv({ cls: 'sheetsmith-sr-only', text: holds() ?? '' });
+					twin.id = `sheetsmith-track-holds-${config.id}-${index}`;
+					el.setAttribute('aria-describedby', twin.id);
+				}
+				const dropTwin = (): void => {
+					if (twin === null || holds() !== null) return;
+					twin.remove();
+					twin = null;
+					el.removeAttribute('aria-describedby');
+				};
+
+				/*
 				 * The ARIA, the tooltip, the touch route and the presses are
 				 * `ring-control.ts`'s, so a flag on a card and the same control in a
 				 * cell cannot come to disagree about what either of them says. What
@@ -2168,8 +2272,10 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 					name: rowSet ? (row.name ?? row.key) : config.label,
 					// The card's own label stands over it, or the row's name beside it.
 					nameOnScreen: true,
+					note: holds,
 					onSet: (level) => {
 						run.value = level;
+						dropTwin();
 						// Synchronously, not through `commitSoon`: a press's outcome
 						// is its input, so there is no run of presses to wait out and
 						// the debounce would only make the note late. So a checklist
@@ -2201,6 +2307,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 					if (wanted === run.value) return;
 					run.value = wanted;
 					control.setLevel(wanted);
+					dropTwin();
 				};
 				runs.push(run);
 				return;
@@ -2325,17 +2432,47 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			 * `blocked` is zero for both; where an item has taken slots away,
 			 * `count` is the unmodified run and this is what is left of it.
 			 *
-			 * Every number the control is built from is this one rather than
+			 * Every number the control is built from starts here rather than at
 			 * `count`: the mark total it clamps to, `aria-valuemax`, the reading,
-			 * and the rectangles the hit test is given. That is the whole of how
-			 * a blocked slot stops being a value — not a guard that refuses a
-			 * press, but a run that never had those positions. A press out there
-			 * lands past the end and fills the live run, which is what a press
-			 * past the end of any run already does.
+			 * and the rectangles the hit test is given — widened by `over` below
+			 * where the note holds more than this, and never by an empty blocked
+			 * slot. That is the whole of how an empty blocked slot stops being a
+			 * value — not a guard that refuses a press, but a run that never had
+			 * that position. A press out there lands past the end and fills
+			 * what the run has, which is what a press past the end of any run
+			 * already does.
 			 */
 			const blocked = rowSet ? 0 : ownCount.blocked;
 			const live = count - blocked;
-			const total = live * marks;
+			/*
+			 * **What the note holds past the live run is drawn, so no step starts
+			 * from a value the reader cannot see.** A run whose note holds more
+			 * marks than it can take — a count lowered, a formula resolving
+			 * lower, a grant taken off or a penalty shutting slots that hold
+			 * marks, a character's row shortened — draws the extra past its end,
+			 * as `over` segments: the blocked slash on a filled box. The control's
+			 * range is then what is drawn, `reach`, so the existing clamp in
+			 * `setMarks` holds a step to it: nothing steps up past the stored
+			 * value, and Left and a tap on the last lit segment step down through
+			 * it one mark at a time. It used to clamp to the live run, and the
+			 * first press of any kind wrote the value down to it
+			 * (`docs/features/track-stored-value-past-shortened-run.md`).
+			 *
+			 * Decided from the state alone, "the note holds more than the live
+			 * run", which is why one rule covers every way of getting there.
+			 */
+			const held = storedMarks(data, row.key);
+			const over = overOf(held, live, marks).segments;
+			const reach = Math.max(live * marks, held);
+			/*
+			 * **Past `MAX_SEGMENTS` the over part is one box holding its count**,
+			 * since a run too long to draw is still a value (the bound's own
+			 * rule). No blocked slot can be left empty then: the value is above
+			 * the unmodified length, which is itself inside the bound.
+			 */
+			const tooLong = live + over > MAX_SEGMENTS;
+			const boxesDrawn = tooLong ? live : Math.max(count, live + over);
+			const total = reach;
 			const el = line.createDiv('sheetsmith-track-run');
 			if (harm) el.classList.add('sheetsmith-track-harm');
 			if (marks > 1) {
@@ -2356,7 +2493,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			el.tabIndex = runs.length === 0 ? 0 : -1;
 
 			const segments: HTMLElement[] = [];
-			for (let at = 0; at < count; at++) {
+			for (let at = 0; at < boxesDrawn; at++) {
 				const segment = el.createSpan('sheetsmith-track-segment');
 				/*
 				 * The granted segments are the last of the run, and that follows
@@ -2369,7 +2506,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 				 * Being last is also what makes them spent last, which is the
 				 * whole of "spent last" as a rule.
 				 */
-				if (at >= live) {
+				if (at >= live + over) {
 					/*
 					 * Past the live run: a slot an item has taken, drawn where it
 					 * has always been and marked as unusable. The owner's rule —
@@ -2379,6 +2516,16 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 					 * a second ceiling, where this is present and shut.
 					 */
 					segment.classList.add('sheetsmith-track-segment-blocked');
+				} else if (at >= live) {
+					/*
+					 * Past the live run and holding marks: the blocked slash on a
+					 * filled box, because a slot past the end of what the run can
+					 * take is one figure whatever put it there, and the fill is
+					 * what differs — as it differs between a lit and an unlit base
+					 * segment. The slash is the blocked rule's own, reached by a
+					 * selector list; this is not a fourth drawing.
+					 */
+					segment.classList.add('sheetsmith-track-segment-over');
 				} else if (at >= live - ownCount.granted) {
 					segment.classList.add('sheetsmith-track-segment-granted');
 				}
@@ -2392,9 +2539,12 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 					// Over the live run rather than the drawn one: a blocked
 					// segment never fills, so its grade is never painted, and
 					// `live` can be zero where a penalty took the whole run.
+					// Held at 1 past it, since an over segment is past the worst
+					// end of the run and takes its colour rather than a share
+					// the colour mix would read above the whole.
 					segment.style.setProperty(
 						'--sheetsmith-track-grade',
-						String((at + 1) / Math.max(1, live)),
+						String(Math.min(1, (at + 1) / Math.max(1, live))),
 					);
 				}
 
@@ -2437,18 +2587,28 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 				}
 
 				/*
-				 * **The live ones only, and that is where "not pressable" is
-				 * decided.** `segments` is what the fill is painted over and what
-				 * the hit test is handed rectangles from, so a blocked slot is
-				 * drawn and then plays no further part: no gesture can land in
-				 * it, and no stored value can fill it — which is the case a note
-				 * holding six marks reaches the moment the shackles go on. The
-				 * note is untouched (SPEC §4.2's "rendered, not corrected"); what
-				 * is clamped is the drawing, exactly as a stored 9 on a
-				 * six-segment run already fills six and stays 9.
+				 * **The live ones and the over ones, and that is where "not
+				 * pressable" is decided.** `segments` is what the fill is painted
+				 * over and what the hit test is handed rectangles from, so an
+				 * empty blocked slot is drawn and then plays no further part: no
+				 * gesture can land in it. An over segment is in, because it holds
+				 * marks the reader can see and step down through — which is the
+				 * case a note holding six marks reaches the moment the shackles go
+				 * on, and used to draw two of them empty.
 				 */
-				if (at < live) segments.push(segment);
+				if (at < live + over) segments.push(segment);
 			}
+
+			/*
+			 * The over part as one box holding its count, where drawing it would
+			 * pass `MAX_SEGMENTS`. No slash: across digits it costs legibility,
+			 * and the box is its own figure. A single hit position meaning "the
+			 * stored value" (below), and its text follows the value on every
+			 * paint, so a burst of presses reads right before the write lands.
+			 */
+			const overBox = tooLong
+				? el.createSpan('sheetsmith-track-over-count')
+				: null;
 
 			const step = named ? line.createDiv('sheetsmith-track-step') : null;
 
@@ -2522,29 +2682,28 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 					);
 					segment.classList.toggle('sheetsmith-track-segment-on', solid > 0);
 				});
-				// Held inside the run for what the control reports, however the
-				// note happens to be spelled: a hand-edited 9 on a six-segment
-				// run fills every segment and stays 9 in the note (§7).
+				// Held inside the run for what the control reports. The run's
+				// range is what it draws, so a stored value past the live run is
+				// reported as itself rather than as the live ceiling.
 				const shown = Math.max(0, Math.min(run.total, landing));
-				const filled = Math.floor(shown / marks);
-				const reading = stepLabel(config, filled, live);
+				if (overBox !== null) {
+					const past = overOf(shown, live, marks).marks;
+					overBox.textContent = `+${past}`;
+					overBox.classList.toggle('sheetsmith-track-segment-on', past > 0);
+				}
 				/*
-				 * **What the run says when part of it is shut, and the reason it
-				 * has to be said in words.** ARIA models a slider as one value
-				 * between `aria-valuemin` and `aria-valuemax`, and a blocked slot
-				 * is not a value this control can take — so the ceiling stays the
-				 * *live* run and the drawn boxes deliberately outnumber it. That
-				 * disagreement is real and `aria-valuetext` is the only sanctioned
-				 * place to explain it, which is what it is for: a flat string
-				 * where the number alone would mislead.
-				 *
-				 * Not spelled inside `stepLabel`, which a named run's step line
-				 * also draws: `levels` publishes its count as a literal, so a
-				 * named run can never be blocked, and putting the clause there
-				 * would be a branch nothing reaches.
+				 * **What the run says past its live end, and the reason it has to
+				 * be said in words.** ARIA models a slider as one value between
+				 * `aria-valuemin` and `aria-valuemax`. An over position is a value
+				 * this control holds and can step down through, so the range grows
+				 * to take it and `aria-valuenow` is the stored value; an empty
+				 * blocked slot is not a value it can take, so the drawn boxes may
+				 * still outnumber the range. `aria-valuetext` is the one sanctioned
+				 * place to say both, which is what it is for: a flat string where
+				 * the number alone would mislead. One reading for every carrier
+				 * (`runReading`).
 				 */
-				const said =
-					blocked === 0 ? reading : `${reading}, ${blocked} blocked`;
+				const said = runReading(config, shown, live, marks, blocked);
 				el.setAttribute('aria-valuenow', String(shown));
 				el.setAttribute('aria-valuetext', said);
 				el.setAttribute(
@@ -2553,7 +2712,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 						? `${row.name ?? row.key}, ${said}`
 						: `${config.label}, ${said}`,
 				);
-				if (step !== null) step.textContent = reading;
+				if (step !== null) step.textContent = said;
 				/*
 				 * Only a named run earns one. An unnamed step's name is the
 				 * count, which the segments already state — and a tooltip
@@ -2569,7 +2728,15 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 				 * run keeps is the route that never depended on a pointer: the
 				 * twin below, which it points at.
 				 */
-				if (named) el.title = reading;
+				/*
+				 * **And a run holding marks past its live end earns one too**,
+				 * named or not (`docs/UI.md` §6 as amended): how far past the run
+				 * the value sits is legible to a sighted reader only as a slash
+				 * they have to count, and a step down through it is only an
+				 * informed one if the count has been said.
+				 */
+				if (named || overOf(shown, live, marks).marks > 0) el.title = said;
+				else el.removeAttribute('title');
 				if (explanation !== null) explanation.textContent = cardPushed ?? '';
 			};
 
@@ -2613,7 +2780,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			};
 
 			const boxes = (): SegmentBox[] =>
-				segments.map((segment) => {
+				[...segments, ...(overBox === null ? [] : [overBox])].map((segment) => {
 					const box = segment.getBoundingClientRect();
 					return {
 						left: box.left,
@@ -2622,6 +2789,17 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 						bottom: box.bottom,
 					};
 				});
+
+			/**
+			 * The mark count a pointer is asking for. Where the over part is one
+			 * box, that box is a single position meaning "the stored value", so
+			 * anything past the live run is `reach`: a tap on it clears one mark,
+			 * since the value stands there, and a drag past it writes nothing.
+			 */
+			const hit = (measured: readonly SegmentBox[], x: number, y: number): number => {
+				const at = marksAtPoint(measured, x, y, marks);
+				return overBox !== null && at > live * marks ? reach : at;
+			};
 
 			/**
 			 * Whether a point is still on this run, which is a question about
@@ -2711,7 +2889,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 				// keyboard picks up where the finger left off.
 				focusRun(runs.indexOf(run));
 
-				const wanted = marksAtPoint(boxes(), event.clientX, event.clientY, marks);
+				const wanted = hit(boxes(), event.clientX, event.clientY);
 				// Pressing the mark the value stands on clears it, so one
 				// control both fills and clears without a modifier — and the
 				// run can never show the states nobody means, which is the
@@ -2753,7 +2931,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 				}
 				event.preventDefault();
 				const measured = boxes();
-				const at = marksAtPoint(measured, event.clientX, event.clientY, marks);
+				const at = hit(measured, event.clientX, event.clientY);
 				// A clear holds for as long as the pointer is on the mark that
 				// armed it, so a wobble cannot silently turn it back into a set.
 				if (clearing !== null && at !== clearing) clearing = null;
@@ -2865,7 +3043,7 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			 */
 			if (named) {
 				longPressed = bindLongPress(el, () =>
-					stepLabel(config, Math.floor(run.value / marks), live),
+					runReading(config, run.value, live, marks, blocked),
 				);
 			}
 

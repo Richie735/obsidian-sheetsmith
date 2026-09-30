@@ -37,6 +37,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { App as ObsidianApp } from 'obsidian';
 import {
+	basenameOfPath,
 	convertLegacyLayouts,
 	createLayout,
 	installLayoutSource,
@@ -260,7 +261,7 @@ describe('startLayout from a blank grid', () => {
 		 * of paths, so it accepts every spelling the real adapter's `fs` write
 		 * would reject — `docs/BACKLOG.md` carries the row, and modelling
 		 * `ENOENT` there is priced across 81 test files. Injecting is
-		 * `layout-editor.test.ts`'s own technique for the unreadable file one
+		 * `layout-file-row.test.ts`'s own technique for the unreadable file one
 		 * control over. The message is Obsidian's own so that what a reader sees
 		 * is what this case shows, and what is actually asserted is the
 		 * *pass-through*: whatever the vault said, verbatim, and nothing
@@ -624,5 +625,15 @@ describe('converting .json layouts', () => {
 			skipped: 0,
 			failed: ['Permission denied.'],
 		});
+	});
+});
+
+describe('the basename a path names', () => {
+	it('drops the folder and the last extension, and keeps a leading dot', () => {
+		expect(basenameOfPath('Sheetsmith layouts/Group variations.sheetsmith')).toBe(
+			'Group variations',
+		);
+		expect(basenameOfPath('Outside/old.layout.json')).toBe('old.layout');
+		expect(basenameOfPath('.hidden')).toBe('.hidden');
 	});
 });

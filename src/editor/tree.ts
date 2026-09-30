@@ -1,32 +1,64 @@
 /*
  * The layout editor's tree: the layout itself, then every component it
- * holds, one row each, selectable and reorderable.
+ * holds, one row each, selectable, movable and — for a container — foldable.
  *
  * Split out of `layout-editor.ts` on `config-panel.ts`'s own precedent: a
  * module in `editor/` named for the region it draws, parameterised over a
  * small host interface so the editor's own structure — the file, the
  * picker, the canvas — stays out of reach.
  *
- * **What this adds over the tree that already existed**: dragging a row onto
- * a container row moves the dragged component into it
- * (`docs/features/grid-canvas.md` §5), dragging a row onto a sibling within
- * its own current parent reorders it there, and every row carries a
- * keyboard-operable equivalent of both — up/down, reusing `moveItem`, and
- * indent/outdent, reparenting into the previous sibling container or out to
- * the grandparent. `reparent.ts`'s `canReparent` is asked before any of the
- * four writes anything, and a refusal is shown in place rather than the drag
- * being silently ignored.
+ * **What a row carries** (`docs/features/layout-editor-tree.md`): a disclosure
+ * slot, its name, a drag handle and a menu. Dragging a row onto a container row
+ * moves the dragged component into it (`docs/features/grid-canvas.md` §5), and
+ * dragging it onto a sibling within its own current parent reorders it there,
+ * where that level is not a placed grid; on a placed grid the order is the
+ * grid's, so the drop is refused toward the canvas. The menu holds the
+ * keyboard-operable equivalents of both — up and down where a level has them,
+ * into the container drawn above and out to the grandparent — plus
+ * **Remove**, and the same four moves are Alt+arrow chords on the row's name
+ * button. `tree-moves.ts` decides all four, once, for both routes, and asks
+ * `reparent.ts`'s `canReparent` before any of them writes; a refusal is shown
+ * in place rather than the gesture being silently ignored.
+ *
+ * **The menu's third section is the clipboard** (`docs/features/component-copy-paste.md`):
+ * **Copy**, **Paste** and **Paste configuration**, and Mod+C and Mod+V on the
+ * name button. The chords arrive as `copy` and `paste` events on the pane's
+ * document rather than on the row, so this module keeps a map from each name
+ * button to its row's two gestures (`clipboardRow`) for the listener to ask.
+ * All of them call the host, which reads and writes the clipboard; a refusal is
+ * drawn under the row the same way a refused move is. A press on a row puts
+ * focus on its name, which is what the chords need to find it.
+ *
+ * **The DOM nests the way the layout does.** A container's children render
+ * into a `role="group"` wrapper directly after its row, indented as a whole and
+ * ruled down its leading edge, so depth reads as a narrower card and one guide
+ * per enclosing container rather than as a text offset inside identical boxes.
+ * A container can be folded shut, which draws no wrapper at all and counts what
+ * it hides in its description. Which containers are shut is the host's posture
+ * (the pane's view state), and the tree never hides the selection: the rules
+ * that keep that true are corrections applied here, at render, so they hold
+ * whichever path moved the selection.
  */
 
 import { Setting, setIcon } from 'obsidian';
-import { getComponent } from '../components';
+import { holdsChildren } from './accepts-children';
 import { moveItem } from './list-fields';
 import { placedComponentName } from './component-name';
-import { canReparent, reparent } from './reparent';
+import { canReparent, forgetEmptyChildren, reparent } from './reparent';
+import {
+	chordMove,
+	clipboardShortcuts,
+	MOVE_SHORTCUTS,
+	moveHint,
+	openRowMenu,
+	placedReorderRefusal,
+	rowMoves,
+	treeListContext,
+} from './tree-moves';
 import { Layout } from '../parse/layout';
-import { WalkEntry, walkComponents } from '../parse/layout-walk';
-import { ComponentConfig, isContainer } from '../types';
-import { innerPlacement } from '../view/grid-cells';
+import { componentsInside, WalkEntry } from '../parse/layout-walk';
+import { ComponentConfig } from '../types';
+import { innerPlacement, walkLayout } from '../view/grid-cells';
 
 /**
  * The top level, wherever something has to be named that is not a component.
@@ -54,8 +86,46 @@ export interface TreeHost {
 	/** Select a component, or the layout itself, and rebuild both regions. */
 	select(id: string): void;
 	readonly selection: string;
-	/** Ask before something irreversible, then do it if confirmed. */
-	confirm(message: string, cta: string, onConfirm: () => void): void;
+	/** Focus this token once the next redraw has happened. */
+	focusAfterRedraw(token: string): void;
+	/**
+	 * The containers drawn shut, read live: a render corrects it before it
+	 * draws, and the rows it then draws read the corrected set.
+	 */
+	readonly collapsed: ReadonlySet<string>;
+	/**
+	 * Remember which containers are shut. Does not redraw, and a set equal to
+	 * the one held is a no-op, which is what lets a render call this every time
+	 * rather than comparing first.
+	 */
+	setCollapsed(ids: Iterable<string>): void;
+	/**
+	 * Write an edit, then say what it did with an offer to take it back — a
+	 * removal, and a paste.
+	 *
+	 * One member rather than `persist` and a notice, because whether the offer
+	 * may be made depends on the write: only the host knows the bytes the edit
+	 * left on disk, and an undo pressed after something else changed them would
+	 * take that change with it. It was `persistRemoval` while a removal was its
+	 * one caller; what it does, a guarded undo offer, was never about removing.
+	 */
+	persistUndoable(sentence: string): void;
+	/**
+	 * Put this row's component, and everything inside it, on the clipboard
+	 * (`docs/features/component-copy-paste.md` §3). Writes nothing to the layout.
+	 */
+	copy(entry: WalkEntry): void;
+	/**
+	 * Paste what the clipboard holds as the sibling after this row (§4).
+	 *
+	 * `text` is what a `paste` event already handed over, or null for the menu,
+	 * which reads the clipboard itself — the one difference between the two
+	 * routes in, so the chord and the item cannot disagree about what a paste
+	 * does. `refuse` draws a refusal under the row, which is the tree's to draw.
+	 */
+	paste(entry: WalkEntry, text: string | null, refuse: (message: string) => void): void;
+	/** Put the clipboard's configuration onto this row's component (§6). */
+	pasteConfiguration(entry: WalkEntry, refuse: (message: string) => void): void;
 	/**
 	 * The component id mid-drag, shared across every row so a drag started on
 	 * one row is read by whichever row the pointer is over, not only the one
@@ -64,17 +134,26 @@ export interface TreeHost {
 	drag: { id: string | null };
 }
 
-/** What removing a component takes with it. */
-function removalMessage(config: ComponentConfig, held: number): string {
-	const kept = `character notes keep their "${config.label}" sections`;
-	if (held === 0) {
-		return `Remove "${config.label}" from the layout? Its configuration and formulas are lost, but ${kept}.`;
+/**
+ * What a removal did, said after the fact (`docs/features/layout-editor-tree.md`
+ * §5), which is where the confirmation it replaces used to say it before.
+ *
+ * **The section sentence only where there is a section.** A container stores
+ * nothing in a note (`storage: 'none'`), so a removed container has no section
+ * for character notes to keep, and saying they keep one would be the one false
+ * sentence in the notice. What a container's removal does say is where its
+ * children went, which is the half an author is most likely to go looking for.
+ */
+function removalSentence(config: ComponentConfig, held: number): string {
+	const removed = `Removed "${config.label}".`;
+	if (held === 1) {
+		return `${removed} The component inside it moved to the bottom of the sheet.`;
 	}
-	const inside =
-		held === 1
-			? 'The component inside it moves'
-			: `The ${held} components inside it move`;
-	return `Remove "${config.label}" from the layout? Its own configuration is lost. ${inside} to the bottom of the sheet, keeping their own configuration, and ${kept}.`;
+	if (held > 1) {
+		return `${removed} The ${held} components inside it moved to the bottom of the sheet.`;
+	}
+	if (holdsChildren(config)) return removed;
+	return `${removed} Character notes keep its section.`;
 }
 
 /**
@@ -95,17 +174,24 @@ export function nextFreeRow(components: ComponentConfig[]): number {
 }
 
 /**
- * Show, or clear, a refused drop's reason under the row the drag ended on.
+ * Show, or clear, a refused move's reason under the row it was refused on — a
+ * drop, or a chord.
  *
  * Its own small mechanism rather than `field-error.ts`'s: that one is keyed
  * to an input, a select or a textarea, and a tree row's name is a `<button>`
  * inside a `Setting`, addressing a different shape for the same policy — a
  * refusal is never silently swallowed (`docs/PATTERNS.md` §4). Transient
- * rather than remembered across a rebuild: nothing about a refused drop
+ * rather than remembered across a rebuild: nothing about a refused move
  * writes the layout, so nothing triggers the rebuild that would need to
  * replay it, and the message stays in place until something else does.
+ *
+ * **`role="alert"`**, because a chord's refusal is the one case where the
+ * reader may not be looking: a key pressed with the focus on the name has no
+ * other effect, so the sentence is the whole of the answer, and an alert is
+ * announced as it is inserted where a status region inserted with its text
+ * often is not (`docs/UI.md` §6, "announce what is not visible").
  */
-function showDropError(row: Setting, message: string | null): void {
+function showMoveError(row: Setting, message: string | null): void {
 	const existing = row.settingEl.querySelector('.sheetsmith-field-error');
 	if (message === null) {
 		existing?.remove();
@@ -115,30 +201,158 @@ function showDropError(row: Setting, message: string | null): void {
 		existing.setText(message);
 		return;
 	}
-	row.settingEl.createDiv('sheetsmith-field-error', (el) => el.setText(message));
+	row.settingEl.createDiv(
+		{ cls: 'sheetsmith-field-error', attr: { role: 'alert' } },
+		(el) => el.setText(message),
+	);
+}
+
+/** What the clipboard's keyboard route can do with one row. */
+export interface ClipboardRow {
+	copy: () => void;
+	paste: (text: string) => void;
+}
+
+/**
+ * The clipboard gestures of each component row, by its name button.
+ *
+ * **How the keyboard route finds a row** (`docs/features/component-copy-paste.md`
+ * §2). Mod+C and Mod+V on a focused `<button>` with no selection send their
+ * `copy` and `paste` events to the document's body, not to the button, so the
+ * listener cannot be on the row: it is on the pane's document, and it asks this
+ * which row the focused element names. A `WeakMap` rather than a data attribute
+ * and a walk, so the row's own closures — its entry and the line a refusal is
+ * drawn under — come with it, and a button a redraw threw away is collected
+ * with its entry.
+ */
+const clipboardRows = new WeakMap<Element, ClipboardRow>();
+
+/**
+ * The clipboard gestures of the row whose name button this is, or null for any
+ * other element — the Layout row's name included, which takes neither chord,
+ * matching its having no menu.
+ */
+export function clipboardRow(focused: Element | null): ClipboardRow | null {
+	return focused === null ? null : (clipboardRows.get(focused) ?? null);
+}
+
+/** The id of the wrapper a container's children render into. */
+function childrenId(id: string): string {
+	return `sheetsmith-tree-children-${id}`;
+}
+
+/** Every component inside `config`, at any depth. */
+function descendants(config: ComponentConfig): ComponentConfig[] {
+	return (config.children ?? []).flatMap((child) => [child, ...descendants(child)]);
 }
 
 /**
  * The layout, then everything in it, in the depth-first walk the sheet reads
- * in — the pane's complete table of contents.
+ * in — the pane's complete table of contents, nested the way the layout is.
  *
  * The first row is the layout itself, selectable exactly as a component row
- * is, which is what keeps the panel needing no chrome of its own. No
- * disclosure control: a container's children are always listed, and the
- * indent and the rule down its left say what holds what.
+ * is, which is what keeps the panel needing no chrome of its own. Every
+ * component row follows in the same order as ever; a container's own are
+ * inside a wrapper after its row, which changes the DOM's shape and not its
+ * order, so the reading order and the tab order are the sheet's.
  */
 export function renderTree(
 	outline: HTMLElement,
 	layout: Layout,
 	host: TreeHost,
 ): void {
+	const walk = walkLayout(layout.components);
+	const byConfig = new Map(walk.map((entry) => [entry.config, entry]));
+	const shut = settleCollapsed(walk, byConfig, host);
 	renderLayoutRow(outline, layout, host);
-	for (const entry of walkComponents(layout.components)) {
-		renderComponentRow(outline, layout, entry, host);
+	renderLevel(outline, null, { layout, walk, byConfig, shut, host });
+}
+
+/** What every row of one render reads, passed down rather than recomputed. */
+interface TreeRender {
+	layout: Layout;
+	walk: WalkEntry[];
+	byConfig: Map<ComponentConfig, WalkEntry>;
+	shut: ReadonlySet<string>;
+	host: TreeHost;
+}
+
+/**
+ * The set of shut containers as this render will draw it, written back where
+ * it differs from what the host held.
+ *
+ * Two corrections, both of posture the host cannot make for itself because it
+ * cannot read the layout (`docs/features/layout-editor-tree.md` §4, §7):
+ *
+ * - **An id naming nothing, or naming a component that is not a container, is
+ *   dropped**, which is where a restored workspace meets a layout that changed
+ *   while the pane was closed. At render rather than at restore, because the
+ *   layout is only parsed here.
+ * - **The selection's shut ancestors are opened** (rule 1). The tree never
+ *   hides what is selected, whichever path selected it — a canvas press, the
+ *   picker's insert, an undo, a drop of the selected row onto a shut container.
+ *   This mirrors grid-canvas §2's "selection drives tab activation".
+ *
+ * The write does not redraw, because this *is* the render, and it is made
+ * every time: an unchanged set is the host's no-op to recognise, so the one
+ * comparison of two id sets lives there.
+ */
+function settleCollapsed(
+	walk: WalkEntry[],
+	byConfig: Map<ComponentConfig, WalkEntry>,
+	host: TreeHost,
+): ReadonlySet<string> {
+	const containers = new Set(
+		walk
+			.filter((entry) => holdsChildren(entry.config))
+			.map((entry) => entry.config.id),
+	);
+	const next = new Set([...host.collapsed].filter((id) => containers.has(id)));
+	let parent =
+		walk.find((entry) => entry.config.id === host.selection)?.parent ?? null;
+	while (parent !== null) {
+		next.delete(parent.id);
+		parent = byConfig.get(parent)?.parent ?? null;
+	}
+	host.setCollapsed(next);
+	return next;
+}
+
+/**
+ * The rows directly inside `parent`, in the walk's order, each container's own
+ * after it in a wrapper of their own.
+ *
+ * A container with nothing in it draws no wrapper, because an empty group
+ * would draw a guide line with nothing to run beside; and a shut one draws none
+ * either, since the wrapper *is* what shutting takes away. A shut chevron still
+ * names the wrapper's id in `aria-controls`, which is the platform's shape for
+ * a disclosure whose region is not rendered while closed; an *open* chevron
+ * over nothing names no region at all (`renderDisclosureSlot`).
+ */
+function renderLevel(
+	into: HTMLElement,
+	parent: ComponentConfig | null,
+	tree: TreeRender,
+): void {
+	for (const entry of tree.walk) {
+		if (entry.parent !== parent) continue;
+		renderComponentRow(into, entry, tree);
+		const { config } = entry;
+		if (!holdsChildren(config)) continue;
+		if (tree.shut.has(config.id) || (config.children ?? []).length === 0) continue;
+		const wrapper = into.createDiv({
+			cls: 'sheetsmith-tree-children',
+			attr: {
+				role: 'group',
+				'aria-label': `Inside ${config.label}`,
+				id: childrenId(config.id),
+			},
+		});
+		renderLevel(wrapper, config, tree);
 	}
 }
 
-/** The layout's own row: no drag, no reorder, no remove — just a drop target. */
+/** The layout's own row: no drag, no menu, no chord — just a drop target. */
 function renderLayoutRow(
 	outline: HTMLElement,
 	layout: Layout,
@@ -149,156 +363,228 @@ function renderLayoutRow(
 		SHEET_DESTINATION,
 		'Layout',
 		'The grid, the function library, the reset triggers and the bonus types.',
-		0,
 		host,
 	);
 	bindDropTarget(row, layout, null, host);
 }
 
 function renderComponentRow(
-	outline: HTMLElement,
-	layout: Layout,
+	into: HTMLElement,
 	entry: WalkEntry,
-	host: TreeHost,
+	tree: TreeRender,
 ): void {
-	const { config, depth, siblings, parent } = entry;
+	const { layout, host } = tree;
+	const { config } = entry;
+	const container = holdsChildren(config);
+	const shut = container && tree.shut.has(config.id);
 	const row = renderRow(
-		outline,
+		into,
 		config.id,
 		config.label,
-		placedComponentName(config),
-		depth,
+		rowDescription(config, shut),
 		host,
 	);
 
+	renderDisclosureSlot(row, config, container, shut, host);
 	bindDragSource(row, config, host);
 	bindDropTarget(row, layout, config, host);
 
-	const index = siblings.indexOf(config);
-	row.addExtraButton((button) => {
-		button
-			.setIcon('arrow-up')
-			.setTooltip('Move up')
-			.setDisabled(index === 0)
-			.onClick(() => moveItem(siblings, index, index - 1, listContext(host)));
-		button.extraSettingsEl.dataset.sheetsmithFocus = `tree-up-${config.id}`;
-	});
-	row.addExtraButton((button) => {
-		button
-			.setIcon('arrow-down')
-			.setTooltip('Move down')
-			.setDisabled(index === siblings.length - 1)
-			.onClick(() => moveItem(siblings, index, index + 1, listContext(host)));
-		button.extraSettingsEl.dataset.sheetsmithFocus = `tree-down-${config.id}`;
-	});
+	const refuse = (message: string): void => showMoveError(row, message);
+	const moves = rowMoves(
+		layout,
+		entry,
+		componentsInside(tree.walk, entry.parent),
+		(of) => tree.byConfig.get(of),
+		host,
+	);
 
-	const previousSibling = index > 0 ? siblings[index - 1] ?? null : null;
-	const indentCheck =
-		previousSibling !== null
-			? canReparent(layout, config, previousSibling)
-			: { error: 'No earlier sibling to move into.' };
-	row.addExtraButton((button) => {
-		button
-			.setIcon('chevron-right')
-			.setTooltip('Move in, into the previous row')
-			.setDisabled(!('ok' in indentCheck))
-			.onClick(() => {
-				if (!('ok' in indentCheck) || previousSibling === null) return;
-				reparent(layout, config, previousSibling);
-				host.persist();
-				host.redraw();
-			});
-		button.extraSettingsEl.dataset.sheetsmithFocus = `tree-indent-${config.id}`;
-	});
+	const name = row.nameEl.querySelector('.sheetsmith-tree-name');
+	if (name?.instanceOf(HTMLElement)) {
+		// Declared twice (`docs/features/layout-editor-tree.md` §6): the attribute
+		// for assistive tech, and the `title` for a pointer, which adds the hint
+		// to the visible name rather than replacing it (`docs/UI.md` §6).
+		name.setAttribute('aria-keyshortcuts', `${MOVE_SHORTCUTS} ${clipboardShortcuts()}`);
+		name.setAttribute('title', `${config.label}\n${moveHint()}`);
+		// On the name button and nowhere else: the handle, the chevron and the
+		// menu button each have arrow keys of their own, or the menu's.
+		name.addEventListener('keydown', (event) => {
+			const move = chordMove(event, moves);
+			if (move === null) return;
+			event.preventDefault();
+			if (move.refusal !== null) {
+				showMoveError(row, move.refusal);
+				return;
+			}
+			move.run();
+		});
+		clipboardRows.set(name, {
+			copy: () => host.copy(entry),
+			paste: (text) => host.paste(entry, text, refuse),
+		});
+	}
 
-	const grandparent =
-		parent === null
-			? undefined
-			: walkComponents(layout.components).find((candidate) => candidate.config === parent)
-					?.parent ?? null;
-	const outdentCheck =
-		grandparent !== undefined
-			? canReparent(layout, config, grandparent)
-			: { error: 'Already at the top level.' };
-	row.addExtraButton((button) => {
-		button
-			.setIcon('chevron-left')
-			.setTooltip('Move out, to the level above')
-			.setDisabled(!('ok' in outdentCheck))
-			.onClick(() => {
-				if (!('ok' in outdentCheck) || grandparent === undefined) return;
-				reparent(layout, config, grandparent);
-				host.persist();
-				host.redraw();
-			});
-		button.extraSettingsEl.dataset.sheetsmithFocus = `tree-outdent-${config.id}`;
+	const menuButton = row.controlEl.createEl('button', {
+		cls: 'clickable-icon sheetsmith-tree-menu',
+		attr: {
+			'aria-label': `More options for "${config.label}"`,
+			'aria-haspopup': 'menu',
+		},
 	});
-
-	row.addExtraButton((button) => {
-		button
-			.setIcon('trash')
-			.setTooltip('Remove from layout')
-			.onClick(() => {
-				const held = config.children ?? [];
-				host.confirm(
-					removalMessage(config, held.length),
-					'Remove component',
-					() => {
-						siblings.splice(siblings.indexOf(config), 1);
-						// Children move out rather than going with it, the same
-						// promise a reparent keeps (Constraint 4).
-						for (const child of held) {
-							// A child of a container that shows one at a time (a tab)
-							// was never sized by its own stored width/height —
-							// `innerPlacement` drew it at the container's own size
-							// instead, so its stored numbers were free to go stale
-							// while nested (`view/grid-cells.ts`'s own comment on
-							// `innerPlacement`). Promoting the child makes its own
-							// position authoritative again, so it has to inherit the
-							// size it was actually drawn at first, or its own
-							// children — never touched by this loop — land outside
-							// the box that now governs them.
-							const { width, height } = innerPlacement(child, config);
-							child.position.width = width;
-							child.position.height = height;
-							child.position.col = 1;
-							child.position.row = nextFreeRow(layout.components);
-							layout.components.push(child);
-						}
-						host.select(SHEET_DESTINATION);
-						host.persist();
-						host.redraw();
-					},
-				);
-			});
-		button.extraSettingsEl.dataset.sheetsmithFocus = `remove-${config.id}`;
+	setIcon(menuButton, 'ellipsis-vertical');
+	menuButton.dataset.sheetsmithFocus = `tree-menu-${config.id}`;
+	menuButton.addEventListener('click', (event) => {
+		openRowMenu(
+			menuButton,
+			event,
+			moves,
+			{
+				copy: () => host.copy(entry),
+				paste: () => host.paste(entry, null, refuse),
+				pasteConfiguration: () => host.pasteConfiguration(entry, refuse),
+			},
+			() => removeComponent(entry, tree),
+		);
 	});
 }
 
 /**
- * One row of the tree: a name that selects, at its own depth.
+ * A component row's second line: what it is, and — for a shut container —
+ * how many components it hides, counting every depth, since all of them are
+ * hidden. Only while shut: an open container's contents are on screen.
+ */
+function rowDescription(config: ComponentConfig, shut: boolean): string {
+	const what = placedComponentName(config);
+	if (!shut) return what;
+	const hidden = descendants(config).length;
+	return hidden === 0 ? `${what} · empty` : `${what} · ${hidden} inside`;
+}
+
+/**
+ * The slot before a component row's name: a chevron on a container, and a
+ * spacer of the same width everywhere else, so names at one depth start in one
+ * column whether or not the row is a container.
+ *
+ * **An empty container keeps its chevron** (§8): hiding it would draw an empty
+ * container as a leaf, which is the one fact an author most needs, since it
+ * accepts drops. The chevron is a `<button>`, so a press on it never reaches
+ * the row's own select — collapsing is not selecting, and the one case where it
+ * changes the selection is rule 2 below, not a side effect.
+ */
+function renderDisclosureSlot(
+	row: Setting,
+	config: ComponentConfig,
+	container: boolean,
+	shut: boolean,
+	host: TreeHost,
+): void {
+	const slot = createDiv('sheetsmith-tree-slot');
+	row.settingEl.prepend(slot);
+	if (!container) return;
+	const verb = shut ? 'Expand' : 'Collapse';
+	const chevron = slot.createEl('button', {
+		cls: 'sheetsmith-tree-disclosure',
+		attr: {
+			'aria-expanded': String(!shut),
+			'aria-label': `${verb} "${config.label}"`,
+			title: `${verb} "${config.label}"`,
+		},
+	});
+	// `aria-controls` names the region the chevron discloses, and an open empty
+	// container draws none — an expanded control pointing at an id no element
+	// carries is an invalid reference, where a collapsed one pointing at a region
+	// not rendered while closed is the pattern. So the attribute is left off in
+	// the one case, rather than drawing an empty wrapper whose guide would then
+	// need an exception to run beside nothing.
+	const empty = (config.children ?? []).length === 0;
+	if (shut || !empty) chevron.setAttribute('aria-controls', childrenId(config.id));
+	setIcon(chevron, shut ? 'chevron-right' : 'chevron-down');
+	chevron.dataset.sheetsmithFocus = `tree-disclosure-${config.id}`;
+	// One route in (`docs/PATTERNS.md` §6): Enter and Space arrive as this click.
+	// Not an edit — no `persist`, so no undo step and no sheet refresh.
+	chevron.addEventListener('click', () => {
+		const next = new Set(host.collapsed);
+		if (shut) next.delete(config.id);
+		else next.add(config.id);
+		host.setCollapsed(next);
+		host.focusAfterRedraw(`tree-disclosure-${config.id}`);
+		// Rule 2: shutting the container that holds the selection selects the
+		// container, in the same redraw. Rule 1 would otherwise reopen it at once.
+		const holdsSelection = descendants(config).some(
+			(child) => child.id === host.selection,
+		);
+		if (!shut && holdsSelection) host.select(config.id);
+		else host.redraw();
+	});
+}
+
+/**
+ * Remove a component, keeping what it held, and say so after rather than
+ * asking before (`docs/features/layout-editor-tree.md` §5). The notice carries
+ * an **Undo** the host guards against a stale press, and undo also reaches
+ * this one step through the palette.
+ *
+ * Focus goes to the layout's own row, which is where the selection goes: the
+ * row that was focused, and the menu that ran this, are both gone, and a
+ * keyboard reader left on the body would have to find the tree again.
+ */
+function removeComponent(entry: WalkEntry, tree: TreeRender): void {
+	const { layout, host } = tree;
+	const { config, siblings } = entry;
+	const held = config.children ?? [];
+	siblings.splice(siblings.indexOf(config), 1);
+	// Its last child gone, a container keeps no `children: []` behind, which
+	// the parser would refuse once the container moves two deep (`reparent.ts`).
+	forgetEmptyChildren(entry.parent);
+	// Children move out rather than going with it, the same promise a reparent
+	// keeps (Constraint 4).
+	for (const child of held) {
+		// A child of a container that shows one at a time (a tab) was never sized
+		// by its own stored width/height — `innerPlacement` drew it at the
+		// container's own size instead, so its stored numbers were free to go
+		// stale while nested (`view/grid-cells.ts`'s own comment on
+		// `innerPlacement`). Promoting the child makes its own position
+		// authoritative again, so it has to inherit the size it was actually drawn
+		// at first, or its own children — never touched by this loop — land
+		// outside the box that now governs them.
+		const { width, height } = innerPlacement(child, config);
+		child.position.width = width;
+		child.position.height = height;
+		child.position.col = 1;
+		child.position.row = nextFreeRow(layout.components);
+		layout.components.push(child);
+	}
+	host.persistUndoable(removalSentence(config, held.length));
+	host.focusAfterRedraw(`edit-${SHEET_DESTINATION}`);
+	if (host.selection !== SHEET_DESTINATION) host.select(SHEET_DESTINATION);
+	else host.redraw();
+}
+
+/**
+ * One row of the tree: a name that selects.
  *
  * A button in the row's name rather than a click handler on the row alone,
  * so it gets a tab stop, a focus ring and Enter for free. The row itself is
  * *also* a click target, per `docs/PATTERNS.md` §6 ("the whole card is the
- * hit target") — a row this crowded, with an icon column and a description
- * line, reads as dead everywhere but the name text without it. Real controls
- * still own their own presses, guarded the same way `passport.ts`'s card
- * line already guards its: `closest('button, input, select, textarea')`
- * excludes the name button itself (which keeps its own listener below), the
- * drag handle, and every extra button `renderComponentRow` adds.
+ * hit target") — a row with an icon column and a description line reads as
+ * dead everywhere but the name text without it. Real controls still own their
+ * own presses, guarded the same way `passport.ts`'s card line already guards
+ * its: `closest('button, input, select, textarea')` excludes the name button
+ * itself (which keeps its own listener below), the chevron, the drag handle
+ * and the menu button.
+ *
+ * Depth is not this row's to draw any more: the wrapper it sits in is indented
+ * and ruled, so every row at every depth is the same card.
  */
 function renderRow(
-	outline: HTMLElement,
+	into: HTMLElement,
 	id: string,
 	name: string,
 	description: string,
-	depth: number,
 	host: TreeHost,
 ): Setting {
 	const selected = host.selection === id;
-	const row = new Setting(outline).setDesc(description);
-	// Every row can end up showing a refused drop's reason (`showDropError`),
+	const row = new Setting(into).setDesc(description);
+	// Every row can end up showing a refused move's reason (`showMoveError`),
 	// a third flex child appended after the controls — `.sheetsmith-wrapping-row`
 	// is what lets that line wrap onto its own row instead of squeezing the
 	// name and the icon controls sideways (docs/UI.md §9), the same
@@ -307,21 +593,34 @@ function renderRow(
 	// One class for the row and for the canvas overlay, so the two paints
 	// cannot disagree about what is selected.
 	if (selected) row.settingEl.addClass('sheetsmith-preview-editing');
-	if (depth > 0) {
-		row.settingEl.addClass('sheetsmith-row-child');
-		row.settingEl.style.setProperty('--sheetsmith-row-depth', String(depth));
-	}
 	const button = row.nameEl.createEl('button', {
 		cls: 'sheetsmith-tree-name',
 		text: name,
 	});
 	button.dataset.sheetsmithFocus = `edit-${id}`;
+	// What a paste marks once it lands (`docs/features/component-copy-paste.md`
+	// §4 step 8): the pane's own flash, read over the whole pane.
+	row.settingEl.dataset.sheetsmithFlash = `tree-${id}`;
 	if (selected) button.setAttribute('aria-current', 'true');
-	button.addEventListener('click', () => host.select(id));
+	/*
+	 * **A press on a row lands focus on its name**, wherever on the row it was.
+	 * A click does not focus a `<button>` in Chromium on macOS or in WebKit, so
+	 * the redraw that selecting makes had no focused control to restore and
+	 * dropped focus to the body — where the row's Mod+C and Mod+V, and its
+	 * Alt+arrow moves, answer nothing (`docs/features/component-copy-paste.md`
+	 * §2, the vault check). Focused before the select, so the redraw's own
+	 * restore carries it to the rebuilt button, and so a press on a row already
+	 * selected, which redraws nothing, lands it too.
+	 */
+	const choose = (): void => {
+		button.focus({ preventScroll: true });
+		host.select(id);
+	};
+	button.addEventListener('click', choose);
 	row.settingEl.addEventListener('click', (event) => {
 		const target = event.target as HTMLElement | null;
 		if (target?.closest('button, input, select, textarea') !== null) return;
-		host.select(id);
+		choose();
 	});
 	return row;
 }
@@ -331,21 +630,25 @@ function renderRow(
  * dedicated handle, not the row itself.
  *
  * `list-fields.ts`'s own `sheetsmith-entry-handle` is the precedent: a row
- * this crowded — a name button plus four reorder/remove icons — makes a
- * whole-row `draggable` a worse fit than it would be for a plainer row,
- * because every one of those controls sits inside the draggable area and
- * becomes a drag candidate the instant a press moves before it lifts. The
- * handle keeps the row's other controls exactly what they look like: plain
- * buttons, never competing with a drag gesture for the same pointer-down.
+ * holding a name button, a chevron and a menu button makes a whole-row
+ * `draggable` a worse fit than it would be for a plainer row, because every
+ * one of those controls sits inside the draggable area and becomes a drag
+ * candidate the instant a press moves before it lifts. The handle keeps the
+ * row's other controls exactly what they look like: plain buttons, never
+ * competing with a drag gesture for the same pointer-down.
+ *
+ * **A shut container drags with its children**, which needs nothing here:
+ * they are its `config.children`, and `reparent` moves the config.
  */
 function bindDragSource(
 	row: Setting,
 	config: ComponentConfig,
 	host: TreeHost,
 ): void {
-	// Created before `renderComponentRow`'s own `addExtraButton` calls, so it
-	// lands first among the row's controls — ahead of up/down/indent/outdent
-	// and trash — the same lead position list-fields.ts's own handle takes.
+	// Created before the menu button, so it lands first among the row's
+	// controls — the same lead position list-fields.ts's own handle takes, and
+	// on the trailing side rather than beside the chevron, where two glyphs a
+	// few pixels apart would do unrelated things.
 	const handle = row.controlEl.createEl('button', {
 		cls: 'clickable-icon sheetsmith-entry-handle',
 		attr: {
@@ -361,7 +664,30 @@ function bindDragSource(
 	});
 	handle.addEventListener('dragend', () => {
 		host.drag.id = null;
+		// Wherever the drag ended — on a refused row, which never receives a
+		// drop, or outside the tree — no refusal it showed on the way outlives
+		// it. Read off the document rather than the tree, since a valid drop
+		// has redrawn the tree and detached this handle from it.
+		for (const el of Array.from(
+			handle.ownerDocument.querySelectorAll(`.${DROP_REFUSED}`),
+		)) {
+			if (el.instanceOf(HTMLElement)) clearDropRefusal(el);
+		}
 	});
+}
+
+/**
+ * Marks a row showing a refused drop's reason while a drag is over it, so the
+ * line can be told from a chord's, which stays until something else replaces
+ * it, and cleared when the pointer leaves or the drag ends.
+ */
+const DROP_REFUSED = 'sheetsmith-tree-drop-refused';
+
+/** Take a hovering drag's refusal off this row, if it shows one. */
+function clearDropRefusal(rowEl: HTMLElement): void {
+	if (!rowEl.classList.contains(DROP_REFUSED)) return;
+	rowEl.classList.remove(DROP_REFUSED);
+	rowEl.querySelector('.sheetsmith-field-error')?.remove();
 }
 
 /**
@@ -380,7 +706,9 @@ type DropResolution =
  * A container row that can hold `dragged` means "move into me"; any other
  * row that shares `dragged`'s own current parent means "reorder beside me" —
  * `list-fields.ts`'s `moveItem` semantics, since both are already in the
- * same list and nothing about containment changes. Anything else is refused
+ * same list and nothing about containment changes — unless that parent places
+ * its children, where the grid decides the order and the drop is refused with
+ * the chord's own sentence. Anything else is refused
  * and says why (`reparent.ts`'s own message, or a plain one for a row that
  * is neither).
  */
@@ -397,15 +725,23 @@ function resolveDrop(
 	// into me": refused here stays refused, and is never silently
 	// reinterpreted as a reorder just because dragged and target happen to
 	// share a parent already.
-	if (target === null || isContainer(getComponent(target.type))) {
+	if (target === null || holdsChildren(target)) {
 		return 'ok' in containerCheck
 			? { kind: 'into' }
 			: { kind: 'refused', error: containerCheck.error };
 	}
-	const walk = walkComponents(layout.components);
+	const walk = walkLayout(layout.components);
 	const draggedParent = walk.find((entry) => entry.config === dragged)?.parent;
 	const targetParent = walk.find((entry) => entry.config === target)?.parent;
-	if (draggedParent === targetParent) return { kind: 'reorder' };
+	if (draggedParent === targetParent && draggedParent !== undefined) {
+		// A placed level reads by position, so a reorder there would change
+		// nothing on screen; it is refused toward the canvas by the same decision,
+		// and in the same words, as the chord (`placedReorderRefusal`).
+		const refusal = placedReorderRefusal(draggedParent);
+		return refusal !== null
+			? { kind: 'refused', error: refusal }
+			: { kind: 'reorder' };
+	}
 	return {
 		kind: 'refused',
 		error:
@@ -418,6 +754,20 @@ function resolveDrop(
 /**
  * A row is a drop target whatever it names — a component, or the layout
  * itself for the top level.
+ *
+ * **A refused drop says why while the pointer is over the row**, not on the
+ * drop: a browser fires `drop` only on a target whose `dragover` was accepted,
+ * so a refusal decided there and shown on `drop` was never seen outside a
+ * test. The line goes up on the first `dragover` and is left alone on the
+ * rest, which fire every few milliseconds, so it neither flickers nor
+ * re-announces; it comes down when the pointer leaves the row — not merely
+ * crosses onto one of its own children — or when the drag ends anywhere.
+ *
+ * **A drop onto a shut container leaves it shut** (§7, rule 3): the count in
+ * its description changes, which is the drop made visible. Nothing here opens
+ * it, and nothing here needs to for the one exception — a dropped row that is
+ * the selection — since the render's own correction opens the ancestors of
+ * whatever is selected. No spring-loaded opening while hovering (rule 5).
  */
 function bindDropTarget(
 	row: Setting,
@@ -430,12 +780,31 @@ function bindDropTarget(
 		if (draggedId === null) return;
 		const dragged = findComponent(layout, draggedId);
 		if (!dragged) return;
-		if (resolveDrop(layout, dragged, target).kind === 'refused') return;
+		const resolution = resolveDrop(layout, dragged, target);
+		// The row being dragged is under the pointer the instant any drag
+		// starts, so its own refusal would flash on every drag; it is refused
+		// without a word, since nobody meant to drop a row on itself.
+		if (resolution.kind === 'refused' && target === dragged) return;
+		if (resolution.kind === 'refused') {
+			const shown = row.settingEl.querySelector('.sheetsmith-field-error');
+			if (shown?.textContent !== resolution.error) {
+				showMoveError(row, resolution.error);
+			}
+			row.settingEl.addClass(DROP_REFUSED);
+			return;
+		}
 		event.preventDefault();
 		row.settingEl.addClass('sheetsmith-tree-drop-valid');
 	});
-	row.settingEl.addEventListener('dragleave', () => {
+	row.settingEl.addEventListener('dragleave', (event) => {
+		// Crossing from the row onto its own name or buttons is a leave too;
+		// only a pointer that has left the row entirely takes the marks down.
+		// Not `instanceof Node`, which is false for a node of a popout's realm
+		// (`docs/PATTERNS.md` §5): a leave's related target is an element or null.
+		const into = event.relatedTarget as Node | null;
+		if (into !== null && row.settingEl.contains(into)) return;
 		row.settingEl.removeClass('sheetsmith-tree-drop-valid');
+		clearDropRefusal(row.settingEl);
 	});
 	row.settingEl.addEventListener('drop', (event) => {
 		event.preventDefault();
@@ -446,11 +815,10 @@ function bindDropTarget(
 		const dragged = findComponent(layout, draggedId);
 		if (!dragged) return;
 		const resolution = resolveDrop(layout, dragged, target);
-		if (resolution.kind === 'refused') {
-			showDropError(row, resolution.error);
-			return;
-		}
-		showDropError(row, null);
+		// A browser never drops on a refused row, since its dragover was not
+		// accepted; the reason is already on screen from the dragover above.
+		if (resolution.kind === 'refused') return;
+		showMoveError(row, null);
 		if (resolution.kind === 'into') {
 			reparent(layout, dragged, target);
 			host.persist();
@@ -471,34 +839,17 @@ function reorderBeside(
 	target: ComponentConfig,
 	host: TreeHost,
 ): void {
-	const walk = walkComponents(layout.components);
+	const walk = walkLayout(layout.components);
 	const entry = walk.find((candidate) => candidate.config === dragged);
 	if (!entry) return;
 	const siblings = entry.siblings;
 	const from = siblings.indexOf(dragged);
 	const to = siblings.indexOf(target);
 	if (from === -1 || to === -1) return;
-	moveItem(siblings, from, to, listContext(host));
-}
-
-/**
- * The minimal `ListContext` `moveItem` needs, over this host. The focus and
- * drag-cursor members are `list-fields.ts`'s own convention for a list of
- * *fields*, which the tree is not, so both are thrown away here rather than
- * threaded through `TreeHost` for one caller with no use for either.
- */
-function listContext(host: TreeHost): Parameters<typeof moveItem>[3] {
-	return {
-		persist: () => host.persist(),
-		redraw: () => host.redraw(),
-		focusAfterRedraw: () => undefined,
-		confirm: (message, cta, onConfirm) => host.confirm(message, cta, onConfirm),
-		errors: new Map(),
-		drag: { index: null },
-	};
+	moveItem(siblings, from, to, treeListContext(host));
 }
 
 function findComponent(layout: Layout, id: string): ComponentConfig | null {
-	return walkComponents(layout.components).find((entry) => entry.config.id === id)
+	return walkLayout(layout.components).find((entry) => entry.config.id === id)
 		?.config ?? null;
 }

@@ -8,8 +8,9 @@
 
 import { isName, SELF_KEYWORD } from '../formula/expression';
 import { MODIFIER_NAMESPACE } from '../formula/modifiers';
-import { walkComponents } from './layout-walk';
+import { everyLevelPlaced, walkComponents } from './layout-walk';
 import {
+	bindingKey,
 	ComponentConfig,
 	GRID_POSITION_KEYS,
 	GridPosition,
@@ -142,8 +143,14 @@ export interface Layout {
  * at. That is exactly why the rewrite is safe: sections key on the label,
  * and no formula can have depended on the old form. Layout files carry no
  * byte-identical promise, so the new id persists on the next save.
+ *
+ * **Exported for a pasted copy** (`docs/features/component-copy-paste.md`,
+ * decision 2), which needs exactly this shape for a different reason: an id
+ * that is already a name comes back exactly as written, and only a taken one
+ * is suffixed `_2`, `_3`. The layout editor's own `uniqueId` builds an id from
+ * a *label* and would turn a free `STR` into `str`.
  */
-function migrateId(raw: string, taken: ReadonlySet<string>): string {
+export function migrateId(raw: string, taken: ReadonlySet<string>): string {
 	let base = raw.replace(/[^A-Za-z0-9_]+/g, '_').replace(/^_+|_+$/g, '');
 	if (base === '' || /^[0-9]/.test(base)) base = `_${base}`;
 	let id = base;
@@ -228,6 +235,16 @@ function parseBinding(value: unknown, where: string): ResetBinding {
 	if (column !== undefined && column.trim() === '') {
 		throw new LayoutParseError(`${where} "column" cannot be blank.`);
 	}
+	// Which records the binding reaches, on a component that has records. Its
+	// shape is the file format's business and its text is contents: an
+	// expression that will not parse is reported in the editor and fails at the
+	// press, like every formula field. A blank one is carried and reads as absent,
+	// as every optional formula key does — unlike `column` above, where blank would
+	// collide with the binding that deliberately names none.
+	const condition = value.where;
+	if (condition !== undefined && typeof condition !== 'string') {
+		throw new LayoutParseError(`${where} "where" must be a string.`);
+	}
 	const action = value.action;
 	if (
 		action !== undefined &&
@@ -265,31 +282,11 @@ function parseBinding(value: unknown, where: string): ResetBinding {
 	return {
 		trigger,
 		...(column !== undefined ? { column } : {}),
+		...(condition !== undefined ? { where: condition } : {}),
 		...(action !== undefined ? { action } : {}),
 		...(to !== undefined ? { to } : {}),
 		...(buffer !== undefined ? { buffer } : {}),
 	};
-}
-
-/**
- * What identifies one reset binding: the trigger and the column together.
- *
- * Exported for the layout editor, on `mayHoldChildren`'s own reason one file
- * over — the rule lives here, and the alternative is the editor carrying its own
- * copy of the comparison and getting it the wrong way round once. The failure
- * that would follow is the one this guard exists for: an editor that happily
- * writes a layout the plugin then refuses to load. PATTERNS §1 puts a predicate
- * on the one-step tier for exactly this, since the only thing a guard test over
- * two copies could assert is that they still agree.
- *
- * Keyed through `JSON.stringify` rather than by joining the two strings, because
- * a column may hold whatever a table's header holds and any separator that is
- * legal in a heading is one two different pairs could spell the same way.
- */
-export function bindingKey(
-	binding: Pick<ResetBinding, 'trigger' | 'column'>,
-): string {
-	return JSON.stringify([binding.trigger, binding.column ?? null]);
 }
 
 function parseReset(value: unknown, where: string): ResetBinding[] | undefined {
@@ -313,8 +310,8 @@ function parseReset(value: unknown, where: string): ResetBinding[] | undefined {
 	 * they always had — the button would apply both in file order and the
 	 * second would win unannounced.
 	 *
-	 * What counts as the same pair is `bindingKey`, which the layout editor
-	 * refuses on too.
+	 * What counts as the same pair is `bindingKey` (`types.ts`), which the
+	 * layout editor refuses on too, through `claimsSamePart`.
 	 */
 	const seen = new Set<string>();
 	for (const binding of bindings) {
@@ -382,6 +379,12 @@ function parseChildren(
 		throw new LayoutParseError(`${where} "children" must be an array.`);
 	}
 	if (!mayHoldChildren(depth)) {
+		// An empty list holds nothing to move up, so it names the key instead.
+		if (value.length === 0) {
+			throw new LayoutParseError(
+				`${where} cannot have a "children" list: it already sits inside ${MAX_CONTAINER_DEPTH} containers, and a container may hold containers only one level deep. Remove its empty "children" list.`,
+			);
+		}
 		throw new LayoutParseError(
 			`${where} cannot hold components: it already sits inside ${MAX_CONTAINER_DEPTH} containers, and a container may hold containers only one level deep. Move these components up a level.`,
 		);
@@ -432,6 +435,38 @@ function parseComponent(
 		...(reset ? { reset } : {}),
 		...(children ? { children } : {}),
 	};
+}
+
+/**
+ * Every component a layout holds, at every depth, in the walk the parser checks
+ * uniqueness over.
+ *
+ * Containment scopes neither an id nor a label: a label still keys a section in
+ * a flat note, and an id is still what a formula writes. So "every component"
+ * for either question is this list and never one level of it.
+ */
+function everyComponent(components: ComponentConfig[]): ComponentConfig[] {
+	return walkComponents(components, everyLevelPlaced).map((entry) => entry.config);
+}
+
+/**
+ * Whether a component other than `self` already carries `label`, at any depth.
+ *
+ * **The parser's own rule, exported so a field can ask it** rather than keep a
+ * second copy: the layout editor's **Label** field once checked the top level
+ * only, so a label a container's child held passed the field and was refused by
+ * the parse, which left the pane holding a layout it could not save
+ * (`docs/features/unsaveable-layout.md` §1). `parseLayout`'s duplicate check
+ * reads the same `everyComponent` walk, so the two cannot come to disagree.
+ */
+export function labelTaken(
+	components: ComponentConfig[],
+	label: string,
+	self: ComponentConfig | null = null,
+): boolean {
+	return everyComponent(components).some(
+		(other) => other !== self && other.label === label,
+	);
 }
 
 export function parseLayout(source: string): Layout {
@@ -556,7 +591,7 @@ export function parseLayout(source: string): Layout {
 	//
 	// The walk's order decides only which of two clashing ids takes the `_2`
 	// suffix below, and grid order is the order the reader would name them in.
-	const flattened = walkComponents(components).map((entry) => entry.config);
+	const flattened = everyComponent(components);
 
 	// Migrate before the duplicate check, and only ids that fail: two
 	// components genuinely sharing a usable id is an authoring error worth

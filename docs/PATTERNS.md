@@ -129,12 +129,16 @@ listener survives being orphaned by a rebuild, and the control stands itself dow
 before the write rather than leaving a listener alive on a row that is going. Its two
 *sentences* have a third consumer, the modifier form's **Remove**, whose armed state
 is the panel's and so cannot take the gesture;
+`ui/undo-notice.ts` holds the notice that says what just happened and offers to
+take it back, on the strength of the sheet's reset and the tree's **Remove**,
+because what is shared is a timing and a markup the notice's stylesheet rule reads;
 and `components/linked-text.ts` holds the anchor policy on the strength of Table
 and Rich text, because what is shared is a *set* — `internal-link`,
 `is-unresolved`, both `href` and `data-href`, `title` and never `aria-label`, and
 that a link paints as resolved where there is no vault — and a guard test over two
-copies of it could only assert they still spell the same thing. All seven say so in
-their headers, which is what a deliberate departure owes.
+copies of it could only assert they still spell the same thing. All of them say so
+in their headers, which is what a deliberate departure owes — a count here went
+stale the first time an entry was added without it.
 
 That last one also shows what does **not** climb with the policy. Table clips its
 text and Rich text wraps, so clipping stayed with the callers: the painter takes
@@ -211,6 +215,10 @@ src/
                    gesture that opens it
   component-rename-migration.ts
                    carrying a component rename across every note on the layout
+  section-adoption.ts
+                   counting the notes that already hold a section under a label
+                   a component has just taken, a scan the level reorder report
+                   shares
   parse/           note and layout parsing, and the ordered walk over a parsed
                    layout. Imports nothing from obsidian [checked]
   formula/         expression parsing and evaluation. Same rule [checked]
@@ -262,9 +270,20 @@ would have had to import `Menu` — which a component may not, since inheriting 
 nothing about modifiers because the domain text arrived as arguments. **Then the
 surface became a form**, `Menu` turned out to host no controls at all, and
 `ui/anchored-panel.ts` replaced it as plain DOM — so the import left `src/`
-entirely, and `components/isolation.test.ts` scans for it. Both times the boundary
-produced the right shape rather than merely permitting one: a `ui/` module that
-knows nothing about what it holds, with the domain text as arguments.
+entirely, and `components/isolation.test.ts` scans for it. Both times the
+boundary produced the right shape rather than merely permitting one: a `ui/`
+module that knows nothing about what it holds, with the domain text as arguments.
+
+*That was the sheet's side of the boundary, and the import has since come back on
+the other side.* The layout editor's tree opens the app's menu from each row
+(`docs/features/layout-editor-tree.md` §5), which is the job the menu is for — a
+list of commands with nothing to fill in — and it lives in
+`editor/tree-moves.ts`, holding its own domain text, rather than behind a `ui/`
+wrapper. Nothing restricts `editor/` the way a component is restricted, so the
+argument that sent the modifier cell's import to `ui/` does not reach it, and a
+wrapper taking the item titles as arguments for one caller is the generalisation
+ahead of evidence §1 refuses. The scan names that one file rather than being
+dropped, so a second import is still a decision made there.
 
 The allowlist has since gained no name, and the sibling list has gained three:
 `components/modifier-form.ts`, the markup of that form; `components/effective-value.ts`;
@@ -401,7 +420,7 @@ Every component follows the same order. A reader who knows one knows them all.
    `type`, `description`, `storage`, `showsOneChild`, `formulaFields`,
    `configFields`, `palette`, `configName`, `example`, `sample`, `read`,
    `scopeValues`, `scopeRows`, `scopeModifiers`, `write`, `hasBuffer`,
-   `resetColumns`, `applyReset`, `render`.
+   `resetColumns`, `resetWhole`, `applyReset`, `render`.
    Contract first, then the data path in the order it runs, then rendering last
    because it is the longest. `showsOneChild` sits beside `storage` because it is
    the same kind of fact: what this component is structurally, before anything
@@ -423,7 +442,10 @@ Every component follows the same order. A reader who knows one knows them all.
    to somebody else's number. `resetColumns` sits beside `hasBuffer` for the reason
    `hasBuffer` sits where it does: both are declarations the layout editor reads to
    decide what a reset binding may say, and a declaration comes before the
-   behaviour it conditions.
+   behaviour it conditions. `resetWhole` sits directly after `resetColumns`
+   because it answers the same picker read the other way: one names the parts a
+   binding may pick, the other names what the picker calls a binding that picks
+   none of them (`docs/features/record-set-reset-field-targeting.md`).
 
 Checked in `contract.test.ts`, along with the rule that a component declares
 nothing outside the contract. Otherwise a new member falls outside the order and
@@ -745,14 +767,37 @@ A component inventing its own is the failure mode to watch for.
   declaring only the first offers an author a column to bind and then passes over
   the binding when the button is pressed — the rule above one step over, and the
   same dead control with nothing to say so.
+- **Declaring `resetWhole` obliges `resetColumns`** [checked: `contract.test.ts`].
+  `resetWhole` is what the **Acts on** picker calls a binding naming none of a
+  component's parts, so without a picker there is nowhere to offer it — a string
+  with nothing for it to be the alternative to
+  (`docs/features/record-set-reset-field-targeting.md`).
+- **Declaring `reset.*.where` obliges honouring it in `applyReset`** [checked:
+  `contract.test.ts`]. The declaration is what the sheet reads to hand a component
+  a binding carrying a condition, and what the editor reads to draw **Only where**
+  (`types.ts`, `checksResetCondition`), so a component declaring it and resetting
+  every part anyway is the mis-scoped rest the key exists to prevent — offered a
+  condition, and ignoring it. The contract drives each declaring component's
+  `example` with a condition nothing satisfies and asserts it writes nothing and
+  says it reached nothing.
+- **A component declaring both `reset.*.where` and `resetColumns` works a
+  part-naming binding's `to` out in that part's own scope** [checked:
+  `contract.test.ts`, `resolvesResetPerPart`]. Both declarations are needed:
+  `reset.*.where` is the component saying it has per-part scopes to evaluate in,
+  and naming a part is the trigger for using one, so a binding naming no part
+  keeps its `to` in sheet scope on any component. The predicate is what the
+  editor's **Resets to** row reads for its suggester and its description, so the
+  row describing a per-entry `to` and the resolver evaluating one cannot
+  disagree about which bindings have one
+  (`docs/features/record-set-reset-field-targeting.md`).
 - **Declaring `applyReset` on a component whose parts have names obliges
   `resetColumns`** [judgement]. Not checked, and the reason is what the tier is for:
   nothing outside a component can tell whether its parts have names, which is the
-  whole reason the member exists. A component that resets as one value — a Pool, a
-  Track, a Record set — correctly declares neither, so the check would have to
-  distinguish the two cases by knowing the thing it exists to avoid knowing. What
-  goes wrong without it is quiet rather than loud: the binding acts on the whole
-  component where the author meant one part of it.
+  whole reason the member exists. A component that resets as one value — a Pool
+  or a Track — correctly declares neither, so the check would have to distinguish
+  the two cases by knowing the thing it exists to avoid knowing. What goes wrong
+  without it is quiet rather than loud: the binding acts on the whole component
+  where the author meant one part of it.
 
 ---
 
@@ -831,8 +876,12 @@ decided.
 - **A test that could pass vacuously must assert it is testing something.**
   `styles.test.ts` checks it matched more than 8 rules before checking they are
   all scoped.
-- **A shared test helper is checked to be the only spelling of what it owns**
-  [checked]. `pointer-gestures.test.ts` scans every `*.test.ts` for a bare
+- **A shared test helper is the only spelling of what it owns** [judgement],
+  **and only `src/test/pointer.ts` has a scan behind it** [checked]. The other
+  helpers in `src/test/`, `exec-command.ts` and `beforeinput.ts` among them, are
+  held by review; a scan waits for a second instance of the same class of drift,
+  as `BACKLOG` refuses one at a single instance. `pointer-gestures.test.ts`
+  scans every `*.test.ts` for a bare
   `new PointerEvent('pointerdown'|'pointerup', …)` that carries `pointerId` or
   `button` and no coordinates — which is exactly what `src/test/pointer.ts`
   already says — and fails naming the file and line. It exists because
@@ -861,7 +910,11 @@ decided.
   driven through a control, so a file of its own would have to build a fake card
   before it could press anything — and `pool.test.ts`, `track.test.ts` and the
   component tests already are that card. A second one is the duplication §1
-  forbids.
+  forbids. `markdown-typing.ts` is the same case: `components/rich-text.test.ts`
+  drives every keystroke it owns through a Rich text field, and
+  `components/record-set.test.ts` proves the record body has it. Both install
+  `src/test/exec-command.ts`, the one spelling of the `execCommand` the test DOM
+  lacks.
 
   **A shared-vocabulary module is tested through the consumers that speak it.**
   `components/column-types.ts` and `components/stored-flag.ts` are the second,

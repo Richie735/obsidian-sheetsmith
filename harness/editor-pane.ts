@@ -13,9 +13,10 @@
 import { App } from '../src/test/obsidian-stub';
 import { openView, showFile } from '../src/test/workspace';
 import { LayoutEditorView } from '../src/view/layout-editor-view';
-import { Layout } from '../src/parse/layout';
+import { Layout, parseLayout, serialiseLayout } from '../src/parse/layout';
 import { fakePlugin } from '../src/test/plugin';
 import { LayoutSource, plantLayout, watchLayoutFile } from './stub-app';
+import { CLIPBOARD_FIXTURES } from './samples';
 
 /** Which of the pane's own controls a view wants driven. */
 export interface PaneView {
@@ -83,13 +84,66 @@ export interface PaneView {
 	 */
 	treeHover?: string;
 	/**
-	 * `<fromId>:<toId>` — the same drag, completed. For a refused pair this
-	 * is what leaves the inline message on screen; for a valid one it is
+	 * `<fromId>:<toId>` — the same drag, completed where a browser would
+	 * complete it. A refused pair gets no drop, as in a browser, and is left
+	 * hovering, which is where its inline message is shown; for a valid one it is
 	 * what `shot.mjs`'s `canvas-tree-drag-complete` drives to show the
 	 * component actually landed at its new container's first free row —
 	 * nothing else here exercises a released, valid drop.
 	 */
 	treeDrop?: string;
+	/**
+	 * `<id>[,<id>…]` — press each container's chevron in the tree, in order
+	 * (`docs/features/layout-editor-tree.md` §9). A press rather than a state
+	 * handed to the view, so the shot exercises the same write to view state a
+	 * reader's press makes; a restore from saved state is a test's to cover.
+	 */
+	collapse?: string;
+	/**
+	 * `<id>` — press that row's menu button and leave the app's menu open.
+	 * Pressed as Enter presses it, which places the menu under the button rather
+	 * than at a pointer a still has none of — and that reads the button's real
+	 * box, so it is driven once the pane is on screen, by `driveTree`.
+	 */
+	menu?: string;
+	/**
+	 * `<id>:<key>` — focus that row's name button and press Alt with the key, one
+	 * of `ArrowUp`, `ArrowDown`, `ArrowRight`, `ArrowLeft`. A completed move and a
+	 * refused one's line under the row are both photographable this way. Driven
+	 * by `driveTree` too, because a detached button cannot take focus.
+	 */
+	treeKey?: string;
+	/**
+	 * `<id>:<fixture>[:config]` — paste onto that tree row
+	 * (`docs/features/component-copy-paste.md` §10). `<fixture>` names one of
+	 * `CLIPBOARD_FIXTURES`, copies made in another layout, or is `self`, which
+	 * has the pane copy that same row first through its own Mod+C.
+	 *
+	 * The paste goes the keyboard's way: the row's name focused and a `paste`
+	 * event dispatched with the text in a `DataTransfer`, which is what the app
+	 * delivers for Mod+V and needs no clipboard permission. `:config` presses the
+	 * row's **Paste configuration** instead, through its menu, which reads the
+	 * clipboard — so the page's clipboard is replaced by one that answers with
+	 * the fixture, for that read and for the copy `self` makes through the pane's
+	 * own `copy` event.
+	 */
+	paste?: string;
+	/**
+	 * The pane holding a layout it cannot save
+	 * (`docs/features/unsaveable-layout.md` §7), reached by the route the app
+	 * reaches it by rather than by handing the pane a state.
+	 *
+	 * `write`: the stub vault refuses writes to the planted layout with `disk
+	 * full`, and **Label** on the component `open` selects is committed through
+	 * its own field, as its label plus ` (draft)`. `invalid`: no field reaches
+	 * this state any more, so the plugin's store is handed the planted layout
+	 * with `rest_pool`'s first reset binding set to a formula with no
+	 * expression, kept against the planted bytes, and the pane puts it back on
+	 * its first render exactly as reopening would. `write-path` is `write` with
+	 * the vault's own kind of refusal, a long unbroken path, which is the message
+	 * that tests whether the block wraps inside its border.
+	 */
+	unsaved?: 'write' | 'write-path' | 'invalid';
 }
 
 export interface PaneHost {
@@ -118,16 +172,26 @@ export async function renderEditorPane(
 	watchLayoutFile(app.vault, host.onLayoutChange);
 	const path = await plantLayout(app, layout);
 
-	const pane = await openView(
-		app,
-		container,
-		LayoutEditorView,
-		fakePlugin(app),
-	);
+	const plugin = fakePlugin(app);
+	if (view.unsaved === 'invalid' && path !== null) await keepInvalid(app, plugin, path);
+	const pane = await openView(app, container, LayoutEditorView, plugin);
 	// Opened on the file it planted, the way a click in the file explorer
 	// opens one: the pane is bound to a file and never picks one for itself.
 	if (path !== null) await showFile(pane, path);
 	if (view.open !== undefined) await select(pane.contentEl, view.open);
+	if (
+		(view.unsaved === 'write' || view.unsaved === 'write-path') &&
+		path !== null &&
+		view.open !== undefined
+	) {
+		await refuseAndCommit(
+			app,
+			pane.contentEl,
+			path,
+			view.open,
+			view.unsaved === 'write' ? 'disk full' : REFUSED_PATH,
+		);
+	}
 	// The picker is not driven here either, for `resize`'s reason below: opening
 	// it scrolls the search field clear of the pinned bar, which reads real
 	// geometry. `drivePicker` is `harness.ts`'s to call once the pane is on
@@ -139,12 +203,189 @@ export async function renderEditorPane(
 	// it reads zero. `driveResize` below is `harness.ts`'s to call once its
 	// own `draw()` has appended the pane, which `select` never needed because a synthetic `click`/`change` dispatches
 	// correctly whether or not the element is on screen.
+	if (view.collapse !== undefined) {
+		for (const id of view.collapse.split(',')) {
+			const chevron = await control(pane.contentEl, `tree-disclosure-${id.trim()}`);
+			if (chevron === null) {
+				console.warn(`No container "${id}" in the tree to collapse.`);
+				continue;
+			}
+			chevron.click();
+		}
+	}
 	if (view.treeHover !== undefined) {
 		await dragTreeRow(pane.contentEl, view.treeHover, false);
 	}
 	if (view.treeDrop !== undefined) {
 		await dragTreeRow(pane.contentEl, view.treeDrop, true);
 	}
+}
+
+/**
+ * What a desktop vault says when it refuses a file: the path it could not open,
+ * one token with no space to break at, long enough to outrun the block's width.
+ */
+const REFUSED_PATH =
+	"EACCES: permission denied, open '/Users/example/Vault/a/deeply/nested/folder/structure/that/keeps/going/Harness sheet.sheetsmith'";
+
+/**
+ * `unsaved=invalid`'s seed: the planted layout with `rest_pool`'s first reset
+ * binding switched to a formula and its expression removed, kept in the
+ * plugin's store against the planted bytes, with the parser's own sentence.
+ */
+async function keepInvalid(
+	app: App,
+	plugin: ReturnType<typeof fakePlugin>,
+	path: string,
+): Promise<void> {
+	const file = app.vault.getFileByPath(path);
+	if (file === null) return;
+	const base = await app.vault.read(file);
+	const layout = parseLayout(base);
+	const pool = layout.components.find((c) => c.id === 'rest_pool');
+	const binding = pool?.reset?.[0];
+	if (binding === undefined) {
+		console.warn('No reset binding on rest_pool to break.');
+		return;
+	}
+	binding.action = 'formula';
+	delete binding.to;
+	let message = '';
+	try {
+		parseLayout(serialiseLayout(layout));
+	} catch (error) {
+		message = error instanceof Error ? error.message : String(error);
+	}
+	plugin.unsavedLayouts.keep(path, {
+		reason: 'invalid',
+		message,
+		base,
+		text: serialiseLayout(layout),
+	});
+}
+
+/**
+ * `unsaved=write`'s route: the vault refuses the planted layout from here on,
+ * and the selected component's **Label** is committed through its own field —
+ * dispatched rather than keyed, `driveSuggest`'s way, since a detached input
+ * fires none of its own events.
+ */
+async function refuseAndCommit(
+	app: App,
+	pane: HTMLElement,
+	path: string,
+	id: string,
+	message: string,
+): Promise<void> {
+	const modify = app.vault.modify.bind(app.vault);
+	app.vault.modify = async (file, content) => {
+		if (file.path === path) throw new Error(message);
+		return modify(file, content);
+	};
+	const field = await control(pane, `label-${id}`);
+	if (!(field instanceof HTMLInputElement)) {
+		console.warn(`No label field for "${id}" to commit.`);
+		return;
+	}
+	field.value = `${field.value} (draft)`;
+	field.dispatchEvent(new Event('input'));
+	field.dispatchEvent(new Event('change'));
+	await new Promise((resolve) => window.setTimeout(resolve, 0));
+}
+
+/**
+ * Drive `view.menu` and `view.treeKey` against an already-attached pane.
+ *
+ * The menu is opened the way Enter on the button opens it — a click whose
+ * `detail` is 0 — so it lands under the button, where a keyboard reader meets
+ * it, rather than at a pointer position a still has no way to choose.
+ */
+export async function driveTree(pane: HTMLElement, view: PaneView): Promise<void> {
+	if (view.menu !== undefined) {
+		const button = await control(pane, `tree-menu-${view.menu}`);
+		if (button === null) {
+			console.warn(`No "${view.menu}" row in the tree to open a menu on.`);
+		} else {
+			button.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }));
+		}
+	}
+	if (view.treeKey !== undefined) {
+		const [id, key] = view.treeKey.split(':');
+		const name = await control(pane, `edit-${id ?? ''}`);
+		if (name === null || key === undefined) {
+			console.warn(`Bad treeKey "${view.treeKey}"; want "<id>:<ArrowUp|ArrowDown|ArrowRight|ArrowLeft>".`);
+			return;
+		}
+		name.focus();
+		name.dispatchEvent(
+			new KeyboardEvent('keydown', { key, altKey: true, bubbles: true, cancelable: true }),
+		);
+	}
+	if (view.paste !== undefined) await drivePaste(pane, view.paste);
+}
+
+/**
+ * A clipboard the page owns, in place of the browser's: headless Chrome grants
+ * neither a read nor a write, and a shot must not depend on a permission. The
+ * pane reads it off its own window, which is this one.
+ */
+function fakeClipboard(): { text: string } {
+	const held = { text: '' };
+	Object.defineProperty(navigator, 'clipboard', {
+		configurable: true,
+		value: {
+			writeText: async (text: string): Promise<void> => {
+				held.text = text;
+			},
+			readText: async (): Promise<string> => held.text,
+		},
+	});
+	return held;
+}
+
+/** Drive `view.paste`, in `<id>:<fixture>[:config]` form. */
+async function drivePaste(pane: HTMLElement, spec: string): Promise<void> {
+	const [id, fixture, mode] = spec.split(':');
+	const name = await control(pane, `edit-${id ?? ''}`);
+	if (name === null || fixture === undefined) {
+		console.warn(`Bad paste "${spec}"; want "<id>:<fixture>[:config]".`);
+		return;
+	}
+	const clipboard = fakeClipboard();
+	if (fixture === 'self') {
+		name.focus();
+		document.body.dispatchEvent(new ClipboardEvent('copy', { bubbles: true, cancelable: true }));
+		// The copy's write resolves on the next turn.
+		await new Promise((resolve) => window.setTimeout(resolve, 0));
+	} else {
+		const make = CLIPBOARD_FIXTURES[fixture];
+		if (make === undefined) {
+			console.warn(`No clipboard fixture "${fixture}". Try ${Object.keys(CLIPBOARD_FIXTURES).join(', ')} or self.`);
+			return;
+		}
+		clipboard.text = make();
+	}
+	if (mode === 'config') {
+		const button = await control(pane, `tree-menu-${id ?? ''}`);
+		button?.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }));
+		const item = Array.from(document.body.querySelectorAll('.menu .menu-item')).find(
+			(el) => el.querySelector('.menu-item-title')?.textContent === 'Paste configuration',
+		);
+		if (!(item instanceof HTMLElement)) {
+			console.warn('No Paste configuration item on the menu.');
+			return;
+		}
+		item.click();
+		return;
+	}
+	// Mod+V as the app delivers it: a `paste` event on the document, carrying
+	// the text, with the row's name focused.
+	const data = new DataTransfer();
+	data.setData('text/plain', clipboard.text);
+	name.focus();
+	document.body.dispatchEvent(
+		new ClipboardEvent('paste', { clipboardData: data, bubbles: true, cancelable: true }),
+	);
 }
 
 /**
@@ -438,8 +679,13 @@ async function dragTreeRow(
 	}
 	const toRow = to.closest('.setting-item') ?? to;
 	from.dispatchEvent(new Event('dragstart', { bubbles: true }));
-	toRow.dispatchEvent(new Event('dragover', { bubbles: true, cancelable: true }));
-	if (complete) {
+	const over = new Event('dragover', { bubbles: true, cancelable: true });
+	toRow.dispatchEvent(over);
+	// A browser drops only on a row that accepted the dragover, and a refused
+	// row says why while the pointer rests on it, so a refused "complete" drag
+	// is left resting there: releasing it would end the drag and take the
+	// message down with it.
+	if (complete && over.defaultPrevented) {
 		toRow.dispatchEvent(new Event('drop', { bubbles: true, cancelable: true }));
 		from.dispatchEvent(new Event('dragend', { bubbles: true }));
 	}

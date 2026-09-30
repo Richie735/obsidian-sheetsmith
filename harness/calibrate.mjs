@@ -225,6 +225,28 @@ const CHROME = [
 	 * plugin draws except inside that popup.
 	 */
 	/^\.suggestion/,
+	/*
+	 * The app's own context menu, which the layout editor's tree opens from each
+	 * row's menu button (`docs/features/layout-editor-tree.md` §5). The plugin
+	 * writes no rule for it, so the shot of an open menu is only a review of the
+	 * app's menu if the app's rules come along: `.menu`, `.menu-item` with its
+	 * `is-disabled` and `is-warning` states, `.menu-item-icon`, `.menu-item-title`
+	 * and `.menu-separator`, all under one prefix.
+	 */
+	/^\.menu/,
+	/*
+	 * The app's modal, which the sheet's reset confirmation is
+	 * (`docs/features/record-set-reset-scope.md`, `confirm=`). The plugin draws
+	 * its list inside it and nothing else, so without these the confirmation would
+	 * photograph as a bare paragraph at the foot of the page. The container, the
+	 * box, its content and its title all come along under one prefix; the app's
+	 * other modals' `mod-*` variants come too and match nothing drawn here.
+	 */
+	/^\.modal/,
+	// The confirmation's destructive button, which `ConfirmModal` marks with
+	// the class rather than `setDestructive` for 1.9. `button(?![.#\w-])` above
+	// refuses a class after the element on purpose, so this one is named.
+	/^button\.mod-warning/,
 	// The workspace pane the layout editor is a view in. A settings tab and a
 	// leaf are two different frames, and the editor now sits in the second: the
 	// leaf's own box, its header, and the scrolling content area a view builds

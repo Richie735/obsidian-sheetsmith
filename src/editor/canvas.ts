@@ -38,10 +38,10 @@ import { formulaContext } from '../formula/resolve';
 import { parseFunctions } from '../formula/functions';
 import { buildSheet, ReadComponent } from '../formula/sheet';
 import { DEFAULT_COLUMNS, Layout } from '../parse/layout';
-import { componentsInside, walkComponents, WalkEntry } from '../parse/layout-walk';
+import { componentsInside, WalkEntry } from '../parse/layout-walk';
 import { ComponentConfig, isContainer, placesChildren } from '../types';
 import { getComponent } from '../components';
-import { innerPlacement, renderGrid } from '../view/grid-cells';
+import { innerPlacement, renderGrid, walkLayout } from '../view/grid-cells';
 import { focusToken } from './focus-token';
 import { readSample } from './sample-read';
 import { describeCell, findOverlaps } from './preview-grid';
@@ -109,6 +109,7 @@ export class Canvas {
 			syncPositionFields: (config) => this.host.syncPositionFields(config),
 			redrawSchematics: () => this.redraw(),
 			select: (id) => this.host.select(id),
+			focusBlock: (id) => this.focusBlock(id),
 		};
 		this.gestures = new SchematicGestures(hostForGestures);
 	}
@@ -128,7 +129,7 @@ export class Canvas {
 		el.empty();
 		this.schematics = [];
 
-		const walk = walkComponents(layout.components);
+		const walk = walkLayout(layout.components);
 		this.ensureSelectionVisible(walk, this.host.selection);
 
 		// `sample-read.ts` holds what a component reads with no character behind
@@ -173,6 +174,39 @@ export class Canvas {
 		this.markInert(grid);
 
 		if (pendingFocus) focusToken(el, pendingFocus);
+	}
+
+	/**
+	 * Focus a block's overlay, after the gesture on it has ended.
+	 *
+	 * **Not during the press**, which cancels its pointerdown and so leaves the
+	 * focus where it was: moving it there would blur a field the author was
+	 * typing in, and a browser fires that field's `change` synchronously inside
+	 * the blur. A position field's commit redraws the canvas, so the block
+	 * holding the pointer capture would be torn down mid-press and the drag
+	 * would end before it began. Once the gesture is over a rebuild costs
+	 * nothing, and the field's pending value is harmless by then: a drag has
+	 * already written its result into the form (`syncPositionFields`).
+	 *
+	 * **Blurred first, then looked up by token**, because focusing the overlay
+	 * directly would run that same commit inside the `focus()` call, rebuild
+	 * the canvas, and leave the element being focused detached. Clicking a
+	 * button does not focus it in Chromium on macOS in any case, so without
+	 * this the arrow keys never reached a block pressed with a pointer.
+	 */
+	private focusBlock(id: string): void {
+		if (!this.root) return;
+		const active = this.root.ownerDocument.activeElement;
+		const token = `preview-${id}`;
+		if (active?.instanceOf(HTMLElement)) {
+			if (active.dataset.sheetsmithFocus === token && this.root.contains(active)) {
+				return;
+			}
+			active.blur();
+		}
+		// Read again after the blur, not before: a commit that redraws the whole
+		// pane draws the canvas into a fresh root, and the old one is detached.
+		if (this.root) focusToken(this.root, token);
 	}
 
 	/** Redraw from the layout last drawn. A no-op before the first `draw`. */
@@ -292,8 +326,11 @@ export class Canvas {
 	 * The cell each tab holds is `fillCell`'s own, one per
 	 * `.sheetsmith-tabset-panel`, in the file order `tab-set.ts` draws its
 	 * strip in — the same order `componentsInside` gives for a container
-	 * whose children share one position (a stable sort over ties preserves
-	 * file order), so the two line up without either knowing about the other.
+	 * whose children are not placed, since `walkComponents` keeps the file's
+	 * order on such a level whatever the tabs' stored rows say. It once
+	 * sorted them, and agreed only while the rows tied: a tab moved in through
+	 * the tree broke the tie, and each overlay then sat in another tab's
+	 * panel under that tab's name.
 	 */
 	private wireUnplacedChildren(
 		containerCell: HTMLElement,

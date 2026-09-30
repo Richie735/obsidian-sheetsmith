@@ -12,14 +12,20 @@ import {
 import { COLUMN_TYPES } from './column-types';
 import { conditionMet } from '../editor/config-fields';
 import {
+	checksResetCondition,
+	claimsSamePart,
 	ColumnOptionsSpec,
 	ComponentConfig,
 	EDITOR_OWNED_KEYS,
 	isContainer,
 	MODIFIER_CHANGE_KEYS,
 	placesChildren,
+	ResetBinding,
+	resolvesResetPerPart,
 	ScopeEntry,
 } from '../types';
+import { NO_ENV } from '../formula/resolve';
+import { planTrigger } from '../view/reset-plan';
 import { buildSheet, ReadComponent } from '../formula/sheet';
 import { Layout } from '../parse/layout';
 
@@ -112,6 +118,9 @@ const MEMBER_ORDER = [
 	// the layout editor reads to decide what a reset binding may say, and they
 	// come before the behaviour they condition.
 	'resetColumns',
+	// Directly after `resetColumns`, because it is what the same picker calls a
+	// binding naming none of those parts: one declaration read the other way.
+	'resetWhole',
 	'applyReset',
 	'render',
 ];
@@ -240,6 +249,16 @@ describe('component registry', () => {
 			),
 		);
 		expect(declaring.length).toBeGreaterThan(0);
+	});
+
+	it('has a columns field on each side of the condition branch', () => {
+		// The per-component case above skips every field that does not offer a
+		// condition, so it reads the same on a registry where none does.
+		const columns = types.flatMap((type) =>
+			(getComponent(type)?.configFields ?? []).filter((field) => field.kind === 'columns'),
+		);
+		expect(columns.filter((field) => field.columnOptions?.visibleWhen === true).length).toBeGreaterThan(0);
+		expect(columns.filter((field) => field.columnOptions?.visibleWhen !== true).length).toBeGreaterThan(0);
 	});
 
 	it('declares enough config fields for the per-field checks to mean anything', () => {
@@ -627,6 +646,42 @@ describe('component registry', () => {
 		}
 	});
 
+	it('names a declared sibling field in every visibleWhen', () => {
+		/*
+		 * `conditionMet` reads an unset controlling key through the field that
+		 * declares it, and finds none for a key no other field declares, so the
+		 * condition is never met and the field never renders — with no error, in
+		 * the ordinary case of a config that leaves the key at its default.
+		 *
+		 * The compiler holds only part of this. `ConfigFieldOf` checks
+		 * `visibleWhen.key` against `DeclarableKey<TConfig>`, which is a config
+		 * *property* and not a declared *field*, and which widens to `string` for
+		 * the same annotations that switch off the key check below: a component
+		 * typed bare `ComponentDefinition`, as `register` accepts it, or
+		 * `ConfigFieldSpec` passed as `ComponentDefinition`'s third argument.
+		 * This runs off the live registry however a component was annotated.
+		 *
+		 * A field may not name itself either: hidden, it could never be set to
+		 * the value that would show it.
+		 */
+		let conditions = 0;
+		for (const type of types) {
+			const fields = getComponent(type)?.configFields ?? [];
+			for (const field of fields) {
+				if (field.visibleWhen === undefined) continue;
+				conditions++;
+				const { key } = field.visibleWhen;
+				expect(key, `${type} ${field.key} is shown by itself`).not.toBe(field.key);
+				expect(
+					fields.some((other) => other.key === key),
+					`${type} ${field.key} is shown by ${key}, which no field declares`,
+				).toBe(true);
+			}
+		}
+		// Two today, Card set's and Pool's; none would pass this vacuously.
+		expect(conditions).toBeGreaterThan(0);
+	});
+
 	it('never declares an empty example', () => {
 		// `{}` is what the bare type already draws.
 		for (const type of types) {
@@ -994,6 +1049,7 @@ describe('a component that says what a sample of itself looks like', () => {
 	const SWEPT = [
 		'card bare',
 		'card Dropdown',
+		'card Computed',
 		'card-set bare',
 		'card-set Currency',
 		'card-set example',
@@ -1361,6 +1417,59 @@ describe.each(types)('component "%s"', (type) => {
 		expect(typeof component.applyReset).toBe('function');
 	});
 
+	it('names the whole only where it names the parts', () => {
+		// `docs/features/record-set-reset-field-targeting.md`, Part 2: the whole
+		// is offered first in the **Acts on** picker, which is drawn from
+		// `resetColumns`, so a component declaring only `resetWhole` offers it
+		// nowhere and says it reads a missing part as the whole of nothing.
+		if (component?.resetWhole === undefined) return;
+		expect(typeof component.resetWhole).toBe('string');
+		expect(component.resetWhole.trim()).not.toBe('');
+		expect(typeof component.resetColumns).toBe('function');
+	});
+
+	it('works a part-naming reset amount out in that part\'s own scope', () => {
+		/*
+		 * `resolvesResetPerPart`: a component that checks a condition and names
+		 * its parts works a part-naming binding's `to` out on each part, and the
+		 * editor tells an author so. Held here rather than in each component,
+		 * because the editor reads the predicate and not the behaviour, so a
+		 * component declaring both halves and resolving `to` once would describe
+		 * one thing in the pane and do another at the press.
+		 *
+		 * Over the component's `example`, or its first palette entry where it has
+		 * none, since a bare config names no part; the case asserts it found one.
+		 */
+		if (!checksResetCondition(component) || component?.resetColumns === undefined) return;
+		const config: ComponentConfig = {
+			...bareConfig(type),
+			...(component.example ?? component.palette?.[0]?.config ?? {}),
+		};
+		const part = component.resetColumns(config)[0];
+		expect(part).toBeDefined();
+		if (part === undefined) return;
+		const binding: ResetBinding = {
+			trigger: 'Rest',
+			column: part.key,
+			action: 'formula',
+			to: part.key,
+		};
+		expect(resolvesResetPerPart(component, binding)).toBe(true);
+		const body = component.sample?.(config) ?? '';
+		const read = component.read(body, { ...config, reset: [binding] });
+		const data = read.ok ? read.data : null;
+		const scopes: Record<string, unknown>[] = [];
+		component.applyReset?.(data, { ...config, reset: [binding] }, binding, {
+			resolve: (field, scope) => {
+				if (field === 'reset.to') scopes.push(scope);
+				return 1;
+			},
+			explain: () => null,
+		});
+		expect(scopes.length).toBeGreaterThan(0);
+		for (const scope of scopes) expect(Object.keys(scope)).toContain(part.key);
+	});
+
 	it('declares reset.to as a formula field when it resets', () => {
 		// `reset` is shared config, so it is forbidden in configFields and
 		// each stateful component has to remember this string for itself —
@@ -1370,6 +1479,40 @@ describe.each(types)('component "%s"', (type) => {
 		// at all. Cheaper to fail here than to debug a dead button.
 		if (component?.applyReset === undefined) return;
 		expect(component.formulaFields).toContain('reset.*.to');
+	});
+
+	it('honours a reset condition wherever it declares one', () => {
+		/*
+		 * `docs/features/record-set-reset-scope.md`: the declaration is what the
+		 * sheet reads to hand a component a binding carrying `where`, and what the
+		 * editor reads to draw **Only where**. Declaring it without honouring it is
+		 * the mis-scoped rest exactly — offered a condition, and resetting the
+		 * whole thing anyway. Driven over the component's own example with a
+		 * condition nothing can satisfy, through the real resolver, so it must
+		 * write nothing and say it reached nothing.
+		 */
+		if (!checksResetCondition(component)) return;
+		expect(typeof component?.applyReset).toBe('function');
+		const binding: ResetBinding = { trigger: 'Rest', action: 'empty', where: 'false' };
+		const config: ComponentConfig = {
+			...bareConfig(type),
+			...(component?.example ?? {}),
+			reset: [binding],
+		};
+		const body = component?.sample?.(config) ?? '';
+		const read = component?.read(body, config);
+		expect(read?.ok).toBe(true);
+		const data = read?.ok === true ? read.data : null;
+		// Through the sheet's own plan, so the rewrite to `reset.0.where` and the
+		// published names are the ones a press uses.
+		const plan = planTrigger('Rest', [{ config, component, error: null, data }], NO_ENV);
+		const result = plan.components[0]?.bindings[0]?.result;
+		expect(result?.ok).toBe(true);
+		if (!result?.ok) return;
+		expect(result.reach?.reached).toBe(0);
+		// Checked against something, or "reached nothing" says nothing.
+		expect(result.reach?.of).toBeGreaterThan(0);
+		expect(component?.write(result.data, body, config)).toBe(body);
 	});
 
 	it('declares formulaFields and configFields', () => {
@@ -1506,6 +1649,26 @@ describe.each(types)('component "%s"', (type) => {
 				expect(COLUMN_TYPES, `${field.key} offers "${id}"`).toContain(id);
 			}
 			expect(new Set(offered.types).size).toBe(offered.types.length);
+		}
+	});
+
+	it('declares a condition on its entries a formula wherever its columns field offers one', () => {
+		/*
+		 * `columnOptions.visibleWhen` is the editor half of a condition on an entry
+		 * (`docs/features/conditional-field-visibility.md`); the pattern in
+		 * `formulaFields` is the half that makes a paste rewrite an id it reads and
+		 * lets the resolver reach it at all. Offering the input without the
+		 * pattern is a condition that never evaluates, which fails *open* and so
+		 * shows every entry with a problem line nobody could fix. The drawing half —
+		 * that such a component hides what its condition names, and that every
+		 * other columns list reports one — is driven in `list-fields.test.ts`,
+		 * since this file has no DOM.
+		 */
+		for (const field of component?.configFields ?? []) {
+			if (field.kind !== 'columns' || field.columnOptions?.visibleWhen !== true) continue;
+			expect(component?.formulaFields, `${field.key} offers a condition`).toContain(
+				`${field.key}.*.visibleWhen`,
+			);
 		}
 	});
 
@@ -1677,8 +1840,10 @@ describe.each(types)('component "%s"', (type) => {
 		 * `DeclarableKey` widens to `string` on its erased branch, so the type
 		 * asks nothing at all of a component annotated `ComponentDefinition`
 		 * with no arguments, which is exactly the type `register` accepts in
-		 * `components/index.ts`. Measured: that annotation, and a hand-passed
-		 * third argument of `ConfigFieldSpec`, both compile with `key: 'label'`.
+		 * `components/index.ts`. Measured: that annotation, and `ConfigFieldSpec`
+		 * passed as `ComponentDefinition`'s third argument, both compile with
+		 * `key: 'label'` — and both switch off the `visibleWhen.key` check too,
+		 * which is why that one has a registry twin as well.
 		 *
 		 * So the compile-time half is conditional on a file-shape convention —
 		 * PATTERNS §3.7's `ComponentDefinition<XConfig, XData>`, prose with no
@@ -1723,5 +1888,69 @@ describe.each(types)('component "%s"', (type) => {
 				if (segment.includes('*')) expect(segment).toBe('*');
 			}
 		}
+	});
+});
+
+describe('which components read a binding naming no part as the whole', () => {
+	it('is some of those naming parts and not all of them', () => {
+		// Both halves, so the rule under each component cannot pass vacuously and
+		// the editor's **Nothing yet** still has a component to draw it for.
+		const naming = types
+			.map((type) => getComponent(type))
+			.filter((component) => component?.resetColumns !== undefined);
+		expect(naming.some((component) => component?.resetWhole !== undefined)).toBe(true);
+		expect(naming.some((component) => component?.resetWhole === undefined)).toBe(true);
+	});
+});
+
+describe('two bindings claiming one part', () => {
+	const whole = { resetWhole: 'Every field' };
+	const PAIRS: [ResetBinding, ResetBinding][] = [
+		[{ trigger: 'Short rest', column: 'Uses' }, { trigger: 'Short rest', column: 'Uses' }],
+		[{ trigger: 'Short rest' }, { trigger: 'Short rest' }],
+		[{ trigger: 'Short rest', column: 'Uses' }, { trigger: 'Short rest', column: 'Used' }],
+		[{ trigger: 'Short rest', column: 'Uses' }, { trigger: 'Long rest', column: 'Uses' }],
+		[{ trigger: 'Short rest' }, { trigger: 'Short rest', column: 'Uses' }],
+		[{ trigger: 'Short rest', column: 'Uses', where: 'Recharges == 1' }, { trigger: 'Short rest', where: 'Recharges == 4' }],
+	];
+
+	it("is the parser's key wherever the key can see the pair", () => {
+		const [same, none, different, otherTrigger, wholeAndPart] = PAIRS.map(([a, b]) =>
+			claimsSamePart(undefined, a, b),
+		);
+		expect([same, none, different, otherTrigger, wholeAndPart]).toEqual([
+			true,
+			true,
+			false,
+			false,
+			false,
+		]);
+	});
+
+	it('adds the whole beside a part, whatever the conditions, only where the component reads one', () => {
+		const [, , different, otherTrigger, wholeAndPart, conditioned] = PAIRS.map(
+			([a, b]) => claimsSamePart(whole, a, b),
+		);
+		expect(wholeAndPart).toBe(true);
+		expect(conditioned).toBe(true);
+		expect(different).toBe(false);
+		expect(otherTrigger).toBe(false);
+		// A Table reads a missing part as a mistake, not as the whole of it.
+		const [a, b] = PAIRS[4] ?? [];
+		if (a === undefined || b === undefined) throw new Error('expected a pair');
+		expect(claimsSamePart(getComponent('table'), a, b)).toBe(false);
+		expect(claimsSamePart(getComponent('record-set'), a, b)).toBe(true);
+	});
+});
+
+describe('which components can check a reset condition', () => {
+	it('is some of the stateful ones and not all of them', () => {
+		// Both halves, so the case under each component cannot pass vacuously and
+		// the sheet's refusal for the rest has somebody to refuse.
+		const stateful = types
+			.map((type) => getComponent(type))
+			.filter((component) => component?.applyReset !== undefined);
+		expect(stateful.some((component) => checksResetCondition(component))).toBe(true);
+		expect(stateful.some((component) => !checksResetCondition(component))).toBe(true);
 	});
 });

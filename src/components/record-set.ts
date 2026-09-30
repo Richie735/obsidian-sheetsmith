@@ -83,9 +83,16 @@ import {
 	withRecordBody,
 } from '../parse/records';
 import { startsSection } from '../parse/character';
+import { conditionReads, heldCondition } from '../formula/field-condition';
 import { displayText, hasLink } from '../parse/wikilink';
 import { fencedLinkRefusal } from './fenced-link';
-import { ColumnType, HOLDER_MAX_SOURCE, MaxSource } from './column-types';
+import {
+	BODY_PLACEMENT,
+	ColumnType,
+	HOLDER_MAX_SOURCE,
+	MaxSource,
+	Placement,
+} from './column-types';
 import {
 	boundedText,
 	formatComputed,
@@ -101,8 +108,11 @@ import {
 	ModifierPush,
 	ModifierSource,
 	ReadResult,
+	RESET_CONDITION_FIELD,
 	ResetBinding,
+	ResetColumn,
 	ResetContext,
+	ResetReach,
 	ResetResult,
 	RowsSource,
 	RowValues,
@@ -260,6 +270,42 @@ export interface RecordField {
 	 */
 	maxSource?: MaxSource;
 	/**
+	 * Where the field is drawn: on the record's summary line, or inside the
+	 * opened record, in a block above its prose, for a value read once and
+	 * changed rarely. Absent means the summary line, so every layout written
+	 * before this reads as it did.
+	 *
+	 * **Display only.** The fence, the formulas, the resets and the modifiers do
+	 * not know it exists: a body field is the same control drawn by the same
+	 * `drawField`, only attached to the body, and a closed record simply does not
+	 * show it. Any value but `BODY_PLACEMENT` reads as the summary line with no
+	 * configuration error, on `maxSource`'s precedent, and is carried untouched.
+	 */
+	placement?: Placement;
+	/**
+	 * A boolean formula in the record's own scope, and where it is false on a
+	 * record the field is not drawn on that record
+	 * (`docs/features/conditional-field-visibility.md`). Absent or blank means
+	 * always shown; a hand-written `true` or `false` is its own answer.
+	 *
+	 * **Not `ConfigFieldSpec.visibleWhen`, and the shared word is all they
+	 * share.** That one is the plugin's own declaration over a closed set of
+	 * config keys, checked by `editor/config-fields.ts`'s `conditionMet`, and it
+	 * fails *closed*: a typo in the plugin's own declaration hides a control,
+	 * which is the safer way to be wrong. This one is an author's formula over
+	 * character data, evaluated by the formula engine, and it fails *open*: a
+	 * condition that cannot be worked out shows the field and says why, because
+	 * a hidden value still counting is the worse way to be wrong. Different
+	 * grammar, different evaluator, opposite failure — so do not unify them.
+	 *
+	 * **Display only, like `placement`.** A hidden field keeps its value in the
+	 * note and goes on counting in every aggregate, modifier and reset: no value
+	 * reads visibility, so the dependency graph cannot close through it. A
+	 * condition naming its own key is refused and the field shown, since a field
+	 * that can hide itself vanishes under the cursor.
+	 */
+	visibleWhen?: string | boolean;
+	/**
 	 * Names for a level field's states, from none upwards. Naming them settles
 	 * how many there are. A name may say what its ring shows after a colon; see
 	 * level-ring.ts, which owns that rule.
@@ -360,6 +406,28 @@ function storedFields(config: RecordSetConfig): RecordField[] {
 	return (config.fields ?? []).filter(
 		(field) => fieldType(field) !== 'computed',
 	);
+}
+
+/** Whether this field draws inside the opened record rather than on its summary line. */
+function inBody(field: RecordField): boolean {
+	return field.placement === BODY_PLACEMENT;
+}
+
+/**
+ * The condition this component will evaluate for a field: its text, a
+ * hand-written answer, or null where the field is simply always shown.
+ *
+ * **Null for a condition naming the field's own key**, which is the refusal:
+ * a `Uses` shown when `Uses > 0` hits zero, vanishes under the cursor, and is
+ * reachable again only through a reset. The editor reports it under the field's
+ * **Shown when**; here it is not evaluated at, and it draws no problem line,
+ * because it is a layout error rather than a condition that failed. The
+ * predicate is `formula/field-condition.ts`'s, which the editor calls too.
+ */
+function honouredCondition(field: RecordField): string | boolean | null {
+	const held = heldCondition(field.visibleWhen);
+	if (typeof held === 'string' && conditionReads(held, field.key)) return null;
+	return held;
 }
 
 /** What a record's field is called on the sheet. */
@@ -548,6 +616,31 @@ function recordViews(data: RecordSetData | null): RecordEntry[] {
 }
 
 /**
+ * One record's stored names: every stored field by its key, never a computed
+ * one — what a computed field, a condition and a reset's `where` all read.
+ *
+ * **One spelling for three readers**, because what is shared is the scope a
+ * formula on a record sees, and two of those disagreeing is a condition that
+ * admits a record on the sheet and not at the press. The value half, never the
+ * whole entry: a record's `Uses` name is worth `2` when the entry says `2 / 3`,
+ * which is what `sum(features, Uses)` added up before the ceiling was the
+ * record's and what it must go on adding up.
+ */
+function storedLayer(
+	config: RecordSetConfig,
+	record: RecordEntry,
+): Record<string, FieldValue> {
+	const stored: Record<string, FieldValue> = {};
+	for (const field of storedFields(config)) {
+		stored[field.key] = typedValue(
+			field,
+			storedValue(field, record.fields[field.key]),
+		);
+	}
+	return stored;
+}
+
+/**
  * One record's names as a formula reads them: every stored field by its key,
  * then the computed fields over the top.
  *
@@ -561,17 +654,7 @@ function recordValues(
 	record: RecordEntry,
 	resolve: FieldResolver,
 ): RowValues {
-	const stored: Record<string, FieldValue> = {};
-	for (const field of config.fields ?? []) {
-		if (fieldType(field) === 'computed') continue;
-		// The value half, never the whole entry: a record's `Uses` name is worth
-		// `2` when the entry says `2 / 3`, which is what `sum(features, Uses)`
-		// added up before this feature and what it must go on adding up.
-		stored[field.key] = typedValue(
-			field,
-			storedValue(field, record.fields[field.key]),
-		);
-	}
+	const stored = storedLayer(config, record);
 	const values: Record<string, FieldValue> = { ...stored };
 	(config.fields ?? []).forEach((field, at) => {
 		if (fieldType(field) !== 'computed') return;
@@ -657,19 +740,16 @@ function sampleField(
 }
 
 /**
- * What a reset writes, or why it cannot.
- *
- * A shape rather than a number, because the three actions want different things
- * per field: `full` reads each number field's own ceiling, `empty` writes zero
- * everywhere, and `formula` writes one resolved value into every number field.
- * The flag is separate because a toggle has no ceiling to read.
+ * What a binding naming no field needs before any record is looked at, or why
+ * it cannot apply: `formula`'s one amount, resolved in sheet scope, and `full`'s
+ * check that every field-owned ceiling exists. What each field is then written as
+ * is `fieldWrite`'s, which the binding naming a field calls too.
  */
 type ResetWrite =
 	| { error: string }
 	| {
-			/** Null is "nothing to restore to on this record", which writes nothing. */
-			number: (field: RecordField, record: RecordEntry) => number | null;
-			flag: boolean;
+			/** The amount `formula` writes; absent for `full` and `empty`. */
+			amount?: number;
 	  };
 
 function resetWrite(
@@ -680,7 +760,7 @@ function resetWrite(
 	if (reset.action === 'empty') {
 		// Emptying needs nothing resolved: zero is zero whatever the ceiling is,
 		// and a list whose ceilings are broken can still be spent.
-		return { number: () => 0, flag: false };
+		return {};
 	}
 	if (reset.action === 'formula') {
 		const value = context.resolve('reset.to', {});
@@ -703,16 +783,7 @@ function resetWrite(
 				error: `its reset formula produced "${String(value)}", which is not a number.`,
 			};
 		}
-		/*
-		 * **The flag is derived from the number rather than set true**, which is
-		 * `track.ts`'s rule for a flag card and the correction this branch needed:
-		 * set unconditionally, `to: '0'` wrote zero into every counter *and turned
-		 * every toggle on* — a write the reader did not ask for, in the one action
-		 * whose whole job is to say what the value should be. Derived, `formula` is
-		 * a generalisation of the other two rather than a third rule: `to: '0'` is
-		 * `empty` and `to: '3'` is `full` on a field with that ceiling.
-		 */
-		return { number: () => number, flag: number >= 1 };
+		return { amount: number };
 	}
 	/*
 	 * `full`, and the whole of the work is here.
@@ -746,18 +817,322 @@ function resetWrite(
 			!recordsOwnMax(field) &&
 			field.max === undefined,
 	);
-	if (missing !== undefined) {
-		return {
-			error: `the field "${fieldLabel(missing)}" has no maximum to restore to. Give it one, or set this trigger to empty.`,
+	if (missing !== undefined) return { error: noMaximum(missing) };
+	return {};
+}
+
+/**
+ * What one field of one record is written as under an action, or null where
+ * nothing is written (`docs/features/record-set-reset-field-targeting.md`,
+ * Part 3).
+ *
+ * **One writer for the binding naming a field and the binding naming none**, on
+ * `docs/PATTERNS.md` §1's one-step tier: what `empty`, `full` and `formula` mean
+ * for a counter and a flag is a policy, and two copies of it could only drift —
+ * a flag set on at one amount under **Every field** and at another under
+ * **Acts on**. `amount` is `formula`'s, worked out by the caller in whichever
+ * scope its binding reads: once for the sheet, or once per record.
+ *
+ * - A `number` is written through the join, so the ceiling survives every
+ *   action: an emptied counter is `Uses: 0 / 3` and never `Uses: 0`, since a
+ *   reset that deleted the reader's own ceiling would be Constraint 4 broken by
+ *   the one control whose job is to restore. The number is held to whichever
+ *   ceiling applies, so a `formula` writing 3 into a record whose ceiling is 2
+ *   writes 2. Under `full`, a record with no ceiling of its own is null —
+ *   skipped, and never written as a zero, which `resetWrite` argues.
+ * - A `toggle`'s flag is **derived from the amount rather than set true** under
+ *   `formula`, which is `track.ts`'s rule for a flag card: set unconditionally,
+ *   `to: '0'` wrote zero into every counter *and turned every toggle on*.
+ *   Derived, `formula` generalises the other two rather than being a third
+ *   rule: `to: '0'` is `empty` and `to: '3'` is `full` on a field with that
+ *   ceiling.
+ * - Anything else — a `level` above all — is left alone by every action.
+ */
+function fieldWrite(
+	field: RecordField,
+	action: NonNullable<ResetBinding['action']>,
+	amount: number | undefined,
+	raw: string,
+): string | null {
+	const type = fieldType(field);
+	if (type === 'toggle') {
+		return flagText(action === 'formula' ? (amount ?? 0) >= 1 : action === 'full');
+	}
+	if (type !== 'number') return null;
+	const value =
+		action === 'empty'
+			? 0
+			: action === 'formula'
+				? (amount ?? null)
+				: recordsOwnMax(field)
+					? recordCeiling(field, raw)
+					: (field.max ?? null);
+	if (value === null) return null;
+	return withValue(raw, boundedText(String(value), fieldBounds(field, raw)));
+}
+
+/**
+ * How many records something happened on, in the words a list's problem lines
+ * use: `every feature` where it was all of the readable ones, else `1 feature`
+ * or `2 features`.
+ *
+ * One spelling for the `visibleWhen` problem line and a reset's refusal, which
+ * both count failed records against the readable ones (`docs/PATTERNS.md` §1's
+ * one-step tier: two copies of a count's wording can only drift).
+ */
+function recordCount(count: number, readable: number, noun: string): string {
+	const lower = noun.toLowerCase();
+	if (count >= readable) return `every ${lower}`;
+	return `${count} ${lower}${count === 1 ? '' : 's'}`;
+}
+
+/**
+ * Which records a binding's `where` admits, or why that could not be told
+ * (`docs/features/record-set-reset-scope.md`).
+ *
+ * **Null where the binding holds no condition**: every readable record, and no
+ * reach, so the confirmation stays the bare label rather than gaining "7 of 7".
+ *
+ * **Evaluated once per record in that record's own scope**, which is the grammar
+ * `visibleWhen` fixed — the stored layer, then the sheet, never a computed field
+ * — and the answer has to be true or false. **It fails closed, and whole**: one
+ * record whose condition cannot be worked out, whether the name is unknown, the
+ * text will not parse or it came to a number, and the binding writes nothing on
+ * this list. That is the opposite of `visibleWhen`'s fail-open on purpose: on a
+ * sheet the worse way to be wrong is a hidden value, and at a rest it is writing
+ * records the author excluded, while writing nothing and saying so is the
+ * direction a reader can recover from. A partial rest would leave them
+ * reconciling record by record; the sentence names the first record instead, so
+ * the fix is one field away.
+ *
+ * **An unreadable record is never evaluated**: it is left byte-identical, as
+ * every reset leaves it, and counts in `of` because the reader sees it.
+ */
+function admittedRecords(
+	config: RecordSetConfig,
+	records: readonly RecordEntry[],
+	reset: ResetBinding,
+	context: ResetContext,
+): { error: string } | { admitted: ReadonlySet<number>; reach: ResetReach } | null {
+	const condition = heldCondition(reset.where);
+	if (typeof condition !== 'string') return null;
+	const noun = recordNoun(config).toLowerCase();
+	const admitted = new Set<number>();
+	let readable = 0;
+	let failed = 0;
+	let first: { name: string; why: string } | null = null;
+	for (const [at, record] of records.entries()) {
+		if (record.error !== null) continue;
+		readable += 1;
+		const scope = storedLayer(config, record);
+		const value = context.resolve('reset.where', scope);
+		if (typeof value === 'boolean') {
+			if (value) admitted.add(at);
+			continue;
+		}
+		failed += 1;
+		first ??= {
+			name: recordLabel(record.name, noun),
+			why:
+				value === null
+					? (context.explain('reset.where', scope) ??
+						'the condition did not resolve.')
+					: `it came to "${String(value)}", which is not true or false.`,
 		};
 	}
-	return {
-		number: (field, record) =>
-			recordsOwnMax(field)
-				? recordCeiling(field, record.fields[field.key])
-				: (field.max ?? null),
-		flag: true,
-	};
+	if (first !== null) {
+		const on = failedOn(failed, readable, first.name, noun);
+		return {
+			error: `its condition under Only where could not be worked out on ${on}, so it resets none: ${first.why} Fix it under Only where in the layout editor.`,
+		};
+	}
+	return { admitted, reach: { reached: admitted.size, of: records.length } };
+}
+
+/**
+ * Which records a whole-binding failure happened on, for the sentence that says
+ * so: `every feature`, `"Rage"`, or `2 features, starting with "Rage"`.
+ *
+ * The count is `recordCount`, which the list's own `visibleWhen` problem line
+ * reads too; what this adds is the first record's name wherever not every record
+ * failed, because a reset refuses the whole list and the reader has to know
+ * which record to go and fix, where a shown field is already on screen.
+ *
+ * **One spelling for a condition that will not work out and an amount that will
+ * not** (`docs/features/record-set-reset-field-targeting.md`, Part 4), on §1's
+ * one-step tier: two copies of a count's wording could only drift.
+ */
+function failedOn(
+	failed: number,
+	readable: number,
+	first: string,
+	noun: string,
+): string {
+	if (failed >= readable) return recordCount(failed, readable, noun);
+	return failed === 1
+		? `"${first}"`
+		: `${recordCount(failed, readable, noun)}, starting with "${first}"`;
+}
+
+/** Whether a field stores a value a reset trigger can restore. */
+function restorable(field: RecordField): boolean {
+	const type = fieldType(field);
+	return type === 'number' || type === 'toggle';
+}
+
+/**
+ * Which fields a reset binding may name, and why one refuses an action
+ * (`docs/features/record-set-reset-field-targeting.md`, Part 1).
+ *
+ * **One list, two readers**, Table's own arrangement: the layout editor draws
+ * its **Acts on** picker from this and `applyReset` looks a binding up in it, so
+ * the two cannot disagree about which fields are eligible or about why one
+ * refuses an action.
+ *
+ * `number` and `toggle` only. A `computed` field stores nothing and a `modifier`
+ * field holds words; a `level` is left out on the ground the Table entry
+ * recorded — a rest restoring a graded level has no reading in any system anyone
+ * can name — and every action already leaves one alone.
+ *
+ * **Only a field-owned ceiling refuses `full`.** A field whose ceiling is each
+ * record's refuses nothing: a record with none is skipped at the press rather
+ * than failed, which `resetWrite` argues and which the editor cannot see.
+ */
+function resetColumnsOf(config: RecordSetConfig): ResetColumn[] {
+	return (
+		(config.fields ?? [])
+			// A field with no key is one `configError` refuses, but the editor
+			// does not run `read`, and an option valued `''` would persist
+			// `column: ""`, which `parseBinding` refuses outright.
+			.filter((field) => (field.key ?? '').trim() !== '')
+			.filter(restorable)
+			.map((field) => {
+				const uncapped =
+					fieldType(field) === 'number' &&
+					!recordsOwnMax(field) &&
+					field.max === undefined;
+				return {
+					key: field.key,
+					...(field.name !== undefined && field.name.trim() !== ''
+						? { label: field.name }
+						: {}),
+					...(uncapped ? { refuses: { full: noMaximum(field) } } : {}),
+				};
+			})
+	);
+}
+
+/**
+ * Why `full` cannot restore a field whose ceiling is the field's and missing.
+ * One sentence for the binding naming the field and the binding naming none,
+ * which both reach it.
+ */
+function noMaximum(field: RecordField): string {
+	return `the field "${fieldLabel(field)}" has no maximum to restore to. Give it one, or set this trigger to empty.`;
+}
+
+/**
+ * A binding that names a field: that field, and only that field, of each record
+ * the binding reaches (`docs/features/record-set-reset-field-targeting.md`,
+ * Parts 3 and 4).
+ *
+ * **Every other field is left out of the delta**, so a reached record's `Save DC`
+ * keeps its bytes when its `Uses` is refilled — the whole of what naming the field
+ * is for. The per-field rules are `resetWrite`'s, restricted to one field, and
+ * every write still goes through the join so a reader-set ceiling survives.
+ *
+ * **`full` fails only on the named field**: its refusal is the one `resetColumns`
+ * declares, so a DC with no maximum no longer blocks refilling `Uses`.
+ *
+ * **`to` is worked out on each reached record, in that record's own scope** —
+ * the stored layer, then the sheet, never a computed field — which is the grammar
+ * `where` already uses, and only after `where` has been worked out on every
+ * readable record, so a broken condition is the one reported. It fails closed and
+ * whole, as `where` does: one record whose amount cannot be worked out and the
+ * binding writes nothing on this list, with the sentence naming the first.
+ */
+function fieldReset(
+	config: RecordSetConfig,
+	records: readonly RecordEntry[],
+	reset: ResetBinding & { action: NonNullable<ResetBinding['action']> },
+	context: ResetContext,
+): ResetResult<RecordSetData> {
+	const named = resetColumnsOf(config).find(
+		(entry) => entry.key === reset.column,
+	);
+	const field = (config.fields ?? []).find(
+		(entry) => entry.key === named?.key,
+	);
+	if (named === undefined || field === undefined) {
+		// Two mistakes with two fixes, told apart as Table tells them apart: a
+		// field that is gone wants the trigger pointed elsewhere, and one that
+		// stores no restorable value wants a different field.
+		const declared = (config.fields ?? []).some(
+			(entry) => entry.key === reset.column,
+		);
+		return {
+			ok: false,
+			error: declared
+				? `the field "${reset.column ?? ''}" holds no value a trigger can restore. Point this trigger at a number or toggle field instead.`
+				: `this list has no field called "${reset.column ?? ''}". Point the trigger at one it has, or remove the binding.`,
+		};
+	}
+	const refusal = named.refuses?.[reset.action];
+	if (refusal !== undefined) return { ok: false, error: refusal };
+
+	const scope = admittedRecords(config, records, reset, context);
+	if (scope !== null && 'error' in scope) return { ok: false, error: scope.error };
+	const reached = [...records.entries()].filter(
+		([at, record]) =>
+			record.error === null && (scope === null || scope.admitted.has(at)),
+	);
+
+	const amounts = new Map<number, number>();
+	if (reset.action === 'formula') {
+		const noun = recordNoun(config).toLowerCase();
+		const readable = records.filter((record) => record.error === null).length;
+		let failed = 0;
+		let first: { name: string; why: string } | null = null;
+		for (const [at, record] of reached) {
+			const layer = storedLayer(config, record);
+			const value = context.resolve('reset.to', layer);
+			const number = value === null ? NaN : Number(value);
+			if (Number.isFinite(number)) {
+				amounts.set(at, number);
+				continue;
+			}
+			failed += 1;
+			first ??= {
+				name: recordLabel(record.name, noun),
+				why:
+					value === null
+						? (context.explain('reset.to', layer) ??
+							'its reset formula is empty.')
+						: `it came to "${String(value)}", which is not a number.`,
+			};
+		}
+		if (first !== null) {
+			const on = failedOn(failed, readable, first.name, noun);
+			return {
+				ok: false,
+				error: `its reset formula could not be worked out on ${on}, so it resets none: ${first.why} Fix it under Resets to in the layout editor.`,
+			};
+		}
+	}
+
+	const next: RecordSetData = { records: {} };
+	for (const [at, record] of reached) {
+		const written = fieldWrite(
+			field,
+			reset.action,
+			amounts.get(at),
+			record.fields[field.key] ?? '',
+		);
+		if (written !== null) next.records[at] = { fields: { [field.key]: written } };
+	}
+	return scope === null
+		? { ok: true, data: next }
+		: { ok: true, data: next, reach: scope.reach };
 }
 
 /** One record's stored pieces, with the delta applied and nothing else touched. */
@@ -805,9 +1180,19 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 	type: 'record-set',
 	description: 'A list of named entries, each with a few typed fields and a paragraph of prose.',
 	storage: 'markdown',
-	// `*` stands for one path segment: every field's formula. `reset.*.to` is the
-	// reset expression, at the index of the binding being applied.
-	formulaFields: ['fields.*.formula', 'reset.*.to'],
+	// `*` stands for one path segment: every field's formula, and every field's
+	// condition — declared so a paste rewrites an id a condition reads and the
+	// resolver reaches it by the field's declared index. `reset.*.to` is the
+	// reset expression, at the index of the binding being applied, and
+	// `reset.*.where` the condition choosing which records it reaches: declaring
+	// it is what says this component can check one, so the sheet hands it a
+	// binding carrying one and the editor draws **Only where**.
+	formulaFields: [
+		'fields.*.formula',
+		'fields.*.visibleWhen',
+		'reset.*.to',
+		RESET_CONDITION_FIELD,
+	],
 	configFields: [
 		{
 			key: 'recordName',
@@ -839,6 +1224,13 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				// uses is the record's rather than the layout's. Table does not ask
 				// for it, which is what keeps this feature out of Table.
 				holderMax: true,
+				// A body to move a field into is the other thing this component has
+				// that a Table does not, so the same opt-in holds it out of Table.
+				placement: true,
+				// And a condition on a field, which only this component draws: a
+				// Table draws every column on every row, so the editor reports a
+				// condition there instead of offering the input.
+				visibleWhen: true,
 				// The strip is the component's, and a per-field hide would leave a
 				// ring unnamed, which is what the strip is for. The *key* is still
 				// read and still round-trips.
@@ -862,7 +1254,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			// `docs/features/component-rename-migration.md`).
 			addressesEntry: { fence: 'record' },
 			description:
-				"The typed values every record holds, each an entry in that record's block in the note. Renaming a key moves that entry in every record, in every note on this layout. Text is not offered: words a reader reads belong in the record's body, where they may hold links. A number field with a maximum is a uses counter: the field draws that maximum beside its value, and a reset trigger restores it to that maximum. A number field's maximum may belong to the field, so every record shares it, or to each record, so a reader types it on the sheet — and a reset restores each record to whichever one applies.",
+				"The typed values every record holds, each an entry in that record's block in the note. Renaming a key moves that entry in every record, in every note on this layout. Text is not offered: words a reader reads belong in the record's body, where they may hold links. A number field with a maximum is a uses counter: the field draws that maximum beside its value, and a reset trigger restores it to that maximum. A number field's maximum may belong to the field, so every record shares it, or to each record, so a reader types it on the sheet — and a reset restores each record to whichever one applies. Tick \"Inside the opened record\" for a value read once and changed rarely: it draws above the record's prose and is not shown while the record is closed. A field used every turn belongs on the summary line. Write a condition in \"Shown when\", such as Recharges == 1 || Recharges == 2, to draw a field only on the records where it holds. A hidden field keeps its value and still counts in every formula, modifier and reset, so a when clause reading a hidden toggle still applies. A level is read by its position, from 0 for the first name, so reordering a level's names changes what a condition reading it means.",
 		},
 		{
 			key: 'hideLabel',
@@ -1113,8 +1505,23 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		return joinRecords(next);
 	},
 
+	resetColumns(config): readonly ResetColumn[] {
+		return resetColumnsOf(config);
+	},
+
+	// A binding naming no field is every field, which is what every Record set
+	// binding meant before one could name a field, so every layout written then
+	// means what it meant (`docs/features/record-set-reset-field-targeting.md`,
+	// Part 2).
+	resetWhole: 'Every field',
+
 	/**
 	 * Restore every record's counters (SPEC §6).
+	 *
+	 * **Where the binding names a field, that field alone**: `fieldReset` above,
+	 * with `to` worked out on each record. What follows is the binding naming
+	 * none, **Every field**, unchanged — every `number` and `toggle` field of each
+	 * record reached, with `to` resolved once in sheet scope.
 	 *
 	 * **The counter is on the record and the reset reaches it through here**,
 	 * which is what a separate Track or Pool beside the list could never do: a
@@ -1135,42 +1542,56 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 	 * names `full` and `empty` for a number and a two-state flag, and a graded
 	 * level's "full" is a ladder position rather than a ceiling the layout stated.
 	 * A record whose fence will not read is left alone too, for `write`'s reason.
+	 *
+	 * **A binding's `where` narrows which records are reached, and nothing else**
+	 * (`docs/features/record-set-reset-scope.md`): `admittedRecords` argues how it
+	 * is evaluated and how it fails, and the reach it counts rides back on the
+	 * result so the confirmation shows the number this evaluation produced.
+	 * Here `to` is resolved once, in sheet scope: every `number` field of a
+	 * reached record is written, so a per-record `Uses + 1` would land in a DC
+	 * beside it — which is why a per-record amount is a binding that names its
+	 * field.
 	 */
 	applyReset(data, config, reset, context): ResetResult<RecordSetData> {
 		const next: RecordSetData = { records: {} };
 		// A binding about the buffer alone, and this component declares none, so
 		// there is nothing to do and nothing went wrong.
-		if (reset.action === undefined) return { ok: true, data: next };
+		const { action } = reset;
+		if (action === undefined) return { ok: true, data: next };
+		if (reset.column !== undefined) {
+			return fieldReset(config, recordViews(data), { ...reset, action }, context);
+		}
+		// `to` first, once and in sheet scope, before any record is looked at: it
+		// fails exactly as it failed before a binding could carry a condition.
 		const write = resetWrite(config, reset, context);
 		if ('error' in write) return { ok: false, error: write.error };
-		recordViews(data).forEach((record, at) => {
+		const records = recordViews(data);
+		const scope = admittedRecords(config, records, reset, context);
+		if (scope !== null && 'error' in scope) {
+			return { ok: false, error: scope.error };
+		}
+		records.forEach((record, at) => {
 			if (record.error !== null) return;
+			// A record the condition excludes is not in the delta at all, so its
+			// bytes are identical after the press. **Records, and not fields**:
+			// within a reached record every `number` field is written, which is
+			// what a binding naming no field means.
+			if (scope !== null && !scope.admitted.has(at)) return;
 			const fields: Record<string, string> = {};
 			for (const field of storedFields(config)) {
-				const type = fieldType(field);
-				if (type === 'number') {
-					const raw = record.fields[field.key] ?? '';
-					const value = write.number(field, record);
-					// **Written through the join, so the ceiling survives every
-					// action.** An emptied counter is `Uses: 0 / 3` and never
-					// `Uses: 0`: a reset that deleted the reader's own ceiling would
-					// be Constraint 4 broken by the one control whose job is to
-					// restore. And the number is held to whichever ceiling applies,
-					// so a `formula` writing 3 into a record whose ceiling is 2
-					// writes 2.
-					if (value !== null) {
-						fields[field.key] = withValue(
-							raw,
-							boundedText(String(value), fieldBounds(field, raw)),
-						);
-					}
-				} else if (type === 'toggle') {
-					fields[field.key] = flagText(write.flag);
-				}
+				const written = fieldWrite(
+					field,
+					action,
+					write.amount,
+					record.fields[field.key] ?? '',
+				);
+				if (written !== null) fields[field.key] = written;
 			}
 			if (Object.keys(fields).length > 0) next.records[at] = { fields };
 		});
-		return { ok: true, data: next };
+		return scope === null
+			? { ok: true, data: next }
+			: { ok: true, data: next, reach: scope.reach };
 	},
 
 	render(container, config, data, context): void {
@@ -1187,6 +1608,12 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 
 		const noun = recordNoun(config);
 		const fields = config.fields ?? [];
+		/**
+		 * The fields the summary line draws, and so the only ones the strip names
+		 * and the subgrid gives a track: a body field has no column, so counting it
+		 * would put a heading over nothing or a hole in every record's line.
+		 */
+		const summaryFields = fields.filter((field) => !inBody(field));
 		const records = recordViews(data);
 
 		/**
@@ -1211,13 +1638,13 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		 */
 		const headed =
 			config.fieldHeadings === true &&
-			fields.length > 0 &&
+			summaryFields.length > 0 &&
 			records.some((record) => record.error === null);
 
 		const block = element(
 			'div',
 			headed
-				? `sheetsmith-placed sheetsmith-record-set sheetsmith-record-set-headed sheetsmith-record-set-fields-${Math.min(fields.length, MAX_TABULATED_FIELDS)}`
+				? `sheetsmith-placed sheetsmith-record-set sheetsmith-record-set-headed sheetsmith-record-set-fields-${Math.min(summaryFields.length, MAX_TABULATED_FIELDS)}`
 				: 'sheetsmith-placed sheetsmith-record-set',
 			container,
 		);
@@ -1226,7 +1653,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		if (headed) {
 			block.style.setProperty(
 				'--sheetsmith-record-fields',
-				String(fields.length),
+				String(summaryFields.length),
 			);
 		}
 		// The placement, handed to CSS as the box's own floor: the box is `height`
@@ -1264,7 +1691,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			 */
 			const strip = element('div', 'sheetsmith-record-strip', list);
 			strip.setAttribute('aria-hidden', 'true');
-			for (const field of fields) {
+			for (const field of summaryFields) {
 				element(
 					'span',
 					'sheetsmith-card-abbreviation',
@@ -1453,9 +1880,46 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		/** The name fields drawn, so a landing after **Add** can reach the last. */
 		const nameFields: HTMLInputElement[] = [];
 
+		/**
+		 * Every conditioned field whose condition could not be worked out, by its
+		 * declared index: on how many records, and the first reason met, in file
+		 * order. Filled while the records draw, reported once per field above them.
+		 */
+		const failedConditions = new Map<number, { count: number; why: string }>();
+		/** Records a condition was evaluated on, which is every one that read. */
+		const readable = records.filter((record) => record.error === null).length;
+
 		records.forEach((record, at) => {
 			drawRecord(record, at);
 		});
+
+		/*
+		 * **One line per failing field, not per record, and above the records**,
+		 * inside the scrolling list so it never grows the placed box. The field is
+		 * drawn on every record it failed on, so what the line owes is the reason:
+		 * a rename that migrated every note while every condition reading the old
+		 * key stopped resolving would otherwise be every hidden field reappearing
+		 * with nobody told why.
+		 *
+		 * The first children of whatever holds the records — the list itself, or
+		 * on a headed list the records' own wrapper, which is `display: contents`
+		 * until the strip draws — so the line sits under the strip rather than in
+		 * a grid track meant for it.
+		 */
+		const lines = [...failedConditions.entries()]
+			.sort(([left], [right]) => left - right)
+			.map(([index, failed]) => {
+				const field = fields[index] as RecordField;
+				const where = recordCount(failed.count, readable, noun);
+				// Appended, then moved to the front with the rest below.
+				return element(
+					'div',
+					'sheetsmith-error',
+					host,
+					`"${fieldLabel(field)}" is shown on ${where} because its condition could not be worked out: ${failed.why} Fix the condition under Shown when in the layout editor.`,
+				);
+			});
+		if (lines.length > 0) host.prepend(...lines);
 
 		// The add control sits in the last position of the list, so it reads as the
 		// next record rather than as chrome beside it — `.sheetsmith-table-add`'s
@@ -1552,9 +2016,42 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				'sheetsmith-record-fields',
 				summary,
 			);
+			/*
+			 * **Partitioned once, and each field keeps its declared index.** A
+			 * computed field resolves `fields.<index>.formula`, which is its position
+			 * in `config.fields` and in neither half — so iterating a filtered array
+			 * with its own indices would resolve a computed field declared after a
+			 * body field against its neighbour's formula.
+			 */
+			const inBlock: {
+				field: RecordField;
+				index: number;
+				shown: boolean;
+			}[] = [];
+			/*
+			 * **The record's stored layer, built once and read by both**: every
+			 * computed field's formula and every field's condition, on the summary
+			 * line and in the body. A condition therefore reaches exactly what a
+			 * computed field reaches, and reads no other computed field (SPEC §5).
+			 * A record whose fence did not read draws no fields, so it evaluates
+			 * nothing.
+			 */
+			const scope = record.error === null ? storedScope(record) : {};
 			if (record.error === null) {
+				/** A summary field's own track under the strip, from 1. */
+				let track = 0;
 				fields.forEach((field, index) => {
-					drawField(fieldRow, row, field, index, record, at, named);
+					const shown = isShown(field, index, scope);
+					if (inBody(field)) {
+						inBlock.push({ field, index, shown });
+						return;
+					}
+					track += 1;
+					drawField(fieldRow, row, field, index, record, at, named, false, {
+						shown,
+						track: headed ? track : null,
+						scope,
+					});
 				});
 			}
 
@@ -1564,8 +2061,95 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				element('div', 'sheetsmith-error', row, record.error);
 			}
 
+			/*
+			 * **The body's first child, and drawn only where there is something in
+			 * it**, so a layout with no body field draws the tree it always drew: no
+			 * block, no class, no second grid row. The prose layers after it are
+			 * unchanged and stay stacked in one cell, one row down.
+			 *
+			 * In the DOM whether the record is open or closed, as the prose field
+			 * already is: `hidden="until-found"` on the body hides the block with it,
+			 * the view's focus restoration counts the same controls either way, and
+			 * find-in-page has the names to reach.
+			 */
+			/*
+			 * **Where every body field on this record is hidden, the block is too**,
+			 * and the body loses the class that gives it a second row — so the prose
+			 * takes the first and no empty step is left above it. The block stays in
+			 * the DOM, hidden, for the same reason a hidden field does: the view
+			 * restores focus by a control's index in the cell, and removing controls
+			 * would renumber every one after them.
+			 */
+			if (inBlock.length > 0) {
+				const anyShown = inBlock.some((one) => one.shown);
+				if (anyShown) {
+					bodyEl.classList.add('sheetsmith-record-body-has-fields');
+				}
+				const block = element(
+					'div',
+					'sheetsmith-record-body-fields',
+					bodyEl,
+				);
+				if (!anyShown) block.setAttribute('hidden', '');
+				for (const { field, index, shown } of inBlock) {
+					drawField(block, row, field, index, record, at, named, true, {
+						shown,
+						track: null,
+						scope,
+					});
+				}
+			}
+
 			drawBody(bodyEl, row, record, at, named);
 			paintDisclosure();
+		}
+
+		/**
+		 * One record's names as a computed field or a condition reads them: every
+		 * stored field's value half, never a computed one.
+		 */
+		function storedScope(record: RecordEntry): Record<string, FieldValue> {
+			return storedLayer(config, record);
+		}
+
+		/**
+		 * Whether this field is drawn on this record, and a failed condition noted
+		 * for the list's problem line.
+		 *
+		 * **Fail-open**, the opposite of the editor's own `conditionMet`: a
+		 * condition that does not resolve, or does not come to true or false,
+		 * shows the field. A hidden value is a counter the reader cannot see still
+		 * counting, which is the worse way to be wrong on a sheet.
+		 *
+		 * **Resolved by the field's declared index**, never by its place in a
+		 * filtered half: the partition into summary and body keeps each field's
+		 * index for exactly this, and a renumbered half reads a neighbour's
+		 * condition.
+		 *
+		 * **Evaluated here and nowhere else.** `scopeRows`, `scopeModifiers` and
+		 * `applyReset` never ask, which is what keeps visibility a sink: a
+		 * condition reads values and no value reads visibility.
+		 */
+		function isShown(
+			field: RecordField,
+			index: number,
+			scope: Record<string, FieldValue>,
+		): boolean {
+			const condition = honouredCondition(field);
+			if (condition === null) return true;
+			if (typeof condition === 'boolean') return condition;
+			const path = `fields.${index}.visibleWhen`;
+			const value = context.resolveField(path, scope);
+			if (typeof value === 'boolean') return value;
+			const why =
+				value === null
+					? (context.explainField?.(path, scope) ??
+						'The condition did not resolve.')
+					: `It came to "${String(value)}", which is not true or false.`;
+			const failed = failedConditions.get(index);
+			if (failed === undefined) failedConditions.set(index, { count: 1, why });
+			else failed.count += 1;
+			return true;
 		}
 
 		/**
@@ -1681,6 +2265,36 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			record: RecordEntry,
 			at: number,
 			named: string,
+			/**
+			 * Whether this control is drawn inside the opened record. The one
+			 * argument that differs between the two placements, and it does two
+			 * things only: the field's name is drawn beside every type, since no
+			 * strip ever names a body field, and a ring is told its name is on
+			 * screen. Everything else — the commit, the delta, the refusals — is the
+			 * same code with the same arguments.
+			 */
+			body: boolean,
+			drawn: {
+				/**
+				 * Whether its condition holds on this record. A hidden field is the
+				 * same control on the same commit path with `hidden` on its cell,
+				 * which is `display: none`: out of layout, the accessibility tree,
+				 * the tab order and find-in-page, and still in the DOM, so every
+				 * control's index in the cell — which is what the view restores
+				 * focus by — is the same whatever the conditions say. Plain
+				 * `hidden`, never `until-found`: find-in-page revealing a field its
+				 * condition hid would be wrong.
+				 */
+				shown: boolean;
+				/**
+				 * Its track under the strip, from 1, on a headed list's summary line
+				 * only. Explicit rather than auto-placed, so a field after a hidden
+				 * one stays under its own heading instead of sliding one track left.
+				 */
+				track: number | null;
+				/** The record's stored layer, which a computed field reads. */
+				scope: Record<string, FieldValue>;
+			},
 		): void {
 			const type = fieldType(field);
 			const raw = record.fields[field.key] ?? '';
@@ -1691,6 +2305,21 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				`sheetsmith-record-field sheetsmith-record-field-${type}`,
 				into,
 			);
+			if (!drawn.shown) cell.setAttribute('hidden', '');
+			if (drawn.track !== null) {
+				cell.style.setProperty(
+					'--sheetsmith-record-track',
+					String(drawn.track),
+				);
+			}
+			// A number's name is drawn beside it in the shared secondary clothes,
+			// always: the stylesheet hides it only where a strip is over it, so the
+			// one query decides both and a number can never have neither. In the
+			// body every type draws it, and no rule hides it there — the strip's
+			// rules are scoped to the summary line.
+			if (body || type === 'number') {
+				element('span', 'sheetsmith-card-abbreviation', cell, name);
+			}
 			const commit = (next: string): void => {
 				context.onChange({
 					records: { [at]: { fields: { [field.key]: next } } },
@@ -1698,7 +2327,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			};
 
 			if (type === 'computed') {
-				drawComputed(cell, field, index, record, accessible);
+				drawComputed(cell, field, index, drawn.scope, accessible);
 				return;
 			}
 			if (type === 'modifier') {
@@ -1712,16 +2341,13 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 					raw,
 					type === 'level',
 					accessible,
+					body,
 					commit,
 				);
 				return;
 			}
 
-			// A number, whose entry may carry its ceiling beside its value. Its name
-			// is drawn beside it in the shared secondary clothes, always: the
-			// stylesheet hides it only where a strip is over it, so the one query
-			// decides both and a number can never have neither.
-			element('span', 'sheetsmith-card-abbreviation', cell, name);
+			// A number, whose entry may carry its ceiling beside its value.
 			const ownMax = recordsOwnMax(field);
 			const entry = splitBounded(raw);
 			const input = element('input', 'sheetsmith-record-input', cell);
@@ -1729,6 +2355,16 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			input.inputMode = 'numeric';
 			input.value = entry.value;
 			input.setAttribute('aria-label', accessible);
+			/*
+			 * **An empty body number says it is empty; a summary one does not need
+			 * to.** On the summary line a blank value sits in a line of values, under
+			 * a heading or beside its neighbours, and the slot reads as a slot. In the
+			 * body a name followed by nothing reads as missing content, or as a
+			 * subheading over the prose, so the field takes Pool's own `—`, the one a
+			 * record-owned ceiling already shows. Body only, so the summary line — and
+			 * every layout without a body field — draws exactly what it drew.
+			 */
+			if (body) input.placeholder = '—';
 			/*
 			 * **A ceiling is drawn beside the value, in Pool's own vocabulary
 			 * rather than a second spelling of it.**
@@ -1986,20 +2622,11 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			cell: HTMLElement,
 			field: RecordField,
 			index: number,
-			record: RecordEntry,
+			/** The record's stored layer, shared with its conditions. */
+			scope: Record<string, FieldValue>,
 			accessible: string,
 		): void {
 			const value = element('div', 'sheetsmith-record-value', cell);
-			const scope: Record<string, FieldValue> = {};
-			for (const other of fields) {
-				if (fieldType(other) === 'computed') continue;
-				// The value half, as `recordValues` does: `3 - Uses` reads `2` from an
-				// entry that says `2 / 3`.
-				scope[other.key] = typedValue(
-					other,
-					storedValue(other, record.fields[other.key]),
-				);
-			}
 			const resolved =
 				field.formula === undefined
 					? null
@@ -2052,6 +2679,8 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			raw: string,
 			graded: boolean,
 			accessible: string,
+			/** Drawn in the body, where its name span sits beside it at every width. */
+			body: boolean,
 			commit: (next: string) => void,
 		): void {
 			const count = graded ? levelCount(field) : 1;
@@ -2114,6 +2743,13 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			 * at every width. What a wide headed list costs is a tooltip restating
 			 * the heading — and it reads `Shield Prepared`, so it names the record as
 			 * well, which no heading can.
+			 *
+			 * **In the body the fact is knowable, and it is true.** A body field draws
+			 * its own name beside its control at every width and no strip or query
+			 * touches it, so a body ring answers `true` — Table's position, where the
+			 * heading is there at every width: no tooltip and no long press repeating
+			 * a name the reader can see, and a named level still gets its level's
+			 * word, which the glyph cannot draw.
 			 */
 			bindRingControl({
 				button,
@@ -2122,7 +2758,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				graded,
 				level: initial,
 				name: accessible,
-				nameOnScreen: false,
+				nameOnScreen: body,
 				onSet: (level) => commit(stateOf(level)),
 			});
 		}

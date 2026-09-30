@@ -38,7 +38,7 @@ import { buildSheet } from '../formula/sheet';
 import { getSection, parseCharacter } from '../parse/character';
 import type { Layout } from '../parse/layout';
 import { DEFAULT_COLUMNS, parseLayout, serialiseLayout } from '../parse/layout';
-import { walkComponents } from '../parse/layout-walk';
+import { walkLayout } from '../view/grid-cells';
 import { parseModifierDefinitions } from '../parse/modifier-definitions';
 import { parseModifierTypes } from '../parse/modifier-types';
 import { parseTriggers } from '../parse/triggers';
@@ -69,7 +69,7 @@ function sheetFrom(layoutSource: string, noteSource: string) {
 	const { library, problems } = parseFunctions(layout.functions);
 	const note = parseCharacter(noteSource);
 
-	const prepared = walkComponents(layout.components).map(({ config }) => {
+	const prepared = walkLayout(layout.components).map(({ config }) => {
 		const component = getComponent(config.type);
 		if (!component) throw new Error(`No component of type "${config.type}".`);
 		const section = isContainer(component)
@@ -221,7 +221,7 @@ const TWELVE_COLUMN = (['Starter 5e', 'Starter PF2e'] as const).map(
 );
 
 describe.each(TWELVE_COLUMN)('%s shares the twelve-column architecture', (_name, layout) => {
-	const walked = walkComponents(layout.components).map(({ config }) => config);
+	const walked = walkLayout(layout.components).map(({ config }) => config);
 
 	it('puts a full-width tab set below the three columns', () => {
 		const width = layout.columns ?? DEFAULT_COLUMNS;
@@ -511,7 +511,7 @@ describe('the Forged in the Dark sheet is a whole game on one screen', () => {
 		STARTERS.find((one) => one.name === 'Starter Forged in the Dark')?.source,
 	);
 	const layout = parseLayout(source);
-	const walked = walkComponents(layout.components).map(({ config }) => config);
+	const walked = walkLayout(layout.components).map(({ config }) => config);
 
 	/** Every component as `id type col,row,width,height`, in walk order — read
 	 * off the built layout, on the 5e pin's own terms. */
@@ -782,7 +782,7 @@ describe('the PF2e sheet is a complete system sheet built to specification', () 
 		STARTERS.find((one) => one.name === 'Starter PF2e')?.source,
 	);
 	const layout = parseLayout(source);
-	const walked = walkComponents(layout.components).map(({ config }) => config);
+	const walked = walkLayout(layout.components).map(({ config }) => config);
 	const byId = (id: string) => {
 		const found = walked.find((config) => config.id === id);
 		if (!found) throw new Error(`No component "${id}" on the PF2e sheet.`);
@@ -1223,7 +1223,7 @@ describe('the 5e sheet is a complete system sheet', () => {
 		STARTERS.find((one) => one.name === 'Starter 5e')?.source,
 	);
 	const layout = parseLayout(source);
-	const walked = walkComponents(layout.components).map(({ config }) => config);
+	const walked = walkLayout(layout.components).map(({ config }) => config);
 
 	/**
 	 * Every component as `id type col,row,width,height`, in walk order.

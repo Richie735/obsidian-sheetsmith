@@ -33,3 +33,17 @@ export async function loadPlugin(
 	await plugin.onload();
 	return plugin;
 }
+
+/**
+ * Unload a plugin `loadPlugin` loaded, the way the app turns one off.
+ *
+ * `loadPlugin` runs `onload` itself rather than through `load()`, so the double
+ * has not marked the component loaded, and its `unload` would return without
+ * running anything. Marking it here is that one missing line, not a model of
+ * how the app unloads: which of the plugin's views close, and when, is the
+ * app's, and the double closes none (`docs/features/unsaveable-layout.md` §4).
+ */
+export function unloadPlugin(plugin: SheetsmithPlugin): void {
+	(plugin as unknown as { loaded: boolean }).loaded = true;
+	plugin.unload();
+}

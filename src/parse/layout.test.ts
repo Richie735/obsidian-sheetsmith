@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { LayoutParseError, mayHoldChildren, parseLayout, serialiseLayout } from './layout';
-import { componentsInside, walkComponents } from './layout-walk';
+import { componentsInside, everyLevelPlaced, walkComponents } from './layout-walk';
 import { ComponentConfig } from '../types';
 
 const VALID = JSON.stringify({
@@ -392,6 +392,160 @@ describe('parseLayout: reset bindings', () => {
 			]),
 		);
 		expect(parseLayout(serialiseLayout(layout))).toEqual(layout);
+	});
+
+	/*
+	 * `where` (`docs/features/record-set-reset-scope.md`): its shape is the file
+	 * format's, its text is contents, and it is not half of a binding's identity.
+	 */
+	it('carries a condition a binding holds', () => {
+		expect(
+			resetOf({ trigger: 'Short rest', action: 'full', where: 'Recharges == 1' }),
+		).toEqual([{ trigger: 'Short rest', where: 'Recharges == 1', action: 'full' }]);
+	});
+
+	it('refuses a condition that is not a string, naming the key', () => {
+		// Whether this component can check a condition at all is contents, and
+		// left to the press; a number where text belongs is the file's shape.
+		for (const where of [1, true, { is: 'Recharges == 1' }]) {
+			expect(() =>
+				parseLayout(withReset({ trigger: 'Short rest', action: 'full', where })),
+			).toThrow(/"where" must be a string\./);
+		}
+	});
+
+	it('carries a blank condition, which reads as absent at the press', () => {
+		// Unlike a blank `column`, which would collide with the binding naming
+		// none: an absent `where` is the ordinary binding, so a blank one is too.
+		expect(
+			resetOf({ trigger: 'Short rest', action: 'full', where: '  ' }),
+		).toEqual([{ trigger: 'Short rest', where: '  ', action: 'full' }]);
+	});
+
+	it('parses a binding without a condition to exactly the object it always did', () => {
+		expect(resetOf({ trigger: 'Short rest', action: 'full' })).toEqual([
+			{ trigger: 'Short rest', action: 'full' },
+		]);
+		expect(
+			Object.keys(resetOf({ trigger: 'Short rest', action: 'full' })?.[0] ?? {}),
+		).toEqual(['trigger', 'action']);
+	});
+
+	it('round-trips a layout carrying a condition byte for byte', () => {
+		// Carried between `column` and `action` in the object it rebuilds, so an
+		// editor-written layout reads back as the text it was written as.
+		const written = serialiseLayout(
+			parseLayout(
+				withReset([
+					{ trigger: 'Short rest', action: 'full', where: 'Recharges == 1' },
+					{ trigger: 'Long rest', column: 'Uses', action: 'empty', where: 'x' },
+				]),
+			),
+		);
+		expect(written).toContain('"where": "Recharges == 1"');
+		expect(serialiseLayout(parseLayout(written))).toBe(written);
+	});
+
+	it('still refuses two bindings on one trigger whatever their conditions say', () => {
+		// Overlap depends on the data, so no check on the file can tell a pair
+		// that is safe from one that is not; `bindingKey` stays trigger and column.
+		expect(() =>
+			parseLayout(
+				withReset([
+					{ trigger: 'Short rest', action: 'full', where: 'Recharges == 1' },
+					{ trigger: 'Short rest', action: 'empty', where: 'Recharges == 2' },
+				]),
+			),
+		).toThrow(/binds to "Short rest" more than once/);
+	});
+
+	/*
+	 * A binding naming the field it writes
+	 * (`docs/features/record-set-reset-field-targeting.md`, Part 5): the parser is
+	 * unchanged. Naming a field makes its refusal per field, and the one pair its
+	 * key cannot see — Every field beside a field — is refused where the
+	 * component's declaration can be read, never here.
+	 */
+	describe('on a component whose parts are fields', () => {
+		const typed = (type: string, reset: unknown) =>
+			JSON.stringify(
+				{
+					name: 'L',
+					components: [
+						{
+							id: 'rest_features',
+							type,
+							label: 'Rest features',
+							position: { col: 1, row: 1, width: 6, height: 3 },
+							reset,
+						},
+					],
+				},
+				null,
+				'\t',
+			);
+
+		it('refuses one field twice on one trigger, whatever the conditions say', () => {
+			for (const [first, second] of [
+				[undefined, undefined],
+				['Recharges == 1', undefined],
+				['Recharges == 1', 'Recharges == 4'],
+			] as const) {
+				expect(() =>
+					parseLayout(
+						typed('record-set', [
+							{ trigger: 'Short rest', column: 'Uses', action: 'full', ...(first ? { where: first } : {}) },
+							{
+								trigger: 'Short rest',
+								column: 'Uses',
+								action: 'formula',
+								to: 'Uses + 1',
+								...(second ? { where: second } : {}),
+							},
+						]),
+					),
+				).toThrow(/binds "Uses" to "Short rest" more than once/);
+			}
+		});
+
+		it('carries two fields on one trigger', () => {
+			expect(
+				parseLayout(
+					typed('record-set', [
+						{ trigger: 'Long rest', column: 'Used', action: 'empty' },
+						{ trigger: 'Long rest', column: 'Uses', action: 'full' },
+					]),
+				).components[0]?.reset,
+			).toHaveLength(2);
+		});
+
+		it('carries a binding naming no field beside one naming a field, on a Record set and a Table alike', () => {
+			for (const type of ['record-set', 'table']) {
+				expect(
+					parseLayout(
+						typed(type, [
+							{ trigger: 'Short rest', action: 'full' },
+							{ trigger: 'Short rest', column: 'Uses', action: 'full' },
+						]),
+					).components[0]?.reset,
+				).toHaveLength(2);
+			}
+		});
+
+		it('round-trips a field-naming Record set binding byte for byte', () => {
+			const text = typed('record-set', [
+				{
+					trigger: 'Short rest',
+					column: 'Uses',
+					where: 'Recharges == 1 || Recharges == 4',
+					action: 'formula',
+					to: 'Uses + 1',
+				},
+			]);
+			const written = serialiseLayout(parseLayout(text));
+			expect(written).toContain('"column": "Uses"');
+			expect(serialiseLayout(parseLayout(written))).toBe(written);
+		});
 	});
 
 	it('refuses a bad binding anywhere in the list', () => {
@@ -831,6 +985,15 @@ describe('parseLayout: components inside components', () => {
 			],
 		});
 
+	it('keeps a hand-written empty children list through a round trip', () => {
+		// The editor drops an emptied container's `children` key at the edit
+		// (`editor/reparent.ts`), not here: normalising it at serialise time
+		// would rewrite a file nobody edited.
+		const source = serialiseLayout(parseLayout(withChildren([])));
+		expect(serialiseLayout(parseLayout(source))).toBe(source);
+		expect(parseLayout(source).components[0]?.children).toEqual([]);
+	});
+
 	const leaf = (id: string, row = 1) => ({
 		id,
 		type: 'card',
@@ -898,6 +1061,24 @@ describe('parseLayout: components inside components', () => {
 		expect(() => parseLayout(source)).toThrow(LayoutParseError);
 		expect(() => parseLayout(source)).toThrow(/"DEEP"/);
 		expect(() => parseLayout(source)).toThrow(/one level deep/);
+		expect(() => parseLayout(source)).toThrow(/Move these components up a level\.$/);
+	});
+
+	it('refuses an empty list there too, naming the key rather than components it lacks', () => {
+		// Still refused, since the rule is the key and not what it holds; but
+		// "move these components up" named a fix with nothing to act on.
+		const source = withChildren([
+			{
+				id: 'inner',
+				type: 'group',
+				label: 'Inner',
+				position: at(1),
+				children: [{ ...leaf('deep'), children: [] }],
+			},
+		]);
+		expect(() => parseLayout(source)).toThrow(
+			'Component 1 ("Outer") component 1 ("Inner") component 1 ("DEEP") cannot have a "children" list: it already sits inside 2 containers, and a container may hold containers only one level deep. Remove its empty "children" list.',
+		);
 	});
 
 	it('refuses it whatever type the component is', () => {
@@ -1071,7 +1252,7 @@ describe('walkComponents', () => {
 	];
 
 	it('reads each level in grid order, children where their container sits', () => {
-		expect(walkComponents(LAYOUT).map((entry) => entry.config.id)).toEqual([
+		expect(walkComponents(LAYOUT, everyLevelPlaced).map((entry) => entry.config.id)).toEqual([
 			'first',
 			'group',
 			'inner_first',
@@ -1081,7 +1262,7 @@ describe('walkComponents', () => {
 	});
 
 	it('reports depth, parent, and the list a component lives in', () => {
-		const inner = walkComponents(LAYOUT)[2];
+		const inner = walkComponents(LAYOUT, everyLevelPlaced)[2];
 		expect(inner?.depth).toBe(1);
 		expect(inner?.parent?.id).toBe('group');
 		expect(inner?.siblings).toBe(LAYOUT[1]?.children);
@@ -1090,7 +1271,7 @@ describe('walkComponents', () => {
 	it('does not reorder the layout it was given', () => {
 		// A render must not rewrite its own input, and the editor removes
 		// through `siblings` by identity.
-		walkComponents(LAYOUT);
+		walkComponents(LAYOUT, everyLevelPlaced);
 		expect(LAYOUT.map((config) => config.id)).toEqual([
 			'last',
 			'group',
@@ -1105,7 +1286,7 @@ describe('walkComponents', () => {
 		// `componentsInside`. If those two orders ever differ, the sheet renders
 		// its cards in an order the name table and the tab order do not have —
 		// and the flat walk is the one nothing draws, so nothing would show it.
-		const walk = walkComponents(LAYOUT);
+		const walk = walkComponents(LAYOUT, everyLevelPlaced);
 		const descend = (parent: ComponentConfig | null): string[] =>
 			componentsInside(walk, parent).flatMap((config) => [
 				config.id,
@@ -1118,13 +1299,30 @@ describe('walkComponents', () => {
 		// Vacuity guard on the test above: a `componentsInside` that returned
 		// everything at every level would still flatten to the same sequence for
 		// a one-container layout read depth first.
-		expect(componentsInside(walkComponents(LAYOUT), null).map((c) => c.id)).toEqual(
+		expect(componentsInside(walkComponents(LAYOUT, everyLevelPlaced), null).map((c) => c.id)).toEqual(
 			['first', 'group', 'last'],
 		);
 		const group = LAYOUT[1] as ComponentConfig;
 		expect(
-			componentsInside(walkComponents(LAYOUT), group).map((c) => c.id),
+			componentsInside(walkComponents(LAYOUT, everyLevelPlaced), group).map((c) => c.id),
 		).toEqual(['inner_first', 'inner_second']);
+	});
+
+	it('keeps the file\'s order on a level whose children have no placement', () => {
+		// A Tab set's tabs, told apart by the caller's predicate because this
+		// file cannot ask the registry. The tabs' stored rows sort `inner_second`
+		// first, and the strip draws the file's order, so the walk must too — and
+		// only at that level: the top level is still read by position.
+		const unplacedInside = (parent: ComponentConfig | null): boolean =>
+			parent?.id !== 'group';
+		const walk = walkComponents(LAYOUT, unplacedInside);
+		expect(walk.map((entry) => entry.config.id)).toEqual([
+			'first',
+			'group',
+			'inner_second',
+			'inner_first',
+			'last',
+		]);
 	});
 
 	it('imports nothing from src/components to decide any of it', () => {
@@ -1145,8 +1343,8 @@ describe('walkComponents', () => {
 		// parsing — which normalises shared config and could reorder `children`
 		// without anything else noticing.
 		const parsed = parseLayout(JSON.stringify({ name: 'L', components: LAYOUT }));
-		expect(walkComponents(parsed.components).map((entry) => entry.config.id)).toEqual(
-			walkComponents(LAYOUT).map((entry) => entry.config.id),
+		expect(walkComponents(parsed.components, everyLevelPlaced).map((entry) => entry.config.id)).toEqual(
+			walkComponents(LAYOUT, everyLevelPlaced).map((entry) => entry.config.id),
 		);
 	});
 });

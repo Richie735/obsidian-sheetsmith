@@ -212,6 +212,15 @@ Measured against Obsidian's defaults (`--font-ui-small: 13px`,
   `--interactive-accent` measures 3.83:1 in both themes against a 4.5:1 bar.
   Both variables are the host's, and the plugin cannot substitute a colour of
   its own, so this is the host's pair and a custom accent moves it either way.
+- **A Track's over slash is a residual, accepted.** The blocked slash drawn on
+  a filled segment (`.sheetsmith-track-segment-over`) measures about **1.9:1**
+  against the fill — 1.92 light, 1.95 dark — under §3's 3:1 for a mark that
+  alone carries a state. Accepted on the granted ring's precedent, which is the
+  same `--text-muted` over the same accent at 1.95:1 (UI.md §9), and because
+  the over figure is not the only channel: the run's `aria-valuetext` and its
+  `title` say `5 of 3, 2 over`
+  (`docs/features/track-stored-value-past-shortened-run.md`). Do not report it
+  again; a change to it is a change to both marks.
 - **The level ring is 20.8px** (`1.6em` at `--font-ui-small`), 28.6px under
   `pointer: coarse`. Its `::after` target insets 4px vertically and 8px
   horizontally, giving **28.8 x 36.8px**, and **36.6 x 44.6px** coarse. That

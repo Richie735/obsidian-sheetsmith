@@ -4,6 +4,7 @@ import {
 	expressionProblem,
 	FormulaError,
 	isName,
+	nameSpans,
 	Scope,
 } from './expression';
 import { parseFunctions } from './functions';
@@ -444,5 +445,51 @@ describe('self', () => {
 				selfGuard: guard,
 			}),
 		).toBe(2);
+	});
+});
+
+describe('nameSpans', () => {
+	/** Each span's text read back out of the source by its own offsets. */
+	function sliced(source: string): string[] | null {
+		return nameSpans(source)?.map((span) => source.slice(span.start, span.end)) ?? null;
+	}
+
+	it('returns each name with where it sits, past whitespace', () => {
+		expect(nameSpans('  hp +  prof')).toEqual([
+			{ text: 'hp', start: 2, end: 4, call: false },
+			{ text: 'prof', start: 8, end: 12, call: false },
+		]);
+	});
+
+	it('keeps a dotted name whole, and a mod. name with its prefix', () => {
+		const source = 'abilities.DEX.value + mod.hp';
+		expect(nameSpans(source)?.map((span) => span.text)).toEqual([
+			'abilities.DEX.value',
+			'mod.hp',
+		]);
+		expect(sliced(source)).toEqual(['abilities.DEX.value', 'mod.hp']);
+	});
+
+	it('marks a call, even with whitespace before its bracket, and nothing else', () => {
+		const spans = nameSpans('mod (score) + sum(inventory, Weight) + count');
+		expect(spans?.map((span) => [span.text, span.call])).toEqual([
+			['mod', true],
+			['score', false],
+			['sum', true],
+			['inventory', false],
+			['Weight', false],
+			['count', false],
+		]);
+	});
+
+	it('reads literals and numbers as they tokenize: true is a name token, 3 is not', () => {
+		expect(nameSpans('true && 3 > x')?.map((span) => span.text)).toEqual(['true', 'x']);
+	});
+
+	it('answers null for text that does not tokenize, and an empty list for none', () => {
+		expect(nameSpans('hp # 2')).toBeNull();
+		expect(nameSpans('1 + 2')).toEqual([]);
+		// Tokenizing is not parsing: a stray bracket still names what it names.
+		expect(sliced('(hp + ')).toEqual(['hp']);
 	});
 });

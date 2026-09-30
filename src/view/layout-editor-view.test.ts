@@ -12,13 +12,16 @@ import { App, Notice, TextFileView } from '../test/obsidian-stub';
 import { fakePlugin, LAYOUT_FOLDER } from '../test/plugin';
 import { expectDescribedRow } from '../test/described-row';
 import { openView, showFile } from '../test/workspace';
+import { lastNotice } from '../test/notice';
 
 /*
  * The pane, as distinct from the editor inside it.
  *
  * What the pane owns is *posture*: which layout is open, and what is selected.
- * Everything the editor draws is driven in `editor/layout-editor.test.ts` — and
- * driven through this pane, because this is the host that ships. What is left
+ * Everything the editor draws is driven in `editor/layout-editor.test.ts` and
+ * the four region files beside it (`tree`, `schematic-gestures`,
+ * `layout-file-row`, `config-panel`) — and driven through this pane, by
+ * `src/test/layout-editor-pane.ts`, because this is the host that ships. What is left
  * here is the two homes Obsidian gives posture and the difference between them,
  * which is the whole reason the pane uses both rather than one.
  */
@@ -586,6 +589,77 @@ describe('a rename while a sheet is open', () => {
 });
 
 /*
+ * A level list reordered while a sheet is open on a note it counts
+ * (`docs/features/level-list-reorder-report.md`). Here for the rename block's
+ * reason: the report is `editor/layout-editor.test.ts`'s, and what this checks
+ * is the pane's reach into an open sheet before the scan — which two views in
+ * one workspace are needed for. The note's section is blank on disk, and the
+ * first value the reader typed into it is still inside the save debounce, so a
+ * count taken without the flush finds nothing and says nothing: the silence
+ * that is otherwise this report's all-clear.
+ */
+describe('a level reorder while a sheet is open', () => {
+	const TABLE_LAYOUT: Layout = {
+		name: 'Alpha',
+		columns: 12,
+		components: [
+			{
+				id: 'skills',
+				type: 'table',
+				label: 'Skills',
+				position: { col: 1, row: 1, width: 6, height: 2 },
+				columns: [
+					{ key: 'Notes' },
+					{ key: 'Proficiency', type: 'level', levels: ['Untrained', 'Proficient', 'Expertise'] },
+				],
+				rows: [{ label: 'Arcana' }],
+			} as unknown as Layout['components'][number],
+		],
+	};
+
+	it('counts the note whose first value the reader has only just typed', async () => {
+		const app = new App();
+		await app.vault.createFolder(LAYOUT_FOLDER);
+		await app.vault.create(pathOf('Alpha'), serialiseLayout(TABLE_LAYOUT));
+		const file = await app.vault.create('Reorders.md', '---\nsheet-layout: Alpha\n---\n\nSome prose.\n');
+		const plugin = fakePlugin(app);
+		const sheet = await openView(app, document.body, SheetView, plugin);
+		await (sheet as unknown as TextFileView).onLoadFile(file);
+		await tick();
+		const pane = await openView(app, document.body, LayoutEditorView, plugin);
+		await showFile(pane, pathOf('Alpha'));
+
+		const cell = sheet.contentEl.querySelector<HTMLInputElement>('input[type="text"], input:not([type])');
+		if (!cell) throw new Error('the sheet drew no field to type in');
+		cell.value = 'Studied';
+		cell.dispatchEvent(new Event('input'));
+		cell.dispatchEvent(new Event('blur'));
+		await tick();
+		// The debounce is deliberately not run, as in the rename block above.
+		expect((sheet as unknown as TextFileView).savesRequested).toBe(1);
+		expect(await app.vault.read(file)).not.toContain('## Skills');
+
+		Notice.instances = [];
+		control(pane, 'edit-skills').click();
+		pane.flush();
+		await tick();
+		const names = pane.contentEl.querySelector<HTMLInputElement>(
+			'input[aria-label="Proficiency level names"]',
+		) as HTMLInputElement;
+		names.value = 'Untrained, Expertise, Proficient';
+		names.dispatchEvent(new Event('input'));
+		names.dispatchEvent(new Event('change'));
+		pane.flush();
+		await tick();
+		await tick();
+
+		expect(Notice.instances.map((notice) => notice.messageEl.textContent)).toEqual([
+			'"Proficiency" levels moved: "Proficient" was 1 and is now 2; "Expertise" was 2 and is now 1. 1 note on this layout holds a section for Skills, and any Proficiency level it stores is now read against the new list. Undo',
+		]);
+	});
+});
+
+/*
  * The pane bound to a file (`docs/features/visible-layout-files.md`).
  *
  * Every open below goes through the leaf — `showFile`, or the pane's own
@@ -731,8 +805,8 @@ describe('the pane bound to a file', () => {
 		// redraw, and the undo pair.
 		pane.flush();
 		pane.redraw();
-		pane.undo();
-		pane.redo();
+		await pane.undo();
+		await pane.redo();
 		await tick();
 		expect(writes.get(pathOf('Broken')) ?? 0).toBe(0);
 	});
@@ -936,9 +1010,12 @@ describe('the pane bound to a file', () => {
 		await tick();
 
 		expect(await text(app, pathOf('Alpha'))).toBe(outside);
-		expect(Notice.messages).toEqual([
-			'"Alpha" changed on disk, so the layout editor reloaded it. An edit not yet saved here was dropped.',
-		]);
+		// One notice, the sentence word for word with the copy the dropped edit
+		// now only exists in (`docs/features/unsaveable-layout.md` §4).
+		expect(Notice.messages).toEqual(['']);
+		expect(lastNotice()).toBe(
+			'"Alpha" changed on disk, so the layout editor reloaded it. An edit not yet saved here was dropped. Copy layout',
+		);
 	});
 
 	it('keeps two panes on one file in step, each keeping its own history', async () => {
@@ -978,5 +1055,146 @@ describe('opening the pane cold', () => {
 		expect(app.workspace.leaves.at(-1)?.viewStates).toEqual([
 			{ type: VIEW_TYPE_LAYOUT_EDITOR, active: true, state: {} },
 		]);
+	});
+});
+
+describe('which containers the tree draws shut', () => {
+	/*
+	 * The fold is posture, like the open file, and it goes in state rather than
+	 * ephemeral state so a restored workspace comes back folded
+	 * (`docs/features/layout-editor-tree.md` §4). The editor's own tests press the
+	 * chevrons; what is here is the pane's half — what it saves, what it takes
+	 * back, and when it lets the set go.
+	 */
+	function containers(name: string): Layout {
+		return {
+			name,
+			columns: 12,
+			components: [
+				{
+					id: 'defences',
+					type: 'group',
+					label: 'Defences',
+					position: { col: 1, row: 1, width: 6, height: 2 },
+					children: [
+						{
+							id: 'armour',
+							type: 'card',
+							label: 'Armour class',
+							position: { col: 1, row: 1, width: 2, height: 1 },
+						},
+					],
+				},
+				{
+					id: 'actions',
+					type: 'group',
+					label: 'Actions',
+					position: { col: 7, row: 1, width: 6, height: 2 },
+					children: [
+						{
+							id: 'attack',
+							type: 'card',
+							label: 'Attack',
+							position: { col: 1, row: 1, width: 2, height: 1 },
+						},
+					],
+				},
+			],
+			triggers: [],
+		};
+	}
+
+	async function folders(): Promise<App> {
+		const app = new App();
+		await app.vault.createFolder(LAYOUT_FOLDER);
+		for (const name of ['Alpha', 'Beta']) {
+			await app.vault.create(pathOf(name), serialiseLayout(containers(name)));
+		}
+		return app;
+	}
+
+	function listed(pane: LayoutEditorView, id: string): boolean {
+		return pane.contentEl.querySelector(`[data-sheetsmith-focus="edit-${id}"]`) !== null;
+	}
+
+	it('saves the shut ones sorted, and nothing when none are shut', async () => {
+		const pane = await paneOn(await folders());
+		expect(pane.getState()).toEqual({ file: pathOf('Alpha') });
+
+		control(pane, 'tree-disclosure-defences').click();
+		await tick();
+		control(pane, 'tree-disclosure-actions').click();
+		await tick();
+		expect(pane.getState()).toEqual({
+			file: pathOf('Alpha'),
+			collapsed: ['actions', 'defences'],
+		});
+	});
+
+	it('asks the workspace to save on a fold, and not on a render', async () => {
+		const app = await folders();
+		const pane = await paneOn(app);
+		const before = app.workspace.layoutSavesRequested;
+		pane.redraw();
+		await tick();
+		expect(app.workspace.layoutSavesRequested).toBe(before);
+		control(pane, 'tree-disclosure-defences').click();
+		await tick();
+		expect(app.workspace.layoutSavesRequested).toBe(before + 1);
+	});
+
+	it('draws a restored state shut', async () => {
+		const app = await folders();
+		const pane = await openView(app, document.body, LayoutEditorView, fakePlugin(app));
+		await pane.setState(
+			{ file: pathOf('Alpha'), collapsed: ['defences'] },
+			{ history: false },
+		);
+		await tick();
+		expect(listed(pane, 'armour')).toBe(false);
+		expect(listed(pane, 'attack')).toBe(true);
+	});
+
+	it('drops an id the layout does not hold, or one that is not a container, at render', async () => {
+		const app = await folders();
+		const pane = await openView(app, document.body, LayoutEditorView, fakePlugin(app));
+		await pane.setState(
+			{ file: pathOf('Alpha'), collapsed: ['defences', 'gone', 'armour'] },
+			{ history: false },
+		);
+		await tick();
+		expect([...pane.collapsed]).toEqual(['defences']);
+	});
+
+	it('ignores a value that is not a list of names', async () => {
+		const app = await folders();
+		const pane = await openView(app, document.body, LayoutEditorView, fakePlugin(app));
+		await pane.setState(
+			{ file: pathOf('Alpha'), collapsed: ['defences', 3] },
+			{ history: false },
+		);
+		await tick();
+		expect(pane.collapsed.size).toBe(0);
+	});
+
+	it('lets the set go when another file opens, since an id means another container there', async () => {
+		const pane = await paneOn(await folders());
+		control(pane, 'tree-disclosure-defences').click();
+		await tick();
+		const picker = control<HTMLSelectElement>(pane, 'layout-picker');
+		picker.value = pathOf('Beta');
+		picker.dispatchEvent(new Event('change'));
+		await tick();
+		expect(pane.getState()).toEqual({ file: pathOf('Beta') });
+		expect(listed(pane, 'armour')).toBe(true);
+	});
+
+	it('passes the set through the legacy state an earlier version saved', async () => {
+		const app = await folders();
+		const pane = await openView(app, document.body, LayoutEditorView, fakePlugin(app));
+		await pane.setState({ layout: 'Beta', collapsed: ['actions'] }, { history: false });
+		await tick();
+		expect(pane.getState()).toEqual({ file: pathOf('Beta'), collapsed: ['actions'] });
+		expect(listed(pane, 'attack')).toBe(false);
 	});
 });

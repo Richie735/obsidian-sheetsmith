@@ -45,7 +45,8 @@ import {
 	pickerCatalog,
 } from './picker-catalog';
 import { Layout } from '../parse/layout';
-import { WalkEntry, walkComponents } from '../parse/layout-walk';
+import { WalkEntry } from '../parse/layout-walk';
+import { walkLayout } from '../view/grid-cells';
 import { ComponentConfig } from '../types';
 import { SHEET_DESTINATION } from './tree';
 
@@ -318,7 +319,7 @@ export class ComponentPicker {
 	 * can walk into.
 	 */
 	private destinations(layout: Layout): WalkEntry[] {
-		return walkComponents(layout.components).filter((entry) =>
+		return walkLayout(layout.components).filter((entry) =>
 			acceptsChildren(entry.config, entry.depth),
 		);
 	}

@@ -17,6 +17,7 @@
  */
 
 import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { all as KNOWN_CSS_PROPERTIES } from 'known-css-properties';
 import { describe, expect, it } from 'vitest';
 import { PARTS, renderStyles } from '../styles.build.mjs';
 import { MAX_TABULATED_FIELDS } from './components/record-set';
@@ -2376,6 +2377,366 @@ describe('the stylesheet wins on specificity, never on !important', () => {
 	});
 });
 
+/** The stylesheet with its comments blanked, which every rule walk reads. */
+const CSS_WITHOUT_COMMENTS = CSS.replace(/\/\*[\s\S]*?\*\//g, ' ');
+
+interface Rule {
+	/** Every at-rule prelude the rule sits inside, outermost first. */
+	context: string[];
+	selector: string;
+	body: string;
+}
+
+/** Every style rule in the file, with the at-rules around it. */
+function rules(text: string): Rule[] {
+	const found: Rule[] = [];
+	const walk = (from: number, to: number, context: string[]): void => {
+		let at = from;
+		while (at < to) {
+			const open = text.indexOf('{', at);
+			if (open === -1 || open >= to) return;
+			const prelude = text.slice(at, open).replace(/^[\s;}]+/, '').trim();
+			// The matching brace, counting nesting.
+			let depth = 1;
+			let close = open + 1;
+			while (depth > 0 && close < to) {
+				const char = text[close];
+				if (char === '{') depth += 1;
+				else if (char === '}') depth -= 1;
+				close += 1;
+			}
+			const inner = text.slice(open + 1, close - 1);
+			if (prelude.startsWith('@')) {
+				walk(open + 1, close - 1, [...context, prelude]);
+			} else {
+				found.push({ context, selector: prelude, body: inner.trim() });
+			}
+			at = close;
+		}
+	};
+	walk(0, text.length, []);
+	return found;
+}
+
+/**
+ * A rule body's declarations, one `property: value` string each, with its
+ * whitespace collapsed so a value wrapped over lines reads as one that is not.
+ *
+ * A plain split on `;`, which is right for this stylesheet because no value in
+ * it holds one: its one `url()` is percent-encoded. A value that ever does would
+ * split into a fragment with no property of its own, and the property scan below
+ * reports that as unreadable rather than reading past it.
+ */
+function declarations(body: string): string[] {
+	return body
+		.split(';')
+		.map((one) => one.trim().replace(/\s+/g, ' '))
+		.filter((one) => one !== '');
+}
+
+/**
+ * A rule's selector list, one selector each, whitespace collapsed.
+ *
+ * Split on the commas outside parentheses only, because
+ * `:not(.sheetsmith-sr-only, .sheetsmith-card-note)` is one selector with a
+ * comma inside it, and the `selectors()` split at the top of this file would
+ * read it as two halves of nothing.
+ */
+function selectorList(selector: string): string[] {
+	const found: string[] = [];
+	let depth = 0;
+	let from = 0;
+	for (let at = 0; at <= selector.length; at++) {
+		const char = selector[at];
+		if (char === '(') depth += 1;
+		else if (char === ')') depth -= 1;
+		else if ((char === ',' && depth === 0) || at === selector.length) {
+			const one = selector.slice(from, at).trim().replace(/\s+/g, ' ');
+			if (one !== '') found.push(one);
+			from = at + 1;
+		}
+	}
+	return found;
+}
+
+describe('no two rules declare the same body', () => {
+	/*
+	 * `docs/UI.md` §9's focus row is the argument, and it is the argument twice
+	 * over. Five fields had the same four declarations written out before that
+	 * list existed, which is a policy shared and its application duplicated
+	 * (`docs/PATTERNS.md` §1): two copies of one treatment drift the first time
+	 * one of them is edited, and nothing in review shows two rules agreeing.
+	 * And the merge that collapsed them then lost them, because a scan that only
+	 * counts copies is satisfied by *deleting* a rule as readily as by merging
+	 * one. So this is two checks, and the second is what the first cannot be
+	 * without.
+	 *
+	 * **Four declarations or more.** Measured by this scan on the stylesheet it
+	 * was written against: 61, 25, 10, 4, 3 and 1 groups of identical bodies at
+	 * one to six declarations or more. Below four the matches are coincidence (`min-width: 0` beside `max-width: 100%`
+	 * is two properties, not a treatment); at four each one was a real copy of a
+	 * real treatment, and the owner ruled on all four — three merged or removed,
+	 * one kept below with its reason.
+	 *
+	 * **Keyed on the at-rules around a rule as well as its body**, deliberately.
+	 * The same declarations at the top level and inside `@media (pointer:
+	 * coarse)` are an override restating what it overrides, not a copy, and
+	 * merging them is impossible: they do not apply under the same conditions.
+	 * Two rules inside *separate* blocks with the same prelude do compare equal,
+	 * because they apply under the same condition and can be merged. The body is
+	 * split, trimmed, whitespace-collapsed and sorted, so declaration order and
+	 * line wrapping cannot hide a copy.
+	 */
+	const MIN_DECLARATIONS = 4;
+
+	/** Every group of rules sharing one body in one context, each rule by its selector list. */
+	function duplicateBodies(text: string): string[][] {
+		const byBody = new Map<string, string[]>();
+		for (const rule of rules(text)) {
+			const body = declarations(rule.body);
+			if (body.length < MIN_DECLARATIONS) continue;
+			const key = [...rule.context, body.sort().join('; ')].join('\n');
+			const selector = selectorList(rule.selector).join(', ');
+			byBody.set(key, [...(byBody.get(key) ?? []), selector]);
+		}
+		return [...byBody.values()]
+			.filter((group) => group.length > 1)
+			.map((group) => group.sort());
+	}
+
+	/**
+	 * Bodies merged into one selector list on a ruling, each held to that list.
+	 *
+	 * **This is what makes the scan unsatisfiable by deletion.** Dropping a
+	 * selector from one of these lists ends the duplicate as surely as merging
+	 * did, and takes a treatment off every element it named. Held here, the drop
+	 * fails exactly as a new copy would. A third consumer joining a list passes:
+	 * what is asserted is that every name below is still on one rule, not that
+	 * nothing else is.
+	 *
+	 * The record body's focus is not an entry, because it has a guard already.
+	 * Its standalone copy was deleted rather than merged, the list it joined is
+	 * `docs/UI.md` §9's focus roster, and "every field the sheet styles has a
+	 * focus indicator" above fails if `sheetsmith-record-body-input` loses it.
+	 */
+	const SHARED_BODIES: { name: string; selectors: string[] }[] = [
+		{
+			name: "a component's authored name over a block of micro-labels",
+			selectors: ['.sheetsmith-card-set-label', '.sheetsmith-table-label'],
+		},
+		{
+			name: "a table's quiet header, and the Total in its foot",
+			selectors: [
+				'.sheetsmith-view .sheetsmith-table thead th',
+				'.sheetsmith-view .sheetsmith-table tfoot .sheetsmith-table-name',
+			],
+		},
+	];
+
+	/** Each shared body whose selectors no longer all sit on one rule of that size. */
+	function unshared(
+		text: string,
+		shared: { name: string; selectors: string[] }[],
+	): string[] {
+		const all = rules(text).filter(
+			(rule) => declarations(rule.body).length >= MIN_DECLARATIONS,
+		);
+		return shared
+			.filter(
+				({ selectors }) =>
+					!all.some((rule) => {
+						const list = selectorList(rule.selector);
+						return selectors.every((one) => list.includes(one));
+					}),
+			)
+			.map(({ name }) => name);
+	}
+
+	/**
+	 * Duplicates kept on a ruling, each with the reason it stays, enumerated the
+	 * way `FOCUS_ELSEWHERE` is, because an exemption nobody states is a rule
+	 * that quietly stops applying.
+	 *
+	 * - **Track's glyph buttons and Passport's.** Both reset a bare `<button>`
+	 *   to a round glyph-only control, and the size policy is not in the copy:
+	 *   it is `--sheetsmith-inline-control`, one token every such control reads.
+	 *   What is duplicated is the reset, and the reset is a *family*. Table's
+	 *   delete glyph and Record set's three controls are members whose bodies
+	 *   differ (a `vertical-align`, a `flex`, a font size), so merging these two
+	 *   would stand one arbitrary pair in for the family, and ruling on the
+	 *   family is a pass of its own.
+	 */
+	const SAME_ON_PURPOSE: { rules: string[]; reason: string }[] = [
+		{
+			rules: [
+				'.sheetsmith-view .sheetsmith-passport-part-remove, .sheetsmith-view .sheetsmith-passport-add',
+				'.sheetsmith-view .sheetsmith-track-action-button, .sheetsmith-view .sheetsmith-track-modifier-button',
+			],
+			reason: 'a glyph-only reset whose family is unruled',
+		},
+	];
+
+	const exempted = (group: string[]) =>
+		SAME_ON_PURPOSE.some(
+			(entry) => JSON.stringify([...entry.rules].sort()) === JSON.stringify(group),
+		);
+
+	/** Each exemption that no longer names a duplicate this stylesheet holds. */
+	function staleExemptions(groups: string[][]): string[] {
+		return SAME_ON_PURPOSE.filter(
+			(entry) =>
+				!groups.some(
+					(group) => JSON.stringify([...entry.rules].sort()) === JSON.stringify(group),
+				),
+		).map(({ reason }) => reason);
+	}
+
+	it('finds the rules it is meant to be checking', () => {
+		// The floor, because both assertions below are absences: a parse that
+		// stopped reading bodies would report no duplicates and no drops.
+		const all = rules(CSS_WITHOUT_COMMENTS);
+		expect(all.length).toBeGreaterThan(600);
+		const sized = all.filter(
+			(rule) => declarations(rule.body).length >= MIN_DECLARATIONS,
+		);
+		expect(sized.length).toBeGreaterThan(150);
+		// Inside at-rules too, which is where a flat parse goes blind.
+		expect(sized.filter((rule) => rule.context.length > 0).length).toBeGreaterThan(
+			5,
+		);
+	});
+
+	it('has no two rules declaring one body, past the ones kept on purpose', () => {
+		expect(duplicateBodies(CSS_WITHOUT_COMMENTS).filter((g) => !exempted(g))).toEqual(
+			[],
+		);
+	});
+
+	it('keeps every merged body on one rule', () => {
+		expect(unshared(CSS_WITHOUT_COMMENTS, SHARED_BODIES)).toEqual([]);
+	});
+
+	it('holds each exemption to a duplicate that still exists', () => {
+		// An exemption whose pair stopped matching would sit here licensing
+		// whatever took its place, so a stale one fails rather than lingers.
+		expect(staleExemptions(duplicateBodies(CSS_WITHOUT_COMMENTS))).toEqual([]);
+	});
+
+	it('would catch a copy, and a merge undone by deletion', () => {
+		const body = 'color: red; margin: 0; padding: 0; border: none;';
+		// Reordered and rewrapped, the copy is still a copy.
+		expect(
+			duplicateBodies(
+				`.a { ${body} }\n.b {\n\tborder:   none;\n\tpadding: 0;\n\tmargin: 0;\n\tcolor: red;\n}`,
+			),
+		).toEqual([['.a', '.b']]);
+		// Under one condition twice it is a copy; against the top level it is
+		// an override.
+		expect(
+			duplicateBodies(
+				`@media (pointer: coarse) { .a { ${body} } }\n@media (pointer: coarse) { .b { ${body} } }`,
+			),
+		).toEqual([['.a', '.b']]);
+		expect(
+			duplicateBodies(`.a { ${body} }\n@media (pointer: coarse) { .b { ${body} } }`),
+		).toEqual([]);
+		// Three declarations is under the line.
+		expect(
+			duplicateBodies('.a { color: red; margin: 0; padding: 0; }\n.b { color: red; margin: 0; padding: 0; }'),
+		).toEqual([]);
+		// A merged list losing a selector, or losing the rule, is reported.
+		const shared = [{ name: 'planted', selectors: ['.a', '.b'] }];
+		expect(unshared(`.a, .b { ${body} }`, shared)).toEqual([]);
+		expect(unshared(`.a { ${body} }`, shared)).toEqual(['planted']);
+		expect(unshared('', shared)).toEqual(['planted']);
+		// And an exemption whose pair went is reported rather than kept.
+		expect(staleExemptions([])).toHaveLength(SAME_ON_PURPOSE.length);
+	});
+});
+
+describe('every declaration names a real CSS property', () => {
+	/*
+	 * `segment-sizing: border-segment` shipped in `.sheetsmith-track-segment`
+	 * and was found by hand. A browser drops a declaration it cannot parse
+	 * without a word, and the host's own reset hid the loss, so the rule looked
+	 * finished while one of its lines did nothing. A type check does not read
+	 * CSS, and a shot shows what the page draws, not what it was told.
+	 *
+	 * The list is `known-css-properties`, pinned to an exact version so a
+	 * release cannot move this check under an unchanged stylesheet. A property
+	 * the list is missing fails here, and the answer is a newer pin, not an
+	 * exemption. A custom property (`--*`) is exempt because any name is a real
+	 * one; `every custom property the plugin declares is its own` above holds
+	 * what those names may be.
+	 *
+	 * Declarations only, on the shared parse, so a rule inside an at-rule is
+	 * checked like any other. An at-rule's own prelude, such as the
+	 * `grid-template-columns: subgrid` a `@supports` tests, is not a declaration
+	 * and is not read.
+	 */
+	const KNOWN = new Set(KNOWN_CSS_PROPERTIES);
+
+	/** What was read: standard declarations checked, and custom ones passed over. */
+	function scan(text: string): {
+		unknown: string[];
+		checked: number;
+		custom: number;
+		nested: number;
+	} {
+		const unknown: string[] = [];
+		let checked = 0;
+		let custom = 0;
+		let nested = 0;
+		for (const rule of rules(text)) {
+			for (const one of declarations(rule.body)) {
+				const colon = one.indexOf(':');
+				const property = colon === -1 ? '' : one.slice(0, colon).trim().toLowerCase();
+				if (property.startsWith('--')) {
+					custom += 1;
+					continue;
+				}
+				checked += 1;
+				if (rule.context.length > 0) nested += 1;
+				if (!KNOWN.has(property)) {
+					unknown.push(`${selectorList(rule.selector).join(', ')} { ${one} }`);
+				}
+			}
+		}
+		return { unknown, checked, custom, nested };
+	}
+
+	it('finds the rules it is meant to be checking', () => {
+		// The list loaded, and is the list: an empty import would report every
+		// property, and a wrong one might report none.
+		expect(KNOWN.size).toBeGreaterThan(500);
+		expect(KNOWN.has('grid-template-columns')).toBe(true);
+		// The parse reached the stylesheet, inside at-rules as well as outside,
+		// and the exemption is exercised rather than merely written.
+		const { checked, custom, nested } = scan(CSS_WITHOUT_COMMENTS);
+		expect(checked).toBeGreaterThan(1500);
+		expect(nested).toBeGreaterThan(100);
+		expect(custom).toBeGreaterThan(20);
+	});
+
+	it('names only properties a browser knows', () => {
+		expect(scan(CSS_WITHOUT_COMMENTS).unknown).toEqual([]);
+	});
+
+	it('would catch the property that shipped', () => {
+		expect(
+			scan('.sheetsmith-track-segment { segment-sizing: border-segment; }').unknown,
+		).toEqual(['.sheetsmith-track-segment { segment-sizing: border-segment }']);
+		// And inside an at-rule, and a fragment that is no declaration at all.
+		expect(
+			scan('@media (pointer: coarse) { .a { colr: red; } }\n.b { color }').unknown,
+		).toEqual(['.a { colr: red }', '.b { color }']);
+		// While a real property, a prefixed one and a custom one pass.
+		expect(
+			scan('.a { color: red; -webkit-mask-image: none; --sheetsmith-x: 1; }').unknown,
+		).toEqual([]);
+	});
+});
+
 describe("a Record set's strip of field names", () => {
 	/*
 	 * `docs/features/record-set-heading-strip.md`. Two things are held here and
@@ -2387,47 +2748,7 @@ describe("a Record set's strip of field names", () => {
 	 * The scan reads rules with the at-rules they sit inside, which the flat
 	 * `selectors()` above cannot: the claim is about *where* a rule lives.
 	 */
-	const withoutComments = CSS.replace(/\/\*[\s\S]*?\*\//g, ' ');
-
-	interface Rule {
-		/** Every at-rule prelude the rule sits inside, outermost first. */
-		context: string[];
-		selector: string;
-		body: string;
-	}
-
-	/** Every style rule in the file, with the at-rules around it. */
-	function rules(text: string): Rule[] {
-		const found: Rule[] = [];
-		const walk = (from: number, to: number, context: string[]): void => {
-			let at = from;
-			while (at < to) {
-				const open = text.indexOf('{', at);
-				if (open === -1 || open >= to) return;
-				const prelude = text.slice(at, open).replace(/^[\s;}]+/, '').trim();
-				// The matching brace, counting nesting.
-				let depth = 1;
-				let close = open + 1;
-				while (depth > 0 && close < to) {
-					const char = text[close];
-					if (char === '{') depth += 1;
-					else if (char === '}') depth -= 1;
-					close += 1;
-				}
-				const inner = text.slice(open + 1, close - 1);
-				if (prelude.startsWith('@')) {
-					walk(open + 1, close - 1, [...context, prelude]);
-				} else {
-					found.push({ context, selector: prelude, body: inner.trim() });
-				}
-				at = close;
-			}
-		};
-		walk(0, text.length, []);
-		return found;
-	}
-
-	const all = rules(withoutComments);
+	const all = rules(CSS_WITHOUT_COMMENTS);
 	const GATE = '@supports (grid-template-columns: subgrid)';
 	const STYLE_QUERY = '@container style(--sheetsmith-record-strip: on)';
 	const inGate = (rule: Rule) => rule.context[0] === GATE;
@@ -2606,7 +2927,7 @@ describe("a Record set's strip of field names", () => {
 			/sheetsmith-record-field/.test(rule.selector),
 		);
 		expect(shifts.map((rule) => rule.selector)).toEqual([
-			'.sheetsmith-record-field-number',
+			'.sheetsmith-record-summary .sheetsmith-record-field-number',
 		]);
 		expect(shifts[0]?.context).toEqual([GATE, STYLE_QUERY]);
 		expect(shifts[0]?.body).toMatch(/translateX\(-0\.4em\)/);
@@ -2615,11 +2936,196 @@ describe("a Record set's strip of field names", () => {
 		expect(shifts[0]?.body).not.toMatch(/width|padding|margin/);
 	});
 
+	it("scopes every rule naming a field to the summary line, so none reaches a body field", () => {
+		/*
+		 * A body field is drawn by the same code as a summary field and wears the
+		 * same class, so a strip rule written against the bare class would reach
+		 * it: centred in a track it does not have, shifted off its own name, and —
+		 * the one that matters — its name hidden on a wide headed list, where
+		 * nothing else names it (`docs/features/record-set-body-fields.md`). The
+		 * 320px stacking rule is held the same way.
+		 */
+		const naming = (rule: Rule) =>
+			/\.sheetsmith-record-field(?![s\w-])|\.sheetsmith-record-field-/.test(
+				rule.selector,
+			);
+		const strip = all.filter(
+			(rule) => rule.context[1] === STYLE_QUERY && naming(rule),
+		);
+		const narrow = all.filter(
+			(rule) =>
+				rule.context[0] === '@container (max-width: 320px)' && naming(rule),
+		);
+		// It found the rules it is about: the centring, the offset and the hide.
+		expect(strip.length).toBeGreaterThanOrEqual(3);
+		const unscoped = [...strip, ...narrow]
+			.filter((rule) =>
+				rule.selector
+					.split(',')
+					.some(
+						(one) =>
+							naming({ ...rule, selector: one }) &&
+							!one.includes('.sheetsmith-record-summary'),
+					),
+			)
+			.map((rule) => rule.selector);
+		expect(unscoped).toEqual([]);
+	});
+
+	it('gives a body its second row only under the class that says it has a block', () => {
+		const second = all.filter(
+			(rule) =>
+				/sheetsmith-record-body/.test(rule.selector) &&
+				/grid-area:\s*2|row-gap/.test(rule.body),
+		);
+		// The row gap and the prose layers' row, at least.
+		expect(second.length).toBeGreaterThanOrEqual(2);
+		const outside = second
+			.filter(
+				(rule) =>
+					!rule.selector.startsWith('.sheetsmith-record-body-has-fields'),
+			)
+			.map((rule) => rule.selector);
+		expect(outside).toEqual([]);
+		// And the block itself takes the first row under that same class.
+		expect(
+			all.some(
+				(rule) =>
+					rule.selector ===
+						'.sheetsmith-record-body-has-fields > .sheetsmith-record-body-fields' &&
+					/grid-area:\s*1\s*\/\s*1/.test(rule.body),
+			),
+		).toBe(true);
+	});
+
 	it('paints no colour of its own', () => {
 		const inside = all.filter((rule) => rule.context[1] === STYLE_QUERY);
 		const literal = inside.filter((rule) =>
 			/#[0-9a-f]{3,8}\b|\brgba?\(|\bhsla?\(/i.test(rule.body),
 		);
 		expect(literal).toEqual([]);
+	});
+});
+
+describe('a field its condition hid is hidden', () => {
+	/*
+	 * `docs/features/conditional-field-visibility.md`. The component sets
+	 * `hidden` on a Record set field's cell, and on a body block whose every
+	 * field is hidden, and the user-agent `[hidden] { display: none }` loses to
+	 * any author rule giving the element a `display`. That is `docs/PATTERNS.md`
+	 * §10's vacuous pass exactly: the attribute is set, the component's tests go
+	 * green, and every field still draws. happy-dom computes no style, so this
+	 * scan is the only instrument that can see it.
+	 */
+	const HIDEABLE = [
+		/\.sheetsmith-record-field(?![\w-])/,
+		/\.sheetsmith-record-body-fields(?![\w-])/,
+	];
+
+	/** (ids, classes and attributes and pseudo-classes, types) of one compound selector. */
+	function specificity(selector: string): [number, number, number] {
+		const bare = selector.replace(/::[\w-]+/g, ' ');
+		const ids = (bare.match(/#[\w-]+/g) ?? []).length;
+		const classes =
+			(bare.match(/\.[\w-]+/g) ?? []).length +
+			(bare.match(/\[[^\]]*\]/g) ?? []).length +
+			(bare.match(/:(?!:)[\w-]+/g) ?? []).length;
+		const types = bare
+			.replace(/\[[^\]]*\]/g, ' ')
+			.split(/[\s>+~]+/)
+			.filter((one) => /^[a-z]/i.test(one)).length;
+		return [ids, classes, types];
+	}
+
+	/** Whether `a` beats `b` on weight alone. */
+	const heavier = (a: [number, number, number], b: [number, number, number]) =>
+		a[0] !== b[0] ? a[0] > b[0] : a[1] !== b[1] ? a[1] > b[1] : a[2] > b[2];
+	const same = (a: [number, number, number], b: [number, number, number]) =>
+		a.join() === b.join();
+
+	/**
+	 * Every selector giving one of the hideable classes a `display` other than
+	 * none, with no answer after it or above it in weight — and how many it found,
+	 * so a class renamed out from under the scan cannot pass it over nothing.
+	 */
+	function unanswered(text: string): { found: number; open: string[] } {
+		const walked = rules(text);
+		const parts = walked.flatMap((rule, at) =>
+			rule.selector.split(',').map((one) => ({ rule, at, selector: one.trim() })),
+		);
+		const answers = parts.filter(
+			({ rule, selector }) =>
+				/\[hidden\]/.test(subjectOf(selector)) &&
+				/display:\s*none/.test(rule.body),
+		);
+		const displays = parts.filter(
+			({ rule, selector }) =>
+				HIDEABLE.some((cls) => cls.test(subjectOf(selector))) &&
+				!/\[hidden\]/.test(selector) &&
+				/(^|[;\s])display:\s*(?!none)/.test(rule.body),
+		);
+		const open = displays
+			.filter(({ at, selector }) => {
+				const cls = HIDEABLE.find((one) => one.test(subjectOf(selector)));
+				return !answers.some((answer) => {
+					if (cls === undefined || !cls.test(subjectOf(answer.selector))) return false;
+					const mine = specificity(answer.selector);
+					const theirs = specificity(selector);
+					// Heavier wins anywhere; equal wins only by coming later.
+					return heavier(mine, theirs) || (same(mine, theirs) && answer.at > at);
+				});
+			})
+			.map(({ selector }) => selector);
+		return { found: displays.length, open };
+	}
+
+	it('answers every display either class is given with a [hidden] rule that wins', () => {
+		const { found, open } = unanswered(CSS_WITHOUT_COMMENTS);
+		// The field's `inline-flex` and the block's `flex`, at least.
+		expect(found).toBeGreaterThanOrEqual(2);
+		expect(open).toEqual([]);
+	});
+
+	it('would catch a display the [hidden] rule does not outweigh', () => {
+		// The case above asserts an empty list, so it reads the same on a sheet
+		// with no answer at all. Driven over the shape it exists to reject: no
+		// answer, an answer too light, and an answer of equal weight placed above.
+		expect(
+			unanswered('.sheetsmith-record-field { display: inline-flex; }').open,
+		).toEqual(['.sheetsmith-record-field']);
+		expect(
+			unanswered(
+				'.sheetsmith-view .sheetsmith-record-summary .sheetsmith-record-field { display: grid; }\n' +
+					'.sheetsmith-record-field[hidden] { display: none; }',
+			).open,
+		).toHaveLength(1);
+		expect(
+			unanswered(
+				'.sheetsmith-view .sheetsmith-record-field[hidden] { display: none; }\n' +
+					'.sheetsmith-view .sheetsmith-record-field.x { display: flex; }',
+			).open,
+		).toHaveLength(1);
+		// And passes the answer this stylesheet actually gives.
+		expect(
+			unanswered(
+				'.sheetsmith-record-body-fields { display: flex; }\n' +
+					'.sheetsmith-view .sheetsmith-record-body-fields[hidden] { display: none; }',
+			),
+		).toEqual({ found: 1, open: [] });
+	});
+
+	it('places a headed summary field by its own track number, not by auto-placement', () => {
+		// Hidden is `display: none`, which takes a field out of placement, so an
+		// auto-placed field after it would slide one track left out from under its
+		// heading.
+		const placed = rules(CSS_WITHOUT_COMMENTS).filter(
+			(rule) =>
+				rule.selector === '.sheetsmith-record-summary .sheetsmith-record-field' &&
+				rule.context[1] === '@container style(--sheetsmith-record-strip: on)',
+		);
+		expect(placed).toHaveLength(1);
+		expect(placed[0]?.body).toMatch(
+			/grid-column:\s*var\(--sheetsmith-record-track\)/,
+		);
 	});
 });

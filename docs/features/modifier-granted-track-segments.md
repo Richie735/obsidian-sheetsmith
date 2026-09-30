@@ -262,6 +262,11 @@ player's data on a level-up (§10)." A five-mark exhaustion whose talisman comes
 draws three filled segments, keeps `value: 5` in the note, reports "3 of 3", and
 comes back to five the moment the talisman goes on again.
 
+**Amended by `track-stored-value-past-shortened-run.md`**: the two marks past the run are now drawn,
+as over segments after the three live ones, and the run reports `5 of 3, 2 over`.
+The note is still untouched; what changed is that the first step no longer writes
+it down to three.
+
 No prior art was found for this half, so it is worth being explicit about why the
 tempting alternative is wrong: clamping the stored value to the new ceiling would
 make taking an item off a *destructive* act, and it is the same act a level-down,
@@ -328,12 +333,19 @@ did this read the other as untouched. Both directions are now drawn.
   live run, which is what a press past the end of any run already does. There is
   no new gesture, no guard, and no value in the blocked region that any input can
   reach.
+  **Narrowed by `track-stored-value-past-shortened-run.md`**: this holds of a blocked slot that holds
+  no mark. One that still holds a mark is drawn *over* and is in the hit test, so
+  it can be stepped down through; nothing steps up into the blocked region.
 - **The run announces the live ceiling and says the rest in words.** ARIA models a
   slider as one value between `aria-valuemin` and `aria-valuemax`, and a blocked
   slot is not a value this control can take — so `aria-valuemax` stays the live
   run and the drawn boxes deliberately outnumber it. `aria-valuetext` carries the
   difference: `3 of 4, 2 blocked`. That is what a flat string is for, and it is the
   only sanctioned place to put it.
+  **Narrowed by `track-stored-value-past-shortened-run.md`**: where the note holds marks past the live
+  run, `aria-valuemax` is the stored value, since an over position is one the
+  control holds, and the blocked clause counts only the shut slots holding nothing:
+  `5 of 4, 1 over, 1 blocked`.
 - **A grant is still drawn as granted, and the two are not one job done twice.**
   Granted slots are *usable* and blocked ones are not, so they are different
   states and want different marks. They can also never appear on one run: a
@@ -352,6 +364,9 @@ did this read the other as untouched. Both directions are now drawn.
   clamped to the run, exactly as a stored 9 on a six-segment run fills six and
   stays 9, and the run is now the live part of it. Take the shackles off and the
   sixth mark is back.
+  **Amended by `track-stored-value-past-shortened-run.md`**: the two blocked slots are now drawn
+  filled, the blocked slash on a filled box, and the run reports `6 of 4, 2 over`.
+  A stored 9 on a six-segment run draws nine.
 - **A penalty that takes the whole run draws it blocked rather than `?`.**
   `2 + mod.self` with a −5 draws two slashed slots, `aria-valuemax="0"`, and
   `0 of 0, 2 blocked`. That returns `?` to meaning what SPEC §5 reserves it for — a
@@ -674,6 +689,8 @@ supposed to mean that rather than "the author thinks so".
 - [x] Marks survive the grant going away: a note holding `value: 5` against a
       count that falls back to 3 draws three filled segments, reports `3 of 3`,
       and `write` produces a byte-identical body.
+      **Amended by `track-stored-value-past-shortened-run.md`**: it now draws five, the last two
+      over, and reports `5 of 3, 2 over`; the byte-identical `write` stands.
 - [ ] **Rewritten after the blocked-slot reversal, which made it false.** It
       read: a `-5` against `count: "2 + mod.self"` draws `?` whose title names
       the number. That run now draws its two slots blocked, and `?` is left for
@@ -687,6 +704,9 @@ supposed to mean that rather than "the author thinks so".
       blocked tail reaches no value inside it; a mark stored there stays in the
       note and is not drawn; and a penalty taking the whole run draws it blocked
       rather than `?`.
+      **Amended by `track-stored-value-past-shortened-run.md`**: a mark stored in the blocked region is
+      now drawn over, filled under the slash, and `aria-valuemax` is the stored
+      value where it is higher.
 - [ ] The popover the button opens and the `aria-describedby` target hold the
       **same** text, from `modifierBreakdown`.
 - [ ] A modified Track grows a glyph button beside its name; an unmodified one

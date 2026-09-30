@@ -197,8 +197,26 @@ mkdirSync(outDir, { recursive: true });
  * tight margin this file usually runs. **Measure before raising again rather than
  * following the pattern**, because two of these three did not need the second
  * raise at all.
+ *
+ * **Raised again for the conditioned Record sets**
+ * (`docs/features/conditional-field-visibility.md`): two grid rows of them at the
+ * foot of the sheet. Measured off `document.body` through each view's own query,
+ * harness built first: **7886** here against 7800, **17048** at `&width=380`
+ * against 16600, **9028** at 520 against 8600 and **9931** at `text=24` against
+ * 9600 — all four over, so the new lists were the ones cropped. 7800 to
+ * **8100**, 16600 to **17300**, 8600 to **9300**, 9600 to **10200**.
+ *
+ * **Raised again for the scoped reset** (`docs/features/record-set-reset-scope.md`):
+ * `rest_features` and its pool take rows 84–86 at the foot of the sheet. Measured
+ * off `document.body` over the DevTools Protocol, harness built first, through
+ * each view's own query and window — and HEAD measured by the same script first,
+ * which reproduced the four numbers above to the pixel, so the instrument is the
+ * one those were taken with. **8122** here against 8100, **17433** at `&width=380`
+ * against 17300, **9264** at 520 against 9300 and **10281** at `text=24` against
+ * 10200: three over, and the 520 one inside by 36px. 8100 to **8500**, 17300 to
+ * **17800**, 9300 to **9600**, 10200 to **10600**.
  */
-const SHEET_FRAME = '1400,7800';
+const SHEET_FRAME = '1400,8500';
 
 /**
  * The editor pane's frame, tall because the tree is the whole layout.
@@ -231,7 +249,32 @@ const SHEET_FRAME = '1400,7800';
  * exactly what this comment keeps being rewritten about — the instrument is only
  * as good as the last time somebody measured it (`docs/UI.md` §11).
  */
-const EDITOR_FRAME = '1500,8600';
+/*
+ * **Re-measured a fourth time for the tree's nesting**
+ * (`docs/features/layout-editor-tree.md`), and the number is not the tree's:
+ * the leaf ends at **16629** at 1500 through `open=weapons`, byte for byte the
+ * same on the tree before that feature and after it, since the nested wrappers
+ * change no row's height and the two controls a row lost did not set it. So
+ * this frame was cutting about 8000px — the whole bottom half of the tree,
+ * every container in it included — off every editor shot, and had been since
+ * some earlier addition to `samples.ts` nobody measured the pane for. Found
+ * because the tree shots exist to show the tree whole. 8600 to **16800**, off
+ * `.workspace-leaf`'s own bottom rather than `document.body`, which reports
+ * the taller of the page and the window and so cannot see staleness at all.
+ */
+const EDITOR_FRAME = '1500,16800';
+
+/*
+ * **The three paste views grow the tree, so they get a frame of their own**
+ * (`docs/features/component-copy-paste.md`, Look criteria). Measured off the
+ * last row that is not page background, at 1500: the same-layout paste of
+ * `Proficiencies` ends at **17744**, the cross-layout Track at 16829 — already
+ * past `EDITOR_FRAME` — and the refused paste at 16704. 18000 leaves the others'
+ * margin, and its bottom row is page background where 16800's was inside the
+ * leaf. A frame of their own rather than a taller `EDITOR_FRAME`, because
+ * raising that would re-shoot every editor view taller for three that grew.
+ */
+const PASTE_FRAME = '1500,18000';
 
 /**
  * The presses that open the panel on the sample's *mixed* row, and then its typed
@@ -342,9 +385,21 @@ const DEFAULTS = [
 		// the one reflow that is not true of: at one column it becomes a
 		// full-width row of its own, the same shape every addition to this frame
 		// has taken. 14300 to **14700**.
+		//
+		// Raised again for the Overfull block (`docs/features/
+		// track-stored-value-past-shortened-run.md`): seven cards at the foot of
+		// the sheet, each a full-width row at one column, and the last of them the
+		// wrapping sample this view exists to show. Measured 16326 against 16100,
+		// so that sample was the one cropped. 16100 to **16600**.
+		//
+		// Raised again with SHEET_FRAME for the conditioned Record sets: measured
+		// 17048 against 16600. 16600 to **17300**.
+		//
+		// Raised again with SHEET_FRAME for the scoped reset: measured 17433
+		// against 17300. 17300 to **17800**.
 		name: 'sheet-narrow',
 		query: 'surface=sheet&theme=dark&width=380',
-		size: '520,16100',
+		size: '520,17800',
 	},
 	{
 		/*
@@ -384,9 +439,16 @@ const DEFAULTS = [
 		// threshold, so it stacks picture-over-text in the row it shares with
 		// the fit row's own stacked Passport, and the row grows to hold both.
 		// 7700 to **7850**.
+		//
+		// Raised again with SHEET_FRAME for the conditioned Record sets: measured
+		// 9028 against 8600. 8600 to **9300**.
+		//
+		// Raised again with SHEET_FRAME for the scoped reset: measured 9264
+		// against 9300 — inside, by 36px, which is a frame that clips on the next
+		// row anybody adds. 9300 to **9600**.
 		name: 'sheet-list-narrow',
 		query: 'surface=sheet&theme=light&width=520',
-		size: '620,8600',
+		size: '620,9600',
 	},
 	{
 		// UI.md §5 puts the card's headline number in `em` rather than pixels
@@ -418,7 +480,86 @@ const DEFAULTS = [
 		//
 		// Raised again with SHEET_FRAME for the fit rows: measured 8437 against
 		// 8000, through `text=24` as this comment asks.
-		size: '1400,9600',
+		//
+		// Raised again with SHEET_FRAME for the conditioned Record sets: measured
+		// 9931 against 9600. 9600 to **10200**.
+		//
+		// Raised again with SHEET_FRAME for the scoped reset: measured 10281
+		// against 10200. 10200 to **10600**.
+		size: '1400,10600',
+	},
+	{
+		/*
+		 * **A record whose every body field is hidden, opened**
+		 * (`docs/features/conditional-field-visibility.md`): Darkvision holds no
+		 * rest, so its `Save DC` is hidden and the body block with it, and the prose
+		 * takes the first row with no empty step above it. The first Darkvision in
+		 * the tree is the headed `recharging` list's; the press opens it and the
+		 * scroll brings it into its own list's scrollport, since it is the third
+		 * record in a box showing two.
+		 */
+		name: 'sheet-recharging-open',
+		query: "surface=sheet&theme=light&press=%5Baria-label%3D'Open%20Darkvision'%5D&scroll=%5Baria-label%3D'Close%20Darkvision'%5D",
+		size: SHEET_FRAME,
+	},
+	{
+		name: 'sheet-recharging-open-dark',
+		query: "surface=sheet&theme=dark&press=%5Baria-label%3D'Open%20Darkvision'%5D&scroll=%5Baria-label%3D'Close%20Darkvision'%5D",
+		size: SHEET_FRAME,
+	},
+	/*
+	 * **What a trigger's confirmation says it will reset**
+	 * (`docs/features/record-set-reset-scope.md`). `confirm=` plans the trigger
+	 * over the sample sheet through the view's own `planTrigger` and opens the
+	 * real `ConfirmModal`, so the lines are the ones a reader is shown: `Rest
+	 * features — Uses 3 of 6` beside the sheet's other Short rest components in their
+	 * existing words, and `Focus points`' refusal of a condition it cannot check.
+	 *
+	 * **A window-sized frame rather than `SHEET_FRAME`**, because the modal is
+	 * fixed to the viewport and centred in it: at 8100 tall it would sit four
+	 * thousand pixels down a mostly irrelevant sheet. 1000 is the height of a
+	 * laptop window, which is where a reader meets it.
+	 */
+	{
+		name: 'sheet-reset-confirm',
+		query: 'surface=sheet&theme=light&confirm=Short%20rest',
+		size: '1400,1000',
+	},
+	{
+		name: 'sheet-reset-confirm-dark',
+		query: 'surface=sheet&theme=dark&confirm=Short%20rest',
+		size: '1400,1000',
+	},
+	{
+		// The wider rest: `Recharges == 1 || Recharges == 2 || Recharges == 4`, so
+		// `Uses 4 of 6`, and `Recharging features, unheaded` as a bare label.
+		name: 'sheet-reset-confirm-long',
+		query: 'surface=sheet&theme=light&confirm=Long%20rest',
+		size: '1400,1000',
+	},
+	{
+		// The rename trap: the Short rest condition reads `Recharge`, so the list
+		// says it will not reset, naming every feature and the unknown name — the
+		// longest line this modal draws, and the one whose wrap is the review.
+		name: 'sheet-reset-confirm-broken',
+		query: 'surface=sheet&theme=light&state=broken&confirm=Short%20rest',
+		size: '1400,1000',
+	},
+	{
+		// The same list at a phone's width. **A 520px window, not 380**: headless
+		// Chrome floors a viewport at 500 (`docs/BACKLOG.md`), and the modal sizes
+		// against the viewport rather than the harness's own container, so a
+		// `width=380` query would photograph a 520px modal and call it 380.
+		name: 'sheet-reset-confirm-narrow',
+		query: 'surface=sheet&theme=light&confirm=Short%20rest',
+		size: '520,1000',
+	},
+	{
+		// And the broken state at that width, because its lines are the longest
+		// the modal draws and so the ones whose wrap is the review.
+		name: 'sheet-reset-confirm-narrow-broken',
+		query: 'surface=sheet&theme=light&state=broken&confirm=Short%20rest',
+		size: '520,1000',
 	},
 	{
 		// The first view to photograph a focus ring at all. A still cannot press
@@ -1056,8 +1197,16 @@ const DEFAULTS = [
 		 * field's own vocabulary, and the footnote saying a declared maximum is
 		 * kept are the whole of what an author meets.
 		 */
+		/*
+		 * **Now the conditioned list** (`docs/features/conditional-field-visibility.md`),
+		 * which still carries a per-record `Uses` maximum and so everything this
+		 * view was added for, and adds **Shown when** last on every detail line,
+		 * the position legend under `Uses`' and `Active`'s, and the amended
+		 * `Fields` description. `editor-record-fields-traits` below keeps the list
+		 * this view used to open, whose five field types are the other half.
+		 */
 		name: 'editor-record-fields',
-		query: 'surface=editor&theme=light&open=traits',
+		query: 'surface=editor&theme=light&open=recharging',
 		// **Wider than `EDITOR_FRAME`, because the canvas preview is the subject
 		// and it has to be wide enough for the strip.** At 1500 the Traits preview
 		// is 467px against the 712px a five-field list needs, so the setting read
@@ -1066,6 +1215,80 @@ const DEFAULTS = [
 		// 2000 it is 759px and the strip draws. The threshold is not lowered to fit
 		// a frame.
 		size: '2000,8600',
+	},
+	{
+		// The list `editor-record-fields` opened before conditions existed: five
+		// field types, a named level's sample and two body fields, each detail line
+		// now ending in an empty **Shown when**.
+		name: 'editor-record-fields-traits',
+		query: 'surface=editor&theme=light&open=traits',
+		size: '2000,8600',
+	},
+	{
+		// The broken copy: the self-naming refusal under `Active`'s **Shown when**,
+		// and `Uses`' rename-trap condition, which parses and so reports nothing
+		// here — the sheet's own line is where an unknown name is reported.
+		// Scrolled to `Active` inside the list's own scrollport, since the error
+		// under it is below that list's cap.
+		name: 'editor-record-fields-broken',
+		query:
+			"surface=editor&theme=light&open=recharging_broken&scroll=input%5Baria-label%3D'Active%20shown%20when'%5D",
+		size: '2000,8600',
+	},
+	/*
+	 * **Only where** (`docs/features/record-set-reset-scope.md`): each binding of
+	 * `rest_features` as one block, trigger and action, then **Acts on** showing
+	 * `Uses`, then the condition, then on Short rest **Resets to** with
+	 * `Uses + 1` (`docs/features/record-set-reset-field-targeting.md`). The reset
+	 * field is at the foot of the panel, so the frame is the pane's own.
+	 */
+	{
+		name: 'editor-reset-where',
+		query: 'surface=editor&theme=light&open=rest_features',
+		size: EDITOR_FRAME,
+	},
+	{
+		name: 'editor-reset-where-dark',
+		query: 'surface=editor&theme=dark&open=rest_features',
+		size: EDITOR_FRAME,
+	},
+	{
+		// A Pool carrying a hand-written condition it cannot check: **Only where**
+		// holds the stored text, with the refusal under it.
+		name: 'editor-reset-where-refused',
+		query: 'surface=editor&theme=light&state=broken&open=rest_pool',
+		size: EDITOR_FRAME,
+	},
+	{
+		// At `Text → 24`, where the row's description and its error have to share
+		// **Resets to**'s `--font-ui-small` rather than growing past it.
+		name: 'editor-reset-where-large-text',
+		query: 'surface=editor&theme=light&text=24&open=rest_features',
+		size: EDITOR_FRAME,
+	},
+	{
+		/*
+		 * **A Record set binding that names no field**
+		 * (`docs/features/record-set-reset-field-targeting.md`): **Acts on** with
+		 * **Every field** selected and no error, which is what every Record set
+		 * binding meant before one could name a field. `rest_features` above is the
+		 * other half — a picker showing `Uses`, and **Resets to** reading the record.
+		 */
+		name: 'editor-reset-every-field',
+		query: 'surface=editor&theme=light&open=recharging_plain',
+		size: EDITOR_FRAME,
+	},
+	{
+		name: 'editor-reset-every-field-dark',
+		query: 'surface=editor&theme=dark&open=recharging_plain',
+		size: EDITOR_FRAME,
+	},
+	{
+		// A Table column carrying a condition by hand: no **Shown when** input, and
+		// the report under the list that the condition does nothing on a table.
+		name: 'editor-table-condition',
+		query: 'surface=editor&theme=light&open=inventory',
+		size: EDITOR_FRAME,
 	},
 	{
 		/*
@@ -1262,8 +1485,9 @@ const DEFAULTS = [
 		// split by about 400px, for the reason above, and 5700 was cutting the
 		// panel this view exists to put under the tree. Re-measured with sample
 		// values on, on EDITOR_FRAME's own third measurement: 8680 at this width,
-		// so 7800 was cutting the bottom of the tree here too.
-		size: '1190,8800',
+		// so 7800 was cutting the bottom of the tree here too. And again with
+		// EDITOR_FRAME's fourth measurement: the leaf ends at 16709 here.
+		size: '1190,16900',
 	},
 	{
 		// Forced colors, which the system palette repaints the whole page in and
@@ -1285,6 +1509,57 @@ const DEFAULTS = [
 		// defect with no default view is a defect that comes back.
 		name: 'editor-forced-colors',
 		query: 'surface=editor&theme=light&open=inventory',
+		size: EDITOR_FRAME,
+		flags: ['--force-high-contrast'],
+	},
+	{
+		/*
+		 * **The pane holding a layout it cannot save**
+		 * (`docs/features/unsaveable-layout.md` §7), in both of its variants and
+		 * both themes. A pane state, so it is photographed: the block has to sit
+		 * directly under the **Layout file** row and above **Sample values**,
+		 * with the whole message wrapped inside its border at this frame.
+		 *
+		 * `write` is reached by the real route — the stub vault refuses the
+		 * planted file and **Label** on `rest_pool` is committed through its own
+		 * field — and shows **Try again** inside the block. `invalid` is reached
+		 * through the plugin's store, since no field reaches it any more: a kept
+		 * layout with a formula reset and no expression, put back on first render
+		 * as reopening would.
+		 */
+		name: 'editor-unsaved-write-light',
+		query: 'surface=editor&theme=light&open=rest_pool&unsaved=write',
+		size: EDITOR_FRAME,
+	},
+	{
+		name: 'editor-unsaved-write-dark',
+		query: 'surface=editor&theme=dark&open=rest_pool&unsaved=write',
+		size: EDITOR_FRAME,
+	},
+	{
+		name: 'editor-unsaved-invalid-light',
+		query: 'surface=editor&theme=light&open=rest_pool&unsaved=invalid',
+		size: EDITOR_FRAME,
+	},
+	{
+		name: 'editor-unsaved-invalid-dark',
+		query: 'surface=editor&theme=dark&open=rest_pool&unsaved=invalid',
+		size: EDITOR_FRAME,
+	},
+	{
+		// The vault's own kind of refusal: a long path with no space to break at,
+		// which is what decides whether the message stays inside the block's
+		// border at this frame. Light only, since the wrap is the same in both.
+		name: 'editor-unsaved-write-path-light',
+		query: 'surface=editor&theme=light&open=rest_pool&unsaved=write-path',
+		size: EDITOR_FRAME,
+	},
+	{
+		// The write variant in forced colors, because it is the one of the four
+		// with a button inside a bordered box: the box's border and the button's
+		// outline both have to survive the repaint.
+		name: 'editor-unsaved-write-forced-colors',
+		query: 'surface=editor&theme=light&open=rest_pool&unsaved=write',
 		size: EDITOR_FRAME,
 		flags: ['--force-high-contrast'],
 	},
@@ -1647,6 +1922,13 @@ const DEFAULTS = [
 		size: '1500,2600',
 	},
 	{
+		// Card's Computed entry: a label over a single `0`, which is its
+		// placeholder formula resolving, with no pill and no note line.
+		name: 'picker-computed',
+		query: 'surface=editor&theme=light&layout=canvas-demo&pickerActive=card:1',
+		size: '1500,2600',
+	},
+	{
 		// A container draws the two placeholder children the picker supplies,
 		// as two tabs, under the tag.
 		name: 'picker-container',
@@ -1786,6 +2068,135 @@ const DEFAULTS = [
 		query: 'surface=editor&theme=dark&layout=canvas-demo&drag=front%3A180%2C120',
 		size: '1400,1400',
 	},
+	/*
+	 * **The tree** (`docs/features/layout-editor-tree.md`): nesting drawn as a
+	 * narrower card and a guide per enclosing container, the fold, the row menu
+	 * and a refused chord. The default layout already holds every shape these
+	 * need — `Proficiencies › Weapons › Attack bonus` two containers deep, the tab
+	 * set `Pages`, and `Ability checks` with its three groups — so no fixture of
+	 * their own. On EDITOR_FRAME, because the tree is the whole left column.
+	 */
+	{
+		// Everything expanded: a reviewer should be able to say each row's depth
+		// without counting pixels.
+		name: 'editor-tree',
+		query: 'surface=editor&theme=light',
+		size: EDITOR_FRAME,
+	},
+	{
+		name: 'editor-tree-dark',
+		query: 'surface=editor&theme=dark',
+		size: EDITOR_FRAME,
+	},
+	{
+		// Two containers shut: the closed chevron, the count, nothing of theirs
+		// listed, and the gap to the next row the same as between two top-level
+		// rows.
+		name: 'editor-tree-collapsed',
+		query: 'surface=editor&theme=light&collapse=proficiencies,pages',
+		size: EDITOR_FRAME,
+	},
+	{
+		name: 'editor-tree-collapsed-dark',
+		query: 'surface=editor&theme=dark&collapse=proficiencies,pages',
+		size: EDITOR_FRAME,
+	},
+	{
+		// The ring on a depth-1 container row, with its guide running down
+		// through what it holds.
+		name: 'editor-tree-selected',
+		query: 'surface=editor&theme=light&open=weapons',
+		size: EDITOR_FRAME,
+	},
+	{
+		name: 'editor-tree-selected-dark',
+		query: 'surface=editor&theme=dark&open=weapons',
+		size: EDITOR_FRAME,
+	},
+	{
+		// A depth-2 row's name focused, beside a selected row in the same shot, so
+		// the two rings can be told apart where they sit together.
+		name: 'editor-tree-focus',
+		query:
+			'surface=editor&theme=light&open=weapons&focus=%5Bdata-sheetsmith-focus%3D%22edit-weapon_bonus%22%5D',
+		size: EDITOR_FRAME,
+	},
+	{
+		name: 'editor-tree-focus-dark',
+		query:
+			'surface=editor&theme=dark&open=weapons&focus=%5Bdata-sheetsmith-focus%3D%22edit-weapon_bonus%22%5D',
+		size: EDITOR_FRAME,
+	},
+	{
+		// The split at its narrowest, grown rather than bounded so the tree is in
+		// the picture: `editor-threshold` is the same width held to the window,
+		// which shows the panel and none of the tree. A two-deep card here is
+		// the narrowest the tree draws one — measured 514px wide at 1210 — and it
+		// has to hold its name and its two controls. 17200 against a leaf that
+		// ends at 17022.
+		name: 'editor-tree-threshold',
+		query: 'surface=editor&theme=light&open=weapons',
+		size: '1210,17200',
+	},
+	{
+		// The app's own menu, painted by the calibrated `.menu` rules: a disabled
+		// item visibly disabled, and **Remove** in the warning colour. Light only,
+		// since the menu is the app's chrome and not the plugin's.
+		name: 'editor-tree-menu',
+		query: 'surface=editor&theme=light&menu=weapon_bonus',
+		size: EDITOR_FRAME,
+	},
+	{
+		// A same-layout paste of a container (`docs/features/component-copy-paste.md`
+		// §4): the pane copies `Proficiencies` through its own Mod+C and pastes it
+		// back by Mod+V. "Proficiencies 2" lands selected at the foot of the top
+		// level with every child suffixed, and the panel on it. Light only: the
+		// tree's rows and the panel are shot in both themes elsewhere.
+		name: 'editor-paste-landed',
+		query: 'surface=editor&theme=light&paste=proficiencies%3Aself',
+		size: PASTE_FRAME,
+	},
+	{
+		// A hit-dice Track copied from another layout, pasted after `Death saves`.
+		// Its ids are kept where they are free, it sits at the foot of its level,
+		// and the panel shows its `long rest` binding exactly as it came. The
+		// notice naming what to check is not drawn by the harness, so its words
+		// are asserted in `layout-editor.test.ts`.
+		name: 'editor-paste-cross',
+		query: 'surface=editor&theme=light&paste=death_saves%3Ahit-dice',
+		size: PASTE_FRAME,
+	},
+	{
+		name: 'editor-paste-cross-dark',
+		query: 'surface=editor&theme=dark&paste=death_saves%3Ahit-dice',
+		size: PASTE_FRAME,
+	},
+	{
+		// Paste configuration of a Pool onto a Track, refused in place: the line
+		// under `Death saves` names both types.
+		name: 'editor-paste-refused',
+		query: 'surface=editor&theme=light&paste=death_saves%3Apool%3Aconfig',
+		size: PASTE_FRAME,
+	},
+	{
+		name: 'editor-paste-refused-dark',
+		query: 'surface=editor&theme=dark&paste=death_saves%3Apool%3Aconfig',
+		size: PASTE_FRAME,
+	},
+	{
+		// A chord the row cannot take: `Tools` into `Weapons`, which would put
+		// Tools, a Group holding components, inside two containers, where it may
+		// hold nothing. The refusal line under the row, in `canReparent`'s own
+		// sentence: Tools holds components, and says to move them out first.
+		name: 'editor-tree-key-refused',
+		query: 'surface=editor&theme=light&treeKey=tools%3AArrowRight',
+		size: EDITOR_FRAME,
+	},
+	{
+		name: 'editor-tree-key-refused-dark',
+		query: 'surface=editor&theme=dark&treeKey=tools%3AArrowRight',
+		size: EDITOR_FRAME,
+	},
 	{
 		// A valid drop, hovering: `Front` dragged onto `Gear`, a container
 		// that accepts it, showing the drop highlight before release.
@@ -1807,9 +2218,11 @@ const DEFAULTS = [
 		size: '1400,1400',
 	},
 	{
-		// A refused drop, completed: `Front` onto `Inventory`, a Table
-		// rather than a container, which shows the inline message in place
-		// rather than the drag being silently ignored.
+		// A refused drop: `Front` over `Inventory`, a Table rather than a
+		// container, which shows the inline message in place rather than the
+		// drag being silently ignored. Held over the row rather than released,
+		// since a browser fires no drop there and the message shows while the
+		// pointer rests on the row.
 		name: 'canvas-tree-drag-refused',
 		query: 'surface=editor&theme=light&layout=canvas-demo&treeDrop=front%3Ainventory',
 		size: '1400,1400',

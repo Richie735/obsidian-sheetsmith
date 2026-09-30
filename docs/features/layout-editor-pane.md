@@ -197,6 +197,8 @@ triangle would disclose nothing — the row's own name is the button that select
 it, which is what makes "click a tree row" a control rather than a handler
 (`docs/UI.md` §6). **And the remove control stays on the row**, where it already
 was; nothing gained an edit affordance, because selecting is the edit.
+*Both superseded by `docs/features/layout-editor-tree.md`: a container row now
+has a chevron that folds its children, and remove moved into the row's menu.*
 
 ### One selection, and the tree's first row is the layout
 
@@ -633,7 +635,9 @@ component labels rather than layout names.
 
 **No reparenting — superseded.** `docs/features/grid-canvas.md` §5 designed and
 shipped it: dragging a row in the tree, or its indent/outdent controls, moves a
-component between containers. Left standing here only as a pointer.
+component between containers. Left standing here only as a pointer. *The
+indent/outdent controls are now the row menu's moves and their chords
+(`docs/features/layout-editor-tree.md`).*
 
 **No contract growth.** No size hint, no icon, no formula-field marking, no
 `validateConfig`, no pre-render error member, no minimum column count.

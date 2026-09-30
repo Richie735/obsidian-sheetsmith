@@ -22,7 +22,6 @@
 
 import {
 	FileView,
-	Notice,
 	TAbstractFile,
 	TFile,
 	ViewStateResult,
@@ -33,7 +32,14 @@ import {
 	LayoutEditorSection,
 	SHEET_DESTINATION,
 } from '../editor/layout-editor';
-import { isLayoutExtension, layoutFileFor, listLayouts } from '../layouts';
+import { offerLayoutCopy } from '../editor/layout-copy';
+import { stoppedSentence } from '../editor/unsaved-layouts';
+import {
+	basenameOfPath,
+	isLayoutExtension,
+	layoutFileFor,
+	listLayouts,
+} from '../layouts';
 import type SheetsmithPlugin from '../main';
 import { openSheetViews } from './sheet-view';
 
@@ -78,6 +84,12 @@ export class LayoutEditorView extends FileView implements LayoutEditorHost {
 	private closing = false;
 	/** What the panel is configuring. Ephemeral state. */
 	private selected: string = SHEET_DESTINATION;
+	/**
+	 * The containers the tree draws shut. State rather than ephemeral state,
+	 * unlike the selection, because a restored workspace should come back folded
+	 * the way the author left it (`docs/features/layout-editor-tree.md` §4).
+	 */
+	private folded = new Set<string>();
 
 	/*
 	 * `navigation` is left at `FileView`'s own `true`, which is a decision with a
@@ -131,6 +143,13 @@ export class LayoutEditorView extends FileView implements LayoutEditorHost {
 		this.registerEvent(
 			this.app.vault.on('modify', (file) => void this.onModify(file)),
 		);
+		// Mod+C and Mod+V on a tree row (`docs/features/component-copy-paste.md`
+		// §2). On the document, because a focused button with no selection sends
+		// both there rather than to itself; the editor answers only for its own
+		// rows. Through `registerDomEvent`, so closing the pane takes them down.
+		const doc = this.containerEl.ownerDocument;
+		this.registerDomEvent(doc, 'copy', (event) => this.editor.clipboardEvent(event));
+		this.registerDomEvent(doc, 'paste', (event) => this.editor.clipboardEvent(event));
 	}
 
 	getIcon(): string {
@@ -173,7 +192,9 @@ export class LayoutEditorView extends FileView implements LayoutEditorHost {
 	 */
 	async onUnloadFile(file: TFile): Promise<void> {
 		const present = this.app.vault.getAbstractFileByPath(file.path) === file;
-		this.editor.release(present);
+		// Awaited: letting go waits for every write in flight before it decides
+		// what the file being left keeps (`docs/features/unsaveable-layout.md` §4).
+		await this.editor.release(present);
 		this.bound = null;
 		if (!this.closing) this.redraw();
 	}
@@ -212,9 +233,14 @@ export class LayoutEditorView extends FileView implements LayoutEditorHost {
 		}
 		if (this.bound !== bound || this.editor.holds(text)) return;
 		const dropped = this.editor.reload();
-		if (dropped) {
-			new Notice(
+		// Sticky and carrying the copy, because the notice is now the only place
+		// the dropped edit still exists (`docs/features/unsaveable-layout.md` §4).
+		if (dropped !== null) {
+			offerLayoutCopy(
 				`"${bound.basename}" changed on disk, so the layout editor reloaded it. An edit not yet saved here was dropped.`,
+				bound.basename,
+				dropped,
+				0,
 			);
 		}
 		this.redraw();
@@ -233,6 +259,14 @@ export class LayoutEditorView extends FileView implements LayoutEditorHost {
 	}
 
 	/**
+	 * The pane's own text of a layout it holds and could not save, or null —
+	 * what the plugin's unload offers to copy.
+	 */
+	unsavedText(): string | null {
+		return this.editor.unsavedText();
+	}
+
+	/**
 	 * Undo or redo the most recent mutation the editor recorded.
 	 *
 	 * Both delegate straight to `LayoutEditorSection`, which owns the two
@@ -240,13 +274,15 @@ export class LayoutEditorView extends FileView implements LayoutEditorHost {
 	 * commands (`docs/features/editor-undo.md`) something on the view to call,
 	 * the same shape `flush` above already has. Each returns whether it
 	 * actually undid or redid something, which is what a command uses to
-	 * decide whether its own feedback fires.
+	 * decide whether its own feedback fires — or a promise of it, where a write
+	 * was still in flight and the action waits for it
+	 * (`docs/features/unsaveable-layout.md` §3).
 	 */
-	undo(): boolean {
+	undo(): boolean | Promise<boolean> {
 		return this.editor.undo();
 	}
 
-	redo(): boolean {
+	redo(): boolean | Promise<boolean> {
 		return this.editor.redo();
 	}
 
@@ -278,6 +314,27 @@ export class LayoutEditorView extends FileView implements LayoutEditorHost {
 
 	setSelection(id: string): void {
 		this.selected = id;
+	}
+
+	get collapsed(): ReadonlySet<string> {
+		return this.folded;
+	}
+
+	/**
+	 * Remember which containers are shut, and ask the workspace to save.
+	 *
+	 * The save is asked for here rather than left to the next layout change,
+	 * because a fold is the whole of what changed: nothing else about the
+	 * workspace moves when a chevron is pressed, so without the request a fold
+	 * made just before quitting would not come back. Only where the set actually
+	 * changed, since the tree also calls this from inside a render to drop an id
+	 * the layout no longer holds, and a render is not an edit to the workspace.
+	 */
+	setCollapsed(ids: Iterable<string>): void {
+		const next = new Set(ids);
+		if (sameIds(next, this.folded)) return;
+		this.folded = next;
+		this.app.workspace.requestSaveLayout();
 	}
 
 	/**
@@ -368,12 +425,22 @@ export class LayoutEditorView extends FileView implements LayoutEditorHost {
 
 	/* --- Posture the workspace remembers ------------------------------- */
 
-	/*
-	 * `getState` is `FileView`'s own, `{ file: <path> }`: which file is open and
-	 * nothing else, which is the one piece of posture that reopening on a
-	 * different layout would read as a bug. What is *selected* is deliberately
-	 * not in it: see `getEphemeralState`.
+	/**
+	 * `FileView`'s own, `{ file: <path> }`, plus the containers the tree draws
+	 * shut: the two pieces of posture that reopening without would read as a
+	 * bug. What is *selected* is deliberately not in it: see
+	 * `getEphemeralState`.
+	 *
+	 * `collapsed` is sorted, so a workspace file does not churn with the order the
+	 * chevrons happened to be pressed in, and left out when nothing is shut, so a
+	 * pane that never folded anything saves exactly what it saved before this
+	 * existed.
 	 */
+	getState(): Record<string, unknown> {
+		const state = super.getState();
+		if (this.folded.size > 0) state.collapsed = [...this.folded].sort();
+		return state;
+	}
 
 	/**
 	 * `FileView`'s own, after one translation: the shape an earlier version
@@ -395,10 +462,47 @@ export class LayoutEditorView extends FileView implements LayoutEditorHost {
 				this.plugin.settings.layoutFolder,
 				legacy,
 			);
-			await super.setState({ ...given, file: file?.path ?? null }, result);
+			const translated = { ...given, file: file?.path ?? null };
+			this.takeCollapsed(translated);
+			await super.setState(translated, result);
 			return;
 		}
+		this.takeCollapsed(given);
 		await super.setState(state, result);
+	}
+
+	/**
+	 * Adopt the folds a state carries, **before** the base class loads the file
+	 * it names, since loading draws and the first draw has to read them.
+	 *
+	 * **Per file**, which is the decision here: a state naming a different file
+	 * from the one open replaces the set with whatever it carries, and that is
+	 * nothing when it carries no key — the dropdown's own `{ file }` among them.
+	 * An id like `abilities` means a different container in a different layout,
+	 * which is the undo stack's reason for clearing at the same moment. Anything
+	 * but an array of strings is ignored, as a malformed workspace file should be.
+	 *
+	 * A state for the file already open adopts a well-formed set and redraws, and
+	 * leaves the folds alone otherwise: that is what revealing the pane sends.
+	 */
+	private takeCollapsed(given: Record<string, unknown>): void {
+		const raw = given.collapsed;
+		const carried =
+			Array.isArray(raw) && raw.every((id) => typeof id === 'string')
+				? raw
+				: null;
+		const names = 'file' in given;
+		const path = typeof given.file === 'string' ? given.file : null;
+		const another = names && path !== (this.file?.path ?? null);
+		if (another) {
+			this.folded = new Set(carried ?? []);
+			return;
+		}
+		if (carried === null) return;
+		const next = new Set(carried);
+		if (sameIds(next, this.folded)) return;
+		this.folded = next;
+		if (this.root !== null) this.redraw();
 	}
 
 	/**
@@ -453,6 +557,38 @@ export class LayoutEditorView extends FileView implements LayoutEditorHost {
 			if (el) el.scrollTop = panel;
 		}
 	}
+}
+
+/**
+ * Say, once per layout, that the plugin is stopping with changes not saved to
+ * it, whether a pane still holds them or the plugin kept them
+ * (`docs/features/unsaveable-layout.md` §4), and offer each a copy.
+ *
+ * **Idempotent, and it marks the store stopped first**, so a pane that lets go
+ * of its layout after this — the plugin's views closing as it unloads — keeps
+ * nothing and says nothing more: each layout gets exactly one notice, this one.
+ */
+export function announceUnsavedLayouts(plugin: SheetsmithPlugin): void {
+	const store = plugin.unsavedLayouts;
+	if (store.stopped) return;
+	store.stopped = true;
+	for (const leaf of plugin.app.workspace.getLeavesOfType(VIEW_TYPE_LAYOUT_EDITOR)) {
+		const view = leaf.view;
+		if (!(view instanceof LayoutEditorView)) continue;
+		const text = view.unsavedText();
+		const file = view.file;
+		if (text === null || file === null) continue;
+		offerLayoutCopy(stoppedSentence(file.basename), file.basename, text, 0);
+	}
+	for (const [path, kept] of store.entries()) {
+		const basename = basenameOfPath(path);
+		offerLayoutCopy(stoppedSentence(basename), basename, kept.text, 0);
+	}
+}
+
+/** Whether two sets of ids hold the same ids. */
+function sameIds(a: ReadonlySet<string>, b: ReadonlySet<string>): boolean {
+	return a.size === b.size && [...a].every((id) => b.has(id));
 }
 
 /**

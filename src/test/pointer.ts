@@ -141,7 +141,7 @@ export function release(el: Target, init: PointerEventInit = {}): void {
  *
  * Named for the event and not for what a control does about it, which is the
  * whole of why it can be shared. The two callers disagree about the policy:
- * `layout-editor.test.ts` drives a schematic that treats a cancel as an abandon
+ * `schematic-gestures.test.ts` drives a schematic that treats a cancel as an abandon
  * and puts the block back, and `pool.test.ts` drives a stepper whose own comment
  * says "cancelled, not abandoned" — the repeat stops and the value it reached is
  * still written. A name carrying either answer would be wrong at the other site.

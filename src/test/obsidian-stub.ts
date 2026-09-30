@@ -251,8 +251,14 @@ export function installDomHelpers(): void {
 // renders, so there is nothing for the helpers to be missing from.
 if (typeof HTMLElement !== 'undefined') installDomHelpers();
 
-/** Which controls `addControls` renders; the tests flip it to cover both. */
-export const Platform = { isMobile: false };
+/**
+ * The two platform facts the plugin reads. `isMobile` is which controls
+ * `addControls` renders, and the tests flip it to cover both; `isMacOS` is which
+ * modifier name the layout editor's tree spells in its shortcut hint (Option
+ * against Alt), false by default so a hint reads the same on every machine a
+ * test runs on.
+ */
+export const Platform = { isMobile: false, isMacOS: false };
 
 /**
  * The path half of a link, with any `#subpath` dropped — which is what
@@ -338,6 +344,13 @@ const ICONS: Readonly<Record<string, readonly IconShape[]>> = {
 		['path', { d: 'm19 12-7 7-7-7' }],
 	],
 	'grip-vertical': gripDots(),
+	// The layout editor's tree row menu button (`docs/features/layout-editor-tree.md`
+	// §1): three dots stacked, Lucide's own circles.
+	'ellipsis-vertical': [
+		['circle', { cx: '12', cy: '12', r: '1' }],
+		['circle', { cx: '12', cy: '5', r: '1' }],
+		['circle', { cx: '12', cy: '19', r: '1' }],
+	],
 	// The layout editor's **Copy layout JSON** control, beside the trash on the
 	// same row (`docs/features/layout-import-export.md`). Two overlapping sheets,
 	// which is the one glyph a reader already reads as "copy" — and it has to be
@@ -346,6 +359,32 @@ const ICONS: Readonly<Record<string, readonly IconShape[]>> = {
 	copy: [
 		['rect', { width: '14', height: '14', x: '8', y: '8', rx: '2', ry: '2' }],
 		['path', { d: 'M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2' }],
+	],
+	// A tree row's **Paste** and **Paste configuration**
+	// (`docs/features/component-copy-paste.md` §1), copied out of Obsidian
+	// 1.13.7's own icon table rather than from Lucide's site, so the glyph a
+	// shot draws is the one the app draws. The rect is `[x, y, w, h, rx]` there.
+	'clipboard-paste': [
+		['path', { d: 'M11 14h10' }],
+		['path', { d: 'M16 4h2a2 2 0 0 1 2 2v1.344' }],
+		['path', { d: 'm17 18 4-4-4-4' }],
+		['path', { d: 'M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 1.793-1.113' }],
+		['rect', { x: '8', y: '2', width: '8', height: '4', rx: '1' }],
+	],
+	paintbrush: [
+		['path', { d: 'm14.622 17.897-10.68-2.913' }],
+		[
+			'path',
+			{
+				d: 'M18.376 2.622a1 1 0 1 1 3.002 3.002L17.36 9.643a.5.5 0 0 0 0 .707l.944.944a2.41 2.41 0 0 1 0 3.408l-.944.944a.5.5 0 0 1-.707 0L8.354 7.348a.5.5 0 0 1 0-.707l.944-.944a2.41 2.41 0 0 1 3.408 0l.944.944a.5.5 0 0 0 .707 0z',
+			},
+		],
+		[
+			'path',
+			{
+				d: 'M9 8c-1.804 2.71-3.97 3.46-6.583 3.948a.507.507 0 0 0-.302.819l7.32 8.883a1 1 0 0 0 1.185.204C12.735 20.405 16 16.792 16 15',
+			},
+		],
 	],
 	// An empty modifier cell, which is the entry point for adding one: `plus`
 	// rather than a fainter `zap`, because "none" against "applying" would then be
@@ -488,6 +527,134 @@ export class Notice {
 	}
 	hide(): void {
 		this.hidden = true;
+	}
+}
+
+/**
+ * One line of a `Menu`, drawing the app's own markup: `div.menu-item` holding
+ * `.menu-item-icon` and `.menu-item-title`, with `is-disabled` and `is-warning`
+ * as the two states this plugin sets.
+ *
+ * **A disabled item's click does nothing**, which is the app's rule and the one
+ * a test leans on: `setDisabled` is how the tree refuses a move from its menu,
+ * and a double that still ran the callback would let a refused move write.
+ */
+export class MenuItem {
+	readonly dom: HTMLElement;
+	private readonly iconEl: HTMLElement;
+	private readonly titleEl: HTMLElement;
+	private callback: ((event: MouseEvent | KeyboardEvent) => unknown) | null = null;
+	disabled = false;
+
+	constructor(private readonly menu: Menu) {
+		this.dom = document.createElement('div');
+		this.dom.className = 'menu-item tappable';
+		this.iconEl = this.dom.createDiv('menu-item-icon');
+		this.titleEl = this.dom.createDiv('menu-item-title');
+		this.dom.addEventListener('click', (event) => {
+			if (this.disabled) return;
+			this.menu.hide();
+			void this.callback?.(event);
+		});
+	}
+
+	setTitle(title: string | DocumentFragment): this {
+		if (typeof title === 'string') this.titleEl.textContent = title;
+		else this.titleEl.replaceChildren(title);
+		return this;
+	}
+
+	setIcon(icon: string | null): this {
+		if (icon === null) this.iconEl.replaceChildren();
+		else setIcon(this.iconEl, icon);
+		return this;
+	}
+
+	setDisabled(disabled: boolean): this {
+		this.disabled = disabled;
+		this.dom.classList.toggle('is-disabled', disabled);
+		return this;
+	}
+
+	setWarning(isWarning: boolean): this {
+		this.dom.classList.toggle('is-warning', isWarning);
+		return this;
+	}
+
+	onClick(callback: (event: MouseEvent | KeyboardEvent) => unknown): this {
+		this.callback = callback;
+		return this;
+	}
+}
+
+/**
+ * The app's context menu, as far as a plugin can see it: items and separators
+ * added in order, shown at a point, hidden by a press on an item.
+ *
+ * **It draws the app's markup on `document.body`** — `div.menu` over
+ * `div.menu-scroll`, holding `div.menu-item` and `div.menu-separator` — so a
+ * harness shot of an open menu is painted by the calibrated stylesheet rather
+ * than by a stand-in, and a test finds an item by its title. Placed at the point
+ * it was shown at, with `position: fixed` coming from the app's own rule.
+ *
+ * **What is not modelled**: the keyboard (the app's menu takes the arrows,
+ * Enter and Escape through a scope of its own), dismissal on a press outside,
+ * submenus, sections, and clamping into the window. One open menu at a time is
+ * modelled, because the app hides the previous menu when another is shown.
+ */
+export class Menu {
+	/** The menu on screen, if any, which is what a test reads. */
+	static open: Menu | null = null;
+	readonly dom: HTMLElement;
+	private readonly scroll: HTMLElement;
+	readonly items: MenuItem[] = [];
+	private hideCallbacks: (() => unknown)[] = [];
+
+	constructor() {
+		this.dom = document.createElement('div');
+		this.dom.className = 'menu';
+		this.scroll = this.dom.createDiv('menu-scroll');
+	}
+
+	addItem(cb: (item: MenuItem) => unknown): this {
+		const item = new MenuItem(this);
+		this.items.push(item);
+		this.scroll.appendChild(item.dom);
+		cb(item);
+		return this;
+	}
+
+	addSeparator(): this {
+		this.scroll.createDiv('menu-separator');
+		return this;
+	}
+
+	showAtMouseEvent(event: MouseEvent): this {
+		return this.showAtPosition({ x: event.clientX, y: event.clientY });
+	}
+
+	showAtPosition(position: { x: number; y: number }, doc: Document = document): this {
+		if (Menu.open !== null && Menu.open !== this) Menu.open.hide();
+		this.dom.setCssStyles({ left: `${position.x}px`, top: `${position.y}px` });
+		doc.body.appendChild(this.dom);
+		Menu.open = this;
+		return this;
+	}
+
+	hide(): this {
+		if (!this.dom.isConnected) return this;
+		this.dom.remove();
+		if (Menu.open === this) Menu.open = null;
+		for (const callback of this.hideCallbacks) void callback();
+		return this;
+	}
+
+	close(): void {
+		this.hide();
+	}
+
+	onHide(callback: () => unknown): void {
+		this.hideCallbacks.push(callback);
 	}
 }
 
@@ -871,6 +1038,12 @@ export class TFolder extends TAbstractFile {
 
 export class Vault {
 	private files = new Map<string, { file: TFile; content: string }>();
+	/**
+	 * The vault's name, which the app takes from its folder. Settable, because
+	 * the one reader (a copied component's fingerprint,
+	 * `parse/component-clipboard.ts`) is about telling two vaults apart.
+	 */
+	name = 'Test vault';
 	private folders = new Map<string, TFolder>();
 	/**
 	 * Who is listening for which file event.
@@ -897,6 +1070,10 @@ export class Vault {
 	 * and call it green.
 	 */
 	private root = new TFolder('/', this);
+
+	getName(): string {
+		return this.name;
+	}
 
 	/**
 	 * The root is in the folder map, because in the app it is a map entry.
@@ -1102,6 +1279,16 @@ export class Vault {
 
 	async read(file: TFile): Promise<string> {
 		return this.files.get(file.path)?.content ?? '';
+	}
+
+	/**
+	 * The app's cached read, which differs from `read` only in where the text
+	 * comes from: a cache the app invalidates on every write. This double keeps
+	 * no cache to go stale, so the two answer the same text — which is the
+	 * app's answer too, for a file nothing is writing at that moment.
+	 */
+	async cachedRead(file: TFile): Promise<string> {
+		return this.read(file);
 	}
 
 	async modify(file: TFile, content: string): Promise<void> {
@@ -1903,6 +2090,25 @@ export class Workspace {
 	async revealLeaf(leaf: WorkspaceLeaf): Promise<void> {
 		this.activeLeaf = leaf;
 	}
+
+	/**
+	 * How many times a view asked for the workspace to be saved, which is what a
+	 * test reads. The app's own is a `Debouncer` that writes `workspace.json` a
+	 * moment later; nothing here has a workspace file, so what is honoured is the
+	 * request, and `cancel`/`run` are there because the type offers them.
+	 */
+	layoutSavesRequested = 0;
+
+	requestSaveLayout = Object.assign(
+		() => {
+			this.layoutSavesRequested += 1;
+			return this.requestSaveLayout;
+		},
+		{
+			cancel: () => this.requestSaveLayout,
+			run: () => undefined,
+		},
+	);
 
 	on(name: string, callback: (...args: unknown[]) => unknown): EventRef {
 		const set = this.listeners.get(name) ?? new Set();

@@ -483,12 +483,18 @@
 	align-items: stretch;
 }
 
-/* The group's authored name, above its cards. A heading over a strip of
-   cards, so it must not wear the same clothes as the micro-label inside
-   each card: same rule as the settings form keeps between a group heading
-   and a field label. The cards own the uppercase-and-tracked treatment;
-   the heading is the one in sentence case at full contrast. */
-.sheetsmith-card-set-label {
+/* A component's authored name above a block of micro-labels: a Card set's
+   over its cards, a Table's over its thead. One role in one set of clothes,
+   so one rule. Each block's own labels are uppercase, tracked and muted (the
+   card labels there, the thead here), which is the same rule the settings form
+   keeps between a group heading and a field label: the heading is the one in
+   sentence case at full contrast, or the two read as the same rank.
+
+   A Table's is in this list rather than beside its own component's rules
+   because the two are one declaration set by design, and two copies of it are
+   what `styles.test.ts`'s duplicate-body scan exists to refuse. */
+.sheetsmith-card-set-label,
+.sheetsmith-table-label {
 	margin-bottom: var(--size-2-3);
 	font-size: var(--font-ui-small);
 	font-weight: var(--font-semibold);
@@ -875,6 +881,11 @@
 	background: transparent;
 	box-shadow: none;
 	text-align: center;
+	/* A note longer than the card ends in an ellipsis rather than mid-word,
+	   and `card-face.ts` reveals the whole of it on hover through
+	   `ui/truncation.ts`. A focused field scrolls natively, as every field
+	   does. */
+	text-overflow: ellipsis;
 	font-size: var(--font-ui-smaller);
 	color: var(--text-muted);
 }
@@ -1112,19 +1123,6 @@
 
 }
 
-/* The component's authored name, above its table — the same role the stat
-   group's label plays above its cards, so it wears the same clothes. Both sit
-   over a block whose own micro-labels are uppercase, tracked, and muted (the
-   thead here, the card labels there); the heading is the one in sentence case
-   at full contrast, or the two read as the same rank. */
-.sheetsmith-table-label {
-	margin-bottom: var(--size-2-3);
-	font-size: var(--font-ui-small);
-	font-weight: var(--font-semibold);
-	line-height: 1.3;
-	color: var(--text-normal);
-}
-
 /* A wide table scrolls inside its own box. The sheet is a grid, and one
    component growing a column must never make the whole page scroll
    sideways — least of all on a phone, where the reflow already stacks
@@ -1166,7 +1164,17 @@
 	vertical-align: middle;
 }
 
-.sheetsmith-view .sheetsmith-table thead th {
+/* The thead's quiet treatment, and the footer's "Total", which is a label on a
+   reading rather than a row name and so wears the same one. The Total cell stays
+   a th carrying the name column's class, or it slides out from under its own
+   column on a phone-width sheet while the numbers stay put.
+
+   Here rather than beside the foot's own border rule further down, and the move
+   changes nothing in the cascade. The foot selector is (0,3,1), which already
+   outweighs the name column's (0,3,0) font weight and colour below wherever it
+   sits, and no rule between here and the foot sets type on a table cell. */
+.sheetsmith-view .sheetsmith-table thead th,
+.sheetsmith-view .sheetsmith-table tfoot .sheetsmith-table-name {
 	font-size: var(--font-smallest);
 	font-weight: var(--font-medium);
 	letter-spacing: 0.04em;
@@ -1917,18 +1925,6 @@
 .sheetsmith-view .sheetsmith-table tfoot th,
 .sheetsmith-view .sheetsmith-table tfoot td {
 	border-bottom: none;
-}
-
-/* "Total" is a label on a reading, not a row name, so it wears the thead's
-   quiet treatment. It stays a th carrying the name column's class, or it slides
-   out from under its own column on a phone-width sheet while the numbers stay
-   put. */
-.sheetsmith-view .sheetsmith-table tfoot .sheetsmith-table-name {
-	font-size: var(--font-smallest);
-	font-weight: var(--font-medium);
-	letter-spacing: 0.04em;
-	text-transform: uppercase;
-	color: var(--text-muted);
 }
 
 /* A finger has no hover to find the target with and no pixel to aim at, so
@@ -3128,8 +3124,11 @@ body {
 	cursor: default;
 }
 
-/* Sits inside a Notice, which has its own colours to read against. */
-a.sheetsmith-undo {
+/* The one action a notice carries — **Undo**, or **Copy layout**
+   (`ui/undo-notice.ts`'s `offerAction`). Sits inside a Notice, which has its own
+   colours to read against. Named for the markup rather than for undo, since the
+   third caller's link copies. */
+a.sheetsmith-notice-action {
 	color: inherit;
 	cursor: pointer;
 	text-decoration: underline;
@@ -3228,7 +3227,15 @@ a.sheetsmith-undo {
    what the repeated `justify-items: start` below is for.
 
    Verified by rendering both and diffing: pixel for pixel identical across all
-   80 shots. */
+   80 shots.
+
+   **The row's floor is the pointer minimum**, `--size-4-5` (20px), and the two
+   fields a row can hold take the same floor below, so a field is a 20x20
+   target and a card mixing declared and typed names keeps one pitch rather
+   than going ragged (`docs/UI.md` §7). Measured before: every row 18.9px on a
+   20.9px pitch, a typed name field 75.6x12 and a length field 16.1x16; after,
+   20px rows on a 22px pitch and fields of 75.6x20 and 20x20. `min-height`
+   rather than `height`, so a larger text size still grows the row. */
 .sheetsmith-track-set .sheetsmith-track-row {
 	display: grid;
 	grid-column: 1 / -1;
@@ -3236,13 +3243,21 @@ a.sheetsmith-undo {
 	justify-self: stretch;
 	justify-items: start;
 	align-items: center;
+	min-height: var(--size-4-5);
 }
 
-/* In the clothes the step name wears — a size down, tracked, and faint — for
-   the same reason: it names the run rather than being part of the reading. */
+/* In the clothes the step name wears — a size down and tracked — for the same
+   reason: it names the run rather than being part of the reading.
+
+   **Muted, not faint**, because a reader reads a name back, and one of them is
+   the character's own typed text. `--text-faint` measured 2.12:1 light and
+   2.57:1 dark on the card's `--background-secondary`, against the 4.5:1 small
+   text needs; `--text-muted` is 6.19:1 and 7.03:1. The rank below the
+   segments' `--text-normal` is carried by size, tracking and case, as the
+   card's own label's is (`docs/UI.md` §6). */
 .sheetsmith-track-row-name {
 	overflow: hidden;
-	color: var(--text-faint);
+	color: var(--text-muted);
 	font-size: calc(var(--font-ui-smaller) * 0.85);
 	letter-spacing: 0.06em;
 	text-align: right;
@@ -3290,8 +3305,15 @@ a.sheetsmith-undo {
    nothing here is a card's centre-line number, so the field reads as part of
    the row rather than as a second reading competing with the run beside
    it. Scoped under `.sheetsmith-view` for the reason every bare input here
-   is: Obsidian styles `input[type='text']` at (0,1,1). */
+   is: Obsidian styles `input[type='text']` at (0,1,1).
+
+   The floor is the row's own, `--size-4-5` on both axes, so the field is a
+   20x20 target where it measured 16.1x16. The `min-width` is here rather than
+   on the pool's class, so Pool's max field does not move, and it sits below
+   that class's `@supports` block so it wins on order at equal weight. */
 .sheetsmith-view .sheetsmith-track-row-length-input {
+	min-width: var(--size-4-5);
+	min-height: var(--size-4-5);
 	font-size: var(--font-ui-small);
 }
 
@@ -3323,6 +3345,9 @@ a.sheetsmith-undo {
 	min-width: 0;
 	max-width: 100%;
 	height: auto;
+	/* The row's floor, so a typed name is a 20px-tall target where it measured
+	   12px (see `.sheetsmith-track-set .sheetsmith-track-row`). */
+	min-height: var(--size-4-5);
 	/* **No horizontal padding, so the two kinds of name share one left edge.**
 	   `0 var(--size-2-1)` staggered them 2px — measured leftmost ink at x=27
 	   for a declared `d6` against x=29 for a typed `Homebrew d4` — which reads
@@ -3337,7 +3362,7 @@ a.sheetsmith-undo {
 	border-radius: var(--radius-s);
 	background: transparent;
 	box-shadow: none;
-	color: var(--text-faint);
+	color: var(--text-muted);
 	font-size: calc(var(--font-ui-smaller) * 0.85);
 	font-weight: inherit;
 	letter-spacing: 0.06em;
@@ -3670,11 +3695,13 @@ a.sheetsmith-undo {
 
 /* A checklist's row name is the content, not a caption on it.
 
-   Every other row set draws its name faint, and rightly: on a card of spell
-   slots or death saves the segments are the reading and "Successes" says which
-   run they belong to. A flag has no reading — there is a dot and a word, and the
-   word is the only thing that says which flag it is, so drawn at --text-faint it
-   sat quieter than the table's own column headers while carrying more. The
+   Every other row set draws its name a rank below the reading, in
+   --text-muted, and rightly: on a card of spell slots or death saves the
+   segments are the reading and "Successes" says which run they belong to. A
+   flag has no reading — there is a dot and a word, and the word is the only
+   thing that says which flag it is, so drawn at the row rank (then
+   --text-faint) it sat quieter than the table's own column headers while
+   carrying more. The
    painter was shared so a flag could not measure differently on a card than in a
    cell (docs/UI.md §9); this is the label beside it, which was not.
 
@@ -3705,7 +3732,7 @@ a.sheetsmith-undo {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	segment-sizing: border-segment;
+	box-sizing: border-box;
 	width: var(--sheetsmith-track-segment-width, 1.15em);
 	height: 1.15em;
 	border: 1.5px solid var(--text-faint);
@@ -3863,8 +3890,18 @@ a.sheetsmith-undo {
    mode is where a mark most has to survive. The bar is longer than the box and
    the segment's own `overflow: hidden` clips it to the padding box, which is
    what makes it a clean corner-to-corner diagonal rather than a line with ends
-   hanging out past the corners. */
-.sheetsmith-track-segment-blocked::after {
+   hanging out past the corners.
+
+   **An over segment takes this same slash, by this selector list and not by a
+   copy**: a slot past the live run that still holds marks is one figure with a
+   slot past it that holds none, and the fill under it is the whole of the
+   difference — the same difference a lit base segment has from an unlit one.
+   The owner's condition for drawing the over part at all
+   (`docs/features/track-stored-value-past-shortened-run.md`): no new figure, no
+   new line style, no new colour. The slash paints after the fill because a
+   positioned `::after` follows its element's other positioned children. */
+.sheetsmith-track-segment-blocked::after,
+.sheetsmith-track-segment-over::after {
 	content: '';
 	position: absolute;
 	right: -6px;
@@ -3876,6 +3913,63 @@ a.sheetsmith-undo {
 	/* The run owns every press; a blocked slot is not a target and its mark
 	   must not become one. */
 	pointer-events: none;
+}
+
+/* The over part of a run too long to draw, as one box holding its count in
+   marks (`+147`), after the live segments. A segment's corner, and the lit
+   segment's accent border and fill so it reads as held marks; no slash, since a
+   slash across digits costs the count its legibility. Its width is its text's,
+   tabular so the box holds still while a burst of presses steps through it.
+   Unlit at `+0`, which only a burst of presses reaches before its write lands.
+
+   **A segment's height, taken from the segment's own font rather than this
+   box's.** A segment is `1.15em` at `--font-ui-small`; written as `1.15em` here
+   it resolved against the smaller digits and drew the box a pixel short of the
+   segments beside it (14 against 15, 18 against 19.5 under a coarse pointer).
+
+   **The border is an overlay, and forced colors is why.** That mode paints a
+   backplate behind text, sized by the font's own ascent and descent rather than
+   by `line-height`, and at this height the backplate is taller than the box's
+   content: it painted over the box's top border (bottom too, while the line box
+   was `line-height: 1`), so in forced colors the count sat in a box with no
+   top. Holding the line box to the content box fixed the bottom and not the top,
+   measured. A positioned `::after` paints after the text and its backplate — the
+   granted ring's own overlay argument, for a different reason — so the edge is
+   drawn on top in every mode, at the same footprint: the border's width becomes
+   padding. */
+.sheetsmith-track-over-count {
+	--sheetsmith-track-over-height: calc(1.15 * var(--font-ui-small));
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+	box-sizing: border-box;
+	height: var(--sheetsmith-track-over-height);
+	padding: 1.5px calc(var(--size-2-2) + 1.5px);
+	border-radius: var(--radius-s);
+	color: var(--text-muted);
+	font-size: var(--font-ui-smaller);
+	font-weight: var(--font-semibold);
+	font-variant-numeric: tabular-nums;
+	line-height: calc(var(--sheetsmith-track-over-height) - 3px);
+}
+
+.sheetsmith-track-over-count::after {
+	content: '';
+	position: absolute;
+	inset: 0;
+	border: 1.5px solid var(--text-faint);
+	border-radius: var(--radius-s);
+	/* The run owns every press; the edge must not become a target. */
+	pointer-events: none;
+}
+
+.sheetsmith-track-over-count.sheetsmith-track-segment-on {
+	background-color: var(--interactive-accent);
+	color: var(--text-on-accent);
+}
+
+.sheetsmith-track-over-count.sheetsmith-track-segment-on::after {
+	border-color: var(--interactive-accent);
 }
 
 /* The glyph sits above both fills, so a segment the layout lettered stays
@@ -4029,6 +4123,10 @@ a.sheetsmith-undo {
 .sheetsmith-track-segment {
 		width: var(--sheetsmith-track-segment-width, 1.5em);
 		height: 1.5em;
+	}
+
+.sheetsmith-track-over-count {
+		--sheetsmith-track-over-height: calc(1.5 * var(--font-ui-small));
 	}
 
 /* A finger needs the room most on the run whose marks it is aiming
@@ -5574,6 +5672,19 @@ a.sheetsmith-undo {
 	gap: var(--size-2-1);
 }
 
+/* **A field its condition hid, and the rule the attribute alone cannot be.**
+   The component sets `hidden` on the field's cell and on a body block whose
+   every field is hidden (`docs/features/conditional-field-visibility.md`), and
+   the user-agent `[hidden] { display: none }` loses to any author rule giving
+   the element a `display` — which both of these have. Without this the
+   attribute is set, every test goes green, and every field still draws.
+   `styles.test.ts` holds each `display` on either class to an answer here at
+   equal or higher specificity. */
+.sheetsmith-view .sheetsmith-record-field[hidden],
+.sheetsmith-view .sheetsmith-record-body-fields[hidden] {
+	display: none;
+}
+
 /* **One variable up from the shared abbreviation, and the job is why.** The
    clothes are `.sheetsmith-card-abbreviation`'s — a size down, tracked, quiet —
    and its colour is `--text-faint`, which a design review measured at **2.20:1**
@@ -5742,6 +5853,85 @@ a.sheetsmith-undo {
 	min-height: 0;
 }
 
+/* ---------------------------------------------------------------------------
+   A field inside the opened record (`docs/features/record-set-body-fields.md`).
+
+   **The body gains a row only when it has the block.** The rule above stacks
+   every child in one cell, which is the two-layer prose arrangement, so a block
+   dropped in beside them would sit under the prose. The body carries
+   `-has-fields` when the component draws the block: the block takes row 1 and
+   the prose layers row 2, still stacked in one cell. Without the class there is
+   no block and no second row, so a layout with no body field draws what it drew.
+
+   One `--size-2-2` step above the prose and no rule between them: the type
+   already separates the two, and a hairline would read as a second disclosure
+   boundary inside a record that is already one disclosure deep.
+   --------------------------------------------------------------------------- */
+.sheetsmith-record-body-has-fields {
+	row-gap: var(--size-2-2);
+}
+
+.sheetsmith-record-body-has-fields > * {
+	grid-area: 2 / 1;
+}
+
+.sheetsmith-record-body-has-fields > .sheetsmith-record-body-fields {
+	grid-area: 1 / 1;
+}
+
+/* The pairs wrap and a pair never splits: each field is the summary line's own
+   `.sheetsmith-record-field` inline-flex, which keeps a name with its control,
+   at the summary's own clearance between two controls. The padding puts the
+   first name's ink under the record name's ink rather than under its field's
+   box, which is the narrow rule's "the ink, not the column" one block over. Both
+   sides rather than the leading one alone, because the prose under the block is
+   padded by the same step on both: a pair then wraps where the prose's own lines
+   wrap, and never runs past the right edge the paragraph below it keeps. */
+.sheetsmith-record-body-fields {
+	display: flex;
+	align-items: center;
+	flex-wrap: wrap;
+	/* **Rows closer than columns**, so a wrapped block reads as one block and
+	   not as a line of fields followed by a caption over the prose. The column
+	   gap is the summary's clearance between two controls, unchanged. The row
+	   gap is the ring's own vertical reach instead: `.sheetsmith-level-ring::after`
+	   extends `--size-2-2` above and below the ring in both pointer modes (the
+	   coarse pointer grows the ring, not the reach), so two rings on consecutive
+	   rows meet at 8px; 12px leaves a 4px margin between their targets. */
+	gap: var(--size-4-3) var(--size-4-5);
+	/* **More room above the block than inside it or below it**, so it reads as
+	   the head of the body rather than as another summary line. Measured on the
+	   harness, box to box, on Ring of Protection: at a 280px list 18px from the
+	   summary's last field to the block, 12px between the block's two wrapped
+	   rows and 7px from the block to the prose's first line; at 1400px 23px and
+	   7px. At `--size-4-2` the first two were 10px and 12px at a 280px
+	   list, so a wrapped Recharge sat nearer the summary's bolt above it than the
+	   Save DC under it, and at 1400px the block was 8px under the summary and 7px
+	   over the prose — the head of the body by indentation alone. */
+	margin-top: var(--size-4-4);
+	padding-inline: var(--size-2-2);
+}
+
+/* Pool's empty `—`, in the faint an empty em dash takes everywhere else on a
+   sheet, and only on a body field's value: a ceiling field has its own. */
+.sheetsmith-view
+	.sheetsmith-record-body-fields
+	.sheetsmith-record-input:not(.sheetsmith-pool-max)::placeholder {
+	color: var(--text-faint);
+	opacity: 1;
+}
+
+/* A pair may be wider than a narrow body, so it may shrink, and a menu shrinks
+   inside its own `max-width` rather than widening the box. */
+.sheetsmith-record-body-fields > .sheetsmith-record-field {
+	min-width: 0;
+	max-width: 100%;
+}
+
+.sheetsmith-view .sheetsmith-record-body-fields .sheetsmith-record-select {
+	min-width: 0;
+}
+
 /* The field carries the view scope for the reason §2 of docs/UI.md gives, and it
    is not hypothetical: Obsidian styles bare `textarea` with a background, a
    border, a font size and a `resize`, so every declaration below that takes
@@ -5778,13 +5968,6 @@ a.sheetsmith-undo {
 .sheetsmith-view .sheetsmith-record-body-input::placeholder {
 	color: var(--text-faint);
 	opacity: 1;
-}
-
-.sheetsmith-view .sheetsmith-record-body-input:focus {
-	border-color: var(--interactive-accent);
-	background-color: var(--background-primary);
-	outline: 2px solid transparent;
-	outline-offset: 0;
 }
 
 /* The layer takes the pointer rather than `pointer-events: none`, because it is
@@ -6202,7 +6385,17 @@ a.sheetsmith-undo {
 			align-items: center;
 		}
 
-		.sheetsmith-record-field {
+		/* Scoped to the summary line, as every rule below that names a field is:
+		   a body field sits in a flex block of its own and has no track, so a
+		   centring margin or a paint offset meant for a column would only move it
+		   off its own name. */
+		/* **Each field in its own track by number, not by auto-placement.** A field
+		   its condition hid is `display: none`, which takes it out of placement, so
+		   auto-placed fields after it would slide one track left and out from under
+		   their headings. The component stamps each summary field's track, from 1,
+		   on a headed list only; hidden or not, a field lands where its heading is. */
+		.sheetsmith-record-summary .sheetsmith-record-field {
+			grid-column: var(--sheetsmith-record-track);
 			justify-self: center;
 			margin-inline: calc((var(--size-4-5) - var(--size-2-2)) / 2);
 		}
@@ -6220,7 +6413,7 @@ a.sheetsmith-undo {
 		   leaves the ink within about 1.6px of its heading for one to three digits
 		   in either half, where the box alone was off by up to 6.4. No static offset
 		   can do better than the spread, which is the digits' own. */
-		.sheetsmith-record-field-number {
+		.sheetsmith-record-summary .sheetsmith-record-field-number {
 			transform: translateX(-0.4em);
 		}
 
@@ -6229,9 +6422,11 @@ a.sheetsmith-undo {
 		}
 
 		/* An open body, a problem line and the add control span every track, so
-		   opening a record moves the records below it and never a column. */
+		   opening a record moves the records below it and never a column. The
+		   list's own line — a condition that could not be worked out — too. */
 		.sheetsmith-record-body,
 		.sheetsmith-view .sheetsmith-record > .sheetsmith-error,
+		.sheetsmith-view .sheetsmith-record-set-records > .sheetsmith-error,
 		.sheetsmith-view .sheetsmith-record-add {
 			grid-column: 1 / -1;
 		}
@@ -6240,8 +6435,15 @@ a.sheetsmith-undo {
 		   be a second sighting of one label.** Hidden here rather than left out of
 		   the DOM, so the one query that shows the strip is the one that hides it
 		   and a number can never have neither. The input keeps its own
-		   `aria-label`, so nothing goes from assistive tech. */
-		.sheetsmith-view .sheetsmith-record-field .sheetsmith-card-abbreviation {
+		   `aria-label`, so nothing goes from assistive tech.
+
+		   **The summary line's number only.** No strip ever names a body field,
+		   so its name is the only one it gets; hidden there, a body number on a
+		   wide headed list would be named by nothing at all. */
+		.sheetsmith-view
+			.sheetsmith-record-summary
+			.sheetsmith-record-field
+			.sheetsmith-card-abbreviation {
 			display: none;
 		}
 	}
