@@ -588,6 +588,77 @@ describe('a rename while a sheet is open', () => {
 });
 
 /*
+ * A level list reordered while a sheet is open on a note it counts
+ * (`docs/features/level-list-reorder-report.md`). Here for the rename block's
+ * reason: the report is `editor/layout-editor.test.ts`'s, and what this checks
+ * is the pane's reach into an open sheet before the scan — which two views in
+ * one workspace are needed for. The note's section is blank on disk, and the
+ * first value the reader typed into it is still inside the save debounce, so a
+ * count taken without the flush finds nothing and says nothing: the silence
+ * that is otherwise this report's all-clear.
+ */
+describe('a level reorder while a sheet is open', () => {
+	const TABLE_LAYOUT: Layout = {
+		name: 'Alpha',
+		columns: 12,
+		components: [
+			{
+				id: 'skills',
+				type: 'table',
+				label: 'Skills',
+				position: { col: 1, row: 1, width: 6, height: 2 },
+				columns: [
+					{ key: 'Notes' },
+					{ key: 'Proficiency', type: 'level', levels: ['Untrained', 'Proficient', 'Expertise'] },
+				],
+				rows: [{ label: 'Arcana' }],
+			} as unknown as Layout['components'][number],
+		],
+	};
+
+	it('counts the note whose first value the reader has only just typed', async () => {
+		const app = new App();
+		await app.vault.createFolder(LAYOUT_FOLDER);
+		await app.vault.create(pathOf('Alpha'), serialiseLayout(TABLE_LAYOUT));
+		const file = await app.vault.create('Reorders.md', '---\nsheet-layout: Alpha\n---\n\nSome prose.\n');
+		const plugin = fakePlugin(app);
+		const sheet = await openView(app, document.body, SheetView, plugin);
+		await (sheet as unknown as TextFileView).onLoadFile(file);
+		await tick();
+		const pane = await openView(app, document.body, LayoutEditorView, plugin);
+		await showFile(pane, pathOf('Alpha'));
+
+		const cell = sheet.contentEl.querySelector<HTMLInputElement>('input[type="text"], input:not([type])');
+		if (!cell) throw new Error('the sheet drew no field to type in');
+		cell.value = 'Studied';
+		cell.dispatchEvent(new Event('input'));
+		cell.dispatchEvent(new Event('blur'));
+		await tick();
+		// The debounce is deliberately not run, as in the rename block above.
+		expect((sheet as unknown as TextFileView).savesRequested).toBe(1);
+		expect(await app.vault.read(file)).not.toContain('## Skills');
+
+		Notice.instances = [];
+		control(pane, 'edit-skills').click();
+		pane.flush();
+		await tick();
+		const names = pane.contentEl.querySelector<HTMLInputElement>(
+			'input[aria-label="Proficiency level names"]',
+		) as HTMLInputElement;
+		names.value = 'Untrained, Expertise, Proficient';
+		names.dispatchEvent(new Event('input'));
+		names.dispatchEvent(new Event('change'));
+		pane.flush();
+		await tick();
+		await tick();
+
+		expect(Notice.instances.map((notice) => notice.messageEl.textContent)).toEqual([
+			'"Proficiency" levels moved: "Proficient" was 1 and is now 2; "Expertise" was 2 and is now 1. 1 note on this layout holds a section for Skills, and any Proficiency level it stores is now read against the new list. Undo',
+		]);
+	});
+});
+
+/*
  * The pane bound to a file (`docs/features/visible-layout-files.md`).
  *
  * Every open below goes through the leaf — `showFile`, or the pane's own

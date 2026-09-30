@@ -91,6 +91,21 @@ export interface ListContext {
 	 * the component whose own rows the expression is evaluated against.
 	 */
 	suggestNames?: (input: HTMLInputElement, owner?: string) => void;
+	/**
+	 * Write a commit to a level list, and raise what it rereads once the write
+	 * and the pane's count of the notes holding a section under `label` resolve
+	 * (`docs/features/level-list-reorder-report.md`). `sentence` is handed that
+	 * count, zero where the pane counted nothing, and says null where no level's
+	 * meaning moved.
+	 *
+	 * Optional for `suggestNames`' reason. Where it is absent a level list
+	 * commits through `persist` and says only what its conditions and resets
+	 * read, which is all a context with no vault can know.
+	 */
+	persistReorder?: (
+		label: string,
+		sentence: (notes: number) => string | null,
+	) => void;
 }
 
 export function moveItem<T>(
@@ -1052,20 +1067,39 @@ export function renderColumnsEditor(
 		max: column.max,
 	});
 
+	/** The label heading this component's section in a note, which the pane counts by. */
+	const sectionLabel = typeof record.label === 'string' ? record.label : '';
+
 	/**
-	 * Tell the author where a commit to a level list moved what a condition on
-	 * this list reads, since a level is read by its position
-	 * (`editor/level-reorder.ts`). After the fact, as the editor's other reports
-	 * are; nothing rewrites the condition.
+	 * Write a commit to a level list, and tell the author what it moved: the
+	 * conditions and resets on this list reading it, and the notes storing it,
+	 * since a level is read by its position (`editor/level-reorder.ts`). After
+	 * the fact, as the editor's other reports are; nothing rewrites either.
+	 *
+	 * The readers are taken now, at the commit, and closed over, so the
+	 * sentence the pane raises once its count resolves describes the list the
+	 * author committed rather than whatever the form holds by then.
 	 */
-	const reportReorder = (column: ColumnEntry, before: LevelList): void => {
-		const said = levelReorderNotice(
-			column.key,
-			before,
-			levelList(column),
-			readersOf(column.key),
-			resetsReading(column.key),
-		);
+	const commitLevels = (column: ColumnEntry, before: LevelList): void => {
+		const key = column.key;
+		const after = levelList(column);
+		const readers = readersOf(key);
+		const resets = resetsReading(key);
+		const sentence = (notes: number): string | null =>
+			levelReorderNotice(
+				key,
+				before,
+				after,
+				readers,
+				resets,
+				{ label: sectionLabel, notes },
+			);
+		if (context.persistReorder !== undefined) {
+			context.persistReorder(sectionLabel, sentence);
+			return;
+		}
+		context.persist();
+		const said = sentence(0);
 		if (said !== null) new Notice(said);
 	};
 
@@ -1274,8 +1308,7 @@ export function renderColumnsEditor(
 				const before = levelList(column);
 				if (candidate === undefined) delete column.levels;
 				else column.levels = candidate;
-				context.persist();
-				reportReorder(column, before);
+				commitLevels(column, before);
 				context.redraw();
 			});
 
@@ -1310,8 +1343,7 @@ export function renderColumnsEditor(
 						// Cleared is a level count too — one — and the sample
 						// has to say so rather than keep showing the old ring.
 						drawSample();
-						context.persist();
-						reportReorder(column, before);
+						commitLevels(column, before);
 						return;
 					}
 					const parsed = Number(raw);
@@ -1327,8 +1359,7 @@ export function renderColumnsEditor(
 					// place rather than through a redraw, so the count can be
 					// typed without the field being pulled out from under it.
 					drawSample();
-					context.persist();
-					reportReorder(column, before);
+					commitLevels(column, before);
 				});
 			}
 

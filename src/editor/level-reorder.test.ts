@@ -136,6 +136,95 @@ describe('levelReorderNotice', () => {
 	});
 });
 
+/*
+ * The notes clause (`docs/features/level-list-reorder-report.md`): the notes on
+ * this layout holding a section for the component, which every stored level is
+ * reread in, reported whether or not anything else reads the list.
+ */
+describe('levelReorderNotice, counting the notes', () => {
+	const PROFICIENCY = ['Untrained', 'Proficient', 'Expertise'];
+	const SWAPPED = { levels: ['Untrained', 'Expertise', 'Proficient'] };
+	const MOVES =
+		'"Proficiency" levels moved: "Proficient" was 1 and is now 2; "Expertise" was 2 and is now 1.';
+
+	it('counts the notes where nothing else reads the list', () => {
+		expect(
+			levelReorderNotice('Proficiency', { levels: PROFICIENCY }, SWAPPED, [], undefined, {
+				label: 'Skills',
+				notes: 4,
+			}),
+		).toBe(
+			`${MOVES} 4 notes on this layout hold a section for Skills, and any Proficiency level they store is now read against the new list.`,
+		);
+	});
+
+	it('says one note in the singular', () => {
+		expect(
+			levelReorderNotice('Proficiency', { levels: PROFICIENCY }, SWAPPED, [], undefined, {
+				label: 'Skills',
+				notes: 1,
+			}),
+		).toBe(
+			`${MOVES} 1 note on this layout holds a section for Skills, and any Proficiency level it stores is now read against the new list.`,
+		);
+	});
+
+	it('says nothing where no note holds a section and nothing else reads the list', () => {
+		expect(
+			levelReorderNotice('Proficiency', { levels: PROFICIENCY }, SWAPPED, [], undefined, {
+				label: 'Skills',
+				notes: 0,
+			}),
+		).toBeNull();
+	});
+
+	it('counts the notes on a shortening', () => {
+		expect(
+			levelReorderNotice('Tier', { max: 4 }, { max: 2 }, [], undefined, { label: 'Feats', notes: 2 }),
+		).toBe(
+			'"Tier" levels shortened: the highest is now 2, where it was 4. 2 notes on this layout hold a section for Feats, and any Tier level they store is now read against the new list.',
+		);
+	});
+
+	it('says nothing for a rename in place or a mark changed, whatever the count', () => {
+		const holding = { label: 'Skills', notes: 9 };
+		expect(
+			levelReorderNotice(
+				'Proficiency',
+				{ levels: PROFICIENCY },
+				{ levels: ['Untrained', 'Trained', 'Expertise'] },
+				[],
+				undefined,
+				holding,
+			),
+		).toBeNull();
+		expect(
+			levelReorderNotice(
+				'Proficiency',
+				{ levels: PROFICIENCY },
+				{ levels: ['Untrained', 'Proficient:', 'Expertise:★'] },
+				[],
+				undefined,
+				holding,
+			),
+		).toBeNull();
+	});
+
+	it('puts the condition, the reset and the notes clauses in that order', () => {
+		const said = levelReorderNotice(
+			'Recharges',
+			{ levels: RECHARGES },
+			{ levels: ['None', 'Short rest', 'Always-on', 'Long rest'] },
+			['Active'],
+			whereOnly(['Short rest']),
+			{ label: 'Spells', notes: 3 },
+		);
+		expect(said).toBe(
+			'"Recharges" levels moved: "Long rest" was 2 and is now 3; "Always-on" was 3 and is now 2. The condition on "Active" reads Recharges by position, so it now means something else. Check it under Shown when. The Short rest reset reads it by position too, so what it resets has changed. Check it under Only where. 3 notes on this layout hold a section for Spells, and any Recharges level they store is now read against the new list.',
+		);
+	});
+});
+
 /** Readers found through **Only where** alone, which is every reader before a `to` could read a record. */
 function whereOnly(triggers: string[]): ResetReaders {
 	return { triggers, where: true, to: false };

@@ -5289,3 +5289,294 @@ describe('a component landing on a section notes kept', () => {
 		]);
 	});
 });
+
+/*
+ * A commit to a level list, reported with the notes it rereads
+ * (`docs/features/level-list-reorder-report.md`). The sentence's own cases are
+ * `level-reorder.test.ts`'s and the scan's are `section-adoption.test.ts`'s;
+ * these are that each of the four commit sites reaches the pane's report, that
+ * the count is of sections, and that the gates and the undo hold. The flush
+ * needs a sheet open beside the pane, so it is `view/layout-editor-view.test.ts`'s.
+ */
+describe('a level list reordered', () => {
+	function levels(): Layout {
+		return {
+			name: 'Level sheet',
+			columns: 12,
+			components: [
+				{
+					id: 'skills',
+					type: 'table',
+					label: 'Skills',
+					position: { col: 1, row: 1, width: 6, height: 2 },
+					columns: [
+						{ key: 'Skill' },
+						{ key: 'Proficiency', type: 'level', levels: ['Untrained', 'Proficient', 'Expertise'] },
+						{ key: 'Tier', type: 'level', max: 3 },
+					],
+					// Stated, since drawing the form writes an empty list where
+					// none is held, and the undo cases compare whole bytes.
+					rows: [],
+				},
+				{
+					id: 'abilities',
+					type: 'roster',
+					label: 'Abilities',
+					position: { col: 7, row: 1, width: 6, height: 2 },
+					columns: [
+						{ key: 'Training', type: 'level', levels: ['Untrained', 'Proficient', 'Expertise'] },
+					],
+				},
+				{
+					id: 'spells',
+					type: 'record-set',
+					label: 'Spells',
+					position: { col: 1, row: 3, width: 6, height: 2 },
+					fields: [
+						{ key: 'Recharges', type: 'level', levels: ['None', 'Short rest', 'Long rest'] },
+					],
+				},
+				{
+					id: 'corruption',
+					type: 'track',
+					label: 'Corruption',
+					position: { col: 7, row: 3, width: 4, height: 1 },
+					levels: ['Clear', 'Touched', 'Marked', 'Lost'],
+				},
+				{
+					id: 'bound',
+					type: 'track',
+					label: 'Bound',
+					position: { col: 11, row: 3, width: 2, height: 1 },
+					count: 1,
+					levels: ['Unbound', 'Bound:'],
+				},
+				{
+					id: 'stress',
+					type: 'track',
+					label: 'Stress',
+					position: { col: 7, row: 4, width: 4, height: 1 },
+					count: 4,
+				},
+			] as unknown as ComponentConfig[],
+		};
+	}
+
+	/** A note on this layout holding each section given. */
+	async function character(
+		path: string,
+		sections: readonly [string, string][],
+		layoutName = 'Level sheet',
+	): Promise<void> {
+		await harness.app.vault.create(
+			path,
+			[
+				'---',
+				`sheet-layout: ${layoutName}`,
+				'---',
+				'',
+				...sections.map(([label, body]) => `## ${label}\n${body}`),
+			].join('\n'),
+		);
+	}
+
+	/** Every section the fixture's notes use, with something in it. */
+	const HELD: [string, string][] = [
+		['Skills', '| Skill | Proficiency |\n| --- | --- |\n| Arcana | 2 |\n'],
+		['Abilities', '| Stat | Training |\n| --- | --- |\n| Strength | 1 |\n'],
+		['Spells', '```sheet\n- name: Shield\n  Recharges: 1\n```\n'],
+		['Corruption', '```sheet\nvalue: 2\n```\n'],
+		['Bound', '```sheet\nvalue: yes\n```\n'],
+		['Stress', '```sheet\nvalue: 1\n```\n'],
+	];
+
+	/** Select a component and let the panel draw its form. */
+	async function edit(id: string): Promise<void> {
+		control(harness, `edit-${id}`).click();
+		await settle(harness.pane);
+	}
+
+	/** An input the panel draws, by its accessible name. */
+	function named(name: string): HTMLInputElement {
+		const input = harness.container.querySelector<HTMLInputElement>(
+			`input[aria-label="${name}"]`,
+		);
+		if (!input) throw new Error(`no input named "${name}"`);
+		return input;
+	}
+
+	/** Commit a value to a field, and let the write, the scan and the notice land. */
+	async function commit(input: HTMLInputElement, value: string): Promise<void> {
+		type(input, value);
+		await settle(harness.pane);
+		await tick();
+		await tick();
+	}
+
+	/** Every notice raised, as its reader reads it. */
+	function said(): string[] {
+		return Notice.instances.map((notice) => notice.messageEl.textContent ?? '');
+	}
+
+	/** Press the last notice's Undo link. */
+	function pressUndo(notice = Notice.instances.at(-1)): void {
+		const link = notice?.messageEl.querySelector('a.sheetsmith-undo');
+		if (!link) throw new Error('no undo in that notice');
+		(link as HTMLElement).click();
+	}
+
+	const SKILLS_MOVED =
+		'"Proficiency" levels moved: "Proficient" was 1 and is now 2; "Expertise" was 2 and is now 1.';
+
+	beforeEach(async () => {
+		harness = await open(levels());
+		Notice.messages = [];
+		Notice.instances = [];
+	});
+
+	it('counts the notes holding a Table’s section when its level names are reordered', async () => {
+		await character('Aramil.md', HELD);
+		await character('Thora.md', HELD);
+		await edit('skills');
+		await commit(named('Proficiency level names'), 'Untrained, Expertise, Proficient');
+		expect(said()).toEqual([
+			`${SKILLS_MOVED} 2 notes on this layout hold a section for Skills, and any Proficiency level they store is now read against the new list. Undo`,
+		]);
+	});
+
+	it('reaches a Roster’s and a Record set’s level names too', async () => {
+		await character('Aramil.md', HELD);
+		await edit('abilities');
+		await commit(named('Training level names'), 'Untrained, Expertise, Proficient');
+		await edit('spells');
+		await commit(named('Recharges level names'), 'None, Long rest, Short rest');
+		expect(said()).toEqual([
+			'"Training" levels moved: "Proficient" was 1 and is now 2; "Expertise" was 2 and is now 1. 1 note on this layout holds a section for Abilities, and any Training level it stores is now read against the new list. Undo',
+			'"Recharges" levels moved: "Short rest" was 1 and is now 2; "Long rest" was 2 and is now 1. 1 note on this layout holds a section for Spells, and any Recharges level it stores is now read against the new list. Undo',
+		]);
+	});
+
+	it('reports a lowered level count, and one cleared from 3', async () => {
+		await character('Aramil.md', HELD);
+		await edit('skills');
+		await commit(named('Tier highest level'), '2');
+		await commit(named('Tier highest level'), '3');
+		await commit(named('Tier highest level'), '');
+		expect(said()).toEqual([
+			'"Tier" levels shortened: the highest is now 2, where it was 3. 1 note on this layout holds a section for Skills, and any Tier level it stores is now read against the new list. Undo',
+			'"Tier" levels shortened: the highest is now 1, where it was 3. 1 note on this layout holds a section for Skills, and any Tier level it stores is now read against the new list. Undo',
+		]);
+	});
+
+	it('counts sections, not fields: a held section without the level counts, a blank one and another layout’s do not', async () => {
+		await character('Aramil.md', [['Skills', '| Skill |\n| --- |\n| Arcana |\n']]);
+		await character('Thora.md', [['Skills', '\n\n']]);
+		await character('Kell.md', HELD, 'Other sheet');
+		await edit('skills');
+		await commit(named('Proficiency level names'), 'Untrained, Expertise, Proficient');
+		expect(said()).toEqual([
+			`${SKILLS_MOVED} 1 note on this layout holds a section for Skills, and any Proficiency level it stores is now read against the new list. Undo`,
+		]);
+	});
+
+	it('says nothing where no condition or reset reads the list and no note uses the layout', async () => {
+		await edit('skills');
+		await commit(named('Proficiency level names'), 'Untrained, Expertise, Proficient');
+		expect(said()).toEqual([]);
+		expect(Notice.messages).toEqual([]);
+	});
+
+	it('counts nothing and offers no undo when the layout write fails', async () => {
+		await character('Aramil.md', HELD);
+		const modify = harness.app.vault.modify.bind(harness.app.vault);
+		harness.app.vault.modify = async (file, content) => {
+			if (file.path.startsWith(LAYOUT_FOLDER)) throw new Error('disk full');
+			return modify(file, content);
+		};
+		await edit('skills');
+		await commit(named('Proficiency level names'), 'Untrained, Expertise, Proficient');
+		expect(said().some((text) => text.includes('on this layout'))).toBe(false);
+		expect(said().some((text) => text.includes('Undo'))).toBe(false);
+	});
+
+	it('counts nothing in a file its name does not resolve to, and still says what a condition reads', async () => {
+		const outside = levels();
+		const spells = outside.components[2] as unknown as { fields: Record<string, unknown>[] };
+		spells.fields.push({ key: 'Uses', type: 'number', visibleWhen: 'Recharges > 1' });
+		const app = new App();
+		await app.vault.createFolder(LAYOUT_FOLDER);
+		await app.vault.create('Elsewhere/Level sheet.sheetsmith', serialiseLayout(outside));
+		const pane = await openView(app, document.body, LayoutEditorView, fakePlugin(app));
+		await showFile(pane, 'Elsewhere/Level sheet.sheetsmith');
+		await app.vault.create(
+			'Aramil.md',
+			'---\nsheet-layout: Level sheet\n---\n\n## Spells\n```sheet\n- name: Shield\n  Recharges: 1\n```\n',
+		);
+		Notice.instances = [];
+		(pane.contentEl.querySelector('[data-sheetsmith-focus="edit-spells"]') as HTMLElement).click();
+		pane.flush();
+		await tick();
+		const names = pane.contentEl.querySelector<HTMLInputElement>(
+			'input[aria-label="Recharges level names"]',
+		) as HTMLInputElement;
+		type(names, 'None, Long rest, Short rest');
+		pane.flush();
+		await tick();
+		await tick();
+		expect(said()).toEqual([
+			'"Recharges" levels moved: "Short rest" was 1 and is now 2; "Long rest" was 2 and is now 1. The condition on "Uses" reads Recharges by position, so it now means something else. Check it under Shown when. Undo',
+		]);
+	});
+
+	it('puts the previous layout bytes back from the notice', async () => {
+		await character('Aramil.md', HELD);
+		const before = await harness.raw();
+		await edit('skills');
+		await commit(named('Proficiency level names'), 'Untrained, Expertise, Proficient');
+		expect(await harness.raw()).not.toBe(before);
+		pressUndo();
+		await settle(harness.pane);
+		expect(await harness.raw()).toBe(before);
+	});
+
+	it('refuses a stale undo after a second commit', async () => {
+		await character('Aramil.md', HELD);
+		for (const [id, input, value] of [
+			['skills', () => named('Proficiency level names'), 'Untrained, Expertise, Proficient'],
+		] as const) {
+			await edit(id);
+			await commit(input(), value);
+			const offer = Notice.instances.at(-1);
+			// Any later commit: the component's row, which touches no note.
+			type(control<HTMLInputElement>(harness, `pos-${id}-row`), '9');
+			await settle(harness.pane);
+			const edited = await harness.raw();
+			Notice.messages = [];
+			pressUndo(offer);
+			await settle(harness.pane);
+			expect(await harness.raw()).toBe(edited);
+			expect(Notice.messages).toEqual([
+				'Sheetsmith did not undo: this layout has changed since.',
+			]);
+		}
+	});
+
+	it('writes no character note', async () => {
+		await character('Aramil.md', HELD);
+		const note = harness.app.vault.getFileByPath('Aramil.md');
+		const bytes = await harness.app.vault.read(note!);
+		const notes: string[] = [];
+		const modify = harness.app.vault.modify.bind(harness.app.vault);
+		harness.app.vault.modify = async (file, content) => {
+			if (file.path.endsWith('.md')) notes.push(file.path);
+			return modify(file, content);
+		};
+		const process = vi.spyOn(harness.app.vault, 'process');
+		await edit('skills');
+		await commit(named('Proficiency level names'), 'Untrained, Expertise, Proficient');
+		expect(said()).toHaveLength(1);
+		expect(notes).toEqual([]);
+		expect(process).not.toHaveBeenCalled();
+		expect(await harness.app.vault.read(note!)).toBe(bytes);
+	});
+});

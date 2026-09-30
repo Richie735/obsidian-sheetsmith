@@ -236,6 +236,16 @@ export interface ConfigPanelHost {
 	 * reads first, which is a computed column's **Formula** and nothing else.
 	 */
 	suggestNames(input: HTMLInputElement, owner?: string): void;
+	/**
+	 * Write a commit to a level list and raise what it rereads once the pane
+	 * has counted the notes holding a section under `label` — `ListContext`'s
+	 * member of the same name, which this panel's own level list, a Track's
+	 * `levels`, commits through too (`docs/features/level-list-reorder-report.md`).
+	 */
+	persistReorder(
+		label: string,
+		sentence: (notes: number) => string | null,
+	): void;
 }
 
 /**
