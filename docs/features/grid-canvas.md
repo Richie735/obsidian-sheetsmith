@@ -364,8 +364,8 @@ position (`SPEC` §8), so a drop beside a sibling there would rewrite the file's
 array and change nothing on screen; it is refused, in the same sentence as the
 Alt+Up and Alt+Down chords, pointing to this canvas's own drag and arrow keys.
 A drop beside a sibling reorders only where a parent's children are not placed,
-a Tab set's tabs, whose strip reads the file's order (with one known gap,
-`docs/features/layout-editor-tree.md` §5).
+a Tab set's tabs, whose strip and tree both read the file's order
+(`docs/features/layout-editor-tree.md` §5).
 
 **A reparent that does not change the component's parent leaves `col`/`row`
 alone.** `resolveDrop` (`tree.ts`) treats a container row as "move into me"

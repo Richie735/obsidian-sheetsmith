@@ -275,18 +275,17 @@ rect for a keyboard press, where `event.detail === 0`). Items, in order:
 | *separator* | | | |
 | **Remove** | `trash-2` | never | removes, `setWarning(true)` |
 
-- **Every move reads its level as the tree draws it**, which is the grid
-  reading order `walkComponents` sorts into, not the file's array. The two
-  differ on a placed grid, where a move decided by file index once acted on
-  rows the tree did not draw beside it (`SPEC` §13, "What Move up and Move down
-  mean on a placed grid"). **In a Tab set they agree only while the tabs'
-  stored positions tie**, since the strip reads the file and the tree sorts by
-  row. An insert and a paste give a tab column 1, row 1, which ties; a tab
-  moved in through the tree is given the set's next free row (`reparent.ts`),
-  which breaks the tie, and from then on a Move up changes the strip and not
-  the tree. **That case is a known gap, deferred as its own bug**, since its fix
-  is in the walk's sort or in `reparent.ts`; `layout-editor.test.ts` carries it
-  as an `it.fails` case.
+- **Every move reads its level as the tree draws it**, which on a placed grid
+  is the grid reading order `walkComponents` sorts into, not the file's array.
+  The two differ there, where a move decided by file index once acted on rows
+  the tree did not draw beside it (`SPEC` §13, "What Move up and Move down mean
+  on a placed grid"). **In a Tab set the tree draws the file's order**, which is
+  the strip's: `walkComponents` keeps it on a level whose children are not
+  placed (`childIsPlaced`). It once sorted that level by stored row too, and
+  agreed with the strip only while the tabs' rows tied — an insert and a paste
+  give row 1, but a tab moved in through the tree is given the set's next free
+  row (`reparent.ts`), and from then on a Move up changed the strip and not the
+  tree. `tree.test.ts` holds the untied case.
 - **On a placed grid there are no Move up and Move down**, since the sheet reads
   that level by position and a reorder of the file would change nothing on
   screen. They are left out, with the separator after them, rather than drawn
