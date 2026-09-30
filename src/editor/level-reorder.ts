@@ -1,6 +1,7 @@
 /*
- * What a commit to a level field's names says to the conditions reading it
- * (`docs/features/conditional-field-visibility.md`, **Reorder**).
+ * What a commit to a level field's names says to the conditions reading it and
+ * the notes storing it (`docs/features/conditional-field-visibility.md`,
+ * **Reorder**; `docs/features/level-list-reorder-report.md`).
  *
  * A level stores its *position*, and the expression language has no strings,
  * so a condition names a level by number: `Recharges == 1 || Recharges == 2`.
@@ -11,10 +12,17 @@
  * the position legend under **Shown when** is the standing half once the notice
  * is gone.
  *
- * **Only a list a condition reads.** A reorder of a level list no condition
- * reads rereads every note's stored positions too, but that hazard is older
- * than conditions and `docs/BACKLOG.md` holds it; widening this to it is a
- * decision about data safety rather than about conditions.
+ * **Every level list, and the notes as well as the conditions**
+ * (`docs/features/level-list-reorder-report.md`). The same commit rereads every
+ * stored level in every note on the layout, since a note holds the position
+ * too, so the sentence also counts the character notes holding a section for
+ * the component — a count of sections, never of fields, because opening a cell
+ * to see whether it holds a level would teach the editor each component's
+ * storage. **Reported, never migrated**: the conditions and the reset clauses
+ * name a level by position as well and nothing can renumber an expression, so
+ * rewriting the notes alone would leave them disagreeing with their own
+ * conditions, which is worse than both agreeing on the new order. The notice
+ * offers the undo instead, and the pane raises it.
  *
  * **A level renamed in place moves nothing and says nothing**, because the
  * position is the same and so is every condition's meaning. A move is a name
@@ -22,8 +30,8 @@
  * highest level, since `levelOf` clamps a stored value past the end and so
  * rereads some notes too.
  *
- * Pure, and in `editor/` rather than beside the columns editor that raises the
- * notice, on `docs/PATTERNS.md` §1's atomicity test: `list-fields.ts` draws
+ * Pure, and in `editor/` rather than beside the columns editor that commits the
+ * list, on `docs/PATTERNS.md` §1's atomicity test: `list-fields.ts` draws
  * list fields, and what a reorder means is a rule rather than a drawing.
  */
 
@@ -51,6 +59,19 @@ export interface ResetReaders {
 const NO_RESETS: ResetReaders = { triggers: [], where: false, to: false };
 
 /**
+ * The character notes on this layout holding a non-empty section for the
+ * component whose list this is: its label, which heads the section, and how
+ * many notes the scan counted.
+ */
+export interface NotesHolding {
+	label: string;
+	notes: number;
+}
+
+/** Nothing counted, which says the same as no note holding a section. */
+const NO_NOTES: NotesHolding = { label: '', notes: 0 };
+
+/**
  * How many moved levels the sentence names before it counts the rest.
  *
  * **Not `parse/spelled.ts`'s bound**, which counts *names*: each move here is a
@@ -65,7 +86,9 @@ const NAMED_MOVES = 3;
  *
  * `readers` are the keys of the fields whose conditions read `key`, and
  * `resets` the reset bindings that read it (`docs/features/record-set-reset-scope.md`);
- * both empty is a list no condition reads, which says nothing. **A reset's `to`
+ * `holding` the notes the pane counted, zero where it counted nothing — a write
+ * that failed, a file that is not its name's layout, a component with no label.
+ * All three empty says nothing, since nothing reads the list. **A reset's `to`
  * counts only where it is worked out on each entry**, which the caller decides:
  * a `to` resolved once in sheet scope reads no record's field, so a reorder
  * cannot change what it means.
@@ -76,9 +99,11 @@ export function levelReorderNotice(
 	after: LevelList,
 	readers: readonly string[],
 	resets: ResetReaders = NO_RESETS,
+	holding: NotesHolding = NO_NOTES,
 ): string | null {
 	const { triggers } = resets;
-	if (readers.length === 0 && triggers.length === 0) return null;
+	const { notes } = holding;
+	if (readers.length === 0 && triggers.length === 0 && notes === 0) return null;
 
 	const names = (list: LevelList): string[] =>
 		(list.levels ?? []).map((entry) => parseLevel(entry).name);
@@ -138,6 +163,20 @@ export function levelReorderNotice(
 		].join(' and ');
 		sentences.push(
 			`The ${series(triggers)} reset${one ? '' : 's'} read${one ? 's' : ''} ${what} by position${readers.length > 0 ? ' too' : ''}, so what ${one ? 'it resets has' : 'they reset has'} changed. Check ${one ? 'it' : 'them'} under ${rows}.`,
+		);
+	}
+	if (notes > 0) {
+		/*
+		 * Last, after the clauses naming a fix the author can make under Shown
+		 * when or Only where: this one has no fix but the undo. "Is now read
+		 * against the new list" rather than "has moved", because it is true of a
+		 * move and a shortening alike, and of a level that did not move — so it
+		 * claims nothing the count of sections cannot back. The label is the
+		 * layout's own word, unquoted as trigger names are.
+		 */
+		const one = notes === 1;
+		sentences.push(
+			`${notes} ${one ? 'note' : 'notes'} on this layout ${one ? 'holds' : 'hold'} a section for ${holding.label}, and any ${key} level ${one ? 'it stores' : 'they store'} is now read against the new list.`,
 		);
 	}
 	return sentences.join(' ');

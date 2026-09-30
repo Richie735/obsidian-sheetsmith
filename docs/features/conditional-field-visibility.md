@@ -425,9 +425,10 @@ nothing and says nothing.** The report fires only for the list the condition liv
 on. A Record set condition reading a *published* level elsewhere on the sheet (a
 Table row published by key) is the same hazard every computed field reading that
 name already has, and it is not widened here. **A reorder of a level list that no
-condition reads raises nothing.** That list's stored positions are reread in every
-note too, but that hazard is older than this feature and is recorded in
-`docs/BACKLOG.md` instead (see **Commit boundaries**). The standing half is the
+condition reads is reported too** (`docs/features/level-list-reorder-report.md`),
+since that list's stored positions are reread in every note: the Notice counts the
+character notes holding a section for the component, and every reorder Notice,
+this one included, now offers **Undo**. The condition clause above is unchanged by it. The standing half is the
 position legend under **Shown when** (below), which shows the new mapping once the
 Notice is gone.
 
@@ -694,7 +695,9 @@ Press:
 - **A reorder.** Reorder `Recharges`' level names to
   `None, Long rest, Short rest, Always-on`. The Notice names the moved levels and
   `Uses`, and the legend under `Uses`' **Shown when** now reads the new positions.
-  Undo. Reorder `Rank`'s names on `features`, which no condition reads: no Notice.
+  Undo. Reorder `Rank`'s names on `features`, which no condition reads: the Notice
+  names the moves and counts the notes holding a section for Features, and
+  carries no condition clause (`docs/features/level-list-reorder-report.md`).
   Undo.
 - **Table and Roster.** Open Card variations' and Roster variations' layouts in the
   editor. The column error is under `Weight` and `Bonus`, both sheets draw those

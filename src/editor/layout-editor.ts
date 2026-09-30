@@ -47,7 +47,12 @@ import { copyContext } from './paste-dependencies';
 import { configurationSentence, pasteSentence } from './paste-notice';
 import { PasteBoxModal } from './paste-box';
 import { childIsPlaced } from '../view/grid-cells';
-import { adoptionReport, reportAdoption, sectionLabels } from '../section-adoption';
+import {
+	adoptionReport,
+	countAdoptions,
+	reportAdoption,
+	sectionLabels,
+} from '../section-adoption';
 
 /**
  * The top level, wherever something has to be named that is not a component.
@@ -133,8 +138,10 @@ export interface LayoutEditorHost {
 	 * An open sheet's edits reach disk through a two-second debounce, so what a
 	 * vault scan reads is not what the reader has typed
 	 * (`docs/features/component-rename-migration.md` § Design, "Open sheets").
-	 * The migration is the one caller: every other write this pane makes is to
-	 * the layout file, which no sheet is the editor of.
+	 * Two callers: the migration, which rewrites the notes, and a level list's
+	 * reorder report, which only counts them and so has to count what a sheet
+	 * is still holding. Every other write this pane makes is to the layout
+	 * file, which no sheet is the editor of.
 	 */
 	flushSheets(): Promise<void>;
 	/**
@@ -355,6 +362,7 @@ export class LayoutEditorSection {
 			errors: this.fieldErrors,
 			listContext: () => this.listContext(),
 			suggestNames: (input, owner) => this.suggestNames(input, owner),
+			persistReorder: (label, sentence) => this.persistReorder(label, sentence),
 		});
 		// The row's host, and the same mapping again. `redraw` is the wrapped one
 		// above rather than the host's, for the flush and the focus it adds, and
@@ -940,20 +948,10 @@ export class LayoutEditorSection {
 		sentence: string | ((adoption: string | null) => string),
 		labels: readonly string[] = [],
 	): void {
-		const before = this.onDisk;
-		const saving = this.persist();
-		const file = this.file;
-		const written = this.onDisk;
-		if (written === before) return;
-		const offer = (text: string): void => {
-			offerUndo(text, () => {
-				if (this.file !== file || this.onDisk !== written) {
-					new Notice('Sheetsmith did not undo: this layout has changed since.');
-					return;
-				}
-				this.undo();
-			});
-		};
+		const step = this.persistStep();
+		if (step === null) return;
+		const { saving, file, written } = step;
+		const offer = (text: string): void => this.offerGuardedUndo(text, file, written);
 		if (typeof sentence === 'string') {
 			offer(sentence);
 			return;
@@ -964,6 +962,88 @@ export class LayoutEditorSection {
 					? await adoptionReport(this.plugin.app, file.basename, labels, 'pasted')
 					: null;
 			offer(sentence(adoption));
+		});
+	}
+
+	/**
+	 * Write the layout as an undoable step, and say which step it was: the write
+	 * in flight, the file it went to, and the bytes it left — or null where no
+	 * byte changed, so there is no step to report or to undo.
+	 *
+	 * The one spelling of what `persistUndoable` and `persistReorder` both need
+	 * before they say anything. `persist` sets `onDisk` and pushes the undo step
+	 * before its first `await`, so all three are known here synchronously, and
+	 * a guard taken from them is taken before anything else can happen.
+	 */
+	private persistStep(): {
+		saving: Promise<boolean>;
+		file: TFile | null;
+		written: string | null;
+	} | null {
+		const before = this.onDisk;
+		const saving = this.persist();
+		const file = this.file;
+		const written = this.onDisk;
+		return written === before ? null : { saving, file, written };
+	}
+
+	/**
+	 * Show `text` with an **Undo** that takes back the step which left `written`
+	 * in `file`, and refuses once the pane holds anything else — the guard
+	 * `persistUndoable` states, shared with `persistReorder` so the two cannot
+	 * disagree about what a stale press does.
+	 */
+	private offerGuardedUndo(text: string, file: TFile | null, written: string | null): void {
+		offerUndo(text, () => {
+			if (this.file !== file || this.onDisk !== written) {
+				new Notice('Sheetsmith did not undo: this layout has changed since.');
+				return;
+			}
+			this.undo();
+		});
+	}
+
+	/**
+	 * Write a commit to a level list, then say what it rereads
+	 * (`docs/features/level-list-reorder-report.md`): the conditions and resets
+	 * reading the list by position, which `sentence` already knows, and the
+	 * character notes holding a section under `label`, which only the pane can
+	 * count. `sentence` is handed that count, zero where nothing was counted,
+	 * and returns null where the commit moved no level's meaning.
+	 *
+	 * **The notice waits for the scan, and its Undo does not**: the bytes are
+	 * taken before anything is awaited, as `persistUndoable` takes them, and
+	 * `persist` has pushed the step onto the undo stack by then.
+	 *
+	 * **The open sheets are flushed before the count**, as the rename path
+	 * flushes them and for the reason it does: a value typed a moment ago is
+	 * still inside a sheet's save debounce, and a scan missing it would report
+	 * silence, which here is the all-clear. Nothing is rewritten afterwards, so
+	 * nothing is reloaded.
+	 *
+	 * A write that failed counts nothing and offers no undo, since nothing was
+	 * written; the clauses about conditions and resets still say what the list
+	 * now means in memory. A file that is not its name's layout counts nothing
+	 * either, `mayAdopt`'s gate for its reason — the notes naming this basename
+	 * read some other file.
+	 */
+	private persistReorder(
+		label: string,
+		sentence: (notes: number) => string | null,
+	): void {
+		const step = this.persistStep();
+		if (step === null) return;
+		const { saving, file, written } = step;
+		void saving.then(async (saved) => {
+			let notes = 0;
+			if (saved && label !== '' && this.mayAdopt(file)) {
+				await this.host.flushSheets();
+				notes = (await countAdoptions(this.plugin.app, file.basename, [label])).notes;
+			}
+			const said = sentence(notes);
+			if (said === null) return;
+			if (saved) this.offerGuardedUndo(said, file, written);
+			else new Notice(said);
 		});
 	}
 
@@ -1209,6 +1289,7 @@ export class LayoutEditorSection {
 			errors: this.fieldErrors,
 			drag: this.drag,
 			suggestNames: (input, owner) => this.suggestNames(input, owner),
+			persistReorder: (label, sentence) => this.persistReorder(label, sentence),
 		};
 	}
 

@@ -1,6 +1,10 @@
 /*
  * Which character notes already hold a section under a label a component has
- * just taken (`docs/features/new-component-adopts-retained-section.md`).
+ * just taken (`docs/features/new-component-adopts-retained-section.md`). The
+ * scan, `countAdoptions`, also serves the level-list reorder report, which
+ * counts the notes holding a component's section by the same lookup
+ * (`docs/features/level-list-reorder-report.md`); the adoption's words, and
+ * the gestures that raise them, stay this file's alone.
  *
  * SPEC §10 keeps a removed component's `##` section in every note, and the sheet
  * finds a component's section by label alone. So a component inserted from the
@@ -81,6 +85,12 @@ export function sectionLabels(root: ComponentConfig): string[] {
  * is counted where the note's text names it (`layout-notes.ts`). Read through
  * `cachedRead`, because nothing here writes and nothing is derived from the
  * text but a count.
+ *
+ * **A second caller asks the same question for another reason**: a level
+ * list's reorder report counts the notes holding a section for the component
+ * whose levels moved, since every level stored there is now read against the
+ * new list (`docs/features/level-list-reorder-report.md`). Sections rather than
+ * fields is the point of reusing this rather than writing a second scan.
  */
 export async function countAdoptions(
 	app: App,
