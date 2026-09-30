@@ -217,7 +217,8 @@ src/
                    carrying a component rename across every note on the layout
   section-adoption.ts
                    counting the notes that already hold a section under a label
-                   a component has just taken
+                   a component has just taken, a scan the level reorder report
+                   shares
   parse/           note and layout parsing, and the ordered walk over a parsed
                    layout. Imports nothing from obsidian [checked]
   formula/         expression parsing and evaluation. Same rule [checked]
