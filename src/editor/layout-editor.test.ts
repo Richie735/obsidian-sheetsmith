@@ -50,6 +50,7 @@ import {
 	redo,
 	panelHeading,
 } from '../test/layout-editor-pane';
+import { lastNotice, pressNoticeLink } from '../test/notice';
 
 /*
  * The layout editor, driven through its own DOM.
@@ -2229,17 +2230,6 @@ describe('removing from the tree', () => {
 		Notice.messages = [];
 	});
 
-	/** The last notice raised, as its reader reads it. */
-	function lastNotice(): string | null | undefined {
-		return Notice.instances.at(-1)?.messageEl.textContent;
-	}
-
-	/** Press the last notice's Undo link. */
-	function pressUndo(): void {
-		const link = Notice.instances.at(-1)?.messageEl.querySelector('a.sheetsmith-undo');
-		if (!link) throw new Error('no undo in the last notice');
-		(link as HTMLElement).click();
-	}
 
 	it('names a leaf and says its section stays', async () => {
 		harness = await open();
@@ -2271,7 +2261,7 @@ describe('removing from the tree', () => {
 		await settle(harness.pane);
 		expect(await harness.raw()).not.toBe(before);
 
-		pressUndo();
+		pressNoticeLink();
 		await settle(harness.pane);
 		expect(await harness.raw()).toBe(before);
 		expect(Notice.instances.at(-1)?.hidden).toBe(true);
@@ -2289,7 +2279,7 @@ describe('removing from the tree', () => {
 		const edited = await harness.raw();
 		const wrote = writes(harness);
 
-		(undo?.messageEl.querySelector('a.sheetsmith-undo') as HTMLElement).click();
+		pressNoticeLink(undo);
 		await settle(harness.pane);
 		expect(await harness.raw()).toBe(edited);
 		expect(wrote()).toBe(0);
@@ -4553,17 +4543,6 @@ describe('copying and pasting a component from the tree', () => {
 		delete (navigator as unknown as { clipboard?: unknown }).clipboard;
 	});
 
-	/** The last notice, as its reader reads it. */
-	function lastNotice(): string | null | undefined {
-		return Notice.instances.at(-1)?.messageEl.textContent;
-	}
-
-	/** Press the last notice's Undo link. */
-	function pressUndo(): void {
-		const link = Notice.instances.at(-1)?.messageEl.querySelector('a.sheetsmith-undo');
-		if (!link) throw new Error('no undo in the last notice');
-		(link as HTMLElement).click();
-	}
 
 	/** Let a clipboard read, the paste it feeds and the write it makes settle. */
 	async function landed(from: Harness): Promise<void> {
@@ -4733,7 +4712,7 @@ describe('copying and pasting a component from the tree', () => {
 		pressMenu(harness, 'level', 'Paste');
 		await landed(harness);
 		expect(await harness.raw()).not.toBe(before);
-		pressUndo();
+		pressNoticeLink();
 		await landed(harness);
 		expect(await harness.raw()).toBe(before);
 
@@ -4752,7 +4731,7 @@ describe('copying and pasting a component from the tree', () => {
 		type(control<HTMLInputElement>(harness, 'label-hit_points'), 'Health');
 		await settle(harness.pane);
 		const edited = await harness.raw();
-		(stale?.messageEl.querySelector('a.sheetsmith-undo') as HTMLElement).click();
+		pressNoticeLink(stale);
 		await settle(harness.pane);
 		expect(await harness.raw()).toBe(edited);
 		expect(Notice.messages).toContain('Sheetsmith did not undo: this layout has changed since.');
@@ -5031,7 +5010,7 @@ describe('copying and pasting a component from the tree', () => {
 			return Array.from(el.querySelectorAll('.sheetsmith-card-input'), (node) => (node as HTMLInputElement).value);
 		};
 		expect(await drawn()).toEqual(['8', '14']);
-		pressUndo();
+		pressNoticeLink();
 		await landed(harness);
 		expect(await drawn()).toEqual(['8', '14', '12']);
 	});
@@ -5071,7 +5050,7 @@ describe('copying and pasting a component from the tree', () => {
 			expect(lastNotice()).toBe(
 				'Pasted "Portrait" from "Image variations". 1 character note already has a section called "Portrait", and the pasted component now shows it. Rename it if that section belongs to something else. Check what these mean here: prof. Undo',
 			);
-			pressUndo();
+			pressNoticeLink();
 			await landed(harness);
 			expect(await harness.raw()).toBe(before);
 			// The note is the note it was: nothing here writes one.
@@ -5417,12 +5396,6 @@ describe('a level list reordered', () => {
 		return Notice.instances.map((notice) => notice.messageEl.textContent ?? '');
 	}
 
-	/** Press the last notice's Undo link. */
-	function pressUndo(notice = Notice.instances.at(-1)): void {
-		const link = notice?.messageEl.querySelector('a.sheetsmith-undo');
-		if (!link) throw new Error('no undo in that notice');
-		(link as HTMLElement).click();
-	}
 
 	const SKILLS_MOVED =
 		'"Proficiency" levels moved: "Proficient" was 1 and is now 2; "Expertise" was 2 and is now 1.';
@@ -5560,14 +5533,14 @@ describe('a level list reordered', () => {
 		await edit('skills');
 		await commit(named('Proficiency level names'), 'Untrained, Expertise, Proficient');
 		expect(await harness.raw()).not.toBe(before);
-		pressUndo();
+		pressNoticeLink();
 		await settle(harness.pane);
 		expect(await harness.raw()).toBe(before);
 
 		await edit('corruption');
 		await commit(control<HTMLInputElement>(harness, 'cfg-corruption-levels'), 'Clear, Marked, Touched, Lost');
 		expect(await harness.raw()).not.toBe(before);
-		pressUndo();
+		pressNoticeLink();
 		await settle(harness.pane);
 		expect(await harness.raw()).toBe(before);
 	});
@@ -5586,7 +5559,7 @@ describe('a level list reordered', () => {
 			await settle(harness.pane);
 			const edited = await harness.raw();
 			Notice.messages = [];
-			pressUndo(offer);
+			pressNoticeLink(offer);
 			await settle(harness.pane);
 			expect(await harness.raw()).toBe(edited);
 			expect(Notice.messages).toEqual([

@@ -3783,8 +3783,10 @@ body {
 	cursor: default;
 }
 
-/* Sits inside a Notice, which has its own colours to read against. */
-a.sheetsmith-undo {
+/* The one action a notice carries (`ui/undo-notice.ts`'s `offerAction`). Sits
+   inside a Notice, which has its own colours to read against. Named for the
+   markup rather than for undo, since the action need not be one. */
+a.sheetsmith-notice-action {
 	color: inherit;
 	cursor: pointer;
 	text-decoration: underline;

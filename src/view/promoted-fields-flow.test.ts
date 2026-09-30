@@ -17,6 +17,7 @@ import { promotedFieldMessage, SheetView } from './sheet-view';
 import { App, Notice, TextFileView } from '../test/obsidian-stub';
 import { fakePlugin, LAYOUT_FOLDER } from '../test/plugin';
 import { openView } from '../test/workspace';
+import { noticeLink } from '../test/notice';
 
 /** A card whose stored value is promoted, and a table whose total is. */
 const COMPONENTS = [
@@ -428,12 +429,7 @@ describe('taking back a reset that moved a promoted value', () => {
 	}
 
 	/** The undo link the trigger's own notice offers. */
-	function undoLink(): HTMLAnchorElement {
-		const notice = Notice.instances.at(-1);
-		const link = notice?.messageEl.querySelector('a.sheetsmith-undo');
-		if (!link) throw new Error('no undo was offered');
-		return link as HTMLAnchorElement;
-	}
+	const undoLink = (): HTMLAnchorElement => noticeLink();
 
 	it('resets the pool and writes the promoted property with it', async () => {
 		const { view } = await sheetOn(POOL_NOTE, POOL_LAYOUT);
