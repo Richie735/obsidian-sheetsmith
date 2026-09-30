@@ -4841,12 +4841,21 @@ describe('copying and pasting a component from the tree', () => {
 
 	it('refuses a paste over a layout that does not save, naming the fix, and throws nothing', async () => {
 		harness = await open(sheet());
-		// An unsaved duplicate label: `persist` refuses it and keeps it held, which
-		// is its contract for a field edit.
-		control(harness, 'edit-level').click();
-		await settle(harness.pane);
-		type(control<HTMLInputElement>(harness, 'label-level'), 'Ward');
-		await settle(harness.pane);
+		// An unsaved duplicate label. The **Label** field refuses one now, so the
+		// pane reaches it the one way left: a kept layout put back on reopening
+		// (`docs/features/unsaveable-layout.md` §4).
+		await holdUnsaved(
+			harness,
+			(layout) => {
+				const level = layout.components.find((c) => c.id === 'level');
+				if (level) level.label = 'Ward';
+			},
+			{
+				reason: 'invalid',
+				message:
+					'Duplicate component label "Ward". Labels key note sections, so they must be unique.',
+			},
+		);
 		const before = await harness.raw();
 		reading = {
 			text: encodeComponentCopy({

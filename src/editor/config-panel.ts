@@ -120,7 +120,7 @@ import {
 	ModifierTypesField,
 	renderModifierTypes,
 } from './modifier-types-field';
-import { DEFAULT_COLUMNS, Layout } from '../parse/layout';
+import { DEFAULT_COLUMNS, labelTaken, Layout } from '../parse/layout';
 
 import { renderResetField } from './reset-field';
 import {
@@ -651,11 +651,10 @@ export class ConfigPanel {
 						this.fieldError(text.inputEl, 'A label is required.');
 						return;
 					}
-					if (
-						layout.components.some(
-							(other) => other !== config && other.label === label,
-						)
-					) {
+					// The parser's own rule, over every component at every depth:
+					// the top level alone passed a label a container's child held,
+					// which the parse then refused (`docs/features/unsaveable-layout.md`).
+					if (labelTaken(layout.components, label, config)) {
 						// Through the binding, like the branch above it. It was a
 						// bare `showFieldError` — the map argument is optional, so
 						// nothing compiled or linted differently, which is exactly
