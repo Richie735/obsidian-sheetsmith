@@ -18,6 +18,7 @@
  */
 
 import type SheetsmithPlugin from '../main';
+import { UnsavedLayouts } from '../editor/unsaved-layouts';
 import { DEFAULT_SETTINGS } from '../settings';
 import { App } from './obsidian-stub';
 
@@ -34,6 +35,7 @@ export function fakePlugin(app: App): SheetsmithPlugin {
 	return {
 		app,
 		settings: { ...DEFAULT_SETTINGS, layoutFolder: LAYOUT_FOLDER },
+		unsavedLayouts: new UnsavedLayouts(),
 		async saveSettings() {},
 	} as unknown as SheetsmithPlugin;
 }

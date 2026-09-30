@@ -83,6 +83,7 @@
 import { Setting } from 'obsidian';
 import { acceptsChildren } from './accepts-children';
 import { keyRename, RenameIntent } from '../component-rename-migration';
+import { refusedRename } from './rename-refusal';
 import { getComponent } from '../components';
 import { placedComponentName } from './component-name';
 import { conditionMet } from './config-fields';
@@ -179,6 +180,12 @@ export interface ConfigPanelHost {
 	 * caller omits it.
 	 */
 	persist(rename?: RenameIntent): void;
+	/**
+	 * Why a commit carrying a rename may not be written now, or null where it
+	 * may (`docs/features/unsaveable-layout.md` §2). Asked at the commit, so a
+	 * save that ends the pane's unsaved state lifts it with no rebuild.
+	 */
+	readonly renameRefusal: () => string | null;
 	/**
 	 * Rebuild both regions from the layout as it now stands.
 	 *
@@ -655,16 +662,23 @@ export class ConfigPanel {
 						);
 						return;
 					}
-					this.fieldError(text.inputEl, null);
 					const from = config.label;
-					config.label = label;
 					// Both values are already in hand at the moment of commit,
 					// which is what `docs/features/component-rename-migration.md`
 					// asks of every trigger it hooks — an explicit rename, never
 					// one inferred later by diffing two saved configs.
-					this.host.persist(
-						from === label ? undefined : { kind: 'label', from, to: label },
-					);
+					const intent: RenameIntent | undefined =
+						from === label ? undefined : { kind: 'label', from, to: label };
+					if (
+						refusedRename(intent, this.host.renameRefusal, text.inputEl, from, (input, message) =>
+							this.fieldError(input, message),
+						)
+					) {
+						return;
+					}
+					this.fieldError(text.inputEl, null);
+					config.label = label;
+					this.host.persist(intent);
 					this.host.redraw();
 				});
 			});
@@ -1078,17 +1092,22 @@ export class ConfigPanel {
 							? (record[field.key] as string)
 							: '';
 					const previous = stored !== '' ? stored : (address?.whenBlank ?? '');
+					/** `rename-refusal.ts`'s gate, bound to this field. */
+					const refused = (intent: RenameIntent | undefined): boolean =>
+						refusedRename(intent, this.host.renameRefusal, text.inputEl, stored, (input, message) =>
+							this.fieldError(input, message),
+						);
 					if (trimmed === '') {
+						const intent = keyRename(
+							address,
+							config.label,
+							stored,
+							address?.whenBlank ?? '',
+						);
+						if (refused(intent)) return;
 						this.fieldError(text.inputEl, null);
 						delete record[field.key];
-						this.host.persist(
-							keyRename(
-								address,
-								config.label,
-								stored,
-								address?.whenBlank ?? '',
-							),
-						);
+						this.host.persist(intent);
 						if (renamed()) this.host.redraw();
 						return;
 					}
@@ -1121,6 +1140,8 @@ export class ConfigPanel {
 							return;
 						}
 					}
+					const intent = keyRename(address, config.label, previous, trimmed);
+					if (refused(intent)) return;
 					if (field.kind === 'number') {
 						const parsed = Number(trimmed);
 						if (Number.isNaN(parsed)) {
@@ -1141,9 +1162,7 @@ export class ConfigPanel {
 						);
 						record[field.key] = trimmed;
 					}
-					this.host.persist(
-						keyRename(address, config.label, previous, trimmed),
-					);
+					this.host.persist(intent);
 					if (renamed()) this.host.redraw();
 				});
 			});

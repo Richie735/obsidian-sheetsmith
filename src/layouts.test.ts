@@ -37,6 +37,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { App as ObsidianApp } from 'obsidian';
 import {
+	basenameOfPath,
 	convertLegacyLayouts,
 	createLayout,
 	installLayoutSource,
@@ -624,5 +625,15 @@ describe('converting .json layouts', () => {
 			skipped: 0,
 			failed: ['Permission denied.'],
 		});
+	});
+});
+
+describe('the basename a path names', () => {
+	it('drops the folder and the last extension, and keeps a leading dot', () => {
+		expect(basenameOfPath('Sheetsmith layouts/Group variations.sheetsmith')).toBe(
+			'Group variations',
+		);
+		expect(basenameOfPath('Outside/old.layout.json')).toBe('old.layout');
+		expect(basenameOfPath('.hidden')).toBe('.hidden');
 	});
 });

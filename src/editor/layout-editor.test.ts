@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SHEET_DESTINATION } from './layout-editor';
 import { LayoutEditorView } from '../view/layout-editor-view';
-import { Layout, serialiseLayout } from '../parse/layout';
+import { Layout, parseLayout, serialiseLayout } from '../parse/layout';
 import { renderGrid, walkLayout } from '../view/grid-cells';
 import { modalButton, modalIsOpen, openModal, pressModalButton } from '../test/modal';
 import { encodeComponentCopy, layoutFingerprint } from '../parse/component-clipboard';
@@ -49,6 +49,7 @@ import {
 	undo,
 	redo,
 	panelHeading,
+	holdUnsaved,
 } from '../test/layout-editor-pane';
 import { lastNotice, pressNoticeLink } from '../test/notice';
 
@@ -3917,6 +3918,45 @@ describe('the component rename migration', () => {
 		]);
 	});
 
+	/*
+	 * The rename-refusal gate (`editor/rename-refusal.ts`) at its two list
+	 * callers, a column key and an entry key, while the pane holds a layout it
+	 * could not write: the key goes back, the field says why, and no note is
+	 * scanned (`docs/features/unsaveable-layout.md` §2).
+	 */
+	for (const [id, token, stored] of [
+		['spells', 'spells-col-0-key', 'Level'],
+		['abilities', 'attr-abilities-0-key', 'DEX'],
+	] as const) {
+		it(`refuses a renamed key at "${token}" while the layout is not saved`, async () => {
+			await harness.app.vault.create('Aramil.md', CHARACTER);
+			control(harness, `edit-${SHEET_DESTINATION}`).click();
+			await settle(harness.pane);
+			refuseWrites(harness);
+			// Into the state through an edit that renames nothing.
+			type(control<HTMLInputElement>(harness, 'layout-columns'), '10');
+			await settle(harness.pane);
+			expect(harness.container.querySelector('.sheetsmith-editor-unsaved')).not.toBeNull();
+			const scans = vi.spyOn(harness.app.vault, 'process');
+
+			control(harness, `edit-${id}`).click();
+			await settle(harness.pane);
+			const key = control<HTMLInputElement>(harness, token);
+			expect(key.value).toBe(stored);
+			type(key, 'Renamed');
+			await settle(harness.pane);
+
+			expect(key.value).toBe(stored);
+			expect(key.parentElement?.querySelector('.sheetsmith-field-error')?.textContent).toBe(
+				'Not renamed, because this layout is not saved yet and its character notes cannot be migrated until this layout saves.',
+			);
+			expect(scans).not.toHaveBeenCalled();
+			expect(
+				await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!),
+			).toBe(CHARACTER);
+		});
+	}
+
 	it('migrates a renamed entry key inside a Card set’s own fence, and reports it', async () => {
 		await harness.app.vault.create('Aramil.md', CHARACTER);
 
@@ -5587,5 +5627,731 @@ describe('a level list reordered', () => {
 		expect(notes).toEqual([]);
 		expect(process).not.toHaveBeenCalled();
 		expect(await harness.app.vault.read(note!)).toBe(bytes);
+	});
+});
+
+/*
+ * A layout the pane holds and cannot write (`docs/features/unsaveable-layout.md`).
+ *
+ * These three began as the reproductions that found the loss: leaving the file
+ * forgot a held layout and both undo stacks with no word, an outside write
+ * dropped one without the notice a pending edit got, and a refused write was
+ * lost the same way. Leaving now keeps the layout by path, reopening puts it
+ * back where the file still holds the bytes it was kept against, and every path
+ * that cannot keep it says so and offers the copy.
+ */
+const HOME = `${LAYOUT_FOLDER}/Test sheet.sheetsmith`;
+const OTHER = `${LAYOUT_FOLDER}/Other sheet.sheetsmith`;
+
+/** A second layout to leave for, told apart from the first by its pool's label. */
+function otherSheet(): Layout {
+	const layout = { ...fixture(), name: 'Other sheet' };
+	layout.components = layout.components.map((c) =>
+		c.id === 'hit_points' ? { ...c, label: 'Other points' } : c,
+	);
+	return layout;
+}
+
+/**
+ * The vault's `modify`, made to refuse writes to the open layout while
+ * `refusing` is set, with the message `message`. `calls` counts every attempt
+ * at that file, refused or not; `hold` makes the next attempt wait on a promise
+ * the case settles, for the orderings a leave can meet.
+ */
+interface Refusal {
+	refusing: boolean;
+	message: string;
+	calls: number;
+	hold: (() => { resolve: () => void; reject: (message: string) => void }) | null;
+	pending: { resolve: () => void; reject: (message: string) => void } | null;
+}
+
+function refuseWrites(from: Harness, path = HOME): Refusal {
+	const modify = from.app.vault.modify.bind(from.app.vault);
+	const state: Refusal = {
+		refusing: true,
+		message: 'disk full',
+		calls: 0,
+		hold: null,
+		pending: null,
+	};
+	from.app.vault.modify = async (file, content) => {
+		if (file.path !== path) return modify(file, content);
+		state.calls++;
+		if (state.hold !== null) {
+			state.hold = null;
+			await new Promise<void>((resolve, reject) => {
+				state.pending = {
+					resolve: () => resolve(),
+					reject: (message) => reject(new Error(message)),
+				};
+			});
+			state.pending = null;
+			return modify(file, content);
+		}
+		if (state.refusing) throw new Error(state.message);
+		return modify(file, content);
+	};
+	return state;
+}
+
+/** Make the next write to the open layout wait until the case settles it. */
+function holdNextWrite(refusal: Refusal): void {
+	refusal.hold = () => refusal.pending!;
+}
+
+
+/** The standing block's text, or null where the pane draws none. */
+function unsavedBlock(from: Harness): string | null {
+	return (
+		from.container.querySelector('.sheetsmith-editor-unsaved')?.textContent ?? null
+	);
+}
+
+/** The parser's own sentence for a layout, or null where it parses. */
+function refusalOf(layout: Layout): string | null {
+	try {
+		parseLayout(serialiseLayout(layout));
+		return null;
+	} catch (error) {
+		return error instanceof Error ? error.message : String(error);
+	}
+}
+
+/** Commit a new label on the selected Pool, through its own field. */
+async function relabel(from: Harness, label: string): Promise<void> {
+	type(control<HTMLInputElement>(from, 'label-hit_points'), label);
+	await settle(from.pane);
+}
+
+/** A clipboard the case owns, as `layout-file-row.test.ts` installs one. */
+let copied: string[] = [];
+function ownClipboard(): void {
+	copied = [];
+	Object.defineProperty(navigator, 'clipboard', {
+		configurable: true,
+		value: {
+			writeText: async (text: string): Promise<void> => {
+				copied.push(text);
+			},
+		},
+	});
+}
+
+describe('leaving a layout the pane could not save', () => {
+	beforeEach(async () => {
+		const layout = fixture();
+		const pool = layout.components.find((c) => c.id === 'hit_points')!;
+		pool.reset = [{ trigger: 'Long rest', action: 'full' }];
+		harness = await open(layout);
+		await harness.app.vault.create(OTHER, serialiseLayout(otherSheet()));
+		Notice.messages = [];
+		Notice.instances = [];
+		ownClipboard();
+		control(harness, 'edit-hit_points').click();
+		await settle(harness.pane);
+	});
+
+	afterEach(() => {
+		delete (navigator as unknown as { clipboard?: unknown }).clipboard;
+	});
+
+	/** Come back to the first layout and select its Pool again. */
+	async function comeBack(): Promise<void> {
+		await showFile(harness.pane, HOME);
+		control(harness, 'edit-hit_points').click();
+		await settle(harness.pane);
+	}
+
+	it('keeps a layout it could not write across leaving and coming back', async () => {
+		const before = await harness.raw();
+		const refusal = refuseWrites(harness);
+		await relabel(harness, 'Health');
+		expect(Notice.messages).toEqual(['Sheetsmith could not save this layout: disk full']);
+
+		// Still refusing as the file is left, which is when the flush writes; the
+		// vault recovers before the author comes back.
+		await showFile(harness.pane, OTHER);
+		expect(lastNotice()).toBe(
+			'"Test sheet" is not saved. Its changes are kept until Obsidian closes; open it again to get them back. Copy layout',
+		);
+		refusal.refusing = false;
+		const attempts = refusal.calls;
+		await comeBack();
+
+		expect(control<HTMLInputElement>(harness, 'label-hit_points').value).toBe('Health');
+		expect(unsavedBlock(harness)).toBe(
+			'Changes to "Test sheet" are not saved, because the file could not be written: disk full. They are kept here, and every edit tries again.Try again',
+		);
+		// Opening a file never writes: the author retries.
+		expect(refusal.calls).toBe(attempts);
+		expect(await harness.raw()).toBe(before);
+	});
+
+	it('puts back a kept layout that does not save, standing state and all', async () => {
+		/*
+		 * **Set to a formula** no longer reaches this state (§1), so it is seeded
+		 * the way a leave would have kept it: the store holds the changed layout
+		 * against the file's own bytes, and reopening puts it back.
+		 */
+		const changed = (layout: Layout): void => {
+			const pool = layout.components.find((c) => c.id === 'hit_points')!;
+			pool.label = 'Health';
+			pool.reset = [{ trigger: 'Long rest', action: 'formula' }];
+		};
+		const probe = parseLayout(await harness.raw());
+		changed(probe);
+		const message = refusalOf(probe)!;
+		expect(message).toBe(
+			'Component 2 ("Health") "reset" action "formula" needs a "to" expression.',
+		);
+		const before = await harness.raw();
+		await holdUnsaved(harness, changed, { reason: 'invalid', message });
+		control(harness, 'edit-hit_points').click();
+		await settle(harness.pane);
+
+		expect(control<HTMLInputElement>(harness, 'label-hit_points').value).toBe('Health');
+		expect(control<HTMLSelectElement>(harness, 'reset-action-hit_points-0').value).toBe(
+			'formula',
+		);
+		expect(unsavedBlock(harness)).toBe(
+			`Changes to "Test sheet" are not saved, because this layout does not save as it stands. Fix this and the next edit saves them: ${message}`,
+		);
+		expect(await harness.raw()).toBe(before);
+		expect(harness.plugin.unsavedLayouts.peek(HOME)).toBeUndefined();
+	});
+
+	it('takes the disk and offers a copy when an outside write drops an unsaved layout', async () => {
+		const modify = harness.app.vault.modify.bind(harness.app.vault);
+		refuseWrites(harness);
+		await relabel(harness, 'Health');
+		Notice.messages = [];
+		Notice.instances = [];
+
+		// Somebody else writes the file: another pane, a promotion, a hand edit.
+		const outside = serialiseLayout({ ...fixture(), columns: 6 });
+		await modify(harness.app.vault.getFileByPath(HOME)!, outside);
+		await tick();
+		await tick();
+
+		// The disk wins.
+		expect(await harness.raw()).toBe(outside);
+		control(harness, `edit-${SHEET_DESTINATION}`).click();
+		await settle(harness.pane);
+		expect(control<HTMLInputElement>(harness, 'layout-columns').value).toBe('6');
+		expect(unsavedBlock(harness)).toBeNull();
+		// The existing sentence, word for word, now carrying the copy.
+		expect(lastNotice()).toBe(
+			'"Test sheet" changed on disk, so the layout editor reloaded it. An edit not yet saved here was dropped. Copy layout',
+		);
+		pressNoticeLink();
+		await tick();
+		expect(copied).toHaveLength(1);
+		expect(parseLayout(copied[0]!).components[1]?.label).toBe('Health');
+		expect(Notice.messages.at(-1)).toBe('Copied "Test sheet" to the clipboard.');
+	});
+
+	it('drops a kept layout whose file was written in the meantime', async () => {
+		const refusal = refuseWrites(harness);
+		await relabel(harness, 'Health');
+		await showFile(harness.pane, OTHER);
+		const kept = harness.plugin.unsavedLayouts.peek(HOME)!.text;
+		// Written elsewhere while it was closed.
+		const elsewhere = serialiseLayout({ ...fixture(), columns: 8 });
+		refusal.refusing = false;
+		await harness.app.vault.modify(harness.app.vault.getFileByPath(HOME)!, elsewhere);
+		Notice.instances = [];
+		await comeBack();
+
+		expect(control<HTMLInputElement>(harness, 'label-hit_points').value).toBe('Hit points');
+		expect(unsavedBlock(harness)).toBeNull();
+		expect(lastNotice()).toBe(
+			'"Test sheet" changed on disk while it was closed, so the changes not saved to it were dropped. Copy layout',
+		);
+		pressNoticeLink();
+		await tick();
+		expect(copied).toEqual([kept]);
+		expect(harness.plugin.unsavedLayouts.peek(HOME)).toBeUndefined();
+	});
+
+	it('keeps the layout when the pane closes, when the dropdown switches, and on New layout', async () => {
+		const kept =
+			'"Test sheet" is not saved. Its changes are kept until Obsidian closes; open it again to get them back. Copy layout';
+		refuseWrites(harness);
+
+		// The dropdown.
+		await relabel(harness, 'Health');
+		Notice.instances = [];
+		choose(control<HTMLSelectElement>(harness, 'layout-picker'), OTHER);
+		await tick();
+		await tick();
+		expect(harness.pane.file?.path).toBe(OTHER);
+		expect(lastNotice()).toBe(kept);
+		expect(harness.plugin.unsavedLayouts.peek(HOME)).toBeDefined();
+
+		// New layout, from the file the kept layout came back into.
+		await comeBack();
+		expect(control<HTMLInputElement>(harness, 'label-hit_points').value).toBe('Health');
+		Notice.instances = [];
+		const row = control(harness, 'layout-picker').closest('.setting-item');
+		const button = Array.from(row?.querySelectorAll('button') ?? []).find(
+			(el) => el.textContent === 'New layout',
+		);
+		button!.click();
+		await tick();
+		const modal = openModal();
+		const name = modal.querySelector('input[type="text"]') as HTMLInputElement;
+		name.value = 'Fresh sheet';
+		name.dispatchEvent(new Event('input'));
+		pressModalButton('Create');
+		await tick();
+		await tick();
+		expect(harness.pane.file?.path).toBe(`${LAYOUT_FOLDER}/Fresh sheet.sheetsmith`);
+		expect(Notice.instances.map((n) => n.messageEl.textContent)).toContain(kept);
+		expect(harness.plugin.unsavedLayouts.peek(HOME)).toBeDefined();
+
+		// Closing the pane.
+		await comeBack();
+		Notice.instances = [];
+		harness.pane.leaf.detach();
+		await tick();
+		await tick();
+		expect(lastNotice()).toBe(kept);
+		expect(harness.plugin.unsavedLayouts.peek(HOME)?.text).toContain('"Health"');
+	});
+
+	it('says the layout went, with the copy, when the file is deleted under the pane', async () => {
+		refuseWrites(harness);
+		await relabel(harness, 'Health');
+		Notice.instances = [];
+		await harness.app.vault.delete(harness.app.vault.getFileByPath(HOME)!);
+		await tick();
+		await tick();
+		expect(lastNotice()).toBe(
+			'"Test sheet" was deleted, so the changes not saved to it were dropped. Copy layout',
+		);
+		expect(harness.plugin.unsavedLayouts.peek(HOME)).toBeUndefined();
+		pressNoticeLink();
+		await tick();
+		expect(parseLayout(copied[0]!).components[1]?.label).toBe('Health');
+	});
+});
+
+describe('a layout the pane could not save', () => {
+	beforeEach(async () => {
+		harness = await open();
+		await harness.app.vault.create(OTHER, serialiseLayout(otherSheet()));
+		Notice.messages = [];
+		Notice.instances = [];
+		control(harness, 'edit-hit_points').click();
+		await settle(harness.pane);
+	});
+
+	it('draws the write block with Try again, and Try again saves once the vault recovers', async () => {
+		const refusal = refuseWrites(harness);
+		await relabel(harness, 'Health');
+		expect(unsavedBlock(harness)).toBe(
+			'Changes to "Test sheet" are not saved, because the file could not be written: disk full. They are kept here, and every edit tries again.Try again',
+		);
+		const retry = control<HTMLButtonElement>(harness, 'unsaved-retry');
+		// A recovery rather than the pane's primary action.
+		expect(retry.classList.contains('mod-cta')).toBe(false);
+
+		// Still refusing: the block is drawn again and focus goes back to it.
+		refusal.message = 'read-only file';
+		retry.click();
+		await tick();
+		expect(unsavedBlock(harness)).toContain('could not be written: read-only file.');
+		expect(document.activeElement?.getAttribute('data-sheetsmith-focus')).toBe(
+			'unsaved-retry',
+		);
+
+		refusal.refusing = false;
+		Notice.messages = [];
+		control<HTMLButtonElement>(harness, 'unsaved-retry').click();
+		await tick();
+		expect(unsavedBlock(harness)).toBeNull();
+		expect((await harness.stored()).components[1]?.label).toBe('Health');
+		expect(Notice.messages).toEqual(['"Test sheet" is saved.']);
+		expect(document.activeElement?.getAttribute('data-sheetsmith-focus')).toBe(
+			'layout-picker',
+		);
+		// One undo step for the held edits, back to the bytes before them.
+		await undo(harness);
+		expect((await harness.stored()).components[1]?.label).toBe('Hit points');
+	});
+
+	it('keeps onDisk at the bytes the file holds after a refused write', async () => {
+		const modify = harness.app.vault.modify.bind(harness.app.vault);
+		const actual = await harness.raw();
+		refuseWrites(harness);
+		await relabel(harness, 'Health');
+		const unwritten = serialiseLayout({
+			...fixture(),
+			components: fixture().components.map((c) =>
+				c.id === 'hit_points' ? { ...c, label: 'Health' } : c,
+			),
+		});
+		Notice.instances = [];
+
+		// The file's own bytes coming back are recognised as the pane's: no reload.
+		await modify(harness.app.vault.getFileByPath(HOME)!, actual);
+		await tick();
+		await tick();
+		expect(Notice.instances).toEqual([]);
+		expect(control<HTMLInputElement>(harness, 'label-hit_points').value).toBe('Health');
+
+		// The text that was never written is not: another writer landing exactly
+		// those bytes is somebody else's write, and the pane takes it.
+		await modify(harness.app.vault.getFileByPath(HOME)!, unwritten);
+		await tick();
+		await tick();
+		expect(lastNotice()).toContain('changed on disk, so the layout editor reloaded it.');
+	});
+
+	/*
+	 * **Two writes out at once.** A commit does not wait for the one before it,
+	 * so a slow vault can hold two; the file's bytes, the undo stack and
+	 * `holds()` have to come out as the file actually is whichever lands.
+	 */
+	it('keeps onDisk at the actual bytes when two overlapping writes both reject', async () => {
+		const modify = harness.app.vault.modify.bind(harness.app.vault);
+		const actual = await harness.raw();
+		const refusal = refuseWrites(harness);
+		holdNextWrite(refusal);
+		const max = (value: string) =>
+			type(control<HTMLInputElement>(harness, 'cfg-hit_points-max'), value);
+		max('20');
+		await tick();
+		max('21');
+		await tick();
+		expect(refusal.pending).not.toBeNull();
+		refusal.pending!.reject('disk full');
+		await tick();
+		await tick();
+		expect(refusal.calls).toBe(2);
+		expect(await harness.raw()).toBe(actual);
+		Notice.instances = [];
+
+		// The file's own bytes are the pane's: no reload.
+		await modify(harness.app.vault.getFileByPath(HOME)!, actual);
+		await tick();
+		await tick();
+		expect(Notice.instances).toEqual([]);
+		// Neither unwritten text is: another writer landing the first one is
+		// somebody else's write.
+		const first = parseLayout(actual);
+		(first.components[1] as ComponentConfig & { max?: string }).max = '20';
+		await modify(harness.app.vault.getFileByPath(HOME)!, serialiseLayout(first));
+		await tick();
+		await tick();
+		expect(lastNotice()).toContain('changed on disk, so the layout editor reloaded it.');
+	});
+
+	it('leaves no undo step for a rejected write that a later one overtook', async () => {
+		const original = await harness.raw();
+		const refusal = refuseWrites(harness);
+		holdNextWrite(refusal);
+		const max = (value: string) =>
+			type(control<HTMLInputElement>(harness, 'cfg-hit_points-max'), value);
+		max('20');
+		await tick();
+		max('21');
+		await tick();
+		refusal.refusing = false;
+		refusal.pending!.reject('disk full');
+		await tick();
+		await tick();
+		expect(unsavedBlock(harness)).toBeNull();
+		const landed = parseLayout(await harness.raw()).components[1] as ComponentConfig & {
+			max?: string;
+		};
+		expect(landed.max).toBe('21');
+
+		// One undo is the one write that landed: back to the file as it was,
+		// never to the "20" that no file ever held.
+		expect(await undo(harness)).toBe(true);
+		expect(await harness.raw()).toBe(original);
+		expect(await undo(harness)).toBe(false);
+	});
+
+	/*
+	 * **An undo pressed while a write is out.** A step is pushed when its write
+	 * lands, so the undo waits for it; otherwise it would pop the step before
+	 * the one being written and lose that edit from both stacks.
+	 */
+	const maxOf = async (from: Harness): Promise<string | undefined> =>
+		(parseLayout(await from.raw()).components[1] as ComponentConfig & { max?: string }).max;
+
+	it('undoes the edit whose write is still in flight', async () => {
+		const original = await harness.raw();
+		const refusal = refuseWrites(harness);
+		refusal.refusing = false;
+		type(control<HTMLInputElement>(harness, 'cfg-hit_points-max'), '20');
+		await settle(harness.pane);
+		holdNextWrite(refusal);
+		type(control<HTMLInputElement>(harness, 'cfg-hit_points-max'), '21');
+		await tick();
+		expect(refusal.pending).not.toBeNull();
+
+		const undoing = harness.pane.undo();
+		refusal.pending!.resolve();
+		expect(await undoing).toBe(true);
+		await tick();
+		await settle(harness.pane);
+
+		// The "21" that was in flight is what came back out, and the "20"
+		// before it is still one undo away.
+		expect(await maxOf(harness)).toBe('20');
+		await undo(harness);
+		await settle(harness.pane);
+		expect(await harness.raw()).toBe(original);
+		expect(await redo(harness)).toBe(true);
+		await settle(harness.pane);
+		expect(await maxOf(harness)).toBe('20');
+	});
+
+	it('leaves the file and the pane agreeing when an undo out of the unsaved state meets a later write', async () => {
+		const original = await harness.raw();
+		const refusal = refuseWrites(harness);
+		type(control<HTMLInputElement>(harness, 'cfg-hit_points-max'), '20');
+		await settle(harness.pane);
+		expect(unsavedBlock(harness)).not.toBeNull();
+		refusal.refusing = false;
+		holdNextWrite(refusal);
+		type(control<HTMLInputElement>(harness, 'cfg-hit_points-max'), '21');
+		await tick();
+		expect(refusal.pending).not.toBeNull();
+
+		const undoing = harness.pane.undo();
+		refusal.pending!.resolve();
+		expect(await undoing).toBe(true);
+		await tick();
+		await settle(harness.pane);
+
+		// The write landed "21" and ended the unsaved state, so the undo took
+		// that step back: file and pane both hold the original.
+		expect(await harness.raw()).toBe(original);
+		control(harness, 'edit-hit_points').click();
+		await settle(harness.pane);
+		expect(control<HTMLInputElement>(harness, 'cfg-hit_points-max').value).toBe('');
+		expect(unsavedBlock(harness)).toBeNull();
+	});
+
+	it('runs a notice\'s Undo pressed while the edit\'s write is in flight', async () => {
+		const original = await harness.raw();
+		const refusal = refuseWrites(harness);
+		refusal.refusing = false;
+		holdNextWrite(refusal);
+		Notice.instances = [];
+		removeRow(harness, 'armour');
+		await tick();
+		expect(refusal.pending).not.toBeNull();
+
+		pressNoticeLink();
+		refusal.pending!.resolve();
+		await tick();
+		await tick();
+		await settle(harness.pane);
+
+		expect(await harness.raw()).toBe(original);
+		expect(Notice.messages).not.toContain(
+			'Sheetsmith did not undo: this layout has changed since.',
+		);
+	});
+
+	it('takes back the undo step a refused write pushed', async () => {
+		const original = await harness.raw();
+		await relabel(harness, 'Health');
+		const saved = await harness.raw();
+		const refusal = refuseWrites(harness);
+		await relabel(harness, 'Vigour');
+
+		// Out of the unsaved state: back to the last saved bytes, written by nobody.
+		const attempts = refusal.calls;
+		await undo(harness);
+		expect(refusal.calls).toBe(attempts);
+		expect(unsavedBlock(harness)).toBeNull();
+		expect(control<HTMLInputElement>(harness, 'label-hit_points').value).toBe('Health');
+		expect(await harness.raw()).toBe(saved);
+
+		// The next undo is the saved edit's, not a step the refused attempt left.
+		refusal.refusing = false;
+		await undo(harness);
+		expect(await harness.raw()).toBe(original);
+	});
+
+	it('says a refusal once per reason', async () => {
+		const refusal = refuseWrites(harness);
+		// Edits that rename nothing, since a rename is refused at its field
+		// while the block is up.
+		const max = (value: string) => {
+			type(control<HTMLInputElement>(harness, 'cfg-hit_points-max'), value);
+			return settle(harness.pane);
+		};
+		await max('20');
+		await max('21');
+		expect(Notice.messages).toEqual(['Sheetsmith could not save this layout: disk full']);
+		refusal.message = 'read-only file';
+		await max('22');
+		expect(Notice.messages).toEqual([
+			'Sheetsmith could not save this layout: disk full',
+			'Sheetsmith could not save this layout: read-only file',
+		]);
+	});
+
+	it('undoes to the last save in one step, and redoes every held edit', async () => {
+		const original = await harness.raw();
+		await relabel(harness, 'Health');
+		const saved = await harness.raw();
+		const refusal = refuseWrites(harness);
+		await relabel(harness, 'Vigour');
+		type(control<HTMLInputElement>(harness, 'cfg-hit_points-max'), '20');
+		await settle(harness.pane);
+
+		await undo(harness);
+		control(harness, 'edit-hit_points').click();
+		await settle(harness.pane);
+		expect(unsavedBlock(harness)).toBeNull();
+		expect(control<HTMLInputElement>(harness, 'label-hit_points').value).toBe('Health');
+		expect(await harness.raw()).toBe(saved);
+
+		Notice.messages = [];
+		expect(await redo(harness)).toBe(true);
+		control(harness, 'edit-hit_points').click();
+		await settle(harness.pane);
+		expect(control<HTMLInputElement>(harness, 'label-hit_points').value).toBe('Vigour');
+		expect(control<HTMLInputElement>(harness, 'cfg-hit_points-max').value).toBe('20');
+		// The state begins again, so it says so again.
+		expect(Notice.messages).toEqual(['Sheetsmith could not save this layout: disk full']);
+		expect(unsavedBlock(harness)).not.toBeNull();
+
+		await undo(harness);
+		refusal.refusing = false;
+		await undo(harness);
+		expect(await harness.raw()).toBe(original);
+	});
+
+	it('refuses a rename while the block is up, and lifts it on the save that ends it', async () => {
+		await harness.app.vault.create(
+			'Aramil.md',
+			'---\nsheet-layout: Test sheet\n---\n\n## Hit points\n```sheet\ncurrent: 5\n```\n',
+		);
+		const refusal = refuseWrites(harness);
+		const scans = vi.spyOn(harness.app.vault, 'process');
+		// Into the state through an edit that renames nothing.
+		type(control<HTMLInputElement>(harness, 'cfg-hit_points-max'), '20');
+		await settle(harness.pane);
+		expect(unsavedBlock(harness)).not.toBeNull();
+
+		const label = control<HTMLInputElement>(harness, 'label-hit_points');
+		type(label, 'Health');
+		await settle(harness.pane);
+		expect(label.value).toBe('Hit points');
+		expect(
+			label.parentElement?.querySelector('.sheetsmith-field-error')?.textContent,
+		).toBe(
+			'Not renamed, because this layout is not saved yet and its character notes cannot be migrated until this layout saves.',
+		);
+		expect(scans).not.toHaveBeenCalled();
+
+		refusal.refusing = false;
+		control<HTMLButtonElement>(harness, 'unsaved-retry').click();
+		await tick();
+		expect(unsavedBlock(harness)).toBeNull();
+		// The same field, with no rebuild in between.
+		expect(label.isConnected).toBe(true);
+		type(label, 'Health');
+		await tick();
+		await tick();
+		expect(scans).toHaveBeenCalled();
+		expect(
+			await harness.app.vault.read(harness.app.vault.getFileByPath('Aramil.md')!),
+		).toContain('## Health');
+	});
+
+	/*
+	 * **The async release race.** `release` now waits for a write before it
+	 * decides what the file being left keeps, so these are the three orderings
+	 * that could land one file's state on another's. Each holds a write open
+	 * with a promise the case settles, so the order is the case's and not a
+	 * timer's.
+	 */
+	it('keeps the layout under the path being left when a leave meets its own flush in flight', async () => {
+		const refusal = refuseWrites(harness);
+		refusal.refusing = false;
+		control(harness, `edit-${SHEET_DESTINATION}`).click();
+		await settle(harness.pane);
+		// Typed and not committed, so the leave's flush is what writes it.
+		const library = control<HTMLTextAreaElement>(harness, 'function-library');
+		library.value = 'half(x) = x / 2';
+		library.dispatchEvent(new Event('input'));
+		holdNextWrite(refusal);
+
+		const leaving = showFile(harness.pane, OTHER);
+		await tick();
+		await tick();
+		expect(refusal.pending).not.toBeNull();
+		// Nothing of the next file is drawn while the write is out.
+		expect(harness.container.textContent).not.toContain('Other points');
+		refusal.pending!.reject('disk full');
+		await leaving;
+		await tick();
+
+		expect(harness.plugin.unsavedLayouts.peek(HOME)?.text).toContain('half(x) = x / 2');
+		expect(harness.plugin.unsavedLayouts.peek(OTHER)).toBeUndefined();
+		control(harness, 'edit-hit_points').click();
+		await settle(harness.pane);
+		expect(control<HTMLInputElement>(harness, 'label-hit_points').value).toBe('Other points');
+		expect(unsavedBlock(harness)).toBeNull();
+		expect(await undo(harness)).toBe(false);
+	});
+
+	it('keeps the layout under the path being left when a leave meets Try again in flight', async () => {
+		const refusal = refuseWrites(harness);
+		await relabel(harness, 'Health');
+		holdNextWrite(refusal);
+		control<HTMLButtonElement>(harness, 'unsaved-retry').click();
+		await tick();
+		expect(refusal.pending).not.toBeNull();
+
+		const leaving = showFile(harness.pane, OTHER);
+		await tick();
+		expect(harness.container.textContent).not.toContain('Other points');
+		refusal.pending!.reject('disk full');
+		await leaving;
+		await tick();
+
+		expect(harness.plugin.unsavedLayouts.peek(HOME)?.text).toContain('"Health"');
+		expect(harness.plugin.unsavedLayouts.peek(OTHER)).toBeUndefined();
+		control(harness, 'edit-hit_points').click();
+		await settle(harness.pane);
+		expect(control<HTMLInputElement>(harness, 'label-hit_points').value).toBe('Other points');
+		expect(unsavedBlock(harness)).toBeNull();
+		expect(await undo(harness)).toBe(false);
+	});
+
+	it('writes once and keeps nothing when Try again lands after the leave began', async () => {
+		const refusal = refuseWrites(harness);
+		await relabel(harness, 'Health');
+		refusal.refusing = false;
+		holdNextWrite(refusal);
+		const before = refusal.calls;
+		control<HTMLButtonElement>(harness, 'unsaved-retry').click();
+		await tick();
+
+		const leaving = showFile(harness.pane, OTHER);
+		await tick();
+		refusal.pending!.resolve();
+		await leaving;
+		await tick();
+
+		expect(harness.plugin.unsavedLayouts.peek(HOME)).toBeUndefined();
+		expect((await harness.stored()).components[1]?.label).toBe('Health');
+		// Coming back writes nothing either: there is nothing kept to put back.
+		await showFile(harness.pane, HOME);
+		await settle(harness.pane);
+		expect(refusal.calls).toBe(before + 1);
+		expect(unsavedBlock(harness)).toBeNull();
 	});
 });

@@ -13,7 +13,7 @@
 import { App } from '../src/test/obsidian-stub';
 import { openView, showFile } from '../src/test/workspace';
 import { LayoutEditorView } from '../src/view/layout-editor-view';
-import { Layout } from '../src/parse/layout';
+import { Layout, parseLayout, serialiseLayout } from '../src/parse/layout';
 import { fakePlugin } from '../src/test/plugin';
 import { LayoutSource, plantLayout, watchLayoutFile } from './stub-app';
 import { CLIPBOARD_FIXTURES } from './samples';
@@ -128,6 +128,22 @@ export interface PaneView {
 	 * own `copy` event.
 	 */
 	paste?: string;
+	/**
+	 * The pane holding a layout it cannot save
+	 * (`docs/features/unsaveable-layout.md` §7), reached by the route the app
+	 * reaches it by rather than by handing the pane a state.
+	 *
+	 * `write`: the stub vault refuses writes to the planted layout with `disk
+	 * full`, and **Label** on the component `open` selects is committed through
+	 * its own field, as its label plus ` (draft)`. `invalid`: no field reaches
+	 * this state any more, so the plugin's store is handed the planted layout
+	 * with `rest_pool`'s first reset binding set to a formula with no
+	 * expression, kept against the planted bytes, and the pane puts it back on
+	 * its first render exactly as reopening would. `write-path` is `write` with
+	 * the vault's own kind of refusal, a long unbroken path, which is the message
+	 * that tests whether the block wraps inside its border.
+	 */
+	unsaved?: 'write' | 'write-path' | 'invalid';
 }
 
 export interface PaneHost {
@@ -156,16 +172,26 @@ export async function renderEditorPane(
 	watchLayoutFile(app.vault, host.onLayoutChange);
 	const path = await plantLayout(app, layout);
 
-	const pane = await openView(
-		app,
-		container,
-		LayoutEditorView,
-		fakePlugin(app),
-	);
+	const plugin = fakePlugin(app);
+	if (view.unsaved === 'invalid' && path !== null) await keepInvalid(app, plugin, path);
+	const pane = await openView(app, container, LayoutEditorView, plugin);
 	// Opened on the file it planted, the way a click in the file explorer
 	// opens one: the pane is bound to a file and never picks one for itself.
 	if (path !== null) await showFile(pane, path);
 	if (view.open !== undefined) await select(pane.contentEl, view.open);
+	if (
+		(view.unsaved === 'write' || view.unsaved === 'write-path') &&
+		path !== null &&
+		view.open !== undefined
+	) {
+		await refuseAndCommit(
+			app,
+			pane.contentEl,
+			path,
+			view.open,
+			view.unsaved === 'write' ? 'disk full' : REFUSED_PATH,
+		);
+	}
 	// The picker is not driven here either, for `resize`'s reason below: opening
 	// it scrolls the search field clear of the pinned bar, which reads real
 	// geometry. `drivePicker` is `harness.ts`'s to call once the pane is on
@@ -193,6 +219,78 @@ export async function renderEditorPane(
 	if (view.treeDrop !== undefined) {
 		await dragTreeRow(pane.contentEl, view.treeDrop, true);
 	}
+}
+
+/**
+ * What a desktop vault says when it refuses a file: the path it could not open,
+ * one token with no space to break at, long enough to outrun the block's width.
+ */
+const REFUSED_PATH =
+	"EACCES: permission denied, open '/Users/example/Vault/a/deeply/nested/folder/structure/that/keeps/going/Harness sheet.sheetsmith'";
+
+/**
+ * `unsaved=invalid`'s seed: the planted layout with `rest_pool`'s first reset
+ * binding switched to a formula and its expression removed, kept in the
+ * plugin's store against the planted bytes, with the parser's own sentence.
+ */
+async function keepInvalid(
+	app: App,
+	plugin: ReturnType<typeof fakePlugin>,
+	path: string,
+): Promise<void> {
+	const file = app.vault.getFileByPath(path);
+	if (file === null) return;
+	const base = await app.vault.read(file);
+	const layout = parseLayout(base);
+	const pool = layout.components.find((c) => c.id === 'rest_pool');
+	const binding = pool?.reset?.[0];
+	if (binding === undefined) {
+		console.warn('No reset binding on rest_pool to break.');
+		return;
+	}
+	binding.action = 'formula';
+	delete binding.to;
+	let message = '';
+	try {
+		parseLayout(serialiseLayout(layout));
+	} catch (error) {
+		message = error instanceof Error ? error.message : String(error);
+	}
+	plugin.unsavedLayouts.keep(path, {
+		reason: 'invalid',
+		message,
+		base,
+		text: serialiseLayout(layout),
+	});
+}
+
+/**
+ * `unsaved=write`'s route: the vault refuses the planted layout from here on,
+ * and the selected component's **Label** is committed through its own field —
+ * dispatched rather than keyed, `driveSuggest`'s way, since a detached input
+ * fires none of its own events.
+ */
+async function refuseAndCommit(
+	app: App,
+	pane: HTMLElement,
+	path: string,
+	id: string,
+	message: string,
+): Promise<void> {
+	const modify = app.vault.modify.bind(app.vault);
+	app.vault.modify = async (file, content) => {
+		if (file.path === path) throw new Error(message);
+		return modify(file, content);
+	};
+	const field = await control(pane, `label-${id}`);
+	if (!(field instanceof HTMLInputElement)) {
+		console.warn(`No label field for "${id}" to commit.`);
+		return;
+	}
+	field.value = `${field.value} (draft)`;
+	field.dispatchEvent(new Event('input'));
+	field.dispatchEvent(new Event('change'));
+	await new Promise((resolve) => window.setTimeout(resolve, 0));
 }
 
 /**

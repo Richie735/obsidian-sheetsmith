@@ -1,10 +1,11 @@
 /*
  * Writing text to the clipboard, and the one sentence a refused write says.
  *
- * Three callers write the clipboard — a copyable name chip, the layout file
- * row's **Copy layout JSON**, and the tree's **Copy** on a component
- * (`docs/features/component-copy-paste.md` §3) — and each says its own thing on
- * success, about a name, a file or a component. What they share is the write
+ * Four callers write the clipboard — a copyable name chip, the layout file
+ * row's **Copy layout JSON**, the tree's **Copy** on a component
+ * (`docs/features/component-copy-paste.md` §3), and **Copy layout** on a notice
+ * about edits the editor could not keep (`editor/layout-copy.ts`) — and each says
+ * its own thing on success, about a name, a file or a component. What they share is the write
  * and the failure sentence, so that is all this holds: `docs/PATTERNS.md` §1's
  * one-step tier, reached at three consumers after `layout-file-row.ts` named
  * the third as the point to revisit.
@@ -12,7 +13,7 @@
  * `ui/` rather than `editor/`, on `docs/PATTERNS.md` §2's rule for that folder:
  * a generic building block that knows nothing of what it writes. The text
  * arrives as an argument and the success sentence stays with each caller, so
- * nothing here knows a name, a layout or a component exists. All three callers
+ * nothing here knows a name, a layout or a component exists. All four callers
  * are in `editor/` today.
  */
 

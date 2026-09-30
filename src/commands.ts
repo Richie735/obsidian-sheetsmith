@@ -24,6 +24,21 @@ import { SheetView, sheetViewState } from './view/sheet-view';
  */
 const UNDO_NOTICE_DURATION = 1500;
 
+/**
+ * Say `sentence` once an undo or a redo has actually happened, and nothing
+ * otherwise. The outcome is a promise where the action waited for a write in
+ * flight, and may then be skipped or dropped, so the notice follows it rather
+ * than the press (`docs/features/unsaveable-layout.md` §3).
+ */
+function announce(outcome: boolean | Promise<boolean>, sentence: string): void {
+	if (outcome === true) new Notice(sentence, UNDO_NOTICE_DURATION);
+	else if (outcome !== false) {
+		void outcome.then((done) => {
+			if (done) new Notice(sentence, UNDO_NOTICE_DURATION);
+		});
+	}
+}
+
 export function registerCommands(plugin: SheetsmithPlugin): void {
 	plugin.addCommand({
 		id: 'open-layout-editor',
@@ -102,7 +117,7 @@ export function registerCommands(plugin: SheetsmithPlugin): void {
 			// Only when something actually happened: an empty stack is a
 			// silent no-op, deliberately, rather than a Notice claiming an
 			// undo that did not occur.
-			if (!checking && view.undo()) new Notice('Undone.', UNDO_NOTICE_DURATION);
+			if (!checking) announce(view.undo(), 'Undone.');
 			return true;
 		},
 	});
@@ -115,7 +130,7 @@ export function registerCommands(plugin: SheetsmithPlugin): void {
 			if (!view) return false;
 			// Same guard as undo above: silent on an empty stack rather than
 			// claiming a redo that did not occur.
-			if (!checking && view.redo()) new Notice('Redone.', UNDO_NOTICE_DURATION);
+			if (!checking) announce(view.redo(), 'Redone.');
 			return true;
 		},
 	});

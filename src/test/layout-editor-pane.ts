@@ -73,6 +73,8 @@ export interface Harness {
 	 * that would be asserting on an implementation the view may change.
 	 */
 	plugin: ReturnType<typeof fakePlugin>;
+	/** The vault path of the layout file the pane was opened on. */
+	path: string;
 	/** The layout as the file currently holds it. */
 	stored: () => Promise<Layout>;
 	/** The file's exact bytes, for the round-trip check. */
@@ -120,6 +122,7 @@ export async function open(layout: Layout = fixture()): Promise<Harness> {
 		pane,
 		app,
 		plugin,
+		path,
 		raw,
 		stored: async () => parseLayout(await raw()),
 		redraw: async () => {
@@ -129,9 +132,14 @@ export async function open(layout: Layout = fixture()): Promise<Harness> {
 	};
 }
 
-/** The control the editor addresses by this focus token. */
+/**
+ * The control the editor addresses by this focus token.
+ *
+ * Takes anything with the pane's `container`, so a case that opened a pane on
+ * a real plugin rather than through `open` addresses its controls the same way.
+ */
 export function control<T extends HTMLElement = HTMLElement>(
-	harness: Harness,
+	harness: Pick<Harness, 'container'>,
 	token: string,
 ): T {
 	const el = harness.container.querySelector(
@@ -653,4 +661,37 @@ export function panelHeading(harness: Harness): string | null | undefined {
 	return harness.container
 		.querySelector('.sheetsmith-editor-panel')
 		?.querySelector('.setting-item-heading')?.textContent;
+}
+
+/**
+ * Put the pane in the unsaved state the way reopening a kept layout does
+ * (`docs/features/unsaveable-layout.md` §4): the plugin's store is handed the
+ * file's own layout changed by `change`, kept against the file's current bytes,
+ * and the pane leaves for a second layout and comes back to it.
+ *
+ * The route rather than a shortcut, because it is now the only one to a layout
+ * that will not parse: every field that could reach one refuses at the field.
+ */
+export async function holdUnsaved(
+	harness: Harness,
+	change: (layout: Layout) => void,
+	unsaved: { reason: 'invalid' | 'write'; message: string },
+): Promise<void> {
+	const base = await harness.raw();
+	const layout = parseLayout(base);
+	change(layout);
+	const away = `${LAYOUT_FOLDER}/Away sheet.sheetsmith`;
+	if (harness.app.vault.getFileByPath(away) === null) {
+		await harness.app.vault.create(
+			away,
+			serialiseLayout({ ...fixture(), name: 'Away sheet' }),
+		);
+	}
+	await showFile(harness.pane, away);
+	harness.plugin.unsavedLayouts.keep(harness.path, {
+		...unsaved,
+		base,
+		text: serialiseLayout(layout),
+	});
+	await showFile(harness.pane, harness.path);
 }
