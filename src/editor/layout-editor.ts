@@ -333,6 +333,12 @@ export class LayoutEditorSection {
 	/** Where the standing block is drawn, repainted in place rather than by a rebuild. */
 	private unsavedSlot: HTMLElement | null = null;
 	/**
+	 * The **Set to a formula** choices waiting for their expression, by the
+	 * action dropdown's focus token (`reset-field.ts`). Panel posture beside
+	 * `fieldErrors`: forgotten where its control is gone, and on leaving.
+	 */
+	private drafts = new Set<string>();
+	/**
 	 * Every write still in flight. `release` waits for all of them before it
 	 * decides whether the layout it is letting go of was saved, so a write that
 	 * lands after the pane has moved on can neither be missed nor land on the
@@ -429,6 +435,10 @@ export class LayoutEditorSection {
 		this.panel = new ConfigPanel({
 			persist: (rename) => void this.persist(true, rename),
 			renameRefusal: () => this.renameRefusal(),
+			drafts: this.drafts,
+			focusAfterRedraw: (token) => {
+				this.pendingFocus = token;
+			},
 			redraw: () => this.redraw(),
 			redrawSchematics: () => this.canvas.redraw(),
 			// The canvas reads `layout.columns` itself on every draw, so there is
@@ -648,6 +658,7 @@ export class LayoutEditorSection {
 		this.onDisk = null;
 		this.expected = null;
 		this.unsaved = null;
+		this.drafts.clear();
 		this.undoStack.clear();
 		this.redoStack.clear();
 		// Closed and cleared where the undo history is, which is the same moment:
@@ -1047,6 +1058,13 @@ export class LayoutEditorSection {
 	 * exists is worse than no message.
 	 */
 	private restoreFieldErrors(container: HTMLElement): void {
+		// A draft is posture beside the errors and goes the same way: with the
+		// control it belongs to.
+		for (const token of [...this.drafts]) {
+			if (container.querySelector(`[data-sheetsmith-focus="${CSS.escape(token)}"]`) === null) {
+				this.drafts.delete(token);
+			}
+		}
 		if (this.fieldErrors.size === 0) return;
 		for (const [token, message] of [...this.fieldErrors]) {
 			const input = container.querySelector(

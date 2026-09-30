@@ -6355,3 +6355,81 @@ describe('a layout the pane could not save', () => {
 		expect(unsavedBlock(harness)).toBeNull();
 	});
 });
+
+describe('Set to a formula, before its expression', () => {
+	beforeEach(async () => {
+		const layout = fixture();
+		const pool = layout.components.find((c) => c.id === 'hit_points')!;
+		pool.reset = [{ trigger: 'Long rest', action: 'full' }];
+		harness = await open(layout);
+		Notice.messages = [];
+		control(harness, 'edit-hit_points').click();
+		await settle(harness.pane);
+	});
+
+	it('writes nothing, says nothing, and asks for the expression where it is typed', async () => {
+		const before = await harness.raw();
+		const wrote = writes(harness);
+		choose(control<HTMLSelectElement>(harness, 'reset-action-hit_points-0'), 'formula');
+		await settle(harness.pane);
+
+		expect(wrote()).toBe(0);
+		expect(await harness.raw()).toBe(before);
+		expect(Notice.messages).toEqual([]);
+		expect(control<HTMLSelectElement>(harness, 'reset-action-hit_points-0').value).toBe(
+			'formula',
+		);
+		const to = control<HTMLInputElement>(harness, 'reset-to-hit_points-0');
+		expect(to.value).toBe('');
+		expect(to.parentElement?.querySelector('.sheetsmith-field-error')?.textContent).toBe(
+			'A formula reset needs an expression.',
+		);
+		expect(document.activeElement).toBe(to);
+		expect(unsavedBlock(harness)).toBeNull();
+	});
+
+	it('writes the action and its expression together, as one undo step', async () => {
+		const before = await harness.raw();
+		choose(control<HTMLSelectElement>(harness, 'reset-action-hit_points-0'), 'formula');
+		await settle(harness.pane);
+		const wrote = writes(harness);
+		type(control<HTMLInputElement>(harness, 'reset-to-hit_points-0'), 'level * 2');
+		await settle(harness.pane);
+
+		expect(wrote()).toBe(1);
+		expect((await harness.stored()).components[1]?.reset).toEqual([
+			{ trigger: 'Long rest', action: 'formula', to: 'level * 2' },
+		]);
+		await undo(harness);
+		expect(await harness.raw()).toBe(before);
+	});
+
+	it('writes another action chosen instead', async () => {
+		choose(control<HTMLSelectElement>(harness, 'reset-action-hit_points-0'), 'formula');
+		await settle(harness.pane);
+		choose(control<HTMLSelectElement>(harness, 'reset-action-hit_points-0'), 'empty');
+		await settle(harness.pane);
+		expect((await harness.stored()).components[1]?.reset).toEqual([
+			{ trigger: 'Long rest', action: 'empty' },
+		]);
+		expect(has(harness, 'reset-to-hit_points-0')).toBe(false);
+	});
+
+	it('writes at once on a binding that kept its expression', async () => {
+		harness = await open({
+			...fixture(),
+			components: fixture().components.map((c) =>
+				c.id === 'hit_points'
+					? { ...c, reset: [{ trigger: 'Long rest', action: 'full', to: 'level' }] }
+					: c,
+			),
+		});
+		control(harness, 'edit-hit_points').click();
+		await settle(harness.pane);
+		choose(control<HTMLSelectElement>(harness, 'reset-action-hit_points-0'), 'formula');
+		await settle(harness.pane);
+		expect((await harness.stored()).components[1]?.reset).toEqual([
+			{ trigger: 'Long rest', action: 'formula', to: 'level' },
+		]);
+	});
+});

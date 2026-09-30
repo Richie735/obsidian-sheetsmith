@@ -187,6 +187,13 @@ export interface ConfigPanelHost {
 	 */
 	readonly renameRefusal: () => string | null;
 	/**
+	 * The **Set to a formula** choices still waiting for their expression, by
+	 * the action dropdown's focus token. Panel posture, like `errors`.
+	 */
+	readonly drafts: Set<string>;
+	/** Focus this token once the next redraw has happened. */
+	focusAfterRedraw(token: string): void;
+	/**
 	 * Rebuild both regions from the layout as it now stands.
 	 *
 	 * Asked for wherever a commit can change what the *form* offers — a select
@@ -798,6 +805,8 @@ export class ConfigPanel {
 				redraw: () => this.host.redraw(),
 				errors: this.host.errors,
 				suggestNames: (input, owner) => this.host.suggestNames(input, owner),
+				drafts: this.host.drafts,
+				focusAfterRedraw: (token) => this.host.focusAfterRedraw(token),
 			});
 		}
 
