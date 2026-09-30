@@ -17,6 +17,7 @@
 
 import { Notice, Platform, setIcon } from 'obsidian';
 import { keyRename, RenameIntent } from '../component-rename-migration';
+import { refusedRename } from './rename-refusal';
 import {
 	levelCount,
 	levelGlyph,
@@ -64,6 +65,12 @@ export interface ListContext {
 	 * this module omits it.
 	 */
 	persist: (rename?: RenameIntent) => void;
+	/**
+	 * Why a commit carrying a rename may not be written now, or null where it
+	 * may (`docs/features/unsaveable-layout.md` §2). Optional for
+	 * `suggestNames`' reason below: a context with no vault renames freely.
+	 */
+	renameRefusal?: () => string | null;
 	/** Rebuild the pane. */
 	redraw: () => void;
 	/** Focus this token once the redraw has happened. */
@@ -1132,17 +1139,17 @@ export function renderColumnsEditor(
 				fieldError(keyInput, `${reason}, so ${subject} was left as "${column.key}".`);
 				return;
 			}
-			fieldError(keyInput, null);
 			const stored = column.key;
-			column.key = next;
-			context.persist(
-				keyRename(
-					address,
-					typeof record.label === 'string' ? record.label : '',
-					stored,
-					next,
-				),
+			const intent = keyRename(
+				address,
+				typeof record.label === 'string' ? record.label : '',
+				stored,
+				next,
 			);
+			if (refusedRename(intent, context.renameRefusal, keyInput, stored, fieldError)) return;
+			fieldError(keyInput, null);
+			column.key = next;
+			context.persist(intent);
 			context.redraw();
 		});
 
@@ -2162,21 +2169,23 @@ export function renderEntriesEditor(
 				);
 				return;
 			}
-			fieldError(primaryInput, null);
-			entry[primary.key] = next;
 			// Both values are already in hand at the moment of commit, which is
 			// what the migration asks of every trigger it hooks — an explicit
 			// rename, never one inferred later by diffing two saved configs.
 			// `stored` empty means there was no fence entry this could have
 			// addressed yet, so nothing is migrated from it.
-			context.persist(
-				keyRename(
-					address,
-					typeof record.label === 'string' ? record.label : '',
-					stored,
-					next,
-				),
+			const intent = keyRename(
+				address,
+				typeof record.label === 'string' ? record.label : '',
+				stored,
+				next,
 			);
+			if (refusedRename(intent, context.renameRefusal, primaryInput, stored, fieldError)) {
+				return;
+			}
+			fieldError(primaryInput, null);
+			entry[primary.key] = next;
+			context.persist(intent);
 			context.redraw();
 		});
 

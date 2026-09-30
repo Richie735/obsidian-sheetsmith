@@ -1513,6 +1513,57 @@ const DEFAULTS = [
 		flags: ['--force-high-contrast'],
 	},
 	{
+		/*
+		 * **The pane holding a layout it cannot save**
+		 * (`docs/features/unsaveable-layout.md` §7), in both of its variants and
+		 * both themes. A pane state, so it is photographed: the block has to sit
+		 * directly under the **Layout file** row and above **Sample values**,
+		 * with the whole message wrapped inside its border at this frame.
+		 *
+		 * `write` is reached by the real route — the stub vault refuses the
+		 * planted file and **Label** on `rest_pool` is committed through its own
+		 * field — and shows **Try again** inside the block. `invalid` is reached
+		 * through the plugin's store, since no field reaches it any more: a kept
+		 * layout with a formula reset and no expression, put back on first render
+		 * as reopening would.
+		 */
+		name: 'editor-unsaved-write-light',
+		query: 'surface=editor&theme=light&open=rest_pool&unsaved=write',
+		size: EDITOR_FRAME,
+	},
+	{
+		name: 'editor-unsaved-write-dark',
+		query: 'surface=editor&theme=dark&open=rest_pool&unsaved=write',
+		size: EDITOR_FRAME,
+	},
+	{
+		name: 'editor-unsaved-invalid-light',
+		query: 'surface=editor&theme=light&open=rest_pool&unsaved=invalid',
+		size: EDITOR_FRAME,
+	},
+	{
+		name: 'editor-unsaved-invalid-dark',
+		query: 'surface=editor&theme=dark&open=rest_pool&unsaved=invalid',
+		size: EDITOR_FRAME,
+	},
+	{
+		// The vault's own kind of refusal: a long path with no space to break at,
+		// which is what decides whether the message stays inside the block's
+		// border at this frame. Light only, since the wrap is the same in both.
+		name: 'editor-unsaved-write-path-light',
+		query: 'surface=editor&theme=light&open=rest_pool&unsaved=write-path',
+		size: EDITOR_FRAME,
+	},
+	{
+		// The write variant in forced colors, because it is the one of the four
+		// with a button inside a bordered box: the box's border and the button's
+		// outline both have to survive the repaint.
+		name: 'editor-unsaved-write-forced-colors',
+		query: 'surface=editor&theme=light&open=rest_pool&unsaved=write',
+		size: EDITOR_FRAME,
+		flags: ['--force-high-contrast'],
+	},
+	{
 		// The one view with a fold in it. Every other shot here lets the pane
 		// grow past the window, so what a reader sees at once has never been
 		// photographed at all — only the whole surface, laid out flat. `&bounded`

@@ -12,6 +12,7 @@ import { App, Notice, TextFileView } from '../test/obsidian-stub';
 import { fakePlugin, LAYOUT_FOLDER } from '../test/plugin';
 import { expectDescribedRow } from '../test/described-row';
 import { openView, showFile } from '../test/workspace';
+import { lastNotice } from '../test/notice';
 
 /*
  * The pane, as distinct from the editor inside it.
@@ -804,8 +805,8 @@ describe('the pane bound to a file', () => {
 		// redraw, and the undo pair.
 		pane.flush();
 		pane.redraw();
-		pane.undo();
-		pane.redo();
+		await pane.undo();
+		await pane.redo();
 		await tick();
 		expect(writes.get(pathOf('Broken')) ?? 0).toBe(0);
 	});
@@ -1009,9 +1010,12 @@ describe('the pane bound to a file', () => {
 		await tick();
 
 		expect(await text(app, pathOf('Alpha'))).toBe(outside);
-		expect(Notice.messages).toEqual([
-			'"Alpha" changed on disk, so the layout editor reloaded it. An edit not yet saved here was dropped.',
-		]);
+		// One notice, the sentence word for word with the copy the dropped edit
+		// now only exists in (`docs/features/unsaveable-layout.md` §4).
+		expect(Notice.messages).toEqual(['']);
+		expect(lastNotice()).toBe(
+			'"Alpha" changed on disk, so the layout editor reloaded it. An edit not yet saved here was dropped. Copy layout',
+		);
 	});
 
 	it('keeps two panes on one file in step, each keeping its own history', async () => {

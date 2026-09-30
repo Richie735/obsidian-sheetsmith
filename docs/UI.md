@@ -1082,6 +1082,10 @@ A misconfigured component renders `.sheetsmith-error` into its own container and
 nothing else. The rest of the sheet stays live and editable (`SPEC` §10). There
 is no global error state, and a broken component never blanks the page.
 
+A pane's own failure appears in its outline, under the **Layout file** row: the
+file cannot be read, cannot be edited, or holds changes not saved. That is the
+pane's place, not a global one, and it never displaces the row.
+
 Error text names the fix: `"max: 'con' is not defined on this sheet"`, not
 `"could not resolve"`.
 

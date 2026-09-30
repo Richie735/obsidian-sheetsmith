@@ -46,6 +46,7 @@
 
 import { App, Notice, Setting, TFile } from 'obsidian';
 import { writeClipboard } from '../ui/clipboard';
+import { copiedLayout } from './layout-copy';
 import { describedRow } from './described-row';
 import { ConfirmModal } from '../ui/confirm-modal';
 import { NEW_LAYOUT_LABEL, promptNewLayout } from './new-layout';
@@ -256,7 +257,7 @@ async function copyLayoutJson(
 	// The layout is named because the row can only show one at a time and a
 	// bare "Copied." leaves a reader wondering which; "to the clipboard" is
 	// the half that says where, in the failure sentence's own words.
-	new Notice(`Copied "${file.basename}" to the clipboard.`);
+	new Notice(copiedLayout(file.basename));
 }
 
 /**

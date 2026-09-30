@@ -18,11 +18,12 @@ import {
 	promptForNewLayout,
 	renderLayoutFileRow,
 } from './layout-file-row';
+import { offerLayoutCopy } from './layout-copy';
 import { showFieldError } from './field-error';
 import { attachFormulaSuggest, FormulaSuggest } from './formula-suggest';
 import { focusToken } from './focus-token';
 import { ConfirmModal } from '../ui/confirm-modal';
-import { offerUndo } from '../ui/undo-notice';
+import { offerUndo, UNDO_TIMEOUT } from '../ui/undo-notice';
 import { writeClipboard } from '../ui/clipboard';
 import { NEW_LAYOUT_LABEL } from './new-layout';
 import { isResolvedLayout, listLayouts } from '../layouts';
@@ -36,6 +37,12 @@ import { Vocabulary, vocabularySource } from '../formula/vocabulary';
 import { clipboardRow, nextFreeRow, renderTree, SHEET_DESTINATION } from './tree';
 import { ComponentConfig } from '../types';
 import { UndoStack } from './undo-stack';
+import {
+	changedWhileClosedSentence,
+	deletedSentence,
+	keptSentence,
+	Unsaved,
+} from './unsaved-layouts';
 import { uniqueId, uniqueLabel } from './unique-names';
 import {
 	encodeComponentCopy,
@@ -69,6 +76,30 @@ export { SHEET_DESTINATION };
 
 /** How long a rebuilt region stays marked, before fading over its own transition. */
 const FLASH_HOLD = 900;
+
+/**
+ * One step on the undo or redo stack.
+ *
+ * `held` marks the one entry that was never a file: the pane's own
+ * serialisation of a layout it could not write, pushed by an undo out of the
+ * unsaved state (`docs/features/unsaveable-layout.md` §3). It may not parse, so
+ * restoring it takes a structural copy rather than `parseLayout`; every other
+ * entry is bytes the file held, and still goes through the parser, so a real
+ * snapshot that failed to parse would still say so.
+ */
+interface Snapshot {
+	text: string;
+	held?: boolean;
+}
+
+/** What a commit carrying a rename says while the layout is not on disk. */
+const RENAME_REFUSED =
+	'Not renamed, because this layout is not saved yet and its character notes cannot be migrated until this layout saves.';
+
+/** The message an unknown thrown value carries. */
+function messageOf(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
 
 /**
  * What the editor needs from the pane hosting it.
@@ -239,16 +270,37 @@ export class LayoutEditorSection {
 	/** What the **Layout file** row reads and asks for, built once like the panel. */
 	private fileRow: LayoutFileRowHost;
 	/**
-	 * The layout's bytes as this session last knew them on disk: what the
-	 * initial read produced, or what the last successful `persist` wrote.
+	 * The layout's bytes as the file is known to hold them: what the initial
+	 * read produced, or what the last write that *landed* wrote. Set nowhere
+	 * else, so it never holds text that was not written
+	 * (`docs/features/unsaveable-layout.md` §2).
 	 *
 	 * The undo stack's baseline. `persist` cannot diff against `this.layout`
 	 * itself, because every mutation site has already changed it in place by
 	 * the time `persist` runs — this is the only record of what the file held
-	 * *before* the write about to happen, which is exactly what a step needs
-	 * to push. Null before a layout has been loaded.
+	 * *before* a write, which is exactly what a step needs to push. Null before a
+	 * layout has been loaded.
 	 */
 	private onDisk: string | null = null;
+	/**
+	 * The bytes the file will hold once every write in flight has landed: the
+	 * last text `persist` sent, or `onDisk` where none is out. What a guard
+	 * taken at a commit compares against, since it has to be known before the
+	 * write resolves.
+	 */
+	private expected: string | null = null;
+	/**
+	 * The texts of the writes still in flight, so the pane's own write coming
+	 * back through the vault's `modify` is recognised by `holds()` before it has
+	 * landed. A list rather than a set: two writes may carry the same bytes.
+	 */
+	private inFlight: string[] = [];
+	/**
+	 * The last write's turn. Writes go to the vault one at a time, in the order
+	 * they were made, so the last one to land is the last one made and `onDisk`
+	 * follows the file rather than the order two promises happened to settle in.
+	 */
+	private queue: Promise<void> = Promise.resolve();
 	/**
 	 * Whether the canvas is drawn with each component's own sample values
 	 * (`docs/features/preview-sample-values.md` §3).
@@ -269,8 +321,39 @@ export class LayoutEditorSection {
 	 */
 	private sampleValues = true;
 	/** Undo and redo history, one snapshot per `persist` that changed a byte. */
-	private undoStack = new UndoStack();
-	private redoStack = new UndoStack();
+	private undoStack = new UndoStack<Snapshot>();
+	private redoStack = new UndoStack<Snapshot>();
+	/**
+	 * Why the layout this pane holds is not on disk, or null where it is
+	 * (`docs/features/unsaveable-layout.md` §2). Set by a `persist` that could
+	 * not write, cleared by one that could, and drawn as a standing block in
+	 * the outline for as long as it lasts.
+	 */
+	private unsaved: Unsaved | null = null;
+	/** Where the standing block is drawn, repainted in place rather than by a rebuild. */
+	private unsavedSlot: HTMLElement | null = null;
+	/**
+	 * The **Set to a formula** choices waiting for their expression, by the
+	 * action dropdown's focus token (`reset-field.ts`). Panel posture beside
+	 * `fieldErrors`: forgotten where its control is gone, and on leaving.
+	 */
+	private drafts = new Set<string>();
+	/**
+	 * Every write still in flight. `release` waits for all of them before it
+	 * decides whether the layout it is letting go of was saved, so a write that
+	 * lands after the pane has moved on can neither be missed nor land on the
+	 * next file's state.
+	 */
+	private writes = new Set<Promise<boolean>>();
+	/**
+	 * How many author edits have been made, counted where one changes the
+	 * layout's bytes or is refused for holding one that will not save. What a
+	 * deferred undo or redo compares against, so a commit made between the press
+	 * and the writes landing is not the one it takes back.
+	 */
+	private commits = 0;
+	/** A `release` still waiting on its writes, which a render waits for in turn. */
+	private releasing: Promise<void> | null = null;
 
 	/**
 	 * Debounced persist, used only by rapid-fire paths (keyboard nudging).
@@ -351,6 +434,11 @@ export class LayoutEditorSection {
 		// answering the same question.
 		this.panel = new ConfigPanel({
 			persist: (rename) => void this.persist(true, rename),
+			renameRefusal: () => this.renameRefusal(),
+			drafts: this.drafts,
+			focusAfterRedraw: (token) => {
+				this.pendingFocus = token;
+			},
 			redraw: () => this.redraw(),
 			redrawSchematics: () => this.canvas.redraw(),
 			// The canvas reads `layout.columns` itself on every draw, so there is
@@ -444,10 +532,19 @@ export class LayoutEditorSection {
 	 * `this.layout` to `this.file`. Clear those first and the commit lands on
 	 * an object nothing will ever write, silently.
 	 *
+	 * **It waits for every write in flight**, the flush's own and any earlier
+	 * one, **Try again** included, before it asks whether the layout was saved
+	 * (`docs/features/unsaveable-layout.md` §4). A layout still not on disk after
+	 * that is kept in the plugin's store under the path being left, never the
+	 * path being opened, and one notice says so and offers a copy. Nothing asks
+	 * before leaving: a pane here never blocks it.
+	 *
 	 * **`write` is false for a file that is gone**, and only then: a pending
 	 * edit has nowhere to land when the file was deleted underneath the pane,
 	 * and writing it would put the file back. The pane's own `onUnloadFile` is
-	 * the caller and the one that knows which case it is in.
+	 * the caller and the one that knows which case it is in. An unsaved layout
+	 * there has nowhere to be kept, so the notice says it went and offers the
+	 * copy.
 	 *
 	 * The pane calls this on every real change of which file is open — the
 	 * dropdown, **New layout**, the trash, a file opened from anywhere Obsidian
@@ -457,11 +554,63 @@ export class LayoutEditorSection {
 	 * a switch to rewrite a *different* layout would be a worse surprise than an
 	 * empty stack. A rename is not a change of file and does not come here.
 	 */
-	release(write = true): void {
-		if (write) this.flush();
-		else this.discardPending();
+	async release(write = true): Promise<void> {
+		const run = this.letGo(write);
+		this.releasing = run;
+		try {
+			await run;
+		} finally {
+			if (this.releasing === run) this.releasing = null;
+		}
+	}
+
+	/** `release`'s body, apart so a render can wait for it by one promise. */
+	private async letGo(write: boolean): Promise<void> {
+		const file = this.file;
+		if (write) {
+			this.flush();
+			await this.settled();
+		} else {
+			this.discardPending();
+		}
+		if (file !== null && this.file === file) this.keepUnsaved(file, write);
 		this.forget();
 		this.file = null;
+	}
+
+	/** Wait until no write this pane started is still in flight. */
+	private async settled(): Promise<void> {
+		while (this.writes.size > 0) await Promise.all([...this.writes]);
+	}
+
+	/**
+	 * Keep the layout this pane could not write, or say it went where it
+	 * cannot be kept. Nothing to do where the layout is on disk.
+	 *
+	 * **Nothing once the plugin has stopped**: the unload has already given this
+	 * layout its one notice, so a pane closing afterwards adds neither an entry
+	 * nor a second sentence.
+	 */
+	private keepUnsaved(file: TFile, write: boolean): void {
+		const unsaved = this.unsaved;
+		const store = this.plugin.unsavedLayouts;
+		if (unsaved === null || this.layout === null || store.stopped) return;
+		const text = serialiseLayout(this.layout);
+		if (!write) {
+			offerLayoutCopy(deletedSentence(file.basename), file.basename, text, 0);
+			return;
+		}
+		store.keep(file.path, { ...unsaved, base: this.onDisk ?? '', text });
+		offerLayoutCopy(keptSentence(file.basename), file.basename, text, UNDO_TIMEOUT);
+	}
+
+	/**
+	 * The pane's own serialisation of an unsaved layout it holds, or null where
+	 * it holds none — what the plugin's unload offers to copy.
+	 */
+	unsavedText(): string | null {
+		if (this.unsaved === null || this.layout === null) return null;
+		return serialiseLayout(this.layout);
 	}
 
 	/**
@@ -470,15 +619,24 @@ export class LayoutEditorSection {
 	 *
 	 * **A pending edit is dropped, not written.** Writing it would overwrite the
 	 * very change the pane has just been told about, which is the lost update
-	 * this exists to prevent; so what the reader had not yet committed goes, and
-	 * the return value says whether there was any, for the one sentence the pane
-	 * shows about it. **Both stacks go too**: a step recorded against the old
-	 * contents would restore text nobody on disk ever had.
+	 * this exists to prevent; so what the reader had not yet committed goes. So
+	 * does a layout the pane could not write (`docs/features/unsaveable-layout.md`
+	 * §4): the disk wins, as it always has. **Both stacks go too**: a step
+	 * recorded against the old contents would restore text nobody on disk ever
+	 * had.
+	 *
+	 * Returns the text dropped — the pane's serialisation once a pending edit is
+	 * folded in — or null where nothing was, so the one sentence the pane shows
+	 * about it can offer the copy.
 	 *
 	 * The file stays bound, so the next render reads it again.
 	 */
-	reload(): boolean {
-		const dropped = this.discardPending();
+	reload(): string | null {
+		const pending = this.discardPending();
+		const dropped =
+			(pending || this.unsaved !== null) && this.layout !== null
+				? serialiseLayout(this.layout)
+				: null;
 		this.forget();
 		return dropped;
 	}
@@ -491,13 +649,16 @@ export class LayoutEditorSection {
 	 * them, and content can.
 	 */
 	holds(text: string): boolean {
-		return this.onDisk !== null && text === this.onDisk;
+		return (this.onDisk !== null && text === this.onDisk) || this.inFlight.includes(text);
 	}
 
 	/** Drop the loaded layout and its history, keeping which file it is. */
 	private forget(): void {
 		this.layout = null;
 		this.onDisk = null;
+		this.expected = null;
+		this.unsaved = null;
+		this.drafts.clear();
 		this.undoStack.clear();
 		this.redoStack.clear();
 		// Closed and cleared where the undo history is, which is the same moment:
@@ -546,6 +707,15 @@ export class LayoutEditorSection {
 	 * not avoid (`docs/UI.md` §12).
 	 */
 	async render(container: HTMLElement): Promise<void> {
+		// A release still waiting on its writes decides what the file being left
+		// keeps, and it reads this pane's state to do it: a render that went ahead
+		// would forget that state underneath it (`docs/features/unsaveable-layout.md`
+		// §4). Only the newest render waiting goes on.
+		if (this.releasing !== null) {
+			const waiting = ++this.renderId;
+			await this.releasing;
+			if (waiting !== this.renderId) return;
+		}
 		// Before anything is drawn or torn down: a popup outlives the input it
 		// hangs off, and the pane rebuilds every input it has.
 		this.closeSuggests();
@@ -603,7 +773,7 @@ export class LayoutEditorSection {
 				// trap them on the broken one.
 				outline.createDiv('sheetsmith-error', (el) =>
 					el.setText(
-						`"${open.basename}" cannot be read: ${error instanceof Error ? error.message : String(error)}`,
+						`"${open.basename}" cannot be read: ${messageOf(error)}`,
 					),
 				);
 				return;
@@ -612,26 +782,48 @@ export class LayoutEditorSection {
 			// or the pane moved to another file; only the newest run, still on
 			// the file it read, may append.
 			if (run !== this.renderId || this.file !== open) return;
-			try {
-				this.layout = parseLayout(source);
-			} catch (error) {
-				this.layout = null;
-				// Named, because the pane now opens on whatever file the reader
-				// clicked, from anywhere Obsidian opens one — so "this layout"
-				// could be a file they did not know was one. Nothing is written
-				// in this state: `persist` returns without a parsed layout, and
-				// what recovers the pane is the view's reload on an outside fix.
-				outline.createDiv('sheetsmith-error', (el) =>
-					el.setText(
-						`"${open.basename}" cannot be edited until its file is fixed: ${error instanceof Error ? error.message : String(error)}`,
-					),
-				);
-				return;
+			// A layout this pane let go of unsaved comes back, but only onto the
+			// bytes it was kept against: anything else means the file was
+			// written meanwhile, and the disk wins.
+			const kept = this.plugin.unsavedLayouts.take(open.path);
+			if (kept !== undefined && kept.base === source) {
+				// Nothing is written, since opening a file never writes; the block
+				// says where the edits are.
+				this.layout = this.restoreHeld(kept.text);
+				this.onDisk = source;
+				this.expected = source;
+				this.unsaved = { reason: kept.reason, message: kept.message };
+			} else {
+				if (kept !== undefined) {
+					offerLayoutCopy(
+						changedWhileClosedSentence(open.basename),
+						open.basename,
+						kept.text,
+						0,
+					);
+				}
+				try {
+					this.layout = parseLayout(source);
+				} catch (error) {
+					this.layout = null;
+					// Named, because the pane now opens on whatever file the reader
+					// clicked, from anywhere Obsidian opens one — so "this layout"
+					// could be a file they did not know was one. Nothing is written
+					// in this state: `persist` returns without a parsed layout, and
+					// what recovers the pane is the view's reload on an outside fix.
+					outline.createDiv('sheetsmith-error', (el) =>
+						el.setText(
+							`"${open.basename}" cannot be edited until its file is fixed: ${messageOf(error)}`,
+						),
+					);
+					return;
+				}
+				// The undo baseline for this freshly loaded layout. Constraint 3
+				// makes `source` itself safe to use rather than re-serialising: a
+				// parse then serialise with nothing changed is byte-identical.
+				this.onDisk = source;
+				this.expected = source;
 			}
-			// The undo baseline for this freshly loaded layout. Constraint 3
-			// makes `source` itself safe to use rather than re-serialising: a
-			// parse then serialise with nothing changed is byte-identical.
-			this.onDisk = source;
 		}
 		const layout = this.layout;
 
@@ -654,6 +846,12 @@ export class LayoutEditorSection {
 			this.host.setSelection(SHEET_DESTINATION);
 		}
 
+		// Directly under the **Layout file** row, where the pane already says a
+		// file cannot be read or edited, and for their reason: the row is how an
+		// author leaves, so nothing may displace it. Unlike those two, the rest of
+		// the pane stays live (`docs/features/unsaveable-layout.md` §2).
+		this.unsavedSlot = outline.createDiv();
+		this.paintUnsaved();
 		// Above the canvas it governs and under the picker, which is where the
 		// pane's other two `Setting` rows sit — and only once there is a canvas
 		// for it to govern, so the row never stands over the two states that
@@ -720,6 +918,87 @@ export class LayoutEditorSection {
 	}
 
 	/**
+	 * Draw the standing block saying the layout is not saved, or nothing where
+	 * it is (`docs/features/unsaveable-layout.md` §2).
+	 *
+	 * **In place, into the slot the render left**, so a refused commit or a
+	 * **Try again** changes this block and nothing else: a rebuild would take
+	 * the field the author is standing in with it, and the rename refusal's
+	 * promise is that it lifts with no rebuild in between. Hidden while empty,
+	 * so a saved layout draws exactly the outline it always did.
+	 *
+	 * `.sheetsmith-error` specialised rather than a new kind (`docs/UI.md` §9's
+	 * inline error), with one ordinary button: **Try again** is a recovery, not
+	 * the pane's primary action, so it is not a call to action.
+	 */
+	private paintUnsaved(): void {
+		const slot = this.unsavedSlot;
+		if (slot === null) return;
+		slot.empty();
+		const unsaved = this.unsaved;
+		const file = this.file;
+		slot.hidden = unsaved === null || file === null;
+		if (unsaved === null || file === null) return;
+		slot.createDiv('sheetsmith-error sheetsmith-editor-unsaved', (block) => {
+			if (unsaved.reason === 'invalid') {
+				block.setText(
+					`Changes to "${file.basename}" are not saved, because this layout does not save as it stands. Fix this and the next edit saves them: ${unsaved.message}`,
+				);
+				return;
+			}
+			block.createDiv({
+				text: `Changes to "${file.basename}" are not saved, because the file could not be written: ${unsaved.message}. They are kept here, and every edit tries again.`,
+			});
+			new ButtonComponent(block)
+				.setButtonText('Try again')
+				.onClick(() => void this.retry())
+				.buttonEl.dataset.sheetsmithFocus = 'unsaved-retry';
+		});
+	}
+
+	/**
+	 * **Try again**: write the held layout as one recorded step, then put focus
+	 * where it can still land — the layout picker once the block has gone, the
+	 * button again where the vault still refuses.
+	 */
+	private async retry(): Promise<void> {
+		const saved = await this.persist();
+		const root = this.rootEl;
+		if (root === null) return;
+		focusToken(root, saved ? 'layout-picker' : 'unsaved-retry');
+	}
+
+	/** Why a rename may not be committed now, or null where it may. */
+	private renameRefusal(): string | null {
+		return this.unsaved === null ? null : RENAME_REFUSED;
+	}
+
+	/**
+	 * Record why the layout is not on disk, and say so where that is news.
+	 *
+	 * **The notice fires once per reason**: when the state begins, or its
+	 * message changes. An edit refused for the same reason again says nothing,
+	 * because the standing block is saying it — the notice that repeated on
+	 * every later edit, quoting the first refusal, is what this replaces.
+	 */
+	private hold(unsaved: Unsaved): void {
+		const before = this.unsaved;
+		this.unsaved = unsaved;
+		if (
+			before === null ||
+			before.reason !== unsaved.reason ||
+			before.message !== unsaved.message
+		) {
+			new Notice(
+				unsaved.reason === 'invalid'
+					? unsaved.message
+					: `Sheetsmith could not save this layout: ${unsaved.message}`,
+			);
+		}
+		this.paintUnsaved();
+	}
+
+	/**
 	 * The vault holds no layouts yet, which is the one state with no tree and no
 	 * panel to draw.
 	 *
@@ -779,6 +1058,13 @@ export class LayoutEditorSection {
 	 * exists is worse than no message.
 	 */
 	private restoreFieldErrors(container: HTMLElement): void {
+		// A draft is posture beside the errors and goes the same way: with the
+		// control it belongs to.
+		for (const token of [...this.drafts]) {
+			if (container.querySelector(`[data-sheetsmith-focus="${CSS.escape(token)}"]`) === null) {
+				this.drafts.delete(token);
+			}
+		}
 		if (this.fieldErrors.size === 0) return;
 		for (const [token, message] of [...this.fieldErrors]) {
 			const input = container.querySelector(
@@ -932,7 +1218,7 @@ export class LayoutEditorSection {
 	 * otherwise — a different layout opened in between is the same refusal,
 	 * since the edit is not in its history.
 	 *
-	 * `persist` sets `onDisk` before it awaits the write, so the bytes are known
+	 * `persist` sets `expected` before it awaits the write, so the bytes are known
 	 * here synchronously. Where the layout would not serialise, `persist` said
 	 * so and wrote nothing, and there is nothing to offer an undo of.
 	 *
@@ -971,19 +1257,20 @@ export class LayoutEditorSection {
 	 * byte changed, so there is no step to report or to undo.
 	 *
 	 * The one spelling of what `persistUndoable` and `persistReorder` both need
-	 * before they say anything. `persist` sets `onDisk` and pushes the undo step
-	 * before its first `await`, so all three are known here synchronously, and
-	 * a guard taken from them is taken before anything else can happen.
+	 * before they say anything. `persist` sets `expected` before its first
+	 * `await`, so all three are known here synchronously, and a guard taken from
+	 * them is taken before anything else can happen. The undo step itself is
+	 * pushed when the write lands, so it is only ever bytes the file held.
 	 */
 	private persistStep(): {
 		saving: Promise<boolean>;
 		file: TFile | null;
 		written: string | null;
 	} | null {
-		const before = this.onDisk;
+		const before = this.expected;
 		const saving = this.persist();
 		const file = this.file;
-		const written = this.onDisk;
+		const written = this.expected;
 		return written === before ? null : { saving, file, written };
 	}
 
@@ -994,13 +1281,47 @@ export class LayoutEditorSection {
 	 * disagree about what a stale press does.
 	 */
 	private offerGuardedUndo(text: string, file: TFile | null, written: string | null): void {
+		// The guard is read once the writes have landed, for `undo`'s reason: while
+		// the edit's own write is out, `expected` already names it and its step is
+		// not on the stack yet.
 		offerUndo(text, () => {
-			if (this.file !== file || this.onDisk !== written) {
-				new Notice('Sheetsmith did not undo: this layout has changed since.');
-				return;
-			}
-			this.undo();
+			const press = (): void => {
+				if (this.file !== file || this.expected !== written) {
+					new Notice('Sheetsmith did not undo: this layout has changed since.');
+					return;
+				}
+				void this.undo();
+			};
+			if (this.writes.size === 0) press();
+			else void this.settled().then(press);
 		});
+	}
+
+	/**
+	 * Run an undo or a redo once every write in flight has landed, and answer
+	 * whether it did anything.
+	 *
+	 * **Skipped, answering false, where the author has moved on**: the file being
+	 * left or another opened, or another commit made between the press and the
+	 * writes landing. A leave counts from the moment it begins, since it waits for
+	 * the same writes: an undo landing on the file being left is the Mod+Z
+	 * reaching across a switch that `docs/features/editor-undo.md` scopes the
+	 * history per layout to prevent.
+	 * The press was about the state on screen when it was made, and taking back
+	 * whatever is on the stack by then would undo an edit nobody asked to undo.
+	 * The count of commits is the test rather than the stack's top, because the
+	 * write the press waited for pushes its own step when it lands, which is the
+	 * step the press meant. False is what keeps the command silent: it says
+	 * "Undone." only for an action that happened.
+	 */
+	private deferred(then: () => boolean | Promise<boolean>): Promise<boolean> {
+		const file = this.file;
+		const commits = this.commits;
+		return this.settled().then(() =>
+			this.file === file && this.releasing === null && this.commits === commits
+				? then()
+				: false,
+		);
 	}
 
 	/**
@@ -1277,6 +1598,7 @@ export class LayoutEditorSection {
 	private listContext(): ListContext {
 		return {
 			persist: (rename) => void this.persist(true, rename),
+			renameRefusal: () => this.renameRefusal(),
 			redraw: () => this.redraw(),
 			focusAfterRedraw: (token) => {
 				this.pendingFocus = token;
@@ -1294,8 +1616,19 @@ export class LayoutEditorSection {
 	}
 
 	/**
-	 * Validate and write the layout, then refresh open sheet views. Invalid
-	 * states stay in memory with a notice and are written once corrected.
+	 * Validate and write the layout, then refresh open sheet views.
+	 *
+	 * **A layout that will not save is held, and reported in the outline, not
+	 * only in a notice** (`docs/features/unsaveable-layout.md` §2). Whether it
+	 * will not serialise and re-parse, or the vault refuses the write, the pane
+	 * keeps it, draws the standing block under the **Layout file** row, and
+	 * raises the notice once per reason rather than on every later edit; the
+	 * write that ends the state says the layout is saved. `onDisk` moves only
+	 * when a write lands and the undo step is pushed then, so a rejected write
+	 * leaves both as they were, and `holds()`, the undo and the byte check a
+	 * kept layout is put back against all read the file's real bytes, however
+	 * many writes overlapped. What happens to a held
+	 * layout when the pane lets go of it is `release`'s.
 	 *
 	 * `record` is the only thing that separates an author's own edit from an
 	 * undo or a redo replaying one: every ordinary call site keeps calling
@@ -1338,7 +1671,34 @@ export class LayoutEditorSection {
 	 * edit to a file those characters never read. The layout still saves; the
 	 * notes are left alone, as they are for any edit to a file nobody uses.
 	 */
-	private async persist(record = true, rename?: RenameIntent): Promise<boolean> {
+	private persist(record = true, rename?: RenameIntent): Promise<boolean> {
+		return this.write({ push: record, clearRedo: record, rename });
+	}
+
+	/**
+	 * `persist`'s body, with its two stack effects apart: an author's edit
+	 * pushes and clears redo, a replay does neither, and a redo of the held
+	 * step pushes without clearing (`docs/features/unsaveable-layout.md` §3).
+	 * Tracked in `writes` for as long as it is in flight, so `release` can wait
+	 * for it.
+	 */
+	private write(options: {
+		push: boolean;
+		clearRedo: boolean;
+		rename?: RenameIntent;
+	}): Promise<boolean> {
+		const writing = this.writeNow(options);
+		this.writes.add(writing);
+		void writing.then(() => this.writes.delete(writing));
+		return writing;
+	}
+
+	private async writeNow(options: {
+		push: boolean;
+		clearRedo: boolean;
+		rename?: RenameIntent;
+	}): Promise<boolean> {
+		const { push, clearRedo, rename } = options;
 		// Taken once, before the write is awaited: the pane may be on another
 		// file by the time it resolves, and the migration below belongs to the
 		// file this write went to.
@@ -1349,14 +1709,23 @@ export class LayoutEditorSection {
 			serialised = serialiseLayout(this.layout);
 			parseLayout(serialised);
 		} catch (error) {
-			new Notice(error instanceof Error ? error.message : String(error));
+			// A fresh edit forgets what a redo could have replayed even where it
+			// is itself refused, the standard rule the recorded branch keeps.
+			if (clearRedo) {
+				this.redoStack.clear();
+				this.commits++;
+			}
+			this.hold({ reason: 'invalid', message: messageOf(error) });
 			return false;
 		}
-		if (record && serialised !== this.onDisk) {
-			if (this.onDisk !== null) this.undoStack.push(this.onDisk);
+		// A fresh edit forgets what a redo could have replayed, as every editor's
+		// undo does; only where it changes a byte.
+		if (push && clearRedo && serialised !== this.expected) {
 			this.redoStack.clear();
+			this.commits++;
 		}
-		this.onDisk = serialised;
+		this.expected = serialised;
+		this.inFlight.push(serialised);
 		// `modify`, not `process`, and the only one left in `src/`. A `process`
 		// callback is handed the file's current contents so that the new ones can
 		// be derived from them, and there is nothing to derive here: `serialised`
@@ -1369,25 +1738,47 @@ export class LayoutEditorSection {
 		/*
 		 * **Reported, not thrown.** `persist` is called as `void this.persist(…)`
 		 * from every field's commit, so a rejection here had nowhere to go: the
-		 * author was told nothing and the app got an unhandled rejection. That
-		 * was inconsistent with the branch a dozen lines up, where a layout that
-		 * will not serialise announces itself — the same failure to save, from
-		 * the author's side, reported in one case and silent in the other.
+		 * author was told nothing and the app got an unhandled rejection.
 		 *
 		 * Returning is what the rename path needs as much as the message is: the
 		 * migration must not run when the layout it is migrating *to* is not on
 		 * disk, which is this method's own first promise and Acceptance criterion
-		 * 9 in `docs/features/component-rename-migration.md`. `onDisk` is left
-		 * holding the text that was not written, which is the pre-existing
-		 * behaviour of this method and not something this guard changes.
+		 * 9 in `docs/features/component-rename-migration.md`.
+		 *
+		 * **One write at a time, in order**, through `queue`, and the next is let
+		 * go only once this one's outcome is recorded. A rejected write changes
+		 * neither `onDisk` nor the undo stack, since neither moved when it was
+		 * sent; `expected` goes back to `onDisk` only where no later write is
+		 * out, because a later one owns it then.
 		 */
+		const turn = this.queue;
+		let done = (): void => undefined;
+		this.queue = new Promise<void>((resolve) => {
+			done = resolve;
+		});
 		try {
+			await turn;
 			await this.plugin.app.vault.modify(file, serialised);
 		} catch (error) {
-			new Notice(
-				`Sheetsmith could not save this layout: ${error instanceof Error ? error.message : String(error)}`,
-			);
+			if (this.file !== file) return false;
+			if (this.expected === serialised) this.expected = this.onDisk;
+			this.hold({ reason: 'write', message: messageOf(error) });
 			return false;
+		} finally {
+			this.inFlight.splice(this.inFlight.indexOf(serialised), 1);
+			done();
+		}
+		if (this.file === file) {
+			const before = this.onDisk;
+			this.onDisk = serialised;
+			if (push && before !== null && before !== serialised) {
+				this.undoStack.push({ text: before });
+			}
+		}
+		if (this.file === file && this.expected === serialised && this.unsaved !== null) {
+			this.unsaved = null;
+			this.paintUnsaved();
+			new Notice(`"${file.basename}" is saved.`);
 		}
 		if (
 			rename !== undefined &&
@@ -1444,6 +1835,21 @@ export class LayoutEditorSection {
 	}
 
 	/**
+	 * The pane's own text of a layout it could not write, taken back as a
+	 * layout: a kept one put back on reopening, or the held step a redo replays
+	 * (`docs/features/unsaveable-layout.md` §3, §4).
+	 *
+	 * **A structural copy, never a parse.** Held text may not parse — that is
+	 * why it was held — and the next `persist` validates it as always. Real file
+	 * bytes keep going through `parseLayout`, so a snapshot of them failing to
+	 * parse still says so; a fallback that tried the parse and quietly took the
+	 * copy would hide exactly that.
+	 */
+	private restoreHeld(text: string): Layout {
+		return JSON.parse(text) as Layout;
+	}
+
+	/**
 	 * Put the layout back to a snapshot popped off an undo or a redo stack.
 	 *
 	 * Re-parses rather than diffing, on the same argument the mechanism as a
@@ -1467,23 +1873,61 @@ export class LayoutEditorSection {
 
 	/**
 	 * Undo the most recent recorded mutation. Returns whether there was one.
+	 *
+	 * **Waits for every write in flight first.** A step is pushed when its write
+	 * lands, so an undo pressed while one is out would pop the step *before* it
+	 * and leave the edit being written in neither stack; the undo instead runs
+	 * once the writes have landed, against the stacks and the unsaved state as
+	 * they then are, and answers a promise of whether it did anything
+	 * (`deferred`). With no write out it answers at once, as it always did.
+	 *
+	 * **From the unsaved state, one undo goes back to the file's last saved
+	 * bytes** (`docs/features/unsaveable-layout.md` §3) without popping the
+	 * stack, and pushes the pane's own serialisation of the held layout onto
+	 * redo, marked as never having been a file. It writes nothing, because the
+	 * file already holds those bytes. Everything since the last save is one
+	 * step: none of the states between was ever a file.
 	 */
-	undo(): boolean {
+	undo(): boolean | Promise<boolean> {
+		if (!this.file) return false;
+		if (this.writes.size > 0) return this.deferred(() => this.undo());
+		if (this.unsaved !== null && this.layout !== null && this.onDisk !== null) {
+			this.redoStack.push({ text: serialiseLayout(this.layout), held: true });
+			this.unsaved = null;
+			this.layout = parseLayout(this.onDisk);
+			this.expected = this.onDisk;
+			this.redraw();
+			return true;
+		}
 		const snapshot = this.undoStack.pop();
-		if (snapshot === undefined || !this.file) return false;
-		if (this.onDisk !== null) this.redoStack.push(this.onDisk);
-		this.restoreSnapshot(snapshot);
+		if (snapshot === undefined) return false;
+		if (this.onDisk !== null) this.redoStack.push({ text: this.onDisk });
+		this.restoreSnapshot(snapshot.text);
 		return true;
 	}
 
 	/**
 	 * Redo the most recently undone mutation. Returns whether there was one.
+	 *
+	 * **The held step is put back by a structural copy**, since it may not
+	 * parse, and written as the edits that produced it were: it either saves,
+	 * where the vault has recovered, or enters the unsaved state again and says
+	 * so. It pushes the bytes it leaves without clearing redo, as the step it
+	 * replays did.
 	 */
-	redo(): boolean {
+	redo(): boolean | Promise<boolean> {
+		if (!this.file) return false;
+		if (this.writes.size > 0) return this.deferred(() => this.redo());
 		const snapshot = this.redoStack.pop();
-		if (snapshot === undefined || !this.file) return false;
-		if (this.onDisk !== null) this.undoStack.push(this.onDisk);
-		this.restoreSnapshot(snapshot);
+		if (snapshot === undefined) return false;
+		if (snapshot.held === true) {
+			this.layout = this.restoreHeld(snapshot.text);
+			this.redraw();
+			void this.write({ push: true, clearRedo: false });
+			return true;
+		}
+		if (this.onDisk !== null) this.undoStack.push({ text: this.onDisk });
+		this.restoreSnapshot(snapshot.text);
 		return true;
 	}
 }

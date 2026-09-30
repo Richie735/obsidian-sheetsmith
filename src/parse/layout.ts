@@ -437,6 +437,38 @@ function parseComponent(
 	};
 }
 
+/**
+ * Every component a layout holds, at every depth, in the walk the parser checks
+ * uniqueness over.
+ *
+ * Containment scopes neither an id nor a label: a label still keys a section in
+ * a flat note, and an id is still what a formula writes. So "every component"
+ * for either question is this list and never one level of it.
+ */
+function everyComponent(components: ComponentConfig[]): ComponentConfig[] {
+	return walkComponents(components, everyLevelPlaced).map((entry) => entry.config);
+}
+
+/**
+ * Whether a component other than `self` already carries `label`, at any depth.
+ *
+ * **The parser's own rule, exported so a field can ask it** rather than keep a
+ * second copy: the layout editor's **Label** field once checked the top level
+ * only, so a label a container's child held passed the field and was refused by
+ * the parse, which left the pane holding a layout it could not save
+ * (`docs/features/unsaveable-layout.md` §1). `parseLayout`'s duplicate check
+ * reads the same `everyComponent` walk, so the two cannot come to disagree.
+ */
+export function labelTaken(
+	components: ComponentConfig[],
+	label: string,
+	self: ComponentConfig | null = null,
+): boolean {
+	return everyComponent(components).some(
+		(other) => other !== self && other.label === label,
+	);
+}
+
 export function parseLayout(source: string): Layout {
 	let raw: unknown;
 	try {
@@ -559,7 +591,7 @@ export function parseLayout(source: string): Layout {
 	//
 	// The walk's order decides only which of two clashing ids takes the `_2`
 	// suffix below, and grid order is the order the reader would name them in.
-	const flattened = walkComponents(components, everyLevelPlaced).map((entry) => entry.config);
+	const flattened = everyComponent(components);
 
 	// Migrate before the duplicate check, and only ids that fail: two
 	// components genuinely sharing a usable id is an authoring error worth

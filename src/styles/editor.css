@@ -157,6 +157,27 @@
 	text-align: center;
 }
 
+/* The pane holds a layout it could not save (`docs/features/unsaveable-layout.md`
+   §2): `.sheetsmith-error` specialised rather than a new kind, drawn where the
+   pane already says a file cannot be read or edited, directly under the
+   **Layout file** row. What it adds is the one thing those two do not hold, a
+   button: the sentence and **Try again** stacked, the button at its own width
+   rather than stretched across the box, so it reads as a control inside the
+   message and not as a second row beside it. The border is the error box's
+   own, which forced colors repaints rather than drops.
+
+   The margin below is the one the **Layout file** row already leaves above it,
+   measured at 8px: the row after the block carries none of its own, so without
+   it the block sat flush on **Sample values** while standing 8px off the row it
+   is about. */
+.sheetsmith-editor-unsaved {
+	display: flex;
+	flex-direction: column;
+	align-items: flex-start;
+	gap: var(--size-4-2);
+	margin-bottom: var(--size-4-2);
+}
+
 /* A tree row's own name: a button, so it has a tab stop and a focus ring —
    and stripped of the app's button chrome, because it is a name that answers
    a press rather than a thing that looks pressable. The row itself also

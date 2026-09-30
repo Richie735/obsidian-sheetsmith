@@ -9,9 +9,11 @@ import {
 import { registerConversionOffer } from './layout-conversion';
 import { registerAutoOpen } from './view/auto-open';
 import {
+	announceUnsavedLayouts,
 	LayoutEditorView,
 	VIEW_TYPE_LAYOUT_EDITOR,
 } from './view/layout-editor-view';
+import { UnsavedLayouts } from './editor/unsaved-layouts';
 import { registerLayoutExtension } from './view/layout-extension';
 import { registerLayoutFileEvents } from './view/layout-file-events';
 import { SheetView, VIEW_TYPE_SHEET } from './view/sheet-view';
@@ -27,6 +29,12 @@ export default class SheetsmithPlugin extends Plugin {
 	declare settings: SheetsmithSettings;
 	/** Files the user chose to keep in markdown view this session. */
 	markdownOverrides = new Set<string>();
+	/**
+	 * Layouts a layout editor pane let go of unsaved, by path, until Obsidian
+	 * closes (`docs/features/unsaveable-layout.md` §4). Memory only: never
+	 * written to `data.json`.
+	 */
+	unsavedLayouts = new UnsavedLayouts();
 
 	async onload() {
 		await this.loadSettings();
@@ -36,6 +44,11 @@ export default class SheetsmithPlugin extends Plugin {
 			VIEW_TYPE_LAYOUT_EDITOR,
 			(leaf) => new LayoutEditorView(leaf, this),
 		);
+		// Registered after the view, so it runs before the view's own teardown
+		// (cleanups run last registered first) and before `onunload`: every
+		// unsaved layout, in a pane or kept, gets its one notice while the panes
+		// still hold theirs (`docs/features/unsaveable-layout.md` §4).
+		this.register(() => announceUnsavedLayouts(this));
 		// A sheet's cells can hold wikilinks, so the view emits `hover-link` for
 		// them. Registering it is what makes Page preview treat this view as a
 		// source it knows: the user gets an entry for Sheetsmith in that plugin's

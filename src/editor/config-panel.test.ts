@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it } from 'vitest';
 import { SHEET_DESTINATION } from './layout-editor';
-import { Layout } from '../parse/layout';
+import { labelTaken, Layout, parseLayout, serialiseLayout } from '../parse/layout';
 import { ComponentConfig } from '../types';
 import { listComponentTypes } from '../components';
 import {
@@ -17,6 +17,7 @@ import {
 	checkbox,
 	writes,
 	furnished,
+	nested,
 } from '../test/layout-editor-pane';
 
 /*
@@ -707,6 +708,45 @@ describe('the panel says what a component publishes', () => {
 		);
 		expect(text).toContain(
 			'total a column, or aggregate over the rows instead.',
+		);
+	});
+});
+
+describe('a label another component already holds', () => {
+	beforeEach(async () => {
+		// `nested()` holds "Armour class" inside a Group, one level down from
+		// the Pool the label is typed on.
+		harness = await open(nested());
+		control(harness, 'edit-hit_points').click();
+		await settle(harness.pane);
+	});
+
+	it('is refused at the field when a container\'s child holds it, and nothing is written', async () => {
+		const wrote = writes(harness);
+		const input = control<HTMLInputElement>(harness, 'label-hit_points');
+		type(input, 'Armour class');
+		await settle(harness.pane);
+		expect(wrote()).toBe(0);
+		expect(input.parentElement?.querySelector('.sheetsmith-field-error')?.textContent).toBe(
+			'Another component already uses this label.',
+		);
+		expect((await harness.stored()).components[1]?.label).toBe('Hit points');
+	});
+
+	it('is the parser\'s own rule, so the field and the parse agree', () => {
+		/*
+		 * The field asks `labelTaken`, and `parseLayout`'s duplicate check reads
+		 * the same walk: one fixture, both answers. The field once checked the top
+		 * level alone, which passed this label and left the pane holding a layout
+		 * the parse refused (`docs/features/unsaveable-layout.md` §1).
+		 */
+		const layout = nested();
+		const pool = layout.components[1]!;
+		expect(labelTaken(layout.components, 'Armour class', pool)).toBe(true);
+		expect(labelTaken(layout.components, 'Hit points', pool)).toBe(false);
+		pool.label = 'Armour class';
+		expect(() => parseLayout(serialiseLayout(layout))).toThrow(
+			'Duplicate component label "Armour class".',
 		);
 	});
 });

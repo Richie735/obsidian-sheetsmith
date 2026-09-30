@@ -22,7 +22,6 @@
 
 import {
 	FileView,
-	Notice,
 	TAbstractFile,
 	TFile,
 	ViewStateResult,
@@ -33,7 +32,14 @@ import {
 	LayoutEditorSection,
 	SHEET_DESTINATION,
 } from '../editor/layout-editor';
-import { isLayoutExtension, layoutFileFor, listLayouts } from '../layouts';
+import { offerLayoutCopy } from '../editor/layout-copy';
+import { stoppedSentence } from '../editor/unsaved-layouts';
+import {
+	basenameOfPath,
+	isLayoutExtension,
+	layoutFileFor,
+	listLayouts,
+} from '../layouts';
 import type SheetsmithPlugin from '../main';
 import { openSheetViews } from './sheet-view';
 
@@ -186,7 +192,9 @@ export class LayoutEditorView extends FileView implements LayoutEditorHost {
 	 */
 	async onUnloadFile(file: TFile): Promise<void> {
 		const present = this.app.vault.getAbstractFileByPath(file.path) === file;
-		this.editor.release(present);
+		// Awaited: letting go waits for every write in flight before it decides
+		// what the file being left keeps (`docs/features/unsaveable-layout.md` §4).
+		await this.editor.release(present);
 		this.bound = null;
 		if (!this.closing) this.redraw();
 	}
@@ -225,9 +233,14 @@ export class LayoutEditorView extends FileView implements LayoutEditorHost {
 		}
 		if (this.bound !== bound || this.editor.holds(text)) return;
 		const dropped = this.editor.reload();
-		if (dropped) {
-			new Notice(
+		// Sticky and carrying the copy, because the notice is now the only place
+		// the dropped edit still exists (`docs/features/unsaveable-layout.md` §4).
+		if (dropped !== null) {
+			offerLayoutCopy(
 				`"${bound.basename}" changed on disk, so the layout editor reloaded it. An edit not yet saved here was dropped.`,
+				bound.basename,
+				dropped,
+				0,
 			);
 		}
 		this.redraw();
@@ -246,6 +259,14 @@ export class LayoutEditorView extends FileView implements LayoutEditorHost {
 	}
 
 	/**
+	 * The pane's own text of a layout it holds and could not save, or null —
+	 * what the plugin's unload offers to copy.
+	 */
+	unsavedText(): string | null {
+		return this.editor.unsavedText();
+	}
+
+	/**
 	 * Undo or redo the most recent mutation the editor recorded.
 	 *
 	 * Both delegate straight to `LayoutEditorSection`, which owns the two
@@ -253,13 +274,15 @@ export class LayoutEditorView extends FileView implements LayoutEditorHost {
 	 * commands (`docs/features/editor-undo.md`) something on the view to call,
 	 * the same shape `flush` above already has. Each returns whether it
 	 * actually undid or redid something, which is what a command uses to
-	 * decide whether its own feedback fires.
+	 * decide whether its own feedback fires — or a promise of it, where a write
+	 * was still in flight and the action waits for it
+	 * (`docs/features/unsaveable-layout.md` §3).
 	 */
-	undo(): boolean {
+	undo(): boolean | Promise<boolean> {
 		return this.editor.undo();
 	}
 
-	redo(): boolean {
+	redo(): boolean | Promise<boolean> {
 		return this.editor.redo();
 	}
 
@@ -533,6 +556,33 @@ export class LayoutEditorView extends FileView implements LayoutEditorHost {
 			const el = this.root.querySelector(PANEL_SELECTOR);
 			if (el) el.scrollTop = panel;
 		}
+	}
+}
+
+/**
+ * Say, once per layout, that the plugin is stopping with changes not saved to
+ * it, whether a pane still holds them or the plugin kept them
+ * (`docs/features/unsaveable-layout.md` §4), and offer each a copy.
+ *
+ * **Idempotent, and it marks the store stopped first**, so a pane that lets go
+ * of its layout after this — the plugin's views closing as it unloads — keeps
+ * nothing and says nothing more: each layout gets exactly one notice, this one.
+ */
+export function announceUnsavedLayouts(plugin: SheetsmithPlugin): void {
+	const store = plugin.unsavedLayouts;
+	if (store.stopped) return;
+	store.stopped = true;
+	for (const leaf of plugin.app.workspace.getLeavesOfType(VIEW_TYPE_LAYOUT_EDITOR)) {
+		const view = leaf.view;
+		if (!(view instanceof LayoutEditorView)) continue;
+		const text = view.unsavedText();
+		const file = view.file;
+		if (text === null || file === null) continue;
+		offerLayoutCopy(stoppedSentence(file.basename), file.basename, text, 0);
+	}
+	for (const [path, kept] of store.entries()) {
+		const basename = basenameOfPath(path);
+		offerLayoutCopy(stoppedSentence(basename), basename, kept.text, 0);
 	}
 }
 

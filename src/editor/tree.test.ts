@@ -877,7 +877,7 @@ describe('reparenting a tree row', () => {
 		await settle(harness.pane);
 		expect(await harness.raw()).not.toBe(before);
 
-		harness.pane.undo();
+		await harness.pane.undo();
 		await settle(harness.pane);
 		expect(await harness.raw()).toBe(before);
 	});
@@ -890,9 +890,9 @@ describe('reparenting a tree row', () => {
 		await settle(harness.pane);
 		const afterMove = await harness.raw();
 
-		harness.pane.undo();
+		await harness.pane.undo();
 		await settle(harness.pane);
-		harness.pane.redo();
+		await harness.pane.redo();
 		await settle(harness.pane);
 
 		expect(await harness.raw()).toBe(afterMove);

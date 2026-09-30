@@ -528,9 +528,15 @@ async function ensureEditor(): Promise<HTMLElement> {
 			treeHover: params.get('treeHover') ?? undefined,
 			treeDrop: params.get('treeDrop') ?? undefined,
 			collapse: params.get('collapse') ?? undefined,
+			unsaved: unsavedParam(params.get('unsaved')),
 		},
 	);
 	return pane;
+}
+
+/** `&unsaved=write|write-path|invalid`, or nothing for any other value (`PaneView.unsaved`). */
+function unsavedParam(value: string | null): 'write' | 'write-path' | 'invalid' | undefined {
+	return value === 'write' || value === 'write-path' || value === 'invalid' ? value : undefined;
 }
 
 async function ensureSettings(): Promise<HTMLElement> {

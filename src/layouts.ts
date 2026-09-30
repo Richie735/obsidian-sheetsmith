@@ -42,6 +42,18 @@ export const LAYOUT_EXTENSIONS: readonly string[] = [
 	LEGACY_EXTENSION,
 ];
 
+/**
+ * The basename a vault path names, without its folder or extension: the name a
+ * note's `sheet-layout` would hold for a layout at that path. For a path whose
+ * file is gone, where there is no `TFile` to ask — a rename's old path, a kept
+ * layout's key (`docs/features/unsaveable-layout.md` §4).
+ */
+export function basenameOfPath(path: string): string {
+	const name = path.slice(path.lastIndexOf('/') + 1);
+	const dot = name.lastIndexOf('.');
+	return dot <= 0 ? name : name.slice(0, dot);
+}
+
 /** Whether a file with this extension can be a layout at all. */
 export function isLayoutExtension(extension: string): boolean {
 	return LAYOUT_EXTENSIONS.includes(extension);

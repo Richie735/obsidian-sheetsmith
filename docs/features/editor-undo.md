@@ -25,6 +25,17 @@ inherited from `persist()`'s existing round-trip guarantee rather than a new
 claim. No character note is read or written by this feature; Constraint 4
 does not apply.
 
+**Amended by `docs/features/unsaveable-layout.md` §3.** "Only ever writes bytes
+the file has already legitimately held" is no longer quite true. One redo entry
+can be the pane's own serialisation of a layout it could not write, pushed by an
+undo out of the unsaved state, and a redo of it *tries* to write those bytes,
+exactly as the edits that produced it tried — as a recorded step, so where it
+lands the bytes it replaced go onto the undo stack, without clearing redo. Every
+other snapshot is still file bytes, and a step is now pushed when its write
+lands rather than when it is sent, so the stack holds nothing a file never
+held. From the unsaved state one undo goes back to the file's last saved bytes
+without writing, so everything since the last save is one step.
+
 ## What it does
 
 Every mutation in the layout editor pane — a field commit, a drag or resize,
@@ -208,6 +219,12 @@ the session — never a new shape, never a new key — so it inherits `persist()
 existing round-trip guarantee (Constraint 3) rather than adding a new claim to
 check. No character note is touched by any part of this feature (Constraint 4
 does not apply).
+
+**Amended by `docs/features/unsaveable-layout.md` §3**: the one exception is a
+redo entry marked as the unsaved step, the pane's own text of a layout it could
+not write. It may not parse, so restoring it takes a structural copy rather than
+`parseLayout`, and the next `persist` validates it as always; real snapshots
+still go through the parser.
 
 ## Acceptance criteria
 

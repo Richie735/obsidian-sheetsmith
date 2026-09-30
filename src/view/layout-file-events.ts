@@ -22,21 +22,18 @@
 
 import { Notice, TAbstractFile, TFile } from 'obsidian';
 import {
+	basenameOfPath,
 	isLayoutPath,
 	LAYOUT_EXTENSION,
 	layoutFileFor,
 	LEGACY_EXTENSION,
 } from '../layouts';
 import { countNotesNaming } from '../layout-notes';
+import { offerLayoutCopy } from '../editor/layout-copy';
+import { deletedSentence } from '../editor/unsaved-layouts';
 import type SheetsmithPlugin from '../main';
 import { openSheetViews } from './sheet-view';
 
-/** The basename of the file a path names, without its folder or extension. */
-function basenameOf(path: string): string {
-	const name = path.slice(path.lastIndexOf('/') + 1);
-	const dot = name.lastIndexOf('.');
-	return dot <= 0 ? name : name.slice(0, dot);
-}
 
 /**
  * What the reader is told about the notes a rename left behind.
@@ -84,7 +81,7 @@ async function reportStranded(
 ): Promise<void> {
 	const folder = plugin.settings.layoutFolder;
 	if (!isLayoutPath(oldPath, folder)) return;
-	const basename = basenameOf(oldPath);
+	const basename = basenameOfPath(oldPath);
 	const now = layoutFileFor(plugin.app, folder, basename);
 	const fellBack =
 		now !== null &&
@@ -127,11 +124,23 @@ export function registerLayoutFileEvents(plugin: SheetsmithPlugin): void {
 		);
 		plugin.registerEvent(
 			app.vault.on('delete', (file) => {
+				// Before the folder filter: a layout opened from outside the
+				// folder can be kept too. Writing it back would recreate the
+				// file, so it goes, and says so with the only copy left
+				// (`docs/features/unsaveable-layout.md` §4).
+				const kept = plugin.unsavedLayouts.take(file.path);
+				if (kept !== undefined) {
+					const basename = basenameOfPath(file.path);
+					offerLayoutCopy(deletedSentence(basename), basename, kept.text, 0);
+				}
 				if (inFolder(file)) refreshSheets(plugin);
 			}),
 		);
 		plugin.registerEvent(
 			app.vault.on('rename', (file, oldPath) => {
+				// Before the folder filter, for the delete's reason: a kept layout
+				// follows its file wherever it moves.
+				plugin.unsavedLayouts.rename(oldPath, file.path);
 				const folder = plugin.settings.layoutFolder;
 				if (!inFolder(file) && !isLayoutPath(oldPath, folder)) return;
 				refreshSheets(plugin);

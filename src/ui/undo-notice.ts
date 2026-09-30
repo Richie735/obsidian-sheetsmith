@@ -1,19 +1,26 @@
 /*
- * A notice that says what just happened and offers to take it back.
+ * A notice carrying a sentence and one action.
  *
- * Two surfaces write something the reader may not have meant and answer with
- * one of these: a reset trigger on a sheet (`view/sheet-view.ts`) and a
- * component removed from the layout editor's tree
- * (`docs/features/layout-editor-tree.md` §5). Extracted on the second, on
+ * The action is the reader's way back from something the plugin just did or is
+ * about to lose. Three callers: a reset trigger on a sheet, which offers
+ * **Undo** (`view/sheet-view.ts`); an edit from the layout editor's tree, a
+ * removal or a paste, which offers **Undo** too
+ * (`docs/features/layout-editor-tree.md` §5); and a layout the editor could not
+ * keep, which offers **Copy layout** (`editor/layout-copy.ts`,
+ * `docs/features/unsaveable-layout.md` §5). Extracted on the second, on
  * `docs/PATTERNS.md` §1's one-step tier: what is shared is a timing and a
- * markup — how long the link stays pressable, and that it is an `<a>` the
- * notice's own stylesheet rule reads — and two copies of a timing could only
- * be tested for still agreeing. **The application is shared, not the number**,
- * so neither caller builds the span and the link itself.
+ * markup — how long an undo stays pressable, and that the action is an `<a>`
+ * the notice's own stylesheet rule reads — and two copies of a timing could
+ * only be tested for still agreeing. **The application is shared, not the
+ * number**, so no caller builds the span and the link itself.
  *
- * What each caller keeps is the sentence and what "undo" means, including the
- * guard that refuses a stale undo: the sheet compares the note's text and the
- * editor the layout's bytes, and neither is this module's to know.
+ * The class is `sheetsmith-notice-action`, named for the markup: it was
+ * `sheetsmith-undo` while every link undid, and a class called undo on a link
+ * that copies is a name a reader would believe.
+ *
+ * What each caller keeps is the sentence and what the action means, including
+ * the guard that refuses a stale undo: the sheet compares the note's text and
+ * the editor the layout's bytes, and neither is this module's to know.
  */
 
 import { Notice } from 'obsidian';
@@ -26,19 +33,37 @@ import { Notice } from 'obsidian';
 export const UNDO_TIMEOUT = 12000;
 
 /**
+ * Show `sentence`, then a link labelled `label` that hides the notice and runs
+ * `onPress`, for `duration` milliseconds (`0` keeps it until dismissed).
+ *
+ * **The one writer of the markup**, since the layout editor's **Copy layout**
+ * is the same sentence-and-link with a different action
+ * (`docs/features/unsaveable-layout.md` §5): the span, the `<a>` and the class
+ * the notice's stylesheet rule reads are spelled here and nowhere else.
+ */
+export function offerAction(
+	sentence: string,
+	label: string,
+	onPress: (notice: Notice) => void,
+	duration: number,
+): Notice {
+	const notice = new Notice('', duration);
+	notice.messageEl.createSpan({ text: `${sentence} ` });
+	const link = notice.messageEl.createEl('a', {
+		text: label,
+		cls: 'sheetsmith-notice-action',
+	});
+	link.addEventListener('click', () => {
+		notice.hide();
+		onPress(notice);
+	});
+	return notice;
+}
+
+/**
  * Show `sentence`, then an **Undo** link that hides the notice and runs
  * `onUndo`.
  */
 export function offerUndo(sentence: string, onUndo: () => void): Notice {
-	const notice = new Notice('', UNDO_TIMEOUT);
-	notice.messageEl.createSpan({ text: `${sentence} ` });
-	const undo = notice.messageEl.createEl('a', {
-		text: 'Undo',
-		cls: 'sheetsmith-undo',
-	});
-	undo.addEventListener('click', () => {
-		notice.hide();
-		onUndo();
-	});
-	return notice;
+	return offerAction(sentence, 'Undo', () => onUndo(), UNDO_TIMEOUT);
 }

@@ -231,6 +231,16 @@ export interface ResetFieldContext {
 	 * suggests nothing behaves exactly as it did.
 	 */
 	suggestNames?: (input: HTMLInputElement, owner?: string) => void;
+	/**
+	 * The **Set to a formula** choices waiting for their expression, by the
+	 * action dropdown's focus token (`docs/features/unsaveable-layout.md` §1).
+	 *
+	 * Panel posture, like `errors`, and optional on `suggestNames`' reason: a
+	 * context without it writes the choice at once, as the field always did.
+	 */
+	drafts?: Set<string>;
+	/** Focus this token once the redraw has happened. */
+	focusAfterRedraw?: (token: string) => void;
 }
 
 /**
@@ -381,6 +391,21 @@ export function renderResetField(
 			});
 		});
 
+		/*
+		 * **Set to a formula with no expression yet is a draft, not a commit.**
+		 * Writing `action: "formula"` alone is a binding the parser refuses, so
+		 * the pane would hold a layout it cannot save
+		 * (`docs/features/unsaveable-layout.md` §1). The binding is left as it is, the dropdown
+		 * and **Resets to** show the choice, and the expression's commit writes
+		 * both halves in one step. A binding that kept a `to` is valid and
+		 * commits at once, as it always did.
+		 */
+		const actionToken = `reset-action-${config.id}-${index}`;
+		const hasTo = (reset.to ?? '').trim() !== '';
+		if (reset.action === 'formula' || hasTo) context.drafts?.delete(actionToken);
+		const drafting = context.drafts?.has(actionToken) === true;
+		const action = drafting ? 'formula' : reset.action;
+
 		setting.addDropdown((dropdown) => {
 			for (const [value, label] of RESET_ACTIONS) {
 				// Leaving the value alone is only a choice where something
@@ -389,9 +414,17 @@ export function renderResetField(
 				if (value === NO_ACTION_OPTION && !buffered) continue;
 				dropdown.addOption(value, label);
 			}
-			dropdown.setValue(reset.action ?? NO_ACTION_OPTION);
-			dropdown.selectEl.dataset.sheetsmithFocus = `reset-action-${config.id}-${index}`;
+			dropdown.setValue(action ?? NO_ACTION_OPTION);
+			dropdown.selectEl.dataset.sheetsmithFocus = actionToken;
 			dropdown.onChange((value) => {
+				const drafts = context.drafts;
+				if (value === 'formula' && !hasTo && drafts !== undefined) {
+					drafts.add(actionToken);
+					context.focusAfterRedraw?.(`reset-to-${config.id}-${index}`);
+					context.redraw();
+					return;
+				}
+				drafts?.delete(actionToken);
 				if (value === NO_ACTION_OPTION) {
 					delete reset.action;
 					// Something has to happen, so the buffer takes over.
@@ -675,7 +708,7 @@ export function renderResetField(
 				}),
 		);
 
-		if (reset.action === 'formula') {
+		if (action === 'formula') {
 			const perPart = resolvesResetPerPart(definition, reset);
 			detailRow(form)
 				.setName('Resets to')
@@ -723,12 +756,11 @@ export function renderResetField(
 					 * beside it.
 					 *
 					 * The blank state is not a hand-edited file, which
-					 * `parseBinding` refuses: it is one this pane *creates*, by
-					 * choosing **Set to a formula** on a binding with no
-					 * expression yet. `persist` then re-parses, catches the
-					 * refusal and declines to write, so between that notice and
-					 * the correction the field is the only thing on screen the
-					 * reader is looking at.
+					 * `parseBinding` refuses: it is the draft this pane draws
+					 * when **Set to a formula** is chosen on a binding with no
+					 * expression yet, and nothing is written until this field
+					 * commits one, so the field is the only thing on screen
+					 * saying what is still missing.
 					 */
 					fieldError(text.inputEl, resetToProblem(reset.to));
 					onCommit(text, (raw) => {
@@ -744,7 +776,16 @@ export function renderResetField(
 						// checker refuses is a field nobody can type into.
 						if (trimmed === '') return;
 						reset.to = trimmed;
+						if (!drafting) {
+							context.persist();
+							return;
+						}
+						// The draft's second half: the action and its expression
+						// land together, in one write and so one undo step.
+						context.drafts?.delete(actionToken);
+						reset.action = 'formula';
 						context.persist();
+						context.redraw();
 					});
 				});
 		}
