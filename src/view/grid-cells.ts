@@ -25,7 +25,7 @@
  * `obsidian` cannot be resolved at all.
  */
 
-import { componentsInside, WalkEntry } from '../parse/layout-walk';
+import { componentsInside, WalkEntry, walkComponents } from '../parse/layout-walk';
 import {
 	getComponent,
 	undrawableMessage,
@@ -119,6 +119,24 @@ export function innerPlacement(
  */
 export function childIsPlaced(parent: ComponentConfig | null): boolean {
 	return parent === null || placesChildren(getComponent(parent.type));
+}
+
+/**
+ * A layout's components in the order the sheet reads them (SPEC §8): grid
+ * order on a placed level, the file's order on one whose children have no
+ * placement, such as a Tab set's tabs.
+ *
+ * `walkComponents` with `childIsPlaced` bound, and **the one spelling of it
+ * outside `parse/`**. The walk lives in `parse/` and cannot ask the registry
+ * which levels are placed, so it takes the answer as an argument; left to each
+ * caller, that argument was spelled at every site, and a site handing it
+ * `everyLevelPlaced` by mistake would draw a Tab set's tabs in an order its
+ * strip does not show, with nothing failing. §1's second half — share the
+ * application, not just the fact — and `grid-cells.test.ts` holds every caller
+ * outside `parse/` to this.
+ */
+export function walkLayout(components: ComponentConfig[]): WalkEntry[] {
+	return walkComponents(components, childIsPlaced);
 }
 
 /**

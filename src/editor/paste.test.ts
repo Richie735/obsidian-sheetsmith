@@ -5,7 +5,7 @@ import { canReparent } from './reparent';
 import { copiedComponent, pasteComponent, pasteConfiguration, Pasted } from './paste';
 import { ComponentCopy } from '../parse/component-clipboard';
 import { Layout, parseLayout, serialiseLayout } from '../parse/layout';
-import { walkComponents } from '../parse/layout-walk';
+import { walkLayout } from '../view/grid-cells';
 import { ComponentConfig } from '../types';
 
 /*
@@ -43,7 +43,7 @@ function landed(result: Pasted | { error: string }): Pasted {
 
 /** Find a component anywhere in a layout by id. */
 function find(layout: Layout, id: string): ComponentConfig {
-	const found = walkComponents(layout.components).find((entry) => entry.config.id === id);
+	const found = walkLayout(layout.components).find((entry) => entry.config.id === id);
 	if (!found) throw new Error(`no ${id}`);
 	return found.config;
 }
@@ -346,7 +346,7 @@ describe('where a paste lands', () => {
 		const tab = book.children?.[0] as ComponentConfig;
 		// The stored size went stale when the tab set was resized.
 		tab.position = at(1, 1, 2, 1);
-		const entry = walkComponents(layout.components).find((one) => one.config === tab);
+		const entry = walkLayout(layout.components).find((one) => one.config === tab);
 		const copied = copiedComponent(entry!);
 		expect(copied.position).toEqual(at(1, 1, 8, 3));
 		expect(tab.position).toEqual(at(1, 1, 2, 1));

@@ -3,8 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { SHEET_DESTINATION } from './layout-editor';
 import { LayoutEditorView } from '../view/layout-editor-view';
 import { Layout, serialiseLayout } from '../parse/layout';
-import { walkComponents } from '../parse/layout-walk';
-import { renderGrid } from '../view/grid-cells';
+import { renderGrid, walkLayout } from '../view/grid-cells';
 import { modalButton, modalIsOpen, openModal, pressModalButton } from '../test/modal';
 import { encodeComponentCopy, layoutFingerprint } from '../parse/component-clipboard';
 import { cardSet, CardSetConfig } from '../components/card-set';
@@ -821,7 +820,7 @@ describe('the component list', () => {
 		scrambled.components.reverse();
 		harness = await open(scrambled);
 
-		const walked = walkComponents((await harness.stored()).components);
+		const walked = walkLayout((await harness.stored()).components);
 		expect(walked.map((entry) => entry.config.label)).toEqual([
 			'Defences',
 			'Armour class',
@@ -1548,7 +1547,7 @@ describe('a container that is itself a tab', () => {
 
 		const stage = document.createElement('div');
 		document.body.appendChild(stage);
-		const walk = walkComponents(layout.components);
+		const walk = walkLayout(layout.components);
 		renderGrid(
 			stage,
 			walk,
@@ -2349,7 +2348,7 @@ describe('the layout is not written for having been looked at', () => {
 		harness = await open(furnished());
 		const before = await harness.raw();
 
-		const ids = walkComponents(furnished().components).map(
+		const ids = walkLayout(furnished().components).map(
 			(entry) => entry.config.id,
 		);
 		// The walk found something to select, or this passes by selecting nothing.

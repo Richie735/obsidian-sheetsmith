@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { LayoutParseError, mayHoldChildren, parseLayout, serialiseLayout } from './layout';
-import { componentsInside, walkComponents } from './layout-walk';
+import { componentsInside, everyLevelPlaced, walkComponents } from './layout-walk';
 import { ComponentConfig } from '../types';
 
 const VALID = JSON.stringify({
@@ -1252,7 +1252,7 @@ describe('walkComponents', () => {
 	];
 
 	it('reads each level in grid order, children where their container sits', () => {
-		expect(walkComponents(LAYOUT).map((entry) => entry.config.id)).toEqual([
+		expect(walkComponents(LAYOUT, everyLevelPlaced).map((entry) => entry.config.id)).toEqual([
 			'first',
 			'group',
 			'inner_first',
@@ -1262,7 +1262,7 @@ describe('walkComponents', () => {
 	});
 
 	it('reports depth, parent, and the list a component lives in', () => {
-		const inner = walkComponents(LAYOUT)[2];
+		const inner = walkComponents(LAYOUT, everyLevelPlaced)[2];
 		expect(inner?.depth).toBe(1);
 		expect(inner?.parent?.id).toBe('group');
 		expect(inner?.siblings).toBe(LAYOUT[1]?.children);
@@ -1271,7 +1271,7 @@ describe('walkComponents', () => {
 	it('does not reorder the layout it was given', () => {
 		// A render must not rewrite its own input, and the editor removes
 		// through `siblings` by identity.
-		walkComponents(LAYOUT);
+		walkComponents(LAYOUT, everyLevelPlaced);
 		expect(LAYOUT.map((config) => config.id)).toEqual([
 			'last',
 			'group',
@@ -1286,7 +1286,7 @@ describe('walkComponents', () => {
 		// `componentsInside`. If those two orders ever differ, the sheet renders
 		// its cards in an order the name table and the tab order do not have —
 		// and the flat walk is the one nothing draws, so nothing would show it.
-		const walk = walkComponents(LAYOUT);
+		const walk = walkComponents(LAYOUT, everyLevelPlaced);
 		const descend = (parent: ComponentConfig | null): string[] =>
 			componentsInside(walk, parent).flatMap((config) => [
 				config.id,
@@ -1299,13 +1299,30 @@ describe('walkComponents', () => {
 		// Vacuity guard on the test above: a `componentsInside` that returned
 		// everything at every level would still flatten to the same sequence for
 		// a one-container layout read depth first.
-		expect(componentsInside(walkComponents(LAYOUT), null).map((c) => c.id)).toEqual(
+		expect(componentsInside(walkComponents(LAYOUT, everyLevelPlaced), null).map((c) => c.id)).toEqual(
 			['first', 'group', 'last'],
 		);
 		const group = LAYOUT[1] as ComponentConfig;
 		expect(
-			componentsInside(walkComponents(LAYOUT), group).map((c) => c.id),
+			componentsInside(walkComponents(LAYOUT, everyLevelPlaced), group).map((c) => c.id),
 		).toEqual(['inner_first', 'inner_second']);
+	});
+
+	it('keeps the file\'s order on a level whose children have no placement', () => {
+		// A Tab set's tabs, told apart by the caller's predicate because this
+		// file cannot ask the registry. The tabs' stored rows sort `inner_second`
+		// first, and the strip draws the file's order, so the walk must too — and
+		// only at that level: the top level is still read by position.
+		const unplacedInside = (parent: ComponentConfig | null): boolean =>
+			parent?.id !== 'group';
+		const walk = walkComponents(LAYOUT, unplacedInside);
+		expect(walk.map((entry) => entry.config.id)).toEqual([
+			'first',
+			'group',
+			'inner_second',
+			'inner_first',
+			'last',
+		]);
 	});
 
 	it('imports nothing from src/components to decide any of it', () => {
@@ -1326,8 +1343,8 @@ describe('walkComponents', () => {
 		// parsing — which normalises shared config and could reorder `children`
 		// without anything else noticing.
 		const parsed = parseLayout(JSON.stringify({ name: 'L', components: LAYOUT }));
-		expect(walkComponents(parsed.components).map((entry) => entry.config.id)).toEqual(
-			walkComponents(LAYOUT).map((entry) => entry.config.id),
+		expect(walkComponents(parsed.components, everyLevelPlaced).map((entry) => entry.config.id)).toEqual(
+			walkComponents(LAYOUT, everyLevelPlaced).map((entry) => entry.config.id),
 		);
 	});
 });

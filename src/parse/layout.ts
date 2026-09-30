@@ -8,7 +8,7 @@
 
 import { isName, SELF_KEYWORD } from '../formula/expression';
 import { MODIFIER_NAMESPACE } from '../formula/modifiers';
-import { walkComponents } from './layout-walk';
+import { everyLevelPlaced, walkComponents } from './layout-walk';
 import {
 	bindingKey,
 	ComponentConfig,
@@ -559,7 +559,7 @@ export function parseLayout(source: string): Layout {
 	//
 	// The walk's order decides only which of two clashing ids takes the `_2`
 	// suffix below, and grid order is the order the reader would name them in.
-	const flattened = walkComponents(components).map((entry) => entry.config);
+	const flattened = walkComponents(components, everyLevelPlaced).map((entry) => entry.config);
 
 	// Migrate before the duplicate check, and only ids that fail: two
 	// components genuinely sharing a usable id is an authoring error worth

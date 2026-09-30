@@ -36,10 +36,9 @@
 
 import { getComponent } from '../components';
 import { Layout, mayHoldChildren } from '../parse/layout';
-import { walkComponents } from '../parse/layout-walk';
 import { spelled } from '../parse/spelled';
 import { ComponentConfig, isContainer } from '../types';
-import { innerPlacement } from '../view/grid-cells';
+import { innerPlacement, walkLayout } from '../view/grid-cells';
 import { nextFreeRow } from './tree';
 
 export type ReparentCheck = { ok: true } | { error: string };
@@ -109,7 +108,7 @@ export function canReparent(
 		};
 	}
 
-	const walk = walkComponents(layout.components);
+	const walk = walkLayout(layout.components);
 	const targetEntry =
 		target === null ? null : walk.find((entry) => entry.config === target);
 	if (target !== null && !targetEntry) {
@@ -171,7 +170,7 @@ export function reparent(
 	target: ComponentConfig | null,
 	index?: number,
 ): void {
-	const walk = walkComponents(layout.components);
+	const walk = walkLayout(layout.components);
 	const entry = walk.find((candidate) => candidate.config === dragged);
 	if (!entry) return;
 	const from = entry.siblings.indexOf(dragged);
@@ -206,7 +205,9 @@ export function reparent(
 	// already: `resolveDrop` sends a drop on your own parent's row through
 	// this same function as a same-container reorder, not a move across
 	// grids, and reassigning position there would visibly move a component
-	// the user only asked to reorder.
+	// the user only asked to reorder. Into a Tab set the row is written and
+	// read by nothing: a tab has no placement, and the walk keeps the file's
+	// order there rather than sorting on it.
 	if (target !== entry.parent) {
 		dragged.position.col = 1;
 		dragged.position.row = nextFreeRow(into);

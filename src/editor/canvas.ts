@@ -38,10 +38,10 @@ import { formulaContext } from '../formula/resolve';
 import { parseFunctions } from '../formula/functions';
 import { buildSheet, ReadComponent } from '../formula/sheet';
 import { DEFAULT_COLUMNS, Layout } from '../parse/layout';
-import { componentsInside, walkComponents, WalkEntry } from '../parse/layout-walk';
+import { componentsInside, WalkEntry } from '../parse/layout-walk';
 import { ComponentConfig, isContainer, placesChildren } from '../types';
 import { getComponent } from '../components';
-import { innerPlacement, renderGrid } from '../view/grid-cells';
+import { innerPlacement, renderGrid, walkLayout } from '../view/grid-cells';
 import { focusToken } from './focus-token';
 import { readSample } from './sample-read';
 import { describeCell, findOverlaps } from './preview-grid';
@@ -129,7 +129,7 @@ export class Canvas {
 		el.empty();
 		this.schematics = [];
 
-		const walk = walkComponents(layout.components);
+		const walk = walkLayout(layout.components);
 		this.ensureSelectionVisible(walk, this.host.selection);
 
 		// `sample-read.ts` holds what a component reads with no character behind
@@ -326,8 +326,11 @@ export class Canvas {
 	 * The cell each tab holds is `fillCell`'s own, one per
 	 * `.sheetsmith-tabset-panel`, in the file order `tab-set.ts` draws its
 	 * strip in — the same order `componentsInside` gives for a container
-	 * whose children share one position (a stable sort over ties preserves
-	 * file order), so the two line up without either knowing about the other.
+	 * whose children are not placed, since `walkComponents` keeps the file's
+	 * order on such a level whatever the tabs' stored rows say. It once
+	 * sorted them, and agreed only while the rows tied: a tab moved in through
+	 * the tree broke the tie, and each overlay then sat in another tab's
+	 * panel under that tab's name.
 	 */
 	private wireUnplacedChildren(
 		containerCell: HTMLElement,

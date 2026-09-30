@@ -3,9 +3,10 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { GridComponent, renderGrid } from './grid-cells';
+import { GridComponent, renderGrid, walkLayout } from './grid-cells';
 import { parseLayout } from '../parse/layout';
-import { walkComponents } from '../parse/layout-walk';
+
+import { getComponent } from '../components';
 import { ComponentConfig, ComponentDefinition, RenderContext } from '../types';
 
 /*
@@ -67,7 +68,7 @@ function context(): (entry: {
  */
 function tree(source: string, components?: readonly GridComponent[]): string[] {
 	const layout = parseLayout(source);
-	const walk = walkComponents(layout.components);
+	const walk = walkLayout(layout.components);
 	const entries: readonly GridComponent[] =
 		components ??
 		walk.map(({ config }) => ({
@@ -232,7 +233,7 @@ describe('renderGrid', () => {
 		// mark, so the harness drew error cells without the one `.sheetsmith-cell`
 		// rule the stylesheet has.
 		const layout = parseLayout(NESTED);
-		const walk = walkComponents(layout.components);
+		const walk = walkLayout(layout.components);
 		const entries = walk.map(({ config }) => ({
 			config,
 			component: config.type === CONTAINER ? group() : marker(config.type),
@@ -294,7 +295,7 @@ describe('renderGrid', () => {
 			],
 		});
 		const layout = parseLayout(source);
-		const walk = walkComponents(layout.components);
+		const walk = walkLayout(layout.components);
 		const root = document.createElement('div');
 		document.body.replaceChildren(root);
 		renderGrid(
@@ -329,7 +330,7 @@ describe('renderGrid', () => {
 		});
 		let offered: boolean | null = null;
 		const layout = parseLayout(source);
-		const walk = walkComponents(layout.components);
+		const walk = walkLayout(layout.components);
 		const root = document.createElement('div');
 		document.body.replaceChildren(root);
 		renderGrid(
@@ -356,7 +357,7 @@ describe('renderGrid', () => {
 		// The harness writes a re-read section back into the entry it was given,
 		// so a copy here would leave that write landing nowhere.
 		const layout = parseLayout(NESTED);
-		const walk = walkComponents(layout.components);
+		const walk = walkLayout(layout.components);
 		const entries = walk.map(({ config }) => ({
 			config,
 			component: config.type === CONTAINER ? group() : marker(config.type),
@@ -424,10 +425,12 @@ describe('the grid has one renderer', () => {
 		// everything below by having nothing in it.
 		expect(source.length).toBeGreaterThan(2000);
 
-		// The only thing it may take from the grid module. Taking `placeCell` or
-		// `openSubgrid` is how a second loop starts, and taking
-		// `componentsInside` is how a second descent does.
-		expect(imported(source)).toEqual(['renderGrid']);
+		// The only things it may take from the grid module. Taking `placeCell`
+		// or `openSubgrid` is how a second loop starts, and taking
+		// `componentsInside` is how a second descent does. `walkLayout` is the
+		// walk the renderer is handed, the same one for every host, not a
+		// second descent.
+		expect(imported(source)).toEqual(['renderGrid', 'walkLayout']);
 
 		// Once, at the root. Twice would mean a level being drawn by hand.
 		expect(source.match(/renderGrid\(/g)).toHaveLength(1);
@@ -498,6 +501,23 @@ describe('the placement rule has one reader', () => {
 		expect(naming.sort()).toEqual(['components/tab-set.ts', 'types.ts']);
 	});
 
+	it('is handed to the walk in one place', () => {
+		// `walkComponents` cannot ask the registry which levels are placed, so it
+		// takes the answer as an argument, and `walkLayout` is the one place
+		// outside `parse/` that supplies it. A caller spelling the walk itself
+		// could hand it the wrong answer — `everyLevelPlaced` — and draw a Tab
+		// set's tabs in an order its strip does not show, with nothing failing.
+		// The harness is a host outside `src/`, so it is read by name.
+		const calling = sources()
+			.filter((path) => !path.startsWith(join(ROOT, 'parse')))
+			.filter((path) => readFileSync(path, 'utf8').includes('walkComponents('))
+			.map((path) => path.slice(ROOT.length + 1));
+		expect(calling).toEqual(['view/grid-cells.ts']);
+		const harness = readFileSync(join(ROOT, '..', 'harness', 'harness.ts'), 'utf8');
+		expect(harness).toContain('walkLayout(');
+		expect(harness).not.toContain('walkComponents(');
+	});
+
 	it('is what the editor asks rather than something it works out', () => {
 		// The schematic's column count comes from `innerPlacement`, so it cannot
 		// read a container's own stored width for a container that is itself a
@@ -566,7 +586,7 @@ describe('a container that shows one child at a time', () => {
 		const root = document.createElement('div');
 		document.body.replaceChildren(root);
 		const layout = parseLayout(TABS);
-		const walk = walkComponents(layout.components);
+		const walk = walkLayout(layout.components);
 		renderGrid(
 			root,
 			walk,
@@ -591,6 +611,45 @@ describe('a container that shows one child at a time', () => {
 					panel.querySelector<HTMLElement>('.sheetsmith-cell')?.dataset.drew,
 			),
 		).toEqual(['first', 'second']);
+	});
+
+	it('draws each child under the strip label that names it, whatever the stored rows say', () => {
+		// The real Tab set, because the strip is its own: it labels the tabs from
+		// `config.children` while the grid hands it one region per child. The
+		// fixture's tabs carry stored rows that sort the second first, so a region
+		// list built in the walk's order would put "First" over the second tab.
+		const root = document.createElement('div');
+		document.body.replaceChildren(root);
+		const layout = parseLayout(TABS);
+		const walk = walkLayout(layout.components);
+		renderGrid(
+			root,
+			walk,
+			walk.map(({ config }) => ({
+				config,
+				component:
+					config.type === 'tab-set'
+						? getComponent('tab-set')
+						: config.type === 'group'
+							? group()
+							: marker(config.type),
+				data: null,
+				error: null,
+			})),
+			context(),
+		);
+		const pairs = Array.from(root.querySelectorAll('.sheetsmith-tabset-tab')).map(
+			(tab) => [
+				tab.textContent,
+				root
+					.querySelector(`#${tab.getAttribute('aria-controls') ?? ''}`)
+					?.querySelector<HTMLElement>('.sheetsmith-cell')?.dataset.drew,
+			],
+		);
+		expect(pairs).toEqual([
+			['First', 'first'],
+			['Second', 'second'],
+		]);
 	});
 
 	it('tells such a child its name is already shown, and a placed child nothing', () => {
@@ -642,7 +701,7 @@ describe('a container that shows one child at a time', () => {
 		const root = document.createElement('div');
 		document.body.replaceChildren(root);
 		const layout = parseLayout(TABS);
-		const walk = walkComponents(layout.components);
+		const walk = walkLayout(layout.components);
 		renderGrid(
 			root,
 			walk,
@@ -675,7 +734,7 @@ describe('a container that shows one child at a time', () => {
 		const root = document.createElement('div');
 		document.body.replaceChildren(root);
 		const layout = parseLayout(TABS);
-		const walk = walkComponents(layout.components);
+		const walk = walkLayout(layout.components);
 		renderGrid(
 			root,
 			walk,
@@ -709,7 +768,7 @@ describe('a container that shows one child at a time', () => {
 		const root = document.createElement('div');
 		document.body.replaceChildren(root);
 		const layout = parseLayout(TABS);
-		const walk = walkComponents(layout.components);
+		const walk = walkLayout(layout.components);
 		renderGrid(
 			root,
 			walk,

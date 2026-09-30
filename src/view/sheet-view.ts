@@ -44,7 +44,6 @@ import {
 import { parseFunctions } from '../formula/functions';
 import { buildSheet } from '../formula/sheet';
 import { DEFAULT_COLUMNS, Layout } from '../parse/layout';
-import { walkComponents } from '../parse/layout-walk';
 import { parseTriggers } from '../parse/triggers';
 import {
 	ComponentConfig,
@@ -56,7 +55,7 @@ import {
 } from '../types';
 import { captureFocus, restoreFocus } from './cell-focus';
 import { attachFileSuggest, FileSuggest } from './file-suggest';
-import { renderGrid } from './grid-cells';
+import { renderGrid, walkLayout } from './grid-cells';
 import { MarkdownPasses } from './markdown-pass';
 import { renderMissingLayout } from './missing-layout';
 import { openResetConfirmation } from './reset-confirmation';
@@ -539,7 +538,7 @@ export class SheetView extends TextFileView {
 		// holds, but it decides two things that matter: tab order, and the
 		// single-column sequence once the narrow reflow drops the grid and lays
 		// cells out in DOM order.
-		const walk = walkComponents(layout.components);
+		const walk = walkLayout(layout.components);
 
 		// Read everything before rendering anything: a formula may name any
 		// component on the sheet, including one that sits later in grid

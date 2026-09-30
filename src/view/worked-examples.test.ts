@@ -18,7 +18,7 @@ import { makeFieldExplainer, resolveFormulaFields } from '../formula/resolve';
 import { buildSheet } from '../formula/sheet';
 import { getSection, parseCharacter } from '../parse/character';
 import { parseLayout } from '../parse/layout';
-import { walkComponents } from '../parse/layout-walk';
+import { walkLayout } from './grid-cells';
 import { ComponentConfig, isContainer } from '../types';
 import { entryConfig } from '../test/palette-entry';
 
@@ -89,7 +89,7 @@ function sheetFrom(layoutSource: string, noteSource: string) {
 	// The view's own walk, depth first and each level in grid order, so a card
 	// inside a container is read before anything renders — exactly as one at the
 	// top level is.
-	const prepared = walkComponents(layout.components).map(({ config }) => {
+	const prepared = walkLayout(layout.components).map(({ config }) => {
 		const component = getComponent(config.type);
 		if (!component) throw new Error(`No component of type "${config.type}".`);
 		// A container has no section (SPEC §4.1), so there is nothing to read.

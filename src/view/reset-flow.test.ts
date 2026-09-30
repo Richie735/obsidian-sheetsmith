@@ -22,7 +22,7 @@ import { FormulaEnv, NO_ENV } from '../formula/resolve';
 import { buildSheet } from '../formula/sheet';
 import { applySectionWrites, getSection, parseCharacter } from '../parse/character';
 import { parseLayout } from '../parse/layout';
-import { walkComponents } from '../parse/layout-walk';
+import { walkLayout } from './grid-cells';
 import { parseTriggers } from '../parse/triggers';
 import { ComponentDefinition, isContainer } from '../types';
 import { boundTo, planTrigger, TriggerPlan, UNCHECKED_CONDITION } from './reset-plan';
@@ -158,7 +158,7 @@ function applyTrigger(
 
 	// The view's own walk: a trigger reaches a component wherever it sits, and
 	// whether or not the reader has the container holding it open.
-	const prepared = walkComponents(layout.components).map(({ config }) => {
+	const prepared = walkLayout(layout.components).map(({ config }) => {
 		const component = getComponent(config.type) as ComponentDefinition;
 		// A container has no section (SPEC §4.1), so there is nothing to read.
 		const section = isContainer(component)
@@ -562,7 +562,7 @@ describe('a long rest against a pool on a tab nobody opened', () => {
 		// left at the top level, so the fixture's own shape is asserted before it
 		// is trusted: `variant` edits an object, and an edit that matched nothing
 		// is exactly the failure this file's `variant` comment was written about.
-		const walk = walkComponents(parseLayout(TABBED).components);
+		const walk = walkLayout(parseLayout(TABBED).components);
 		const pool = walk.find((entry) => entry.config.id === 'hp');
 		expect(pool?.depth).toBe(2);
 		expect(pool?.parent?.id).toBe('vitals');

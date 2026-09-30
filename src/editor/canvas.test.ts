@@ -622,6 +622,33 @@ describe('selecting inside a Tab set', () => {
 		expect(overlay?.closest('[inert]')).toBeNull();
 	});
 
+	it('puts each tab\'s overlay in the panel its strip label names, whatever the stored rows say', () => {
+		// A tab has no placement (SPEC §4.1), so its stored row is a value
+		// nothing should read — but a tab moved in through the tree is given one
+		// (`reparent.ts`), and here the second tab's sorts first. The strip and
+		// the panels follow the file; the overlays must follow them.
+		const set = tabbed();
+		const [combat, spells] = set.children ?? [];
+		if (combat) combat.position.row = 2;
+		if (spells) spells.position.row = 1;
+		const el = document.createElement('div');
+		new Canvas(fakeHost('pages')).draw(el, layoutOf(set));
+
+		const pairs = Array.from(el.querySelectorAll('.sheetsmith-tabset-tab')).map(
+			(tab) => {
+				const panel = el.querySelector(`#${tab.getAttribute('aria-controls') ?? ''}`);
+				return [
+					tab.textContent,
+					panel?.querySelector('[data-sheetsmith-focus]')?.getAttribute('aria-label'),
+				];
+			},
+		);
+		expect(pairs).toEqual([
+			['Combat', 'Combat'],
+			['Spells', 'Spells'],
+		]);
+	});
+
 	it('leaves an inactive tab inert when nothing inside it is selected', () => {
 		const host = fakeHost('pages');
 		const canvas = new Canvas(host);

@@ -44,10 +44,9 @@
 import { buildSheet, ReadComponent } from '../formula/sheet';
 import { formulaContext } from '../formula/resolve';
 import { Layout } from '../parse/layout';
-import { walkComponents } from '../parse/layout-walk';
 import { getComponent, listComponentTypes } from '../components';
 import { ComponentConfig, GridPosition, isContainer, placesChildren } from '../types';
-import { renderGrid } from '../view/grid-cells';
+import { renderGrid, walkLayout } from '../view/grid-cells';
 import { PickerChoice } from './picker-catalog';
 import { readSample } from './sample-read';
 
@@ -134,7 +133,7 @@ export function renderComponentPreview(into: HTMLElement, choice: PickerChoice):
 		columns: PREVIEW_COLUMNS,
 		components: [previewConfig(choice)],
 	};
-	const walk = walkComponents(layout.components);
+	const walk = walkLayout(layout.components);
 	const prepared: ReadComponent[] = walk.map(({ config }) => readSample(config, true));
 	const { env } = buildSheet(layout, prepared);
 

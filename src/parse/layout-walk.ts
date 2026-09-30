@@ -2,12 +2,14 @@
  * The order the sheet reads a layout in (SPEC §8).
  *
  * One job: given a parsed layout, answer where each component sits in the
- * depth-first, grid-order walk — flattened for whoever reads every component,
+ * depth-first walk — grid order on a placed level, the file's order on one
+ * whose children have no placement, which the caller says — flattened for
+ * whoever reads every component,
  * one level at a time for whoever draws a grid. Nothing here parses, and
  * nothing here validates; `layout.ts` turns a file into the model and this
  * answers questions about the model.
  *
- * Its own file because those are two jobs and the consumers differ: five
+ * Its own file because those are two jobs and the consumers differ: most
  * callers need this order and only some of them parse anything, and
  * `view/grid-cells.ts` needs the traversal and no parsing at all. The one
  * dependency runs the other way — `parseLayout` flattens through
@@ -47,8 +49,28 @@ export interface WalkEntry {
 }
 
 /**
- * Every component, depth first, each level in its own grid reading order
- * (SPEC §8).
+ * Whether a child of `parent` has a placement of its own, or `parent` is null
+ * for the top level. Decides whether the walk sorts that level by position or
+ * keeps the file's order.
+ */
+export type ChildPlacement = (parent: ComponentConfig | null) => boolean;
+
+/**
+ * The walk's placement answer where the registry is out of reach: every level
+ * sorted by position, which is the walk as it was before a Tab set's level kept
+ * the file's order.
+ *
+ * For `parseLayout` alone outside tests. Its flattened walk only decides which
+ * of two clashing ids takes the `_2` suffix, and the parser cannot tell a Tab set
+ * from a Group without importing the components it must not import. A caller
+ * that draws, lists or publishes uses `walkLayout` (`view/grid-cells.ts`)
+ * instead, which binds `childIsPlaced`.
+ */
+export const everyLevelPlaced: ChildPlacement = () => true;
+
+/**
+ * Every component, depth first, each placed level in its own grid reading
+ * order and every other level in the file's (SPEC §8).
  *
  * A container's children are read where the container sits, before the
  * container's next neighbour: the same sentence the sheet already had, applied
@@ -63,6 +85,20 @@ export interface WalkEntry {
  * reason `publishedComponent` exists in `formula/sheet.ts`, and the two had
  * already drifted once when it did not.
  *
+ * **A level whose children have no placement keeps the file's order**, which is
+ * SPEC §8's own exception: a Tab set's tabs are read in the order the layout
+ * wrote them, because that is the order its strip draws them in and there is no
+ * grid order to read. Sorting them by a stored row sorted on a value nothing
+ * else reads, and a tab moved in through the tree carries one, so the tree drew
+ * one order under a strip showing another and the editor's canvas put each
+ * tab's overlay in a different tab's panel. Whether a level is placed is the
+ * registry's answer, which this file cannot ask (`parse/` imports nothing from
+ * `components/`), so the caller hands it in. Outside `parse/` nothing calls
+ * this directly: `walkLayout` (`view/grid-cells.ts`) binds `childIsPlaced`
+ * once, and `grid-cells.test.ts` holds every other caller to it. Inside,
+ * `parseLayout` passes `everyLevelPlaced` above. Required rather than
+ * defaulted, because a default is how one caller ends up disagreeing.
+ *
  * Sorted on a copy at each level, because `sort` mutates and reading a layout
  * must not reorder it. That is the only thing the walk keeps to itself: what it
  * hands back aliases the layout throughout, which `WalkEntry` states and which
@@ -71,17 +107,23 @@ export interface WalkEntry {
  * safe while `siblings` handed the editor the same array to splice, and a cast
  * here is what let the two claims coexist.
  */
-export function walkComponents(components: ComponentConfig[]): WalkEntry[] {
+export function walkComponents(
+	components: ComponentConfig[],
+	placed: ChildPlacement,
+): WalkEntry[] {
 	const found: WalkEntry[] = [];
 	const visit = (
 		list: ComponentConfig[],
 		depth: number,
 		parent: ComponentConfig | null,
 	): void => {
-		const ordered = [...list].sort(
-			(a, b) =>
-				a.position.row - b.position.row || a.position.col - b.position.col,
-		);
+		const ordered = placed(parent)
+			? [...list].sort(
+					(a, b) =>
+						a.position.row - b.position.row ||
+						a.position.col - b.position.col,
+				)
+			: list;
 		for (const config of ordered) {
 			found.push({ config, depth, parent, siblings: list });
 			if (config.children !== undefined) {
