@@ -388,7 +388,15 @@ export interface ConfigFieldSpec<
 	/**
 	 * Input kind. 'formula' is a text field holding an expression; 'text-list'
 	 * is an ordered list of plain strings, edited as one comma-separated field
-	 * and stored as an array; the last four are ordered lists the editor
+	 * and stored as an array, and **read as level names**: their position is
+	 * what a note stores, so the editor reports a commit that reorders or
+	 * shortens one (`docs/features/level-list-reorder-report.md`) — a list
+	 * whose order is not positional would need a flag declared first. The
+	 * report also assumes its one owner, a Track: the component's label is the
+	 * key it names, and no sibling condition or reset reads the list, so a
+	 * second owner with a condition or a per-part reset reading it has to pass
+	 * those readers in `config-panel.ts` or its notice drops their clauses. The
+	 * last four are ordered lists the editor
 	 * renders as a table of their own — 'entries' of the two columns the
 	 * field's own `entryColumns` names, 'track-rows' of those two plus a count
 	 * and a sense, 'rows' of { label, values? }, and 'columns' of typed column

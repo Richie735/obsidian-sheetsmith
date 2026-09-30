@@ -95,6 +95,7 @@ import { fencedKeyProblem } from '../parse/fenced';
 import { parseModifierDefinitions } from '../parse/modifier-definitions';
 import { WalkEntry, walkComponents } from '../parse/layout-walk';
 import { onCommit } from './field-commit';
+import { levelReorderNotice } from './level-reorder';
 import { renderPublishedNames } from './published-names';
 import { showFieldError } from './field-error';
 import { formulaProblem } from './field-formula';
@@ -145,6 +146,13 @@ import { clamp, lastColumn } from './preview-grid';
  */
 function positionToken(id: string, key: keyof GridPosition): string {
 	return `pos-${id}-${key}`;
+}
+
+/** A `text-list` value as the layout holds it, copied, with anything not a string left out. */
+function namesOf(value: unknown): string[] {
+	return Array.isArray(value)
+		? value.filter((entry): entry is string => typeof entry === 'string')
+		: [];
 }
 
 /**
@@ -910,12 +918,38 @@ export class ConfigPanel {
 							.map((entry) => entry.trim())
 							.filter((entry) => entry !== '');
 						this.fieldError(text.inputEl, null);
+						const before = namesOf(record[field.key]);
 						// Cleared is "this list is not set", which is a state
 						// the component reads — a track with no level names
 						// counts its marks instead.
 						if (parsed.length === 0) delete record[field.key];
 						else record[field.key] = parsed;
-						this.host.persist();
+						/*
+						 * The one `text-list` is a Track's level names, and a
+						 * note stores a position in them (`types.ts`, the kind),
+						 * so a commit moving one is reported as a level column's
+						 * is. **Names against names only**: with none on either
+						 * side the Track counts from its `count`, which may be a
+						 * formula this panel cannot read, so a clear or a first
+						 * naming has no level count to compare and says nothing.
+						 * A Track's key and label are one word, and it has no
+						 * sibling conditions and no reset condition to read it.
+						 */
+						const label = config.label;
+						if (before.length > 0 && parsed.length > 0) {
+							this.host.persistReorder(label, (notes) =>
+								levelReorderNotice(
+									label,
+									{ levels: before },
+									{ levels: parsed },
+									[],
+									undefined,
+									{ label, notes },
+								),
+							);
+						} else {
+							this.host.persist();
+						}
 						// The list may decide what another field means.
 						this.host.redraw();
 					});

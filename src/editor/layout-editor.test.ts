@@ -5468,6 +5468,33 @@ describe('a level list reordered', () => {
 		]);
 	});
 
+	it('reports a reorder of a Track’s level names, and a flag Track’s swapped pair', async () => {
+		await character('Aramil.md', HELD);
+		await edit('corruption');
+		await commit(control<HTMLInputElement>(harness, 'cfg-corruption-levels'), 'Clear, Marked, Touched, Lost');
+		await edit('bound');
+		await commit(control<HTMLInputElement>(harness, 'cfg-bound-levels'), 'Bound:, Unbound');
+		expect(said()).toEqual([
+			'"Corruption" levels moved: "Touched" was 1 and is now 2; "Marked" was 2 and is now 1. 1 note on this layout holds a section for Corruption, and any Corruption level it stores is now read against the new list. Undo',
+			'"Bound" levels moved: "Unbound" was 0 and is now 1; "Bound" was 1 and is now 0. 1 note on this layout holds a section for Bound, and any Bound level it stores is now read against the new list. Undo',
+		]);
+	});
+
+	it('says nothing for a Track’s names cleared, or a Track named for the first time', async () => {
+		await character('Aramil.md', HELD);
+		await edit('corruption');
+		await commit(control<HTMLInputElement>(harness, 'cfg-corruption-levels'), '');
+		await edit('stress');
+		await commit(control<HTMLInputElement>(harness, 'cfg-stress-levels'), 'Calm, Tense');
+		expect(said()).toEqual([]);
+		// Both still wrote, which is what makes the silence mean something.
+		const stored = await harness.stored();
+		const levelsOf = (id: string) =>
+			(stored.components.find((c) => c.id === id) as { levels?: string[] } | undefined)?.levels;
+		expect(levelsOf('corruption')).toBeUndefined();
+		expect(levelsOf('stress')).toEqual(['Calm', 'Tense']);
+	});
+
 	it('counts sections, not fields: a held section without the level counts, a blank one and another layout’s do not', async () => {
 		await character('Aramil.md', [['Skills', '| Skill |\n| --- |\n| Arcana |\n']]);
 		await character('Thora.md', [['Skills', '\n\n']]);
@@ -5528,7 +5555,7 @@ describe('a level list reordered', () => {
 		]);
 	});
 
-	it('puts the previous layout bytes back from the notice', async () => {
+	it('puts the previous layout bytes back from the notice, at a level column and at a Track', async () => {
 		await character('Aramil.md', HELD);
 		const before = await harness.raw();
 		await edit('skills');
@@ -5537,12 +5564,20 @@ describe('a level list reordered', () => {
 		pressUndo();
 		await settle(harness.pane);
 		expect(await harness.raw()).toBe(before);
+
+		await edit('corruption');
+		await commit(control<HTMLInputElement>(harness, 'cfg-corruption-levels'), 'Clear, Marked, Touched, Lost');
+		expect(await harness.raw()).not.toBe(before);
+		pressUndo();
+		await settle(harness.pane);
+		expect(await harness.raw()).toBe(before);
 	});
 
-	it('refuses a stale undo after a second commit', async () => {
+	it('refuses a stale undo after a second commit, at a level column and at a Track', async () => {
 		await character('Aramil.md', HELD);
 		for (const [id, input, value] of [
 			['skills', () => named('Proficiency level names'), 'Untrained, Expertise, Proficient'],
+			['corruption', () => control<HTMLInputElement>(harness, 'cfg-corruption-levels'), 'Clear, Marked, Touched, Lost'],
 		] as const) {
 			await edit(id);
 			await commit(input(), value);
@@ -5574,7 +5609,9 @@ describe('a level list reordered', () => {
 		const process = vi.spyOn(harness.app.vault, 'process');
 		await edit('skills');
 		await commit(named('Proficiency level names'), 'Untrained, Expertise, Proficient');
-		expect(said()).toHaveLength(1);
+		await edit('bound');
+		await commit(control<HTMLInputElement>(harness, 'cfg-bound-levels'), 'Bound:, Unbound');
+		expect(said()).toHaveLength(2);
 		expect(notes).toEqual([]);
 		expect(process).not.toHaveBeenCalled();
 		expect(await harness.app.vault.read(note!)).toBe(bytes);
