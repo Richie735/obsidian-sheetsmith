@@ -689,6 +689,23 @@ describe('recordSet rendering', () => {
 		]);
 	});
 
+	it('draws the add control as the box\'s foot, outside the scrolling list', () => {
+		const el = render();
+		const add = addButton(el);
+		const box = el.querySelector('.sheetsmith-record-set-box') as Element;
+		expect(add.parentElement).toBe(box);
+		expect(box.lastElementChild).toBe(add);
+		expect(
+			el.querySelector('.sheetsmith-record-set-list')?.contains(add),
+		).toBe(false);
+		// Still after every record's controls, which the focus restore rests on.
+		const names = nameFields(el);
+		expect(
+			(names[names.length - 1] as Element).compareDocumentPosition(add) &
+				Node.DOCUMENT_POSITION_FOLLOWING,
+		).toBeTruthy();
+	});
+
 	it('draws the empty state as a label and one add control', () => {
 		const el = render({}, null);
 		expect(records(el)).toHaveLength(0);
@@ -3025,14 +3042,16 @@ describe('a strip of field names over the list', () => {
 				true,
 			);
 		}
-		// The records and the add control moved into the strip's second row.
+		// The records moved into the strip's second row; the add control is not
+		// among them, it is the box's own last child, outside the scroller.
 		const wrapper = list(el).children[1] as HTMLElement;
 		expect(wrapper.classList.contains('sheetsmith-record-set-records')).toBe(
 			true,
 		);
 		expect(list(el).children).toHaveLength(2);
 		expect(wrapper.querySelectorAll('.sheetsmith-record')).toHaveLength(2);
-		expect(wrapper.lastElementChild).toBe(addButton(el));
+		expect(list(el).contains(addButton(el))).toBe(false);
+		expect(addButton(el).parentElement?.lastElementChild).toBe(addButton(el));
 	});
 
 	it('stamps the true count, and a class clamped to the table the stylesheet holds', () => {

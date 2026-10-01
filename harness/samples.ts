@@ -3566,3 +3566,124 @@ export const CLIPBOARD_FIXTURES: Readonly<Record<string, () => string>> = {
 	many: manyCopy,
 	pool: poolCopy,
 };
+
+/**
+ * **The add control pinned to the foot of the card**
+ * (`docs/features/table-add-row-pinned-bottom.md`), and every state the spec's
+ * acceptance section names, on a sheet of its own.
+ *
+ * A state rather than a change to `SAMPLES`: the populated sheet's tables sit
+ * beside cards that never make their row taller than the rows, which is exactly
+ * the case the feature is *not* visible in. A control pinned to the bottom of a
+ * cell can only be seen in a cell taller than its rows, and a Table has no
+ * placement floor, so the height here comes from a tall neighbour (a Rich text
+ * block, whose floor is its placement) that stretches the grid row.
+ *
+ * Rows 1-3, a tall band (each Table spans all three, so its cell is taller than its rows): an open Table with totals, an open Table without, a closed
+ * Table (which must not move) and the tall neighbour. Row 4: the same two open
+ * Tables with more rows than the placement. Rows 5-8: Record set with few records
+ * in a tall placement, one with many in a short one, and an empty open Table.
+ * Row 9: a wide open Table, for the sideways scroll.
+ */
+export function pinnedAddSamples(): Sample[] {
+	const table = (
+		id: string,
+		label: string,
+		position: { col: number; row: number; width: number; height: number },
+		extra: Record<string, unknown>,
+		body: string | null,
+	): Sample => ({
+		config: {
+			id,
+			type: 'table',
+			label,
+			position,
+			rowHeader: 'Item',
+			columns: [
+				{ key: 'Qty', type: 'number' },
+				{ key: 'Weight', type: 'number', total: extra.total === true },
+			],
+			...(extra.config as object),
+		} as ComponentConfig,
+		body,
+	});
+	const rows = (count: number) =>
+		[
+			'| Item | Qty | Weight |',
+			'| --- | --- | --- |',
+			...Array.from(
+				{ length: count },
+				(_, i) => `| Thing ${i + 1} | ${i + 1} | ${i + 2} |`,
+			),
+		].join('\n');
+	const records = (count: number) =>
+		[
+			'',
+			...Array.from({ length: count }, (_, i) =>
+				[`### Spell ${i + 1}`, '```sheet', `Level: ${i % 9}`, '```', 'A line of prose.', ''].join('\n'),
+			),
+		].join('\n');
+	return [
+		table('tall_totals', 'Tall with totals', { col: 1, row: 1, width: 3, height: 3 }, { total: true, config: { openRows: true } }, rows(2)),
+		table('tall_plain', 'Tall without totals', { col: 4, row: 1, width: 3, height: 3 }, { config: { openRows: true } }, rows(2)),
+		table('tall_closed', 'Closed in a tall cell', { col: 7, row: 1, width: 3, height: 3 }, { total: true, config: { rows: [{ label: 'Rope' }, { label: 'Torch' }] } }, rows(2)),
+		{
+			config: {
+				id: 'tall_neighbour',
+				type: 'rich-text',
+				label: 'Tall neighbour',
+				position: { col: 10, row: 1, width: 3, height: 3 },
+			},
+			body: '\nThis block makes its grid row tall, which is the only thing it is for.\n',
+		},
+		table('many_totals', 'Many with totals', { col: 1, row: 4, width: 6, height: 1 }, { total: true, config: { openRows: true } }, rows(9)),
+		table('many_plain', 'Many without totals', { col: 7, row: 4, width: 6, height: 1 }, { config: { openRows: true } }, rows(9)),
+		{
+			config: {
+				id: 'few_records',
+				type: 'record-set',
+				label: 'Few records, tall',
+				position: { col: 1, row: 5, width: 4, height: 4 },
+				recordName: 'Spell',
+				fields: [{ key: 'Level', type: 'number', max: 9 }],
+			} as ComponentConfig,
+			body: records(2),
+		},
+		{
+			config: {
+				id: 'many_records',
+				type: 'record-set',
+				label: 'Many records, short',
+				position: { col: 5, row: 5, width: 4, height: 3 },
+				recordName: 'Spell',
+				fields: [{ key: 'Level', type: 'number', max: 9 }],
+			} as ComponentConfig,
+			body: records(9),
+		},
+		table('empty_open', 'Empty and open', { col: 9, row: 5, width: 4, height: 4 }, { config: { openRows: true } }, null),
+		{
+			config: {
+				id: 'wide_open',
+				type: 'table',
+				label: 'Wide, scrolls sideways',
+				position: { col: 1, row: 9, width: 12, height: 1 },
+				rowHeader: 'Item',
+				openRows: true,
+				columns: [
+					{ key: 'Qty', type: 'number' },
+					{ key: 'Weight', type: 'number', total: true },
+					{ key: 'Value', type: 'text' },
+					{ key: 'Source', type: 'text' },
+					{ key: 'Notes', type: 'text' },
+					{ key: 'Where kept', type: 'text' },
+				],
+			} as ComponentConfig,
+			body: [
+				'| Item | Qty | Weight | Value | Source | Notes | Where kept |',
+				'| --- | --- | --- | --- | --- | --- | --- |',
+				'| Rope | 1 | 10 | 1 gp | the cart | fifty feet of hempen rope | pack |',
+				'| Lantern | 1 | 2 | 5 gp | the market | bullseye, with a spare shutter | belt |',
+			].join('\n'),
+		},
+	];
+}

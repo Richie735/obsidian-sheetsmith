@@ -1199,7 +1199,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			kind: 'text',
 			label: 'Record name',
 			description:
-				'What one record is called, e.g. "Spell". Names the add control in the last position of the list and the accessible name of a record\'s name field, and is the filler the layout editor previews with. Defaults to "Record".',
+				'What one record is called, e.g. "Spell". Names the add control at the foot of the card and the accessible name of a record\'s name field, and is the filler the layout editor previews with. Defaults to "Record".',
 		},
 		{
 			key: 'fields',
@@ -1678,9 +1678,13 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			'sheetsmith-placed-box sheetsmith-record-set-box',
 			block,
 		);
-		// Out of flow, so nothing inside contributes intrinsic height and the box
-		// cannot be grown past its placement by a long list or a long body.
-		const list = element('div', 'sheetsmith-record-set-list', box);
+		// The scroll area and the add control are the box's two children, so the
+		// control sits at the box's foot and never scrolls (see where it is drawn,
+		// below). The list is out of flow inside its wrapper, so nothing in it
+		// contributes intrinsic height and the box cannot be grown past its
+		// placement by a long list or a long body.
+		const scroll = element('div', 'sheetsmith-record-set-scroll', box);
+		const list = element('div', 'sheetsmith-record-set-list', scroll);
 		if (headed) {
 			/*
 			 * **Aria-hidden, and no table role anywhere.** Every control already
@@ -1921,10 +1925,13 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			});
 		if (lines.length > 0) host.prepend(...lines);
 
-		// The add control sits in the last position of the list, so it reads as the
-		// next record rather than as chrome beside it — `.sheetsmith-table-add`'s
-		// own vocabulary, one storage over.
-		const add = element('button', 'sheetsmith-record-add', host);
+		// The add control is the box's last child, outside the scrolling list, so it
+		// sits at the foot of the card whatever the list holds and does not scroll
+		// away with it. It wears the clothes Table's add control wears, in one
+		// stylesheet rule, so the two read as one treatment. It is still after every
+		// record's controls in document order, which is what the landing below and
+		// the view's index-based focus restore both rest on.
+		const add = element('button', 'sheetsmith-record-add', box);
 		add.type = 'button';
 		element(
 			'span',

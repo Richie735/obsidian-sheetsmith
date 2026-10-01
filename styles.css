@@ -1807,6 +1807,42 @@ body {
 	background-attachment: local, scroll;
 }
 
+/* **An open table's card is a box around its scroller, and the box fills the
+   cell.** The add control is the card's foot, so the card has to reach the foot
+   of the cell it was placed in: a grid item stretches, and the container is a
+   flex column in which the box takes whatever the label leaves, so in a cell
+   taller than the rows the space falls between the last row and the control
+   rather than under the control. A table's height is still a floor and never a
+   cap: nothing here scrolls vertically and nothing is given a `min-height`.
+
+   **Only an open table.** A closed one has no control to pin, so it keeps the
+   bare scroller above and is the card it always was in a tall cell, unchanged.
+
+   The border, radius and fill move from the scroller to the box so the
+   scroller's right-edge shadow is clipped by the box's corner rather than
+   painted over it, and the box clips so the control's hover surface takes the
+   box's bottom corners. */
+.sheetsmith-table-open {
+	display: flex;
+	flex-direction: column;
+}
+
+.sheetsmith-table-box {
+	display: flex;
+	flex: 1 1 auto;
+	flex-direction: column;
+	overflow: hidden;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: var(--radius-m);
+	background-color: var(--background-primary-alt);
+}
+
+.sheetsmith-table-wrapper-boxed {
+	flex: none;
+	border: none;
+	border-radius: 0;
+}
+
 .sheetsmith-view .sheetsmith-table {
 	width: 100%;
 	border-collapse: collapse;
@@ -1841,7 +1877,8 @@ body {
 	color: var(--text-muted);
 }
 
-/* The last row's rule would be a second line against the container border. */
+/* The last row's rule would be a second line against the add control's rule, or
+   against the container border where there is no control. */
 .sheetsmith-view .sheetsmith-table tbody tr:last-child th,
 .sheetsmith-view .sheetsmith-table tbody tr:last-child td {
 	border-bottom: none;
@@ -2517,59 +2554,75 @@ body {
 	background-color: inherit;
 }
 
-/* The add control is a row, in the row position: it reads as "the next row"
-   rather than as chrome parked beside the table, and it picks up the row hover
-   the rows already have. The cell gives its padding to the button, so the whole
-   width of the row is the target. */
-.sheetsmith-view .sheetsmith-table-add td {
-	padding: 0;
-}
+/* ---------------------------------------------------------------------------
+   The add control: the foot of the card, for Table and for Record set.
 
-.sheetsmith-view .sheetsmith-table-add-button {
+   **One recipe, one rule**, which is what `docs/UI.md` §9 listing the two as one
+   row asks for and what `styles.test.ts`'s duplicate-body scan refuses to see
+   written twice. A rule across the top, the label centred in the line it
+   occupies, the hover surface every control on the sheet uses, and an inset
+   focus ring. It is the last child of the card's box, below the rows and below
+   any totals row, with `margin-top: auto`: in a cell taller than its rows the
+   control sits at the card's foot with the space above it.
+
+   **It is outside whatever scrolls.** A table's scroller wraps the table alone
+   and a record set's list scrolls inside its own wrapper, so the control never
+   scrolls and its label is always in view with no `position: sticky`. The rule
+   at its top is the one line between the rows and the control, so the last body
+   row drops its own (below).
+
+   The label is a span for the reason the hover and the focus below need one: to
+   reach the text without reaching the rule. `min-height` is the level ring's own
+   size token, so the control grows to a finger under a coarse pointer with the
+   marks beside it, and is at least the pointer minimum without one.
+   --------------------------------------------------------------------------- */
+.sheetsmith-view .sheetsmith-table-add-button,
+.sheetsmith-view .sheetsmith-record-add {
+	flex: none;
 	width: 100%;
-	padding: var(--size-2-2) var(--size-4-2);
+	min-height: var(--sheetsmith-inline-control, 1.6em);
+	margin-top: auto;
+	padding: var(--size-2-2);
 	border: none;
+	border-top: 1px solid var(--background-modifier-border);
 	border-radius: 0;
 	background-color: transparent;
 	box-shadow: none;
-	/* Left, under the name column, because that is where the row it adds
-	   begins. */
-	text-align: left;
+	text-align: center;
 	font-size: var(--font-ui-small);
 	color: var(--text-muted);
 	cursor: pointer;
-	transition: color 160ms ease;
+	transition:
+		background-color 160ms ease,
+		color 160ms ease;
 }
 
-/* Pinned while the table scrolls, for the reason the name column is: the button
-   is as wide as the table, so its label would scroll away and leave a band of
-   nothing where the next row is added.
-
-   **`left` rather than a left *alignment*.** The button's own `text-align: left`
-   above never reached this span the way its comment assumed — the cell centres
-   its inline content — so what ships, and what `docs/UI.md` §9 now names as the
-   treatment both add controls wear, is a centred label under a rule. */
-.sheetsmith-view .sheetsmith-table-add-label {
+.sheetsmith-table-add-label,
+.sheetsmith-record-add-label {
 	display: inline-block;
-	position: sticky;
-	left: var(--size-4-2);
 }
 
-.sheetsmith-view .sheetsmith-table-add-button:hover {
+.sheetsmith-view .sheetsmith-table-add-button:hover,
+.sheetsmith-view .sheetsmith-record-add:hover {
+	background-color: var(--background-modifier-hover);
 	color: var(--text-normal);
 }
 
-/* Inset, because the button fills its cell and an outline outside it would be
-   clipped by the container's own radius. */
-.sheetsmith-view .sheetsmith-table-add-button:focus-visible {
+/* Inset, because the button fills the box's width and an outline outside it
+   would be clipped by the box's own overflow and radius. An outline rather than
+   a shadow, so forced colors repaints it as the ring that is the one signal
+   there, where the hover's background and the label's colour are dropped. */
+.sheetsmith-view .sheetsmith-table-add-button:focus-visible,
+.sheetsmith-view .sheetsmith-record-add:focus-visible {
 	outline: 2px solid var(--interactive-accent);
 	outline-offset: -2px;
 }
 
 /* The last body row drops its rule because it would be a second line against
-   the container border — which stops being true the moment a totals row sits
-   under it. There the foot is the row at the container's edge, and the last row
-   keeps the line that separates it from the total.
+   the add control's own rule, or the container border on a closed table — which
+   stops being true the moment a totals row sits under it. There the foot is the
+   row beside the control, and the last row keeps the line that separates it from
+   the total; the control's rule then separates the foot from the control.
 
    `.sheetsmith-table-has-totals`, stamped by `table.ts` from the same
    `column.total` test that decides whether to draw a `tfoot` at all. It was
@@ -2792,6 +2845,9 @@ body {
    asked for more contrast. */
 @media (prefers-contrast: more) {
 .sheetsmith-table-wrapper,
+.sheetsmith-table-box,
+.sheetsmith-view .sheetsmith-table-add-button,
+.sheetsmith-view .sheetsmith-record-add,
 .sheetsmith-view .sheetsmith-table th,
 .sheetsmith-view .sheetsmith-table td {
 		border-color: var(--text-muted);
@@ -6707,56 +6763,34 @@ a.sheetsmith-notice-action {
 }
 
 /* ---------------------------------------------------------------------------
-   The add control, in the last position of the list.
+   The add control, at the foot of the box.
 
-   **It wears the treatment Table's own add row wears**, which is what
-   `docs/UI.md` §9 listing the two as one row asks for and what they had drifted
-   apart on before the first release: a rule across the top separating it from
-   the last record, and the label centred in the line it occupies. Table renders
-   exactly that, and a design review found the two 40px apart in one shot looking
-   like different kinds of thing — with only Table's reading as pressable.
+   **It is outside the list, and that is what pins it.** The box is a flex column
+   of two things: the scroll area, which takes whatever the control leaves, and
+   the control, which is `flex: none` and never scrolls. It was the list's last
+   child, so it scrolled away with a long list and sat under the last record in a
+   short one; now it is at the box's foot whichever it is, and an empty list
+   shows its two words of label over the control rather than a control alone.
+   Its clothes are `.sheetsmith-table-add-button`'s, in the one rule they share
+   above (`docs/features/table-add-row-pinned-bottom.md`), which is where the
+   argument for the treatment lives: the rule across its top is the only 3:1
+   boundary a control owes (`legibility.md` §3), and a design review once found
+   the two add controls 40px apart looking like different kinds of thing.
 
-   **The rule is also the only 3:1 boundary in here that a control owes.** An
-   empty list was a label over a fill measuring 1.04:1 against the page, holding
-   two words of plain grey text: `legibility.md` §3's bar applies to a control's
-   own boundary, and this is the control. A filled list clips this line at the
-   scrollport's edge, which the box's own border now draws.
+   `overflow: hidden` on the box so the control's hover takes the box's bottom
+   corners, and the scroll area is out of flow inside its own wrapper for the
+   reason the list always was: nothing in it may contribute height to the box.
    --------------------------------------------------------------------------- */
-.sheetsmith-view .sheetsmith-record-add {
-	display: block;
-	width: 100%;
-	padding: var(--size-2-2);
-	border: none;
-	border-top: 1px solid var(--background-modifier-border);
-	border-radius: 0;
-	background-color: transparent;
-	box-shadow: none;
-	text-align: center;
-	font-size: var(--font-ui-small);
-	color: var(--text-muted);
-	cursor: pointer;
-	transition:
-		background-color 160ms ease,
-		color 160ms ease;
+.sheetsmith-record-set-box {
+	display: flex;
+	flex-direction: column;
+	overflow: hidden;
 }
 
-/* A span rather than the button's own text, for the reason Table's is one: it is
-   what the hover and the focus treatments below have to reach without also
-   reaching the rule above. */
-.sheetsmith-record-add-label {
-	display: inline-block;
-}
-
-.sheetsmith-view .sheetsmith-record-add:hover {
-	background-color: var(--background-modifier-hover);
-	color: var(--text-normal);
-}
-
-/* Inset, because the button fills the width of the list and an outline outside
-   it would be clipped by the scrollport. */
-.sheetsmith-view .sheetsmith-record-add:focus-visible {
-	outline: 2px solid var(--interactive-accent);
-	outline-offset: -2px;
+.sheetsmith-record-set-scroll {
+	position: relative;
+	flex: 1 1 0;
+	min-height: 0;
 }
 
 /* ---------------------------------------------------------------------------
@@ -7080,13 +7114,12 @@ a.sheetsmith-notice-action {
 			grid-column: -2;
 		}
 
-		/* An open body, a problem line and the add control span every track, so
+		/* An open body and a problem line span every track, so
 		   opening a record moves the records below it and never a column. The
 		   list's own line — a condition that could not be worked out — too. */
 		.sheetsmith-record-body,
 		.sheetsmith-view .sheetsmith-record > .sheetsmith-error,
-		.sheetsmith-view .sheetsmith-record-set-records > .sheetsmith-error,
-		.sheetsmith-view .sheetsmith-record-add {
+		.sheetsmith-view .sheetsmith-record-set-records > .sheetsmith-error {
 			grid-column: 1 / -1;
 		}
 

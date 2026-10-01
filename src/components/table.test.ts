@@ -1898,6 +1898,83 @@ describe('table with open rows', () => {
 		expect(el.querySelector('.sheetsmith-table-add-button')).not.toBeNull();
 	});
 
+	it('draws the add control at the foot of the card, outside the table', () => {
+		const { el } = openRender(PACK);
+		const add = el.querySelector('.sheetsmith-table-add-button') as Element;
+		const box = el.querySelector('.sheetsmith-table-box') as Element;
+		// A child of the box, a sibling of the scroller, and no row of the table:
+		// that is what lets it sit at the box's foot and stay out of the scroll.
+		expect(add.parentElement).toBe(box);
+		expect(add.previousElementSibling).toBe(
+			el.querySelector('.sheetsmith-table-wrapper'),
+		);
+		expect(box.lastElementChild).toBe(add);
+		expect(el.querySelector('table')?.contains(add)).toBe(false);
+		expect(el.querySelector('tr.sheetsmith-table-add')).toBeNull();
+		// After the last row, and after every row's controls, in document order.
+		const rows = el.querySelectorAll('tbody tr');
+		const last = rows[rows.length - 1] as Element;
+		expect(
+			last.compareDocumentPosition(add) &
+				Node.DOCUMENT_POSITION_FOLLOWING,
+		).toBeTruthy();
+		expect(el.classList.contains('sheetsmith-table-open')).toBe(true);
+	});
+
+	it('keeps the add control the box\'s last child whatever the row count', () => {
+		// The position is structural, so it cannot depend on how many rows there
+		// are: the same last-child under two, three and none (the empty state).
+		for (const body of [null, PACK, `${PACK.trimEnd()}\n| Torch | 1 | 1 | no |\n`]) {
+			const { el } = openRender(body);
+			const box = el.querySelector('.sheetsmith-table-box') as Element;
+			expect(box.lastElementChild?.classList.contains('sheetsmith-table-add-button')).toBe(true);
+			expect(box.querySelectorAll('.sheetsmith-table-add-button')).toHaveLength(1);
+		}
+	});
+
+	it('stamps the totals flag the one-line rule keys on, only where there is a foot', () => {
+		// With a foot the last body row keeps its rule (`.sheetsmith-table-has-totals`)
+		// and the foot's own rule is dropped, so rows, foot and control are separated by
+		// exactly one line each; without one the last row has none and the control's top
+		// rule is the only line. The stylesheet half is asserted in `styles.test.ts`.
+		const withFoot = openRender(PACK).el.querySelector('table') as Element;
+		expect(withFoot.classList.contains('sheetsmith-table-has-totals')).toBe(true);
+		expect(withFoot.querySelectorAll('tfoot')).toHaveLength(1);
+		const plain = openRender(PACK, {
+			...inventory,
+			columns: [{ key: 'Qty', type: 'number' }],
+		}).el.querySelector('table') as Element;
+		expect(plain.classList.contains('sheetsmith-table-has-totals')).toBe(false);
+		expect(plain.querySelectorAll('tfoot')).toHaveLength(0);
+	});
+
+	it('draws the totals row before the add control', () => {
+		const { el } = openRender(PACK);
+		const foot = el.querySelector('tfoot') as Element;
+		const add = el.querySelector('.sheetsmith-table-add-button') as Element;
+		expect(
+			foot.compareDocumentPosition(add) &
+				Node.DOCUMENT_POSITION_FOLLOWING,
+		).toBeTruthy();
+	});
+
+	it('keeps the add control reachable on an empty open table', () => {
+		const { el } = openRender(null);
+		expect(el.querySelector('.sheetsmith-table-empty')).not.toBeNull();
+		expect(
+			el.querySelector('.sheetsmith-table-box > .sheetsmith-table-add-button'),
+		).not.toBeNull();
+	});
+
+	it('gives only an open table the box that stretches', () => {
+		const { el } = openRender(PACK, { ...inventory, openRows: false });
+		expect(el.querySelector('.sheetsmith-table-box')).toBeNull();
+		expect(el.classList.contains('sheetsmith-table-open')).toBe(false);
+		expect(el.querySelector('.sheetsmith-table-wrapper-boxed')).toBeNull();
+		// The scroller is still the card, a direct child of the container.
+		expect(el.querySelector('.sheetsmith-table-wrapper')?.parentElement).toBe(el);
+	});
+
 	it('appends a row to the note when the add control is pressed', () => {
 		const { el, changes } = openRender(PACK);
 		const add = el.querySelector(
@@ -6297,9 +6374,8 @@ describe('table.applyReset', () => {
 		const el = document.createElement('div');
 		table.render(el, bound, data, contextFor(data, bound));
 		expect(el.querySelector('.sheetsmith-error')).toBe(null);
-		// Three rows plus the add control's own, which is what an open list
-		// draws when nothing is wrong with it.
-		expect(el.querySelectorAll('tbody tr')).toHaveLength(4);
+		// Three rows, and the add control below the table rather than among them.
+		expect(el.querySelectorAll('tbody tr')).toHaveLength(3);
 		// And still editable: the cells are fields, not read-only text.
 		expect(
 			el.querySelectorAll('tbody .sheetsmith-table-input').length,
