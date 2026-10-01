@@ -61,6 +61,8 @@ import { renderMissingLayout } from './missing-layout';
 import { openResetConfirmation } from './reset-confirmation';
 import { boundTo, planTrigger, TriggerPlan } from './reset-plan';
 import { attachTextSuggest, TextSuggest } from './text-suggest';
+import { attachFormulaSuggest, FormulaSuggest } from '../editor/formula-suggest';
+import { layoutVocabulary } from '../formula/vocabulary';
 
 export const VIEW_TYPE_SHEET = 'sheetsmith-sheet';
 
@@ -247,6 +249,12 @@ export class SheetView extends TextFileView {
 	 * fires no `blur`, and this view rebuilds on every committed edit.
 	 */
 	private textSuggests: TextSuggest[] = [];
+	/**
+	 * The formula suggesters on fields holding an expression a component keeps
+	 * in the note — a record's ceiling (`docs/features/record-ceiling-formula.md`)
+	 * — held and closed as `fileSuggests` is, for the same reason.
+	 */
+	private formulaSuggests: FormulaSuggest[] = [];
 	/**
 	 * What the note is expected to hold when the offered undo is pressed.
 	 *
@@ -477,6 +485,8 @@ export class SheetView extends TextFileView {
 		this.fileSuggests = [];
 		for (const suggest of this.textSuggests) suggest.close();
 		this.textSuggests = [];
+		for (const suggest of this.formulaSuggests) suggest.close();
+		this.formulaSuggests = [];
 
 		let note: CharacterNote;
 		try {
@@ -642,6 +652,14 @@ export class SheetView extends TextFileView {
 			link.resolves(target),
 		);
 
+		// What a formula field on the sheet may name, built once per render by the
+		// assembly the layout editor uses, and read only when a popup answers.
+		const vocabulary = layoutVocabulary(
+			walk.map(({ config }) => config),
+			library,
+			getComponent,
+		);
+
 		renderGrid(grid, walk, prepared, ({ config, component, data }) => ({
 			...formulaContext(component, config, data, env),
 			onChange: (edited: unknown) => this.applyEdit(component, config, edited),
@@ -656,6 +674,11 @@ export class SheetView extends TextFileView {
 			},
 			suggestText: (input, names, commit) => {
 				this.textSuggests.push(attachTextSuggest(this.app, input, names, commit));
+			},
+			suggestFormula: (input, owner) => {
+				this.formulaSuggests.push(
+					attachFormulaSuggest(this.app, input, () => vocabulary, owner),
+				);
 			},
 			activeTab: this.activeTab.get(config.id),
 			onActivateTab: (index: number) => this.activeTab.set(config.id, index),

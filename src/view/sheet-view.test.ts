@@ -395,3 +395,68 @@ describe('a text field as a list’s group key', () => {
 		expect(view.containerEl.querySelector('.sheetsmith-record-group')).toBeNull();
 	});
 });
+
+/*
+ * A record's ceiling offers the sheet's names as a formula is typed into it, and
+ * the view closes what it bound when it rebuilds
+ * (`docs/features/record-ceiling-formula.md`).
+ */
+describe('a record ceiling’s formula suggester', () => {
+	const LIST = {
+		id: 'features',
+		type: 'record-set',
+		label: 'Features',
+		recordName: 'Feature',
+		fields: [{ key: 'Uses', type: 'number', maxSource: 'record' }],
+	};
+	const PROF = {
+		id: 'prof',
+		type: 'card',
+		label: 'Proficiency bonus',
+	};
+	const TEXT = note(
+		['Proficiency bonus', '```sheet\nvalue: 2\n```\n'],
+		['Features', '\n### Rage\n```sheet\nUses: 1 / prof\n```\n\n### Dash\n```sheet\nUses: 1\n```\n'],
+	);
+	const ceilings = (view: SheetView) =>
+		Array.from(
+			view.containerEl.querySelectorAll<HTMLInputElement>(
+				'.sheetsmith-pool-ceiling input',
+			),
+		);
+	const offered = () =>
+		Array.from(
+			document.body.querySelectorAll('.suggestion-container .suggestion-item'),
+		).map((one) => one.textContent ?? '');
+
+	it('draws what the ceiling came to and offers the sheet’s names when typed into', async () => {
+		const { view } = await sheetOnNote([PROF, LIST], TEXT);
+		expect(
+			view.containerEl.querySelector('.sheetsmith-record-worked-out-layer')
+				?.textContent,
+		).toBe('2');
+		const field = ceilings(view)[1] as HTMLInputElement;
+		field.focus();
+		field.value = 'pr';
+		field.dispatchEvent(new Event('input'));
+		expect(offered().some((one) => one.includes('prof'))).toBe(true);
+	});
+
+	it('closes a popup left open by a rebuild', async () => {
+		const { view } = await sheetOnNote([PROF, LIST], TEXT);
+		const field = ceilings(view)[1] as HTMLInputElement;
+		field.focus();
+		field.value = 'pr';
+		field.dispatchEvent(new Event('input'));
+		expect(document.body.querySelector('.suggestion-item')).not.toBeNull();
+		const other = ceilings(view)[0] as HTMLInputElement;
+		other.value = 'prof + 1';
+		other.dispatchEvent(new Event('blur'));
+		await settle();
+		expect(document.body.querySelector('.suggestion-item')).toBeNull();
+		expect(
+			view.containerEl.querySelector('.sheetsmith-record-worked-out-layer')
+				?.textContent,
+		).toBe('3');
+	});
+});

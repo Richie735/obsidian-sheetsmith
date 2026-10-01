@@ -1,5 +1,8 @@
 /*
- * The type-ahead on a formula input in the layout editor pane.
+ * The type-ahead on a formula input: every one in the layout editor pane, and
+ * on the sheet the one field holding an expression a character note keeps — a
+ * record's ceiling (`docs/features/record-ceiling-formula.md`), which the sheet
+ * view binds through `RenderContext.suggestFormula`.
  *
  * One job: bind Obsidian's own `AbstractInputSuggest` to one `<input>`, answer
  * its queries from `formula/completion.ts` and `formula/vocabulary.ts`, and
