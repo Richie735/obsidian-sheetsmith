@@ -57,6 +57,7 @@ import {
 	unmodifiedSamples,
 	pinnedAddSamples,
 	recordGroupSamples,
+	textGroupSamples,
 } from './samples';
 import { renderSettings } from './settings-panel';
 import { harnessLayout } from './stub-app';
@@ -68,7 +69,8 @@ type StateName =
 	| 'effective'
 	| 'broken'
 	| 'pinned-add'
-	| 'record-groups';
+	| 'record-groups'
+	| 'text-groups';
 type Surface = 'sheet' | 'editor' | 'settings' | 'both';
 
 interface Live {
@@ -95,6 +97,7 @@ function samplesFor(name: StateName): Sample[] {
 	if (name === 'broken') return brokenSamples();
 	if (name === 'pinned-add') return pinnedAddSamples();
 	if (name === 'record-groups') return recordGroupSamples();
+	if (name === 'text-groups') return textGroupSamples();
 	return SAMPLES;
 }
 
@@ -777,7 +780,8 @@ function applyQuery(): void {
 			wanted === 'effective' ||
 			wanted === 'broken' ||
 			wanted === 'pinned-add' ||
-			wanted === 'record-groups'
+			wanted === 'record-groups' ||
+			wanted === 'text-groups'
 			? wanted
 			: 'populated',
 	);

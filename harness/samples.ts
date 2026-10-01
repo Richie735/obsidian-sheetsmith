@@ -3914,3 +3914,203 @@ export function recordGroupSamples(): Sample[] {
 		},
 	];
 }
+
+/**
+ * **A Record set grouped by what the player types**
+ * (`docs/features/free-text-group-key.md`), on a sheet of its own for the reason
+ * `recordGroupSamples` has one: the measurement the feature owes, that a collapse
+ * moves nothing outside the list, needs neighbours above, below and beside it.
+ *
+ * Row 1: a Card over each of the two lists. Rows 2-5: Homebrew features, four
+ * columns wide, whose key is a text field on the summary line, over the eight
+ * records the spec names (three Fighter, two Blood Hunter of which one is spelled
+ * `blood hunter`, one Wizard, one blank, one `Other`), and Homebrew strip, six
+ * wide with the strip of field names over a text column and the odd values a
+ * hand-edited note can hold (a colon, a link, ninety characters). Row 6: a Pool
+ * under each. Row 7: Homebrew in the body (the key inside the opened record), and
+ * the two half-valid configurations, a text field with no Group by and a second
+ * text field. Row 10: a Tab set holding a text-keyed list.
+ */
+export function textGroupSamples(): Sample[] {
+	const record = (name: string, fence: string[] | null, prose = ''): string =>
+		[
+			`### ${name}`,
+			...(fence === null ? [] : ['```sheet', ...fence, '```']),
+			prose,
+			'',
+		].join('\n');
+	const card = (
+		id: string,
+		label: string,
+		position: { col: number; row: number; width: number; height: number },
+		key: string,
+		value: string,
+	): Sample => ({
+		config: { id, type: 'card', label, position, key } as ComponentConfig,
+		body: `\`\`\`sheet\n${key}: ${value}\n\`\`\``,
+	});
+	const pool = (
+		id: string,
+		label: string,
+		position: { col: number; row: number; width: number; height: number },
+	): Sample => ({
+		config: { id, type: 'pool', label, position, max: '10' } as ComponentConfig,
+		body: '```sheet\ncurrent: 6\nmax: 10\n```',
+	});
+	const features = [
+		['Hunter\'s Bane', 'Blood Hunter', '1'],
+		['Second Wind', 'Fighter', '2'],
+		['Crimson Rite', 'blood hunter', '1'],
+		['Action Surge', 'Fighter', '1'],
+		['Arcane Recovery', 'Wizard', '1'],
+		['Lucky', '', '3'],
+		['Fighting Style', 'Fighter', ''],
+		['Odd one', 'Other', '0'],
+	];
+	const featureBody = [
+		'',
+		...features.map(([name, klass, uses]) =>
+			record(
+				name as string,
+				[...(klass === '' ? [] : [`Class: ${klass}`]), ...(uses === '' ? [] : [`Uses: ${uses}`])],
+				'A line of prose.',
+			),
+		),
+	].join('\n');
+	// Ninety characters exactly, the spec's hand-edited case.
+	const longName = 'The Order of the Seventh Lantern and the Wandering Keepers of the Hollow Archive and Halls';
+	const stripFields = [{ key: 'Class' }, { key: 'Prepared', type: 'toggle' }];
+	return [
+		card('text_above_features', 'Above features', { col: 1, row: 1, width: 4, height: 1 }, 'AC', '16'),
+		card('text_above_strip', 'Above strip', { col: 5, row: 1, width: 6, height: 1 }, 'DC', '14'),
+		{
+			config: {
+				id: 'homebrew_features',
+				type: 'record-set',
+				label: 'Homebrew features',
+				position: { col: 1, row: 2, width: 4, height: 4 },
+				recordName: 'Feature',
+				groupBy: 'Class',
+				fields: [{ key: 'Class' }, { key: 'Uses', type: 'number', max: 3 }],
+			} as ComponentConfig,
+			body: featureBody,
+		},
+		{
+			config: {
+				id: 'homebrew_strip',
+				type: 'record-set',
+				label: 'Homebrew strip',
+				position: { col: 5, row: 2, width: 6, height: 4 },
+				recordName: 'Feature',
+				fieldHeadings: true,
+				groupBy: 'Class',
+				fields: stripFields,
+			} as ComponentConfig,
+			body: [
+				'',
+				record('Sunblade', ['Class: [[Sunblade]]', 'Prepared: yes']),
+				record('Colon', ['Class:   Blood: Hunter  ', 'Prepared: no']),
+				record('Ninety', [`Class: ${longName}`, 'Prepared: yes']),
+				record('Fireball', ['Class: Wizard', 'Prepared: no']),
+				record('Shield', ['Class: wizard', 'Prepared: yes']),
+				record('Cantrip', ['Prepared: no']),
+			].join('\n'),
+		},
+		card('text_beside', 'Beside', { col: 11, row: 2, width: 2, height: 4 }, 'XP', '300'),
+		pool('text_below_features', 'Below features', { col: 1, row: 6, width: 4, height: 1 }),
+		pool('text_below_strip', 'Below strip', { col: 5, row: 6, width: 6, height: 1 }),
+		{
+			config: {
+				id: 'homebrew_body',
+				type: 'record-set',
+				label: 'Homebrew in the body',
+				position: { col: 1, row: 7, width: 6, height: 3 },
+				recordName: 'Feature',
+				groupBy: 'Class',
+				fields: [{ key: 'Class', placement: 'body' }, { key: 'Uses', type: 'number', max: 3 }],
+			} as ComponentConfig,
+			body: [
+				'',
+				record('Hunter\'s Bane', ['Class: Blood Hunter', 'Uses: 1'], 'Sets a mark on one creature you can see.'),
+				record('Crimson Rite', ['Class: Blood Hunter', 'Uses: 2']),
+				record('Second Wind', ['Class: Fighter', 'Uses: 1']),
+				record('Action Surge', ['Class: Fighter', 'Uses: 1']),
+				record('Lucky', ['Uses: 3']),
+			].join('\n'),
+		},
+		{
+			config: {
+				id: 'bad_text_plain',
+				type: 'record-set',
+				label: 'Text with no Group by',
+				position: { col: 7, row: 7, width: 3, height: 3 },
+				recordName: 'Feature',
+				fields: [{ key: 'Class' }],
+			} as ComponentConfig,
+			body: record('Second Wind', ['Class: Fighter']),
+		},
+		{
+			config: {
+				id: 'bad_text_second',
+				type: 'record-set',
+				label: 'Two text fields',
+				position: { col: 10, row: 7, width: 3, height: 3 },
+				recordName: 'Feature',
+				groupBy: 'Class',
+				fields: [{ key: 'Class' }, { key: 'Subclass' }],
+			} as ComponentConfig,
+			body: record('Second Wind', ['Class: Fighter', 'Subclass: Champion']),
+		},
+		{
+			config: {
+				id: 'text_tabs',
+				type: 'tab-set',
+				label: 'Text tabs',
+				position: { col: 1, row: 10, width: 8, height: 4 },
+				children: [
+					{
+						id: 'text_tab_one',
+						type: 'group',
+						label: 'Features tab',
+						position: { col: 1, row: 1, width: 8, height: 4 },
+						children: [
+							{
+								id: 'text_tabbed_features',
+								type: 'record-set',
+								label: 'Tabbed features',
+								position: { col: 1, row: 1, width: 8, height: 4 },
+								recordName: 'Feature',
+								groupBy: 'Class',
+								fields: [{ key: 'Class' }, { key: 'Uses', type: 'number', max: 3 }],
+							},
+						],
+					},
+					{
+						id: 'text_tab_two',
+						type: 'group',
+						label: 'Notes tab',
+						position: { col: 1, row: 1, width: 8, height: 1 },
+						children: [
+							{
+								id: 'text_tabbed_note',
+								type: 'rich-text',
+								label: 'Tabbed note',
+								position: { col: 1, row: 1, width: 8, height: 1 },
+							},
+						],
+					},
+				],
+			} as unknown as ComponentConfig,
+			body: null,
+			children: {
+				text_tabbed_features: [
+					'',
+					record('Second Wind', ['Class: Fighter', 'Uses: 1']),
+					record('Fireball', ['Class: Wizard', 'Uses: 1']),
+					record('Action Surge', ['Class: fighter', 'Uses: 1']),
+				].join('\n'),
+				text_tabbed_note: '\nA second tab, so this is a real tab set.\n',
+			},
+		},
+	];
+}

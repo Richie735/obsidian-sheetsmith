@@ -3,7 +3,12 @@
  * script a reviewer can run again: not shipped, and not a test, because it needs
  * a browser. Run `npm run harness` first (it measures the built bundle), then
  *
- *   node harness/measure-groups.mjs
+ *   node harness/measure-groups.mjs [state]
+ *
+ * `state` is the harness state to measure, `record-groups` unless given. Run it
+ * again with `text-groups` for a list keyed by what the player types
+ * (`docs/features/free-text-group-key.md`), where check 5 also holds the strip
+ * to being centred over the text column's field.
  *
  * It drives Chrome over the DevTools Protocol, as `inspect.mjs` does, and exits
  * non-zero if any check fails. It prints the numbers.
@@ -19,6 +24,20 @@
  *  4. A press does not lose the header: after collapsing, the pressed header is
  *     inside the list's scrollport, for a list taller than its box (scrolled to
  *     the end) and one shorter than it.
+ *  5. The strip is centred over its fields: each heading's centre is within a
+ *     pixel and a half of the centre of the field box under it, text column
+ *     included. A number's heading is centred on its ink instead (the 0.4em
+ *     in `sheet.css`), so numbers are left out; a text column's heading starts
+ *     where its words start, so its left edge is held to the input's ink.
+ *  6. A header name wider than its header is clipped to one line, every header
+ *     is the same height, and a real pointer resting on a clipped name reveals
+ *     all of it (`title`). The `text-groups` state must hold at least one
+ *     clipped name at 520px, or this check would pass on nothing.
+ *  7. A list with a text field on its summary line is stacked (name and delete
+ *     on one row, the fields under the name) at a container of 480px and not at
+ *     481px, and a headed one at 420px and not at 421px
+ *     (`docs/features/free-text-group-key.md`, narrow regime). Only the
+ *     `text-groups` state has those lists.
  */
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -37,6 +56,7 @@ if (!CHROME) {
 }
 const root = fileURLToPath(new URL('.', import.meta.url));
 const PORT = 9334;
+const STATE = process.argv[2] ?? 'record-groups';
 const proc = spawn(
 	CHROME,
 	['--headless=new', '--disable-gpu', '--hide-scrollbars', `--remote-debugging-port=${PORT}`, '--window-size=1400,1900', 'about:blank'],
@@ -76,7 +96,7 @@ const evaluate = async (expression) => {
 };
 async function load(theme, width, viewport) {
 	await send('Emulation.setDeviceMetricsOverride', { width: viewport, height: 1900, deviceScaleFactor: 1, mobile: false });
-	await send('Page.navigate', { url: `file://${root}index.html?surface=sheet&theme=${theme}&state=record-groups&width=${width}` });
+	await send('Page.navigate', { url: `file://${root}index.html?surface=sheet&theme=${theme}&state=${STATE}&width=${width}` });
 	await sleep(2500);
 }
 
@@ -193,6 +213,84 @@ for (const [label, taller] of [['taller than its box (scrolled to the end)', tru
 	const results = await evaluate(scrollport(taller));
 	await load('light', 0, 1400);
 	check(results.length > 0 && results.every((one) => one.inside), `pressed header stays in the scrollport: list ${label}`, JSON.stringify(results));
+}
+
+// 5. The strip is centred over its fields, whatever the column holds.
+await load('light', 0, 1400);
+{
+	const offsets = await evaluate(`(()=>{
+	 const L=[...document.querySelectorAll('.sheetsmith-record-set-list')].find(l=>l.querySelector('.sheetsmith-record-strip'));
+	 const heads=[...L.querySelector('.sheetsmith-record-strip').children];
+	 const rec=L.querySelector('.sheetsmith-record');
+	 const fields=[...rec.querySelectorAll('.sheetsmith-record-fields > .sheetsmith-record-field')];
+	 const mid=e=>{const b=e.getBoundingClientRect();return b.left+b.width/2};
+	 return heads.map((h,i)=>({name:h.textContent,offset:Math.round((mid(h)-mid(fields[i]))*10)/10,text:!!fields[i].querySelector('.sheetsmith-record-input-text'),number:fields[i].classList.contains('sheetsmith-record-field-number'),inkOffset:(()=>{const t=fields[i].querySelector('.sheetsmith-record-input-text');if(!t)return null;const cs=getComputedStyle(t);const ink=t.getBoundingClientRect().left+parseFloat(cs.borderLeftWidth)+parseFloat(cs.paddingLeft);const hs=getComputedStyle(h);const hink=h.getBoundingClientRect().left+parseFloat(hs.paddingLeft);return Math.round((hink-ink)*10)/10})()}))})()`);
+	// A number is left out on purpose: its field is moved 0.4em so the heading
+	// is centred on its ink and not its box (measured 5.2px in `sheet.css`).
+	const boxed = offsets.filter((one) => !one.number && !one.text);
+	check(
+		boxed.length > 0 && boxed.every((one) => Math.abs(one.offset) <= 1.5),
+		'each heading is centred over the field under it',
+		JSON.stringify(offsets),
+	);
+	const words = offsets.filter((one) => one.text);
+	check(
+		STATE !== 'text-groups' || (words.length > 0 && words.every((one) => Math.abs(one.inkOffset) <= 1.5)),
+		'a text column’s heading starts over its first letter',
+		JSON.stringify(words.map((one) => one.inkOffset)),
+	);
+}
+
+// 6. A clipped header name: one line, no taller than its siblings, revealed on hover.
+await load('light', 520, 620);
+{
+	const names = await evaluate(`(()=>{const out=[];for(const n of document.querySelectorAll('.sheetsmith-record-group-name')){const b=n.getBoundingClientRect(),h=n.closest('.sheetsmith-record-group-heading').getBoundingClientRect();out.push({text:n.textContent,clipped:n.scrollWidth>n.clientWidth+1,x:b.x+b.width/2,y:b.y+b.height/2,height:Math.round(h.height*10)/10,lines:Math.round(b.height/parseFloat(getComputedStyle(n).lineHeight))})}return out})()`);
+	const clipped = names.filter((one) => one.clipped);
+	check(
+		STATE !== 'text-groups' || clipped.length > 0,
+		'the fixture holds a clipped header name at 520px',
+		`${clipped.length} of ${names.length}`,
+	);
+	check(
+		names.every((one) => one.height === names[0].height && one.lines <= 1),
+		'every header is one line and the same height, clipped or not',
+		JSON.stringify([...new Set(names.map((one) => one.height))]),
+	);
+	for (const one of clipped) {
+		await send('Input.dispatchMouseEvent', { type: 'mouseMoved', x: one.x, y: one.y });
+		await sleep(150);
+		const title = await evaluate(`[...document.querySelectorAll('.sheetsmith-record-group-name')].find(n=>n.scrollWidth>n.clientWidth+1)?.title`);
+		check(title === one.text, 'a pointer on a clipped header name reveals all of it', `${one.text.length} characters`);
+		break;
+	}
+}
+
+// 7. The stacking thresholds, at the container widths the spec names.
+if (STATE === 'text-groups') {
+	await load('light', 0, 1400);
+	const stackedAt = (id, width) => evaluate(`(()=>{
+	 const label=[...document.querySelectorAll('.sheetsmith-component-label')].find(l=>l.textContent==='${id}');
+	 const block=label.closest('.sheetsmith-record-set');
+	 const cs=getComputedStyle(block);
+	 const pad=parseFloat(cs.paddingLeft)+parseFloat(cs.paddingRight)+parseFloat(cs.borderLeftWidth)+parseFloat(cs.borderRightWidth);
+	 block.style.width=(${width}+pad)+'px';block.style.maxWidth='none';block.style.justifySelf='start';
+	 const content=block.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);
+	 const fields=block.querySelector('.sheetsmith-record-fields');
+	 return {content,stacked:getComputedStyle(fields).gridRowStart==='2',strip:getComputedStyle(block.querySelector('.sheetsmith-record-strip')??block).display}})()`);
+	for (const [id, edge] of [['Homebrew features', 480], ['Homebrew strip', 420]]) {
+		await load('light', 0, 1400);
+		const at = await stackedAt(id, edge);
+		await sleep(200);
+		const atNow = await evaluate(`(()=>{const l=[...document.querySelectorAll('.sheetsmith-component-label')].find(l=>l.textContent==='${id}');const f=l.closest('.sheetsmith-record-set').querySelector('.sheetsmith-record-fields');return getComputedStyle(f).gridRowStart==='2'})()`);
+		await evaluate(`(()=>{const l=[...document.querySelectorAll('.sheetsmith-component-label')].find(l=>l.textContent==='${id}');const b=l.closest('.sheetsmith-record-set');const cs=getComputedStyle(b);const pad=parseFloat(cs.paddingLeft)+parseFloat(cs.paddingRight)+parseFloat(cs.borderLeftWidth)+parseFloat(cs.borderRightWidth);b.style.width=(${edge + 1}+pad)+'px'})()`);
+		await sleep(200);
+		const above = await evaluate(`(()=>{const l=[...document.querySelectorAll('.sheetsmith-component-label')].find(l=>l.textContent==='${id}');const b=l.closest('.sheetsmith-record-set');const f=b.querySelector('.sheetsmith-record-fields');return {stacked:getComputedStyle(f).gridRowStart==='2',content:b.clientWidth}})()`);
+		check(
+			atNow === true && above.stacked === false,
+			`${id}: stacked at a container of ${edge}px and not at ${edge + 1}px`,
+			`content ${at.content}px stacked=${atNow}; above stacked=${above.stacked}`,
+		);
+	}
 }
 
 ws.close();
