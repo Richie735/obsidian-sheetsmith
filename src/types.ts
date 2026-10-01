@@ -260,7 +260,23 @@ export interface ComponentConfig {
  * data object when it was handed null and has nothing to reset.
  */
 export type ResetResult<TData> =
-	| { ok: true; data: TData; reach?: ResetReach }
+	| {
+			ok: true;
+			data: TData;
+			reach?: ResetReach;
+			/**
+			 * The component's own sentence about parts this binding reached and did
+			 * not write, for a reason the reader can fix on the sheet — a record whose
+			 * maximum will not work out (`docs/features/record-ceiling-formula.md`).
+			 *
+			 * **A sentence rather than a count**, because the view does not know the
+			 * component's noun, and `resetSummary` teaches its file nothing about
+			 * records. Not a failure: the rest of the binding was written, so §6's
+			 * per-component error is the wrong channel for it. Absent where nothing
+			 * was skipped, so every confirmation that skips nothing reads as it did.
+			 */
+			skipped?: string;
+	  }
 	| { ok: false; error: string };
 
 /**
@@ -1733,7 +1749,33 @@ export type FieldExplainer = (
 export interface ResetContext {
 	resolve: FieldResolver;
 	explain: FieldExplainer;
+	/** As `RenderContext.resolveExpression`, for a reset reading an expression a component holds. */
+	resolveExpression?: ExpressionResolver;
 }
+
+/**
+ * Evaluate an expression a component holds rather than its layout, in a scope
+ * the component supplies, against the sheet the host already built
+ * (`docs/features/record-ceiling-formula.md`).
+ *
+ * **`FieldResolver` with the text in place of the path**, because the text is in
+ * the *note* — a record's ceiling, `Uses: 1 / prof` — and no config path names
+ * it, so `formulaFields` cannot declare it and `FieldResolver` cannot find it.
+ * One evaluator behind both: the host builds this from the same reader a formula
+ * field goes through (`formula/resolve.ts`), so the name table, the function
+ * library and the modifier slots are the sheet's own. It publishes no name, so
+ * `mod.self` reads 0.
+ */
+export type ExpressionResolver = (
+	text: string,
+	scope: Readonly<Record<string, FieldValue>>,
+) => FieldValue | null;
+
+/** Why an expression a component holds did not resolve, or null where it did. */
+export type ExpressionExplainer = (
+	text: string,
+	scope: Readonly<Record<string, FieldValue>>,
+) => string | null;
 
 /**
  * What a component needs from the app to make a note reference work.
@@ -1764,6 +1806,20 @@ export interface RenderContext<TData = unknown> {
 	 * this sheet" is the difference between a status and a next action.
 	 */
 	explainField?: FieldExplainer;
+	/**
+	 * Evaluate an expression the component holds in its data rather than in
+	 * the layout (`ExpressionResolver`).
+	 *
+	 * **Optional in the type, required of every production host**, and
+	 * `src/expression-context-coverage.test.ts` holds that: `formulaContext`
+	 * supplies both members, so a host spreading it cannot drop one. Absent is
+	 * loud rather than silent — a component with no evaluator draws an
+	 * expression as `?` with a line saying it could not be worked out, which is
+	 * the truth where there is no sheet to ask.
+	 */
+	resolveExpression?: ExpressionResolver;
+	/** Why such an expression failed, on `explainField`'s terms. */
+	explainExpression?: ExpressionExplainer;
 	/**
 	 * Report edited data. The sheet view owns writing it back to the note;
 	 * components never touch the file themselves.
@@ -1897,6 +1953,18 @@ export interface RenderContext<TData = unknown> {
 		names: readonly string[],
 		commit: (next: string) => void,
 	) => void;
+	/**
+	 * Attach the formula suggester to a field holding an expression the
+	 * component keeps in its data (`docs/features/record-ceiling-formula.md`).
+	 *
+	 * **`suggestText`'s seam and its terms**: optional, so the canvas and the
+	 * harness pass none and the field is the plain text box it is; a component
+	 * cannot import `AbstractInputSuggest`; called once, immediately after the
+	 * field exists, and the caller closes whatever it attaches before the next
+	 * render. `owner` is the component's own id, so the names its rows hold are
+	 * offered first, as the layout editor offers them on **Only where**.
+	 */
+	suggestFormula?: (input: HTMLInputElement, owner: string) => void;
 	/**
 	 * Draw this component's `children` into an element of its own choosing
 	 * (SPEC §4.2).

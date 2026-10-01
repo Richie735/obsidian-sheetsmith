@@ -1,5 +1,8 @@
 /*
- * Resolves a component's formula fields.
+ * Resolves a component's formula fields, and the expressions a component holds
+ * in its data rather than in its layout — a record's ceiling, `Uses: 1 / prof`
+ * (`docs/features/record-ceiling-formula.md`). Both go through one evaluation:
+ * the second is handed its text where the first reads it from a config path.
  *
  * Names resolve in three layers, nearest first: the scope the component
  * passes in (one ability's `value`, later a table row's cells), then the
@@ -17,6 +20,8 @@
 import {
 	ComponentConfig,
 	ComponentDefinition,
+	ExpressionExplainer,
+	ExpressionResolver,
 	FieldExplainer,
 	FieldResolver,
 	ResolvedValues,
@@ -229,7 +234,7 @@ function fieldReaders(
 	config: ComponentConfig,
 	data: unknown,
 	env: FormulaEnv,
-): { resolve: FieldResolver; explain: FieldExplainer } {
+): FormulaReaders {
 	const record = config as unknown as Record<string, unknown>;
 	const dataScope = scopeFromData(data);
 	// The sheet, and only the sheet, is what a function body sees: `prof`
@@ -265,6 +270,35 @@ function fieldReaders(
 		 */
 		selfRows?: RowsSource,
 	): { literal: Value } | { evaluated: Value } | null => {
+		if (!isDeclared(component.formulaFields, field)) return null;
+		const expression = readPath(record, field);
+		// A field configured as a bare number or boolean is its own answer.
+		// The explainer sees this as "nothing to explain", which is the same
+		// thing said the other way round.
+		if (typeof expression === 'number' || typeof expression === 'boolean') {
+			return { literal: expression };
+		}
+		if (typeof expression !== 'string') return null;
+		return {
+			evaluated: evaluateText(expression, extra, published, displayOnly, selfRows),
+		};
+	};
+
+	/**
+	 * The evaluation `read` runs once it has the text, and the one an expression
+	 * a component holds runs with text it was handed
+	 * (`docs/features/record-ceiling-formula.md`). **One evaluator, not two**: a
+	 * ceiling in a note and a formula in the layout see the same three layers,
+	 * the same function library and the same modifier slots, so a name that
+	 * resolves in one cannot fail in the other. Throws a FormulaError.
+	 */
+	const evaluateText = (
+		expression: string,
+		extra: Record<string, unknown>,
+		published: string | undefined,
+		displayOnly: boolean,
+		selfRows: RowsSource | undefined,
+	): Value => {
 		/**
 		 * The name whose slot this evaluation actually read, or null.
 		 *
@@ -289,15 +323,6 @@ function fieldReaders(
 		 * in a render (`formula/sheet.ts`).
 		 */
 		let asked: string | null = null;
-		if (!isDeclared(component.formulaFields, field)) return null;
-		const expression = readPath(record, field);
-		// A field configured as a bare number or boolean is its own answer.
-		// The explainer sees this as "nothing to explain", which is the same
-		// thing said the other way round.
-		if (typeof expression === 'number' || typeof expression === 'boolean') {
-			return { literal: expression };
-		}
-		if (typeof expression !== 'string') return null;
 		const scope: Scope = (name) => {
 			// An own-property check, not `in`: the caller's scope is an ordinary
 			// object, so `in` answers yes for every name on Object.prototype and
@@ -380,7 +405,7 @@ function fieldReaders(
 						self: { id: published ?? config.id, build: () => selfRows(resolve) },
 					},
 		);
-		return { evaluated: displayOnly ? value : withPublishedModifiers(asked, value) };
+		return displayOnly ? value : withPublishedModifiers(asked, value);
 	};
 
 	/**
@@ -487,7 +512,54 @@ function fieldReaders(
 				return error instanceof FormulaError ? error.message : String(error);
 			}
 		},
+		/*
+		 * No published name and no rows of its own: an expression a component
+		 * holds becomes no name on the sheet, so `mod.self` reads 0 on the rule
+		 * `read` already applies to a formula field nothing publishes.
+		 */
+		resolveExpression: (text, extra) => {
+			try {
+				return evaluateText(text, extra, undefined, false, undefined);
+			} catch {
+				return null;
+			}
+		},
+		explainExpression: (text, extra) => {
+			try {
+				evaluateText(text, extra, undefined, false, undefined);
+				return null;
+			} catch (error) {
+				return error instanceof FormulaError ? error.message : String(error);
+			}
+		},
 	};
+}
+
+/**
+ * Every reader a host hands a component, from one evaluation: a formula field's
+ * resolver and explainer, and the same pair for an expression the component
+ * holds in its data rather than in its layout
+ * (`docs/features/record-ceiling-formula.md`).
+ *
+ * **One call for a host that does not go through `formulaContext`** — the reset
+ * plan, which hands `bindingContext` the members one by one — so it builds one
+ * reader rather than three, and its members cannot come from different builds
+ * of the sheet any more than `formulaContext`'s can.
+ */
+export interface FormulaReaders {
+	resolve: FieldResolver;
+	explain: FieldExplainer;
+	resolveExpression: ExpressionResolver;
+	explainExpression: ExpressionExplainer;
+}
+
+export function makeFormulaReaders(
+	component: Pick<ComponentDefinition, 'formulaFields'>,
+	config: ComponentConfig,
+	data: unknown,
+	env: FormulaEnv = NO_ENV,
+): FormulaReaders {
+	return fieldReaders(component, config, data, env);
 }
 
 /**
@@ -594,25 +666,37 @@ export function publishedFieldNames(
 }
 
 /**
- * The three formula members every `renderGrid` host hands a component: what its
- * fields resolved to, a resolver for its per-scope fields, and why one failed.
+ * The formula members every `renderGrid` host hands a component: what its
+ * fields resolved to, a resolver for its per-scope fields, and why one failed —
+ * and the same pair for an expression the component holds in its data
+ * (`docs/features/record-ceiling-formula.md`), built from the one reader so the
+ * two cannot see different sheets.
  *
- * One function because four hosts built this triple by hand — the sheet view,
- * the layout editor's canvas, the component picker's preview and the harness —
- * and a host that dropped or rewired one of the three would draw a component
- * the others do not (`docs/PATTERNS.md` §1: three consumers, extract). Spread
- * into the host's own context, which adds what differs per host.
+ * One function because four hosts built these by hand — the sheet view, the
+ * layout editor's canvas, the component picker's preview and the harness — and
+ * a host that dropped or rewired one of them would draw a component the others
+ * do not (`docs/PATTERNS.md` §1: three consumers, extract). Spread into the
+ * host's own context, which adds what differs per host.
  */
 export function formulaContext(
 	component: Pick<ComponentDefinition, 'formulaFields' | 'scopeValues'>,
 	config: ComponentConfig,
 	data: unknown,
 	env: FormulaEnv = NO_ENV,
-): { resolved: ResolvedValues; resolveField: FieldResolver; explainField: FieldExplainer } {
+): {
+	resolved: ResolvedValues;
+	resolveField: FieldResolver;
+	explainField: FieldExplainer;
+	resolveExpression: ExpressionResolver;
+	explainExpression: ExpressionExplainer;
+} {
+	const readers = fieldReaders(component, config, data, env);
 	return {
 		resolved: resolveFormulaFields(component, config, data, env),
-		resolveField: makeFieldResolver(component, config, data, env),
-		explainField: makeFieldExplainer(component, config, data, env),
+		resolveField: readers.resolve,
+		explainField: readers.explain,
+		resolveExpression: readers.resolveExpression,
+		explainExpression: readers.explainExpression,
 	};
 }
 

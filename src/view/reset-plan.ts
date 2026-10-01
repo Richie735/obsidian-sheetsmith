@@ -31,8 +31,7 @@
 
 import {
 	FormulaEnv,
-	makeFieldExplainer,
-	makeFieldResolver,
+	makeFormulaReaders,
 	publishedFieldNames,
 } from '../formula/resolve';
 import { heldCondition } from '../formula/field-condition';
@@ -41,6 +40,7 @@ import {
 	claimsSamePart,
 	ComponentConfig,
 	ComponentDefinition,
+	ExpressionResolver,
 	FieldExplainer,
 	FieldResolver,
 	ResetBinding,
@@ -83,7 +83,11 @@ export interface TriggerPlan {
 	components: PlannedComponent[];
 	/** What Apply writes, and nothing else: one per binding that succeeded. */
 	edits: PlannedEdit[];
-	/** One line per binding that failed, `<label> — <reason>`, for the report. */
+	/**
+	 * One line per binding that failed, `<label> — <reason>`, for the report —
+	 * and one per binding that applied but skipped parts it reached, in the
+	 * component's own sentence, since those parts did not reset either.
+	 */
 	failed: string[];
 }
 
@@ -137,8 +141,12 @@ export function planTrigger(
 
 	for (const { component, config, data } of bound) {
 		if (!resets(component)) continue;
-		const resolve = makeFieldResolver(component, config, data, env);
-		const explain = makeFieldExplainer(component, config, data, env);
+		const { resolve, explain, resolveExpression } = makeFormulaReaders(
+			component,
+			config,
+			data,
+			env,
+		);
 		/*
 		 * The same mapping the pre-resolve pass uses, so a rest restores to the
 		 * ceiling the card is *drawing* rather than to the one it drew before a
@@ -181,13 +189,20 @@ export function planTrigger(
 								resolve,
 								explain,
 								published,
+								resolveExpression,
 							}),
 			});
 		}
 
 		for (const { result } of planned.bindings) {
-			if (result.ok) plan.edits.push({ component, config, data: result.data });
-			else plan.failed.push(`${config.label} — ${result.error}`);
+			if (result.ok) {
+				plan.edits.push({ component, config, data: result.data });
+				// Parts reached and not written, in the component's own words: the
+				// report's heading — "could not reset" — is true of them too.
+				if (result.skipped !== undefined) {
+					plan.failed.push(`${config.label} — ${result.skipped}`);
+				}
+			} else plan.failed.push(`${config.label} — ${result.error}`);
 		}
 		plan.components.push(planned);
 	}
@@ -265,6 +280,7 @@ function planBinding(
 		resolve: FieldResolver;
 		explain: FieldExplainer;
 		published: ReadonlyMap<string, string>;
+		resolveExpression: ExpressionResolver;
 	},
 ): ResetResult<unknown> {
 	/*
@@ -283,7 +299,13 @@ function planBinding(
 		data,
 		config,
 		binding,
-		bindingContext(readers.resolve, readers.explain, index, readers.published),
+		bindingContext(
+			readers.resolve,
+			readers.explain,
+			index,
+			readers.published,
+			readers.resolveExpression,
+		),
 	);
 }
 
@@ -301,12 +323,17 @@ function planBinding(
  * needs exactly this, and a copy of it in the test would go on passing after this
  * one changed. `published` is what makes `mod.self` mean the name a field
  * becomes; a caller with no names to hand leaves it out.
+ *
+ * `resolveExpression` is passed through untouched: it is handed text rather than
+ * a path, so there is nothing to rewrite. A test with no sheet leaves it out, and
+ * `src/expression-context-coverage.test.ts` holds that the plan never does.
  */
 export function bindingContext(
 	resolve: FieldResolver,
 	explain: FieldExplainer,
 	index: number,
 	published: ReadonlyMap<string, string> = new Map(),
+	resolveExpression?: ExpressionResolver,
 ): ResetContext {
 	const at = (field: string): string =>
 		/^reset\.[^.]+$/.test(field)
@@ -315,5 +342,6 @@ export function bindingContext(
 	return {
 		resolve: (field, scope) => resolve(at(field), scope, published.get(at(field))),
 		explain: (field, scope) => explain(at(field), scope, published.get(at(field))),
+		...(resolveExpression === undefined ? {} : { resolveExpression }),
 	};
 }

@@ -2,7 +2,9 @@ import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { parseFunctions } from './functions';
 import {
+	formulaContext,
 	formulaTexts,
+	makeFormulaReaders,
 	makeFieldExplainer,
 	makeFieldResolver,
 	NO_ENV,
@@ -13,6 +15,7 @@ import { card, CardConfig } from '../components/card';
 import { cardSet, CardSetConfig } from '../components/card-set';
 import { ComponentConfig } from '../types';
 import { modifierSlot } from './modifiers';
+import { bindingContext } from '../view/reset-plan';
 
 const component = { formulaFields: ['derived'] as const };
 const config = {
@@ -230,6 +233,62 @@ describe('the layout function library, from a component', () => {
 			{ ...NO_ENV, sheet, library: looping },
 		);
 		expect(resolve('derived', {})).toBeNull();
+	});
+});
+
+/*
+ * An expression a component holds in its data rather than in its layout
+ * (`docs/features/record-ceiling-formula.md`): handed as text, evaluated by the
+ * reader a formula field goes through, so it sees the sheet, the function
+ * library and the component's own data exactly as a layout formula does.
+ */
+describe('an expression a component holds', () => {
+	const { library } = parseFunctions(['prof = ceil(level / 4) + 1']);
+	const sheet = (name: string) =>
+		name === 'level' ? 5 : name === modifierSlot('x') ? 9 : undefined;
+	const env = { ...NO_ENV, sheet, library };
+
+	it('reads the scope it is handed, then the sheet and the library', () => {
+		const { resolveExpression } = makeFormulaReaders(component, config, {}, env);
+		expect(resolveExpression('prof', {})).toBe(3);
+		expect(resolveExpression('prof + Bonus', { Bonus: 2 })).toBe(5);
+		expect(resolveExpression('level', { level: 1 })).toBe(1);
+		// It publishes no name, so `mod.self` is 0 whatever the sheet holds.
+		expect(resolveExpression('mod.self', {})).toBe(0);
+	});
+
+	it('explains what the resolver could not work out, and nothing it could', () => {
+		const { resolveExpression, explainExpression } = makeFormulaReaders(
+			component,
+			config,
+			{},
+			env,
+		);
+		expect(resolveExpression('prfo', {})).toBeNull();
+		expect(explainExpression('prfo', {})).toMatch(/prfo/);
+		expect(explainExpression('prof', {})).toBeNull();
+	});
+
+	it('is supplied by formulaContext and by bindingContext from the one reader', () => {
+		const rendered = formulaContext(component, config, {}, env);
+		expect(rendered.resolveExpression('prof', {})).toBe(3);
+		expect(rendered.explainExpression('prfo', {})).toMatch(/prfo/);
+		const { resolveExpression } = makeFormulaReaders(component, config, {}, env);
+		const reset = bindingContext(
+			makeFieldResolver(component, config, {}, env),
+			makeFieldExplainer(component, config, {}, env),
+			0,
+			new Map(),
+			resolveExpression,
+		);
+		expect(reset.resolveExpression?.('prof', {})).toBe(3);
+		// And a caller with no sheet to hand gets none, rather than a stub.
+		const bare = bindingContext(
+			makeFieldResolver(component, config, {}),
+			makeFieldExplainer(component, config, {}),
+			0,
+		);
+		expect(bare.resolveExpression).toBeUndefined();
 	});
 });
 
