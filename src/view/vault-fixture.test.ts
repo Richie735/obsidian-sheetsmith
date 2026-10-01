@@ -1,3 +1,4 @@
+// @vitest-environment happy-dom
 /*
  * The throwaway vault fixture, run through the real parsers.
  *
@@ -51,6 +52,8 @@
  */
 
 import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { getComponent } from '../components';
 import {
@@ -68,52 +71,63 @@ import {
 import { TrackConfig, TrackData } from '../components/track';
 import { parseFunctions } from '../formula/functions';
 import { modifierTargetSource } from '../formula/modifier-targets';
-import { makeFieldResolver, resolveFormulaFields } from '../formula/resolve';
+import {
+	formulaContext,
+	makeFieldResolver,
+	resolveFormulaFields,
+} from '../formula/resolve';
 import { buildSheet } from '../formula/sheet';
 import { getSection, parseCharacter, serialiseCharacter } from '../parse/character';
 import { parseLayout, serialiseLayout } from '../parse/layout';
 import { cellParts } from '../parse/modifier-cell';
 import { parseModifierDefinitions } from '../parse/modifier-definitions';
 import { walkLayout } from './grid-cells';
+import { planTrigger } from './reset-plan';
+import { resetSummary } from './reset-confirmation';
 import { isContainer, ModifierOutcome } from '../types';
 
 /**
  * Where the two files sit, and the constants the feature doc's paths have to
  * agree with. A test that read them through a hard-coded string in two places
  * would not notice the folder moving under one of them.
+ *
+ * Paths rather than `URL`s: this file runs under happy-dom so a Record set can be
+ * drawn, and happy-dom's own `URL` is not one `node:fs` takes.
  */
-const FIXTURE_DIR = new URL('../test/fixtures/modifiers/', import.meta.url);
+const HERE = dirname(fileURLToPath(import.meta.url));
+
+const FIXTURE_DIR = join(HERE, '../test/fixtures/modifiers/');
 const LAYOUT_FILE = 'Modifier variations.sheetsmith';
 const NOTE_FILE = 'Ilona.md';
 
-const LAYOUT_TEXT = readFileSync(new URL(LAYOUT_FILE, FIXTURE_DIR), 'utf8');
-const NOTE_TEXT = readFileSync(new URL(NOTE_FILE, FIXTURE_DIR), 'utf8');
+const LAYOUT_TEXT = readFileSync(join(FIXTURE_DIR, LAYOUT_FILE), 'utf8');
+const NOTE_TEXT = readFileSync(join(FIXTURE_DIR, NOTE_FILE), 'utf8');
 
 /** The Record set fixture, on the same terms and in a folder of its own. */
-const RECORDS_DIR = new URL('../test/fixtures/records/', import.meta.url);
+const RECORDS_DIR = join(HERE, '../test/fixtures/records/');
 const RECORDS_LAYOUT_FILE = 'Record variations.sheetsmith';
 const RECORDS_NOTE_FILE = 'Records.md';
 
 const RECORDS_LAYOUT_TEXT = readFileSync(
-	new URL(RECORDS_LAYOUT_FILE, RECORDS_DIR),
+	join(RECORDS_DIR, RECORDS_LAYOUT_FILE),
 	'utf8',
 );
 const RECORDS_NOTE_TEXT = readFileSync(
-	new URL(RECORDS_NOTE_FILE, RECORDS_DIR),
+	join(RECORDS_DIR, RECORDS_NOTE_FILE),
 	'utf8',
 );
 
 /** The Track fixture, on the same terms and in a folder of its own. */
-const TRACKS_DIR = new URL('../test/fixtures/tracks/', import.meta.url);
+const TRACKS_DIR = join(HERE, '../test/fixtures/tracks/');
 const TRACKS_LAYOUT_FILE = 'Track variations.sheetsmith';
 const TRACKS_NOTE_FILE = 'Tracks.md';
 
 const TRACKS_LAYOUT_TEXT = readFileSync(
-	new URL(TRACKS_LAYOUT_FILE, TRACKS_DIR),
+	join(TRACKS_DIR, TRACKS_LAYOUT_FILE),
 	'utf8',
 );
 const TRACKS_NOTE_TEXT = readFileSync(
-	new URL(TRACKS_NOTE_FILE, TRACKS_DIR),
+	join(TRACKS_DIR, TRACKS_NOTE_FILE),
 	'utf8',
 );
 
@@ -1427,6 +1441,9 @@ describe('the Record set fixture the recipe names', () => {
 			'Hand broken',
 			'Fey Ancestry',
 			'Lucky',
+			'Spellfire Flame',
+			'Bardic Inspiration',
+			"Dragon's Breath",
 		]);
 		// The states the note's prose promises, each on its own record.
 		expect(features.records[0]?.body).toContain('catoblepas');
@@ -1547,13 +1564,13 @@ describe('the Record set fixture the recipe names', () => {
 		expect(records[1]?.fields?.Uses).toBe('2/2');
 		expect(records[3]?.fields?.Uses).toBe('3 / 3');
 		/*
-		 * **The two records with no ceiling of their own are skipped rather than
-		 * failed, and their toggles still reset.** "Torch of Revealing" stores a
-		 * bare number and "Fey Ancestry" a ceiling that is not one; neither is a
-		 * counter, and failing the whole component would mean one passive trait
-		 * refusing a Long rest for every record beside it. Nothing is written into
-		 * either `Uses` — not even a zero, which is the value the reader never
-		 * asked for in the one action whose job is to put a number back.
+		 * **The records whose ceiling gives nothing to restore to are skipped
+		 * rather than failed, and their toggles still reset.** "Torch of Revealing"
+		 * stores a bare number, so it is not a counter; "Fey Ancestry" holds `lots`,
+		 * a formula that names nothing — and with no sheet handed to this context,
+		 * every formula ceiling is one that cannot be worked out. Failing the whole
+		 * component would mean one record refusing a Long rest for every record
+		 * beside it. Nothing is written into either `Uses` — not even a zero.
 		 */
 		expect(records[2]?.fields?.Uses).toBe('3');
 		expect(records[2]?.fields?.Attuned).toBe('yes');
@@ -1568,6 +1585,132 @@ describe('the Record set fixture the recipe names', () => {
 		// still reports it rather than silently gaining a fence.
 		expect(records[4]?.error).toContain('this line is not an entry');
 		expect(records[4]?.fields).toEqual({});
+	});
+
+	/*
+	 * Claim 9 and the reworded claims 7 and 8 (`docs/features/record-ceiling-formula.md`):
+	 * a ceiling that is a formula, read against the fixture's own sheet, where the
+	 * Proficiency bonus card publishes `prof` at 2.
+	 */
+	describe('a ceiling that is a formula', () => {
+		const features = built.entryFor('features');
+		const config = features.config as RecordSetConfig;
+		const data = features.data as RecordSetData;
+		const section = getSection(built.note, 'Features')?.body ?? '';
+
+		/** The list as the sheet draws it, with the context the sheet builds. */
+		function drawn(onChange: (next: RecordSetData) => void = () => undefined) {
+			const el = document.createElement('div');
+			document.body.appendChild(el);
+			features.component.render(el, config, data, {
+				...formulaContext(features.component, config, data, built.env),
+				onChange: onChange as (next: unknown) => void,
+			});
+			return el;
+		}
+		const recordNamed = (el: HTMLElement, name: string): HTMLElement => {
+			const found = Array.from(
+				el.querySelectorAll<HTMLElement>('.sheetsmith-record'),
+			).find(
+				(one) =>
+					one.querySelector<HTMLInputElement>('.sheetsmith-record-name-input')
+						?.value === name,
+			);
+			if (found === undefined) throw new Error(`no record "${name}"`);
+			return found;
+		};
+		const slot = (record: HTMLElement) =>
+			record.querySelector('.sheetsmith-record-worked-out-layer')?.textContent;
+		const lines = (record: HTMLElement) =>
+			Array.from(record.querySelectorAll('.sheetsmith-error')).map(
+				(one) => one.textContent ?? '',
+			);
+
+		/** A Long rest the way the sheet plans it, with the fixture's own sheet. */
+		function longRest() {
+			const plan = planTrigger(
+				'Long rest',
+				[{ config, component: features.component, error: null, data }],
+				built.env,
+			);
+			const planned = plan.components[0];
+			if (planned === undefined) throw new Error('the rest reached Features');
+			const result = planned.bindings[0]?.result;
+			if (result?.ok !== true) throw new Error('the rest planned no write');
+			const written = features.component.write(result.data, section, config);
+			const after = features.component.read(written, config);
+			if (!after.ok || after.data === null) throw new Error('the rest broke the list');
+			return {
+				plan,
+				planned,
+				written,
+				records: (after.data as RecordSetData).records,
+			};
+		}
+
+		it('reads each prof ceiling as the card holds it', () => {
+			expect(built.sheet('prof')).toBe(2);
+			const el = drawn();
+			expect(slot(recordNamed(el, 'Spellfire Flame'))).toBe('2');
+			expect(slot(recordNamed(el, 'Bardic Inspiration'))).toBe('2');
+			expect(lines(recordNamed(el, 'Spellfire Flame'))).toEqual([]);
+		});
+
+		it("draws Dragon's Breath as ? with its line", () => {
+			const record = recordNamed(drawn(), "Dragon's Breath");
+			expect(slot(record)).toBe('?');
+			expect(lines(record)).toEqual([
+				'Uses maximum could not be worked out: Unknown name "prfo". Change it after the slash, or clear it.',
+			]);
+		});
+
+		/*
+		 * **The existing note's `2 / lots` fails loudly and keeps its bytes**, which
+		 * is the owner's own condition on approval. It was quietly "no ceiling"
+		 * before a ceiling could be a formula; it is a formula naming nothing now,
+		 * so it says so — and nothing about the note changes.
+		 */
+		it('fails `2 / lots` loudly and leaves its bytes as they are', () => {
+			const changes: RecordSetData[] = [];
+			const el = drawn((next) => changes.push(next));
+			const record = recordNamed(el, 'Fey Ancestry');
+			expect(slot(record)).toBe('?');
+			expect(slot(record)).not.toBe('—');
+			expect(lines(record)).toHaveLength(1);
+			expect(lines(record)[0]).toBe(
+				'Uses maximum could not be worked out: Unknown name "lots". Change it after the slash, or clear it.',
+			);
+			// A value commit there is not clamped, and keeps the ceiling's text.
+			const value = record.querySelector<HTMLInputElement>('.sheetsmith-record-input');
+			if (value === null) throw new Error('no value field');
+			value.value = '40';
+			value.dispatchEvent(new Event('input'));
+			value.dispatchEvent(new Event('blur'));
+			expect(changes[0]?.records[5]?.fields).toEqual({ Uses: '40 / lots' });
+			// A Long rest leaves it alone, and the confirmation counts it.
+			const rest = longRest();
+			expect(rest.records[5]?.fields?.Uses).toBe('2 / lots');
+			expect(resetSummary('Long rest', rest.planned)).toContain('2 features skipped');
+			// The `Uses` entry's bytes are the bytes it had, and its toggle still
+			// resets, as any skipped record's does (question 3).
+			const block = (text: string) =>
+				/### Fey Ancestry\n```sheet\n([\s\S]*?)```/.exec(text)?.[1] ?? '';
+			const uses = (text: string) => /^Uses:.*$/m.exec(block(text))?.[0];
+			expect(uses(section)).toBe('Uses: 2 / lots');
+			expect(uses(rest.written)).toBe(uses(section));
+			expect(block(section)).toContain('Attuned: no');
+			expect(block(rest.written)).toContain('Attuned: yes');
+		});
+
+		it('refills each prof record to the card, and says how many it skipped', () => {
+			const rest = longRest();
+			expect(rest.records[7]?.fields?.Uses).toBe('2 / prof');
+			expect(rest.records[8]?.fields?.Uses).toBe('2 / prof');
+			expect(rest.records[9]?.fields?.Uses).toBe('1 / prfo');
+			expect(rest.plan.failed).toEqual([
+				'Features — 2 features skipped, their maximums could not be worked out',
+			]);
+		});
 	});
 
 	it('draws the layout\'s own max again when the field is switched back', () => {

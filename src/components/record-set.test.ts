@@ -1,4 +1,7 @@
 // @vitest-environment happy-dom
+import { readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
 	groupReading,
@@ -13,6 +16,8 @@ import { buildSheet, ReadComponent } from '../formula/sheet';
 import { evaluate } from '../formula/expression';
 import {
 	callsFrom,
+	formulaContext,
+	makeFormulaReaders,
 	makeFieldExplainer,
 	makeFieldResolver,
 	NO_ENV,
@@ -1337,31 +1342,39 @@ describe('a ceiling each record sets for itself', () => {
 		expect(beside.value).toBe('9');
 	});
 
-	it('declines a slash in either field, so a ceiling cannot be typed away', () => {
+	it('declines a slash in the value, so a ceiling cannot be typed away, and takes one in the ceiling', () => {
 		/*
 		 * The slash is syntax now. Committed into the value, `1/2` on an entry
 		 * reading `2 / 3` would write `1/2 / 3`, which re-reads as a value of 1
-		 * against a ceiling of `2 / 3` — text, so nothing clamps to it and `full`
-		 * skips the record. Nothing is deleted, so Constraint 4 holds; what goes
-		 * silently is the reading the reader set.
+		 * against a ceiling of `2 / 3` — so the ceiling the reader set goes
+		 * silently. Nothing is deleted, so Constraint 4 holds.
 		 */
 		const body = '\n### A\n```sheet\nUses: 2 / 3\n```\nProse.\n';
-		for (const which of ['value', 'ceiling'] as const) {
+		{
 			const changes: RecordSetData[] = [];
 			const el = render(owned, body, {
 				onChange: (data) => changes.push(data),
 			});
-			const record = records(el)[0] as HTMLElement;
-			const field =
-				which === 'value' ? valueField(record) : ceilingField(record);
+			const field = valueField(records(el)[0] as HTMLElement);
 			commit(field, '1/2');
-			expect(changes, which).toEqual([]);
-			expect(field.value, which).toBe('1/2');
-			expect(errors(el)[0]?.textContent, which).toContain(
-				'A slash separates',
-			);
+			expect(changes).toEqual([]);
+			expect(field.value).toBe('1/2');
+			expect(errors(el)[0]?.textContent).toContain('A slash separates');
 			// Refused rather than repaired: nothing replaces what was typed.
 			expect(recordSet.write({ records: {} }, body, owned)).toBe(body);
+		}
+		/*
+		 * **A slash after the first is the ceiling's own, and it is division**
+		 * (`docs/features/record-ceiling-formula.md`): the entry splits at its
+		 * first slash, so `2 / 1/2` reads back as the value 2 against `1/2`.
+		 */
+		{
+			const changes: RecordSetData[] = [];
+			const el = render(owned, body, {
+				onChange: (data) => changes.push(data),
+			});
+			commit(ceilingField(records(el)[0] as HTMLElement), '1/2');
+			expect(changes[0]?.records[0]?.fields).toEqual({ Uses: '2 / 1/2' });
 		}
 		// And a value that is merely not a number is still stored as typed, which
 		// is `boundedText`'s standing rule and not what this refuses.
@@ -1453,9 +1466,22 @@ describe('a ceiling each record sets for itself', () => {
 			'frog',
 			'2',
 		]);
-		// A ceiling that is not a number is drawn as typed and behaves as none:
-		// nothing clamps to it.
+		/*
+		 * **A ceiling that is not a number is now a formula that will not work
+		 * out**, and says so on its record (`docs/features/record-ceiling-formula.md`):
+		 * `lots` is an unknown name, so the slot reads `?`, the line under the
+		 * record names it, and nothing clamps to it. The stored text is in the field
+		 * as typed, so the reader can see what to fix.
+		 */
 		expect(ceilingField(shown[2] as HTMLElement).value).toBe('lots');
+		expect(
+			shown[2]?.querySelector('.sheetsmith-record-worked-out-layer')
+				?.textContent,
+		).toBe('?');
+		const lines = errors(shown[2] as HTMLElement).map((one) => one.textContent);
+		expect(lines).toHaveLength(1);
+		expect(lines[0]).toContain('Uses maximum could not be worked out');
+		expect(lines[0]).toContain('lots');
 		const changes: RecordSetData[] = [];
 		const live = render(owned, body, {
 			onChange: (data) => changes.push(data),
@@ -1464,9 +1490,10 @@ describe('a ceiling each record sets for itself', () => {
 		expect(changes[0]?.records[2]?.fields).toEqual({ Uses: '40 / lots' });
 		/*
 		 * **And the announcement agrees with the clamp**, which is the half that
-		 * shipped wrong: the live region took the ceiling's raw text while the
+		 * shipped wrong once: the live region took the ceiling's raw text while the
 		 * clamp parsed it, so a record nothing clamped and `full` skipped still
-		 * said "of lots" to the one reader who cannot see the field.
+		 * said "of lots" to the one reader who cannot see the field. A ceiling that
+		 * will not work out holds nothing and is announced as nothing.
 		 */
 		expect(live.querySelector('.sheetsmith-sr-only')?.textContent).toBe(
 			'C Uses 40',
@@ -1593,6 +1620,458 @@ describe('a ceiling each record sets for itself', () => {
 			ceilingField(records(render(owned, written))[0] as HTMLElement)
 				.value,
 		).toBe('5');
+	});
+});
+
+describe('a ceiling that is a formula', () => {
+	/*
+	 * `docs/features/record-ceiling-formula.md`: the ceiling half of a
+	 * record-owned entry may hold an expression, worked out in that record's
+	 * stored scope against the sheet, and every channel reads the one answer.
+	 */
+	const FEATURES: RecordSetConfig = {
+		...config,
+		fields: [
+			{ key: 'Uses', type: 'number', maxSource: 'record' },
+			{ key: 'Bonus', type: 'number' },
+			{ key: 'Twice', type: 'computed', formula: 'Bonus * 2' },
+			{ key: 'Attuned', type: 'toggle' },
+		],
+	};
+
+	/** The sheet's own names, mutable so a case can move `prof` under a record. */
+	const sheetNames: Record<string, number> = {};
+	const env = {
+		...NO_ENV,
+		sheet: (name: string) => sheetNames[name],
+	};
+
+	afterEach(() => {
+		for (const key of Object.keys(sheetNames)) delete sheetNames[key];
+	});
+
+	const entry = (name: string, uses: string, extra: string[] = []) =>
+		['', `### ${name}`, '```sheet', `Uses: ${uses}`, ...extra, '```', 'Prose.'].join(
+			'\n',
+		);
+
+	/** A render whose context is the real one a sheet builds, through `formulaContext`. */
+	function live(
+		body: string,
+		from: RecordSetConfig = FEATURES,
+		ctx: Partial<RenderContext<RecordSetData>> = {},
+	) {
+		const data = readData(body, from);
+		const el = document.createElement('div');
+		document.body.appendChild(el);
+		recordSet.render(el, from, data, {
+			...context,
+			...formulaContext(recordSet, from, data, env),
+			...ctx,
+		});
+		return el;
+	}
+
+	const ceilingField = (record: HTMLElement) =>
+		record.querySelector<HTMLInputElement>(
+			'.sheetsmith-pool-ceiling input',
+		) as HTMLInputElement;
+	const valueField = (record: HTMLElement) =>
+		record.querySelector<HTMLInputElement>(
+			'.sheetsmith-record-input',
+		) as HTMLInputElement;
+	const layer = (record: HTMLElement) =>
+		record.querySelector<HTMLElement>('.sheetsmith-record-worked-out-layer');
+	const announced = (el: HTMLElement) =>
+		el.querySelector('.sheetsmith-sr-only[aria-live]')?.textContent;
+	const commit = (input: HTMLInputElement, value: string) => {
+		input.value = value;
+		input.dispatchEvent(new Event('input'));
+		input.dispatchEvent(new Event('blur'));
+	};
+
+	it('draws what the formula came to, holds the value to it and announces it', () => {
+		sheetNames.prof = 3;
+		const changes: RecordSetData[] = [];
+		const el = live(`${entry('Spellfire Flame', '1 / prof')}\n`, FEATURES, {
+			onChange: (data) => changes.push(data),
+		});
+		const record = records(el)[0] as HTMLElement;
+		expect(layer(record)?.textContent).toBe('3');
+		expect(layer(record)?.classList.contains('sheetsmith-pool-max')).toBe(true);
+		// The field holds the stored text, which is what focus shows.
+		expect(ceilingField(record).value).toBe('prof');
+		expect(errors(el)).toEqual([]);
+		commit(valueField(record), '9');
+		expect(changes[0]?.records[0]?.fields).toEqual({ Uses: '3 / prof' });
+		expect(announced(el)).toBe('Spellfire Flame Uses held to 3 of 3');
+	});
+
+	it('never evaluates a typed number, and draws exactly the DOM it drew before', () => {
+		const resolveExpression = vi.fn(() => 99);
+		const explainExpression = vi.fn(() => null);
+		for (const uses of ['2 / 3', '2/3', '2 / 03', '2 / 1.5']) {
+			const el = live(`${entry('A', uses)}\n`, FEATURES, {
+				resolveExpression,
+				explainExpression,
+			});
+			const record = records(el)[0] as HTMLElement;
+			expect(record.querySelector('.sheetsmith-record-worked-out'), uses).toBeNull();
+			const ceiling = record.querySelector('.sheetsmith-pool-ceiling') as HTMLElement;
+			// The separator and the one field, children of the ceiling itself.
+			expect(Array.from(ceiling.children).map((one) => one.tagName), uses).toEqual([
+				'SPAN',
+				'INPUT',
+			]);
+			expect(ceilingField(record).title).toBe('Maximum Uses, held by this feature.');
+			// And the clamp still reads the typed number.
+			commit(valueField(record), '50');
+		}
+		expect(resolveExpression).not.toHaveBeenCalled();
+		expect(explainExpression).not.toHaveBeenCalled();
+	});
+
+	it("reads the record's own stored fields before the sheet, and no computed field", () => {
+		sheetNames.Bonus = 10;
+		sheetNames.Twice = 10;
+		const body = [
+			entry('Own', '1 / Bonus', ['Bonus: 4']),
+			entry('Computed', '1 / Twice', ['Bonus: 4']),
+			'',
+		].join('\n');
+		const el = live(body);
+		const [own, computed] = records(el) as [HTMLElement, HTMLElement];
+		expect(layer(own)?.textContent).toBe('4');
+		// A computed field is not in a ceiling's scope, so `Twice` falls through to
+		// the sheet's name of that spelling.
+		expect(layer(computed)?.textContent).toBe('10');
+	});
+
+	it('draws ? and a line under the record on first render for every way a ceiling fails', () => {
+		sheetNames.prof = 3;
+		sheetNames.flag = 0;
+		const body = [
+			entry('Parse', '1 / prof +'),
+			entry('Unknown', '1 / prfo'),
+			entry('Boolean', '1 / prof > 2'),
+			'',
+		].join('\n');
+		const el = live(body);
+		const shown = records(el);
+		for (const record of shown) {
+			expect(layer(record)?.textContent).toBe('?');
+			expect(layer(record)?.classList.contains('sheetsmith-pool-max-unresolved')).toBe(
+				true,
+			);
+			const lines = errors(record);
+			expect(lines).toHaveLength(1);
+			expect(lines[0]?.textContent).toMatch(
+				/^Uses maximum could not be worked out: .+ Change it after the slash, or clear it\.$/,
+			);
+		}
+		expect(errors(shown[1] as HTMLElement)[0]?.textContent).toContain('prfo');
+		expect(errors(shown[2] as HTMLElement)[0]?.textContent).toContain(
+			'it came to "true", which is not a number.',
+		);
+		// Unclamped: a ceiling that cannot be worked out holds nothing.
+		const changes: RecordSetData[] = [];
+		const again = live(body, FEATURES, { onChange: (data) => changes.push(data) });
+		commit(valueField(records(again)[1] as HTMLElement), '40');
+		expect(changes[0]?.records[1]?.fields).toEqual({ Uses: '40 / prfo' });
+	});
+
+	it('draws the line where the field is hidden too, since a reset still counts it', () => {
+		const hiding: RecordSetConfig = {
+			...config,
+			fields: [
+				{ key: 'Shown', type: 'toggle' },
+				{ key: 'Uses', type: 'number', maxSource: 'record', visibleWhen: 'Shown' },
+			],
+		};
+		const el = live(`${entry('A', '1 / prfo', ['Shown: no'])}\n`, hiding);
+		const record = records(el)[0] as HTMLElement;
+		expect(record.querySelector('.sheetsmith-record-field-number')?.hasAttribute('hidden')).toBe(
+			true,
+		);
+		expect(errors(record)).toHaveLength(1);
+		expect(errors(record)[0]?.textContent).toContain('prfo');
+	});
+
+	it('evaluates nothing where the ceiling is not the record’s', () => {
+		const resolveExpression = vi.fn(() => 3);
+		for (const fields of [
+			[{ key: 'Uses', type: 'number' as const }],
+			[{ key: 'Uses', type: 'number' as const, maxSource: 'field' as const, max: 5 }],
+		]) {
+			const from = { ...config, fields };
+			const el = live(`${entry('A', '1 / prfo')}\n`, from, { resolveExpression });
+			expect(errors(el)).toEqual([]);
+			expect(el.querySelector('.sheetsmith-record-worked-out')).toBeNull();
+		}
+		expect(resolveExpression).not.toHaveBeenCalled();
+	});
+
+	it('shows the text on focus and the number at rest, with the field in the tab order throughout', () => {
+		sheetNames.prof = 2;
+		const el = live(`${entry('A', '1 / prof')}\n`);
+		const record = records(el)[0] as HTMLElement;
+		const field = ceilingField(record);
+		const stack = record.querySelector('.sheetsmith-record-worked-out') as HTMLElement;
+		expect(field.tabIndex).toBe(0);
+		expect(field.matches(FOCUSABLE)).toBe(true);
+		expect(stack.classList.contains('sheetsmith-record-worked-out-focused')).toBe(false);
+		field.focus();
+		field.dispatchEvent(new FocusEvent('focus'));
+		expect(stack.classList.contains('sheetsmith-record-worked-out-focused')).toBe(true);
+		expect(field.value).toBe('prof');
+		field.blur();
+		field.dispatchEvent(new FocusEvent('blur'));
+		expect(stack.classList.contains('sheetsmith-record-worked-out-focused')).toBe(false);
+		expect(layer(record)?.textContent).toBe('2');
+		// The layer takes no press, which is the stylesheet's to say.
+		const css = readFileSync(
+			join(dirname(fileURLToPath(import.meta.url)), '../styles/sheet.css'),
+			'utf8',
+		);
+		const rule = /\.sheetsmith-record-worked-out-layer \{[^}]*\}/.exec(css)?.[0] ?? '';
+		expect(rule).toContain('pointer-events: none');
+	});
+
+	it('takes `level / 2` and reads it back as the value and its ceiling, and still refuses a link in both', () => {
+		sheetNames.level = 6;
+		const changes: RecordSetData[] = [];
+		const body = `${entry('A', '1')}\n`;
+		const el = live(body, FEATURES, { onChange: (data) => changes.push(data) });
+		commit(ceilingField(records(el)[0] as HTMLElement), 'level / 2');
+		const written = recordSet.write(changes[0] as RecordSetData, body, FEATURES);
+		expect(written).toContain('Uses: 1 / level / 2');
+		const back = live(written);
+		const record = records(back)[0] as HTMLElement;
+		expect(valueField(record).value).toBe('1');
+		expect(ceilingField(record).value).toBe('level / 2');
+		expect(layer(record)?.textContent).toBe('3');
+		for (const pick of [valueField, ceilingField]) {
+			const refused: RecordSetData[] = [];
+			const fresh = live(body, FEATURES, { onChange: (data) => refused.push(data) });
+			commit(pick(records(fresh)[0] as HTMLElement), '[[Prof]]');
+			expect(refused).toEqual([]);
+		}
+	});
+
+	it('takes letters on a phone, and steps a typed number but not a formula', () => {
+		sheetNames.prof = 2;
+		const el = live([entry('Typed', '1 / 3'), entry('Formula', '1 / prof'), ''].join('\n'));
+		const [typed, formula] = records(el) as [HTMLElement, HTMLElement];
+		for (const record of [typed, formula]) {
+			expect(ceilingField(record).inputMode).toBe('text');
+		}
+		// The value field keeps its keypad.
+		expect(valueField(typed).inputMode).toBe('numeric');
+		const step = (input: HTMLInputElement) => {
+			input.focus();
+			input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+		};
+		step(ceilingField(typed));
+		expect(ceilingField(typed).value).toBe('4');
+		step(ceilingField(formula));
+		expect(ceilingField(formula).value).toBe('prof');
+	});
+
+	it('stores a formula that will not parse as typed, and says what is wrong', () => {
+		const changes: RecordSetData[] = [];
+		const body = `${entry('A', '1 / 3')}\n`;
+		const el = live(body, FEATURES, { onChange: (data) => changes.push(data) });
+		const record = records(el)[0] as HTMLElement;
+		commit(ceilingField(record), 'prof +');
+		expect(changes[0]?.records[0]?.fields).toEqual({ Uses: '1 / prof +' });
+		expect(announced(el)).toBe('A Uses maximum prof +, which could not be worked out');
+		// The rebuild draws the parser's sentence under the record.
+		const back = live(recordSet.write(changes[0] as RecordSetData, body, FEATURES));
+		const line = errors(records(back)[0] as HTMLElement)[0]?.textContent ?? '';
+		expect(line).toContain('Uses maximum could not be worked out:');
+		expect(line).toContain('formula');
+		expect(ceilingField(records(back)[0] as HTMLElement).title).toBe(
+			'Maximum Uses, held by this feature. Worked out from prof +.',
+		);
+	});
+
+	it('draws a ceiling above its value as it is, and holds a step to it', () => {
+		sheetNames.prof = 2;
+		const changes: RecordSetData[] = [];
+		const body = `${entry('A', '3 / prof')}\n`;
+		const el = live(body, FEATURES, { onChange: (data) => changes.push(data) });
+		const record = records(el)[0] as HTMLElement;
+		expect(valueField(record).value).toBe('3');
+		expect(layer(record)?.textContent).toBe('2');
+		expect(changes).toEqual([]);
+		const value = valueField(record);
+		value.focus();
+		value.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+		value.dispatchEvent(new Event('blur'));
+		expect(changes[0]?.records[0]?.fields).toEqual({ Uses: '2 / prof' });
+	});
+
+	it('leaves what a list adds up untouched by any ceiling', () => {
+		const body = [entry('A', '2 / prof'), entry('B', '1 / prfo'), entry('C', '3 / 4'), ''].join(
+			'\n',
+		);
+		const rows = recordSet.scopeRows?.(readData(body, FEATURES), FEATURES);
+		expect((rows?.(() => null) ?? []).map((one) => one.values['Uses'])).toEqual([2, 1, 3]);
+	});
+
+	it('draws ? and its line where the host hands it no evaluator, never a number', () => {
+		const el = render(FEATURES, `${entry('A', '1 / prof')}\n`);
+		const record = records(el)[0] as HTMLElement;
+		expect(layer(record)?.textContent).toBe('?');
+		expect(errors(record)[0]?.textContent).toContain(
+			'there is no sheet here to work "prof" out against.',
+		);
+	});
+
+	it('round-trips every spelling of a formula ceiling byte for byte', () => {
+		for (const uses of ['1 / prof', '1/prof', '0 / max(1, abilities.WIS)', '1 / level / 2']) {
+			const body = `${entry('A', uses)}\n`;
+			expect(recordSet.write(readData(body, FEATURES), body, FEATURES), uses).toBe(body);
+		}
+	});
+
+	it('offers the formula suggester on the ceiling alone, with the list’s own id', () => {
+		const suggestFormula = vi.fn<(input: HTMLInputElement, owner: string) => void>();
+		const el = live(`${entry('A', '1 / prof')}\n${entry('B', '2')}\n`, FEATURES, {
+			suggestFormula,
+		});
+		const shown = records(el);
+		expect(suggestFormula).toHaveBeenCalledTimes(2);
+		expect(suggestFormula.mock.calls.map(([input]) => input)).toEqual(
+			shown.map((record) => ceilingField(record)),
+		);
+		for (const [, owner] of suggestFormula.mock.calls) expect(owner).toBe(FEATURES.id);
+	});
+
+	describe('at a reset', () => {
+		const LIST = [
+			entry('Spellfire', '0 / prof', ['Attuned: no']),
+			entry('Broken', '0 / prfo', ['Attuned: no']),
+			entry('Typed', '0 / 3', ['Attuned: no']),
+			entry('Passive', '', ['Attuned: no']),
+			'',
+		].join('\n');
+
+		/**
+		 * Without `Bonus`, whose field-owned ceiling is missing and would fail
+		 * `full` whole — the existing rule, which is not what these cases are about.
+		 */
+		const RESTING: RecordSetConfig = {
+			...config,
+			fields: [
+				{ key: 'Uses', type: 'number', maxSource: 'record' },
+				{ key: 'Attuned', type: 'toggle' },
+			],
+		};
+
+		function press(
+			reset: ResetBinding,
+			{ from = RESTING, body = LIST }: { from?: RecordSetConfig; body?: string } = {},
+		) {
+			const cfg: RecordSetConfig = { ...from, reset: [reset] };
+			const data = readData(body, cfg);
+			const result = recordSet.applyReset?.(
+				data,
+				cfg,
+				reset,
+				bindingContext(
+					makeFieldResolver(recordSet, cfg, data, env),
+					makeFieldExplainer(recordSet, cfg, data, env),
+					0,
+					new Map(),
+					makeFormulaReaders(recordSet, cfg, data, env).resolveExpression,
+				),
+			);
+			if (result === undefined) throw new Error('expected a reset');
+			const written = result.ok ? recordSet.write(result.data, body, cfg) : body;
+			const fields: Record<string, Record<string, string> | undefined> = {};
+			for (const one of Object.values(readData(written, cfg).records)) {
+				fields[one.name ?? ''] = one.fields;
+			}
+			return { result, written, fields };
+		}
+
+		it('refills every other record to its own ceiling, skips the one that fails, and still sets its toggles', () => {
+			sheetNames.prof = 2;
+			const { result, fields } = press({ trigger: 'Long rest', action: 'full' });
+			expect(result).toMatchObject({ ok: true });
+			expect(fields.Spellfire?.Uses).toBe('2 / prof');
+			expect(fields.Broken?.Uses).toBe('0 / prfo');
+			expect(fields.Broken?.Attuned).toBe('yes');
+			expect(fields.Typed?.Uses).toBe('3 / 3');
+			expect(fields.Passive?.Uses).toBe('');
+			// One record skipped for its ceiling; the passive one is not a counter.
+			expect(result.ok && result.skipped).toBe(
+				'1 feature skipped, its maximum could not be worked out',
+			);
+		});
+
+		it('writes a lowered ceiling on a full rest', () => {
+			sheetNames.prof = 2;
+			const { fields } = press(
+				{ trigger: 'Long rest', action: 'full' },
+				{ body: `${entry('A', '3 / prof')}\n` },
+			);
+			expect(fields.A?.Uses).toBe('2 / prof');
+		});
+
+		it('skips the failing field under formula, and empties it under empty', () => {
+			sheetNames.prof = 2;
+			const formula = press({ trigger: 'Long rest', action: 'formula', to: '5' });
+			expect(formula.fields.Spellfire?.Uses).toBe('2 / prof');
+			expect(formula.fields.Broken?.Uses).toBe('0 / prfo');
+			expect(formula.result.ok && formula.result.skipped).toBe(
+				'1 feature skipped, its maximum could not be worked out',
+			);
+			const empty = press(
+				{ trigger: 'Long rest', action: 'empty' },
+				{ body: LIST.replace('0 / prfo', '2 / prfo') },
+			);
+			expect(empty.fields.Broken?.Uses).toBe('0 / prfo');
+			expect(empty.result.ok && empty.result.skipped).toBeUndefined();
+		});
+
+		it('skips the same way under a named field and a condition, and still counts the record reached', () => {
+			sheetNames.prof = 2;
+			const named = press({ trigger: 'Long rest', action: 'full', column: 'Uses' });
+			expect(named.fields.Broken?.Uses).toBe('0 / prfo');
+			expect(named.fields.Spellfire?.Uses).toBe('2 / prof');
+			expect(named.result.ok && named.result.skipped).toBe(
+				'1 feature skipped, its maximum could not be worked out',
+			);
+			const scoped = press({
+				trigger: 'Long rest',
+				action: 'full',
+				where: 'Attuned == false',
+			});
+			expect(scoped.result.ok && scoped.result.reach).toEqual({ reached: 4, of: 4 });
+			expect(scoped.fields.Broken?.Uses).toBe('0 / prfo');
+			expect(scoped.result.ok && scoped.result.skipped).toBe(
+				'1 feature skipped, its maximum could not be worked out',
+			);
+		});
+
+		it('counts several, and says nothing where nothing was skipped', () => {
+			const several = press(
+				{ trigger: 'Long rest', action: 'full' },
+				{ body: LIST.replace('0 / prof', '0 / prof +') },
+			);
+			// No `prof` on this sheet, so both formulas fail.
+			expect(several.result.ok && several.result.skipped).toBe(
+				'2 features skipped, their maximums could not be worked out',
+			);
+			const clean = press(
+				{ trigger: 'Long rest', action: 'full' },
+				{ body: `${entry('A', '0 / 3')}\n${entry('B', '')}\n` },
+			);
+			expect(clean.result.ok).toBe(true);
+			expect(clean.result.ok && 'skipped' in clean.result).toBe(false);
+		});
 	});
 });
 

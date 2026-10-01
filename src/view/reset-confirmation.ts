@@ -103,14 +103,28 @@ export function resetSummary(
 	 * with the component's word for the whole, so every existing layout's
 	 * confirmation reads as it did.
 	 */
+	/*
+	 * **And the parts the binding reached and will not write**, in the
+	 * component's own sentence, after its count — `2 of 5, 1 feature skipped, …`
+	 * (`docs/features/record-ceiling-formula.md`). A sentence because this file
+	 * knows no noun; absent where nothing is skipped, so the line is unchanged.
+	 */
 	const moving = succeeded.flatMap(({ binding, result }) => {
 		const counted =
 			result.ok && result.reach !== undefined
 				? `${result.reach.reached} of ${result.reach.of}`
 				: undefined;
-		if (binding.column === undefined) return counted === undefined ? [] : [counted];
-		const label = shown(binding.column);
-		return [counted === undefined ? label : `${label} ${counted}`];
+		const skipped = result.ok ? result.skipped : undefined;
+		const head =
+			binding.column === undefined
+				? counted
+				: counted === undefined
+					? shown(binding.column)
+					: `${shown(binding.column)} ${counted}`;
+		const pieces = [head, skipped].filter(
+			(piece): piece is string => piece !== undefined,
+		);
+		return pieces.length === 0 ? [] : [pieces.join(', ')];
 	});
 	/*
 	 * **Some of a component's bindings failed and some did not**, which only a

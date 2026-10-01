@@ -6688,6 +6688,86 @@ a.sheetsmith-notice-action {
 	color: var(--text-muted);
 }
 
+/* **A ceiling that is a formula reads as what it came to, over the field that
+   holds its text** (`docs/features/record-ceiling-formula.md`). `docs/UI.md`
+   §9's stacked arrangement — the record's own name does it for its links — one
+   grid cell holding the field and a layer, so the field stays in the DOM and in
+   the tab order and neither child changes size on focus.
+
+   The layer is the field's twin in geometry: the same fixed two-digit box, the
+   same transparent border and vertical padding, left-aligned, so `3` from
+   `prof` lands where a typed `3` lands and the two cannot be told apart at rest.
+   Its reading is `.sheetsmith-pool-max`'s, which the element wears, and `?` is
+   `.sheetsmith-pool-max-unresolved`, Pool's own class for the same state.
+
+   A typed number draws no stack at all, so nothing here reaches it. */
+.sheetsmith-view .sheetsmith-record-worked-out {
+	display: inline-grid;
+	grid-template-columns: auto;
+	align-items: center;
+}
+
+.sheetsmith-view .sheetsmith-record-worked-out > * {
+	grid-area: 1 / 1;
+}
+
+.sheetsmith-view .sheetsmith-record-field .sheetsmith-record-worked-out-layer {
+	width: calc(2ch + 2px);
+	padding: var(--size-2-1) 0;
+	border: 1px solid transparent;
+	overflow: hidden;
+	white-space: nowrap;
+	text-align: left;
+	/* The press is the field's: a ceiling is one short line, so a click lands
+	   the caret where it fell, as a table cell's does. */
+	pointer-events: none;
+}
+
+/* **`?` in the ceiling's own muted grey, not Pool's faint.** It is the reading in
+   that slot, read back exactly as a number there is, and `docs/UI.md` §6 holds
+   such text to 4.5:1 on its surface: faint measures about 2.2:1 light and 2.9:1
+   dark on a record, where the `/` beside it is muted. The error line under the
+   record says *why*, but the slot is where the eye lands first. Scoped to the
+   record's layer, so Pool's own unresolved max keeps its rule. */
+.sheetsmith-view
+	.sheetsmith-record-field
+	.sheetsmith-record-worked-out-layer.sheetsmith-pool-max-unresolved {
+	color: var(--text-muted);
+}
+
+/* Keyed on the field's focus, through `interaction/field-focus-flag.ts`, as the
+   name's layer is: focused, the reader edits `prof` rather than 3. */
+.sheetsmith-view
+	.sheetsmith-record-worked-out-focused
+	.sheetsmith-record-worked-out-layer {
+	opacity: 0;
+}
+
+/* Unfocused the field's own text would show through the layer, so its colour
+   goes rather than the layer being made opaque: the field keeps its box, its
+   hover surface and its placeholder. */
+.sheetsmith-view
+	.sheetsmith-record-worked-out
+	.sheetsmith-record-input.sheetsmith-pool-max:not(:focus) {
+	color: transparent;
+}
+
+/* Forced colors repaints `transparent` text back to the system colour, so both
+   layers would draw at once. The record name's departure, applied here: the
+   layer goes and the field's own text shows. */
+@media (forced-colors: active) {
+.sheetsmith-view .sheetsmith-record-field .sheetsmith-record-worked-out-layer {
+		visibility: hidden;
+	}
+
+.sheetsmith-view
+	.sheetsmith-record-worked-out
+	.sheetsmith-record-input.sheetsmith-pool-max:not(:focus) {
+		color: var(--text-normal);
+	}
+
+}
+
 /* A read-only value one press from what it is made of, which is the same
    treatment a computed cell wears: `cursor: help` and the shared popover, so
    the formula and its failure explanation are reachable without a hover — a

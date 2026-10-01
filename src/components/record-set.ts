@@ -92,7 +92,9 @@ import {
 } from '../parse/records';
 import { startsSection } from '../parse/character';
 import { conditionReads, heldCondition } from '../formula/field-condition';
+import { expressionProblem } from '../formula/expression';
 import { displayText, hasLink } from '../parse/wikilink';
+import { formatDerived } from './card-face';
 import { fencedLinkRefusal } from './fenced-link';
 import {
 	BODY_PLACEMENT,
@@ -111,6 +113,8 @@ import {
 import {
 	ComponentConfig,
 	ComponentDefinition,
+	ExpressionExplainer,
+	ExpressionResolver,
 	FieldResolver,
 	FieldValue,
 	ModifierPush,
@@ -278,8 +282,9 @@ export interface RecordField {
 	max?: number;
 	/**
 	 * Where a number field's ceiling comes from: the field, one number every
-	 * record is read against, or each record, a number the reader types on the
-	 * sheet beside the value and the note keeps inside that record's own entry.
+	 * record is read against, or each record, a number or a formula the reader
+	 * types on the sheet beside the value and the note keeps inside that
+	 * record's own entry (`docs/features/record-ceiling-formula.md`).
 	 *
 	 * Absent means `'field'`, so every layout written before this reads exactly
 	 * as it did. Under `'record'` the field's own `max` is not read at all — it
@@ -287,9 +292,12 @@ export interface RecordField {
 	 * reading exactly, which is Pool's own rule for a note carrying a `max`
 	 * entry: read in both modes, used in one.
 	 *
-	 * A string union rather than a boolean, so the formula ceiling this
-	 * deliberately does not do can be added as a third source rather than
-	 * replacing a flag. Ignored on every other field type, on `secondary`'s
+	 * A string union rather than a boolean, so a third source could be added
+	 * rather than replacing a flag. A *field-level* formula `max` was the
+	 * obvious third and was refused: one formula speaks for every record, and a
+	 * features list needs `prof`, a typed number, `abilities.CHA` and no ceiling
+	 * side by side — so a formula is something a record's own ceiling may hold
+	 * instead. Ignored on every other field type, on `secondary`'s
 	 * rule: it promises nothing this component would have to deliver, and a
 	 * hand-edited layout may carry it.
 	 *
@@ -497,53 +505,168 @@ function storedValue(field: RecordField, raw: string | undefined): string {
 }
 
 /**
- * What a ceiling's text is worth as a number, or null where it is worth
- * nothing at all.
+ * What a typed ceiling's text is worth as a number, or null where it is not a
+ * number at all.
  *
- * Null covers all three of "nothing there", "a blank half" and "text that is
- * not a number" — `boundedText`'s own rule keeps exactly what somebody wrote,
- * and all three behave the same way here: nothing clamps to it, and `full`
- * skips the field on that record.
- *
- * **One spelling, because drift is the whole of the risk** (§1's one-step
- * rung). The ceiling the note holds and the ceiling being typed are read at
- * opposite ends of this file, and two copies of this fail in exactly one way:
- * two channels disagreeing about whether a record has a ceiling at all. That
- * is not hypothetical — it is the defect the announcement shipped with, saying
- * "of lots" about a ceiling the clamp and the reset both read correctly as
- * none.
+ * **The rule every ceiling read before a ceiling could be a formula**, kept as
+ * the first step of `ceilingOf` so a typed number never reaches the evaluator:
+ * `03`, `1.5`, `+3` and `1e3` read exactly what they always read, whatever the
+ * expression grammar thinks of them. A field-owned `max` is read by this alone,
+ * since a literal the layout declared is never evaluated.
  */
-function ceilingOf(text: string): number | null {
+function typedCeiling(text: string): number | null {
 	const trimmed = text.trim();
 	if (trimmed === '') return null;
 	const value = Number(trimmed);
 	return Number.isFinite(value) ? value : null;
 }
 
-/** The ceiling this record holds for this field, or null where it holds none. */
+/**
+ * What a record's ceiling comes to: a number, `null` where nothing is there,
+ * or why it cannot be worked out (`docs/features/record-ceiling-formula.md`).
+ */
+type Ceiling = number | null | { error: string };
+
+/** The evaluator a ceiling is worked out with, as a host hands it over. */
+interface CeilingReaders {
+	resolveExpression?: ExpressionResolver;
+	explainExpression?: ExpressionExplainer;
+}
+
+/** A sentence as the record's line ends it, whoever wrote it. */
+function asSentence(text: string): string {
+	const trimmed = text.trim();
+	return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}
+
+/**
+ * What a record-owned ceiling's text comes to, in that record's stored scope.
+ *
+ * **One function, and every channel takes its answer** — the drawn number, the
+ * value's clamp, the announcement's "of 3" and every reset — which is the lesson
+ * of the defect this function's predecessor recorded: the announcement once took
+ * the raw text where the clamp parsed it, and said "of lots" about a ceiling the
+ * clamp and the reset both read as none. Two channels disagreeing about whether a
+ * record has a ceiling is the failure, so there is one spelling.
+ *
+ * In order: blank is nothing; a typed number is that number, by `typedCeiling`;
+ * text the parser refuses is its sentence; and anything else is evaluated. **Text
+ * that is not a number is no longer "no ceiling"**, and that is the decision: a
+ * mistyped `prfo` read as uncapped would be the silent default §5 forbids, and
+ * `lots` and `prfo` cannot be told apart — both are perfectly good names to a
+ * parser. So both say so, on the record that holds them.
+ *
+ * **An evaluated ceiling is held to the field's floor**, as a typed one is at its
+ * commit, because a ceiling under the floor describes a range no value can
+ * occupy; a typed one is not held here, so it reads exactly as before.
+ *
+ * **No evaluator is loud, not silent.** A host with no sheet draws every
+ * expression ceiling as unresolved with its line, never as a number and never as
+ * no ceiling.
+ */
+function ceilingOf(
+	text: string,
+	field: RecordField,
+	scope: Readonly<Record<string, FieldValue>>,
+	readers: CeilingReaders,
+): Ceiling {
+	const trimmed = text.trim();
+	if (trimmed === '') return null;
+	const typed = typedCeiling(trimmed);
+	if (typed !== null) return typed;
+	const problem = expressionProblem(trimmed);
+	if (problem !== null) return { error: asSentence(problem) };
+	if (readers.resolveExpression === undefined) {
+		return { error: `there is no sheet here to work "${trimmed}" out against.` };
+	}
+	const value = readers.resolveExpression(trimmed, scope);
+	if (value === null) {
+		return {
+			error: asSentence(
+				readers.explainExpression?.(trimmed, scope) ?? 'it did not resolve.',
+			),
+		};
+	}
+	if (typeof value !== 'number' || !Number.isFinite(value)) {
+		return { error: `it came to "${String(value)}", which is not a number.` };
+	}
+	return field.min === undefined ? value : Math.max(field.min, value);
+}
+
+/** A ceiling's number where it has one, and null where it has none or cannot be read. */
+function ceilingNumber(ceiling: Ceiling): number | null {
+	return typeof ceiling === 'number' ? ceiling : null;
+}
+
+/** Why a ceiling cannot be worked out, or null where it can or is absent. */
+function ceilingProblem(ceiling: Ceiling): string | null {
+	return ceiling !== null && typeof ceiling === 'object' ? ceiling.error : null;
+}
+
+/**
+ * The ceiling this record holds for this field, or null where it holds none —
+ * and always null where the ceiling is the field's, whose half of an entry is
+ * carried and never evaluated.
+ */
 function recordCeiling(
 	field: RecordField,
 	raw: string | undefined,
-): number | null {
+	scope: Readonly<Record<string, FieldValue>>,
+	readers: CeilingReaders,
+): Ceiling {
 	if (!recordsOwnMax(field)) return null;
-	return ceilingOf(splitBounded(raw ?? '').ceiling ?? '');
+	return ceilingOf(splitBounded(raw ?? '').ceiling ?? '', field, scope, readers);
 }
 
 /**
  * The bounds a number field's value is held to on this record: the field's own
- * floor, and whichever ceiling applies.
+ * floor, and whichever ceiling applies. A ceiling that cannot be worked out
+ * holds nothing, so a value committed under one is not clamped.
  *
  * The floor is the layout's in both modes, which is why it is not conditional.
  * `typed-value.ts` goes on being handed one number — the splitting happens on
  * this component's side of the call, which is what keeps this feature out of
  * Table by construction.
  */
-function fieldBounds(field: RecordField, raw: string | undefined): TypedField {
+function fieldBounds(field: RecordField, ceiling: Ceiling): TypedField {
 	if (!recordsOwnMax(field)) return field;
-	const ceiling = recordCeiling(field, raw);
-	return ceiling === null
+	const max = ceilingNumber(ceiling);
+	return max === null
 		? { type: 'number', min: field.min }
-		: { type: 'number', min: field.min, max: ceiling };
+		: { type: 'number', min: field.min, max };
+}
+
+/**
+ * Whether an action passes over this field on this record because its own
+ * ceiling cannot be worked out (`docs/features/record-ceiling-formula.md`).
+ *
+ * `full` restores to the ceiling and `formula` holds its amount to it, so
+ * neither has anything to write against; `empty` needs no ceiling, so a list
+ * whose ceilings are broken can still be spent. **Per record and field**, as the
+ * no-ceiling skip is: a toggle on the record still resets, and so does a second
+ * number field whose ceiling reads.
+ */
+function skipsUnreadCeiling(
+	field: RecordField,
+	action: NonNullable<ResetBinding['action']>,
+	ceiling: Ceiling,
+): boolean {
+	return (
+		action !== 'empty' &&
+		recordsOwnMax(field) &&
+		ceilingProblem(ceiling) !== null
+	);
+}
+
+/**
+ * What a reset says about the records it reached and passed over, in this
+ * component's own words: `1 feature skipped, its maximum could not be worked out`.
+ * "Maximum" rather than "ceiling", because the field's own name says maximum.
+ */
+function skippedSentence(count: number, noun: string): string {
+	return count === 1
+		? `${countOf(count, noun)} skipped, its maximum could not be worked out`
+		: `${countOf(count, noun)} skipped, their maximums could not be worked out`;
 }
 
 /**
@@ -952,6 +1075,14 @@ function resetWrite(
 	 * the record whose counter did not move is the record showing `—` in the
 	 * ceiling slot, in the list the reader is already looking at.
 	 *
+	 * **A record whose ceiling is a formula that will not work out is skipped the
+	 * same way, and that one is counted** (`skipsUnreadCeiling`,
+	 * `docs/features/record-ceiling-formula.md`): it is a counter the reader meant,
+	 * so the confirmation and the report say how many, through the result's
+	 * `skipped`. One record's broken `prfo` says nothing about another's `prof`,
+	 * so it never fails the list — unlike `where` or a per-record `to`, each one
+	 * statement by the author applied to every record.
+	 *
 	 * **And it must not write 0.** `full` means restore to the ceiling; where
 	 * there is none there is nothing to restore to, so nothing is written — a
 	 * zero would be a value the reader never asked for in the one action whose
@@ -1000,22 +1131,56 @@ function fieldWrite(
 	action: NonNullable<ResetBinding['action']>,
 	amount: number | undefined,
 	raw: string,
+	/** This record's own ceiling for the field, worked out by the caller in its scope. */
+	ceiling: Ceiling,
 ): string | null {
 	const type = fieldType(field);
 	if (type === 'toggle') {
 		return flagText(action === 'formula' ? (amount ?? 0) >= 1 : action === 'full');
 	}
 	if (type !== 'number') return null;
+	if (skipsUnreadCeiling(field, action, ceiling)) return null;
 	const value =
 		action === 'empty'
 			? 0
 			: action === 'formula'
 				? (amount ?? null)
 				: recordsOwnMax(field)
-					? recordCeiling(field, raw)
+					? ceilingNumber(ceiling)
 					: (field.max ?? null);
 	if (value === null) return null;
-	return withValue(raw, boundedText(String(value), fieldBounds(field, raw)));
+	return withValue(raw, boundedText(String(value), fieldBounds(field, ceiling)));
+}
+
+/**
+ * Every field a reset writes on one record, and whether a ceiling that would
+ * not work out made it pass one over.
+ *
+ * **One loop for the binding naming a field and the binding naming none**, so
+ * the two cannot disagree about which ceiling a record is held to or which
+ * record counts as skipped. Each ceiling is worked out in that record's stored
+ * scope, where `visibleWhen`, `where` and a per-record `to` are worked out.
+ */
+function recordWrites(
+	config: RecordSetConfig,
+	record: RecordEntry,
+	fields: readonly RecordField[],
+	action: NonNullable<ResetBinding['action']>,
+	amount: number | undefined,
+	context: ResetContext,
+): { fields: Record<string, string>; skipped: boolean } {
+	const scope = storedLayer(config, record);
+	const readers = { resolveExpression: context.resolveExpression };
+	const written: Record<string, string> = {};
+	let skipped = false;
+	for (const field of fields) {
+		const raw = record.fields[field.key] ?? '';
+		const ceiling = recordCeiling(field, raw, scope, readers);
+		if (skipsUnreadCeiling(field, action, ceiling)) skipped = true;
+		const next = fieldWrite(field, action, amount, raw, ceiling);
+		if (next !== null) written[field.key] = next;
+	}
+	return { fields: written, skipped };
 }
 
 /**
@@ -1028,9 +1193,17 @@ function fieldWrite(
  * one-step tier: two copies of a count's wording can only drift).
  */
 function recordCount(count: number, readable: number, noun: string): string {
-	const lower = noun.toLowerCase();
-	if (count >= readable) return `every ${lower}`;
-	return `${count} ${lower}${count === 1 ? '' : 's'}`;
+	if (count >= readable) return `every ${noun.toLowerCase()}`;
+	return countOf(count, noun);
+}
+
+/**
+ * `1 feature` or `2 features`: a count of records in the author's own word, for
+ * every surface that counts them — the problem lines above, a reset's skipped
+ * sentence and a group header's count.
+ */
+function countOf(count: number, noun: string): string {
+	return `${count} ${noun.toLowerCase()}${count === 1 ? '' : 's'}`;
 }
 
 /**
@@ -1268,18 +1441,43 @@ function fieldReset(
 	}
 
 	const next: RecordSetData = { records: {} };
+	let skipped = 0;
 	for (const [at, record] of reached) {
-		const written = fieldWrite(
-			field,
+		const written = recordWrites(
+			config,
+			record,
+			[field],
 			reset.action,
 			amounts.get(at),
-			record.fields[field.key] ?? '',
+			context,
 		);
-		if (written !== null) next.records[at] = { fields: { [field.key]: written } };
+		if (written.skipped) skipped += 1;
+		if (Object.keys(written.fields).length > 0) {
+			next.records[at] = { fields: written.fields };
+		}
 	}
-	return scope === null
-		? { ok: true, data: next }
-		: { ok: true, data: next, reach: scope.reach };
+	return resetOutcome(config, next, scope?.reach, skipped);
+}
+
+/**
+ * A reset that applied, with its reach where it narrowed and its skipped
+ * records where a ceiling would not work out — each absent where it says
+ * nothing, so a confirmation with neither reads exactly as it did.
+ */
+function resetOutcome(
+	config: RecordSetConfig,
+	data: RecordSetData,
+	reach: ResetReach | undefined,
+	skipped: number,
+): ResetResult<RecordSetData> {
+	return {
+		ok: true,
+		data,
+		...(reach === undefined ? {} : { reach }),
+		...(skipped === 0
+			? {}
+			: { skipped: skippedSentence(skipped, recordNoun(config)) }),
+	};
 }
 
 /** One record's stored pieces, with the delta applied and nothing else touched. */
@@ -1403,7 +1601,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			// `docs/features/component-rename-migration.md`).
 			addressesEntry: { fence: 'record' },
 			description:
-				"The typed values every record holds, each an entry in that record's block in the note. Renaming a key moves that entry in every record, in every note on this layout. Text is offered for one job, naming the group a record sits under, and only on the field Group by names: it publishes nothing and no formula can read it, and words a reader reads belong in the record's body, where they may hold links. A number field with a maximum is a uses counter: the field draws that maximum beside its value, and a reset trigger restores it to that maximum. A number field's maximum may belong to the field, so every record shares it, or to each record, so a reader types it on the sheet — and a reset restores each record to whichever one applies. Tick \"Inside the opened record\" for a value read once and changed rarely: it draws above the record's prose and is not shown while the record is closed. A field used every turn belongs on the summary line. Write a condition in \"Shown when\", such as Recharges == 1 || Recharges == 2, to draw a field only on the records where it holds. A hidden field keeps its value and still counts in every formula, modifier and reset, so a when clause reading a hidden toggle still applies. A level is read by its position, from 0 for the first name, so reordering a level's names changes what a condition reading it means.",
+				"The typed values every record holds, each an entry in that record's block in the note. Renaming a key moves that entry in every record, in every note on this layout. Text is offered for one job, naming the group a record sits under, and only on the field Group by names: it publishes nothing and no formula can read it, and words a reader reads belong in the record's body, where they may hold links. A number field with a maximum is a uses counter: the field draws that maximum beside its value, and a reset trigger restores it to that maximum. A number field's maximum may belong to the field, so every record shares it, or to each record, so a reader types it on the sheet beside the value, as a number or a formula such as prof, worked out from that record's own fields and the sheet. A formula follows the sheet, so a feature with proficiency-bonus uses refills to whatever the bonus is. A reset restores each record to whichever maximum applies, and leaves alone a record that has set none or whose formula cannot be worked out. Tick \"Inside the opened record\" for a value read once and changed rarely: it draws above the record's prose and is not shown while the record is closed. A field used every turn belongs on the summary line. Write a condition in \"Shown when\", such as Recharges == 1 || Recharges == 2, to draw a field only on the records where it holds. A hidden field keeps its value and still counts in every formula, modifier and reset, so a when clause reading a hidden toggle still applies. A level is read by its position, from 0 for the first name, so reordering a level's names changes what a condition reading it means.",
 		},
 		{
 			key: 'groupBy',
@@ -1726,6 +1924,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		if (scope !== null && 'error' in scope) {
 			return { ok: false, error: scope.error };
 		}
+		let skipped = 0;
 		records.forEach((record, at) => {
 			if (record.error !== null) return;
 			// A record the condition excludes is not in the delta at all, so its
@@ -1733,21 +1932,20 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			// within a reached record every `number` field is written, which is
 			// what a binding naming no field means.
 			if (scope !== null && !scope.admitted.has(at)) return;
-			const fields: Record<string, string> = {};
-			for (const field of storedFields(config)) {
-				const written = fieldWrite(
-					field,
-					action,
-					write.amount,
-					record.fields[field.key] ?? '',
-				);
-				if (written !== null) fields[field.key] = written;
+			const written = recordWrites(
+				config,
+				record,
+				storedFields(config),
+				action,
+				write.amount,
+				context,
+			);
+			if (written.skipped) skipped += 1;
+			if (Object.keys(written.fields).length > 0) {
+				next.records[at] = { fields: written.fields };
 			}
-			if (Object.keys(fields).length > 0) next.records[at] = { fields };
 		});
-		return scope === null
-			? { ok: true, data: next }
-			: { ok: true, data: next, reach: scope.reach };
+		return resetOutcome(config, next, scope?.reach, skipped);
 	},
 
 	render(container, config, data, context): void {
@@ -2023,10 +2221,11 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		 * format requires, not what looks tidy — and the slash is now what a colon
 		 * already was.
 		 *
-		 * One sentence for both fields and both modes: where the ceiling is the
+		 * The value field's alone, in both modes: where the ceiling is the
 		 * record's there is a field after the slash to type it in, and where it is
 		 * the layout's there is nothing to type at all, so neither is told to go
-		 * anywhere in particular.
+		 * anywhere in particular. The ceiling field takes `refuseCeiling` below,
+		 * since a slash after the first is division there.
 		 */
 		const refuseNumber = (text: string): string | null => {
 			const link = refusal(text);
@@ -2034,6 +2233,20 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			if (!text.includes('/')) return null;
 			return `Not saved. A slash separates a value from the maximum it is read against, so "${text}" would be stored as two numbers rather than one. Type just the number here.`;
 		};
+
+		/**
+		 * Why a record's own ceiling cannot be stored, or null: a link, and nothing
+		 * else (`docs/features/record-ceiling-formula.md`).
+		 *
+		 * **The slash is lifted here and kept on the value.** The entry splits at
+		 * its *first* slash, so a slash after it is the ceiling's own: `level / 2`
+		 * is division, and `Uses: 1 / level / 2` reads back as the value 1 against
+		 * the ceiling `level / 2`. The value half can still hold none, which is why
+		 * `refuseNumber` keeps it. A parse problem is not refused either: it is
+		 * stored as typed and the line under the record says what is wrong, since a
+		 * refusal would keep the reader's words only until the next render.
+		 */
+		const refuseCeiling = (text: string): string | null => refusal(text);
 
 		/**
 		 * Why a group name cannot be stored, or null.
@@ -2309,7 +2522,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				'span',
 				'sheetsmith-sr-only',
 				section,
-				`${count} ${noun.toLowerCase()}${count === 1 ? '' : 's'}`,
+				countOf(count, noun),
 			);
 			said.id = `sheetsmith-record-group-count-${config.id}-${ordinal}`;
 			toggle.setAttribute('aria-describedby', said.id);
@@ -2873,6 +3086,16 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			let held = raw;
 
 			let ceilingInput: HTMLInputElement | null = null;
+			/** What a formula ceiling came to, drawn over its field; null for a typed one. */
+			let ceilingLayer: HTMLElement | null = null;
+			/** The field's own title, and what a formula ceiling adds to it. */
+			const ceilingTitle = (text: string): string => {
+				const base = `Maximum ${name}, held by this ${noun.toLowerCase()}.`;
+				const trimmed = text.trim();
+				return trimmed === '' || typedCeiling(trimmed) !== null
+					? base
+					: `${base} Worked out from ${trimmed}.`;
+			};
 			if (ownMax || field.max !== undefined) {
 				const ceiling = element(
 					'span',
@@ -2881,16 +3104,41 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				);
 				element('span', 'sheetsmith-pool-separator', ceiling, '/');
 				if (ownMax) {
+					const stored = (entry.ceiling ?? '').trim();
+					/*
+					 * **A ceiling that is a formula is drawn as what it came to**, over
+					 * the field that holds its text: `docs/UI.md` §9's stacked
+					 * arrangement, which this record's name already uses for its links.
+					 * Unfocused the layer shows the number and the field's own text is
+					 * transparent under it; focused the layer goes inert and the reader
+					 * edits `prof`, not 3. The layer takes no press — one short line,
+					 * so a press lands the caret in the field, as a table cell's does.
+					 *
+					 * **A typed number, or nothing, gets no stack at all**: the field
+					 * alone, the DOM it has always had, which is what makes "a typed
+					 * number reads exactly as before" true by construction.
+					 */
+					const worked =
+						stored !== '' && typedCeiling(stored) === null
+							? element('span', 'sheetsmith-record-worked-out', ceiling)
+							: null;
 					// `maxInput`, which is Pool's own name for the same control — and
 					// deliberately not `held`, which is the mutable entry above and the
 					// state every commit on this line composes from.
 					const maxInput = element(
 						'input',
 						'sheetsmith-record-input sheetsmith-pool-max',
-						ceiling,
+						worked ?? ceiling,
 					);
 					maxInput.type = 'text';
-					maxInput.inputMode = 'numeric';
+					/*
+					 * **Text, always**, where this was `numeric`: a phone's numeric
+					 * keypad has no letters, so `prof` could not be typed there. A
+					 * keypad that switched on what the field holds would be stuck on
+					 * the keypad from an empty or numeric ceiling, the one state from
+					 * which a formula is typed (`docs/features/record-ceiling-formula.md`).
+					 */
+					maxInput.inputMode = 'text';
 					maxInput.value = entry.ceiling ?? '';
 					maxInput.placeholder = '—';
 					// **The one thing the field gains that the span could not have.** A
@@ -2901,8 +3149,24 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 						'aria-label',
 						`${accessible} maximum`,
 					);
-					maxInput.title = `Maximum ${name}, held by this ${noun.toLowerCase()}.`;
+					maxInput.title = ceilingTitle(stored);
+					if (worked !== null) {
+						// A formula is not prose: a squiggle under `prof` is noise, and
+						// under transparent text it would show through the layer.
+						maxInput.spellcheck = false;
+						flagWhileFocused(
+							worked,
+							maxInput,
+							'sheetsmith-record-worked-out-focused',
+						);
+						ceilingLayer = element(
+							'span',
+							'sheetsmith-pool-max sheetsmith-record-worked-out-layer',
+							worked,
+						);
+					}
 					ceilingInput = maxInput;
+					context.suggestFormula?.(maxInput, config.id);
 				} else {
 					element(
 						'span',
@@ -2913,41 +3177,83 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				}
 			}
 
+			const readers: CeilingReaders = {
+				resolveExpression: context.resolveExpression,
+				explainExpression: context.explainExpression,
+			};
 			/**
-			 * The ceiling the value is read against as it stands, or null where
-			 * there is none — the *draft* where one is being typed, which is Pool's
-			 * own rule: what the value is announced against and held to is what the
-			 * reader can see.
+			 * The ceiling the value is read against as it stands — the *draft* where
+			 * one is being typed, which is Pool's own rule: what the value is
+			 * announced against and held to is what the reader can see. Worked out
+			 * in the record's stored layer, the scope `visibleWhen` reads.
 			 *
 			 * **This says which text; `ceilingOf` says what it is worth**, and every
 			 * channel on this line goes through both. The announcement used to take
 			 * the raw text where the clamp parsed it, so a record storing
-			 * `Uses: 2 / lots` clamped to nothing and was skipped by `full` —
-			 * correctly, since text that is not a number behaves as no ceiling — and
-			 * *still* announced "Uses 40 of lots". The one channel that was wrong is
-			 * the only one a reader who cannot see the field has.
+			 * `Uses: 2 / lots` clamped to nothing and *still* announced "Uses 40 of
+			 * lots". The one channel that was wrong is the only one a reader who
+			 * cannot see the field has.
 			 */
-			const ceilingNow = (): number | null =>
-				ceilingOf(
-					ownMax
-						? (ceilingInput?.value ?? '')
-						: field.max === undefined
-							? ''
-							: String(field.max),
-				);
-			/** "of 3", or nothing at all where this record has no ceiling. */
+			const ceilingNow = (): Ceiling =>
+				ownMax
+					? ceilingOf(ceilingInput?.value ?? '', field, drawn.scope, readers)
+					: field.max === undefined
+						? null
+						: typedCeiling(String(field.max));
+			/** "of 3", or nothing at all where this record has no ceiling it can read. */
 			const said = (): string => {
-				const ceiling = ceilingNow();
+				const ceiling = ceilingNumber(ceilingNow());
 				return ceiling === null ? '' : ` of ${ceiling}`;
 			};
 			/** The bounds the value is held to, against that same standing ceiling. */
-			const valueBounds = (): TypedField => {
-				if (!ownMax) return field;
+			const valueBounds = (): TypedField =>
+				ownMax ? fieldBounds(field, ceilingNow()) : field;
+
+			/**
+			 * The ceiling's reading and its problem line, from the field's text as it
+			 * stands: at the draw, so a hand-edited or renamed ceiling says so on
+			 * first paint, and after a commit, so the line answers before the rebuild
+			 * (PATTERNS §5's optimistic paint).
+			 *
+			 * **Its own line, not the refusal's**, so a refused link on the value
+			 * beside it does not clear it, and two failing fields draw two. Hung on
+			 * the record, where a refusal hangs, because the summary line has nowhere
+			 * to put a sentence.
+			 *
+			 * **Drawn whether or not the field's condition shows it.** A reset never
+			 * reads visibility, so it skips and counts a hidden field whose ceiling
+			 * will not work out exactly as a shown one, and the confirmation's "1
+			 * feature skipped" has to name a record the reader can find. The line is
+			 * the only place on the sheet that says which.
+			 */
+			let ceilingLine: HTMLElement | null = null;
+			const paintCeiling = (): void => {
+				if (!ownMax || ceilingInput === null) return;
 				const ceiling = ceilingNow();
-				return ceiling === null
-					? { type: 'number', min: field.min }
-					: { type: 'number', min: field.min, max: ceiling };
+				const problem = ceilingProblem(ceiling);
+				if (ceilingLayer !== null) {
+					const blank = ceilingInput.value.trim() === '';
+					// Blank shows the field's own `—` placeholder through the layer.
+					ceilingLayer.textContent = blank
+						? ''
+						: formatDerived(ceilingNumber(ceiling), false);
+					ceilingLayer.classList.toggle(
+						'sheetsmith-pool-max-unresolved',
+						problem !== null,
+					);
+				}
+				ceilingInput.title = ceilingTitle(ceilingInput.value);
+				ceilingLine?.remove();
+				ceilingLine = null;
+				if (problem === null) return;
+				ceilingLine = element(
+					'div',
+					'sheetsmith-error',
+					row,
+					`${name} maximum could not be worked out: ${problem} Change it after the slash, or clear it.`,
+				);
 			};
+			paintCeiling();
 
 			const showValueRefusal = refusalNotice(row);
 			bindEditable(input, {
@@ -2973,7 +3279,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				 * above exists for.
 				 */
 				get max() {
-					return ceilingNow() ?? undefined;
+					return ceilingNumber(ceilingNow()) ?? undefined;
 				},
 				announceCommit: (next) => {
 					status.textContent =
@@ -3018,15 +3324,23 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				// hold a floor the value obeys and the ceiling contradicts. There is
 				// no upper bound on a ceiling to hold it to.
 				min: field.min,
-				// **No arithmetic**, and this is a departure from Pool stated rather
-				// than hidden: a record's *value* field does not settle `31+7`, so
-				// giving the ceiling beside it arithmetic would put two commit rules
-				// on one line. If it is ever wanted it arrives on both halves at once.
+				// **No arithmetic settles**, and this is a departure from Pool stated
+				// rather than hidden: a record's *value* field does not settle `31+7`,
+				// so turning a ceiling's `prof + 1` into a number at the commit would
+				// put two commit rules on one line. An expression is stored as typed
+				// and worked out on every read instead, which is the value field's
+				// own rule: store what was typed. Arrow keys step a typed number and
+				// leave an expression alone, `editable.ts`'s rule for text.
 				announceCommit: (next) => {
+					// A formula that will not work out is stored as typed — the note is
+					// where the reader's words belong — and the commit says what is
+					// wrong with it, which the line under the record then shows.
+					const unread =
+						ceilingProblem(ceilingOf(next, field, drawn.scope, readers)) !== null;
 					status.textContent =
 						next === ''
 							? `${ceilingName} cleared`
-							: `${ceilingName} ${next}`;
+							: `${ceilingName} ${next}${unread ? ', which could not be worked out' : ''}`;
 				},
 				announceRestore: (restored) => {
 					status.textContent =
@@ -3034,7 +3348,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 							? `${ceilingName} restored to empty`
 							: `${ceilingName} restored to ${restored}`;
 				},
-				refuse: refuseNumber,
+				refuse: refuseCeiling,
 				onRefusal: showCeilingRefusal,
 				onCommit: (next) => {
 					const settled = boundedText(next, {
@@ -3052,6 +3366,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 					// And clearing it drops the separator with it, so the entry goes
 					// back to a bare number rather than to `2 /`.
 					held = withCeiling(held, settled);
+					paintCeiling();
 					commit(held);
 				},
 			});
