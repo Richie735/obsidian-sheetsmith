@@ -55,6 +55,7 @@ import {
 	Sample,
 	SAMPLES,
 	unmodifiedSamples,
+	pinnedAddSamples,
 } from './samples';
 import { renderSettings } from './settings-panel';
 import { harnessLayout } from './stub-app';
@@ -64,7 +65,8 @@ type StateName =
 	| 'empty'
 	| 'unmodified'
 	| 'effective'
-	| 'broken';
+	| 'broken'
+	| 'pinned-add';
 type Surface = 'sheet' | 'editor' | 'settings' | 'both';
 
 interface Live {
@@ -89,6 +91,7 @@ function samplesFor(name: StateName): Sample[] {
 	if (name === 'unmodified') return unmodifiedSamples();
 	if (name === 'effective') return effectiveSamples();
 	if (name === 'broken') return brokenSamples();
+	if (name === 'pinned-add') return pinnedAddSamples();
 	return SAMPLES;
 }
 
@@ -755,7 +758,8 @@ function applyQuery(): void {
 		wanted === 'empty' ||
 			wanted === 'unmodified' ||
 			wanted === 'effective' ||
-			wanted === 'broken'
+			wanted === 'broken' ||
+			wanted === 'pinned-add'
 			? wanted
 			: 'populated',
 	);
@@ -856,6 +860,22 @@ function applyQuery(): void {
 					target.offsetTop - box.offsetTop - (box.clientHeight - target.offsetHeight) / 2;
 				break;
 			}
+		}
+	};
+
+	/**
+	 * `&scrollx=<selector>|<left|right>` — scroll that element sideways to one
+	 * end, `&scroll=`'s sibling for the other axis. The add control is outside
+	 * the table's scroller, so a claim that its label stays in view with the table
+	 * scrolled to both ends needs a still of each end.
+	 */
+	const scrolledSideways = params.getAll('scrollx');
+	const scrollSidewaysWanted = () => {
+		for (const wanted of scrolledSideways) {
+			const [selector, end] = wanted.split('|');
+			const target = document.querySelector<HTMLElement>(selector ?? '');
+			if (target === null) continue;
+			target.scrollLeft = end === 'right' ? target.scrollWidth : 0;
 		}
 	};
 
@@ -960,6 +980,7 @@ function applyQuery(): void {
 		typeWanted();
 		// After the presses, so a press that draws something can be scrolled to.
 		scrollWanted();
+		scrollSidewaysWanted();
 		if (scrolled.length > 0) focusWanted();
 		// The component picker, once the pane is on screen: opening it scrolls
 		// the search field clear of the pinned bar, which reads real geometry.

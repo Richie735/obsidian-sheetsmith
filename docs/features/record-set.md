@@ -463,8 +463,9 @@ evidence for the model answer.
   the rendered layer is hidden rather than left transparent, the caret is not placed
   from the click, and the two layers scroll separately. `renderMarkdown` draws it where
   there is an app and `paintParagraphs` where there is not.
-- **Add** is a control in the last position of the list, reading as the next record
-  rather than as chrome beside it — and wearing `.sheetsmith-table-add`'s own
+- **Add** is a control at the foot of the card, outside the scrolling list
+  (`table-add-row-pinned-bottom.md` moved it there; it was the list's last child,
+  reading as the next record) — and wearing `.sheetsmith-table-add-button`'s own
   *treatment* and not merely its vocabulary: a rule across the top and a centred
   label, which is what Table renders and what UI §9's shared row now names. The two
   had drifted before the first release, with only Table's reading as pressable. The press

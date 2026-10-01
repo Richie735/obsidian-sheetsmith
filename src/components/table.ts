@@ -1643,7 +1643,25 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			(config.rowHeader ?? '').trim() || DEFAULT_ROW_HEADER;
 		// The table scrolls inside its own box: a sheet must never scroll
 		// sideways because one component grew a column.
-		const wrapper = element('div', 'sheetsmith-table-wrapper', container);
+		//
+		// **An open table gets a box around the scroller, and a closed one does
+		// not.** The box is the card — border, radius, fill — and it stretches to
+		// the cell the table was placed in, so the add control below can sit at the
+		// card's foot rather than under the last row. The scroller inside it carries
+		// the sideways scroll alone, which is what keeps the control out of it. A
+		// closed table has no control to pin, and stays the scroller it always was
+		// so a closed card in a tall cell does not move.
+		const box = open
+			? element('div', 'sheetsmith-table-box', container)
+			: container;
+		if (open) container.addClass('sheetsmith-table-open');
+		const wrapper = element(
+			'div',
+			open
+				? 'sheetsmith-table-wrapper sheetsmith-table-wrapper-boxed'
+				: 'sheetsmith-table-wrapper',
+			box,
+		);
 		const grid = element('table', 'sheetsmith-table', wrapper);
 		// Two facts the stylesheet needs about the whole table, stamped here
 		// because both were `:has()` selectors and Obsidian's review asks for
@@ -2689,27 +2707,19 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 		});
 
 		if (open) {
-			// A row-shaped control in the row position, so it reads as "the next
-			// row" rather than as chrome parked beside the table, and it picks up
-			// the row hover the rows already have.
-			const tr = element('tr', 'sheetsmith-table-add', body);
-			const cell = element('td', '', tr);
-			cell.colSpan = width;
-			const add = element('button', 'sheetsmith-table-add-button', cell);
+			// The control is the last thing in the card, below the rows and below
+			// any totals row, and it is a sibling of the scroller rather than a row
+			// of the table. That is what pins it: in a cell taller than the rows the
+			// box fills the cell and `margin-top: auto` puts the control at its foot,
+			// and because it is outside the scroller a sideways scroll never moves
+			// it, so its label needs no `position: sticky`. It reverses
+			// `open-rows-for-table.md`'s "a row in the row position", for the reason
+			// recorded in `table-add-row-pinned-bottom.md`: the control marks the
+			// card's foot, and a row stops being one the moment the cell is taller.
+			const add = element('button', 'sheetsmith-table-add-button', box);
 			add.type = 'button';
-			// The label is in a span so it can hold its place while the table scrolls
-			// sideways: the button spans the table's full width, and its text would
-			// otherwise scroll out and leave a wide empty band with nothing saying
-			// what it is.
-			//
-			// **The CSS beside this used to claim the label sits "left, under the
-			// name column, because that is where the row it adds begins", and that
-			// described an intent the cascade never delivered**: the cell centres its
-			// inline content, so what has always shipped is a centred label under a
-			// rule. Recorded rather than corrected in either direction — a design
-			// review measured the rendered pair, ruled that the centred row is what
-			// reads as pressable, and `docs/UI.md` §9 now names that as the shared
-			// treatment, which is what Record set's add control was brought to.
+			// A span rather than the button's own text, so the hover and focus
+			// treatments reach the label without reaching the rule above it.
 			element('span', 'sheetsmith-table-add-label', add, 'Add row');
 			add.addEventListener('click', () => {
 				// The one place PATTERNS §5's optimistic paint cannot apply: a new
@@ -2721,7 +2731,9 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 				// the view restores focus — by control index within the cell, and
 				// the new row's controls sit immediately before the add button
 				// that was focused. That makes it an accident rather than a
-				// design, so it has a test of its own.
+				// design, so it has a test of its own. It survives the control
+				// moving out of the table because the button is still after every
+				// row control in document order.
 				status.textContent = 'Row added';
 				context.onChange({
 					rows: {},

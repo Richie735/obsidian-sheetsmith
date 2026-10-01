@@ -219,6 +219,14 @@ mkdirSync(outDir, { recursive: true });
 const SHEET_FRAME = '1400,8500';
 
 /**
+ * The `pinned-add` state at a 520px container with its wide Table scrolled to one
+ * end; the caller appends `left` or `right`. `:has()` picks the one table with a
+ * text column, which is the wide one.
+ */
+const WIDE =
+	'surface=sheet&theme=dark&state=pinned-add&width=520&scrollx=.sheetsmith-table-wrapper:has(.sheetsmith-table-has-text)%7C';
+
+/**
  * The editor pane's frame, tall because the tree is the whole layout.
  *
  * The pane lists every component the layout holds, one settings row each, under
@@ -2524,6 +2532,55 @@ const DEFAULTS = [
 			'surface=sheet&theme=light&type=.sheetsmith-track-row-name-input%7Cd6',
 		size: SHEET_FRAME,
 		flags: ['--force-high-contrast'],
+	},
+	{
+		/*
+		 * **The add control pinned to the foot of the card**
+		 * (`docs/features/table-add-row-pinned-bottom.md`), on the `pinned-add`
+		 * state's own sheet rather than the populated one: the control can only be
+		 * seen at a cell's foot in a cell taller than its rows, and nothing on the
+		 * populated sheet makes one. Tall open Tables with and without a totals row
+		 * beside a closed one that must not have moved, the same two with more rows
+		 * than their placement, two Record sets, an empty open Table and a wide one.
+		 *
+		 * Its own frame, 1500 against a measured 1460: it is a fixture sheet, not
+		 * the populated one, so SHEET_FRAME's number does not apply.
+		 */
+		name: 'sheet-pinned-add',
+		query: 'surface=sheet&theme=light&state=pinned-add',
+		size: '1400,1500',
+	},
+	{
+		name: 'sheet-pinned-add-dark',
+		query: 'surface=sheet&theme=dark&state=pinned-add',
+		size: '1400,1500',
+	},
+	{
+		/*
+		 * Forced colors, where the rule is one system colour, the hover is dropped
+		 * and the inset focus ring is the one signal the control has. Focused so the
+		 * ring is in the picture.
+		 */
+		name: 'sheet-pinned-add-forced-colors',
+		query: 'surface=sheet&theme=light&state=pinned-add&focus=.sheetsmith-table-add-button',
+		size: '1400,1500',
+		flags: ['--force-high-contrast'],
+	},
+	{
+		/*
+		 * **A container narrower than the wide Table, scrolled to each end.** The
+		 * control is outside the scroller, so its label has to be fully in view at
+		 * both. 520 is the narrowest a shot can honestly show (the 500px floor, UI.md
+		 * §12), so the table is made wide enough to scroll at it.
+		 */
+		name: 'sheet-pinned-add-scrolled-left',
+		query: `${WIDE}left`,
+		size: '620,1500',
+	},
+	{
+		name: 'sheet-pinned-add-scrolled-right',
+		query: `${WIDE}right`,
+		size: '620,1500',
 	},
 ];
 

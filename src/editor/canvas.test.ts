@@ -361,9 +361,9 @@ describe('the canvas filled with sample values', () => {
 		// The declared row is static text; a row the character owns is drawn as
 		// an editable name, so the two are read off different things.
 		expect(el.textContent).toContain('Rope');
-		// One declared row, two the sample added, and the add-row control's own
-		// line, which an open table draws whatever is in it.
-		expect(el.querySelectorAll('tbody tr')).toHaveLength(4);
+		// One declared row and two the sample added; the add-row control is below
+		// the table, not a row of it.
+		expect(el.querySelectorAll('tbody tr')).toHaveLength(3);
 		const cells = Array.from(el.querySelectorAll<HTMLInputElement>('tbody input'));
 		expect(cells.map((input) => input.value)).toContain('Item 1');
 		const weights = cells

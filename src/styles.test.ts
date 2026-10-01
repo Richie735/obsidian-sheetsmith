@@ -3129,3 +3129,67 @@ describe('a field its condition hid is hidden', () => {
 		);
 	});
 });
+
+describe('the add control pinned to the foot of the card', () => {
+	const stripped = CSS.replace(/\/\*[\s\S]*?\*\//g, '');
+	const all = rules(stripped);
+	const control = all.find(
+		(rule) =>
+			rule.context.length === 0 &&
+			rule.selector.includes('.sheetsmith-table-add-button') &&
+			rule.selector.includes('.sheetsmith-record-add') &&
+			/margin-top:\s*auto/.test(rule.body),
+	);
+
+	it('is one rule for both components, pinned and a finger tall', () => {
+		expect(control).toBeDefined();
+		// Pinned to the foot of a box taller than its rows.
+		expect(control?.body).toMatch(/margin-top:\s*auto/);
+		// Its height is the level ring's own token, which the coarse-pointer
+		// block raises on `body`, so it grows to a finger with the marks beside it.
+		expect(control?.body).toMatch(
+			/min-height:\s*var\(--sheetsmith-inline-control,\s*1\.6em\)/,
+		);
+		const coarse = all.filter(
+			(rule) =>
+				rule.context.includes('@media (pointer: coarse)') &&
+				/--sheetsmith-inline-control:\s*2\.2em/.test(rule.body),
+		);
+		expect(coarse.length).toBeGreaterThan(0);
+	});
+
+	it('is not sticky, and a table row no longer carries it', () => {
+		expect(stripped).not.toMatch(/\.sheetsmith-table-add-label[^{]*\{[^}]*sticky/);
+		expect(stripped).not.toMatch(/\.sheetsmith-table-add\s*[ ,{]/);
+	});
+
+	it('keeps exactly one line between the last row, the foot and the control', () => {
+		// Without a foot the last row drops its rule and the control's top rule is
+		// the line; with one, the last row keeps its rule and the foot's is dropped.
+		const body = (selector: string) =>
+			all.find((rule) => rule.selector === selector)?.body ?? '';
+		expect(
+			body('.sheetsmith-view .sheetsmith-table tbody tr:last-child th,\n.sheetsmith-view .sheetsmith-table tbody tr:last-child td'),
+		).toMatch(/border-bottom:\s*none/);
+		expect(
+			body('.sheetsmith-view .sheetsmith-table-has-totals tbody tr:last-child th,\n.sheetsmith-view .sheetsmith-table-has-totals tbody tr:last-child td'),
+		).toMatch(/border-bottom:\s*1px solid/);
+		expect(
+			body('.sheetsmith-view .sheetsmith-table tfoot th,\n.sheetsmith-view .sheetsmith-table tfoot td'),
+		).toMatch(/border-bottom:\s*none/);
+		expect(control?.body).toMatch(/border-top:\s*1px solid/);
+	});
+
+	it('escalates its rule under more contrast with the rest of the card', () => {
+		const more = all.filter((rule) =>
+			rule.context.includes('@media (prefers-contrast: more)'),
+		);
+		const listed = more.find(
+			(rule) =>
+				rule.selector.includes('.sheetsmith-table-add-button') &&
+				/border-color:\s*var\(--text-muted\)/.test(rule.body),
+		);
+		expect(listed?.selector).toContain('.sheetsmith-record-add');
+		expect(listed?.selector).toContain('.sheetsmith-table-box');
+	});
+});
