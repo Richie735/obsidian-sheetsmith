@@ -7,10 +7,10 @@ disclosure** — the harness can already show a record's summary line, and what 
 cannot show is find-in-page reaching a closed body, a rename propagating through a
 record's name, or Obsidian's own renderer drawing a record's prose.
 
-Eight claims, in the order they are easiest to break:
+Nine claims, in the order they are easiest to break:
 
 1. **The box is the placement and the list scrolls inside it.** "Features" (4×3)
-   holds seven records and "Spells" (2×3) holds five. Open every record in
+   holds ten records and "Spells" (2×3) holds five. Open every record in
    Features, then close them all, and **nothing below either box may move** — the
    "Bare list", "Armour class" and "Attuned things" on the next rows are there to
    be watched. SPEC §8 forbids a component ceasing to fill its placement, and this
@@ -48,8 +48,12 @@ Eight claims, in the order they are easiest to break:
    "Second Wind" reads 3, "Sunblade" 2 and "Warded cloak" 3 — and **"Torch of
    Revealing", which has set no ceiling, does not move at all while its `Attuned`
    still does**, because a record with no ceiling is a record that is not a
-   counter rather than a failure. "Fey Ancestry", whose ceiling is not a number,
-   is skipped for the same reason. **"Hand broken" is left exactly as it is**,
+   counter rather than a failure. "Fey Ancestry", whose ceiling is the word
+   `lots`, and "Dragon's Breath", whose ceiling is the misspelt `prfo`, are
+   skipped too — but for a different reason: each is a formula that names nothing
+   on this sheet, so both draw `?` and a line under the record, and the
+   confirmation and the report say "2 features skipped". **"Hand broken" is left
+   exactly as it is**,
    because no write into a record whose fence will not read is accepted at all —
    and "Lucky", which has no fence, *gains* one. Nothing about "Bare list" moves,
    since it has no fields. Reopen the note afterwards and check **every ceiling is
@@ -66,10 +70,22 @@ Eight claims, in the order they are easiest to break:
    silently canonicalised, and the note is the only thing that says whether it
    was. "Warded cloak" sits at `5 / 3`, above
    its own ceiling: it is drawn exactly as stored, with no warning treatment and
-   no rewrite. Finally, switch `Uses` back to **The field** in the layout editor:
-   the declared `max: 3` is drawn on every record, every stored ceiling stays in
-   the note untouched, and switching back to **Each record** finds all of them
-   still there.
+   no rewrite. "Fey Ancestry" holds `2 / lots`, typed long before a ceiling
+   could be a formula: it now draws `?` and says `lots` is not defined, and its
+   bytes never change. Finally, switch `Uses` back to **The field** in the layout
+   editor: the declared `max: 3` is drawn on every record, every stored ceiling
+   stays in the note untouched, and switching back to **Each record** finds all
+   of them still there.
+9. **A ceiling may be a formula, and it follows the sheet.** "Spellfire Flame"
+   holds `1 / prof` and "Bardic Inspiration" `2 / prof`, where `prof` is the
+   "Proficiency bonus" card, stored at 2. Set the card to 3: both read `/ 3`, and
+   no line in the note changes. Set it to 1: "Bardic Inspiration" reads `2 / 1`,
+   drawn as stored, while its note still says `2 / prof`. Press **Long rest**:
+   both read their ceiling of 1, "Dragon's Breath" and "Fey Ancestry" are left
+   alone with their lines still showing, and every other record refills. Then
+   type `prof + 1` into "Second Wind"'s ceiling: the note holds `prof + 1`, and
+   the slot reads 2 once the card is back at 1. Click into a formula ceiling and
+   the formula is what you edit; leave it and the number comes back.
 
 Two things to look at that are not claims. **"Features" holds every field type
 this component offers** — a number with a per-record ceiling, a toggle, a named
@@ -167,6 +183,35 @@ An entry under a key the layout no longer declares. `Retired` stays in the note
 untouched, nothing on the sheet reports it, and no edit anywhere else removes it.
 
 ### Lucky
+
+### Spellfire Flame
+```sheet
+Uses: 1 / prof
+Attuned: no
+```
+A ceiling that is a formula: `prof` is the Proficiency bonus card, so the slot reads
+what the card holds and follows it.
+
+### Bardic Inspiration
+```sheet
+Uses: 2 / prof
+Attuned: no
+```
+Two uses against the same formula, so lowering the card below 2 puts the value above
+its ceiling, drawn as stored.
+
+### Dragon's Breath
+```sheet
+Uses: 1 / prfo
+Attuned: no
+```
+A misspelt formula: the slot reads `?`, a line under the record says what is wrong,
+and a Long rest leaves it alone.
+
+## Proficiency bonus
+```sheet
+value: 2
+```
 
 ## Spells
 

@@ -142,6 +142,30 @@ export function vocabularySource(
 }
 
 /**
+ * Everything a layout offers a formula field, in layout order: each component's
+ * names and the layout's own functions.
+ *
+ * **One assembly for the two places a suggester is bound**, the layout editor's
+ * pane and the sheet (`docs/features/record-ceiling-formula.md`), on
+ * `docs/PATTERNS.md` §1's one-step tier: what is shared is *which sources make
+ * up the list*, and a source taught to one copy would be silently missing from
+ * the other. Takes the registry lookup rather than importing it, on
+ * `vocabularySource`'s own reason (Constraint 5).
+ */
+export function layoutVocabulary(
+	configs: readonly ComponentConfig[],
+	functions: FunctionLibrary,
+	definitionOf: (type: string) => Parameters<typeof vocabularySource>[1],
+): Vocabulary {
+	return {
+		components: configs.map((config) =>
+			vocabularySource(config, definitionOf(config.type)),
+		),
+		functions,
+	};
+}
+
+/**
  * The names a formula written *inside* a component reads per row.
  *
  * **Derived from the config field *kinds* rather than from a component's name**,

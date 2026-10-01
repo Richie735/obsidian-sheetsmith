@@ -1509,7 +1509,9 @@ export const SAMPLES: Sample[] = [
 	 * **And every state a reader-set ceiling has**, since `Uses` is this
 	 * component's `maxSource: 'record'` subject: a ceiling above the value, one
 	 * the value has passed, one written with no spaces around the slash, one at
-	 * its ceiling, and a record with none at all showing the `—` placeholder.
+	 * its ceiling, and a record with none at all showing the `—` placeholder —
+	 * and a ceiling that is a formula, beside typed ones, and one that will not
+	 * work out (`docs/features/record-ceiling-formula.md`).
 	 */
 	{
 		config: {
@@ -1596,7 +1598,10 @@ export const SAMPLES: Sample[] = [
 			'',
 			'### [[Ring of Protection]]',
 			'```sheet',
-			'Uses: 0 / 1',
+			// **A ceiling that is a formula** (`docs/features/record-ceiling-formula.md`):
+			// `abilities.CON` is 1 on this sheet, so the slot reads `0 / 1` exactly
+			// as a typed 1 would, between two records whose ceilings are typed.
+			'Uses: 0 / abilities.CON',
 			'Attuned: yes',
 			'Rank: 2',
 			// Untyped on purpose. `as item` would contest with the Magic items
@@ -1646,6 +1651,14 @@ export const SAMPLES: Sample[] = [
 			'Uses: 3 / 3',
 			'```',
 			'A record with no modifier field filled in, which is the ordinary state on a list like this, and a counter sitting at its own ceiling.',
+			'',
+			'### Dragon’s Breath',
+			'```sheet',
+			// A formula naming nothing the sheet publishes: `?` in the slot and the
+			// line under the record. Last, so every record above keeps its place.
+			'Uses: 2 / prfo',
+			'```',
+			'A ceiling that cannot be worked out, which says so on its own record and nowhere else.',
 			'',
 		].join('\n'),
 	},

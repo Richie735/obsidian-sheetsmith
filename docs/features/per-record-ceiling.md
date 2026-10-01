@@ -789,6 +789,10 @@ implementation and every round of findings.
   failure path on a control that already has one. A reader-typed ceiling and a computed
   one are different features; this is the first, and `maxSource` is a string union
   precisely so the third source can be added without replacing a boolean.
+  *Since overturned for the record's own ceiling:* `docs/features/record-ceiling-formula.md`
+  lets that half hold a formula, worked out in the record's scope, and skips a record
+  whose formula will not work out rather than failing the reset; a field-level formula
+  `max` stays closed.
 - **The same treatment for Table's `number` columns.** Table has the identical
   ambiguity — `boundedText` clamps to a ceiling nothing on screen states — and it is a
   separate design question because a Table cell sits under a `<th>` in a tabular grid,

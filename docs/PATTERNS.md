@@ -762,6 +762,16 @@ A component inventing its own is the failure mode to watch for.
   [checked]. The editor owns those.
 - Declaring `applyReset` obliges `formulaFields` to include `reset.*.to`
   [checked]. Forgetting it leaves the reset button dead with nothing to say so.
+- **An expression stored in a character note, and nowhere in the layout, is not
+  a formula field, because `formulaFields` names layout config paths and no config
+  path holds it** (a record's ceiling, `Uses: 1 / prof`). **Any expression held
+  anywhere in a layout's config, at any depth, is a formula field and is
+  declared** — the exemption is where the text lives, never what it is used for.
+  A note-held expression's input still owes what a declaration buys: the parser's
+  sentence where it is typed, and the suggester [judgement]. It is evaluated
+  through `RenderContext.resolveExpression`, and **every production host supplies
+  it** [checked: `src/expression-context-coverage.test.ts`]
+  (`docs/features/record-ceiling-formula.md`).
 - **Declaring `resetColumns` obliges `applyReset`** [checked]. The editor draws its
   picker from the first and the trigger writes through the second, so a component
   declaring only the first offers an author a column to bind and then passes over
