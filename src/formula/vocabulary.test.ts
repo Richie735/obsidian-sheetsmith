@@ -8,6 +8,7 @@ import {
 	matchCandidates,
 	Vocabulary,
 	vocabularySource,
+	layoutVocabulary,
 } from './vocabulary';
 import { getComponent } from '../components';
 import { ComponentConfig } from '../types';
@@ -335,5 +336,21 @@ describe('the published names are the picker\'s own', () => {
 		expect(picker.every((label) => label.includes(' · '))).toBe(true);
 		// Not a vacuous pass: an empty tree would satisfy an empty comparison.
 		expect(published.length).toBeGreaterThan(4);
+	});
+});
+
+describe('layoutVocabulary', () => {
+	it('is every component in layout order, each as vocabularySource reads it, and the functions', () => {
+		const { library } = parseFunctions(['prof = 2']);
+		const configs = [
+			{ id: 'ac', type: 'card', label: 'AC', position: { col: 1, row: 1, width: 1, height: 1 } },
+			{ id: 'ghost', type: 'no-such-type', label: 'Ghost', position: { col: 2, row: 1, width: 1, height: 1 } },
+		] as ComponentConfig[];
+		const vocabulary = layoutVocabulary(configs, library, getComponent);
+		expect(vocabulary.components.map((one) => one.id)).toEqual(['ac', 'ghost']);
+		expect(vocabulary.components[0]).toEqual(
+			vocabularySource(configs[0] as ComponentConfig, getComponent('card')),
+		);
+		expect(vocabulary.functions).toBe(library);
 	});
 });
