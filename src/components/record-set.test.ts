@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+	groupReading,
 	MAX_TABULATED_FIELDS,
 	recordSet,
 	RecordSetConfig,
@@ -5260,6 +5261,967 @@ describe('a reset that reaches only the records its condition admits', () => {
 			expect(
 				resolveField.mock.calls.filter(([path]) => path.startsWith('reset.')),
 			).toEqual([]);
+		});
+	});
+});
+
+/*
+ * Groups (`docs/features/record-set-groups.md`).
+ *
+ * Driven through a small stand-in for the view: it holds the note, the collapsed
+ * keys and the open records, and rebuilds the list on every change exactly as a
+ * committed edit does. The three held members are the view's, so a case about a
+ * collapse surviving an edit is a case about what the component hands back.
+ */
+describe('groupReading', () => {
+	const level = { key: 'Class', type: 'level' as const, levels: ['A', 'B', 'C'] };
+	const number = { key: 'Level', type: 'number' as const };
+	const read = (f: typeof level | typeof number, v: string | undefined) =>
+		groupReading(f, v === undefined ? {} : { [f.key]: v }, null)?.key ?? null;
+
+	it('reads a level as levelOf does, but files an index outside the list under nothing', () => {
+		expect(['', undefined, 'x', '1', '1.4', '2', '3', '-1', '9'].map((v) => read(level, v))).toEqual(
+			['0', '0', '0', '1', '1', '2', null, null, null],
+		);
+	});
+
+	it('reads a number as typedValue does, so 3, 03 and " 3.0 " are one key', () => {
+		expect(['3', '03', ' 3.0 ', ''].map((v) => read(number, v))).toEqual(['3', '3', '3', '0']);
+		expect(read(number, 'two')).toBeNull();
+		expect(groupReading(number, { Level: '3' }, 'unreadable')).toBeNull();
+	});
+
+	it('never gives a key that is empty, which is Other’s alone', () => {
+		for (const v of ['', 'x', '0', '-2', '7', '1e1']) {
+			expect(read(level, v) ?? 'none').not.toBe('');
+			expect(read(number, v) ?? 'none').not.toBe('');
+		}
+	});
+});
+
+describe('groups', () => {
+	// Ids are per list and every case draws one, so a stale host from an earlier
+	// case would answer `getElementById` before the one under test does.
+	afterEach(() => document.body.replaceChildren());
+
+	const CLASS_FIELD = {
+		key: 'Class',
+		type: 'level' as const,
+		levels: ['Unassigned', 'Fighter', 'Wizard', 'Cleric'],
+		input: 'select' as const,
+		placement: 'body' as const,
+	};
+
+	const GROUPED: RecordSetConfig = {
+		...config,
+		id: 'features',
+		recordName: 'Feature',
+		groupBy: 'Class',
+		fields: [CLASS_FIELD, { key: 'Uses', type: 'number', max: 3 }],
+	};
+
+	/** Seven features: three Fighter, two Wizard, one with no entry, one past the list. */
+	const FEATURES = [
+		'',
+		'### Second Wind',
+		'```sheet',
+		'Class: 1',
+		'Uses: 2',
+		'```',
+		'A bonus action.',
+		'',
+		'### Fireball',
+		'```sheet',
+		'Class: 2',
+		'```',
+		'',
+		'### Action Surge',
+		'```sheet',
+		'Class: 1',
+		'```',
+		'',
+		'### Lucky',
+		'```sheet',
+		'Uses: 3',
+		'```',
+		'',
+		'### Old homebrew',
+		'```sheet',
+		'Class: 9',
+		'```',
+		'',
+		'### Shield',
+		'```sheet',
+		'Class: 2',
+		'```',
+		'',
+		'### Fighting Style',
+		'```sheet',
+		'Class: 1',
+		'```',
+		'',
+	].join('\n');
+
+	interface Live {
+		host: HTMLElement;
+		state: {
+			body: string;
+			collapsed: Set<string>;
+			open: Set<number>;
+			toggled: [string, boolean][];
+			changes: RecordSetData[];
+		};
+		draw: () => void;
+	}
+
+	/**
+	 * A list that rebuilds on every committed edit, the way the sheet does.
+	 * `rebuilds: false` reports a change and writes nothing, for the cases about
+	 * what happens *before* a commit lands.
+	 */
+	function live(
+		overrides: Partial<RecordSetConfig> = {},
+		text: string = FEATURES,
+		extra: Partial<RenderContext<RecordSetData>> = {},
+		rebuilds = true,
+	): Live {
+		const cfg = { ...GROUPED, ...overrides };
+		const host = document.createElement('div');
+		document.body.appendChild(host);
+		const state: Live['state'] = {
+			body: text,
+			collapsed: new Set(),
+			open: new Set(),
+			toggled: [],
+			changes: [],
+		};
+		const draw = (): void => {
+			recordSet.render(host, cfg, readData(state.body, cfg), {
+				...context,
+				collapsedGroups: [...state.collapsed],
+				onToggleGroup: (key, collapsed) => {
+					state.toggled.push([key, collapsed]);
+					if (collapsed) state.collapsed.add(key);
+					else state.collapsed.delete(key);
+				},
+				openRecords: [...state.open],
+				onToggleRecord: (index, open) => {
+					if (open) state.open.add(index);
+					else state.open.delete(index);
+				},
+				onChange: (delta) => {
+					state.changes.push(delta);
+					if (!rebuilds) return;
+					state.body = recordSet.write(delta, state.body, cfg);
+					draw();
+				},
+				...extra,
+			});
+		};
+		draw();
+		return { host, state, draw };
+	}
+
+	const groupEls = (el: HTMLElement) =>
+		Array.from(el.querySelectorAll<HTMLElement>('.sheetsmith-record-group'));
+	const headings = (el: HTMLElement) =>
+		Array.from(
+			el.querySelectorAll<HTMLElement>('.sheetsmith-record-group-heading'),
+		);
+	const toggles = (el: HTMLElement) =>
+		Array.from(
+			el.querySelectorAll<HTMLButtonElement>(
+				'.sheetsmith-record-group-toggle',
+			),
+		);
+	const groupBodies = (el: HTMLElement) =>
+		Array.from(
+			el.querySelectorAll<HTMLElement>('.sheetsmith-record-group-body'),
+		);
+	const groupNames = (el: HTMLElement) =>
+		toggles(el).map((one) => one.textContent);
+	const names = (el: HTMLElement) => nameFields(el).map((one) => one.value);
+	const press = (el: Element) =>
+		el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+
+	describe('what a list with no groupBy is', () => {
+		it('draws exactly the list it always drew, for an absent and a blank key', () => {
+			const bare = render({ fields: GROUPED.fields }, FEATURES);
+			for (const blank of ['', '   ']) {
+				const el = render({ fields: GROUPED.fields, groupBy: blank }, FEATURES);
+				expect(el.innerHTML).toBe(bare.innerHTML);
+			}
+			expect(bare.querySelector('.sheetsmith-record-group')).toBeNull();
+			expect(bare.querySelector('h3')).toBeNull();
+		});
+
+		it('writes the same bytes whatever groupBy says', () => {
+			const delta = { records: { 1: { fields: { Class: '3' } } } };
+			expect(recordSet.write(delta, FEATURES, GROUPED)).toBe(
+				recordSet.write(delta, FEATURES, { ...GROUPED, groupBy: undefined }),
+			);
+		});
+
+		it('round-trips a layout with and without the key, byte for byte', () => {
+			for (const component of [
+				GROUPED,
+				{ ...GROUPED, groupBy: undefined } as RecordSetConfig,
+			]) {
+				const text = serialiseLayout({
+					name: 'L',
+					components: [component],
+					triggers: [],
+				});
+				expect(serialiseLayout(parseLayout(text))).toBe(text);
+			}
+			const withKey = serialiseLayout({
+				name: 'L',
+				components: [GROUPED],
+				triggers: [],
+			});
+			expect(withKey).toContain('"groupBy": "Class"');
+			const without = serialiseLayout({
+				name: 'L',
+				components: [{ ...GROUPED, groupBy: undefined } as RecordSetConfig],
+				triggers: [],
+			});
+			expect(without).not.toContain('groupBy');
+		});
+
+		it('declares groupBy as a text field the layout editor draws from the config', () => {
+			const entry = recordSet.configFields.find((one) => one.key === 'groupBy');
+			expect(entry?.kind).toBe('text');
+			expect(entry?.label).toBe('Group by');
+		});
+	});
+
+	describe('which records sit where', () => {
+		it('draws a header per non-empty group in the key’s declared order', () => {
+			const { host } = live();
+			expect(groupNames(host)).toEqual([
+				'Unassigned',
+				'Fighter',
+				'Wizard',
+				'Other',
+			]);
+			// Cleric has no record, so it is not drawn.
+			expect(groupNames(host)).not.toContain('Cleric');
+		});
+
+		it('keeps the file’s order inside a group and draws the groups in order', () => {
+			const { host } = live();
+			expect(names(host)).toEqual([
+				'Lucky',
+				'Second Wind',
+				'Action Surge',
+				'Fighting Style',
+				'Fireball',
+				'Shield',
+				'Old homebrew',
+			]);
+			expect(
+				groupBodies(host).map(
+					(one) => one.querySelectorAll('.sheetsmith-record').length,
+				),
+			).toEqual([1, 3, 2, 1]);
+		});
+
+		it('files a level past the last name under Other, not under the last name', () => {
+			const { host } = live();
+			const other = groupEls(host)[3] as HTMLElement;
+			expect(
+				(other.querySelector('.sheetsmith-record-name-input') as HTMLInputElement)
+					.value,
+			).toBe('Old homebrew');
+			const cleric = (n: string) =>
+				recordSet.write(
+					{ records: { 4: { fields: { Class: n } } } },
+					FEATURES,
+					GROUPED,
+				);
+			// An index equal to the last name is a Cleric, and nothing else is clamped.
+			const edge = live({}, cleric('3')).host;
+			expect(groupNames(edge)).toEqual(['Unassigned', 'Fighter', 'Wizard', 'Cleric']);
+			for (const stray of ['4', '-1', '3.6', '99']) {
+				expect(groupNames(live({}, cleric(stray)).host).at(-1)).toBe('Other');
+			}
+			// And a rounding that lands inside the list stays inside it.
+			expect(groupNames(live({}, cleric('3.4')).host)).toContain('Cleric');
+		});
+
+		it('reads a blank, a missing and a non-numeric level as the first group', () => {
+			const odd = (entry: string) =>
+				['', '### A', '```sheet', entry, '```', ''].join('\n');
+			for (const entry of ['Class:', 'Uses: 1', 'Class: wizard-ish']) {
+				expect(groupNames(live({}, odd(entry)).host)).toEqual(['Unassigned']);
+			}
+		});
+
+		it('sends a record whose fence will not read to Other, still editable by name', () => {
+			const broken = [
+				'',
+				'### Fine',
+				'```sheet',
+				'Class: 1',
+				'```',
+				'',
+				'### Torn',
+				'```sheet',
+				'Class 1 with no colon',
+				'```',
+				'',
+			].join('\n');
+			const { host } = live({}, broken);
+			expect(groupNames(host)).toEqual(['Fighter', 'Other']);
+			expect(groupEls(host)[1]?.textContent).toContain('Torn');
+		});
+
+		it('heads a number key by its field name and the number, in numeric order', () => {
+			const spells: RecordSetConfig = {
+				...config,
+				id: 'spells',
+				recordName: 'Spell',
+				groupBy: 'Level',
+				fields: [
+					{ key: 'Level', type: 'number' },
+					{ key: 'Prepared', type: 'toggle' },
+				],
+			};
+			const text = [10, '03', 0, '3.0', ' 1 ', '-1', 'two', ''].map(
+				(level, at) =>
+					['', `### S${at}`, '```sheet', `Level: ${level}`, '```', ''].join('\n'),
+			);
+			const { host } = live(spells, text.join(''));
+			// `3`, `03` and `3.0` are one group; blank is 0, which is a real group;
+			// `two` has no value and goes last.
+			expect(groupNames(host)).toEqual([
+				'Level -1',
+				'Level 0',
+				'Level 1',
+				'Level 3',
+				'Level 10',
+				'Other',
+			]);
+			const counts = headings(host).map(
+				(one) => one.querySelector('.sheetsmith-record-group-count')?.textContent,
+			);
+			expect(counts).toEqual(['1', '2', '1', '2', '1', '1']);
+		});
+
+		it('names an unnamed level by its field and number, like a number', () => {
+			const plain: RecordSetConfig = {
+				...GROUPED,
+				fields: [{ key: 'Class', type: 'level', max: 3 }, { key: 'Uses', type: 'number' }],
+			};
+			expect(groupNames(live(plain).host)).toEqual([
+				'Class 0',
+				'Class 1',
+				'Class 2',
+				'Other',
+			]);
+		});
+
+		it('matches the key trimmed and ignoring case', () => {
+			expect(groupNames(live({ groupBy: '  class ' }).host)).toHaveLength(4);
+		});
+
+		it('groups a record the key’s own condition hides, since the note is what is read', () => {
+			const hidden: RecordSetConfig = {
+				...GROUPED,
+				fields: [
+					{ ...CLASS_FIELD, visibleWhen: 'Uses > 100' },
+					{ key: 'Uses', type: 'number' },
+				],
+			};
+			expect(groupNames(live(hidden).host)).toEqual([
+				'Unassigned',
+				'Fighter',
+				'Wizard',
+				'Other',
+			]);
+		});
+	});
+
+	describe('a key that cannot group', () => {
+		const LINE = '.sheetsmith-record-set-list > .sheetsmith-error';
+
+		it('draws the list ungrouped with a line, and does not fail read', () => {
+			for (const [groupBy, said] of [
+				['Nope', 'has no field with that key'],
+				['Uses2', 'has no field with that key'],
+			] as const) {
+				const cfg = { ...GROUPED, groupBy };
+				expect(recordSet.read(FEATURES, cfg).ok).toBe(true);
+				const { host } = live({ groupBy });
+				expect(host.querySelector('.sheetsmith-record-group')).toBeNull();
+				expect(records(host)).toHaveLength(7);
+				const line = host.querySelector(LINE);
+				expect(line?.textContent).toContain(`Group by is "${groupBy}"`);
+				expect(line?.textContent).toContain(said);
+			}
+		});
+
+		it('names the wrong type of a toggle, a computed and a modifier field', () => {
+			const mixed: RecordSetConfig = {
+				...GROUPED,
+				fields: [
+					CLASS_FIELD,
+					{ key: 'Prepared', type: 'toggle' },
+					{ key: 'Double', type: 'computed', formula: 'Class * 2' },
+					{ key: 'Mods', type: 'modifier' },
+				],
+			};
+			for (const [key, type] of [
+				['Prepared', 'toggle'],
+				['Double', 'computed'],
+				['Mods', 'modifier'],
+			]) {
+				const { host } = live({ ...mixed, groupBy: key });
+				expect(host.querySelector('.sheetsmith-record-group')).toBeNull();
+				expect(host.querySelector(LINE)?.textContent).toBe(
+					`Group by is "${key}", which is a ${type} field. Records can be grouped by a level or a number field only. The records are shown ungrouped. Name one in the layout editor, or clear Group by.`,
+				);
+			}
+		});
+
+		it('says nothing for a blank key', () => {
+			const { host } = live({ groupBy: '' });
+			expect(host.querySelector(LINE)).toBeNull();
+		});
+
+		it('leaves what the reader collapsed alone while it draws no groups', () => {
+			const { host, state } = live();
+			press(toggles(host)[1] as HTMLElement);
+			state.toggled.length = 0;
+			const cfg = { ...GROUPED, groupBy: 'Nope' };
+			recordSet.render(host, cfg, readData(FEATURES, cfg), {
+				...context,
+				collapsedGroups: ['1'],
+				onToggleGroup: (key, collapsed) => state.toggled.push([key, collapsed]),
+			});
+			expect(state.toggled).toEqual([]);
+		});
+	});
+
+	describe('the header', () => {
+		it('is an h3 holding one button whose name is the group’s name alone', () => {
+			const { host } = live();
+			for (const heading of headings(host)) {
+				expect(heading.tagName).toBe('H3');
+				const buttons = heading.querySelectorAll('button');
+				expect(buttons).toHaveLength(1);
+				const button = buttons[0] as HTMLButtonElement;
+				expect(button.hasAttribute('aria-label')).toBe(false);
+				expect(button.hasAttribute('title')).toBe(false);
+				// The count is outside the button, so it is not in the name.
+				expect(button.textContent).not.toMatch(/\d/);
+			}
+			expect(toggles(host)[1]?.textContent).toBe('Fighter');
+		});
+
+		it('describes the button with the count, in a sibling that resolves', () => {
+			const { host } = live();
+			const fighter = toggles(host)[1] as HTMLButtonElement;
+			const said = host.ownerDocument.getElementById(
+				fighter.getAttribute('aria-describedby') ?? '',
+			);
+			expect(said?.textContent).toBe('3 features');
+			expect(said?.classList.contains('sheetsmith-sr-only')).toBe(true);
+			const one = host.ownerDocument.getElementById(
+				toggles(host)[0]?.getAttribute('aria-describedby') ?? '',
+			);
+			expect(one?.textContent).toBe('1 feature');
+			// The visible figure is not announced a second time.
+			expect(
+				headings(host)[1]
+					?.querySelector('.sheetsmith-record-group-count')
+					?.getAttribute('aria-hidden'),
+			).toBe('true');
+		});
+
+		it('counts a record whose fence will not read', () => {
+			const torn = ['', '### Torn', '```sheet', 'no colon', '```', ''].join('\n');
+			const { host } = live({}, torn);
+			const said = host.ownerDocument.getElementById(
+				toggles(host)[0]?.getAttribute('aria-describedby') ?? '',
+			);
+			expect(said?.textContent).toBe('1 feature');
+		});
+
+		it('keeps aria-expanded and aria-controls true in both states', () => {
+			const { host } = live();
+			const button = toggles(host)[1] as HTMLButtonElement;
+			const resolves = () =>
+				host.ownerDocument.getElementById(
+					button.getAttribute('aria-controls') ?? '',
+				);
+			expect(button.getAttribute('aria-expanded')).toBe('true');
+			expect(resolves()).toBe(groupBodies(host)[1]);
+			press(button);
+			expect(button.getAttribute('aria-expanded')).toBe('false');
+			expect(resolves()).toBe(groupBodies(host)[1]);
+		});
+
+		it('answers a press anywhere on the row, once, through the same handler', () => {
+			const { host, state } = live();
+			const count = headings(host)[1]?.querySelector(
+				'.sheetsmith-record-group-count',
+			) as HTMLElement;
+			press(count);
+			expect(state.toggled).toEqual([['1', true]]);
+			// A press on the button is the button's, not counted twice by the row.
+			press(toggles(host)[2] as HTMLElement);
+			expect(state.toggled).toEqual([
+				['1', true],
+				['2', true],
+			]);
+		});
+
+		it('toggles exactly once whichever part of the header is pressed', () => {
+			// The chevron is repainted by the very press that lands on it, so the
+			// element the event targets is detached before the event reaches the
+			// row: a handler that asks where the target sits then answers twice.
+			const { host, state } = live();
+			const parts: Array<(el: HTMLElement) => Element | null> = [
+				(el) => el,
+				(el) => el.querySelector('.sheetsmith-record-group-mark'),
+				(el) => el.querySelector('.sheetsmith-record-group-mark svg'),
+				(el) => el.querySelector('.sheetsmith-record-group-mark svg *'),
+				(el) => el.querySelector('.sheetsmith-record-group-name'),
+				(el) =>
+					el
+						.closest('.sheetsmith-record-group-heading')
+						?.querySelector('.sheetsmith-record-group-count') ?? null,
+				(el) => el.closest('.sheetsmith-record-group-heading'),
+			];
+			parts.forEach((part, at) => {
+				const target = part(toggles(host)[1] as HTMLElement);
+				expect(target, `part ${at}`).not.toBeNull();
+				const before = state.toggled.length;
+				press(target as Element);
+				expect(state.toggled.length - before, `part ${at}`).toBe(1);
+			});
+			// Seven presses, one each: the group ends where an odd count leaves it.
+			expect(toggles(host)[1]?.getAttribute('aria-expanded')).toBe('false');
+		});
+	});
+
+	describe('collapsing', () => {
+		it('hides the body until found, keeps every record in the DOM, and reports it', () => {
+			const { host, state } = live();
+			press(toggles(host)[1] as HTMLElement);
+			const body = groupBodies(host)[1] as HTMLElement;
+			expect(body.getAttribute('hidden')).toBe('until-found');
+			expect(body.querySelectorAll('.sheetsmith-record')).toHaveLength(3);
+			expect(state.toggled).toEqual([['1', true]]);
+			// The records outside it are untouched.
+			expect(groupBodies(host)[0]?.hasAttribute('hidden')).toBe(false);
+			press(toggles(host)[1] as HTMLElement);
+			expect(body.hasAttribute('hidden')).toBe(false);
+			expect(state.toggled.at(-1)).toEqual(['1', false]);
+		});
+
+		it('keeps the focus on the header it pressed', () => {
+			const { host } = live();
+			const button = toggles(host)[1] as HTMLButtonElement;
+			button.focus();
+			press(button);
+			expect(host.ownerDocument.activeElement).toBe(button);
+			expect(host.contains(button)).toBe(true);
+		});
+
+		it('opens on a beforematch and reports it', () => {
+			// happy-dom has neither the attribute nor the event, so this is the wiring.
+			const { host, state } = live();
+			press(toggles(host)[1] as HTMLElement);
+			groupBodies(host)[1]?.dispatchEvent(new Event('beforematch'));
+			expect(groupBodies(host)[1]?.hasAttribute('hidden')).toBe(false);
+			expect(toggles(host)[1]?.getAttribute('aria-expanded')).toBe('true');
+			expect(state.toggled.at(-1)).toEqual(['1', false]);
+		});
+
+		it('starts every group open', () => {
+			const { host } = live();
+			expect(groupBodies(host).some((one) => one.hasAttribute('hidden'))).toBe(false);
+		});
+
+		it('survives a rebuild caused by an edit in the same group, another group and the name', () => {
+			const { host, state } = live();
+			press(toggles(host)[1] as HTMLElement);
+			// Another group: the Wizard's Uses is not drawn, so rename its first record.
+			const fields = nameFields(host);
+			fields[4]!.value = 'Fireball II';
+			fields[4]!.dispatchEvent(new Event('blur'));
+			expect(state.body).toContain('### Fireball II');
+			expect(toggles(host)[1]?.getAttribute('aria-expanded')).toBe('false');
+			// The collapsed group's own record.
+			const inside = nameFields(host)[1]!;
+			inside.value = 'Second Wind II';
+			inside.dispatchEvent(new Event('blur'));
+			expect(toggles(host)[1]?.getAttribute('aria-expanded')).toBe('false');
+			expect(groupBodies(host)[1]?.getAttribute('hidden')).toBe('until-found');
+		});
+
+		it('still holds every collapsed record’s values, computed ones included', () => {
+			const cfg: RecordSetConfig = {
+				...GROUPED,
+				fields: [
+					...(GROUPED.fields ?? []),
+					{ key: 'Left', type: 'computed', formula: '3 - Uses' },
+				],
+			};
+			const data = readData(FEATURES, cfg);
+			const layout: Layout = { name: 'L', components: [cfg] };
+			const { env } = buildSheet(layout, [
+				{ config: cfg, component: recordSet, data, error: null },
+			]);
+			const resolveField = makeFieldResolver(recordSet, cfg, data, env);
+			const values = (collapse: boolean) => {
+				const { host, state } = live(cfg, FEATURES, { resolveField });
+				if (collapse) for (const one of toggles(host)) press(one);
+				expect(state.changes).toEqual([]);
+				return Array.from(
+					host.querySelectorAll<HTMLElement>('.sheetsmith-record-value'),
+				).map((one) => one.textContent);
+			};
+			const open = values(false);
+			// Fighter's Second Wind has Uses 2, so its Left is 1: a real evaluation.
+			expect(open).toContain('1');
+			// Every group collapsed, every computed value is still drawn and the same.
+			expect(values(true)).toEqual(open);
+			// And the sum a formula reads is the file's, whatever the view collapsed.
+			expect(evaluate('sum(features, Uses)', env.sheet, callsFrom(env))).toBe(
+				2 + 3,
+			);
+		});
+
+		it('reports a group that is gone as expanded, so it opens if it returns', () => {
+			const { host, state } = live();
+			press(toggles(host)[2] as HTMLElement);
+			state.toggled.length = 0;
+			// Both Wizard records move to Cleric, so group 2 is gone at this render.
+			state.body = recordSet.write(
+				{
+					records: {
+						1: { fields: { Class: '3' } },
+						5: { fields: { Class: '3' } },
+					},
+				},
+				state.body,
+				GROUPED,
+			);
+			recordSet.render(host, GROUPED, readData(state.body, GROUPED), {
+				...context,
+				collapsedGroups: [...state.collapsed],
+				onToggleGroup: (key, collapsed) => {
+					state.toggled.push([key, collapsed]);
+					if (collapsed) state.collapsed.add(key);
+					else state.collapsed.delete(key);
+				},
+			});
+			expect(state.toggled).toEqual([['2', false]]);
+			expect(state.collapsed.has('2')).toBe(false);
+		});
+
+		it('reports nothing where every held key still has its group', () => {
+			const { host, state, draw } = live();
+			press(toggles(host)[1] as HTMLElement);
+			state.toggled.length = 0;
+			draw();
+			expect(state.toggled).toEqual([]);
+			expect(toggles(host)[1]?.getAttribute('aria-expanded')).toBe('false');
+		});
+	});
+
+	describe('Add', () => {
+		const added = (text: string) =>
+			recordSet.write(
+				{ records: {}, added: [{ name: 'Feature' }] },
+				text,
+				GROUPED,
+			);
+
+		it('draws one add control, outside the scrolling list', () => {
+			const { host } = live();
+			expect(host.querySelectorAll('.sheetsmith-record-add')).toHaveLength(1);
+			expect(
+				host.querySelector('.sheetsmith-record-set-list .sheetsmith-record-add'),
+			).toBeNull();
+		});
+
+		it('lands the new record in the first group, opens it, and focuses it by position', () => {
+			const { host, state } = live();
+			press(toggles(host)[0] as HTMLElement);
+			state.toggled.length = 0;
+			expect(host.querySelector('.sheetsmith-record-group')).not.toBeNull();
+			press(addButton(host));
+			// The new record has no fence, so it is in the first group; that group
+			// was collapsed and opens in the same step.
+			expect(state.toggled).toEqual([['0', false]]);
+			expect(state.collapsed.has('0')).toBe(false);
+			const unassigned = groupBodies(host)[0] as HTMLElement;
+			expect(
+				Array.from(
+					unassigned.querySelectorAll<HTMLInputElement>('.sheetsmith-record-name-input'),
+				).map((one) => one.value),
+			).toEqual(['Lucky', 'Feature']);
+			// The new record is the last in the file and the *second* drawn: focus
+			// goes to it, not to whichever name was drawn last.
+			const fields = nameFields(host);
+			const focused = host.ownerDocument.activeElement;
+			expect(focused).toBe(fields[1]);
+			expect(fields.at(-1)).not.toBe(focused);
+			expect((focused as HTMLInputElement).value).toBe('Feature');
+		});
+
+		it('creates the first group when nothing was in it, and opens nothing it need not', () => {
+			const noUnassigned = FEATURES.replace('Uses: 3', 'Class: 1\nUses: 3');
+			const { host, state } = live({}, noUnassigned);
+			expect(groupNames(host)).not.toContain('Unassigned');
+			press(addButton(host));
+			expect(groupNames(host)[0]).toBe('Unassigned');
+			expect(state.toggled).toEqual([]);
+			expect(host.ownerDocument.activeElement).toBe(
+				groupBodies(host)[0]?.querySelector('.sheetsmith-record-name-input'),
+			);
+			expect(added(noUnassigned)).toContain('### Feature');
+		});
+
+		it('lands nothing where the write never grew the list', () => {
+			const { host } = live({}, FEATURES, {}, false);
+			press(addButton(host));
+			const again = live({}, FEATURES).host;
+			expect(again.ownerDocument.activeElement).not.toBe(nameFields(again)[0]);
+		});
+	});
+
+	describe('editing the key in a record', () => {
+		const select = (host: HTMLElement, at: number): HTMLSelectElement =>
+			Array.from(
+				host.querySelectorAll<HTMLSelectElement>('.sheetsmith-record-select'),
+			)[at] as HTMLSelectElement;
+
+		it('does not move the record until the commit', () => {
+			// Reports a change and writes nothing: the state before a commit lands.
+			const { host, state } = live({}, FEATURES, {}, false);
+			const first = select(host, 1);
+			first.focus();
+			first.value = '2';
+			first.dispatchEvent(new Event('change'));
+			// The commit was reported, and with no write there is no rebuild, so the
+			// record is exactly where it was.
+			expect(state.changes).toHaveLength(1);
+			expect(names(host)[1]).toBe('Second Wind');
+			expect(groupBodies(host)[1]?.contains(first)).toBe(true);
+		});
+
+		it('moves it into the new group, opens that group and keeps focus on the same dropdown', () => {
+			const { host, state } = live();
+			press(toggles(host)[2] as HTMLElement);
+			state.open.add(1);
+			// Second Wind (position 0) is the first Fighter, drawn at index 1; its
+			// Class dropdown is the record's first control after the chevron.
+			const target = select(host, 1);
+			target.focus();
+			target.value = '2';
+			target.dispatchEvent(new Event('change'));
+			expect(state.collapsed.has('2')).toBe(false);
+			const wizard = groupBodies(host)[2] as HTMLElement;
+			expect(
+				Array.from(
+					wizard.querySelectorAll<HTMLInputElement>('.sheetsmith-record-name-input'),
+				).map((one) => one.value),
+			).toEqual(['Second Wind', 'Fireball', 'Shield']);
+			// Same control, same record: the Class select of Second Wind.
+			const landed = host.ownerDocument.activeElement as HTMLSelectElement;
+			expect(landed.classList.contains('sheetsmith-record-select')).toBe(true);
+			expect(landed.value).toBe('2');
+			expect(landed.getAttribute('aria-label')).toBe(
+				'Second Wind Class',
+			);
+			expect(wizard.contains(landed)).toBe(true);
+			// The record's open state is its position's, and the position is unchanged.
+			expect(state.open.has(1)).toBe(true);
+		});
+
+		it('moves a record typed into a number key to a new group, and back', () => {
+			const spells: RecordSetConfig = {
+				...config,
+				id: 'spells',
+				recordName: 'Spell',
+				groupBy: 'Level',
+				fields: [{ key: 'Level', type: 'number' }],
+			};
+			const text = [1, 2, 3].map((level, at) =>
+				['', `### S${at}`, '```sheet', `Level: ${level}`, '```', ''].join('\n'),
+			);
+			const { host } = live(spells, text.join(''));
+			const level = (at: number) =>
+				Array.from(
+					host.querySelectorAll<HTMLInputElement>('.sheetsmith-record-input'),
+				)[at] as HTMLInputElement;
+			const type = (from: string, value: string) => {
+				const input = Array.from(
+					host.querySelectorAll<HTMLInputElement>('.sheetsmith-record-input'),
+				).find((one) => one.value === from) as HTMLInputElement;
+				input.focus();
+				input.value = value;
+				input.dispatchEvent(
+					new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }),
+				);
+			};
+			// Before Enter the draft is only a draft.
+			const first = level(0);
+			first.focus();
+			first.value = '12';
+			first.dispatchEvent(new Event('input'));
+			expect(groupNames(host)).toEqual(['Level 1', 'Level 2', 'Level 3']);
+			first.dispatchEvent(
+				new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }),
+			);
+			expect(groupNames(host)).toEqual(['Level 2', 'Level 3', 'Level 12']);
+			// Focus followed the record into its new group.
+			const active = host.ownerDocument.activeElement as HTMLInputElement;
+			expect(active.value).toBe('12');
+			expect(groupBodies(host)[2]?.contains(active)).toBe(true);
+			// Typing 2 moves it back into the existing group, and the empty one is gone.
+			type('12', '2');
+			expect(groupNames(host)).toEqual(['Level 2', 'Level 3']);
+			// Text that is not a number goes to Other.
+			type('2', 'two');
+			expect(groupNames(host)).toEqual(['Level 2', 'Level 3', 'Other']);
+			// Focus followed it into Other, which is drawn open.
+			const inOther = host.ownerDocument.activeElement as HTMLInputElement;
+			expect(inOther.value).toBe('two');
+			expect(groupBodies(host)[2]?.contains(inOther)).toBe(true);
+			expect(toggles(host)[2]?.getAttribute('aria-expanded')).toBe('true');
+			// And back out of Other: a number puts it in a group again, focus with it.
+			type('two', '3');
+			expect(groupNames(host)).toEqual(['Level 2', 'Level 3']);
+			const back = host.ownerDocument.activeElement as HTMLInputElement;
+			expect(back.value).toBe('3');
+			expect(groupBodies(host)[1]?.contains(back)).toBe(true);
+		});
+
+		it('does not pull focus back to a control the reader tabbed away from', () => {
+			const spells: RecordSetConfig = {
+				...config,
+				id: 'spells',
+				recordName: 'Spell',
+				groupBy: 'Level',
+				fields: [{ key: 'Level', type: 'number' }],
+			};
+			const text = [1, 2].map((level, at) =>
+				['', `### S${at}`, '```sheet', `Level: ${level}`, '```', ''].join('\n'),
+			);
+			const { host } = live(spells, text.join(''));
+			const input = host.querySelector<HTMLInputElement>(
+				'.sheetsmith-record-input',
+			) as HTMLInputElement;
+			input.value = '9';
+			// The commit a blur makes: focus is already on its way elsewhere.
+			input.dispatchEvent(new Event('blur'));
+			expect(groupNames(host)).toEqual(['Level 2', 'Level 9']);
+			expect(host.ownerDocument.activeElement).not.toBe(
+				host.querySelector('.sheetsmith-record-input'),
+			);
+		});
+
+		it('leaves the record where it was after Escape', () => {
+			const spells: RecordSetConfig = {
+				...config,
+				id: 'spells',
+				recordName: 'Spell',
+				groupBy: 'Level',
+				fields: [{ key: 'Level', type: 'number' }],
+			};
+			const text = ['', '### S0', '```sheet', 'Level: 1', '```', ''].join('\n');
+			const { host, state } = live(spells, text);
+			const input = host.querySelector<HTMLInputElement>(
+				'.sheetsmith-record-input',
+			) as HTMLInputElement;
+			input.focus();
+			input.value = '5';
+			input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+			expect(input.value).toBe('1');
+			expect(groupNames(host)).toEqual(['Level 1']);
+			expect(state.changes).toEqual([]);
+		});
+	});
+
+	describe('what grouping leaves alone', () => {
+		it('reaches a collapsed group’s record with a reset, and draws the result', () => {
+			const cfg: RecordSetConfig = {
+				...GROUPED,
+				fields: [
+					...(GROUPED.fields ?? []),
+					{ key: 'Left', type: 'computed', formula: '3 - Uses' },
+				],
+			};
+			const result = recordSet.applyReset?.(
+				readData(FEATURES, cfg),
+				cfg,
+				{ trigger: 'Long rest', action: 'full' },
+				{ resolve: () => null, explain: () => null },
+			);
+			if (!result?.ok) throw new Error('expected a reset');
+			const after = recordSet.write(result.data, FEATURES, cfg);
+			// The reset is the same whether or not the list is grouped.
+			expect(after).toBe(
+				recordSet.write(
+					(() => {
+						const plain = { ...cfg, groupBy: undefined };
+						const r = recordSet.applyReset?.(
+							readData(FEATURES, plain),
+							plain,
+							{ trigger: 'Long rest', action: 'full' },
+							{ resolve: () => null, explain: () => null },
+						);
+						if (!r?.ok) throw new Error('expected a reset');
+						return r.data;
+					})(),
+					FEATURES,
+					{ ...cfg, groupBy: undefined },
+				),
+			);
+			// Rendered after the reset with the Fighter group collapsed: its
+			// record, restored to its maximum, is in the DOM and its computed field
+			// follows.
+			const data = readData(after, cfg);
+			const { env } = buildSheet({ name: 'L', components: [cfg] }, [
+				{ config: cfg, component: recordSet, data, error: null },
+			]);
+			const { host } = live(cfg, after, {
+				resolveField: makeFieldResolver(recordSet, cfg, data, env),
+			}, true);
+			press(toggles(host)[1] as HTMLElement);
+			const fighter = groupBodies(host)[1] as HTMLElement;
+			expect(fighter.getAttribute('hidden')).toBe('until-found');
+			const uses = fighter.querySelector<HTMLInputElement>(
+				'.sheetsmith-record-input',
+			);
+			expect(uses?.value).toBe('3');
+			expect(
+				fighter.querySelector('.sheetsmith-record-value')?.textContent,
+			).toBe('0');
+		});
+
+		it('adds up the same with a group collapsed, since collapsing writes nothing', () => {
+			const { host, state } = live();
+			const before = state.body;
+			for (const one of toggles(host)) press(one);
+			expect(state.body).toBe(before);
+			expect(state.changes).toEqual([]);
+		});
+
+		it('publishes the same rows with and without a group', () => {
+			const plain = recordSet.scopeRows?.(readData(FEATURES, GROUPED), {
+				...GROUPED,
+				groupBy: undefined,
+			});
+			const grouped = recordSet.scopeRows?.(readData(FEATURES, GROUPED), GROUPED);
+			expect(grouped?.(() => null)).toEqual(plain?.(() => null));
+			expect(grouped?.(() => null)).toHaveLength(7);
 		});
 	});
 });

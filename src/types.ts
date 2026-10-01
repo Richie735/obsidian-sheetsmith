@@ -1983,6 +1983,21 @@ export interface RenderContext<TData = unknown> {
 	openRecords?: readonly number[];
 	/** Report the reader opening or closing one of this component's records. */
 	onToggleRecord?: (index: number, open: boolean) => void;
+	/**
+	 * The keys of this component's groups the reader has collapsed, and empty
+	 * where they have collapsed none: absence is open, so a group nobody has
+	 * touched needs no entry.
+	 *
+	 * **The third member of the posture category above, and a third pair rather
+	 * than a reading of the other two.** An index into alternatives, a set of open
+	 * record positions and a set of collapsed keys are three shapes. Keys rather
+	 * than positions, because a group is identified by the value its records share
+	 * and not by where it is drawn: the key is the stored value as a string, and
+	 * the empty string for the group a record with no value goes under.
+	 */
+	collapsedGroups?: readonly string[];
+	/** Report the reader collapsing or expanding one of this component's groups. */
+	onToggleGroup?: (key: string, collapsed: boolean) => void;
 }
 
 /**

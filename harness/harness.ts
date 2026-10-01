@@ -56,6 +56,7 @@ import {
 	SAMPLES,
 	unmodifiedSamples,
 	pinnedAddSamples,
+	recordGroupSamples,
 } from './samples';
 import { renderSettings } from './settings-panel';
 import { harnessLayout } from './stub-app';
@@ -66,7 +67,8 @@ type StateName =
 	| 'unmodified'
 	| 'effective'
 	| 'broken'
-	| 'pinned-add';
+	| 'pinned-add'
+	| 'record-groups';
 type Surface = 'sheet' | 'editor' | 'settings' | 'both';
 
 interface Live {
@@ -92,6 +94,7 @@ function samplesFor(name: StateName): Sample[] {
 	if (name === 'effective') return effectiveSamples();
 	if (name === 'broken') return brokenSamples();
 	if (name === 'pinned-add') return pinnedAddSamples();
+	if (name === 'record-groups') return recordGroupSamples();
 	return SAMPLES;
 }
 
@@ -344,6 +347,13 @@ function resource(target: string): string | null {
 const activeTab = new Map<string, number>();
 
 /**
+ * Which groups the reader has collapsed where, exactly as the view holds them
+ * (`types.ts`, `collapsedGroups`): the *collapsed* keys, so an untouched group is
+ * open. Empty to begin with — "every group open" is the default a shot should show.
+ */
+const collapsedGroups = new Map<string, Set<string>>();
+
+/**
  * Which records the reader has opened where, exactly as the view holds them.
  *
  * **Seeded, which nothing else in this map's shape is, and the reason is what a
@@ -409,6 +419,13 @@ function renderSheet(into: HTMLElement): void {
 				// The same answer for a record set's disclosure, and held the same
 				// way: a record left open has to survive an edit anywhere on the
 				// sheet, because a commit re-renders everything.
+				collapsedGroups: [...(collapsedGroups.get(config.id) ?? [])],
+				onToggleGroup: (key: string, collapsed: boolean) => {
+					const held = collapsedGroups.get(config.id) ?? new Set<string>();
+					if (collapsed) held.add(key);
+					else held.delete(key);
+					collapsedGroups.set(config.id, held);
+				},
 				openRecords: [...(openRecords.get(config.id) ?? [])],
 				onToggleRecord: (index: number, open: boolean) => {
 					const held = openRecords.get(config.id) ?? new Set<number>();
@@ -759,7 +776,8 @@ function applyQuery(): void {
 			wanted === 'unmodified' ||
 			wanted === 'effective' ||
 			wanted === 'broken' ||
-			wanted === 'pinned-add'
+			wanted === 'pinned-add' ||
+			wanted === 'record-groups'
 			? wanted
 			: 'populated',
 	);

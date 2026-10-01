@@ -3687,3 +3687,230 @@ export function pinnedAddSamples(): Sample[] {
 		},
 	];
 }
+
+/**
+ * **A Record set's groups** (`docs/features/record-set-groups.md`), on a sheet of
+ * their own, so that the one measurement the feature owes — that a collapse moves
+ * nothing outside the list — has neighbours above, below and beside the list to
+ * move.
+ *
+ * A state rather than a change to `SAMPLES`, on `pinnedAddSamples`' own argument:
+ * the populated sheet is every component's own reading, and what this one is for
+ * is a handful of grouped lists whose records are chosen to meet every rule the
+ * spec names. Row 1: a Card over each of the two grouped lists. Rows 2-5: Class
+ * features (a level key drawn as a dropdown in the opened record, the class case)
+ * four columns wide, Grouped spells (a number key under the strip) six wide, and
+ * a Card beside them. Row 6: a Pool under each. Row 7: Spells by name (a level
+ * key with names, so a header says `Cantrip`) and the two bad keys. Row 10: a Tab
+ * set holding a grouped list, for a collapse inside a container.
+ *
+ * Class features holds the seven records the spec's fixture names: three Fighter,
+ * two Wizard, one with no `Class` entry (Unassigned), one with `Class: 9`, past
+ * the list, which lands in Other. One has a body and one has no fence.
+ */
+export function recordGroupSamples(): Sample[] {
+	const record = (name: string, fence: string[] | null, prose = ''): string =>
+		[
+			`### ${name}`,
+			...(fence === null ? [] : ['```sheet', ...fence, '```']),
+			prose,
+			'',
+		].join('\n');
+	const card = (
+		id: string,
+		label: string,
+		position: { col: number; row: number; width: number; height: number },
+		key: string,
+		value: string,
+	): Sample => ({
+		config: { id, type: 'card', label, position, key } as ComponentConfig,
+		body: `\`\`\`sheet\n${key}: ${value}\n\`\`\``,
+	});
+	const pool = (
+		id: string,
+		label: string,
+		position: { col: number; row: number; width: number; height: number },
+	): Sample => ({
+		config: { id, type: 'pool', label, position, max: '10' } as ComponentConfig,
+		body: '```sheet\ncurrent: 6\nmax: 10\n```',
+	});
+	const spellFields = [
+		{ key: 'Level', type: 'number' },
+		{ key: 'Prepared', type: 'toggle' },
+	];
+	const spells = [
+		['Light', '0'],
+		['Mage Hand', '0'],
+		['Shield', '1'],
+		['Sleep', '1'],
+		['Fireball', '3'],
+		['Counterspell', '03'],
+		['Wish', 'two'],
+		['Blank', ''],
+	];
+	const spellBody = (rows: string[][]): string =>
+		[
+			'',
+			...rows.map(([name, level], at) =>
+				record(name as string, [`Level: ${level}`, `Prepared: ${at % 2 === 0 ? 'yes' : 'no'}`], 'A line of prose.'),
+			),
+		].join('\n');
+	const classFields = [
+		{
+			key: 'Class',
+			type: 'level',
+			levels: ['Unassigned', 'Fighter', 'Wizard', 'Cleric'],
+			input: 'select',
+			placement: 'body',
+		},
+		{ key: 'Uses', type: 'number', max: 3 },
+	];
+	return [
+		card('groups_above_features', 'Above features', { col: 1, row: 1, width: 4, height: 1 }, 'AC', '16'),
+		card('groups_above_spells', 'Above spells', { col: 5, row: 1, width: 6, height: 1 }, 'DC', '14'),
+		{
+			config: {
+				id: 'class_features',
+				type: 'record-set',
+				label: 'Class features',
+				position: { col: 1, row: 2, width: 4, height: 4 },
+				recordName: 'Feature',
+				groupBy: 'Class',
+				fields: classFields,
+			} as ComponentConfig,
+			body: [
+				'',
+				record('Second Wind', ['Class: 1', 'Uses: 2'], 'A bonus action: regain 1d10 plus your level in hit points.'),
+				record('Fireball', ['Class: 2', 'Uses: 1']),
+				record('Action Surge', ['Class: 1', 'Uses: 1']),
+				record('Lucky', ['Uses: 3']),
+				record('Old homebrew', ['Class: 9', 'Uses: 0']),
+				record('Arcane Recovery', ['Class: 2', 'Uses: 1']),
+				record('Fighting Style', null),
+			].join('\n'),
+		},
+		{
+			config: {
+				id: 'grouped_spells',
+				type: 'record-set',
+				label: 'Grouped spells',
+				position: { col: 5, row: 2, width: 6, height: 4 },
+				recordName: 'Spell',
+				fieldHeadings: true,
+				groupBy: 'Level',
+				fields: spellFields,
+			} as ComponentConfig,
+			body: spellBody(spells),
+		},
+		card('groups_beside', 'Beside', { col: 11, row: 2, width: 2, height: 4 }, 'XP', '300'),
+		pool('groups_below_features', 'Below features', { col: 1, row: 6, width: 4, height: 1 }),
+		pool('groups_below_spells', 'Below spells', { col: 5, row: 6, width: 6, height: 1 }),
+		{
+			config: {
+				id: 'spells_by_name',
+				type: 'record-set',
+				label: 'Spells by name',
+				position: { col: 1, row: 7, width: 6, height: 3 },
+				recordName: 'Spell',
+				groupBy: 'Level',
+				fields: [
+					{
+						key: 'Level',
+						type: 'level',
+						levels: ['Cantrip', '1st', '2nd', '3rd'],
+						input: 'select',
+					},
+					{ key: 'Prepared', type: 'toggle' },
+				],
+			} as ComponentConfig,
+			body: spellBody([
+				['Light', '0'],
+				['Shield', '1'],
+				['Misty Step', '2'],
+				['Fireball', '3'],
+				['Mage Hand', '0'],
+			]),
+		},
+		{
+			config: {
+				id: 'bad_group_missing',
+				type: 'record-set',
+				label: 'Group by nothing',
+				position: { col: 7, row: 7, width: 3, height: 3 },
+				recordName: 'Spell',
+				groupBy: 'Nope',
+				fields: spellFields,
+			} as ComponentConfig,
+			body: spellBody([
+				['Light', '0'],
+				['Shield', '1'],
+			]),
+		},
+		{
+			config: {
+				id: 'bad_group_toggle',
+				type: 'record-set',
+				label: 'Group by a toggle',
+				position: { col: 10, row: 7, width: 3, height: 3 },
+				recordName: 'Spell',
+				groupBy: 'Prepared',
+				fields: spellFields,
+			} as ComponentConfig,
+			body: spellBody([
+				['Light', '0'],
+				['Shield', '1'],
+			]),
+		},
+		{
+			config: {
+				id: 'grouped_tabs',
+				type: 'tab-set',
+				label: 'Grouped tabs',
+				position: { col: 1, row: 10, width: 8, height: 4 },
+				children: [
+					{
+						id: 'grouped_tab_one',
+						type: 'group',
+						label: 'Features tab',
+						position: { col: 1, row: 1, width: 8, height: 4 },
+						children: [
+							{
+								id: 'tabbed_features',
+								type: 'record-set',
+								label: 'Tabbed features',
+								position: { col: 1, row: 1, width: 8, height: 4 },
+								recordName: 'Feature',
+								groupBy: 'Class',
+								fields: classFields,
+							},
+						],
+					},
+					{
+						id: 'grouped_tab_two',
+						type: 'group',
+						label: 'Notes tab',
+						position: { col: 1, row: 1, width: 8, height: 1 },
+						children: [
+							{
+								id: 'tabbed_note',
+								type: 'rich-text',
+								label: 'Tabbed note',
+								position: { col: 1, row: 1, width: 8, height: 1 },
+							},
+						],
+					},
+				],
+			} as unknown as ComponentConfig,
+			body: null,
+			children: {
+				tabbed_features: [
+					'',
+					record('Second Wind', ['Class: 1', 'Uses: 1']),
+					record('Fireball', ['Class: 2', 'Uses: 1']),
+					record('Action Surge', ['Class: 1', 'Uses: 1']),
+				].join('\n'),
+				tabbed_note: '\nA second tab, so this is a real tab set.\n',
+			},
+		},
+	];
+}
