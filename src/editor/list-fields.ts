@@ -924,13 +924,14 @@ export function renderColumnsEditor(
 		return named.length === 0 ? COLUMN_TYPES : named;
 	})();
 	/**
-	 * What a new column is created as, and what an unrecognised stored type
-	 * falls back to on screen.
+	 * What an unset or unrecognised stored type is on screen. A new column is
+	 * created as the first *offered* type instead (the Add handler), which is
+	 * the same answer for Table and Roster and not for a Record set.
 	 *
-	 * The *shared* default where this list offers it, so a Table goes on storing
-	 * a text column as no type at all; the first offered type otherwise, written
-	 * out — which is what keeps `DEFAULT_COLUMN_TYPE` meaning one thing rather
-	 * than one thing per component (`types.ts`, `columnOptions`).
+	 * The *shared* default where this list offers it, so an untyped column is
+	 * what `read` takes it for; the first offered type otherwise — which is what
+	 * keeps `DEFAULT_COLUMN_TYPE` meaning one thing rather than one thing per
+	 * component (`types.ts`, `columnOptions`).
 	 */
 	const fallback = offered.some((id) => id === DEFAULT_COLUMN_TYPE)
 		? DEFAULT_COLUMN_TYPE
@@ -1223,9 +1224,11 @@ export function renderColumnsEditor(
 		 * shows `fallback` for an unset type, so resolving it to the shared
 		 * default here would draw **Number** in the select and a *text* column's
 		 * detail line under it — the exact disagreement this comment forbids,
-		 * one level in. Not reachable from a fixture, because a list that does
-		 * not offer text writes its type out; reachable from a hand-edited
-		 * layout, which is what these two lines exist for.
+		 * one level in. Reachable from a hand-edited layout only: a list writes
+		 * its first offered type out. A Record set now offers text, so for it the
+		 * select shows **Text** for an untyped field, which is what `read` has
+		 * always meant by one (it used to draw **Number** over a field the
+		 * component refused as text).
 		 */
 		const effective = column.type ?? fallback;
 
@@ -1896,13 +1899,15 @@ export function renderColumnsEditor(
 		let counter = 2;
 		while (taken.has(next)) next = `New ${unit} ${counter++}`;
 		context.focusAfterRedraw(`${prefix}-col-${columns.length}-key`);
-		// The type is written out unless it *is* the shared default, so a list
-		// that does not offer text never stores a column as "no type" — which
-		// the component would read back as text and refuse.
+		// The first *offered* type, written out unless it *is* the shared
+		// default. Not `fallback`, which is the shared default wherever it is
+		// offered: a Record set offers text (last, as a group key) and would
+		// otherwise store every new field as "no type", read it back as text and
+		// refuse it on the first field an author created. For Table the first
+		// offered type is the shared default, so it still stores `{ key }`.
+		const first = offered[0] as string;
 		columns.push(
-			fallback === DEFAULT_COLUMN_TYPE
-				? { key: next }
-				: { key: next, type: fallback },
+			first === DEFAULT_COLUMN_TYPE ? { key: next } : { key: next, type: first },
 		);
 		context.persist();
 		context.redraw();

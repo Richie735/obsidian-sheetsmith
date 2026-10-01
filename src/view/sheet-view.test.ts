@@ -274,3 +274,86 @@ describe('the groups a reader collapsed', () => {
 		expect(expanded(view)).toEqual(['true', 'true']);
 	});
 });
+
+describe('a text field as a list’s group key', () => {
+	const fence = (...lines: string[]): string =>
+		['```sheet', ...lines, '```', ''].join('\n');
+	const LIST = {
+		id: 'features',
+		type: 'record-set',
+		label: 'Features',
+		recordName: 'Feature',
+		position: { col: 1, row: 1, width: 6, height: 3 },
+		groupBy: 'Class',
+		fields: [{ key: 'Class' }],
+	};
+	const TEXT = note([
+		'Features',
+		[
+			'',
+			'### Hunter\'s Bane',
+			fence('Class: Blood Hunter'),
+			'### Second Wind',
+			fence('Class: Fighter'),
+			'### Crimson Rite',
+			fence('Class: blood hunter'),
+			'',
+		].join('\n'),
+	]);
+	const toggles = (view: SheetView): HTMLButtonElement[] =>
+		Array.from(
+			view.containerEl.querySelectorAll<HTMLButtonElement>(
+				'.sheetsmith-record-group-toggle',
+			),
+		);
+	const classField = (view: SheetView, record: string): HTMLInputElement =>
+		Array.from(
+			view.containerEl.querySelectorAll<HTMLInputElement>(
+				'.sheetsmith-record-input-text',
+			),
+		).find(
+			(one) => one.getAttribute('aria-label') === `${record} Class`,
+		) as HTMLInputElement;
+
+	it('keeps a group collapsed across a rebuild when a member is retyped in another case', async () => {
+		const { view } = await sheetOnNote([LIST], TEXT);
+		expect(toggles(view).map((one) => one.textContent)).toEqual([
+			'Blood Hunter',
+			'Fighter',
+		]);
+		toggles(view)[0]?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		expect(toggles(view)[0]?.getAttribute('aria-expanded')).toBe('false');
+
+		const field = classField(view, 'Crimson Rite');
+		field.value = 'BLOOD HUNTER';
+		field.dispatchEvent(new Event('blur'));
+		await settle();
+		// The sheet was rebuilt from the written note, and the match key kept the state.
+		expect(toggles(view).map((one) => one.getAttribute('aria-expanded'))).toEqual([
+			'false',
+			'true',
+		]);
+		expect(view.containerEl.textContent).not.toContain('Not saved');
+	});
+
+	it('writes what was typed to the note, in the record’s own fence', async () => {
+		const { view } = await sheetOnNote([LIST], TEXT);
+		const field = classField(view, 'Second Wind');
+		field.value = '  Rogue ';
+		field.dispatchEvent(new Event('blur'));
+		await settle();
+		await view.save();
+		expect(
+			(view as unknown as { data: string }).data,
+		).toContain('### Second Wind\n```sheet\nClass: Rogue\n```');
+	});
+
+	it('draws the configuration error in place when the text field is not the key', async () => {
+		const { view } = await sheetOnNote([{ ...LIST, groupBy: undefined }], TEXT);
+		const error = view.containerEl.querySelector('.sheetsmith-error');
+		expect(error?.textContent).toContain(
+			'The field "Class" holds text, which a list can hold only as the field it is grouped by. Set Group by to "Class"',
+		);
+		expect(view.containerEl.querySelector('.sheetsmith-record-group')).toBeNull();
+	});
+});

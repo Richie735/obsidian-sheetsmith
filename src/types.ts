@@ -454,19 +454,22 @@ export interface ConfigFieldSpec<
 	 * without it, and the failure was reachable on the first field an author
 	 * added.** The field is Table's shape: it offers every type in
 	 * `components/column-types.ts`, and it leaves the *shared* default out of the
-	 * file — which is `text`. A Record set refuses a text field outright, since
-	 * SPEC §5's language has no strings and prose belongs in a record's body, so a
-	 * freshly added field arrived stored as "no type", read back as text, and the
-	 * card reported that it cannot hold text. The author met a configuration error
-	 * on the first field they created, beside checkboxes offering two more things
-	 * the component refuses.
+	 * file — which is `text`. A Record set refuses a text field except as the one
+	 * its list is grouped by, since SPEC §5's language has no strings and prose
+	 * belongs in a record's body, so a freshly added field arrived stored as "no
+	 * type", read back as text, and the card reported that it cannot hold text.
+	 * The author met a configuration error on the first field they created,
+	 * beside checkboxes offering two more things the component refuses. **It now
+	 * offers `text`, last, and the trap is closed by the Add handler writing the
+	 * first offered type out** rather than by leaving the type off the list.
 	 *
 	 * **Giving Record set its own default is what this is instead of**, and it is
 	 * the drift `column-types.ts` exists to prevent: the editor omits the key when
 	 * it equals the shared constant and the component reads a missing key as that
 	 * same constant, so two answers to "which type is first" makes one of them
-	 * misread stored data. With `text` simply not offered, a Record set's `type` is
-	 * always written out and the shared constant keeps one meaning.
+	 * misread stored data. With the first offered type always written out unless it
+	 * is the shared default, a Record set's `type` is `number` and the shared
+	 * constant keeps one meaning.
 	 */
 	columnOptions?: ColumnOptionsSpec;
 	/**

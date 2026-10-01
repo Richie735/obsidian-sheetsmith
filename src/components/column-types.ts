@@ -36,15 +36,17 @@
  * equal, which is what one copy says for free.
  *
  * **The third policy is the one a second rendering component does not hold, and
- * saying which is the point of this paragraph.** A Record set refuses a `text`
- * field, so `DEFAULT_COLUMN_TYPE` is not *its* default — and giving it one of its
- * own is exactly the drift above, because the editor omits the key when it equals
- * this constant and a component reads a missing key as this constant. The
- * resolution keeps one answer to "which type is first" and takes `text` out of
- * what that component's field *offers* instead: `ConfigFieldSpec.columnOptions`
- * names the types a field holds, the first of them is written out where it is not
- * this default, and a type this file knows nothing about cannot reach either
- * reader (`contract.test.ts`). So the first two policies are shared by three
+ * saying which is the point of this paragraph.** A Record set holds a `text`
+ * field only as the one its list is grouped by, so `DEFAULT_COLUMN_TYPE` is not
+ * *its* default — and giving it one of its own is exactly the drift above,
+ * because the editor omits the key when it equals this constant and a component
+ * reads a missing key as this constant. The resolution keeps one answer to "which
+ * type is first": `ConfigFieldSpec.columnOptions` names the types a field holds,
+ * `text` last (appended, since the order decides the default), and a new field is
+ * created as the first of them, written out where it is not this default — so a
+ * Record set's new field is a `number` and never an untyped one read as text. A
+ * type this file knows nothing about cannot reach either reader
+ * (`contract.test.ts`). So the first two policies are shared by three
  * readers and the third by two, deliberately — and the fourth by two as well,
  * for a different reason rather than the same one: only one rendering component
  * has a per-holder maximum at all, and the editor field that configures it is
