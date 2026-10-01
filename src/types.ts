@@ -1874,6 +1874,30 @@ export interface RenderContext<TData = unknown> {
 	 */
 	suggestFile?: (input: HTMLInputElement, commit: (next: string) => void) => void;
 	/**
+	 * Attach a type-ahead to a free-text field, offering the names a list already
+	 * uses (`docs/features/free-text-group-key.md`).
+	 *
+	 * **`suggestFile`'s seam and its terms**: optional, so absent — the editor's
+	 * canvas and the harness pass none — the field is the plain text box it is; a
+	 * component may import nothing from `obsidian` beyond `setIcon`, and the
+	 * platform's `AbstractInputSuggest` is past that line; and nothing in
+	 * `ComponentDefinition` changes. Called once, immediately after the field
+	 * exists, and the caller closes whatever it attaches before the next render.
+	 *
+	 * `names` is what the *caller* decided is on offer, in the order to show it, so
+	 * the view knows nothing about groups: a name is a spelling to put in the
+	 * field and nothing else. `commit` is the field's own commit
+	 * (`EditableHandle.set`), so a pick runs the refusals, the announcement and
+	 * the regroup exactly as typing the name and pressing Enter would. The list
+	 * opens on typing and never on focus alone, which `editor/formula-suggest.ts`
+	 * argues and `suggestFile`'s field, whose whole value is replaced, may ignore.
+	 */
+	suggestText?: (
+		input: HTMLInputElement,
+		names: readonly string[],
+		commit: (next: string) => void,
+	) => void;
+	/**
 	 * Draw this component's `children` into an element of its own choosing
 	 * (SPEC §4.2).
 	 *

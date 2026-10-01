@@ -2130,6 +2130,19 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 						// A text key's order is the spelling's, not a number's.
 						{ alphabetical: fieldType(groupField.field) === 'text' },
 					);
+		/**
+		 * What a text field offers as it is typed: each group's first-seen
+		 * spelling, in header order, without Other. Names in use on this
+		 * character in this list and nothing wider, whether or not a group is
+		 * collapsed.
+		 */
+		const groupSpellings: readonly string[] =
+			groups === null || groupField === null || fieldType(groupField.field) !== 'text'
+				? []
+				: groups
+						.filter((group) => group.key !== OTHER_KEY)
+						.map((group) => group.label ?? group.key);
+
 		if (groups !== null) {
 			groups.forEach((group, ordinal) => {
 				drawGroup(group, ordinal);
@@ -3082,7 +3095,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			input.placeholder = '—';
 			revealWhenTruncated(input);
 			const showRefusal = refusalNotice(row);
-			bindEditable(input, {
+			const handle = bindEditable(input, {
 				initial: raw,
 				announceCommit: (next) => {
 					status.textContent =
@@ -3098,6 +3111,10 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				onRefusal: showRefusal,
 				onCommit: commit,
 			});
+			// The view decides how the offer is drawn; absent, this is a plain box.
+			// A pick is the field's own commit, so it takes the refusals, the
+			// announcement and the regroup typing the name would.
+			context.suggestText?.(input, groupSpellings, (next) => handle.set(next));
 		}
 
 		/**

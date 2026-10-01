@@ -348,6 +348,44 @@ describe('a text field as a list’s group key', () => {
 		).toContain('### Second Wind\n```sheet\nClass: Rogue\n```');
 	});
 
+	it('offers the names in use as the reader types, and a pick writes the note', async () => {
+		const { view } = await sheetOnNote([LIST], TEXT);
+		const field = classField(view, 'Second Wind');
+		field.focus();
+		field.value = 'bl';
+		field.dispatchEvent(new Event('input'));
+		const offered = (): string[] =>
+			Array.from(
+				document.body.querySelectorAll('.suggestion-container .suggestion-item'),
+			).map((one) => one.textContent ?? '');
+		expect(offered()).toEqual(['Blood Hunter']);
+		document.body
+			.querySelector<HTMLElement>('.suggestion-item')
+			?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		await settle();
+		expect(
+			(view as unknown as { data: string }).data,
+		).toContain('### Second Wind\n```sheet\nClass: Blood Hunter\n```');
+		// The rebuild closed what it had bound.
+		expect(offered()).toEqual([]);
+	});
+
+	it('closes a popup left open by a rebuild', async () => {
+		const { view } = await sheetOnNote([LIST], TEXT);
+		const field = classField(view, 'Second Wind');
+		field.focus();
+		field.value = 'bl';
+		field.dispatchEvent(new Event('input'));
+		expect(document.body.querySelector('.suggestion-item')).not.toBeNull();
+		// A rebuild from another record's edit: the focused input is removed
+		// without a blur, so the view has to be what closes the list.
+		const other = classField(view, 'Crimson Rite');
+		other.value = 'Blood Hunter2';
+		other.dispatchEvent(new Event('blur'));
+		await settle();
+		expect(document.body.querySelector('.suggestion-item')).toBeNull();
+	});
+
 	it('draws the configuration error in place when the text field is not the key', async () => {
 		const { view } = await sheetOnNote([{ ...LIST, groupBy: undefined }], TEXT);
 		const error = view.containerEl.querySelector('.sheetsmith-error');

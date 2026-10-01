@@ -7354,6 +7354,107 @@ describe('a text field as the group key', () => {
 		});
 	});
 
+	describe('the type-ahead the view may attach', () => {
+		interface Attached {
+			input: HTMLInputElement;
+			names: readonly string[];
+			commit: (next: string) => void;
+		}
+		function attach(
+			overrides: Partial<RecordSetConfig> = {},
+			text: string = FEATURES_TEXT,
+		) {
+			const calls: Attached[] = [];
+			const view = live(overrides, text, {
+				suggestText: (input, names, commit) => {
+					calls.push({ input, names, commit });
+				},
+			});
+			return { ...view, calls };
+		}
+
+		it('is called once per text input, with this list’s group spellings in header order', () => {
+			const { host, calls } = attach();
+			expect(calls).toHaveLength(8);
+			expect(calls.map((one) => one.input)).toEqual(textInputs(host));
+			for (const call of calls) {
+				// First-seen spelling, header order, no Other, collapsed or not.
+				expect(call.names).toEqual(['Blood Hunter', 'Fighter', 'Wizard']);
+			}
+		});
+
+		it('offers a collapsed group’s name and never a name from another list', () => {
+			const { host, state, calls } = attach();
+			press(toggles(host)[2] as HTMLElement);
+			expect(state.collapsed.has('wizard')).toBe(true);
+			// Redrawn by the collapse's own report: the latest render's calls.
+			expect(calls.at(-1)?.names).toContain('Wizard');
+			const other = attach({ id: 'other-list' }, rec('Z', 'Class: Rogue'));
+			expect(other.calls.at(-1)?.names).toEqual(['Rogue']);
+			expect(calls.at(-1)?.names).not.toContain('Rogue');
+		});
+
+		it('rebuilds the offer on a render, so a new name is on it', () => {
+			const { host, calls } = attach();
+			expect(calls.at(-1)?.names).not.toContain('Rogue');
+			typeClass(host, 'Second Wind', 'Rogue');
+			// Second Wind headed Fighter, so with it gone the next Fighter in the
+			// file (`FIGHTER`) heads it: the first-seen spelling, as the header does.
+			expect(calls.at(-1)?.names).toEqual([
+				'Blood Hunter',
+				'FIGHTER',
+				'Rogue',
+				'Wizard',
+			]);
+		});
+
+		it('commits a pick through the field’s own gesture: same write, same regroup, same refusals', () => {
+			const { host, state, calls } = attach();
+			const call = calls.find(
+				(one) => one.input.getAttribute('aria-label') === 'Second Wind Class',
+			) as Attached;
+			call.commit('Wizard');
+			expect(state.changes).toEqual([
+				{ records: { 1: { fields: { Class: 'Wizard' } } } },
+			]);
+			expect(membersOf(host, 2)).toContain('Second Wind');
+
+			const refused = attach();
+			const bad = refused.calls.find(
+				(one) => one.input.getAttribute('aria-label') === 'Second Wind Class',
+			) as Attached;
+			bad.commit('[[Wizard]]');
+			expect(refused.state.changes).toEqual([]);
+			expect(refused.host.querySelector('.sheetsmith-error')?.textContent).toContain(
+				'Not saved.',
+			);
+		});
+
+		it('draws a plain input where the view attaches nothing', () => {
+			const { host } = live();
+			expect(textInputs(host)).toHaveLength(8);
+			expect(textInputs(host)[0]?.hasAttribute('aria-autocomplete')).toBe(false);
+		});
+
+		it('is never called for a list keyed by something other than text', () => {
+			let called = 0;
+			const cfg: RecordSetConfig = {
+				...TEXT_CONFIG,
+				groupBy: 'Uses',
+				fields: [{ key: 'Uses', type: 'number' }],
+			};
+			const host = document.createElement('div');
+			document.body.appendChild(host);
+			recordSet.render(host, cfg, readData(rec('A', 'Uses: 1'), cfg), {
+				...context,
+				suggestText: () => {
+					called += 1;
+				},
+			});
+			expect(called).toBe(0);
+		});
+	});
+
 	describe('sample', () => {
 		it('names two classes from the first two sample records, through read and write', () => {
 			const sample = recordSet.sample?.(TEXT_CONFIG) ?? '';
