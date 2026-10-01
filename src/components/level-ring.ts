@@ -107,15 +107,26 @@ export function levelGlyph(column: LevelColumn, level: number): string {
 }
 
 /**
+ * The level index a stored value names, **not held to the column's range**:
+ * blank is 0, text that is not a number is 0, and anything else rounds. The one
+ * reading of a stored level, which `levelOf` clamps for a ring and a Record
+ * set's grouping compares against the list instead, so the two cannot disagree
+ * about which level a record holds.
+ */
+export function levelIndex(raw: string): number {
+	const value = raw.trim() === '' ? 0 : Number(raw);
+	if (!Number.isFinite(value)) return 0;
+	return Math.round(value);
+}
+
+/**
  * The level a cell holds, held inside the column's range. A stored value
  * outside it is a hand edit or a layout that used to have more marks; showing
  * the nearest level the column can represent beats showing nothing, and the
  * note keeps what it says until the user changes that cell.
  */
 export function levelOf(column: LevelColumn, raw: string): number {
-	const value = raw.trim() === '' ? 0 : Number(raw);
-	if (!Number.isFinite(value)) return 0;
-	return Math.max(0, Math.min(levelCount(column), Math.round(value)));
+	return Math.max(0, Math.min(levelCount(column), levelIndex(raw)));
 }
 
 /**

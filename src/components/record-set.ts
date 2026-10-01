@@ -73,6 +73,12 @@ import { fencedKeyProblem, readFenced, writeFenced } from '../parse/fenced';
 import { bodyText, writeBodyText } from '../parse/markdown-body';
 import { cellParts, spellParts, storedParts } from '../parse/modifier-cell';
 import {
+	GroupReading,
+	groupRecords,
+	OTHER_KEY,
+	RecordGroup,
+} from '../parse/record-groups';
+import {
 	appendRecord,
 	joinRecords,
 	RecordBlock,
@@ -118,7 +124,7 @@ import {
 	RowValues,
 	showsOwnLabel,
 } from '../types';
-import { levelCount, levelName, levelOf, parseLevel } from './level-ring';
+import { levelCount, levelIndex, levelName, levelOf, parseLevel } from './level-ring';
 import { adoptRenderedLinks, paintLinkedText } from './linked-text';
 import {
 	ModifierFormState,
@@ -227,6 +233,27 @@ const NAME_CLIPPING = {
  * observable fact the press was waiting for.
  */
 let awaitingAdd: { id: string; held: number } | null = null;
+
+/**
+ * Which control of which record, in which list, the reader has just edited so
+ * that the record regrouped, and the group it is now in.
+ *
+ * **`awaitingAdd`'s shape and for its reason.** Regrouping moves the record, so
+ * the view's restore — which finds a control by its index among the cell's
+ * controls — would name another record's control. The edit releases focus before
+ * reporting, which makes the view's capture return null, and this says where the
+ * landing goes. Armed only where focus was on the control and the record's group
+ * actually changed, so a blur that committed while focus went elsewhere never
+ * takes it back; and consumed only by a render in which that record is in the
+ * group the edit named, so a write that never lands cannot leave it armed to
+ * steal focus from some later render.
+ */
+let awaitingKeyEdit: {
+	id: string;
+	at: number;
+	index: number;
+	key: string;
+} | null = null;
 
 /** One typed value every record holds, stored as an entry in its fence. */
 export interface RecordField {
@@ -354,6 +381,13 @@ export interface RecordSetConfig extends ComponentConfig {
 	 * unheaded one until it holds a record that read.
 	 */
 	fieldHeadings?: boolean;
+	/**
+	 * Display only: nothing in the note or in a formula knows it. Matched to a
+	 * field's key trimmed and case-insensitively, as `write` matches a delta's
+	 * keys, and a key that names nothing usable draws the list ungrouped with a
+	 * line saying why rather than failing `read`.
+	 */
+	groupBy?: string;
 }
 
 /** One record, as the note holds it. */
@@ -595,6 +629,79 @@ function configError(config: RecordSetConfig): string | null {
 		}
 	}
 	return null;
+}
+
+/**
+ * What `groupBy` makes of this list: the field it names, a sentence for why it
+ * names none that can group, or null where the layout asks for no grouping.
+ *
+ * **A sentence and not a `configError`**, because a grouping that cannot be drawn
+ * leaves a working list: `read` stays whole and the records draw ungrouped under
+ * the line. The types it accepts are named here and only here, so a later key
+ * type is one clause.
+ */
+function groupingOf(
+	config: RecordSetConfig,
+): { field: RecordField; index: number } | { problem: string } | null {
+	const wanted = (config.groupBy ?? '').trim();
+	if (wanted === '') return null;
+	const fields = config.fields ?? [];
+	const index = fields.findIndex(
+		(field) => (field.key ?? '').trim().toLowerCase() === wanted.toLowerCase(),
+	);
+	if (index === -1) {
+		return {
+			problem: `Group by is "${wanted}", and this list has no field with that key. The records are shown ungrouped. Name one of its fields in the layout editor, or clear Group by.`,
+		};
+	}
+	const field = fields[index] as RecordField;
+	const type = fieldType(field);
+	if (type !== 'level' && type !== 'number') {
+		return {
+			problem: `Group by is "${wanted}", which is a ${type} field. Records can be grouped by a level or a number field only. The records are shown ungrouped. Name one in the layout editor, or clear Group by.`,
+		};
+	}
+	return { field, index };
+}
+
+/**
+ * Which group a record's stored entry belongs to, or null where it belongs to
+ * none and goes under Other.
+ *
+ * **The stored value, never a modifier-adjusted one, read the way a formula
+ * reads it.** A number goes through `typedValue`, so `3`, `03` and ` 3.0 ` are
+ * one group and `sum(spells, Level)` agrees with the header about what a record
+ * is worth; text that is not a number has no value. A level is read as `levelOf`
+ * reads it — blank and non-numeric are 0, the first name — **except that it is
+ * not clamped**: an index that rounds outside the list has no name to sit under,
+ * and filing it under the nearest one would put a record in a class it was never
+ * given. A record whose fence will not read has no value at all.
+ */
+export function groupReading(
+	field: RecordField,
+	entry: Record<string, string>,
+	error: string | null,
+): GroupReading | null {
+	if (error !== null) return null;
+	const raw = storedValue(field, entry[field.key]);
+	if (fieldType(field) === 'number') {
+		const value = typedValue(field, raw);
+		return typeof value === 'number'
+			? { key: String(value), order: value }
+			: null;
+	}
+	const level = levelIndex(raw);
+	if (level < 0 || level > levelCount(field)) return null;
+	return { key: String(level), order: level };
+}
+
+/** What a group's header calls it. */
+function groupName(field: RecordField, key: string): string {
+	if (key === OTHER_KEY) return 'Other';
+	if (fieldType(field) === 'level' && field.levels !== undefined) {
+		return levelName(field, Number(key));
+	}
+	return `${fieldLabel(field)} ${key}`;
 }
 
 /** Every record the list draws, in file order. */
@@ -1257,6 +1364,13 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				"The typed values every record holds, each an entry in that record's block in the note. Renaming a key moves that entry in every record, in every note on this layout. Text is not offered: words a reader reads belong in the record's body, where they may hold links. A number field with a maximum is a uses counter: the field draws that maximum beside its value, and a reset trigger restores it to that maximum. A number field's maximum may belong to the field, so every record shares it, or to each record, so a reader types it on the sheet — and a reset restores each record to whichever one applies. Tick \"Inside the opened record\" for a value read once and changed rarely: it draws above the record's prose and is not shown while the record is closed. A field used every turn belongs on the summary line. Write a condition in \"Shown when\", such as Recharges == 1 || Recharges == 2, to draw a field only on the records where it holds. A hidden field keeps its value and still counts in every formula, modifier and reset, so a when clause reading a hidden toggle still applies. A level is read by its position, from 0 for the first name, so reordering a level's names changes what a condition reading it means.",
 		},
 		{
+			key: 'groupBy',
+			kind: 'text',
+			label: 'Group by',
+			description:
+				'The key of one level or number field. Records are drawn under a collapsible header per value, a level in the order its names are written and a number from lowest to highest, and a record with no value goes under Other. It changes how the list is drawn and nothing in the note, and a reset bound to this field will move records between groups. A level suits a closed set such as a class: its names are the layout\'s, so a name a player invents needs appending to its "Level names" here; set the field to a dropdown and tick "Inside the opened record", and name its first level for a record with no choice, such as Unassigned. A number suits a spell level and heads each group "Level 3". Show the key field, since a record hidden from it by a condition still sits in its group. Blank draws the list ungrouped.',
+		},
+		{
 			key: 'hideLabel',
 			group: 'Appearance',
 			kind: 'boolean',
@@ -1625,7 +1739,23 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		 */
 		const landing =
 			awaitingAdd?.id === config.id && records.length > awaitingAdd.held;
+		/** The position the new record was appended at, which is where it still is. */
+		const landedAt = landing && awaitingAdd !== null ? awaitingAdd.held : -1;
 		if (landing) awaitingAdd = null;
+
+		/**
+		 * How the list is grouped, if it is: the key field, or why it cannot be.
+		 * Read once, so the groups, the problem line and the **Add** landing agree.
+		 */
+		const grouping = groupingOf(config);
+		const groupField =
+			grouping !== null && 'field' in grouping ? grouping : null;
+		/**
+		 * The groups the reader has collapsed. Clamped to nothing: a key the list
+		 * no longer has is pruned below rather than filtered here, so the view's
+		 * copy and this one agree after the render.
+		 */
+		const collapsedKeys = new Set(context.collapsedGroups ?? []);
 
 		/**
 		 * Whether this list draws the strip, and so whether it is a headed list at
@@ -1881,8 +2011,14 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		/** Which delete control is armed, one register per list. */
 		const armedRecord = armRegister();
 
-		/** The name fields drawn, so a landing after **Add** can reach the last. */
-		const nameFields: HTMLInputElement[] = [];
+		/**
+		 * The name fields drawn, by the record's position in the file, so a landing
+		 * after **Add** finds the record it appended and not whichever was drawn
+		 * last: with groups, the last drawn is no longer the last record.
+		 */
+		const nameFields = new Map<number, HTMLInputElement>();
+		/** Every field's cell by record position and declared index, for a key edit's landing. */
+		const fieldCells = new Map<string, HTMLElement>();
 
 		/**
 		 * Every conditioned field whose condition could not be worked out, by its
@@ -1893,9 +2029,26 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		/** Records a condition was evaluated on, which is every one that read. */
 		const readable = records.filter((record) => record.error === null).length;
 
-		records.forEach((record, at) => {
-			drawRecord(record, at);
-		});
+		if (groupField !== null) {
+			const groups = groupRecords(records, (record, at) =>
+				groupReading(groupField.field, record.fields, record.error),
+			);
+			groups.forEach((group, ordinal) => {
+				drawGroup(group, ordinal);
+			});
+			// A group that is gone is a new group if it returns, and opens: reported
+			// as the difference, the way `shiftOpen` is. Only where groups were drawn,
+			// so an ungrouped fallback after a bad `groupBy` leaves what the reader
+			// collapsed as it was.
+			const drawn = new Set(groups.map((group) => group.key));
+			for (const key of collapsedKeys) {
+				if (!drawn.has(key)) context.onToggleGroup?.(key, false);
+			}
+		} else {
+			records.forEach((record, at) => {
+				drawRecord(record, at, host);
+			});
+		}
 
 		/*
 		 * **One line per failing field, not per record, and above the records**,
@@ -1910,7 +2063,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		 * until the strip draws — so the line sits under the strip rather than in
 		 * a grid track meant for it.
 		 */
-		const lines = [...failedConditions.entries()]
+		const lines: HTMLElement[] = [...failedConditions.entries()]
 			.sort(([left], [right]) => left - right)
 			.map(([index, failed]) => {
 				const field = fields[index] as RecordField;
@@ -1923,6 +2076,11 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 					`"${fieldLabel(field)}" is shown on ${where} because its condition could not be worked out: ${failed.why} Fix the condition under Shown when in the layout editor.`,
 				);
 			});
+		if (grouping !== null && 'problem' in grouping) {
+			lines.unshift(
+				element('div', 'sheetsmith-error', host, grouping.problem),
+			);
+		}
 		if (lines.length > 0) host.prepend(...lines);
 
 		// The add control is the box's last child, outside the scrolling list, so it
@@ -1949,23 +2107,142 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			// component's own next render puts it where the reader needs it.
 			add.blur();
 			awaitingAdd = { id: config.id, held: records.length };
+			// The record starts with no fence, so it lands in the group the key's
+			// default value names; one the reader collapsed opens with it.
+			if (groupField !== null) {
+				const key = groupReading(groupField.field, {}, null)?.key;
+				if (key !== undefined && collapsedKeys.has(key)) {
+					context.onToggleGroup?.(key, false);
+				}
+			}
 			// Named rather than blank: a `### ` with nothing after it is not a
 			// heading, so a nameless record would not survive its own first read.
 			context.onChange({ records: {}, added: [{ name: noun }] });
 		});
 
 		if (landing) {
-			const field = nameFields[nameFields.length - 1];
+			const field = nameFields.get(landedAt);
 			field?.focus();
 			// Selected as well as focused, because the name the add control wrote is
 			// a placeholder the reader is expected to type over.
 			field?.select();
 		}
 
+		if (awaitingKeyEdit?.id === config.id && groupField !== null) {
+			const wanted = awaitingKeyEdit;
+			const edited = records[wanted.at];
+			if (
+				edited !== undefined &&
+				(
+					groupReading(groupField.field, edited.fields, edited.error) ?? {
+						key: OTHER_KEY,
+					}
+				).key === wanted.key
+			) {
+				awaitingKeyEdit = null;
+				fieldCells
+					.get(`${wanted.at}:${wanted.index}`)
+					?.querySelector<HTMLElement>('select, button, input')
+					?.focus();
+			}
+		}
+
+		/**
+		 * One group: its header over a body holding its records, in the file's order.
+		 *
+		 * **The body is always in the DOM and a collapse only hides it**, so a
+		 * collapsed group's records are still laid out and every formula over them is
+		 * still evaluated, as an inactive tab's are (SPEC §8). `hidden="until-found"`
+		 * is the record body's own spelling for its own reason: it runs on
+		 * `content-visibility: hidden`, so the rows leave layout and add no height,
+		 * and the box does not move because it never depended on them.
+		 */
+		function drawGroup(
+			group: RecordGroup<RecordEntry>,
+			ordinal: number,
+		): void {
+			if (groupField === null) return;
+			const name = groupName(groupField.field, group.key);
+			const section = element('div', 'sheetsmith-record-group', host);
+			const heading = element(
+				'h3',
+				'sheetsmith-record-group-heading',
+				section,
+			);
+			const toggle = element(
+				'button',
+				'sheetsmith-record-group-toggle',
+				heading,
+			);
+			toggle.type = 'button';
+			const mark = element('span', 'sheetsmith-record-group-mark', toggle);
+			mark.setAttribute('aria-hidden', 'true');
+			element('span', 'sheetsmith-record-group-name', toggle, name);
+			// Beside the button and out of its name, so the name is the text on
+			// screen and nothing else (WCAG 2.5.3); the sentence is its twin.
+			const count = group.members.length;
+			element(
+				'span',
+				'sheetsmith-card-abbreviation sheetsmith-record-group-count',
+				heading,
+				String(count),
+			).setAttribute('aria-hidden', 'true');
+			const said = element(
+				'span',
+				'sheetsmith-sr-only',
+				section,
+				`${count} ${noun.toLowerCase()}${count === 1 ? '' : 's'}`,
+			);
+			said.id = `sheetsmith-record-group-count-${config.id}-${ordinal}`;
+			toggle.setAttribute('aria-describedby', said.id);
+
+			const body = element('div', 'sheetsmith-record-group-body', section);
+			body.id = `sheetsmith-record-group-${config.id}-${ordinal}`;
+			toggle.setAttribute('aria-controls', body.id);
+
+			let collapsed = collapsedKeys.has(group.key);
+			const paintGroup = (): void => {
+				mark.replaceChildren();
+				setIcon(mark, collapsed ? CLOSED_ICON : OPEN_ICON);
+				toggle.setAttribute('aria-expanded', String(!collapsed));
+				if (collapsed) body.setAttribute('hidden', 'until-found');
+				else body.removeAttribute('hidden');
+			};
+			const setCollapsed = (next: boolean): void => {
+				if (next === collapsed) return;
+				collapsed = next;
+				// Kept current for the presses that follow without a rebuild: **Add**
+				// and a key edit read it to know whether their group needs opening.
+				if (collapsed) collapsedKeys.add(group.key);
+				else collapsedKeys.delete(group.key);
+				// Painted before reporting, on the record disclosure's own rule: a
+				// collapse reaches no file, so no rebuild comes to paint it.
+				paintGroup();
+				context.onToggleGroup?.(group.key, collapsed);
+			};
+			// **One route in, on the row, and not one on the button and one on the
+			// row.** The button's press bubbles to the row, and a press on the chevron
+			// repaints the chevron (`paintGroup` replaces it) before it gets there, so
+			// a row handler that asked whether the target sat inside the button found
+			// it detached and answered a second time: the group toggled twice and
+			// looked unmoved. Enter and Space reach the row as the button's own
+			// `click`, the count and the empty row as a press on the row.
+			heading.addEventListener('click', () => setCollapsed(!collapsed));
+			body.addEventListener('beforematch', () => setCollapsed(false));
+			for (const member of group.members) {
+				drawRecord(member.record, member.at, body);
+			}
+			paintGroup();
+		}
+
 		/** One record: its summary line, its body, and the controls on both. */
-		function drawRecord(record: RecordEntry, at: number): void {
+		function drawRecord(
+			record: RecordEntry,
+			at: number,
+			into: HTMLElement,
+		): void {
 			const named = recordLabel(record.name, noun);
-			const row = element('div', 'sheetsmith-record', host);
+			const row = element('div', 'sheetsmith-record', into);
 			const summary = element('div', 'sheetsmith-record-summary', row);
 
 			/*
@@ -2112,6 +2389,45 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		}
 
 		/**
+		 * What an edit to the key field owes before it is reported: the group the
+		 * record is about to be in opens, and focus follows the control.
+		 *
+		 * **Nothing here moves a record.** The commit is the only thing that does,
+		 * since a draft is not a render. Focus is released before the report, as
+		 * **Add** does, because the view restores it by a control's index and the
+		 * index names another control once the record has moved; and it is taken only
+		 * where the control holds it, so a commit made by tabbing to another field
+		 * does not pull the reader back.
+		 */
+		function regroup(
+			record: RecordEntry,
+			at: number,
+			index: number,
+			cell: HTMLElement,
+			next: string,
+		): void {
+			if (groupField === null) return;
+			const before = groupReading(
+				groupField.field,
+				record.fields,
+				record.error,
+			);
+			const after = groupReading(
+				groupField.field,
+				{ ...record.fields, [groupField.field.key]: next },
+				record.error,
+			);
+			const key = (after ?? { key: OTHER_KEY }).key;
+			if (key === (before ?? { key: OTHER_KEY }).key) return;
+			if (collapsedKeys.has(key)) context.onToggleGroup?.(key, false);
+			const held = cell.ownerDocument.activeElement;
+			if (held !== null && cell.contains(held)) {
+				if (held.instanceOf(HTMLElement)) held.blur();
+				awaitingKeyEdit = { id: config.id, at, index, key };
+			}
+		}
+
+		/**
 		 * One record's names as a computed field or a condition reads them: every
 		 * stored field's value half, never a computed one.
 		 */
@@ -2190,7 +2506,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			// well: this field's *value* is the record's name, so qualifying it would
 			// announce the same word twice.
 			input.setAttribute('aria-label', noun);
-			nameFields.push(input);
+			nameFields.set(at, input);
 			const handle = bindEditable(input, {
 				initial: record.name,
 				announceCommit: (next) => {
@@ -2312,6 +2628,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				`sheetsmith-record-field sheetsmith-record-field-${type}`,
 				into,
 			);
+			fieldCells.set(`${at}:${index}`, cell);
 			if (!drawn.shown) cell.setAttribute('hidden', '');
 			if (drawn.track !== null) {
 				cell.style.setProperty(
@@ -2328,6 +2645,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 				element('span', 'sheetsmith-card-abbreviation', cell, name);
 			}
 			const commit = (next: string): void => {
+				if (groupField?.index === index) regroup(record, at, index, cell, next);
 				context.onChange({
 					records: { [at]: { fields: { [field.key]: next } } },
 				});

@@ -6098,6 +6098,163 @@ a.sheetsmith-notice-action {
 	background-color: var(--background-modifier-hover);
 }
 
+/* ---------------------------------------------------------------------------
+   A group of records under a header that collapses
+   (docs/features/record-set-groups.md).
+
+   **Nothing here changes the box.** The list is out of flow inside a box that is
+   `--sheetsmith-rows` tall as a floor, so a group's height reaches no grid track:
+   collapsing one removes rows from the list's scroll extent and nothing the sheet
+   is sized from. The body is hidden, not removed, and `hidden="until-found"` runs
+   on `content-visibility: hidden`, so a collapsed group's records still lay out
+   and still compute.
+
+   **The clothes are all borrowed.** The chevron and its muted colour are the record
+   disclosure's, the count is the secondary rank, the rule is the group heading's
+   hairline and the hover is the surface every control on the sheet uses. A list
+   with no `groupBy` draws none of these elements. */
+/* **A group is one contained block: its header and its records inside one quiet
+   border.** Membership reads from the box, so the leading rule down the body
+   that an earlier pass drew is gone (a box says it twice) and the gap between
+   boxes is a step rather than the 12px that had to do the separating alone.
+   **The border is an `outline` drawn inward, not a `border`**: a group is a
+   subgrid in the wide regime, and a border on a subgrid is added to its edge
+   tracks, which would move the columns of the headed list off its strip. An
+   outline takes no track, no padding and no height, so the component's box,
+   its rows and its columns are exactly what they were. The radius is the
+   component's own small one, and the colour the sheet's hairline. The header
+   keeps its band, because a box alone does not say which line is the header. */
+.sheetsmith-record-group {
+	border-radius: var(--radius-s);
+	outline: 1px solid var(--background-modifier-border);
+	outline-offset: -1px;
+}
+
+.sheetsmith-record-group + .sheetsmith-record-group {
+	margin-top: var(--size-4-2);
+}
+
+/* A closed group is the header alone in its box, so the rule under the header
+   would double the box's own edge and the header's square lower corners would
+   poke out of the radius. */
+.sheetsmith-view
+	.sheetsmith-record-group:has(> .sheetsmith-record-group-body[hidden])
+	.sheetsmith-record-group-heading {
+	border-bottom-color: transparent;
+	border-radius: var(--radius-s);
+}
+
+/* An `h3` for the note's own outline: a component's section is `##` and a record
+   `###`, so a group between them takes the lower level and a reader navigating by
+   heading finds the groups and not forty record names. Obsidian's heading rules
+   are scoped to rendered markdown, so the size, weight and margin are set here. */
+.sheetsmith-view .sheetsmith-record-group-heading {
+	display: flex;
+	align-items: center;
+	gap: var(--size-2-2);
+	min-height: var(--sheetsmith-inline-control, 1.6em);
+	margin: 0;
+	/* A little taller than the control floor the button inside it holds: block
+	   padding from the size scale, so the row reads as a header and not as a
+	   record's own line. The hit target is the whole row either way. */
+	padding: var(--size-2-2) var(--size-2-2);
+	border-bottom: 1px solid
+		var(--sheetsmith-group-rule, var(--background-modifier-border));
+	border-radius: var(--radius-s) var(--radius-s) 0 0;
+	/* Half the hover step: the outline carries the grouping, so the band only has
+	   to say which line is the header. A mix of the sheet's own translucent token
+	   and not a fixed grey, so it still reads on the card in either theme (the
+	   card's own colour is what a band of `--background-secondary` vanished into). */
+	background-color: color-mix(
+		in srgb,
+		var(--background-modifier-hover) 60%,
+		transparent
+	);
+	font-size: var(--font-ui-small);
+	font-weight: var(--font-semibold);
+	line-height: 1.3;
+	color: var(--text-normal);
+	cursor: pointer;
+	transition: background-color 160ms ease;
+}
+
+.sheetsmith-view .sheetsmith-record-group-heading:hover {
+	background-color: var(--background-modifier-active-hover);
+}
+
+/* The button fills the row and carries the name; Obsidian styles a bare `button`
+   with a background, a radius, a padding and a shadow, so the reset is scoped
+   under `.sheetsmith-view` (§2 of docs/UI.md). */
+.sheetsmith-view .sheetsmith-record-group-toggle {
+	display: inline-flex;
+	flex: 1 1 auto;
+	align-items: center;
+	justify-content: flex-start;
+	gap: var(--size-2-2);
+	min-width: 0;
+	height: auto;
+	min-height: var(--sheetsmith-inline-control, 1.6em);
+	padding: 0;
+	margin: 0;
+	border: none;
+	border-radius: var(--radius-s);
+	background-color: transparent;
+	box-shadow: none;
+	font: inherit;
+	color: inherit;
+	text-align: start;
+	cursor: pointer;
+}
+
+/* Muted for the disclosure's measured reason: `--text-faint` is 2.20:1 here. */
+.sheetsmith-view .sheetsmith-record-group-mark {
+	display: inline-flex;
+	flex: 0 0 auto;
+	line-height: 0;
+	color: var(--text-muted);
+}
+
+.sheetsmith-view .sheetsmith-record-group-mark .svg-icon {
+	width: var(--icon-s);
+	height: var(--icon-s);
+}
+
+.sheetsmith-view .sheetsmith-record-group-name {
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+/* The secondary rank, in the muted colour a record's own field name wears, and in
+   tabular figures so a count changing from 9 to 10 holds still. Not in the
+   button's name. */
+.sheetsmith-view .sheetsmith-record-group-heading .sheetsmith-record-group-count {
+	flex: 0 0 auto;
+	min-height: 0;
+	font-variant-numeric: tabular-nums;
+	color: var(--text-muted);
+}
+
+/* One ring per component, on the button and inside the row so the list's own
+   padding is not what it is clipped by. */
+.sheetsmith-view .sheetsmith-record-group-toggle:focus-visible {
+	outline: 2px solid var(--interactive-accent);
+	outline-offset: -2px;
+}
+
+/* The siblings' pattern, one token: the hairlines the grouping rests on go to
+   `--text-muted`, so the box that says which records belong to which header does
+   not fade at higher contrast. */
+@media (prefers-contrast: more) {
+	.sheetsmith-record-group {
+		outline-color: var(--text-muted);
+	}
+
+	.sheetsmith-view .sheetsmith-record-group-heading {
+		border-bottom-color: var(--text-muted);
+	}
+}
+
 /* The three glyph controls a record carries, measured off the level ring's own
    token so a chevron, a bolt and a ring in one summary line cannot measure
    differently under the same finger — and grow together under a coarse pointer.
@@ -7054,6 +7211,21 @@ a.sheetsmith-notice-action {
 			align-content: start;
 			gap: 0 var(--size-2-2);
 			padding-block: var(--size-2-2);
+		}
+
+		/* A group and its body are subgrids of the same tracks, so a record's
+		   fields land on the same x in every group and under the one strip, and a
+		   heading spans them all. */
+		.sheetsmith-record-group,
+		.sheetsmith-record-group-body {
+			display: grid;
+			grid-template-columns: subgrid;
+			grid-column: 1 / -1;
+			gap: 0 var(--size-2-2);
+		}
+
+		.sheetsmith-view .sheetsmith-record-group-heading {
+			grid-column: 1 / -1;
 		}
 
 		.sheetsmith-record,

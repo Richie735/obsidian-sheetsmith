@@ -19,6 +19,7 @@ import { SheetView } from './sheet-view';
 import { App, TextFileView } from '../test/obsidian-stub';
 import { fakePlugin } from '../test/plugin';
 import { openView } from '../test/workspace';
+import { note, settle, sheetOn as sheetOnNote } from '../test/sheet-on-note';
 
 
 /*
@@ -181,3 +182,95 @@ describe('whether the sheet may write', () => {
 	});
 });
 
+
+/*
+ * The groups a reader has collapsed, which the view holds for the same reasons it
+ * holds a tab and an open record: the sheet rebuilds on every committed edit, and
+ * a collapse is this reader's posture rather than the character's data. The other
+ * two members of that category stay untested here (`docs/BACKLOG.md`); this is the
+ * case for the third alone, and it is the reason the view's own six lines are not
+ * the part nobody drives: forget the `clear` and a reopened note inherits the last
+ * note's collapsed groups.
+ */
+describe('the groups a reader collapsed', () => {
+	const fence = (...lines: string[]): string =>
+		['```sheet', ...lines, '```', ''].join('\n');
+	const FEATURES = {
+		id: 'features',
+		type: 'record-set',
+		label: 'Features',
+		position: { col: 1, row: 1, width: 6, height: 3 },
+		groupBy: 'Class',
+		fields: [
+			{ key: 'Class', type: 'level', levels: ['None', 'Fighter', 'Wizard'] },
+		],
+	};
+	const EXTRAS = {
+		id: 'extras',
+		type: 'record-set',
+		label: 'Extras',
+		position: { col: 1, row: 4, width: 6, height: 3 },
+		fields: [{ key: 'Uses', type: 'number' }],
+	};
+	const TEXT = note(
+		[
+			'Features',
+			['', '### Second Wind', fence('Class: 1'), '### Fireball', fence('Class: 2'), ''].join(
+				'\n',
+			),
+		],
+		['Extras', ['', '### Torch', fence('Uses: 1'), ''].join('\n')],
+	);
+
+	const toggle = (view: SheetView, at: number): HTMLButtonElement =>
+		Array.from(
+			view.containerEl.querySelectorAll<HTMLButtonElement>(
+				'.sheetsmith-record-group-toggle',
+			),
+		)[at] as HTMLButtonElement;
+	const expanded = (view: SheetView): (string | null)[] =>
+		Array.from(
+			view.containerEl.querySelectorAll<HTMLButtonElement>(
+				'.sheetsmith-record-group-toggle',
+			),
+		).map((one) => one.getAttribute('aria-expanded'));
+
+	/** Rename the first record of the list named, which commits on blur. */
+	async function rename(view: SheetView, list: number, to: string): Promise<void> {
+		const input = Array.from(
+			view.containerEl.querySelectorAll<HTMLInputElement>(
+				'.sheetsmith-record-name-input',
+			),
+		)[list] as HTMLInputElement;
+		input.value = to;
+		input.dispatchEvent(new Event('blur'));
+		await settle();
+	}
+
+	it('survive a rebuild from an edit in the same list, and in another component', async () => {
+		const { view } = await sheetOnNote([FEATURES, EXTRAS], TEXT);
+		expect(expanded(view)).toEqual(['true', 'true']);
+		toggle(view, 0).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		expect(expanded(view)).toEqual(['false', 'true']);
+
+		const before = toggle(view, 0);
+		await rename(view, 1, 'Fireball II');
+		// The sheet really was rebuilt, and the collapse came back with it.
+		expect(toggle(view, 0)).not.toBe(before);
+		expect(expanded(view)).toEqual(['false', 'true']);
+
+		await rename(view, 2, 'Torch II');
+		expect(expanded(view)).toEqual(['false', 'true']);
+	});
+
+	it('are dropped when the leaf moves to another file', async () => {
+		const { view } = await sheetOnNote([FEATURES, EXTRAS], TEXT);
+		toggle(view, 0).dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		expect(expanded(view)).toEqual(['false', 'true']);
+
+		view.clear();
+		view.setViewData(TEXT, true);
+		await settle();
+		expect(expanded(view)).toEqual(['true', 'true']);
+	});
+});

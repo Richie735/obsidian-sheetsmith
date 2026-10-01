@@ -212,6 +212,14 @@ export class SheetView extends TextFileView {
 	 */
 	private openRecords = new Map<string, Set<number>>();
 	/**
+	 * The keys of each list's groups the reader has collapsed, by component id.
+	 *
+	 * The third sibling of the two above, for their reasons. Holds the *collapsed*
+	 * keys so that absence is the default of open, and is dropped with them when the
+	 * leaf moves to another file (`types.ts`, `collapsedGroups`).
+	 */
+	private collapsedGroups = new Map<string, Set<string>>();
+	/**
 	 * The lifecycle of markdown a component asked the app to draw.
 	 *
 	 * Here rather than in the component that wants it, because
@@ -345,6 +353,7 @@ export class SheetView extends TextFileView {
 		this.renderId++;
 		this.activeTab.clear();
 		this.openRecords.clear();
+		this.collapsedGroups.clear();
 		// An undo offered on the note being left has nothing to restore into.
 		this.undoExpectation = null;
 		// The outgoing note's embeds go with it: a transclusion loaded for the
@@ -644,6 +653,13 @@ export class SheetView extends TextFileView {
 				if (open) held.add(index);
 				else held.delete(index);
 				this.openRecords.set(config.id, held);
+			},
+			collapsedGroups: [...(this.collapsedGroups.get(config.id) ?? [])],
+			onToggleGroup: (key: string, collapsed: boolean) => {
+				const held = this.collapsedGroups.get(config.id) ?? new Set<string>();
+				if (collapsed) held.add(key);
+				else held.delete(key);
+				this.collapsedGroups.set(config.id, held);
 			},
 		}));
 
