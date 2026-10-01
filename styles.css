@@ -6611,6 +6611,26 @@ a.sheetsmith-notice-action {
 	font-variant-numeric: tabular-nums;
 }
 
+/* **A text field is the number field with a width for a word.** The class a
+   record's field already wears, so it takes the shared hover and the shared
+   focus lists with no new selector, and one width rule on top: a group name is
+   not two digits, and a number's centred 3.5em box would clip `Blood Hunter`
+   to `Blood Hu`. Sized in `ch` so it follows the text size, left-aligned
+   because a name reads from its first letter, and allowed to shrink inside a
+   narrow line or body block rather than widening the box. A name longer than
+   the box is revealed by `ui/truncation.ts`' hover reveal. It is the 14ch of
+   `Path of the Wild Magic` less a few characters; the harness fixture holds a
+   90-character value, and `harness/measure-groups.mjs` holds a clipped group
+   header to one line, the same height as its siblings, with its full text on
+   hover (`docs/features/free-text-group-key.md`). */
+.sheetsmith-view .sheetsmith-record-input.sheetsmith-record-input-text {
+	width: 100%;
+	max-width: 14ch;
+	min-width: 5ch;
+	text-align: left;
+	font-variant-numeric: normal;
+}
+
 /* **A ceiling the reader sets wears the record's field chrome and the pool's
    reading**, and `.sheetsmith-pool-max-input` is deliberately not borrowed.
 
@@ -7015,6 +7035,81 @@ a.sheetsmith-notice-action {
 }
 
 /* ---------------------------------------------------------------------------
+   **A list with a text field stacks sooner, so the record's name is not starved.**
+   A text field is a word wide (a name is not two digits), and the 320px rule
+   above was derived for a name, a labelled number, a ring and a glyph. Measured
+   at a container of 321px with a text field and a counter on the line, the
+   fields took 186px in two lines and the name was left 40px, `Se…`, with the
+   line's own free width inside the fields' track. The record's name is its
+   identity and the first thing a reader looks for, so the stacked line (name and
+   delete on a row, the fields under the name) is drawn for a list holding a
+   text field on its summary line up to **480px**, where the whole line fits in
+   one row with a name of its own: the chevron, the delete, three gaps, a
+   96px name and the text field with a counter come to about 470px.
+
+   **A headed list stacks up to 420px and no further.** Its strip comes in at
+   `14.5em + 6em × N`, which is 424px for two fields, and the strip and the
+   stacked line must never both apply (the strip's own comment above). The strip
+   is not lifted for this: it was measured and tabulated for the widest field
+   there was, and a text field is 115px against its 88px, inside the 52px that
+   the tabulation clears the fit by.
+
+   Same five rules as the 320px block, with the same reasons, and only written
+   twice because a container query cannot take its threshold from a selector.
+   --------------------------------------------------------------------------- */
+@container (max-width: 480px) {
+.sheetsmith-record-set-text:not(.sheetsmith-record-set-text-headed) .sheetsmith-record-summary {
+		grid-template-columns: auto minmax(0, 1fr) auto;
+		row-gap: var(--size-2-1);
+	}
+
+.sheetsmith-record-set-text:not(.sheetsmith-record-set-text-headed) .sheetsmith-record-name {
+		grid-column: 2;
+	}
+
+.sheetsmith-record-set-text:not(.sheetsmith-record-set-text-headed) .sheetsmith-record-remove {
+		grid-column: 3;
+		margin-left: 0;
+	}
+
+.sheetsmith-record-set-text:not(.sheetsmith-record-set-text-headed) .sheetsmith-record-fields {
+		grid-row: 2;
+		grid-column: 2 / -1;
+		padding-left: var(--size-2-2);
+	}
+
+.sheetsmith-record-set-text:not(.sheetsmith-record-set-text-headed) .sheetsmith-record + .sheetsmith-record {
+		margin-top: var(--size-4-2);
+	}
+}
+
+@container (max-width: 420px) {
+.sheetsmith-record-set-text-headed .sheetsmith-record-summary {
+		grid-template-columns: auto minmax(0, 1fr) auto;
+		row-gap: var(--size-2-1);
+	}
+
+.sheetsmith-record-set-text-headed .sheetsmith-record-name {
+		grid-column: 2;
+	}
+
+.sheetsmith-record-set-text-headed .sheetsmith-record-remove {
+		grid-column: 3;
+		margin-left: 0;
+	}
+
+.sheetsmith-record-set-text-headed .sheetsmith-record-fields {
+		grid-row: 2;
+		grid-column: 2 / -1;
+		padding-left: var(--size-2-2);
+	}
+
+.sheetsmith-record-set-text-headed .sheetsmith-record + .sheetsmith-record {
+		margin-top: var(--size-4-2);
+	}
+}
+
+/* ---------------------------------------------------------------------------
    A strip of field names over the list — opt-in, and only where it fits.
 
    **Everything the feature adds is in this block**, so leaving it leaves the
@@ -7201,6 +7296,22 @@ a.sheetsmith-notice-action {
 			white-space: nowrap;
 			text-align: center;
 			color: var(--text-muted);
+		}
+
+		/* **A heading over a column of words starts where the words start.** A
+		   number is centred in a narrow box, so a centred heading sits over it; a
+		   name is left-aligned in a box 14ch wide, and a heading centred over the box
+		   sat 35 to 50px to the right of the ink it names (measured in the harness).
+		   The number column's precedent is to centre the heading on the *ink*
+		   (the 0.4em on the field below); here the ink is at the left edge, so the
+		   heading goes there instead of the field moving. The margin is the field's
+		   own, so the two start at one x, and the padding is the input's own
+		   padding plus its border, which puts the first letters of each over one
+		   another. */
+		.sheetsmith-view .sheetsmith-record-strip .sheetsmith-record-strip-text {
+			justify-self: start;
+			padding-inline-start: calc(var(--size-2-2) + 1px);
+			text-align: left;
 		}
 
 		.sheetsmith-record-set-records {

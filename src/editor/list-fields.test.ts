@@ -1563,6 +1563,98 @@ describe('the columns editor over a component that holds fewer types', () => {
 		expect(table.columns).toEqual([{ key: 'New column' }]);
 	});
 
+	describe('with Record set, Table and Roster as they are registered', () => {
+		/*
+		 * `docs/features/free-text-group-key.md`. A Record set now offers text, last,
+		 * as the field its list is grouped by. The derived `fallback` is then the
+		 * shared default, so an Add handler testing it would store every new field
+		 * as "no type", read back as text and refused on the first field an author
+		 * created. The handler writes the first *offered* type instead, and these
+		 * drive it over each component's real declaration rather than a copy.
+		 */
+		const offersOf = (type: string, key: string): ColumnOptionsSpec => {
+			const found = getComponent(type)?.configFields.find(
+				(one) => one.key === key,
+			)?.columnOptions;
+			if (found === undefined) throw new Error(`${type} offers no ${key}`);
+			return found;
+		};
+		const added = (offers: ColumnOptionsSpec | undefined, name: string) => {
+			const record: { columns: Record<string, unknown>[] } = { columns: [] };
+			button(columnsEditor(record, 0, offers), `Add ${name}`).click();
+			return record.columns;
+		};
+
+		it('stores a Record set\'s new field as a number, not as no type', () => {
+			expect(added(offersOf('record-set', 'fields'), 'field')).toEqual([
+				{ key: 'New field', type: 'number' },
+			]);
+		});
+
+		it('stores a Table\'s new column as absence, exactly as it did', () => {
+			// Table declares no `columnOptions`: every type, text first.
+			expect(added(undefined, 'column')).toEqual([{ key: 'New column' }]);
+		});
+
+		it('stores a Roster\'s new column as it did', () => {
+			const roster = offersOf('roster', 'columns');
+			// Whatever Roster offers first, written out unless it is the default.
+			const first = roster.types[0];
+			expect(added(roster, 'column')).toEqual(
+				first === 'text'
+					? [{ key: 'New column' }]
+					: [{ key: 'New column', type: first }],
+			);
+			expect(first).toBe('number');
+		});
+
+		it('lists Text last for a Record set and shows it for a field with no type', () => {
+			const offers = offersOf('record-set', 'fields');
+			const el = columnsEditor({ columns: [{ key: 'Class' }] }, 0, offers);
+			const select = el.querySelector<HTMLSelectElement>(
+				"select[aria-label='What the field holds']",
+			) as HTMLSelectElement;
+			const values = Array.from(select.options).map((one) => one.value);
+			expect(values.at(-1)).toBe('text');
+			expect(values.indexOf('number')).toBe(0);
+			expect(select.value).toBe('text');
+			expect(select.selectedOptions[0]?.textContent).toBe('Text');
+		});
+
+		it('writes choosing Text as absence, and keeps a hand-written "text"', () => {
+			const offers = offersOf('record-set', 'fields');
+			const record: { columns: Record<string, unknown>[] } = {
+				columns: [
+					{ key: 'A', type: 'number' },
+					{ key: 'B', type: 'text' },
+				],
+			};
+			const el = columnsEditor(record, 0, offers);
+			const [first, second] = Array.from(
+				el.querySelectorAll<HTMLSelectElement>(
+					"select[aria-label='What the field holds']",
+				),
+			) as [HTMLSelectElement, HTMLSelectElement];
+			first.value = 'text';
+			first.dispatchEvent(new Event('change'));
+			expect(record.columns[0]).toEqual({ key: 'A' });
+			// Untouched: a hand-written spelling is carried, not normalised.
+			expect(record.columns[1]).toEqual({ key: 'B', type: 'text' });
+			expect(second.value).toBe('text');
+		});
+
+		it('offers a text field the line a text field has and no number bounds', () => {
+			const offers = offersOf('record-set', 'fields');
+			const el = columnsEditor({ columns: [{ key: 'Class' }] }, 0, offers);
+			const spans = Array.from(
+				el.querySelectorAll('.sheetsmith-position-label'),
+			).map((one) => one.textContent);
+			expect(spans).not.toContain('Minimum');
+			expect(spans).not.toContain('Maximum');
+			expect(labels(el)).not.toContain('Show a total');
+		});
+	});
+
 	it('offers neither a total nor publication where the field refuses them', () => {
 		const shown = labels(
 			columnsEditor({ columns: [{ key: 'Uses', type: 'number' }] }),

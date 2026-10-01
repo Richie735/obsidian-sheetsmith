@@ -569,9 +569,11 @@ describe('recordSet configuration', () => {
 		return message;
 	}
 
-	it('refuses a text field and names the body as the place for words', () => {
+	it('refuses a text field that is not the group key and names the way out', () => {
 		const message = refuses([{ key: 'Notes', type: 'text' }]);
-		expect(message).toContain("prose belongs in the feature's body");
+		expect(message).toBe(
+			`The field "Notes" holds text, which a list can hold only as the field it is grouped by. Set Group by to "Notes", or make it a number, level, toggle, computed or modifier field, or write the words in the feature's body instead.`,
+		);
 	});
 
 	it('refuses every offered field type that cannot hold a value in a fence', () => {
@@ -581,8 +583,9 @@ describe('recordSet configuration', () => {
 		 * `COLUMN_TYPES` grows is what an author can pick here — and a type this
 		 * component cannot store has to be refused rather than half-drawn.
 		 *
-		 * `text` is the one that is refused today. The floor is what stops this
-		 * passing on an empty vocabulary.
+		 * `text` is the one that is refused today, because nothing names it as the
+		 * group key here. The floor is what stops this passing on an empty
+		 * vocabulary.
 		 */
 		expect(COLUMN_TYPES.length).toBeGreaterThan(4);
 		const refused = COLUMN_TYPES.filter((type) => {
@@ -594,8 +597,11 @@ describe('recordSet configuration', () => {
 
 	it('refuses a field with no type, which is what a fresh one is', () => {
 		// The columns editor leaves `type` out for its own default, and that
-		// default is `text` — so a field added and not yet typed lands here.
-		expect(refuses([{ key: 'Field' }])).toContain('cannot hold text');
+		// default is `text` — so a hand-edited field with no type lands here
+		// unless Group by names it. (The editor's Add handler writes a type out.)
+		expect(refuses([{ key: 'Field' }])).toContain(
+			'holds text, which a list can hold only as the field it is grouped by',
+		);
 	});
 
 	it('refuses a key a fence could not hold, and a repeated one', () => {
@@ -5679,7 +5685,7 @@ describe('groups', () => {
 				const { host } = live({ ...mixed, groupBy: key });
 				expect(host.querySelector('.sheetsmith-record-group')).toBeNull();
 				expect(host.querySelector(LINE)?.textContent).toBe(
-					`Group by is "${key}", which is a ${type} field. Records can be grouped by a level or a number field only. The records are shown ungrouped. Name one in the layout editor, or clear Group by.`,
+					`Group by is "${key}", which is a ${type} field. Records can be grouped by a level, number or text field only. The records are shown ungrouped. Name one in the layout editor, or clear Group by.`,
 				);
 			}
 		});
@@ -6222,6 +6228,1241 @@ describe('groups', () => {
 			const grouped = recordSet.scopeRows?.(readData(FEATURES, GROUPED), GROUPED);
 			expect(grouped?.(() => null)).toEqual(plain?.(() => null));
 			expect(grouped?.(() => null)).toHaveLength(7);
+		});
+	});
+});
+
+describe('a text field as the group key', () => {
+	afterEach(() => document.body.replaceChildren());
+
+	const TEXT_CONFIG: RecordSetConfig = {
+		...config,
+		id: 'homebrew',
+		recordName: 'Feature',
+		groupBy: 'Class',
+		// No `type` on Class: that is how the editor stores a text field.
+		fields: [{ key: 'Class' }, { key: 'Uses', type: 'number', max: 3 }],
+	};
+
+	const rec = (name: string, ...lines: string[]): string =>
+		['', `### ${name}`, '```sheet', ...lines, '```', ''].join('\n');
+
+	/** Eight records over five spellings of four classes and two with no class. */
+	const FEATURES_TEXT =
+		rec("Hunter's Bane", 'Class: Blood Hunter', 'Uses: 1') +
+		rec('Second Wind', 'Class: Fighter') +
+		rec('Crimson Rite', 'Class: blood hunter') +
+		rec('Action Surge', 'Class:   FIGHTER  ') +
+		rec('Arcane Recovery', 'Class: Wizard') +
+		rec('Lucky', 'Uses: 3') +
+		rec('Odd one', 'Class: Other') +
+		rec('Another odd', 'Class: other');
+
+	interface LiveText {
+		host: HTMLElement;
+		state: {
+			body: string;
+			collapsed: Set<string>;
+			toggled: [string, boolean][];
+			changes: RecordSetData[];
+		};
+	}
+
+	function live(
+		overrides: Partial<RecordSetConfig> = {},
+		text: string = FEATURES_TEXT,
+		extra: Partial<RenderContext<RecordSetData>> = {},
+		rebuilds = true,
+	): LiveText {
+		const cfg = { ...TEXT_CONFIG, ...overrides };
+		const host = document.createElement('div');
+		document.body.appendChild(host);
+		const state: LiveText['state'] = {
+			body: text,
+			collapsed: new Set(),
+			toggled: [],
+			changes: [],
+		};
+		const draw = (): void => {
+			recordSet.render(host, cfg, readData(state.body, cfg), {
+				...context,
+				collapsedGroups: [...state.collapsed],
+				onToggleGroup: (key, collapsed) => {
+					state.toggled.push([key, collapsed]);
+					if (collapsed) state.collapsed.add(key);
+					else state.collapsed.delete(key);
+				},
+				onChange: (delta) => {
+					state.changes.push(delta);
+					if (!rebuilds) return;
+					state.body = recordSet.write(delta, state.body, cfg);
+					draw();
+				},
+				...extra,
+			});
+		};
+		draw();
+		return { host, state };
+	}
+
+	const toggles = (el: HTMLElement) =>
+		Array.from(
+			el.querySelectorAll<HTMLButtonElement>('.sheetsmith-record-group-toggle'),
+		);
+	const groupNames = (el: HTMLElement) =>
+		toggles(el).map((one) => one.textContent);
+	const groupBodies = (el: HTMLElement) =>
+		Array.from(
+			el.querySelectorAll<HTMLElement>('.sheetsmith-record-group-body'),
+		);
+	const textInputs = (el: HTMLElement) =>
+		Array.from(
+			el.querySelectorAll<HTMLInputElement>('.sheetsmith-record-input-text'),
+		);
+	const press = (el: Element) =>
+		el.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+	const membersOf = (el: HTMLElement, group: number) =>
+		Array.from(
+			(groupBodies(el)[group] as HTMLElement).querySelectorAll<HTMLInputElement>(
+				'.sheetsmith-record-name-input',
+			),
+		).map((one) => one.value);
+	/** One record's class field, by the record's name: the draw order is grouped. */
+	const classOf = (host: HTMLElement, record: string): HTMLInputElement =>
+		textInputs(host).find(
+			(one) => one.getAttribute('aria-label') === `${record} Class`,
+		) as HTMLInputElement;
+	/** Type into one record's class and commit it with Enter, focused as a reader is. */
+	function typeClass(host: HTMLElement, record: string, value: string): void {
+		const input = classOf(host, record);
+		input.focus();
+		input.value = value;
+		input.dispatchEvent(
+			new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }),
+		);
+	}
+
+	describe('where text is legal', () => {
+		const refusal = (cfg: Partial<RecordSetConfig>): string => {
+			const result = recordSet.read(null as unknown as string, {
+				...TEXT_CONFIG,
+				...cfg,
+			});
+			if (result.ok) throw new Error('expected a configuration error');
+			return result.error;
+		};
+
+		it('accepts a text field Group by names, however the key is spelled', () => {
+			for (const groupBy of ['Class', 'class', '  CLASS ']) {
+				expect(recordSet.read(FEATURES_TEXT, { ...TEXT_CONFIG, groupBy }).ok).toBe(
+					true,
+				);
+			}
+			// Hand-written `type: "text"` is the same field as an absent one.
+			const typed: RecordSetConfig = {
+				...TEXT_CONFIG,
+				fields: [{ key: 'Class', type: 'text' }],
+			};
+			expect(recordSet.read(FEATURES_TEXT, typed).ok).toBe(true);
+		});
+
+		it('decides "is the key" and "groups the list" with one rule, over the same spellings', () => {
+			// A text field that groups must not also be refused, and one that does not
+			// group must be: the two readings cannot disagree about any spelling.
+			for (const groupBy of ['Class', 'class', '  CLASS ', 'Clas', ' ', '', undefined]) {
+				const cfg: RecordSetConfig = { ...TEXT_CONFIG, groupBy };
+				const accepted = recordSet.read(FEATURES_TEXT, cfg).ok;
+				const el = document.createElement('div');
+				recordSet.render(el, cfg, accepted ? readData(FEATURES_TEXT, cfg) : null, context);
+				const grouped = el.querySelector('.sheetsmith-record-group') !== null;
+				expect(accepted, String(groupBy)).toBe(grouped);
+			}
+		});
+
+		it('refuses it otherwise, in a sentence that names Group by', () => {
+			for (const groupBy of [undefined, '', 'Uses', 'Nope']) {
+				const said = refusal({ groupBy });
+				expect(said).toContain('holds text');
+				expect(said).toContain('Set Group by to "Class"');
+			}
+		});
+
+		it('refuses a second text field and a typeless field that is not the key', () => {
+			const second = refusal({
+				fields: [{ key: 'Class' }, { key: 'Notes', type: 'text' }],
+			});
+			expect(second).toContain('The field "Notes" holds text');
+			const typeless = refusal({ fields: [{ key: 'Class' }, { key: 'Extra' }] });
+			expect(typeless).toContain('The field "Extra" holds text');
+		});
+
+		it('publishes nothing from a list it refuses', () => {
+			const bad: RecordSetConfig = { ...TEXT_CONFIG, groupBy: undefined };
+			expect(recordSet.read(FEATURES_TEXT, bad).ok).toBe(false);
+			expect(recordSet.scopeRows?.(null, bad)).toBeUndefined();
+			expect(recordSet.scopeModifiers?.(null, bad)).toBeUndefined();
+		});
+
+		it('shows the configuration error in place on the sheet, with nothing drawn', () => {
+			const el = render({ ...TEXT_CONFIG, groupBy: undefined }, null);
+			expect(errors(el).map((one) => one.textContent)).toEqual([
+				'The field "Class" holds text, which a list can hold only as the field it is grouped by. Set Group by to "Class", or make it a number, level, toggle, computed or modifier field, or write the words in the feature\'s body instead.',
+			]);
+			expect(el.querySelector('.sheetsmith-record-add')).toBeNull();
+		});
+	});
+
+	describe('inert paths', () => {
+		it('leaves the text key out of every scope a formula or condition reads', () => {
+			const withComputed: RecordSetConfig = {
+				...TEXT_CONFIG,
+				fields: [
+					{ key: 'Class' },
+					{ key: 'Uses', type: 'number' },
+					{ key: 'Left', type: 'computed', formula: '3 - Uses' },
+				],
+			};
+			const rows = recordSet
+				.scopeRows?.(readData(FEATURES_TEXT, withComputed), withComputed)?.(
+					() => 2,
+				);
+			expect(rows).toHaveLength(8);
+			for (const row of rows ?? []) {
+				expect(Object.keys(row.values)).not.toContain('Class');
+			}
+			expect(Object.keys(rows?.[0]?.values ?? {}).sort()).toEqual(
+				['Left', 'Uses'].sort(),
+			);
+		});
+
+		it('reports the ordinary unknown name for a condition naming the text key', () => {
+			const cfg: RecordSetConfig = {
+				...TEXT_CONFIG,
+				fields: [
+					{ key: 'Class' },
+					{ key: 'Uses', type: 'number', visibleWhen: 'Class == 1' },
+				],
+			};
+			const data = readData(FEATURES_TEXT, cfg);
+			const host = render(cfg, FEATURES_TEXT, {
+				resolveField: makeFieldResolver(recordSet, cfg, data, NO_ENV),
+				explainField: makeFieldExplainer(recordSet, cfg, data, NO_ENV),
+			});
+			expect(errors(host)[0]?.textContent).toContain('Unknown name "Class".');
+		});
+
+		it('offers it to no reset and writes nothing for a binding that names it by hand', () => {
+			expect(
+				recordSet.resetColumns?.(TEXT_CONFIG).map((one) => one.key),
+			).toEqual(['Uses']);
+			const named = recordSet.applyReset?.(
+				readData(FEATURES_TEXT, TEXT_CONFIG),
+				TEXT_CONFIG,
+				{ trigger: 'Rest', action: 'empty', column: 'Class' },
+				{ resolve: () => null, explain: () => null },
+			);
+			// Whatever it says, no text entry changed.
+			if (named?.ok === true) {
+				expect(recordSet.write(named.data, FEATURES_TEXT, TEXT_CONFIG)).toBe(
+					FEATURES_TEXT,
+				);
+			}
+			// Every other field still resets as before.
+			const whole = recordSet.applyReset?.(
+				readData(FEATURES_TEXT, TEXT_CONFIG),
+				TEXT_CONFIG,
+				{ trigger: 'Rest', action: 'empty' },
+				{ resolve: () => null, explain: () => null },
+			);
+			if (!whole?.ok) throw new Error('expected a reset');
+			const after = recordSet.write(whole.data, FEATURES_TEXT, TEXT_CONFIG);
+			expect(after).toContain('Class: Wizard');
+			expect(after).toContain('Uses: 0');
+			expect(after).not.toContain('Uses: 1');
+		});
+
+		it('adds up a numeric field the same with a group collapsed', () => {
+			const { host, state } = live();
+			const before = state.body;
+			for (const one of toggles(host)) press(one);
+			expect(state.body).toBe(before);
+			const scoped = recordSet.scopeRows?.(
+				readData(state.body, TEXT_CONFIG),
+				TEXT_CONFIG,
+			);
+			const total = (scoped?.(() => null) ?? []).reduce(
+				(sum, row) => sum + Number(row.values.Uses ?? 0),
+				0,
+			);
+			expect(total).toBe(4);
+		});
+	});
+
+	describe('grouping', () => {
+		it('merges case and padding variants and heads a group with the first spelling in the file', () => {
+			const { host } = live();
+			expect(groupNames(host)).toEqual(['Blood Hunter', 'Fighter', 'Wizard', 'Other']);
+			expect(membersOf(host, 0)).toEqual(["Hunter's Bane", 'Crimson Rite']);
+			// `FIGHTER` follows `Fighter` in the file, so the header is `Fighter`.
+			expect(membersOf(host, 1)).toEqual(['Second Wind', 'Action Surge']);
+		});
+
+		it('changes the header only when the first record in the file is retyped', () => {
+			const { host } = live();
+			expect(groupNames(host)[0]).toBe('Blood Hunter');
+			// The second record's capital is the one nothing visible follows.
+			typeClass(host, 'Crimson Rite', 'BLOOD HUNTER');
+			expect(groupNames(host)[0]).toBe('Blood Hunter');
+			// The first one heads the group, so retyping it changes the header.
+			typeClass(host, "Hunter's Bane", 'BLOOD HUNTER');
+			expect(groupNames(host)[0]).toBe('BLOOD HUNTER');
+		});
+
+		it('keeps an accent a letter and an inner run of spaces a difference', () => {
+			const text =
+				rec('A', 'Class: Cleric') +
+				rec('B', 'Class: Cléric') +
+				rec('C', 'Class: Blood Hunter') +
+				rec('D', 'Class: Blood  Hunter');
+			// Four groups, none merged; their relative order is the collator's.
+			expect(groupNames(live({}, text).host).sort()).toEqual(
+				['Blood  Hunter', 'Blood Hunter', 'Cleric', 'Cléric'].sort(),
+			);
+		});
+
+		it('matches a composed accent and a decomposed one as the same group', () => {
+			const text =
+				rec('A', 'Class: Cléric') + rec('B', 'Class: Cléric');
+			const { host } = live({}, text);
+			expect(groupNames(host)).toEqual(['Cléric']);
+			expect(membersOf(host, 0)).toEqual(['A', 'B']);
+		});
+
+		it('orders alphabetically with numbers by value, and Other last whatever its spelling', () => {
+			const text =
+				rec('A', 'Class: Zealot') +
+				rec('B', 'Class: Tier 10') +
+				rec('C', 'Class: Tier 2') +
+				rec('D', 'Class: Archer') +
+				rec('E', 'Class: Other') +
+				rec('F', 'Class: Alpha');
+			expect(groupNames(live({}, text).host)).toEqual([
+				'Alpha',
+				'Archer',
+				'Tier 2',
+				'Tier 10',
+				'Zealot',
+				'Other',
+			]);
+		});
+
+		it('puts a blank value, "Other" in any case and an unreadable record in one group', () => {
+			const { host } = live();
+			expect(groupNames(host).filter((one) => one === 'Other')).toHaveLength(1);
+			// Lucky has no entry, and two records typed `Other` and `other`.
+			expect(membersOf(host, 3)).toEqual(['Lucky', 'Odd one', 'Another odd']);
+			const other = toggles(host)[3] as HTMLElement;
+			expect(other.getAttribute('aria-expanded')).toBe('true');
+			const said = host.ownerDocument.getElementById(
+				other.getAttribute('aria-describedby') ?? '',
+			);
+			expect(said?.textContent).toBe('3 features');
+			expect(other.textContent).toBe('Other');
+
+			const broken = FEATURES_TEXT + '\n### Broken\n```sheet\nnot an entry\n```\n';
+			const again = live({}, broken).host;
+			expect(groupNames(again).filter((one) => one === 'Other')).toHaveLength(1);
+			const last = groupBodies(again)[3] as HTMLElement;
+			expect(last.querySelectorAll('.sheetsmith-record')).toHaveLength(4);
+			expect(last.textContent).toContain('Broken');
+		});
+
+		it('draws one Other group when every value is blank', () => {
+			const text = rec('A', 'Uses: 1') + rec('B');
+			const { host } = live({}, text);
+			expect(groupNames(host)).toEqual(['Other']);
+		});
+
+		it('puts every record in exactly one group', () => {
+			const { host } = live();
+			const all = [0, 1, 2, 3].flatMap((at) => membersOf(host, at));
+			expect(all.sort()).toEqual(
+				[
+					"Hunter's Bane",
+					'Second Wind',
+					'Crimson Rite',
+					'Action Surge',
+					'Arcane Recovery',
+					'Lucky',
+					'Odd one',
+					'Another odd',
+				].sort(),
+			);
+		});
+
+		it('draws a hand-edited link or a long value as typed and groups it by its own key', () => {
+			const long = 'x'.repeat(90);
+			const text =
+				rec('A', 'Class: [[Wizard]]') + rec('B', `Class: ${long}`) + rec('C', 'Class: [[wizard]]');
+			const { host } = live({}, text);
+			// Two groups: `[[wizard]]` joins `[[Wizard]]`, and the header is raw text.
+			expect(groupNames(host)).toEqual(['[[Wizard]]', long]);
+			expect(textInputs(host).map((one) => one.value)).toEqual([
+				'[[Wizard]]',
+				'[[wizard]]',
+				long,
+			]);
+			// Nothing was written for drawing them.
+			expect(host.querySelector('.sheetsmith-record-group a')).toBeNull();
+		});
+	});
+
+	describe('collapse is keyed by the match key', () => {
+		it('keeps a group collapsed when a member is retyped in another case', () => {
+			const { host, state } = live();
+			press(toggles(host)[2] as HTMLElement);
+			expect(state.collapsed.has('wizard')).toBe(true);
+			typeClass(host, 'Arcane Recovery', 'WIZARD');
+			// Its only member heads it, so the header follows the new spelling.
+			expect(groupNames(host)).toContain('WIZARD');
+			expect(state.collapsed.has('wizard')).toBe(true);
+			expect(toggles(host)[2]?.getAttribute('aria-expanded')).toBe('false');
+		});
+
+		it('reports a group that has gone expanded, and opens the one that arrives', () => {
+			const { host, state } = live();
+			press(toggles(host)[2] as HTMLElement);
+			state.toggled.length = 0;
+			typeClass(host, 'Arcane Recovery', 'Mage');
+			// `wizard` has no members now: reported expanded, and `mage` is open.
+			expect(state.toggled).toEqual([['wizard', false]]);
+			expect(state.collapsed.has('wizard')).toBe(false);
+			const mage = toggles(host).find((one) => one.textContent === 'Mage');
+			expect(mage?.getAttribute('aria-expanded')).toBe('true');
+		});
+
+		it('treats a typo as a new group that opens, and fixing it removes group and state', () => {
+			const { host, state } = live();
+			typeClass(host, 'Arcane Recovery', 'Wizrd');
+			expect(groupNames(host)).toContain('Wizrd');
+			press(toggles(host).find((one) => one.textContent === 'Wizrd') as HTMLElement);
+			expect(state.collapsed.has('wizrd')).toBe(true);
+			typeClass(host, 'Arcane Recovery', 'Wizard');
+			expect(groupNames(host)).not.toContain('Wizrd');
+			expect(state.collapsed.has('wizrd')).toBe(false);
+		});
+
+		it('keeps Other collapsed under the empty key and opens it on Add', () => {
+			const { host, state } = live();
+			press(toggles(host)[3] as HTMLElement);
+			expect(state.collapsed.has('')).toBe(true);
+			state.toggled.length = 0;
+			press(addButton(host));
+			expect(state.toggled).toEqual([['', false]]);
+			expect(state.collapsed.has('')).toBe(false);
+			// The new record is in Other, and focus is on its name.
+			expect(membersOf(host, 3)).toContain('Feature');
+			const focused = host.ownerDocument.activeElement as HTMLInputElement;
+			expect(focused.value).toBe('Feature');
+			expect(groupBodies(host)[3]?.contains(focused)).toBe(true);
+		});
+	});
+
+	describe('editing the key', () => {
+		it('does not move the record before the commit, and moves it after', () => {
+			const { host, state } = live({}, FEATURES_TEXT, {}, false);
+			const input = classOf(host, "Hunter's Bane");
+			input.focus();
+			input.value = 'Rogue';
+			input.dispatchEvent(new Event('input'));
+			expect(groupNames(host)).toContain('Blood Hunter');
+			input.dispatchEvent(
+				new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }),
+			);
+			// Reported, and with no write there is no rebuild.
+			expect(state.changes).toHaveLength(1);
+			expect(membersOf(host, 0)).toContain("Hunter's Bane");
+
+			const real = live();
+			typeClass(real.host, "Hunter's Bane", 'Rogue');
+			expect(groupNames(real.host)).toEqual([
+				'blood hunter',
+				'Fighter',
+				'Rogue',
+				'Wizard',
+				'Other',
+			]);
+		});
+
+		it('keeps focus on the same input of the same record after Enter', () => {
+			const { host } = live();
+			typeClass(host, "Hunter's Bane", 'Rogue');
+			const active = host.ownerDocument.activeElement as HTMLInputElement;
+			expect(active.classList.contains('sheetsmith-record-input-text')).toBe(true);
+			expect(active.value).toBe('Rogue');
+			expect(active.getAttribute('aria-label')).toBe("Hunter's Bane Class");
+		});
+
+		it('moves nothing when only the case is retyped', () => {
+			const { host } = live();
+			const order = groupNames(host);
+			const input = classOf(host, 'Second Wind');
+			input.focus();
+			const blurred = vi.fn();
+			input.addEventListener('blur', blurred);
+			input.value = 'FIGHTER';
+			input.dispatchEvent(
+				new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }),
+			);
+			// The same groups in the same places; only a header's spelling follows
+			// the record that heads it.
+			expect(groupNames(host).map((one) => one?.toLowerCase())).toEqual(
+				order.map((one) => one?.toLowerCase()),
+			);
+			// And the field was never blurred: a regroup releases focus before it
+			// reports, so none of that happened for a record that stayed put.
+			expect(blurred).not.toHaveBeenCalled();
+		});
+
+		it('restores on Escape, and a tab away commits without pulling focus back', () => {
+			const { host, state } = live();
+			const input = classOf(host, "Hunter's Bane");
+			input.focus();
+			input.value = 'Rogue';
+			input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+			expect(input.value).toBe('Blood Hunter');
+			expect(state.changes).toEqual([]);
+
+			const other = classOf(host, 'Second Wind');
+			other.value = 'Rogue';
+			other.dispatchEvent(new Event('blur'));
+			expect(groupNames(host)).toContain('Rogue');
+			expect(host.ownerDocument.activeElement).not.toBe(classOf(host, 'Second Wind'));
+		});
+
+		it('draws the field with its empty state, and no spellcheck', () => {
+			const { host } = live();
+			const blank = classOf(host, 'Lucky');
+			expect(blank.value).toBe('');
+			expect(blank.placeholder).toBe('—');
+			expect(blank.spellcheck).toBe(false);
+			expect(blank.getAttribute('aria-label')).toBe('Lucky Class');
+			// The field's name is drawn beside it, as a number's is.
+			expect(
+				blank
+					.closest('.sheetsmith-record-field')
+					?.querySelector('.sheetsmith-card-abbreviation')?.textContent,
+			).toBe('Class');
+		});
+
+		it('is the same control inside the opened record', () => {
+			const { host } = live({
+				fields: [
+					{ key: 'Class', placement: 'body' },
+					{ key: 'Uses', type: 'number', max: 3 },
+				],
+			});
+			const input = textInputs(host)[0] as HTMLInputElement;
+			expect(input.closest('.sheetsmith-record-body-fields')).not.toBeNull();
+			expect(input.placeholder).toBe('—');
+		});
+	});
+
+	describe('what it refuses at the commit', () => {
+		const attempt = (value: string) => {
+			const live1 = live({}, FEATURES_TEXT, {}, false);
+			const input = classOf(live1.host, 'Second Wind');
+			input.focus();
+			if (value.includes('\n')) {
+				// An `<input>` strips a line break on typing, so reaching the check
+				// takes a value that arrives some other way: a paste into a field the
+				// engine did not sanitise, or a programmatic set.
+				Object.defineProperty(input, 'value', {
+					get: () => value,
+					set: () => undefined,
+					configurable: true,
+				});
+			} else {
+				input.value = value;
+			}
+			input.dispatchEvent(
+				new KeyboardEvent('keydown', { key: 'Enter', cancelable: true }),
+			);
+			return { ...live1, input };
+		};
+		const noticeOf = (host: HTMLElement) =>
+			host.querySelector('.sheetsmith-error')?.textContent ?? null;
+
+		it('refuses a wikilink with the shared sentence and keeps the draft', () => {
+			const { host, state, input } = attempt('[[Wizard]]');
+			expect(state.changes).toEqual([]);
+			expect(input.value).toBe('[[Wizard]]');
+			expect(noticeOf(host)).toBe(
+				'Not saved. A feature\'s fields are stored in a code block and Obsidian indexes no link inside one, so "[[Wizard]]" would stop being a link. Put it in the feature\'s name or its body instead.',
+			);
+		});
+
+		it('refuses 41 characters with the count and saves 40', () => {
+			const over = attempt('x'.repeat(41));
+			expect(over.state.changes).toEqual([]);
+			expect(noticeOf(over.host)).toBe(
+				"Not saved. A group name is at most 40 characters, and this is 41. Shorten it, or put the detail in the feature's body.",
+			);
+			expect(attempt('x'.repeat(40)).state.changes).toHaveLength(1);
+		});
+
+		it('counts code points, so 40 emoji are 40', () => {
+			expect(attempt('🙂'.repeat(40)).state.changes).toHaveLength(1);
+			expect(noticeOf(attempt('🙂'.repeat(41)).host)).toContain('and this is 41');
+		});
+
+		it('refuses a line break', () => {
+			const { host, state } = attempt('Blood\nHunter');
+			expect(state.changes).toEqual([]);
+			expect(noticeOf(host)).toBe(
+				'Not saved. A group name is one line, because the sheet block holds one entry per line. Remove the line break.',
+			);
+		});
+
+		it('clears the notice on Escape and keeps the stored value', () => {
+			const { host, input } = attempt('[[Wizard]]');
+			input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+			expect(input.value).toBe('Fighter');
+			input.dispatchEvent(new Event('blur'));
+			expect(noticeOf(host)).toBeNull();
+		});
+
+		it('stores a colon, a slash, a semicolon and inner spaces as typed, and trims the ends', () => {
+			for (const value of ['Blood: Hunter', 'A/B', 'A;B', 'Two  words']) {
+				const { state } = attempt(value);
+				expect(state.changes).toHaveLength(1);
+				const written = recordSet.write(
+					state.changes[0] as RecordSetData,
+					FEATURES_TEXT,
+					TEXT_CONFIG,
+				);
+				const reread = readData(written, TEXT_CONFIG).records[1]?.fields?.Class;
+				expect(reread).toBe(value);
+			}
+			const { state } = attempt('   Rogue   ');
+			expect(state.changes[0]).toEqual({
+				records: { 1: { fields: { Class: 'Rogue' } } },
+			});
+		});
+
+		it('writes a cleared value as a blank entry', () => {
+			const { state } = attempt('');
+			expect(state.changes).toEqual([{ records: { 1: { fields: { Class: '' } } } }]);
+			const written = recordSet.write(
+				state.changes[0] as RecordSetData,
+				FEATURES_TEXT,
+				TEXT_CONFIG,
+			);
+			expect(written).toContain('Class: \n');
+		});
+	});
+
+	describe('round trip', () => {
+		const ODD =
+			rec('A', 'Class: Wizard') +
+			rec('B', 'Class:   a: b  ') +
+			rec('C', 'Class: [[Wizard]]') +
+			rec('D', `Class: ${'y'.repeat(90)}`, 'Uses: 1');
+
+		it('parses and serialises byte-identically with nothing changed', () => {
+			expect(recordSet.write({ records: {} }, ODD, TEXT_CONFIG)).toBe(ODD);
+			expect(
+				recordSet.write({ records: { 0: { fields: { Class: 'Wizard' } } } }, ODD, TEXT_CONFIG),
+			).toBe(ODD);
+		});
+
+		it('leaves the odd lines’ bytes alone when a sibling field is written', () => {
+			const written = recordSet.write(
+				{ records: { 3: { fields: { Uses: '2' } } } },
+				ODD,
+				TEXT_CONFIG,
+			);
+			expect(written).toBe(ODD.replace('Uses: 1', 'Uses: 2'));
+			expect(written).toContain('Class:   a: b  ');
+			expect(written).toContain('Class: [[Wizard]]');
+		});
+
+		it('reads a colon in the value as the rest of the line', () => {
+			expect(readData(ODD, TEXT_CONFIG).records[1]?.fields?.Class).toBe('a: b');
+			const { host } = live({}, ODD);
+			expect(textInputs(host).map((one) => one.value)[1]).toBe('a: b');
+		});
+
+		it('keeps every entry when the field is retyped or the key cleared (Constraint 4)', () => {
+			for (const cfg of [
+				{ ...TEXT_CONFIG, fields: [{ key: 'Class', type: 'number' as const }] },
+				{ ...TEXT_CONFIG, groupBy: undefined, fields: [{ key: 'Other', type: 'number' as const }] },
+			]) {
+				const result = recordSet.write(
+					{ records: { 0: { name: 'AA' } } },
+					ODD,
+					cfg,
+				);
+				expect(result).toBe(ODD.replace('### A\n', '### AA\n'));
+			}
+		});
+	});
+
+	describe('the classes the stylesheet’s design rules key on', () => {
+		/*
+		 * The stacking thresholds (480px, and 420px headed) and the left-aligned
+		 * strip heading are CSS, held by `harness/measure-groups.mjs`; what they key
+		 * on is these classes, and nothing else fails if the component stops
+		 * stamping them.
+		 */
+		const classesOf = (cfg: Partial<RecordSetConfig>, text = FEATURES_TEXT) => {
+			const el = live(cfg, text).host;
+			const block = el.querySelector('.sheetsmith-record-set') as HTMLElement;
+			return {
+				text: block.classList.contains('sheetsmith-record-set-text'),
+				headed: block.classList.contains('sheetsmith-record-set-text-headed'),
+				strip: Array.from(
+					el.querySelectorAll('.sheetsmith-record-strip > *'),
+				).map((one) => [
+					one.textContent,
+					one.classList.contains('sheetsmith-record-strip-text'),
+				]),
+			};
+		};
+
+		it('stamps -text exactly when a text field is on the summary line', () => {
+			expect(classesOf({}).text).toBe(true);
+			expect(
+				classesOf({
+					fields: [{ key: 'Class', placement: 'body' }, { key: 'Uses', type: 'number' }],
+				}).text,
+			).toBe(false);
+			expect(
+				classesOf({
+					groupBy: 'Uses',
+					fields: [{ key: 'Uses', type: 'number' }, { key: 'Seen', type: 'toggle' }],
+				}).text,
+			).toBe(false);
+		});
+
+		it('stamps -text-headed exactly when the strip is drawn', () => {
+			expect(classesOf({}).headed).toBe(false);
+			expect(classesOf({ fieldHeadings: true })).toMatchObject({ text: true, headed: true });
+			// Asked for and with nothing to name: no strip, so no headed class.
+			const empty = document.createElement('div');
+			recordSet.render(empty, { ...TEXT_CONFIG, fieldHeadings: true }, null, context);
+			const emptyBlock = empty.querySelector('.sheetsmith-record-set') as HTMLElement;
+			expect(emptyBlock.classList.contains('sheetsmith-record-set-text')).toBe(true);
+			expect(emptyBlock.classList.contains('sheetsmith-record-set-text-headed')).toBe(false);
+			expect(
+				classesOf({
+					fieldHeadings: true,
+					groupBy: 'Uses',
+					fields: [{ key: 'Uses', type: 'number' }],
+				}),
+			).toMatchObject({ text: false, headed: false });
+		});
+
+		it('marks the strip heading of a text column and no other', () => {
+			expect(classesOf({ fieldHeadings: true }).strip).toEqual([
+				['Class', true],
+				['Uses', false],
+			]);
+		});
+	});
+
+	describe('a list with no text field', () => {
+		const PLAIN: RecordSetConfig = {
+			...config,
+			id: 'plain',
+			fields: [
+				{ key: 'Uses', type: 'number', max: 3 },
+				{ key: 'Attuned', type: 'toggle' },
+				{ key: 'Rank', type: 'level', levels: ['None', 'Low', 'High'] },
+				{ key: 'Left', type: 'computed', formula: '3 - Uses' },
+				{ key: 'Mods', type: 'modifier' },
+			],
+		};
+
+		/**
+		 * A structural outline of the markup: tag, classes and the attributes a
+		 * reader or a screen reader meets, one element a line. The snapshots below
+		 * were taken from the component **before** the text type existed, so a drift
+		 * in what an existing layout draws is a diff here and not a surprise in the
+		 * harness (`docs/features/free-text-group-key.md`, "Nothing existing
+		 * changes").
+		 */
+		const outline = (root: Element, depth = 0): string[] => {
+			const attrs = ['type', 'aria-label', 'aria-expanded', 'placeholder', 'hidden']
+				.filter((name) => root.hasAttribute(name))
+				.map((name) => `${name}=${root.getAttribute(name)}`);
+			const own = Array.from(root.children).every(
+				(child) => child.nodeType === 1,
+			)
+				? root.children.length === 0
+					? root.textContent
+					: ''
+				: root.textContent;
+			const head = `${'  '.repeat(depth)}${root.tagName.toLowerCase()}${
+				root.className === '' ? '' : `.${root.className.split(' ').join('.')}`
+			}${attrs.length === 0 ? '' : ` [${attrs.join(' ')}]`}${own ? ` "${own}"` : ''}`;
+			return [head, ...Array.from(root.children).flatMap((c) => outline(c, depth + 1))];
+		};
+		const EVERY_TYPE: RecordSetConfig = {
+			...config,
+			id: 'every_type',
+			fields: [
+				{ key: 'Uses', type: 'number', max: 3 },
+				{ key: 'Attuned', type: 'toggle' },
+				{ key: 'Rank', type: 'level', levels: ['None', 'Low', 'High'] },
+				{ key: 'Left', type: 'computed', formula: '3 - Uses' },
+				{ key: 'Mods', type: 'modifier' },
+			],
+		};
+		const EVERY_BODY = [
+			'',
+			'### First',
+			'```sheet',
+			'Uses: 1',
+			'Attuned: yes',
+			'Rank: 2',
+			'```',
+			'Some prose.',
+			'',
+			'### Second',
+			'```sheet',
+			'Uses: 3',
+			'Rank: 1',
+			'```',
+			'',
+		].join('\n');
+		const drawn = (overrides: Partial<RecordSetConfig>): string => {
+			const cfg = { ...EVERY_TYPE, ...overrides };
+			const el = document.createElement('div');
+			recordSet.render(el, cfg, readData(EVERY_BODY, cfg), {
+				...context,
+				resolveField: makeFieldResolver(recordSet, cfg, readData(EVERY_BODY, cfg), NO_ENV),
+			});
+			return outline(el).join('\n');
+		};
+
+		it('draws the markup it drew before text was offered, plain', () => {
+			expect(drawn({})).toMatchInlineSnapshot(`
+				"div
+				  div.sheetsmith-placed.sheetsmith-record-set
+				    div.sheetsmith-component-label.sheetsmith-record-set-label "Features"
+				    div.sheetsmith-placed-box.sheetsmith-record-set-box
+				      div.sheetsmith-record-set-scroll
+				        div.sheetsmith-record-set-list
+				          div.sheetsmith-record
+				            div.sheetsmith-record-summary
+				              button.sheetsmith-record-disclosure [type=button aria-label=Open First aria-expanded=false]
+				                svg.svg-icon.lucide-chevron-right
+				                  path
+				              div.sheetsmith-record-name
+				                input.sheetsmith-record-name-input [type=text aria-label=Feature]
+				              div.sheetsmith-record-fields
+				                div.sheetsmith-record-field.sheetsmith-record-field-number
+				                  span.sheetsmith-card-abbreviation "Uses"
+				                  input.sheetsmith-record-input [type=text aria-label=First Uses]
+				                  span.sheetsmith-pool-ceiling
+				                    span.sheetsmith-pool-separator "/"
+				                    span.sheetsmith-pool-max "3"
+				                div.sheetsmith-record-field.sheetsmith-record-field-toggle
+				                  button.sheetsmith-level-ring.sheetsmith-level-ring-on [type=button aria-label=First Attuned]
+				                div.sheetsmith-record-field.sheetsmith-record-field-level
+				                  button.sheetsmith-level-ring.sheetsmith-level-ring-on [type=button aria-label=First Rank: High] "H"
+				                div.sheetsmith-record-field.sheetsmith-record-field-computed
+				                  div.sheetsmith-record-value.sheetsmith-record-askable "2"
+				                  span.sheetsmith-sr-only "First Left"
+				                div.sheetsmith-record-field.sheetsmith-record-field-modifier.sheetsmith-record-modifier-empty
+				                  button.sheetsmith-record-modifier [type=button aria-label=First Mods aria-expanded=false]
+				                    span.sheetsmith-record-modifier-glyph
+				                      svg.svg-icon.lucide-plus
+				                        path
+				                        path
+				              button.sheetsmith-record-remove [type=button aria-label=Delete First]
+				                svg.svg-icon.lucide-trash
+				                  path
+				                  path
+				                  path
+				            div.sheetsmith-record-body [hidden=until-found]
+				              textarea.sheetsmith-record-body-input [aria-label=First body placeholder=Write anything about this feature.]
+				              div.sheetsmith-record-body-rendered.sheetsmith-record-body-plain
+				                p "Some prose."
+				          div.sheetsmith-record
+				            div.sheetsmith-record-summary
+				              button.sheetsmith-record-disclosure [type=button aria-label=Open Second aria-expanded=false]
+				                svg.svg-icon.lucide-chevron-right
+				                  path
+				              div.sheetsmith-record-name
+				                input.sheetsmith-record-name-input [type=text aria-label=Feature]
+				              div.sheetsmith-record-fields
+				                div.sheetsmith-record-field.sheetsmith-record-field-number
+				                  span.sheetsmith-card-abbreviation "Uses"
+				                  input.sheetsmith-record-input [type=text aria-label=Second Uses]
+				                  span.sheetsmith-pool-ceiling
+				                    span.sheetsmith-pool-separator "/"
+				                    span.sheetsmith-pool-max "3"
+				                div.sheetsmith-record-field.sheetsmith-record-field-toggle
+				                  button.sheetsmith-level-ring [type=button aria-label=Second Attuned]
+				                div.sheetsmith-record-field.sheetsmith-record-field-level
+				                  button.sheetsmith-level-ring.sheetsmith-level-ring-on.sheetsmith-level-ring-part [type=button aria-label=Second Rank: Low] "L"
+				                div.sheetsmith-record-field.sheetsmith-record-field-computed
+				                  div.sheetsmith-record-value.sheetsmith-record-askable "0"
+				                  span.sheetsmith-sr-only "Second Left"
+				                div.sheetsmith-record-field.sheetsmith-record-field-modifier.sheetsmith-record-modifier-empty
+				                  button.sheetsmith-record-modifier [type=button aria-label=Second Mods aria-expanded=false]
+				                    span.sheetsmith-record-modifier-glyph
+				                      svg.svg-icon.lucide-plus
+				                        path
+				                        path
+				              button.sheetsmith-record-remove [type=button aria-label=Delete Second]
+				                svg.svg-icon.lucide-trash
+				                  path
+				                  path
+				                  path
+				            div.sheetsmith-record-body [hidden=until-found]
+				              textarea.sheetsmith-record-body-input [aria-label=Second body placeholder=Write anything about this feature.]
+				              div.sheetsmith-record-body-rendered
+				      button.sheetsmith-record-add [type=button]
+				        span.sheetsmith-record-add-label "Add feature"
+				    div.sheetsmith-sr-only"
+			`);
+		});
+
+		it('draws the markup it drew before, grouped by a level key', () => {
+			expect(drawn({ groupBy: 'Rank' })).toMatchInlineSnapshot(`
+				"div
+				  div.sheetsmith-placed.sheetsmith-record-set
+				    div.sheetsmith-component-label.sheetsmith-record-set-label "Features"
+				    div.sheetsmith-placed-box.sheetsmith-record-set-box
+				      div.sheetsmith-record-set-scroll
+				        div.sheetsmith-record-set-list
+				          div.sheetsmith-record-group
+				            h3.sheetsmith-record-group-heading
+				              button.sheetsmith-record-group-toggle [type=button aria-expanded=true]
+				                span.sheetsmith-record-group-mark
+				                  svg.svg-icon.lucide-chevron-down
+				                    path
+				                span.sheetsmith-record-group-name "Low"
+				              span.sheetsmith-card-abbreviation.sheetsmith-record-group-count "1"
+				            span.sheetsmith-sr-only "1 feature"
+				            div.sheetsmith-record-group-body
+				              div.sheetsmith-record
+				                div.sheetsmith-record-summary
+				                  button.sheetsmith-record-disclosure [type=button aria-label=Open Second aria-expanded=false]
+				                    svg.svg-icon.lucide-chevron-right
+				                      path
+				                  div.sheetsmith-record-name
+				                    input.sheetsmith-record-name-input [type=text aria-label=Feature]
+				                  div.sheetsmith-record-fields
+				                    div.sheetsmith-record-field.sheetsmith-record-field-number
+				                      span.sheetsmith-card-abbreviation "Uses"
+				                      input.sheetsmith-record-input [type=text aria-label=Second Uses]
+				                      span.sheetsmith-pool-ceiling
+				                        span.sheetsmith-pool-separator "/"
+				                        span.sheetsmith-pool-max "3"
+				                    div.sheetsmith-record-field.sheetsmith-record-field-toggle
+				                      button.sheetsmith-level-ring [type=button aria-label=Second Attuned]
+				                    div.sheetsmith-record-field.sheetsmith-record-field-level
+				                      button.sheetsmith-level-ring.sheetsmith-level-ring-on.sheetsmith-level-ring-part [type=button aria-label=Second Rank: Low] "L"
+				                    div.sheetsmith-record-field.sheetsmith-record-field-computed
+				                      div.sheetsmith-record-value.sheetsmith-record-askable "0"
+				                      span.sheetsmith-sr-only "Second Left"
+				                    div.sheetsmith-record-field.sheetsmith-record-field-modifier.sheetsmith-record-modifier-empty
+				                      button.sheetsmith-record-modifier [type=button aria-label=Second Mods aria-expanded=false]
+				                        span.sheetsmith-record-modifier-glyph
+				                          svg.svg-icon.lucide-plus
+				                            path
+				                            path
+				                  button.sheetsmith-record-remove [type=button aria-label=Delete Second]
+				                    svg.svg-icon.lucide-trash
+				                      path
+				                      path
+				                      path
+				                div.sheetsmith-record-body [hidden=until-found]
+				                  textarea.sheetsmith-record-body-input [aria-label=Second body placeholder=Write anything about this feature.]
+				                  div.sheetsmith-record-body-rendered
+				          div.sheetsmith-record-group
+				            h3.sheetsmith-record-group-heading
+				              button.sheetsmith-record-group-toggle [type=button aria-expanded=true]
+				                span.sheetsmith-record-group-mark
+				                  svg.svg-icon.lucide-chevron-down
+				                    path
+				                span.sheetsmith-record-group-name "High"
+				              span.sheetsmith-card-abbreviation.sheetsmith-record-group-count "1"
+				            span.sheetsmith-sr-only "1 feature"
+				            div.sheetsmith-record-group-body
+				              div.sheetsmith-record
+				                div.sheetsmith-record-summary
+				                  button.sheetsmith-record-disclosure [type=button aria-label=Open First aria-expanded=false]
+				                    svg.svg-icon.lucide-chevron-right
+				                      path
+				                  div.sheetsmith-record-name
+				                    input.sheetsmith-record-name-input [type=text aria-label=Feature]
+				                  div.sheetsmith-record-fields
+				                    div.sheetsmith-record-field.sheetsmith-record-field-number
+				                      span.sheetsmith-card-abbreviation "Uses"
+				                      input.sheetsmith-record-input [type=text aria-label=First Uses]
+				                      span.sheetsmith-pool-ceiling
+				                        span.sheetsmith-pool-separator "/"
+				                        span.sheetsmith-pool-max "3"
+				                    div.sheetsmith-record-field.sheetsmith-record-field-toggle
+				                      button.sheetsmith-level-ring.sheetsmith-level-ring-on [type=button aria-label=First Attuned]
+				                    div.sheetsmith-record-field.sheetsmith-record-field-level
+				                      button.sheetsmith-level-ring.sheetsmith-level-ring-on [type=button aria-label=First Rank: High] "H"
+				                    div.sheetsmith-record-field.sheetsmith-record-field-computed
+				                      div.sheetsmith-record-value.sheetsmith-record-askable "2"
+				                      span.sheetsmith-sr-only "First Left"
+				                    div.sheetsmith-record-field.sheetsmith-record-field-modifier.sheetsmith-record-modifier-empty
+				                      button.sheetsmith-record-modifier [type=button aria-label=First Mods aria-expanded=false]
+				                        span.sheetsmith-record-modifier-glyph
+				                          svg.svg-icon.lucide-plus
+				                            path
+				                            path
+				                  button.sheetsmith-record-remove [type=button aria-label=Delete First]
+				                    svg.svg-icon.lucide-trash
+				                      path
+				                      path
+				                      path
+				                div.sheetsmith-record-body [hidden=until-found]
+				                  textarea.sheetsmith-record-body-input [aria-label=First body placeholder=Write anything about this feature.]
+				                  div.sheetsmith-record-body-rendered.sheetsmith-record-body-plain
+				                    p "Some prose."
+				      button.sheetsmith-record-add [type=button]
+				        span.sheetsmith-record-add-label "Add feature"
+				    div.sheetsmith-sr-only"
+			`);
+		});
+
+		it('draws the markup it drew before, grouped by a number key', () => {
+			expect(drawn({ groupBy: 'Uses' })).toMatchInlineSnapshot(`
+				"div
+				  div.sheetsmith-placed.sheetsmith-record-set
+				    div.sheetsmith-component-label.sheetsmith-record-set-label "Features"
+				    div.sheetsmith-placed-box.sheetsmith-record-set-box
+				      div.sheetsmith-record-set-scroll
+				        div.sheetsmith-record-set-list
+				          div.sheetsmith-record-group
+				            h3.sheetsmith-record-group-heading
+				              button.sheetsmith-record-group-toggle [type=button aria-expanded=true]
+				                span.sheetsmith-record-group-mark
+				                  svg.svg-icon.lucide-chevron-down
+				                    path
+				                span.sheetsmith-record-group-name "Uses 1"
+				              span.sheetsmith-card-abbreviation.sheetsmith-record-group-count "1"
+				            span.sheetsmith-sr-only "1 feature"
+				            div.sheetsmith-record-group-body
+				              div.sheetsmith-record
+				                div.sheetsmith-record-summary
+				                  button.sheetsmith-record-disclosure [type=button aria-label=Open First aria-expanded=false]
+				                    svg.svg-icon.lucide-chevron-right
+				                      path
+				                  div.sheetsmith-record-name
+				                    input.sheetsmith-record-name-input [type=text aria-label=Feature]
+				                  div.sheetsmith-record-fields
+				                    div.sheetsmith-record-field.sheetsmith-record-field-number
+				                      span.sheetsmith-card-abbreviation "Uses"
+				                      input.sheetsmith-record-input [type=text aria-label=First Uses]
+				                      span.sheetsmith-pool-ceiling
+				                        span.sheetsmith-pool-separator "/"
+				                        span.sheetsmith-pool-max "3"
+				                    div.sheetsmith-record-field.sheetsmith-record-field-toggle
+				                      button.sheetsmith-level-ring.sheetsmith-level-ring-on [type=button aria-label=First Attuned]
+				                    div.sheetsmith-record-field.sheetsmith-record-field-level
+				                      button.sheetsmith-level-ring.sheetsmith-level-ring-on [type=button aria-label=First Rank: High] "H"
+				                    div.sheetsmith-record-field.sheetsmith-record-field-computed
+				                      div.sheetsmith-record-value.sheetsmith-record-askable "2"
+				                      span.sheetsmith-sr-only "First Left"
+				                    div.sheetsmith-record-field.sheetsmith-record-field-modifier.sheetsmith-record-modifier-empty
+				                      button.sheetsmith-record-modifier [type=button aria-label=First Mods aria-expanded=false]
+				                        span.sheetsmith-record-modifier-glyph
+				                          svg.svg-icon.lucide-plus
+				                            path
+				                            path
+				                  button.sheetsmith-record-remove [type=button aria-label=Delete First]
+				                    svg.svg-icon.lucide-trash
+				                      path
+				                      path
+				                      path
+				                div.sheetsmith-record-body [hidden=until-found]
+				                  textarea.sheetsmith-record-body-input [aria-label=First body placeholder=Write anything about this feature.]
+				                  div.sheetsmith-record-body-rendered.sheetsmith-record-body-plain
+				                    p "Some prose."
+				          div.sheetsmith-record-group
+				            h3.sheetsmith-record-group-heading
+				              button.sheetsmith-record-group-toggle [type=button aria-expanded=true]
+				                span.sheetsmith-record-group-mark
+				                  svg.svg-icon.lucide-chevron-down
+				                    path
+				                span.sheetsmith-record-group-name "Uses 3"
+				              span.sheetsmith-card-abbreviation.sheetsmith-record-group-count "1"
+				            span.sheetsmith-sr-only "1 feature"
+				            div.sheetsmith-record-group-body
+				              div.sheetsmith-record
+				                div.sheetsmith-record-summary
+				                  button.sheetsmith-record-disclosure [type=button aria-label=Open Second aria-expanded=false]
+				                    svg.svg-icon.lucide-chevron-right
+				                      path
+				                  div.sheetsmith-record-name
+				                    input.sheetsmith-record-name-input [type=text aria-label=Feature]
+				                  div.sheetsmith-record-fields
+				                    div.sheetsmith-record-field.sheetsmith-record-field-number
+				                      span.sheetsmith-card-abbreviation "Uses"
+				                      input.sheetsmith-record-input [type=text aria-label=Second Uses]
+				                      span.sheetsmith-pool-ceiling
+				                        span.sheetsmith-pool-separator "/"
+				                        span.sheetsmith-pool-max "3"
+				                    div.sheetsmith-record-field.sheetsmith-record-field-toggle
+				                      button.sheetsmith-level-ring [type=button aria-label=Second Attuned]
+				                    div.sheetsmith-record-field.sheetsmith-record-field-level
+				                      button.sheetsmith-level-ring.sheetsmith-level-ring-on.sheetsmith-level-ring-part [type=button aria-label=Second Rank: Low] "L"
+				                    div.sheetsmith-record-field.sheetsmith-record-field-computed
+				                      div.sheetsmith-record-value.sheetsmith-record-askable "0"
+				                      span.sheetsmith-sr-only "Second Left"
+				                    div.sheetsmith-record-field.sheetsmith-record-field-modifier.sheetsmith-record-modifier-empty
+				                      button.sheetsmith-record-modifier [type=button aria-label=Second Mods aria-expanded=false]
+				                        span.sheetsmith-record-modifier-glyph
+				                          svg.svg-icon.lucide-plus
+				                            path
+				                            path
+				                  button.sheetsmith-record-remove [type=button aria-label=Delete Second]
+				                    svg.svg-icon.lucide-trash
+				                      path
+				                      path
+				                      path
+				                div.sheetsmith-record-body [hidden=until-found]
+				                  textarea.sheetsmith-record-body-input [aria-label=Second body placeholder=Write anything about this feature.]
+				                  div.sheetsmith-record-body-rendered
+				      button.sheetsmith-record-add [type=button]
+				        span.sheetsmith-record-add-label "Add feature"
+				    div.sheetsmith-sr-only"
+			`);
+		});
+
+		it('draws no text control and writes the same bytes whatever groupBy says', () => {
+			const el = render(PLAIN, BODY);
+			expect(el.querySelector('.sheetsmith-record-input-text')).toBeNull();
+			const delta = { records: { 1: { fields: { Uses: '2' } } } };
+			expect(recordSet.write(delta, BODY, PLAIN)).toBe(
+				BODY.replace('Uses: 0', 'Uses: 2'),
+			);
+			for (const blank of ['', '  ']) {
+				expect(render({ ...PLAIN, groupBy: blank }, BODY).innerHTML).toBe(el.innerHTML);
+			}
+		});
+	});
+
+	describe('the type-ahead the view may attach', () => {
+		interface Attached {
+			input: HTMLInputElement;
+			names: readonly string[];
+			commit: (next: string) => void;
+		}
+		function attach(
+			overrides: Partial<RecordSetConfig> = {},
+			text: string = FEATURES_TEXT,
+		) {
+			const calls: Attached[] = [];
+			const view = live(overrides, text, {
+				suggestText: (input, names, commit) => {
+					calls.push({ input, names, commit });
+				},
+			});
+			return { ...view, calls };
+		}
+
+		it('is called once per text input, with this list’s group spellings in header order', () => {
+			const { host, calls } = attach();
+			expect(calls).toHaveLength(8);
+			expect(calls.map((one) => one.input)).toEqual(textInputs(host));
+			for (const call of calls) {
+				// First-seen spelling, header order, no Other, collapsed or not.
+				expect(call.names).toEqual(['Blood Hunter', 'Fighter', 'Wizard']);
+			}
+		});
+
+		it('offers a collapsed group’s name and never a name from another list', () => {
+			const { host, state, calls } = attach();
+			press(toggles(host)[2] as HTMLElement);
+			expect(state.collapsed.has('wizard')).toBe(true);
+			// Redrawn by the collapse's own report: the latest render's calls.
+			expect(calls.at(-1)?.names).toContain('Wizard');
+			const other = attach({ id: 'other-list' }, rec('Z', 'Class: Rogue'));
+			expect(other.calls.at(-1)?.names).toEqual(['Rogue']);
+			expect(calls.at(-1)?.names).not.toContain('Rogue');
+		});
+
+		it('rebuilds the offer on a render, so a new name is on it', () => {
+			const { host, calls } = attach();
+			expect(calls.at(-1)?.names).not.toContain('Rogue');
+			typeClass(host, 'Second Wind', 'Rogue');
+			// Second Wind headed Fighter, so with it gone the next Fighter in the
+			// file (`FIGHTER`) heads it: the first-seen spelling, as the header does.
+			expect(calls.at(-1)?.names).toEqual([
+				'Blood Hunter',
+				'FIGHTER',
+				'Rogue',
+				'Wizard',
+			]);
+		});
+
+		it('commits a pick through the field’s own gesture: same write, same regroup, same refusals', () => {
+			const { host, state, calls } = attach();
+			const call = calls.find(
+				(one) => one.input.getAttribute('aria-label') === 'Second Wind Class',
+			) as Attached;
+			call.commit('Wizard');
+			expect(state.changes).toEqual([
+				{ records: { 1: { fields: { Class: 'Wizard' } } } },
+			]);
+			expect(membersOf(host, 2)).toContain('Second Wind');
+
+			const refused = attach();
+			const bad = refused.calls.find(
+				(one) => one.input.getAttribute('aria-label') === 'Second Wind Class',
+			) as Attached;
+			bad.commit('[[Wizard]]');
+			expect(refused.state.changes).toEqual([]);
+			expect(refused.host.querySelector('.sheetsmith-error')?.textContent).toContain(
+				'Not saved.',
+			);
+		});
+
+		it('draws a plain input where the view attaches nothing', () => {
+			const { host } = live();
+			expect(textInputs(host)).toHaveLength(8);
+			expect(textInputs(host)[0]?.hasAttribute('aria-autocomplete')).toBe(false);
+		});
+
+		it('is never called for a list keyed by something other than text', () => {
+			let called = 0;
+			const cfg: RecordSetConfig = {
+				...TEXT_CONFIG,
+				groupBy: 'Uses',
+				fields: [{ key: 'Uses', type: 'number' }],
+			};
+			const host = document.createElement('div');
+			document.body.appendChild(host);
+			recordSet.render(host, cfg, readData(rec('A', 'Uses: 1'), cfg), {
+				...context,
+				suggestText: () => {
+					called += 1;
+				},
+			});
+			expect(called).toBe(0);
+		});
+	});
+
+	describe('sample', () => {
+		it('names two classes from the first two sample records, through read and write', () => {
+			const sample = recordSet.sample?.(TEXT_CONFIG) ?? '';
+			expect(sample).toContain('Class: Fighter');
+			expect(sample).toContain('Class: Wizard');
+			expect(recordSet.read(sample, TEXT_CONFIG).ok).toBe(true);
+			const { host } = live({}, sample);
+			expect(groupNames(host)).toEqual(['Fighter', 'Wizard']);
 		});
 	});
 });

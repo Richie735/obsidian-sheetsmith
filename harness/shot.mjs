@@ -2620,6 +2620,86 @@ const DEFAULTS = [
 		query: 'surface=sheet&theme=light&state=record-groups&width=520',
 		size: '620,3200',
 	},
+	{
+		/*
+		 * **A Record set grouped by what the player types**
+		 * (`docs/features/free-text-group-key.md`), on the `text-groups` state's
+		 * own sheet: a text key on the summary line (headed and unheaded) and
+		 * inside the opened record, a case-variant pair under one header, a blank
+		 * and an `Other` sharing one **Other**, a hand-edited link, a colon and a
+		 * ninety-character value in the strip list, and the two half-valid
+		 * configurations drawn in place.
+		 */
+		name: 'sheet-text-groups',
+		query: 'surface=sheet&theme=light&state=text-groups',
+		size: '1400,1900',
+	},
+	{
+		name: 'sheet-text-groups-dark',
+		query: 'surface=sheet&theme=dark&state=text-groups',
+		size: '1400,1900',
+	},
+	{
+		name: 'sheet-text-groups-collapsed',
+		query:
+			'surface=sheet&theme=light&state=text-groups&press=.sheetsmith-record-group-toggle',
+		size: '1400,1900',
+	},
+	{
+		name: 'sheet-text-groups-narrow',
+		query: 'surface=sheet&theme=light&state=text-groups&width=520',
+		size: '620,3200',
+	},
+	{
+		// The editor's canvas on sample values: two groups from the first two
+		// sample records for a key, the configuration error in place for the two
+		// half-valid lists.
+		name: 'editor-text-groups',
+		query: 'surface=both&theme=light&state=text-groups&open=bad_text_plain',
+		size: '1500,2400',
+	},
+	{
+		// A refused commit, which exists only after somebody types and looks away:
+		// a link is kept in the field under the shared sentence.
+		name: 'sheet-text-groups-refused-link',
+		query:
+			'surface=sheet&theme=light&state=text-groups&type=.sheetsmith-record-input-text%7C%5B%5BWizard%5D%5D',
+		size: '1400,1900',
+	},
+	{
+		// And a name over the 40-character limit, 57 characters.
+		name: 'sheet-text-groups-refused-length',
+		query:
+			'surface=sheet&theme=light&state=text-groups&type=.sheetsmith-record-input-text%7CThe%20Order%20of%20the%20Seventh%20Lantern%20and%20the%20Wanderers',
+		size: '1400,1900',
+	},
+	{
+		// The **Other** group of the first list, scrolled to: below the fold of a
+		// four-row box in every other frame. It holds the blank record (the `—`
+		// placeholder on an empty text field) and the `Other` typed by hand, which
+		// share the one group.
+		name: 'sheet-text-groups-other',
+		query:
+			'surface=sheet&theme=light&state=text-groups&scroll=.sheetsmith-record-group-toggle%5Baria-controls%3D%22sheetsmith-record-group-homebrew_features-3%22%5D',
+		size: '1400,1900',
+	},
+	{
+		// A text key inside an **opened** record: "Homebrew in the body", whose
+		// Class is placed in the body. Shot closed everywhere else.
+		name: 'sheet-text-groups-body-open',
+		query:
+			'surface=sheet&theme=light&state=text-groups&press=%5Baria-controls%3D%22sheetsmith-record-homebrew_body-0%22%5D',
+		size: '1400,1900',
+	},
+	{
+		// The shared hover a transparent field takes, on a text field. A clipped
+		// group name's reveal is a native `title`, which no still captures; that is
+		// measured by `harness/measure-groups.mjs` check 6 instead.
+		name: 'sheet-text-groups-hover',
+		query: 'surface=sheet&theme=light&state=text-groups',
+		size: '1400,1900',
+		hover: '.sheetsmith-record-input-text',
+	},
 ];
 
 const args = process.argv.slice(2);

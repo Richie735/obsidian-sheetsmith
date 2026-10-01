@@ -26,9 +26,10 @@
  *
  * - **No wikilink inside a fence, and the *inputs* are where that is actually
  *   held.** The claim used to be that no field type this component offers can
- *   hold one — a `text` field is refused as a configuration error, and the
- *   refusal is not a cut, since SPEC §5's language has no strings — and that is
- *   true of the *type* and false of the *input*. A `number` field is an
+ *   hold one — a `text` field is refused as a configuration error unless it is
+ *   the field the list is grouped by (`docs/features/free-text-group-key.md`),
+ *   and the refusal is not a cut, since SPEC §5's language has no strings — and
+ *   that is true of the *type* and false of the *input*. A `number` field is an
  *   `<input type="text">` and `boundedText` leaves text that is not a number
  *   exactly as typed, so a pasted `[[Ring]]` reached the fence; a scan over the
  *   offered types could not see it. Every free-text route into a fence entry now
@@ -74,6 +75,7 @@ import { bodyText, writeBodyText } from '../parse/markdown-body';
 import { cellParts, spellParts, storedParts } from '../parse/modifier-cell';
 import {
 	GroupReading,
+	groupMatchKey,
 	groupRecords,
 	OTHER_KEY,
 	RecordGroup,
@@ -559,6 +561,17 @@ function recordLabel(name: string, noun: string): string {
 }
 
 /**
+ * Whether Group by names this field key: trimmed, case-insensitive, and never a
+ * blank. **The one rule** `groupingOf` finds its field by and `configError`
+ * decides whether a text field is the group key by, so a field cannot group the
+ * list and also report "holds text" (or the reverse) after one of them changes.
+ */
+function namesKey(groupBy: string | undefined, key: string | undefined): boolean {
+	const wanted = (groupBy ?? '').trim().toLowerCase();
+	return wanted !== '' && wanted === (key ?? '').trim().toLowerCase();
+}
+
+/**
  * Configuration errors, each on this component alone and each naming its fix
  * (SPEC §10).
  *
@@ -568,11 +581,12 @@ function recordLabel(name: string, noun: string): string {
  * nothing here. Reported rather than ignored, which is exactly how Table already
  * handles a `total` on a text column.
  *
- * **The default type is one of them**, and it is worth naming because it is the
- * state a freshly added field is in: the columns field leaves `type` out for its
- * own default, which is `text`, so a field added and not yet typed reports here
- * until the author picks one. The message names every type this component does
- * offer, which is the fix.
+ * **The default type is one of them unless it is the group key.** The columns
+ * field leaves `type` out for its own default, which is `text`, so a field a
+ * hand-edited layout left untyped reads as text and reports here until it is
+ * named by Group by or retyped. The editor writes a new field's type out
+ * (`list-fields.ts`), so a field added there is a number, not this error. The
+ * message names every type this component offers, which is the fix.
  */
 function configError(config: RecordSetConfig): string | null {
 	const noun = recordNoun(config).toLowerCase();
@@ -594,8 +608,10 @@ function configError(config: RecordSetConfig): string | null {
 			return `Two fields are both called "${key}".`;
 		}
 		seen.add(key.toLowerCase());
-		if (fieldType(field) === 'text') {
-			return `The field "${key}" cannot hold text, because prose belongs in the ${noun}'s body, where it may also hold links. Make it a number, level, toggle, computed or modifier field, or remove it and write the words in the ${noun} instead.`;
+		if (fieldType(field) === 'text' && !namesKey(config.groupBy, key)) {
+			// A text field has one job here, naming the group a record sits under;
+			// anything else it could hold is prose, and prose belongs in the body.
+			return `The field "${key}" holds text, which a list can hold only as the field it is grouped by. Set Group by to "${key}", or make it a number, level, toggle, computed or modifier field, or write the words in the ${noun}'s body instead.`;
 		}
 		if (field.total === true) {
 			return `The field "${key}" cannot show a total, because a list of ${noun}s draws no totals row for one to sit in. Add it up from elsewhere on the sheet with sum(${config.id}, ${key}), or turn the total off.`;
@@ -646,9 +662,7 @@ function groupingOf(
 	const wanted = (config.groupBy ?? '').trim();
 	if (wanted === '') return null;
 	const fields = config.fields ?? [];
-	const index = fields.findIndex(
-		(field) => (field.key ?? '').trim().toLowerCase() === wanted.toLowerCase(),
-	);
+	const index = fields.findIndex((field) => namesKey(wanted, field.key));
 	if (index === -1) {
 		return {
 			problem: `Group by is "${wanted}", and this list has no field with that key. The records are shown ungrouped. Name one of its fields in the layout editor, or clear Group by.`,
@@ -656,9 +670,9 @@ function groupingOf(
 	}
 	const field = fields[index] as RecordField;
 	const type = fieldType(field);
-	if (type !== 'level' && type !== 'number') {
+	if (type !== 'level' && type !== 'number' && type !== 'text') {
 		return {
-			problem: `Group by is "${wanted}", which is a ${type} field. Records can be grouped by a level or a number field only. The records are shown ungrouped. Name one in the layout editor, or clear Group by.`,
+			problem: `Group by is "${wanted}", which is a ${type} field. Records can be grouped by a level, number or text field only. The records are shown ungrouped. Name one in the layout editor, or clear Group by.`,
 		};
 	}
 	return { field, index };
@@ -684,6 +698,12 @@ export function groupReading(
 ): GroupReading | null {
 	if (error !== null) return null;
 	const raw = storedValue(field, entry[field.key]);
+	if (fieldType(field) === 'text') {
+		// The match key groups and the first spelling heads, so retyping a capital
+		// moves nothing. A blank value has no group, and `other` is Other's own.
+		const key = groupMatchKey(raw);
+		return key === '' ? null : { key, order: 0, label: raw.trim() };
+	}
 	if (fieldType(field) === 'number') {
 		const value = typedValue(field, raw);
 		return typeof value === 'number'
@@ -696,8 +716,14 @@ export function groupReading(
 }
 
 /** What a group's header calls it. */
-function groupName(field: RecordField, key: string): string {
+function groupName(
+	field: RecordField,
+	group: RecordGroup<RecordEntry>,
+): string {
+	const key = group.key;
 	if (key === OTHER_KEY) return 'Other';
+	// The first-seen spelling, never the match key: a header reads as typed.
+	if (fieldType(field) === 'text') return group.label ?? key;
 	if (fieldType(field) === 'level' && field.levels !== undefined) {
 		return levelName(field, Number(key));
 	}
@@ -739,6 +765,10 @@ function storedLayer(
 ): Record<string, FieldValue> {
 	const stored: Record<string, FieldValue> = {};
 	for (const field of storedFields(config)) {
+		// A text field is a group key and nothing a formula can read: the language
+		// has no strings, and a name that resolved to one would be the accident a
+		// modifier field's raw text already is.
+		if (fieldType(field) === 'text') continue;
 		stored[field.key] = typedValue(
 			field,
 			storedValue(field, record.fields[field.key]),
@@ -772,6 +802,12 @@ function recordValues(
 	});
 	return { label: recordLabel(record.name, recordNoun(config)), values };
 }
+
+/** Group names a sample text field cycles through, by record. */
+const SAMPLE_GROUPS = ['Fighter', 'Wizard', 'Cleric'] as const;
+
+/** The longest group name a player may type, in code points. */
+const GROUP_NAME_LIMIT = 40;
 
 /** What one field holds in a sample, or null where it stores nothing. */
 function sampleField(
@@ -828,6 +864,10 @@ function sampleField(
 		}
 		case 'toggle':
 			return flagText(sampleFlag(record));
+		case 'text':
+			// Two groups from the first two sample records, so the canvas draws a
+			// grouped list the moment a text field is the key.
+			return SAMPLE_GROUPS[record % SAMPLE_GROUPS.length] as string;
 		case 'level':
 			// A level is a flag with a ladder in it, so it answers both rules at
 			// once: alternate records carry a level at all, and the level they
@@ -840,7 +880,7 @@ function sampleField(
 		// in one of the *layout's* definitions, and a layout the author is still
 		// building may declare none — so a sample that named one would put a
 		// problem on screen the author did not cause. A computed field stores
-		// nothing at all, and a text field is a configuration error.
+		// nothing at all.
 		default:
 			return null;
 	}
@@ -1316,13 +1356,15 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			 * **What this component can hold, so a freshly added field is not an
 			 * error.** The shared columns field is Table's shape: it offers every
 			 * type and leaves the *shared* default — `text` — out of the file. This
-			 * component refuses a text field, so without this an author met a
-			 * configuration error on the first field they created, beside two
-			 * checkboxes offering things the component also refuses. `number` first,
-			 * because a uses counter is what a record's field usually is.
+			 * component holds text only as the group key, so a field stored with no
+			 * type reads as text and is refused unless Group by names it. `number` is
+			 * first and `text` last (appended, never inserted: the order decides the
+			 * default), and the editor writes the first offered type out for a new
+			 * field, so an author's first field is a number rather than that error,
+			 * beside two checkboxes offering things the component also refuses.
 			 */
 			columnOptions: {
-				types: ['number', 'toggle', 'level', 'computed', 'modifier'],
+				types: ['number', 'toggle', 'level', 'computed', 'modifier', 'text'],
 				total: false,
 				publish: false,
 				// A uses counter that belongs to a record the character added is
@@ -1361,14 +1403,14 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			// `docs/features/component-rename-migration.md`).
 			addressesEntry: { fence: 'record' },
 			description:
-				"The typed values every record holds, each an entry in that record's block in the note. Renaming a key moves that entry in every record, in every note on this layout. Text is not offered: words a reader reads belong in the record's body, where they may hold links. A number field with a maximum is a uses counter: the field draws that maximum beside its value, and a reset trigger restores it to that maximum. A number field's maximum may belong to the field, so every record shares it, or to each record, so a reader types it on the sheet — and a reset restores each record to whichever one applies. Tick \"Inside the opened record\" for a value read once and changed rarely: it draws above the record's prose and is not shown while the record is closed. A field used every turn belongs on the summary line. Write a condition in \"Shown when\", such as Recharges == 1 || Recharges == 2, to draw a field only on the records where it holds. A hidden field keeps its value and still counts in every formula, modifier and reset, so a when clause reading a hidden toggle still applies. A level is read by its position, from 0 for the first name, so reordering a level's names changes what a condition reading it means.",
+				"The typed values every record holds, each an entry in that record's block in the note. Renaming a key moves that entry in every record, in every note on this layout. Text is offered for one job, naming the group a record sits under, and only on the field Group by names: it publishes nothing and no formula can read it, and words a reader reads belong in the record's body, where they may hold links. A number field with a maximum is a uses counter: the field draws that maximum beside its value, and a reset trigger restores it to that maximum. A number field's maximum may belong to the field, so every record shares it, or to each record, so a reader types it on the sheet — and a reset restores each record to whichever one applies. Tick \"Inside the opened record\" for a value read once and changed rarely: it draws above the record's prose and is not shown while the record is closed. A field used every turn belongs on the summary line. Write a condition in \"Shown when\", such as Recharges == 1 || Recharges == 2, to draw a field only on the records where it holds. A hidden field keeps its value and still counts in every formula, modifier and reset, so a when clause reading a hidden toggle still applies. A level is read by its position, from 0 for the first name, so reordering a level's names changes what a condition reading it means.",
 		},
 		{
 			key: 'groupBy',
 			kind: 'text',
 			label: 'Group by',
 			description:
-				'The key of one level or number field. Records are drawn under a collapsible header per value, a level in the order its names are written and a number from lowest to highest, and a record with no value goes under Other. It changes how the list is drawn and nothing in the note, and a reset bound to this field will move records between groups. A level suits a closed set such as a class: its names are the layout\'s, so a name a player invents needs appending to its "Level names" here; set the field to a dropdown and tick "Inside the opened record", and name its first level for a record with no choice, such as Unassigned. A number suits a spell level and heads each group "Level 3". Show the key field, since a record hidden from it by a condition still sits in its group. Blank draws the list ungrouped.',
+				'The key of one level, number or text field. Records are drawn under a collapsible header per value: a level in the order its names are written, a number from lowest to highest, and text alphabetically, matched without regard to case or surrounding spaces and headed by the first spelling in the note. A record with no value goes under Other. It changes how the list is drawn and nothing in the note, and a reset bound to this field will move records between groups. A level suits a closed set such as a class: its names are the layout\'s, so a name a player invents needs appending to its "Level names" here; set the field to a dropdown and tick "Inside the opened record", and name its first level for a record with no choice, such as Unassigned. A number suits a spell level and heads each group "Level 3". A text field lets a player invent a group on a character without editing this layout. Show the key field, since a record hidden from it by a condition still sits in its group. Blank draws the list ungrouped.',
 		},
 		{
 			key: 'hideLabel',
@@ -1771,11 +1813,23 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			summaryFields.length > 0 &&
 			records.some((record) => record.error === null);
 
+		/**
+		 * Whether the summary line carries a text field, which is a word wide and
+		 * stacks the record sooner (`sheet.css`, the text-list stacking block). The
+		 * class is stamped only then, so every other list draws the markup it
+		 * always drew.
+		 */
+		const wordOnLine = summaryFields.some((field) => fieldType(field) === 'text');
 		const block = element(
 			'div',
-			headed
+			(headed
 				? `sheetsmith-placed sheetsmith-record-set sheetsmith-record-set-headed sheetsmith-record-set-fields-${Math.min(summaryFields.length, MAX_TABULATED_FIELDS)}`
-				: 'sheetsmith-placed sheetsmith-record-set',
+				: 'sheetsmith-placed sheetsmith-record-set') +
+				(wordOnLine
+					? headed
+						? ' sheetsmith-record-set-text sheetsmith-record-set-text-headed'
+						: ' sheetsmith-record-set-text'
+					: ''),
 			container,
 		);
 		// The true count, for the shared tracks; the class above is only the
@@ -1828,7 +1882,9 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			for (const field of summaryFields) {
 				element(
 					'span',
-					'sheetsmith-card-abbreviation',
+					fieldType(field) === 'text'
+						? 'sheetsmith-card-abbreviation sheetsmith-record-strip-text'
+						: 'sheetsmith-card-abbreviation',
 					strip,
 					fieldLabel(field),
 				);
@@ -1980,6 +2036,35 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		};
 
 		/**
+		 * Why a group name cannot be stored, or null.
+		 *
+		 * A link, as everywhere else that reaches the fence, through the same
+		 * builder so the sentence cannot drift from the number field's. Then a
+		 * line break, which an `<input>` strips on typing and a programmatic or
+		 * pasted value must still not carry into a fence that holds one entry per
+		 * line; and a length, counted in code points so a name in another script
+		 * or with emoji is not penalised per code unit. **Not the input's
+		 * `maxlength`**, which silently truncates a paste: a refusal that says so
+		 * is this codebase's convention.
+		 *
+		 * **Deliberately not refused**: a colon (the fence splits at the line's
+		 * first, so a value half may hold more), a slash (split only for a number),
+		 * a semicolon, and the spaces at either end, which the gesture trims.
+		 */
+		const refuseGroupName = (text: string): string | null => {
+			const link = refusal(text);
+			if (link !== null) return link;
+			if (/[\r\n]/.test(text)) {
+				return 'Not saved. A group name is one line, because the sheet block holds one entry per line. Remove the line break.';
+			}
+			const length = Array.from(text).length;
+			if (length > GROUP_NAME_LIMIT) {
+				return `Not saved. A group name is at most ${GROUP_NAME_LIMIT} characters, and this is ${length}. Shorten it, or put the detail in the ${noun.toLowerCase()}'s body.`;
+			}
+			return null;
+		};
+
+		/**
 		 * Draw or clear one standing refusal under a record, and say it.
 		 *
 		 * **A closure per message rather than a function taking one**, because what
@@ -2029,10 +2114,36 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		/** Records a condition was evaluated on, which is every one that read. */
 		const readable = records.filter((record) => record.error === null).length;
 
-		if (groupField !== null) {
-			const groups = groupRecords(records, (record, at) =>
-				groupReading(groupField.field, record.fields, record.error),
-			);
+		/**
+		 * The groups, computed before any record is drawn so that the names a text
+		 * field's type-ahead offers are the ones this render is about to draw: the
+		 * pass that produces the headers produces the list, and nothing reads the
+		 * records a second time.
+		 */
+		const groups =
+			groupField === null
+				? null
+				: groupRecords(
+						records,
+						(record) =>
+							groupReading(groupField.field, record.fields, record.error),
+						// A text key's order is the spelling's, not a number's.
+						{ alphabetical: fieldType(groupField.field) === 'text' },
+					);
+		/**
+		 * What a text field offers as it is typed: each group's first-seen
+		 * spelling, in header order, without Other. Names in use on this
+		 * character in this list and nothing wider, whether or not a group is
+		 * collapsed.
+		 */
+		const groupSpellings: readonly string[] =
+			groups === null || groupField === null || fieldType(groupField.field) !== 'text'
+				? []
+				: groups
+						.filter((group) => group.key !== OTHER_KEY)
+						.map((group) => group.label ?? group.key);
+
+		if (groups !== null) {
 			groups.forEach((group, ordinal) => {
 				drawGroup(group, ordinal);
 			});
@@ -2110,10 +2221,11 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			// The record starts with no fence, so it lands in the group the key's
 			// default value names; one the reader collapsed opens with it.
 			if (groupField !== null) {
-				const key = groupReading(groupField.field, {}, null)?.key;
-				if (key !== undefined && collapsedKeys.has(key)) {
-					context.onToggleGroup?.(key, false);
-				}
+				// A text or number key has no reading for a blank record, which is
+				// Other's: the common case for text, so it opens Other and not nothing.
+				const key =
+					groupReading(groupField.field, {}, null)?.key ?? OTHER_KEY;
+				if (collapsedKeys.has(key)) context.onToggleGroup?.(key, false);
 			}
 			// Named rather than blank: a `### ` with nothing after it is not a
 			// heading, so a nameless record would not survive its own first read.
@@ -2162,7 +2274,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			ordinal: number,
 		): void {
 			if (groupField === null) return;
-			const name = groupName(groupField.field, group.key);
+			const name = groupName(groupField.field, group);
 			const section = element('div', 'sheetsmith-record-group', host);
 			const heading = element(
 				'h3',
@@ -2177,7 +2289,13 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			toggle.type = 'button';
 			const mark = element('span', 'sheetsmith-record-group-mark', toggle);
 			mark.setAttribute('aria-hidden', 'true');
-			element('span', 'sheetsmith-record-group-name', toggle, name);
+			// One line, clipped, and revealed on hover only where it is clipped
+			// (`ui/truncation.ts`): a typed name can be any length, and a header
+			// that wrapped would grow with it and move every record below. The
+			// button's accessible name is this text whole, clipped or not.
+			revealWhenTruncated(
+				element('span', 'sheetsmith-record-group-name', toggle, name),
+			);
 			// Beside the button and out of its name, so the name is the text on
 			// screen and nothing else (WCAG 2.5.3); the sentence is its twin.
 			const count = group.members.length;
@@ -2641,7 +2759,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			// one query decides both and a number can never have neither. In the
 			// body every type draws it, and no rule hides it there — the strip's
 			// rules are scoped to the summary line.
-			if (body || type === 'number') {
+			if (body || type === 'number' || type === 'text') {
 				element('span', 'sheetsmith-card-abbreviation', cell, name);
 			}
 			const commit = (next: string): void => {
@@ -2669,6 +2787,11 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 					body,
 					commit,
 				);
+				return;
+			}
+
+			if (type === 'text') {
+				drawText(cell, row, raw, accessible, commit);
 				return;
 			}
 
@@ -2932,6 +3055,66 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 					commit(held);
 				},
 			});
+		}
+
+		/**
+		 * A text field: the word a player types to name the group a record sits
+		 * under, which is the only job text has here
+		 * (`docs/features/free-text-group-key.md`).
+		 *
+		 * **The number field's clothes and its gesture** (`editable.ts`: typing
+		 * drafts, Enter or blur commits, Escape restores, a refusal keeps the
+		 * draft), with a width of its own. It reads and writes the entry whole: a
+		 * text value has no ceiling half, and a colon or a slash in it is inert
+		 * because the fence splits at the first colon of the *line*.
+		 *
+		 * **Refused at the commit, never in `read`**, so a note that already holds
+		 * a link, a long value or a line break is rendered and carried (SPEC §10).
+		 * `spellcheck` is off: class names are proper nouns and homebrew words, and
+		 * red underlines down a column of them are noise.
+		 */
+		function drawText(
+			cell: HTMLElement,
+			row: HTMLElement,
+			raw: string,
+			accessible: string,
+			commit: (next: string) => void,
+		): void {
+			const input = element(
+				'input',
+				'sheetsmith-record-input sheetsmith-record-input-text',
+				cell,
+			);
+			input.type = 'text';
+			input.value = raw;
+			input.spellcheck = false;
+			input.setAttribute('aria-label', accessible);
+			// The empty state in both placements: a chromeless blank input is
+			// otherwise indistinguishable from nothing, and a text field has no
+			// value to imply a slot the way a number does.
+			input.placeholder = '—';
+			revealWhenTruncated(input);
+			const showRefusal = refusalNotice(row);
+			const handle = bindEditable(input, {
+				initial: raw,
+				announceCommit: (next) => {
+					status.textContent =
+						next === '' ? `${accessible} cleared` : `${accessible} ${next}`;
+				},
+				announceRestore: (restored) => {
+					status.textContent =
+						restored === ''
+							? `${accessible} restored to empty`
+							: `${accessible} restored to ${restored}`;
+				},
+				refuse: refuseGroupName,
+				onRefusal: showRefusal,
+				onCommit: commit,
+			});
+			// The view decides how the offer is drawn; absent, this is a plain box.
+			// A pick is the field's own commit, so it takes the refusals, the
+			// announcement and the regroup typing the name would.
+			context.suggestText?.(input, groupSpellings, (next) => handle.set(next));
 		}
 
 		/**

@@ -60,6 +60,7 @@ import { MarkdownPasses } from './markdown-pass';
 import { renderMissingLayout } from './missing-layout';
 import { openResetConfirmation } from './reset-confirmation';
 import { boundTo, planTrigger, TriggerPlan } from './reset-plan';
+import { attachTextSuggest, TextSuggest } from './text-suggest';
 
 export const VIEW_TYPE_SHEET = 'sheetsmith-sheet';
 
@@ -240,6 +241,12 @@ export class SheetView extends TextFileView {
 	 * (`docs/features/picture-fit-and-suggest.md`).
 	 */
 	private fileSuggests: FileSuggest[] = [];
+	/**
+	 * The group-name type-aheads standing on the sheet, held and closed exactly
+	 * as `fileSuggests` is and for the same reason: an input removed mid-focus
+	 * fires no `blur`, and this view rebuilds on every committed edit.
+	 */
+	private textSuggests: TextSuggest[] = [];
 	/**
 	 * What the note is expected to hold when the offered undo is pressed.
 	 *
@@ -468,6 +475,8 @@ export class SheetView extends TextFileView {
 		// whichever one the render before this took.
 		for (const suggest of this.fileSuggests) suggest.close();
 		this.fileSuggests = [];
+		for (const suggest of this.textSuggests) suggest.close();
+		this.textSuggests = [];
 
 		let note: CharacterNote;
 		try {
@@ -644,6 +653,9 @@ export class SheetView extends TextFileView {
 				this.fileSuggests.push(
 					attachFileSuggest(this.app, input, commit, this.file?.path ?? ''),
 				);
+			},
+			suggestText: (input, names, commit) => {
+				this.textSuggests.push(attachTextSuggest(this.app, input, names, commit));
 			},
 			activeTab: this.activeTab.get(config.id),
 			onActivateTab: (index: number) => this.activeTab.set(config.id, index),
