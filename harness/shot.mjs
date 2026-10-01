@@ -2582,6 +2582,44 @@ const DEFAULTS = [
 		query: `${WIDE}right`,
 		size: '620,1500',
 	},
+	{
+		/*
+		 * **Grouped Record sets** (`docs/features/record-set-groups.md`), on the
+		 * `record-groups` state's own sheet: lists with neighbours above, below and
+		 * beside them, so a collapse that moved anything would show. Every group
+		 * open, then the first header drawn pressed shut. The frame is the fixture
+		 * sheet's, not the populated one's.
+		 */
+		name: 'sheet-record-groups',
+		query: 'surface=sheet&theme=light&state=record-groups',
+		size: '1400,1900',
+	},
+	{
+		name: 'sheet-record-groups-dark',
+		query: 'surface=sheet&theme=dark&state=record-groups',
+		size: '1400,1900',
+	},
+	{
+		name: 'sheet-record-groups-collapsed',
+		query:
+			'surface=sheet&theme=light&state=record-groups&press=.sheetsmith-record-group-toggle',
+		size: '1400,1900',
+	},
+	{
+		/*
+		 * The editor's canvas beside the sheet: it draws the layout's own components
+		 * through the same render path, so the grouped lists (groups open, on sample
+		 * values) and the problem line for a key naming nothing or a toggle show here.
+		 */
+		name: 'editor-record-groups',
+		query: 'surface=both&theme=light&state=record-groups&open=bad_group_missing',
+		size: '1500,2400',
+	},
+	{
+		name: 'sheet-record-groups-narrow',
+		query: 'surface=sheet&theme=light&state=record-groups&width=520',
+		size: '620,3200',
+	},
 ];
 
 const args = process.argv.slice(2);
