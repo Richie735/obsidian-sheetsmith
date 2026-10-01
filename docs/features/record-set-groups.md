@@ -139,6 +139,8 @@ alternative holds a working feature for a larger one.
 
 ### Deferred: a player's own groups
 
+**Built since: `docs/features/free-text-group-key.md`.** What follows is the argument as it stood when the route was deferred; the reversal it names has been made, for the group key only.
+
 **Decided by the owner after the build was in front of them: this feature lands as
 it stands, and a player inventing their own class or group name is its own route.**
 What is wanted there is per-character group *values*, and the only thing that
@@ -795,7 +797,7 @@ implementation and every round of findings.
   not a header gesture, and its first design question is what it does to a header
   the reader has deliberately collapsed.
 - **Free-text group key: let a player type their own class or group name on a
-  Record set record, which reverses the "no text field" decision.** Deferred as its
+  Record set record, which reverses the "no text field" decision.** *(Built: `docs/features/free-text-group-key.md`.)* Deferred as its
   own route by the owner, gated on that reversal (SPEC §4.2,
   `docs/features/record-set.md`, §5's missing strings), which needs its own spec
   and model question (SPEC §13 holds it). **Class grouping does not cover a

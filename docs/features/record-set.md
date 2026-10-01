@@ -161,7 +161,7 @@ than corrected (§10). Criterion 6's scan over the offered types proves `text` i
 refused and does not reach this, which is why it needed its own case.
 
 **The types themselves, which is the half that was right.** The fields are `number`, `toggle`, `level`,
-`computed` and `modifier`. A `text` field is **refused** as a configuration error, and
+`computed` and `modifier`. A `text` field is **refused** as a configuration error *unless it is the field Group by names* (`docs/features/free-text-group-key.md` reversed the refusal for that one job), and
 the refusal is not a cut: §5's language has no strings, so a text field could publish
 nothing, be compared to nothing and be handed to no builtin — it could only be
 display, and display words are what the record's body is for, where they hold links
@@ -670,7 +670,7 @@ prose is the one sample a reader could mistake for their own data.
 | Key | Kind | Label | Description |
 | --- | --- | --- | --- |
 | `recordName` | `text` | Record name | What one record is called. Names the **Add** control, the accessible name of a record's name field, and the filler in the layout editor's preview. Defaults to "Record". |
-| `fields` | `columns` | Fields | The typed values every record holds, each an entry in that record's fenced block. Text is not offered: words a reader reads belong in the record's body, where they may hold links. A `max` on a `number` field is a uses counter's ceiling: a reset restores to it, and the field draws it beside the value. |
+| `fields` | `columns` | Fields | The typed values every record holds, each an entry in that record's fenced block. Text is offered only for the field Group by names, as a word that heads a group; other words a reader reads belong in the record's body, where they may hold links. A `max` on a `number` field is a uses counter's ceiling: a reset restores to it, and the field draws it beside the value. |
 | `hideLabel` | `boolean` | Hide the heading | Draws the list with no name over it, for a list whose surroundings already say what it is. |
 
 `formulaFields`: `fields.*.formula` and `reset.to`.
@@ -981,7 +981,7 @@ implementation and every round of findings.
 - **Two views over one collection**, which CSB 549 and 519 are asking for together — an
   inventory list and an equipped list over one set of records. It needs a record to
   appear in two components, which needs an identity a position does not have.
-- **A `text` field.** Refused with a message. §5 has no strings, so it could publish
+- **A `text` field**, except as the group key (`docs/features/free-text-group-key.md`). Elsewhere it is refused with a message. §5 has no strings, so it could publish
   nothing; the body is where words go.
 - **Multiply and override operators on modifiers, grouped conditional modifiers, a
   record naming two targets, dice-changing modifiers.** All deferred already, each with
