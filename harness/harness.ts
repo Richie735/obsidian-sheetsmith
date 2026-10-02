@@ -58,6 +58,8 @@ import {
 	pinnedAddSamples,
 	recordGroupSamples,
 	textGroupSamples,
+	notesSamples,
+	NOTE_DEFINITIONS,
 } from './samples';
 import { renderSettings } from './settings-panel';
 import { harnessLayout } from './stub-app';
@@ -70,7 +72,8 @@ type StateName =
 	| 'broken'
 	| 'pinned-add'
 	| 'record-groups'
-	| 'text-groups';
+	| 'text-groups'
+	| 'notes';
 type Surface = 'sheet' | 'editor' | 'settings' | 'both';
 
 interface Live {
@@ -98,7 +101,22 @@ function samplesFor(name: StateName): Sample[] {
 	if (name === 'pinned-add') return pinnedAddSamples();
 	if (name === 'record-groups') return recordGroupSamples();
 	if (name === 'text-groups') return textGroupSamples();
+	if (name === 'notes') return notesSamples();
 	return SAMPLES;
+}
+
+/**
+ * The layout a state draws: the harness layout over its samples, with the
+ * `notes` state's note-bearing definitions ahead of the layout's own, so the
+ * editor opens on them (`docs/features/modifier-notes.md`).
+ */
+function layoutFor(name: StateName): Layout {
+	const built = harnessLayout(samplesFor(name));
+	if (name !== 'notes') return built;
+	return {
+		...built,
+		modifiers: [...NOTE_DEFINITIONS, ...(built.modifiers ?? [])] as Layout['modifiers'],
+	};
 }
 
 /** Reset stored values to the chosen state, and take its configs as the layout. */
@@ -113,7 +131,7 @@ function loadState(name: StateName): void {
 			] as [string, string | null]),
 		),
 	);
-	layout = harnessLayout(samples);
+	layout = layoutFor(name);
 	prepare();
 }
 
@@ -540,7 +558,7 @@ async function ensureEditor(): Promise<HTMLElement> {
 		file === 'outside' ||
 		file === 'no-file'
 			? file
-			: harnessLayout(samplesFor(state)),
+			: layoutFor(state),
 		{
 			open: params.get('open') ?? undefined,
 			// Only ever off: a pane opens with sample values on, so the state
@@ -781,7 +799,8 @@ function applyQuery(): void {
 			wanted === 'broken' ||
 			wanted === 'pinned-add' ||
 			wanted === 'record-groups' ||
-			wanted === 'text-groups'
+			wanted === 'text-groups' ||
+			wanted === 'notes'
 			? wanted
 			: 'populated',
 	);

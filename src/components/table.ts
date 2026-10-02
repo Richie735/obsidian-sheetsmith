@@ -66,7 +66,7 @@ import { paintLinkedText } from './linked-text';
 import {
 	MODIFIED_CLASS,
 	applying,
-	modifierBreakdown,
+	modifierAccount,
 	modifierRowName,
 	modifierRowText,
 	rowModifiers,
@@ -83,6 +83,7 @@ import {
 	sampleSeed,
 	sampleText,
 } from './sample-values';
+import { renderAccountNotes, renderNotesAt, reserveNoteSlots } from './note-mark';
 import { bindRingControl } from './ring-control';
 import { flagText } from './stored-flag';
 import {
@@ -1461,6 +1462,12 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 		return writeTable(body, headers(config), { rows, added, removed });
 	},
 
+	/*
+	 * A published row's cell and a column total draw the note mark, after the
+	 * number or the control (`docs/features/modifier-notes.md`).
+	 */
+	drawsNotes: true,
+
 	resetColumns(config): readonly ResetColumn[] {
 		return resetColumnsOf(config);
 	},
@@ -2089,10 +2096,10 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 						name === undefined || column.formula === undefined
 							? null
 							: noteRow().values[column.key];
-					const pushed =
+					const account =
 						name === undefined || column.formula === undefined
 							? null
-							: modifierBreakdown(
+							: modifierAccount(
 									context.modifiers?.breakdown(name),
 									typeof shown === 'number' ? shown : null,
 									// This breakdown is read inside a table, so every
@@ -2101,7 +2108,14 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 									// rows the reader is looking at.
 									true,
 								);
-					if (pushed !== null) {
+					/*
+					 * **The whole account opens on the cell's press; the underline
+					 * and the in-cell twin follow the arithmetic alone**, so a
+					 * note-only cell underlines no number nothing moved. Its notes
+					 * have their own mark and twin after the number, below.
+					 */
+					const pushed = account?.text ?? null;
+					if (account?.arithmetic === true && pushed !== null) {
 						cell.classList.add(MODIFIED_CLASS);
 						/*
 						 * The same text where there is no pointer, in a span inside
@@ -2135,6 +2149,7 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 						 */
 						element('span', 'sheetsmith-sr-only', td, pushed);
 					}
+					renderAccountNotes(td, account, 'sheetsmith-table-has-note');
 					if (column.formula !== undefined) {
 						// The title says this on a desktop and says nothing on a
 						// phone. A read-only cell has no other use for a tap, so
@@ -2389,6 +2404,7 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 							definitions: context.modifiers?.definitions ?? [],
 							targets: context.modifiers?.targets ?? [],
 							published: context.modifiers?.published ?? [],
+							noteTargets: context.modifiers?.noteTargets ?? [],
 							bonusTypes: context.modifiers?.bonusTypes ?? [],
 							// The one import from `obsidian` in this folder, passed on
 							// rather than taken again: the allowlist stays one name long.
@@ -2516,6 +2532,12 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 						}
 						select.value = String(initial);
 						select.setAttribute('aria-label', label);
+						renderNotesAt(
+							td,
+							context.modifiers,
+							publishedName(config, rowView, index),
+							'sheetsmith-table-has-note',
+						);
 						let shown = initial;
 						// **The guard is kept, and it is dead.** A native `change`
 						// does not fire on re-picking the option already chosen, so
@@ -2569,6 +2591,14 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 						nameOnScreen: column.hideHeading !== true,
 						onSet: store,
 					});
+					// After the control, as the cell's door: the ring's press is the
+					// ring's, so the notes need a control of their own.
+					renderNotesAt(
+						td,
+						context.modifiers,
+						publishedName(config, rowView, index),
+						'sheetsmith-table-has-note',
+					);
 					return;
 				}
 
@@ -2582,6 +2612,12 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 				input.value = raw;
 				input.setAttribute('aria-label', label);
 				if (type === 'number') input.inputMode = 'numeric';
+				renderNotesAt(
+					td,
+					context.modifiers,
+					publishedName(config, rowView, index),
+					'sheetsmith-table-has-note',
+				);
 				bindEditable(input, {
 					initial: raw,
 					step: type === 'number',
@@ -2775,6 +2811,13 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 					column,
 					el: element('div', 'sheetsmith-table-value', cell),
 				});
+				// After the sum, where a note was pushed at the total's own name.
+				renderNotesAt(
+					cell,
+					context.modifiers,
+					`${config.id}.${column.key}`,
+					'sheetsmith-table-has-note',
+				);
 			}
 			if (open) element('td', 'sheetsmith-table-remove', foot);
 
@@ -2827,5 +2870,8 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 			};
 			paintTotals(true);
 		}
+		// Last, once every cell that will hold a mark holds it: a noted column
+		// reserves the mark's slot in its other cells, so its values line up.
+		reserveNoteSlots(grid);
 	},
 };

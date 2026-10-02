@@ -2640,6 +2640,71 @@ const DEFAULTS = [
 		size: '1400,1900',
 	},
 	{
+		/*
+		 * **A modifier saying something without changing a number**
+		 * (`docs/features/modifier-notes.md`), on the `notes` state's own sheet:
+		 * the note mark on a Card with its own note line filled, on a Card with
+		 * both marks, on a note-only Card and on a Card with its label hidden; on
+		 * a Table's computed cell, its stored level cell and a column total; and
+		 * on a Roster's computed row, band head, stat card and stored level cell.
+		 * What to look at: the glyph reads as distinct from the underline, sits on
+		 * the label's line without moving a card's number off centre, and widens
+		 * no stored cell enough to clip at the threshold width.
+		 */
+		name: 'sheet-notes',
+		query: 'surface=sheet&theme=light&state=notes',
+		size: '1400,1500',
+	},
+	{
+		name: 'sheet-notes-dark',
+		query: 'surface=sheet&theme=dark&state=notes',
+		size: '1400,1500',
+	},
+	{
+		// The glyph is an SVG in `currentColor`, so this mode keeps it; the
+		// underline beside it is the arithmetic's, and both must still read.
+		name: 'sheet-notes-forced-colors',
+		query: 'surface=sheet&theme=light&state=notes',
+		size: '1400,1500',
+		flags: ['--force-high-contrast'],
+	},
+	{
+		// One tab stop per noted value, on the Track door's own ring.
+		name: 'sheet-notes-focus',
+		query: 'surface=sheet&theme=light&state=notes&focus=.sheetsmith-note-mark',
+		size: '1400,1500',
+	},
+	{
+		// A computed cell's mark opens the cell's own popover text: the formula,
+		// a blank line, then the notes.
+		name: 'sheet-notes-cell',
+		query:
+			'surface=sheet&theme=light&state=notes&bar=off&press=td.sheetsmith-table-computed .sheetsmith-note-mark',
+		size: '1400,1500',
+	},
+	{
+		// The card with both marks: arithmetic, the total, then `Notes`.
+		name: 'sheet-notes-both',
+		query:
+			'surface=sheet&theme=dark&state=notes&bar=off&press=.sheetsmith-card-has-note .sheetsmith-modified',
+		size: '1400,1500',
+	},
+	{
+		name: 'sheet-notes-narrow',
+		query: 'surface=sheet&theme=light&state=notes&width=520',
+		size: '620,3200',
+	},
+	{
+		// The editor opening on note-bearing changes: the **Note** field on a
+		// change line's second row, beside a blank **Amount** on the two
+		// note-only definitions and a filled one on Ring of Warmth. The editor
+		// alone, and tall enough to reach the third definition: beside the sheet
+		// the column ended at Reset triggers and no Note field was in frame.
+		name: 'editor-notes',
+		query: 'surface=editor&theme=light&state=notes',
+		size: '1500,2600',
+	},
+	{
 		name: 'sheet-text-groups-collapsed',
 		query:
 			'surface=sheet&theme=light&state=text-groups&press=.sheetsmith-record-group-toggle',

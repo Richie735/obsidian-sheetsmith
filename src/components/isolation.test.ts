@@ -142,6 +142,10 @@ const ALLOWED = [
 	// every state here is a fact about a character's level.
 	"import { bindRingControl } from './ring-control';",
 	"import { bindRingControl } from '../components/ring-control';",
+	// The mark on a value something has noted, shared by Card, Table and Roster:
+	// three consumers, which is §1's extraction line met exactly.
+	"import { renderNoteMark } from './note-mark';",
+	"import { renderNoteMark } from '../components/note-mark';",
 	"import { MODIFIED_CLASS } from '../components/modifier-breakdown';",
 	"import { paintLinkedText } from '../components/linked-text';",
 	"import { paintLevelRing } from '../components/level-ring';",

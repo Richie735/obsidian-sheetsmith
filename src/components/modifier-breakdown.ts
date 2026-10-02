@@ -61,10 +61,12 @@
 
 import {
 	ModifierBreakdown,
+	ModifierNote,
 	ModifierOperator,
 	ModifierPhase,
 	ModifierOutcome,
 } from '../types';
+import { isNoteOnly } from '../parse/modifier-cell';
 
 /**
  * The mark on a number something has been pushed at.
@@ -166,46 +168,82 @@ export function modifierBreakdown(
 	 * row from a second table goes, every line loses its prefix because they
 	 * genuinely all come from one place now.
 	 */
-	const sources = new Set(breakdown.lines.map((line) => line.source));
-	const qualify = sources.size > 1 || inRows === true;
+	const qualify = qualified(breakdown.lines, inRows);
+	return arithmeticLines(breakdown, shown, qualify).join('\n');
+}
+
+/**
+ * Whether every line of a breakdown names its component: where it draws on more
+ * than one, or where it is read inside a component with rows (`inRows`).
+ *
+ * Over whatever lines the caller hands it, so the account below decides it
+ * **once over both groups together** — one popover never qualifies half its
+ * lines, which is the rule's own reason read across the arithmetic and the notes.
+ */
+function qualified(
+	lines: readonly { source: string }[],
+	inRows?: boolean,
+): boolean {
+	return new Set(lines.map((line) => line.source)).size > 1 || inRows === true;
+}
+
+/**
+ * How one contributor or note is identified: component, row, modifier — widest
+ * scope first, each where it informs.
+ *
+ * One spelling for both groups, because a note line uses the drop rule's own
+ * tokens: a reader who can find a contributor's row from its line finds a note's
+ * row the same way.
+ */
+function identity(
+	line: { source: string; label: string; definition?: string },
+	qualify: boolean,
+): string {
+	const from = qualify && line.source !== '' ? [line.source] : [];
+	/*
+	 * **The modifier's own name, where the row is not already called by it.**
+	 *
+	 * The same rule as the source's, read on the token beside it rather than on
+	 * the same token down the breakdown: a token carrying no information is
+	 * dropped. An item's row is normally named after the modifier it applies —
+	 * `Ring of Protection` in both places — so printing both would print one
+	 * word twice, and every line in this repository's fixtures is unchanged by
+	 * this clause. It earns its place on the case a cell holding a list created:
+	 * the Bracers of Defence reach armour class from a row called *Belt of Giant
+	 * Strength*, and without this the line said a Strength item was giving the
+	 * reader armour class.
+	 *
+	 * **Per line, where the source is decided per breakdown, and the difference
+	 * is not an inconsistency.** Dropping the source on some lines would leave a
+	 * fact unrecoverable — nothing else on an unqualified line says which
+	 * component — and would make one line's text depend on another line's
+	 * spelling. Dropping the modifier where it equals the row removes a
+	 * *duplicate of a word already on the line*: nothing is missing, and no
+	 * line's text depends on any other line's. So the granularity follows from
+	 * the same rule rather than from a second one.
+	 *
+	 * Both, and never the modifier alone: the row is how a reader finds the
+	 * thing to untick, and a breakdown naming only `Bracers of Defence` sends
+	 * them scanning an inventory for a row that does not exist.
+	 */
+	const which =
+		line.definition !== undefined &&
+		line.definition !== '' &&
+		line.definition !== line.label
+			? [line.definition]
+			: [];
+	return [...from, line.label, ...which].join(' · ');
+}
+
+/** The arithmetic group's lines, the blank line and the total, as a list. */
+function arithmeticLines(
+	breakdown: ModifierBreakdown,
+	shown: number | null | undefined,
+	qualify: boolean,
+): string[] {
 	const said = breakdown.lines.map((line) => {
-		const from = qualify && line.source !== '' ? [line.source] : [];
-		/*
-		 * **The modifier's own name, where the row is not already called by it.**
-		 *
-		 * The same rule as the source's, read on the token beside it rather than on
-		 * the same token down the breakdown: a token carrying no information is
-		 * dropped. An item's row is normally named after the modifier it applies —
-		 * `Ring of Protection` in both places — so printing both would print one
-		 * word twice, and every line in this repository's fixtures is unchanged by
-		 * this clause. It earns its place on the case a cell holding a list created:
-		 * the Bracers of Defence reach armour class from a row called *Belt of Giant
-		 * Strength*, and without this the line said a Strength item was giving the
-		 * reader armour class.
-		 *
-		 * **Per line, where the source is decided per breakdown, and the difference
-		 * is not an inconsistency.** Dropping the source on some lines would leave a
-		 * fact unrecoverable — nothing else on an unqualified line says which
-		 * component — and would make one line's text depend on another line's
-		 * spelling. Dropping the modifier where it equals the row removes a
-		 * *duplicate of a word already on the line*: nothing is missing, and no
-		 * line's text depends on any other line's. So the granularity follows from
-		 * the same rule rather than from a second one.
-		 *
-		 * Both, and never the modifier alone: the row is how a reader finds the
-		 * thing to untick, and a breakdown naming only `Bracers of Defence` sends
-		 * them scanning an inventory for a row that does not exist.
-		 */
-		const which =
-			line.definition !== undefined &&
-			line.definition !== '' &&
-			line.definition !== line.label
-				? [line.definition]
-				: [];
-		/** Component, row, modifier — widest scope first, each where it informs. */
-		const named = [...from, line.label, ...which];
 		const why = line.suppressed === null ? '' : ` (not applied: ${line.suppressed})`;
-		return `${named.join(' · ')} — ${change(line)}${why}`;
+		return `${identity(line, qualify)} — ${change(line)}${why}`;
 	});
 	/*
 	 * **The total line changes shape only when an override applies, and only when
@@ -226,7 +264,85 @@ export function modifierBreakdown(
 	// more contributor. Flush with the rest it was a third entry on a
 	// two-contributor breakdown. The table cell's own payload already separates
 	// the formula from the breakdown this way, so the bubble is known to take it.
-	return [...said, '', total].join('\n');
+	return [...said, '', total];
+}
+
+/**
+ * A note as words: its own text in straight double quotes, with a line break a
+ * hand-edited layout holds drawn as a space.
+ *
+ * **The outcome half of a note, and one helper for it**, on `change`'s own
+ * argument below: the breakdown's note line, a row's popup line and its `title`
+ * all spell a note through here, so `docs/UI.md` §9's "what is genuinely one
+ * spelling across all three is the outcome" holds for notes too.
+ */
+function quoted(note: string): string {
+	return `"${note.replace(/\s*[\r\n]+\s*/g, ' ')}"`;
+}
+
+/** One note line: who pushed it, an em dash, the words, and why not where not. */
+function noteLine(note: ModifierNote, qualify: boolean): string {
+	const why = note.suppressed === null ? '' : ` (not applied: ${note.suppressed})`;
+	return `${identity(note, qualify)} — ${quoted(note.text)}${why}`;
+}
+
+/**
+ * What a value's account says, and which of its two marks it owes
+ * (`docs/features/modifier-notes.md`).
+ *
+ * **The marks are answers rather than inferences, and that is the one real trap
+ * this closes.** Every caller of `modifierBreakdown` draws the arithmetic
+ * underline wherever text came back, and under a note-only account that would
+ * underline a number nothing moved — which is exactly what keeping notes out of
+ * the arithmetic forbids. So the caller reads `arithmetic` for the underline and
+ * `notes` for the note mark, and draws nothing from whether `text` is null.
+ */
+export interface ModifierAccount {
+	/** Both groups as one block of text, or null where there is neither. */
+	text: string | null;
+	/** Whether any contributor is listed: the underline follows this alone. */
+	arithmetic: boolean;
+	/** How many notes are listed, for the note mark's accessible name. */
+	notes: number;
+}
+
+/**
+ * A value's whole account: the arithmetic exactly as `modifierBreakdown` spells
+ * it, then its notes, and the marks each owes.
+ *
+ * **The notes group comes after the total, headed `Notes` only where arithmetic
+ * lines are present too**: alone, the heading would be a token telling nothing
+ * apart, which is the drop rule. The component qualifier is decided once over
+ * both groups together. Where there are no notes this is `modifierBreakdown`'s
+ * own text, byte for byte, so a sheet with none reads exactly as it did.
+ *
+ * A separate function rather than a second return shape on `modifierBreakdown`,
+ * because the components no note reaches — Card set, Track — read that one and
+ * stay as they are.
+ */
+export function modifierAccount(
+	breakdown: ModifierBreakdown | undefined,
+	/** `modifierBreakdown`'s `shown`, for the total under an override. */
+	shown?: number | null,
+	/** `modifierBreakdown`'s `inRows`. */
+	inRows?: boolean,
+): ModifierAccount {
+	const lines = breakdown?.lines ?? [];
+	const notes = breakdown?.notes ?? [];
+	const arithmetic = lines.length > 0;
+	if (breakdown === undefined || (!arithmetic && notes.length === 0)) {
+		return { text: null, arithmetic: false, notes: 0 };
+	}
+	const qualify = qualified([...lines, ...notes], inRows);
+	const noted = notes.map((note) => noteLine(note, qualify));
+	const said = arithmetic ? arithmeticLines(breakdown, shown, qualify) : [];
+	const text =
+		noted.length === 0
+			? said
+			: arithmetic
+				? [...said, '', 'Notes', ...noted]
+				: noted;
+	return { text: text.join('\n'), arithmetic, notes: notes.length };
 }
 
 /**
@@ -320,7 +436,16 @@ export function modifierOutcomeText(
 	// An amount of null is an expression that would not resolve, or one the reader
 	// has not typed yet, and the reason is in `suppressed`; the line then says what
 	// kind of change it is without claiming a number nobody could work out.
-	const did =
+	/*
+	 * **A note is said after the amount, joined by "and"**, because the row's
+	 * surfaces describe the *change* and one change may do both — where a
+	 * breakdown describes the value, and lists them as two lines in two groups. A
+	 * note-only change is its note alone: there is no amount to say anything
+	 * about, so "bonus" would claim one.
+	 */
+	const note = ((moved !== null ? moved.note : typed?.note) ?? '').trim();
+	const noteOnly = isNoteOnly(moved ?? typed ?? {});
+	const arithmetic =
 		outcome.amount === null
 			? operator === 'override'
 				? 'sets a value'
@@ -330,6 +455,11 @@ export function modifierOutcomeText(
 					type: operator === 'override' ? null : (bonusType ?? null),
 					amount: outcome.amount,
 				});
+	const did = noteOnly
+		? quoted(note)
+		: note === ''
+			? arithmetic
+			: `${arithmetic} and ${quoted(note)}`;
 	const lines = [`${outcome.targetLabel} — ${did}`];
 	if (outcome.suppressed !== null) {
 		lines.push(`Not applied: ${outcome.suppressed}`);
@@ -352,6 +482,9 @@ export function modifierOutcomeText(
 			`Only while ${when}, which ${outcome.condition ? 'holds' : 'does not hold'} now`,
 		);
 	}
+	// Its own line, after the arithmetic's: an amount may apply while the note
+	// aimed at the same name cannot show, and one line could not say both.
+	if (outcome.noteLine !== undefined) lines.push(outcome.noteLine);
 	return lines.join('\n');
 }
 

@@ -9,7 +9,7 @@ value this row changes, whether it adds or sets, by how much, its bonus type, an
 when it applies. A change typed here can be **saved to the layout** to reuse it.
 Nothing about a *named* change is in this note — only which changes each row
 applies — so editing one in the layout editor moves every character using it.
-**Thirteen things are worth looking at, and five of them nothing outside the app can
+**Fourteen things are worth looking at, and five of them nothing outside the app can
 show**: a form opened by a press, that form under a finger, a layout file written
 from this sheet, a rename propagating, and a wikilink that hovers.
 
@@ -94,8 +94,20 @@ from this sheet, a rename propagating, and a wikilink that hovers.
     other nine definitions still draw one line each — the flat spelling and the
     nested one side by side, in one file.
 
+14. **A modifier can say something without changing a number.** `War Caster` is a
+    layout modifier with a **note** and no amount, aimed at the Concentration row
+    of **Checks**: that row's total gains a small note mark and does not move.
+    Press it and the note is listed twice, once from `War Caster` and once from
+    the `Spellguard` row, which types the same words itself — two sources, two
+    lines, never combined. Perception's bonus and passive perception carry a note
+    mark too, and neither number moves. `Lucky stone`'s condition reads a name
+    this sheet does not have, so its note is listed as not applied and nothing is
+    refused. `Belt of Dwarvenkind` aims a note at a Strength card, which cannot
+    show one yet: its form says so, and nothing is drawn there.
+
 The full fifteen steps, including the ones that change the layout, are in
-`docs/features/modifier-definitions.md` in the plugin repository.
+`docs/features/modifier-definitions.md` in the plugin repository, and the notes
+are in `docs/features/modifier-notes.md`.
 
 ## Abilities
 ```sheet
@@ -132,9 +144,27 @@ CHA: 8
 | Eyes of the Eagle | Eyes of the Eagle | yes | a modifier aimed at a published table row |
 | Torch of Nothing | Belt of Giant Strengh | yes | hand-edited: no such modifier |
 | Chalk |  |  | nothing on this row yet |
+| War Caster | War Caster |  | a note at a roster row, and no number moves |
+| Elven ears | skills.perception += note: Advantage on sight-based checks |  | a note typed at a table row |
+| Keen nose | passive_perception += note: Advantage on smell-based checks |  | a note at a card whose formula reads no modifier |
+| Spellguard | checks.concentration += note: Advantage to maintain concentration |  | War Caster's words from a second source, listed twice |
+| Lucky stone | checks.con_save += when Lucky note: Reroll a failed save |  | a note whose condition reads a name this sheet lacks |
+| Belt of Dwarvenkind | abilities.STR += note: Advantage against poison |  | a card set cannot show a note yet |
 
 ## Worn items
 
 | Worn | Modifiers |
 | --- | --- |
 | [[Ring of Protection]] | Ring of Protection |
+
+## Checks
+```sheet
+CON: 14
+DEX: 16
+```
+
+| Check | Bonus |
+| --- | --- |
+| Con Save | 2 |
+| Concentration | 2 |
+| Stealth | 1 |

@@ -136,3 +136,45 @@ describe('parseModifierTypes: the definitions naming one', () => {
 		expect(parseModifierTypes(layout(['item'], [], [card])).problems).toEqual([]);
 	});
 });
+
+describe('parseModifierTypes: a type spelled with the note keyword', () => {
+	it('refuses it under Bonus types and offers it in no select', () => {
+		// A cell's `as` clause comes before its note clause, so a type holding
+		// ` note:` would be cut in two in every cell naming it
+		// (`docs/features/modifier-notes.md` G). Read with the clause's own space
+		// in front, so a type *starting* with the keyword is the same collision.
+		const read = parseModifierTypes(
+			layout(['item', 'racial note: dwarf', 'note: elf', 'Note: racial']),
+		);
+		expect(read.names).toEqual(['item', 'Note: racial']);
+		expect(read.problems).toEqual([
+			{
+				message:
+					'"racial note: dwarf" cannot be a bonus type, because a row\'s modifier spells its note after "note:". Rename it without that text.',
+			},
+			{
+				message:
+					'"note: elf" cannot be a bonus type, because a row\'s modifier spells its note after "note:". Rename it without that text.',
+			},
+		]);
+	});
+
+	it('leaves a definition naming it with the shipped undeclared sentence', () => {
+		const read = parseModifierTypes(
+			layout(['note: elf'], [modifier('Elven cloak', 'note: elf')]),
+		);
+		expect(read.problems.map((problem) => problem.message)).toContain(
+			'"Elven cloak" is typed "note: elf", which this layout does not declare. It still stacks only against modifiers of that same type, and the type will not appear in the list until a bonus type of that name exists.',
+		);
+	});
+
+	it('words every other type problem exactly as before', () => {
+		expect(parseModifierTypes(layout(['', 'item', 'item'])).problems).toEqual([
+			{ message: 'A bonus type needs a name.' },
+			{
+				message:
+					'"item" is declared more than once. The second is ignored, since two types with one name could not be told apart.',
+			},
+		]);
+	});
+});

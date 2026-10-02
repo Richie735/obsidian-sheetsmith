@@ -3719,6 +3719,7 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 					definitions: context.modifiers?.definitions ?? [],
 					targets: context.modifiers?.targets ?? [],
 					published: context.modifiers?.published ?? [],
+					noteTargets: context.modifiers?.noteTargets ?? [],
 					bonusTypes: context.modifiers?.bonusTypes ?? [],
 					// The one import from `obsidian` in this folder, passed on rather
 					// than taken again: the allowlist stays one name long.

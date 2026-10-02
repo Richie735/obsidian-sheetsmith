@@ -286,6 +286,18 @@ export default defineConfig(
 								 * about the layout rather than about a character.
 								 */
 								'!./ring-control',
+								/*
+								 * **The mark on a value something has noted**, and the
+								 * door onto its account, shared by Card (through
+								 * `card-face.ts`), Table and Roster
+								 * (`docs/features/modifier-notes.md`). In no registry,
+								 * declaring no `ComponentDefinition`, touching no file,
+								 * and taking only `setIcon` from `obsidian`. On the list
+								 * for *reuse* at three consumers, which is PATTERNS §1's
+								 * extraction line met exactly: the glyph, the count in the
+								 * name and the twin are one control on three surfaces.
+								 */
+								'!./note-mark',
 								'!../components/column-types',
 								'!../components/level-ring',
 								'!../components/card-face',
@@ -300,6 +312,7 @@ export default defineConfig(
 								'!../components/fenced-link',
 								'!../components/picture-frame',
 								'!../components/ring-control',
+								'!../components/note-mark',
 							],
 							message:
 								'A component must not import another component. Move the shared behaviour into a module named for what it does — a sibling painter, or src/interaction/ — and import that from both.',

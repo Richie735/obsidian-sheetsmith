@@ -564,3 +564,38 @@ describe('resolveEnrolments over a definition naming several changes', () => {
 		).toBe('');
 	});
 });
+
+describe('resolveEnrolments: a blank amount with a note (docs/features/modifier-notes.md E)', () => {
+	const NOTED = definitionTable([
+		define({ name: 'Boots', target: 'skills.stealth', note: 'Quiet', when: 'Worn' }),
+		define({ name: 'Nothing', target: 'armour_class', amount: '' }),
+	]);
+
+	it('is a complete note-only change on the named tier, refusing no slot', () => {
+		const found = only(NOTED, 'Boots', row('Boots', { Worn: true }), {});
+		expect(found.kind).toBe('noted');
+		expect(found.kind === 'noted' ? found.conditional : null).toBe(true);
+	});
+
+	it('is a complete note-only change on the typed tier, not an unfinished one', () => {
+		expect(only(NOTED, 'skills.stealth += note: Quiet', row('Cloak'), {}).kind).toBe(
+			'noted',
+		);
+		// Without a note the typed tier is still unfinished, word for word.
+		expect(only(NOTED, 'skills.stealth +=', row('Cloak'), {}).kind).toBe('unfinished');
+	});
+
+	it('leaves a definition with no amount and no note refusing its slot as before', () => {
+		const found = only(NOTED, 'Nothing', row('Nothing'), {});
+		expect(found.kind).toBe('unreadable');
+		expect(found.kind === 'unreadable' ? found.reason : null).toBe(
+			'the modifier "Nothing" has no amount.',
+		);
+	});
+
+	it('is inactive where its condition is false, like any other change', () => {
+		expect(only(NOTED, 'Boots', row('Boots', { Worn: false }), {}).kind).toBe(
+			'inactive',
+		);
+	});
+});
