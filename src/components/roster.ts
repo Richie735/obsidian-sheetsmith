@@ -60,7 +60,8 @@ import { effectiveReading, sameNumber } from './effective-value';
 import { fencedLinkRefusal } from './fenced-link';
 import { levelCount, levelName, levelOf } from './level-ring';
 import { paintLinkedText } from './linked-text';
-import { MODIFIED_CLASS, modifierBreakdown } from './modifier-breakdown';
+import { MODIFIED_CLASS, modifierAccount } from './modifier-breakdown';
+import { renderAccountNotes, renderNotesAt, reserveNoteSlots } from './note-mark';
 import { bindRingControl } from './ring-control';
 import { sampleFlag, sampleNumber, sampleSeed, sampleText } from './sample-values';
 import { flagText, isFlagSet } from './stored-flag';
@@ -807,6 +808,12 @@ export const roster: ComponentDefinition<RosterConfig, RosterData> = {
 		return next ?? '';
 	},
 
+	/*
+	 * A stat's band head, its stat card under `cardLayout`, and a published row's
+	 * cell draw the note mark (`docs/features/modifier-notes.md`).
+	 */
+	drawsNotes: true,
+
 	render(container, config, data, context): void {
 		container.replaceChildren();
 
@@ -957,6 +964,9 @@ function renderShared(
 			}
 		});
 	}
+	// Once every band and row is drawn: a noted column, or noted bands, reserve
+	// the mark's slot where there is no mark, so readings line up.
+	reserveNoteSlots(grid);
 }
 
 /** This roster's own `stat`/`stat.value` reader, shared by every row scope. */
@@ -1036,13 +1046,20 @@ function drawBandHead(
 		label.textContent = name;
 		revealWhenTruncated(label);
 
-		if (config.derived !== undefined) {
-			drawDerivedReading(parent, config, stored, published, signed, context, rowsOf);
-		}
+		const reading =
+			config.derived === undefined
+				? null
+				: drawDerivedReading(parent, config, stored, published, signed, context, rowsOf);
 		if (config.hideValue !== true) {
 			const value = parent.createDiv('sheetsmith-card-value');
 			drawValueField(value, parent, config, key, name, stored, published, context, status);
 		}
+		// On the stat card's label line, in the corner a Card's own mark takes:
+		// this is the card's own DOM shape, so it takes the card's own placement.
+		renderNotesAt(parent, context.modifiers, published, 'sheetsmith-card-has-note', {
+			shown: reading,
+			inRows: false,
+		});
 		return;
 	}
 
@@ -1059,9 +1076,15 @@ function drawBandHead(
 	if (config.hideValue !== true) {
 		drawValueField(valueGroup, inner, config, key, name, stored, published, context, status);
 	}
-	if (config.derived !== undefined) {
-		drawDerivedReading(valueGroup, config, stored, published, signed, context, rowsOf);
-	}
+	const reading =
+		config.derived === undefined
+			? null
+			: drawDerivedReading(valueGroup, config, stored, published, signed, context, rowsOf);
+	// At the band head's inline end, after the reading.
+	renderNotesAt(inner, context.modifiers, published, 'sheetsmith-roster-band-has-note', {
+		shown: reading,
+		inRows: false,
+	});
 }
 
 /** The score's own field, wherever the band head's two layouts put it. */
@@ -1111,10 +1134,13 @@ function drawValueField(
 	 * with — this field owns its own.
 	 */
 	const atRestNumber = Number(atRest);
-	const pushed = modifierBreakdown(
+	const account = modifierAccount(
 		context.modifiers?.breakdown(published),
 		atRest.trim() !== '' && Number.isFinite(atRestNumber) ? atRestNumber : null,
 	);
+	// The whole account, where any of it is arithmetic: a note-only stat's words
+	// reach a reader through its note mark's own twin instead.
+	const pushed = account.arithmetic ? account.text : null;
 	if (pushed !== null) {
 		const twin = inner.createDiv('sheetsmith-sr-only');
 		twin.id = `sheetsmith-roster-breakdown-${config.id}-${key}`;
@@ -1178,7 +1204,7 @@ function drawDerivedReading(
 	signed: boolean,
 	context: Parameters<ComponentDefinition<RosterConfig, RosterData>['render']>[3],
 	rowsOf: () => RowsSource,
-): void {
+): number | null {
 	const derivedEl = parent.createDiv('sheetsmith-card-derived');
 	// An empty value is a blank, not a broken formula (`card.ts`'s own
 	// `needsValue`, one component over) — the state that matters most,
@@ -1198,15 +1224,19 @@ function drawDerivedReading(
 				'The formula did not resolve.',
 		);
 	}
-	const pushed = modifierBreakdown(
+	const account = modifierAccount(
 		context.modifiers?.breakdown(published),
 		typeof resolved === 'number' ? resolved : null,
 	);
+	// The underline follows the arithmetic alone, and the press opens the whole
+	// account, so where the stat also has a note mark the two open one text.
+	const pushed = account.arithmetic ? account.text : null;
 	if (pushed !== null) {
 		derivedEl.classList.add(MODIFIED_CLASS);
 		derivedEl.addEventListener('click', () => showPopover(derivedEl, pushed));
 		derivedEl.createDiv({ cls: 'sheetsmith-sr-only', text: pushed });
 	}
+	return typeof resolved === 'number' ? resolved : null;
 }
 
 /** One row under a band, on the same drawing rules as `table.ts`'s cells. */
@@ -1296,18 +1326,23 @@ function drawRow(
 				: rowValues(config, view, cellText, statReading, context.resolveField).values[
 						column.key
 					];
-			const pushed =
+			const account =
 				name === undefined || column.formula === undefined
 					? null
-					: modifierBreakdown(
+					: modifierAccount(
 							context.modifiers?.breakdown(name),
 							typeof shown === 'number' ? shown : null,
 							true,
 						);
-			if (pushed !== null) {
+			// Table's computed cell exactly: the press opens the whole account,
+			// the underline and its twin follow the arithmetic, and the notes have
+			// their own mark after the number.
+			const pushed = account?.text ?? null;
+			if (account?.arithmetic === true && pushed !== null) {
 				cell.classList.add(MODIFIED_CLASS);
 				cell.createSpan({ cls: 'sheetsmith-sr-only', text: pushed });
 			}
+			renderAccountNotes(td, account, 'sheetsmith-table-has-note');
 			if (column.formula !== undefined) {
 				cell.classList.add('sheetsmith-table-askable');
 				cell.addEventListener('click', () => {
@@ -1356,6 +1391,12 @@ function drawRow(
 				}
 				select.value = String(initial);
 				select.setAttribute('aria-label', label);
+				renderNotesAt(
+					td,
+					context.modifiers,
+					publishedNameFor(config, column, view),
+					'sheetsmith-table-has-note',
+				);
 				// Table's own dead-but-kept guard, for its reason: the spec fenced
 				// this branch off, so it keeps the shape it had.
 				let shown = initial;
@@ -1390,6 +1431,13 @@ function drawRow(
 				nameOnScreen: column.hideHeading !== true,
 				onSet: store,
 			});
+			// After the control, as the cell's door, as on a Table.
+			renderNotesAt(
+				td,
+				context.modifiers,
+				publishedNameFor(config, column, view),
+				'sheetsmith-table-has-note',
+			);
 			return;
 		}
 
@@ -1400,6 +1448,12 @@ function drawRow(
 		input.value = raw;
 		input.setAttribute('aria-label', label);
 		input.inputMode = 'numeric';
+		renderNotesAt(
+			td,
+			context.modifiers,
+			publishedNameFor(config, column, view),
+			'sheetsmith-table-has-note',
+		);
 		bindEditable(input, {
 			initial: raw,
 			step: true,
@@ -1528,6 +1582,7 @@ function renderCards(
 				tr.classList.add('sheetsmith-roster-row-divider');
 			}
 		});
+		reserveNoteSlots(grid);
 	}
 }
 

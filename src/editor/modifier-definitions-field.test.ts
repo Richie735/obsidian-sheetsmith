@@ -1049,3 +1049,188 @@ describe('a definition naming several changes', () => {
 		expect(labels).not.toContain('Changes');
 	});
 });
+
+describe('a change carrying a note (docs/features/modifier-notes.md)', () => {
+	/** `SOURCES`, both cards drawing notes, plus a card set that draws none. */
+	const NOTING: readonly ModifierTargetSource[] = [
+		...SOURCES.map((source) => ({ ...source, drawsNotes: true as const })),
+		{
+			id: 'abilities',
+			label: 'Abilities',
+			values: { named: { STR: {} } },
+			formulas: ['floor((value - 10) / 2) + mod.self'],
+		},
+	];
+	function noted(from: Layout): HTMLElement {
+		const container = document.createElement('div');
+		document.body.replaceChildren(container);
+		renderModifierDefinitions(container, from, {
+			persist: () => {
+				recorded.persists++;
+			},
+			redraw: () => {
+				recorded.redraws++;
+			},
+			list,
+			sources: NOTING,
+		});
+		return container;
+	}
+	const commit = (input: HTMLInputElement, value: string) => {
+		input.value = value;
+		input.dispatchEvent(new Event('change'));
+	};
+
+	it('writes nothing for a layout with definitions and no note, opened and left', () => {
+		const declared: Declared[] = [
+			{ ...RING },
+			{ name: 'Cloak', target: 'passive_perception', amount: '2' },
+			{
+				name: 'Bear',
+				changes: [
+					{ target: 'armour_class', amount: '1' },
+					{ target: 'abilities.STR', amount: '1', bonusType: 'item' },
+				],
+			},
+		];
+		const from = layout(declared);
+		const before = JSON.parse(JSON.stringify(from)) as Layout;
+		noted(from);
+		expect(recorded.persists).toBe(0);
+		expect(from).toEqual(before);
+	});
+
+	it('disables Operator, Applies to and Bonus type on a note-only change, writing nothing', () => {
+		const declared: Declared[] = [
+			{ name: 'Boots', target: 'armour_class', bonusType: 'item', note: 'Quiet' },
+		];
+		const from = layout(declared);
+		const before = JSON.parse(JSON.stringify(from)) as Layout;
+		const el = noted(from);
+		const selects = ['operator', 'applies', 'bonus-type'].map((key) =>
+			control<HTMLSelectElement>(el, `modifier-Boots-0-${key}`),
+		);
+		expect(selects.map((one) => one.disabled)).toEqual([true, true, true]);
+		expect(selects.map((one) => one.parentElement?.classList.contains('sheetsmith-detail-field-disabled'))).toEqual([true, true, true]);
+		// The hand-written bonus type keeps its bytes and is still reported.
+		expect(selects[2]?.value).toBe('item');
+		expect(recorded.persists).toBe(0);
+		expect(from).toEqual(before);
+		expect(problems(el).join('\n')).toContain('so its bonus type is ignored');
+		// Typing an amount gives them back before it commits.
+		const amount = control<HTMLInputElement>(el, 'modifier-Boots-0-amount');
+		amount.value = '1';
+		amount.dispatchEvent(new Event('input'));
+		expect(selects.map((one) => one.disabled)).toEqual([false, false, false]);
+		expect(recorded.persists).toBe(0);
+	});
+
+	it('leaves a change with an amount, or with neither, enabled', () => {
+		const el = noted(layout([{ ...RING }, { name: 'Bare', target: 'armour_class' }]));
+		for (const name of ['Ring of Protection', 'Bare']) {
+			expect(control<HTMLSelectElement>(el, `modifier-${name}-0-operator`).disabled).toBe(false);
+		}
+	});
+
+	it('offers Takes modifiers, then Notes only, with the accepting list unchanged in the first', () => {
+		const el = noted(layout([{ ...RING }]));
+		const picker = control<HTMLSelectElement>(el, 'modifier-Ring of Protection-0-target');
+		const groups = Array.from(picker.querySelectorAll('optgroup')).map((group) => [
+			group.label,
+			Array.from(group.querySelectorAll('option')).map((one) => one.textContent),
+		]);
+		expect(groups).toEqual([
+			['Takes modifiers', ['Armour class', 'Abilities · STR']],
+			['Notes only', ['Passive perception']],
+		]);
+		// A card set draws no note, so none of its names is offered for one.
+		expect(Array.from(picker.options).map((one) => one.value)).not.toContain(
+			'abilities',
+		);
+	});
+
+	it('draws today’s flat list where nothing outside the accepting set can show a note', () => {
+		const el = render(layout([{ ...RING }]));
+		const picker = control<HTMLSelectElement>(el, 'modifier-Ring of Protection-0-target');
+		expect(picker.querySelector('optgroup')).toBeNull();
+	});
+
+	it('commits a note on change, and deletes the key for a blank one', () => {
+		const from = layout([{ ...RING }]);
+		const el = noted(from);
+		const note = control<HTMLInputElement>(el, 'modifier-Ring of Protection-0-note');
+		commit(note, '  Resistance to cold  ');
+		expect(from.modifiers?.[0]?.note).toBe('Resistance to cold');
+		expect(recorded.persists).toBe(1);
+		commit(note, '   ');
+		expect('note' in (from.modifiers?.[0] ?? {})).toBe(false);
+	});
+
+	it('refuses a semicolon inline and leaves the stored note as it was', () => {
+		const from = layout([{ ...RING, note: 'Warm' }]);
+		const el = noted(from);
+		const note = control<HTMLInputElement>(el, 'modifier-Ring of Protection-0-note');
+		commit(note, 'Warm; dry');
+		expect(from.modifiers?.[0]?.note).toBe('Warm');
+		// The typed text stays, so the complaint is about what is on screen.
+		expect(note.value).toBe('Warm; dry');
+		// And it is not replayed over a redraw that puts the stored note back.
+		expect(list.errors.size).toBe(0);
+		expect(recorded.persists).toBe(0);
+		expect(fieldError(el, 'modifier-Ring of Protection-0-note')).toBe(
+			'A note cannot hold a semicolon, because a row separates the modifiers it applies with one. Reword it without one.',
+		);
+	});
+
+	it('says every new report sentence in the report it draws', () => {
+		const el = noted(
+			layout([
+				{ name: 'Belt', target: 'abilities.STR', note: 'Strong' },
+				{ name: 'Boots', target: 'passive_perception', amount: '1', note: 'Sharp' },
+				{ name: 'Sets', target: 'armour_class', operator: 'override', note: 'Plate' },
+				{ name: 'Torn', target: 'armour_class', note: 'One; two' },
+			]),
+		);
+		const said = problems(el).join('\n');
+		for (const sentence of [
+			'"Belt" notes "abilities.STR", which cannot show a note yet, because the component publishing it draws none. Choose a value on a component that does, or correct the spelling.',
+			'"Boots" changes "passive_perception", which reads no modifier, so its amount does nothing. Its note still shows. Add "+ mod.self" to that value\'s own formula for the amount.',
+			'"Sets" has a note and no amount, so its operator is ignored: a note alone changes no number. Clear it, or give it an amount.',
+			'A note cannot hold a semicolon, because a row separates the modifiers it applies with one. Reword it without one.',
+		]) {
+			expect(said).toContain(sentence);
+		}
+	});
+
+	it('reports nothing for a note-only change at a value that reads no modifier', () => {
+		const el = noted(
+			layout([{ name: 'Keen', target: 'passive_perception', note: 'Sharp' }]),
+		);
+		expect(problems(el)).toEqual([]);
+	});
+
+	it('asks before removing a definition whose only content is a note', () => {
+		const from = layout([{ name: 'Keen', target: 'passive_perception', note: 'Sharp' }]);
+		const el = noted(from);
+		control(el, 'modifier-Keen-remove').click();
+		expect(recorded.confirms).toEqual([
+			"Remove the modifier \"Keen\"? Its target, note and condition are lost. Every character's row that names it keeps the name and changes nothing until it is pointed at another modifier.",
+		]);
+	});
+
+	it('moves the note with the other flat members on Add change', () => {
+		const from = layout([{ ...RING, note: 'Warm' }]);
+		const el = noted(from);
+		const add = Array.from(el.querySelectorAll('button')).find(
+			(button) => button.textContent === 'Add change',
+		) as HTMLButtonElement;
+		add.click();
+		expect(from.modifiers?.[0]).toEqual({
+			name: 'Ring of Protection',
+			changes: [
+				{ target: 'armour_class', amount: '1', bonusType: 'item', note: 'Warm' },
+				{},
+			],
+		});
+	});
+});

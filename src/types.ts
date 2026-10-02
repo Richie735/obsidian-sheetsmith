@@ -1167,6 +1167,16 @@ export interface ModifierDefinition {
 	 */
 	when?: string;
 	/**
+	 * Words shown at the target, behind a note mark, while this applies
+	 * (`docs/features/modifier-notes.md`). The flat spelling's, like the four
+	 * above it; `changes[].note` where the definition lists its changes.
+	 *
+	 * **Never an expression**, and nothing reads one: no formula, no condition.
+	 * A change carrying a note may leave its amount blank, which is a complete
+	 * change rather than an unfinished one.
+	 */
+	note?: string;
+	/**
 	 * Every value this definition moves, where it names more than the flat
 	 * spelling can.
 	 *
@@ -1200,6 +1210,7 @@ export const MODIFIER_CHANGE_KEYS = [
 	'amount',
 	'bonusType',
 	'applies',
+	'note',
 ] as const;
 
 /**
@@ -1233,6 +1244,12 @@ export interface ModifierChange {
 	 * change that says nothing is.
 	 */
 	applies?: ModifierPhase;
+	/**
+	 * Words shown at the target while this applies. Absent where blank, and a
+	 * change with one needs no amount: it moves no number, so it is a note-only
+	 * change rather than an unfinished one.
+	 */
+	note?: string;
 }
 
 /**
@@ -1261,7 +1278,8 @@ export interface TypedEffect {
 	 * An expression, evaluated on the row that typed it.
 	 *
 	 * **May be blank, which is an unfinished effect: it changes nothing and is not
-	 * an error** (SPEC §4.2). That is what makes the form safe to commit one
+	 * an error** (SPEC §4.2) — unless the effect carries a note, when it is a
+	 * complete note-only effect. That is what makes the form safe to commit one
 	 * field at a time — the part exists the moment a target is chosen, and it must
 	 * not blank a card while the reader is still typing.
 	 */
@@ -1283,6 +1301,11 @@ export interface TypedEffect {
 	applies?: ModifierPhase;
 	/** An expression; absent means always. */
 	when?: string;
+	/**
+	 * Words shown at the target while this applies, spelled last in the cell as
+	 * ` note: <text>`. Holds no `;`, which would split the part.
+	 */
+	note?: string;
 }
 
 /**
@@ -1508,6 +1531,33 @@ export interface ModifierLine {
 }
 
 /**
+ * One note pushed at a name, as a reader is shown it
+ * (`docs/features/modifier-notes.md`).
+ *
+ * **Its own type and not a `ModifierLine` with no amount**, because a note is not
+ * a contributor: it is never stacked, never contested and never part of a total,
+ * so a line type carrying an operator, a bonus type and an amount would invite a
+ * reader of the arithmetic to count it. The identifying half is the same three
+ * tokens a line has, so a breakdown names both groups one way.
+ */
+export interface ModifierNote {
+	/** The row as a reader sees it, `ModifierLine.label`'s rule. */
+	label: string;
+	/** The component the row lives on, for wherever the row alone is ambiguous. */
+	source: string;
+	/** The modifier's own name, or absent for a note typed on the row. */
+	definition?: string;
+	/** The note as the layout or the cell spells it. */
+	text: string;
+	/**
+	 * Why the note is listed and not applying, or null where it applies: only a
+	 * condition that would not resolve. A false condition lists nothing, as an
+	 * inactive contributor lists nothing.
+	 */
+	suppressed: string | null;
+}
+
+/**
  * What applies at one name, and what it comes to.
  *
  * The total travels with the lines rather than being re-added by whoever draws
@@ -1542,6 +1592,16 @@ export interface ModifierBreakdown {
 	 * does not acquire a second number to state.
 	 */
 	resultTotal?: number;
+	/**
+	 * The notes pushed at this name, in walk order, never combined.
+	 *
+	 * **Optional, and absent means none**, on `resultTotal`'s rule and for a
+	 * reason of its own: every breakdown on a sheet with no notes is then the
+	 * object it always was, which is what keeps every popover, `title` and
+	 * accessible name built from one byte-identical. Present only where there is
+	 * at least one, and only at a name whose component draws notes.
+	 */
+	notes?: readonly ModifierNote[];
 }
 
 /**
@@ -1628,6 +1688,18 @@ export interface ModifierOutcome {
 	 * Null where it applies, and null where the condition is what stopped it.
 	 */
 	suppressed: string | null;
+	/**
+	 * What this part's note is doing, where the amount's verdict does not say it
+	 * (`docs/features/modifier-notes.md`): why it is not shown, at a name that
+	 * cannot show one, or that it still shows, beside an amount that changes
+	 * nothing. Absent everywhere else, so an outcome with no note is the object it
+	 * always was.
+	 *
+	 * Separate from `applies` and `suppressed` because those are the *amount's*
+	 * verdict, judged exactly as before notes existed, and the note's can differ
+	 * from it either way.
+	 */
+	noteLine?: string;
 }
 
 /**
@@ -1672,6 +1744,15 @@ export interface ModifierContext {
 	 * popover on a player's inventory row.
 	 */
 	published: readonly ModifierTarget[];
+	/**
+	 * Every published name a note may be aimed at: the names whose component
+	 * draws notes (`noteTargets`). The form's **Value** select offers the ones
+	 * outside `targets` under **Notes only**.
+	 *
+	 * Optional because a context built without a sheet has no layout to ask, and
+	 * absent offers none — which is the truth there.
+	 */
+	noteTargets?: readonly ModifierTarget[];
 	/** The layout's bonus types, for the form's **Bonus type** select. */
 	bonusTypes: readonly string[];
 	/**
@@ -1691,8 +1772,25 @@ export interface ModifierContext {
 	 * What applies at this name, in declaration order, and what it comes to. No
 	 * lines where nothing does, and none for a name that accepts no modifier — so
 	 * a card can never draw a mark for a modifier that is not being applied.
+	 *
+	 * **Notes are bounded separately**: they come for every name whose component
+	 * draws notes, accepting or not, because a note needs no slot — and never for
+	 * any other name, which is what lets a component that draws none stay as it
+	 * is.
 	 */
 	breakdown(name: string): ModifierBreakdown;
+	/**
+	 * Whether a note could be shown at this name: it is a note target, and some
+	 * part on the sheet could carry a note to it, read from text and never by
+	 * evaluating anything (`docs/features/modifier-notes.md` F).
+	 *
+	 * **What a value with no breakdown of its own asks before asking for one.** A
+	 * stored cell and a column total never opened a breakdown, so asking at each
+	 * of them would move the modifier walk's first entry on a sheet carrying no
+	 * note at all; asking this first keeps that entry where it was. Optional, and
+	 * absent answers no, which is the truth for a context built without a sheet.
+	 */
+	notable?(name: string): boolean;
 	/**
 	 * Add one definition to the layout under `name`, then answer whether it landed
 	 * (SPEC §7).
@@ -2377,6 +2475,20 @@ export interface ComponentDefinition<
 	 * all. The editor offers `reset.buffer` exactly where this is set.
 	 */
 	hasBuffer?: boolean;
+	/**
+	 * True where this component draws the notes a modifier pushes at the names it
+	 * publishes (`docs/features/modifier-notes.md`).
+	 *
+	 * Declared rather than inferred for `hasBuffer`'s reason: whether a component
+	 * puts a note mark beside a value is a fact about its render, which nothing
+	 * outside it can see. **Absent refuses**: every name this component publishes
+	 * is reported as not a note target yet, so a component that has not learned to
+	 * draw a note cannot drop one silently. Two files hold the two halves:
+	 * `note-contract.test.ts` renders each declaring component and checks its DOM
+	 * carries every note pushed at its sample's names, and `contract.test.ts`
+	 * checks a silent one has none of its names in `noteTargets`.
+	 */
+	drawsNotes?: true;
 	/**
 	 * Which config fields accept an expression rather than a literal.
 	 *

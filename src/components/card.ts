@@ -29,7 +29,7 @@ import {
 } from '../types';
 import { renderCardFace, toDerived } from './card-face';
 import { effectiveReading } from './effective-value';
-import { modifierBreakdown } from './modifier-breakdown';
+import { modifierAccount } from './modifier-breakdown';
 import { sampleNumber, sampleSeed, sampleText } from './sample-values';
 
 /**
@@ -452,6 +452,10 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 		return writeFenced(body, updates);
 	},
 
+	// The note mark at the label line's end, through `card-face.ts`
+	// (`docs/features/modifier-notes.md`). The card's own note line is untouched.
+	drawsNotes: true,
+
 	render(container, config, data, context): void {
 		container.replaceChildren();
 
@@ -532,6 +536,19 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 						context.resolveField,
 					);
 
+		/*
+		 * **One account, two marks, each owed separately.** The underline and the
+		 * derived's press follow the arithmetic alone, so a note-only account
+		 * underlines no number nothing moved; the note mark follows the notes. Both
+		 * open the same text, so where a value has both marks they open one
+		 * popover. The note's number and not the draft's, as before: the breakdown
+		 * is fixed for the life of a render.
+		 */
+		const account = modifierAccount(
+			context.modifiers?.breakdown(config.id),
+			stored.value,
+		);
+
 		renderCardFace(face, {
 			title: config.label,
 			// The strip of a container showing one child at a time has already
@@ -571,10 +588,7 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 							// and not the draft's: the breakdown is fixed for the life
 							// of a render, and an override makes the face independent
 							// of the stored value anyway.
-							modifiers: modifierBreakdown(
-								context.modifiers?.breakdown(config.id),
-								stored.value,
-							),
+							modifiers: account.arithmetic ? account.text : null,
 						},
 			note:
 				config.hideNote === true
@@ -584,6 +598,7 @@ export const card: ComponentDefinition<CardConfig, CardData> = {
 							placeholder: config.notePlaceholder,
 							onCommit: (next) => context.onChange({ note: next }),
 						},
+			notes: account,
 		});
 	},
 };

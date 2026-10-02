@@ -2938,6 +2938,45 @@ describe('the modifiers a record pushes', () => {
 		});
 	});
 
+	it('round-trips a modifier field holding a note byte for byte', () => {
+		// The fence line splits on its first `: `, which sits before the part, so
+		// the note's own `note:` is part of the value (`docs/features/modifier-notes.md`).
+		const body = BODY.replace(
+			'Modifiers: armour_class += 1 as item when Attuned',
+			'Modifiers: armour_class += 1 as item when Attuned note: and resistance to cold',
+		);
+		expect(body).not.toBe(BODY);
+		const data = readData(body);
+		expect(Object.values(data.records ?? {}).length).toBeGreaterThan(0);
+		expect(body).toContain('note: and resistance to cold');
+		expect(recordSet.write({ records: {} }, body, config)).toBe(body);
+		const held = recordSet.scopeModifiers?.(data, config)?.(() => null) ?? [];
+		expect(held.map((push) => push.part)).toContain(
+			'armour_class += 1 as item when Attuned note: and resistance to cold',
+		);
+	});
+
+	it('refuses a note reference typed into a modifier note', () => {
+		const changes: RecordSetData[] = [];
+		closeAnchoredPanel();
+		const el = render({}, BODY, {
+			onChange: (data) => changes.push(data),
+			modifiers: modifierContext(),
+		});
+		const glyph = records(el)[0]?.querySelector(
+			'.sheetsmith-record-modifier',
+		) as HTMLButtonElement;
+		glyph.click();
+		const panel = document.querySelector('.sheetsmith-panel') as HTMLElement;
+		typeInto(field(panel, 'Value'), 'armour_class');
+		expect(changes).toHaveLength(1);
+		typeInto(field(panel, 'Note'), 'See [[Ring of Protection]]');
+		expect(changes).toHaveLength(1);
+		expect(records(el)[0]?.querySelector('.sheetsmith-error')?.textContent).toContain(
+			'code block',
+		);
+	});
+
 	it('opens the shared anchored form on the glyph', () => {
 		const el = render({}, BODY, {
 			modifiers: {

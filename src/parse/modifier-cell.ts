@@ -148,6 +148,64 @@ export function unspellableName(name: string): string | null {
 	return null;
 }
 
+/**
+ * The keyword a typed part's note clause starts with, space included
+ * (`docs/features/modifier-notes.md`).
+ *
+ * **The colon is what makes it safe, and the leading space is what makes it a
+ * clause.** `:` is not a character of the expression grammar — `tokenize` throws
+ * on it — so ` note:` cannot occur in an amount or a condition that parses, and a
+ * cell holding one there today is already an unreadable expression. The bare word
+ * `note` is a legal name, so a column headed `note` read in an amount
+ * (`x += note + 1`) would have been captured by a colon-less keyword. The one
+ * remaining collision, a bonus type spelled with this text, is refused where the
+ * types are declared (`parse/modifier-types.ts`).
+ */
+export const NOTE_CLAUSE = ' note:';
+
+/**
+ * Why a note a cell could not spell is refused, or null where it could.
+ *
+ * Beside `unspellableName` on its argument: the editor's **Note** field, the
+ * sheet form's and the definitions report all say this sentence, and a copy in
+ * each would be three wordings one design pass away from disagreeing
+ * (`PATTERNS.md` §1).
+ *
+ * **A semicolon, because it splits the part**, and the note refuses it rather than
+ * the cell gaining an escape: an escape would put this plugin's syntax into a file
+ * the user owns. **A line break, because a cell is one line** of a markdown table
+ * and a record's fence line is one line too, so a note holding one could be
+ * stored in neither. Its sentence is the semicolon's shape for the same reason.
+ */
+export function unspellableNote(note: string): string | null {
+	if (holdsSeparator(note)) {
+		return 'A note cannot hold a semicolon, because a row separates the modifiers it applies with one. Reword it without one.';
+	}
+	if (/[\r\n]/.test(note)) {
+		return 'A note cannot hold a line break, because a row keeps each modifier on one line. Reword it on one line.';
+	}
+	return null;
+}
+
+/**
+ * Whether a change is **note-only**: it carries a note and leaves its amount
+ * blank (`docs/features/modifier-notes.md` E).
+ *
+ * Such a change is complete rather than unfinished — it applies wherever its
+ * condition holds and never refuses a slot, because a note moves no number. One
+ * predicate for every reader of a change, on either tier and at any stage —
+ * the report, the enrolment, the walk, the row's words and the form — because
+ * the only thing a test over copies of it could check is that they still agree
+ * (`PATTERNS.md` §1). Both sides trimmed here, so no caller's own trimming
+ * decides the answer.
+ */
+export function isNoteOnly(change: {
+	amount?: string | null;
+	note?: string | null;
+}): boolean {
+	return (change.note ?? '').trim() !== '' && (change.amount ?? '').trim() === '';
+}
+
 /** One part of a cell: a definition's name, or the effect the row spells out. */
 export type ModifierPart =
 	/** The name of one of the layout's definitions, as the cell spells it. */
@@ -311,7 +369,9 @@ function clauseAt(text: string, keyword: string): number {
  * **A blank amount is a typed effect and not a refusal.** `armour_class +=` is an
  * unfinished effect: it changes nothing and is not an error, which is `SPEC` §10's
  * "a section without a data block is empty, not malformed" read one level down and
- * is what makes the form safe to commit one field at a time.
+ * is what makes the form safe to commit one field at a time. **With a note it is
+ * complete**: `skills.stealth += note: Advantage` is a note-only effect, which
+ * moves no number because a note never does.
  */
 export function parseModifierPart(part: string): ModifierPart {
 	const text = part.trim();
@@ -320,6 +380,22 @@ export function parseModifierPart(part: string): ModifierPart {
 	const target = head[1] as string;
 	const operator: ModifierOperator = head[2] === SETS ? 'override' : 'add';
 	let rest = text.slice(head[0].length);
+
+	/*
+	 * **The note first, at its *leftmost* keyword, and only then today's scans.**
+	 * A note is arbitrary text that may itself hold ` when `, ` as `, ` to result`
+	 * or a second ` note:`, so it is found from the left and taken off before
+	 * `clauseAt` scans for anything — or "counts as magic when worn" would lose its
+	 * tail to the `as` and `when` scans. Nothing to its left can hold the keyword
+	 * and still parse (`NOTE_CLAUSE`), so a cell with no ` note:` runs exactly
+	 * today's path, which is what keeps every existing cell's bytes and meaning.
+	 */
+	let note: string | undefined;
+	const noted = rest.indexOf(NOTE_CLAUSE);
+	if (noted >= 0) {
+		note = rest.slice(noted + NOTE_CLAUSE.length).trim();
+		rest = rest.slice(0, noted);
+	}
 
 	let when: string | undefined;
 	const at = clauseAt(rest, 'when');
@@ -359,6 +435,7 @@ export function parseModifierPart(part: string): ModifierPart {
 			...(applies !== undefined ? { applies } : {}),
 			...(bonusType !== undefined && bonusType !== '' ? { bonusType } : {}),
 			...(when !== undefined && when !== '' ? { when } : {}),
+			...(note !== undefined && note !== '' ? { note } : {}),
 		},
 	};
 }
@@ -391,5 +468,9 @@ export function spellTypedEffect(effect: TypedEffect): string {
 	if (bonusType !== '') said.push('as', bonusType);
 	const when = (effect.when ?? '').trim();
 	if (when !== '') said.push('when', when);
+	// Last, because the parse takes it off first from the left: anything spelled
+	// after it would be read as part of the note.
+	const note = (effect.note ?? '').trim();
+	if (note !== '') said.push(NOTE_CLAUSE.trim(), note);
 	return said.join(' ');
 }

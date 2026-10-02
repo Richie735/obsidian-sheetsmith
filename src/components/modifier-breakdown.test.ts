@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { definitionView, outcomeView } from '../test/modifier-views';
 import {
 	MODIFIED_CLASS,
+	modifierAccount,
 	modifierBreakdown,
 	modifierOutcomeText,
 	modifierRowName,
@@ -11,6 +12,7 @@ import {
 	ModifierChangeView,
 	ModifierDefinitionView,
 	ModifierLine,
+	ModifierNote,
 	ModifierOutcome,
 } from '../types';
 
@@ -55,7 +57,18 @@ const said = (
 	shown: number | null = override === null ? null : override + total,
 	/** That the reader is inside a component with rows, which a table is. */
 	inRows = false,
-) => modifierBreakdown({ lines, total, override }, shown, inRows);
+) => {
+	const text = modifierBreakdown({ lines, total, override }, shown, inRows);
+	/*
+	 * **Every case in this file is also a case of the account**, which is how a
+	 * sheet with no notes is held byte-identical (`docs/features/modifier-notes.md`):
+	 * with no notes the account's text is this text, character for character, and
+	 * it owes the underline exactly where there is text to owe it for.
+	 */
+	const account = modifierAccount({ lines, total, override }, shown, inRows);
+	expect(account).toEqual({ text, arithmetic: text !== null, notes: 0 });
+	return text;
+};
 
 describe('modifierBreakdown', () => {
 	it('is null where nothing modifies the number', () => {
@@ -716,5 +729,171 @@ describe('a row whose modifier names several changes', () => {
 			'Modifiers: Ring of Protection, changes nothing',
 		);
 		expect(modifierRowText(said)).toBeNull();
+	});
+});
+
+describe('a value\'s notes (docs/features/modifier-notes.md)', () => {
+	const note = (over: Partial<ModifierNote> = {}): ModifierNote => ({
+		label: 'Cloak of Warding',
+		source: 'Magic items',
+		text: 'Resistance to cold',
+		suppressed: null,
+		...over,
+	});
+
+	it('lists notes alone with no heading, and owes no underline', () => {
+		expect(
+			modifierAccount({
+				lines: [],
+				override: null,
+				total: 0,
+				notes: [note()],
+			}),
+		).toEqual({
+			text: 'Cloak of Warding — "Resistance to cold"',
+			arithmetic: false,
+			notes: 1,
+		});
+	});
+
+	it('heads the notes after the total where there is arithmetic too', () => {
+		const account = modifierAccount({
+			lines: [
+				line({ label: 'Ring of Protection', type: 'item', amount: 1 }),
+				line({
+					label: 'Shield of Faith',
+					type: 'Spell',
+					amount: 2,
+				}),
+			],
+			override: null,
+			total: 3,
+			notes: [note()],
+		});
+		expect(account.text).toBe(
+			[
+				'Ring of Protection — item +1',
+				'Shield of Faith — Spell +2',
+				'',
+				'Total +3',
+				'',
+				'Notes',
+				'Cloak of Warding — "Resistance to cold"',
+			].join('\n'),
+		);
+		expect(account.arithmetic).toBe(true);
+		expect(account.notes).toBe(1);
+	});
+
+	it('decides the component qualifier once over both groups together', () => {
+		const account = modifierAccount({
+			lines: [line({ label: 'Ring', amount: 1 })],
+			override: null,
+			total: 1,
+			notes: [note({ source: 'Feats', label: 'War Caster' })],
+		});
+		expect(account.text?.split('\n')).toEqual([
+			'Magic items · Ring — +1',
+			'',
+			'Total +1',
+			'',
+			'Notes',
+			'Feats · War Caster — "Resistance to cold"',
+		]);
+	});
+
+	it('names the component inside a table, and the modifier where the row is not called by it', () => {
+		expect(
+			modifierAccount(
+				{
+					lines: [],
+					override: null,
+					total: 0,
+					notes: [note({ label: 'Boots', definition: 'Boots of Elvenkind' })],
+				},
+				null,
+				true,
+			).text,
+		).toBe('Magic items · Boots · Boots of Elvenkind — "Resistance to cold"');
+	});
+
+	it('lists two identical notes as two lines', () => {
+		expect(
+			modifierAccount({
+				lines: [],
+				override: null,
+				total: 0,
+				notes: [note({ label: 'Boots' }), note({ label: 'Cloak' })],
+			}).text?.split('\n'),
+		).toEqual([
+			'Boots — "Resistance to cold"',
+			'Cloak — "Resistance to cold"',
+		]);
+	});
+
+	it('says why a note whose condition will not resolve is not applying', () => {
+		expect(
+			modifierAccount({
+				lines: [],
+				override: null,
+				total: 0,
+				notes: [note({ suppressed: 'Worn is not defined on this sheet.' })],
+			}).text,
+		).toBe(
+			'Cloak of Warding — "Resistance to cold" (not applied: Worn is not defined on this sheet.)',
+		);
+	});
+
+	it('draws a line break a hand-edited note holds as a space', () => {
+		expect(
+			modifierAccount({
+				lines: [],
+				override: null,
+				total: 0,
+				notes: [note({ text: 'Resistance\n to cold' })],
+			}).text,
+		).toBe('Cloak of Warding — "Resistance to cold"');
+	});
+
+	it('spells a note on the row surfaces through the same quoted outcome', () => {
+		const noteOnly = outcomeView({
+			typed: { target: 'skills.stealth', operator: 'add', amount: '', note: 'Quiet' },
+			target: 'skills.stealth',
+			targetLabel: 'Skills · stealth',
+			applies: true,
+		});
+		expect(modifierOutcomeText('skills.stealth += note: Quiet', noteOnly)).toBe(
+			'Skills · stealth — "Quiet"',
+		);
+		const both = outcomeView({
+			typed: {
+				target: 'armour_class',
+				operator: 'add',
+				amount: '1',
+				bonusType: 'item',
+				note: 'Resistance to cold',
+			},
+			target: 'armour_class',
+			targetLabel: 'Armour class',
+			applies: true,
+			amount: 1,
+		});
+		expect(modifierOutcomeText('armour_class += 1 as item note: …', both)).toBe(
+			'Armour class — item +1 and "Resistance to cold"',
+		);
+	});
+
+	it('puts a note the target cannot show on a line of its own', () => {
+		const outcome = outcomeView({
+			typed: { target: 'abilities.STR', operator: 'add', amount: '1', note: 'Strong' },
+			target: 'abilities.STR',
+			targetLabel: 'Abilities · STR',
+			applies: true,
+			amount: 1,
+			noteLine: 'Abilities · STR cannot show a note yet.',
+		});
+		expect(modifierOutcomeText('abilities.STR += 1 note: Strong', outcome)).toBe(
+			'Abilities · STR — +1 and "Strong"\nAbilities · STR cannot show a note yet.',
+		);
 	});
 });

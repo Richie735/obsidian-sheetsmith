@@ -857,7 +857,9 @@
 }
 
 .sheetsmith-card-single
-	> :nth-last-child(1 of :not(.sheetsmith-sr-only, .sheetsmith-card-note)) {
+	> :nth-last-child(
+		1 of :not(.sheetsmith-sr-only, .sheetsmith-card-note, .sheetsmith-note-mark)
+	) {
 	margin-bottom: auto;
 }
 
@@ -3562,7 +3564,8 @@ a.sheetsmith-notice-action {
    does not share is the class name — this one opens no picker and performs no
    action, so it is named for what it is about. */
 .sheetsmith-view .sheetsmith-track-action-button,
-.sheetsmith-view .sheetsmith-track-modifier-button {
+.sheetsmith-view .sheetsmith-track-modifier-button,
+.sheetsmith-view .sheetsmith-note-mark {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
@@ -3582,19 +3585,22 @@ a.sheetsmith-notice-action {
 }
 
 .sheetsmith-view .sheetsmith-track-action-button .svg-icon,
-.sheetsmith-view .sheetsmith-track-modifier-button .svg-icon {
+.sheetsmith-view .sheetsmith-track-modifier-button .svg-icon,
+.sheetsmith-view .sheetsmith-note-mark .svg-icon {
 	width: var(--icon-s);
 	height: var(--icon-s);
 }
 
 .sheetsmith-view .sheetsmith-track-action-button:hover,
-.sheetsmith-view .sheetsmith-track-modifier-button:hover {
+.sheetsmith-view .sheetsmith-track-modifier-button:hover,
+.sheetsmith-view .sheetsmith-note-mark:hover {
 	background-color: var(--background-modifier-hover);
 	color: var(--text-normal);
 }
 
 .sheetsmith-view .sheetsmith-track-action-button:focus-visible,
-.sheetsmith-view .sheetsmith-track-modifier-button:focus-visible {
+.sheetsmith-view .sheetsmith-track-modifier-button:focus-visible,
+.sheetsmith-view .sheetsmith-note-mark:focus-visible {
 	outline: 2px solid var(--interactive-accent);
 	outline-offset: 2px;
 }
@@ -3605,7 +3611,8 @@ a.sheetsmith-notice-action {
    is the same value a modifier cell's own glyph was raised to, and for the
    measured reason recorded there — at this size a faint bolt reads as a smudge
    rather than as a mark (`docs/UI.md` §9). */
-.sheetsmith-view .sheetsmith-track-modifier-button {
+.sheetsmith-view .sheetsmith-track-modifier-button,
+.sheetsmith-view .sheetsmith-note-mark {
 	color: var(--text-muted);
 }
 
@@ -3625,9 +3632,203 @@ a.sheetsmith-notice-action {
 
    At a circled glyph's size the mark was reading heavier than the name beside
    it, which is a smaller type rank than a picker's neighbours are. */
-.sheetsmith-view .sheetsmith-track-modifier-button .svg-icon {
+.sheetsmith-view .sheetsmith-track-modifier-button .svg-icon,
+.sheetsmith-view .sheetsmith-note-mark .svg-icon {
 	width: var(--icon-xs);
 	height: var(--icon-xs);
+}
+
+/* The note mark (`components/note-mark.ts`), on the Track door's treatment by
+   the selector lists above: the same box, ink, hover and focus ring, so no two
+   glyph buttons on one card measure differently under one finger. What is its
+   own is where it sits.
+
+   On a card it is out of flow at the label line's inline end, so it cannot move
+   the number off the card's centre line, and the label gives up the glyph's
+   width on *both* sides so it stays centred and clips before reaching it. The
+   corner sits half the padding in, which puts the glyph's box across the
+   label's line.
+
+   In a table cell it follows the value inline, a small gap after the number or
+   the control; `vertical-align: middle` because a cell's content sits on a text
+   baseline a glyph box has none of. */
+.sheetsmith-card-has-note {
+	position: relative;
+}
+
+.sheetsmith-card-has-note > .sheetsmith-card-label {
+	/* The glyph's box plus the step it was inset by, less the card's padding the
+	   label already stands clear of: `1.6em` of the label's smaller font fell
+	   0.4px short of the box once the mark moved in a step. */
+	padding-inline: calc(var(--sheetsmith-inline-control, 1.6em) + var(--size-2-1));
+}
+
+.sheetsmith-view .sheetsmith-card-has-note > .sheetsmith-note-mark {
+	position: absolute;
+	/* One step in from the half-padding corner, so the focus ring's 2px offset
+	   clears the card's own border rather than drawing over it. */
+	top: var(--size-2-3);
+	inset-inline-end: var(--size-2-3);
+}
+
+/* **On a narrow card the label keeps its words and gives up its centre.** The
+   reserve is symmetric so the label stays centred over the number, and that
+   costs the glyph's width twice; at 520 a card is 116px and the label read
+   "ARMOUR…" and "PASSIVE…". Below the breakpoint the start-side reserve goes
+   and the label wraps rather than truncating, keeping the end-side reserve so
+   no line runs under the corner mark. It may then sit off centre, which is the
+   trade (`docs/features/modifier-notes.md`). **200px, from measurement**: the
+   longest sample label, "Passive perception", is 143px at the card's own
+   tracking, and with both 19.2px reserves needs 181.4px — which a 200px card's
+   184px of content holds and anything narrower does not. */
+@container (max-width: 200px) {
+	.sheetsmith-card-has-note > .sheetsmith-card-label {
+		padding-inline-start: 0;
+		white-space: normal;
+		text-overflow: clip;
+	}
+}
+
+.sheetsmith-view td > .sheetsmith-note-mark,
+.sheetsmith-view .sheetsmith-roster-band-inner > .sheetsmith-note-mark {
+	flex: 0 0 auto;
+	align-self: center;
+	vertical-align: middle;
+	margin-inline-start: var(--size-2-1);
+}
+
+/* **Past a level ring, the gap is the ring's reach.**
+   `.sheetsmith-level-ring::after` reaches `--size-4-2` beyond the ring on each
+   side, in both pointer modes, so at the default gap a press on the mark's
+   first few pixels landed on the ring and changed the stored level. The mark
+   cannot grow over the ring, so the gap has to (`legibility.md` §5) — and only
+   that far: the mark's own target is its box, so there is no second reach to
+   clear, and the margin a reach-plus-4px gap added overflowed a Saves card at
+   the threshold width. */
+.sheetsmith-view .sheetsmith-level-ring + .sheetsmith-note-mark {
+	margin-inline-start: var(--size-4-2);
+}
+
+/* **And the width the mark costs comes out of the name column.** A ring, its
+   reach and the mark make a stored cell's column wider, and at the threshold
+   width that took a Saves card 1px past its box. The name column is the one
+   holding the table's slack, and its inline-end padding is the one 8px a reader
+   never sees as alignment — the left edge stays where every name starts — so a
+   table holding a mark gives half of it back. Only such a table, so every
+   other table on a sheet keeps its padding (`docs/features/modifier-notes.md`). */
+.sheetsmith-view .sheetsmith-table:has(.sheetsmith-note-mark) .sheetsmith-table-name {
+	padding-inline-end: var(--size-2-2);
+}
+
+/* A noted cell and every reserving cell keep their value and the mark, or its
+   slot, on one line: a slot wrapped under its value at a narrow width gave the
+   cell a different shape from the noted one and undid the line-up. */
+.sheetsmith-table-has-note,
+.sheetsmith-note-column {
+	white-space: nowrap;
+}
+
+/* **A noted column reserves the mark's slot in every cell, not only the noted
+   ones** (`docs/features/modifier-notes.md`). Cells are centred, so a mark
+   beside one number pushed that number off its column by half the mark's
+   width — a noted Constitution ring sat 15px left of Dexterity's. The render
+   marks the column (`reserveNoteSlots`), and a cell in it with no mark draws an
+   empty box the mark's size and gap after its value, so every cell's content
+   is the same shape and the values line up. Built from the mark's own
+   measurements: its box, its font size (which its `em` is of) and the gap it
+   takes after a number or after a ring. Body and foot cells only: a column's
+   heading is centred over the cell and reserving there would widen a narrow
+   ring column to its word's width plus a mark. Only a column holding a mark is
+   touched, so a table with no notes is exactly as it was. */
+.sheetsmith-view .sheetsmith-note-mark {
+	font-size: var(--font-ui-small);
+}
+
+.sheetsmith-view td.sheetsmith-note-column:not(.sheetsmith-table-has-note)::after,
+.sheetsmith-view
+	.sheetsmith-note-bands
+	.sheetsmith-roster-band-inner:not(.sheetsmith-roster-band-has-note)::after {
+	content: '';
+	display: inline-block;
+	flex: 0 0 auto;
+	width: var(--sheetsmith-inline-control, 1.6em);
+	font-size: var(--font-ui-small);
+	margin-inline-start: var(--size-2-1);
+}
+
+.sheetsmith-view td.sheetsmith-note-column.sheetsmith-table-level:not(.sheetsmith-table-has-note)::after {
+	margin-inline-start: var(--size-4-2);
+}
+
+.sheetsmith-view .sheetsmith-table-has-note > .sheetsmith-level-ring,
+.sheetsmith-view .sheetsmith-table-has-note > .sheetsmith-table-input,
+.sheetsmith-view .sheetsmith-table-has-note > .sheetsmith-table-select {
+	display: inline-flex;
+	vertical-align: middle;
+}
+
+/* **After a number, the mark is centred on the digits, not on a line box.**
+   The mark used to be centred on the number's *box*, both `vertical-align:
+   middle`, and a number's line box carries the font's descent below its
+   baseline, so the box's centre sits under the digits' own centre — 2.5px at a
+   cell's 16px. That is what read as too low for a centre and too high for an
+   exponent.
+
+   So the number keeps its own baseline, untouched, and the mark is placed
+   against the cell's text metrics. `vertical-align: middle` puts its centre at
+   the baseline plus half the x-height; the digits' centre is the baseline plus
+   half the *cap* height, so the mark is then raised by half the difference.
+   Both heights are the cell's own, `1ex` and `1cap` resolved on the cell and
+   carried to the mark as lengths: the mark's own font is the button's smaller
+   one, whose metrics would be the wrong digits'. Registered so they inherit as
+   resolved lengths rather than being re-read at the mark. `top` moves the box
+   and not the layout, so the line, the hit target and the gap are unchanged. */
+@property --sheetsmith-note-cap {
+	syntax: '<length>';
+	inherits: true;
+	initial-value: 0px;
+}
+
+@property --sheetsmith-note-ex {
+	syntax: '<length>';
+	inherits: true;
+	initial-value: 0px;
+}
+
+.sheetsmith-view .sheetsmith-table-has-note > .sheetsmith-table-value,
+.sheetsmith-view .sheetsmith-note-column > .sheetsmith-table-value {
+	display: inline-block;
+	vertical-align: baseline;
+}
+
+/* **The mark takes no height from its line**, so a noted value sits where an
+   unnoted one does. A 1.6em box centred near the x-height reaches below the
+   number's descent, so it grew the cell's line box downward, and the cell —
+   centring that taller line — lifted the number 1.8px off its row. Negative
+   block margins of half its height give it a margin box of no height at the
+   point it is centred on: the box, its hit target and its glyph are where they
+   were, and the line is the number's alone. */
+.sheetsmith-view .sheetsmith-table-value ~ .sheetsmith-note-mark {
+	margin-block: calc(-0.5 * var(--sheetsmith-inline-control, 1.6em));
+}
+
+/* Guarded, because where `@property` is supported and `cap` is not (iOS WebKit
+   16.4–17.1) `1cap` falls back to the registered `0px` and the raise would push
+   the mark half an x-height *down*; unguarded, the mark stays at plain `middle`.
+   The number's baseline above does not depend on the raise, so it stays out.
+   Without `cap` the mark's centre sits about 1.4px below the digits' — an
+   estimate from the cell's metrics and not a measurement, because the harness
+   renders in a Chrome that has `cap` and cannot render a WebKit that lacks it. */
+@supports (top: 1cap) {
+	.sheetsmith-view .sheetsmith-table-has-note {
+		--sheetsmith-note-cap: 1cap;
+		--sheetsmith-note-ex: 1ex;
+	}
+
+	.sheetsmith-view .sheetsmith-table-value ~ .sheetsmith-note-mark {
+		position: relative;
+		top: calc((var(--sheetsmith-note-ex) - var(--sheetsmith-note-cap)) / 2);
+	}
 }
 
 /* The **Remove** picker's own armed line, inside the anchored panel this

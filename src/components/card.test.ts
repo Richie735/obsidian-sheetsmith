@@ -5,10 +5,12 @@ import { outcomeView } from '../test/modifier-views';
 import {
 	FieldValue,
 	ModifierBreakdown,
+	ModifierLine,
 	ModifierOutcome,
 	RenderContext,
 } from '../types';
 import { sampleOf } from '../test/sample';
+import { closePopover } from '../ui/popover';
 
 const config: CardConfig = {
 	id: 'armour-class',
@@ -1527,5 +1529,140 @@ describe('card.render: an effective value over a stored one', () => {
 		);
 		const select = el.querySelector('.sheetsmith-card-select') as HTMLSelectElement;
 		expect(select.value).toBe('15');
+	});
+});
+
+describe('a card something has noted (docs/features/modifier-notes.md)', () => {
+	const NOTE = {
+		label: 'Cloak of Warding',
+		source: 'Magic items',
+		text: 'Resistance to cold',
+		suppressed: null,
+	};
+	const noting = (lines: ModifierLine[] = []): Partial<RenderContext> => ({
+		modifiers: {
+			definitions: [],
+			...NO_AUTHORING,
+			outcomes: () => [NO_OUTCOME],
+			breakdown: () => ({
+				override: null,
+				total: lines.reduce((sum, one) => sum + one.amount, 0),
+				lines,
+				notes: [NOTE],
+			}),
+		},
+	});
+	const mark = (el: HTMLElement) =>
+		el.querySelector<HTMLButtonElement>('.sheetsmith-note-mark');
+
+	it('draws the mark, names its count, and opens the notes on a press', () => {
+		const el = render({ derived: 'value' }, { value: '15' }, noting());
+		const button = mark(el) as HTMLButtonElement;
+		expect(button.getAttribute('aria-label')).toBe('1 note');
+		expect(button.dataset.icon).toBe('info');
+		// The SVG is the button's own child, so the button's flex centring centres
+		// the glyph itself rather than a line box holding it on a baseline.
+		expect(button.firstElementChild?.tagName.toLowerCase()).toBe('svg');
+		const twin = el.querySelector(
+			`#${button.getAttribute('aria-describedby') ?? ''}`,
+		);
+		expect(twin?.textContent).toBe('Cloak of Warding — "Resistance to cold"');
+		button.click();
+		expect(document.querySelector('.sheetsmith-popover')?.textContent).toBe(
+			'Cloak of Warding — "Resistance to cold"',
+		);
+		document.querySelector('.sheetsmith-popover')?.remove();
+	});
+
+	it('keeps a press on the mark the mark’s, so the card does not focus its field', () => {
+		// The card routes every press on it to its nearest field; the mark stops
+		// its own click from reaching that routing.
+		const el = render({}, { value: '15', note: 'chain mail' }, noting());
+		document.body.appendChild(el);
+		(mark(el) as HTMLButtonElement).click();
+		expect(document.activeElement?.tagName).not.toBe('INPUT');
+		expect(document.querySelectorAll('.sheetsmith-popover')).toHaveLength(1);
+		document.querySelector('.sheetsmith-popover')?.remove();
+		el.remove();
+	});
+
+	it('points the mark at its twin again after the popover has had the attribute', () => {
+		const el = render({ derived: 'value' }, { value: '15' }, noting());
+		document.body.appendChild(el);
+		const button = mark(el) as HTMLButtonElement;
+		const twin = button.getAttribute('aria-describedby');
+		button.click();
+		// The popover points its anchor at itself while open, and takes the
+		// attribute away when it closes.
+		closePopover();
+		expect(button.getAttribute('aria-describedby')).toBeNull();
+		button.dispatchEvent(new FocusEvent('focus'));
+		expect(button.getAttribute('aria-describedby')).toBe(twin);
+		el.remove();
+	});
+
+	it('draws no underline on a number only a note reached', () => {
+		const el = render({ derived: 'value' }, { value: '15' }, noting());
+		expect(el.querySelector('.sheetsmith-modified')).toBeNull();
+	});
+
+	it('draws both marks where an amount and a note reach it, and both open one account', () => {
+		const el = render(
+			{ derived: 'value + mod.self' },
+			{ value: '15' },
+			noting([
+				{
+					applies: 'value',
+					label: 'Cloak of Warding',
+					source: 'Magic items',
+					definition: 'Cloak of Warding',
+					operator: 'add',
+					type: 'item',
+					amount: 1,
+					suppressed: null,
+				},
+			]),
+		);
+		const derived = el.querySelector('.sheetsmith-card-derived') as HTMLElement;
+		expect(derived.classList.contains('sheetsmith-modified')).toBe(true);
+		derived.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		const fromNumber = document.querySelector('.sheetsmith-popover')?.textContent;
+		(mark(el) as HTMLButtonElement).click();
+		const fromMark = document.querySelector('.sheetsmith-popover')?.textContent;
+		expect(fromNumber).toBe(fromMark);
+		expect(fromMark).toContain('\n\nNotes\nCloak of Warding — "Resistance to cold"');
+		document.querySelector('.sheetsmith-popover')?.remove();
+	});
+
+	it("leaves the card's own note line the character's, editable and unchanged", () => {
+		const el = render({}, { value: '+2', note: 'advantage' }, noting());
+		const note = inputs(el).note as HTMLInputElement;
+		expect(note.value).toBe('advantage');
+		expect(note.readOnly).toBe(false);
+		expect(mark(el)).not.toBeNull();
+	});
+
+	it('keeps the mark with the label hidden, out of the number’s flow', () => {
+		const el = render({ hideLabel: true }, { value: '15' }, noting());
+		expect(el.querySelector('.sheetsmith-card-label')).toBeNull();
+		const button = mark(el) as HTMLButtonElement;
+		// Last in the face, after the controls, so the face's own first and last
+		// flex items are still the label and the value.
+		expect(button.parentElement?.classList.contains('sheetsmith-card-has-note')).toBe(
+			true,
+		);
+	});
+
+	it('draws nothing at all where there are no notes', () => {
+		const el = render({ derived: 'value' }, { value: '15' }, {
+			modifiers: {
+				definitions: [],
+				...NO_AUTHORING,
+				outcomes: () => [NO_OUTCOME],
+				breakdown: () => ({ override: null, total: 0, lines: [] }),
+			},
+		});
+		expect(mark(el)).toBeNull();
+		expect(el.querySelector('.sheetsmith-card-has-note')).toBeNull();
 	});
 });

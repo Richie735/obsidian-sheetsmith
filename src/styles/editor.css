@@ -1011,11 +1011,24 @@
 	max-width: 22em;
 }
 
+/* **A modifier change's Note fills a line it shares with the remove track**
+   (`docs/features/modifier-notes.md`). A note is a sentence, and in a share of
+   the second line it read "Advantage on Dexterity (Stealth) c…" whatever the
+   wide field's cap. The editor puts a break before it; here it grows over the
+   whole line, uncapped, with a basis of 0 so the change's remove track still
+   fits beside it. The row treatment below would push that track onto a line
+   of its own and leave an empty band under the field. */
+.sheetsmith-list-modifiers .sheetsmith-detail-field-note {
+	flex: 1 1 0;
+	max-width: none;
+}
+
 /* **A field on a detail line that takes a row of its own**, still last on the
    line. A Record set field's **Shown when** is the case
    (`docs/features/conditional-field-visibility.md`): an expression is as long as
    the author writes it, and in a share of the line it clipped
    `Recharges == 1 || Recharges == 2` to exactly the half that says which rests.
+
    It also carries a legend and an error under its input, so beside other
    fields it was the tallest column and the line's `align-items: center`
    dropped every neighbour against it — the Uses line's Minimum 18px under its
@@ -1075,6 +1088,28 @@
    **This is not `docs/UI.md` §12's slack-distribution row**, which is about a
    table with more room than columns and no principled answer. These two have one:
    a closed list has a longest member, and it is knowable without measuring. */
+/* **A control a note-only change gives nothing to do reads as disabled**
+   (`docs/features/modifier-notes.md`). Obsidian draws a disabled `.dropdown`
+   exactly like an enabled one (`docs/BACKLOG.md` § UI), so these three take
+   their own: the field's label and the value go faint, and the select loses its
+   surface and its pointer. Two channels and neither is colour alone — the box
+   going away is a shape change, which holds in forced colors, where the system
+   paints a disabled control its own disabled colour anyway. Scoped to the
+   Modifiers list, so the pane's other controls are as they were. */
+.sheetsmith-list-modifiers .sheetsmith-detail-field-disabled > .sheetsmith-position-label {
+	color: var(--text-faint);
+}
+
+.sheetsmith-list-modifiers .sheetsmith-detail-field-disabled > select.dropdown:disabled {
+	/* Chromium's own `opacity: 0.7` on a disabled select stacked on the faint
+	   colour (1.74:1); the colour is the treatment, so the opacity comes off. */
+	opacity: 1;
+	color: var(--text-faint);
+	background-color: transparent;
+	box-shadow: none;
+	cursor: not-allowed;
+}
+
 .sheetsmith-list-modifiers .sheetsmith-detail-field-tight {
 	flex: 0 0 auto;
 	min-width: 0;

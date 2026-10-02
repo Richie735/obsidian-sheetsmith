@@ -2570,7 +2570,7 @@ describe('no two rules declare the same body', () => {
 		{
 			rules: [
 				'.sheetsmith-view .sheetsmith-passport-part-remove, .sheetsmith-view .sheetsmith-passport-add',
-				'.sheetsmith-view .sheetsmith-track-action-button, .sheetsmith-view .sheetsmith-track-modifier-button',
+				'.sheetsmith-view .sheetsmith-track-action-button, .sheetsmith-view .sheetsmith-track-modifier-button, .sheetsmith-view .sheetsmith-note-mark',
 			],
 			reason: 'a glyph-only reset whose family is unruled',
 		},
@@ -3191,5 +3191,89 @@ describe('the add control pinned to the foot of the card', () => {
 		);
 		expect(listed?.selector).toContain('.sheetsmith-record-add');
 		expect(listed?.selector).toContain('.sheetsmith-table-box');
+	});
+});
+
+describe('the note mark (docs/features/modifier-notes.md)', () => {
+	const ruleFor = (selector: string) =>
+		rules(CSS_WITHOUT_COMMENTS).find((rule) =>
+			selectorList(rule.selector).includes(selector),
+		);
+
+	it('sits out of flow on a card, labelled or not, so the number keeps its centre', () => {
+		const body = ruleFor('.sheetsmith-view .sheetsmith-card-has-note > .sheetsmith-note-mark')?.body ?? '';
+		expect(declarations(body)).toContain('position: absolute');
+		// The face's own last-flex-item rule skips it, so the value keeps the
+		// auto margin that centres the run.
+		expect(CSS_WITHOUT_COMMENTS).toContain('.sheetsmith-note-mark)');
+	});
+
+	it('centres the mark after a number on the digits’ cap height, not the number’s box', () => {
+		// Layout is not measurable here; the harness measured the result (mark
+		// centre = baseline − cap / 2). What is pinned is the construction: the
+		// number keeps its baseline, and the mark is raised from x-height middle
+		// to cap middle with the cell's own metrics.
+		const marks = rules(CSS_WITHOUT_COMMENTS)
+			.filter((rule) =>
+				selectorList(rule.selector).includes(
+					'.sheetsmith-view .sheetsmith-table-value ~ .sheetsmith-note-mark',
+				),
+			)
+			.flatMap((rule) => declarations(rule.body));
+		expect(marks).toContain(
+			'top: calc((var(--sheetsmith-note-ex) - var(--sheetsmith-note-cap)) / 2)',
+		);
+		// And it takes no height from the line, or the number it follows is lifted
+		// off its row by the taller line the cell then centres.
+		expect(marks).toContain(
+			'margin-block: calc(-0.5 * var(--sheetsmith-inline-control, 1.6em))',
+		);
+		const cell = ruleFor('.sheetsmith-view .sheetsmith-table-has-note')?.body ?? '';
+		expect(declarations(cell)).toEqual(
+			expect.arrayContaining(['--sheetsmith-note-cap: 1cap', '--sheetsmith-note-ex: 1ex']),
+		);
+		const value = ruleFor('.sheetsmith-view .sheetsmith-table-has-note > .sheetsmith-table-value')?.body ?? '';
+		expect(declarations(value)).toContain('vertical-align: baseline');
+		expect(CSS_WITHOUT_COMMENTS).toContain('@property --sheetsmith-note-cap');
+		// Guarded on `cap` support: without it `1cap` falls back to the registered
+		// 0px and the raise would lower the mark instead.
+		const guarded = CSS_WITHOUT_COMMENTS.slice(CSS_WITHOUT_COMMENTS.indexOf('@supports (top: 1cap)'));
+		expect(CSS_WITHOUT_COMMENTS).toContain('@supports (top: 1cap)');
+		expect(guarded.slice(0, guarded.indexOf('}\n}'))).toContain('--sheetsmith-note-cap: 1cap');
+		expect(guarded.slice(0, guarded.indexOf('}\n}'))).toContain('top: calc(');
+	});
+
+	it('reserves in an unmarked cell of a noted column exactly what the mark takes', () => {
+		// A slot the mark's own size and gap, so every cell's content is the same
+		// shape and a centred value or ring lines up with the noted one.
+		const slot = ruleFor('.sheetsmith-view td.sheetsmith-note-column:not(.sheetsmith-table-has-note)::after')?.body ?? '';
+		expect(declarations(slot)).toEqual(
+			expect.arrayContaining([
+				'width: var(--sheetsmith-inline-control, 1.6em)',
+				'font-size: var(--font-ui-small)',
+				'margin-inline-start: var(--size-2-1)',
+			]),
+		);
+		const mark =
+			rules(CSS_WITHOUT_COMMENTS).find(
+				(rule) => rule.selector.trim() === '.sheetsmith-view .sheetsmith-note-mark',
+			)?.body ?? '';
+		expect(declarations(mark)).toContain('font-size: var(--font-ui-small)');
+		const after = ruleFor('.sheetsmith-view td > .sheetsmith-note-mark')?.body ?? '';
+		expect(declarations(after)).toContain('margin-inline-start: var(--size-2-1)');
+		// After a ring, the slot takes the ring's gap, as the mark does.
+		const ringSlot = ruleFor('.sheetsmith-view td.sheetsmith-note-column.sheetsmith-table-level:not(.sheetsmith-table-has-note)::after')?.body ?? '';
+		expect(declarations(ringSlot)).toContain('margin-inline-start: var(--size-4-2)');
+	});
+
+	it('keeps clear of a level ring’s expanded target beside it', () => {
+		// The ring's `::after` reaches `--size-4-2` sideways; the gap after it
+		// must be at least that, or a press on the mark changes the level.
+		const reach = ruleFor('.sheetsmith-view .sheetsmith-level-ring::after')?.body ?? '';
+		expect(declarations(reach)).toContain(
+			'inset: calc(-1 * var(--size-2-2)) calc(-1 * var(--size-4-2))',
+		);
+		const gap = ruleFor('.sheetsmith-view .sheetsmith-level-ring + .sheetsmith-note-mark')?.body ?? '';
+		expect(declarations(gap)).toContain('margin-inline-start: var(--size-4-2)');
 	});
 });

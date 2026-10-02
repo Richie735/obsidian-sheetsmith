@@ -57,6 +57,7 @@ function changeView(
 		...(over.operator === undefined ? {} : { operator: over.operator }),
 		...(over.bonusType === undefined ? {} : { bonusType: over.bonusType }),
 		...(over.applies === undefined ? {} : { applies: over.applies }),
+		...(over.note === undefined ? {} : { note: over.note }),
 	};
 }
 

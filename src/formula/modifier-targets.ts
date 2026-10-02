@@ -74,6 +74,15 @@ export interface ModifierTargetSource {
 	 * lookup's failure is visible.
 	 */
 	unknownType?: boolean;
+	/**
+	 * True where the component draws the notes pushed at its names: a copy of
+	 * `ComponentDefinition.drawsNotes`, on `unknownType`'s precedent.
+	 *
+	 * Copied here so the one place the registry is read for it is
+	 * `modifierTargetSource`, and the editor's report, the sheet's outcomes, the
+	 * **Value** picker and the walk's bound all read one answer (`noteTargets`).
+	 */
+	drawsNotes?: true;
 }
 
 /**
@@ -162,6 +171,26 @@ export function publishedTargets(
 	return components
 		.flatMap((component) => publishedEntries(component))
 		.map(({ name, label }) => ({ name, label }));
+}
+
+/**
+ * Every published name a note may be aimed at, in declaration order: the names
+ * whose component draws notes (`docs/features/modifier-notes.md` A).
+ *
+ * **The one derivation, read by four surfaces**: the definitions report, which
+ * says "cannot show a note yet" of anything else; the sheet's outcomes and its
+ * breakdown, which never hand a note to a name outside it; the **Value**
+ * picker's **Notes only** group; and the bound on when a breakdown may enter the
+ * modifier walk for a note. Not the accepting set, deliberately — a note needs no
+ * slot, so requiring `mod.self` in a skill's formula just to hang a reminder on
+ * it would be wiring for its own sake.
+ */
+export function noteTargets(
+	components: readonly ModifierTargetSource[],
+): readonly ModifierTarget[] {
+	return publishedTargets(
+		components.filter((component) => component.drawsNotes === true),
+	);
 }
 
 /**
@@ -283,7 +312,7 @@ export function publishedSuffixes(
 export function modifierTargetSource(
 	config: ComponentConfig,
 	definition:
-		| Pick<ComponentDefinition, 'formulaFields' | 'scopeValues'>
+		| Pick<ComponentDefinition, 'formulaFields' | 'scopeValues' | 'drawsNotes'>
 		| undefined,
 ): ModifierTargetSource {
 	return {
@@ -294,5 +323,6 @@ export function modifierTargetSource(
 		// Absent rather than `false` for a type the registry has, so a source
 		// built by hand in a test reads the same as one built here.
 		...(definition === undefined ? { unknownType: true } : {}),
+		...(definition?.drawsNotes === true ? { drawsNotes: true } : {}),
 	};
 }

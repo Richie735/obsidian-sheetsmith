@@ -39,7 +39,7 @@
  * from `modifiers.ts` — stays downstream of both.
  */
 
-import { parseModifierPart } from '../parse/modifier-cell';
+import { isNoteOnly, parseModifierPart } from '../parse/modifier-cell';
 import {
 	ModifierChangeView,
 	ModifierDefinitionView,
@@ -139,6 +139,11 @@ export interface PartFields {
 	 */
 	applies: ModifierPhase;
 	when: string | null;
+	/**
+	 * The words shown at the target, or null where there are none. Never
+	 * evaluated: a note is text, and nothing here reads it but the walk.
+	 */
+	note: string | null;
 }
 
 /** One part, resolved on its row. */
@@ -156,8 +161,23 @@ export type Enrolment =
 	/**
 	 * The condition, or the amount of an active row, would not resolve. The
 	 * reason is a sentence, already lowercased for `inRowMessage` to prefix.
+	 *
+	 * `condition` says which: true where the condition is what failed, which is
+	 * the one case a note on the same change is listed as not applying. Where the
+	 * amount failed under a condition that holds, the note shows.
 	 */
-	| ({ kind: 'unreadable'; fields: PartFields; reason: string } & PartSource)
+	| ({
+			kind: 'unreadable';
+			fields: PartFields;
+			reason: string;
+			condition: boolean;
+	  } & PartSource)
+	/**
+	 * A note and no amount, with its condition holding: a **note-only change**.
+	 * Complete rather than unfinished, on both tiers, and it never refuses a
+	 * slot, because a note moves no number (`docs/features/modifier-notes.md` E).
+	 */
+	| ({ kind: 'noted'; fields: PartFields; conditional: boolean } & PartSource)
 	/** The condition is false on this row, so it changes nothing. */
 	| ({
 			kind: 'inactive';
@@ -220,6 +240,7 @@ function fieldsOfChange(
 ): PartFields {
 	const bonusType = (change.bonusType ?? '').trim();
 	const when = (definition.when ?? '').trim();
+	const note = (change.note ?? '').trim();
 	return {
 		target: change.target.trim(),
 		operator: operatorOf(change),
@@ -227,6 +248,7 @@ function fieldsOfChange(
 		bonusType: bonusType === '' ? null : bonusType,
 		applies: phaseOf(change),
 		when: when === '' ? null : when,
+		note: note === '' ? null : note,
 	};
 }
 
@@ -234,6 +256,7 @@ function fieldsOfChange(
 function fieldsOfTyped(effect: TypedEffect): PartFields {
 	const bonusType = (effect.bonusType ?? '').trim();
 	const when = (effect.when ?? '').trim();
+	const note = (effect.note ?? '').trim();
 	return {
 		target: effect.target.trim(),
 		operator: effect.operator,
@@ -241,6 +264,7 @@ function fieldsOfTyped(effect: TypedEffect): PartFields {
 		bonusType: bonusType === '' ? null : bonusType,
 		applies: phaseOf(effect),
 		when: when === '' ? null : when,
+		note: note === '' ? null : note,
 	};
 }
 
@@ -344,6 +368,24 @@ export function resolveEnrolments(
 }
 
 /**
+ * The target a typed part notes, read from its text alone, or null where the
+ * part is a name or carries no note.
+ *
+ * **Here because this file holds the codebase's one parse of a cell part**, and
+ * the sheet's walk bound needs a second reading of the same text: which names a
+ * typed part could carry a note to, without evaluating its condition or its
+ * amount (`docs/features/modifier-notes.md` F). A named part's note is its
+ * definition's, which the definitions already say.
+ */
+export function typedNoteTarget(part: string): string | null {
+	const parsed = parseModifierPart(part);
+	if (parsed.kind !== 'typed') return null;
+	if ((parsed.effect.note ?? '').trim() === '') return null;
+	const target = parsed.effect.target.trim();
+	return target === '' ? null : target;
+}
+
+/**
  * What a part's condition came to, decided once however many changes it governs.
  *
  * `always` and `holds` are deliberately two: a part with no condition carries no
@@ -394,7 +436,13 @@ function settle(
 	calls: FunctionEnv,
 ): Enrolment {
 	if (verdict.kind === 'unreadable') {
-		return { kind: 'unreadable', ...source, fields, reason: verdict.reason };
+		return {
+			kind: 'unreadable',
+			...source,
+			fields,
+			reason: verdict.reason,
+			condition: true,
+		};
 	}
 	if (verdict.kind === 'inactive') {
 		// Read tolerantly: an inactive row contributes nothing, so an amount it
@@ -412,17 +460,37 @@ function settle(
 	}
 
 	if (fields.amount === '') {
+		/*
+		 * **A note makes a blank amount complete**, on both tiers. Without one the
+		 * two keep today's meanings exactly: a typed part is unfinished and
+		 * refuses nothing, a definition has no amount and refuses its slot.
+		 */
+		if (isNoteOnly(fields)) {
+			return {
+				kind: 'noted',
+				...source,
+				fields,
+				conditional: verdict.kind === 'holds',
+			};
+		}
 		if (source.typed !== null) return { kind: 'unfinished', ...source, fields };
 		return {
 			kind: 'unreadable',
 			...source,
 			fields,
 			reason: `${called(source)} has no amount.`,
+			condition: false,
 		};
 	}
 	const amount = read(fields.amount, scope, calls);
 	if ('reason' in amount) {
-		return { kind: 'unreadable', ...source, fields, reason: amount.reason };
+		return {
+			kind: 'unreadable',
+			...source,
+			fields,
+			reason: amount.reason,
+			condition: false,
+		};
 	}
 	if (typeof amount.value !== 'number') {
 		return {
@@ -430,6 +498,7 @@ function settle(
 			...source,
 			fields,
 			reason: `"${String(amount.value)}" is not a number, so ${called(source)} has no amount.`,
+			condition: false,
 		};
 	}
 

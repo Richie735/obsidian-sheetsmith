@@ -32,11 +32,12 @@
 import {
 	acceptingTargets,
 	ModifierTargetSource,
+	noteTargets,
 	publishedTargets,
 } from '../formula/modifier-targets';
 import { Layout } from './layout';
-import { unspellableName } from './modifier-cell';
-import { spelled } from './spelled';
+import { isNoteOnly, unspellableName, unspellableNote } from './modifier-cell';
+import { series, spelled } from './spelled';
 import {
 	MODIFIER_CHANGE_KEYS,
 	ModifierChangeView,
@@ -156,6 +157,11 @@ export function parseModifierDefinitions(
 	const published = new Map(
 		publishedTargets(sources).map((target) => [target.name, target.label]),
 	);
+	// The names a note may be aimed at, through the same module: a published
+	// name whose component does not draw notes is refused for a note, and the
+	// sheet reads the one derivation too, so this report and the sheet's own
+	// sentence cannot disagree about which names those are.
+	const notable = new Set(noteTargets(sources).map((target) => target.name));
 	// Read as a shape rather than as the declared type: `parseLayout` checked that
 	// each entry is an object and nothing more, so every member here is still a
 	// free `unknown` and a hand-edited file may hold a number where a name goes.
@@ -237,11 +243,16 @@ export function parseModifierDefinitions(
 			const operator = operatorOf(one);
 			const applies = phaseOf(one);
 			const bonusType = text(one, 'bonusType');
+			const note = text(one, 'note');
 			return {
 				target,
 				operator,
 				amount: text(one, 'amount'),
 				...(bonusType !== '' ? { bonusType } : {}),
+				// Absent where blank, as every optional member is (PATTERNS §8). Held
+				// as written, line breaks and all: the sheet draws a break as a space,
+				// and detach has to see the raw text to refuse what a cell cannot hold.
+				...(note !== '' ? { note } : {}),
 				// Omitted for the value phase, so a layout gains a key only where it
 				// means something other than the default (PATTERNS §8).
 				...(applies === 'result' && operator !== 'override' ? { applies } : {}),
@@ -273,8 +284,11 @@ export function parseModifierDefinitions(
 		 * nothing, because every message below names its own target the moment
 		 * there is more than one to tell apart.
 		 */
+		const noteOnly = (change: ModifierChangeView): boolean => isNoteOnly(change);
+
 		for (const change of changes) {
 			const { target } = change;
+			const noted = change.note !== undefined;
 			if (target === '') {
 				problems.push({
 					definition: name,
@@ -287,16 +301,40 @@ export function parseModifierDefinitions(
 					definition: name,
 					message: `"${name}" changes "${target}", which this layout publishes no value under. Choose one it does, or correct the spelling.`,
 				});
-			} else if (!accepting.has(target)) {
-				// dnd5e#3900 caught in the editor rather than on a sheet: an effect
-				// aimed at a value whose own formula reads no slot adds nothing and
-				// says nothing. Reported per change, with the fix in it.
-				problems.push({
-					definition: name,
-					message: several
-						? `"${name}" changes "${target}", which reads no modifier, so that change does nothing. Add "+ mod.self" to that value's own formula.`
-						: `"${target}" reads no modifier, so "${name}" changes nothing. Add "+ mod.self" to that value's own formula.`,
-				});
+			} else {
+				/*
+				 * **A note needs no slot, so a note-only change is never told its
+				 * target reads no modifier.** An amount still is, and where the note
+				 * does show the sentence says so, because "changes nothing" would be
+				 * false of a change whose note is on the sheet.
+				 */
+				if (!accepting.has(target) && !noteOnly(change)) {
+					// dnd5e#3900 caught in the editor rather than on a sheet: an effect
+					// aimed at a value whose own formula reads no slot adds nothing and
+					// says nothing. Reported per change, with the fix in it.
+					problems.push({
+						definition: name,
+						message:
+							noted && notable.has(target)
+								? `"${name}" changes "${target}", which reads no modifier, so its amount does nothing. Its note still shows. Add "+ mod.self" to that value's own formula for the amount.`
+								: several
+									? `"${name}" changes "${target}", which reads no modifier, so that change does nothing. Add "+ mod.self" to that value's own formula.`
+									: `"${target}" reads no modifier, so "${name}" changes nothing. Add "+ mod.self" to that value's own formula.`,
+					});
+				}
+				/*
+				 * **Strict as an amount's, because a missing note shows as
+				 * nothing.** A published name whose component draws no note mark
+				 * would take the note and drop it, so it is refused here in the
+				 * unknown target's own family of wording, and named for the three
+				 * components that do draw one.
+				 */
+				if (noted && !notable.has(target)) {
+					problems.push({
+						definition: name,
+						message: `"${name}" notes "${target}", which cannot show a note yet, because the component publishing it draws none. Choose a value on a component that does, or correct the spelling.`,
+					});
+				}
 			}
 		}
 
@@ -312,6 +350,9 @@ export function parseModifierDefinitions(
 			 * line, and a flat layout's report must not move.
 			 */
 			if (several && target === '') continue;
+			// A note with no amount is a complete change: it moves no number, so
+			// there is no amount for it to be missing.
+			if (noteOnly(change)) continue;
 			if (amount === '') {
 				problems.push({
 					definition: name,
@@ -339,6 +380,39 @@ export function parseModifierDefinitions(
 		spelt.forEach((one, at) => {
 			const change = changes[at] as ModifierChangeView;
 			const operator = operatorOf(one);
+			const note = change.note;
+			if (note !== undefined) {
+				// Reported and still shown: the file is the author's own, so a note no
+				// cell could spell is rendered rather than corrected (SPEC §10).
+				const unspellable = unspellableNote(note);
+				if (unspellable !== null) {
+					problems.push({ definition: name, message: unspellable });
+				}
+			}
+			if (noteOnly(change)) {
+				/*
+				 * **What a note-only change carries beside its note does nothing**,
+				 * and saying so replaces the override's own two sentences below
+				 * rather than joining them: they explain how an override contests,
+				 * and a change with no amount contests nothing. The members are named
+				 * in the words the editor's own controls carry — **Operator**,
+				 * **Bonus type**, **Applies to** — because this is read beside those
+				 * controls and the fix is to change one of them.
+				 */
+				const ignored = [
+					...(operator === 'override' ? ['operator'] : []),
+					...(text(one, 'bonusType') !== '' ? ['bonus type'] : []),
+					...(text(one, 'applies') !== '' ? ['phase'] : []),
+				];
+				if (ignored.length > 0) {
+					const plural = ignored.length > 1;
+					problems.push({
+						definition: name,
+						message: `"${name}" has a note and no amount${several ? ` for "${change.target}"` : ''}, so its ${series(ignored)} ${plural ? 'are' : 'is'} ignored: a note alone changes no number. Clear ${plural ? 'them' : 'it'}, or give it an amount.`,
+					});
+				}
+				return;
+			}
 			/*
 			 * **Anything but the word `result` is the value phase** (SPEC §5), which is
 			 * what keeps a hand-edited layout safe: a typo leaves the modifier doing

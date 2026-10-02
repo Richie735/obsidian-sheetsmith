@@ -1255,3 +1255,130 @@ describe('a condition written by hand on a column', () => {
 		expect(roster.write(read.data as RosterData, BODY, conditioned)).toBe(BODY);
 	});
 });
+
+describe('a roster something has noted (docs/features/modifier-notes.md)', () => {
+	const noting = (noted: readonly string[]): RenderContext['modifiers'] => ({
+		definitions: [],
+		targets: [],
+		published: [],
+		bonusTypes: [],
+		outcomes: () => [],
+		breakdown: (name) => ({
+			lines: [],
+			override: null,
+			total: 0,
+			resultTotal: 0,
+			...(noted.includes(name)
+				? {
+						notes: [
+							{
+								label: 'War Caster',
+								source: 'Feats',
+								text: `Noted at ${name}`,
+								suppressed: null,
+							},
+						],
+					}
+				: {}),
+		}),
+		notable: (name) => noted.includes(name),
+		promote: () => Promise.resolve({ error: 'No layout here.' }),
+	});
+	const data = (over = config): RosterData => {
+		const result = roster.read(BODY, over);
+		if (!result.ok || result.data === null) throw new Error('expected data');
+		return result.data;
+	};
+	const drawn = (noted: readonly string[], over = config) => {
+		const el = document.createElement('div');
+		const read = data(over);
+		roster.render(el, over, read, { ...contextFor(read, over), modifiers: noting(noted) });
+		return el;
+	};
+
+	it('marks a keyed row on its published cell, the notes joining that cell’s popover', () => {
+		const el = drawn(['abilities.athletics']);
+		const marks = el.querySelectorAll('.sheetsmith-note-mark');
+		expect(marks).toHaveLength(1);
+		const cell = marks[0]?.closest('td') as HTMLElement;
+		expect(cell.closest('tr')?.textContent).toContain('Athletics');
+		expect(cell.querySelector('.sheetsmith-modified')).toBeNull();
+		(cell.querySelector('.sheetsmith-table-value') as HTMLElement).click();
+		// The cell's own answer first — here why the formula did not resolve, on a
+		// roster with no library — then the notes, after the blank line.
+		expect(document.querySelector('.sheetsmith-popover')?.textContent).toMatch(
+			/\n\nFeats · War Caster — "Noted at abilities\.athletics"$/,
+		);
+		closePopover();
+	});
+
+	it('marks a stat at the inline end of its band head', () => {
+		const el = drawn(['abilities.DEX']);
+		const mark = el.querySelector('.sheetsmith-note-mark') as HTMLElement;
+		expect(mark.parentElement?.classList.contains('sheetsmith-roster-band-inner')).toBe(
+			true,
+		);
+		expect(mark.parentElement?.textContent).toContain('Dexterity');
+	});
+
+	it('reserves the slot on every band head where any band carries a note', () => {
+		const el = drawn(['abilities.DEX']);
+		const table = el.querySelector('table.sheetsmith-roster') as HTMLElement;
+		expect(table.classList.contains('sheetsmith-note-bands')).toBe(true);
+		const plain = drawn([]);
+		expect(plain.querySelector('.sheetsmith-note-bands, .sheetsmith-note-column')).toBeNull();
+	});
+
+	it('marks a stat on its card’s label line under cardLayout', () => {
+		const el = drawn(['abilities.STR'], { ...config, cardLayout: true });
+		const mark = el.querySelector('.sheetsmith-note-mark') as HTMLElement;
+		const card = mark.parentElement as HTMLElement;
+		expect(card.classList.contains('sheetsmith-card')).toBe(true);
+		expect(card.classList.contains('sheetsmith-card-has-note')).toBe(true);
+		expect(card.querySelector('.sheetsmith-card-label')?.textContent).toBe('Strength');
+	});
+
+	it('marks a stored published level cell after its ring', () => {
+		const levelled: RosterConfig = {
+			...config,
+			columns: [{ key: 'Training', type: 'level', max: 1, publish: true }],
+		};
+		const el = drawn(['abilities.athletics'], levelled);
+		const mark = el.querySelector('.sheetsmith-note-mark') as HTMLElement;
+		expect(mark.previousElementSibling?.classList.contains('sheetsmith-level-ring')).toBe(
+			true,
+		);
+	});
+
+	it('reads a row the same once a key is added, and only a new name appears', () => {
+		const keyed: RosterConfig = {
+			...config,
+			rows: [
+				{ label: 'Athletics', stat: 'STR', key: 'athletics' },
+				{ label: 'Acrobatics', stat: 'DEX', key: 'acrobatics' },
+			],
+		};
+		expect(roster.read(BODY, keyed)).toEqual(roster.read(BODY, config));
+		const names = (over: RosterConfig) =>
+			Object.keys(roster.scopeValues?.(data(), over).named ?? {});
+		expect(names(keyed).filter((key) => !names(config).includes(key))).toEqual([
+			'acrobatics',
+		]);
+		expect(roster.write(data(), BODY, keyed)).toBe(roster.write(data(), BODY, config));
+	});
+
+	it('refuses a key colliding with a stat key whatever its case, drawing its error in place', () => {
+		const clashing: RosterConfig = {
+			...config,
+			rows: [
+				{ label: 'Athletics', stat: 'STR', key: 'athletics' },
+				{ label: 'Acrobatics', stat: 'DEX', key: 'dex' },
+			],
+		};
+		const result = roster.read(BODY, clashing);
+		expect(result.ok).toBe(false);
+		const el = document.createElement('div');
+		roster.render(el, clashing, null, contextFor(null, clashing));
+		expect(el.querySelector('.sheetsmith-error')).not.toBeNull();
+	});
+});

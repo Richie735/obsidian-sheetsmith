@@ -786,3 +786,166 @@ describe('parseModifierDefinitions: a definition naming several changes', () => 
 		);
 	});
 });
+
+describe('parseModifierDefinitions: a change carrying a note (docs/features/modifier-notes.md)', () => {
+	/**
+	 * `SOURCES` with the drawing declared where the registry declares it: the two
+	 * cards draw notes, the card set does not.
+	 */
+	const NOTING: readonly ModifierTargetSource[] = SOURCES.map((source) =>
+		source.id === 'abilities' ? source : { ...source, drawsNotes: true },
+	);
+	const report = (modifiers: unknown[]) =>
+		parseModifierDefinitions(layout(modifiers), NOTING);
+	const messages = (modifiers: unknown[]) =>
+		report(modifiers).problems.map((problem) => problem.message);
+
+	it("reports a note's target exactly as an amount's", () => {
+		// A missing number shows as a wrong total and a missing note as nothing,
+		// so a note's target is held to the same strictness, in the same words.
+		const blank = [{ name: 'Boots', target: '', note: 'Advantage' }];
+		const blankAmount = [{ name: 'Boots', target: '', amount: '1' }];
+		expect(messages(blank)).toEqual([
+			'"Boots" changes nothing, because it names no value. Choose one under Value.',
+		]);
+		expect(messages(blank)[0]).toBe(messages(blankAmount)[0]);
+		const unpublished = [
+			{ name: 'Boots', target: 'skills.stelth', note: 'Advantage' },
+		];
+		const unpublishedAmount = [
+			{ name: 'Boots', target: 'skills.stelth', amount: '1' },
+		];
+		expect(messages(unpublished)).toEqual([
+			'"Boots" changes "skills.stelth", which this layout publishes no value under. Choose one it does, or correct the spelling.',
+		]);
+		expect(messages(unpublished)[0]).toBe(messages(unpublishedAmount)[0]);
+	});
+
+	it('takes a note-only change at a value that reads no modifier, with nothing to say', () => {
+		const { definitions, problems } = report([
+			{ name: 'Keen senses', target: 'passive_perception', note: 'Advantage on sight' },
+		]);
+		expect(problems).toEqual([]);
+		expect(definitions[0]?.changes[0]).toEqual({
+			target: 'passive_perception',
+			operator: 'add',
+			amount: '',
+			note: 'Advantage on sight',
+			targetLabel: 'Passive perception',
+		});
+	});
+
+	it('does not tell a note-only change that it has no amount', () => {
+		expect(
+			messages([{ name: 'Warded', target: 'armour_class', note: 'Resistance to cold' }]),
+		).toEqual([]);
+		// And a blank amount with no note keeps both of its shipped sentences.
+		expect(messages([{ name: 'Warded', target: 'armour_class' }])).toEqual([
+			'"Warded" has no amount, so it changes nothing. Give it an expression under Amount.',
+		]);
+	});
+
+	it('says the note still shows where an amount does nothing', () => {
+		expect(
+			messages([
+				{
+					name: 'Boots',
+					target: 'passive_perception',
+					amount: '1',
+					note: 'Advantage on sight',
+				},
+			]),
+		).toEqual([
+			'"Boots" changes "passive_perception", which reads no modifier, so its amount does nothing. Its note still shows. Add "+ mod.self" to that value\'s own formula for the amount.',
+		]);
+	});
+
+	it('reports a note aimed at a value that cannot show one yet', () => {
+		expect(
+			messages([{ name: 'Belt', target: 'abilities.STR', note: 'Advantage on Strength checks' }]),
+		).toEqual([
+			'"Belt" notes "abilities.STR", which cannot show a note yet, because the component publishing it draws none. Choose a value on a component that does, or correct the spelling.',
+		]);
+		// Where the change has an amount too, the amount is checked as today and
+		// the sentence is about the note alone.
+		expect(
+			messages([
+				{ name: 'Belt', target: 'abilities.STR', amount: '2', note: 'Advantage' },
+			]),
+		).toEqual([
+			'"Belt" notes "abilities.STR", which cannot show a note yet, because the component publishing it draws none. Choose a value on a component that does, or correct the spelling.',
+		]);
+	});
+
+	it('says what a note-only change ignores beside its note', () => {
+		expect(
+			messages([
+				{
+					name: 'Boots',
+					target: 'armour_class',
+					operator: 'override',
+					note: 'Advantage',
+				},
+			]),
+		).toEqual([
+			'"Boots" has a note and no amount, so its operator is ignored: a note alone changes no number. Clear it, or give it an amount.',
+		]);
+		expect(
+			messages([
+				{
+					name: 'Boots',
+					target: 'armour_class',
+					bonusType: 'item',
+					applies: 'result',
+					note: 'Advantage',
+				},
+			]),
+		).toEqual([
+			'"Boots" has a note and no amount, so its bonus type and phase are ignored: a note alone changes no number. Clear them, or give it an amount.',
+		]);
+	});
+
+	it('reports a hand-edited note no cell could spell, and still shows it', () => {
+		const { definitions, problems } = report([
+			{ name: 'Boots', target: 'armour_class', note: 'Roll twice; take the higher' },
+		]);
+		expect(problems).toEqual([
+			{
+				definition: 'Boots',
+				message:
+					'A note cannot hold a semicolon, because a row separates the modifiers it applies with one. Reword it without one.',
+			},
+		]);
+		expect(definitions[0]?.changes[0]?.note).toBe('Roll twice; take the higher');
+	});
+
+	it('reads a note in either spelling, and omits a blank one', () => {
+		const { definitions } = report([
+			{ name: 'Flat', target: 'armour_class', amount: '1', note: '  Warm  ' },
+			{
+				name: 'Listed',
+				changes: [
+					{ target: 'armour_class', amount: '1', note: 'Cold' },
+					{ target: 'passive_perception', amount: '', note: ' ' },
+				],
+			},
+		]);
+		expect(definitions[0]?.changes[0]?.note).toBe('Warm');
+		expect(definitions[1]?.changes[0]?.note).toBe('Cold');
+		expect('note' in (definitions[1]?.changes[1] ?? {})).toBe(false);
+	});
+
+	it('words every report on a layout with no note exactly as before', () => {
+		// The same layouts read against sources that draw notes and ones that do
+		// not: with no note anywhere, which components draw one changes nothing.
+		const shipped = [
+			{ name: 'Ring', target: 'armour_class', amount: '1' },
+			{ name: 'Cloak', target: 'passive_perception', amount: '2' },
+			{ name: 'Typo', target: 'nowhere', amount: '2' },
+			{ name: 'Empty', target: 'armour_class' },
+		];
+		expect(report(shipped)).toEqual(
+			parseModifierDefinitions(layout(shipped), SOURCES),
+		);
+	});
+});

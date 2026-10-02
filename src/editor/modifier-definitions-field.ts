@@ -68,7 +68,10 @@
 import {
 	acceptingTargets,
 	ModifierTargetSource,
+	noteTargets,
 } from '../formula/modifier-targets';
+import { fillTargetOptions } from '../components/modifier-form';
+import { isNoteOnly, unspellableNote } from '../parse/modifier-cell';
 import {
 	addControls,
 	addControlSpacers,
@@ -130,13 +133,13 @@ function changeCount(definition: DefinitionEntry): number {
 		: 1;
 }
 
-/** Whether any of a definition's changes carries an amount, in either spelling. */
-function carriesAmount(definition: DefinitionEntry): boolean {
+/** Whether any of a definition's changes carries this member, in either spelling. */
+function carries(definition: DefinitionEntry, key: 'amount' | 'note'): boolean {
 	if (!Array.isArray(definition.changes)) {
-		return String(definition.amount ?? '').trim() !== '';
+		return String(definition[key] ?? '').trim() !== '';
 	}
 	return (definition.changes as ChangeEntry[]).some(
-		(change) => String(change.amount ?? '').trim() !== '',
+		(change) => String(change[key] ?? '').trim() !== '',
 	);
 }
 
@@ -208,6 +211,9 @@ export function renderModifierDefinitions(
 	);
 
 	const targets = acceptingTargets(context.sources);
+	// The values a note may be aimed at: **Notes only** offers the ones outside
+	// the accepting set, through the one derivation the report reads.
+	const notable = noteTargets(context.sources);
 	const bonusTypes = parseModifierTypes(layout).names;
 	/** Bound once: every inline error here outlives a rebuild of the pane. */
 	const fieldError = (input: HTMLInputElement, message: string | null) =>
@@ -415,8 +421,20 @@ export function renderModifierDefinitions(
 				 * changes and an amount on either is authored work, and one with none is
 				 * the row that was just added.
 				 */
-				if (!carriesAmount(definition)) return null;
+				/*
+				 * **A note is content as much as an amount is**, so a note-only
+				 * definition is not removed silently. A definition with no note still
+				 * reads the shipped sentence word for word.
+				 */
+				const amounted = carries(definition, 'amount');
+				const noted = carries(definition, 'note');
+				if (!amounted && !noted) return null;
 				const count = changeCount(definition);
+				const held = noted
+					? amounted
+						? 'amount, note'
+						: 'note'
+					: 'amount';
 				/*
 				 * **The whole clause is the ternary, not half of it**, so the
 				 * one-change sentence is the shipped one word for word: a definition
@@ -426,7 +444,7 @@ export function renderModifierDefinitions(
 				 */
 				const lost =
 					count === 1
-						? 'Its target, amount and condition are lost.'
+						? `Its target, ${held} and condition are lost.`
 						: `Its ${count} changes and its condition are lost.`;
 				return `Remove the modifier "${named}"? ${lost} Every character's row that names it keeps the name and changes nothing until it is pointed at another modifier.`;
 			},
@@ -494,7 +512,9 @@ export function renderModifierDefinitions(
 		/** What one change is called, for the controls that have to tell two apart. */
 		const changeName = (at: number): string => {
 			const target = String(changes[at]?.target ?? '').trim();
-			const label = targets.find((one) => one.name === target)?.label;
+			const label = [...targets, ...notable].find(
+				(one) => one.name === target,
+			)?.label;
 			return label ?? (target === '' ? `change ${at + 1}` : target);
 		};
 		/**
@@ -546,12 +566,7 @@ export function renderModifierDefinitions(
 			});
 			const storedTarget = String(change.target ?? '').trim();
 			value.createEl('option', { value: '', text: '—' });
-			for (const target of targets) {
-				value.createEl('option', {
-					value: target.name,
-					text: target.label,
-				});
-			}
+			fillTargetOptions(value, targets, notable);
 			/*
 			 * A stored target the picker does not offer, carried as its bare name.
 			 *
@@ -570,7 +585,8 @@ export function renderModifierDefinitions(
 			 */
 			if (
 				storedTarget !== '' &&
-				!targets.some((t) => t.name === storedTarget)
+				!targets.some((t) => t.name === storedTarget) &&
+				!notable.some((t) => t.name === storedTarget)
 			) {
 				value.createEl('option', {
 					value: storedTarget,
@@ -599,6 +615,14 @@ export function renderModifierDefinitions(
 			 * width — inside a `<select>`, where the reveal-on-hover answer for a clipped
 			 * value cannot reach.
 			 */
+			/*
+			 * **The three controls a note-only change gives nothing to do**, held so
+			 * they can be disabled while Amount is blank and Note is filled, and
+			 * enabled again the moment an amount is typed. Disabling writes nothing:
+			 * a stored operator, phase or bonus type keeps its bytes, and the report's
+			 * "ignored" sentence still names it (`docs/features/modifier-notes.md`).
+			 */
+			const arithmeticOnly: { field: HTMLElement; select: HTMLSelectElement }[] = [];
 			const operatorField = labelled(detail, 'Operator');
 			operatorField.addClass('sheetsmith-detail-field-tight');
 			const operator = operatorField.createEl('select', {
@@ -611,6 +635,7 @@ export function renderModifierDefinitions(
 					text: OPERATOR_LABELS[id],
 				});
 			}
+			arithmeticOnly.push({ field: operatorField, select: operator });
 			const effective: ModifierOperator = operatorOf(change);
 			operator.value = effective;
 			titleChosen(operator);
@@ -758,6 +783,7 @@ export function renderModifierDefinitions(
 				phase.value = phaseOf(change);
 				titleChosen(phase);
 				if (effective === 'add') {
+					arithmeticOnly.push({ field: phaseField, select: phase });
 					phase.dataset.sheetsmithFocus = `modifier-${named}-${at}-applies`;
 					phase.addEventListener('change', () => {
 						// The value phase is the absent key, so choosing it clears rather
@@ -802,6 +828,7 @@ export function renderModifierDefinitions(
 				type.value = storedType;
 				titleChosen(type);
 				if (effective === 'add') {
+					arithmeticOnly.push({ field: typeField, select: type });
 					type.dataset.sheetsmithFocus = `modifier-${named}-${at}-bonus-type`;
 					type.addEventListener('change', () => {
 						setOptional(change, 'bonusType', type.value);
@@ -837,6 +864,71 @@ export function renderModifierDefinitions(
 					typeField.addClass('sheetsmith-detail-field-reserved');
 					typeField.setAttribute('aria-hidden', 'true');
 				}
+
+				/*
+				 * **The note, last on the detail line and on a row of its own.** A
+				 * note is a sentence, so it takes the line's whole width rather than
+				 * a share of it. Offered on **Adds to** and **Sets** alike, because
+				 * an override can carry a reminder too. It commits on Enter and on
+				 * blur, as every field in this pane does, and a blank one deletes the
+				 * key rather than storing an empty string (PATTERNS §8).
+				 *
+				 * **A note a cell could not spell is refused at the commit**, with the
+				 * stored note left as it was: the sentence is `unspellableNote`'s,
+				 * beside its predicate, so this field, the sheet form and the report
+				 * cannot be reworded apart.
+				 *
+				 * **The typed text stays in the field**, as a formula field's does and
+				 * as the sheet form's note does, so the complaint is about words on
+				 * screen. The message is deliberately kept out of the pane's error
+				 * map: a redraw puts the stored note back, and a complaint replayed
+				 * over it would be about text no longer there, which is
+				 * `docs/BACKLOG.md`'s "a refused edit's complaint outlives the text it
+				 * was about" grown a fresh instance.
+				 */
+				// A line of its own, which it shares only with the change's remove
+				// track: a note is a sentence, and in a share of the second line it
+				// clipped to its first half whatever the cap. Not
+				// `.sheetsmith-detail-field-row`, whose full basis pushed the remove
+				// track onto a line of its own and left an empty band above **Add
+				// change**.
+				detail.createDiv('sheetsmith-detail-break');
+				const noteField = labelled(detail, 'Note');
+				noteField.addClass('sheetsmith-detail-field-note');
+				const note = noteField.createEl('input', {
+					type: 'text',
+					attr: {
+						placeholder: 'Shown at the value',
+						'aria-label': qualified(at, 'note'),
+					},
+				});
+				const storedNote = String(change.note ?? '');
+				note.value = storedNote;
+				note.dataset.sheetsmithFocus = `modifier-${named}-${at}-note`;
+				/** Disable the arithmetic's controls while this change is note-only. */
+				const paintNoteOnly = () => {
+					const noteOnly = isNoteOnly({ amount: amount.value, note: note.value });
+					for (const { field, select } of arithmeticOnly) {
+						select.disabled = noteOnly;
+						field.toggleClass('sheetsmith-detail-field-disabled', noteOnly);
+					}
+				};
+				paintNoteOnly();
+				// Live, so typing an amount gives the controls back before it commits.
+				amount.addEventListener('input', paintNoteOnly);
+				note.addEventListener('input', paintNoteOnly);
+				note.addEventListener('change', () => {
+					const next = note.value.trim();
+					const refusal = unspellableNote(next);
+					if (refusal !== null) {
+						showFieldError(note, refusal);
+						return;
+					}
+					fieldError(note, null);
+					setOptional(change, 'note', next);
+					commit();
+					context.redraw();
+				});
 			}
 		};
 
@@ -864,11 +956,19 @@ export function renderModifierDefinitions(
 			 */
 			describeRemoval: (at) => {
 				const change = changes[at] as ChangeEntry;
-				if (String(change.amount ?? '').trim() === '') return null;
+				const amounted = String(change.amount ?? '').trim() !== '';
+				const noted = String(change.note ?? '').trim() !== '';
+				if (!amounted && !noted) return null;
 				// Enumerated the way the definition's own confirmation enumerates: a
 				// change carries an amount, a bonus type and a phase, and naming two
-				// of the three would say the third survives.
-				return `Remove the change to ${changeName(at)}? Its amount, bonus type and phase are lost. "${named}" goes on applying its other changes.`;
+				// of the three would say the third survives. A note is said where
+				// there is one, and alone where it is all the change holds.
+				const lost = !amounted
+					? 'Its note is lost.'
+					: noted
+						? 'Its amount, bonus type, phase and note are lost.'
+						: 'Its amount, bonus type and phase are lost.';
+				return `Remove the change to ${changeName(at)}? ${lost} "${named}" goes on applying its other changes.`;
 			},
 			onAdd: () => {
 				/*
