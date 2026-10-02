@@ -221,6 +221,15 @@ sheet.
   list field's reorder and remove controls name it — `Move STR up`,
   `Remove STR` — whether drawn by `addControls` in `editor/list-fields.ts` or
   by the nested list's own remove (`editor/nested-list-field.ts`).
+- **A reorder control with ends disables at them** [judgement]: the first
+  item's up and the last item's down, as the layout editor's tab-order arrows
+  already do. A control that does nothing when pressed says so, and disabled is
+  announced. A drag handle has no ends to disable — it is one control, and an
+  arrow key at an end does nothing. The cost falls on focus, which follows an
+  item through a move by its token: a move that lands it at an end would leave
+  focus on the arrow just disabled, so focus goes to the opposite one. No
+  control does that handoff yet, the tab-order arrows included, and the list
+  fields' arrows do not disable at all (`docs/BACKLOG.md` § UI).
 - **State goes in ARIA, not only in paint.** `aria-pressed` on a two-state mark;
   `aria-label` composed from the label and the state name the layout author
   chose, since "Stowed" says more than "not pressed".
