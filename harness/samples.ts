@@ -1371,8 +1371,13 @@ export const SAMPLES: Sample[] = [
 			// segments rather than the bonus-type contest one table over. Two
 			// rows rather than five, each naming several targets, because one
 			// item lengthening three runs is also the shape a reader meets.
-			'| Talisman of Endurance | endurance.count += 2; endurance_low.count += 2; all_granted.count += 2 |',
-			'| Shackles | vigour.count += -2; cursed_run.count += -5; unmade.count += -1; overfull_shackled.count += -2 |',
+			// The pools' ceilings ride on the same two rows, for the same reason:
+			// one item raising a run and a maximum is the shape a reader meets
+			// (`docs/features/pool-ceiling-modifier-door.md`). `rolled_health.max`
+			// is the push that moves nothing — a typed ceiling has no formula to
+			// read its slot — and the row's own line says so.
+			'| Talisman of Endurance | endurance.count += 2; endurance_low.count += 2; all_granted.count += 2; stamina.max += 3 |',
+			'| Shackles | vigour.count += -2; cursed_run.count += -5; unmade.count += -1; overfull_shackled.count += -2; ward.max += -2; rolled_health.max += -4 |',
 		].join('\n'),
 	},
 	/*
@@ -1758,6 +1763,56 @@ export const SAMPLES: Sample[] = [
 			fields: [{ key: 'Level', type: 'number', max: 9 }],
 		} as ComponentConfig,
 		body: null,
+	},
+	/*
+	 * **A Pool's ceiling a modifier moved** (`docs/features/pool-ceiling-modifier-door.md`),
+	 * pushed at from the Worn items table above, on the row the record sets
+	 * left free, the nearest free row to that table, so no placement above moves.
+	 *
+	 * - **Stamina reserve** is raised by the talisman: the numeral after the slash takes
+	 *   the dotted rule and the card its corner door.
+	 * - **Ward** is lowered by the shackles, because the mark says *moved* in
+	 *   either direction — dotted, not a Track's dashed "granted".
+	 * - **Rolled HP** is a typed ceiling the shackles also push at, and draws
+	 *   neither: no formula reads its slot, so the number the character typed is
+	 *   the ceiling, and a mark on it would claim otherwise. It sits in the free
+	 *   three columns beside the six-field Passport rather than in this row,
+	 *   because two columns is all this row has left and a two-column pool clips
+	 *   its own reading at a 520px container, which is a pool's width limit and
+	 *   not this feature's to photograph.
+	 */
+	{
+		config: {
+			id: 'stamina',
+			type: 'pool',
+			// Two words, so at a 520px container — a 115px card, under the 200px
+			// the label's reserve gives way at — it wraps under the door rather
+			// than running beneath it, which a one-word label could not show.
+			label: 'Stamina reserve',
+			position: { col: 5, row: 38, width: 3, height: 1 },
+			max: '12 + mod.self',
+		} as ComponentConfig,
+		body: '```sheet\ncurrent: 9\n```',
+	},
+	{
+		config: {
+			id: 'ward',
+			type: 'pool',
+			label: 'Ward',
+			position: { col: 8, row: 38, width: 3, height: 1 },
+			max: '8 + mod.self',
+		} as ComponentConfig,
+		body: '```sheet\ncurrent: 5\n```',
+	},
+	{
+		config: {
+			id: 'rolled_health',
+			type: 'pool',
+			label: 'Rolled HP',
+			position: { col: 10, row: 46, width: 3, height: 1 },
+			maxSource: 'character',
+		} as ComponentConfig,
+		body: '```sheet\ncurrent: 14\nmax: 22\n```',
 	},
 	/*
 	 * **Fields shown only for some values of another**

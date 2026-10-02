@@ -1591,12 +1591,12 @@ describe('a card something has noted (docs/features/modifier-notes.md)', () => {
 		document.body.appendChild(el);
 		const button = mark(el) as HTMLButtonElement;
 		const twin = button.getAttribute('aria-describedby');
+		expect(twin).not.toBeNull();
 		button.click();
-		// The popover points its anchor at itself while open, and takes the
-		// attribute away when it closes.
+		// The popover points its anchor at itself while open, and gives the
+		// anchor's own description back when it closes (`ui/popover.ts`).
+		expect(button.getAttribute('aria-describedby')).not.toBe(twin);
 		closePopover();
-		expect(button.getAttribute('aria-describedby')).toBeNull();
-		button.dispatchEvent(new FocusEvent('focus'));
 		expect(button.getAttribute('aria-describedby')).toBe(twin);
 		el.remove();
 	});

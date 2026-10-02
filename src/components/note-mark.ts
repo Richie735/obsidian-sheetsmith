@@ -29,13 +29,14 @@
 import { setIcon } from 'obsidian';
 import { ModifierContext } from '../types';
 import { showPopover } from '../ui/popover';
-import { ModifierAccount, modifierAccount } from './modifier-breakdown';
+import {
+	ACCOUNT_GLYPH,
+	ModifierAccount,
+	modifierAccount,
+} from './modifier-breakdown';
 
 /** The mark's class, which the stylesheet's glyph-button selector list names. */
 export const NOTE_MARK_CLASS = 'sheetsmith-note-mark';
-
-/** The glyph, named once so the docs, the tests and the paint agree. */
-export const NOTE_GLYPH = 'info';
 
 /**
  * The class a cell takes when its column holds a note mark anywhere, and the one
@@ -74,17 +75,12 @@ export function renderNoteMark(
 	 * centre of the number or the ring it follows. The button's `aria-label`
 	 * names it, so the SVG needs no `aria-hidden` of its own.
 	 */
-	setIcon(button, NOTE_GLYPH);
+	setIcon(button, ACCOUNT_GLYPH);
 	const twin = parent.createSpan({ cls: 'sheetsmith-sr-only', text: account });
 	twin.id = `sheetsmith-note-account-${++twins}`;
-	/*
-	 * Set again on focus, because the shared popover owns the attribute while it
-	 * is open — it points the anchor at itself and removes the attribute when it
-	 * closes — so after one press the twin would otherwise be unreachable.
-	 */
-	const describe = () => button.setAttribute('aria-describedby', twin.id);
-	describe();
-	button.addEventListener('focus', describe);
+	// The shared popover points the button at itself while it is open and puts
+	// this back when it closes, so the twin survives a press.
+	button.setAttribute('aria-describedby', twin.id);
 	button.addEventListener('click', (event) => {
 		// A press on the mark is the mark's, never the card's or the cell's that
 		// holds it: a card routes a press to its nearest field, and a computed

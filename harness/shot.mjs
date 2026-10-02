@@ -405,9 +405,19 @@ const DEFAULTS = [
 		//
 		// Raised again with SHEET_FRAME for the scoped reset: measured 17433
 		// against 17300. 17300 to **17800**.
+		//
+		// Raised again for the three Pools whose ceiling a modifier moved
+		// (`docs/features/pool-ceiling-modifier-door.md`), and alone of the four
+		// this time: two share Rituals' row and the third the six-field
+		// Passport's, so at the default, at 520 and at `text=24` they add only what
+		// a pool is taller than the component beside it (8193,
+		// 9343 and 10302, all inside their frames by more than 250px),
+		// while at one column each is a full-width row of its own. Measured
+		// 17893 against 17800, so the last cards on the sheet were the ones
+		// cropped. 17800 to **18300**.
 		name: 'sheet-narrow',
 		query: 'surface=sheet&theme=dark&width=380',
-		size: '520,17800',
+		size: '520,18300',
 	},
 	{
 		/*
@@ -698,6 +708,24 @@ const DEFAULTS = [
 		name: 'sheet-breakdown-track',
 		query:
 			"surface=sheet&theme=light&bar=off&press=%5Baria-label%3D'Modifiers%20on%20Endurance'%5D",
+		size: SHEET_FRAME,
+	},
+	{
+		/*
+		 * **The fourth door onto one builder, and the first in a corner**
+		 * (`docs/features/pool-ceiling-modifier-door.md`). A Pool's numeral has no
+		 * press of its own, so the breakdown opens from a glyph button — Track's
+		 * door — but a Pool is centred like a Card, so it sits in the note mark's
+		 * corner rather than in a heading row that would push the label off centre.
+		 *
+		 * What to look at: the dotted rule under the raised ceiling and nothing
+		 * else under the reading, the label still centred over it, and the bubble
+		 * listing the talisman. The lowered Ward beside it is dotted again; the
+		 * typed Rolled HP, beside the six-field Passport further down, draws nothing.
+		 */
+		name: 'sheet-breakdown-pool',
+		query:
+			"surface=sheet&theme=light&bar=off&press=%5Baria-label%3D'Modifiers%20on%20Stamina%20reserve'%5D",
 		size: SHEET_FRAME,
 	},
 	{

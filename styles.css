@@ -3080,6 +3080,27 @@ body {
 	font-variant-numeric: tabular-nums;
 }
 
+/* A calculated ceiling a modifier has been pushed at
+   (`docs/features/pool-ceiling-modifier-door.md`). **Not `.sheetsmith-modified`**:
+   that class's `cursor: help` promises a press on the number, and this numeral
+   has none — the corner door is the route in — and its plain underline is the
+   open "reads as a link" row in `docs/BACKLOG.md`.
+
+   **A border, which was reverted on Card and is right here, and the box is the
+   difference.** On Card it drew on a right-aligned number's whole cell; this span
+   is a flex item of `.sheetsmith-pool-ceiling`, which is `nowrap`, so its box is
+   its digits and the rule spans the numeral alone. It is also the spelling the
+   Card row wanted and the CSS lint refused as `text-decoration-*`: dotted, muted,
+   2px. Dotted rather than dashed, because dashed is a Track's "granted", one
+   direction only, and this mark says moved either way; dotted under text is
+   `abbr`'s "there is an explanation". `--text-muted`, the numeral's own colour,
+   so it reads as part of the numeral and clears 3:1 on a card, where faint does
+   not. A border's style and width survive `forced-colors: active`, so the mark
+   needs no forced-colors block. */
+.sheetsmith-pool-max-modified {
+	border-bottom: 2px dotted var(--text-muted);
+}
+
 /* A max the character owns, typed where it is read.
 
    It keeps the span's colour and size rather than taking the value's, because
@@ -4224,6 +4245,7 @@ a.sheetsmith-notice-action {
    action, so it is named for what it is about. */
 .sheetsmith-view .sheetsmith-track-action-button,
 .sheetsmith-view .sheetsmith-track-modifier-button,
+.sheetsmith-view .sheetsmith-pool-modifier-button,
 .sheetsmith-view .sheetsmith-note-mark {
 	display: inline-flex;
 	align-items: center;
@@ -4245,6 +4267,7 @@ a.sheetsmith-notice-action {
 
 .sheetsmith-view .sheetsmith-track-action-button .svg-icon,
 .sheetsmith-view .sheetsmith-track-modifier-button .svg-icon,
+.sheetsmith-view .sheetsmith-pool-modifier-button .svg-icon,
 .sheetsmith-view .sheetsmith-note-mark .svg-icon {
 	width: var(--icon-s);
 	height: var(--icon-s);
@@ -4252,6 +4275,7 @@ a.sheetsmith-notice-action {
 
 .sheetsmith-view .sheetsmith-track-action-button:hover,
 .sheetsmith-view .sheetsmith-track-modifier-button:hover,
+.sheetsmith-view .sheetsmith-pool-modifier-button:hover,
 .sheetsmith-view .sheetsmith-note-mark:hover {
 	background-color: var(--background-modifier-hover);
 	color: var(--text-normal);
@@ -4259,6 +4283,7 @@ a.sheetsmith-notice-action {
 
 .sheetsmith-view .sheetsmith-track-action-button:focus-visible,
 .sheetsmith-view .sheetsmith-track-modifier-button:focus-visible,
+.sheetsmith-view .sheetsmith-pool-modifier-button:focus-visible,
 .sheetsmith-view .sheetsmith-note-mark:focus-visible {
 	outline: 2px solid var(--interactive-accent);
 	outline-offset: 2px;
@@ -4271,6 +4296,7 @@ a.sheetsmith-notice-action {
    measured reason recorded there — at this size a faint bolt reads as a smudge
    rather than as a mark (`docs/UI.md` §9). */
 .sheetsmith-view .sheetsmith-track-modifier-button,
+.sheetsmith-view .sheetsmith-pool-modifier-button,
 .sheetsmith-view .sheetsmith-note-mark {
 	color: var(--text-muted);
 }
@@ -4292,6 +4318,7 @@ a.sheetsmith-notice-action {
    At a circled glyph's size the mark was reading heavier than the name beside
    it, which is a smaller type rank than a picker's neighbours are. */
 .sheetsmith-view .sheetsmith-track-modifier-button .svg-icon,
+.sheetsmith-view .sheetsmith-pool-modifier-button .svg-icon,
 .sheetsmith-view .sheetsmith-note-mark .svg-icon {
 	width: var(--icon-xs);
 	height: var(--icon-xs);
@@ -4311,18 +4338,21 @@ a.sheetsmith-notice-action {
    In a table cell it follows the value inline, a small gap after the number or
    the control; `vertical-align: middle` because a cell's content sits on a text
    baseline a glyph box has none of. */
-.sheetsmith-card-has-note {
+.sheetsmith-card-has-note,
+.sheetsmith-pool-has-door {
 	position: relative;
 }
 
-.sheetsmith-card-has-note > .sheetsmith-card-label {
+.sheetsmith-card-has-note > .sheetsmith-card-label,
+.sheetsmith-pool-has-door > .sheetsmith-pool-label {
 	/* The glyph's box plus the step it was inset by, less the card's padding the
 	   label already stands clear of: `1.6em` of the label's smaller font fell
 	   0.4px short of the box once the mark moved in a step. */
 	padding-inline: calc(var(--sheetsmith-inline-control, 1.6em) + var(--size-2-1));
 }
 
-.sheetsmith-view .sheetsmith-card-has-note > .sheetsmith-note-mark {
+.sheetsmith-view .sheetsmith-card-has-note > .sheetsmith-note-mark,
+.sheetsmith-view .sheetsmith-pool-has-door > .sheetsmith-pool-modifier-button {
 	position: absolute;
 	/* One step in from the half-padding corner, so the focus ring's 2px offset
 	   clears the card's own border rather than drawing over it. */
@@ -4341,7 +4371,8 @@ a.sheetsmith-notice-action {
    tracking, and with both 19.2px reserves needs 181.4px — which a 200px card's
    184px of content holds and anything narrower does not. */
 @container (max-width: 200px) {
-	.sheetsmith-card-has-note > .sheetsmith-card-label {
+	.sheetsmith-card-has-note > .sheetsmith-card-label,
+	.sheetsmith-pool-has-door > .sheetsmith-pool-label {
 		padding-inline-start: 0;
 		white-space: normal;
 		text-overflow: clip;

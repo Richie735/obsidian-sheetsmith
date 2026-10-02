@@ -66,7 +66,11 @@ import { levelGlyph, levelName, parseLevel } from './level-ring';
 import { bindRingControl } from './ring-control';
 import { flagText, isFlagSet, isFlagSpelling } from './stored-flag';
 import { fencedLinkRefusal } from './fenced-link';
-import { modifierBreakdown } from './modifier-breakdown';
+import {
+	ACCOUNT_GLYPH,
+	modifierBreakdown,
+	modifiersOnName,
+} from './modifier-breakdown';
 import { publishedFieldNames } from '../formula/resolve';
 import {
 	sampleFlag,
@@ -1764,8 +1768,8 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 			const button = heading.createEl('button');
 			button.type = 'button';
 			button.classList.add('sheetsmith-track-modifier-button');
-			setIcon(button, 'info');
-			button.setAttribute('aria-label', `Modifiers on ${config.label}`);
+			setIcon(button, ACCOUNT_GLYPH);
+			button.setAttribute('aria-label', modifiersOnName(config.label));
 			button.addEventListener('click', () => {
 				showPopover(button, doorText ?? cardPushed);
 			});

@@ -6,7 +6,13 @@ import { expectSpokenChildrenLast } from '../test/spoken-order';
 import { pool, PoolConfig, PoolData } from './pool';
 import { table, TableConfig } from './table';
 import { buildSheet, ReadComponent } from '../formula/sheet';
-import { makeFieldResolver, resolveFormulaFields } from '../formula/resolve';
+import {
+	makeFieldExplainer,
+	makeFieldResolver,
+	resolveFormulaFields,
+} from '../formula/resolve';
+import { closePopover } from '../ui/popover';
+import { modifierBreakdown } from './modifier-breakdown';
 import { Layout } from '../parse/layout';
 import { RenderContext } from '../types';
 import { sampleOf } from '../test/sample';
@@ -2430,5 +2436,190 @@ describe('a modifier pushed at the ceiling', () => {
 		expect(
 			parts(past.el).current?.classList.contains('sheetsmith-pool-over'),
 		).toBe(true);
+	});
+});
+
+/*
+ * **The mark and the door on a ceiling a modifier moved**
+ * (`docs/features/pool-ceiling-modifier-door.md`).
+ *
+ * Through a real sheet, as the ceiling suite above is, because the gate is a
+ * fact `scopeValues` decides — whether `max` publishes as a formula field — and
+ * a stubbed `modifiers` could not show the typed ceiling losing its name.
+ */
+describe('the door onto a ceiling a modifier moved', () => {
+	const gear: TableConfig = {
+		id: 'worn',
+		type: 'table',
+		label: 'Worn items',
+		position: { col: 3, row: 1, width: 4, height: 2 },
+		rowHeader: 'Item',
+		rows: [{ label: 'Amulet' }],
+		columns: [{ key: 'Modifiers', type: 'modifier' }],
+	};
+
+	const sheetOf = (
+		poolConfig: PoolConfig,
+		cell: string | null = 'hp.max += 4 as item',
+		body = '\n```sheet\ncurrent: 7\n```\n',
+	) => {
+		const gearBody = [
+			'| Item | Modifiers |',
+			'| --- | --- |',
+			`| Amulet | ${cell ?? ''} |`,
+		].join('\n');
+		const poolRead = pool.read(body, poolConfig);
+		const gearRead = table.read(gearBody, gear);
+		if (!poolRead.ok || !gearRead.ok) throw new Error('read failed');
+		const layout: Layout = { name: 'Test', components: [poolConfig, gear] };
+		const prepared: ReadComponent[] = [
+			{ config: poolConfig, component: pool, data: poolRead.data, error: null },
+			{ config: gear, component: table, data: gearRead.data, error: null },
+		];
+		const { env, modifiers } = buildSheet(layout, prepared);
+		const el = document.createElement('div');
+		document.body.appendChild(el);
+		pool.render(el, poolConfig, poolRead.data, {
+			resolved: resolveFormulaFields(pool, poolConfig, poolRead.data, env),
+			resolveField: makeFieldResolver(pool, poolConfig, poolRead.data, env),
+			explainField: makeFieldExplainer(pool, poolConfig, poolRead.data, env),
+			onChange: () => undefined,
+			modifiers,
+		});
+		return { el, env, modifiers };
+	};
+
+	const derived: PoolConfig = { ...config, max: '10 + mod.self' };
+	const doorOf = (el: HTMLElement) =>
+		el.querySelectorAll<HTMLButtonElement>('button.sheetsmith-pool-modifier-button');
+
+	afterEach(() => closePopover());
+
+	it('marks the numeral, which reads the pushed ceiling, as the fill does', () => {
+		const { el } = sheetOf(derived);
+		const max = parts(el).max;
+		expect(max?.textContent).toBe('14');
+		expect(max?.classList.contains('sheetsmith-pool-max-modified')).toBe(true);
+		// 7 of 14: the fill reads the same number the mark sits under.
+		expect(
+			el.querySelector<HTMLElement>('.sheetsmith-pool')?.style.getPropertyValue(
+				'--sheetsmith-pool-fill',
+			),
+		).toBe('0.5');
+	});
+
+	it('marks a lowered ceiling too, since the mark says moved and not granted', () => {
+		const { el } = sheetOf(derived, 'hp.max += -3 as item');
+		expect(parts(el).max?.textContent).toBe('7');
+		expect(parts(el).max?.classList.contains('sheetsmith-pool-max-modified')).toBe(
+			true,
+		);
+		expect(doorOf(el)).toHaveLength(1);
+	});
+
+	it('draws one info door named for the pool, described by a twin holding the breakdown', () => {
+		const { el, modifiers } = sheetOf(derived);
+		const doors = doorOf(el);
+		expect(doors).toHaveLength(1);
+		const door = doors[0] as HTMLButtonElement;
+		expect(door.type).toBe('button');
+		expect(door.getAttribute('aria-label')).toBe('Modifiers on HP');
+		expect(door.querySelector('svg.lucide-info')).not.toBeNull();
+		const expected = modifierBreakdown(modifiers.breakdown('hp.max'), 14);
+		expect(expected).toContain('Amulet — item +4');
+		const twin = el.ownerDocument.getElementById(
+			door.getAttribute('aria-describedby') ?? '',
+		);
+		expect(twin?.classList.contains('sheetsmith-sr-only')).toBe(true);
+		expect(twin?.textContent).toBe(expected);
+		expect(
+			el.querySelector('.sheetsmith-pool')?.classList.contains('sheetsmith-pool-has-door'),
+		).toBe(true);
+	});
+
+	it('opens the same text in the shared popover, and keeps the twin after it closes', () => {
+		const { el, modifiers } = sheetOf(derived);
+		const door = doorOf(el)[0] as HTMLButtonElement;
+		door.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+		expect(document.querySelector('.sheetsmith-popover')?.textContent).toBe(
+			modifierBreakdown(modifiers.breakdown('hp.max'), 14),
+		);
+		closePopover();
+		// The popover points the door at itself while open and gives the twin
+		// back on close, so a press does not cost a listener the account.
+		expect(door.getAttribute('aria-describedby')).toBe('sheetsmith-pool-modified-hp');
+	});
+
+	it('keeps its spoken children last, the twin among them', () => {
+		const { el } = sheetOf(derived);
+		expectSpokenChildrenLast(el.querySelector('.sheetsmith-pool'), 3);
+	});
+
+	it('draws nothing at all where nothing is pushed', () => {
+		const { el } = sheetOf(derived, null);
+		expect(parts(el).max?.textContent).toBe('10');
+		expect(el.querySelector('.sheetsmith-pool-max-modified')).toBeNull();
+		expect(doorOf(el)).toHaveLength(0);
+		expect(el.querySelector('[id^="sheetsmith-pool-modified-"]')).toBeNull();
+		expect(el.querySelector('.sheetsmith-pool-has-door')).toBeNull();
+	});
+
+	it('draws neither on a typed ceiling, even with a leftover formula that reads the slot', () => {
+		const typed: PoolConfig = {
+			...config,
+			maxSource: 'character',
+			max: '10 + mod.self',
+		};
+		const { el } = sheetOf(typed, undefined, '\n```sheet\ncurrent: 7\nmax: 20\n```\n');
+		// The typed number is the ceiling, untouched by the push.
+		expect(parts(el).maxInput?.value).toBe('20');
+		expect(el.querySelector('.sheetsmith-pool-max-modified')).toBeNull();
+		expect(doorOf(el)).toHaveLength(0);
+		expect(el.querySelector('.sheetsmith-pool-has-door')).toBeNull();
+	});
+
+	it('leaves a "?" unmarked and leads its door with the sentence the "?" carries', () => {
+		const broken: PoolConfig = { ...config, max: 'nowhere + mod.self' };
+		const { el } = sheetOf(broken);
+		const max = parts(el).max;
+		expect(max?.textContent).toBe('?');
+		expect(max?.classList.contains('sheetsmith-pool-max-modified')).toBe(false);
+		const door = doorOf(el)[0];
+		if (door === undefined) throw new Error('no door');
+		const twin = el.ownerDocument.getElementById(
+			door.getAttribute('aria-describedby') ?? '',
+		);
+		const sentence = max?.getAttribute('title') ?? '';
+		expect(sentence).not.toBe('');
+		expect(twin?.textContent?.startsWith(`${sentence}\n\n`)).toBe(true);
+		expect(twin?.textContent).toContain('Amulet — item +4');
+	});
+
+	it('lights itself rather than the card under a hover or a press', () => {
+		const { el } = sheetOf(derived);
+		const card = el.querySelector('.sheetsmith-pool') as HTMLElement;
+		const door = doorOf(el)[0] as HTMLButtonElement;
+		door.dispatchEvent(new PointerEvent('pointerover', { bubbles: true }));
+		expect(card.classList.contains('sheetsmith-pool-control-hot')).toBe(true);
+		pressDown(door, { bubbles: true });
+		expect(card.classList.contains('sheetsmith-pool-control-pressed')).toBe(true);
+		// The label beside it is the card's own surface, so it lights the card.
+		el.querySelector('.sheetsmith-pool-label')?.dispatchEvent(
+			new PointerEvent('pointerover', { bubbles: true }),
+		);
+		expect(card.classList.contains('sheetsmith-pool-control-hot')).toBe(false);
+	});
+
+	it('takes a press on the door without handing focus to a field', () => {
+		const { el } = sheetOf(derived);
+		const door = doorOf(el)[0] as HTMLButtonElement;
+		const before = document.activeElement;
+		pressDown(door, { bubbles: true });
+		expect(document.activeElement).toBe(before);
+		expect(document.activeElement).not.toBe(parts(el).current);
+		// The same press on the label beside it does reach the field, so the
+		// case above is about the door and not about a router that never runs.
+		pressDown(el.querySelector('.sheetsmith-pool-label'), { bubbles: true });
+		expect(document.activeElement).toBe(parts(el).current);
 	});
 });

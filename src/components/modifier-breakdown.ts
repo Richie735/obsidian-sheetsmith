@@ -82,6 +82,25 @@ import { isNoteOnly } from '../parse/modifier-cell';
  */
 export const MODIFIED_CLASS = 'sheetsmith-modified';
 
+/**
+ * The glyph every read-only account of a value wears: a Track's breakdown door,
+ * a Pool's ceiling door and the note mark (`docs/UI.md` §9, "Which glyph").
+ * `zap` is the modifier-*authoring* glyph; this is the one that opens something
+ * a reader can only read. Named once, because three surfaces hand-spelling it is
+ * how one of them drifts back to the bolt.
+ */
+export const ACCOUNT_GLYPH = 'info';
+
+/**
+ * The accessible name of a door onto what modifies a component's number. A glyph
+ * button has no words of its own, so this is the whole of what a listener hears
+ * on it (`docs/UI.md` §6); one spelling for the Track and Pool doors, so a sheet
+ * holding both names them alike.
+ */
+export function modifiersOnName(label: string): string {
+	return `Modifiers on ${label}`;
+}
+
 /** A number as a modifier reads: "+2", "-1". Zero never reaches here. */
 function signed(amount: number): string {
 	return amount > 0 ? `+${amount}` : String(amount);
