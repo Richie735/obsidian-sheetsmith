@@ -4127,3 +4127,213 @@ export function textGroupSamples(): Sample[] {
 		},
 	];
 }
+
+/**
+ * The definitions the `notes` state adds ahead of the layout's own
+ * (`docs/features/modifier-notes.md`), so the editor's Modifiers list opens on a
+ * note-bearing change inside the frame `editor-notes` captures (the editor
+ * alone, 2600px tall, which reaches the third of these).
+ *
+ * Two note-only definitions, which the sheet's rows enrol in, and one carrying
+ * an amount *and* a note, which nothing enrols in: it exists so the change line
+ * draws its **Note** field beside a filled **Amount**.
+ */
+export const NOTE_DEFINITIONS = [
+	{
+		name: 'Boots of Elvenkind',
+		target: 'skills.stealth',
+		note: 'Advantage on Dexterity (Stealth) checks',
+		when: 'Worn',
+	},
+	{
+		name: 'War Caster',
+		target: 'checks.concentration',
+		note: 'Advantage to maintain concentration',
+	},
+	{
+		name: 'Ring of Warmth',
+		target: 'armour_class',
+		amount: '1',
+		bonusType: 'item',
+		note: 'Resistance to cold',
+	},
+];
+
+/**
+ * A modifier saying something without changing a number, on every surface that
+ * draws one (`docs/features/modifier-notes.md`): a Card with its own note line
+ * filled, a Card with both marks, a note-only Card, a Card with its label hidden,
+ * a Table's published computed cell, its stored level cell and a column total,
+ * and a Roster's computed row, band head, stat card and stored level cell.
+ *
+ * Every note arrives from one modifier table at the foot, typed on its rows or
+ * named from `NOTE_DEFINITIONS`, so each row's line says what it is for.
+ */
+export function notesSamples(): Sample[] {
+	const card = (
+		id: string,
+		label: string,
+		col: number,
+		over: Record<string, unknown>,
+		body: string,
+	): Sample => ({
+		config: {
+			id,
+			type: 'card',
+			label,
+			position: { col, row: 1, width: 3, height: 1 },
+			...over,
+		},
+		body,
+	});
+	return [
+		card(
+			'initiative',
+			'Initiative',
+			1,
+			{ derived: 'value + mod.self', notePlaceholder: 'advantage?' },
+			'```sheet\nvalue: 2\nnote: advantage\n```',
+		),
+		card(
+			'armour_class',
+			'Armour class',
+			4,
+			{ derived: '10 + mod.self', signed: false, hideValue: true, hideNote: true },
+			'',
+		),
+		card(
+			'passive',
+			'Passive perception',
+			7,
+			{ derived: '12', signed: false, hideValue: true, hideNote: true },
+			'',
+		),
+		card(
+			'speed',
+			'Speed',
+			10,
+			{ hideLabel: true, hideNote: true },
+			'```sheet\nvalue: 30\n```',
+		),
+		{
+			config: {
+				id: 'skills',
+				type: 'table',
+				label: 'Skills',
+				position: { col: 1, row: 2, width: 6, height: 2 },
+				rowHeader: 'Skill',
+				rows: [
+					{ label: 'Perception', key: 'perception' },
+					{ label: 'Stealth', key: 'stealth' },
+				],
+				columns: [
+					{ key: 'Training', type: 'level', levels: ['Untrained', 'Proficient'], hideHeading: true },
+					{
+						key: 'Total',
+						type: 'computed',
+						formula: '1 + Training * 2 + mod.self',
+						signed: true,
+						publish: true,
+					},
+				],
+			} as ComponentConfig,
+			body: '| Skill | Training |\n| --- | --- |\n| Perception | 1 |\n| Stealth | 0 |\n',
+		},
+		{
+			config: {
+				id: 'saves',
+				type: 'table',
+				label: 'Saving throws',
+				position: { col: 7, row: 2, width: 6, height: 2 },
+				rowHeader: 'Save',
+				rows: [
+					{ label: 'Constitution', key: 'CON' },
+					{ label: 'Dexterity', key: 'DEX' },
+				],
+				columns: [
+					{ key: 'Prof', type: 'level', levels: ['Untrained', 'Proficient'], publish: true },
+					{ key: 'Bonus', type: 'number', total: true },
+				],
+			} as ComponentConfig,
+			body: '| Save | Prof | Bonus |\n| --- | --- | --- |\n| Constitution | 1 | 2 |\n| Dexterity | 0 | 1 |\n',
+		},
+		{
+			config: {
+				id: 'checks',
+				type: 'roster',
+				label: 'Checks',
+				position: { col: 1, row: 4, width: 6, height: 3 },
+				rowHeader: 'Check',
+				stats: [
+					{ key: 'CON', name: 'Constitution' },
+					{ key: 'DEX', name: 'Dexterity' },
+				],
+				derived: 'mod(value)',
+				columns: [
+					{ key: 'Bonus', type: 'number' },
+					{ key: 'Total', type: 'computed', formula: 'stat + Bonus', signed: true, publish: true },
+				],
+				rows: [
+					{ label: 'Concentration', stat: 'CON', key: 'concentration' },
+					{ label: 'Stealth', stat: 'DEX', key: 'stealth' },
+				],
+			} as ComponentConfig,
+			body: '```sheet\nCON: 14\nDEX: 16\n```\n\n| Check | Bonus |\n| --- | --- |\n| Concentration | 2 |\n| Stealth | 0 |\n',
+		},
+		{
+			config: {
+				id: 'checks_cards',
+				type: 'roster',
+				label: 'Checks as cards',
+				position: { col: 7, row: 4, width: 6, height: 3 },
+				rowHeader: 'Check',
+				cardLayout: true,
+				stats: [
+					{ key: 'STR', name: 'Strength' },
+					{ key: 'WIS', name: 'Wisdom' },
+				],
+				derived: 'mod(value)',
+				columns: [
+					{ key: 'Prof', type: 'level', levels: ['Untrained', 'Proficient'], publish: true },
+				],
+				rows: [
+					{ label: 'Athletics', stat: 'STR', key: 'athletics' },
+					{ label: 'Insight', stat: 'WIS', key: 'insight' },
+				],
+			} as ComponentConfig,
+			body: '```sheet\nSTR: 16\nWIS: 12\n```\n\n| Check | Prof |\n| --- | --- |\n| Athletics | 1 |\n| Insight | 0 |\n',
+		},
+		{
+			config: {
+				id: 'noting_items',
+				type: 'table',
+				label: 'Magic items',
+				position: { col: 1, row: 7, width: 12, height: 3 },
+				rowHeader: 'Item',
+				openRows: true,
+				columns: [
+					{ key: 'Modifiers', type: 'modifier', hideHeading: true },
+					{ key: 'Worn', type: 'toggle' },
+					{ key: 'Notes', type: 'text' },
+				],
+			} as ComponentConfig,
+			body: [
+				'| Item | Modifiers | Worn | Notes |',
+				'| --- | --- | --- | --- |',
+				'| Lucky | initiative += note: Roll twice, take the higher | yes | a note at a card with its own note line |',
+				'| Cloak of Warding | armour_class += 1 as item note: Resistance to cold | yes | an amount and a note, so both marks |',
+				'| Keen senses | passive += note: Advantage on smell-based checks | yes | a note at a card reading no modifier |',
+				'| Swift | speed += note: Ignores difficult terrain | yes | a note at a card with no label |',
+				'| Boots of Elvenkind | Boots of Elvenkind | yes | a note at a published computed cell |',
+				'| Resilience | saves.CON += note: Advantage against poison | yes | a note at a stored level cell |',
+				'| Pack | saves.Bonus += note: Includes the shield | yes | a note at a column total |',
+				'| War Caster | War Caster | yes | a note at a roster row |',
+				'| Spellguard | checks.concentration += note: Advantage to maintain concentration | yes | the same words twice |',
+				'| Belt | checks.CON += note: Advantage on Constitution checks | yes | a note at a band head |',
+				'| Gauntlets | checks_cards.STR += note: Advantage on grapples | yes | a note at a stat card |',
+				'| Athlete | checks_cards.athletics += note: Climbing costs no extra movement | yes | a note at a roster level cell |',
+				'| Torn charm | checks.stealth += when Hidden note: Reroll a failed check | yes | a condition that will not resolve |',
+			].join('\n'),
+		},
+	];
+}

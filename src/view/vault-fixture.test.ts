@@ -251,9 +251,9 @@ describe('the layout file the fixture recipe names', () => {
 		// nothing to do with what it tests.
 		expect(layout.columns).toBe(6);
 		expect(problems).toEqual([]);
-		// Not a vacuous pass: seven components, and every one of them a type the
+		// Not a vacuous pass: eight components, and every one of them a type the
 		// registry actually has.
-		expect(layout.components).toHaveLength(7);
+		expect(layout.components).toHaveLength(8);
 		for (const config of layout.components) {
 			expect(getComponent(config.type), config.type).toBeDefined();
 		}
@@ -271,6 +271,7 @@ describe('the layout file the fixture recipe names', () => {
 			'skills',
 			'magic_items',
 			'worn_items',
+			'checks',
 		]);
 	});
 
@@ -293,7 +294,7 @@ describe('the layout file the fixture recipe names', () => {
 		expect(layout.modifierTypes).not.toContain('luck');
 	});
 
-	it('declares the ten modifiers the recipe names', () => {
+	it('declares the eleven modifiers the recipe names', () => {
 		/*
 		 * The list is the layout's own vocabulary, and every *named* state the sheet
 		 * shows comes from one of these. **`Bracers of Defence +1` carries
@@ -312,6 +313,7 @@ describe('the layout file the fixture recipe names', () => {
 			'Cloak of Elvenkind',
 			'Cloak of Displacement',
 			'Eyes of the Eagle',
+			'War Caster',
 		]);
 	});
 
@@ -359,7 +361,7 @@ describe('the layout file the fixture recipe names', () => {
 			LAYOUT_TEXT,
 			NOTE_TEXT,
 		).definitions;
-		expect(definitions).toHaveLength(10);
+		expect(definitions).toHaveLength(11);
 		expect(reported).toHaveLength(1);
 		expect(reported[0]?.definition).toBe('Cloak of Displacement');
 		expect(reported[0]?.message).toContain('reads no modifier');
@@ -399,6 +401,7 @@ describe('the character note the fixture recipe names', () => {
 		expect(getSection(note, 'Skills')).toBeDefined();
 		expect(getSection(note, 'Magic items')).toBeDefined();
 		expect(getSection(note, 'Worn items')).toBeDefined();
+		expect(getSection(note, 'Checks')).toBeDefined();
 		// The two cards are derived-only, so they have nothing to store yet.
 		expect(getSection(note, 'Armour class')).toBeUndefined();
 		expect(getSection(note, 'Passive perception')).toBeUndefined();
@@ -417,13 +420,13 @@ describe('the character note the fixture recipe names', () => {
 		expect(NOTE_TEXT).not.toContain('```\n| [[');
 	});
 
-	it('gives up all fourteen rows, in order, through Table\'s real read', () => {
+	it('gives up all twenty rows, in order, through Table\'s real read', () => {
 		const { data } = magicItems(NOTE_TEXT);
 		const rows = Object.keys(data.rows)
 			.map(Number)
 			.sort((a, b) => a - b)
 			.map((index) => data.rows[index]);
-		expect(rows).toHaveLength(14);
+		expect(rows).toHaveLength(20);
 		expect(rows.map((row) => row?.name)).toEqual([
 			'Belt of Giant Strength',
 			'Gauntlets of Ogre Power',
@@ -439,6 +442,12 @@ describe('the character note the fixture recipe names', () => {
 			'Eyes of the Eagle',
 			'Torch of Nothing',
 			'Chalk',
+			'War Caster',
+			'Elven ears',
+			'Keen nose',
+			'Spellguard',
+			'Lucky stone',
+			'Belt of Dwarvenkind',
 		]);
 		/*
 		 * Cells arrive keyed by the note's own header, lowercased, and holding the
@@ -463,6 +472,12 @@ describe('the character note the fixture recipe names', () => {
 			'Belt of Giant Strengh',
 			// And a blank cell, which is the ordinary case and draws a `plus`.
 			'',
+			'War Caster',
+			'skills.perception += note: Advantage on sight-based checks',
+			'passive_perception += note: Advantage on smell-based checks',
+			'checks.concentration += note: Advantage to maintain concentration',
+			'checks.con_save += when Lucky note: Reroll a failed save',
+			'abilities.STR += note: Advantage against poison',
 		]);
 		/*
 		 * **The mixed cell reads as two parts, one of each tier**, and the
@@ -794,7 +809,7 @@ describe('the arithmetic the fixture\'s press steps promise', () => {
 		// do with which table the row is on — and the accepting set is what the
 		// form's **Value** select offers, which is the sheet's own half of
 		// dnd5e#3900's check now that a target can be typed on a row.
-		expect(built.modifiers.definitions).toHaveLength(10);
+		expect(built.modifiers.definitions).toHaveLength(11);
 		expect(built.modifiers.targets.map((one) => one.name)).toEqual([
 			'abilities.STR',
 			'abilities.DEX',
@@ -1373,6 +1388,182 @@ describe('a modifier choosing which number it moves', () => {
 	it('round-trips the retyped cell byte for byte', () => {
 		// Constraint 3, on the clause this feature added to the grammar.
 		expect(serialiseCharacter(parseCharacter(onResult))).toBe(onResult);
+	});
+});
+
+describe('the notes the fixture recipe names (docs/features/modifier-notes.md)', () => {
+	const built = sheetFrom(LAYOUT_TEXT, NOTE_TEXT);
+
+	/** One component as the sheet draws it, with the sheet's modifier context. */
+	function drawn(from: ReturnType<typeof sheetFrom>, id: string): HTMLElement {
+		const entry = from.entryFor(id);
+		const el = document.createElement('div');
+		entry.component.render(el, entry.config, entry.data, {
+			...formulaContext(entry.component, entry.config, entry.data, from.env),
+			onChange: () => undefined,
+			modifiers: from.modifiers,
+		});
+		return el;
+	}
+	const noteTexts = (from: ReturnType<typeof sheetFrom>, name: string) =>
+		(from.modifiers.breakdown(name).notes ?? []).map((note) => [
+			note.label,
+			note.definition ?? null,
+			note.text,
+			note.suppressed,
+		]);
+
+	it('lists War Caster and its typed twin at the Concentration row, and moves no number', () => {
+		expect(built.sheet('checks.concentration')).toBe(4);
+		expect(built.modifiers.breakdown('checks.concentration').lines).toEqual([]);
+		expect(noteTexts(built, 'checks.concentration')).toEqual([
+			['War Caster', 'War Caster', 'Advantage to maintain concentration', null],
+			['Spellguard', null, 'Advantage to maintain concentration', null],
+		]);
+		const checks = drawn(built, 'checks');
+		const marks = Array.from(checks.querySelectorAll('.sheetsmith-note-mark'));
+		// Con Save's is Lucky stone's, listed as not applied: a note whose
+		// condition will not resolve is listed rather than dropped.
+		expect(marks.map((mark) => mark.closest('tr')?.querySelector('th')?.textContent)).toEqual([
+			'Con Save',
+			'Concentration',
+		]);
+		expect(marks[1]?.getAttribute('aria-label')).toBe('2 notes');
+		expect(checks.querySelector('.sheetsmith-modified')).toBeNull();
+	});
+
+	it('names the definition on its line only where the row is not called by it', () => {
+		// War Caster's row is named after the modifier it applies, so the line
+		// says the name once; the typed twin has no modifier name at all.
+		const said = checksAccount();
+		expect(said).toBe(
+			[
+				'Magic items · War Caster — "Advantage to maintain concentration"',
+				'Magic items · Spellguard — "Advantage to maintain concentration"',
+			].join('\n'),
+		);
+		function checksAccount(): string {
+			const checks = drawn(built, 'checks');
+			const mark = checks.querySelectorAll('.sheetsmith-note-mark')[1] as HTMLElement;
+			return (
+				checks.querySelector(`#${mark.getAttribute('aria-describedby') ?? ''}`)
+					?.textContent ?? ''
+			);
+		}
+	});
+
+	it('marks Perception’s bonus with its note, beside the arithmetic it already had', () => {
+		expect(built.sheet('skills.perception')).toBe(2);
+		expect(
+			built.modifiers.breakdown('skills.perception').lines.map((line) => line.label),
+		).toEqual(['Eyes of the Eagle']);
+		expect(noteTexts(built, 'skills.perception')).toEqual([
+			['Elven ears', null, 'Advantage on sight-based checks', null],
+		]);
+		const skills = drawn(built, 'skills');
+		const mark = skills.querySelector('.sheetsmith-note-mark') as HTMLElement;
+		expect(mark.closest('tr')?.textContent).toContain('Perception');
+		// Both marks on that cell: the arithmetic underline and the note's glyph.
+		expect(mark.closest('td')?.querySelector('.sheetsmith-modified')).not.toBeNull();
+	});
+
+	it('marks passive perception with a note and no underline', () => {
+		expect(built.derivedFor('passive_perception')).toBe(10);
+		const card = drawn(built, 'passive_perception');
+		expect(card.querySelector('.sheetsmith-note-mark')).not.toBeNull();
+		expect(card.querySelector('.sheetsmith-modified')).toBeNull();
+	});
+
+	it('lists a note whose condition will not resolve as not applied, and refuses nothing', () => {
+		expect(built.sheet('checks.con_save')).toBe(4);
+		const [note] = noteTexts(built, 'checks.con_save');
+		expect(note?.[2]).toBe('Reroll a failed save');
+		expect(note?.[3]).toEqual(expect.stringContaining('Lucky'));
+	});
+
+	it('says at the row that a card set cannot show a note yet, and draws nothing there', () => {
+		const [outcome] = built.modifiers.outcomes(
+			'abilities.STR += note: Advantage against poison',
+			{ label: 'Belt of Dwarvenkind', values: {} },
+		);
+		expect(outcome?.applies).toBe(false);
+		expect(outcome?.suppressed).toBe(
+			'Abilities · STR cannot show a note yet, so this note is not shown. Its layout has to aim it at a value that draws notes.',
+		);
+		expect(built.modifiers.breakdown('abilities.STR').notes).toBeUndefined();
+	});
+
+	it('Boots of Elvenkind: unknown while Stealth has no key, marked once the author adds one', () => {
+		/*
+		 * **Introduced here and never committed**, so the committed layout reports
+		 * exactly what it reported before notes existed. Worked on in-memory copies
+		 * of the two files, as the author would do it in the vault: add the
+		 * definition and two rows, read the report, type `stealth` into the
+		 * Stealth row's **Publishes as**, and look again.
+		 */
+		const layout = JSON.parse(LAYOUT_TEXT) as {
+			components: { id: string; rows?: { label: string; key?: string }[] }[];
+			modifiers: unknown[];
+		};
+		layout.modifiers.push({
+			name: 'Boots of Elvenkind',
+			target: 'checks.stealth',
+			note: 'Advantage on Dexterity (Stealth) checks',
+			when: 'Worn',
+		});
+		const note = NOTE_TEXT.replace(
+			'| Belt of Dwarvenkind |',
+			[
+				'| Boots of Elvenkind | Boots of Elvenkind | yes | worn |',
+				'| Spare boots | Boots of Elvenkind |  | stowed |',
+				'| Belt of Dwarvenkind |',
+			].join('\n'),
+		);
+		expect(note).not.toBe(NOTE_TEXT);
+
+		const unkeyed = sheetFrom(JSON.stringify(layout), note);
+		const reported = unkeyed.definitions.problems.filter(
+			(problem) => problem.definition === 'Boots of Elvenkind',
+		);
+		expect(reported.map((problem) => problem.message)).toEqual([
+			'"Boots of Elvenkind" changes "checks.stealth", which this layout publishes no value under. Choose one it does, or correct the spelling.',
+		]);
+		const rowsMarked = (from: ReturnType<typeof sheetFrom>) =>
+			Array.from(drawn(from, 'checks').querySelectorAll('.sheetsmith-note-mark')).map(
+				(mark) => mark.closest('tr')?.querySelector('th')?.textContent,
+			);
+		// Nothing marked for Boots: the two marks are the fixture's own.
+		expect(rowsMarked(unkeyed)).toEqual(['Con Save', 'Concentration']);
+
+		const checks = layout.components.find((component) => component.id === 'checks');
+		const stealth = checks?.rows?.find((row) => row.label === 'Stealth');
+		if (stealth === undefined) throw new Error('no Stealth row');
+		stealth.key = 'stealth';
+		const keyed = sheetFrom(JSON.stringify(layout), note);
+		expect(
+			keyed.definitions.problems.filter(
+				(problem) => problem.definition === 'Boots of Elvenkind',
+			),
+		).toEqual([]);
+		expect(noteTexts(keyed, 'checks.stealth')).toEqual([
+			// Once, from the worn row: the stowed one's condition is false.
+			[
+				'Boots of Elvenkind',
+				'Boots of Elvenkind',
+				'Advantage on Dexterity (Stealth) checks',
+				null,
+			],
+		]);
+		expect(rowsMarked(keyed)).toEqual(['Con Save', 'Concentration', 'Stealth']);
+
+		// The key is layout vocabulary: the note's section reads to the same data
+		// under either layout and is written back to the same bytes.
+		const section = getSection(keyed.note, 'Checks')?.body ?? '';
+		const before = unkeyed.entryFor('checks');
+		const after = keyed.entryFor('checks');
+		expect(after.data).toEqual(before.data);
+		expect(after.component.write(after.data, section, after.config)).toBe(section);
+		expect(before.component.write(before.data, section, before.config)).toBe(section);
 	});
 });
 
