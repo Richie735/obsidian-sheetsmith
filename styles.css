@@ -1290,13 +1290,18 @@ body {
    larger than the name it glosses, so only colour and weight were holding
    the hierarchy up while size argued against it. Small tracking is positive
    here — the opposite of the headline number, and the reason neither can
-   share one letter-spacing value. */
+   share one letter-spacing value.
+
+   Muted, the label's own colour, so size and tracking alone hold the rank
+   under the name: a gloss is read back, and `--text-faint` measured 2.12:1
+   light and 2.57:1 dark on a card against 4.5:1 (docs/UI.md §6,
+   docs/features/text-faint-audit.md). */
 .sheetsmith-card-abbreviation {
 	/* The published slot, in the units it was defined in. */
 	min-height: var(--sheetsmith-card-abbr-space);
 	font-size: calc(var(--font-ui-smaller) * 0.85);
 	letter-spacing: 0.06em;
-	color: var(--text-faint);
+	color: var(--text-muted);
 }
 
 /* Six abilities across a narrow pane gives each card about 110px, and
@@ -1771,7 +1776,6 @@ body {
 		border-color: var(--text-muted);
 	}
 
-.sheetsmith-card-abbreviation,
 .sheetsmith-card-derived-unresolved {
 		color: var(--text-muted);
 	}
@@ -1986,14 +1990,26 @@ body {
    behind a skill, the source of an item. The same clothes the abbreviation
    wears under a card's name, and for the same reason: two things of
    equal weight per row leave the eye deciding which one the row is. Opt-in
-   per column, because muted user data otherwise reads as disabled. */
-.sheetsmith-view .sheetsmith-table-input-secondary {
+   per column, because a quieter column of user data otherwise reads as
+   disabled.
+
+   Muted, like the abbreviation, so size and tracking carry the rank: a gloss is
+   read back, and faint measured 2.20:1 light and 2.74:1 dark on a table
+   (`docs/features/text-faint-audit.md`).
+
+   **A gloss that is also a link** takes the same size and tracking on its
+   display layer, and the link colour on the anchor inside it: the rank says
+   "this qualifies the row", the link colour says "this can be followed", and
+   only one of those is discoverable by looking. One selector list, because the
+   two bodies were one. */
+.sheetsmith-view .sheetsmith-table-input-secondary,
+.sheetsmith-view .sheetsmith-table-input-secondary + .sheetsmith-table-link-layer {
 	font-size: calc(var(--font-ui-smaller) * 0.85);
 	letter-spacing: 0.06em;
-	color: var(--text-faint);
+	color: var(--text-muted);
 }
 
-/* Faint is for reading past; the cell being edited is the one being read.
+/* A quieter column is for reading past; the cell being edited is the one being read.
    Colour only — a size change here would reflow the row under the cursor. */
 .sheetsmith-view .sheetsmith-table-input-secondary:hover,
 .sheetsmith-view .sheetsmith-table-input-secondary:focus {
@@ -2424,15 +2440,6 @@ body {
 	font-size: inherit;
 }
 
-/* A gloss that is also a link takes the link colour and keeps the secondary size
-   and tracking. Faintness says "this qualifies the row"; the link colour says
-   "this can be followed", and only one of those two is discoverable by looking. */
-.sheetsmith-view .sheetsmith-table-input-secondary + .sheetsmith-table-link-layer {
-	font-size: calc(var(--font-ui-smaller) * 0.85);
-	letter-spacing: 0.06em;
-	color: var(--text-faint);
-}
-
 /* The delete column is as wide as its glyph, like every other column holding
    a control rather than prose. */
 .sheetsmith-view .sheetsmith-table-remove {
@@ -2861,8 +2868,7 @@ body {
 		border-color: var(--text-muted);
 	}
 
-.sheetsmith-view .sheetsmith-table-unresolved,
-.sheetsmith-view .sheetsmith-table-input-secondary {
+.sheetsmith-view .sheetsmith-table-unresolved {
 		color: var(--text-muted);
 	}
 
@@ -3315,7 +3321,7 @@ body {
 }
 
 .sheetsmith-pool-temp-label {
-	color: var(--text-faint);
+	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
 	letter-spacing: 0.04em;
 	text-transform: uppercase;
@@ -3691,9 +3697,14 @@ body {
    never meant to exceed it. Draining the colour and lending the accent say
    "different" without the component asserting "bad" and "good" about a game
    it does not know — the same restraint it already shows by not clamping.
-   Colour is never the only carrier: the live region says the state too. */
+   Colour is never the only carrier: the live region says the state too.
+
+   Drained to muted and not faint: the headline is still the value a reader
+   reads back, and faint measured 2.12:1 light and 2.57:1 dark on a card, under
+   even the 3:1 a 28px bold number needs. Muted against the value's normal is
+   still a drain (`docs/features/text-faint-audit.md`). */
 .sheetsmith-view .sheetsmith-pool-spent {
-	color: var(--text-faint);
+	color: var(--text-muted);
 }
 
 .sheetsmith-view .sheetsmith-pool-over {
@@ -3753,7 +3764,6 @@ body {
 		color: var(--text-normal);
 	}
 
-.sheetsmith-pool-temp-label,
 .sheetsmith-pool-max-unresolved {
 		color: var(--text-muted);
 	}
@@ -5043,7 +5053,7 @@ a.sheetsmith-notice-action {
 }
 
 /* The current step's name, in the clothes a secondary table column wears: a
-   size down, tracked, and faint. It is what makes a threshold track legible —
+   size down, tracked, and muted. It is what makes a threshold track legible —
    exhaustion and corruption are ladders where the number is an index into a
    rule, and a row of anonymous segments leaves the player counting segments and then
    looking the count up somewhere else. An unnamed run has no such line and
@@ -5051,7 +5061,7 @@ a.sheetsmith-notice-action {
 .sheetsmith-track-step {
 	max-width: 100%;
 	overflow: hidden;
-	color: var(--text-faint);
+	color: var(--text-muted);
 	font-size: calc(var(--font-ui-smaller) * 0.85);
 	letter-spacing: 0.06em;
 	text-overflow: ellipsis;
@@ -5133,7 +5143,6 @@ a.sheetsmith-notice-action {
 		border-color: var(--interactive-accent);
 	}
 
-.sheetsmith-track-step,
 .sheetsmith-track-unresolved {
 		color: var(--text-muted);
 	}
@@ -6860,21 +6869,14 @@ a.sheetsmith-notice-action {
 	display: none;
 }
 
-/* **One variable up from the shared abbreviation, and the job is why.** The
-   clothes are `.sheetsmith-card-abbreviation`'s — a size down, tracked, quiet —
-   and its colour is `--text-faint`, which a design review measured at **2.20:1**
-   light and 2.74:1 dark against `legibility.md` §3's 4.5:1, at the 10.2px this
-   type already is. On a Card set that costs nothing: "STR" restates "STRENGTH"
-   directly above it, so the faint copy is a second sighting of a word already
-   read. Here — correctly, wherever no strip is over it: the unheaded list, and
-   a headed one below its threshold — "Uses" is the *only* place a sighted reader
-   meets the field's name, and below it they see a bare number. (On a wide
-   headed list this span is hidden and the strip names the column.) `--text-muted` measures 6.41:1 and 7.50:1, which is what this
-   component's own chevron already wears, and the size and the tracking stay so
-   the name is still visibly secondary to the value beside it. */
-.sheetsmith-view .sheetsmith-record-field .sheetsmith-card-abbreviation {
-	color: var(--text-muted);
-}
+/* **A record field's name wears `.sheetsmith-card-abbreviation` unaltered, and
+   the job is why its muted matters most here.** Wherever no strip is over it —
+   the unheaded list, and a headed one below its threshold — "Uses" is the
+   *only* place a sighted reader meets the field's name, and below it they see a
+   bare number. (On a wide headed list this span is hidden and the strip names
+   the column.) The size and the tracking keep it visibly secondary to the value
+   beside it. It needed an override here while the shared rank was faint
+   (`docs/features/text-faint-audit.md`). */
 
 /* **The ceiling a bounded number reads against, in Pool's own vocabulary.**
    `Uses 1` cannot say whether that is all of them or one of three, and a uses
@@ -7683,9 +7685,8 @@ a.sheetsmith-notice-action {
 		}
 
 		/* **The secondary type, borrowed and not copied**: the shared rank for a
-		   name the eye has to find and not read (§9 of docs/UI.md), in the muted
-		   colour a record's own field name wears for the same measured reason —
-		   `--text-faint` is 2.20:1 here. Centred over the control and never
+		   name the eye has to find and not read (§9 of docs/UI.md), colour and
+		   all, as a record's own field name wears it. Centred over the control and never
 		   wrapped, so a word wider than its control sets the track's width, which
 		   is what a column heading does. The margin is the field's own, so a
 		   heading and its control are centred on the same box. */
@@ -7695,7 +7696,6 @@ a.sheetsmith-notice-action {
 			margin-inline: calc((var(--size-4-5) - var(--size-2-2)) / 2);
 			white-space: nowrap;
 			text-align: center;
-			color: var(--text-muted);
 		}
 
 		/* **A heading over a column of words starts where the words start.** A
