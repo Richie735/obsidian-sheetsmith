@@ -121,6 +121,23 @@ describe('installing a starter', () => {
 		);
 	});
 
+	it('leaves an installed Starter 5e alone, so its saves and skills gain no keys', async () => {
+		// The starter now publishes every save and skill
+		// (`docs/features/modifier-notes.md` B). That reaches new installs only: a
+		// vault already holding the layout keeps its bytes, and adding the keys is
+		// the author's own edit.
+		await app.vault.createFolder(LAYOUT_FOLDER);
+		await app.vault.create(pathOf(fifth.name), '{"name": "Starter 5e", "edited": true}');
+		const result = await installStarter(vault(), LAYOUT_FOLDER, fifth);
+		expect(result).toEqual({
+			error: 'A layout named "Starter 5e" already exists.',
+		});
+		const file = app.vault.getFileByPath(pathOf(fifth.name));
+		expect(await app.vault.read(file as NonNullable<typeof file>)).toBe(
+			'{"name": "Starter 5e", "edited": true}',
+		);
+	});
+
 	it('refuses a source the parser will not take, in the parser’s words', async () => {
 		/*
 		 * The round-trip case in `index.test.ts` is what stops this state
