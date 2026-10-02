@@ -78,14 +78,9 @@ export function renderNoteMark(
 	setIcon(button, ACCOUNT_GLYPH);
 	const twin = parent.createSpan({ cls: 'sheetsmith-sr-only', text: account });
 	twin.id = `sheetsmith-note-account-${++twins}`;
-	/*
-	 * Set again on focus, because the shared popover owns the attribute while it
-	 * is open — it points the anchor at itself and removes the attribute when it
-	 * closes — so after one press the twin would otherwise be unreachable.
-	 */
-	const describe = () => button.setAttribute('aria-describedby', twin.id);
-	describe();
-	button.addEventListener('focus', describe);
+	// The shared popover points the button at itself while it is open and puts
+	// this back when it closes, so the twin survives a press.
+	button.setAttribute('aria-describedby', twin.id);
 	button.addEventListener('click', (event) => {
 		// A press on the mark is the mark's, never the card's or the cell's that
 		// holds it: a card routes a press to its nearest field, and a computed

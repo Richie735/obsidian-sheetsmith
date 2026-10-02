@@ -32,6 +32,21 @@ describe('popover', () => {
 		expect(el.hasAttribute('aria-describedby')).toBe(false);
 	});
 
+	it('gives the anchor back the description it had before', () => {
+		const el = anchor();
+		el.setAttribute('aria-describedby', 'its-own-twin');
+		showPopover(el, 'Expertise');
+		expect(el.getAttribute('aria-describedby')).not.toBe('its-own-twin');
+		closePopover();
+		expect(el.getAttribute('aria-describedby')).toBe('its-own-twin');
+		// And again when a second popover replaces the first on the same anchor,
+		// so the restore is not taken from the first bubble's id.
+		showPopover(el, 'one');
+		showPopover(el, 'two');
+		closePopover();
+		expect(el.getAttribute('aria-describedby')).toBe('its-own-twin');
+	});
+
 	it('releases every listener it registered', () => {
 		const onDoc = vi.spyOn(document, 'addEventListener');
 		const offDoc = vi.spyOn(document, 'removeEventListener');
