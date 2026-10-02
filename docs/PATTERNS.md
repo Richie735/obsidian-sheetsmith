@@ -285,10 +285,12 @@ wrapper taking the item titles as arguments for one caller is the generalisation
 ahead of evidence §1 refuses. The scan names that one file rather than being
 dropped, so a second import is still a decision made there.
 
-The allowlist has since gained no name, and the sibling list has gained three:
+The allowlist has since gained no name, and the sibling list has gained four:
 `components/modifier-form.ts`, the markup of that form; `components/effective-value.ts`;
-and `components/typed-value.ts`, which is what a typed value stored as text means
-before any formula runs. The last two are on it for **reuse** rather than atomicity,
+`components/typed-value.ts`, which is what a typed value stored as text means
+before any formula runs; and `components/note-mark.ts`, the mark on a value a
+modifier has noted, at three consumers — Card through `card-face.ts`, Table and
+Roster — which is §1's extraction line met exactly. The last three are on it for **reuse** rather than atomicity,
 which is the distinction the entry below turns on — and `typed-value.ts` is the one
 that shows the boundary working rather than merely permitting: extraction was refused
 once in review on the grounds that §2 reserves the allowlist edit and that
@@ -322,8 +324,11 @@ record of it. **A one-consumer sibling arrives with the atomicity argument or it
 not arrive**, which is the sentence a reader of this file alone needs, because
 "shared" would admit the next one with no argument at all.
 
-`setIcon` is the one import of its kind, and **four components take it now** —
-`table.ts`, `record-set.ts`, `passport.ts` and `track.ts`. This sentence said
+`setIcon` is the one import of its kind, and **four components and one painter
+take it now** — `table.ts`, `record-set.ts`, `passport.ts`, `track.ts`, and
+`note-mark.ts`, which draws its glyph itself rather than taking it as an argument
+the way `modifier-form.ts` does, since the allowlist is a list of names and not
+of files. This sentence said
 "`table.ts` takes `setIcon`" while three more had reached for it, which is the
 drift this tier is most prone to: the *rule* is that the allowlist stays one
 name long, and it has, so nothing was violated and nothing reported. A count of
@@ -420,7 +425,7 @@ Every component follows the same order. A reader who knows one knows them all.
    `type`, `description`, `storage`, `showsOneChild`, `formulaFields`,
    `configFields`, `palette`, `configName`, `example`, `sample`, `read`,
    `scopeValues`, `scopeRows`, `scopeModifiers`, `write`, `hasBuffer`,
-   `resetColumns`, `resetWhole`, `applyReset`, `render`.
+   `drawsNotes`, `resetColumns`, `resetWhole`, `applyReset`, `render`.
    Contract first, then the data path in the order it runs, then rendering last
    because it is the longest. `showsOneChild` sits beside `storage` because it is
    the same kind of fact: what this component is structurally, before anything
@@ -442,7 +447,10 @@ Every component follows the same order. A reader who knows one knows them all.
    to somebody else's number. `resetColumns` sits beside `hasBuffer` for the reason
    `hasBuffer` sits where it does: both are declarations the layout editor reads to
    decide what a reset binding may say, and a declaration comes before the
-   behaviour it conditions. `resetWhole` sits directly after `resetColumns`
+   behaviour it conditions. `drawsNotes` sits directly after `hasBuffer` because
+   it is the same kind of declaration — a fact about what this component draws
+   that nothing outside it could infer (`docs/features/modifier-notes.md`).
+   `resetWhole` sits directly after `resetColumns`
    because it answers the same picker read the other way: one names the parts a
    binding may pick, the other names what the picker calls a binding that picks
    none of them (`docs/features/record-set-reset-field-targeting.md`).
@@ -777,6 +785,16 @@ A component inventing its own is the failure mode to watch for.
   declaring only the first offers an author a column to bind and then passes over
   the binding when the button is pressed — the rule above one step over, and the
   same dead control with nothing to say so.
+- **A component publishing a name either draws its notes or refuses them as a
+  target** [checked: `contract.test.ts`, `note-contract.test.ts`]. `drawsNotes`
+  is the declaration, and both halves read it through one derivation,
+  `noteTargets`: a declaring component's DOM must carry every note pushed at each
+  name its sample publishes, and a silent one must have none of its names among
+  the note targets, so a note aimed at one is reported as not a note target yet.
+  Neither half alone would do: a component could declare the flag and draw
+  nothing, or draw without the check knowing. The DOM half is a file of its own
+  because `contract.test.ts` runs without a DOM on purpose
+  (`docs/features/modifier-notes.md`).
 - **Declaring `resetWhole` obliges `resetColumns`** [checked: `contract.test.ts`].
   `resetWhole` is what the **Acts on** picker calls a binding naming none of a
   component's parts, so without a picker there is nowhere to offer it — a string
