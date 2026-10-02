@@ -1832,7 +1832,8 @@ describe('a list field naming its own columns', () => {
 		await settle(harness.pane);
 		for (const remove of Array.from(
 			harness.container.querySelectorAll<HTMLButtonElement>(
-				'.sheetsmith-entry-row button[aria-label="Remove entry"]',
+				'.sheetsmith-entry-row button[aria-label="Remove Elf"], ' +
+					'.sheetsmith-entry-row button[aria-label="Remove Dwarf"]',
 			),
 		).reverse()) {
 			remove.click();
