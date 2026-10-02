@@ -2654,6 +2654,139 @@ describe('no two rules declare the same body', () => {
 	});
 });
 
+describe('faint text on a sheet is a placeholder or a disabled control', () => {
+	/*
+	 * `--text-faint` measures **2.12:1 light and 2.57:1 dark on a card**, 2.20 and
+	 * 2.74 on a table or a placed box, and 2.30 and 2.97 on `--background-primary`
+	 * — under `legibility.md` §3's 4.5:1 for small text and its 3:1 for large text,
+	 * on every surface a sheet has, in both themes. So text a reader reads back is
+	 * never faint (`docs/UI.md` §6, `docs/features/text-faint-audit.md`).
+	 *
+	 * It stays in two kinds of place, and the selector says which: a
+	 * placeholder, which is a hint standing in for a value and is the app's own
+	 * `--input-placeholder-color`; and a disabled control, which WCAG 1.4.3
+	 * exempts and which carries its state in `disabled` besides. Twenty-three
+	 * faint text colours sat in `sheet.css` before the audit, each landing
+	 * silently, because nothing here distinguishes a quiet gloss from an
+	 * illegible one. This is that distinction.
+	 *
+	 * **`sheet.css` alone**, read from its source rather than from the assembled
+	 * file: the editor's and the shared part's faint text were outside the audit,
+	 * and the editor's disabled selects state their own reason at the rule.
+	 *
+	 * **The `color` property only.** A faint border or fill is a different bar —
+	 * 3:1 for a mark that alone carries a state — and a track segment's resting
+	 * outline is one, measured where it is drawn.
+	 */
+	const SHEET = readFileSync(
+		new URL('./styles/sheet.css', import.meta.url),
+		'utf8',
+	).replace(/\/\*[\s\S]*?\*\//g, ' ');
+
+	/**
+	 * A faint text colour on a selector the rule above does not cover, each with
+	 * the reason it stays. Empty: the audit lifted everything else. An entry is the
+	 * whole selector list of one rule, as `selectorList` joins it.
+	 */
+	const FAINT_ON_PURPOSE: { selector: string; reason: string }[] = [];
+
+	/** Every rule declaring a faint text colour, by its joined selector list. */
+	function faintRules(text: string): string[] {
+		return rules(text)
+			.filter((rule) =>
+				declarations(rule.body).some((one) =>
+					/^color: .*--text-faint\b/.test(one),
+				),
+			)
+			.map((rule) => selectorList(rule.selector).join(', '));
+	}
+
+	/**
+	 * True where every selector in the list is a placeholder or a disabled
+	 * control. Both anchored at the end, so the subject is the placeholder or the
+	 * disabled control itself: a bare `includes` would pass `:not(:disabled)`,
+	 * which is the enabled control, and `.x:disabled + .label`, which is text
+	 * beside it.
+	 */
+	function keepsFaint(list: string): boolean {
+		return selectorList(list).every(
+			(one) => /::placeholder$/.test(one) || /:disabled$/.test(one),
+		);
+	}
+
+	function unexplained(
+		text: string,
+		exemptions: { selector: string }[] = FAINT_ON_PURPOSE,
+	): string[] {
+		return faintRules(text).filter(
+			(list) =>
+				!keepsFaint(list) &&
+				!exemptions.some((entry) => entry.selector === list),
+		);
+	}
+
+	/** Each exemption that no longer names a faint rule this stylesheet holds. */
+	function stale(
+		text: string,
+		exemptions: { selector: string; reason: string }[] = FAINT_ON_PURPOSE,
+	): string[] {
+		const found = faintRules(text);
+		return exemptions
+			.filter((entry) => !found.includes(entry.selector))
+			.map(({ reason }) => reason);
+	}
+
+	it('finds the faint rules it is meant to be checking', () => {
+		// Both kinds, so a parse that stopped reading bodies, or a stylesheet
+		// that lost the file, cannot pass by finding nothing to object to.
+		const found = faintRules(SHEET);
+		expect(found.some((list) => list.includes('::placeholder'))).toBe(true);
+		expect(found.some((list) => list.includes(':disabled'))).toBe(true);
+	});
+
+	it('keeps faint to placeholders and disabled controls, past the ones kept on purpose', () => {
+		expect(unexplained(SHEET)).toEqual([]);
+	});
+
+	it('holds each exemption to a faint rule that still exists', () => {
+		expect(stale(SHEET)).toEqual([]);
+	});
+
+	it('would catch a faint gloss, in a list or alone', () => {
+		const faint = 'color: var(--text-faint);';
+		expect(unexplained(`.sheetsmith-view .sheetsmith-x { ${faint} }`)).toEqual([
+			'.sheetsmith-view .sheetsmith-x',
+		]);
+		// One read-back selector in a list of placeholders is still reported.
+		expect(unexplained(`.a::placeholder, .b { ${faint} }`)).toEqual([
+			'.a::placeholder, .b',
+		]);
+		// Inside a query too, which is where a flat parse goes blind.
+		expect(
+			unexplained(`@media (prefers-contrast: more) { .b { ${faint} } }`),
+		).toEqual(['.b']);
+		// `:disabled` counts only as the subject: not negated, not a neighbour's.
+		expect(unexplained(`.a:not(:disabled) { ${faint} }`)).toEqual([
+			'.a:not(:disabled)',
+		]);
+		expect(unexplained(`.x:disabled + .label { ${faint} }`)).toEqual([
+			'.x:disabled + .label',
+		]);
+		// The two kinds pass, a `:not()` inside a placeholder included.
+		expect(
+			unexplained(
+				`.a:not(.b, .c)::placeholder, .d:disabled { ${faint} }`,
+			),
+		).toEqual([]);
+		// A faint border is not a text colour.
+		expect(unexplained(`.e { border-color: var(--text-faint); }`)).toEqual([]);
+		// An exemption covers its own list, and is stale once its rule goes.
+		const planted = [{ selector: '.b', reason: 'planted' }];
+		expect(unexplained(`.b { ${faint} }`, planted)).toEqual([]);
+		expect(stale('', planted)).toEqual(['planted']);
+	});
+});
+
 describe('every declaration names a real CSS property', () => {
 	/*
 	 * `segment-sizing: border-segment` shipped in `.sheetsmith-track-segment`

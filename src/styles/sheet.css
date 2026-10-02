@@ -631,13 +631,18 @@
    larger than the name it glosses, so only colour and weight were holding
    the hierarchy up while size argued against it. Small tracking is positive
    here — the opposite of the headline number, and the reason neither can
-   share one letter-spacing value. */
+   share one letter-spacing value.
+
+   Muted, the label's own colour, so size and tracking alone hold the rank
+   under the name: a gloss is read back, and `--text-faint` measured 2.12:1
+   light and 2.57:1 dark on a card against 4.5:1 (docs/UI.md §6,
+   docs/features/text-faint-audit.md). */
 .sheetsmith-card-abbreviation {
 	/* The published slot, in the units it was defined in. */
 	min-height: var(--sheetsmith-card-abbr-space);
 	font-size: calc(var(--font-ui-smaller) * 0.85);
 	letter-spacing: 0.06em;
-	color: var(--text-faint);
+	color: var(--text-muted);
 }
 
 /* Six abilities across a narrow pane gives each card about 110px, and
@@ -925,13 +930,6 @@
 	border: 0;
 }
 
-/* Unresolved formula is a status, not a value — and not the same glyph
-   as an empty input. */
-.sheetsmith-card-derived-unresolved {
-	color: var(--text-faint);
-	font-weight: var(--font-normal);
-}
-
 /* A number something has been pushed at, on a card or in a cell (SPEC §5).
 
    One rule for both consumers, and the mark is a *shape* channel rather than a
@@ -1110,11 +1108,6 @@
 .sheetsmith-card,
 .sheetsmith-card-has-derived .sheetsmith-card-value {
 		border-color: var(--text-muted);
-	}
-
-.sheetsmith-card-abbreviation,
-.sheetsmith-card-derived-unresolved {
-		color: var(--text-muted);
 	}
 
 /* One step further for someone who asked for it, since the default is
@@ -1327,14 +1320,26 @@
    behind a skill, the source of an item. The same clothes the abbreviation
    wears under a card's name, and for the same reason: two things of
    equal weight per row leave the eye deciding which one the row is. Opt-in
-   per column, because muted user data otherwise reads as disabled. */
-.sheetsmith-view .sheetsmith-table-input-secondary {
+   per column, because a quieter column of user data otherwise reads as
+   disabled.
+
+   Muted, like the abbreviation, so size and tracking carry the rank: a gloss is
+   read back, and faint measured 2.20:1 light and 2.74:1 dark on a table
+   (`docs/features/text-faint-audit.md`).
+
+   **A gloss that is also a link** takes the same size and tracking on its
+   display layer, and the link colour on the anchor inside it: the rank says
+   "this qualifies the row", the link colour says "this can be followed", and
+   only one of those is discoverable by looking. One selector list, because the
+   two bodies were one. */
+.sheetsmith-view .sheetsmith-table-input-secondary,
+.sheetsmith-view .sheetsmith-table-input-secondary + .sheetsmith-table-link-layer {
 	font-size: calc(var(--font-ui-smaller) * 0.85);
 	letter-spacing: 0.06em;
-	color: var(--text-faint);
+	color: var(--text-muted);
 }
 
-/* Faint is for reading past; the cell being edited is the one being read.
+/* A quieter column is for reading past; the cell being edited is the one being read.
    Colour only — a size change here would reflow the row under the cursor. */
 .sheetsmith-view .sheetsmith-table-input-secondary:hover,
 .sheetsmith-view .sheetsmith-table-input-secondary:focus {
@@ -1765,15 +1770,6 @@
 	font-size: inherit;
 }
 
-/* A gloss that is also a link takes the link colour and keeps the secondary size
-   and tracking. Faintness says "this qualifies the row"; the link colour says
-   "this can be followed", and only one of those two is discoverable by looking. */
-.sheetsmith-view .sheetsmith-table-input-secondary + .sheetsmith-table-link-layer {
-	font-size: calc(var(--font-ui-smaller) * 0.85);
-	letter-spacing: 0.06em;
-	color: var(--text-faint);
-}
-
 /* The delete column is as wide as its glyph, like every other column holding
    a control rather than prose. */
 .sheetsmith-view .sheetsmith-table-remove {
@@ -1787,8 +1783,11 @@
    invent one — two consumers earn duplication, not a module (PATTERNS §1), and
    UI.md §9 gains a row when a third appears.
 
-   It is always rendered, and faint: UI.md §7 rules out a hover-only
-   affordance, and a phone has no hover to reveal one with. */
+   It is always rendered, and muted at rest: UI.md §7 rules out a hover-only
+   affordance, and a phone has no hover to reveal one with, so the resting
+   colour is the only one a touch reader ever gets. Faint measured 2.20:1 light
+   and 2.74:1 dark on a table; muted is 6.41:1 and 7.50:1. What guards the press
+   is arming, not faintness (`docs/features/text-faint-audit.md`). */
 .sheetsmith-view .sheetsmith-table-remove-button {
 	display: inline-flex;
 	align-items: center;
@@ -1806,7 +1805,7 @@
 	box-shadow: none;
 	font-size: var(--font-ui-small);
 	line-height: 1;
-	color: var(--text-faint);
+	color: var(--text-muted);
 	cursor: pointer;
 	/* Anchors the hit target below. */
 	position: relative;
@@ -1819,7 +1818,7 @@
 
 /* The icon takes the app's small icon size rather than the 24px a Lucide SVG
    carries by default, which would overflow a control sized to a level ring. It
-   paints in `currentColor`, so the faint, full-contrast and armed states all
+   paints in `currentColor`, so the resting, full-contrast and armed states all
    reach it without a rule of their own. */
 .sheetsmith-view .sheetsmith-table-remove-button .svg-icon {
 	width: var(--icon-s);
@@ -1827,7 +1826,7 @@
 }
 
 /* Full contrast for the row being looked at, and for the control a keyboard is
-   on. Faint is for reading past, which is every other row.
+   on. Every other row keeps the resting muted.
 
    **Both state rules stand down for an armed control**, and that is the whole
    cascade problem in this block rather than a nicety. An armed control is one
@@ -2126,9 +2125,11 @@ body {
 
    It was `--text-faint`, copied from the delete glyph one column across on a
    consistency argument, and the argument copied the wrong half. **The delete
-   rule's own words are "faint is for reading past, which is every other row"** —
-   true of a destructive control you never want pressed by accident, and exactly
-   backwards for the entry point of a column. Measured off the PNGs, faint is
+   rule's own words were "faint is for reading past, which is every other row"** —
+   arguable for a destructive control you never want pressed by accident, and
+   exactly backwards for the entry point of a column. The delete glyph has since
+   been lifted to muted too (`docs/features/text-faint-audit.md`), on the ground
+   that arming, not faintness, guards its press. Measured off the PNGs, faint is
    **2.20:1 light and 2.74:1 dark**: under `legibility.md` §3's 4.5:1 for a
    meaningful glyph and under even the 3:1 a state mark owes.
 
@@ -2143,11 +2144,14 @@ body {
    nothing to discover the column from. `harness/index.html` photographs that
    state.
 
-   **The cost, taken deliberately:** an empty modifier cell now reads louder than
-   the delete control beside it. That is right rather than regrettable. Prominence
-   should track how much a control wants pressing, adding a modifier is the thing
-   a reader came to do, and deleting a row is not — so the two diverging is the
-   two jobs differing, not an inconsistency. */
+   **The ranking this once bought is gone, and that was taken deliberately.** An
+   empty modifier cell used to read louder than the delete control beside it, on
+   the argument that prominence should track how much a control wants pressing.
+   The text-faint audit ruled the other way for the delete: on a phone the resting
+   colour is the only one a reader ever gets, and at 2.20:1 a destructive control
+   is one nobody can find to check before pressing. So the two columns now share
+   muted, and what separates the jobs is that the delete arms before it fires
+   (`docs/features/text-faint-audit.md`). */
 
 .sheetsmith-view .sheetsmith-table-value {
 	font-weight: var(--font-semibold);
@@ -2159,12 +2163,6 @@ body {
 	   read as the number giving way rather than a warning arriving. A colour
 	   fade, not motion, so reduced-motion has nothing to strip. */
 	transition: color 200ms ease;
-}
-
-/* Status, not data: the same treatment "?" gets on a card. */
-.sheetsmith-view .sheetsmith-table-unresolved {
-	font-weight: var(--font-normal);
-	color: var(--text-faint);
 }
 
 .sheetsmith-view .sheetsmith-table-empty {
@@ -2202,20 +2200,9 @@ body {
 		border-color: var(--text-muted);
 	}
 
-.sheetsmith-view .sheetsmith-table-unresolved,
-.sheetsmith-view .sheetsmith-table-input-secondary {
-		color: var(--text-muted);
-	}
-
 /* An empty ring against a faint outline is the whole signal here. */
 .sheetsmith-view .sheetsmith-level-ring {
 		border-color: var(--text-muted);
-	}
-
-/* Faint is a contrast the reader has said they do not want, and this one is
-	   a control rather than something to read past. */
-.sheetsmith-view .sheetsmith-table-remove-button {
-		color: var(--text-muted);
 	}
 
 /* The ramp trades contrast for a shape that can be read down the column,
@@ -2511,9 +2498,25 @@ body {
 	outline-offset: 0;
 }
 
-/* "?" is a status rather than a number, and must not read as one. */
+/* An unresolved formula's "?", on a card, in a computed cell or a total, and in
+   Pool's ceiling: a status rather than a value, and not the same glyph as an
+   empty input. The weight drops a rank under the value it stands in for.
+
+   **Muted rather than faint, though the glyph is already a second channel.** The
+   `?` replaces the digits and each carries a `title` with the reason, so by
+   `docs/UI.md` §6 it could have stayed faint — but a channel is only a channel
+   while the mark is visible, and faint measured 2.12:1 light and 2.57:1 dark on a
+   card, under even the 3:1 a 28px card `?` needs. Muted clears both bars on
+   every surface these sit on (`docs/features/text-faint-audit.md`).
+
+   **Here, after the last of the rules it overrides**, not at Card's: a cell's
+   `?` is also `.sheetsmith-view .sheetsmith-table-value`, which sets the
+   semibold at equal weight above, so a fold placed earlier would lose the
+   weight. */
+.sheetsmith-card-derived-unresolved,
+.sheetsmith-view .sheetsmith-table-unresolved,
 .sheetsmith-pool-max-unresolved {
-	color: var(--text-faint);
+	color: var(--text-muted);
 	font-weight: var(--font-normal);
 }
 
@@ -2617,14 +2620,16 @@ body {
 
 /* A buffer at nothing sits on the card all session saying "0". Draining its
    colour there means the pill's presence carries information: you have a
-   buffer right now. The field stays fully legible once it holds anything. */
-.sheetsmith-pool-temp-empty {
-	color: var(--text-faint);
-}
+   buffer right now. The field takes the full colour once it holds anything.
 
-.sheetsmith-pool-temp-empty .sheetsmith-pool-temp-label,
+   Drained to muted rather than faint: the `0` is a value read back, not a
+   placeholder, and faint measured 2.30:1 light and 2.97:1 dark on the pill. It
+   is the drain a spent value takes, so a Pool says "at nothing" one way. The
+   label is muted at rest, so it needs no entry here
+   (`docs/features/text-faint-audit.md`). */
+.sheetsmith-pool-temp-empty,
 .sheetsmith-view .sheetsmith-pool-temp-empty .sheetsmith-pool-temp-input {
-	color: var(--text-faint);
+	color: var(--text-muted);
 }
 
 /* Lit for a moment as the buffer absorbs a spend. The pool's own number does
@@ -2656,7 +2661,7 @@ body {
 }
 
 .sheetsmith-pool-temp-label {
-	color: var(--text-faint);
+	color: var(--text-muted);
 	font-size: var(--font-ui-smaller);
 	letter-spacing: 0.04em;
 	text-transform: uppercase;
@@ -3032,9 +3037,14 @@ body {
    never meant to exceed it. Draining the colour and lending the accent say
    "different" without the component asserting "bad" and "good" about a game
    it does not know — the same restraint it already shows by not clamping.
-   Colour is never the only carrier: the live region says the state too. */
+   Colour is never the only carrier: the live region says the state too.
+
+   Drained to muted and not faint: the headline is still the value a reader
+   reads back, and faint measured 2.12:1 light and 2.57:1 dark on a card, under
+   even the 3:1 a 28px bold number needs. Muted against the value's normal is
+   still a drain (`docs/features/text-faint-audit.md`). */
 .sheetsmith-view .sheetsmith-pool-spent {
-	color: var(--text-faint);
+	color: var(--text-muted);
 }
 
 .sheetsmith-view .sheetsmith-pool-over {
@@ -3092,11 +3102,6 @@ body {
 .sheetsmith-pool-adjust-direction,
 .sheetsmith-pool-preview {
 		color: var(--text-normal);
-	}
-
-.sheetsmith-pool-temp-label,
-.sheetsmith-pool-max-unresolved {
-		color: var(--text-muted);
 	}
 
 }
@@ -3203,7 +3208,15 @@ body {
 }
 
 /* A declared trigger nothing binds to yet. Shown rather than hidden, so a
-   half-built layout does not read as a broken one. */
+   half-built layout does not read as a broken one.
+
+   **Faint on purpose, and one of the two places a sheet keeps it.** An inactive
+   control is exempt from WCAG 1.4.3's contrast, and this one carries its state
+   in three channels besides the colour: `disabled`, which is announced; an
+   `aria-label` and `title` saying nothing on this sheet resets on it; and no
+   hover answer. Faint is the app's own disabled reading. It measures 2.30:1
+   light and 2.97:1 dark on the button's own `--background-primary`
+   (`docs/features/text-faint-audit.md`, `styles.test.ts` holds the rule). */
 .sheetsmith-trigger:disabled {
 	color: var(--text-faint);
 	cursor: default;
@@ -3589,7 +3602,17 @@ a.sheetsmith-notice-action {
    the *treatment* and not only the measurement (`docs/UI.md` §9): three glyph
    buttons on one card must not measure differently under one finger. What it
    does not share is the class name — this one opens no picker and performs no
-   action, so it is named for what it is about. */
+   action, so it is named for what it is about.
+
+   **Muted for all four, and for two reasons that arrive at one value.** The
+   pickers are entry points — **Add** is the only route to a row — and faint for
+   an entry point is exactly backwards. The bolt and the note mark read as a
+   state rather than an affordance: something *is* changing this value, and a
+   reader who never presses one should still see that it is there. At this size
+   a faint glyph reads as a smudge rather than a mark, 2.12:1 light and 2.57:1
+   dark on a card, which is the modifier cell's measured reason (`docs/UI.md` §9,
+   `docs/features/text-faint-audit.md`). The pickers were faint once and the
+   other three overridden a rank above them. */
 .sheetsmith-view .sheetsmith-track-action-button,
 .sheetsmith-view .sheetsmith-track-modifier-button,
 .sheetsmith-view .sheetsmith-pool-modifier-button,
@@ -3605,7 +3628,7 @@ a.sheetsmith-notice-action {
 	border-radius: 50%;
 	background-color: transparent;
 	box-shadow: none;
-	color: var(--text-faint);
+	color: var(--text-muted);
 	cursor: pointer;
 	transition:
 		background-color 160ms ease,
@@ -3634,18 +3657,6 @@ a.sheetsmith-notice-action {
 .sheetsmith-view .sheetsmith-note-mark:focus-visible {
 	outline: 2px solid var(--interactive-accent);
 	outline-offset: 2px;
-}
-
-/* The bolt reads as a state rather than as an affordance, so it sits a rank
-   above the two pickers' faint glyphs: something *is* changing this run, and a
-   reader who never presses it should still see that it is there. --text-muted
-   is the same value a modifier cell's own glyph was raised to, and for the
-   measured reason recorded there — at this size a faint bolt reads as a smudge
-   rather than as a mark (`docs/UI.md` §9). */
-.sheetsmith-view .sheetsmith-track-modifier-button,
-.sheetsmith-view .sheetsmith-pool-modifier-button,
-.sheetsmith-view .sheetsmith-note-mark {
-	color: var(--text-muted);
 }
 
 /* A rank of ink down from the pickers', and only the ink: the box above stays
@@ -4384,7 +4395,7 @@ a.sheetsmith-notice-action {
 }
 
 /* The current step's name, in the clothes a secondary table column wears: a
-   size down, tracked, and faint. It is what makes a threshold track legible —
+   size down, tracked, and muted. It is what makes a threshold track legible —
    exhaustion and corruption are ladders where the number is an index into a
    rule, and a row of anonymous segments leaves the player counting segments and then
    looking the count up somewhere else. An unnamed run has no such line and
@@ -4392,7 +4403,7 @@ a.sheetsmith-notice-action {
 .sheetsmith-track-step {
 	max-width: 100%;
 	overflow: hidden;
-	color: var(--text-faint);
+	color: var(--text-muted);
 	font-size: calc(var(--font-ui-smaller) * 0.85);
 	letter-spacing: 0.06em;
 	text-overflow: ellipsis;
@@ -4401,10 +4412,12 @@ a.sheetsmith-notice-action {
 
 /* A count that is present and did not resolve. "?" is reserved for exactly
    that (SPEC §5); an empty run is a state the control shows, not a missing
-   value, so it is never drawn as "—". */
+   value, so it is never drawn as "—". Muted on the card's own "?"'s argument
+   (above, at `.sheetsmith-card-derived-unresolved`); its own rule because it is
+   semibold and sized for the run on purpose. */
 .sheetsmith-track-unresolved {
 	margin: auto 0;
-	color: var(--text-faint);
+	color: var(--text-muted);
 	font-size: var(--font-ui-medium);
 	font-weight: var(--font-semibold);
 }
@@ -4472,11 +4485,6 @@ a.sheetsmith-notice-action {
 
 .sheetsmith-track-segment-on {
 		border-color: var(--interactive-accent);
-	}
-
-.sheetsmith-track-step,
-.sheetsmith-track-unresolved {
-		color: var(--text-muted);
 	}
 
 }
@@ -4727,10 +4735,34 @@ a.sheetsmith-notice-action {
 	caret-color: transparent;
 }
 
-/* A hint the reader can act on is worth showing through, so the placeholder is
-   the one part of an unfocused field that stays visible — it is what says an
-   empty box is one click from being typed in. */
-.sheetsmith-view .sheetsmith-rich-text-input::placeholder {
+/* **Every placeholder on a sheet, in one rule, and faint on purpose.** This is
+   one of the two places a sheet keeps `--text-faint` for text, and
+   `styles.test.ts` holds the colour to them (`docs/UI.md` §6,
+   `docs/features/text-faint-audit.md`).
+
+   The reason is the app's: Obsidian's own `--input-placeholder-color` is
+   `--text-faint`, so a sheet's placeholder matches every placeholder in the app,
+   a Card's empty em dash included, which has no rule here and takes the app's. A
+   placeholder is a hint standing in for a value, never the value read back, and
+   it goes the moment one is typed. It measures 2.20:1 light and 2.74:1 dark in a
+   box and 2.12:1 and 2.57:1 on a card. **A Passport's name placeholder stays
+   under even the 3:1 its 28px bold would need**, and that is said here rather
+   than hidden; `prefers-contrast: more` raises it and the field words, below.
+
+   `opacity: 1` because a browser dims a placeholder by default, which would put
+   it under faint. And on the transparent fields — Rich text's, Image's, a
+   record's body — the placeholder is the one part of an unfocused field that
+   shows through: it is what says an empty box is one click from being typed in,
+   and a hint the reader can act on is worth showing. What else each one says is
+   at its own component, below. */
+.sheetsmith-view .sheetsmith-rich-text-input::placeholder,
+.sheetsmith-view .sheetsmith-image-input::placeholder,
+.sheetsmith-view .sheetsmith-passport-name-input::placeholder,
+.sheetsmith-view .sheetsmith-passport-input::placeholder,
+.sheetsmith-view
+	.sheetsmith-record-body-fields
+	.sheetsmith-record-input:not(.sheetsmith-pool-max)::placeholder,
+.sheetsmith-view .sheetsmith-record-body-input::placeholder {
 	color: var(--text-faint);
 	opacity: 1;
 }
@@ -4969,13 +5001,9 @@ a.sheetsmith-notice-action {
 	caret-color: transparent;
 }
 
-/* A hint the reader can act on is worth showing through, so the placeholder is
-   the one part of an unfocused field that stays visible — it is what says an
-   empty frame is one click from holding a picture. */
-.sheetsmith-view .sheetsmith-image-input::placeholder {
-	color: var(--text-faint);
-	opacity: 1;
-}
+/* The placeholder shows through the field, which is what says an empty frame
+   is one click from holding a picture; its colour is the shared placeholder rule
+   at Rich text's. */
 
 /* Focused, it is a band across the box with its own background, so the reference
    is legible over whatever is behind it — and it takes the press back, since the
@@ -5142,11 +5170,8 @@ a.sheetsmith-notice-action {
    which is UI §9's model for this: a Card's empty value is an em dash at the
    card's own size, faint. A design review measured the alternative, a rank down,
    putting the smallest and faintest string on the face into the headline slot
-   while the values under it became the headline. */
-.sheetsmith-view .sheetsmith-passport-name-input::placeholder {
-	color: var(--text-faint);
-	opacity: 1;
-}
+   while the values under it became the headline. The colour is the shared
+   placeholder rule at Rich text's. */
 
 /* The one new thing: the identity values as a line rather than a form.
 
@@ -5372,7 +5397,11 @@ a.sheetsmith-notice-action {
    in when shown; it is deliberately placed *before* the delete control's own
    hidden-at-rest rule below, since the two share one selector's worth of
    specificity and CSS breaks that tie by source order — the later rule (the
-   one below) is the one that must win at rest. */
+   one below) is the one that must win at rest.
+
+   Muted, as Track's pickers are: the add is the only route to a second part,
+   and the remove is drawn only while its part has focus, so neither is
+   something to read past (`docs/features/text-faint-audit.md`). */
 .sheetsmith-view .sheetsmith-passport-part-remove,
 .sheetsmith-view .sheetsmith-passport-add {
 	display: inline-flex;
@@ -5386,7 +5415,7 @@ a.sheetsmith-notice-action {
 	border-radius: 50%;
 	background-color: transparent;
 	box-shadow: none;
-	color: var(--text-faint);
+	color: var(--text-muted);
 	cursor: pointer;
 	transition:
 		background-color 160ms ease,
@@ -5496,12 +5525,8 @@ a.sheetsmith-notice-action {
    The sheet's own precedent says the same thing and is easier to check: a Card's
    empty value is an em dash at the *card's* full size, faint, and §9 cites that
    dash as the model. Rich text's placeholder, Image's and a record's body all
-   take exactly these two declarations and nothing else. This is the fourth, and
-   the size and the tracking are what leave. */
-.sheetsmith-view .sheetsmith-passport-input::placeholder {
-	color: var(--text-faint);
-	opacity: 1;
-}
+   take exactly these two declarations and nothing else, which is why the four
+   are now one rule at Rich text's, and the size and the tracking are what left. */
 
 /* **Faint is a legibility floor for these two, whatever rank they belong to.**
 
@@ -5981,11 +6006,14 @@ a.sheetsmith-notice-action {
 	line-height: 0;
 }
 
-/* Faint is for reading past, which is every record the reader is not on. Always
-   drawn, never revealed on hover: §7 of docs/UI.md rules out a hover-only
-   affordance, and a phone has no hover to reveal one with. */
+/* Muted at rest, on every record the reader is not on, for Table's delete
+   glyph's reason: always drawn, never revealed on hover, since §7 of docs/UI.md
+   rules out a hover-only affordance and a phone has no hover to reveal one with —
+   so the resting colour is all a touch reader gets, and faint was 2.20:1 light
+   and 2.74:1 dark here. Arming guards the press, not faintness
+   (`docs/features/text-faint-audit.md`). */
 .sheetsmith-view .sheetsmith-record-remove {
-	color: var(--text-faint);
+	color: var(--text-muted);
 }
 
 /* Full contrast for the record being looked at and for the control a keyboard
@@ -6201,21 +6229,14 @@ a.sheetsmith-notice-action {
 	display: none;
 }
 
-/* **One variable up from the shared abbreviation, and the job is why.** The
-   clothes are `.sheetsmith-card-abbreviation`'s — a size down, tracked, quiet —
-   and its colour is `--text-faint`, which a design review measured at **2.20:1**
-   light and 2.74:1 dark against `legibility.md` §3's 4.5:1, at the 10.2px this
-   type already is. On a Card set that costs nothing: "STR" restates "STRENGTH"
-   directly above it, so the faint copy is a second sighting of a word already
-   read. Here — correctly, wherever no strip is over it: the unheaded list, and
-   a headed one below its threshold — "Uses" is the *only* place a sighted reader
-   meets the field's name, and below it they see a bare number. (On a wide
-   headed list this span is hidden and the strip names the column.) `--text-muted` measures 6.41:1 and 7.50:1, which is what this
-   component's own chevron already wears, and the size and the tracking stay so
-   the name is still visibly secondary to the value beside it. */
-.sheetsmith-view .sheetsmith-record-field .sheetsmith-card-abbreviation {
-	color: var(--text-muted);
-}
+/* **A record field's name wears `.sheetsmith-card-abbreviation` unaltered, and
+   the job is why its muted matters most here.** Wherever no strip is over it —
+   the unheaded list, and a headed one below its threshold — "Uses" is the
+   *only* place a sighted reader meets the field's name, and below it they see a
+   bare number. (On a wide headed list this span is hidden and the strip names
+   the column.) The size and the tracking keep it visibly secondary to the value
+   beside it. It needed an override here while the shared rank was faint
+   (`docs/features/text-faint-audit.md`). */
 
 /* **The ceiling a bounded number reads against, in Pool's own vocabulary.**
    `Uses 1` cannot say whether that is all of them or one of three, and a uses
@@ -6367,17 +6388,10 @@ a.sheetsmith-notice-action {
 	pointer-events: none;
 }
 
-/* **`?` in the ceiling's own muted grey, not Pool's faint.** It is the reading in
-   that slot, read back exactly as a number there is, and `docs/UI.md` §6 holds
-   such text to 4.5:1 on its surface: faint measures about 2.2:1 light and 2.9:1
-   dark on a record, where the `/` beside it is muted. The error line under the
-   record says *why*, but the slot is where the eye lands first. Scoped to the
-   record's layer, so Pool's own unresolved max keeps its rule. */
-.sheetsmith-view
-	.sheetsmith-record-field
-	.sheetsmith-record-worked-out-layer.sheetsmith-pool-max-unresolved {
-	color: var(--text-muted);
-}
+/* The layer's `?` takes Pool's own `.sheetsmith-pool-max-unresolved`, which is
+   muted since `docs/features/text-faint-audit.md`: the reading in that slot,
+   read back exactly as a number there is, beside a muted `/`. It needed an
+   override of its own here while Pool's was faint. */
 
 /* Keyed on the field's focus, through `interaction/field-focus-flag.ts`, as the
    name's layer is: focused, the reader edits `prof` rather than 3. */
@@ -6545,14 +6559,9 @@ a.sheetsmith-notice-action {
 	padding-inline: var(--size-2-2);
 }
 
-/* Pool's empty `—`, in the faint an empty em dash takes everywhere else on a
-   sheet, and only on a body field's value: a ceiling field has its own. */
-.sheetsmith-view
-	.sheetsmith-record-body-fields
-	.sheetsmith-record-input:not(.sheetsmith-pool-max)::placeholder {
-	color: var(--text-faint);
-	opacity: 1;
-}
+/* A body field's empty `—` is Pool's, in the faint an empty em dash takes
+   everywhere else on a sheet, through the shared placeholder rule at Rich
+   text's — and only on a body field's value: a ceiling field has its own. */
 
 /* A pair may be wider than a narrow body, so it may shrink, and a menu shrinks
    inside its own `max-width` rather than widening the box. */
@@ -6596,12 +6605,8 @@ a.sheetsmith-notice-action {
 	caret-color: transparent;
 }
 
-/* A hint the reader can act on is worth showing through, so the placeholder is
-   the one part of an unfocused field that stays visible. */
-.sheetsmith-view .sheetsmith-record-body-input::placeholder {
-	color: var(--text-faint);
-	opacity: 1;
-}
+/* The placeholder still shows through, by the shared placeholder rule at Rich
+   text's. */
 
 /* The layer takes the pointer rather than `pointer-events: none`, because it is
    what scrolls when the prose is longer than the record is open: a layer that is
@@ -7024,9 +7029,8 @@ a.sheetsmith-notice-action {
 		}
 
 		/* **The secondary type, borrowed and not copied**: the shared rank for a
-		   name the eye has to find and not read (§9 of docs/UI.md), in the muted
-		   colour a record's own field name wears for the same measured reason —
-		   `--text-faint` is 2.20:1 here. Centred over the control and never
+		   name the eye has to find and not read (§9 of docs/UI.md), colour and
+		   all, as a record's own field name wears it. Centred over the control and never
 		   wrapped, so a word wider than its control sets the track's width, which
 		   is what a column heading does. The margin is the field's own, so a
 		   heading and its control are centred on the same box. */
@@ -7036,7 +7040,6 @@ a.sheetsmith-notice-action {
 			margin-inline: calc((var(--size-4-5) - var(--size-2-2)) / 2);
 			white-space: nowrap;
 			text-align: center;
-			color: var(--text-muted);
 		}
 
 		/* **A heading over a column of words starts where the words start.** A

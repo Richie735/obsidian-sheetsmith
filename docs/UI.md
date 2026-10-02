@@ -177,7 +177,7 @@ A knob is public API once shipped. Renaming it breaks someone's snippet.
 - **`font-variant-numeric: tabular-nums` on every number that changes.** A value
   that reflows while stepping reads as movement the user did not ask for.
 - Secondary text, an abbreviation under a stat name or a gloss beside a row, is
-  one style: sized down, tracked, faint. Reuse it rather than inventing a
+  one style: sized down, tracked, muted. Reuse it rather than inventing a
   second quiet style.
 
 ---
@@ -300,17 +300,24 @@ sheet.
   comment says so: the ramp "costs nothing, because the glyph and the name were
   already carrying the exact answer." A new mark either has that second channel
   or the review says what a reader sees without it.
-- **Text a reader reads back meets 4.5:1 on the surface it sits on, and
-  `--text-faint` does not on a card** [judgement]. Measured on
-  `--background-secondary`, faint is **2.12:1** light and **2.57:1** dark against
-  `legibility.md` §3's 4.5:1 for small text, so a Track row's name column — the
-  declared name and the typed one alike, since one of them is the character's own
-  text — is `--text-muted`, at 6.19:1 and 7.03:1. The rank below the segments is
-  carried by size, tracking and case, as the card label's is, rather than by a
-  third grey. **Scoped to the name column on purpose**: the other 23
-  `--text-faint` text colours in `sheet.css` were not measured, and
-  `docs/BACKLOG.md` § UI holds them as one row
-  (`docs/features/track-row-legibility-and-clipped-fields.md`).
+- **Text a reader reads back meets 4.5:1 on the surface it sits on, or 3:1
+  where it is large, and `--text-faint` meets neither on any surface a sheet
+  has** [checked: `styles.test.ts`, faint confined to placeholders and
+  `:disabled`; the ratio itself is judgement]. Faint is **2.12:1** light and **2.57:1**
+  dark on a card (`--background-secondary`), 2.20 and 2.74 on a table or a
+  placed box (`--background-primary-alt`), and 2.30 and 2.97 on
+  `--background-primary`; `--text-muted` is 6.19 / 7.03, 6.41 / 7.50 and
+  6.69 / 8.13 on the same three. So a gloss, a secondary column, a step name, an
+  unresolved `?`, a drained value and a glyph control at rest are all muted, and
+  a rank below the value is carried by size, tracking, case and weight rather
+  than by a third grey. **Faint is kept for a placeholder or a disabled control
+  only**, each with its reason at the rule: a placeholder is a hint standing in
+  for a value and takes the app's own `--input-placeholder-color`, and a disabled
+  control is exempt from contrast and carries its state in `disabled` besides.
+  `styles.test.ts` holds `sheet.css` to that, and any exemption sits in the test
+  beside its reason (`docs/features/text-faint-audit.md`, which measured every
+  instance; `docs/features/track-row-legibility-and-clipped-fields.md` was the
+  first, for a Track row's name column).
 
 The numbers these rules are judged against, and the way to measure them, are in
 `.claude/skills/design-review/reference/legibility.md`: contrast ratios by text
@@ -414,7 +421,7 @@ belongs to the component that is only that, not to whoever renders one.
 | Brackets that close and lists that continue as prose is typed | `interaction/markdown-typing.ts`, on `beforeinput` | Rich text's field and a record's body, through `bindMultiline`. **Fixed, not read from Obsidian's editor settings**, which are not public API: `(` `[` `{` pair and step over, `*` `_` `` ` `` only wrap a selection, Enter continues `-` `*` `+` `N.` and task items, and an empty item steps out one level. No appearance of its own. |
 | The focus a transparent field takes | one selector list in `sheet.css` | Table's cells, Rich text's prose, Image's reference, a record's name, its number fields and its body, a Passport's name. **A third list sits beside these two and is not a fourth kind of treatment**: a chromeless field drawn *inline on a card row* takes `.sheetsmith-pool-max-input`'s own hover and its box-shadow ring instead — a Pool's character-owned max, a Track row's own length through that very class, and a Track row's own name, which is one selector on each rule rather than a copy of either. The split is the control's shape and not its component: these three paint no border at rest, so an accent *border-color* has nothing to colour, and §6's one-focus-treatment-per-component is what puts a Track card's two fields on the same one of them |
 | The hover a transparent field takes | a second selector list beside it | Table's cells, a record's name and its number fields, a Passport's name — **a deliberately different roster from the focus list above**, and each absence is the roster's own definition rather than an exception: Image's field is `pointer-events: none` until its frame hands the press over, Rich text's display layer owns the press so its field never sees a hover, a record's body is a textarea with chrome of its own, and a Passport's *values* left the list when they became tags, because a control with a surface at rest has nothing to reveal. Order is not load-bearing in either list: `:hover` and `:focus` are pseudo-classes, so every selector is (0,3,0) against its base rule's (0,2,0) |
-| Secondary text | `.sheetsmith-card-abbreviation` | Card set, a Record set field's name — **on every field type inside the opened record**, where no strip names a body field so the span is its only name and no rule hides it — **and a Record set's strip of field names** (`fieldHeadings`): the same rank in `--text-muted`, sticky over the list, deliberately *not* Table's header clothes, which are larger, medium weight and uppercase. **Not a Passport's placeholders**, and the near miss is worth the row: they borrowed this rank once and a design review measured a half-filled line carrying two type sizes on one baseline, with the smallest and faintest string on the face holding the *headline* slot. A placeholder takes the field's own size and only `--text-faint` from here, which is what a Card's empty em dash already does |
+| Secondary text | `.sheetsmith-card-abbreviation` | Card set, a Record set field's name — **on every field type inside the opened record**, where no strip names a body field so the span is its only name and no rule hides it — **and a Record set's strip of field names** (`fieldHeadings`): the same rank, sticky over the list, deliberately *not* Table's header clothes, which are larger, medium weight and uppercase. **Not a Passport's placeholders**, and the near miss is worth the row: they borrowed this rank once and a design review measured a half-filled line carrying two type sizes on one baseline, with the smallest and faintest string on the face holding the *headline* slot. A placeholder takes the field's own size and `--text-faint`, the app's own placeholder colour, which is what a Card's empty em dash already does |
 | Inline error | `.sheetsmith-error` | every component's own failure |
 | Arm, then commit | `interaction/arm-to-confirm.ts`; `.sheetsmith-table-remove-button`, `.sheetsmith-record-remove`, `.sheetsmith-panel-remove`, `.sheetsmith-passport-part-remove` | Table's row delete, Record set's record delete, the modifier form's **Remove** (the sentences only), a Passport list field's own part delete — reused at a deliberately lower stake than the other three, since a part is a short phrase cheaply retyped, on the argument that one mental model for "this plugin's delete controls arm, then confirm" beats a lighter gesture invented for the cheaper case (`docs/features/passport-field-lists.md`). **A Track row's own remove no longer binds this module**: a row lost its own remove control to the row set's shared **Remove** picker (below), so nothing here presses twice on itself any more — what it keeps is the two sentences (`armedName`, `armedPrompt`, `STOOD_DOWN`), imported directly so an armed line in that picker still reads in this vocabulary (`docs/features/track-row-length.md`). **That picker now lists a second kind of row**, the ones the character named rather than the layout, after the declared ones and in the note's own order — and it is the one delete in this plugin **whose target does not come back**: removing a declared row puts it back on the **Add** panel's list, while removing a character-added row deletes the only record that it ever existed. The gesture is not made heavier for it, on this table's own one-mental-model argument; what carries the difference is the armed line saying the name, which the reader reads before the second pick (`docs/features/character-added-track-rows.md`) |
 | A total under a table | `tfoot` + `.sheetsmith-table-value` | Table's column totals |
