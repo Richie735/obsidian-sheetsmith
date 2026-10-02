@@ -2442,8 +2442,11 @@ body {
    invent one — two consumers earn duplication, not a module (PATTERNS §1), and
    UI.md §9 gains a row when a third appears.
 
-   It is always rendered, and faint: UI.md §7 rules out a hover-only
-   affordance, and a phone has no hover to reveal one with. */
+   It is always rendered, and muted at rest: UI.md §7 rules out a hover-only
+   affordance, and a phone has no hover to reveal one with, so the resting
+   colour is the only one a touch reader ever gets. Faint measured 2.20:1 light
+   and 2.74:1 dark on a table; muted is 6.41:1 and 7.50:1. What guards the press
+   is arming, not faintness (`docs/features/text-faint-audit.md`). */
 .sheetsmith-view .sheetsmith-table-remove-button {
 	display: inline-flex;
 	align-items: center;
@@ -2461,7 +2464,7 @@ body {
 	box-shadow: none;
 	font-size: var(--font-ui-small);
 	line-height: 1;
-	color: var(--text-faint);
+	color: var(--text-muted);
 	cursor: pointer;
 	/* Anchors the hit target below. */
 	position: relative;
@@ -2474,7 +2477,7 @@ body {
 
 /* The icon takes the app's small icon size rather than the 24px a Lucide SVG
    carries by default, which would overflow a control sized to a level ring. It
-   paints in `currentColor`, so the faint, full-contrast and armed states all
+   paints in `currentColor`, so the resting, full-contrast and armed states all
    reach it without a rule of their own. */
 .sheetsmith-view .sheetsmith-table-remove-button .svg-icon {
 	width: var(--icon-s);
@@ -2482,7 +2485,7 @@ body {
 }
 
 /* Full contrast for the row being looked at, and for the control a keyboard is
-   on. Faint is for reading past, which is every other row.
+   on. Every other row keeps the resting muted.
 
    **Both state rules stand down for an armed control**, and that is the whole
    cascade problem in this block rather than a nicety. An armed control is one
@@ -2781,9 +2784,11 @@ body {
 
    It was `--text-faint`, copied from the delete glyph one column across on a
    consistency argument, and the argument copied the wrong half. **The delete
-   rule's own words are "faint is for reading past, which is every other row"** —
-   true of a destructive control you never want pressed by accident, and exactly
-   backwards for the entry point of a column. Measured off the PNGs, faint is
+   rule's own words were "faint is for reading past, which is every other row"** —
+   arguable for a destructive control you never want pressed by accident, and
+   exactly backwards for the entry point of a column. The delete glyph has since
+   been lifted to muted too (`docs/features/text-faint-audit.md`), on the ground
+   that arming, not faintness, guards its press. Measured off the PNGs, faint is
    **2.20:1 light and 2.74:1 dark**: under `legibility.md` §3's 4.5:1 for a
    meaningful glyph and under even the 3:1 a state mark owes.
 
@@ -2798,11 +2803,14 @@ body {
    nothing to discover the column from. `harness/index.html` photographs that
    state.
 
-   **The cost, taken deliberately:** an empty modifier cell now reads louder than
-   the delete control beside it. That is right rather than regrettable. Prominence
-   should track how much a control wants pressing, adding a modifier is the thing
-   a reader came to do, and deleting a row is not — so the two diverging is the
-   two jobs differing, not an inconsistency. */
+   **The ranking this once bought is gone, and that was taken deliberately.** An
+   empty modifier cell used to read louder than the delete control beside it, on
+   the argument that prominence should track how much a control wants pressing.
+   The text-faint audit ruled the other way for the delete: on a phone the resting
+   colour is the only one a reader ever gets, and at 2.20:1 a destructive control
+   is one nobody can find to check before pressing. So the two columns now share
+   muted, and what separates the jobs is that the delete arms before it fires
+   (`docs/features/text-faint-audit.md`). */
 
 .sheetsmith-view .sheetsmith-table-value {
 	font-weight: var(--font-semibold);
@@ -2854,12 +2862,6 @@ body {
 /* An empty ring against a faint outline is the whole signal here. */
 .sheetsmith-view .sheetsmith-level-ring {
 		border-color: var(--text-muted);
-	}
-
-/* Faint is a contrast the reader has said they do not want, and this one is
-	   a control rather than something to read past. */
-.sheetsmith-view .sheetsmith-table-remove-button {
-		color: var(--text-muted);
 	}
 
 /* The ramp trades contrast for a shape that can be read down the column,
@@ -4249,7 +4251,17 @@ a.sheetsmith-notice-action {
    the *treatment* and not only the measurement (`docs/UI.md` §9): three glyph
    buttons on one card must not measure differently under one finger. What it
    does not share is the class name — this one opens no picker and performs no
-   action, so it is named for what it is about. */
+   action, so it is named for what it is about.
+
+   **Muted for all four, and for two reasons that arrive at one value.** The
+   pickers are entry points — **Add** is the only route to a row — and faint for
+   an entry point is exactly backwards. The bolt and the note mark read as a
+   state rather than an affordance: something *is* changing this value, and a
+   reader who never presses one should still see that it is there. At this size
+   a faint glyph reads as a smudge rather than a mark, 2.12:1 light and 2.57:1
+   dark on a card, which is the modifier cell's measured reason (`docs/UI.md` §9,
+   `docs/features/text-faint-audit.md`). The pickers were faint once and the
+   other three overridden a rank above them. */
 .sheetsmith-view .sheetsmith-track-action-button,
 .sheetsmith-view .sheetsmith-track-modifier-button,
 .sheetsmith-view .sheetsmith-pool-modifier-button,
@@ -4265,7 +4277,7 @@ a.sheetsmith-notice-action {
 	border-radius: 50%;
 	background-color: transparent;
 	box-shadow: none;
-	color: var(--text-faint);
+	color: var(--text-muted);
 	cursor: pointer;
 	transition:
 		background-color 160ms ease,
@@ -4294,18 +4306,6 @@ a.sheetsmith-notice-action {
 .sheetsmith-view .sheetsmith-note-mark:focus-visible {
 	outline: 2px solid var(--interactive-accent);
 	outline-offset: 2px;
-}
-
-/* The bolt reads as a state rather than as an affordance, so it sits a rank
-   above the two pickers' faint glyphs: something *is* changing this run, and a
-   reader who never presses it should still see that it is there. --text-muted
-   is the same value a modifier cell's own glyph was raised to, and for the
-   measured reason recorded there — at this size a faint bolt reads as a smudge
-   rather than as a mark (`docs/UI.md` §9). */
-.sheetsmith-view .sheetsmith-track-modifier-button,
-.sheetsmith-view .sheetsmith-pool-modifier-button,
-.sheetsmith-view .sheetsmith-note-mark {
-	color: var(--text-muted);
 }
 
 /* A rank of ink down from the pickers', and only the ink: the box above stays
@@ -6029,7 +6029,11 @@ a.sheetsmith-notice-action {
    in when shown; it is deliberately placed *before* the delete control's own
    hidden-at-rest rule below, since the two share one selector's worth of
    specificity and CSS breaks that tie by source order — the later rule (the
-   one below) is the one that must win at rest. */
+   one below) is the one that must win at rest.
+
+   Muted, as Track's pickers are: the add is the only route to a second part,
+   and the remove is drawn only while its part has focus, so neither is
+   something to read past (`docs/features/text-faint-audit.md`). */
 .sheetsmith-view .sheetsmith-passport-part-remove,
 .sheetsmith-view .sheetsmith-passport-add {
 	display: inline-flex;
@@ -6043,7 +6047,7 @@ a.sheetsmith-notice-action {
 	border-radius: 50%;
 	background-color: transparent;
 	box-shadow: none;
-	color: var(--text-faint);
+	color: var(--text-muted);
 	cursor: pointer;
 	transition:
 		background-color 160ms ease,
@@ -6638,11 +6642,14 @@ a.sheetsmith-notice-action {
 	line-height: 0;
 }
 
-/* Faint is for reading past, which is every record the reader is not on. Always
-   drawn, never revealed on hover: §7 of docs/UI.md rules out a hover-only
-   affordance, and a phone has no hover to reveal one with. */
+/* Muted at rest, on every record the reader is not on, for Table's delete
+   glyph's reason: always drawn, never revealed on hover, since §7 of docs/UI.md
+   rules out a hover-only affordance and a phone has no hover to reveal one with —
+   so the resting colour is all a touch reader gets, and faint was 2.20:1 light
+   and 2.74:1 dark here. Arming guards the press, not faintness
+   (`docs/features/text-faint-audit.md`). */
 .sheetsmith-view .sheetsmith-record-remove {
-	color: var(--text-faint);
+	color: var(--text-muted);
 }
 
 /* Full contrast for the record being looked at and for the control a keyboard
