@@ -195,6 +195,15 @@ sheet.
   outline: 2px solid transparent;
   ```
   Prefer an outline outright where the offset allows it.
+- **`forced-color-adjust: none` only on a glyph or a count sitting on a
+  system-colour fill the plugin itself painted** [judgement]. Its colours then
+  come from system keywords only, never theme tokens, since the mode no longer
+  repaints them, and each use is evidenced by a `sheet-forced-colors` shot. A
+  Track's wholly lit glyph and its lit `+N` count are the cases: the mode paints
+  a `Canvas` backplate behind text, which put `SelectedItemText` black on black.
+  A glyph on a partly lit segment is not a case, since part of it sits on
+  `Canvas`, so it keeps the mode's own colour and plate
+  (`docs/features/forced-colors-track-and-table.md`).
 - **One focus treatment per component.** The same gesture in the same component
   must not produce two different rings.
 - **`prefers-reduced-motion: reduce` removes transitions**, and every animated
