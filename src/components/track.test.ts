@@ -816,6 +816,22 @@ describe('track.render', () => {
 		expect(fills(el).slice(0, 7)).toEqual([1, 1, 1, 1, 1, 0.5, 0]);
 	});
 
+	it('marks a segment lit at all as on, and only a wholly lit one as full', () => {
+		const el = render({ count: 10, marks: 4 }, { values: { value: '22' } }, {
+			resolved: { count: 10 },
+		});
+		const has = (name: string) =>
+			runSegments(el)
+				.slice(0, 7)
+				.map((segment) => segment.classList.contains(name));
+		expect(has('sheetsmith-track-segment-on')).toEqual([
+			true, true, true, true, true, true, false,
+		]);
+		expect(has('sheetsmith-track-segment-full')).toEqual([
+			true, true, true, true, true, false, false,
+		]);
+	});
+
 	it('draws a value above the run past its end, and leaves the note alone', () => {
 		// Under `MAX_SEGMENTS`, so the over part is drawn segment by segment:
 		// honest, and long on a narrow card, which is the approved bound's

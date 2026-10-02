@@ -2685,6 +2685,11 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 						String(held === landing ? 0 : ghost),
 					);
 					segment.classList.toggle('sheetsmith-track-segment-on', solid > 0);
+					// Lit across the whole segment, which is what forced colors needs
+					// to know before it paints a mark in the fill's own text colour:
+					// on a partly lit segment that colour lands on `Canvas` too and
+					// vanishes there (`sheet.css`, the Track's `forced-colors` block).
+					segment.classList.toggle('sheetsmith-track-segment-full', solid >= 1);
 				});
 				// Held inside the run for what the control reports. The run's
 				// range is what it draws, so a stored value past the live run is
