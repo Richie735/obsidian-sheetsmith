@@ -324,13 +324,13 @@ record of it. **A one-consumer sibling arrives with the atomicity argument or it
 not arrive**, which is the sentence a reader of this file alone needs, because
 "shared" would admit the next one with no argument at all.
 
-`setIcon` is the one import of its kind, and **four components and one painter
-take it now** — `table.ts`, `record-set.ts`, `passport.ts`, `track.ts`, and
-`note-mark.ts`, which draws its glyph itself rather than taking it as an argument
-the way `modifier-form.ts` does, since the allowlist is a list of names and not
-of files. This sentence said
-"`table.ts` takes `setIcon`" while three more had reached for it, which is the
-drift this tier is most prone to: the *rule* is that the allowlist stays one
+`setIcon` is the one import of its kind, and **several components and a painter
+take it** — `note-mark.ts` among them, which draws its glyph itself rather than
+taking it as an argument the way `modifier-form.ts` does, since the allowlist is a
+list of names and not of files. Deliberately not counted or listed: this sentence
+said "`table.ts` takes `setIcon`" while three more had reached for it, and then
+"four components and one painter" until Pool's ceiling door made a fifth, which is
+the drift this tier is most prone to: the *rule* is that the allowlist stays one
 name long, and it has, so nothing was violated and nothing reported. A count of
 files is not that rule and goes stale silently; `components/isolation.test.ts`
 holds the name, and no check holds this sentence. The
