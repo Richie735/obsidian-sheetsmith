@@ -3208,7 +3208,15 @@ body {
 }
 
 /* A declared trigger nothing binds to yet. Shown rather than hidden, so a
-   half-built layout does not read as a broken one. */
+   half-built layout does not read as a broken one.
+
+   **Faint on purpose, and one of the two places a sheet keeps it.** An inactive
+   control is exempt from WCAG 1.4.3's contrast, and this one carries its state
+   in three channels besides the colour: `disabled`, which is announced; an
+   `aria-label` and `title` saying nothing on this sheet resets on it; and no
+   hover answer. Faint is the app's own disabled reading. It measures 2.30:1
+   light and 2.97:1 dark on the button's own `--background-primary`
+   (`docs/features/text-faint-audit.md`, `styles.test.ts` holds the rule). */
 .sheetsmith-trigger:disabled {
 	color: var(--text-faint);
 	cursor: default;
@@ -4727,10 +4735,34 @@ a.sheetsmith-notice-action {
 	caret-color: transparent;
 }
 
-/* A hint the reader can act on is worth showing through, so the placeholder is
-   the one part of an unfocused field that stays visible — it is what says an
-   empty box is one click from being typed in. */
-.sheetsmith-view .sheetsmith-rich-text-input::placeholder {
+/* **Every placeholder on a sheet, in one rule, and faint on purpose.** This is
+   one of the two places a sheet keeps `--text-faint` for text, and
+   `styles.test.ts` holds the colour to them (`docs/UI.md` §6,
+   `docs/features/text-faint-audit.md`).
+
+   The reason is the app's: Obsidian's own `--input-placeholder-color` is
+   `--text-faint`, so a sheet's placeholder matches every placeholder in the app,
+   a Card's empty em dash included, which has no rule here and takes the app's. A
+   placeholder is a hint standing in for a value, never the value read back, and
+   it goes the moment one is typed. It measures 2.20:1 light and 2.74:1 dark in a
+   box and 2.12:1 and 2.57:1 on a card. **A Passport's name placeholder stays
+   under even the 3:1 its 28px bold would need**, and that is said here rather
+   than hidden; `prefers-contrast: more` raises it and the field words, below.
+
+   `opacity: 1` because a browser dims a placeholder by default, which would put
+   it under faint. And on the transparent fields — Rich text's, Image's, a
+   record's body — the placeholder is the one part of an unfocused field that
+   shows through: it is what says an empty box is one click from being typed in,
+   and a hint the reader can act on is worth showing. What else each one says is
+   at its own component, below. */
+.sheetsmith-view .sheetsmith-rich-text-input::placeholder,
+.sheetsmith-view .sheetsmith-image-input::placeholder,
+.sheetsmith-view .sheetsmith-passport-name-input::placeholder,
+.sheetsmith-view .sheetsmith-passport-input::placeholder,
+.sheetsmith-view
+	.sheetsmith-record-body-fields
+	.sheetsmith-record-input:not(.sheetsmith-pool-max)::placeholder,
+.sheetsmith-view .sheetsmith-record-body-input::placeholder {
 	color: var(--text-faint);
 	opacity: 1;
 }
@@ -4969,13 +5001,9 @@ a.sheetsmith-notice-action {
 	caret-color: transparent;
 }
 
-/* A hint the reader can act on is worth showing through, so the placeholder is
-   the one part of an unfocused field that stays visible — it is what says an
-   empty frame is one click from holding a picture. */
-.sheetsmith-view .sheetsmith-image-input::placeholder {
-	color: var(--text-faint);
-	opacity: 1;
-}
+/* The placeholder shows through the field, which is what says an empty frame
+   is one click from holding a picture; its colour is the shared placeholder rule
+   at Rich text's. */
 
 /* Focused, it is a band across the box with its own background, so the reference
    is legible over whatever is behind it — and it takes the press back, since the
@@ -5142,11 +5170,8 @@ a.sheetsmith-notice-action {
    which is UI §9's model for this: a Card's empty value is an em dash at the
    card's own size, faint. A design review measured the alternative, a rank down,
    putting the smallest and faintest string on the face into the headline slot
-   while the values under it became the headline. */
-.sheetsmith-view .sheetsmith-passport-name-input::placeholder {
-	color: var(--text-faint);
-	opacity: 1;
-}
+   while the values under it became the headline. The colour is the shared
+   placeholder rule at Rich text's. */
 
 /* The one new thing: the identity values as a line rather than a form.
 
@@ -5500,12 +5525,8 @@ a.sheetsmith-notice-action {
    The sheet's own precedent says the same thing and is easier to check: a Card's
    empty value is an em dash at the *card's* full size, faint, and §9 cites that
    dash as the model. Rich text's placeholder, Image's and a record's body all
-   take exactly these two declarations and nothing else. This is the fourth, and
-   the size and the tracking are what leave. */
-.sheetsmith-view .sheetsmith-passport-input::placeholder {
-	color: var(--text-faint);
-	opacity: 1;
-}
+   take exactly these two declarations and nothing else, which is why the four
+   are now one rule at Rich text's, and the size and the tracking are what left. */
 
 /* **Faint is a legibility floor for these two, whatever rank they belong to.**
 
@@ -6538,14 +6559,9 @@ a.sheetsmith-notice-action {
 	padding-inline: var(--size-2-2);
 }
 
-/* Pool's empty `—`, in the faint an empty em dash takes everywhere else on a
-   sheet, and only on a body field's value: a ceiling field has its own. */
-.sheetsmith-view
-	.sheetsmith-record-body-fields
-	.sheetsmith-record-input:not(.sheetsmith-pool-max)::placeholder {
-	color: var(--text-faint);
-	opacity: 1;
-}
+/* A body field's empty `—` is Pool's, in the faint an empty em dash takes
+   everywhere else on a sheet, through the shared placeholder rule at Rich
+   text's — and only on a body field's value: a ceiling field has its own. */
 
 /* A pair may be wider than a narrow body, so it may shrink, and a menu shrinks
    inside its own `max-width` rather than widening the box. */
@@ -6589,12 +6605,8 @@ a.sheetsmith-notice-action {
 	caret-color: transparent;
 }
 
-/* A hint the reader can act on is worth showing through, so the placeholder is
-   the one part of an unfocused field that stays visible. */
-.sheetsmith-view .sheetsmith-record-body-input::placeholder {
-	color: var(--text-faint);
-	opacity: 1;
-}
+/* The placeholder still shows through, by the shared placeholder rule at Rich
+   text's. */
 
 /* The layer takes the pointer rather than `pointer-events: none`, because it is
    what scrolls when the prose is longer than the record is open: a layer that is

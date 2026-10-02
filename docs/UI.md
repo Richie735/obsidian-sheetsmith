@@ -300,17 +300,24 @@ sheet.
   comment says so: the ramp "costs nothing, because the glyph and the name were
   already carrying the exact answer." A new mark either has that second channel
   or the review says what a reader sees without it.
-- **Text a reader reads back meets 4.5:1 on the surface it sits on, and
-  `--text-faint` does not on a card** [judgement]. Measured on
-  `--background-secondary`, faint is **2.12:1** light and **2.57:1** dark against
-  `legibility.md` §3's 4.5:1 for small text, so a Track row's name column — the
-  declared name and the typed one alike, since one of them is the character's own
-  text — is `--text-muted`, at 6.19:1 and 7.03:1. The rank below the segments is
-  carried by size, tracking and case, as the card label's is, rather than by a
-  third grey. **Scoped to the name column on purpose**: the other 23
-  `--text-faint` text colours in `sheet.css` were not measured, and
-  `docs/BACKLOG.md` § UI holds them as one row
-  (`docs/features/track-row-legibility-and-clipped-fields.md`).
+- **Text a reader reads back meets 4.5:1 on the surface it sits on, or 3:1
+  where it is large, and `--text-faint` meets neither on any surface a sheet
+  has** [checked: `styles.test.ts`, faint confined to placeholders and
+  `:disabled`; the ratio itself is judgement]. Faint is **2.12:1** light and **2.57:1**
+  dark on a card (`--background-secondary`), 2.20 and 2.74 on a table or a
+  placed box (`--background-primary-alt`), and 2.30 and 2.97 on
+  `--background-primary`; `--text-muted` is 6.19 / 7.03, 6.41 / 7.50 and
+  6.69 / 8.13 on the same three. So a gloss, a secondary column, a step name, an
+  unresolved `?`, a drained value and a glyph control at rest are all muted, and
+  a rank below the value is carried by size, tracking, case and weight rather
+  than by a third grey. **Faint is kept for a placeholder or a disabled control
+  only**, each with its reason at the rule: a placeholder is a hint standing in
+  for a value and takes the app's own `--input-placeholder-color`, and a disabled
+  control is exempt from contrast and carries its state in `disabled` besides.
+  `styles.test.ts` holds `sheet.css` to that, and any exemption sits in the test
+  beside its reason (`docs/features/text-faint-audit.md`, which measured every
+  instance; `docs/features/track-row-legibility-and-clipped-fields.md` was the
+  first, for a Track row's name column).
 
 The numbers these rules are judged against, and the way to measure them, are in
 `.claude/skills/design-review/reference/legibility.md`: contrast ratios by text
