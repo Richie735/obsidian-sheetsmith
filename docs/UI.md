@@ -216,9 +216,11 @@ sheet.
   names only the *other* party — `Move into "Tools"`, `Move out of
   "Proficiencies"` — and **Move up** and **Move down** name nobody, since the
   neighbour is on screen directly beside the row
-  (`docs/features/layout-editor-tree.md` §5). The same rule is what makes a
-  bare list-field "Move up" a gap rather than a style: that control is reached
-  by Tab with nothing announcing its entry (`docs/BACKLOG.md` § Patterns).
+  (`docs/features/layout-editor-tree.md` §5). A list field's controls are the
+  opposite case, reached by Tab with nothing announcing their entry, so every
+  list field's reorder and remove controls name it — `Move STR up`,
+  `Remove STR` — whether drawn by `addControls` in `editor/list-fields.ts` or
+  by the nested list's own remove (`editor/nested-list-field.ts`).
 - **State goes in ARIA, not only in paint.** `aria-pressed` on a two-state mark;
   `aria-label` composed from the label and the state name the layout author
   chose, since "Stowed" says more than "not pressed".
