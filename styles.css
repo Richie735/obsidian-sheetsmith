@@ -2408,6 +2408,12 @@ body {
 	color: transparent;
 }
 
+/* In forced colors this cell takes the record name's departure: the layer goes
+   and the field's raw `[[Target]]` shows, at the cost of the link's press. One
+   rule for every stack that does this, after the last of their `transparent`
+   rules, which is the record set's worked-out ceiling; the argument is the
+   record name's, and the Table's own half of it is written there. */
+
 /* The name field pulls itself back by its own inset so its text lines up with a
    declared row's plain name. The layer stacked over it has to make the same
    move, and take the name's own size, or the rendered link sits a few pixels
@@ -6795,24 +6801,13 @@ a.sheetsmith-notice-action {
    and the raw `[[Target]]` still says where it pointed. `visibility` rather than
    `display`, so the grid cell keeps its size and the line does not move.
 
-   Table has the identical defect in the identical shot, and it is *not* fixed
-   here: it is pre-existing in a component this feature is not otherwise
-   touching, and `docs/UI.md` §12 now holds it with the photograph.
+   Table had the identical defect in the identical shot, and a record's
+   worked-out ceiling is a third stack with it. All three take this departure
+   from one rule pair, by selector list, after the worked-out ceiling's own
+   `transparent` rule further down: it has to follow every `transparent` it
+   undoes, and a copy per stack is a policy whose only possible test is that the
+   copies still agree (`docs/PATTERNS.md` §1).
    --------------------------------------------------------------------------- */
-@media (forced-colors: active) {
-.sheetsmith-view
-	.sheetsmith-record-linked
-	.sheetsmith-record-name-layer {
-		visibility: hidden;
-	}
-
-.sheetsmith-view
-	.sheetsmith-record-linked
-	.sheetsmith-record-name-input:not(:focus) {
-		color: var(--text-normal);
-	}
-
-}
 
 /* The fields, in the order the layout declared them. **No heading strip over
    them unless the layout opts in**, and that is an amendment rather than a
@@ -7061,13 +7056,30 @@ a.sheetsmith-notice-action {
 }
 
 /* Forced colors repaints `transparent` text back to the system colour, so both
-   layers would draw at once. The record name's departure, applied here: the
-   layer goes and the field's own text shows. */
+   layers of a stack would draw at once. **One rule pair for every stack that
+   answers it the same way**: the record name's departure (its comment, above,
+   holds the argument), a Table cell holding a wikilink, and this worked-out
+   ceiling. The layer goes and the field's own text shows, so in this mode a
+   stacked link is read and not pressed, and the raw `[[Target]]` still says
+   where it points. Here, after the last of the three `transparent` rules it
+   undoes, because a later rule of the same weight would win.
+
+   **The Table cell also loses a frame by it**: its layer carries a
+   `1px solid transparent` border to sit exactly over the field's text, which
+   the mode repainted `CanvasText` into a second frame around the field's own,
+   and a hidden layer draws none. One selector covers the cell's three
+   placements, the name, a plain cell and a gloss. */
 @media (forced-colors: active) {
+.sheetsmith-view .sheetsmith-record-linked .sheetsmith-record-name-layer,
+.sheetsmith-view .sheetsmith-table-linked .sheetsmith-table-link-layer,
 .sheetsmith-view .sheetsmith-record-field .sheetsmith-record-worked-out-layer {
 		visibility: hidden;
 	}
 
+.sheetsmith-view
+	.sheetsmith-record-linked
+	.sheetsmith-record-name-input:not(:focus),
+.sheetsmith-view .sheetsmith-table-linked .sheetsmith-table-input:not(:focus),
 .sheetsmith-view
 	.sheetsmith-record-worked-out
 	.sheetsmith-record-input.sheetsmith-pool-max:not(:focus) {
