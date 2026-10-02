@@ -2570,7 +2570,7 @@ describe('no two rules declare the same body', () => {
 		{
 			rules: [
 				'.sheetsmith-view .sheetsmith-passport-part-remove, .sheetsmith-view .sheetsmith-passport-add',
-				'.sheetsmith-view .sheetsmith-track-action-button, .sheetsmith-view .sheetsmith-track-modifier-button, .sheetsmith-view .sheetsmith-note-mark',
+				'.sheetsmith-view .sheetsmith-track-action-button, .sheetsmith-view .sheetsmith-track-modifier-button, .sheetsmith-view .sheetsmith-pool-modifier-button, .sheetsmith-view .sheetsmith-note-mark',
 			],
 			reason: 'a glyph-only reset whose family is unruled',
 		},
