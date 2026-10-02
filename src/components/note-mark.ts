@@ -29,13 +29,14 @@
 import { setIcon } from 'obsidian';
 import { ModifierContext } from '../types';
 import { showPopover } from '../ui/popover';
-import { ModifierAccount, modifierAccount } from './modifier-breakdown';
+import {
+	ACCOUNT_GLYPH,
+	ModifierAccount,
+	modifierAccount,
+} from './modifier-breakdown';
 
 /** The mark's class, which the stylesheet's glyph-button selector list names. */
 export const NOTE_MARK_CLASS = 'sheetsmith-note-mark';
-
-/** The glyph, named once so the docs, the tests and the paint agree. */
-export const NOTE_GLYPH = 'info';
 
 /**
  * The class a cell takes when its column holds a note mark anywhere, and the one
@@ -74,7 +75,7 @@ export function renderNoteMark(
 	 * centre of the number or the ring it follows. The button's `aria-label`
 	 * names it, so the SVG needs no `aria-hidden` of its own.
 	 */
-	setIcon(button, NOTE_GLYPH);
+	setIcon(button, ACCOUNT_GLYPH);
 	const twin = parent.createSpan({ cls: 'sheetsmith-sr-only', text: account });
 	twin.id = `sheetsmith-note-account-${++twins}`;
 	/*
