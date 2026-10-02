@@ -1749,6 +1749,12 @@
 	color: transparent;
 }
 
+/* In forced colors this cell takes the record name's departure: the layer goes
+   and the field's raw `[[Target]]` shows, at the cost of the link's press. One
+   rule for every stack that does this, after the last of their `transparent`
+   rules, which is the record set's worked-out ceiling; the argument is the
+   record name's, and the Table's own half of it is written there. */
+
 /* The name field pulls itself back by its own inset so its text lines up with a
    declared row's plain name. The layer stacked over it has to make the same
    move, and take the name's own size, or the rendered link sits a few pixels
@@ -4072,15 +4078,14 @@ a.sheetsmith-notice-action {
    same value, so the granted ring and the base border agree there and the dash
    stays the whole of the difference.
 
-   **The border under it is `transparent` and `dashed`, which is the plugin's own
-   forced-colors idiom rather than a second mark.** `docs/UI.md` §6: a ring drawn
-   in a way the mode discards carries a companion that is invisible in an
-   ordinary theme and repainted where the mode bites. Here it is the other way
-   round from a focus ring and for the same reason — forced colors strips every
-   fill, so there is nothing for the overlay to sit on and nothing to bite out of
-   the border, and the border alone draws a clean dashed square. So the overlay
-   stands down in that mode and the border takes over. The two mechanisms differ
-   exactly where the *fill* does, which is what they are both about.
+   **The overlay is the mark in forced colors too, and that mode has a branch of
+   its own at the foot of this section.** The segment has no border of its own
+   (the rule below says why), so there is nothing for the mode to repaint into a
+   second ring. What the mode does change is the fill: the Track's
+   `forced-colors` block paints a lit segment `SelectedItem`, and this ring takes
+   `SelectedItemText` over it, since the mode's `CanvasText` on that fill
+   measures 1.49:1 and would disappear. Unlit, the ring stays `CanvasText` on
+   `Canvas`.
 
    The second is a wider gap at the join — the run's own gap again, so the pair
    reads as "further apart than the others" rather than as a measurement of its
@@ -4472,6 +4477,83 @@ a.sheetsmith-notice-action {
 .sheetsmith-track-step,
 .sheetsmith-track-unresolved {
 		color: var(--text-muted);
+	}
+
+}
+
+/* Forced colors: the value, and every mark drawn over it.
+
+   **Without this block a run says nothing about its value in this mode.** The
+   fill is an accent `background-color`, which the mode repaints `Canvas`, and a
+   lit segment's accent border becomes `CanvasText` like an unlit one's — so a
+   run at 5 of 6 and one at 2 of 6 drew the same picture, 62 of 2760 pixels
+   apart and all of them antialiasing.
+
+   **The fill takes `SelectedItem`**, the ghost with it through the base rule's
+   own pair. That is how `editor.css` paints a ticked checkbox and how the app
+   paints its own enabled toggle, so a form and a sheet say "on" one way. The
+   ghost keeps its opacity, which the mode leaves alone. The harm ramp's
+   `color-mix` does not survive, so a harm run fills flat: the
+   `prefers-contrast` block's own rule, for the same reason.
+
+   **Everything drawn over a lit segment then takes `SelectedItemText`**, because
+   the mode's `CanvasText` on `SelectedItem` measures **1.49:1** in Chrome's
+   palette (`docs/features/forced-colors-track-and-table.md`) and vanishes:
+   the granted ring, the blocked and over slash, a glyph and the `+N` count.
+
+   **Two keys, because a multi-mark segment can be partly lit.** `-on` is set
+   once the fill is above zero and `-full` once it reaches the whole segment.
+   The ring and the glyph key on `-full`: over a half-lit segment a
+   `SelectedItemText` ring or glyph lands on `Canvas` across the unlit half and
+   vanishes there, taking the box and its granted status with it, so a partly lit
+   one keeps the mode's own `CanvasText` (faint over the lit half, whole over the
+   unlit) and the glyph keeps its backplate. The slash keys on `-on`, because it
+   is two-toned and reads on both halves.
+
+   **The slash on a lit segment is two-toned**, a `SelectedItemText` top border
+   over a `CanvasText` bottom one. A multi-mark segment can be partly lit, and
+   one stroke in the fill's text colour drew only across the lit half and
+   vanished over `Canvas`. Two tones put one half on each surface along the
+   whole diagonal, which is `docs/UI.md` §6's companion idiom applied to a
+   stroke, and it exists in this mode only.
+
+   **A wholly lit glyph and the lit count take `forced-color-adjust: none`**, and the
+   reason is the backplate: in this mode Chrome paints a `Canvas` plate behind
+   text, so `SelectedItemText` alone drew black on black. With the adjustment off
+   every colour on them is a system keyword, which `docs/UI.md` §6 makes the
+   condition of using it. Both hold text and nothing else, so the inherited
+   adjustment reaches no element this block does not name. */
+@media (forced-colors: active) {
+.sheetsmith-track-segment-fill,
+.sheetsmith-track-segment-ghost,
+.sheetsmith-track-harm .sheetsmith-track-segment-fill,
+.sheetsmith-track-harm .sheetsmith-track-segment-ghost {
+		background-color: SelectedItem;
+	}
+
+.sheetsmith-track-segment-full.sheetsmith-track-segment-granted::after {
+		border-color: SelectedItemText;
+	}
+
+.sheetsmith-track-segment-on.sheetsmith-track-segment-blocked::after,
+.sheetsmith-track-segment-on.sheetsmith-track-segment-over::after {
+		border-top-color: SelectedItemText;
+		border-bottom: 1.5px solid CanvasText;
+	}
+
+.sheetsmith-track-segment-full .sheetsmith-track-segment-glyph {
+		forced-color-adjust: none;
+		color: SelectedItemText;
+	}
+
+.sheetsmith-track-over-count.sheetsmith-track-segment-on {
+		forced-color-adjust: none;
+		background-color: SelectedItem;
+		color: SelectedItemText;
+	}
+
+.sheetsmith-track-over-count.sheetsmith-track-segment-on::after {
+		border-color: SelectedItem;
 	}
 
 }
@@ -6060,24 +6142,13 @@ a.sheetsmith-notice-action {
    and the raw `[[Target]]` still says where it pointed. `visibility` rather than
    `display`, so the grid cell keeps its size and the line does not move.
 
-   Table has the identical defect in the identical shot, and it is *not* fixed
-   here: it is pre-existing in a component this feature is not otherwise
-   touching, and `docs/UI.md` §12 now holds it with the photograph.
+   Table had the identical defect in the identical shot, and a record's
+   worked-out ceiling is a third stack with it. All three take this departure
+   from one rule pair, by selector list, after the worked-out ceiling's own
+   `transparent` rule further down: it has to follow every `transparent` it
+   undoes, and a copy per stack is a policy whose only possible test is that the
+   copies still agree (`docs/PATTERNS.md` §1).
    --------------------------------------------------------------------------- */
-@media (forced-colors: active) {
-.sheetsmith-view
-	.sheetsmith-record-linked
-	.sheetsmith-record-name-layer {
-		visibility: hidden;
-	}
-
-.sheetsmith-view
-	.sheetsmith-record-linked
-	.sheetsmith-record-name-input:not(:focus) {
-		color: var(--text-normal);
-	}
-
-}
 
 /* The fields, in the order the layout declared them. **No heading strip over
    them unless the layout opts in**, and that is an amendment rather than a
@@ -6326,13 +6397,30 @@ a.sheetsmith-notice-action {
 }
 
 /* Forced colors repaints `transparent` text back to the system colour, so both
-   layers would draw at once. The record name's departure, applied here: the
-   layer goes and the field's own text shows. */
+   layers of a stack would draw at once. **One rule pair for every stack that
+   answers it the same way**: the record name's departure (its comment, above,
+   holds the argument), a Table cell holding a wikilink, and this worked-out
+   ceiling. The layer goes and the field's own text shows, so in this mode a
+   stacked link is read and not pressed, and the raw `[[Target]]` still says
+   where it points. Here, after the last of the three `transparent` rules it
+   undoes, because a later rule of the same weight would win.
+
+   **The Table cell also loses a frame by it**: its layer carries a
+   `1px solid transparent` border to sit exactly over the field's text, which
+   the mode repainted `CanvasText` into a second frame around the field's own,
+   and a hidden layer draws none. One selector covers the cell's three
+   placements, the name, a plain cell and a gloss. */
 @media (forced-colors: active) {
+.sheetsmith-view .sheetsmith-record-linked .sheetsmith-record-name-layer,
+.sheetsmith-view .sheetsmith-table-linked .sheetsmith-table-link-layer,
 .sheetsmith-view .sheetsmith-record-field .sheetsmith-record-worked-out-layer {
 		visibility: hidden;
 	}
 
+.sheetsmith-view
+	.sheetsmith-record-linked
+	.sheetsmith-record-name-input:not(:focus),
+.sheetsmith-view .sheetsmith-table-linked .sheetsmith-table-input:not(:focus),
 .sheetsmith-view
 	.sheetsmith-record-worked-out
 	.sheetsmith-record-input.sheetsmith-pool-max:not(:focus) {
