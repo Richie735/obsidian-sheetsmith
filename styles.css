@@ -1589,13 +1589,6 @@ body {
 	border: 0;
 }
 
-/* Unresolved formula is a status, not a value — and not the same glyph
-   as an empty input. */
-.sheetsmith-card-derived-unresolved {
-	color: var(--text-faint);
-	font-weight: var(--font-normal);
-}
-
 /* A number something has been pushed at, on a card or in a cell (SPEC §5).
 
    One rule for both consumers, and the mark is a *shape* channel rather than a
@@ -1774,10 +1767,6 @@ body {
 .sheetsmith-card,
 .sheetsmith-card-has-derived .sheetsmith-card-value {
 		border-color: var(--text-muted);
-	}
-
-.sheetsmith-card-derived-unresolved {
-		color: var(--text-muted);
 	}
 
 /* One step further for someone who asked for it, since the default is
@@ -2827,12 +2816,6 @@ body {
 	transition: color 200ms ease;
 }
 
-/* Status, not data: the same treatment "?" gets on a card. */
-.sheetsmith-view .sheetsmith-table-unresolved {
-	font-weight: var(--font-normal);
-	color: var(--text-faint);
-}
-
 .sheetsmith-view .sheetsmith-table-empty {
 	padding: var(--size-4-3);
 	text-align: center;
@@ -2866,10 +2849,6 @@ body {
 .sheetsmith-view .sheetsmith-table th,
 .sheetsmith-view .sheetsmith-table td {
 		border-color: var(--text-muted);
-	}
-
-.sheetsmith-view .sheetsmith-table-unresolved {
-		color: var(--text-muted);
 	}
 
 /* An empty ring against a faint outline is the whole signal here. */
@@ -3176,9 +3155,25 @@ body {
 	outline-offset: 0;
 }
 
-/* "?" is a status rather than a number, and must not read as one. */
+/* An unresolved formula's "?", on a card, in a computed cell or a total, and in
+   Pool's ceiling: a status rather than a value, and not the same glyph as an
+   empty input. The weight drops a rank under the value it stands in for.
+
+   **Muted rather than faint, though the glyph is already a second channel.** The
+   `?` replaces the digits and each carries a `title` with the reason, so by
+   `docs/UI.md` §6 it could have stayed faint — but a channel is only a channel
+   while the mark is visible, and faint measured 2.12:1 light and 2.57:1 dark on a
+   card, under even the 3:1 a 28px card `?` needs. Muted clears both bars on
+   every surface these sit on (`docs/features/text-faint-audit.md`).
+
+   **Here, after the last of the rules it overrides**, not at Card's: a cell's
+   `?` is also `.sheetsmith-view .sheetsmith-table-value`, which sets the
+   semibold at equal weight above, so a fold placed earlier would lose the
+   weight. */
+.sheetsmith-card-derived-unresolved,
+.sheetsmith-view .sheetsmith-table-unresolved,
 .sheetsmith-pool-max-unresolved {
-	color: var(--text-faint);
+	color: var(--text-muted);
 	font-weight: var(--font-normal);
 }
 
@@ -3762,10 +3757,6 @@ body {
 .sheetsmith-pool-adjust-direction,
 .sheetsmith-pool-preview {
 		color: var(--text-normal);
-	}
-
-.sheetsmith-pool-max-unresolved {
-		color: var(--text-muted);
 	}
 
 }
@@ -5070,10 +5061,12 @@ a.sheetsmith-notice-action {
 
 /* A count that is present and did not resolve. "?" is reserved for exactly
    that (SPEC §5); an empty run is a state the control shows, not a missing
-   value, so it is never drawn as "—". */
+   value, so it is never drawn as "—". Muted on the card's own "?"'s argument
+   (above, at `.sheetsmith-card-derived-unresolved`); its own rule because it is
+   semibold and sized for the run on purpose. */
 .sheetsmith-track-unresolved {
 	margin: auto 0;
-	color: var(--text-faint);
+	color: var(--text-muted);
 	font-size: var(--font-ui-medium);
 	font-weight: var(--font-semibold);
 }
@@ -5141,10 +5134,6 @@ a.sheetsmith-notice-action {
 
 .sheetsmith-track-segment-on {
 		border-color: var(--interactive-accent);
-	}
-
-.sheetsmith-track-unresolved {
-		color: var(--text-muted);
 	}
 
 }
@@ -7028,17 +7017,10 @@ a.sheetsmith-notice-action {
 	pointer-events: none;
 }
 
-/* **`?` in the ceiling's own muted grey, not Pool's faint.** It is the reading in
-   that slot, read back exactly as a number there is, and `docs/UI.md` §6 holds
-   such text to 4.5:1 on its surface: faint measures about 2.2:1 light and 2.9:1
-   dark on a record, where the `/` beside it is muted. The error line under the
-   record says *why*, but the slot is where the eye lands first. Scoped to the
-   record's layer, so Pool's own unresolved max keeps its rule. */
-.sheetsmith-view
-	.sheetsmith-record-field
-	.sheetsmith-record-worked-out-layer.sheetsmith-pool-max-unresolved {
-	color: var(--text-muted);
-}
+/* The layer's `?` takes Pool's own `.sheetsmith-pool-max-unresolved`, which is
+   muted since `docs/features/text-faint-audit.md`: the reading in that slot,
+   read back exactly as a number there is, beside a muted `/`. It needed an
+   override of its own here while Pool's was faint. */
 
 /* Keyed on the field's focus, through `interaction/field-focus-flag.ts`, as the
    name's layer is: focused, the reader edits `prof` rather than 3. */
