@@ -1298,8 +1298,10 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 					/*
 					 * **The mark is Pool's own and not `.sheetsmith-modified`.** That
 					 * class carries `cursor: help`, promising a press on the number,
-					 * and this numeral has none; and its plain underline is the open
-					 * "reads as a link" finding. A dotted rule drawn as a border
+					 * and this numeral has none; and its plain underline reads as a
+					 * link, a trade `docs/UI.md` §9 accepts for numbers that have a
+					 * press, and reopens if the directory review only warns about
+					 * the dotted longhands. A dotted rule drawn as a border
 					 * fits here where it was reverted on Card, because this span is a
 					 * flex item sized to its digits, so its box is the numeral.
 					 * `?` takes no mark: it is a status, not a number.
