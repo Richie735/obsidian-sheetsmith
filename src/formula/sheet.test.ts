@@ -776,6 +776,53 @@ describe('sheetModifiers', () => {
 		expect(outcome.applies).toBe(false);
 	});
 
+	it('breaks down a name its own formula reads absolutely', () => {
+		// `mod.armour_class` in armour_class's own formula is `mod.self` spelt
+		// out, and moves the number exactly as much.
+		expect(
+			sheet('10 + mod.armour_class').breakdown('armour_class').lines,
+		).toHaveLength(1);
+	});
+
+	it('gives no breakdown for a name only another formula reads, though the push applies', () => {
+		/*
+		 * The narrow set's whole point. `speed` reads `mod.armour_class`, so
+		 * armour_class is in the wide set and the Ring's outcome still applies —
+		 * it moves speed — but armour_class's own number never moves, so its
+		 * breakdown lists nothing and no mark is drawn on it.
+		 */
+		const components: PublishedComponent[] = [
+			{ id: 'armour_class', values: { self: { value: 10 } } },
+			{
+				id: 'items',
+				values: {},
+				modifiers: () => [
+					{ part: 'Ring', source: 'Magic items', row: { label: 'Ring', values: {} } },
+				],
+			},
+		];
+		const input = sheetModifierInput(DEFINITIONS, [
+			source({
+				id: 'armour_class',
+				label: 'Armour class',
+				values: { self: { value: 1 } },
+				formulas: ['10'],
+			}),
+			source({
+				id: 'speed',
+				label: 'Speed',
+				values: { self: { value: 1 } },
+				formulas: ['30 + mod.armour_class'],
+			}),
+		]);
+		expect(input.accepting.has('armour_class')).toBe(true);
+		expect(input.marked.has('armour_class')).toBe(false);
+		const context = sheetModifiers(input, buildSheetEnv(components, undefined, input));
+		expect(context.breakdown('armour_class').lines).toEqual([]);
+		const outcome = context.outcomes('Ring', { label: 'Ring', values: {} })[0] as ModifierOutcome;
+		expect(outcome.applies).toBe(true);
+	});
+
 	it('gives no breakdown where the slot itself was refused', () => {
 		// The refusal is already on the card as "?" with the row named under it,
 		// through the formula that read the slot. There is no number to take apart.

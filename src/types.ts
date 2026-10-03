@@ -1729,7 +1729,8 @@ export interface ModifierContext {
 	/**
 	 * The values a modifier may be aimed at, for the form's **Value** select.
 	 *
-	 * The accepting set — every published name whose own formula reads a modifier —
+	 * The accepting set — every published name some formula on the layout reads a
+	 * modifier for, through its own `mod.self` or a `mod.<name>` anywhere —
 	 * derived once in `formula/modifier-targets.ts` and shared with the layout
 	 * editor's own picker, so the sheet and the pane cannot offer different lists.
 	 */

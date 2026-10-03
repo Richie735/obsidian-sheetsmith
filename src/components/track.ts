@@ -855,8 +855,9 @@ interface CardCount {
  * **It is also why nothing has to scan the formula text.** A run whose `count`
  * reads the absolute spelling — `3 + mod.exhaustion.count` — resolves to the
  * same number either way, because only `mod.self` is sensitive to the name, so
- * it correctly draws a longer run with nothing marked as granted. `docs/UI.md`
- * §9's wide set still decides whether there is a breakdown to read.
+ * it correctly draws a longer run with nothing marked as granted. Whether there
+ * is a breakdown to read is the own-formula set's question
+ * (`SheetModifiers.marked`), which admits that spelling.
  *
  * **A penalty is the same subtraction read the other way, and what it produces
  * is drawn rather than thrown away.** The slots an item takes stay on the card
@@ -1676,12 +1677,12 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 		 * things about one number — the rule the `title` and the twin were already
 		 * held to, with the carriers changed under it.
 		 *
-		 * **It follows the wide set, which the granted drawing deliberately does
-		 * not.** A breakdown answers "has anything been pushed at this name",
-		 * which is a question about the name; the dashed tail answers "how much of
-		 * this length came from a push", which is a question about the formula. A
-		 * run whose `count` reads `mod.exhaustion.count` gets the door and no
-		 * dashes, and that is right on both counts.
+		 * **It follows the own-formula set, which the granted drawing deliberately
+		 * narrows further.** A breakdown answers "has anything been pushed at a
+		 * name this card's own formula reads", which admits the absolute spelling;
+		 * the dashed tail answers "how much of this length came from `mod.self`",
+		 * which does not. A run whose `count` reads `mod.exhaustion.count` gets the
+		 * door and no dashes, and that is right on both counts.
 		 *
 		 * Row sets get none by the same absence everything else here turns on:
 		 * `countName` is undefined, so there is no name to break down.

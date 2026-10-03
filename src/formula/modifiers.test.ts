@@ -126,6 +126,7 @@ function sheet(
 		published: components.map((one) => ({ name: one.id, label: one.id })),
 		bonusTypes: [],
 		accepting: new Set(components.map((one) => one.id)),
+		marked: new Set(components.map((one) => one.id)),
 	});
 }
 
