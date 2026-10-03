@@ -52,6 +52,7 @@ import { parseModifierDefinitions } from '../parse/modifier-definitions';
 import { parseModifierTypes } from '../parse/modifier-types';
 import {
 	acceptingTargets,
+	markedTargets,
 	modifierTargetSource,
 	ModifierTargetSource,
 	noteTargets,
@@ -302,14 +303,14 @@ export interface SheetModifiers {
 	 */
 	bonusTypes: readonly string[];
 	/**
-	 * The published names whose own formula reads a modifier.
+	 * The published names some formula reads a modifier for: the wide set
+	 * (`acceptingTargets`).
 	 *
-	 * What `ModifierContext`'s two questions are bounded by, and nothing more. A
-	 * name that accepts no modifier gets no breakdown, which keeps a card from
-	 * drawing a mark over a change that is not being applied; and an enrolment
+	 * What an enrolment's outcome is bounded by, and nothing more: an enrolment
 	 * whose target accepts none reports that it changes nothing, which keeps a
 	 * modifier cell's glyph from claiming an effect and is the only bound on the
-	 * one query that enters the modifier walk from the sheet.
+	 * one query that enters the modifier walk from the sheet. A breakdown, and so
+	 * a mark, is bounded by `marked` below, which is narrower.
 	 *
 	 * **The override step is bounded elsewhere and more tightly** — by the slot
 	 * actually having been read on the path an evaluation took (`resolve.ts`) — so
@@ -318,6 +319,19 @@ export interface SheetModifiers {
 	 * under this bound instead of that one.
 	 */
 	accepting: ReadonlySet<string>;
+	/**
+	 * The published names a modifier can move: those whose *own* component's
+	 * formulas mention `mod.self` or `mod.<that name>` (`markedTargets`).
+	 *
+	 * **What a breakdown's arithmetic, and so every mark on a number, is bounded
+	 * by.** A subset of `accepting`, which also admits a name some *other*
+	 * formula reads through `mod.<name>` — that name's own number never moves, so
+	 * bounding the mark on the wide set drew it, and listed contributors, over a
+	 * value nothing changed. `accepting` keeps the outcomes, because a push at
+	 * such a name does move the component reading it; this keeps the mark, which
+	 * is about the number on the card.
+	 */
+	marked: ReadonlySet<string>;
 	/**
 	 * Every published name a note may be aimed at, with its label: the names
 	 * whose component draws notes (`noteTargets`). The form's **Value** select
@@ -343,6 +357,7 @@ export const NO_SHEET_MODIFIERS: SheetModifiers = {
 	published: [],
 	bonusTypes: [],
 	accepting: new Set(),
+	marked: new Set(),
 	noteTargets: [],
 	notable: new Set(),
 };
@@ -384,6 +399,7 @@ export function sheetModifierInput(
 		published: publishedTargets(sources),
 		bonusTypes,
 		accepting: new Set(targets.map((target) => target.name)),
+		marked: new Set(markedTargets(sources).map((target) => target.name)),
 		noteTargets: notes,
 		notable: new Set(notes.map((target) => target.name)),
 	};
@@ -393,12 +409,12 @@ export function sheetModifierInput(
  * Every name some part on this sheet could carry a note to, found by reading
  * text and never by evaluating it (`docs/features/modifier-notes.md` F).
  *
- * **What bounds a breakdown's entry into the modifier walk at a name that
- * accepts no modifier.** The accepting set bounded that entry alone, and
- * `sheetModifiers` argues why the bound matters; notes need the wider set, and
+ * **What bounds a breakdown's entry into the modifier walk at a name outside
+ * `marked`.** `marked` bounds that entry for the arithmetic, and
+ * `sheetModifiers` argues why the bound matters; notes need a wider set, and
  * asking at every note target on every render would move the walk's first
  * entry on sheets carrying no note at all. With this, a sheet with no note
- * anywhere enters the walk at exactly the names it entered before.
+ * anywhere enters the walk from a breakdown at the `marked` names alone.
  *
  * **A static scan, because gathering pushes is not one.** The spec's first
  * choice was to read the pushes themselves; it does not hold, since a Table's
@@ -529,14 +545,17 @@ export function buildSheet(
  * decide what a component may draw and are too load-bearing to state inside a
  * five-line sequence.
  *
- * **Nothing at all for a name that accepts no modifier**, and that is a rule
- * rather than an optimisation — of the arithmetic. Notes are bounded by a set of
- * their own (`notable`, below), because a note needs no slot; a name outside both
- * sets gets nothing of either. It is what keeps a card from drawing a mark over an
- * enrolment that is not being applied — a definition aimed at a value whose
- * formula reads no slot changes nothing, and the place that says so is the
- * editor's report beside the target picker that chose it. It also means a name
- * nothing could read never sets the walk going.
+ * **No arithmetic for a name a push cannot move**, and that is a rule rather
+ * than an optimisation. Three sets bound three things: an enrolment's outcome
+ * by `accepting`, the wide set, since a push there moves *something*; a
+ * breakdown's arithmetic, and so every mark, by `marked`, the names whose own
+ * formula reads the push, so a name read only through another component's
+ * `mod.<name>` lists nothing; and notes by `notable`, because a note needs no
+ * slot. A name outside all three gets nothing. It is what keeps a card from
+ * drawing a mark over an enrolment that is not moving its number — a definition
+ * aimed at a value whose formula reads no slot changes nothing, and the place
+ * that says so is the editor's report beside the target picker that chose it.
+ * It also means a name nothing could read never sets the walk going.
  *
  * **A refused slot has no breakdown either.** The refusal is already on the card
  * as `?` with the row named under it, through the formula that read the slot; a
@@ -550,9 +569,9 @@ export function sheetModifiers(
 	promote?: (name: string, effect: TypedEffect) => Promise<PromoteResult>,
 	/**
 	 * The names some part could carry a note to (`noteCandidates`), which is what
-	 * lets a breakdown enter the walk at a note target that accepts no modifier.
-	 * Absent offers none: notes then reach accepting names only, which is never
-	 * a wider walk than the one this function entered before notes existed.
+	 * lets a breakdown enter the walk at a note target outside `marked`.
+	 * Absent offers none: notes then reach `marked` names only, which is never
+	 * a wider walk than the one a breakdown enters for its arithmetic.
 	 */
 	candidates: () => ReadonlySet<string> = () => new Set(),
 ): ModifierContext {
@@ -595,8 +614,10 @@ export function sheetModifiers(
 		noteTargets: modifiers.noteTargets ?? [],
 		bonusTypes: modifiers.bonusTypes,
 		/*
-		 * **Bounded by the accepting set, on the same terms `breakdown` is**, and
-		 * that bound is doing two jobs.
+		 * **Bounded by the accepting set**, which is wider than `breakdown`'s
+		 * bound on purpose: a push at a name another component reads through
+		 * `mod.<name>` moves that component, so saying it changes nothing would
+		 * be false. That bound is doing two jobs.
 		 *
 		 * It is the *only* bound on this query, and this query is what enters the
 		 * modifier walk from the sheet: a modifier cell asks it **once per modifier
@@ -690,16 +711,21 @@ export function sheetModifiers(
 				};
 			}),
 		/*
-		 * **Two bounds, one per group.** The arithmetic is bounded by the accepting
-		 * set exactly as before. Notes come for every note target — a note needs
-		 * no slot — but a name outside the accepting set enters the walk only
-		 * where some part on the sheet could carry a note to it (`candidates`),
-		 * which keeps the walk's first entry where it was on a sheet with none.
-		 * An arithmetic refusal does not hide a note: the card draws `?` and the
-		 * notes group still says what was noted.
+		 * **Two bounds, one per group.** The arithmetic is bounded by `marked`,
+		 * the names whose own formula reads a modifier for them, and not by the
+		 * accepting set: a name reaching that set only through another
+		 * component's `mod.<name>` has no number a push moves, so listing
+		 * contributors there was listing contributors with no effect. Every
+		 * arithmetic mark is drawn from this answer, so the mark follows too.
+		 * Notes come for every note target — a note needs no slot — but a name
+		 * outside `marked` enters the walk only where some part on the sheet
+		 * could carry a note to it (`candidates`), which keeps the walk's first
+		 * entry no wider than it was on a sheet with none. An arithmetic refusal
+		 * does not hide a note: the card draws `?` and the notes group still says
+		 * what was noted.
 		 */
 		breakdown: (name) => {
-			const accepts = modifiers.accepting.has(name);
+			const accepts = modifiers.marked.has(name);
 			const notesHere = notable.has(name);
 			if (!accepts && !(notesHere && candidates().has(name))) {
 				return { lines: [], override: null, total: 0, resultTotal: 0 };

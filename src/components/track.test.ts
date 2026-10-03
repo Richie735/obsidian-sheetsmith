@@ -3725,8 +3725,8 @@ describe('a modifier granting segments', () => {
 	});
 
 	/*
-	 * The absolute spelling reaches the ceiling through the accepting set's
-	 * *second* rule — a `mod.<name>` written anywhere on the layout — so the run
+	 * The absolute spelling, written in the Track's own field, reaches the
+	 * own-formula set a mark follows (`SheetModifiers.marked`), so the run
 	 * genuinely gets longer while the component's own formula can say nothing
 	 * about how much of its length came from a push. A uniform run is the honest
 	 * drawing, and it needs no text scan to arrive at: only `mod.self` resolves
@@ -4136,7 +4136,7 @@ describe('a modifier granting segments', () => {
 		).toBe(true);
 	});
 
-	it('follows the wide set, so an absolute spelling gets the door and no dashes', () => {
+	it('follows the own-formula set, so an absolute spelling gets the door and no dashes', () => {
 		const { el } = sheetOf('+= 2', { ...run, count: '3 + mod.exhaustion.count' });
 		expect(doorOf(el)).not.toBeNull();
 		expect(

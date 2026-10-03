@@ -131,8 +131,11 @@ export function modifierBreakdown(
 	 * where the slot was actually read. Both bounds are individually right and
 	 * together they printed `Total 19` over the number 10, on
 	 * `if(false, 10 + mod.self, 10)` and, with no lazy `if` at all, on any name
-	 * that reaches the accepting set through some *other* formula's `mod.<name>`
-	 * while an override only ever arrives via `mod.self`.
+	 * that reached the accepting set through some *other* formula's `mod.<name>`
+	 * while an override only ever arrives via `mod.self`. That second case is
+	 * now closed upstream — a breakdown is bounded by the names whose own formula
+	 * reads a modifier (`SheetModifiers.marked`) — and the lazy `if` is not, which
+	 * is why the shown value still comes from the caller.
 	 *
 	 * A wrong delta was an unexplained delta; a wrong value is a false statement
 	 * about the number under the cursor, which is exactly what `resolve.ts`'s own

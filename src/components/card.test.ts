@@ -11,6 +11,14 @@ import {
 } from '../types';
 import { sampleOf } from '../test/sample';
 import { closePopover } from '../ui/popover';
+import { table, TableConfig } from './table';
+import { buildSheet, ReadComponent } from '../formula/sheet';
+import {
+	makeFieldExplainer,
+	makeFieldResolver,
+	resolveFormulaFields,
+} from '../formula/resolve';
+import { Layout } from '../parse/layout';
 
 const config: CardConfig = {
 	id: 'armour-class',
@@ -1664,5 +1672,99 @@ describe('a card something has noted (docs/features/modifier-notes.md)', () => {
 		});
 		expect(mark(el)).toBeNull();
 		expect(el.querySelector('.sheetsmith-card-has-note')).toBeNull();
+	});
+});
+
+/*
+ * Which card a push draws the mark on, through the real assembly rather than a
+ * stubbed breakdown (SPEC §13, settled): the mark follows the names whose *own*
+ * formula reads a modifier for them, and a name some other card reads through
+ * `mod.<name>` is not one of them.
+ */
+describe('the mark follows the card\'s own formula', () => {
+	const gear: TableConfig = {
+		id: 'worn',
+		type: 'table',
+		label: 'Worn items',
+		position: { col: 1, row: 2, width: 4, height: 2 },
+		rowHeader: 'Item',
+		rows: [{ label: 'Ring' }],
+		columns: [{ key: 'Modifiers', type: 'modifier' }],
+	};
+
+	/**
+	 * Two cards and a push at the first; returns both rendered, the target as
+	 * `el` and the card reading it as `readerEl`.
+	 */
+	const sheetOf = (own: string, other: string) => {
+		const target: CardConfig = { ...config, id: 'armour_class', derived: own };
+		const reader: CardConfig = {
+			...config,
+			id: 'shield',
+			label: 'Shield',
+			position: { col: 3, row: 1, width: 2, height: 1 },
+			derived: other,
+		};
+		const gearBody = [
+			'| Item | Modifiers |',
+			'| --- | --- |',
+			'| Ring | armour_class += 2 as item |',
+		].join('\n');
+		const data = { value: '15' };
+		const gearRead = table.read(gearBody, gear);
+		if (!gearRead.ok) throw new Error('read failed');
+		const layout: Layout = { name: 'Test', components: [target, reader, gear] };
+		const prepared: ReadComponent[] = [
+			{ config: target, component: card, data, error: null },
+			{ config: reader, component: card, data, error: null },
+			{ config: gear, component: table, data: gearRead.data, error: null },
+		];
+		const { env, modifiers } = buildSheet(layout, prepared);
+		const drawn = (one: CardConfig) => {
+			const el = document.createElement('div');
+			card.render(el, one, data, {
+				resolved: resolveFormulaFields(card, one, data, env),
+				resolveField: makeFieldResolver(card, one, data, env),
+				explainField: makeFieldExplainer(card, one, data, env),
+				onChange: () => undefined,
+				modifiers,
+			});
+			return el;
+		};
+		return { el: drawn(target), readerEl: drawn(reader), env };
+	};
+
+	it('marks a number whose own formula reads the push', () => {
+		const { el } = sheetOf('value + mod.self', 'value');
+		expect(el.querySelector('.sheetsmith-modified')).not.toBeNull();
+	});
+
+	it('marks it under the absolute spelling of its own name too', () => {
+		const { el } = sheetOf('value + mod.armour_class', 'value');
+		expect(el.querySelector('.sheetsmith-modified')).not.toBeNull();
+	});
+
+	it('draws no mark where only another card reads the push', () => {
+		const { el, env } = sheetOf('value', 'value + mod.armour_class');
+		// The push is real and moves the card that reads it, which is why the
+		// name stays in the wide set: it is the target's own number that does
+		// not move, so nothing on it may say it did.
+		expect(env.sheet('shield')).toBe(17);
+		expect(env.sheet('armour_class')).toBe(15);
+		expect(el.querySelector('.sheetsmith-modified')).toBeNull();
+	});
+
+	it('draws no mark on the card that reads the push absolutely, though it moved', () => {
+		/*
+		 * Left on purpose and pinned at the surface (`docs/BACKLOG.md` § UI): a
+		 * push at armour_class moves shield, and no set marks shield. A change to
+		 * this is a ruling, not a drift.
+		 */
+		const { readerEl, env } = sheetOf('value', 'value + mod.armour_class');
+		expect(env.sheet('shield')).toBe(17);
+		expect(
+			readerEl.querySelector('.sheetsmith-card-derived')?.textContent,
+		).toContain('17');
+		expect(readerEl.querySelector('.sheetsmith-modified')).toBeNull();
 	});
 });

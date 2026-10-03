@@ -1376,7 +1376,7 @@ export const SAMPLES: Sample[] = [
 			// (`docs/features/pool-ceiling-modifier-door.md`). `rolled_health.max`
 			// is the push that moves nothing — a typed ceiling has no formula to
 			// read its slot — and the row's own line says so.
-			'| Talisman of Endurance | endurance.count += 2; endurance_low.count += 2; all_granted.count += 2; stamina.max += 3 |',
+			'| Talisman of Endurance | endurance.count += 2; endurance_low.count += 2; all_granted.count += 2; stamina.max += 3; grit.count += 2; carried += 3 |',
 			'| Shackles | vigour.count += -2; cursed_run.count += -5; unmade.count += -1; overfull_shackled.count += -2; ward.max += -2; rolled_health.max += -4 |',
 		].join('\n'),
 	},
@@ -3075,6 +3075,56 @@ export const SAMPLES: Sample[] = [
 			count: 6,
 		} as ComponentConfig,
 		body: '```sheet\nvalue: 30\n```',
+	},
+	/*
+	 * **Which number a push marks: the one whose own formula reads it**
+	 * (SPEC §13, settled). All three are pushed at by the Talisman of Endurance
+	 * row in Worn items.
+	 *
+	 * - **Grit** reads its slot by the absolute spelling in its own field,
+	 *   `3 + mod.grit.count`, and keeps its door: the run really is two longer,
+	 *   with no granted dashes, since the dashes are `mod.self`'s alone.
+	 * - **Carried** is pushed at and draws **no** underline: its own formula reads
+	 *   no slot, so its number does not move. It accepts a modifier only because
+	 *   Load, beside it, reads `mod.carried` — which used to be enough to draw the
+	 *   mark and list the Talisman over a 10 that stayed 10.
+	 * - **Load** is the number that did move, 10 + 3, and draws no mark either.
+	 *   That one is deliberate and not settled here: no set marks a component for
+	 *   a push aimed at another name it reads.
+	 */
+	{
+		config: {
+			id: 'grit',
+			type: 'track',
+			label: 'Grit',
+			position: { col: 5, row: 77, width: 4, height: 1 },
+			count: '3 + mod.grit.count',
+		} as ComponentConfig,
+		body: '```sheet\nvalue: 2\n```',
+	},
+	{
+		config: {
+			id: 'carried',
+			type: 'card',
+			label: 'Carried',
+			position: { col: 9, row: 77, width: 2, height: 1 },
+			key: 'Carried',
+			derived: 'value',
+			signed: false,
+		} as ComponentConfig,
+		body: '```sheet\nCarried: 10\n```',
+	},
+	{
+		config: {
+			id: 'load',
+			type: 'card',
+			label: 'Load',
+			position: { col: 11, row: 77, width: 2, height: 1 },
+			key: 'Load',
+			derived: 'carried + mod.carried',
+			signed: false,
+		} as ComponentConfig,
+		body: '```sheet\nLoad: 0\n```',
 	},
 ];
 

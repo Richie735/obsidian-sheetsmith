@@ -5781,6 +5781,7 @@ describe('table and mod.self', () => {
 				})),
 				bonusTypes: [],
 				accepting: new Set(pushes.map(([target]) => target)),
+				marked: new Set(pushes.map(([target]) => target)),
 			},
 		);
 	}
@@ -6128,6 +6129,7 @@ describe('table and mod.self', () => {
 				published: [],
 				bonusTypes: [],
 				accepting: new Set(['skills.acrobatics']),
+				marked: new Set(['skills.acrobatics']),
 			},
 		);
 		const el = document.createElement('div');

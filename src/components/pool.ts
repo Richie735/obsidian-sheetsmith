@@ -787,9 +787,10 @@ export const pool: ComponentDefinition<PoolConfig, PoolData> = {
 		 * cannot bring the door back. A second spelling of that condition here
 		 * would be `PATTERNS.md` §1's predicate in two places.
 		 *
-		 * **It follows the wide set**, as Track's door and Card's underline do: the
-		 * question is whether anything was pushed at the name, not whether the
-		 * formula's arithmetic moved because of it.
+		 * **It follows the own-formula set**, as Track's door and Card's underline
+		 * do (`SheetModifiers.marked`): the question is whether anything was pushed
+		 * at a name this pool's own formula reads, not how far the arithmetic
+		 * moved because of it.
 		 */
 		const maxName = publishedFieldNames(pool, config).get('max');
 		const ceilingPushed =
