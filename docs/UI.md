@@ -860,12 +860,18 @@ already looking at.
 it did** [judgement]. `count: 'floor((3 + mod.self) / 2)'` with a `+2` draws one
 granted segment, so `Total +2` alone states one push at two magnitudes on one
 control. The contributor lines stay what was pushed, since that is what a reader
-unticks, and the total adds the measured effect only where it differs —
-`Total +2, run +1` — so an untransformed slot reads as it always did. The effect
-comes from the caller that measured it, as `shown` does: the builder never
-re-derives a number somebody else drew. Track measures it already (`cardCount`);
-Card, Table and Roster follow when they do. Not yet built
-(`docs/BACKLOG.md` § UI).
+unticks, and the total adds the measured effect only where it differs from both
+phases' slot total — `Total +2, run +1`, signed either way, after `, ` so it
+does not read as a contributor — so an untransformed slot reads as it always
+did. The effect and its noun come from the caller that measured it, as `shown`
+does: the builder never re-derives a number somebody else drew, and holds no
+component's word. **A zero effect adds nothing**, because a count reading its
+slot by the absolute spelling measures zero over a run that genuinely moved;
+**an override keeps `Total <shown>`**, which already states the value; and a
+clamp at the run's floor or cap is something the push did, so it is said
+(`docs/features/breakdown-measured-effect.md`). Track is built, from
+`cardCount`'s own measurement; Card, Table and Roster follow when they measure.
+What a zero still hides — an absorbed push — is in `docs/BACKLOG.md` § UI.
 
 **An irreversible control arms before it fires** [judgement]. The first press
 takes a warning tint, marks what it would take, and names it; the second
