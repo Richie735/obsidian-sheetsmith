@@ -131,6 +131,7 @@ import {
 	showsOwnLabel,
 } from '../types';
 import { levelCount, levelIndex, levelName, levelOf, parseLevel } from './level-ring';
+import { FALLBACK_FIT_TIER, fitTier, type LineField } from './record-line-fit';
 import { adoptRenderedLinks, paintLinkedText } from './linked-text';
 import {
 	ModifierFormState,
@@ -189,6 +190,7 @@ const REMOVE_ICON = 'trash';
  * draws for that count with nothing red to say so.
  */
 export const MAX_TABULATED_FIELDS = 8;
+
 
 /** A blank line, which is what separates one paragraph from the next. */
 const PARAGRAPH_BREAK = /(?:\r?\n[ \t]*)+\r?\n/;
@@ -477,6 +479,34 @@ function honouredCondition(field: RecordField): string | boolean | null {
 /** What a record's field is called on the sheet. */
 function fieldLabel(field: RecordField): string {
 	return (field.name ?? '').trim() || field.key;
+}
+
+/**
+ * A summary field as `record-line-fit.ts` sizes it: its kind as drawn, and the
+ * words it draws that its width depends on.
+ */
+function lineFieldOf(field: RecordField): LineField {
+	const type = fieldType(field);
+	if (type === 'computed') return { kind: 'computed' };
+	if (type === 'modifier' || type === 'toggle') return { kind: 'mark' };
+	if (type === 'level') {
+		if (field.input !== 'select') return { kind: 'mark' };
+		const options: string[] = [];
+		for (let level = 0; level <= levelCount(field); level++) {
+			options.push(levelName(field, level));
+		}
+		return { kind: 'select', options };
+	}
+	if (type === 'text') return { kind: 'text', name: fieldLabel(field) };
+	return {
+		kind: 'number',
+		name: fieldLabel(field),
+		ceiling: recordsOwnMax(field)
+			? 'typed'
+			: field.max !== undefined
+				? { fixed: String(field.max) }
+				: 'none',
+	};
 }
 
 /** Whether this field's ceiling belongs to each record rather than to the field. */
@@ -2012,22 +2042,27 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 			records.some((record) => record.error === null);
 
 		/**
-		 * Whether the summary line carries a text field, which is a word wide and
-		 * stacks the record sooner (`sheet.css`, the text-list stacking block). The
-		 * class is stamped only then, so every other list draws the markup it
-		 * always drew.
+		 * How many fields the summary line declares, clamped to the strip's
+		 * threshold table, which a headed list wears as `-fields-N`.
 		 */
-		const wordOnLine = summaryFields.some((field) => fieldType(field) === 'text');
+		const lineCount = Math.min(summaryFields.length, MAX_TABULATED_FIELDS);
+		/**
+		 * The width the summary line fits on one row at, in steps of 16px:
+		 * `sheet.css` stacks the record (name and delete on a row, the
+		 * fields under the name) below it (`docs/features/record-set-stacking-tiers.md`).
+		 * Stamped on **every** list, headed or not, from every declared summary
+		 * field, a hidden one included, because a record can draw them all.
+		 */
+		const tier = fitTier(summaryFields.map(lineFieldOf));
 		const block = element(
 			'div',
 			(headed
-				? `sheetsmith-placed sheetsmith-record-set sheetsmith-record-set-headed sheetsmith-record-set-fields-${Math.min(summaryFields.length, MAX_TABULATED_FIELDS)}`
+				? `sheetsmith-placed sheetsmith-record-set sheetsmith-record-set-headed sheetsmith-record-set-fields-${lineCount}`
 				: 'sheetsmith-placed sheetsmith-record-set') +
-				(wordOnLine
-					? headed
-						? ' sheetsmith-record-set-text sheetsmith-record-set-text-headed'
-						: ' sheetsmith-record-set-text'
-					: ''),
+				` sheetsmith-record-set-fit-${tier}` +
+				// The fallback 320px rule's opt-out: a line that fits by 320px
+				// must not be stacked up to it (the rule's own comment).
+				(tier < FALLBACK_FIT_TIER ? ' sheetsmith-record-set-fits-narrow' : ''),
 			container,
 		);
 		// The true count, for the shared tracks; the class above is only the

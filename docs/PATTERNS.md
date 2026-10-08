@@ -285,13 +285,12 @@ wrapper taking the item titles as arguments for one caller is the generalisation
 ahead of evidence §1 refuses. The scan names that one file rather than being
 dropped, so a second import is still a decision made there.
 
-The allowlist has since gained no name, and the sibling list has gained four:
-`components/modifier-form.ts`, the markup of that form; `components/effective-value.ts`;
-`components/typed-value.ts`, which is what a typed value stored as text means
-before any formula runs; and `components/note-mark.ts`, the mark on a value a
-modifier has noted, at three consumers — Card through `card-face.ts`, Table and
-Roster — which is §1's extraction line met exactly. The last three are on it for **reuse** rather than atomicity,
-which is the distinction the entry below turns on — and `typed-value.ts` is the one
+The allowlist has since gained no name. The sibling list is recorded in
+`eslint.config.mts`, each entry beside its argument, and driven through
+`components/isolation.test.ts`; this file carries no copy of it. Most entries are
+on it for **reuse** rather than atomicity, which is the distinction the entry below
+turns on — and `typed-value.ts`, which is what a typed value stored as text means
+before any formula runs, is the one
 that shows the boundary working rather than merely permitting: extraction was refused
 once in review on the grounds that §2 reserves the allowlist edit and that
 `column-types.ts` holds a vocabulary and no behaviour, and both halves of that were
@@ -299,14 +298,18 @@ right about the *destination* and wrong about the conclusion. §2 says the edit 
 the decision, and §1 says extraction goes to a module named for the behaviour — which
 is a new file, not the vocabulary.
 
-**`modifier-form.ts` is the one on the list for atomicity and not for reuse, and
-the difference is the whole of why its entry is worth reading.** It arrived with
+**`modifier-form.ts` was the first on the list for atomicity and not for reuse,
+and the difference is the whole of why its entry is worth reading.** It arrived with
 exactly one consumer — Table — where `card-face.ts`, `linked-text.ts` and
 `level-ring.ts` had three each and `modifier-breakdown.ts` five. §1 is explicit
 that one consumer earns no generalisation, so "shared" is not what admitted it:
 `table.ts` was 2450 lines and drawing a six-field form is a second job in a file
 whose job is a table, which is the Pool engine's precedent above — *atomicity is
-what forced the split, not reuse*.
+what forced the split, not reuse*. `components/record-line-fit.ts` is the second
+entry on those terms: Record set's private half, with one consumer and no markup,
+split out because estimating a summary line's width from measured constants is a
+second job in `record-set.ts`, and kept pure so its estimate is held against the
+harness's numbers without a DOM (`docs/features/record-set-stacking-tiers.md`).
 
 **And the second consumer has since arrived, which closes what that entry was
 waiting for.** Record set's `modifier` field imports `renderModifierForm` and

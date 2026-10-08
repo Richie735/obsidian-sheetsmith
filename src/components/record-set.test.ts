@@ -3616,6 +3616,158 @@ describe('a strip of field names over the list', () => {
 		).toBe(true);
 	});
 
+	describe('the fit tier (docs/features/record-set-stacking-tiers.md)', () => {
+		/** The `-fit-N` classes a block wears; there is exactly one. */
+		const tiers = (el: HTMLElement) =>
+			Array.from(block(el).classList).filter((one) =>
+				one.startsWith('sheetsmith-record-set-fit-'),
+			);
+		const narrow = (el: HTMLElement) =>
+			block(el).classList.contains('sheetsmith-record-set-fits-narrow');
+
+		it('stamps an unheaded list from its fields, which before this pass carried no width', () => {
+			// Traits' own line: a typed-ceiling `Uses`, a toggle, a ring, a computed
+			// value and a modifier, measured to fit at 510px; estimated at 509.9.
+			const el = render({ ...HEADED, fieldHeadings: false }, HEADED_BODY);
+			expect(block(el).classList.contains('sheetsmith-record-set-headed')).toBe(false);
+			expect(block(el).className).not.toContain('sheetsmith-record-set-fields-');
+			expect(tiers(el)).toEqual(['sheetsmith-record-set-fit-32']);
+			expect(narrow(el)).toBe(false);
+		});
+
+		it('stamps a headed list too, beside its strip count', () => {
+			const el = render(HEADED, HEADED_BODY);
+			expect(tiers(el)).toEqual(['sheetsmith-record-set-fit-32']);
+			expect(block(el).classList.contains('sheetsmith-record-set-fields-5')).toBe(true);
+		});
+
+		it('stamps a headed list whose strip is withheld', () => {
+			const el = document.createElement('div');
+			recordSet.render(el, HEADED, null, context);
+			expect(block(el).classList.contains('sheetsmith-record-set-headed')).toBe(false);
+			expect(tiers(el)).toEqual(['sheetsmith-record-set-fit-32']);
+		});
+
+		it('sizes the summary line only, not a field placed in the body', () => {
+			const el = render(
+				{
+					...HEADED,
+					fieldHeadings: false,
+					fields: [
+						...HEADED.fields!.slice(0, 2),
+						{ key: 'Notes', type: 'number', placement: 'body' },
+					],
+				},
+				HEADED_BODY,
+			);
+			// `Uses` and a toggle: 96 + 141.5 + 96 = 333.5px, so 21 steps of 16px.
+			expect(tiers(el)).toEqual(['sheetsmith-record-set-fit-21']);
+		});
+
+		it('sizes a field its condition can hide, because a record can draw it', () => {
+			const hidden = render(
+				{
+					...HEADED,
+					fieldHeadings: false,
+					fields: HEADED.fields!.map((field) =>
+						field.key === 'Attuned' ? { ...field, visibleWhen: false } : field,
+					),
+				},
+				HEADED_BODY,
+			);
+			expect(tiers(hidden)).toEqual(['sheetsmith-record-set-fit-32']);
+		});
+
+		it('marks a line that fits by 320px, which the fallback rule passes by', () => {
+			const one = render(
+				{ ...HEADED, fieldHeadings: false, fields: [{ key: 'Seen', type: 'toggle' }] },
+				HEADED_BODY,
+			);
+			// 96 + 20.8 + 96 = 212.8px, so 14 steps, stacked up to 224px.
+			expect(tiers(one)).toEqual(['sheetsmith-record-set-fit-14']);
+			expect(narrow(one)).toBe(true);
+			const none = render({ ...HEADED, fieldHeadings: false, fields: [] }, HEADED_BODY);
+			expect(tiers(none)).toEqual(['sheetsmith-record-set-fit-12']);
+			expect(narrow(none)).toBe(true);
+		});
+
+		it('clamps to the last tier the stylesheet tabulates', () => {
+			const many: RecordSetConfig = {
+				...HEADED,
+				fieldHeadings: false,
+				fields: Array.from({ length: 40 }, (_, at) => ({
+					key: `N${at}`,
+					type: 'number' as const,
+				})),
+			};
+			expect(tiers(render(many, HEADED_BODY))).toEqual(['sheetsmith-record-set-fit-100']);
+		});
+
+		it('re-tiers when a field is renamed, because its name is on the line', () => {
+			const long = render(
+				{
+					...HEADED,
+					fieldHeadings: false,
+					fields: [{ ...HEADED.fields![0]!, name: 'Uses of the ancient pact' }, ...HEADED.fields!.slice(1)],
+				},
+				HEADED_BODY,
+			);
+			// 24 characters at 6.73px: 96 + 391.9 + 156.6 = 644.5px, so 41 steps.
+			expect(tiers(long)).toEqual(['sheetsmith-record-set-fit-41']);
+		});
+
+		it('sizes a level drawn as a dropdown by its longest option', () => {
+			// Spells' line: `Level / 9`, a toggle and a school dropdown, measured to
+			// fit at 455.5px; estimated at 463.1, so 29 steps.
+			const spells = render(
+				{
+					...HEADED,
+					fieldHeadings: false,
+					fields: [
+						{ key: 'Level', type: 'number', max: 9 },
+						{ key: 'Prepared', type: 'toggle' },
+						{
+							key: 'School',
+							type: 'level',
+							input: 'select',
+							levels: ['None', 'Evocation', 'Abjuration'],
+						},
+					],
+				},
+				HEADED_BODY,
+			);
+			expect(tiers(spells)).toEqual(['sheetsmith-record-set-fit-29']);
+			// The same level as a ring is one mark wide: 96 + 178.9 + 96 = 370.9px, so 24.
+			const ring = render(
+				{
+					...HEADED,
+					fieldHeadings: false,
+					fields: [
+						{ key: 'Level', type: 'number', max: 9 },
+						{ key: 'Prepared', type: 'toggle' },
+						{ key: 'School', type: 'level', levels: ['None', 'Evocation', 'Abjuration'] },
+					],
+				},
+				HEADED_BODY,
+			);
+			expect(tiers(ring)).toEqual(['sheetsmith-record-set-fit-24']);
+		});
+
+		it('sizes a declared ceiling by its digits, which is where the fallback cut falls', () => {
+			const level = (max: number) =>
+				render(
+					{ ...HEADED, fieldHeadings: false, fields: [{ key: 'Level', type: 'number', max }] },
+					HEADED_BODY,
+				);
+			// `Level / 9`: 96 + 97.3 + 96 = 289.3px, 19 steps, under the fallback's 20.
+			expect(tiers(level(9))).toEqual(['sheetsmith-record-set-fit-19']);
+			expect(narrow(level(9))).toBe(true);
+			// `Level / 100`: 96 + 113.5 + 96 = 305.5px, 20 steps, the fallback's own.
+			expect(tiers(level(100))).toEqual(['sheetsmith-record-set-fit-20']);
+			expect(narrow(level(100))).toBe(false);
+		});
+	});
+
 	it('is hidden from assistive tech and carries no table role', () => {
 		const el = render(HEADED, HEADED_BODY);
 		const drawn = strip(el) as HTMLElement;
@@ -4166,7 +4318,10 @@ describe('a field inside the opened record', () => {
 		const noneBlock = none.querySelector('.sheetsmith-record-set') as HTMLElement;
 		expect(none.querySelector('.sheetsmith-record-strip')).toBeNull();
 		expect(none.querySelector('.sheetsmith-record-set-records')).toBeNull();
-		expect(noneBlock.className).toBe('sheetsmith-placed sheetsmith-record-set');
+		// No headed classes: only the fit tier of a line with no fields on it.
+		expect(noneBlock.className).toBe(
+			'sheetsmith-placed sheetsmith-record-set sheetsmith-record-set-fit-12 sheetsmith-record-set-fits-narrow',
+		);
 		expect(noneBlock.style.getPropertyValue('--sheetsmith-record-fields')).toBe('');
 	});
 
@@ -7428,17 +7583,13 @@ describe('a text field as the group key', () => {
 
 	describe('the classes the stylesheet’s design rules key on', () => {
 		/*
-		 * The stacking thresholds (480px, and 420px headed) and the left-aligned
-		 * strip heading are CSS, held by `harness/measure-groups.mjs`; what they key
-		 * on is these classes, and nothing else fails if the component stops
-		 * stamping them.
+		 * The stacking tier and the left-aligned strip heading are CSS, held by
+		 * `harness/measure-groups.mjs`; what they key on is these classes, and
+		 * nothing else fails if the component stops stamping them.
 		 */
 		const classesOf = (cfg: Partial<RecordSetConfig>, text = FEATURES_TEXT) => {
 			const el = live(cfg, text).host;
-			const block = el.querySelector('.sheetsmith-record-set') as HTMLElement;
 			return {
-				text: block.classList.contains('sheetsmith-record-set-text'),
-				headed: block.classList.contains('sheetsmith-record-set-text-headed'),
 				strip: Array.from(
 					el.querySelectorAll('.sheetsmith-record-strip > *'),
 				).map((one) => [
@@ -7448,37 +7599,14 @@ describe('a text field as the group key', () => {
 			};
 		};
 
-		it('stamps -text exactly when a text field is on the summary line', () => {
-			expect(classesOf({}).text).toBe(true);
-			expect(
-				classesOf({
-					fields: [{ key: 'Class', placement: 'body' }, { key: 'Uses', type: 'number' }],
-				}).text,
-			).toBe(false);
-			expect(
-				classesOf({
-					groupBy: 'Uses',
-					fields: [{ key: 'Uses', type: 'number' }, { key: 'Seen', type: 'toggle' }],
-				}).text,
-			).toBe(false);
-		});
-
-		it('stamps -text-headed exactly when the strip is drawn', () => {
-			expect(classesOf({}).headed).toBe(false);
-			expect(classesOf({ fieldHeadings: true })).toMatchObject({ text: true, headed: true });
-			// Asked for and with nothing to name: no strip, so no headed class.
-			const empty = document.createElement('div');
-			recordSet.render(empty, { ...TEXT_CONFIG, fieldHeadings: true }, null, context);
-			const emptyBlock = empty.querySelector('.sheetsmith-record-set') as HTMLElement;
-			expect(emptyBlock.classList.contains('sheetsmith-record-set-text')).toBe(true);
-			expect(emptyBlock.classList.contains('sheetsmith-record-set-text-headed')).toBe(false);
-			expect(
-				classesOf({
-					fieldHeadings: true,
-					groupBy: 'Uses',
-					fields: [{ key: 'Uses', type: 'number' }],
-				}),
-			).toMatchObject({ text: false, headed: false });
+		it('stamps no class for a text field: its fit tier sizes it', () => {
+			// A text field and a counter: 96 + 260.8 + 169 = 525.8px, so 33 steps.
+			for (const cfg of [{}, { fieldHeadings: true }]) {
+				const el = live(cfg).host;
+				const block = el.querySelector('.sheetsmith-record-set') as HTMLElement;
+				expect(block.className).not.toMatch(/sheetsmith-record-set-text/);
+				expect(block.classList.contains('sheetsmith-record-set-fit-33')).toBe(true);
+			}
 		});
 
 		it('marks the strip heading of a text column and no other', () => {
@@ -7508,7 +7636,8 @@ describe('a text field as the group key', () => {
 		 * were taken from the component **before** the text type existed, so a drift
 		 * in what an existing layout draws is a diff here and not a surprise in the
 		 * harness (`docs/features/free-text-group-key.md`, "Nothing existing
-		 * changes").
+		 * changes"). Updated once since, on purpose: the block's stacking tier
+		 * class (`docs/features/record-set-stacking-tiers.md`), its only diff.
 		 */
 		const outline = (root: Element, depth = 0): string[] => {
 			const attrs = ['type', 'aria-label', 'aria-expanded', 'placeholder', 'hidden']
@@ -7567,7 +7696,7 @@ describe('a text field as the group key', () => {
 		it('draws the markup it drew before text was offered, plain', () => {
 			expect(drawn({})).toMatchInlineSnapshot(`
 				"div
-				  div.sheetsmith-placed.sheetsmith-record-set
+				  div.sheetsmith-placed.sheetsmith-record-set.sheetsmith-record-set-fit-32
 				    div.sheetsmith-component-label.sheetsmith-record-set-label "Features"
 				    div.sheetsmith-placed-box.sheetsmith-record-set-box
 				      div.sheetsmith-record-set-scroll
@@ -7652,7 +7781,7 @@ describe('a text field as the group key', () => {
 		it('draws the markup it drew before, grouped by a level key', () => {
 			expect(drawn({ groupBy: 'Rank' })).toMatchInlineSnapshot(`
 				"div
-				  div.sheetsmith-placed.sheetsmith-record-set
+				  div.sheetsmith-placed.sheetsmith-record-set.sheetsmith-record-set-fit-32
 				    div.sheetsmith-component-label.sheetsmith-record-set-label "Features"
 				    div.sheetsmith-placed-box.sheetsmith-record-set-box
 				      div.sheetsmith-record-set-scroll
@@ -7757,7 +7886,7 @@ describe('a text field as the group key', () => {
 		it('draws the markup it drew before, grouped by a number key', () => {
 			expect(drawn({ groupBy: 'Uses' })).toMatchInlineSnapshot(`
 				"div
-				  div.sheetsmith-placed.sheetsmith-record-set
+				  div.sheetsmith-placed.sheetsmith-record-set.sheetsmith-record-set-fit-32
 				    div.sheetsmith-component-label.sheetsmith-record-set-label "Features"
 				    div.sheetsmith-placed-box.sheetsmith-record-set-box
 				      div.sheetsmith-record-set-scroll

@@ -7458,9 +7458,6 @@ a.sheetsmith-notice-action {
    settles the grouping a separator would otherwise have to: a field line is
    nearer the name it belongs to than the record that follows.
 
-   320px rather than the sheet's 480: this is one component's own line, and it
-   is the width at which the four things in it stop fitting.
-
    **Measured: the query's subject is the list, at every width.** The query is
    unnamed, so it answers to the nearest container of any name, and the block
    that wraps the box (`.sheetsmith-record-set`, above) declares
@@ -7468,12 +7465,626 @@ a.sheetsmith-notice-action {
    summary's nearest container at that block, 346px wide, which is the box's own
    width; at `width=520` it is 157px (Known spells), 280px (Traits) and 198px
    (Spells), and at the default width 221, 794 and 565. Nothing between the list
-   and the sheet is what it measures. So the comment above is true, and a
-   six-field record's fields wrapping at a container of 338 to 361px is the
-   rule's threshold and not a subject the rule has wrong. A headed list's strip
-   is gated on the same container, one rung up, so the two can never both apply.
+   and the sheet is what it measures.
+
+   **Where the line stacks is its own fit, not one number.** This block is the
+   fallback, for an engine with no style queries; the threshold every list
+   actually takes is the width its declared fields fit at, which the component
+   stamps as `-fit-N` and the table below tabulates in px
+   (`docs/features/record-set-stacking-tiers.md`). 320px was derived for a name,
+   a labelled number, a ring and a glyph, and at containers of 338, 346 and 361px
+   every multi-field list in the harness wrapped its fields inside their own
+   track. 320px is tier 20 exactly (`FALLBACK_FIT_TIER`). A list of tier 19 or
+   under stacks to 304px or less, so this block would stack it past its own
+   threshold; it wears `-fits-narrow` and this block passes it by.
    --------------------------------------------------------------------------- */
 @container (max-width: 320px) {
+.sheetsmith-record-set:not(.sheetsmith-record-set-fits-narrow) .sheetsmith-record-summary {
+		grid-template-columns: auto minmax(0, 1fr) auto;
+		row-gap: var(--size-2-1);
+	}
+
+.sheetsmith-record-set:not(.sheetsmith-record-set-fits-narrow) .sheetsmith-record-name {
+		grid-column: 2;
+	}
+
+.sheetsmith-view .sheetsmith-record-set:not(.sheetsmith-record-set-fits-narrow) .sheetsmith-record-remove {
+		grid-column: 3;
+		margin-left: 0;
+	}
+
+.sheetsmith-record-set:not(.sheetsmith-record-set-fits-narrow) .sheetsmith-record-fields {
+		grid-row: 2;
+		grid-column: 2 / -1;
+		/* The *ink*, not the column: the name is a field with its own padding, so
+		   aligning the two tracks left the first field label 8px inside the name
+		   it is supposed to line up under. */
+		padding-left: var(--size-2-2);
+	}
+
+	/* Bigger than the row gap above it, so the break between two records reads
+	   as the larger separation. Between records rather than after every one, so
+	   the last record does not push the add control down. */
+.sheetsmith-record-set:not(.sheetsmith-record-set-fits-narrow) .sheetsmith-record + .sheetsmith-record {
+		margin-top: var(--size-4-2);
+	}
+
+}
+
+/* ---------------------------------------------------------------------------
+   **A line stacks below the width it fits at: one threshold per 16px.** The
+   component estimates the width its declared summary fields fit on one row at,
+   with the name at six ems, and stamps it rounded up to a step of 16px as
+   `.sheetsmith-record-set-fit-N` (`components/record-line-fit.ts`). Tier N
+   stacks up to N × 16px: the estimate is cautious, so that is at or past the
+   line's fit, and the steps add under one more. Stacked, its fields can still
+   wrap under the name in a list narrower than they are (`docs/BACKLOG.md`
+   § UI). Every list wears a tier, headed or not, from every declared summary
+   field, a hidden one included, because a record can draw them all.
+
+   **In px, not `em`, because the line is.** Every width on it is a fixed-px
+   token (`--font-ui-small`, `--font-ui-smaller`, `--size-*`), and the sheet's
+   `em` is not: it is the stage's type size in the harness and Obsidian's
+   `--font-ui-medium` in the app. Measured: Traits fits at 509.5px at the
+   harness's `text=20` and `text=24` as at its default, where an `em` table
+   stacked it to 660 and 792. A zoom scales both sides alike.
+
+   **Tabulated, as the strip is**: a container query can neither add widths nor
+   take a threshold from a selector, so each entry does one small thing, setting
+   `--sheetsmith-record-stack` on the box, and the five rules are written once
+   under a style query on it. `styles.test.ts` holds each entry to its rule and
+   the 320px block's copy of the five rules, the fallback for an engine with no
+   style queries, equal to this one.
+
+   **The estimate errs toward stacking.** A word is sized from its character
+   count at the widest per-character width any harness sample measured, so a
+   name of unusually wide letters can still outrun it. The fit itself is not a
+   sum: the name's track and the fields' grow together, so the line fits at
+   `96 + F + clamp(F − m, 96, 169)`px, with F the fields and their gaps and m
+   the widest field, measured on every harness list within a pixel.
+
+   **A headed list draws its plain line below its strip** wherever the line
+   fits there, and is stacked only below its own fit. The strip's entries turn
+   this property off, and they come after these in the file (`@container` adds
+   no specificity), which the test holds, so a list is plain, stacked or under
+   its strip, and never stacked under its strip.
+   --------------------------------------------------------------------------- */
+
+@container (max-width: 192px) {
+	.sheetsmith-record-set-fit-12 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 208px) {
+	.sheetsmith-record-set-fit-13 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 224px) {
+	.sheetsmith-record-set-fit-14 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 240px) {
+	.sheetsmith-record-set-fit-15 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 256px) {
+	.sheetsmith-record-set-fit-16 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 272px) {
+	.sheetsmith-record-set-fit-17 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 288px) {
+	.sheetsmith-record-set-fit-18 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 304px) {
+	.sheetsmith-record-set-fit-19 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 320px) {
+	.sheetsmith-record-set-fit-20 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 336px) {
+	.sheetsmith-record-set-fit-21 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 352px) {
+	.sheetsmith-record-set-fit-22 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 368px) {
+	.sheetsmith-record-set-fit-23 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 384px) {
+	.sheetsmith-record-set-fit-24 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 400px) {
+	.sheetsmith-record-set-fit-25 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 416px) {
+	.sheetsmith-record-set-fit-26 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 432px) {
+	.sheetsmith-record-set-fit-27 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 448px) {
+	.sheetsmith-record-set-fit-28 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 464px) {
+	.sheetsmith-record-set-fit-29 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 480px) {
+	.sheetsmith-record-set-fit-30 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 496px) {
+	.sheetsmith-record-set-fit-31 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 512px) {
+	.sheetsmith-record-set-fit-32 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 528px) {
+	.sheetsmith-record-set-fit-33 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 544px) {
+	.sheetsmith-record-set-fit-34 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 560px) {
+	.sheetsmith-record-set-fit-35 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 576px) {
+	.sheetsmith-record-set-fit-36 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 592px) {
+	.sheetsmith-record-set-fit-37 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 608px) {
+	.sheetsmith-record-set-fit-38 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 624px) {
+	.sheetsmith-record-set-fit-39 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 640px) {
+	.sheetsmith-record-set-fit-40 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 656px) {
+	.sheetsmith-record-set-fit-41 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 672px) {
+	.sheetsmith-record-set-fit-42 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 688px) {
+	.sheetsmith-record-set-fit-43 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 704px) {
+	.sheetsmith-record-set-fit-44 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 720px) {
+	.sheetsmith-record-set-fit-45 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 736px) {
+	.sheetsmith-record-set-fit-46 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 752px) {
+	.sheetsmith-record-set-fit-47 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 768px) {
+	.sheetsmith-record-set-fit-48 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 784px) {
+	.sheetsmith-record-set-fit-49 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 800px) {
+	.sheetsmith-record-set-fit-50 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 816px) {
+	.sheetsmith-record-set-fit-51 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 832px) {
+	.sheetsmith-record-set-fit-52 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 848px) {
+	.sheetsmith-record-set-fit-53 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 864px) {
+	.sheetsmith-record-set-fit-54 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 880px) {
+	.sheetsmith-record-set-fit-55 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 896px) {
+	.sheetsmith-record-set-fit-56 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 912px) {
+	.sheetsmith-record-set-fit-57 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 928px) {
+	.sheetsmith-record-set-fit-58 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 944px) {
+	.sheetsmith-record-set-fit-59 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 960px) {
+	.sheetsmith-record-set-fit-60 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 976px) {
+	.sheetsmith-record-set-fit-61 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 992px) {
+	.sheetsmith-record-set-fit-62 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1008px) {
+	.sheetsmith-record-set-fit-63 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1024px) {
+	.sheetsmith-record-set-fit-64 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1040px) {
+	.sheetsmith-record-set-fit-65 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1056px) {
+	.sheetsmith-record-set-fit-66 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1072px) {
+	.sheetsmith-record-set-fit-67 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1088px) {
+	.sheetsmith-record-set-fit-68 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1104px) {
+	.sheetsmith-record-set-fit-69 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1120px) {
+	.sheetsmith-record-set-fit-70 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1136px) {
+	.sheetsmith-record-set-fit-71 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1152px) {
+	.sheetsmith-record-set-fit-72 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1168px) {
+	.sheetsmith-record-set-fit-73 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1184px) {
+	.sheetsmith-record-set-fit-74 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1200px) {
+	.sheetsmith-record-set-fit-75 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1216px) {
+	.sheetsmith-record-set-fit-76 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1232px) {
+	.sheetsmith-record-set-fit-77 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1248px) {
+	.sheetsmith-record-set-fit-78 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1264px) {
+	.sheetsmith-record-set-fit-79 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1280px) {
+	.sheetsmith-record-set-fit-80 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1296px) {
+	.sheetsmith-record-set-fit-81 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1312px) {
+	.sheetsmith-record-set-fit-82 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1328px) {
+	.sheetsmith-record-set-fit-83 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1344px) {
+	.sheetsmith-record-set-fit-84 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1360px) {
+	.sheetsmith-record-set-fit-85 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1376px) {
+	.sheetsmith-record-set-fit-86 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1392px) {
+	.sheetsmith-record-set-fit-87 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1408px) {
+	.sheetsmith-record-set-fit-88 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1424px) {
+	.sheetsmith-record-set-fit-89 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1440px) {
+	.sheetsmith-record-set-fit-90 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1456px) {
+	.sheetsmith-record-set-fit-91 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1472px) {
+	.sheetsmith-record-set-fit-92 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1488px) {
+	.sheetsmith-record-set-fit-93 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1504px) {
+	.sheetsmith-record-set-fit-94 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1520px) {
+	.sheetsmith-record-set-fit-95 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1536px) {
+	.sheetsmith-record-set-fit-96 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1552px) {
+	.sheetsmith-record-set-fit-97 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1568px) {
+	.sheetsmith-record-set-fit-98 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1584px) {
+	.sheetsmith-record-set-fit-99 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container (max-width: 1600px) {
+	.sheetsmith-record-set-fit-100 .sheetsmith-record-set-box {
+		--sheetsmith-record-stack: on;
+	}
+}
+
+@container style(--sheetsmith-record-stack: on) {
 .sheetsmith-record-summary {
 		grid-template-columns: auto minmax(0, 1fr) auto;
 		row-gap: var(--size-2-1);
@@ -7491,92 +8102,10 @@ a.sheetsmith-notice-action {
 .sheetsmith-record-fields {
 		grid-row: 2;
 		grid-column: 2 / -1;
-		/* The *ink*, not the column: the name is a field with its own padding, so
-		   aligning the two tracks left the first field label 8px inside the name
-		   it is supposed to line up under. */
 		padding-left: var(--size-2-2);
 	}
 
-	/* Bigger than the row gap above it, so the break between two records reads
-	   as the larger separation. Between records rather than after every one, so
-	   the last record does not push the add control down. */
 .sheetsmith-record + .sheetsmith-record {
-		margin-top: var(--size-4-2);
-	}
-
-}
-
-/* ---------------------------------------------------------------------------
-   **A list with a text field stacks sooner, so the record's name is not starved.**
-   A text field is a word wide (a name is not two digits), and the 320px rule
-   above was derived for a name, a labelled number, a ring and a glyph. Measured
-   at a container of 321px with a text field and a counter on the line, the
-   fields took 186px in two lines and the name was left 40px, `Se…`, with the
-   line's own free width inside the fields' track. The record's name is its
-   identity and the first thing a reader looks for, so the stacked line (name and
-   delete on a row, the fields under the name) is drawn for a list holding a
-   text field on its summary line up to **480px**, where the whole line fits in
-   one row with a name of its own: the chevron, the delete, three gaps, a
-   96px name and the text field with a counter come to about 470px.
-
-   **A headed list stacks up to 420px and no further.** Its strip comes in at
-   `14.5em + 6em × N`, which is 424px for two fields, and the strip and the
-   stacked line must never both apply (the strip's own comment above). The strip
-   is not lifted for this: it was measured and tabulated for the widest field
-   there was, and a text field is 115px against its 88px, inside the 52px that
-   the tabulation clears the fit by.
-
-   Same five rules as the 320px block, with the same reasons, and only written
-   twice because a container query cannot take its threshold from a selector.
-   --------------------------------------------------------------------------- */
-@container (max-width: 480px) {
-.sheetsmith-record-set-text:not(.sheetsmith-record-set-text-headed) .sheetsmith-record-summary {
-		grid-template-columns: auto minmax(0, 1fr) auto;
-		row-gap: var(--size-2-1);
-	}
-
-.sheetsmith-record-set-text:not(.sheetsmith-record-set-text-headed) .sheetsmith-record-name {
-		grid-column: 2;
-	}
-
-.sheetsmith-record-set-text:not(.sheetsmith-record-set-text-headed) .sheetsmith-record-remove {
-		grid-column: 3;
-		margin-left: 0;
-	}
-
-.sheetsmith-record-set-text:not(.sheetsmith-record-set-text-headed) .sheetsmith-record-fields {
-		grid-row: 2;
-		grid-column: 2 / -1;
-		padding-left: var(--size-2-2);
-	}
-
-.sheetsmith-record-set-text:not(.sheetsmith-record-set-text-headed) .sheetsmith-record + .sheetsmith-record {
-		margin-top: var(--size-4-2);
-	}
-}
-
-@container (max-width: 420px) {
-.sheetsmith-record-set-text-headed .sheetsmith-record-summary {
-		grid-template-columns: auto minmax(0, 1fr) auto;
-		row-gap: var(--size-2-1);
-	}
-
-.sheetsmith-record-set-text-headed .sheetsmith-record-name {
-		grid-column: 2;
-	}
-
-.sheetsmith-record-set-text-headed .sheetsmith-record-remove {
-		grid-column: 3;
-		margin-left: 0;
-	}
-
-.sheetsmith-record-set-text-headed .sheetsmith-record-fields {
-		grid-row: 2;
-		grid-column: 2 / -1;
-		padding-left: var(--size-2-2);
-	}
-
-.sheetsmith-record-set-text-headed .sheetsmith-record + .sheetsmith-record {
 		margin-top: var(--size-4-2);
 	}
 }
@@ -7596,7 +8125,9 @@ a.sheetsmith-notice-action {
    number, so it is *tabulated* — the sheet's own `.sheetsmith-cols-N` pattern,
    and `styles.test.ts` holds each entry to the formula. Each entry does one
    thing and does it small: it sets `--sheetsmith-record-strip` on the box when
-   the list is at least that wide. Everything else is written once, under a style
+   the list is at least that wide, and turns the fit table's
+   `--sheetsmith-record-stack` off, so a list under its strip is never also
+   stacked (the fit table above). Everything else is written once, under a style
    query on that property, which is what stops eight copies of the same fifty
    declarations. An engine with no style queries ignores that rule whole, and so
    draws the narrow regime at every width, which is today's list.
@@ -7627,48 +8158,56 @@ a.sheetsmith-notice-action {
 	@container sheetsmith-record-set (min-width: 20.5em) {
 		.sheetsmith-record-set-fields-1 .sheetsmith-record-set-box {
 			--sheetsmith-record-strip: on;
+			--sheetsmith-record-stack: off;
 		}
 	}
 
 	@container sheetsmith-record-set (min-width: 26.5em) {
 		.sheetsmith-record-set-fields-2 .sheetsmith-record-set-box {
 			--sheetsmith-record-strip: on;
+			--sheetsmith-record-stack: off;
 		}
 	}
 
 	@container sheetsmith-record-set (min-width: 32.5em) {
 		.sheetsmith-record-set-fields-3 .sheetsmith-record-set-box {
 			--sheetsmith-record-strip: on;
+			--sheetsmith-record-stack: off;
 		}
 	}
 
 	@container sheetsmith-record-set (min-width: 38.5em) {
 		.sheetsmith-record-set-fields-4 .sheetsmith-record-set-box {
 			--sheetsmith-record-strip: on;
+			--sheetsmith-record-stack: off;
 		}
 	}
 
 	@container sheetsmith-record-set (min-width: 44.5em) {
 		.sheetsmith-record-set-fields-5 .sheetsmith-record-set-box {
 			--sheetsmith-record-strip: on;
+			--sheetsmith-record-stack: off;
 		}
 	}
 
 	@container sheetsmith-record-set (min-width: 50.5em) {
 		.sheetsmith-record-set-fields-6 .sheetsmith-record-set-box {
 			--sheetsmith-record-strip: on;
+			--sheetsmith-record-stack: off;
 		}
 	}
 
 	@container sheetsmith-record-set (min-width: 56.5em) {
 		.sheetsmith-record-set-fields-7 .sheetsmith-record-set-box {
 			--sheetsmith-record-strip: on;
+			--sheetsmith-record-stack: off;
 		}
 	}
 
 	@container sheetsmith-record-set (min-width: 62.5em) {
 		.sheetsmith-record-set-fields-8 .sheetsmith-record-set-box {
 			--sheetsmith-record-strip: on;
+			--sheetsmith-record-stack: off;
 		}
 	}
 
