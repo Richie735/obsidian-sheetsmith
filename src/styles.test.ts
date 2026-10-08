@@ -21,6 +21,16 @@ import { all as KNOWN_CSS_PROPERTIES } from 'known-css-properties';
 import { describe, expect, it } from 'vitest';
 import { PARTS, renderStyles } from '../styles.build.mjs';
 import { MAX_TABULATED_FIELDS } from './components/record-set';
+import {
+	FALLBACK_FIT_TIER,
+	GAP_PX,
+	MAX_FIT_TIER,
+	MIN_FIT_TIER,
+	NAME_CAP_PX,
+	STEP_PX,
+	TEXT_MIN_PX,
+	TEXT_PX,
+} from './components/record-line-fit';
 
 const CSS = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
 
@@ -2950,7 +2960,8 @@ describe("a Record set's strip of field names", () => {
 			all.some(
 				(rule) =>
 					rule.context[0] === '@container (max-width: 320px)' &&
-					rule.selector === '.sheetsmith-record-summary',
+					rule.selector ===
+						'.sheetsmith-record-set:not(.sheetsmith-record-set-fits-narrow) .sheetsmith-record-summary',
 			),
 		).toBe(true);
 		const under = thresholds()
@@ -3137,6 +3148,168 @@ describe("a Record set's strip of field names", () => {
 			/#[0-9a-f]{3,8}\b|\brgba?\(|\bhsla?\(/i.test(rule.body),
 		);
 		expect(literal).toEqual([]);
+	});
+});
+
+describe("a Record set's stacking tiers", () => {
+	/*
+	 * `docs/features/record-set-stacking-tiers.md`. A summary line stacks (name
+	 * and delete on a row, the fields under the name) below the width its declared
+	 * fields fit at, which the component stamps as a whole number of ems,
+	 * `-fit-N`, and `sheet.css` tabulates because a container query can neither
+	 * add widths nor take a threshold from a selector. Held here: that each entry
+	 * is its rule, that the stacked layout is the 320px fallback's own, and that a
+	 * list under its strip is never also stacked.
+	 */
+	const all = rules(CSS_WITHOUT_COMMENTS);
+	const STACK_QUERY = '@container style(--sheetsmith-record-stack: on)';
+	const GATE = '@supports (grid-template-columns: subgrid)';
+	const FALLBACK = '@container (max-width: 320px)';
+	const OPT_OUT = '.sheetsmith-record-set:not(.sheetsmith-record-set-fits-narrow) ';
+	const collapse = (text: string) => text.replace(/\s+/g, ' ').trim();
+
+	/** The per-tier entries, `[N, px, index in the file]`. */
+	function tiers(): [number, number, number][] {
+		const out: [number, number, number][] = [];
+		all.forEach((rule, at) => {
+			const query = rule.context.length === 1
+				? rule.context[0]?.match(/^@container \(max-width: ([\d.]+)px\)$/)
+				: null;
+			const tier = rule.selector.match(
+				/^\.sheetsmith-record-set-fit-(\d+) \.sheetsmith-record-set-box$/,
+			);
+			if (!query || !tier) return;
+			expect(collapse(rule.body)).toBe('--sheetsmith-record-stack: on;');
+			out.push([Number(tier[1]), Number(query[1]), at]);
+		});
+		return out;
+	}
+
+	/** The strip's per-count entries, `[N, em, index in the file, body]`. */
+	function strips(): [number, number, number, string][] {
+		const out: [number, number, number, string][] = [];
+		all.forEach((rule, at) => {
+			const query = rule.context[1]?.match(
+				/^@container sheetsmith-record-set \(min-width: ([\d.]+)em\)$/,
+			);
+			const count = rule.selector.match(
+				/^\.sheetsmith-record-set-fields-(\d+) \.sheetsmith-record-set-box$/,
+			);
+			if (rule.context[0] !== GATE || !query || !count) return;
+			out.push([Number(count[1]), Number(query[1]), at, collapse(rule.body)]);
+		});
+		return out;
+	}
+
+	it('tabulates every tier the component can stamp, once each', () => {
+		expect(tiers().map(([tier]) => tier)).toEqual(
+			Array.from(
+				{ length: MAX_FIT_TIER - MIN_FIT_TIER + 1 },
+				(_, at) => at + MIN_FIT_TIER,
+			),
+		);
+	});
+
+	it('stacks tier N up to N steps of 16px, the estimated fit rounded up', () => {
+		// In px, because every width on the line is a fixed-px token: an `em` table
+		// stacked Traits to 792px at the harness's `text=24`, where it fits at 509.5.
+		const off = tiers()
+			.filter(([tier, px]) => px !== tier * STEP_PX)
+			.map(([tier, px]) => `tier ${tier} at ${px}px`);
+		expect(off).toEqual([]);
+	});
+
+	it('puts the fallback at its tier’s own threshold, in the same unit', () => {
+		expect(FALLBACK).toBe(`@container (max-width: ${FALLBACK_FIT_TIER * STEP_PX}px)`);
+	});
+
+	it('holds the copied widths to the rules they were measured off', () => {
+		const find = (selector: string) =>
+			all
+				.filter((rule) => rule.context.length === 0 && rule.selector === selector)
+				.map((rule) => collapse(rule.body))
+				.join(' ');
+		// One type basis for the line: every `em` on it is 13px.
+		expect(find('.sheetsmith-record'), 'NAME_CAP_PX is 13em at --font-ui-small').toMatch(
+			/font-size: var\(--font-ui-small\)/,
+		);
+		expect(
+			find('.sheetsmith-record-summary'),
+			'NAME_CAP_PX is the name track’s 13em cap at 13px',
+		).toMatch(/minmax\(0, var\(--sheetsmith-record-name, 13em\)\)/);
+		expect(NAME_CAP_PX, 'NAME_CAP_PX is 13em at 13px').toBe(13 * 13);
+		expect(find('.sheetsmith-record-fields'), 'GAP_PX is --size-4-5').toMatch(
+			/gap: var\(--size-4-5\)/,
+		);
+		expect(GAP_PX, 'GAP_PX is Obsidian’s --size-4-5, 20px').toBe(20);
+		const text = find('.sheetsmith-view .sheetsmith-record-input.sheetsmith-record-input-text');
+		expect(text, 'TEXT_PX was measured at the input’s 14ch').toMatch(/max-width: 14ch/);
+		expect(text, 'TEXT_MIN_PX was measured at the input’s 5ch').toMatch(/min-width: 5ch/);
+		expect(TEXT_PX).toBeGreaterThan(TEXT_MIN_PX);
+	});
+
+	it('draws the fallback’s stacked line, and nothing else', () => {
+		// The fallback's selectors carry the opt-out a line that fits by 320px
+		// wears; past that prefix the two blocks are the same five rules.
+		const narrow = all
+			.filter(
+				(rule) =>
+					rule.context[0] === FALLBACK &&
+					/sheetsmith-record/.test(rule.selector) &&
+					!/sheetsmith-record-set-fit-/.test(rule.selector),
+			)
+			.map((rule) => [rule.selector.replace(OPT_OUT, ''), collapse(rule.body)]);
+		const stacked = all
+			.filter((rule) => rule.context.length === 1 && rule.context[0] === STACK_QUERY)
+			.map((rule) => [rule.selector, collapse(rule.body)]);
+		expect(narrow.length).toBe(5);
+		expect(stacked).toEqual(narrow);
+	});
+
+	it('passes by a line that fits by 320px in every fallback rule', () => {
+		const unscoped = all
+			.filter(
+				(rule) =>
+					rule.context[0] === FALLBACK &&
+					/sheetsmith-record/.test(rule.selector) &&
+					!/sheetsmith-record-set-fit-/.test(rule.selector),
+			)
+			.filter((rule) => !rule.selector.includes(OPT_OUT))
+			.map((rule) => rule.selector);
+		expect(unscoped).toEqual([]);
+	});
+
+	it('writes the stacked line twice and only twice', () => {
+		// The fallback, for an engine with no style queries, and the block under
+		// the style query. Any third copy is one the equality test above misses.
+		const placing = all.filter(
+			(rule) =>
+				/sheetsmith-record-fields$/.test(rule.selector) &&
+				/grid-row:\s*2/.test(rule.body),
+		);
+		expect(placing.map((rule) => rule.context[0])).toEqual([FALLBACK, STACK_QUERY]);
+	});
+
+	it('turns the stacked line off with every strip entry', () => {
+		const missing = strips()
+			.filter(([, , , body]) => !body.includes('--sheetsmith-record-stack: off;'))
+			.map(([count]) => count);
+		expect(strips().length).toBe(MAX_TABULATED_FIELDS);
+		expect(missing).toEqual([]);
+	});
+
+	it('puts every strip entry after every tier entry, which is what lets it win', () => {
+		// `@container` adds no specificity and the selectors weigh the same, so
+		// source order alone decides between `on` and `off`.
+		const lastTier = Math.max(...tiers().map(([, , at]) => at));
+		const firstStrip = Math.min(...strips().map(([, , at]) => at));
+		expect(lastTier).toBeLessThan(firstStrip);
+	});
+
+	it('keeps no stacking entry keyed on a text field, which the tiers now size', () => {
+		expect(
+			all.filter((rule) => /sheetsmith-record-set-(text|stack-)/.test(rule.selector)),
+		).toEqual([]);
 	});
 });
 

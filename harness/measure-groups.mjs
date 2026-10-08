@@ -33,11 +33,19 @@
  *     is the same height, and a real pointer resting on a clipped name reveals
  *     all of it (`title`). The `text-groups` state must hold at least one
  *     clipped name at 520px, or this check would pass on nothing.
- *  7. A list with a text field on its summary line is stacked (name and delete
- *     on one row, the fields under the name) at a container of 480px and not at
- *     481px, and a headed one at 420px and not at 421px
- *     (`docs/features/free-text-group-key.md`, narrow regime). Only the
- *     `text-groups` state has those lists.
+ *  7. Where every list's summary line stacks, swept from 150 to 1300px in
+ *     half pixels over every list in this state and in `populated`, the sheet's
+ *     own, each at the default type size and at `text=20` and `text=24`
+ *     (`docs/features/record-set-stacking-tiers.md`). Checks 1 to 6 need groups,
+ *     so `node harness/measure-groups.mjs pinned-add` runs this one alone:
+ *     a. no unstacked field line wraps inside its own track, or cuts its name
+ *        under 96px;
+ *     b. no list is stacked more than 2em (32px, the line's own em) past the
+ *        width its plain line fits at, every declared field drawn, with the name
+ *        at six ems;
+ *     c. no list is stacked and under its strip at once.
+ *     It prints, per list, where it is stacked to, where its plain line fits
+ *     from and where its strip comes in.
  */
 import { spawn } from 'node:child_process';
 import { existsSync } from 'node:fs';
@@ -111,6 +119,10 @@ const snapshot = `(()=>{${rect}return [...document.querySelectorAll('.sheetsmith
 const listHeights = `[...document.querySelectorAll('.sheetsmith-record-set-list')].map(l=>l.getBoundingClientRect().height)`;
 const click = (selector) => `document.querySelectorAll('${selector}').forEach(b=>b.click())`;
 
+// Checks 1 to 6 are about groups, so they run only in a state that has them;
+// check 7 runs in any (`pinned-add` included, which has no groups).
+const GROUPED = STATE === 'record-groups' || STATE === 'text-groups';
+if (GROUPED) {
 // 1. The sheet does not move.
 for (const theme of ['light', 'dark']) {
 	for (const [label, width, viewport] of [['wide', 0, 1400], ['narrow', 520, 620]]) {
@@ -265,31 +277,54 @@ await load('light', 520, 620);
 	}
 }
 
-// 7. The stacking thresholds, at the container widths the spec names.
-if (STATE === 'text-groups') {
-	await load('light', 0, 1400);
-	const stackedAt = (id, width) => evaluate(`(()=>{
-	 const label=[...document.querySelectorAll('.sheetsmith-component-label')].find(l=>l.textContent==='${id}');
-	 const block=label.closest('.sheetsmith-record-set');
-	 const cs=getComputedStyle(block);
-	 const pad=parseFloat(cs.paddingLeft)+parseFloat(cs.paddingRight)+parseFloat(cs.borderLeftWidth)+parseFloat(cs.borderRightWidth);
-	 block.style.width=(${width}+pad)+'px';block.style.maxWidth='none';block.style.justifySelf='start';
-	 const content=block.clientWidth-parseFloat(cs.paddingLeft)-parseFloat(cs.paddingRight);
-	 const fields=block.querySelector('.sheetsmith-record-fields');
-	 return {content,stacked:getComputedStyle(fields).gridRowStart==='2',strip:getComputedStyle(block.querySelector('.sheetsmith-record-strip')??block).display}})()`);
-	for (const [id, edge] of [['Homebrew features', 480], ['Homebrew strip', 420]]) {
-		await load('light', 0, 1400);
-		const at = await stackedAt(id, edge);
-		await sleep(200);
-		const atNow = await evaluate(`(()=>{const l=[...document.querySelectorAll('.sheetsmith-component-label')].find(l=>l.textContent==='${id}');const f=l.closest('.sheetsmith-record-set').querySelector('.sheetsmith-record-fields');return getComputedStyle(f).gridRowStart==='2'})()`);
-		await evaluate(`(()=>{const l=[...document.querySelectorAll('.sheetsmith-component-label')].find(l=>l.textContent==='${id}');const b=l.closest('.sheetsmith-record-set');const cs=getComputedStyle(b);const pad=parseFloat(cs.paddingLeft)+parseFloat(cs.paddingRight)+parseFloat(cs.borderLeftWidth)+parseFloat(cs.borderRightWidth);b.style.width=(${edge + 1}+pad)+'px'})()`);
-		await sleep(200);
-		const above = await evaluate(`(()=>{const l=[...document.querySelectorAll('.sheetsmith-component-label')].find(l=>l.textContent==='${id}');const b=l.closest('.sheetsmith-record-set');const f=b.querySelector('.sheetsmith-record-fields');return {stacked:getComputedStyle(f).gridRowStart==='2',content:b.clientWidth}})()`);
-		check(
-			atNow === true && above.stacked === false,
-			`${id}: stacked at a container of ${edge}px and not at ${edge + 1}px`,
-			`content ${at.content}px stacked=${atNow}; above stacked=${above.stacked}`,
-		);
+}
+
+// 7. Where every list's line stacks: checks a, b and c.
+async function loadState(state, text) {
+	await send('Emulation.setDeviceMetricsOverride', { width: 1400, height: 1900, deviceScaleFactor: 1, mobile: false });
+	await send('Page.navigate', { url: `file://${root}index.html?surface=sheet&theme=light&state=${state}&text=${text}` });
+	await sleep(2500);
+}
+const SWEEP = `(()=>{
+ const lines=(fs)=>{const bs=fs.map(f=>f.getBoundingClientRect()).sort((a,b)=>a.top-b.top);let n=0,bottom=-1e9;for(const b of bs){if(b.top>=bottom-1){n++;bottom=b.bottom;}else bottom=Math.max(bottom,b.bottom);}return n;};
+ const blocks=[...document.querySelectorAll('.sheetsmith-view .sheetsmith-record-set')].filter(b=>b.querySelector('.sheetsmith-record-summary'));
+ const out=blocks.map(b=>({name:b.querySelector('.sheetsmith-record-set-label')?.textContent??'?',em:parseFloat(getComputedStyle(b).fontSize),wrap:[],both:[],stackedTo:null,stripFrom:null,fit:null}));
+ const sweep=(b,each)=>{b.style.flex='none';b.style.justifySelf='start';b.style.maxWidth='none';for(let w=150;w<=1300;w+=0.5){b.style.width=w+'px';void b.offsetWidth;if(each(w))break;}};
+ blocks.forEach((b,i)=>{const o=out[i];sweep(b,(w)=>{
+  const strip=getComputedStyle(b.querySelector('.sheetsmith-record-set-box')).getPropertyValue('--sheetsmith-record-strip').trim()==='on';
+  if(strip&&o.stripFrom===null)o.stripFrom=w;
+  let stacked=false,bad=false;
+  for(const s of b.querySelectorAll('.sheetsmith-record-summary')){const f=s.querySelector('.sheetsmith-record-fields');
+   if(getComputedStyle(f).gridRowStart==='2'){stacked=true;continue;}
+   if(strip)continue;
+   if(lines([...f.children].filter(x=>!x.hidden))>1||s.querySelector('.sheetsmith-record-name').getBoundingClientRect().width<96)bad=true;}
+  if(stacked)o.stackedTo=w; if(bad)o.wrap.push(w); if(stacked&&strip)o.both.push(w); return false;});});
+ const force=document.createElement('style');force.textContent='.sheetsmith-record-set-box{--sheetsmith-record-stack: off !important}';document.head.appendChild(force);
+ blocks.forEach((b,i)=>{const o=out[i];b.classList.remove('sheetsmith-record-set-headed');b.classList.add('sheetsmith-record-set-fits-narrow');
+  for(const f of b.querySelectorAll('.sheetsmith-record-summary .sheetsmith-record-field'))f.removeAttribute('hidden');
+  sweep(b,(w)=>{const ok=[...b.querySelectorAll('.sheetsmith-record-summary')].every(s=>{const f=s.querySelector('.sheetsmith-record-fields');return lines([...f.children])<=1&&s.querySelector('.sheetsmith-record-name').getBoundingClientRect().width>=96;});if(ok){o.fit=w;return true;}return false;});});
+ return out;})()`;
+/**
+ * The bound on (b): two ems at the line's own 16px. Not the container's `em`,
+ * which is the stage's type size and grows with `text=`, where the line's widths
+ * do not (they are fixed-px tokens): at `text=24` a container `em` would let a
+ * list stack 48px past its fit and call it two ems.
+ */
+const PAST_PX = 32;
+for (const state of [...new Set(['populated', STATE])]) {
+	// The default type size, and two larger ones: the line's widths are px, so
+	// its thresholds must not move with the stage's type size.
+	for (const text of [0, 20, 24]) {
+		await loadState(state, text);
+		const lists = await evaluate(SWEEP);
+		const at = `${state}${text ? ` text=${text}` : ''}`;
+		for (const one of lists) {
+			const past = one.stackedTo === null || one.fit === null ? 0 : one.stackedTo - one.fit;
+			console.log(`      ${at} ${one.name}: stacked to ${one.stackedTo ?? 'never'}, plain from ${one.fit ?? 'never'}, strip from ${one.stripFrom ?? 'never'}, ${past}px past`);
+			check(one.wrap.length === 0, `${at} ${one.name}: (a) no unstacked line wraps`, one.wrap.slice(0, 4).join(','));
+			check(one.fit !== null && past <= PAST_PX, `${at} ${one.name}: (b) stacked no more than 2em past its fit`, `${past}px past`);
+			check(one.both.length === 0, `${at} ${one.name}: (c) never stacked under its strip`, one.both.slice(0, 4).join(','));
+		}
 	}
 }
 
