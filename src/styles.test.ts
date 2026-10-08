@@ -96,8 +96,12 @@ const FIELD_CLASS = /\.sheetsmith-[a-z-]*(?:-input|-current|-select)\b/;
  * anchored panel's own `CONTROLS` list below is the same idea for a surface
  * that cannot carry `.sheetsmith-view` at all; this is for a control that
  * can and should, but was named outside `FIELD_CLASS`'s own pattern.
+ *
+ * `sheetsmith-pool-adjust-amount` is the pool's adjust field, a real text
+ * `<input>` named for what it holds. It was scoped all along and simply never
+ * listed; the phone-width guard below found it (`docs/features/phone-input-width.md`).
  */
-const NAMED_FIELD_CLASSES = ['sheetsmith-canvas-overlay'];
+const NAMED_FIELD_CLASSES = ['sheetsmith-canvas-overlay', 'sheetsmith-pool-adjust-amount'];
 
 /**
  * The one family of rules that may not carry the scope, and the reason it cannot
@@ -2466,6 +2470,27 @@ function selectorList(selector: string): string[] {
 	return found;
 }
 
+/** (ids, classes and attributes and pseudo-classes, types) of one selector. */
+function specificity(selector: string): [number, number, number] {
+	const bare = selector.replace(/::[\w-]+/g, ' ');
+	const ids = (bare.match(/#[\w-]+/g) ?? []).length;
+	const classes =
+		(bare.match(/\.[\w-]+/g) ?? []).length +
+		(bare.match(/\[[^\]]*\]/g) ?? []).length +
+		(bare.match(/:(?!:)[\w-]+/g) ?? []).length;
+	const types = bare
+		.replace(/\[[^\]]*\]/g, ' ')
+		.split(/[\s>+~]+/)
+		.filter((one) => /^[a-z]/i.test(one)).length;
+	return [ids, classes, types];
+}
+
+/** Whether `a` beats `b` on weight alone. */
+const heavier = (a: [number, number, number], b: [number, number, number]) =>
+	a[0] !== b[0] ? a[0] > b[0] : a[1] !== b[1] ? a[1] > b[1] : a[2] > b[2];
+const same = (a: [number, number, number], b: [number, number, number]) =>
+	a.join() === b.join();
+
 describe('no two rules declare the same body', () => {
 	/*
 	 * `docs/UI.md` §9's focus row is the argument, and it is the argument twice
@@ -3230,7 +3255,9 @@ describe("a Record set's stacking tiers", () => {
 			/gap: var\(--size-4-5\)/,
 		);
 		expect(GAP_PX, 'GAP_PX is Obsidian’s --size-4-5, 20px').toBe(20);
-		const text = find('.sheetsmith-view .sheetsmith-record-input.sheetsmith-record-input-text');
+		const text = find(
+			'.sheetsmith-view .sheetsmith-record-input.sheetsmith-record-input.sheetsmith-record-input-text',
+		);
 		expect(text, 'TEXT_PX was measured at the input’s 14ch').toMatch(/max-width: 14ch/);
 	});
 
@@ -3364,27 +3391,6 @@ describe('a field its condition hid is hidden', () => {
 		/\.sheetsmith-record-body-fields(?![\w-])/,
 	];
 
-	/** (ids, classes and attributes and pseudo-classes, types) of one compound selector. */
-	function specificity(selector: string): [number, number, number] {
-		const bare = selector.replace(/::[\w-]+/g, ' ');
-		const ids = (bare.match(/#[\w-]+/g) ?? []).length;
-		const classes =
-			(bare.match(/\.[\w-]+/g) ?? []).length +
-			(bare.match(/\[[^\]]*\]/g) ?? []).length +
-			(bare.match(/:(?!:)[\w-]+/g) ?? []).length;
-		const types = bare
-			.replace(/\[[^\]]*\]/g, ' ')
-			.split(/[\s>+~]+/)
-			.filter((one) => /^[a-z]/i.test(one)).length;
-		return [ids, classes, types];
-	}
-
-	/** Whether `a` beats `b` on weight alone. */
-	const heavier = (a: [number, number, number], b: [number, number, number]) =>
-		a[0] !== b[0] ? a[0] > b[0] : a[1] !== b[1] ? a[1] > b[1] : a[2] > b[2];
-	const same = (a: [number, number, number], b: [number, number, number]) =>
-		a.join() === b.join();
-
 	/**
 	 * Every selector giving one of the hideable classes a `display` other than
 	 * none, with no answer after it or above it in weight — and how many it found,
@@ -3469,6 +3475,156 @@ describe('a field its condition hid is hidden', () => {
 		expect(placed[0]?.body).toMatch(
 			/grid-column:\s*var\(--sheetsmith-record-track\)/,
 		);
+	});
+});
+
+describe("a sheet input's width outranks Obsidian's phone rule", () => {
+	/*
+	 * `docs/features/phone-input-width.md`. On a phone Obsidian adds
+	 * `.is-mobile input[type='text'] { width: 100% }`, at (0,2,1). The scope rule
+	 * above buys (0,2,0), which clears the desktop `input[type='text']` at (0,1,1)
+	 * and loses to this one, so on a phone every text field the sheet sizes took
+	 * the whole width it was offered: a record's number field went from 52px to
+	 * 177px and its name to 11, a pool's reading to the width of its card. Nothing
+	 * in vitest or the harness could see it, since neither carries `.is-mobile` or
+	 * the app's mobile rules, so this scan is the guard.
+	 *
+	 * **Every rule giving a sheet text field a width must weigh more than (0,2,1)**,
+	 * and the stylesheet buys (0,3,0) by doubling the field's class on a rule that
+	 * declares the width and nothing else: doubling a whole rule would also lift its
+	 * padding and background over the field's own `:hover` and `:focus`.
+	 * `width: 100%` is exempt, because losing to the app's `100%` changes nothing.
+	 *
+	 * Which classes are text fields is `FIELD_CLASS`'s naming, less `-select`, plus
+	 * the text inputs in `NAMED_FIELD_CLASSES`. So the guard is only as complete as
+	 * that naming: a text input sized through a class outside both, or through an
+	 * element selector, gets past it. A `<textarea>` under the pattern is
+	 * swept in too, which costs a doubled class it does not need and nothing else;
+	 * today both, `-rich-text-input` and `-record-body-input`, are `100%` and exempt.
+	 */
+	const PHONE_RULE: [number, number, number] = [0, 2, 1];
+	// The named controls that are text inputs: the canvas overlay is a button,
+	// which Obsidian's phone rule does not select.
+	const TEXT_FIELDS_OUTSIDE_THE_PATTERN = NAMED_FIELD_CLASSES.filter(
+		(cls) => cls !== 'sheetsmith-canvas-overlay',
+	);
+
+	const isTextField = (selector: string): boolean => {
+		const subject = subjectOf(selector);
+		const classes = (subject.match(/\.[\w-]+/g) ?? []).map((one) => one.slice(1));
+		return classes.some(
+			(cls) =>
+				(FIELD_CLASS.test(`.${cls}`) && !cls.endsWith('-select')) ||
+				TEXT_FIELDS_OUTSIDE_THE_PATTERN.includes(cls),
+		);
+	};
+
+	/** Every selector giving a text field a width the phone rule would replace, and those too light. */
+	function sized(text: string): { found: string[]; light: string[] } {
+		const found: string[] = [];
+		const light: string[] = [];
+		for (const rule of rules(text)) {
+			const width = declarations(rule.body)
+				.filter((one) => /^width\s*:/.test(one))
+				.map((one) => one.slice(one.indexOf(':') + 1).trim());
+			if (width.length === 0 || width.every((value) => value === '100%')) continue;
+			for (const selector of selectorList(rule.selector)) {
+				if (!isTextField(selector)) continue;
+				found.push(selector);
+				if (!heavier(specificity(selector), PHONE_RULE)) light.push(selector);
+			}
+		}
+		return { found, light };
+	}
+
+	it('gives every text field its width at more than (0,2,1)', () => {
+		const { found, light } = sized(CSS_WITHOUT_COMMENTS);
+		// A record's number field, a table's, a pool's three, a track's name and
+		// a passport's, with their field-sizing answers: a scan that matched
+		// nothing would pass on an empty list.
+		expect(found.length).toBeGreaterThanOrEqual(12);
+		expect(light).toEqual([]);
+	});
+
+	/**
+	 * Every rule that narrows a doubled width rule to a case and ties with it.
+	 *
+	 * Doubling a field's width to (0,3,0) lifts it to the weight its own
+	 * overrides already had: `.sheetsmith-table-text .sheetsmith-table-input` and
+	 * `.sheetsmith-record-input.sheetsmith-record-input-text` used to beat their
+	 * (0,2,0) base on weight and would win only by coming later. So a rule giving
+	 * the same field a width under a narrower selector must outweigh the doubled
+	 * one. The same selector restated, as a `@supports` override is, is exempt: it
+	 * is the base itself, answered by order on purpose.
+	 */
+	function tied(text: string): { bases: string[]; tied: string[] } {
+		const widths = rules(text)
+			.filter((rule) => declarations(rule.body).some((one) => /^width\s*:/.test(one)))
+			.flatMap((rule) => selectorList(rule.selector));
+		const classesOf = (selector: string) =>
+			(subjectOf(selector).match(/\.[\w-]+/g) ?? []).map((one) => one.slice(1));
+		// The doubled rule's own shape, and only it: an override may double the
+		// class too, and is then a narrower rule, not a second base.
+		const DOUBLED = /^\.sheetsmith-view \.([\w-]+)\.\1$/;
+		const doubled = widths.filter((selector) => DOUBLED.test(selector));
+		const out: string[] = [];
+		for (const base of doubled) {
+			const field = DOUBLED.exec(base)?.[1] ?? '';
+			for (const other of widths) {
+				if (other === base || !classesOf(other).includes(field)) continue;
+				if (!heavier(specificity(other), specificity(base))) out.push(other);
+			}
+		}
+		// The fields it found a doubled base for, so a base respelled out of
+		// `DOUBLED`'s exact shape cannot pass the check by leaving it nothing to do.
+		const bases = [...new Set(doubled.map((base) => DOUBLED.exec(base)?.[1] ?? ''))];
+		return { bases, tied: [...new Set(out)] };
+	}
+
+	it('gives every narrower width on a doubled field more weight than the doubled rule', () => {
+		const { bases, tied: open } = tied(CSS_WITHOUT_COMMENTS);
+		// The nine fields the phone fix doubled, each recognised as a base.
+		expect(bases.length).toBeGreaterThanOrEqual(9);
+		expect(open).toEqual([]);
+	});
+
+	it('would catch an override that ties with its doubled base', () => {
+		const base = '.sheetsmith-view .sheetsmith-table-input.sheetsmith-table-input { width: 4em; }\n';
+		expect(
+			tied(base + '.sheetsmith-view .sheetsmith-table-text .sheetsmith-table-input { width: 100%; }').tied,
+		).toEqual(['.sheetsmith-view .sheetsmith-table-text .sheetsmith-table-input']);
+		expect(
+			tied(
+				base +
+					'@supports (field-sizing: content) { .sheetsmith-view .sheetsmith-table-input.sheetsmith-table-input { width: auto; } }\n' +
+					'.sheetsmith-view .sheetsmith-table-text .sheetsmith-table-input.sheetsmith-table-input { width: 100%; }',
+			),
+		).toEqual({ bases: ['sheetsmith-table-input'], tied: [] });
+	});
+
+	it('would catch a width the phone rule outranks', () => {
+		// Driven over the shapes it exists to reject: the scoped rule that shipped,
+		// one at exactly (0,2,1) that wins only on load order, and the text field
+		// named outside the pattern. And it passes the doubled answer and a `100%`.
+		expect(
+			sized('.sheetsmith-view .sheetsmith-record-input { width: 3.5em; }').light,
+		).toEqual(['.sheetsmith-view .sheetsmith-record-input']);
+		expect(
+			sized('.sheetsmith-view input.sheetsmith-table-input { width: 4em; }').light,
+		).toHaveLength(1);
+		expect(
+			sized('.sheetsmith-view .sheetsmith-pool-adjust-amount { width: 5ch; }').light,
+		).toHaveLength(1);
+		expect(
+			sized(
+				'.sheetsmith-view .sheetsmith-record-input.sheetsmith-record-input { width: 3.5em; }\n' +
+					'.sheetsmith-view .sheetsmith-card-input { width: 100%; }\n' +
+					'.sheetsmith-view .sheetsmith-card-select { width: auto; }',
+			),
+		).toEqual({
+			found: ['.sheetsmith-view .sheetsmith-record-input.sheetsmith-record-input'],
+			light: [],
+		});
 	});
 });
 
