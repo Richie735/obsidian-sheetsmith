@@ -181,6 +181,8 @@ Nothing stored and nothing written. Round trip and existing notes are untouched 
 - [ ] `docs/UI.md` §9 describes the fit tier, the BACKLOG row for this pass is gone, the stacked-line wrap row is added, and the `sheet.css` comments describe the fit table.
 - [ ] `npm test`, `npm run lint`, `npm run build` pass, and `styles.css` is regenerated.
 
+In the app on 2026-10-08, Obsidian 1.14.4 over the DevTools protocol, check 7's sweep agreed with every tier and fit within 0.5px and found no wrap, no line stacked under its strip and no overlap at desktop widths. At phone width (an emulation, not a device) Obsidian's mobile input width breaks the plain line. Numbers, the strip's 15/16 offset and the method are in `record-summary-fields-first.md` § In the app, 2026-10-08.
+
 ### Shots
 
 Dark theme, explicit frames. `before-` is release (the `text-groups` and Spells-crossing ones are shot from a `release/0.6.0` worktree), `a-` is option A's build, and `after-` is this one.

@@ -72,6 +72,8 @@ Nothing stored and nothing written. Round trip and existing notes are untouched 
 - [ ] Every new rule is under `.sheetsmith-view` and uses no plugin colour. `npm run lint`, `npm test`, `npm run build` pass, and `styles.css` is regenerated.
 - [ ] Before and after PNGs of `magic_items` at 1400 and 520 go to the land stop.
 
+In the app on 2026-10-08, Obsidian 1.14.4 over the DevTools protocol, at pane 620 every Magic items name read whole, only the table's scroller scrolled, and the name stayed at its sticky edge with the last cell reachable. At phone width (an emulation, not a device) the same held, except that the two longest names clip by about 10px under Obsidian's mobile input width. Detail and method: `record-summary-fields-first.md` § In the app, 2026-10-08.
+
 ## Commit boundaries
 
 1. `fix: Floor an open table's name column at its longest name`. Contains the sizer in `table.ts`, its rules in `src/styles/sheet.css`, the corrected ~1302 comment, the regenerated `styles.css`, and the `table.test.ts` cases.

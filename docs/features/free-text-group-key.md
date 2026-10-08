@@ -602,18 +602,20 @@ changes another field leaves the odd line's bytes.
 
 ### By hand, for the owner (the harness cannot take them, and no review ticks them)
 
-All owner-checked and unticked, with `prefers-contrast: more` and forced colours (never rendered) and the vault walkthrough's press list.
+All owner-checked and unticked, except where the result line below records a check driven in the app, with `prefers-contrast: more` and forced colours (never rendered) and the vault walkthrough's press list.
 
-- [ ] The suggestion popup in Obsidian, desktop and mobile: it opens when typing and
+- [x] The suggestion popup in Obsidian, desktop and mobile: it opens when typing and
       not on focus, arrows and Enter pick, Escape closes it before it restores, a pick
       regroups the record and focus follows, and it is themed like the formula inputs'.
 - [ ] Screen reader: the input announces as an editable combobox with its record's
       name; a group header reads name, button, expanded or collapsed, count.
 - [ ] Find-in-page for a group's name finds its header; with a group collapsed the
       body stays `hidden="until-found"` as before.
-- [ ] Type a homebrew class on one record, then the same class on two more with the
+- [x] Type a homebrew class on one record, then the same class on two more with the
       suggestion list and without it; retype one with a different capital; confirm
       the group is one and the header keeps the first spelling.
+
+In the app on 2026-10-08, Obsidian 1.14.4 over the DevTools protocol, on `Characters/Records.md`'s Homebrew features (the fixture below was already in the vault). Two passed. **The popup**, at desktop and at a phone emulation of 390 × 844 (`app.emulateMobile`, not a device): a real click focused the field with no popup, typing `e` opened Blood Hunter and Fighter, ArrowDown and Enter picked Fighter, the record moved to that group and kept focus, one Escape closed the popup with `e` kept, and a second restored `Wizard` and blurred. The popup's computed container and item styles equalled the ceiling formula popup's. **Homebrew classes**: `Druid` typed in full on Second Wind and Lucky, and picked from the list on Odd one, made one group headed `Druid`, which `DRUID` retyped on Lucky did not change. The screen reader was not reached: none was available to the session. Find-in-page was not reached in Obsidian: Cmd-F, as a real key event and as the `editor:open-search` command, opens nothing in a plugin view, so there is no find-in-page there to test (`record-set-groups.md` has the measurement); the Chrome half was not taken. The summary-line text field is shot at 620, 1452 and 390 for the owner. The method is in `record-summary-fields-first.md` § In the app, 2026-10-08.
 
 ### The throwaway vault fixture
 

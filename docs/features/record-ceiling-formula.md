@@ -862,6 +862,8 @@ and 520px, in both themes:
 
 Aramil and `DnD 5e Caster` are not touched.
 
+The press list passed in the app on 2026-10-08, Obsidian 1.14.4 over the DevTools protocol, on `Characters/Records.md`, whose `prof` card stood at 99 from an earlier press (both records read `/ 99`). At 3 both read `/ 3` and only the card's line changed. At 1 Bardic Inspiration read `2 / 1` with its note still `2 / prof`. **Long rest** confirmed `Features — 2 features skipped, their maximums could not be worked out` and, applied, wrote both `prof` records to 1, left `prfo` and `lots` with their lines and their bytes, refilled the rest, and set the skipped records' toggles. `prof + 1` typed into Second Wind's ceiling was written as typed and read 2. The ceiling's suggestions opened in the app on typing and not on focus, at desktop and at a phone emulation of 390 × 844 (not a device): ` + pr` after `prof` offered `prof`, Proficiency bonus. The vault note was put back afterwards. Method: `record-summary-fields-first.md` § In the app, 2026-10-08.
+
 ## Commit boundaries
 
 A plan for `/land-it`, not a schedule. The tree stays uncommitted through

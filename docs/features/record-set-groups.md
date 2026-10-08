@@ -720,6 +720,8 @@ until the author fixes it, which is loud and loses no data.
 - [ ] Edit a field in the lowest group of a long list and see where the list's
       scroll goes; repeat on an ungrouped list.
 
+In the app on 2026-10-08, Obsidian 1.14.4 over the DevTools protocol, with all 31 groups on `Characters/Records.md` collapsed: **Cmd-F does nothing in a sheet view**. Neither a real Cmd-F key event nor the `editor:open-search` command (which reports that it ran) opens a search bar, because Obsidian's in-note search belongs to the markdown views and Electron has no find bar of its own. So no group opens and no record opens, and in Obsidian `hidden="until-found"` is reached by nothing a reader can press. The Chrome half was not taken, so the box stays open, and this result is for SPEC §4.2's disclosure bullet, which this pass does not edit. The screen reader was not reached: none was available to the session. The look of a header is the owner's: Class features and Grouped spells are shot at panes 620 and 1452, plus a header focused from the keyboard. Method: `record-summary-fields-first.md` § In the app, 2026-10-08.
+
 ### The throwaway vault fixture
 
 The vault is outside the repository, so its recipe lives here (`AGENTS.md`). It is
