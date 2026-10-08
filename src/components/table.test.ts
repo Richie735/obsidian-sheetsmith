@@ -2015,6 +2015,82 @@ describe('table with open rows', () => {
 		expect((landed as HTMLInputElement).value).toBe('');
 	});
 
+	describe("the name column's floor", () => {
+		/*
+		 * `docs/UI.md` §4: an open table's name column never falls below its
+		 * longest name while any column holds slack. A field with a percentage
+		 * width contributes only its `min-width` to the table's layout, so the
+		 * floor is a hidden copy of the name the cell lays out as text. Its
+		 * geometry is the stylesheet's and invisible here; what is held here is
+		 * what it holds, when, and that nothing reads it twice.
+		 */
+		function sizers(el: HTMLElement): HTMLElement[] {
+			return Array.from(
+				el.querySelectorAll<HTMLElement>('.sheetsmith-table-name-sizer'),
+			);
+		}
+
+		it("gives a character row's name cell one sizer holding its name", () => {
+			const { el } = openRender(PACK);
+			const cells = Array.from(
+				el.querySelectorAll<HTMLElement>('tbody .sheetsmith-table-name'),
+			);
+			expect(cells).toHaveLength(2);
+			expect(
+				cells.map(
+					(cell) =>
+						cell.querySelectorAll('.sheetsmith-table-name-sizer').length,
+				),
+			).toEqual([1, 1]);
+			expect(sizers(el).map((sizer) => sizer.textContent)).toEqual([
+				'Dagger',
+				'Rope',
+			]);
+		});
+
+		it('hides the sizer from assistive tech, which already has the field', () => {
+			const [sizer] = sizers(openRender(PACK).el);
+			expect(sizer?.getAttribute('aria-hidden')).toBe('true');
+		});
+
+		it('holds the new name once a rename is written and rendered again', () => {
+			const renamed = table.write(
+				{ rows: { 0: { name: 'Gauntlets of Ogre Power' } } },
+				PACK,
+				inventory,
+			);
+			expect(sizers(openRender(renamed).el)[0]?.textContent).toBe(
+				'Gauntlets of Ogre Power',
+			);
+		});
+
+		it('does not move while a name is typed and not yet committed', () => {
+			const { el } = openRender(PACK);
+			const input = el.querySelector<HTMLInputElement>(
+				'.sheetsmith-table-name-input',
+			) as HTMLInputElement;
+			input.dispatchEvent(new Event('focus'));
+			input.value = 'Dagger of a much longer name';
+			input.dispatchEvent(new Event('input'));
+			expect(sizers(el)[0]?.textContent).toBe('Dagger');
+		});
+
+		it("gives a declared row's name cell no sizer", () => {
+			const { el } = openRender(PACK, load);
+			const cells = Array.from(
+				el.querySelectorAll<HTMLElement>('tbody .sheetsmith-table-name'),
+			);
+			// The two declared rows, then the note's two character rows.
+			expect(cells).toHaveLength(4);
+			expect(
+				cells.map(
+					(cell) =>
+						cell.querySelector('.sheetsmith-table-name-sizer') !== null,
+				),
+			).toEqual([false, false, true, true]);
+		});
+	});
+
 	it('deletes a row in two presses, writing nothing on the first', () => {
 		const { el, changes } = openRender(PACK);
 		const [dagger] = removeButtons(el);
@@ -2534,6 +2610,28 @@ describe('table link cells', () => {
 				) as HTMLInputElement
 			).value,
 		).toBe('[[Sunblade|sword]]');
+	});
+
+	it("floors a linked name at the text it shows, as text and not as a link", () => {
+		/*
+		 * The floor is the width of what the cell draws at rest, so an alias
+		 * floors at the alias rather than at its source. And it is a text node
+		 * alone: `FOCUSABLE` counts `a[href]`, and the view restores focus by
+		 * control index within a cell, so an anchor in the sizer would move
+		 * every landing after it.
+		 */
+		const { el } = driven();
+		const row = el.querySelectorAll('tbody tr')[1] as HTMLElement;
+		const cell = row.querySelector('.sheetsmith-table-name') as HTMLElement;
+		const sizer = cell.querySelector('.sheetsmith-table-name-sizer');
+		expect(sizer?.textContent).toBe('sword');
+		expect(sizer?.children).toHaveLength(0);
+		expect(cell.querySelectorAll(FOCUSABLE)).toHaveLength(2);
+		expect(
+			Array.from(cell.querySelectorAll(FOCUSABLE)).some(
+				(control) => sizer?.contains(control) === true,
+			),
+		).toBe(false);
 	});
 
 	it('names a linked row in a total it could not read', () => {

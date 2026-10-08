@@ -1298,12 +1298,18 @@
 }
 
 /* Where the table has a prose column, that column is the one that should
-   grow and the name falls back to its own width. Row names are a fixed
-   vocabulary — "Sleight of hand" is as long as a skill gets — so slack given
-   to that column is room it can never use, while a note is open-ended. With
-   no prose column the rule above still applies and the name takes the slack,
-   which is what keeps a ring or a checkbox from being handed a third of the
-   sheet to sit in the middle of. */
+   grow and the name falls back to its own width. A declared row's name is a
+   fixed vocabulary — "Sleight of hand" is as long as a skill gets — so slack
+   given to that column is room it can never use, while a note is open-ended.
+   With no prose column the rule above still applies and the name takes the
+   slack, which is what keeps a ring or a checkbox from being handed a third of
+   the sheet to sit in the middle of.
+
+   **That premise is false on an `openRows` table**, where the character types
+   the names, so falling back to its own width must still mean the *longest*
+   name: a character row's name is a field, and a field with a percentage width
+   has no content width to fall back to. `.sheetsmith-table-name-sizer` below is
+   what gives it one (`docs/UI.md` §4). */
 .sheetsmith-view
 	.sheetsmith-table-has-text
 	.sheetsmith-table-name {
@@ -1607,6 +1613,66 @@
 	/* A name longer than its column is truncated rather than cut mid-glyph: a
 	   hard cut with room to spare inside the field reads as damaged data. */
 	text-overflow: ellipsis;
+}
+
+/* **The name column's floor**, for the field above that cannot give one
+   (`docs/UI.md` §4). A field with a percentage width is compressible: its
+   min-content is its `min-width` and nothing else, so beside a prose column
+   the table cut a character's name to `6em`. This is a copy of the name the
+   cell shows at rest, laid out as text, so the cell's min-content is the name's
+   own width and the column, the widest of its cells, floors at the longest.
+
+   No height and no paint, so it takes no room in the row and nothing is read
+   twice; `aria-hidden` in the markup says the same to assistive tech. **No
+   inline padding either, and that is the arithmetic rather than an omission**:
+   the field above is pulled into the cell's padding by exactly its own padding
+   and border, so its text area is the cell's content box — and the sizer, in
+   that same box, is the width the text needs. The name's own size, since the
+   field takes `inherit` too. `pre` so a name's spaces neither collapse nor
+   wrap.
+
+   **And a floor with a ceiling: never so wide that the sticky name covers the
+   scroller.** The name cell is pinned at the left edge with an opaque fill, so a
+   name as wide as the scroller hides every cell that scrolls under it, and in a
+   narrow card no scroll position reached a row's modifier or remove control. The
+   other cells need not all fit beside the name, only one at a time, since
+   scrolling brings each into the band left over in turn — so the band is one
+   constant and not a sum over each table's trailing cells: one number cell,
+   which takes a glyph, the remove control or a number field whole, and a text
+   field in part. Wide cards never reach the cap, so the floor is unchanged
+   there; in a narrow one the field's own `6em` minimum takes over again.
+
+   **`cqi`, against the box**, because nothing else can say how wide the
+   scroller is. A percentage `max-width` inside a table cell resolves against
+   the column the cell is being sized for, so it is ignored for min-content and
+   caps nothing; an `em` cap is a fixed length, so it cuts a long name on a wide
+   card too, which is the clip this floor removes. **On the box rather than the
+   scroller**, because `.sheetsmith-table-wrapper` is Roster's scroller as well,
+   and a container there would become the nearest one for every unnamed query
+   inside a Roster; the box exists only on an open table, which is the only
+   table that draws a sizer, and its content box is the scroller's width. */
+.sheetsmith-view .sheetsmith-table-box {
+	container-type: inline-size;
+}
+
+.sheetsmith-view .sheetsmith-table-name-sizer {
+	/* One number cell: `.sheetsmith-table-input`'s `width: 4em` at its own
+	   `--font-ui-small` (border-box, so padding and border are inside it), plus
+	   its cell's inline padding. */
+	--sheetsmith-table-name-band: calc(
+		4 * var(--font-ui-small) + 2 * var(--size-4-2)
+	);
+	display: block;
+	/* The name cell's own inline padding comes off too, since the cap is on
+	   the sizer and the cell is what has to leave the band. */
+	max-width: calc(
+		100cqi - 2 * var(--size-4-2) - var(--sheetsmith-table-name-band)
+	);
+	height: 0;
+	overflow: hidden;
+	visibility: hidden;
+	white-space: pre;
+	font-size: inherit;
 }
 
 /* A link to a note that does not exist yet, and this rule is not a preference —
