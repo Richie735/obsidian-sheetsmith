@@ -793,12 +793,17 @@ working exactly as written, and the migration cost named in the model question.
       criterion.*
 - [x] Deleting a record above an open one leaves the right record open: the set is
       keyed by position, so a delete shifts it.
-- [ ] Committing an edit inside an open record leaves that record open across the
+- [x] Committing an edit inside an open record leaves that record open across the
       re-render.
       *Moved to the vault-fixture press list, for the reason the criterion below is
       there.* The component's half is driven — rendered with an open set supplied,
       the record is open — and the half that survives is the view's `Map`, which
       needs a `SheetView` a test can render (`docs/PATTERNS.md` §11).
+      In the app on 2026-10-08, Obsidian 1.14.4 over the DevTools protocol: Crimson
+      Rite in `Records.md`'s Homebrew in the body, opened by a real click, had its
+      body **Class** retyped and committed with Enter; the note was written, and the
+      record was still open with focus on the same field. Method:
+      `record-summary-fields-first.md` § In the app, 2026-10-08.
 - [x] ~~Opening a note, closing it and opening a second note leaves the second
       note's records closed.~~ **Moved to the vault fixture**, below: it is the
       view's `clear()`, which needs a `SheetView` a test can render

@@ -811,7 +811,7 @@ holds Track cases the repository fixture does not, and they are left alone.
       - **`Ilona.md`'s new rows:** a War Caster row and the typed rows above,
         each with a `Notes` cell saying what it is for, as the existing rows
         have.
-- [ ] **Boots after the author adds `stealth`.** A test in
+- [x] **Boots after the author adds `stealth`.** A test in
       `vault-fixture.test.ts` introduces Boots itself, working on in-memory
       copies of the committed files:
       1. It appends a note-only `Boots of Elvenkind` at `checks.stealth`, with
@@ -832,7 +832,7 @@ holds Track cases the repository fixture does not, and they are left alone.
       3. type `stealth` into the Stealth row's **Publishes as**;
       4. see the glyph appear and confirm that `## Checks` is unchanged in
          markdown view.
-- [ ] **What to press in the vault.** In `Ilona.md`:
+- [x] **What to press in the vault.** In `Ilona.md`:
       - Concentration shows the glyph, and pressing it lists War Caster and the
         typed twin;
       - Perception's `Bonus` cell shows the glyph;
@@ -852,10 +852,12 @@ holds Track cases the repository fixture does not, and they are left alone.
       - **If the Roster or any note case cannot join without changing any other
         existing assertion, the dev names that case and stops.** No second
         fixture layout is opened to route around it.
-- [ ] **Beside it, the starter case:** the vault's `Starter 5e.sheetsmith` is
+- [x] **Beside it, the starter case:** the vault's `Starter 5e.sheetsmith` is
       replaced with the new starter's bytes plus a `War Caster` at `saves.CON`.
       `Mireth.md` enrols in it. This is vault-only, and no repository fixture
       changes for it.
+
+In the app on 2026-10-08, Obsidian 1.14.4 over the DevTools protocol. **The press list** passed on `Ilona.md`: Concentration's glyph lists War Caster and Spellguard, Perception's `Bonus` carries the glyph, passive perception the glyph and no underline, armour class carries both and its popover both groups, and the row form says `Abilities · STR cannot show a note yet`. **Two vault repairs came first.** The vault's layout had `magic_items` at row 1, over the cards, against the committed row 5, and was put back. Neither fixture holds the armour class case this list presses (the committed fixture puts both marks on Perception instead), so the vault's `Ilona.md` gained `| Cloak of Warding | armour_class += 1 as item note: Resistance to cold | yes | … |`, the harness's row. The vault's `Ilona.md` also differs from the committed one, its older rows' modifier cells emptied, and is left as found. **Boots by hand**: the definition and two rows report `checks.stealth` in the editor and on the row form, typing `stealth` into Stealth's **Publishes as** clears the report, the worn row's note marks Stealth once, and `## Checks` is byte-identical. The layout saved on blur, not on Enter. All of it was then taken back out, as the walkthrough leaves it to the reader. **The starter**: the vault's `Starter 5e` equals `src/starters/5e.json` plus War Caster, and Mireth's Constitution save carries its glyph. Method: `record-summary-fields-first.md` § In the app, 2026-10-08.
 
 **The gates.**
 
