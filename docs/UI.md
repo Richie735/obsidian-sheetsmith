@@ -136,8 +136,7 @@ A knob is public API once shipped. Renaming it breaks someone's snippet.
   one, prose takes it, since prose is the one cell that can use unbounded room.
   But the name column never falls below its longest name while any column holds
   slack: the reason it yields, "row names are a fixed vocabulary", is false on
-  an `openRows` table, where the character types them. Not yet true of an open
-  row's name field (`docs/BACKLOG.md` § UI).
+  an `openRows` table, where the character types them.
 - **The sheet fills the pane.** A sheet is a dashboard, not prose, so nothing
   holds it at reading width. `--sheetsmith-sheet-max-width` gives reading width back
   to anyone who wants it.
