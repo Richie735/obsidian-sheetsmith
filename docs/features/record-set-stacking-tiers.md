@@ -40,6 +40,8 @@ The summary grid is `auto minmax(0, 13em) auto 1fr auto`: chevron, name, fields,
 
 Here 96 is the padding, chevron, delete glyph, its margin and the gaps. F is the fields plus a 20px gap between each. 96 and 169 are the name's floor (six ems) and its cap (13em at its 13px).
 
+**Superseded by `docs/features/record-summary-fields-first.md`**, which gives the plain line's fields a `max-content` track so they take their width before the name grows, and makes the fit the plain sum `192 + F`. The formula and the tables in this doc stay as the record of this pass.
+
 It matches every harness list within a pixel, measured with the strip forced off, stacking forced off and every declared field drawn:
 
 | List | Measured fit | Formula on measured widths |
@@ -205,7 +207,7 @@ Dark theme, explicit frames. `before-` is release (the `text-groups` and Spells-
 ## Deliberately not doing
 
 - The stacked line's own wrap in a narrow list. Deferred, with its measured ranges, to `docs/BACKLOG.md` § UI.
-- The summary grid's sharing of free space between the name and the fields. Deferred to its own row. It is also why the formula has a clamp.
+- The summary grid's sharing of free space between the name and the fields. Deferred to its own row. It is also why the formula has a clamp. Since done: `docs/features/record-summary-fields-first.md`.
 - The strip thresholds, which are unchanged.
 - Measuring a field's real width at render time. The estimate is the owner's choice (a), and a character count is what it uses.
 - Every other § UI row, and every editor-pane row.

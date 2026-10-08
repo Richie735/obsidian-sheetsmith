@@ -26,6 +26,7 @@ import {
 import { cellParts, parseModifierPart } from '../parse/modifier-cell';
 import { closeAnchoredPanel } from '../ui/anchored-panel';
 import { sampleOf } from '../test/sample';
+import { hoverClip, setClip } from '../test/clipped';
 
 /*
  * A D&D skill list, which is what fixed rows exist for: the layout owns the
@@ -2660,22 +2661,12 @@ describe('table link cells', () => {
 		const anchor = links(el).find(
 			(a) => a.textContent === 'Bag of Holding',
 		) as HTMLElement;
-		Object.defineProperty(anchor, 'scrollWidth', {
-			value: 200,
-			configurable: true,
-		});
-		Object.defineProperty(anchor, 'clientWidth', {
-			value: 100,
-			configurable: true,
-		});
-		anchor.dispatchEvent(new Event('pointerenter'));
+		setClip(anchor, 200, 100);
+		hoverClip(anchor);
 		expect(anchor.getAttribute('title')).toBe('Bag of Holding');
 
-		Object.defineProperty(anchor, 'clientWidth', {
-			value: 400,
-			configurable: true,
-		});
-		anchor.dispatchEvent(new Event('pointerenter'));
+		setClip(anchor, 200, 400);
+		hoverClip(anchor);
 		expect(anchor.hasAttribute('title')).toBe(false);
 	});
 
@@ -2688,15 +2679,8 @@ describe('table link cells', () => {
 		const aliased = links(el).find(
 			(a) => a.textContent === 'sword',
 		) as HTMLElement;
-		Object.defineProperty(aliased, 'scrollWidth', {
-			value: 200,
-			configurable: true,
-		});
-		Object.defineProperty(aliased, 'clientWidth', {
-			value: 100,
-			configurable: true,
-		});
-		aliased.dispatchEvent(new Event('pointerenter'));
+		setClip(aliased, 200, 100);
+		hoverClip(aliased);
 		expect(aliased.getAttribute('title')).toBe('Sunblade');
 	});
 

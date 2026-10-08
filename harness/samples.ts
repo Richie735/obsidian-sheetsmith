@@ -1665,6 +1665,19 @@ export const SAMPLES: Sample[] = [
 			'```',
 			'A ceiling that cannot be worked out, which says so on its own record and nowhere else.',
 			'',
+			// **A name wider than the name's track at every width**
+			// (`docs/features/record-summary-fields-first.md`): 24 W's are about
+			// 312px against a 169px cap, and `W` is the widest letter the estimate
+			// undercounts. On a fields-first line the name is the track that gives,
+			// so this is the record that shows it clipping with an ellipsis and
+			// revealing on hover, never overlapping its fields. Last, so every record
+			// above keeps its place.
+			'### WWWWWWWWWWWWWWWWWWWWWWWW',
+			'```sheet',
+			'Uses: 1 / 1',
+			'```',
+			'A name of 24 W’s, so a reviewer can see the name clip beside fields that keep their full width.',
+			'',
 		].join('\n'),
 	},
 	/*

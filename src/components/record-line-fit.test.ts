@@ -10,7 +10,8 @@ import {
 } from './record-line-fit';
 
 /*
- * `docs/features/record-set-stacking-tiers.md`. The estimate is held against
+ * `docs/features/record-set-stacking-tiers.md`, with the fit made a plain sum by
+ * `docs/features/record-summary-fields-first.md`. The estimate is held against
  * what the harness measured, at a 16px container, so a change to a constant
  * that would size a sample short is red here rather than a wrap in a review.
  */
@@ -53,7 +54,7 @@ const REST: LineField = {
  */
 const LISTS: [string, LineField[], number, number?][] = [
 	['Known spells', [{ kind: 'number', name: 'Level', ceiling: 'none' }, MARK], 308.5, 424],
-	['Traits', [TYPED, MARK, MARK, { kind: 'computed' }, MARK], 509.5, 712],
+	['Traits', [TYPED, MARK, MARK, { kind: 'computed' }, MARK], 449, 712],
 	[
 		'Spells',
 		[
@@ -61,9 +62,9 @@ const LISTS: [string, LineField[], number, number?][] = [
 			MARK,
 			{ kind: 'select', options: ['None', 'Evocation', 'Abjuration'] },
 		],
-		455.5,
+		418,
 	],
-	['Recharging features', [REST, TYPED, MARK, MARK], 541, 616],
+	['Recharging features', [REST, TYPED, MARK, MARK], 468, 616],
 	['Rest features', [REST, TYPED], 386.5, 424],
 	[
 		'Homebrew features',
@@ -71,9 +72,9 @@ const LISTS: [string, LineField[], number, number?][] = [
 			{ kind: 'text', name: 'Class' },
 			{ kind: 'number', name: 'Uses', ceiling: { fixed: '3' } },
 		],
-		519,
+		448.5,
 	],
-	['Homebrew strip', [{ kind: 'text', name: 'Class' }, MARK], 397.5, 424],
+	['Homebrew strip', [{ kind: 'text', name: 'Class' }, MARK], 379, 424],
 	['Homebrew in the body', [{ kind: 'number', name: 'Uses', ceiling: { fixed: '3' } }], 282.5],
 	['Rituals', [], 192],
 	// The `pinned-add` state: one `Level / 9` each.
@@ -94,35 +95,29 @@ const LISTS: [string, LineField[], number, number?][] = [
 
 describe('a summary field’s estimated width', () => {
 	it.each(MEASURED)('never sizes %s short of the harness', (_, field, drawn) => {
-		expect(fieldWidthPx(field).width).toBeGreaterThanOrEqual(drawn - 0.05);
+		expect(fieldWidthPx(field)).toBeGreaterThanOrEqual(drawn - 0.05);
 	});
 
 	it('sizes a longer name wider, by its characters', () => {
 		const short = fieldWidthPx({ kind: 'number', name: 'Uses', ceiling: 'none' });
 		const long = fieldWidthPx({ kind: 'number', name: 'Uses left', ceiling: 'none' });
-		expect(long.width - short.width).toBeCloseTo(5 * 6.73, 5);
+		expect(long - short).toBeCloseTo(5 * 6.73, 5);
 	});
 
 	it('sizes a dropdown by its longest option, not its first', () => {
-		expect(fieldWidthPx({ kind: 'select', options: ['A', 'Abjuration'] }).width).toBe(
-			fieldWidthPx({ kind: 'select', options: ['Abjuration', 'A'] }).width,
+		expect(fieldWidthPx({ kind: 'select', options: ['A', 'Abjuration'] })).toBe(
+			fieldWidthPx({ kind: 'select', options: ['Abjuration', 'A'] }),
 		);
-	});
-
-	it('lets a text field narrow to its floor, which is what the grid starts from', () => {
-		const text = fieldWidthPx({ kind: 'text', name: 'Class' });
-		expect(text.min).toBeLessThan(text.width);
-		// Measured: 72.6px at its 5ch floor.
-		expect(text.min).toBeGreaterThanOrEqual(72.6 - 0.05);
 	});
 });
 
 describe('the line’s fit', () => {
-	it('is the grid’s own sharing, measured to within a pixel on widths as drawn', () => {
+	it('is the fields beside a name at its floor, measured to within a pixel on widths as drawn', () => {
 		// Traits as drawn, its widest record: 100.7, 20.8, 20.8, 14.2, 20.8. The
-		// harness sweep measured its fit at 509.5px.
-		const drawn = [100.7, 20.8, 20.8, 14.2, 20.8].map((width) => ({ width, min: width }));
-		expect(Math.abs(lineFitPx(drawn) - 509.5)).toBeLessThanOrEqual(1);
+		// harness sweep measured its fit at 449px with the fields' track at
+		// `max-content` (`docs/features/record-summary-fields-first.md`).
+		const drawn = [100.7, 20.8, 20.8, 14.2, 20.8];
+		expect(Math.abs(lineFitPx(drawn) - 449)).toBeLessThanOrEqual(1);
 		// A line with no fields keeps its name at its floor and nothing else.
 		expect(lineFitPx([])).toBe(192);
 	});
@@ -145,8 +140,8 @@ describe('the line’s fit', () => {
 
 describe('the tier', () => {
 	it('is the fit rounded up to a step of 16px', () => {
-		// Traits: 509.9px is 31.87 steps.
-		expect(fitTier([TYPED, MARK, MARK, { kind: 'computed' }, MARK])).toBe(32);
+		// Traits: 449.3px is 28.08 steps.
+		expect(fitTier([TYPED, MARK, MARK, { kind: 'computed' }, MARK])).toBe(29);
 	});
 
 	it('stays inside the table the stylesheet holds', () => {

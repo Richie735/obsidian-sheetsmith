@@ -2863,6 +2863,11 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 					link: context.link,
 					clipping: NAME_CLIPPING,
 				});
+				// The cell clips its own text, so it is what reveals it: the name is
+				// the track that gives first on a fields-first line
+				// (`docs/features/record-summary-fields-first.md`). A sole link's
+				// anchor is bound by the painter as well, and reveals the same words.
+				revealWhenTruncated(cell);
 				return;
 			}
 			const input = nameField(cell, record.name);
@@ -2922,7 +2927,13 @@ export const recordSet: ComponentDefinition<RecordSetConfig, RecordSetData> = {
 		 */
 		function nameField(cell: HTMLElement, raw: string): HTMLInputElement {
 			if (!hasLink(raw)) {
-				return element('input', 'sheetsmith-record-name-input', cell);
+				const input = element('input', 'sheetsmith-record-name-input', cell);
+				// The field clips with an ellipsis and holds exactly what is drawn,
+				// so its `value` is the reveal. Not bound in the linked branch below:
+				// there the field holds the raw `[[…]]`, and a `title` would reveal
+				// the source rather than the words on screen (`docs/BACKLOG.md` § UI).
+				revealWhenTruncated(input);
+				return input;
 			}
 			const stack = element('div', 'sheetsmith-record-linked', cell);
 			const input = element(

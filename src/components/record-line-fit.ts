@@ -15,9 +15,11 @@
  * estimated from their character count at a width per character chosen so that
  * every harness sample comes out at or above its measured width: the estimate
  * errs toward stacking, which costs a line that could have stayed on one row a
- * little sooner. It does not rule out a wrap: a name or option of unusually wide
- * letters (`WWWW`) outruns it, and its line can wrap, which is the accepted
- * residue. The table-name pass rejected a character-count estimate for the
+ * little sooner. It does not rule out a short line: a field name or option of
+ * unusually wide letters (`WWWW`) outruns it, and then the record's name narrows
+ * under its floor first, clipped and revealed on hover, and only a shortfall past
+ * 96px pushes the fields out of the box. That is the accepted residue
+ * (`docs/features/record-summary-fields-first.md`). The table-name pass rejected a character-count estimate for the
  * opposite reason: it needed an exact floor, where this needs a cautious bound.
  *
  * **In px, because the line is.** Every width on the line is a fixed-px token
@@ -68,16 +70,23 @@ const TYPED_CEILING_PX = 26.3;
 /** A ceiling the layout declares: its separator and gaps, then its digits. */
 const FIXED_CEILING_PX = 8;
 const DIGIT_PX = 8.125;
-/** A text field's input at its 14ch, and at its 5ch floor, with the gap before it. */
-export const TEXT_PX = 116.6;
-export const TEXT_MIN_PX = 42.9;
+/**
+ * A text field's input at its 14ch, with the gap before it. Its 5ch floor
+ * enters no fit: the plain line's fields' track is `max-content`, so a text
+ * field is drawn at its 14ch whenever the line is plain, and the floor is the
+ * strip's alone.
+ */
+const TEXT_PX = 116.6;
 /** Between two fields (`--size-4-5`). */
 export const GAP_PX = 20;
 /** Padding, chevron, delete glyph, its margin and the summary's gaps. */
 const LINE_CHROME_PX = 96;
-/** The name's floor (six ems) and its cap (`13em` at the name's 13px). */
+/**
+ * The name's floor, six ems: the narrowest name the fit assumes. A line whose
+ * estimate runs short is drawn plain anyway, and its name narrows below this,
+ * clipped and revealed on hover.
+ */
 const NAME_FLOOR_PX = 96;
-export const NAME_CAP_PX = 169;
 
 /** One step of the tier table: tier N stacks the line up to N × 16px. */
 export const STEP_PX = 16;
@@ -99,22 +108,22 @@ export const MAX_FIT_TIER = 100;
  */
 export const FALLBACK_FIT_TIER = 20;
 
-/** A field's estimated width on the line, and the narrowest it can be drawn. */
-export function fieldWidthPx(field: LineField): { width: number; min: number } {
+/**
+ * A field's width on the line, estimated cautiously: at or above the width the
+ * harness drew every sample at (`record-line-fit.test.ts`).
+ */
+export function fieldWidthPx(field: LineField): number {
 	switch (field.kind) {
 		case 'mark':
-			return { width: MARK_PX, min: MARK_PX };
+			return MARK_PX;
 		case 'computed':
-			return { width: COMPUTED_PX, min: COMPUTED_PX };
+			return COMPUTED_PX;
 		case 'select': {
 			const longest = Math.max(0, ...field.options.map((one) => one.length));
-			const width = SELECT_CHROME_PX + SELECT_CHAR_PX * longest;
-			return { width, min: width };
+			return SELECT_CHROME_PX + SELECT_CHAR_PX * longest;
 		}
-		case 'text': {
-			const name = NAME_CHAR_PX * field.name.length;
-			return { width: name + TEXT_PX, min: name + TEXT_MIN_PX };
-		}
+		case 'text':
+			return NAME_CHAR_PX * field.name.length + TEXT_PX;
 		case 'number': {
 			const ceiling =
 				field.ceiling === 'none'
@@ -123,8 +132,7 @@ export function fieldWidthPx(field: LineField): { width: number; min: number } {
 						? TYPED_CEILING_PX
 						: FIXED_CEILING_PX +
 							DIGIT_PX * Math.max(1, field.ceiling.fixed.length);
-			const width = NAME_CHAR_PX * field.name.length + NUMBER_PX + ceiling;
-			return { width, min: width };
+			return NAME_CHAR_PX * field.name.length + NUMBER_PX + ceiling;
 		}
 	}
 }
@@ -133,21 +141,23 @@ export function fieldWidthPx(field: LineField): { width: number; min: number } {
  * The narrowest container, in px at 16px, at which a line of fields of these
  * widths sits on one row with its name at six ems.
  *
- * Not a sum, because of how the grid shares its free space: the name's track
- * (`minmax(0, 13em)`) and the fields' (`auto`, from the widest field up to all
- * of them on one row) grow together. So the fields reach their full width
- * `F − m` after the name starts growing, and the name is then that wide, held
- * between its floor and its cap. Measured on every harness list within a pixel.
+ * **A plain sum, because the fields take their width before the name grows**
+ * (`docs/features/record-summary-fields-first.md`). The plain line's fields'
+ * track is `max-content`, so it starts at all of the fields on one row and the
+ * name's `minmax(0, 13em)` gets only what is left. The line therefore fits where
+ * the name reaches its floor beside the fields. Before that pass the fields'
+ * track was `auto` and grew together with the name, which made the fit
+ * `96 + F + clamp(F − m, 96, 169)` and up to 73px wider. This formula is true
+ * only while that track is `max-content`, which `styles.test.ts` holds.
+ *
+ * Every term is monotone in the field widths, so a field estimated at or above
+ * its drawn width gives a line estimated at or above its measured fit.
  */
-export function lineFitPx(
-	widths: readonly { width: number; min: number }[],
-): number {
+export function lineFitPx(widths: readonly number[]): number {
 	const all =
-		widths.reduce((sum, one) => sum + one.width, 0) +
+		widths.reduce((sum, one) => sum + one, 0) +
 		GAP_PX * Math.max(0, widths.length - 1);
-	const widest = Math.max(0, ...widths.map((one) => one.min));
-	const name = Math.min(Math.max(all - widest, NAME_FLOOR_PX), NAME_CAP_PX);
-	return LINE_CHROME_PX + all + name;
+	return LINE_CHROME_PX + all + NAME_FLOOR_PX;
 }
 
 /**

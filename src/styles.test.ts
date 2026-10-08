@@ -26,10 +26,7 @@ import {
 	GAP_PX,
 	MAX_FIT_TIER,
 	MIN_FIT_TIER,
-	NAME_CAP_PX,
 	STEP_PX,
-	TEXT_MIN_PX,
-	TEXT_PX,
 } from './components/record-line-fit';
 
 const CSS = readFileSync(new URL('../styles.css', import.meta.url), 'utf8');
@@ -3229,23 +3226,62 @@ describe("a Record set's stacking tiers", () => {
 				.filter((rule) => rule.context.length === 0 && rule.selector === selector)
 				.map((rule) => collapse(rule.body))
 				.join(' ');
-		// One type basis for the line: every `em` on it is 13px.
-		expect(find('.sheetsmith-record'), 'NAME_CAP_PX is 13em at --font-ui-small').toMatch(
-			/font-size: var\(--font-ui-small\)/,
-		);
-		expect(
-			find('.sheetsmith-record-summary'),
-			'NAME_CAP_PX is the name track’s 13em cap at 13px',
-		).toMatch(/minmax\(0, var\(--sheetsmith-record-name, 13em\)\)/);
-		expect(NAME_CAP_PX, 'NAME_CAP_PX is 13em at 13px').toBe(13 * 13);
 		expect(find('.sheetsmith-record-fields'), 'GAP_PX is --size-4-5').toMatch(
 			/gap: var\(--size-4-5\)/,
 		);
 		expect(GAP_PX, 'GAP_PX is Obsidian’s --size-4-5, 20px').toBe(20);
 		const text = find('.sheetsmith-view .sheetsmith-record-input.sheetsmith-record-input-text');
 		expect(text, 'TEXT_PX was measured at the input’s 14ch').toMatch(/max-width: 14ch/);
-		expect(text, 'TEXT_MIN_PX was measured at the input’s 5ch').toMatch(/min-width: 5ch/);
-		expect(TEXT_PX).toBeGreaterThan(TEXT_MIN_PX);
+	});
+
+	it('gives the plain line’s fields their width before the name grows', () => {
+		/*
+		 * `docs/features/record-summary-fields-first.md`. `lineFitPx` is a plain
+		 * sum only while the plain line's fields' track is `max-content`; under the
+		 * base `auto` it would grow with the name and every fit would come out up
+		 * to 73px short. The rule is gated on a style query, so an engine without
+		 * one keeps the base `auto` line, and it must sit after the base rule (to
+		 * win over it) and before the stack block (so a stacked line's template,
+		 * which it cannot reach anyway, and the strip's subgrid follow it).
+		 */
+		const GATED = '@container not style(--sheetsmith-record-stack: on)';
+		const gated = all
+			.map((rule, at) => ({ rule, at }))
+			.filter(
+				({ rule }) =>
+					rule.context.length === 1 &&
+					rule.context[0] === GATED &&
+					rule.selector === '.sheetsmith-record-summary',
+			);
+		expect(gated.length).toBe(1);
+		const [{ rule, at }] = gated as [{ rule: (typeof all)[number]; at: number }];
+		expect(collapse(rule.body)).toBe(
+			'grid-template-columns: auto minmax(0, var(--sheetsmith-record-name, 13em)) max-content 1fr auto;',
+		);
+		const base = all.findIndex(
+			(one) =>
+				one.context.length === 0 &&
+				one.selector === '.sheetsmith-record-summary' &&
+				/grid-template-columns/.test(one.body),
+		);
+		expect(base).toBeGreaterThanOrEqual(0);
+		expect(
+			collapse((all[base] as (typeof all)[number]).body),
+			'the base keeps `auto`, for an engine with no style queries',
+		).toContain(
+			'grid-template-columns: auto minmax(0, var(--sheetsmith-record-name, 13em)) auto 1fr auto;',
+		);
+		const firstStacked = all.findIndex(
+			(one) => one.context.length === 1 && one.context[0] === STACK_QUERY,
+		);
+		expect(base).toBeLessThan(at);
+		expect(at).toBeLessThan(firstStacked);
+		// The strip keeps its own tracks: each field `auto`, as measured.
+		expect(
+			all.some((one) =>
+				/repeat\(var\(--sheetsmith-record-fields\), auto\)/.test(collapse(one.body)),
+			),
+		).toBe(true);
 	});
 
 	it('draws the fallback’s stacked line, and nothing else', () => {

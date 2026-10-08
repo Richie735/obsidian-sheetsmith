@@ -35,6 +35,7 @@ import { parseModifierPart } from '../parse/modifier-cell';
 import { hold } from '../test/pointer';
 import { installExecCommand } from '../test/exec-command';
 import { beforeinput } from '../test/beforeinput';
+import { hoverClip, setClip } from '../test/clipped';
 
 /*
  * Record set, and with it `parse/records.ts`.
@@ -2132,6 +2133,54 @@ describe("a record's name and its links", () => {
 	});
 });
 
+describe("a record's name, clipped and revealed", () => {
+	/*
+	 * `docs/features/record-summary-fields-first.md`. On a fields-first line the
+	 * name is the track that gives, so a clipped name has to read as truncated:
+	 * `ui/truncation.ts`'s reveal, bound to whichever element clips it. The
+	 * metrics are faked through `src/test/clipped.ts`, so what this proves is
+	 * where the reveal is bound.
+	 */
+	const clip = (el: HTMLElement, clipped: boolean) =>
+		setClip(el, 200, clipped ? 100 : 400);
+
+	it('reveals a plain name through its field, and only while it is clipped', () => {
+		const field = nameFields(render())[0] as HTMLInputElement;
+		clip(field, true);
+		hoverClip(field);
+		expect(field.getAttribute('title')).toBe('Second Wind');
+		clip(field, false);
+		hoverClip(field);
+		expect(field.hasAttribute('title')).toBe(false);
+	});
+
+	it('reveals the read-only name of a record whose block will not read', () => {
+		const el = render(
+			{},
+			'\n### A name long enough to clip\n```sheet\nnot an entry\n```\nProse.\n',
+		);
+		const cell = el.querySelector('.sheetsmith-record-name-plain') as HTMLElement;
+		expect(cell).not.toBeNull();
+		clip(cell, true);
+		hoverClip(cell);
+		expect(cell.getAttribute('title')).toBe('A name long enough to clip');
+		clip(cell, false);
+		hoverClip(cell);
+		expect(cell.hasAttribute('title')).toBe(false);
+	});
+
+	it('binds no reveal on the field of a name that mixes text and a link', () => {
+		// The field holds the raw `[[…]]`, so a `title` there would reveal the
+		// source rather than what is drawn (`docs/BACKLOG.md` § UI).
+		const el = render({}, '\n### [[Sunblade]] of dawn\n\nProse.\n');
+		const field = nameFields(el)[0] as HTMLInputElement;
+		expect(field.value).toBe('[[Sunblade]] of dawn');
+		clip(field, true);
+		hoverClip(field);
+		expect(field.hasAttribute('title')).toBe(false);
+	});
+});
+
 describe('the disclosure', () => {
 	it('opens nothing on first render, and wires the chevron to its body', () => {
 		const el = render();
@@ -3627,17 +3676,18 @@ describe('a strip of field names over the list', () => {
 
 		it('stamps an unheaded list from its fields, which before this pass carried no width', () => {
 			// Traits' own line: a typed-ceiling `Uses`, a toggle, a ring, a computed
-			// value and a modifier, measured to fit at 510px; estimated at 509.9.
+			// value and a modifier, measured to fit at 449px; estimated at 449.3
+			// (`docs/features/record-summary-fields-first.md`).
 			const el = render({ ...HEADED, fieldHeadings: false }, HEADED_BODY);
 			expect(block(el).classList.contains('sheetsmith-record-set-headed')).toBe(false);
 			expect(block(el).className).not.toContain('sheetsmith-record-set-fields-');
-			expect(tiers(el)).toEqual(['sheetsmith-record-set-fit-32']);
+			expect(tiers(el)).toEqual(['sheetsmith-record-set-fit-29']);
 			expect(narrow(el)).toBe(false);
 		});
 
 		it('stamps a headed list too, beside its strip count', () => {
 			const el = render(HEADED, HEADED_BODY);
-			expect(tiers(el)).toEqual(['sheetsmith-record-set-fit-32']);
+			expect(tiers(el)).toEqual(['sheetsmith-record-set-fit-29']);
 			expect(block(el).classList.contains('sheetsmith-record-set-fields-5')).toBe(true);
 		});
 
@@ -3645,7 +3695,7 @@ describe('a strip of field names over the list', () => {
 			const el = document.createElement('div');
 			recordSet.render(el, HEADED, null, context);
 			expect(block(el).classList.contains('sheetsmith-record-set-headed')).toBe(false);
-			expect(tiers(el)).toEqual(['sheetsmith-record-set-fit-32']);
+			expect(tiers(el)).toEqual(['sheetsmith-record-set-fit-29']);
 		});
 
 		it('sizes the summary line only, not a field placed in the body', () => {
@@ -3675,7 +3725,7 @@ describe('a strip of field names over the list', () => {
 				},
 				HEADED_BODY,
 			);
-			expect(tiers(hidden)).toEqual(['sheetsmith-record-set-fit-32']);
+			expect(tiers(hidden)).toEqual(['sheetsmith-record-set-fit-29']);
 		});
 
 		it('marks a line that fits by 320px, which the fallback rule passes by', () => {
@@ -3712,13 +3762,13 @@ describe('a strip of field names over the list', () => {
 				},
 				HEADED_BODY,
 			);
-			// 24 characters at 6.73px: 96 + 391.9 + 156.6 = 644.5px, so 41 steps.
-			expect(tiers(long)).toEqual(['sheetsmith-record-set-fit-41']);
+			// 24 characters at 6.73px: 96 + 391.9 + 96 = 583.9px, so 37 steps.
+			expect(tiers(long)).toEqual(['sheetsmith-record-set-fit-37']);
 		});
 
 		it('sizes a level drawn as a dropdown by its longest option', () => {
 			// Spells' line: `Level / 9`, a toggle and a school dropdown, measured to
-			// fit at 455.5px; estimated at 463.1, so 29 steps.
+			// fit at 418px; estimated at 424.2, so 27 steps.
 			const spells = render(
 				{
 					...HEADED,
@@ -3736,7 +3786,7 @@ describe('a strip of field names over the list', () => {
 				},
 				HEADED_BODY,
 			);
-			expect(tiers(spells)).toEqual(['sheetsmith-record-set-fit-29']);
+			expect(tiers(spells)).toEqual(['sheetsmith-record-set-fit-27']);
 			// The same level as a ring is one mark wide: 96 + 178.9 + 96 = 370.9px, so 24.
 			const ring = render(
 				{
@@ -7600,12 +7650,12 @@ describe('a text field as the group key', () => {
 		};
 
 		it('stamps no class for a text field: its fit tier sizes it', () => {
-			// A text field and a counter: 96 + 260.8 + 169 = 525.8px, so 33 steps.
+			// A text field and a counter: 96 + 260.8 + 96 = 452.8px, so 29 steps.
 			for (const cfg of [{}, { fieldHeadings: true }]) {
 				const el = live(cfg).host;
 				const block = el.querySelector('.sheetsmith-record-set') as HTMLElement;
 				expect(block.className).not.toMatch(/sheetsmith-record-set-text/);
-				expect(block.classList.contains('sheetsmith-record-set-fit-33')).toBe(true);
+				expect(block.classList.contains('sheetsmith-record-set-fit-29')).toBe(true);
 			}
 		});
 
@@ -7696,7 +7746,7 @@ describe('a text field as the group key', () => {
 		it('draws the markup it drew before text was offered, plain', () => {
 			expect(drawn({})).toMatchInlineSnapshot(`
 				"div
-				  div.sheetsmith-placed.sheetsmith-record-set.sheetsmith-record-set-fit-32
+				  div.sheetsmith-placed.sheetsmith-record-set.sheetsmith-record-set-fit-28
 				    div.sheetsmith-component-label.sheetsmith-record-set-label "Features"
 				    div.sheetsmith-placed-box.sheetsmith-record-set-box
 				      div.sheetsmith-record-set-scroll
@@ -7781,7 +7831,7 @@ describe('a text field as the group key', () => {
 		it('draws the markup it drew before, grouped by a level key', () => {
 			expect(drawn({ groupBy: 'Rank' })).toMatchInlineSnapshot(`
 				"div
-				  div.sheetsmith-placed.sheetsmith-record-set.sheetsmith-record-set-fit-32
+				  div.sheetsmith-placed.sheetsmith-record-set.sheetsmith-record-set-fit-28
 				    div.sheetsmith-component-label.sheetsmith-record-set-label "Features"
 				    div.sheetsmith-placed-box.sheetsmith-record-set-box
 				      div.sheetsmith-record-set-scroll
@@ -7886,7 +7936,7 @@ describe('a text field as the group key', () => {
 		it('draws the markup it drew before, grouped by a number key', () => {
 			expect(drawn({ groupBy: 'Uses' })).toMatchInlineSnapshot(`
 				"div
-				  div.sheetsmith-placed.sheetsmith-record-set.sheetsmith-record-set-fit-32
+				  div.sheetsmith-placed.sheetsmith-record-set.sheetsmith-record-set-fit-28
 				    div.sheetsmith-component-label.sheetsmith-record-set-label "Features"
 				    div.sheetsmith-placed-box.sheetsmith-record-set-box
 				      div.sheetsmith-record-set-scroll
