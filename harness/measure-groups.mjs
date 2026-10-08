@@ -38,12 +38,18 @@
  *     own, each at the default type size and at `text=20` and `text=24`
  *     (`docs/features/record-set-stacking-tiers.md`). Checks 1 to 6 need groups,
  *     so `node harness/measure-groups.mjs pinned-add` runs this one alone:
- *     a. no unstacked field line wraps inside its own track, or cuts its name
- *        under 96px;
+ *     a. no unstacked field line wraps inside its own track, cuts its name
+ *        under 96px, or pushes a field past the delete glyph's left edge (under
+ *        the plain line's `max-content` fields track a line too narrow for its
+ *        fields overflows rather than wraps:
+ *        `docs/features/record-summary-fields-first.md`);
  *     b. no list is stacked more than 2em (32px, the line's own em) past the
  *        width its plain line fits at, every declared field drawn, with the name
  *        at six ems;
- *     c. no list is stacked and under its strip at once.
+ *     c. no list is stacked and under its strip at once;
+ *     d. in the forced-plain sweep, at every width from 150 to 1300px and not
+ *        only past the fit, no record's name box passes the left edge of its
+ *        fields: a name narrowed under its floor clips, and never overlaps.
  *     It prints, per list, where it is stacked to, where its plain line fits
  *     from and where its strip comes in.
  */
@@ -279,16 +285,18 @@ await load('light', 520, 620);
 
 }
 
-// 7. Where every list's line stacks: checks a, b and c.
+// 7. Where every list's line stacks: checks a, b, c and d.
 async function loadState(state, text) {
 	await send('Emulation.setDeviceMetricsOverride', { width: 1400, height: 1900, deviceScaleFactor: 1, mobile: false });
 	await send('Page.navigate', { url: `file://${root}index.html?surface=sheet&theme=light&state=${state}&text=${text}` });
 	await sleep(2500);
 }
 const SWEEP = `(()=>{
+ const pastDelete=(s)=>{const d=s.querySelector('.sheetsmith-record-remove');if(!d)return false;const left=d.getBoundingClientRect().left;return [...s.querySelectorAll('.sheetsmith-record-fields > .sheetsmith-record-field')].filter(x=>!x.hidden).some(x=>x.getBoundingClientRect().right>left+0.5);};
+ const overlaps=(s)=>{const f=s.querySelector('.sheetsmith-record-fields');if(!f||![...f.children].some(x=>!x.hidden))return false;return s.querySelector('.sheetsmith-record-name').getBoundingClientRect().right>f.getBoundingClientRect().left+0.5;};
  const lines=(fs)=>{const bs=fs.map(f=>f.getBoundingClientRect()).sort((a,b)=>a.top-b.top);let n=0,bottom=-1e9;for(const b of bs){if(b.top>=bottom-1){n++;bottom=b.bottom;}else bottom=Math.max(bottom,b.bottom);}return n;};
  const blocks=[...document.querySelectorAll('.sheetsmith-view .sheetsmith-record-set')].filter(b=>b.querySelector('.sheetsmith-record-summary'));
- const out=blocks.map(b=>({name:b.querySelector('.sheetsmith-record-set-label')?.textContent??'?',em:parseFloat(getComputedStyle(b).fontSize),wrap:[],both:[],stackedTo:null,stripFrom:null,fit:null}));
+ const out=blocks.map(b=>({name:b.querySelector('.sheetsmith-record-set-label')?.textContent??'?',em:parseFloat(getComputedStyle(b).fontSize),wrap:[],both:[],overlap:[],stackedTo:null,stripFrom:null,fit:null}));
  const sweep=(b,each)=>{b.style.flex='none';b.style.justifySelf='start';b.style.maxWidth='none';for(let w=150;w<=1300;w+=0.5){b.style.width=w+'px';void b.offsetWidth;if(each(w))break;}};
  blocks.forEach((b,i)=>{const o=out[i];sweep(b,(w)=>{
   const strip=getComputedStyle(b.querySelector('.sheetsmith-record-set-box')).getPropertyValue('--sheetsmith-record-strip').trim()==='on';
@@ -297,12 +305,14 @@ const SWEEP = `(()=>{
   for(const s of b.querySelectorAll('.sheetsmith-record-summary')){const f=s.querySelector('.sheetsmith-record-fields');
    if(getComputedStyle(f).gridRowStart==='2'){stacked=true;continue;}
    if(strip)continue;
-   if(lines([...f.children].filter(x=>!x.hidden))>1||s.querySelector('.sheetsmith-record-name').getBoundingClientRect().width<96)bad=true;}
+   if(lines([...f.children].filter(x=>!x.hidden))>1||s.querySelector('.sheetsmith-record-name').getBoundingClientRect().width<96||pastDelete(s))bad=true;}
   if(stacked)o.stackedTo=w; if(bad)o.wrap.push(w); if(stacked&&strip)o.both.push(w); return false;});});
  const force=document.createElement('style');force.textContent='.sheetsmith-record-set-box{--sheetsmith-record-stack: off !important}';document.head.appendChild(force);
  blocks.forEach((b,i)=>{const o=out[i];b.classList.remove('sheetsmith-record-set-headed');b.classList.add('sheetsmith-record-set-fits-narrow');
   for(const f of b.querySelectorAll('.sheetsmith-record-summary .sheetsmith-record-field'))f.removeAttribute('hidden');
-  sweep(b,(w)=>{const ok=[...b.querySelectorAll('.sheetsmith-record-summary')].every(s=>{const f=s.querySelector('.sheetsmith-record-fields');return lines([...f.children])<=1&&s.querySelector('.sheetsmith-record-name').getBoundingClientRect().width>=96;});if(ok){o.fit=w;return true;}return false;});});
+  sweep(b,(w)=>{const summaries=[...b.querySelectorAll('.sheetsmith-record-summary')];
+   if(summaries.some(overlaps))o.overlap.push(w);
+   const ok=summaries.every(s=>{const f=s.querySelector('.sheetsmith-record-fields');return lines([...f.children])<=1&&s.querySelector('.sheetsmith-record-name').getBoundingClientRect().width>=96&&!pastDelete(s);});if(ok&&o.fit===null)o.fit=w;return false;});});
  return out;})()`;
 /**
  * The bound on (b): two ems at the line's own 16px. Not the container's `em`,
@@ -324,6 +334,7 @@ for (const state of [...new Set(['populated', STATE])]) {
 			check(one.wrap.length === 0, `${at} ${one.name}: (a) no unstacked line wraps`, one.wrap.slice(0, 4).join(','));
 			check(one.fit !== null && past <= PAST_PX, `${at} ${one.name}: (b) stacked no more than 2em past its fit`, `${past}px past`);
 			check(one.both.length === 0, `${at} ${one.name}: (c) never stacked under its strip`, one.both.slice(0, 4).join(','));
+			check(one.overlap.length === 0, `${at} ${one.name}: (d) no name passes its fields`, one.overlap.slice(0, 4).join(','));
 		}
 	}
 }

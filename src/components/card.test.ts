@@ -10,6 +10,7 @@ import {
 	RenderContext,
 } from '../types';
 import { sampleOf } from '../test/sample';
+import { hoverClip, setClip } from '../test/clipped';
 import { closePopover } from '../ui/popover';
 import { table, TableConfig } from './table';
 import { buildSheet, ReadComponent } from '../formula/sheet';
@@ -287,13 +288,12 @@ describe('card.render', () => {
 		 */
 		const el = render({}, { value: '15', note: 'chain mail, shield' });
 		const note = inputs(el).note as HTMLInputElement;
-		Object.defineProperty(note, 'scrollWidth', { value: 101, configurable: true });
-		Object.defineProperty(note, 'clientWidth', { value: 73, configurable: true });
-		note.dispatchEvent(new Event('pointerenter'));
+		setClip(note, 101, 73);
+		hoverClip(note);
 		expect(note.getAttribute('title')).toBe('chain mail, shield');
 
-		Object.defineProperty(note, 'clientWidth', { value: 200, configurable: true });
-		note.dispatchEvent(new Event('pointerenter'));
+		setClip(note, 101, 200);
+		hoverClip(note);
 		expect(note.hasAttribute('title')).toBe(false);
 	});
 

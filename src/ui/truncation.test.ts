@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 // `view/cell-focus.test.ts` imports it.
 import '../test/obsidian-stub';
 import { revealWhenTruncated } from './truncation';
+import { hoverClip, setClip } from '../test/clipped';
 
 /*
  * The metrics are faked, and that is the point of the module existing: happy-dom
@@ -15,8 +16,7 @@ import { revealWhenTruncated } from './truncation';
 function sized(scroll: number, client: number, text = ''): HTMLElement {
 	const el = document.createElement('div');
 	el.textContent = text;
-	Object.defineProperty(el, 'scrollWidth', { value: scroll, configurable: true });
-	Object.defineProperty(el, 'clientWidth', { value: client, configurable: true });
+	setClip(el, scroll, client);
 	return el;
 }
 
@@ -24,7 +24,7 @@ describe('revealWhenTruncated', () => {
 	it('carries the full text while the element is clipping it', () => {
 		const el = sized(200, 100, 'Torch of Revealing');
 		revealWhenTruncated(el);
-		el.dispatchEvent(new Event('pointerenter'));
+		hoverClip(el);
 		expect(el.getAttribute('title')).toBe('Torch of Revealing');
 	});
 
@@ -33,7 +33,7 @@ describe('revealWhenTruncated', () => {
 		// pass, which is what the card's label learned.
 		const el = sized(100, 100, 'Dagger');
 		revealWhenTruncated(el);
-		el.dispatchEvent(new Event('pointerenter'));
+		hoverClip(el);
 		expect(el.hasAttribute('title')).toBe(false);
 	});
 
@@ -42,7 +42,7 @@ describe('revealWhenTruncated', () => {
 		const el = sized(200, 100, 'Torch of Revealing');
 		revealWhenTruncated(el);
 		el.textContent = 'A brighter lantern';
-		el.dispatchEvent(new Event('pointerenter'));
+		hoverClip(el);
 		expect(el.getAttribute('title')).toBe('A brighter lantern');
 	});
 
@@ -57,20 +57,18 @@ describe('revealWhenTruncated', () => {
 		 */
 		const field = document.createElement('input');
 		field.value = 'Thora Ironhelm of Mirabar';
-		Object.defineProperty(field, 'scrollWidth', { value: 300, configurable: true });
-		Object.defineProperty(field, 'clientWidth', { value: 100, configurable: true });
+		setClip(field, 300, 100);
 		revealWhenTruncated(field);
-		field.dispatchEvent(new Event('pointerenter'));
+		hoverClip(field);
 		expect(field.getAttribute('title')).toBe('Thora Ironhelm of Mirabar');
 	});
 
 	it('says nothing where a field\'s value already fits', () => {
 		const field = document.createElement('input');
 		field.value = 'Thora';
-		Object.defineProperty(field, 'scrollWidth', { value: 100, configurable: true });
-		Object.defineProperty(field, 'clientWidth', { value: 100, configurable: true });
+		setClip(field, 100, 100);
 		revealWhenTruncated(field);
-		field.dispatchEvent(new Event('pointerenter'));
+		hoverClip(field);
 		expect(field.hasAttribute('title')).toBe(false);
 	});
 
@@ -80,22 +78,21 @@ describe('revealWhenTruncated', () => {
 		// over the old string would reveal the old string.
 		const field = document.createElement('input');
 		field.value = 'Thora';
-		Object.defineProperty(field, 'scrollWidth', { value: 300, configurable: true });
-		Object.defineProperty(field, 'clientWidth', { value: 100, configurable: true });
+		setClip(field, 300, 100);
 		revealWhenTruncated(field);
 		field.value = 'Thora Ironhelm of Mirabar';
-		field.dispatchEvent(new Event('pointerenter'));
+		hoverClip(field);
 		expect(field.getAttribute('title')).toBe('Thora Ironhelm of Mirabar');
 	});
 
 	it('decides again on every hover, since the width follows the pane', () => {
 		const el = sized(200, 100, 'Torch of Revealing');
 		revealWhenTruncated(el);
-		el.dispatchEvent(new Event('pointerenter'));
+		hoverClip(el);
 		expect(el.hasAttribute('title')).toBe(true);
 		// The split was dragged wider and the text now fits.
-		Object.defineProperty(el, 'clientWidth', { value: 400, configurable: true });
-		el.dispatchEvent(new Event('pointerenter'));
+		setClip(el, 200, 400);
+		hoverClip(el);
 		expect(el.hasAttribute('title')).toBe(false);
 	});
 });

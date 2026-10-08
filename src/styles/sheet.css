@@ -5820,6 +5820,36 @@ a.sheetsmith-notice-action {
 	border-radius: var(--radius-s);
 }
 
+/* **The fields take their width before the name grows**
+   (docs/features/record-summary-fields-first.md). Under the base `auto` the
+   name's track and the fields' grow together from their minimums, because the
+   grid shares free space equally among every track under its limit and cannot
+   rank one before another; so the fields reached their full width only once the
+   name had grown by their spare, which added up to 73px to every multi-field
+   fit. `max-content` starts the fields' track at all of them on one row, and the
+   name gets what is left, up to its cap. `record-line-fit.ts`'s plain sum,
+   `192 + F`, is true only while this track is `max-content`, which
+   `styles.test.ts` holds.
+
+   **Gated on a style query, so the fallback keeps its line.** An engine with no
+   style queries drops this rule and keeps the base `auto`, so a line too narrow
+   for its fields wraps them inside their track exactly as it did; ungated, the
+   name would collapse to nothing there and the delete glyph would be pushed past
+   the box's clipped edge. A stacked line fails the `not` and takes the stack
+   block's template below, and a headed list over its strip takes the strip's
+   subgrid, which comes later in the source and wins. The strip keeps
+   `repeat(N, auto)`: changing it moved nothing measured. */
+@container not style(--sheetsmith-record-stack: on) {
+	.sheetsmith-record-summary {
+		grid-template-columns:
+			auto
+			minmax(0, var(--sheetsmith-record-name, 13em))
+			max-content
+			1fr
+			auto;
+	}
+}
+
 .sheetsmith-record-disclosure {
 	grid-column: 1;
 }
