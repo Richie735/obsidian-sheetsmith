@@ -831,6 +831,16 @@ interface CardCount {
 	 * the two marks can never land on one segment.
 	 */
 	blocked: number;
+	/**
+	 * How far the push moved the run, signed: the live run less the unmodified
+	 * one. What the breakdown's total says the push did (`docs/UI.md` §9).
+	 *
+	 * **Here and not as `granted - blocked` at the call site**, because this
+	 * function's rule is one derivation of the grant. Zero where only an absolute
+	 * spelling reads the slot, since only `mod.self` is sensitive to the name —
+	 * which is why the builder reads a zero as saying nothing.
+	 */
+	moved: number;
 }
 
 /**
@@ -889,7 +899,13 @@ function cardCount(
 	// A push this component publishes no name for cannot have moved anything,
 	// so the run is whatever it resolved to and nothing is marked either way.
 	if (published === undefined) {
-		return { drawn: modified, live: modified ?? 0, granted: 0, blocked: 0 };
+		return {
+			drawn: modified,
+			live: modified ?? 0,
+			granted: 0,
+			blocked: 0,
+			moved: 0,
+		};
 	}
 	const base = unmodified ?? 0;
 	const live = modified ?? 0;
@@ -901,6 +917,7 @@ function cardCount(
 		live,
 		granted: Math.max(0, live - base),
 		blocked: drawn - live,
+		moved: live - base,
 	};
 }
 
@@ -1684,6 +1701,12 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 		 * which does not. A run whose `count` reads `mod.exhaustion.count` gets the
 		 * door and no dashes, and that is right on both counts.
 		 *
+		 * **The total says what the push did to the run where that differs from
+		 * the push** — `floor((3 + mod.self) / 2)` with `+2` reads
+		 * `Total +2, run +1` over one granted segment — and the measurement is
+		 * `cardCount`'s, handed over as `shown` is, so the popover and the run
+		 * cannot state one push at two magnitudes.
+		 *
 		 * Row sets get none by the same absence everything else here turns on:
 		 * `countName` is undefined, so there is no name to break down.
 		 */
@@ -1693,6 +1716,8 @@ export const track: ComponentDefinition<TrackConfig, TrackData> = {
 				: modifierBreakdown(
 						context.modifiers?.breakdown(countName),
 						ownCount.live,
+						undefined,
+						{ noun: 'run', amount: ownCount.moved },
 					);
 
 		/**

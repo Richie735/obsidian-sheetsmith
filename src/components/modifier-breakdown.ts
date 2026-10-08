@@ -67,6 +67,7 @@ import {
 	ModifierOutcome,
 } from '../types';
 import { isNoteOnly } from '../parse/modifier-cell';
+import { roundSum } from '../formula/expression';
 
 /**
  * The mark on a number something has been pushed at.
@@ -164,6 +165,16 @@ export function modifierBreakdown(
 	 * rows" is the caller's fact and nothing here could ask it.
 	 */
 	inRows?: boolean,
+	/**
+	 * What the push did to the number the caller drew, where the caller measured
+	 * it (`docs/UI.md` §9, "Where the formula transforms the slot").
+	 *
+	 * **Supplied by the caller and never derived here, on `shown`'s own
+	 * argument**: this module never re-derives a number somebody else drew, and
+	 * the only place the effect certainly exists is the component that measured
+	 * it. Absent or null, the text is exactly what it was before this existed.
+	 */
+	effect?: MeasuredEffect | null,
 ): string | null {
 	if (breakdown === undefined || breakdown.lines.length === 0) return null;
 	/*
@@ -191,7 +202,21 @@ export function modifierBreakdown(
 	 * genuinely all come from one place now.
 	 */
 	const qualify = qualified(breakdown.lines, inRows);
-	return arithmeticLines(breakdown, shown, qualify).join('\n');
+	return arithmeticLines(breakdown, shown, qualify, effect).join('\n');
+}
+
+/**
+ * What a push did to the number a caller drew, and what that number is called.
+ *
+ * **The noun is the caller's**, the same kind of fact as `inRows`: it names
+ * what the caller drew, and a builder holding `run` would be holding a Track
+ * word in a module beside the components, which must not know a Track exists.
+ */
+export interface MeasuredEffect {
+	/** What the number is, in the reader's words: `run` for a Track. */
+	noun: string;
+	/** How far the push moved it, signed. */
+	amount: number;
 }
 
 /**
@@ -262,6 +287,7 @@ function arithmeticLines(
 	breakdown: ModifierBreakdown,
 	shown: number | null | undefined,
 	qualify: boolean,
+	effect?: MeasuredEffect | null,
 ): string[] {
 	const said = breakdown.lines.map((line) => {
 		const why = line.suppressed === null ? '' : ` (not applied: ${line.suppressed})`;
@@ -280,13 +306,48 @@ function arithmeticLines(
 	 */
 	const total =
 		breakdown.override === null || typeof shown !== 'number'
-			? `Total ${signed(breakdown.total)}`
+			? `Total ${signed(breakdown.total)}${effectClause(breakdown, effect)}`
 			: `Total ${shown}`;
 	// A blank line before the total, so it reads as the sum rather than as one
 	// more contributor. Flush with the rest it was a third entry on a
 	// two-contributor breakdown. The table cell's own payload already separates
 	// the formula from the breakdown this way, so the bubble is known to take it.
 	return [...said, '', total];
+}
+
+/**
+ * The total line's second half, `, run +1`, or nothing.
+ *
+ * **Only where the push and what it did differ**, so a slot the formula passes
+ * through reads as it always did. Three cases add nothing, each for its own
+ * reason (`docs/features/breakdown-measured-effect.md`):
+ *
+ * - **An override.** The line already states the drawn value, so a clause would
+ *   be a second account of a number it just gave, and there is no slot total to
+ *   compare against.
+ * - **A zero effect.** A measured zero is ambiguous: a count reading its slot by
+ *   the absolute spelling resolves the same with and without the push, so it
+ *   measures zero over a run that genuinely moved, and `run +0` would be false.
+ *   What this costs is the absorbed push, which reads as the push alone.
+ * - **An effect equal to the slot total**, meaning both phases: the measured
+ *   effect includes the result phase, because the published evaluation adds it,
+ *   so comparing against `total` alone would qualify an untransformed slot that
+ *   merely carries a result-phase line.
+ *
+ * A clamp at the run's floor or cap is something the push did, and is said.
+ * Spelled through `signed`, so the two halves of one line spell a number alike.
+ */
+function effectClause(
+	breakdown: ModifierBreakdown,
+	effect: MeasuredEffect | null | undefined,
+): string {
+	if (effect === undefined || effect === null) return '';
+	if (breakdown.override !== null || effect.amount === 0) return '';
+	// Rounded as the phases' own totals are (`roundSum`), so a fractional effect
+	// that equals its push does not grow a clause off a float residue.
+	const slot = roundSum(breakdown.total + (breakdown.resultTotal ?? 0));
+	if (roundSum(effect.amount) === slot) return '';
+	return `, ${effect.noun} ${signed(effect.amount)}`;
 }
 
 /**

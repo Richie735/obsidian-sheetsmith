@@ -1376,7 +1376,7 @@ export const SAMPLES: Sample[] = [
 			// (`docs/features/pool-ceiling-modifier-door.md`). `rolled_health.max`
 			// is the push that moves nothing — a typed ceiling has no formula to
 			// read its slot — and the row's own line says so.
-			'| Talisman of Endurance | endurance.count += 2; endurance_low.count += 2; all_granted.count += 2; stamina.max += 3; grit.count += 2; carried += 3 |',
+			'| Talisman of Endurance | endurance.count += 2; endurance_low.count += 2; all_granted.count += 2; stamina.max += 3; grit.count += 2; carried += 3; halved.count += 2 |',
 			'| Shackles | vigour.count += -2; cursed_run.count += -5; unmade.count += -1; overfull_shackled.count += -2; ward.max += -2; rolled_health.max += -4 |',
 		].join('\n'),
 	},
@@ -1803,6 +1803,26 @@ export const SAMPLES: Sample[] = [
 			max: '8 + mod.self',
 		} as ComponentConfig,
 		body: '```sheet\ncurrent: 5\n```',
+	},
+	/*
+	 * **A run whose formula transforms its push**
+	 * (`docs/features/breakdown-measured-effect.md`). `floor((3 + mod.self) / 2)`
+	 * with the talisman's `+2` draws two segments where it would draw one, so one
+	 * is granted, and the door's total reads `Total +2, run +1`: the push, then
+	 * what it did to the run on screen. The two columns this row had left after
+	 * the pools, the nearest free placement to the granted runs above, so no
+	 * placement moves; a two-segment run fits two columns where a pool's reading
+	 * does not.
+	 */
+	{
+		config: {
+			id: 'halved',
+			type: 'track',
+			label: 'Halved',
+			position: { col: 11, row: 38, width: 2, height: 1 },
+			count: 'floor((3 + mod.self) / 2)',
+		} as ComponentConfig,
+		body: '```sheet\nvalue: 1\n```',
 	},
 	{
 		config: {

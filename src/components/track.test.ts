@@ -3995,6 +3995,78 @@ describe('a modifier granting segments', () => {
 	});
 
 	/*
+	 * **The total states the push and then what it did to the run**
+	 * (`docs/UI.md` §9, `docs/features/breakdown-measured-effect.md`), on both
+	 * carriers at once, since one string reaches the twin and the popover.
+	 */
+	describe('what the push did to the run', () => {
+		/** The popover's text and the twin's, after a press on the door. */
+		const carriers = (el: HTMLElement) => {
+			const described = parts(el).run?.getAttribute('aria-describedby');
+			const twin = described ? el.querySelector(`#${described}`)?.textContent : null;
+			doorOf(el)?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+			const bubble = document.querySelector('.sheetsmith-popover')?.textContent;
+			closePopover();
+			return { twin, bubble };
+		};
+
+		it('reads "Total +2, run +1" where the formula halves the push', () => {
+			// The bug: one granted segment under a total of +2 stated one push at
+			// two magnitudes on one control.
+			const { el } = sheetOf('+= 2', {
+				...run,
+				count: 'floor((3 + mod.self) / 2)',
+			});
+			expect(
+				parts(el).segments.filter((s) =>
+					s.classList.contains('sheetsmith-track-segment-granted'),
+				),
+			).toHaveLength(1);
+			const { twin, bubble } = carriers(el);
+			expect(bubble?.endsWith('Total +2, run +1')).toBe(true);
+			expect(twin).toBe(bubble);
+		});
+
+		it('reads "Total -2, run -1" where the formula halves a penalty', () => {
+			const { el } = sheetOf('+= -2', {
+				...run,
+				count: 'floor((3 + mod.self) / 2)',
+			});
+			const { twin, bubble } = carriers(el);
+			expect(bubble?.endsWith('Total -2, run -1')).toBe(true);
+			expect(twin).toBe(bubble);
+		});
+
+		it('reads "Total -5, run -2" where the run has no more slots to lose', () => {
+			// Decision 4: the floor is something the push did, and the clause is
+			// the two blocked slots drawn.
+			const { el } = sheetOf('+= -5', { ...run, count: '2 + mod.self' });
+			const { twin, bubble } = carriers(el);
+			expect(bubble?.endsWith('Total -5, run -2')).toBe(true);
+			expect(twin).toBe(bubble);
+		});
+
+		it('reads the total alone where the slot passes through', () => {
+			const { el } = sheetOf('+= 2', { ...run, count: '4 + mod.self' });
+			const { twin, bubble } = carriers(el);
+			expect(bubble?.endsWith('Total +2')).toBe(true);
+			expect(twin).toBe(bubble);
+		});
+
+		it('reads the total alone where the count names the slot absolutely', () => {
+			// The run is two segments longer and measures zero, so a clause would
+			// be a false statement about it.
+			const { el } = sheetOf('+= 2', {
+				...run,
+				count: '3 + mod.exhaustion.count',
+			});
+			const { twin, bubble } = carriers(el);
+			expect(bubble?.endsWith('Total +2')).toBe(true);
+			expect(twin).toBe(bubble);
+		});
+	});
+
+	/*
 	 * **The affordance, which is the half a `title` never had.** The content was
 	 * already right and reachable from the keyboard and from a screen reader; a
 	 * native tooltip is slow, unstyled, truncating, and a finger never sees one.

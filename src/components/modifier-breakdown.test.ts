@@ -60,6 +60,18 @@ const said = (
 ) => {
 	const text = modifierBreakdown({ lines, total, override }, shown, inRows);
 	/*
+	 * **And every case is a case of a measured effect that says nothing new**
+	 * (`docs/features/breakdown-measured-effect.md`): no effect, a null one, and
+	 * one equal to the slot total all read exactly as before, so the nine other
+	 * importers of this builder are pinned byte-identical here rather than in
+	 * each of their files.
+	 */
+	for (const effect of [undefined, null, { noun: 'run', amount: total }]) {
+		expect(
+			modifierBreakdown({ lines, total, override }, shown, inRows, effect),
+		).toBe(text);
+	}
+	/*
 	 * **Every case in this file is also a case of the account**, which is how a
 	 * sheet with no notes is held byte-identical (`docs/features/modifier-notes.md`):
 	 * with no notes the account's text is this text, character for character, and
@@ -230,6 +242,112 @@ describe('modifierBreakdown', () => {
 			),
 		).toBe(
 			'Belt — item +2\nGauntlets — item +1 (not applied: a larger item bonus applies)\n\nTotal +2',
+		);
+	});
+});
+
+/*
+ * What a push did, where the formula transformed the slot
+ * (`docs/UI.md` §9, `docs/features/breakdown-measured-effect.md`).
+ *
+ * The effect is the caller's measurement, handed over as `shown` is, so these
+ * cases pass it in rather than asking the builder to work it out.
+ */
+describe('a measured effect on the total', () => {
+	const pushed = (
+		amount: number,
+		effect: { noun: string; amount: number } | null,
+		over: { override?: number | null; resultTotal?: number; shown?: number | null } = {},
+	) =>
+		modifierBreakdown(
+			{
+				lines: [line({ label: 'Talisman of Endurance', amount })],
+				total: amount,
+				override: over.override ?? null,
+				...(over.resultTotal === undefined ? {} : { resultTotal: over.resultTotal }),
+			},
+			over.shown ?? null,
+			undefined,
+			effect,
+		);
+
+	it('states one push at one magnitude: the push, then what it did to the run', () => {
+		/*
+		 * The bug this exists for. `floor((3 + mod.self) / 2)` with a `+2` draws
+		 * one granted segment, and `Total +2` alone stated one push at two
+		 * magnitudes on one control. The contributor line stays what was pushed,
+		 * since that is what a reader unticks.
+		 */
+		expect(pushed(2, { noun: 'run', amount: 1 })).toBe(
+			'Talisman of Endurance — +2\n\nTotal +2, run +1',
+		);
+	});
+
+	it('signs an effect the push shortened, through the same spelling', () => {
+		expect(pushed(-2, { noun: 'run', amount: -1 })).toBe(
+			'Talisman of Endurance — -2\n\nTotal -2, run -1',
+		);
+	});
+
+	it('says a clamp, since the run moving less than the push is what it did', () => {
+		// Cursed vigour: `2 + mod.self` with a −5 shuts both slots, and the run
+		// has no third to lose.
+		expect(pushed(-5, { noun: 'run', amount: -2 })).toBe(
+			'Talisman of Endurance — -5\n\nTotal -5, run -2',
+		);
+	});
+
+	it('adds nothing where the effect is the push', () => {
+		expect(pushed(2, { noun: 'run', amount: 2 })).toBe(pushed(2, null));
+	});
+
+	it('adds nothing for a zero effect, which an absolute spelling also measures', () => {
+		// `3 + mod.grit.count` really is two segments longer and measures zero,
+		// so `run +0` would be a false statement about a run that moved.
+		expect(pushed(1, { noun: 'run', amount: 0 })).toBe(
+			'Talisman of Endurance — +1\n\nTotal +1',
+		);
+	});
+
+	it('adds nothing under an override, whose total already states the value', () => {
+		const effect = { noun: 'run', amount: -2 };
+		expect(pushed(0, effect, { override: 2, shown: 2 })).toBe(
+			pushed(0, null, { override: 2, shown: 2 }),
+		);
+		expect(pushed(0, null, { override: 2, shown: 2 })).toContain('Total 2');
+		// And where the caller has no number, the delta arm is taken, which is the
+		// one place the override guard is reachable: without it this would read
+		// `Total +0, run -2`.
+		expect(pushed(0, effect, { override: 2, shown: null })).toBe(
+			pushed(0, null, { override: 2, shown: null }),
+		);
+		expect(pushed(0, null, { override: 2, shown: null })).toContain('Total 0');
+	});
+
+	it('compares as the phases total, so a float residue adds no clause', () => {
+		// 0.1 + 0.2 is 0.30000000000000004, and a caller measuring 0.3 has said
+		// exactly what was pushed.
+		expect(pushed(0.1, { noun: 'run', amount: 0.3 }, { resultTotal: 0.2 })).toBe(
+			pushed(0.1, null, { resultTotal: 0.2 }),
+		);
+	});
+
+	it('compares against both phases, so a result-phase line is not a transform', () => {
+		// `4 + mod.self` with `+2` and a result-phase `+1` moves the published
+		// number by 3, which is exactly what was pushed.
+		expect(pushed(2, { noun: 'run', amount: 3 }, { resultTotal: 1 })).toBe(
+			pushed(2, null, { resultTotal: 1 }),
+		);
+		// Against the value phase alone that would read as a transform; against
+		// both it differs only where the formula really did something.
+		expect(pushed(2, { noun: 'run', amount: 1 }, { resultTotal: 1 })).toBe(
+			'Talisman of Endurance — +2\n\nTotal +2, run +1',
+		);
+	});
+
+	it("takes the noun from the caller, so the builder holds no component's word", () => {
+		expect(pushed(2, { noun: 'length', amount: 1 })).toBe(
+			'Talisman of Endurance — +2\n\nTotal +2, length +1',
 		);
 	});
 });
