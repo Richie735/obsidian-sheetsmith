@@ -698,9 +698,11 @@ with their numbers so a later reader can revisit it.
 **The cold sheet, and which starters show it.** SPEC §5 has a name the sheet
 does not publish fail to resolve rather than default to zero, so a derived
 value with no data beneath it reads "?" — the honest answer before there is
-data, structural rather than a defect, and the subject of `docs/UI.md` §12's
-cold-start row. The three starters exhibit it very differently, and the
-difference is worth having in the set:
+data, structural rather than a defect, and the subject of SPEC §13's
+resolved entry on whether a derived sheet owes better than "?". *This entry
+first said `docs/UI.md` §12's cold-start row; that row moved to
+`docs/BACKLOG.md` and closed when §13 ruled "no".* The three starters
+exhibit it very differently, and the difference is worth having in the set:
 
 - **5e** is derived almost everywhere, so a fresh character reads "?" across
   armour class, proficiency, every skill total and both save columns. **Level
@@ -731,8 +733,9 @@ difference is worth having in the set:
   em dash rather than a failure.
 
 The open question underneath — whether a derived sheet owes a reader better
-than "?" — is the backlog's; two of the three starters raise its stakes without
-changing its answer, and the third is the counter-example.
+than "?" — was the backlog's and is resolved "no" in SPEC §13; two of the
+three starters raise its stakes without changing its answer, and the third is
+the counter-example.
 
 ## Config fields
 
@@ -886,8 +889,9 @@ None. No component is added or changed; the feature registers a command.
 - [ ] Manual: fresh characters on the 5e and PF2e layouts are *full* of "?"
       and that is accepted, not filed — but looked at once, deliberately,
       because these are the widest instances of the cold-start state
-      `docs/UI.md` §12 records, and the ruling there should be taken with
-      these screens in front of whoever takes it.
+      SPEC §13 now rules on. *This item first said `docs/UI.md` §12 records
+      it and the ruling there should be taken with these screens in front of
+      whoever takes it; §13 has since ruled "no".*
 
 ## Commit boundaries
 

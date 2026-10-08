@@ -7517,10 +7517,11 @@ a.sheetsmith-notice-action {
    with the name at six ems, and stamps it rounded up to a step of 16px as
    `.sheetsmith-record-set-fit-N` (`components/record-line-fit.ts`). Tier N
    stacks up to N × 16px: the estimate is cautious, so that is at or past the
-   line's fit, and the steps add under one more. Stacked, its fields can still
-   wrap under the name in a list narrower than they are (`docs/BACKLOG.md`
-   § UI). Every list wears a tier, headed or not, from every declared summary
-   field, a hidden one included, because a record can draw them all.
+   line's fit, and the steps add under one more. Stacked is the narrowest
+   layout (`docs/UI.md` §9): its fields can still wrap under the name in a
+   list narrower than they are. Every list wears a tier, headed or not, from
+   every declared summary field, a hidden one included, because a record can
+   draw them all.
 
    **In px, not `em`, because the line is.** Every width on it is a fixed-px
    token (`--font-ui-small`, `--font-ui-smaller`, `--size-*`), and the sheet's
