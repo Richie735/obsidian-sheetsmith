@@ -1939,7 +1939,6 @@ body {
 }
 
 .sheetsmith-view .sheetsmith-table-input {
-	width: 4em;
 	padding: var(--size-2-1) var(--size-2-2);
 	border: 1px solid transparent;
 	border-radius: var(--radius-s);
@@ -1947,6 +1946,20 @@ body {
 	text-align: center;
 	font-size: var(--font-ui-small);
 	color: var(--text-normal);
+}
+
+/* **A field's width is given alone, at (0,3,0), and that is every sheet text
+   field's rule** (docs/features/phone-input-width.md). On a phone Obsidian adds
+   `.is-mobile input[type='text'] { width: 100% }` at (0,2,1), which beats the
+   (0,2,0) that `.sheetsmith-view` scoping buys, so a field sized here took the
+   whole width it was offered: a record's number field went from 52px to 177px
+   and squeezed its name to 11. Doubling the class clears it without an
+   `!important` and without restyling the app's selector. Only the width moves
+   to the doubled rule, because doubling the whole rule would also lift its
+   border and background over the field's own `:hover` and `:focus`, which sit
+   at (0,3,0) above. `styles.test.ts` holds every text field's width to this. */
+.sheetsmith-view .sheetsmith-table-input.sheetsmith-table-input {
+	width: 4em;
 }
 
 /* A text column holds prose, and prose wants the room, the left edge, and
@@ -1975,7 +1988,10 @@ body {
 	width: auto;
 }
 
-.sheetsmith-view .sheetsmith-table-text .sheetsmith-table-input {
+/* Doubled for (0,4,0), one class past the doubled 4em above: the base is at
+   (0,3,0) for Obsidian's phone rule (see its comment), and a prose cell's width
+   must win on weight rather than on coming later. */
+.sheetsmith-view .sheetsmith-table-text .sheetsmith-table-input.sheetsmith-table-input {
 	width: 100%;
 	min-width: 8em;
 	text-align: left;
@@ -2263,7 +2279,6 @@ body {
 	   a printed one are two rows of one list and must not read as two lists,
 	   which four pixels of indent is enough to do. */
 	margin-inline: calc(-1 * var(--sheetsmith-field-inset));
-	width: calc(100% + 2 * var(--sheetsmith-field-inset));
 	min-width: 6em;
 	/* And at the size the names beside it are. The other cells are a size down
 	   because they are data beside the row; this one is the row. */
@@ -2272,6 +2287,12 @@ body {
 	/* A name longer than its column is truncated rather than cut mid-glyph: a
 	   hard cut with room to spare inside the field reads as damaged data. */
 	text-overflow: ellipsis;
+}
+
+/* The width alone at (0,3,0), past Obsidian's phone rule: see
+   `.sheetsmith-table-input`'s. */
+.sheetsmith-view .sheetsmith-table-name-input.sheetsmith-table-name-input {
+	width: calc(100% + 2 * var(--sheetsmith-field-inset));
 }
 
 /* **The name column's floor**, for the field above that cannot give one
@@ -3100,7 +3121,6 @@ body {
 	   it is not — every non-Chromium engine, Obsidian mobile included —
 	   `width: auto` on an input falls back to its intrinsic ~20-character
 	   size, which is a blown-out card rather than a graceful degradation. */
-	width: 4ch;
 	min-width: 4ch;
 	padding: 0;
 	border: none;
@@ -3124,8 +3144,14 @@ body {
 	transition: color 260ms ease-out;
 }
 
+/* The width alone at (0,3,0), past Obsidian's phone rule: see
+   `.sheetsmith-table-input`'s. */
+.sheetsmith-view .sheetsmith-pool-current.sheetsmith-pool-current {
+	width: 4ch;
+}
+
 @supports (field-sizing: content) {
-.sheetsmith-view .sheetsmith-pool-current {
+.sheetsmith-view .sheetsmith-pool-current.sheetsmith-pool-current {
 		width: auto;
 		field-sizing: content;
 	}
@@ -3179,7 +3205,6 @@ body {
 	   the digits themselves both read as clamped onto the number rather than
 	   drawn around a field — and it is inside the width because the box sizes
 	   border-box, so three characters stay three characters. */
-	width: calc(3ch + 2 * var(--size-2-2));
 	min-width: calc(3ch + 2 * var(--size-2-2));
 	height: auto;
 	padding: 0 var(--size-2-2);
@@ -3191,8 +3216,14 @@ body {
 	text-align: left;
 }
 
+/* The width alone at (0,3,0), past Obsidian's phone rule: see
+   `.sheetsmith-table-input`'s. */
+.sheetsmith-view .sheetsmith-pool-max-input.sheetsmith-pool-max-input {
+	width: calc(3ch + 2 * var(--size-2-2));
+}
+
 @supports (field-sizing: content) {
-.sheetsmith-view .sheetsmith-pool-max-input {
+.sheetsmith-view .sheetsmith-pool-max-input.sheetsmith-pool-max-input {
 		width: auto;
 		min-width: 1ch;
 		field-sizing: content;
@@ -3396,7 +3427,6 @@ body {
 /* The pill's only control, now that the steppers are gone, so it takes the
    room they were using: a comfortable target rather than three cramped ones. */
 .sheetsmith-view .sheetsmith-pool-temp-input {
-	width: 3ch;
 	min-width: 0;
 	padding: var(--size-2-1) var(--size-2-2);
 	margin: calc(-1 * var(--size-2-1)) calc(-1 * var(--size-2-2));
@@ -3407,6 +3437,12 @@ body {
 	font-size: var(--font-ui-small);
 	font-variant-numeric: tabular-nums;
 	text-align: center;
+}
+
+/* The width alone at (0,3,0), past Obsidian's phone rule: see
+   `.sheetsmith-table-input`'s. */
+.sheetsmith-view .sheetsmith-pool-temp-input.sheetsmith-pool-temp-input {
+	width: 3ch;
 }
 
 /* The pill wears the ring, so the field inside it wears nothing.
@@ -3636,7 +3672,6 @@ body {
 	   afterthought, and three characters is not room for an amount plus the
 	   caret after it. The type matches the glyph beside it too — a field being
 	   typed into should not be the quietest thing in its own control. */
-	width: 5ch;
 	min-width: 0;
 	height: var(--sheetsmith-pool-control, var(--size-4-8));
 	padding: 0 var(--size-2-2);
@@ -3647,6 +3682,12 @@ body {
 	font-size: var(--font-ui-medium);
 	font-variant-numeric: tabular-nums;
 	text-align: center;
+}
+
+/* The width alone at (0,3,0), past Obsidian's phone rule: see
+   `.sheetsmith-table-input`'s. */
+.sheetsmith-view .sheetsmith-pool-adjust-amount.sheetsmith-pool-adjust-amount {
+	width: 5ch;
 }
 
 .sheetsmith-view .sheetsmith-pool-adjust-amount:focus {
@@ -4159,7 +4200,6 @@ a.sheetsmith-notice-action {
    twenty characters wide and would set the name column's width against a
    column whose whole job is to be as narrow as the longest name in it. */
 .sheetsmith-view .sheetsmith-track-row-name-input {
-	width: 8ch;
 	/* **The field has to yield with its track, not just the track.** Letting
 	   the name column shrink (`minmax(0, auto)` above) does nothing on its own:
 	   a grid item with a `min-width` of its own simply overflows the area it
@@ -4207,8 +4247,14 @@ a.sheetsmith-notice-action {
 	text-align: start;
 }
 
+/* The width alone at (0,3,0), past Obsidian's phone rule: see
+   `.sheetsmith-table-input`'s. */
+.sheetsmith-view .sheetsmith-track-row-name-input.sheetsmith-track-row-name-input {
+	width: 8ch;
+}
+
 @supports (field-sizing: content) {
-	.sheetsmith-view .sheetsmith-track-row-name-input {
+	.sheetsmith-view .sheetsmith-track-row-name-input.sheetsmith-track-row-name-input {
 		width: auto;
 		min-width: 4ch;
 		/* A cap rather than no cap: the name column is shared with the
@@ -6042,7 +6088,6 @@ a.sheetsmith-notice-action {
 	font-family: inherit;
 	font-weight: var(--tag-weight);
 	text-decoration: var(--tag-decoration);
-	width: auto;
 	max-width: 100%;
 	/* `height: auto` against Obsidian's own `--input-height: 30px`, so the pill is
 	   the height of its own text and its padding rather than of a form field. A
@@ -6060,6 +6105,13 @@ a.sheetsmith-notice-action {
 	/* A level steps under the arrow keys, and digits that re-advance as they
 	   change move every field after them (§5 of docs/UI.md). */
 	font-variant-numeric: tabular-nums;
+}
+
+/* The width alone at (0,3,0), past Obsidian's phone rule: see
+   `.sheetsmith-table-input`'s. `auto` is the input's `size`, which the
+   component sets to the value's length. */
+.sheetsmith-view .sheetsmith-passport-input.sheetsmith-passport-input {
+	width: auto;
 }
 
 /* The tag's own hover, which is why this field left the shared hover roster
@@ -7019,7 +7071,6 @@ a.sheetsmith-notice-action {
 }
 
 .sheetsmith-view .sheetsmith-record-input {
-	width: 3.5em;
 	padding: var(--size-2-1) var(--size-2-2);
 	border: 1px solid transparent;
 	border-radius: var(--radius-s);
@@ -7030,6 +7081,12 @@ a.sheetsmith-notice-action {
 	/* A number that reflows while it is being stepped reads as movement the
 	   reader did not ask for (§5 of docs/UI.md). */
 	font-variant-numeric: tabular-nums;
+}
+
+/* The width alone at (0,3,0), past Obsidian's phone rule: see
+   `.sheetsmith-table-input`'s. */
+.sheetsmith-view .sheetsmith-record-input.sheetsmith-record-input {
+	width: 3.5em;
 }
 
 /* **A text field is the number field with a width for a word.** The class a
@@ -7043,8 +7100,10 @@ a.sheetsmith-notice-action {
    `Path of the Wild Magic` less a few characters; the harness fixture holds a
    90-character value, and `harness/measure-groups.mjs` holds a clipped group
    header to one line, the same height as its siblings, with its full text on
-   hover (`docs/features/free-text-group-key.md`). */
-.sheetsmith-view .sheetsmith-record-input.sheetsmith-record-input-text {
+   hover (`docs/features/free-text-group-key.md`). The base class is doubled
+   for (0,4,0), one class past the doubled 3.5em above, so this wins on weight
+   rather than on coming later. */
+.sheetsmith-view .sheetsmith-record-input.sheetsmith-record-input.sheetsmith-record-input-text {
 	width: 100%;
 	max-width: 14ch;
 	min-width: 5ch;
