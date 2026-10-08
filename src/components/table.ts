@@ -2710,6 +2710,36 @@ export const table: ComponentDefinition<TableConfig, TableData> = {
 				// is given the value with the name, so qualifying it would announce
 				// the same word twice.
 				input.setAttribute('aria-label', nameHeading);
+				/*
+				 * **The column's floor** (`docs/UI.md` §4): a hidden copy of what the
+				 * cell shows at rest, laid out as text. A field with a percentage
+				 * width contributes only its `min-width` to the table's layout, so
+				 * with a prose column beside it the name was cut to `6em`; a cell's
+				 * min-content is its widest in-flow child, so this floors each cell
+				 * at its own name and the column at the longest, with no length
+				 * computed here. Not `input.size`, Passport's spelling, which
+				 * measures average advances rather than these glyphs, and not
+				 * `field-sizing: content`, which moves the row's other cells while
+				 * the reader types: this is painted per render, so it moves only
+				 * on the rebuild a commit produces.
+				 *
+				 * `displayText`, the one spelling of what a link shows, so an alias
+				 * floors at what is drawn rather than at its source — and plain text
+				 * passes through it unchanged, so there is no second decision here
+				 * about whether the name is linked. Not `rowLabel`, which names an
+				 * empty row for a listener: an empty name floors at nothing and the
+				 * field's `min-width` holds. **One text node**, never anchors: the
+				 * view restores focus by counting a cell's controls, `a[href]`
+				 * among them. `aria-hidden` because the field already gives the name
+				 * to assistive tech.
+				 */
+				const sizer = element(
+					'span',
+					'sheetsmith-table-name-sizer',
+					cell,
+					displayText(rowView.label),
+				);
+				sizer.setAttribute('aria-hidden', 'true');
 				bindEditable(input, {
 					initial: rowView.label,
 					announceCommit: (next) => {
